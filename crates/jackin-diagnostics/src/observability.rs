@@ -1,18 +1,8 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! `tracing` subscriber setup for JSONL diagnostics plus optional OTLP export.
-//!
-//! The default subscriber installs only [`JackinDiagnosticsLayer`]. It has no
-//! stdout/stderr sink: diagnostic output must never stream over the operator's
-//! full-screen TUI or plain CLI surface. With `--features otlp` and a standard
-//! OTLP endpoint configured (`OTEL_EXPORTER_OTLP_ENDPOINT`), an OTLP export
-//! layer is added beside the JSONL layer.
+//! Direct OTLP subscriber setup with no terminal or local-file sink.
 
-use tracing::field::{Field, Visit};
-use tracing::{Event, Subscriber};
-use tracing_subscriber::Layer;
-use tracing_subscriber::layer::Context;
 use tracing_subscriber::prelude::*;
 
 mod config;
@@ -84,8 +74,6 @@ pub fn validate_delivery() -> Result<ValidationReport, ValidationFailure> {
         health,
     })
 }
-
-const JSONL_TARGET: &str = "jackin_diagnostics::jsonl";
 
 /// OTLP/tracing attribute keys — the single source of truth for jackin❯'s
 /// telemetry tag taxonomy. Every key is dotted, never underscored: jackin❯'s own
@@ -189,87 +177,6 @@ pub mod otel_metrics {
 #[path = "observability_events.rs"]
 pub mod otel_events;
 
-/// Tracing layer that turns marked diagnostics events into run JSONL records.
-///
-/// `RunDiagnostics` methods emit events with `target = JSONL_TARGET`; this
-/// layer is the single JSONL sink. Other tracing events are left for optional
-/// exporters such as OTLP.
-#[derive(Debug, Default)]
-pub struct JackinDiagnosticsLayer;
-
-impl<S> Layer<S> for JackinDiagnosticsLayer
-where
-    S: Subscriber + for<'lookup> tracing_subscriber::registry::LookupSpan<'lookup>,
-{
-    fn on_event(&self, event: &Event<'_>, _ctx: Context<'_, S>) {
-        let metadata = event.metadata();
-        if metadata.target() != JSONL_TARGET {
-            // The OpenTelemetry SDK reports its own failures (export errors,
-            // dropped batches, partial-success) as `tracing` events on
-            // `opentelemetry*` targets. They are filtered OUT of the OTLP log
-            // bridge (else an export error would itself try to export — a
-            // feedback loop), so this layer is the only place they can be made
-            // durable: capture WARN+ into the active run as `otlp_internal`.
-            // Without this, "telemetry isn't reaching the backend" is invisible.
-            if metadata.target().starts_with("opentelemetry")
-                && matches!(
-                    *metadata.level(),
-                    tracing::Level::WARN | tracing::Level::ERROR
-                )
-            {
-                let mut visitor = OtelInternalVisitor::default();
-                event.record(&mut visitor);
-                if let Some(run) = crate::active_run() {
-                    run.record_otlp_internal(metadata.level().as_str(), &visitor.into_message());
-                }
-            }
-        }
-    }
-}
-
-/// Flattens an OpenTelemetry-internal event's fields into one line. These
-/// events carry a `name` (the exporter event tag, e.g. `ExportFailed`) plus
-/// ad-hoc fields (`error`, `reason`, …); concatenate them so the run record
-/// shows the exporter's own words verbatim rather than just a level.
-#[derive(Default)]
-struct OtelInternalVisitor {
-    name: Option<String>,
-    fields: Vec<String>,
-}
-
-impl OtelInternalVisitor {
-    fn into_message(self) -> String {
-        let mut parts = Vec::new();
-        if let Some(name) = self.name {
-            parts.push(name);
-        }
-        parts.extend(self.fields);
-        if parts.is_empty() {
-            "opentelemetry internal event".to_owned()
-        } else {
-            parts.join(" ")
-        }
-    }
-
-    fn record_field(&mut self, name: &str, value: String) {
-        match name {
-            "name" => self.name = Some(value),
-            "message" => self.fields.insert(0, value),
-            _ => self.fields.push(format!("{name}={value}")),
-        }
-    }
-}
-
-impl Visit for OtelInternalVisitor {
-    fn record_str(&mut self, field: &Field, value: &str) {
-        self.record_field(field.name(), value.to_owned());
-    }
-
-    fn record_debug(&mut self, field: &Field, value: &dyn std::fmt::Debug) {
-        self.record_field(field.name(), format!("{value:?}"));
-    }
-}
-
 /// Install the global `tracing` subscriber.
 ///
 /// Default build: installs the JSONL diagnostics layer and no terminal sink.
@@ -331,34 +238,16 @@ pub fn init_tracing_for(
         let endpoints = otlp::OtlpEndpoints::from_config(&config);
         return match otlp::init(debug, run_id, identity, &endpoints) {
             Ok(()) => Ok(true),
-            Err(error) => {
-                // OTLP requested but unavailable: install the JSONL-only layer
-                // so fallback diagnostics still capture the initialization
-                // failure for the operator.
-                install_jsonl_only();
-                Err(error)
-            }
+            Err(error) => Err(error),
         };
     }
 
     // No fmt layer: the operator's terminal must never receive the firehose.
     let _ = (debug, run_id, identity);
     tracing_subscriber::registry()
-        .with(JackinDiagnosticsLayer)
         .try_init()
         .map_err(|e| anyhow::anyhow!("tracing subscriber already installed: {e}"))?;
     Ok(false)
-}
-
-/// Install the JSONL-only subscriber as a fallback. Ignores an
-/// already-installed error: that means a subscriber exists, which is all the
-/// fallback needs. Only the otlp build reaches this (the failed-exporter path).
-fn install_jsonl_only() {
-    drop(
-        tracing_subscriber::registry()
-            .with(JackinDiagnosticsLayer)
-            .try_init(),
-    );
 }
 
 /// The first explicitly-requested OTLP protocol jackin cannot honor, when an
@@ -537,7 +426,6 @@ mod otlp {
     use tracing_subscriber::EnvFilter;
     use tracing_subscriber::prelude::*;
 
-    use super::JackinDiagnosticsLayer;
     use super::ServiceIdentity;
     use super::health;
     #[cfg(test)]
@@ -1201,7 +1089,6 @@ mod otlp {
         let log_directive =
             export_filter_directive(export_level_for(crate::TelemetrySink::OtlpLogs, debug));
         let installed = tracing_subscriber::registry()
-            .with(JackinDiagnosticsLayer)
             .with(
                 span_layer
                     .with_filter(tracing_subscriber::filter::filter_fn(|metadata| {
@@ -1235,7 +1122,7 @@ mod otlp {
     }
 
     /// Install OTLP export for the capsule. Mirrors `init` but composes no
-    /// `JackinDiagnosticsLayer` (the capsule has no JSONL run) and stamps the
+    /// direct OTLP layers and stamps the
     /// capsule resource; providers come from [`build_otlp_providers`].
     pub(super) fn init_capsule(
         _session_id: &str,
@@ -1325,7 +1212,6 @@ mod otlp {
         "jackin_core",
         "jackin_dev",
         "jackin_diagnostics",
-        "jackin_diagnostics::jsonl",
         "jackin_diagnostics::session",
         "jackin_docker",
         "jackin_env",
@@ -1419,9 +1305,7 @@ mod otlp {
         let test_level = if debug { "debug" } else { "info" };
         let span_directive = export_filter_directive(test_level);
         let log_directive = export_filter_directive(test_level);
-        // Host bootstrap: JackinDiagnosticsLayer (JSONL) + host Resource.
         let subscriber = tracing_subscriber::registry()
-            .with(JackinDiagnosticsLayer)
             .with(
                 span_layer
                     .with_filter(tracing_subscriber::filter::filter_fn(|metadata| {
@@ -1955,30 +1839,6 @@ fn emit_jsonl_event_with_level(
             JsonlEventLevel::Error => "ERROR",
         },
     );
-    // Prefer OTel hex ids inside record_direct; fall back to the tracing-registry
-    // u64 span id for file-only mode.
-    let fallback_span_id = tracing::Span::current()
-        .id()
-        .map(|id| id.into_u64().to_string());
-    let run = crate::run::run_by_id(run_id).or_else(crate::active_run);
-    if let Some(run) = run {
-        run.record_from_layer(
-            kind,
-            message.as_ref(),
-            stage,
-            detail,
-            fallback_span_id.as_deref(),
-            if kind == otel_events::DEBUG && !matches!(level, JsonlEventLevel::Error) {
-                "DEBUG"
-            } else {
-                match level {
-                    JsonlEventLevel::Info => "INFO",
-                    JsonlEventLevel::Error => "ERROR",
-                }
-            },
-        );
-    }
-
     // The `--debug` firehose is DEBUG-severity so external exporters filter
     // it by level; the JSONL layer ignores levels and records everything.
     // The trailing format message becomes the OTLP log body — without it,
@@ -2041,7 +1901,7 @@ fn emit_info_jsonl_event(
     let screen_name = crate::current_screen_name().unwrap_or("");
     match (stage, detail, error_type) {
         (Some(stage), Some(detail), Some(error_type)) => tracing::event!(
-            target: JSONL_TARGET,
+            target: jackin_telemetry::TELEMETRY_TARGET,
             tracing::Level::INFO,
             "parallax.run.id" = run_id,
             event.name = taxonomy.event_name.as_str(),
@@ -2056,7 +1916,7 @@ fn emit_info_jsonl_event(
             "{message}"
         ),
         (Some(stage), Some(detail), None) => tracing::event!(
-            target: JSONL_TARGET,
+            target: jackin_telemetry::TELEMETRY_TARGET,
             tracing::Level::INFO,
             "parallax.run.id" = run_id,
             event.name = taxonomy.event_name.as_str(),
@@ -2070,7 +1930,7 @@ fn emit_info_jsonl_event(
             "{message}"
         ),
         (Some(stage), None, Some(error_type)) => tracing::event!(
-            target: JSONL_TARGET,
+            target: jackin_telemetry::TELEMETRY_TARGET,
             tracing::Level::INFO,
             "parallax.run.id" = run_id,
             event.name = taxonomy.event_name.as_str(),
@@ -2084,7 +1944,7 @@ fn emit_info_jsonl_event(
             "{message}"
         ),
         (Some(stage), None, None) => tracing::event!(
-            target: JSONL_TARGET,
+            target: jackin_telemetry::TELEMETRY_TARGET,
             tracing::Level::INFO,
             "parallax.run.id" = run_id,
             event.name = taxonomy.event_name.as_str(),
@@ -2097,7 +1957,7 @@ fn emit_info_jsonl_event(
             "{message}"
         ),
         (None, Some(detail), Some(error_type)) => tracing::event!(
-            target: JSONL_TARGET,
+            target: jackin_telemetry::TELEMETRY_TARGET,
             tracing::Level::INFO,
             "parallax.run.id" = run_id,
             event.name = taxonomy.event_name.as_str(),
@@ -2111,7 +1971,7 @@ fn emit_info_jsonl_event(
             "{message}"
         ),
         (None, Some(detail), None) => tracing::event!(
-            target: JSONL_TARGET,
+            target: jackin_telemetry::TELEMETRY_TARGET,
             tracing::Level::INFO,
             "parallax.run.id" = run_id,
             event.name = taxonomy.event_name.as_str(),
@@ -2124,7 +1984,7 @@ fn emit_info_jsonl_event(
             "{message}"
         ),
         (None, None, Some(error_type)) => tracing::event!(
-            target: JSONL_TARGET,
+            target: jackin_telemetry::TELEMETRY_TARGET,
             tracing::Level::INFO,
             "parallax.run.id" = run_id,
             event.name = taxonomy.event_name.as_str(),
@@ -2137,7 +1997,7 @@ fn emit_info_jsonl_event(
             "{message}"
         ),
         (None, None, None) => tracing::event!(
-            target: JSONL_TARGET,
+            target: jackin_telemetry::TELEMETRY_TARGET,
             tracing::Level::INFO,
             "parallax.run.id" = run_id,
             event.name = taxonomy.event_name.as_str(),
@@ -2163,7 +2023,7 @@ fn emit_debug_jsonl_event(
     let screen_name = crate::current_screen_name().unwrap_or("");
     match (stage, detail, error_type) {
         (Some(stage), Some(detail), Some(error_type)) => tracing::event!(
-            target: JSONL_TARGET,
+            target: jackin_telemetry::TELEMETRY_TARGET,
             tracing::Level::DEBUG,
             "parallax.run.id" = run_id,
             event.name = taxonomy.event_name.as_str(),
@@ -2178,7 +2038,7 @@ fn emit_debug_jsonl_event(
             "{message}"
         ),
         (Some(stage), Some(detail), None) => tracing::event!(
-            target: JSONL_TARGET,
+            target: jackin_telemetry::TELEMETRY_TARGET,
             tracing::Level::DEBUG,
             "parallax.run.id" = run_id,
             event.name = taxonomy.event_name.as_str(),
@@ -2192,7 +2052,7 @@ fn emit_debug_jsonl_event(
             "{message}"
         ),
         (Some(stage), None, Some(error_type)) => tracing::event!(
-            target: JSONL_TARGET,
+            target: jackin_telemetry::TELEMETRY_TARGET,
             tracing::Level::DEBUG,
             "parallax.run.id" = run_id,
             event.name = taxonomy.event_name.as_str(),
@@ -2206,7 +2066,7 @@ fn emit_debug_jsonl_event(
             "{message}"
         ),
         (Some(stage), None, None) => tracing::event!(
-            target: JSONL_TARGET,
+            target: jackin_telemetry::TELEMETRY_TARGET,
             tracing::Level::DEBUG,
             "parallax.run.id" = run_id,
             event.name = taxonomy.event_name.as_str(),
@@ -2219,7 +2079,7 @@ fn emit_debug_jsonl_event(
             "{message}"
         ),
         (None, Some(detail), Some(error_type)) => tracing::event!(
-            target: JSONL_TARGET,
+            target: jackin_telemetry::TELEMETRY_TARGET,
             tracing::Level::DEBUG,
             "parallax.run.id" = run_id,
             event.name = taxonomy.event_name.as_str(),
@@ -2233,7 +2093,7 @@ fn emit_debug_jsonl_event(
             "{message}"
         ),
         (None, Some(detail), None) => tracing::event!(
-            target: JSONL_TARGET,
+            target: jackin_telemetry::TELEMETRY_TARGET,
             tracing::Level::DEBUG,
             "parallax.run.id" = run_id,
             event.name = taxonomy.event_name.as_str(),
@@ -2246,7 +2106,7 @@ fn emit_debug_jsonl_event(
             "{message}"
         ),
         (None, None, Some(error_type)) => tracing::event!(
-            target: JSONL_TARGET,
+            target: jackin_telemetry::TELEMETRY_TARGET,
             tracing::Level::DEBUG,
             "parallax.run.id" = run_id,
             event.name = taxonomy.event_name.as_str(),
@@ -2259,7 +2119,7 @@ fn emit_debug_jsonl_event(
             "{message}"
         ),
         (None, None, None) => tracing::event!(
-            target: JSONL_TARGET,
+            target: jackin_telemetry::TELEMETRY_TARGET,
             tracing::Level::DEBUG,
             "parallax.run.id" = run_id,
             event.name = taxonomy.event_name.as_str(),
@@ -2285,7 +2145,7 @@ fn emit_error_jsonl_event(
     let screen_name = crate::current_screen_name().unwrap_or("");
     match (stage, detail, error_type) {
         (Some(stage), Some(detail), Some(error_type)) => tracing::event!(
-            target: JSONL_TARGET,
+            target: jackin_telemetry::TELEMETRY_TARGET,
             tracing::Level::ERROR,
             "parallax.run.id" = run_id,
             event.name = taxonomy.event_name.as_str(),
@@ -2300,7 +2160,7 @@ fn emit_error_jsonl_event(
             "{message}"
         ),
         (Some(stage), Some(detail), None) => tracing::event!(
-            target: JSONL_TARGET,
+            target: jackin_telemetry::TELEMETRY_TARGET,
             tracing::Level::ERROR,
             "parallax.run.id" = run_id,
             event.name = taxonomy.event_name.as_str(),
@@ -2314,7 +2174,7 @@ fn emit_error_jsonl_event(
             "{message}"
         ),
         (Some(stage), None, Some(error_type)) => tracing::event!(
-            target: JSONL_TARGET,
+            target: jackin_telemetry::TELEMETRY_TARGET,
             tracing::Level::ERROR,
             "parallax.run.id" = run_id,
             event.name = taxonomy.event_name.as_str(),
@@ -2328,7 +2188,7 @@ fn emit_error_jsonl_event(
             "{message}"
         ),
         (Some(stage), None, None) => tracing::event!(
-            target: JSONL_TARGET,
+            target: jackin_telemetry::TELEMETRY_TARGET,
             tracing::Level::ERROR,
             "parallax.run.id" = run_id,
             event.name = taxonomy.event_name.as_str(),
@@ -2341,7 +2201,7 @@ fn emit_error_jsonl_event(
             "{message}"
         ),
         (None, Some(detail), Some(error_type)) => tracing::event!(
-            target: JSONL_TARGET,
+            target: jackin_telemetry::TELEMETRY_TARGET,
             tracing::Level::ERROR,
             "parallax.run.id" = run_id,
             event.name = taxonomy.event_name.as_str(),
@@ -2355,7 +2215,7 @@ fn emit_error_jsonl_event(
             "{message}"
         ),
         (None, Some(detail), None) => tracing::event!(
-            target: JSONL_TARGET,
+            target: jackin_telemetry::TELEMETRY_TARGET,
             tracing::Level::ERROR,
             "parallax.run.id" = run_id,
             event.name = taxonomy.event_name.as_str(),
@@ -2368,7 +2228,7 @@ fn emit_error_jsonl_event(
             "{message}"
         ),
         (None, None, Some(error_type)) => tracing::event!(
-            target: JSONL_TARGET,
+            target: jackin_telemetry::TELEMETRY_TARGET,
             tracing::Level::ERROR,
             "parallax.run.id" = run_id,
             event.name = taxonomy.event_name.as_str(),
@@ -2381,7 +2241,7 @@ fn emit_error_jsonl_event(
             "{message}"
         ),
         (None, None, None) => tracing::event!(
-            target: JSONL_TARGET,
+            target: jackin_telemetry::TELEMETRY_TARGET,
             tracing::Level::ERROR,
             "parallax.run.id" = run_id,
             event.name = taxonomy.event_name.as_str(),

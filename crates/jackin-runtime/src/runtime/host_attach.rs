@@ -1083,7 +1083,6 @@ fn file_export_success_notice(export: &CompletedHostFileExport) -> String {
     export_action_notice(export, reveal_host_file, "revealed", "reveal")
 }
 
-
 fn outer_terminal_reset_sequence() -> Vec<u8> {
     let mut seq = OUTER_TERMINAL_RESET_BASE.to_vec();
     if !jackin_diagnostics::host_screen_owned() {

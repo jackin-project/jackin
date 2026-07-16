@@ -5,8 +5,9 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, OnceLock, Weak};
+#[cfg(test)]
+use std::sync::Weak;
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Instant;
 
 use rand::RngExt as _;
@@ -20,7 +21,6 @@ const CRASH_EVIDENCE_EXPORT_CAP: usize = 4096;
 const MAX_HISTOGRAM_SAMPLES: usize = 1024;
 
 static ACTIVE_RUN: OnceLock<Mutex<Option<Arc<RunDiagnostics>>>> = OnceLock::new();
-static RUN_REGISTRY: OnceLock<Mutex<HashMap<String, Weak<RunDiagnostics>>>> = OnceLock::new();
 static HOST_PANIC_HOOK_INSTALLED: OnceLock<()> = OnceLock::new();
 #[cfg(test)]
 static ACTIVE_RUN_BY_DIR: OnceLock<Mutex<HashMap<PathBuf, Weak<RunDiagnostics>>>> = OnceLock::new();
@@ -32,10 +32,6 @@ fn active_slot() -> &'static Mutex<Option<Arc<RunDiagnostics>>> {
 #[cfg(test)]
 fn active_run_by_dir() -> &'static Mutex<HashMap<PathBuf, Weak<RunDiagnostics>>> {
     ACTIVE_RUN_BY_DIR.get_or_init(|| Mutex::new(HashMap::new()))
-}
-
-fn run_registry() -> &'static Mutex<HashMap<String, Weak<RunDiagnostics>>> {
-    RUN_REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
 fn locked<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -57,7 +53,6 @@ pub struct RunDiagnostics {
     /// Accumulated per-stage durations for the end-of-run summary.
     stage_durations_ms: Mutex<Vec<(String, u64)>>,
     metrics: Mutex<DiagnosticsMetrics>,
-    otlp_internal_notified: AtomicBool,
 }
 
 #[derive(Debug)]
@@ -187,12 +182,7 @@ impl RunDiagnostics {
             timing_starts: Mutex::new(HashMap::new()),
             stage_durations_ms: Mutex::new(Vec::new()),
             metrics: Mutex::new(DiagnosticsMetrics::default()),
-            otlp_internal_notified: AtomicBool::new(false),
         });
-        run_registry()
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .insert(run.run_id.clone(), Arc::downgrade(&run));
         if let Some(error) = otlp_error {
             // Record into the run file (on by construction here, since OTLP is
             // inactive) and emit the compact operator notice (stderr / deferred
@@ -619,74 +609,6 @@ impl RunDiagnostics {
             Some(&detail),
         );
     }
-
-    pub(crate) fn record_from_layer(
-        &self,
-        kind: &str,
-        message: &str,
-        stage: Option<&str>,
-        detail: Option<&str>,
-        span_id: Option<&str>,
-        level: &str,
-    ) {
-        self.record_direct(kind, message, stage, detail, span_id, level);
-    }
-
-    /// Record an OpenTelemetry-internal diagnostic (an export failure, dropped
-    /// batch, partial-success, …) captured from OpenTelemetry's own `tracing`
-    /// events. `level` is the SDK event severity (`WARN`/`ERROR`). Written as
-    /// `otlp_internal` so "telemetry isn't reaching the backend" is durable in
-    /// the run file (its count rides the run summary too). The *first* such event
-    /// also emits one compact operator notice — stderr on a plain CLI, deferred
-    /// to teardown under a rich TUI — so an export that fails on the wire is
-    /// visible even when the file sink is gated off (the common OTLP-active case).
-    /// Only the first is announced; the rest are silent to avoid 5-second spam.
-    pub(crate) fn record_otlp_internal(&self, level: &str, message: &str) {
-        let first = !self.otlp_internal_notified.swap(true, Ordering::Relaxed);
-        self.record_direct(
-            crate::observability::otel_events::OTLP_INTERNAL,
-            message,
-            None,
-            Some(level),
-            None,
-            level,
-        );
-        if first {
-            // Terminal-only notice: record_direct already wrote the file, and a
-            // tracing emit here would re-enter the subscriber (this runs inside
-            // the diagnostics layer).
-            crate::logging::emit_operator_notice(&format!(
-                "telemetry export issue (run telemetry may be incomplete): {message}"
-            ));
-        }
-    }
-
-    // Sink-only helper. Call directly only from `record_from_layer` and
-    // `record_otlp_internal`; normal diagnostics should emit tracing events.
-    fn record_direct(
-        &self,
-        kind: &str,
-        message: &str,
-        stage: Option<&str>,
-        detail: Option<&str>,
-        _fallback_span_id: Option<&str>,
-        _level: &str,
-    ) {
-        self.record_metrics(kind);
-        let _ = (message, stage, detail);
-    }
-
-    fn record_metrics(&self, kind: &str) {
-        let mut metrics = locked(&self.metrics);
-        *metrics.event_counts.entry(kind.to_owned()).or_default() += 1;
-        if kind.contains("cache_hit") {
-            metrics.cache_hits += 1;
-        }
-        if kind.contains("cache_miss") {
-            metrics.cache_misses += 1;
-        }
-    }
-
     pub(crate) fn domain_metrics_snapshot(&self) -> DomainMetricsSnapshot {
         let metrics = locked(&self.metrics);
         DomainMetricsSnapshot {
@@ -752,14 +674,6 @@ pub fn install_host_panic_hook() {
             default_hook(info);
         }));
     });
-}
-
-pub(crate) fn run_by_id(run_id: &str) -> Option<Arc<RunDiagnostics>> {
-    run_registry()
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .get(run_id)
-        .and_then(Weak::upgrade)
 }
 
 /// A fresh session id for the capsule's `session.id`. One daemon run is one
