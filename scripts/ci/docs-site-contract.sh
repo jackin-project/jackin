@@ -18,7 +18,6 @@ set -euo pipefail
     'docs/scripts/**' \
     'docs/*.ts' \
     'docs/*.json' \
-    'docs/*.toml' \
     | while IFS= read -r -d '' path; do
         printf '%s\0%s\n' "$path" "$(git hash-object "$path")"
       done

@@ -270,14 +270,42 @@ jobs:
           else
             latest=$(
               gh api "repos/${REPOSITORY}/actions/artifacts?per_page=100" \
-                --jq '[.artifacts[] | select(.expired == false and (.name | startswith("docs-site-v2-")))][0] | [.id, .workflow_run.head_sha] | @tsv'
+                --jq '[.artifacts[] | select(.expired == false and (.name | startswith("docs-site-v3-")))][0] | [.id, .workflow_run.head_sha] | @tsv'
             )
             latest_id=${latest%%$'\t'*}
             source_sha=${latest#*$'\t'}
             if [ -n "$latest_id" ] && [ -n "$source_sha" ]; then
               git fetch --no-tags --depth=1 origin "$source_sha"
+              source_tools=$(
+                {
+                  git show "$source_sha:mise.toml" | sed -n -e '/^bun = /p' -e '/^node = /p'
+                  git show "$source_sha:mise.lock" | sed -n \
+                    -e '/^\[\[tools\.bun\]\]/,/^\[\[tools\./p' \
+                    -e '/^\[\[tools\.node\]\]/,/^\[\[tools\./p'
+                } | sha256sum | cut -d ' ' -f 1
+              )
+              current_tools=$(
+                {
+                  sed -n -e '/^bun = /p' -e '/^node = /p' mise.toml
+                  sed -n \
+                    -e '/^\[\[tools\.bun\]\]/,/^\[\[tools\./p' \
+                    -e '/^\[\[tools\.node\]\]/,/^\[\[tools\./p' \
+                    mise.lock
+                } | sha256sum | cut -d ' ' -f 1
+              )
               if git diff --quiet "$source_sha" HEAD -- \
-                Cargo.toml 'crates/*/Cargo.toml' 'crates/*/README.md' docs mise.toml mise.lock; then
+                Cargo.toml \
+                'crates/*/Cargo.toml' \
+                'crates/*/README.md' \
+                docs/bun.lock \
+                docs/package.json \
+                'docs/src/**' \
+                'docs/content/**' \
+                'docs/public/**' \
+                'docs/scripts/**' \
+                'docs/*.ts' \
+                'docs/*.json' && \
+                [ "$source_tools" = "$current_tools" ]; then
                 echo "::notice::promoting a site built from identical semantic inputs"
                 artifact_id=$latest_id
               fi
