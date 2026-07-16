@@ -336,17 +336,41 @@ jobs:
         working-directory: docs
         run: bun run build
 
-      - name: Restore lychee cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
-        with:
-          path: .lycheecache
-          # Not scoped by ref: a PR and the post-merge main run must check the
-          # same external-link state. A ref-scoped key let a link cached OK on
-          # the PR branch be cold-fetched (and rate-limited) on main, so the
-          # same check disagreed between PR and main.
-          key: lychee-${{ runner.os }}-${{ github.workflow }}-${{ hashFiles('docs/lychee.toml') }}
-          restore-keys: |
-            lychee-${{ runner.os }}-${{ github.workflow }}-
+      - name: Restore repository-wide lychee cache
+        id: lychee-cache
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          REPOSITORY_ID: ${{ github.event.repository.id }}
+        run: |
+          set -euo pipefail
+          name="lychee-v1-${RUNNER_OS}-$(sha256sum docs/lychee.toml | cut -d ' ' -f 1)"
+          artifact=$(
+            gh api --paginate "repos/${REPOSITORY}/actions/artifacts?per_page=100" \
+              | jq -sc --arg name "$name" --argjson repository_id "$REPOSITORY_ID" \
+                '[.[].artifacts[] | select(.expired == false and .name == $name and .workflow_run.head_repository_id == $repository_id)] | sort_by(.created_at) | last // {}'
+          )
+          artifact_id=$(jq -r '.id // empty' <<< "$artifact")
+          hit=false
+          refresh=true
+          if [ -n "$artifact_id" ]; then
+            gh api "repos/${REPOSITORY}/actions/artifacts/${artifact_id}/zip" > .lycheecache.zip
+            python3 -m zipfile -e .lycheecache.zip .
+            rm .lycheecache.zip
+            if [ -f .lycheecache ]; then
+              hit=true
+              created_at=$(jq -r '.created_at' <<< "$artifact")
+              created_epoch=$(date -u -d "$created_at" +%s)
+              if [ $(( $(date -u +%s) - created_epoch )) -lt 259200 ]; then
+                refresh=false
+              fi
+            fi
+          fi
+          {
+            echo "hit=$hit"
+            echo "name=$name"
+            echo "refresh=$refresh"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Check built site links
         env:
@@ -361,6 +385,20 @@ jobs:
             --remap "https://github.com/jackin-project/jackin/issues https://api.github.com/repos/jackin-project/jackin/issues" \
             --root-dir "${{ github.workspace }}/docs/.output/public" \
             "docs/.output/public/**/*.html"
+
+      - name: Publish repository-wide lychee cache
+        if: >-
+          steps.lychee-cache.outputs.refresh == 'true' &&
+          (github.ref == 'refs/heads/main' ||
+           github.event_name == 'workflow_dispatch' ||
+           (github.event_name == 'pull_request' &&
+            github.event.pull_request.head.repo.full_name == github.repository))
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ steps.lychee-cache.outputs.name }}
+          path: .lycheecache
+          compression-level: 0
+          retention-days: 7
 
       - name: Publish input-identical built site
         if: >-
