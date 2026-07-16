@@ -410,7 +410,7 @@ Prerequisites: `zig` and `cargo-zigbuild` must be installed. Both are declared i
 
 First build takes 2–3 minutes; subsequent builds are incremental via cargo's dependency cache.
 
-**Debug builds for crash triage.** When a container crashes with an exit-101 panic and the backtrace in `multiplexer.log` shows `<unknown>` frames, use the canonical [Debugging Capsule Crashes](/reference/capsule/session-lifecycle/#debugging-capsule-crashes-symbolicated-build) flow. That page owns the full symbolicated-build recipe so the build command, `RUST_BACKTRACE=full` launch, run-id lookup, and `capsule_log` triage steps do not drift across two copies.
+**Debug builds for crash triage.** When a container crashes with an exit-101 panic and `docker logs` shows `<unknown>` frames, use the canonical [Debugging Capsule Crashes](/reference/capsule/session-lifecycle/#debugging-capsule-crashes-symbolicated-build) flow. That page owns the symbolicated-build recipe, `RUST_BACKTRACE=full` launch, and explicit log-inspection steps.
 
 ### Derived image build
 
