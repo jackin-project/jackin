@@ -74,6 +74,14 @@ binary instead of compiling it again. Runner configuration selects one
 canonical cache writer: GitHub when it participates, or Velnor for a
 Velnor-only dispatch. Both lanes restore that same portable output.
 
+The required gate audits every completed job on every run. Its summary records
+admission delay, runtime, every individual step duration, cache misses,
+dependency/toolchain downloads, source-tool builds, and third-party
+compile/check/build markers per job. Exact warm runs fail if any forbidden
+download or build marker remains; producer runs retain the evidence for the
+next optimization decision rather than hiding it behind an overall green
+result.
+
 A cold bootstrap is recorded as a cache miss, not hidden by raising the target.
 Fan-out jobs stay offline and consume the warmup result. Cross-run compiler
 result sharing is deferred to the [Shared CI compiler cache](<docs/content/docs/roadmap/(infrastructure)/shared-ci-compiler-cache.mdx>)
@@ -110,11 +118,11 @@ still consume the same contracts and run the same per-crate workflow; the
 central selector only decides which independently attributable crate jobs
 exist. It also resolves target-artifact metadata once for every selected miss,
 so GitHub and Velnor do not repeat the same repository API search before
-restoring identical target parts. Both lanes download those parts through the
-same GitHub REST artifact path; target transport does not depend on a
-runner-specific Results Service action adapter. A runner with an existing
-Cargo target uses that local state as the first seed and lets Cargo validate
-it; an empty runner restores the portable artifact. This is one shared
+restoring the identical target archive. Both lanes download that one archive
+through the same GitHub REST artifact path; target transport does not depend on a
+runner-specific Results Service action adapter. A runner with existing current
+and MSRV Cargo targets uses that local state as the first seed and lets Cargo
+validate it; an incomplete or empty runner restores the portable artifact. This is one shared
 fallback order, not a lane-specific verification path.
 
 An exact target-key miss first restores that crate's latest successful target
@@ -233,9 +241,10 @@ affected crates and genuinely stale components allocate their dedicated jobs.
 Cache and artifact contracts used by runner-selectable jobs are resolved once
 by the GitHub-hosted metadata job and passed unchanged to both GitHub and
 Velnor. Runner-local expression support therefore cannot silently produce a
-different or empty key. Latest-target pointers resolve the run that owns the
-matching ready marker, rather than assuming the pointer artifact's run also
-owns the target parts.
+different or empty key. A target is one archive published in one operation;
+numbered transport parts are forbidden. Latest-target pointers resolve the run
+that owns the referenced archive rather than assuming the pointer's run also
+owns it.
 
 The repository policy set has a one-day component marker keyed by the semantic
 base revision, Rust/policy inputs, and requested lanes. Pull requests use their

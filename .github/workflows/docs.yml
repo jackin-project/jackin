@@ -685,6 +685,13 @@ jobs:
         with:
           needs-json: ${{ toJSON(needs) }}
           workflow-label: docs
+      - name: Audit every Docs job's performance
+        if: always()
+        env:
+          EXPECT_CLEAN: ${{ needs.changes.outputs.result-reuse == 'true' }}
+          GH_TOKEN: ${{ github.token }}
+          WORKFLOW_LABEL: Docs
+        run: scripts/ci/audit-workflow-performance.sh
       - name: Stage input-identical successful Docs result
         if: >-
           needs.changes.outputs.result-reuse != 'true' &&

@@ -144,7 +144,7 @@ jobs:
         run: echo "version=$(sed -n 's/^rust-version = \"\(.*\)\"/\1/p' Cargo.toml)" >> "$GITHUB_OUTPUT"
       - name: Cache prepared Rust toolchains
         if: steps.crate-result.outputs.hit != 'true'
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/.rustup/toolchains
@@ -152,6 +152,7 @@ jobs:
           key: rustup-ci-v3-${{ runner.os }}-${{ runner.arch }}-${{ inputs.rustup-ci-contract || hashFiles('rust-toolchain.toml', 'Cargo.toml') }}
           restore-keys: |
             rustup-ci-v3-${{ runner.os }}-${{ runner.arch }}-
+          fail-on-cache-miss: true
       - id: cargo-registry-cache
         if: steps.crate-result.outputs.hit != 'true'
         uses: ./.github/actions/cache-cargo-registry
@@ -213,9 +214,11 @@ jobs:
           hit=false
           if [ -f "$target_dir/.rustc_info.json" ] &&
              [ -d "$target_dir/debug/deps" ] &&
-             find "$target_dir/debug/deps" -maxdepth 1 -type f -name '*.rlib' -print -quit | grep -q .; then
+             find "$target_dir/debug/deps" -maxdepth 1 -type f -name '*.rlib' -print -quit | grep -q . &&
+             [ -d "$target_dir/msrv/debug/deps" ] &&
+             find "$target_dir/msrv/debug/deps" -maxdepth 1 -type f -name '*.rlib' -print -quit | grep -q .; then
             hit=true
-            echo "::notice::using runner-local Cargo target as a validated seed"
+            echo "::notice::using runner-local current and MSRV Cargo targets as a validated seed"
           fi
           echo "hit=$hit" >> "$GITHUB_OUTPUT"
       - name: Download input-identical crate target
@@ -236,10 +239,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          target_dir=${CARGO_TARGET_DIR:-target}
+          mkdir -p "$target_dir"
           if [ "${{ steps.crate-target.outputs.format }}" = "v4" ]; then
+            # Temporary read compatibility lets the first v5 producer migrate the
+            # old split archive. No workflow publishes split artifacts anymore.
             pids=()
             for archive in target/.ci-restore/target.part-*; do
-              tar --zstd -xf "$archive" &
+              tar --zstd --strip-components=1 -C "$target_dir" -xf "$archive" &
               pids+=("$!")
             done
             failed=0
@@ -247,11 +254,9 @@ jobs:
               wait "$pid" || failed=1
             done
             [ "$failed" -eq 0 ]
-          elif [ "${{ steps.crate-target.outputs.format }}" = "v3" ]; then
-            cat target/.ci-restore/target.part-* > target/.ci-restore/target.tar.zst
-            tar --zstd -xf target/.ci-restore/target.tar.zst
           else
-            tar --zstd -xf target/.ci-restore/target.tar.zst
+            tar --zstd --strip-components=1 -C "$target_dir" \
+              -xf target/.ci-restore/target.tar.zst
           fi
           rm -rf target/.ci-restore
           if [ "${{ steps.crate-target.outputs.canonical-hit }}" = "true" ]; then
@@ -319,9 +324,8 @@ jobs:
       - name: Check crate on MSRV
         if: steps.crate-result.outputs.hit != 'true'
         env:
-          CARGO_TARGET_DIR: target/msrv
           RUSTUP_TOOLCHAIN: ${{ steps.msrv.outputs.version }}
-        run: cargo check -p "${{ matrix.package }}" --all-targets --locked --offline
+        run: CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-target}/msrv" cargo check -p "${{ matrix.package }}" --all-targets --locked --offline
       - name: Upload junit + timing
         if: always() && steps.crate-result.outputs.hit != 'true'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -521,42 +525,17 @@ jobs:
            (github.event_name == 'pull_request' &&
             github.event.pull_request.head.repo.full_name == github.repository))
         run: |
-          totals=(0 0 0 0 0)
-          for index in 0 1 2 3 4; do
-            : > "target.list-$index"
-          done
-          while IFS=$'\t' read -r -d '' size path; do
-            bucket=0
-            for index in 1 2 3 4; do
-              if [ "${totals[index]}" -lt "${totals[bucket]}" ]; then
-                bucket=$index
-              fi
-            done
-            printf '%s\0' "$path" >> "target.list-$bucket"
-            totals[bucket]=$((totals[bucket] + size))
-          done < <(
-            find target \
-              \( -path target/nextest -o -path 'target/nextest/*' \
-                 -o -path 'target/telemetry-*' \
-                 -o -path target/.ci-restore -o -path 'target/.ci-restore/*' \) \
-              -prune -o \( -type f -o -type l \) -printf '%s\t%p\0' \
-              | sort -z -nr
-          )
-
-          pids=()
-          for index in 0 1 2 3 4; do
-            tar --zstd --null --no-recursion \
-              --files-from="target.list-$index" \
-              -cf "target.part-$index" &
-            pids+=("$!")
-          done
-          failed=0
-          for pid in "${pids[@]}"; do
-            wait "$pid" || failed=1
-          done
-          [ "$failed" -eq 0 ]
-          rm target.list-*
-          sha256sum target.part-* > target.ready
+          set -euo pipefail
+          target_dir=${CARGO_TARGET_DIR:-target}
+          find "$target_dir" \
+            \( -path "$target_dir/nextest" -o -path "$target_dir/nextest/*" \
+               -o -path "$target_dir/telemetry-*" \
+               -o -path "$target_dir/.ci-restore" -o -path "$target_dir/.ci-restore/*" \) \
+            -prune -o \( -type f -o -type l \) -print0 \
+            | sort -z \
+            | tar --zstd --null --no-recursion \
+                --transform="s|^${target_dir#/}/|target/|" \
+                --files-from=- -cf target.tar.zst
       - name: Stage latest successful crate target pointer
         if: >-
           always() && !cancelled() && !failure() &&
@@ -568,7 +547,7 @@ jobs:
            (github.event_name == 'pull_request' &&
             github.event.pull_request.head.repo.full_name == github.repository))
         run: printf '%s\n' "${{ steps.crate-target.outputs.prefix }}" > target.latest
-      - name: Publish input-identical crate target part 0
+      - name: Publish input-identical crate target
         if: >-
           always() && !cancelled() && !failure() &&
           steps.crate-result.outputs.hit != 'true' &&
@@ -580,88 +559,8 @@ jobs:
             github.event.pull_request.head.repo.full_name == github.repository))
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: ${{ steps.crate-target.outputs.prefix }}-part-0
-          path: target.part-0
-          compression-level: 0
-          retention-days: 7
-      - name: Publish input-identical crate target part 1
-        if: >-
-          always() && !cancelled() && !failure() &&
-          steps.crate-result.outputs.hit != 'true' &&
-          steps.crate-target.outputs.canonical-hit != 'true' &&
-          matrix.config.cache_writer &&
-          (github.ref == 'refs/heads/main' ||
-           github.event_name == 'workflow_dispatch' ||
-           (github.event_name == 'pull_request' &&
-            github.event.pull_request.head.repo.full_name == github.repository))
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: ${{ steps.crate-target.outputs.prefix }}-part-1
-          path: target.part-1
-          compression-level: 0
-          retention-days: 7
-      - name: Publish input-identical crate target part 2
-        if: >-
-          always() && !cancelled() && !failure() &&
-          steps.crate-result.outputs.hit != 'true' &&
-          steps.crate-target.outputs.canonical-hit != 'true' &&
-          matrix.config.cache_writer &&
-          (github.ref == 'refs/heads/main' ||
-           github.event_name == 'workflow_dispatch' ||
-           (github.event_name == 'pull_request' &&
-            github.event.pull_request.head.repo.full_name == github.repository))
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: ${{ steps.crate-target.outputs.prefix }}-part-2
-          path: target.part-2
-          compression-level: 0
-          retention-days: 7
-      - name: Publish input-identical crate target part 3
-        if: >-
-          always() && !cancelled() && !failure() &&
-          steps.crate-result.outputs.hit != 'true' &&
-          steps.crate-target.outputs.canonical-hit != 'true' &&
-          matrix.config.cache_writer &&
-          (github.ref == 'refs/heads/main' ||
-           github.event_name == 'workflow_dispatch' ||
-           (github.event_name == 'pull_request' &&
-            github.event.pull_request.head.repo.full_name == github.repository))
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: ${{ steps.crate-target.outputs.prefix }}-part-3
-          path: target.part-3
-          compression-level: 0
-          retention-days: 7
-      - name: Publish input-identical crate target part 4
-        if: >-
-          always() && !cancelled() && !failure() &&
-          steps.crate-result.outputs.hit != 'true' &&
-          steps.crate-target.outputs.canonical-hit != 'true' &&
-          matrix.config.cache_writer &&
-          (github.ref == 'refs/heads/main' ||
-           github.event_name == 'workflow_dispatch' ||
-           (github.event_name == 'pull_request' &&
-            github.event.pull_request.head.repo.full_name == github.repository))
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: ${{ steps.crate-target.outputs.prefix }}-part-4
-          path: target.part-4
-          compression-level: 0
-          retention-days: 7
-      - name: Publish input-identical crate target ready marker
-        if: >-
-          always() && !cancelled() && !failure() &&
-          steps.crate-result.outputs.hit != 'true' &&
-          steps.crate-target.outputs.canonical-hit != 'true' &&
-          matrix.config.cache_writer &&
-          (github.ref == 'refs/heads/main' ||
-           github.event_name == 'workflow_dispatch' ||
-           (github.event_name == 'pull_request' &&
-            github.event.pull_request.head.repo.full_name == github.repository))
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: ${{ steps.crate-target.outputs.prefix }}-ready
-          path: target.ready
+          name: ${{ steps.crate-target.outputs.prefix }}
+          path: target.tar.zst
           compression-level: 0
           retention-days: 7
       - name: Publish latest successful crate target pointer
@@ -676,7 +575,7 @@ jobs:
             github.event.pull_request.head.repo.full_name == github.repository))
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: ci-crate-target-${{ inputs.all-features && 'latest-v4' || 'default-latest-v4' }}-${{ runner.os }}-${{ runner.arch }}-${{ matrix.package }}-ready
+          name: ci-crate-target-${{ inputs.all-features && 'latest-v5' || 'default-latest-v5' }}-${{ runner.os }}-${{ runner.arch }}-${{ matrix.package }}
           path: target.latest
           compression-level: 0
           retention-days: 7

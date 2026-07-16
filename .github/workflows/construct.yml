@@ -506,6 +506,13 @@ jobs:
         with:
           needs-json: ${{ toJSON(needs) }}
           workflow-label: construct
+      - name: Audit every Construct job's performance
+        if: always()
+        env:
+          EXPECT_CLEAN: ${{ needs.changes.outputs.reuse == 'true' }}
+          GH_TOKEN: ${{ github.token }}
+          WORKFLOW_LABEL: Construct
+        run: scripts/ci/audit-workflow-performance.sh
       - name: Stage input-identical successful construct result
         if: >-
           needs.changes.outputs.reuse != 'true' &&

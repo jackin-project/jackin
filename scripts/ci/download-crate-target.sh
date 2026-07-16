@@ -21,10 +21,10 @@ mapfile -t artifacts < <(
 selected=()
 for artifact in "${artifacts[@]}"; do
   read -r artifact_id artifact_name <<< "$artifact"
-  if { [ "$format" = v4 ] || [ "$format" = v3 ]; } && \
-    [[ "$artifact_name" == "${download_prefix}-part-"* ]]; then
+  if [ "$format" = v5 ] && [ "$artifact_name" = "$download_prefix" ]; then
     selected+=("${artifact_id}"$'\t'"${artifact_name}")
-  elif [ "$format" = v2 ] && [ "$artifact_name" = "$legacy_name" ]; then
+  elif [ "$format" = v4 ] && \
+    [[ "$artifact_name" == "${download_prefix}-part-"* ]]; then
     selected+=("${artifact_id}"$'\t'"${artifact_name}")
   fi
 done

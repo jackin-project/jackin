@@ -217,12 +217,29 @@ job per affected crate and normal artifact repopulation.
 The first post-result `lanes=both` dispatch, CI run `29510145650`, exposed a
 runner-expression parity bug before any test fan-out: Velnor received an empty
 `hashFiles` value for the prepared xtask name, then followed a republished
-latest pointer whose run did not own the referenced target parts. Cache and
+latest pointer whose run did not own the referenced target archive. Cache and
 artifact contracts are now resolved once by the GitHub-hosted metadata job and
 passed unchanged into both lane matrices and the reusable nextest workflow.
-Latest pointers independently resolve the run owning the matching ready marker,
-and are republished only alongside newly uploaded target parts. The same
+Latest pointers independently resolve the run owning the referenced archive
+and are republished only alongside a newly uploaded target. The same
 runner-independent Rust and registry contracts feed Construct jobs.
+
+Dual-lane run `29517877664` rejected the v4 numbered-part target transport.
+The GitHub `jackin` crate job spent 38 seconds downloading five pieces and 56
+seconds restoring them, while the check UI exposed five publish steps plus a
+ready marker with no independent meaning. The v5 contract publishes one
+`target.tar.zst` archive in one step and restores it in one step. Workflow
+policy now forbids splitting one crate's tests, one artifact's bytes, or one
+conceptual command into numbered shards, batches, jobs, steps, or parts. That
+run also exposed 1,191 unchanged third-party builds in Velnor's MSRV check:
+the runner-local current target was warm, but `target/msrv` was not. A local
+target is now accepted only when both current and MSRV outputs exist; otherwise
+the job restores the portable target. Finally, registry verification triggered
+six Rust component downloads in both crate jobs because the warmup skipped
+toolchain preparation whenever tool binaries were already available. Toolchain
+preparation is now unconditional in the single warmup owner, and crate jobs use
+restore-only toolchain access so they cannot download or spend 45 seconds
+saving the same 646 MB toolchain independently.
 
 The next producer run exposed a separate invalidation problem: hashing the
 entire reusable test workflow turned cache-only plumbing changes into misses

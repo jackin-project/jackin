@@ -448,7 +448,7 @@ jobs:
       - run: actionlint .github/workflows/*.yml
 
   fmt:
-    needs: [changes, matrix-setup]
+    needs: [changes, matrix-setup, cargo-registry-warmup]
     if: needs.changes.outputs.rust == 'true' && needs.changes.outputs.result-reuse != 'true'
     strategy:
       fail-fast: false
@@ -462,14 +462,15 @@ jobs:
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - name: Cache Rust toolchain
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/.rustup/toolchains
             ~/.rustup/update-hashes
-          key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ needs.changes.outputs.rustup-contract }}
+          key: rustup-ci-v3-${{ runner.os }}-${{ runner.arch }}-${{ needs.changes.outputs.rustup-ci-contract }}
           restore-keys: |
-            rustup-${{ runner.os }}-${{ runner.arch }}-
+            rustup-ci-v3-${{ runner.os }}-${{ runner.arch }}-
+          fail-on-cache-miss: true
       - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
         with:
           version: "2026.6.11"
@@ -554,58 +555,34 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          MARKER_NAME: ci-crate-target-latest-v4-${{ runner.os }}-${{ runner.arch }}-jackin-xtask-ready
-          PREFIX_BASE: ci-crate-target-v4-${{ runner.os }}-${{ runner.arch }}-jackin-xtask-
           REPOSITORY: ${{ github.repository }}
         run: |
           set -euo pipefail
-          artifact=$(
-            gh api "repos/${REPOSITORY}/actions/artifacts?name=${MARKER_NAME}&per_page=10" \
-              --jq '.artifacts[] | select(.expired == false) | [.id, .workflow_run.id] | @tsv' \
-              | head -n 1
-          )
-          if [ -z "$artifact" ]; then
-            echo "hit=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          read -r artifact_id run_id <<< "$artifact"
-          mkdir -p target/.ci-latest-marker
-          gh api "repos/${REPOSITORY}/actions/artifacts/${artifact_id}/zip" \
-            > target/.ci-latest-marker/artifact.zip
-          python3 -m zipfile -e \
-            target/.ci-latest-marker/artifact.zip target/.ci-latest-marker
-          prefix=$(cat target/.ci-latest-marker/target.latest)
-          rm -rf target/.ci-latest-marker
-          if [[ ! "$prefix" =~ ^${PREFIX_BASE}[0-9a-f]{64}$ ]]; then
-            echo "::error::invalid latest-target prefix for jackin-xtask"
-            exit 1
-          fi
-          run_id=$(
-            gh api "repos/${REPOSITORY}/actions/artifacts?name=${prefix}-ready&per_page=10" \
-              --jq '.artifacts | map(select(.expired == false)) | first | .workflow_run.id // empty'
-          )
-          if [ -z "$run_id" ]; then
-            echo "::warning::latest jackin-xtask target parts are unavailable; rebuilding"
-            echo "hit=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
+          result=$(scripts/ci/find-crate-target.sh \
+            jackin-xtask "$(printf '0%.0s' {1..64})" true \
+            "${{ runner.os }}" "${{ runner.arch }}")
           {
-            echo "hit=true"
-            echo "prefix=$prefix"
-            echo "run-id=$run_id"
+            echo "hit=$(jq -r '.hit' <<< "$result")"
+            echo "format=$(jq -r '.format' <<< "$result")"
+            echo "download-prefix=$(jq -r '.download_prefix' <<< "$result")"
+            echo "legacy-name=$(jq -r '.legacy_name' <<< "$result")"
+            echo "run-id=$(jq -r '.run_id' <<< "$result")"
           } >> "$GITHUB_OUTPUT"
       - name: Download latest successful jackin-xtask target
         if: >-
           steps.ci-xtask-artifact.outputs.hit != 'true' &&
           steps.xtask-target-seed.outputs.hit == 'true'
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          pattern: ${{ steps.xtask-target-seed.outputs.prefix }}-part-*
-          path: target/.ci-restore
-          merge-multiple: true
-          github-token: ${{ github.token }}
-          repository: ${{ github.repository }}
-          run-id: ${{ steps.xtask-target-seed.outputs.run-id }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          scripts/ci/download-crate-target.sh \
+            "${{ steps.xtask-target-seed.outputs.run-id }}" \
+            "${{ steps.xtask-target-seed.outputs.format }}" \
+            "${{ steps.xtask-target-seed.outputs.download-prefix }}" \
+            "${{ steps.xtask-target-seed.outputs.legacy-name }}" \
+            target/.ci-restore
       - name: Restore latest successful jackin-xtask target
         if: >-
           steps.ci-xtask-artifact.outputs.hit != 'true' &&
@@ -613,23 +590,20 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          pids=()
-          for archive in target/.ci-restore/target.part-*; do
-            tar --zstd -xf "$archive" &
-            pids+=("$!")
-          done
-          failed=0
-          for pid in "${pids[@]}"; do
-            wait "$pid" || failed=1
-          done
-          [ "$failed" -eq 0 ]
+          target_dir=${CARGO_TARGET_DIR:-target}
+          mkdir -p "$target_dir"
+          if [ "${{ steps.xtask-target-seed.outputs.format }}" = v4 ]; then
+            for archive in target/.ci-restore/target.part-*; do
+              tar --zstd --strip-components=1 -C "$target_dir" -xf "$archive"
+            done
+          else
+            tar --zstd --strip-components=1 -C "$target_dir" \
+              -xf target/.ci-restore/target.tar.zst
+          fi
           rm -rf target/.ci-restore
           git ls-files -z | xargs -0r touch --date='2000-01-01T00:00:00Z' --
       - name: Check prepared Rust toolchains
         id: toolchain-lookup
-        if: >-
-          steps.ci-xtask-artifact.outputs.hit != 'true' ||
-          steps.ci-tools-artifact.outputs.hit != 'true'
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -638,16 +612,10 @@ jobs:
           key: rustup-ci-v3-${{ runner.os }}-${{ runner.arch }}-${{ needs.changes.outputs.rustup-ci-contract }}
           lookup-only: true
       - name: Use the minimal Rust CI profile
-        if: >-
-          (steps.ci-xtask-artifact.outputs.hit != 'true' ||
-           steps.ci-tools-artifact.outputs.hit != 'true') &&
-          steps.toolchain-lookup.outputs.cache-hit != 'true'
+        if: steps.toolchain-lookup.outputs.cache-hit != 'true'
         run: rustup set profile minimal
       - name: Bootstrap missing Rust toolchains
         id: toolchain-cache
-        if: >-
-          steps.ci-xtask-artifact.outputs.hit != 'true' ||
-          steps.ci-tools-artifact.outputs.hit != 'true'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -657,16 +625,10 @@ jobs:
           restore-keys: |
             rustup-ci-v3-${{ runner.os }}-${{ runner.arch }}-
       - id: cargo-registry-cache
-        if: >-
-          steps.ci-xtask-artifact.outputs.hit != 'true' ||
-          steps.ci-tools-artifact.outputs.hit != 'true'
         uses: ./.github/actions/cache-cargo-registry
         with:
           contract-key: ${{ needs.changes.outputs.registry-contract }}
       - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
-        if: >-
-          steps.ci-xtask-artifact.outputs.hit != 'true' ||
-          steps.ci-tools-artifact.outputs.hit != 'true'
         with:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
@@ -681,12 +643,9 @@ jobs:
             ${{ steps.ci-tools-artifact.outputs.hit != 'true' &&
                 'cargo-binstall cargo:sccache cargo:cargo-nextest cargo:cargo-deny cargo:cargo-shear cargo:cargo-audit cargo:cargo-fuzz cargo:cargo-hack' || '' }}
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
-      - name: Prepare clippy once for crate jobs
-        if: >-
-          (steps.ci-xtask-artifact.outputs.hit != 'true' ||
-           steps.ci-tools-artifact.outputs.hit != 'true') &&
-          steps.toolchain-lookup.outputs.cache-hit != 'true'
-        run: rustup component add clippy
+      - name: Prepare Rust components once for downstream jobs
+        if: steps.toolchain-lookup.outputs.cache-hit != 'true'
+        run: rustup component add clippy rustfmt
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         if: steps.ci-xtask-artifact.outputs.hit != 'true'
         with:
@@ -909,14 +868,15 @@ jobs:
           tools-contract: ${{ needs.changes.outputs.ci-tools-contract }}
           xtask-contract: ${{ needs.changes.outputs.ci-xtask-contract }}
       - name: Cache Rust toolchain
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/.rustup/toolchains
             ~/.rustup/update-hashes
-          key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ needs.changes.outputs.rustup-contract }}
+          key: rustup-ci-v3-${{ runner.os }}-${{ runner.arch }}-${{ needs.changes.outputs.rustup-ci-contract }}
           restore-keys: |
-            rustup-${{ runner.os }}-${{ runner.arch }}-
+            rustup-ci-v3-${{ runner.os }}-${{ runner.arch }}-
+          fail-on-cache-miss: true
       - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
         with:
           version: "2026.6.11"
@@ -979,14 +939,15 @@ jobs:
           tools-contract: ${{ needs.changes.outputs.ci-tools-contract }}
           xtask-contract: ${{ needs.changes.outputs.ci-xtask-contract }}
       - name: Cache Rust toolchain
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/.rustup/toolchains
             ~/.rustup/update-hashes
-          key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ needs.changes.outputs.rustup-contract }}
+          key: rustup-ci-v3-${{ runner.os }}-${{ runner.arch }}-${{ needs.changes.outputs.rustup-ci-contract }}
           restore-keys: |
-            rustup-${{ runner.os }}-${{ runner.arch }}-
+            rustup-ci-v3-${{ runner.os }}-${{ runner.arch }}-
+          fail-on-cache-miss: true
       - name: Cache audit indexes
         id: audit-cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -1041,6 +1002,13 @@ jobs:
         with:
           needs-json: ${{ toJSON(needs) }}
           workflow-label: CI
+      - name: Audit every CI job's performance
+        if: always()
+        env:
+          EXPECT_CLEAN: ${{ needs.changes.outputs.result-reuse == 'true' }}
+          GH_TOKEN: ${{ github.token }}
+          WORKFLOW_LABEL: CI
+        run: scripts/ci/audit-workflow-performance.sh
       - name: Stage input-identical successful CI result
         if: >-
           needs.changes.outputs.result-reuse != 'true' &&

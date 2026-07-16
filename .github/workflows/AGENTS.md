@@ -28,6 +28,12 @@ Apply these rules to every workflow under this directory. They define the reposi
 
 - GitHub-hosted runners are the default and required PR path. Every runner-selectable pipeline exposes a `workflow_dispatch` `lanes` choice with `github`, `velnor`, and `both`; omitted input resolves to `github`. `velnor` runs only when explicitly selected, never from automatic PR or push triggers.
 
+## Semantic Boundaries
+
+- Never split one crate's tests, one artifact's bytes, or one conceptual command into numbered shards, batches, jobs, steps, or parts. One affected crate owns one complete test job; one cache artifact is one archive with one publish and one restore operation.
+- Split jobs and steps only when they have distinct meaning, ownership, or failure diagnosis. Transport mechanics are not semantic boundaries.
+- Improve runtime through result reuse, local or remote caches, prebuilt artifacts, and faster transport. Do not trade readability or independently attributable results for parallel fragments of the same work.
+
 ## Publishing and Parity
 
 - Derive one `is_publish` value and gate every external write on `main`. Feature branches may build and test but never publish.
