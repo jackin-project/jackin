@@ -548,20 +548,6 @@ jobs:
             ${{ env.CI_TOOLS_HIT != 'true' &&
                 'cargo-binstall cargo:sccache cargo:cargo-nextest cargo:cargo-deny cargo:cargo-shear cargo:cargo-audit cargo:cargo-fuzz cargo:cargo-hack' || '' }}
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
-      - name: Validate the prepared current Rust toolchain
-        if: env.CI_XTASK_HIT == 'true'
-        run: >-
-          "$CI_XTASK" ci-toolchain prepare
-          --version "${{ needs.changes.outputs.rust-version }}"
-      - name: Save prepared Rust toolchain
-        if: >-
-          steps.toolchain-lookup.outputs.cache-hit != 'true'
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            ${{ env.RUSTUP_HOME }}/toolchains
-            ${{ env.RUSTUP_HOME }}/update-hashes
-          key: rustup-v2-${{ runner.os }}-${{ runner.arch }}-${{ needs.changes.outputs.rustup-contract }}
       - id: cargo-registry-cache
         if: >-
           env.CI_XTASK_HIT != 'true' &&
@@ -610,6 +596,19 @@ jobs:
           ${{ env.CI_TOOLS_HIT == 'true' && '--tools-hit' || '' }}
           --cached-xtask "$CI_XTASK"
           --cached-tools "$CI_TOOLS_PATH"
+      - name: Validate the prepared current Rust toolchain
+        run: >-
+          "$CI_XTASK" ci-toolchain prepare
+          --version "${{ needs.changes.outputs.rust-version }}"
+      - name: Save prepared Rust toolchain
+        if: >-
+          steps.toolchain-lookup.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ${{ env.RUSTUP_HOME }}/toolchains
+            ${{ env.RUSTUP_HOME }}/update-hashes
+          key: rustup-v2-${{ runner.os }}-${{ runner.arch }}-${{ needs.changes.outputs.rustup-contract }}
       - name: Cache newly prepared Cargo tools
         if: steps.prepared-artifacts.outputs.tools-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
