@@ -9,9 +9,16 @@ use crate::docs::repo_root;
 
 /// CI partition names for `--only` selection.
 ///
-/// `lint` | `policy` | `tests` | `powerset` | `docs` | `snapshots`
-pub(crate) const PARTITIONS: &[&str] =
-    &["lint", "policy", "tests", "powerset", "docs", "snapshots"];
+/// `lint` | `policy` | `tests` | `powerset` | `docs` | `snapshots` | `e2e`
+pub(crate) const PARTITIONS: &[&str] = &[
+    "lint",
+    "policy",
+    "tests",
+    "powerset",
+    "docs",
+    "snapshots",
+    "e2e",
+];
 
 #[derive(Args, Debug)]
 pub(crate) struct CiArgs {
@@ -26,7 +33,7 @@ pub(crate) struct CiArgs {
     base: String,
     /// Run only the named partition(s). Repeatable.
     ///
-    /// Partitions: lint, policy, tests, powerset, docs, snapshots.
+    /// Partitions: lint, policy, tests, powerset, docs, snapshots, e2e.
     /// Local-dev convenience only — merge readiness remains the full `ci`.
     #[arg(long = "only", value_name = "PARTITION")]
     only: Vec<String>,
@@ -95,8 +102,7 @@ pub(crate) fn run(args: CiArgs) -> Result<()> {
         }
     }
 
-    // E2E is opt-in and independent of `--only` partitions.
-    if args.e2e {
+    if e2e_selected(&args) {
         match build_e2e_step(&root) {
             Ok(step) => {
                 if let Err(err) = run_step(&root, &step) {
@@ -117,6 +123,10 @@ pub(crate) fn run(args: CiArgs) -> Result<()> {
         failures.len(),
         failures.join("\n  ")
     )
+}
+
+fn e2e_selected(args: &CiArgs) -> bool {
+    args.e2e || args.only.iter().any(|partition| partition == "e2e")
 }
 
 fn partition_selected(args: &CiArgs, partition: &str) -> bool {

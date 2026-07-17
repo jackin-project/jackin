@@ -1,6 +1,18 @@
 use std::fs;
 
-use super::parse_capsule_export;
+use super::{CiArgs, e2e_selected, parse_capsule_export};
+
+#[test]
+fn e2e_partition_selects_the_complete_docker_suite() {
+    let args = CiArgs {
+        fast: false,
+        e2e: false,
+        base: "origin/main".to_owned(),
+        only: vec!["e2e".to_owned()],
+    };
+
+    assert!(e2e_selected(&args));
+}
 
 #[test]
 fn parse_capsule_export_accepts_single_quoted_path() {

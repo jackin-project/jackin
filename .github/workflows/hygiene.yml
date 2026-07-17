@@ -947,14 +947,9 @@ jobs:
           cache-all-crates: "true"
           cache-workspace-crates: "true"
           env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTFLAGS RUSTDOC RUSTUP"
-      - name: Export local capsule binary
-        run: |
-          set -euo pipefail
-          eval "$(cargo run -p jackin --bin build-jackin-capsule -- --export)"
-          echo "JACKIN_CAPSULE_BIN=$JACKIN_CAPSULE_BIN" >> "$GITHUB_ENV"
       - name: Run full DinD E2E suite
-        run: |
-          cargo nextest run -p jackin --features e2e --profile docker-e2e --locked
+        run: >-
+          "$CI_XTASK" ci --only e2e
 
 
   # Plan 027: per-main health JSON snapshot (advisory series seed).
