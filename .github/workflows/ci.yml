@@ -77,7 +77,7 @@ jobs:
           CI_TOOLS: ${{ hashFiles('mise.toml', 'mise.lock', 'crates/jackin-xtask/src/ci_stage.rs') }}
           CI_XTASK: ${{ hashFiles('Cargo.lock', 'Cargo.toml', 'rust-toolchain.toml', '.cargo/**', 'crates/*/Cargo.toml', 'crates/jackin-xtask/src/**', 'crates/jackin-process/src/**') }}
           DOCKER: ${{ hashFiles('docker/**', 'docker-bake.hcl') }}
-          REGISTRY: ${{ hashFiles('Cargo.lock', 'crates/**/fuzz/Cargo.lock', 'rust-toolchain.toml', '.cargo/config.toml') }}
+          REGISTRY: ${{ hashFiles('Cargo.lock', 'crates/**/fuzz/Cargo.lock', 'crates/jackin-lints/Cargo.lock', 'rust-toolchain.toml', '.cargo/config.toml') }}
           RUSTUP: ${{ hashFiles('rust-toolchain.toml') }}
         run: |
           {
