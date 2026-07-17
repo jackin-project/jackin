@@ -112,10 +112,12 @@ jobs:
         with:
           token: ${{ github.token }}
           lane: ${{ matrix.config.lane }}
+          tools-contract: ${{ inputs.ci-tools-contract }}
           xtask-contract: ${{ inputs.ci-xtask-contract }}
-          include-tools: "false"
+          include-tools: ${{ matrix.package == inputs.refresh-package }}
       - name: Find input-identical successful crate result
         id: crate-result
+        if: matrix.package != inputs.refresh-package
         env:
           ALL_FEATURES: ${{ inputs.all-features }}
           CACHE_KEY: ${{ fromJSON(inputs.package-cache-keys-json)[matrix.package] }}
@@ -146,7 +148,9 @@ jobs:
           --refresh-package "$REFRESH_PACKAGE"
           --github-output
       - uses: ./.github/actions/download-ci-xtask
-        if: steps.crate-result.outputs.hit != 'true'
+        if: >-
+          steps.crate-result.outputs.hit != 'true' &&
+          matrix.package != inputs.refresh-package
         with:
           token: ${{ github.token }}
           lane: ${{ matrix.config.lane }}
