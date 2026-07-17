@@ -50,6 +50,7 @@ fn conformance_slow_export_honors_each_signal_deadline() -> anyhow::Result<()> {
     assert_eq!(health.active_signals, 0);
     assert!(health.shutdown_completed);
     assert!(!health.shutdown_succeeded);
+    assert!(health.shutdown_timed_out);
     assert!(!jackin_diagnostics::otlp_runtime_active_for_test());
     Ok(())
 }
