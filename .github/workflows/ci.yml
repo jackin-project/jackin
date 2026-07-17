@@ -520,9 +520,6 @@ jobs:
           key: cargo-registry-v5-${{ needs.changes.outputs.registry-contract }}
       - name: Restore prepared Rust toolchains
         id: toolchain-lookup
-        if: >-
-          env.CI_XTASK_HIT != 'true' ||
-          env.CI_TOOLS_HIT != 'true'
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -532,7 +529,6 @@ jobs:
           restore-keys: rustup-v2-${{ runner.os }}-${{ runner.arch }}-
       - name: Use the minimal Rust CI profile
         if: >-
-          (env.CI_XTASK_HIT != 'true' || env.CI_TOOLS_HIT != 'true') &&
           steps.toolchain-lookup.outputs.cache-hit != 'true'
         run: rustup set profile minimal
       - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
@@ -553,17 +549,13 @@ jobs:
                 'cargo-binstall cargo:sccache cargo:cargo-nextest cargo:cargo-deny cargo:cargo-shear cargo:cargo-audit cargo:cargo-fuzz cargo:cargo-hack' || '' }}
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - name: Validate the prepared current Rust toolchain
-        if: >-
-          (env.CI_XTASK_HIT != 'true' || env.CI_TOOLS_HIT != 'true') &&
-          env.CI_XTASK_HIT == 'true'
+        if: env.CI_XTASK_HIT == 'true'
         run: >-
           "$CI_XTASK" ci-toolchain prepare
           --version "${{ needs.changes.outputs.rust-version }}"
       - name: Save prepared Rust toolchain
         if: >-
-          (env.CI_XTASK_HIT != 'true' || env.CI_TOOLS_HIT != 'true') &&
-          steps.toolchain-lookup.outputs.cache-hit != 'true' &&
-          matrix.config.cache_writer
+          steps.toolchain-lookup.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |

@@ -673,11 +673,32 @@ restore, artifact fallback on the first ref miss, and one cache population after
 fallback or build. Both lanes run the same cache actions and keys; Velnor may
 serve them from its native persistent adapter without workflow divergence.
 Repository cache usage before introducing this pair was `7.34GB` across `81`
-entries; the prepared tools and xtask own about `86MB` per active ref, use no
-prefix fallback, and remain subject to the existing per-run cache-budget audit.
+entries. The first populated entries measured `30.5MB` for tools and `3.2MB`
+for each xtask contract, instead of the old `72.4MB` and `13.8MB` artifact
+payloads; they use no prefix fallback and remain subject to the existing
+per-run cache-budget audit.
 The redundant run-local combined upload is removed. Crate-key parsing and result
 marker creation also move into tested `jackin-xtask` commands, eliminating Bash
 and runner-specific nested-expression evaluation from the producer handoff.
+
+Run `29566043776` accepted the runner-neutral crate-result handoff and rejected
+the remaining toolchain warmup condition. Every displayed job finished below
+one minute: GitHub warmup took `24s`, Velnor warmup `42s`, policy jobs `7s`-
+`30s`, and the required gate completed after the crate pair. Velnor won producer
+admission and completed the whole `jackin-xtask` contract in `54s`; prepared
+xtask restore took `2s`, exact-key resolution and result lookup took `1s`, tools
+restore took `1s`, the runner-local target required no transport, and result
+publication succeeded. The queued GitHub copy then completed in `7s`, found the
+current-run marker immediately, and skipped toolchain setup, target handling,
+every Cargo command, reporting, and publication. The raw scan found zero Cargo
+registry updates, crate downloads, external compilation/checking, or marker
+substitution errors. It nevertheless found four Velnor rustup cache misses and
+four six-component downloads: prepared-binary hits had caused warmup to skip
+toolchain restore and validation, so policy and crate jobs repaired the same
+toolchain independently. Toolchain restore and validation are now unconditional
+warmup responsibilities, and either lane may populate the same exact cache key
+before fan-out. The next proof must preserve the accepted producer/consumer
+shape while reducing toolchain download and cache-miss markers to zero.
 
 ## Problem
 
