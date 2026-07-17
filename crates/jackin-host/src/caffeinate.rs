@@ -306,7 +306,7 @@ fn is_caffeinate_alive_at(pid: u32) -> Liveness {
         // Caffeinate process liveness probe runs inside spawn_blocking.
         let request = ExecRequest::new("ps", ["-p", &pid.to_string(), "-o", "comm="])
             .stderr_mode(StdioMode::Null);
-        if let Ok(output) = exec_liveness_probe(&request) {
+        if let Ok(output) = crate::process_telemetry::exec_sync(&request) {
             return classify_ps_comm_output(
                 output.success,
                 &String::from_utf8_lossy(&output.stdout),
@@ -314,41 +314,6 @@ fn is_caffeinate_alive_at(pid: u32) -> Liveness {
         }
     }
     Liveness::Unknown
-}
-
-fn exec_liveness_probe(request: &ExecRequest) -> anyhow::Result<jackin_process::ExecResult> {
-    use jackin_telemetry::schema::enums::{ErrorType, OutcomeValue};
-
-    let operation = jackin_telemetry::operation_or_disabled(
-        &jackin_telemetry::operation::PROCESS_COMMAND,
-        &[jackin_telemetry::Attr {
-            key: jackin_telemetry::schema::attrs::std_attrs::PROCESS_EXECUTABLE_NAME,
-            value: jackin_telemetry::Value::Str(
-                jackin_telemetry::process::classify_executable(&request.program).as_str(),
-            ),
-        }],
-    );
-    let result = jackin_process::exec_sync(request);
-    let completion = match &result {
-        Ok(output) => {
-            if let Some(code) = output.code {
-                let _attribute = operation.set_attr(jackin_telemetry::Attr {
-                    key: jackin_telemetry::schema::attrs::std_attrs::PROCESS_EXIT_CODE,
-                    value: jackin_telemetry::Value::I64(i64::from(code)),
-                });
-            }
-            if output.timed_out {
-                (OutcomeValue::Timeout, Some(ErrorType::Timeout))
-            } else if output.success {
-                (OutcomeValue::Success, None)
-            } else {
-                (OutcomeValue::Failure, Some(ErrorType::ProcessExitNonzero))
-            }
-        }
-        Err(_) => (OutcomeValue::Failure, Some(ErrorType::ProcessSpawnError)),
-    };
-    operation.complete(completion.0, completion.1);
-    result.map_err(|_| anyhow::anyhow!("liveness process spawn failed"))
 }
 
 /// Pure classification of `ps -p PID -o comm=` output. Split out so

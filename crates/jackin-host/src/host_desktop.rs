@@ -30,13 +30,10 @@ fn run_host_desktop_command(program: &str, args: Vec<String>, label: &str) -> Re
     let request = ExecRequest::new(program, args)
         .stdout_mode(StdioMode::Null)
         .stderr_mode(StdioMode::Null);
-    let result = jackin_process::exec_sync(&request)
-        .with_context(|| format!("running {label} command {program:?}"))?;
+    let result = crate::process_telemetry::exec_sync(&request)
+        .with_context(|| format!("running {label} command"))?;
     if !result.success {
-        anyhow::bail!(
-            "{label} command {program:?} exited with code {:?}",
-            result.code
-        );
+        anyhow::bail!("{label} command exited unsuccessfully");
     }
     Ok(())
 }
