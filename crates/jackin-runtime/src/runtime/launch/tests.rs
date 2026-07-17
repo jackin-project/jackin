@@ -8,7 +8,8 @@
 )]
 use super::*;
 use crate::runtime::launch::launch_runtime::{
-    CapsuleAuth, CapsuleEndpoint, CapsuleNetwork, capsule_export_coverage, debug_runtime_envs,
+    CapsuleAuth, CapsuleEndpoint, CapsuleNetwork, capsule_export_coverage,
+    capsule_otlp_allowlist_host, capsule_otlp_propagation, debug_runtime_envs,
     telemetry_runtime_envs_for,
 };
 
@@ -63,6 +64,44 @@ fn capsule_otlp_fails_closed_for_network_endpoint_and_auth() {
             CapsuleAuth::Complete,
         ),
         CapsuleExportCoverage::Enabled
+    );
+}
+
+#[test]
+fn disabled_capsule_export_injects_no_telemetry_or_firewall_host() {
+    let env = capsule_otlp_propagation(
+        None,
+        Some("authorization=private-host-header"),
+        Some("00-private-traceparent"),
+    );
+    assert!(env.is_empty());
+    assert_eq!(capsule_otlp_allowlist_host(None), None);
+}
+
+#[test]
+fn enabled_capsule_export_uses_only_explicit_safe_carriers() {
+    let endpoint = jackin_diagnostics::ContainerOtlp {
+        endpoint: "http://host.docker.internal:4317".to_owned(),
+        needs_host_gateway: true,
+    };
+    let env = capsule_otlp_propagation(
+        Some(&endpoint),
+        Some("authorization=capsule-safe"),
+        Some("00-bounded-traceparent"),
+    );
+    assert_eq!(env.len(), 3);
+    assert!(
+        env.iter()
+            .any(|value| value == "OTEL_EXPORTER_OTLP_HEADERS=authorization=capsule-safe")
+    );
+    assert_eq!(
+        capsule_otlp_allowlist_host(Some(&endpoint)),
+        Some("host.docker.internal")
+    );
+    assert!(!env.iter().any(|value| value.contains("CLIENT_KEY")));
+    assert!(
+        !env.iter()
+            .any(|value| value.contains("private-host-header"))
     );
 }
 use jackin_config::AppConfig;

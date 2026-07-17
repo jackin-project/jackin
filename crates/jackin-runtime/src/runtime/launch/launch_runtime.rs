@@ -735,7 +735,7 @@ pub(crate) async fn launch_role_runtime(
         } else {
             Vec::new()
         };
-        let otlp_host = container_otlp.as_ref().map(|_| "host.docker.internal");
+        let otlp_host = capsule_otlp_allowlist_host(container_otlp.as_ref());
         let allowlist = crate::runtime::docker_profile::allowlist_hosts(
             agent.slug(),
             grants,
@@ -813,16 +813,11 @@ pub(crate) async fn launch_role_runtime(
     // host.docker.internal must be wired to the host gateway for the rewritten
     // loopback endpoint to resolve on Linux engines. `container_otlp` is
     // computed once above (for the WP1 allowlist) and reused here.
-    let mut otlp_propagation: Vec<String> = Vec::new();
-    if let Some(otlp) = &container_otlp {
-        otlp_propagation.push(format!("OTEL_EXPORTER_OTLP_ENDPOINT={}", otlp.endpoint));
-        if let Some(headers) = capsule_otlp_headers.as_deref() {
-            otlp_propagation.push(format!("OTEL_EXPORTER_OTLP_HEADERS={headers}"));
-        }
-        if let Some(traceparent) = jackin_telemetry::propagation::current_traceparent() {
-            otlp_propagation.push(format!("TRACEPARENT={traceparent}"));
-        }
-    }
+    let otlp_propagation = capsule_otlp_propagation(
+        container_otlp.as_ref(),
+        capsule_otlp_headers.as_deref(),
+        jackin_telemetry::propagation::current_traceparent().as_deref(),
+    );
     for env_str in &otlp_propagation {
         run_args.push("-e");
         run_args.push(env_str);
@@ -1348,5 +1343,33 @@ pub(crate) const fn capsule_export_coverage(
         CapsuleExportCoverage::DisabledUnclassifiedAuth
     } else {
         CapsuleExportCoverage::Enabled
+    }
+}
+
+pub(crate) fn capsule_otlp_propagation(
+    endpoint: Option<&jackin_diagnostics::ContainerOtlp>,
+    capsule_safe_headers: Option<&str>,
+    traceparent: Option<&str>,
+) -> Vec<String> {
+    let Some(endpoint) = endpoint else {
+        return Vec::new();
+    };
+    let mut env = vec![format!("OTEL_EXPORTER_OTLP_ENDPOINT={}", endpoint.endpoint)];
+    if let Some(headers) = capsule_safe_headers {
+        env.push(format!("OTEL_EXPORTER_OTLP_HEADERS={headers}"));
+    }
+    if let Some(traceparent) = traceparent {
+        env.push(format!("TRACEPARENT={traceparent}"));
+    }
+    env
+}
+
+pub(crate) const fn capsule_otlp_allowlist_host(
+    endpoint: Option<&jackin_diagnostics::ContainerOtlp>,
+) -> Option<&'static str> {
+    if endpoint.is_some() {
+        Some("host.docker.internal")
+    } else {
+        None
     }
 }
