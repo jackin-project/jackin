@@ -71,7 +71,7 @@ Baseline reconstructed from the last commits before each atomic cutover. Counts 
 | `crates/jackin-runtime/src/runtime/apple_container.rs` | 14 | 0 | 0 | 0 | 0 | 0 | governed DEBUG detail |
 | `crates/jackin-runtime/src/runtime/attach.rs` | 0 | 0 | 0 | 0 | 0 | 0 | COMPLETE — manifest-title fallback and handled attach EOF/failure each emit a bodyless recovered-degradation warning at the decision boundary; container identity, paths, and raw errors are excluded |
 | `crates/jackin-runtime/src/runtime/cleanup.rs` | 1 | 0 | 0 | 0 | 0 | 0 | COMPLETE — corrupt-manifest and orphan-lock removal failures use bodyless recovered-degradation WARNs; successful cleanup narration and the raw path/error `eprintln!` are deleted |
-| `crates/jackin-runtime/src/runtime/docker_profile.rs` | 1 | 0 | 0 | 0 | 0 | 0 | governed DEBUG detail |
+| `crates/jackin-runtime/src/runtime/docker_profile.rs` | 1 | 0 | 0 | 0 | 0 | 0 | COMPLETE — the session contract is explicit operator `--debug` output, not exported telemetry; the stale generic-macro documentation reference is removed |
 | `crates/jackin-runtime/src/runtime/host_attach.rs` | 24 | 0 | 0 | 0 | 0 | 0 | REPLACE terminal-reset teardown failures with bodyless typed `io_error`; remaining DEBUG sites require classification |
 | `crates/jackin-runtime/src/runtime/image.rs` | 13 | 0 | 0 | 0 | 0 | 0 | REPLACE handled lookup/inspect/version failures with one bodyless recovered-degradation warning per decision; remaining DEBUG sites require classification |
 | `crates/jackin-runtime/src/runtime/image/build.rs` | 1 | 0 | 0 | 0 | 0 | 0 | COMPLETE — governed cache/image decisions own reuse; local base-image identity narration is deleted |
@@ -79,7 +79,7 @@ Baseline reconstructed from the last commits before each atomic cutover. Counts 
 | `crates/jackin-runtime/src/runtime/launch/exit_diagnosis.rs` | 0 | 0 | 0 | 0 | 0 | 0 | COMPLETE — conservative dead/unavailable-container preservation emits a bodyless recovered-degradation warning; container identity and Docker detail are excluded |
 | `crates/jackin-runtime/src/runtime/launch/launch_dind.rs` | 8 | 0 | 0 | 0 | 0 | 0 | governed DEBUG detail |
 | `crates/jackin-runtime/src/runtime/launch/launch_pipeline.rs` | 12 | 0 | 0 | 0 | 0 | 0 | governed DEBUG detail |
-| `crates/jackin-runtime/src/runtime/launch/launch_pipeline/launch_core/orchestrate.rs` | 4 | 0 | 0 | 0 | 0 | 0 | governed DEBUG detail |
+| `crates/jackin-runtime/src/runtime/launch/launch_pipeline/launch_core/orchestrate.rs` | 4 | 0 | 0 | 0 | 0 | 0 | COMPLETE — registered image and launch-stage owners cover build/materialization decisions; expected preserved-container absence is silent; unavailable session inspection emits bodyless recovered degradation without container identity or raw reason |
 | `crates/jackin-runtime/src/runtime/launch/launch_runtime.rs` | 16 | 0 | 0 | 0 | 0 | 0 | governed DEBUG detail |
 | `crates/jackin-runtime/src/runtime/launch/launch_slot.rs` | 0 | 0 | 0 | 0 | 0 | 0 | COMPLETE — lock contention followed by another bounded attempt emits the registered bodyless `retry.scheduled` WARN; container names, attempt counts, lock paths, and raw errors are excluded |
 | `crates/jackin-runtime/src/runtime/launch/trust.rs` | 1 | 0 | 0 | 0 | 0 | 0 | COMPLETE — governed launch trust owns the decision; workspace count and Codex config path narration are deleted |

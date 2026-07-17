@@ -212,12 +212,8 @@ where
                     let sessions =
                         inspect_agent_sessions(docker, container_name, &ContainerState::Running)
                             .await;
-                    if let AgentSessionInventory::Unavailable(ref reason) = sessions {
-                        jackin_diagnostics::telemetry_debug!(
-                            "instance",
-                            "inspect_agent_sessions unavailable for {container_name}: {reason}; \
-                             treating conservatively as sessions-present (container preserved)",
-                        );
+                    if let AgentSessionInventory::Unavailable(_) = sessions {
+                        let _warning = jackin_telemetry::record_recovered_degradation();
                     }
                     if matches!(&sessions, AgentSessionInventory::Sessions(v) if v.is_empty()) {
                         super::super::super::write_instance_status(
@@ -283,12 +279,6 @@ where
                 );
             }
             ContainerState::NotFound if is_preserved => {
-                jackin_diagnostics::telemetry_debug!(
-                    "instance",
-                    "container {container_name} not found after session with Preserved decision; \
-                     removed externally during finalization — tearing down DinD/network, \
-                     preserved status on disk stands",
-                );
                 cleanup.run(docker).await;
             }
             ContainerState::NotFound => {
@@ -809,7 +799,6 @@ struct BuildImage<'a, D, R> {
     reason: crate::runtime::image::ImageInvalidationReason,
     role_git_sha: Option<String>,
     base_image_override: Option<String>,
-    source: String,
 }
 
 async fn build_image<D, R, S>(
@@ -827,18 +816,12 @@ where
         reason,
         role_git_sha,
         base_image_override,
-        source,
     } = input;
     super::super::super::emit_image_materialization_plan(
         false,
         reason.as_str(),
         common.restoring,
         common.container_name,
-    );
-    jackin_diagnostics::telemetry_debug!(
-        "image",
-        "derived image build required from {source}: {}",
-        reason.as_str(),
     );
     common.steps.next("Preparing runtime binaries").await?;
     let image_agents = common.supported_agents.to_vec();
@@ -963,14 +946,12 @@ where
                 base_image,
             },
         ) => {
-            let source = format!("published image {base_image}");
             build_image(
                 BuildImage {
                     common: input,
                     reason,
                     role_git_sha,
                     base_image_override: Some(base_image),
-                    source,
                 },
                 sidecar,
                 early_sidecar_result,
@@ -990,7 +971,6 @@ where
                     reason,
                     role_git_sha,
                     base_image_override: None,
-                    source: "workspace Dockerfile".to_owned(),
                 },
                 sidecar,
                 early_sidecar_result,
@@ -1424,12 +1404,6 @@ where
     let workspace_label = workspace
         .as_workspace_label()
         .map_err(anyhow::Error::from)?;
-    jackin_diagnostics::telemetry_debug!(
-        "isolation",
-        "load_role: invoking materialize_workspace for container {container_name} \
-         (interactive=true, force={force})",
-        force = opts.force,
-    );
     if let Some(git_pull_join) = git_pull_join {
         super::super::finish_deferred_git_pull(git_pull_join, steps).await?;
     }
