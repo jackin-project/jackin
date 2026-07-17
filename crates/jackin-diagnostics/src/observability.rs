@@ -1055,8 +1055,10 @@ mod otlp {
             .build();
         let tracer_provider = SdkTracerProvider::builder()
             .with_sampler(Sampler::ParentBased(Box::new(Sampler::AlwaysOn)))
-            .with_max_attributes_per_span(64)
-            .with_max_attributes_per_event(32)
+            .with_max_attributes_per_span(jackin_telemetry::limits::MAX_SPAN_ATTRIBUTES as u32)
+            .with_max_attributes_per_event(jackin_telemetry::limits::MAX_LOG_ATTRIBUTES as u32)
+            .with_max_links_per_span(jackin_telemetry::limits::MAX_SPAN_LINKS as u32)
+            .with_max_attributes_per_link(jackin_telemetry::limits::MAX_SPAN_ATTRIBUTES as u32)
             .with_span_processor(GovernedSpanProcessor(
                 BatchSpanProcessor::builder(CountingSpanExporter(span_exporter), Tokio)
                     .with_batch_config(span_batch)
@@ -1520,8 +1522,10 @@ mod otlp {
         let logs = opentelemetry_sdk::logs::InMemoryLogExporter::default();
         let resource = build_resource_for(ServiceIdentity::HOST_ONE_SHOT);
         let tracer_provider = SdkTracerProvider::builder()
-            .with_max_attributes_per_span(64)
-            .with_max_attributes_per_event(32)
+            .with_max_attributes_per_span(jackin_telemetry::limits::MAX_SPAN_ATTRIBUTES as u32)
+            .with_max_attributes_per_event(jackin_telemetry::limits::MAX_LOG_ATTRIBUTES as u32)
+            .with_max_links_per_span(jackin_telemetry::limits::MAX_SPAN_LINKS as u32)
+            .with_max_attributes_per_link(jackin_telemetry::limits::MAX_SPAN_ATTRIBUTES as u32)
             .with_span_processor(GovernedSpanProcessor(
                 opentelemetry_sdk::trace::SimpleSpanProcessor::new(spans.clone()),
             ))
@@ -1582,8 +1586,10 @@ mod otlp {
         let logs = opentelemetry_sdk::logs::InMemoryLogExporter::default();
         let resource = build_resource_for(ServiceIdentity::CAPSULE);
         let tracer_provider = SdkTracerProvider::builder()
-            .with_max_attributes_per_span(64)
-            .with_max_attributes_per_event(32)
+            .with_max_attributes_per_span(jackin_telemetry::limits::MAX_SPAN_ATTRIBUTES as u32)
+            .with_max_attributes_per_event(jackin_telemetry::limits::MAX_LOG_ATTRIBUTES as u32)
+            .with_max_links_per_span(jackin_telemetry::limits::MAX_SPAN_LINKS as u32)
+            .with_max_attributes_per_link(jackin_telemetry::limits::MAX_SPAN_ATTRIBUTES as u32)
             .with_span_processor(GovernedSpanProcessor(
                 opentelemetry_sdk::trace::SimpleSpanProcessor::new(spans.clone()),
             ))

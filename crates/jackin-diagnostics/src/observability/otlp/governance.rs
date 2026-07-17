@@ -241,11 +241,10 @@ fn validate_span(
     span: &opentelemetry_sdk::trace::SpanData,
     definition: &jackin_telemetry::schema::SpanMetadata,
 ) -> Result<(), jackin_telemetry::Rejection> {
-    if span.attributes.len() > jackin_telemetry::limits::MAX_SPAN_ATTRIBUTES
-        || span.links.len() > jackin_telemetry::limits::MAX_SPAN_LINKS
-    {
-        return Err(jackin_telemetry::Rejection::SizeLimit);
-    }
+    validate_span_limits(
+        span.attributes.len(),
+        span.links.iter().map(|link| link.attributes.len()),
+    )?;
     if let opentelemetry::trace::Status::Error { description } = &span.status {
         if description.len() > jackin_telemetry::limits::MAX_BODY_BYTES {
             return Err(jackin_telemetry::Rejection::SizeLimit);
@@ -301,6 +300,21 @@ fn validate_span(
             .iter()
             .any(|attribute| attribute.key.as_str() == required)
     })?;
+    Ok(())
+}
+
+fn validate_span_limits(
+    span_attributes: usize,
+    mut link_attributes: impl ExactSizeIterator<Item = usize>,
+) -> Result<(), jackin_telemetry::Rejection> {
+    if span_attributes > jackin_telemetry::limits::MAX_SPAN_ATTRIBUTES
+        || link_attributes.len() > jackin_telemetry::limits::MAX_SPAN_LINKS
+        || link_attributes
+            .try_fold(span_attributes, usize::checked_add)
+            .is_none_or(|count| count > jackin_telemetry::limits::MAX_SPAN_ATTRIBUTES)
+    {
+        return Err(jackin_telemetry::Rejection::SizeLimit);
+    }
     Ok(())
 }
 
@@ -417,5 +431,27 @@ const fn otel_log_severity(
         jackin_telemetry::event::Severity::Info => opentelemetry::logs::Severity::Info,
         jackin_telemetry::event::Severity::Warn => opentelemetry::logs::Severity::Warn,
         jackin_telemetry::event::Severity::Error => opentelemetry::logs::Severity::Error,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::validate_span_limits;
+    use jackin_telemetry::{Rejection, limits};
+
+    #[test]
+    fn span_limits_include_all_link_attributes() {
+        assert_eq!(
+            validate_span_limits(limits::MAX_SPAN_ATTRIBUTES - 1, [1].into_iter()),
+            Ok(())
+        );
+        assert_eq!(
+            validate_span_limits(limits::MAX_SPAN_ATTRIBUTES, [1].into_iter()),
+            Err(Rejection::SizeLimit)
+        );
+        assert_eq!(
+            validate_span_limits(0, [0; limits::MAX_SPAN_LINKS + 1].into_iter()),
+            Err(Rejection::SizeLimit)
+        );
     }
 }
