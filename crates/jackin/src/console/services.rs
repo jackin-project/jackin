@@ -369,6 +369,7 @@ pub(super) mod instances {
         let mut sessions = HashMap::new();
         let mut session_errors = HashSet::new();
         let mut snapshot_targets: Vec<String> = Vec::new();
+        let mut recovered_failure = false;
 
         for entry in &instances {
             if is_live_instance_status(entry.status) {
@@ -378,12 +379,8 @@ pub(super) mod instances {
                         sessions.insert(entry.container_base.clone(), manifest.sessions);
                     }
                     Ok(_) => {}
-                    Err(e) => {
-                        jackin_diagnostics::telemetry_debug!(
-                            "console",
-                            "manifest read failed for {}: {e:#}",
-                            entry.container_base
-                        );
+                    Err(_) => {
+                        recovered_failure = true;
                         session_errors.insert(entry.container_base.clone());
                     }
                 }
@@ -405,13 +402,14 @@ pub(super) mod instances {
                 Ok((None, transport)) => {
                     exec_fallback_seen |= transport == SnapshotTransport::DockerExecFallback;
                 }
-                Err(e) => {
-                    jackin_diagnostics::telemetry_debug!(
-                        "console",
-                        "snapshot fetch failed for {container}: {e:#}"
-                    );
+                Err(_) => {
+                    recovered_failure = true;
                 }
             }
+        }
+
+        if recovered_failure {
+            let _event = jackin_telemetry::record_recovered_degradation();
         }
 
         Ok(ManagerInstanceRefreshSnapshot {
