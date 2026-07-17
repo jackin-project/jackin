@@ -40,8 +40,8 @@ jobs:
           LANES: ${{ github.event_name == 'workflow_dispatch' && inputs.lanes || 'github' }}
         run: |
           set -euo pipefail
-          github='{"lane":"GitHub","runner":"\"ubuntu-24.04\"","runner_os":"Linux","runner_arch":"X64"}'
-          velnor='{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","runner_os":"Linux","runner_arch":"X64"}'
+          github='{"lane":"GitHub","runner":"\"ubuntu-24.04\"","runner_os":"Linux","runner_arch":"X64","mise_data_dir":"/home/runner/.local/share/mise","rustup_home":"/home/runner/.rustup"}'
+          velnor='{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","runner_os":"Linux","runner_arch":"X64","mise_data_dir":"/opt/mise","rustup_home":"/opt/rustup"}'
 
           case "$LANES" in
             github)
@@ -77,6 +77,7 @@ jobs:
       sha: ${{ steps.source.outputs.sha }}
       short_sha: ${{ steps.meta.outputs.short_sha }}
       version: ${{ steps.meta.outputs.version }}
+      toolchain-cache-key: ${{ steps.toolchain.outputs.key }}
     steps:
       - name: Resolve source SHA
         id: source
@@ -105,6 +106,12 @@ jobs:
         with:
           ref: ${{ steps.source.outputs.sha }}
           fetch-depth: 0
+
+      - name: Resolve Rust toolchain cache key
+        id: toolchain
+        env:
+          CACHE_KEY: ${{ hashFiles('rust-toolchain.toml') }}
+        run: echo "key=$CACHE_KEY" >> "$GITHUB_OUTPUT"
 
       - name: Classify changed paths
         id: filter
@@ -286,6 +293,8 @@ jobs:
       RUSTC_WRAPPER: sccache
       SCCACHE_BASEDIRS: ${{ github.workspace }}
       SCCACHE_GHA_ENABLED: "off"
+      MISE_DATA_DIR: ${{ matrix.config.mise_data_dir }}
+      RUSTUP_HOME: ${{ matrix.config.rustup_home }}
     strategy:
       matrix:
         config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
@@ -306,9 +315,9 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
-            ~/.rustup/toolchains
-            ~/.rustup/update-hashes
-          key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}
+            ${{ env.RUSTUP_HOME }}/toolchains
+            ${{ env.RUSTUP_HOME }}/update-hashes
+          key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ needs.source-changed.outputs.toolchain-cache-key }}
           restore-keys: |
             rustup-${{ runner.os }}-${{ runner.arch }}-
       - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
@@ -384,6 +393,8 @@ jobs:
       RUSTC_WRAPPER: sccache
       SCCACHE_BASEDIRS: ${{ github.workspace }}
       SCCACHE_GHA_ENABLED: "off"
+      MISE_DATA_DIR: ${{ matrix.config.mise_data_dir }}
+      RUSTUP_HOME: ${{ matrix.config.rustup_home }}
     strategy:
       matrix:
         config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
@@ -402,9 +413,9 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
-            ~/.rustup/toolchains
-            ~/.rustup/update-hashes
-          key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}
+            ${{ env.RUSTUP_HOME }}/toolchains
+            ${{ env.RUSTUP_HOME }}/update-hashes
+          key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ needs.source-changed.outputs.toolchain-cache-key }}
           restore-keys: |
             rustup-${{ runner.os }}-${{ runner.arch }}-
       - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
