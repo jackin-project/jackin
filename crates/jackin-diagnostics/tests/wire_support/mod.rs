@@ -10,6 +10,9 @@ const CORRELATION_KEYS: [&str; 7] = [
     "gen_ai.conversation.id",
     "app.crash.id",
 ];
+const MAX_DEFAULT_WIRE_LOGS: usize = 8;
+const MAX_DEFAULT_WIRE_SPANS: usize = 4;
+const MAX_DEFAULT_WIRE_METRIC_STREAMS: usize = 16;
 
 pub(crate) fn assert_three_signal_delivery(
     identity: jackin_diagnostics::ServiceIdentity,
@@ -58,6 +61,17 @@ pub(crate) fn assert_three_signal_delivery(
     jackin_telemetry::counter(&jackin_telemetry::metric::TELEMETRY_VALIDATE)
         .add(1, &[])
         .map_err(|error| anyhow::anyhow!("validation metric rejected: {error:?}"))?;
+    let quiet_fields = [jackin_telemetry::Attr {
+        key: jackin_telemetry::schema::attrs::OUTCOME,
+        value: jackin_telemetry::Value::Str("success"),
+    }];
+    for event in [
+        &jackin_telemetry::event::DEBUG_LINE,
+        &jackin_telemetry::event::TIMING_STARTED,
+    ] {
+        jackin_telemetry::emit_event(event, jackin_telemetry::FieldSet::new(&quiet_fields, None))
+            .map_err(|error| anyhow::anyhow!("quiet event rejected: {error:?}"))?;
+    }
     drop(span_guard);
     operation.complete(jackin_telemetry::schema::enums::OutcomeValue::Success, None);
     drop(session);
@@ -92,6 +106,7 @@ pub(crate) fn assert_three_signal_delivery(
     assert!(!traces.is_empty(), "trace request missing");
     assert!(!logs.is_empty(), "logs request missing");
     assert!(!metrics.is_empty(), "metrics request missing");
+    assert_default_wire_volume_and_severity(&testbed);
     assert_correlation_contract(&testbed, invocation, &session_id)?;
     assert!(
         testbed
@@ -146,6 +161,40 @@ pub(crate) fn assert_three_signal_delivery(
         "governed telemetry created a local artifact"
     );
     Ok(())
+}
+
+fn assert_default_wire_volume_and_severity(testbed: &jackin_otlp_testbed::Testbed) {
+    let logs = testbed.log_records();
+    let spans = testbed.spans();
+    let metric_names = testbed.metric_names();
+    assert!(
+        logs.len() <= MAX_DEFAULT_WIRE_LOGS,
+        "default wire log volume {} exceeded {}",
+        logs.len(),
+        MAX_DEFAULT_WIRE_LOGS
+    );
+    assert!(
+        spans.len() <= MAX_DEFAULT_WIRE_SPANS,
+        "default wire span volume {} exceeded {}",
+        spans.len(),
+        MAX_DEFAULT_WIRE_SPANS
+    );
+    assert!(
+        metric_names.len() <= MAX_DEFAULT_WIRE_METRIC_STREAMS,
+        "default wire metric stream volume {} exceeded {}: {metric_names:?}",
+        metric_names.len(),
+        MAX_DEFAULT_WIRE_METRIC_STREAMS
+    );
+    assert!(
+        logs.iter().all(|record| record.severity_number >= 9),
+        "default export delivered a record below INFO: {logs:?}"
+    );
+    for quiet in ["debug.line", "timing.started"] {
+        assert!(
+            logs.iter().all(|record| record.event_name != quiet),
+            "default export delivered {quiet}"
+        );
+    }
 }
 
 fn assert_correlation_contract(
