@@ -125,6 +125,8 @@ Add `conformance_no_lifetime_spans`: simulate (test-level) a console session wit
 - Capsule identity exists before fallible startup, a bounded startup root covers listener readiness and links the launch context, and inactive/failed shutdown always clears paired ambient session state.
 - Capsule daemon configuration and startup failures pass through one top-level `ResultTelemetryExt` boundary while the provider/session guard is alive; handled daemon failures use the typed recovered-degradation warning so raw error values and duplicate terminal ERROR events are never exported.
 - Host and `jackin-role` parse/help/version exits now pass through one shared pre-dispatch boundary. It initializes configured export, emits and completes one bounded `cli.command` root under the governed `help` command name, records success or stable `config_error` plus exit code and CLI metrics, and drops the active diagnostics guard so all signals flush before clap terminates. The developer-only capsule builder remains explicitly excluded. Exporter-backed coverage proves the failure shape without exporting clap text.
+- Session ownership is an exclusive scoped guard used after console terminal acquisition and at the runtime attachment boundary. A console may transfer its existing ownership into attachment without a duplicate lifecycle pair; competing console/attachment/Capsule owners are rejected, a non-owning attachment cannot clear the owner, and the next independently claimed attachment mints a new UUID with the last-ended UUID as `session.previous_id`. Threaded ownership tests and production call-site inspection close the concurrency/reattach requirement.
+- Capsule PID-1 initialization claims session identity before exporter setup, starts the bounded startup root while the provider is live, links valid launch context, and completes startup exactly once only after socket-listener readiness. Pre-readiness failure completes the root with `launch_failed`, clears ambient session ownership, emits the paired session end when started, and shuts the exporter down from the guard. The PID-1 entrypoint applies a single typed terminal boundary to each mutually exclusive fallible stage and keeps the guard alive through daemon execution; handled rule-pack/config degradations use the governed recovered-warning path without raw error export.
 
 ## Test plan
 
@@ -137,7 +139,7 @@ Add `conformance_no_lifetime_spans`: simulate (test-level) a console session wit
 
 - [ ] `cargo nextest run --workspace --all-features --locked` exits 0
 - [ ] `grep -rn "cli.invocation.id" crates/ --include='*.rs' | grep -v tests | head` shows facade/schema usage (no ad-hoc string duplicates outside jackin-telemetry)
-- [ ] `grep -n "emit_session_start" crates/jackin-diagnostics/src/observability.rs` returns no span-emitting variant (event only)
+- [x] `grep -n "emit_session_start" crates/jackin-diagnostics/src/observability.rs` returns no span-emitting variant (event only; only the test helper remains)
 - [x] `conformance_no_lifetime_spans` passes and proves bounded startup/command/shutdown operations do not cover the idle session interval, invocation identity is present on roots/logs but absent from Resource, and metric dimensions reject it
 - [ ] One-shot smoke: `cargo run --bin jackin -- status` works with no endpoint set (no-op path intact)
 - [ ] `cargo xtask lint --strict` exits 0 (export-volume regenerated)
