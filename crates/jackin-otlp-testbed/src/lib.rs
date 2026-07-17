@@ -275,6 +275,30 @@ impl Testbed {
             .collect()
     }
 
+    /// Decoded attribute keys across every metric datapoint and exemplar.
+    #[must_use]
+    pub fn metric_dimension_keys(&self) -> Vec<String> {
+        let mut keys = Vec::new();
+        for metric in self
+            .metrics()
+            .into_iter()
+            .flat_map(|request| request.resource_metrics)
+            .flat_map(|resource| resource.scope_metrics)
+            .flat_map(|scope| scope.metrics)
+        {
+            visit_metric_points(metric.data.as_ref(), |attributes, exemplars| {
+                keys.extend(attributes.iter().map(|attribute| attribute.key.clone()));
+                keys.extend(exemplars.iter().flat_map(|exemplar| {
+                    exemplar
+                        .filtered_attributes
+                        .iter()
+                        .map(|attribute| attribute.key.clone())
+                }));
+            });
+        }
+        keys
+    }
+
     /// Report forbidden backend/product namespaces anywhere in decoded OTLP.
     #[must_use]
     pub fn legacy_namespace_violations(&self) -> Vec<String> {
@@ -577,42 +601,12 @@ fn scan_metric_points(
     data: Option<&opentelemetry_proto::tonic::metrics::v1::metric::Data>,
     violations: &mut Vec<String>,
 ) {
-    use opentelemetry_proto::tonic::metrics::v1::{Exemplar, metric::Data};
-
-    let mut scan_point = |attributes, exemplars: &[Exemplar]| {
+    visit_metric_points(data, |attributes, exemplars| {
         scan_attributes(attributes, violations);
         for exemplar in exemplars {
             scan_attributes(&exemplar.filtered_attributes, violations);
         }
-    };
-    match data {
-        Some(Data::Gauge(value)) => {
-            for point in &value.data_points {
-                scan_point(&point.attributes, &point.exemplars);
-            }
-        }
-        Some(Data::Sum(value)) => {
-            for point in &value.data_points {
-                scan_point(&point.attributes, &point.exemplars);
-            }
-        }
-        Some(Data::Histogram(value)) => {
-            for point in &value.data_points {
-                scan_point(&point.attributes, &point.exemplars);
-            }
-        }
-        Some(Data::ExponentialHistogram(value)) => {
-            for point in &value.data_points {
-                scan_point(&point.attributes, &point.exemplars);
-            }
-        }
-        Some(Data::Summary(value)) => {
-            for point in &value.data_points {
-                scan_attributes(&point.attributes, violations);
-            }
-        }
-        None => {}
-    }
+    });
 }
 
 fn scan_metric_point_values(
@@ -620,38 +614,47 @@ fn scan_metric_point_values(
     prohibited: &[&str],
     violations: &mut Vec<String>,
 ) {
-    use opentelemetry_proto::tonic::metrics::v1::{Exemplar, metric::Data};
-
-    let mut scan_point = |attributes, exemplars: &[Exemplar]| {
+    visit_metric_points(data, |attributes, exemplars| {
         scan_values(Some(attributes), prohibited, violations);
         for exemplar in exemplars {
             scan_values(Some(&exemplar.filtered_attributes), prohibited, violations);
         }
-    };
+    });
+}
+
+fn visit_metric_points(
+    data: Option<&opentelemetry_proto::tonic::metrics::v1::metric::Data>,
+    mut visit: impl FnMut(
+        &[opentelemetry_proto::tonic::common::v1::KeyValue],
+        &[opentelemetry_proto::tonic::metrics::v1::Exemplar],
+    ),
+) {
+    use opentelemetry_proto::tonic::metrics::v1::metric::Data;
+
     match data {
         Some(Data::Gauge(value)) => {
             for point in &value.data_points {
-                scan_point(&point.attributes, &point.exemplars);
+                visit(&point.attributes, &point.exemplars);
             }
         }
         Some(Data::Sum(value)) => {
             for point in &value.data_points {
-                scan_point(&point.attributes, &point.exemplars);
+                visit(&point.attributes, &point.exemplars);
             }
         }
         Some(Data::Histogram(value)) => {
             for point in &value.data_points {
-                scan_point(&point.attributes, &point.exemplars);
+                visit(&point.attributes, &point.exemplars);
             }
         }
         Some(Data::ExponentialHistogram(value)) => {
             for point in &value.data_points {
-                scan_point(&point.attributes, &point.exemplars);
+                visit(&point.attributes, &point.exemplars);
             }
         }
         Some(Data::Summary(value)) => {
             for point in &value.data_points {
-                scan_values(Some(&point.attributes), prohibited, violations);
+                visit(&point.attributes, &[]);
             }
         }
         None => {}

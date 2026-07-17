@@ -1,6 +1,17 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+const CORRELATION_KEYS: [&str; 8] = [
+    "cli.invocation.id",
+    "session.id",
+    "session.previous_id",
+    "job.id",
+    "ui.screen.visit.id",
+    "gen_ai.conversation.id",
+    "app.crash.id",
+    "parallax.run.id",
+];
+
 pub(crate) fn assert_three_signal_delivery(
     identity: jackin_diagnostics::ServiceIdentity,
 ) -> anyhow::Result<()> {
@@ -13,7 +24,17 @@ pub(crate) fn assert_three_signal_delivery(
         .build()?;
     let testbed = runtime.block_on(async { jackin_otlp_testbed::Testbed::start() })?;
     let runtime_guard = runtime.enter();
+    let invocation = jackin_telemetry::identity::InvocationId::mint();
+    jackin_telemetry::identity::set_current_invocation(invocation)
+        .map_err(|current| anyhow::anyhow!("invocation already owned by {current}"))?;
     jackin_diagnostics::init_wire_test_export(&testbed.endpoint(), identity)?;
+    let session_kind = if identity == jackin_diagnostics::ServiceIdentity::CAPSULE {
+        jackin_telemetry::identity::SessionKind::Capsule
+    } else {
+        jackin_telemetry::identity::SessionKind::Console
+    };
+    let session = jackin_telemetry::identity::SessionGuard::begin(session_kind)?;
+    let session_id = session.context().current.to_string();
     let before = jackin_diagnostics::telemetry_health_snapshot();
 
     let operation =
@@ -40,6 +61,7 @@ pub(crate) fn assert_three_signal_delivery(
         .map_err(|error| anyhow::anyhow!("validation metric rejected: {error:?}"))?;
     drop(span_guard);
     operation.complete(jackin_telemetry::schema::enums::OutcomeValue::Success, None);
+    drop(session);
     jackin_diagnostics::flush_wire_test_export()?;
     let flushed = jackin_diagnostics::telemetry_health_snapshot();
     for (before, after) in [
@@ -71,17 +93,7 @@ pub(crate) fn assert_three_signal_delivery(
     assert!(!traces.is_empty(), "trace request missing");
     assert!(!logs.is_empty(), "logs request missing");
     assert!(!metrics.is_empty(), "metrics request missing");
-    assert!(
-        testbed
-            .spans()
-            .iter()
-            .any(|span| span.name == "telemetry.validate"),
-        "governed validation span missing"
-    );
-    assert!(
-        testbed.find_event("telemetry.validate").is_some(),
-        "native governed validation event missing"
-    );
+    assert_correlation_contract(&testbed, invocation, &session_id)?;
     assert!(
         testbed
             .metric_names()
@@ -135,6 +147,60 @@ pub(crate) fn assert_three_signal_delivery(
         "governed telemetry created a local artifact"
     );
     Ok(())
+}
+
+fn assert_correlation_contract(
+    testbed: &jackin_otlp_testbed::Testbed,
+    invocation: jackin_telemetry::identity::InvocationId,
+    session_id: &str,
+) -> anyhow::Result<()> {
+    let validation_span = testbed
+        .spans()
+        .into_iter()
+        .find(|span| span.name == "telemetry.validate")
+        .ok_or_else(|| anyhow::anyhow!("governed validation span missing"))?;
+    let validation_event = testbed
+        .find_event("telemetry.validate")
+        .ok_or_else(|| anyhow::anyhow!("native governed validation event missing"))?;
+    let invocation = invocation.to_string();
+    for (key, expected) in [
+        ("cli.invocation.id", invocation.as_str()),
+        ("session.id", session_id),
+    ] {
+        assert_eq!(
+            string_attribute(&validation_span.attributes, key),
+            Some(expected)
+        );
+        assert_eq!(
+            string_attribute(&validation_event.attributes, key),
+            Some(expected)
+        );
+    }
+    let metric_dimension_keys = testbed.metric_dimension_keys();
+    for forbidden in CORRELATION_KEYS {
+        assert!(
+            !metric_dimension_keys.iter().any(|key| key == forbidden),
+            "correlation identifier {forbidden} escaped into metric dimensions"
+        );
+    }
+    Ok(())
+}
+
+fn string_attribute<'a>(
+    attributes: &'a [opentelemetry_proto::tonic::common::v1::KeyValue],
+    key: &str,
+) -> Option<&'a str> {
+    attributes
+        .iter()
+        .find(|attribute| attribute.key == key)
+        .and_then(|attribute| attribute.value.as_ref())
+        .and_then(|value| value.value.as_ref())
+        .and_then(|value| match value {
+            opentelemetry_proto::tonic::common::v1::any_value::Value::StringValue(value) => {
+                Some(value.as_str())
+            }
+            _ => None,
+        })
 }
 
 fn assert_cross_provider_resources(
@@ -236,16 +302,7 @@ fn assert_resource_contract(
             .all(|attribute| allowed.contains(&attribute.key.as_str())),
         "Resource contains an attribute outside the fixed allowlist"
     );
-    for forbidden in [
-        "cli.invocation.id",
-        "session.id",
-        "session.previous_id",
-        "job.id",
-        "ui.screen.visit.id",
-        "gen_ai.conversation.id",
-        "app.crash.id",
-        "parallax.run.id",
-    ] {
+    for forbidden in CORRELATION_KEYS {
         assert!(
             attribute(forbidden).is_none(),
             "correlation identifier {forbidden} must not be stored on Resource"
