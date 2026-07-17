@@ -556,22 +556,6 @@ jobs:
         run: >-
           "$CI_XTASK" ci-toolchain prepare
           --version "${{ needs.changes.outputs.rust-version }}"
-      - name: Prepare the exact current Rust toolchain
-        if: env.CI_XTASK_HIT != 'true'
-        shell: bash
-        run: |
-          set -euo pipefail
-          version=$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)
-          if scripts/ci/activate-installed-rust-toolchain.sh "$version" 2>/dev/null; then
-            exit 0
-          fi
-
-          mise_install=${MISE_DATA_DIR:?MISE_DATA_DIR must be set}/installs/rust/$version
-          if [ ! -x "$mise_install/bin/rustc" ]; then
-            rm -rf "$mise_install"
-            mise install "rust@$version"
-          fi
-          scripts/ci/activate-installed-rust-toolchain.sh "$version"
       - name: Save prepared Rust toolchain
         if: >-
           (env.CI_XTASK_HIT != 'true' || env.CI_TOOLS_HIT != 'true') &&
@@ -606,7 +590,9 @@ jobs:
         if: env.CI_XTASK_HIT != 'true'
         env:
           CARGO_NET_OFFLINE: "true"
-        run: cargo build -p jackin-xtask --locked
+        run: >-
+          mise exec rust@${{ needs.changes.outputs.rust-version }} --
+          cargo build -p jackin-xtask --locked
       - name: Pack shared CI xtask target seed
         if: env.CI_XTASK_HIT != 'true' && matrix.config.cache_writer
         run: >-
