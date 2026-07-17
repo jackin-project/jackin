@@ -30,39 +30,6 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  matrix-setup:
-    name: Select runner lane
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    outputs:
-      configs: ${{ steps.set.outputs.configs }}
-      has_github: ${{ steps.set.outputs.has_github }}
-    steps:
-      - id: set
-        env:
-          LANES: ${{ github.event_name == 'workflow_dispatch' && inputs.lanes || 'github' }}
-        run: |
-          github='{"lane":"GitHub","runner":"\"ubuntu-24.04\"","runner_os":"Linux","runner_arch":"X64","mise_data_dir":"/home/runner/.local/share/mise","rustup_home":"/home/runner/.rustup"}'
-          velnor='{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","runner_os":"Linux","runner_arch":"X64","mise_data_dir":"/opt/mise","rustup_home":"/opt/rustup"}'
-          case "$LANES" in
-            velnor)
-              configs="[$velnor]"
-              has_github=false
-              ;;
-            both)
-              configs="[$github,$velnor]"
-              has_github=true
-              ;;
-            *)
-              configs="[$github]"
-              has_github=true
-              ;;
-          esac
-          {
-            echo "configs=$configs"
-            echo "has_github=$has_github"
-          } >> "$GITHUB_OUTPUT"
-
   check-version:
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -129,20 +96,20 @@ jobs:
 
   test:
     if: needs.check-version.outputs.published != 'true'
-    needs: [check-version, matrix-setup]
+    needs: [check-version]
     uses: ./.github/workflows/rust-nextest.yml
     with:
-      runner-configs-json: ${{ needs.matrix-setup.outputs.configs }}
+      runner-configs-json: ${{ (github.event_name != 'workflow_dispatch' || inputs.lanes == 'github') && '[{"lane":"GitHub","runner":"\"ubuntu-24.04\"","mise_data_dir":"/home/runner/.local/share/mise","rustup_home":"/home/runner/.rustup"}]' || inputs.lanes == 'velnor' && '[{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","mise_data_dir":"/opt/mise","rustup_home":"/opt/rustup"}]' || '[{"lane":"GitHub","runner":"\"ubuntu-24.04\"","mise_data_dir":"/home/runner/.local/share/mise","rustup_home":"/home/runner/.rustup"},{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","mise_data_dir":"/opt/mise","rustup_home":"/opt/rustup"}]' }}
       all-features: false
     secrets: inherit
 
   build:
     if: needs.check-version.outputs.published != 'true'
-    needs: [check-version, matrix-setup]
+    needs: [check-version]
     strategy:
       fail-fast: false
       matrix:
-        config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
+        config: ${{ fromJSON((github.event_name != 'workflow_dispatch' || inputs.lanes == 'github') && '[{"lane":"GitHub","runner":"\"ubuntu-24.04\"","mise_data_dir":"/home/runner/.local/share/mise","rustup_home":"/home/runner/.rustup"}]' || inputs.lanes == 'velnor' && '[{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","mise_data_dir":"/opt/mise","rustup_home":"/opt/rustup"}]' || '[{"lane":"GitHub","runner":"\"ubuntu-24.04\"","mise_data_dir":"/home/runner/.local/share/mise","rustup_home":"/home/runner/.rustup"},{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","mise_data_dir":"/opt/mise","rustup_home":"/opt/rustup"}]') }}
     runs-on: ${{ fromJSON(matrix.config.runner) }}
     timeout-minutes: 60
     name: build jackin (${{ matrix.config.lane }})
@@ -263,7 +230,7 @@ jobs:
 
   build-jackin-capsule:
     if: needs.check-version.outputs.published != 'true'
-    needs: [check-version, matrix-setup]
+    needs: [check-version]
     runs-on: ${{ fromJSON(matrix.config.runner) }}
     timeout-minutes: 60
     name: build jackin-capsule (${{ matrix.config.lane }})
@@ -283,7 +250,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
+        config: ${{ fromJSON((github.event_name != 'workflow_dispatch' || inputs.lanes == 'github') && '[{"lane":"GitHub","runner":"\"ubuntu-24.04\"","mise_data_dir":"/home/runner/.local/share/mise","rustup_home":"/home/runner/.rustup"}]' || inputs.lanes == 'velnor' && '[{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","mise_data_dir":"/opt/mise","rustup_home":"/opt/rustup"}]' || '[{"lane":"GitHub","runner":"\"ubuntu-24.04\"","mise_data_dir":"/home/runner/.local/share/mise","rustup_home":"/home/runner/.rustup"},{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","mise_data_dir":"/opt/mise","rustup_home":"/opt/rustup"}]') }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - name: Restore input-identical capsule release
@@ -382,9 +349,9 @@ jobs:
 
   release:
     if: >-
-      needs.matrix-setup.outputs.has_github == 'true' &&
+      (github.event_name != 'workflow_dispatch' || inputs.lanes != 'velnor') &&
       needs.check-version.outputs.published != 'true'
-    needs: [check-version, matrix-setup, test, build, build-jackin-capsule]
+    needs: [check-version, test, build, build-jackin-capsule]
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
