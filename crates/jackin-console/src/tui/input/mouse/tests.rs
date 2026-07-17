@@ -103,6 +103,33 @@ fn conformance_wire_mouse_coordinates_become_only_semantic_action() -> anyhow::R
         format!("{:?}", action.attributes).contains("tab.switch"),
         "mouse action was not exported semantically: {action:?}"
     );
+    let ui_action_count = testbed
+        .metrics()
+        .into_iter()
+        .flat_map(|request| request.resource_metrics)
+        .flat_map(|resource| resource.scope_metrics)
+        .flat_map(|scope| scope.metrics)
+        .filter(|metric| metric.name == "ui.actions")
+        .filter_map(|metric| metric.data)
+        .filter_map(|data| match data {
+            opentelemetry_proto::tonic::metrics::v1::metric::Data::Sum(sum) => Some(sum),
+            _ => None,
+        })
+        .flat_map(|sum| sum.data_points)
+        .filter_map(|point| point.value)
+        .map(|value| match value {
+            opentelemetry_proto::tonic::metrics::v1::number_data_point::Value::AsInt(value) => {
+                value as f64
+            }
+            opentelemetry_proto::tonic::metrics::v1::number_data_point::Value::AsDouble(value) => {
+                value
+            }
+        })
+        .sum::<f64>();
+    anyhow::ensure!(
+        ui_action_count == 1.0,
+        "one semantic mouse action must increment ui.actions exactly once, got {ui_action_count}"
+    );
     for key in action
         .attributes
         .iter()

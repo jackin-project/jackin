@@ -261,13 +261,7 @@ impl Multiplexer {
         else {
             return false;
         };
-        let delivered = session.send_input(&buf);
-        if delivered {
-            let _counter_result =
-                jackin_telemetry::counter(&jackin_telemetry::metric::TERMINAL_INPUT_MOUSE)
-                    .add(1, &[]);
-        }
-        delivered
+        session.send_input(&buf)
     }
 
     /// Click-to-jump on the focused pane's scrollback scrollbar. Hits only

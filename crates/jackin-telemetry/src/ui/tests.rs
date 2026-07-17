@@ -128,6 +128,68 @@ fn pending_action_owns_effect_and_one_render_until_taken() {
 }
 
 #[test]
+fn batched_actions_are_retained_in_dispatch_order() {
+    let exporter = opentelemetry_sdk::trace::InMemorySpanExporter::default();
+    let provider = opentelemetry_sdk::trace::SdkTracerProvider::builder()
+        .with_simple_exporter(exporter.clone())
+        .build();
+    let subscriber = tracing_subscriber::registry()
+        .with(tracing_opentelemetry::layer().with_tracer(provider.tracer("test")));
+
+    tracing::subscriber::with_default(subscriber, || {
+        for action in [
+            schema::enums::UiActionName::TabSwitch,
+            schema::enums::UiActionName::WorkspaceSave,
+        ] {
+            remember_action_parent(
+                start_action(
+                    action,
+                    schema::enums::ScreenId::WorkspaceEditor,
+                    Some("mounts"),
+                )
+                .unwrap(),
+            );
+        }
+        for _ in 0..2 {
+            let parent = take_action_parent().expect("queued action parent");
+            parent.in_scope(|| {
+                crate::operation(&crate::operation::UI_RENDER, &[])
+                    .unwrap()
+                    .complete(schema::enums::OutcomeValue::Success, None);
+            });
+            drop(parent);
+        }
+        assert!(take_action_parent().is_none());
+    });
+    provider.force_flush().unwrap();
+
+    let spans = exporter.get_finished_spans().unwrap();
+    let actions = spans
+        .iter()
+        .filter(|span| span.name == "ui.action")
+        .collect::<Vec<_>>();
+    let renders = spans
+        .iter()
+        .filter(|span| span.name == "ui.render")
+        .collect::<Vec<_>>();
+    assert_eq!(actions.len(), 2);
+    assert_eq!(renders.len(), 2);
+    for (action, expected) in actions.iter().zip(["tab.switch", "workspace.save"]) {
+        assert_eq!(
+            span_attr(action, schema::attrs::UI_ACTION_NAME).as_deref(),
+            Some(expected)
+        );
+        assert_eq!(
+            renders
+                .iter()
+                .filter(|render| render.parent_span_id == action.span_context.span_id())
+                .count(),
+            1
+        );
+    }
+}
+
+#[test]
 fn transition_exports_destination_under_action() {
     let exporter = opentelemetry_sdk::trace::InMemorySpanExporter::default();
     let provider = opentelemetry_sdk::trace::SdkTracerProvider::builder()

@@ -776,6 +776,14 @@ impl Multiplexer {
     }
 
     pub(super) fn handle_input(&mut self, event: InputEvent) {
+        if matches!(
+            &event,
+            InputEvent::MousePress { .. } | InputEvent::MouseRelease { .. }
+        ) {
+            let _counter_result =
+                jackin_telemetry::counter(&jackin_telemetry::metric::TERMINAL_INPUT_MOUSE)
+                    .add(1, &[]);
+        }
         if let Some(action) = mouse_chrome_update_action(&event) {
             self.apply_action(action);
         }

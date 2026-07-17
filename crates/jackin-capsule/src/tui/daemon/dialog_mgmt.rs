@@ -10,7 +10,7 @@ use super::{
 
 impl Multiplexer {
     const PANE_WIDGET: &'static str = "capsule.pane";
-    const TAB_BAR_WIDGET: &'static str = "capsule.tab_bar";
+    const TAB_BAR_WIDGET: &'static str = "capsule.tab";
     const PALETTE_WIDGET: &'static str = "capsule.command_palette";
     const DIALOG_WIDGET: &'static str = "capsule.dialog";
 

@@ -11,7 +11,7 @@ use uuid::Uuid;
 use crate::{Attr, FieldSet, Rejection, Value, counter, emit_event, histogram, metric, schema};
 
 thread_local! {
-    static PENDING_ACTION: RefCell<Option<ActionParent>> = const { RefCell::new(None) };
+    static PENDING_ACTIONS: RefCell<VecDeque<ActionParent>> = const { RefCell::new(VecDeque::new()) };
 }
 
 #[derive(Debug)]
@@ -35,23 +35,27 @@ impl Drop for ActionParent {
 }
 
 /// Retain a reducer-owned action through its synchronous follow-up effects and
-/// the immediate action-triggered frame. Replacing or taking it completes the
-/// prior action deterministically.
+/// the immediate action-triggered frame.
 pub fn remember_action_parent(guard: crate::operation::OperationGuard) {
-    PENDING_ACTION.with(|parent| {
-        *parent.borrow_mut() = Some(ActionParent(Some(guard)));
+    PENDING_ACTIONS.with(|parents| {
+        parents.borrow_mut().push_back(ActionParent(Some(guard)));
     });
 }
 
 #[must_use]
 pub fn take_action_parent() -> Option<ActionParent> {
-    PENDING_ACTION.with(|parent| parent.borrow_mut().take())
+    PENDING_ACTIONS.with(|parents| parents.borrow_mut().pop_front())
+}
+
+#[must_use]
+pub fn has_pending_actions() -> bool {
+    PENDING_ACTIONS.with(|parents| !parents.borrow().is_empty())
 }
 
 /// Run reducer follow-up effects under the semantic action that requested
 /// them, while leaving completion to the single action-triggered frame.
 pub fn in_pending_action_scope<T>(operation: impl FnOnce() -> T) -> T {
-    PENDING_ACTION.with(|parent| match parent.borrow().as_ref() {
+    PENDING_ACTIONS.with(|parents| match parents.borrow().back() {
         Some(parent) => parent.in_scope(operation),
         None => operation(),
     })

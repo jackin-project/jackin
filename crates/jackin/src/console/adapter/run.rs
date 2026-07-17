@@ -902,12 +902,9 @@ fn handle_mouse_event<H, R>(
         Some(inputs.config),
     );
     for effect in ms.drain_effects() {
-        *needs_redraw |= crate::console::effects::execute_manager_effect(
-            ms,
-            inputs.config,
-            inputs.paths,
-            effect,
-        );
+        *needs_redraw |= jackin_telemetry::ui::in_pending_action_scope(|| {
+            crate::console::effects::execute_manager_effect(ms, inputs.config, inputs.paths, effect)
+        });
     }
     update_console_pointer_shape(
         ms,
@@ -988,6 +985,7 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
     // the op-picker panel rain, and other animations stay live.
     let mut animation_tick = tokio::time::interval(Duration::from_millis(TICK_MS));
     animation_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    let mut pending_events = std::collections::VecDeque::new();
     let mut needs_redraw = true;
 
     // The Debug-info dialog paints OSC 8 hyperlinks as a raw overlay outside the
@@ -1001,6 +999,7 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
 
     let result: anyhow::Result<Option<ConsoleOutcome>> = 'main: loop {
         let action_parent = jackin_telemetry::ui::take_action_parent();
+        needs_redraw |= action_parent.is_some();
         sync_active_screen(&state, &mut screen_tracker, action_parent.as_ref());
         sync_widget_focus(&state, &mut widget_tracker, action_parent.as_ref());
 
@@ -1066,19 +1065,26 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
             needs_redraw = false;
         }
         drop(action_parent);
+        if jackin_telemetry::ui::has_pending_actions() {
+            continue;
+        }
         let term_size: ratatui::layout::Rect = terminal.size()?.into();
 
         // Async event wait: yield to the Tokio reactor until either a
         // terminal event arrives or the animation tick fires. This frees
         // the reactor between events so background tasks can progress
         // instead of blocking for up to TICK_MS.
-        let (event_batch, tick_fired) =
-            next_event_batch(&mut event_stream, &mut animation_tick).await?;
+        let (event_batch, tick_fired) = if pending_events.is_empty() {
+            next_event_batch(&mut event_stream, &mut animation_tick).await?
+        } else {
+            (Vec::new(), false)
+        };
+        pending_events.extend(event_batch);
         if tick_fired && let ConsoleStage::Manager(ms) = &mut state.stage {
             needs_redraw |= ms.tick_active_animation();
         }
-        needs_redraw |= !event_batch.is_empty();
-        for event in event_batch {
+        needs_redraw |= !pending_events.is_empty();
+        if let Some(event) = pending_events.pop_front() {
             match event {
                 Event::Key(key) if key.kind == KeyEventKind::Press => {
                     let mut inputs = ConsoleLoopInputs {

@@ -4744,7 +4744,7 @@ fn capsule_widget_focus_lifecycle_is_exported_without_runtime_identity() {
         mux.synthesise_focus_swap(Some(41), Some(42));
 
         mux.set_tab_bar_focused(true);
-        assert_eq!(mux.widget_focus.current_widget(), Some("capsule.tab_bar"));
+        assert_eq!(mux.widget_focus.current_widget(), Some("capsule.tab"));
 
         mux.open_command_palette();
         assert_eq!(
@@ -4753,7 +4753,7 @@ fn capsule_widget_focus_lifecycle_is_exported_without_runtime_identity() {
         );
 
         mux.dialog_clear();
-        assert_eq!(mux.widget_focus.current_widget(), Some("capsule.tab_bar"));
+        assert_eq!(mux.widget_focus.current_widget(), Some("capsule.tab"));
         mux.set_tab_bar_focused(false);
         assert_eq!(mux.widget_focus.current_widget(), Some("capsule.pane"));
         mux.widget_focus.unfocus().unwrap();
@@ -4769,11 +4769,100 @@ fn capsule_widget_focus_lifecycle_is_exported_without_runtime_identity() {
             .all(|span| span.name != jackin_telemetry::schema::spans::UI_ACTION),
         "focus lifecycle must not create pane-action spans: {spans:?}"
     );
-    for widget in ["capsule.pane", "capsule.tab_bar", "capsule.command_palette"] {
+    for widget in ["capsule.pane", "capsule.tab", "capsule.command_palette"] {
         assert!(export.contains_log_text(widget));
     }
     assert!(!export.contains_log_text("test-role"));
     assert!(!export.contains_log_text("/workspace"));
+}
+
+#[test]
+fn conformance_wire_capsule_mouse_dispatch_counts_once_without_coordinates() -> Result<()> {
+    const CHILD: &str = "JACKIN_CAPSULE_MOUSE_WIRE_CHILD";
+    if std::env::var_os(CHILD).is_none() {
+        let status = Command::new(std::env::current_exe()?)
+            .args([
+                "--exact",
+                "daemon::tests::conformance_wire_capsule_mouse_dispatch_counts_once_without_coordinates",
+                "--nocapture",
+            ])
+            .env(CHILD, "1")
+            .status()?;
+        anyhow::ensure!(status.success(), "isolated Capsule mouse test failed");
+        return Ok(());
+    }
+
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()?;
+    let testbed = runtime.block_on(async { jackin_otlp_testbed::Testbed::start() })?;
+    let runtime_guard = runtime.enter();
+    jackin_diagnostics::init_wire_test_export(
+        &testbed.endpoint(),
+        jackin_diagnostics::ServiceIdentity::CAPSULE,
+    )?;
+    let mut mux = test_mux(40, 80);
+    mux.handle_input(InputEvent::MousePress {
+        col: 73,
+        row: 37,
+        button: 0,
+    });
+    mux.handle_input(InputEvent::MouseRelease {
+        col: 73,
+        row: 37,
+        button: 0,
+    });
+    jackin_telemetry::emit_event(
+        &jackin_telemetry::event::TELEMETRY_VALIDATE,
+        jackin_telemetry::FieldSet::default(),
+    )
+    .map_err(|reason| anyhow::anyhow!("validation event rejected: {reason:?}"))?;
+    jackin_diagnostics::flush_wire_test_export()?;
+    drop(runtime_guard);
+    anyhow::ensure!(
+        runtime.block_on(testbed.wait_for_all_signals(Duration::from_secs(2))),
+        "Capsule mouse metric did not reach all three-signal receiver"
+    );
+
+    let mouse_count = testbed
+        .metrics()
+        .into_iter()
+        .flat_map(|request| request.resource_metrics)
+        .flat_map(|resource| resource.scope_metrics)
+        .flat_map(|scope| scope.metrics)
+        .filter(|metric| metric.name == "terminal.input.mouse")
+        .filter_map(|metric| metric.data)
+        .filter_map(|data| match data {
+            opentelemetry_proto::tonic::metrics::v1::metric::Data::Sum(sum) => Some(sum),
+            _ => None,
+        })
+        .flat_map(|sum| sum.data_points)
+        .filter_map(|point| point.value)
+        .map(|value| match value {
+            opentelemetry_proto::tonic::metrics::v1::number_data_point::Value::AsInt(value) => {
+                value as f64
+            }
+            opentelemetry_proto::tonic::metrics::v1::number_data_point::Value::AsDouble(value) => {
+                value
+            }
+        })
+        .sum::<f64>();
+    anyhow::ensure!(
+        mouse_count == 2.0,
+        "expected two mouse events, got {mouse_count}"
+    );
+    for key in testbed.metric_dimension_keys() {
+        anyhow::ensure!(
+            !matches!(
+                key.as_str(),
+                "row" | "column" | "mouse.row" | "mouse.column" | "ui.pointer.x" | "ui.pointer.y"
+            ),
+            "raw pointer coordinate key escaped to OTLP: {key}"
+        );
+    }
+    jackin_diagnostics::shutdown_capsule_tracing();
+    Ok(())
 }
 
 #[test]

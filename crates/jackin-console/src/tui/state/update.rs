@@ -301,14 +301,8 @@ pub fn update_manager(state: &mut ManagerState<'_>, message: ManagerMessage) -> 
         }
     }
     drop(action_span);
-    if let (Some(guard), Some(action)) = (action_guard, action) {
+    if let Some(guard) = action_guard {
         jackin_telemetry::ui::remember_action_parent(guard);
-        let attrs = [jackin_telemetry::Attr {
-            key: jackin_telemetry::schema::attrs::UI_ACTION_NAME,
-            value: jackin_telemetry::Value::Str(action.as_str()),
-        }];
-        let _counter_result =
-            jackin_telemetry::counter(&jackin_telemetry::metric::UI_ACTIONS).add(1, &attrs);
     }
     ManagerUpdate::redraw()
 }
