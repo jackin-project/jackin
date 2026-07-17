@@ -343,7 +343,7 @@ pub(crate) async fn launch_role_runtime(
             ),
         );
     }
-    // AppArmor only feeds the `--debug` telemetry + session contract, so skip the
+    // AppArmor only feeds local `--debug` output + session contract, so skip the
     // `docker info` round-trip on the common non-debug launch. On a probe error,
     // report layer `unknown` rather than letting a failed round-trip masquerade
     // as a genuine `available=no` in the audit surface.
@@ -358,7 +358,11 @@ pub(crate) async fn launch_role_runtime(
         {
             Ok(info) => crate::runtime::docker_profile::parse_apparmor_from_docker_info(&info),
             Err(err) => {
-                jackin_diagnostics::telemetry_debug!("launch", "apparmor probe failed: {err:#}");
+                let _warning = jackin_telemetry::record_recovered_degradation();
+                jackin_diagnostics::emit_debug_line(
+                    "launch",
+                    &format!("apparmor probe failed: {err:#}"),
+                );
                 (false, "unknown")
             }
         }
@@ -469,73 +473,87 @@ pub(crate) async fn launch_role_runtime(
     }
     let resource_flags = crate::runtime::docker_profile::resource_flags(grants);
     run_args.extend(resource_flags.iter().map(String::as_str));
-    // WP3: per-decision launch telemetry. One line per applied control so a
+    // WP3: per-decision local launch diagnostics. One line per applied control so a
     // `--debug` run shows exactly what was enforced. The session contract
     // (emitted below, once credential state is known) is the human-readable
     // summary of the same data.
-    let yes_no = |enabled: bool| if enabled { "yes" } else { "no" };
-    jackin_diagnostics::telemetry_debug!(
-        "launch",
-        "profile_selected profile={profile} source={profile_source}",
-    );
-    jackin_diagnostics::telemetry_debug!(
-        "launch",
-        "cap_drop_all={} cap_add={}",
-        yes_no(crate::runtime::docker_profile::drops_all_caps(*profile)),
-        if grants.capabilities_add.is_empty() {
-            "-".to_owned()
-        } else {
-            grants.capabilities_add.join(",")
-        },
-    );
-    jackin_diagnostics::telemetry_debug!(
-        "launch",
-        "no_new_privileges enforced={}",
-        yes_no(grants.no_new_privileges),
-    );
-    jackin_diagnostics::telemetry_debug!("launch", "seccomp profile=docker-default");
-    jackin_diagnostics::telemetry_debug!(
-        "launch",
-        "apparmor available={} profile=docker-default layer={apparmor_layer}",
-        yes_no(apparmor_available),
-    );
-    jackin_diagnostics::telemetry_debug!(
-        "launch",
-        "read_only_root enforced={} tmpfs={}",
-        yes_no(!grants.system_writes),
-        if grants.system_writes {
-            "-".to_owned()
-        } else {
-            crate::runtime::docker_profile::tmpfs_paths(*profile).join(",")
-        },
-    );
-    jackin_diagnostics::telemetry_debug!("launch", "cgroup_version v={cgroup_version}");
-    for (kind, value) in [
-        ("memory", grants.memory_bytes.map(|b| b.to_string())),
-        ("cpus", grants.cpus.map(|c| c.to_string())),
-        ("pids", grants.pids.map(|p| p.to_string())),
-    ] {
-        if let Some(value) = value {
-            jackin_diagnostics::telemetry_debug!(
-                "launch",
-                "resource_limit kind={kind} value={value}"
-            );
+    if *debug {
+        let yes_no = |enabled: bool| if enabled { "yes" } else { "no" };
+        jackin_diagnostics::emit_debug_line(
+            "launch",
+            &format!("profile_selected profile={profile} source={profile_source}"),
+        );
+        jackin_diagnostics::emit_debug_line(
+            "launch",
+            &format!(
+                "cap_drop_all={} cap_add={}",
+                yes_no(crate::runtime::docker_profile::drops_all_caps(*profile)),
+                if grants.capabilities_add.is_empty() {
+                    "-".to_owned()
+                } else {
+                    grants.capabilities_add.join(",")
+                },
+            ),
+        );
+        jackin_diagnostics::emit_debug_line(
+            "launch",
+            &format!(
+                "no_new_privileges enforced={}",
+                yes_no(grants.no_new_privileges),
+            ),
+        );
+        jackin_diagnostics::emit_debug_line("launch", "seccomp profile=docker-default");
+        jackin_diagnostics::emit_debug_line(
+            "launch",
+            &format!(
+                "apparmor available={} profile=docker-default layer={apparmor_layer}",
+                yes_no(apparmor_available),
+            ),
+        );
+        jackin_diagnostics::emit_debug_line(
+            "launch",
+            &format!(
+                "read_only_root enforced={} tmpfs={}",
+                yes_no(!grants.system_writes),
+                if grants.system_writes {
+                    "-".to_owned()
+                } else {
+                    crate::runtime::docker_profile::tmpfs_paths(*profile).join(",")
+                },
+            ),
+        );
+        jackin_diagnostics::emit_debug_line(
+            "launch",
+            &format!("cgroup_version v={cgroup_version}"),
+        );
+        for (kind, value) in [
+            ("memory", grants.memory_bytes.map(|b| b.to_string())),
+            ("cpus", grants.cpus.map(|c| c.to_string())),
+            ("pids", grants.pids.map(|p| p.to_string())),
+        ] {
+            if let Some(value) = value {
+                jackin_diagnostics::emit_debug_line(
+                    "launch",
+                    &format!("resource_limit kind={kind} value={value}"),
+                );
+            }
         }
+        jackin_diagnostics::emit_debug_line(
+            "launch",
+            &format!("dind enabled={dind_enabled} mode={}", grants.dind),
+        );
+        // Host Docker socket is never mounted into a role container (hard rule);
+        // guarded by `role_container_never_mounts_host_docker_socket` in tests.
+        jackin_diagnostics::emit_debug_line("launch", "host_socket_check passed=yes");
+        jackin_diagnostics::emit_debug_line(
+            "launch",
+            &format!(
+                "network mode={} enforcement={}",
+                crate::runtime::docker_profile::network_grant_label(grants.network),
+                crate::runtime::docker_profile::network_enforcement_label(grants),
+            ),
+        );
     }
-    jackin_diagnostics::telemetry_debug!(
-        "launch",
-        "dind enabled={dind_enabled} mode={}",
-        grants.dind
-    );
-    // Host Docker socket is never mounted into a role container (hard rule);
-    // guarded by `role_container_never_mounts_host_docker_socket` in tests.
-    jackin_diagnostics::telemetry_debug!("launch", "host_socket_check passed=yes");
-    jackin_diagnostics::telemetry_debug!(
-        "launch",
-        "network mode={} enforcement={}",
-        crate::runtime::docker_profile::network_grant_label(grants.network),
-        crate::runtime::docker_profile::network_enforcement_label(grants),
-    );
 
     // Run the container as the host operator's UID (group 0). Matching the host
     // UID makes host-owned bind mounts transparently read/write, and the
@@ -754,7 +772,7 @@ pub(crate) async fn launch_role_runtime(
         ));
     }
     // WP3: render the session contract under `--debug` only (its sole consumer
-    // is the debug_log below). Coarse `agent_auth_mode` reflects whether the
+    // is the local debug sink below). Coarse `agent_auth_mode` reflects whether the
     // selected agent's auth was provisioned; richer posture is owned by WP7.
     if *debug {
         let agent_auth_mode = match agent.slug() {
@@ -780,7 +798,10 @@ pub(crate) async fn launch_role_runtime(
             },
             gh_token.is_some(),
         );
-        jackin_diagnostics::telemetry_debug!("launch", "session_contract\n{session_contract}");
+        jackin_diagnostics::emit_debug_line(
+            "launch",
+            &format!("session_contract\n{session_contract}"),
+        );
     }
     push_env_if_present(
         &mut env_strings,
@@ -1006,10 +1027,14 @@ pub(crate) async fn launch_role_runtime(
     for mount in &extrausers_mounts {
         run_args.extend_from_slice(&["-v", mount.as_str()]);
     }
-    jackin_diagnostics::telemetry_debug!(
-        "launch",
-        "prepared host socket dir {socket_dir_str} (owned by host UID, default umask) and Capsule config for bind-mount at /jackin/run",
-    );
+    if *debug {
+        jackin_diagnostics::emit_debug_line(
+            "launch",
+            &format!(
+                "prepared host socket dir {socket_dir_str} (owned by host UID, default umask) and Capsule config for bind-mount at /jackin/run"
+            ),
+        );
+    }
     run_args.push(image);
     // Pass the initial agent as the container command argument. The
     // daemon uses it only to choose the first tab; per-session
@@ -1073,11 +1098,15 @@ pub(crate) async fn launch_role_runtime(
     }
     for (label, argv, failure_context, is_firewall) in post_run_steps {
         let result = runner.run("docker", &argv, None, &docker_run_opts).await;
-        jackin_diagnostics::telemetry_debug!(
-            "launch",
-            "{label} exit={}",
-            if result.is_ok() { "0" } else { "nonzero" },
-        );
+        if *debug {
+            jackin_diagnostics::emit_debug_line(
+                "launch",
+                &format!(
+                    "{label} exit={}",
+                    if result.is_ok() { "0" } else { "nonzero" },
+                ),
+            );
+        }
         if let Err(err) = result {
             emit_post_run_failure(is_firewall);
             if let Err(remove_err) = docker.remove_container(container_name).await {
@@ -1210,11 +1239,15 @@ pub(crate) async fn launch_role_runtime(
         // finalize, which reads exit-action.json and executes the choice. The
         // attach detail is kept only as a diagnostic breadcrumb.
         let attach_detail = attach_failure_error(container_name, &err);
-        jackin_diagnostics::telemetry_debug!(
-            "session",
-            "clean container exit for {container_name}; proceeding to finalize \
-             (attach shutdown detail: {attach_detail})"
-        );
+        if *debug {
+            jackin_diagnostics::emit_debug_line(
+                "session",
+                &format!(
+                    "clean container exit for {container_name}; proceeding to finalize \
+                     (attach shutdown detail: {attach_detail})"
+                ),
+            );
+        }
         if let Some(run) = jackin_diagnostics::active_run() {
             run.compact(
                 jackin_telemetry::schema::events::CAPSULE_SESSION_CLEAN_SHUTDOWN,
