@@ -3035,6 +3035,7 @@ dependencies = [
  "jackin-config",
  "jackin-core",
  "jackin-diagnostics",
+ "jackin-process",
  "jackin-protocol",
  "jackin-telemetry",
  "portable-pty",
@@ -3046,6 +3047,7 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.18",
  "toml",
+ "tracing",
 ]
 
 [[package]]

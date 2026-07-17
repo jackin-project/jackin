@@ -24,9 +24,8 @@
 //!
 //! Roadmap: `docs/src/content/docs/reference/roadmap/workspace-claude-token-setup.mdx`
 
-use std::process::Command;
-
 const CLAUDE_DEFAULT_BIN: &str = "claude";
+const CLAUDE_PROBE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
 
 /// Result of probing `<binary> --version` on the host.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -53,39 +52,24 @@ pub(crate) fn probe_claude_cli() -> anyhow::Result<ClaudeProbe> {
 
 /// Test-injectable variant. Production callers use [`probe_claude_cli`].
 pub(crate) fn probe_with_binary(binary: &str) -> anyhow::Result<ClaudeProbe> {
-    let mut command = Command::new(binary);
-    command.arg("--version");
-    #[expect(
-        clippy::disallowed_methods,
-        reason = "Claude CLI probe is wrapped by spawn_blocking on launch paths"
-    )]
-    let out = command.output().map_err(|e| {
-        anyhow::anyhow!(
-            "failed to spawn Claude CLI {binary:?}: {e} \
-                 (install with `npm i -g @anthropic-ai/claude-code` or see \
-                 https://docs.anthropic.com/en/docs/claude-code)"
-        )
-    })?;
+    let request =
+        jackin_process::ExecRequest::new(binary, ["--version"]).timeout(CLAUDE_PROBE_TIMEOUT);
+    let out = crate::process_telemetry::exec_sync_as(
+        &request,
+        jackin_telemetry::schema::enums::ProcessExecutableName::Claude,
+    )
+    .map_err(|_| anyhow::anyhow!("Claude CLI could not start; install Claude Code and retry"))?;
 
-    if !out.status.success() {
-        let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
-        let code = out
-            .status
-            .code()
-            .map_or_else(|| "signal".to_owned(), |c| c.to_string());
-        anyhow::bail!(
-            "`{binary} --version` exited with {code} (stderr: {})",
-            stderr.trim()
-        );
+    if out.timed_out {
+        anyhow::bail!("Claude CLI version probe timed out");
+    }
+    if !out.success {
+        anyhow::bail!("Claude CLI version probe failed");
     }
 
     let stdout = String::from_utf8_lossy(&out.stdout);
-    let version = parse_version_line(&stdout).ok_or_else(|| {
-        anyhow::anyhow!(
-            "could not parse Claude CLI version from output: {:?}",
-            stdout.trim()
-        )
-    })?;
+    let version = parse_version_line(&stdout)
+        .ok_or_else(|| anyhow::anyhow!("Claude CLI returned an invalid version"))?;
 
     Ok(ClaudeProbe {
         binary: binary.to_owned(),
