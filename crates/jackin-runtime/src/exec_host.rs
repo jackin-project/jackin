@@ -70,8 +70,6 @@ pub fn start(
             // credential resolution is unavailable for the whole session, so
             // surface it on the always-on tier rather than only under --debug.
             eprintln!("[jackin] warning: jackin-exec credential resolver unavailable");
-            let _error =
-                jackin_telemetry::record_error(jackin_telemetry::schema::enums::ErrorType::IoError);
         }
     })
 }
@@ -107,6 +105,42 @@ async fn run_listener(
     allowed_bindings: &[ExecBinding],
     caller_auth: CallerAuth,
 ) -> Result<()> {
+    let open =
+        jackin_telemetry::stream::phase(jackin_telemetry::schema::enums::StreamOperation::Open);
+    let listener = match bind_listener(sock_path) {
+        Ok(listener) => listener,
+        Err(error) => {
+            jackin_telemetry::stream::complete_error(
+                open,
+                jackin_telemetry::schema::enums::ErrorType::IoError,
+            );
+            return Err(error);
+        }
+    };
+    jackin_telemetry::stream::complete_success(open);
+    let _close = jackin_telemetry::stream::close_on_drop();
+
+    loop {
+        if let Ok((stream, _)) = listener.accept().await {
+            if handle_connection(stream, allowed_bindings, caller_auth)
+                .await
+                .is_err()
+            {
+                let _error = jackin_telemetry::record_error(
+                    jackin_telemetry::schema::enums::ErrorType::RpcError,
+                );
+            }
+        } else {
+            let _error =
+                jackin_telemetry::record_error(jackin_telemetry::schema::enums::ErrorType::IoError);
+            let _retry = jackin_telemetry::record_retry_scheduled();
+            // Brief back-off to avoid tight loop on persistent errors.
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+    }
+}
+
+fn bind_listener(sock_path: &Path) -> Result<UnixListener> {
     // Remove stale socket from a previous session.
     drop(std::fs::remove_file(sock_path));
     if let Some(parent) = sock_path.parent() {
@@ -123,26 +157,8 @@ async fn run_listener(
             std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o700))?;
         }
     }
-    let listener = UnixListener::bind(sock_path)
-        .with_context(|| format!("binding host.sock at {}", sock_path.display()))?;
-
-    loop {
-        if let Ok((stream, _)) = listener.accept().await {
-            if handle_connection(stream, allowed_bindings, caller_auth)
-                .await
-                .is_err()
-            {
-                let _error = jackin_telemetry::record_error(
-                    jackin_telemetry::schema::enums::ErrorType::RpcError,
-                );
-            }
-        } else {
-            let _error =
-                jackin_telemetry::record_error(jackin_telemetry::schema::enums::ErrorType::IoError);
-            // Brief back-off to avoid tight loop on persistent errors.
-            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-        }
-    }
+    UnixListener::bind(sock_path)
+        .with_context(|| format!("binding host.sock at {}", sock_path.display()))
 }
 
 async fn handle_connection(

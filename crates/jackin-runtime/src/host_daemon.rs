@@ -403,32 +403,54 @@ pub fn bind_control_socket(layout: &DaemonLayout) -> Result<UnixListener> {
 }
 
 pub fn serve(layout: &DaemonLayout, build_id: &str) -> Result<ServeOutcome> {
-    let listener = bind_control_socket(layout)?;
-    write_pid(layout)?;
+    let open =
+        jackin_telemetry::stream::phase(jackin_telemetry::schema::enums::StreamOperation::Open);
+    let listener = match bind_control_socket(layout).and_then(|listener| {
+        write_pid(layout)?;
+        Ok(listener)
+    }) {
+        Ok(listener) => listener,
+        Err(error) => {
+            jackin_telemetry::stream::complete_error(
+                open,
+                jackin_telemetry::schema::enums::ErrorType::IoError,
+            );
+            return Err(error);
+        }
+    };
+    jackin_telemetry::stream::complete_success(open);
+    let close = jackin_telemetry::stream::close_on_drop();
     let coredump_policy = disable_coredumps();
     let attention_enabled = std::env::var_os("JACKIN_ATTENTION").is_some_and(|value| value == "1");
     let mut attention = AttentionAdapter::new(HostAttentionNotifier::new(
         StdNotificationDispatcher,
         attention_enabled,
     ));
-    for stream in listener.incoming() {
-        let mut stream = stream.context("accepting daemon client")?;
-        let response = handle_stream(
-            &mut stream,
-            layout,
-            build_id,
-            &coredump_policy,
-            &mut attention,
-        )?;
-        if matches!(
-            response.kind,
-            DaemonResponseKind::Shutdown { accepted: true }
-        ) {
-            cleanup_runtime_files(layout);
-            return Ok(ServeOutcome::Shutdown);
+    let result = (|| {
+        for stream in listener.incoming() {
+            let mut stream = stream.context("accepting daemon client")?;
+            let response = handle_stream(
+                &mut stream,
+                layout,
+                build_id,
+                &coredump_policy,
+                &mut attention,
+            )?;
+            if matches!(
+                response.kind,
+                DaemonResponseKind::Shutdown { accepted: true }
+            ) {
+                cleanup_runtime_files(layout);
+                return Ok(ServeOutcome::Shutdown);
+            }
         }
+        Ok(ServeOutcome::Shutdown)
+    })();
+    match &result {
+        Ok(_) => close.complete_success(),
+        Err(_) => close.complete_error(jackin_telemetry::schema::enums::ErrorType::IoError),
     }
-    Ok(ServeOutcome::Shutdown)
+    result
 }
 
 pub fn request(
