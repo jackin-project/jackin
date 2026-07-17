@@ -197,6 +197,10 @@ fn write_summary(packages: &[String], reused: &[String]) -> Result<()> {
 
 fn append_env_file(name: &str, contents: std::fmt::Arguments<'_>) -> Result<()> {
     let path = env::var_os(name).with_context(|| format!("{name} must be set"))?;
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "ci-route is a synchronous CLI and appends GitHub runner command files"
+    )]
     let mut file = OpenOptions::new()
         .create(true)
         .append(true)
