@@ -17,6 +17,10 @@ use termrock::text::sanitize_terminal_title;
 
 use std::sync::Arc;
 
+fn record_pr_context_recovery() {
+    let _warning = jackin_telemetry::record_recovered_degradation();
+}
+
 /// Stable failure classes for pull-request lookup. Operator-derived command
 /// output and response payloads never enter the error value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -141,15 +145,12 @@ pub(crate) fn gh_pull_request_info(
     }
     // Checks lookup is best-effort — a parse failure on checks should
     // not poison the PR cache. Demote any error to `None` checks.
-    let checks = gh_pull_request_checks(workdir, &pr.url)
-        .map_err(|e| {
-            jackin_diagnostics::telemetry_info!(
-                "capsule",
-                "pull-request-context: gh pr checks failed: {e}"
-            );
-        })
-        .ok()
-        .flatten();
+    let checks = if let Ok(checks) = gh_pull_request_checks(workdir, &pr.url) {
+        checks
+    } else {
+        record_pr_context_recovery();
+        None
+    };
     // GitHub does not sanitize PR titles for terminal safety; strip
     // control bytes here so the dialog body, the bottom bar, and the
     // OSC 2 outer-terminal title can all consume the field directly.
@@ -179,26 +180,19 @@ fn gh_pull_request_checks(
     else {
         return Ok(None);
     };
-    for check in &checks {
-        if !matches!(
+    if checks.iter().any(|check| {
+        !matches!(
             check.bucket.as_str(),
             "pass" | "fail" | "pending" | "skipping" | "cancel"
-        ) {
-            jackin_diagnostics::telemetry_debug!(
-                "capsule",
-                "pull-request-context: unknown gh pr checks bucket {:?}",
-                check.bucket
-            );
-        }
+        )
+    }) {
+        record_pr_context_recovery();
     }
     let ci_url = best_check_url(&checks)
         .or_else(|| {
             gh_status_check_rollup_url(workdir, url)
-                .map_err(|e| {
-                    jackin_diagnostics::telemetry_debug!(
-                        "capsule",
-                        "pull-request-context: gh pr view statusCheckRollup failed: {e}"
-                    );
+                .map_err(|_| {
+                    record_pr_context_recovery();
                 })
                 .ok()
                 .flatten()
@@ -388,4 +382,22 @@ fn read_pipe_bounded<R: std::io::Read + Send + 'static>(
             Ok(bytes)
         },
     )
+}
+
+#[cfg(test)]
+mod telemetry_tests {
+    use super::*;
+
+    #[test]
+    fn pr_context_recovery_export_is_bodyless() {
+        let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
+        tracing::subscriber::with_default(subscriber, record_pr_context_recovery);
+
+        export.force_flush();
+        assert_eq!(export.event_count("operation.warn"), 1);
+        assert!(export.contains_log_text("recovered_degradation"));
+        for private in ["pull request", "bucket", "URL", "command", "raw error"] {
+            assert!(!export.contains_log_text(private));
+        }
+    }
 }
