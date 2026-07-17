@@ -19,10 +19,10 @@ cap = 1850
 mode = "enforce"
 [[family.entry]]
 key = "crates/jackin-diagnostics/src/observability.rs"
-bound = 1980
+bound = 2007
 [[family.entry]]
 key = "crates/jackin-xtask/src/telemetry_registry.rs"
-bound = 1865
+bound = 2009
 
 [[family]]
 id = "file-size-test"
@@ -90,9 +90,6 @@ bound = 3
 key = "clippy::disallowed_methods@jackin-dev"
 bound = 1
 [[family.entry]]
-key = "clippy::disallowed_methods@jackin-docker"
-bound = 1
-[[family.entry]]
 key = "clippy::disallowed_methods@jackin-env"
 bound = 3
 [[family.entry]]
@@ -130,7 +127,7 @@ key = "clippy::excessive_nesting@jackin-agent-status"
 bound = 1
 [[family.entry]]
 key = "clippy::excessive_nesting@jackin-capsule"
-bound = 11
+bound = 10
 [[family.entry]]
 key = "clippy::excessive_nesting@jackin-config"
 bound = 1
@@ -352,7 +349,7 @@ key = "clippy::too_many_arguments@jackin-launch"
 bound = 1
 [[family.entry]]
 key = "clippy::too_many_arguments@jackin-runtime"
-bound = 11
+bound = 12
 [[family.entry]]
 key = "clippy::too_many_arguments@jackin-usage"
 bound = 2
@@ -422,9 +419,6 @@ bound = 4
 [[family.entry]]
 key = "dead_code@jackin-env"
 bound = 3
-[[family.entry]]
-key = "dead_code@jackin-image"
-bound = 1
 [[family.entry]]
 key = "dead_code@jackin-lints"
 bound = 1
@@ -533,7 +527,7 @@ key = "crates/jackin-console/README.md"
 bound = 2498
 [[family.entry]]
 key = "crates/jackin-core/README.md"
-bound = 5482
+bound = 5351
 [[family.entry]]
 key = "crates/jackin-dev/README.md"
 bound = 1199
@@ -584,7 +578,7 @@ key = "crates/jackin-runtime/README.md"
 bound = 3652
 [[family.entry]]
 key = "crates/jackin-telemetry/README.md"
-bound = 1940
+bound = 2149
 [[family.entry]]
 key = "crates/jackin-term/README.md"
 bound = 2915
@@ -682,7 +676,7 @@ key = "jackin-diagnostics"
 bound = 11
 [[family.entry]]
 key = "jackin-telemetry"
-bound = 13
+bound = 15
 [[family.entry]]
 key = "jackin-docker"
 bound = 3
@@ -812,9 +806,6 @@ bound = 73
 key = "jackin-diagnostics"
 bound = 24
 [[family.entry]]
-key = "jackin-docker"
-bound = 24
-[[family.entry]]
 key = "jackin-env"
 bound = 29
 [[family.entry]]
@@ -828,7 +819,7 @@ key = "jackin-isolation"
 bound = 23
 [[family.entry]]
 key = "jackin-launch"
-bound = 41
+bound = 44
 [[family.entry]]
 key = "jackin-lints"
 bound = 27
@@ -837,7 +828,10 @@ key = "jackin-protocol"
 bound = 80
 [[family.entry]]
 key = "jackin-runtime"
-bound = 90
+bound = 91
+[[family.entry]]
+key = "jackin-telemetry"
+bound = 24
 [[family.entry]]
 key = "jackin-term"
 bound = 66
