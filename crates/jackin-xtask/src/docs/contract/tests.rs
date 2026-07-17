@@ -15,6 +15,20 @@ fn component_copy_does_not_change_link_attributes() {
 }
 
 #[test]
+fn implementation_changes_do_not_change_code_link_surface() {
+    let first = "const pages = source.getPages()\nreturn <Link to={markdownUrl} />\n";
+    let second = "const pages = publicPageUrls\nreturn <Link to={markdownUrl} />\n";
+    assert_eq!(extract_link_surface(first), extract_link_surface(second));
+}
+
+#[test]
+fn code_link_targets_change_the_surface() {
+    let first = "return <a href=\"/guide\">Guide</a>\n";
+    let second = "return <a href=\"/reference\">Guide</a>\n";
+    assert_ne!(extract_link_surface(first), extract_link_surface(second));
+}
+
+#[test]
 fn multiline_link_targets_are_part_of_surface() {
     let surface = String::from_utf8(extract_link_surface("[docs](\n/guide\n)\nother\n")).unwrap();
     assert!(surface.contains("/guide"));

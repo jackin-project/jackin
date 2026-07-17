@@ -215,7 +215,7 @@ fn surface_contract(git_ref: &str) -> Result<String> {
     for entry in tree(git_ref)? {
         if is_full_surface_input(&entry.path) {
             push_tree_entry(&mut input, &entry);
-        } else if is_link_markup_input(&entry.path) {
+        } else if is_link_markup_input(&entry.path) || is_link_code_input(&entry.path) {
             input.extend_from_slice(entry.path.as_bytes());
             input.push(0);
             let content = String::from_utf8(blob(git_ref, &entry.path)?)
@@ -352,15 +352,29 @@ fn is_full_surface_input(path: &str) -> bool {
     path == "Cargo.toml"
         || (path.starts_with("crates/") && path.ends_with("/Cargo.toml"))
         || matches!(path, "docs/bun.lock" | "docs/package.json")
-        || ["docs/src/", "docs/scripts/", "docs/public/"]
-            .iter()
-            .any(|prefix| path.starts_with(prefix))
-        || (path.starts_with("docs/") && has_any_extension(path, &["ts", "json"]))
+        || path.starts_with("docs/public/")
+        || matches!(
+            path,
+            "docs/source.config.ts"
+                | "docs/scripts/gen-crate-pages.ts"
+                | "docs/src/components/RepoFile.tsx"
+                | "docs/src/components/mdx.tsx"
+                | "docs/src/components/mdx/legacy.tsx"
+                | "docs/src/lib/seo.ts"
+                | "docs/src/lib/shared.ts"
+                | "docs/src/lib/source-paths.ts"
+        )
+        || (path.starts_with("docs/") && has_any_extension(path, &["json"]))
 }
 
 fn is_link_markup_input(path: &str) -> bool {
     (path.starts_with("crates/") && path.ends_with("/README.md"))
         || (path.starts_with("docs/content/") && has_any_extension(path, &["mdx"]))
+}
+
+fn is_link_code_input(path: &str) -> bool {
+    (path.starts_with("docs/src/") || path.starts_with("docs/scripts/"))
+        && has_any_extension(path, &["ts", "tsx"])
 }
 
 fn has_any_extension(path: &str, extensions: &[&str]) -> bool {
