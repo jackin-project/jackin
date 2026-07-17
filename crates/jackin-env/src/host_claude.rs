@@ -187,35 +187,50 @@ pub(crate) fn capture_setup_token_with_binary(
         })
         .map_err(|e| anyhow::anyhow!("failed to allocate pty: {e}"))?;
 
+    let spawn_operation = crate::process_telemetry::ChildOperation::begin(
+        jackin_telemetry::schema::enums::ProcessExecutableName::Claude,
+    );
     let cmd = CommandBuilder::new(binary);
-    let mut child = pair
-        .slave
-        .spawn_command({
-            let mut c = cmd;
-            c.arg("setup-token");
-            c
-        })
-        .map_err(|e| {
-            anyhow::anyhow!(
+    let mut child = match pair.slave.spawn_command({
+        let mut c = cmd;
+        c.arg("setup-token");
+        c
+    }) {
+        Ok(child) => child,
+        Err(e) => {
+            spawn_operation.spawn_failed();
+            return Err(anyhow::anyhow!(
                 "failed to spawn Claude CLI {binary:?} setup-token: {e} \
              (install with `npm i -g @anthropic-ai/claude-code` or see \
              https://docs.anthropic.com/en/docs/claude-code)"
-            )
-        })?;
+            ));
+        }
+    };
 
     // Drop the slave handle on the parent side so the child becomes
     // the only owner — its EOF on exit closes the master side and
     // wakes our reader.
     drop(pair.slave);
 
-    let mut reader = pair
-        .master
-        .try_clone_reader()
-        .map_err(|e| anyhow::anyhow!("failed to clone pty reader: {e}"))?;
-    let mut master_writer = pair
-        .master
-        .take_writer()
-        .map_err(|e| anyhow::anyhow!("failed to take pty writer: {e}"))?;
+    let mut reader = match pair.master.try_clone_reader() {
+        Ok(reader) => reader,
+        Err(e) => {
+            drop(child.kill());
+            drop(child.wait());
+            spawn_operation.io_failed();
+            return Err(anyhow::anyhow!("failed to clone pty reader: {e}"));
+        }
+    };
+    let mut master_writer = match pair.master.take_writer() {
+        Ok(writer) => writer,
+        Err(e) => {
+            drop(child.kill());
+            drop(child.wait());
+            spawn_operation.io_failed();
+            return Err(anyhow::anyhow!("failed to take pty writer: {e}"));
+        }
+    };
+    spawn_operation.succeeded();
 
     // Put the operator's terminal into raw mode so single
     // keystrokes (`c` to copy the OAuth URL, the OAuth code paste,
@@ -277,9 +292,13 @@ pub(crate) fn capture_setup_token_with_binary(
             }
             Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}
             Err(e) => {
+                let read_operation = crate::process_telemetry::ChildOperation::begin(
+                    jackin_telemetry::schema::enums::ProcessExecutableName::Claude,
+                );
                 drop(stderr.flush());
                 drop(child.kill());
                 drop(child.wait());
+                read_operation.io_failed();
                 anyhow::bail!(
                     "PTY read failed while capturing `{binary} setup-token` output: {e} \
                      (any captured token must be considered compromised; re-run setup)"
@@ -294,9 +313,19 @@ pub(crate) fn capture_setup_token_with_binary(
     }
     drop(stderr.flush());
 
-    let status = child
-        .wait()
-        .map_err(|e| anyhow::anyhow!("failed to wait on `claude setup-token`: {e}"))?;
+    let close_operation = crate::process_telemetry::ChildOperation::begin(
+        jackin_telemetry::schema::enums::ProcessExecutableName::Claude,
+    );
+    let status = match child.wait() {
+        Ok(status) => status,
+        Err(e) => {
+            close_operation.io_failed();
+            return Err(anyhow::anyhow!(
+                "failed to wait on `claude setup-token`: {e}"
+            ));
+        }
+    };
+    close_operation.complete_portable_status(&status);
     if !status.success() {
         anyhow::bail!(
             "`{binary} setup-token` exited with non-zero status (operator may have \

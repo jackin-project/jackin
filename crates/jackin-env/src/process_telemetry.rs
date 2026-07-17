@@ -37,6 +37,24 @@ impl ChildOperation {
         });
     }
 
+    pub(crate) fn complete_portable_status(mut self, status: &portable_pty::ExitStatus) {
+        if let Some(operation) = self.operation.as_ref() {
+            let _attribute = operation.set_attr(jackin_telemetry::Attr {
+                key: jackin_telemetry::schema::attrs::std_attrs::PROCESS_EXIT_CODE,
+                value: jackin_telemetry::Value::I64(i64::from(status.exit_code())),
+            });
+        }
+        self.complete(if status.success() {
+            (OutcomeValue::Success, None)
+        } else {
+            (OutcomeValue::Failure, Some(ErrorType::ProcessExitNonzero))
+        });
+    }
+
+    pub(crate) fn succeeded(mut self) {
+        self.complete((OutcomeValue::Success, None));
+    }
+
     pub(crate) fn spawn_failed(mut self) {
         self.complete((OutcomeValue::Failure, Some(ErrorType::ProcessSpawnError)));
     }
@@ -151,5 +169,23 @@ mod tests {
         ] {
             assert!(!export.contains_span_text(secret));
         }
+    }
+
+    #[test]
+    fn exports_portable_pty_completion_statuses() {
+        let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
+        let _subscriber = tracing::subscriber::set_default(subscriber);
+
+        ChildOperation::begin(ProcessExecutableName::Claude)
+            .complete_portable_status(&portable_pty::ExitStatus::with_exit_code(0));
+        ChildOperation::begin(ProcessExecutableName::Claude)
+            .complete_portable_status(&portable_pty::ExitStatus::with_exit_code(19));
+
+        export.force_flush();
+        assert_eq!(export.finished_spans().len(), 2);
+        assert_eq!(export.error_span_count(), 1);
+        assert!(export.contains_span_text("claude"));
+        assert!(export.contains_span_text("process_exit_nonzero"));
+        assert!(export.contains_span_text("19"));
     }
 }
