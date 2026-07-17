@@ -1278,7 +1278,7 @@ run `29580885810`; coverage, mutation, Hakari, Dylint, and DinD entered their
 semantic work within 28 to 35 seconds of job start. Dylint no longer spends
 minutes installing its driver from source. Its first measured analysis still
 downloaded and compiled the standalone lint workspace because the shared
-registry contract omitted `crates/jackin-lints/Cargo.lock`, then failed on a
+registry contract omitted <RepoFile path="crates/jackin-lints/Cargo.lock" />, then failed on a
 nightly compiler API change before its target cache could save. CI run
 `29588123914` corrected that ownership: the single registry-warmup job restored
 the prior registry, fetched the missing lint dependencies once, and saved the
