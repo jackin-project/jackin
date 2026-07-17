@@ -43,7 +43,20 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 0
+      - name: Classify version-check inputs
+        id: version-inputs
+        uses: dorny/paths-filter@7b450fff21473bca461d4b92ce414b9d0420d706 # v4.0.2
+        with:
+          token: ""
+          filters: |
+            lock:
+              - 'Cargo.lock'
+            artifact:
+              - 'Cargo.toml'
+              - 'crates/jackin-dev/**'
+              - '!crates/jackin-dev/**/*.md'
       - name: Cache Rust toolchain
+        if: steps.version-inputs.outputs.lock == 'true' && steps.version-inputs.outputs.artifact != 'true'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -53,13 +66,15 @@ jobs:
           restore-keys: |
             rustup-${{ runner.os }}-${{ runner.arch }}-
       - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+        if: steps.version-inputs.outputs.lock == 'true' && steps.version-inputs.outputs.artifact != 'true'
         with:
           version: "2026.7.7"
           cache_key_prefix: "mise-v2"
           cache_save: ${{ github.ref == 'refs/heads/main' }}
           install_args: "rust"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
-      - uses: ./.github/actions/cache-cargo-registry
+      - if: steps.version-inputs.outputs.lock == 'true' && steps.version-inputs.outputs.artifact != 'true'
+        uses: ./.github/actions/cache-cargo-registry
 
       - name: Require jackin-dev version bump for artifact changes
         env:
