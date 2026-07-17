@@ -770,6 +770,7 @@ impl Multiplexer {
     pub(super) fn set_tab_bar_focused(&mut self, focused: bool) {
         if self.render.tab_bar_focused != focused {
             self.render.tab_bar_focused = focused;
+            self.sync_widget_focus();
             self.invalidate(FullRedrawReason::StatusChange);
         }
     }

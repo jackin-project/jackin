@@ -413,6 +413,7 @@ pub struct Multiplexer {
     pub(crate) render: RenderState,
     pub(crate) launch_env: LaunchEnv,
     pub(crate) resource_metrics: resource_metrics::ResourceMetricsSampler,
+    pub(crate) widget_focus: jackin_telemetry::ui::WidgetFocusTracker,
     /// Wall/monotonic clock for lifecycle timestamps (plan 025). Tests inject
     /// [`jackin_core::ManualClock`] via [`Multiplexer::with_clock`].
     pub(crate) clock: Arc<dyn Clock>,
@@ -553,7 +554,7 @@ impl Multiplexer {
         let ratatui_terminal =
             ratatui::Terminal::new(crate::tui::socket_backend::SocketBackend::new(cols, rows))?;
 
-        Ok(Self {
+        let mut mux = Self {
             session_supervisor: SessionSupervisor {
                 sessions: SessionRegistry::default(),
                 tabs: Vec::new(),
@@ -641,8 +642,11 @@ impl Multiplexer {
                 provider_keys,
             },
             resource_metrics: resource_metrics::ResourceMetricsSampler::default(),
+            widget_focus: jackin_telemetry::ui::WidgetFocusTracker::default(),
             clock,
-        })
+        };
+        mux.sync_widget_focus();
+        Ok(mux)
     }
 
     /// Wall-clock `DateTime<Utc>` from the injected clock.

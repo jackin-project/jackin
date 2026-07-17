@@ -4540,6 +4540,44 @@ fn tab_bar_focus_mode_arrows_switch_tabs_then_esc_returns_to_agent() {
 }
 
 #[test]
+fn capsule_widget_focus_lifecycle_is_exported_without_runtime_identity() {
+    let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(true);
+    tracing::subscriber::with_default(subscriber, || {
+        let mut mux = test_mux(40, 80);
+        assert_eq!(mux.widget_focus.current_widget(), Some("capsule.pane"));
+        mux.synthesise_focus_swap(Some(41), Some(42));
+
+        mux.set_tab_bar_focused(true);
+        assert_eq!(mux.widget_focus.current_widget(), Some("capsule.tab_bar"));
+
+        mux.open_command_palette();
+        assert_eq!(
+            mux.widget_focus.current_widget(),
+            Some("capsule.command_palette")
+        );
+
+        mux.dialog_clear();
+        assert_eq!(mux.widget_focus.current_widget(), Some("capsule.tab_bar"));
+        mux.set_tab_bar_focused(false);
+        assert_eq!(mux.widget_focus.current_widget(), Some("capsule.pane"));
+        mux.widget_focus.unfocus().unwrap();
+    });
+    export.force_flush();
+
+    assert_eq!(export.event_count("ui.widget.focused"), 6);
+    assert_eq!(export.event_count("ui.widget.unfocused"), 6);
+    assert!(
+        export.finished_spans().is_empty(),
+        "focus lifecycle must not create pane-action or lifetime spans"
+    );
+    for widget in ["capsule.pane", "capsule.tab_bar", "capsule.command_palette"] {
+        assert!(export.contains_log_text(widget));
+    }
+    assert!(!export.contains_log_text("test-role"));
+    assert!(!export.contains_log_text("/workspace"));
+}
+
+#[test]
 fn apply_action_status_bar_click_switches_tab() {
     let mut mux = single_pane_tab_mux();
     mux.session_supervisor
