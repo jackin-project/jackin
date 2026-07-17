@@ -128,3 +128,59 @@ fn text_file_busy_retry_eventually_succeeds() {
     assert_eq!(result, "ok");
     assert_eq!(attempts.get(), 3);
 }
+
+#[test]
+fn op_process_owner_exports_outcome_matrix_without_sensitive_material() {
+    let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
+    let _subscriber = tracing::subscriber::set_default(subscriber);
+
+    run_op_with_timeout(
+        "sh",
+        &["-c", "printf op-secret-output"],
+        std::time::Duration::from_secs(1),
+    )
+    .unwrap();
+    let _nonzero = run_op_with_timeout(
+        "sh",
+        &["-c", "printf op-secret-stderr >&2; exit 23"],
+        std::time::Duration::from_secs(1),
+    )
+    .unwrap_err();
+    let _timeout = run_op_with_timeout(
+        "sh",
+        &["-c", "sleep 1"],
+        std::time::Duration::from_millis(5),
+    )
+    .unwrap_err();
+    let spawn_error = run_op_with_timeout(
+        "/op-secret/missing-binary",
+        &["op-secret-argument"],
+        std::time::Duration::from_secs(1),
+    )
+    .unwrap_err();
+    assert!(
+        spawn_error
+            .to_string()
+            .contains("failed to spawn 1Password CLI")
+    );
+
+    export.force_flush();
+    assert_eq!(export.finished_spans().len(), 4);
+    assert_eq!(export.error_span_count(), 3);
+    for expected in [
+        "op",
+        "process_exit_nonzero",
+        "process_spawn_error",
+        "timeout",
+    ] {
+        assert!(export.contains_span_text(expected), "missing {expected}");
+    }
+    for secret in [
+        "op-secret-output",
+        "op-secret-stderr",
+        "/op-secret/missing-binary",
+        "op-secret-argument",
+    ] {
+        assert!(!export.contains_span_text(secret), "exported {secret}");
+    }
+}

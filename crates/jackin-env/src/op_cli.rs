@@ -240,14 +240,28 @@ where
     unreachable!("OP_SPAWN_RETRIES is nonzero");
 }
 
-fn spawn_op_with_retry<F>(mut build: F) -> std::io::Result<std::process::Child>
+fn spawn_op_with_retry<F>(
+    mut build: F,
+) -> Result<
+    (
+        std::process::Child,
+        crate::process_telemetry::ChildOperation,
+    ),
+    Box<(std::io::Error, crate::process_telemetry::ChildOperation)>,
+>
 where
     F: FnMut() -> std::process::Command,
 {
-    retry_text_file_busy_result(|| {
+    let operation = crate::process_telemetry::ChildOperation::begin(
+        jackin_telemetry::schema::enums::ProcessExecutableName::Op,
+    );
+    match retry_text_file_busy_result(|| {
         let mut command = build();
         command.spawn()
-    })
+    }) {
+        Ok(child) => Ok((child, operation)),
+        Err(error) => Err(Box::new((error, operation))),
+    }
 }
 
 fn op_spawn_error(binary: &str, error: &std::io::Error) -> anyhow::Error {
@@ -303,7 +317,7 @@ impl OpRunner for OpCli {
 
         validate_op_source(reference)?;
 
-        let mut child = spawn_op_with_retry(|| {
+        let (mut child, operation) = spawn_op_with_retry(|| {
             let mut cmd = Command::new(&self.binary);
             cmd.args(op_read_args(reference, self.account.as_deref()))
                 .stdin(Stdio::null())
@@ -311,20 +325,28 @@ impl OpRunner for OpCli {
                 .stderr(Stdio::piped());
             cmd
         })
-        .map_err(|error| op_spawn_error(&self.binary, &error))?;
+        .map_err(|failure| {
+            let (error, operation) = *failure;
+            operation.spawn_failed();
+            op_spawn_error(&self.binary, &error)
+        })?;
 
         // Channel-and-thread wait pattern so we avoid a new async dep,
         // and the wait thread never holds the mutex across a blocking
         // wait — see spawn_wait_thread.
         let (tx, rx) = std::sync::mpsc::channel();
-        let mut stdout = child
-            .stdout
-            .take()
-            .ok_or_else(|| anyhow::anyhow!("1Password CLI stdout pipe missing"))?;
-        let stderr = child
-            .stderr
-            .take()
-            .ok_or_else(|| anyhow::anyhow!("1Password CLI stderr pipe missing"))?;
+        let Some(mut stdout) = child.stdout.take() else {
+            drop(child.kill());
+            drop(child.wait());
+            operation.io_failed();
+            anyhow::bail!("1Password CLI stdout pipe missing");
+        };
+        let Some(stderr) = child.stderr.take() else {
+            drop(child.kill());
+            drop(child.wait());
+            operation.io_failed();
+            anyhow::bail!("1Password CLI stderr pipe missing");
+        };
         let timeout = self.timeout;
 
         let stdout_handle = jackin_telemetry::spawn::thread_stream("op.stdout", move || {
@@ -342,6 +364,7 @@ impl OpRunner for OpCli {
         let status = match rx.recv_timeout(timeout) {
             Ok(Ok(status)) => status,
             Ok(Err(e)) => {
+                operation.io_failed();
                 anyhow::bail!("1Password CLI wait failed for {reference:?}: {e}");
             }
             Err(_) => {
@@ -357,6 +380,7 @@ impl OpRunner for OpCli {
                     drop(c.kill());
                     drop(c.wait());
                 }
+                operation.timed_out();
                 anyhow::bail!(
                     "1Password CLI timed out after {}s resolving {reference:?}",
                     timeout.as_secs()
@@ -368,6 +392,7 @@ impl OpRunner for OpCli {
         let stderr_bytes = stderr_handle.join().unwrap_or_default();
 
         if status.success() {
+            operation.complete_status(status);
             // `op read` appends a trailing newline as CLI convention;
             // strip exactly one so a secret ending in a real newline
             // (e.g. PEM block) survives.
@@ -383,6 +408,7 @@ impl OpRunner for OpCli {
 
         let stderr = String::from_utf8_lossy(&stderr_bytes);
         let stderr_trimmed = truncate_stderr(&stderr);
+        operation.complete_status(status);
         anyhow::bail!(
             "1Password CLI exited with status {} resolving {reference:?}: {}",
             format_exit_status(status),
@@ -421,7 +447,7 @@ fn run_op_with_timeout(
     use std::io::Read;
     use std::process::{Command, Stdio};
 
-    let mut child = spawn_op_with_retry(|| {
+    let (mut child, operation) = spawn_op_with_retry(|| {
         let mut command = Command::new(binary);
         command
             .args(args)
@@ -430,17 +456,25 @@ fn run_op_with_timeout(
             .stderr(Stdio::piped());
         command
     })
-    .map_err(|error| op_spawn_error(binary, &error))?;
+    .map_err(|failure| {
+        let (error, operation) = *failure;
+        operation.spawn_failed();
+        op_spawn_error(binary, &error)
+    })?;
 
     let (tx, rx) = std::sync::mpsc::channel();
-    let mut stdout = child
-        .stdout
-        .take()
-        .ok_or_else(|| anyhow::anyhow!("1Password CLI stdout pipe missing"))?;
-    let stderr = child
-        .stderr
-        .take()
-        .ok_or_else(|| anyhow::anyhow!("1Password CLI stderr pipe missing"))?;
+    let Some(mut stdout) = child.stdout.take() else {
+        drop(child.kill());
+        drop(child.wait());
+        operation.io_failed();
+        anyhow::bail!("1Password CLI stdout pipe missing");
+    };
+    let Some(stderr) = child.stderr.take() else {
+        drop(child.kill());
+        drop(child.wait());
+        operation.io_failed();
+        anyhow::bail!("1Password CLI stderr pipe missing");
+    };
 
     let stdout_handle = jackin_telemetry::spawn::thread_stream("op.stdout", move || {
         let mut buf = Vec::new();
@@ -457,6 +491,7 @@ fn run_op_with_timeout(
     let status = match rx.recv_timeout(timeout) {
         Ok(Ok(status)) => status,
         Ok(Err(e)) => {
+            operation.io_failed();
             let message = format!("1Password CLI wait failed for `{cmd_label}`: {e}");
             return Err(anyhow::Error::new(jackin_core::OpProbeError::Other {
                 message: message.clone(),
@@ -472,6 +507,7 @@ fn run_op_with_timeout(
                 drop(c.kill());
                 drop(c.wait());
             }
+            operation.timed_out();
             let seconds = timeout.as_secs();
             let message = format!("1Password CLI timed out after {seconds}s running `{cmd_label}`");
             return Err(
@@ -484,12 +520,14 @@ fn run_op_with_timeout(
     let stderr_bytes = stderr_handle.join().unwrap_or_default();
 
     if status.success() {
+        operation.complete_status(status);
         return Ok(stdout_bytes);
     }
 
     let stderr = String::from_utf8_lossy(&stderr_bytes);
     let stderr_trimmed = truncate_stderr(&stderr);
     let stderr_msg = stderr_trimmed.trim();
+    operation.complete_status(status);
     let message = format!(
         "1Password CLI exited with status {} running `{cmd_label}`: {stderr_msg}",
         format_exit_status(status),
@@ -636,7 +674,7 @@ impl OpWriteRunner for OpCli {
         let body = serde_json::to_vec(&template)
             .map_err(|e| anyhow::anyhow!("failed to encode op item template: {e}"))?;
 
-        let mut child = spawn_op_with_retry(|| {
+        let (mut child, operation) = spawn_op_with_retry(|| {
             let mut command = Command::new(&self.binary);
             if let Some(account) = self.account.as_deref() {
                 command.args(["--account", account]);
@@ -656,7 +694,11 @@ impl OpWriteRunner for OpCli {
                 .stderr(Stdio::piped());
             command
         })
-        .map_err(|error| op_spawn_error(&self.binary, &error))?;
+        .map_err(|failure| {
+            let (error, operation) = *failure;
+            operation.spawn_failed();
+            op_spawn_error(&self.binary, &error)
+        })?;
 
         // Write the template body to the child's stdin and drop the
         // handle so `op` sees EOF and proceeds. Scoping the stdin
@@ -669,33 +711,44 @@ impl OpWriteRunner for OpCli {
         // surfacing the error so the operator sees the real cause
         // (auth failure, vault permission, schema mismatch) instead
         // of a generic "stdin write failed".
-        if let Some(mut stdin) = child.stdin.take()
-            && let Err(e) = stdin.write_all(&body)
-        {
+        let Some(mut stdin) = child.stdin.take() else {
+            drop(child.kill());
+            drop(child.wait());
+            operation.io_failed();
+            anyhow::bail!("1Password CLI stdin pipe missing");
+        };
+        if let Err(e) = stdin.write_all(&body) {
             drop(stdin);
             let captured = child.wait_with_output().ok();
             let stderr_msg = captured
                 .as_ref()
                 .map(|o| String::from_utf8_lossy(&o.stderr).into_owned())
                 .unwrap_or_default();
+            operation.io_failed();
             anyhow::bail!(
                 "failed to write op item template to stdin: {e} (op stderr: {})",
                 truncate_stderr(&stderr_msg).trim()
             );
         }
 
-        let out = child
-            .wait_with_output()
-            .map_err(|e| anyhow::anyhow!("1Password CLI wait failed: {e}"))?;
+        let out = match child.wait_with_output() {
+            Ok(out) => out,
+            Err(e) => {
+                operation.io_failed();
+                return Err(anyhow::anyhow!("1Password CLI wait failed: {e}"));
+            }
+        };
 
         if !out.status.success() {
             let stderr = String::from_utf8_lossy(&out.stderr);
+            operation.complete_status(out.status);
             anyhow::bail!(
                 "`op item create` exited with status {}: {}",
                 format_exit_status(out.status),
                 truncate_stderr(&stderr).trim()
             );
         }
+        operation.complete_status(out.status);
 
         // SAFETY: `op item create --format json` echoes the created
         // item's fields back, including the secret `value` for
@@ -838,7 +891,7 @@ impl OpWriteRunner for OpCli {
         // as the item name, not a stdin sentinel (that is the create-only
         // convention). `--template` is mutually exclusive with piped
         // input, so it is intentionally not passed.
-        let mut child = spawn_op_with_retry(|| {
+        let (mut child, operation) = spawn_op_with_retry(|| {
             use std::process::Command;
             let mut command = Command::new(&self.binary);
             if let Some(acc) = self.account.as_deref() {
@@ -853,35 +906,50 @@ impl OpWriteRunner for OpCli {
                 .stderr(Stdio::piped());
             command
         })
-        .map_err(|e| op_spawn_error(&self.binary, &e))?;
+        .map_err(|failure| {
+            let (error, operation) = *failure;
+            operation.spawn_failed();
+            op_spawn_error(&self.binary, &error)
+        })?;
 
-        if let Some(mut stdin) = child.stdin.take()
-            && let Err(e) = stdin.write_all(&body)
-        {
+        let Some(mut stdin) = child.stdin.take() else {
+            drop(child.kill());
+            drop(child.wait());
+            operation.io_failed();
+            anyhow::bail!("1Password CLI stdin pipe missing");
+        };
+        if let Err(e) = stdin.write_all(&body) {
             drop(stdin);
             let captured = child.wait_with_output().ok();
             let stderr_msg = captured
                 .as_ref()
                 .map(|o| String::from_utf8_lossy(&o.stderr).into_owned())
                 .unwrap_or_default();
+            operation.io_failed();
             anyhow::bail!(
                 "failed to write op item template to stdin: {e} (op stderr: {})",
                 truncate_stderr(&stderr_msg).trim()
             );
         }
 
-        let out = child
-            .wait_with_output()
-            .map_err(|e| anyhow::anyhow!("1Password CLI wait failed: {e}"))?;
+        let out = match child.wait_with_output() {
+            Ok(out) => out,
+            Err(e) => {
+                operation.io_failed();
+                return Err(anyhow::anyhow!("1Password CLI wait failed: {e}"));
+            }
+        };
 
         if !out.status.success() {
             let stderr = String::from_utf8_lossy(&out.stderr);
+            operation.complete_status(out.status);
             anyhow::bail!(
                 "`op item edit` exited with status {}: {}",
                 format_exit_status(out.status),
                 truncate_stderr(&stderr).trim()
             );
         }
+        operation.complete_status(out.status);
 
         // Step 4: parse the returned item JSON and build the ref.
         let updated: serde_json::Value = serde_json::from_slice(&out.stdout)
