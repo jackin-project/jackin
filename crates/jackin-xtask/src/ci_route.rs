@@ -2,8 +2,7 @@
 
 use std::collections::BTreeMap;
 use std::env;
-use std::fs::OpenOptions;
-use std::io::Write;
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -197,17 +196,10 @@ fn write_summary(packages: &[String], reused: &[String]) -> Result<()> {
 
 fn append_env_file(name: &str, contents: std::fmt::Arguments<'_>) -> Result<()> {
     let path = env::var_os(name).with_context(|| format!("{name} must be set"))?;
-    #[expect(
-        clippy::disallowed_methods,
-        reason = "ci-route is a synchronous CLI and appends GitHub runner command files"
-    )]
-    let mut file = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&path)
-        .with_context(|| format!("opening {}", Path::new(&path).display()))?;
-    file.write_fmt(contents)
-        .with_context(|| format!("writing {}", Path::new(&path).display()))
+    let path = Path::new(&path);
+    let mut file = fs::read(path).unwrap_or_default();
+    file.extend_from_slice(contents.to_string().as_bytes());
+    fs::write(path, file).with_context(|| format!("writing {}", path.display()))
 }
 
 #[cfg(test)]
