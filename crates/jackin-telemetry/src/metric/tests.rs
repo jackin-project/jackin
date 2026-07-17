@@ -147,6 +147,34 @@ fn prewarm_metrics_use_only_bounded_job_and_outcome_dimensions() {
 }
 
 #[test]
+fn standard_token_usage_requires_only_bounded_semantic_dimensions() {
+    let dimensions = GEN_AI_CLIENT_TOKEN_USAGE.dimensions();
+    assert_eq!(
+        dimensions
+            .iter()
+            .map(|requirement| requirement.name)
+            .collect::<Vec<_>>(),
+        [
+            attrs::GEN_AI_OPERATION_NAME,
+            attrs::GEN_AI_PROVIDER_NAME,
+            attrs::GEN_AI_TOKEN_TYPE,
+        ]
+    );
+    assert!(
+        dimensions
+            .iter()
+            .all(|requirement| requirement.requirement == schema::RequirementLevel::Required)
+    );
+    assert_eq!(GEN_AI_CLIENT_TOKEN_USAGE.unit(), "{token}");
+    assert_eq!(
+        GEN_AI_CLIENT_TOKEN_USAGE.boundaries(),
+        [
+            1.0, 4.0, 16.0, 64.0, 256.0, 1024.0, 4096.0, 16384.0, 65536.0, 262144.0
+        ]
+    );
+}
+
+#[test]
 fn correlation_identities_are_never_metric_dimensions() {
     for key in [
         attrs::CLI_INVOCATION_ID,

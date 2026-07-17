@@ -128,6 +128,41 @@ fn token_monitor_poll_due_respects_interval() {
     assert!(!session.poll_due());
 }
 
+#[test]
+fn standard_token_usage_delta_includes_cached_input_without_regression() {
+    let previous = TokenTotals {
+        input_tokens: 100,
+        output_tokens: 40,
+        cache_read_tokens: 20,
+        cache_write_tokens: 10,
+        ..TokenTotals::default()
+    };
+    let current = TokenTotals {
+        input_tokens: 130,
+        output_tokens: 55,
+        cache_read_tokens: 28,
+        cache_write_tokens: 14,
+        ..TokenTotals::default()
+    };
+    assert_eq!(token_usage_delta(&previous, &current), (42, 15));
+    assert_eq!(token_usage_delta(&current, &previous), (0, 0));
+}
+
+#[test]
+fn standard_token_usage_uses_only_truthful_bounded_providers() {
+    use schema::enums::GenAiProviderName;
+
+    assert_eq!(
+        provider_name(Agent::Claude),
+        Some(GenAiProviderName::Anthropic)
+    );
+    assert_eq!(provider_name(Agent::Codex), Some(GenAiProviderName::Openai));
+    assert_eq!(provider_name(Agent::Amp), Some(GenAiProviderName::Amp));
+    assert_eq!(provider_name(Agent::Kimi), Some(GenAiProviderName::Kimi));
+    assert_eq!(provider_name(Agent::Grok), Some(GenAiProviderName::Xai));
+    assert_eq!(provider_name(Agent::Opencode), None);
+}
+
 #[tokio::test]
 async fn due_poll_report_distinguishes_attempted_unchanged_work() {
     let mut monitor = TokenMonitor::new();

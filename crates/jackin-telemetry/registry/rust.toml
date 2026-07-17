@@ -69,6 +69,8 @@ URL_TEMPLATE = "url.template"
 GEN_AI_AGENT_NAME = "gen_ai.agent.name"
 GEN_AI_CONVERSATION_ID = "gen_ai.conversation.id"
 GEN_AI_PROVIDER_NAME = "gen_ai.provider.name"
+GEN_AI_OPERATION_NAME = "gen_ai.operation.name"
+GEN_AI_TOKEN_TYPE = "gen_ai.token.type"
 
 [[standard_enum]]
 rust_type = "AgentName"
@@ -141,3 +143,4 @@ values = ["v1alpha1", "v1alpha2", "v1alpha3", "v1alpha4", "v1alpha5", "v1alpha6"
 "db.client.operation.duration" = [0.001, 0.005, 0.010, 0.025, 0.050, 0.100, 0.250, 0.500, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0]
 "rpc.duration" = [0.001, 0.005, 0.010, 0.025, 0.050, 0.100, 0.250, 0.500, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0]
 "terminal.render.duration" = [0.001, 0.005, 0.010, 0.025, 0.050, 0.100, 0.250, 0.500, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0]
+"gen_ai.client.token.usage" = [1.0, 4.0, 16.0, 64.0, 256.0, 1024.0, 4096.0, 16384.0, 65536.0, 262144.0]

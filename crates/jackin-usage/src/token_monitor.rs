@@ -21,7 +21,7 @@ use std::path::Path;
 use std::time::{Instant, SystemTime};
 
 use jackin_core::Agent;
-use jackin_telemetry::ResultTelemetryExt as _;
+use jackin_telemetry::{Attr, ResultTelemetryExt as _, Value, histogram, metric, schema};
 
 use jackin_protocol::control::TokenUsageSummary;
 
@@ -164,6 +164,7 @@ impl TokenSession {
     /// Poll for new token data while preserving adapter degradation.
     pub(crate) async fn poll(&mut self) -> PollStatus {
         self.last_polled = Instant::now();
+        let previous = self.totals.clone();
         let changed = match self.agent {
             Agent::Claude => claude::poll_session(self),
             Agent::Codex => codex::poll_session(self),
@@ -190,10 +191,76 @@ impl TokenSession {
                     self.totals.cache_write_tokens,
                 );
             }
+            record_token_usage(self.agent, &previous, &self.totals);
         } else if changed == PollStatus::Unchanged {
             self.silent_polls = self.silent_polls.saturating_add(1);
         }
         changed
+    }
+}
+
+fn record_token_usage(agent: Agent, previous: &TokenTotals, current: &TokenTotals) {
+    let Some(provider) = provider_name(agent) else {
+        return;
+    };
+    let (input, output) = token_usage_delta(previous, current);
+    record_token_type(provider, schema::enums::GenAiTokenType::Input, input);
+    record_token_type(provider, schema::enums::GenAiTokenType::Output, output);
+}
+
+fn token_usage_delta(previous: &TokenTotals, current: &TokenTotals) -> (u64, u64) {
+    let input = current
+        .input_tokens
+        .saturating_sub(previous.input_tokens)
+        .saturating_add(
+            current
+                .cache_read_tokens
+                .saturating_sub(previous.cache_read_tokens),
+        )
+        .saturating_add(
+            current
+                .cache_write_tokens
+                .saturating_sub(previous.cache_write_tokens),
+        );
+    let output = current.output_tokens.saturating_sub(previous.output_tokens);
+    (input, output)
+}
+
+fn record_token_type(
+    provider: schema::enums::GenAiProviderName,
+    token_type: schema::enums::GenAiTokenType,
+    tokens: u64,
+) {
+    if tokens == 0 {
+        return;
+    }
+    let attrs = [
+        Attr {
+            key: schema::attrs::GEN_AI_PROVIDER_NAME,
+            value: Value::Str(provider.as_str()),
+        },
+        Attr {
+            key: schema::attrs::GEN_AI_OPERATION_NAME,
+            value: Value::Str(schema::enums::GenAiOperationName::Chat.as_str()),
+        },
+        Attr {
+            key: schema::attrs::GEN_AI_TOKEN_TYPE,
+            value: Value::Str(token_type.as_str()),
+        },
+    ];
+    let _metric_result =
+        histogram(&metric::GEN_AI_CLIENT_TOKEN_USAGE).record(tokens as f64, &attrs);
+}
+
+const fn provider_name(agent: Agent) -> Option<schema::enums::GenAiProviderName> {
+    use schema::enums::GenAiProviderName;
+    match agent {
+        Agent::Claude => Some(GenAiProviderName::Anthropic),
+        Agent::Codex => Some(GenAiProviderName::Openai),
+        Agent::Amp => Some(GenAiProviderName::Amp),
+        Agent::Kimi => Some(GenAiProviderName::Kimi),
+        Agent::Grok => Some(GenAiProviderName::Xai),
+        Agent::Opencode => None,
     }
 }
 
@@ -228,20 +295,18 @@ pub fn find_provider_files(
             Ok(entries) => entries,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
             Err(_) => {
-                let _error = jackin_telemetry::record_error(
-                    jackin_telemetry::schema::enums::ErrorType::IoError,
-                );
+                let _error = jackin_telemetry::record_error(schema::enums::ErrorType::IoError);
                 return Err(ProviderReadDegraded);
             }
         };
         for entry in entries {
             let entry = entry
-                .record_telemetry_error(jackin_telemetry::schema::enums::ErrorType::IoError)
+                .record_telemetry_error(schema::enums::ErrorType::IoError)
                 .map_err(|_| ProviderReadDegraded)?;
             let p = entry.path();
             let file_type = entry
                 .file_type()
-                .record_telemetry_error(jackin_telemetry::schema::enums::ErrorType::IoError)
+                .record_telemetry_error(schema::enums::ErrorType::IoError)
                 .map_err(|_| ProviderReadDegraded)?;
             if file_type.is_dir() {
                 if depth < max_depth {
@@ -285,9 +350,7 @@ pub fn recompute_spend(
 ) -> Result<Option<SpendAcc>, ProviderReadDegraded> {
     let mut acc = SpendAcc::default();
     for path in files {
-        match read_file_text(path)
-            .record_telemetry_error(jackin_telemetry::schema::enums::ErrorType::IoError)
-        {
+        match read_file_text(path).record_telemetry_error(schema::enums::ErrorType::IoError) {
             Ok(Some(text)) => fold(&text, &mut acc),
             Ok(None) => {}
             Err(_) => return Err(ProviderReadDegraded),

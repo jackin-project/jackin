@@ -330,6 +330,14 @@ pub const GEN_AI_CONVERSATION_ID_DEF: super::AttributeMetadata = super::Attribut
     allowed_values: &[],
 };
 // registry-type: enum
+pub const GEN_AI_OPERATION_NAME: &str = "gen_ai.operation.name";
+pub const GEN_AI_OPERATION_NAME_DEF: super::AttributeMetadata = super::AttributeMetadata {
+    name: GEN_AI_OPERATION_NAME,
+    description: "Generative AI operation name.",
+    value_type: super::ValueType::String,
+    allowed_values: &["chat"],
+};
+// registry-type: enum
 pub const GEN_AI_PROVIDER_NAME: &str = "gen_ai.provider.name";
 pub const GEN_AI_PROVIDER_NAME_DEF: super::AttributeMetadata = super::AttributeMetadata {
     name: GEN_AI_PROVIDER_NAME,
@@ -344,6 +352,14 @@ pub const GEN_AI_PROVIDER_NAME_DEF: super::AttributeMetadata = super::AttributeM
         "minimax",
         "kimi",
     ],
+};
+// registry-type: enum
+pub const GEN_AI_TOKEN_TYPE: &str = "gen_ai.token.type";
+pub const GEN_AI_TOKEN_TYPE_DEF: super::AttributeMetadata = super::AttributeMetadata {
+    name: GEN_AI_TOKEN_TYPE,
+    description: "Generative AI token type.",
+    value_type: super::ValueType::String,
+    allowed_values: &["input", "output"],
 };
 // registry-type: string
 pub const JOB_ID: &str = "job.id";
@@ -670,7 +686,9 @@ pub const ALL_KEYS: &[&str] = &[
     DIND_MODE,
     GEN_AI_AGENT_NAME,
     GEN_AI_CONVERSATION_ID,
+    GEN_AI_OPERATION_NAME,
     GEN_AI_PROVIDER_NAME,
+    GEN_AI_TOKEN_TYPE,
     JOB_ID,
     JOB_TYPE,
     LAUNCH_STAGE_NAME,
@@ -722,7 +740,9 @@ pub const ALL_DEFINITIONS: &[super::AttributeMetadata] = &[
     DIND_MODE_DEF,
     GEN_AI_AGENT_NAME_DEF,
     GEN_AI_CONVERSATION_ID_DEF,
+    GEN_AI_OPERATION_NAME_DEF,
     GEN_AI_PROVIDER_NAME_DEF,
+    GEN_AI_TOKEN_TYPE_DEF,
     JOB_ID_DEF,
     JOB_TYPE_DEF,
     LAUNCH_STAGE_NAME_DEF,
@@ -802,7 +822,11 @@ pub mod std_attrs {
     // Local pin: not authoritative in opentelemetry-semantic-conventions =0.32.1; registry schema 1.43.0.
     pub const GEN_AI_CONVERSATION_ID: &str = "gen_ai.conversation.id";
     // Local pin: not authoritative in opentelemetry-semantic-conventions =0.32.1; registry schema 1.43.0.
+    pub const GEN_AI_OPERATION_NAME: &str = "gen_ai.operation.name";
+    // Local pin: not authoritative in opentelemetry-semantic-conventions =0.32.1; registry schema 1.43.0.
     pub const GEN_AI_PROVIDER_NAME: &str = "gen_ai.provider.name";
+    // Local pin: not authoritative in opentelemetry-semantic-conventions =0.32.1; registry schema 1.43.0.
+    pub const GEN_AI_TOKEN_TYPE: &str = "gen_ai.token.type";
     pub const ALL_KEYS: &[&str] = &[
         APP_BUILD_ID,
         APP_CRASH_ID,
@@ -848,7 +872,9 @@ pub mod std_attrs {
         URL_TEMPLATE,
         GEN_AI_AGENT_NAME,
         GEN_AI_CONVERSATION_ID,
+        GEN_AI_OPERATION_NAME,
         GEN_AI_PROVIDER_NAME,
+        GEN_AI_TOKEN_TYPE,
     ];
     pub const UPSTREAM_ALIASES: &[(&str, &str)] = &[
         (APP_BUILD_ID, "app.build_id"),

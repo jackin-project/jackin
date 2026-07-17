@@ -712,6 +712,45 @@ pub const DB_CLIENT_OPERATION_DURATION_DEF: super::MetricMetadata = super::Metri
         ],
     }],
 };
+// registry: instrument=histogram; unit={token}; attributes=gen_ai.operation.name:required,gen_ai.provider.name:required,gen_ai.token.type:required
+pub const GEN_AI_CLIENT_TOKEN_USAGE: &str = "gen_ai.client.token.usage";
+pub const GEN_AI_CLIENT_TOKEN_USAGE_DEF: super::MetricMetadata = super::MetricMetadata {
+    name: GEN_AI_CLIENT_TOKEN_USAGE,
+    description: "Number of input and output tokens used.",
+    instrument: super::MetricInstrument::Histogram,
+    unit: "{token}",
+    boundaries: &[
+        1.0, 4.0, 16.0, 64.0, 256.0, 1024.0, 4096.0, 16384.0, 65536.0, 262144.0,
+    ],
+    attributes: &[
+        super::AttributeRequirement {
+            name: "gen_ai.operation.name",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Required,
+            allowed_values: &["chat"],
+        },
+        super::AttributeRequirement {
+            name: "gen_ai.provider.name",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Required,
+            allowed_values: &[
+                "anthropic",
+                "openai",
+                "amp",
+                "xai",
+                "zai",
+                "minimax",
+                "kimi",
+            ],
+        },
+        super::AttributeRequirement {
+            name: "gen_ai.token.type",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Required,
+            allowed_values: &["input", "output"],
+        },
+    ],
+};
 // registry: instrument=updowncounter; unit={execution}; attributes=launch.stage.name:required,launch.target.kind:required
 pub const LAUNCH_STAGE_ACTIVE: &str = "launch.stage.active";
 pub const LAUNCH_STAGE_ACTIVE_DEF: super::MetricMetadata = super::MetricMetadata {
@@ -1429,6 +1468,7 @@ pub const ALL: &[&str] = &[
     CONNECTION_ATTEMPTS,
     CONNECTION_DURATION,
     DB_CLIENT_OPERATION_DURATION,
+    GEN_AI_CLIENT_TOKEN_USAGE,
     LAUNCH_STAGE_ACTIVE,
     LAUNCH_STAGE_DURATION,
     LAUNCH_STAGE_EXECUTIONS,
@@ -1471,6 +1511,7 @@ pub const DEFINITIONS: &[super::MetricMetadata] = &[
     CONNECTION_ATTEMPTS_DEF,
     CONNECTION_DURATION_DEF,
     DB_CLIENT_OPERATION_DURATION_DEF,
+    GEN_AI_CLIENT_TOKEN_USAGE_DEF,
     LAUNCH_STAGE_ACTIVE_DEF,
     LAUNCH_STAGE_DURATION_DEF,
     LAUNCH_STAGE_EXECUTIONS_DEF,
