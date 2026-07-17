@@ -20,12 +20,6 @@ The roadmap acceptance criteria are binding. This worksheet maps each criterion 
 | 14 | Zero-allocation disabled path and reviewed five-percent active-path gate | `disabled_alloc_facade_fast_paths_allocate_nothing`; `cargo xtask telemetry-bench --capture`; comparator doctored-baseline self-test |
 | 15 | Direct OTLP/backend history/in-memory state/no files documented | docs build/link/audit gates; `/guides/run-telemetry/`; `/reference/runtime/diagnostics/`; `ENGINEERING.md`; `TESTING.md` |
 
-## Verification record
+## Verification rule
 
-Verified locally on 2026-07-16 after the artifact-removal cutover:
-
-- 10 consecutive wire-conformance runs: 21/21 passed each run.
-- Full workspace: 5,499 passed, 3 opt-in tests skipped; the slow-export deadline and soak tests passed separately.
-- Registry, strict lint, clippy, formatting, feature powerset, allocation, volume, cardinality, privacy, propagation, lifecycle, benchmark comparison, docs tests, docs build, repository links, roadmap, and research gates passed.
-- CLI expected-absence checks passed; `diagnostics validate` produced the expected typed failures without an endpoint and with a non-gRPC protocol.
-- The CI `telemetry-conformance` workflow requires the unfiltered `jackin-otlp-testbed` suite, including `serves_all_three_otlp_services`, `namespace_detector_rejects_synthetic_legacy_attribute`, and `privacy_detector_rejects_nested_synthetic_value`; its filtered wire matrix also includes the testbed package.
+Named tests and commands above are the evidence inventory, not proof that the current tree passed them. Final closure records fresh command output and CI results from the post-merge tree; historical aggregate counts and pre-audit runs are not accepted as completion evidence.
