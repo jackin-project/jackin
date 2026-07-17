@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::{
-    contains_legacy_telemetry_name, event_runtime_severity, generate_rust_sources, repo_root,
-    rust_pascal, source_policy_violations, source_policy_violations_for_files,
+    contains_legacy_telemetry_name, event_runtime_severity, generate_rust_sources, ownership_type,
+    repo_root, rust_pascal, source_policy_violations, source_policy_violations_for_files,
     validate_registry_matches_rust,
 };
 
@@ -337,6 +337,18 @@ fn rust_names_preserve_version_boundaries() {
         rust_pascal("config.schema.v1alpha9"),
         "ConfigSchemaV1Alpha9"
     );
+}
+
+#[test]
+fn ownership_census_extracts_static_and_dynamic_types() {
+    assert_eq!(
+        ownership_type(&[
+            ".record_telemetry_error(",
+            "schema::enums::ErrorType::DependencyCancelled,",
+        ]),
+        "DependencyCancelled"
+    );
+    assert_eq!(ownership_type(&["record_error(error_type)"]), "dynamic");
 }
 
 #[test]
