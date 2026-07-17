@@ -337,18 +337,30 @@ fn accept_series(name: &'static str, attrs: &[Attr<'_>]) -> bool {
         .get_or_init(|| Mutex::new(HashMap::new()))
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if accept_series_in(&mut all, name, attrs, &order[..attrs.len()]) {
+        return true;
+    }
+    health::reject(health::Signal::Metric, Rejection::Cardinality);
+    false
+}
+
+fn accept_series_in(
+    all: &mut SeriesByInstrument,
+    name: &'static str,
+    attrs: &[Attr<'_>],
+    order: &[usize],
+) -> bool {
     let stream = all.entry(name).or_default();
     if stream
         .iter()
-        .any(|identity| series_matches(identity, attrs, &order[..attrs.len()]))
+        .any(|identity| series_matches(identity, attrs, order))
     {
         return true;
     }
     if stream.len() >= limits::MAX_CARDINALITY {
-        health::reject(health::Signal::Metric, Rejection::Cardinality);
         return false;
     }
-    stream.push(series_identity_with_order(attrs, &order[..attrs.len()]));
+    stream.push(series_identity_with_order(attrs, order));
     true
 }
 

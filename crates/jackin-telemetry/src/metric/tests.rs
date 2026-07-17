@@ -2,6 +2,50 @@ use super::*;
 use crate::{event::Value, schema::attrs};
 
 #[test]
+fn every_registered_metric_stream_enforces_its_own_cardinality_cap() {
+    let mut streams = SeriesByInstrument::new();
+    for definition in ALL {
+        for value in 0..limits::MAX_CARDINALITY {
+            let attrs = [Attr {
+                key: attrs::CLI_COMMAND_NAME,
+                value: Value::U64(value as u64),
+            }];
+            assert!(accept_series_in(
+                &mut streams,
+                definition.name,
+                &attrs,
+                &[0]
+            ));
+        }
+        let existing = [Attr {
+            key: attrs::CLI_COMMAND_NAME,
+            value: Value::U64(0),
+        }];
+        assert!(accept_series_in(
+            &mut streams,
+            definition.name,
+            &existing,
+            &[0]
+        ));
+        let overflow = [Attr {
+            key: attrs::CLI_COMMAND_NAME,
+            value: Value::U64(limits::MAX_CARDINALITY as u64),
+        }];
+        assert!(
+            !accept_series_in(&mut streams, definition.name, &overflow, &[0]),
+            "{} accepted its 257th series",
+            definition.name
+        );
+    }
+    assert_eq!(streams.len(), ALL.len());
+    assert!(
+        streams
+            .values()
+            .all(|series| series.len() == limits::MAX_CARDINALITY)
+    );
+}
+
+#[test]
 fn cardinality_rejects_the_257th_set_without_eviction() {
     use opentelemetry::metrics::MeterProvider as _;
     use opentelemetry_sdk::metrics::{InMemoryMetricExporter, PeriodicReader, SdkMeterProvider};
