@@ -388,19 +388,47 @@ jobs:
         run: bun run build
 
       - name: Cache lychee responses
-        if: steps.link-result.outputs.verified != 'true'
+        id: lychee_cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: .lycheecache
           key: lychee-v1-${{ runner.os }}-${{ hashFiles('docs/lychee.toml', 'crates/jackin-xtask/src/docs/site_links.rs') }}
           restore-keys: lychee-v1-${{ runner.os }}-
 
+      - name: Restore durable lychee responses
+        id: durable_lychee_cache
+        env:
+          ACTIONS_CACHE_HIT: ${{ steps.lychee_cache.outputs.cache-hit }}
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          REPOSITORY_ID: ${{ github.event.repository.id }}
+        run: >-
+          "$CI_XTASK" docs ci-lychee-cache
+
       - name: Check built site links
+        id: site_links
         if: steps.link-result.outputs.verified != 'true'
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: >-
           "$CI_XTASK" docs site-links
+
+      - name: Publish durable lychee responses
+        if: >-
+          steps.durable_lychee_cache.outputs.artifact_hit != 'true' &&
+          (steps.lychee_cache.outputs.cache-hit == 'true' ||
+           steps.site_links.outcome == 'success') &&
+          (github.ref == 'refs/heads/main' ||
+           github.event_name == 'workflow_dispatch' ||
+           (github.event_name == 'pull_request' &&
+            github.event.pull_request.head.repo.full_name == github.repository))
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ steps.durable_lychee_cache.outputs.name }}
+          path: .lycheecache
+          compression-level: 0
+          include-hidden-files: true
+          retention-days: 90
 
       - name: Stage repository-wide successful link result
         if: steps.link-result.outputs.refresh == 'true'

@@ -193,7 +193,7 @@ pub(crate) fn site_contract(git_ref: &str) -> Result<String> {
     Ok(hash(&input))
 }
 
-fn lychee_contract(git_ref: &str) -> Result<String> {
+pub(crate) fn lychee_contract(git_ref: &str) -> Result<String> {
     let config = String::from_utf8(blob(git_ref, "docs/lychee.toml")?)
         .context("docs/lychee.toml is not UTF-8")?;
     let parsed: toml::Value = toml::from_str(&config).context("parsing docs/lychee.toml")?;

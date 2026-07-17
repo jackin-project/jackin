@@ -28,6 +28,7 @@ use crate::report::{self, FormatArgs};
 
 mod brand;
 pub(crate) mod contract;
+mod lychee_cache;
 mod site_links;
 mod specs;
 
@@ -93,6 +94,9 @@ pub(crate) enum DocsCommand {
     /// Resolve and publish the reusable docs-link result for GitHub Actions.
     #[command(hide = true)]
     CiLinkResult,
+    /// Restore the durable lychee response cache for GitHub Actions.
+    #[command(hide = true)]
+    CiLycheeCache,
     /// Validate links in the generated documentation site.
     SiteLinks,
 }
@@ -205,6 +209,7 @@ pub(crate) fn run_docs(command: DocsCommand) -> Result<()> {
         ),
         DocsCommand::Contract(args) => contract::run(args),
         DocsCommand::CiLinkResult => contract::run_ci_link_result(),
+        DocsCommand::CiLycheeCache => lychee_cache::run(),
         DocsCommand::SiteLinks => site_links::run(),
     }
 }
