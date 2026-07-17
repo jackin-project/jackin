@@ -708,7 +708,8 @@ pub const DB_CLIENT_OPERATION_DURATION_DEF: super::MetricMetadata = super::Metri
         value_type: super::ValueType::String,
         requirement: super::RequirementLevel::Required,
         allowed_values: &[
-            "begin", "commit", "rollback", "select", "insert", "upsert", "update", "delete",
+            "connect", "begin", "commit", "rollback", "select", "insert", "upsert", "update",
+            "delete",
         ],
     }],
 };

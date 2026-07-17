@@ -302,7 +302,7 @@ pub const DB_OPERATION_NAME_DEF: super::AttributeMetadata = super::AttributeMeta
     description: "Database operation name.",
     value_type: super::ValueType::String,
     allowed_values: &[
-        "begin", "commit", "rollback", "select", "insert", "upsert", "update", "delete",
+        "connect", "begin", "commit", "rollback", "select", "insert", "upsert", "update", "delete",
     ],
 };
 // registry-type: enum

@@ -513,7 +513,8 @@ pub const DB_CLIENT_DEF: super::SpanMetadata = super::SpanMetadata {
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Required,
             allowed_values: &[
-                "begin", "commit", "rollback", "select", "insert", "upsert", "update", "delete",
+                "connect", "begin", "commit", "rollback", "select", "insert", "upsert", "update",
+                "delete",
             ],
         },
         super::AttributeRequirement {

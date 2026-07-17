@@ -54,10 +54,47 @@ pub async fn operation<T, E>(
 
 /// Open a local `SQLite` database at `path` and return a connection.
 pub async fn connect_local(path: &str) -> Result<Connection, String> {
-    let db = turso::Builder::new_local(path)
-        .build()
-        .await
-        .map_err(|err| format!("open local store failed: {err}"))?;
-    db.connect()
-        .map_err(|err| format!("connect local store failed: {err}"))
+    operation(DbOperation::Connect, async {
+        let db = turso::Builder::new_local(path)
+            .build()
+            .await
+            .map_err(|_| "open local store failed".to_owned())?;
+        db.connect()
+            .map_err(|_| "connect local store failed".to_owned())
+    })
+    .await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn connection_owner_exports_outcome_without_database_path() {
+        let directory = tempfile::tempdir().unwrap();
+        let success_path = directory.path().join("sqlite-secret-success.db");
+        let failure_path = directory.path().join("sqlite-secret-directory");
+        std::fs::create_dir(&failure_path).unwrap();
+        let success_path = success_path.to_string_lossy();
+        let failure_path = failure_path.to_string_lossy();
+
+        let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
+        let _subscriber = tracing::subscriber::set_default(subscriber);
+
+        connect_local(&success_path).await.unwrap();
+        connect_local(&failure_path).await.unwrap_err();
+
+        export.force_flush();
+        assert_eq!(export.finished_spans().len(), 2);
+        assert_eq!(export.error_span_count(), 1);
+        assert!(export.contains_span_text("connect"));
+        assert!(export.contains_span_text("db_error"));
+        for prohibited in [
+            success_path.as_ref(),
+            failure_path.as_ref(),
+            "sqlite-secret",
+        ] {
+            assert!(!export.contains_span_text(prohibited));
+        }
+    }
 }

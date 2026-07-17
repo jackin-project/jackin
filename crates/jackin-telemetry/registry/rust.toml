@@ -85,7 +85,7 @@ values = ["anthropic", "openai", "amp", "xai", "zai", "minimax", "kimi"]
 [[standard_enum]]
 rust_type = "DbOperationName"
 attribute = "db.operation.name"
-values = ["begin", "commit", "rollback", "select", "insert", "upsert", "update", "delete"]
+values = ["connect", "begin", "commit", "rollback", "select", "insert", "upsert", "update", "delete"]
 
 [[standard_enum]]
 rust_type = "ScreenId"

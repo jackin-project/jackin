@@ -30,7 +30,7 @@ bounded_values!(ConfigOperation { Load => "load", Validate => "validate", Migrat
 bounded_values!(ConfigScope { Global => "global", Workspace => "workspace" });
 bounded_values!(ConnectionPeerType { HostDaemon => "host_daemon", CapsuleControl => "capsule_control", CapsuleAttach => "capsule_attach", Docker => "docker", Provider => "provider", Parallax => "parallax" });
 bounded_values!(CredentialSourceType { Environment => "environment", AgentHome => "agent_home", Onepassword => "onepassword", GithubCli => "github_cli", OauthStore => "oauth_store", None => "none" });
-bounded_values!(DbOperationName { Begin => "begin", Commit => "commit", Rollback => "rollback", Select => "select", Insert => "insert", Upsert => "upsert", Update => "update", Delete => "delete" });
+bounded_values!(DbOperationName { Connect => "connect", Begin => "begin", Commit => "commit", Rollback => "rollback", Select => "select", Insert => "insert", Upsert => "upsert", Update => "update", Delete => "delete" });
 bounded_values!(DindMode { None => "none", Rootless => "rootless", Privileged => "privileged" });
 bounded_values!(GenAiAgentName { Claude => "claude", Codex => "codex", Amp => "amp", Kimi => "kimi", Opencode => "opencode", Grok => "grok" });
 bounded_values!(GenAiOperationName { Chat => "chat" });
