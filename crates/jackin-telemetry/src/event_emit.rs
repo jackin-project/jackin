@@ -20,7 +20,7 @@ macro_rules! event_field_value {
 fn emit_registered_event(def: &'static EventDef, fields: FieldSet<'_>) {
     if def.name <= "launch.stage.started" {
         emit_registered_event_0(def, fields);
-    } else if def.name <= "ui.widget.focused" {
+    } else if def.name <= "ui.screen.exited" {
         emit_registered_event_1(def, fields);
     } else if def.name <= "ui.widget.unfocused" {
         emit_registered_event_2(def, fields);
@@ -103,6 +103,9 @@ fn emit_registered_event_1(def: &'static EventDef, fields: FieldSet<'_>) {
         schema::events::PTY_SPAWN => {
             emit_pty_spawn(def, fields);
         }
+        schema::events::RETRY_SCHEDULED => {
+            emit_retry_scheduled(def, fields);
+        }
         schema::events::RUN_SUMMARY => {
             emit_run_summary(def, fields);
         }
@@ -130,15 +133,15 @@ fn emit_registered_event_1(def: &'static EventDef, fields: FieldSet<'_>) {
         schema::events::UI_SCREEN_EXITED => {
             emit_ui_screen_exited(def, fields);
         }
-        schema::events::UI_WIDGET_FOCUSED => {
-            emit_ui_widget_focused(def, fields);
-        }
         _ => unreachable!("validated event registry chunk"),
     }
 }
 
 fn emit_registered_event_2(def: &'static EventDef, fields: FieldSet<'_>) {
     match def.name {
+        schema::events::UI_WIDGET_FOCUSED => {
+            emit_ui_widget_focused(def, fields);
+        }
         schema::events::UI_WIDGET_UNFOCUSED => {
             emit_ui_widget_unfocused(def, fields);
         }
@@ -501,6 +504,18 @@ fn emit_pty_spawn(def: &'static EventDef, fields: FieldSet<'_>) {
                 field_gen_ai_conversation_id,
                 String
             ),
+            ("session.id", field_session_id, String),
+        ]
+    );
+}
+
+fn emit_retry_scheduled(def: &'static EventDef, fields: FieldSet<'_>) {
+    emit_schema_event!(
+        "retry.scheduled",
+        def.severity,
+        fields,
+        [
+            ("cli.invocation.id", field_cli_invocation_id, String),
             ("session.id", field_session_id, String),
         ]
     );

@@ -817,15 +817,15 @@ pub mod std_attrs {
     pub use opentelemetry_semantic_conventions::attribute::SESSION_ID;
     pub use opentelemetry_semantic_conventions::attribute::SESSION_PREVIOUS_ID;
     pub use opentelemetry_semantic_conventions::attribute::URL_TEMPLATE;
-    // Local pin: not authoritative in opentelemetry-semantic-conventions =0.32.1; registry schema 1.43.0.
+    // Local pin: not authoritative in opentelemetry-semantic-conventions =0.32.1; registry schema 1.44.0.
     pub const GEN_AI_AGENT_NAME: &str = "gen_ai.agent.name";
-    // Local pin: not authoritative in opentelemetry-semantic-conventions =0.32.1; registry schema 1.43.0.
+    // Local pin: not authoritative in opentelemetry-semantic-conventions =0.32.1; registry schema 1.44.0.
     pub const GEN_AI_CONVERSATION_ID: &str = "gen_ai.conversation.id";
-    // Local pin: not authoritative in opentelemetry-semantic-conventions =0.32.1; registry schema 1.43.0.
+    // Local pin: not authoritative in opentelemetry-semantic-conventions =0.32.1; registry schema 1.44.0.
     pub const GEN_AI_OPERATION_NAME: &str = "gen_ai.operation.name";
-    // Local pin: not authoritative in opentelemetry-semantic-conventions =0.32.1; registry schema 1.43.0.
+    // Local pin: not authoritative in opentelemetry-semantic-conventions =0.32.1; registry schema 1.44.0.
     pub const GEN_AI_PROVIDER_NAME: &str = "gen_ai.provider.name";
-    // Local pin: not authoritative in opentelemetry-semantic-conventions =0.32.1; registry schema 1.43.0.
+    // Local pin: not authoritative in opentelemetry-semantic-conventions =0.32.1; registry schema 1.44.0.
     pub const GEN_AI_TOKEN_TYPE: &str = "gen_ai.token.type";
     pub const ALL_KEYS: &[&str] = &[
         APP_BUILD_ID,

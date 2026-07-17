@@ -33,7 +33,7 @@ pub(crate) async fn claim_container_name(
     let mut last_unlink_err: Option<std::io::Error> = None;
     let mut occupied_attempts = 0u32;
 
-    for attempt in 0..CLAIM_MAX_ATTEMPTS {
+    for _ in 0..CLAIM_MAX_ATTEMPTS {
         let name = crate::instance::new_container_name(workspace_name, selector);
 
         let slot_free = match docker.inspect_container_state(&name).await {
@@ -72,10 +72,7 @@ pub(crate) async fn claim_container_name(
             match try_acquire_name_lock(&paths.data_dir, &name) {
                 Ok(lock_file) => return Ok((name, lock_file)),
                 Err(NameLockError { lock, unlink }) => {
-                    jackin_diagnostics::telemetry_debug!(
-                        "runtime",
-                        "claim_container_name: lock contention on {name} (attempt {attempt}): {lock}",
-                    );
+                    let _warning = jackin_telemetry::record_retry_scheduled();
                     if let Some(unlink_err) = unlink {
                         last_unlink_err = Some(unlink_err);
                     }
@@ -161,13 +158,7 @@ fn try_acquire_name_lock(
     if let Err(lock) = FileExt::try_lock(&lock_file) {
         let lock = std::io::Error::from(lock);
         drop(lock_file);
-        let unlink = std::fs::remove_file(&lock_path).err().inspect(|err| {
-            jackin_diagnostics::telemetry_debug!(
-                "runtime",
-                "try_acquire_name_lock: failed to unlink {} after lock contention: {err}",
-                lock_path.display(),
-            );
-        });
+        let unlink = std::fs::remove_file(&lock_path).err();
         return Err(NameLockError { lock, unlink });
     }
     Ok(lock_file)

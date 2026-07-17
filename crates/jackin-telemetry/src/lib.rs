@@ -18,6 +18,7 @@ pub mod operation;
 pub mod privacy;
 pub mod process;
 pub mod propagation;
+mod retry;
 pub mod schema;
 pub mod spawn;
 pub mod ui;
@@ -36,6 +37,7 @@ pub use operation::{
     OperationGuard, SpanDef, autonomous_root_operation, operation, operation_or_disabled,
     operation_with_remote_parent, root_operation,
 };
+pub use retry::record_retry_scheduled;
 
 /// The only tracing target accepted for governed product telemetry.
 pub const TELEMETRY_TARGET: &str = "jackin_telemetry";

@@ -1033,6 +1033,27 @@ pub const PTY_SPAWN_DEF: super::EventMetadata = super::EventMetadata {
         },
     ],
 };
+// registry: attributes=cli.invocation.id:recommended,session.id:recommended
+pub const RETRY_SCHEDULED: &str = "retry.scheduled";
+pub const RETRY_SCHEDULED_DEF: super::EventMetadata = super::EventMetadata {
+    name: RETRY_SCHEDULED,
+    description: "A bounded retry was scheduled after an unsuccessful attempt.",
+    severity: super::EventSeverity::Warn,
+    attributes: &[
+        super::AttributeRequirement {
+            name: "cli.invocation.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
+        super::AttributeRequirement {
+            name: "session.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
+    ],
+};
 // registry: attributes=cli.invocation.id:recommended,outcome:required,session.id:recommended
 pub const RUN_SUMMARY: &str = "run.summary";
 pub const RUN_SUMMARY_DEF: super::EventMetadata = super::EventMetadata {
@@ -1448,6 +1469,7 @@ pub const ALL: &[&str] = &[
     PROCESS_SUBPROCESS_DONE,
     PTY_EXIT,
     PTY_SPAWN,
+    RETRY_SCHEDULED,
     RUN_SUMMARY,
     SESSION_END,
     SESSION_START,
@@ -1484,6 +1506,7 @@ pub const DEFINITIONS: &[super::EventMetadata] = &[
     PROCESS_SUBPROCESS_DONE_DEF,
     PTY_EXIT_DEF,
     PTY_SPAWN_DEF,
+    RETRY_SCHEDULED_DEF,
     RUN_SUMMARY_DEF,
     SESSION_END_DEF,
     SESSION_START_DEF,

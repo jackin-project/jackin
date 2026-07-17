@@ -34,6 +34,7 @@ pub const PROCESS_SUBPROCESS_DONE: EventDef =
     EventDef::generated(&schema::events::PROCESS_SUBPROCESS_DONE_DEF);
 pub const PTY_EXIT: EventDef = EventDef::generated(&schema::events::PTY_EXIT_DEF);
 pub const PTY_SPAWN: EventDef = EventDef::generated(&schema::events::PTY_SPAWN_DEF);
+pub const RETRY_SCHEDULED: EventDef = EventDef::generated(&schema::events::RETRY_SCHEDULED_DEF);
 pub const RUN_SUMMARY: EventDef = EventDef::generated(&schema::events::RUN_SUMMARY_DEF);
 pub const SESSION_END: EventDef = EventDef::generated(&schema::events::SESSION_END_DEF);
 pub const SESSION_START: EventDef = EventDef::generated(&schema::events::SESSION_START_DEF);
@@ -71,6 +72,7 @@ pub const ALL: &[EventDef] = &[
     PROCESS_SUBPROCESS_DONE,
     PTY_EXIT,
     PTY_SPAWN,
+    RETRY_SCHEDULED,
     RUN_SUMMARY,
     SESSION_END,
     SESSION_START,
