@@ -7,6 +7,7 @@ use std::process::Command;
 
 use anyhow::{Context, Result, bail};
 use clap::{Args, Subcommand};
+use serde::Deserialize;
 
 use crate::cmd;
 
@@ -27,6 +28,20 @@ pub(crate) struct PrepareArgs {
     version: String,
 }
 
+#[derive(Deserialize)]
+struct ToolchainFile {
+    toolchain: ToolchainConfig,
+}
+
+#[derive(Deserialize)]
+struct ToolchainConfig {
+    channel: String,
+    #[serde(default)]
+    components: Vec<String>,
+    #[serde(default)]
+    targets: Vec<String>,
+}
+
 pub(crate) fn run(command: CiToolchainCommand) -> Result<()> {
     match command {
         CiToolchainCommand::Activate(args) => activate(&args.version, false),
@@ -35,14 +50,13 @@ pub(crate) fn run(command: CiToolchainCommand) -> Result<()> {
 }
 
 fn activate(version: &str, repair: bool) -> Result<()> {
-    let pinned;
+    let config = pinned_config()?;
     let version = if version.is_empty() {
-        pinned = pinned_version()?;
-        pinned.as_str()
+        config.channel.as_str()
     } else {
         version
     };
-    if let Some(toolchain) = find_rustup_toolchain(version)? {
+    if let Some(toolchain) = find_rustup_toolchain(version, &config)? {
         append_github_file("GITHUB_ENV", &format!("RUSTUP_TOOLCHAIN={toolchain}"))?;
         writeln!(
             io::stdout().lock(),
@@ -54,15 +68,17 @@ fn activate(version: &str, repair: bool) -> Result<()> {
     if !repair {
         bail!("prepared Rust toolchain {version} is unavailable; the warmup job must repair it");
     }
-    cmd::run_streaming(Command::new("rustup").args([
-        "toolchain",
-        "install",
-        version,
-        "--profile",
-        "minimal",
-    ]))
-    .with_context(|| format!("installing Rust {version} with rustup"))?;
-    if let Some(toolchain) = find_rustup_toolchain(version)? {
+    let mut install = Command::new("rustup");
+    install.args(["toolchain", "install", version, "--profile", "minimal"]);
+    if !config.components.is_empty() {
+        install.args(["--component", &config.components.join(",")]);
+    }
+    if !config.targets.is_empty() {
+        install.args(["--target", &config.targets.join(",")]);
+    }
+    cmd::run_streaming(&mut install)
+        .with_context(|| format!("installing Rust {version} with rustup"))?;
+    if let Some(toolchain) = find_rustup_toolchain(version, &config)? {
         append_github_file("GITHUB_ENV", &format!("RUSTUP_TOOLCHAIN={toolchain}"))?;
         writeln!(
             io::stdout().lock(),
@@ -73,21 +89,15 @@ fn activate(version: &str, repair: bool) -> Result<()> {
     bail!("rustup reported Rust {version} installed, but its toolchain is incomplete")
 }
 
-fn pinned_version() -> Result<String> {
+fn pinned_config() -> Result<ToolchainConfig> {
     let source = fs::read_to_string("rust-toolchain.toml")
         .context("reading rust-toolchain.toml for the pinned Rust version")?;
-    source
-        .lines()
-        .find_map(|line| {
-            line.trim()
-                .strip_prefix("channel = \"")
-                .and_then(|value| value.strip_suffix('"'))
-                .map(str::to_owned)
-        })
-        .context("rust-toolchain.toml is missing a quoted channel")
+    toml::from_str::<ToolchainFile>(&source)
+        .context("parsing rust-toolchain.toml")
+        .map(|file| file.toolchain)
 }
 
-fn find_rustup_toolchain(version: &str) -> Result<Option<String>> {
+fn find_rustup_toolchain(version: &str, config: &ToolchainConfig) -> Result<Option<String>> {
     let rustup_home = env::var_os("RUSTUP_HOME").map_or_else(
         || {
             env::var_os("HOME")
@@ -108,21 +118,38 @@ fn find_rustup_toolchain(version: &str) -> Result<Option<String>> {
         .into_iter()
         .filter_map(|entry| {
             let name = entry.file_name().into_string().ok()?;
-            (name.starts_with(&prefix) && name.ends_with(&suffix) && valid_toolchain(&entry.path()))
-                .then_some(name)
+            (name.starts_with(&prefix)
+                && name.ends_with(&suffix)
+                && valid_toolchain(&entry.path(), config))
+            .then_some(name)
         })
         .collect::<Vec<_>>();
     candidates.sort_unstable();
     Ok(candidates.pop())
 }
 
-fn valid_toolchain(path: &Path) -> bool {
-    ["rustc", "cargo"].into_iter().all(|binary| {
+fn valid_toolchain(path: &Path, config: &ToolchainConfig) -> bool {
+    let binaries = ["rustc", "cargo"]
+        .into_iter()
+        .chain(
+            config
+                .components
+                .iter()
+                .filter_map(|component| match component.as_str() {
+                    "rustfmt" => Some("rustfmt"),
+                    "clippy" => Some("clippy-driver"),
+                    _ => None,
+                }),
+        );
+    binaries.into_iter().all(|binary| {
         let Ok(metadata) = fs::metadata(path.join("bin").join(binary)) else {
             return false;
         };
         metadata.is_file() && metadata.permissions().mode() & 0o111 != 0
-    })
+    }) && config
+        .targets
+        .iter()
+        .all(|target| path.join("lib/rustlib").join(target).join("lib").is_dir())
 }
 
 fn host_triple() -> Result<&'static str> {
