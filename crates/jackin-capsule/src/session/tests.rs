@@ -4,8 +4,8 @@
 //! Tests for `session`.
 use super::{
     AgentState, OscPolicy, Session, SessionEvent, agent_model_args, build_agent_command,
-    build_shell_command, child_exit_reason, inject_status_env, osc8_uri_is_safe,
-    pty_exit_error_type, pty_exit_reason, validate_agent_slug,
+    build_shell_command, child_exit_reason, emit_pty_exit, emit_pty_spawn, inject_status_env,
+    osc8_uri_is_safe, pty_exit_error_type, pty_exit_reason, validate_agent_slug,
 };
 
 use std::path::Path;
@@ -1230,6 +1230,31 @@ fn pty_exit_reason_covers_the_closed_registry() {
         pty_exit_error_type(PtyExitReason::WaitFailed),
         Some(ErrorType::IoError)
     );
+}
+
+#[test]
+fn pty_spawn_exit_pair_is_bounded_and_does_not_export_wait_errors() {
+    let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
+    let private_error = std::io::Error::other("private PTY bytes and /private/workspace");
+    tracing::subscriber::with_default(subscriber, || {
+        emit_pty_spawn(Some("codex"), Some("conversation-proof"));
+        emit_pty_exit(
+            Some("codex"),
+            Some("conversation-proof"),
+            Err(&private_error),
+            false,
+        );
+    });
+    export.force_flush();
+
+    assert_eq!(export.event_count("pty.spawn"), 1);
+    assert_eq!(export.event_count("pty.exit"), 1);
+    assert!(export.contains_log_text("wait_failed"));
+    assert!(export.contains_log_text("io_error"));
+    assert!(export.contains_log_text("codex"));
+    assert!(export.contains_log_text("conversation-proof"));
+    assert!(!export.contains_log_text("private PTY bytes"));
+    assert!(!export.contains_log_text("/private/workspace"));
 }
 
 #[test]

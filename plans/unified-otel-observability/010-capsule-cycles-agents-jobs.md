@@ -116,7 +116,7 @@ In `handle_state_tick`'s transition block (`daemon.rs:885-909` region, where `St
 
 - The shared generated cycle contract requires bounded `background.cycle.name`, accepts stable `error.type`, and automatically records count/duration/outcome/error metrics without job IDs at guard completion. Branch and PR workers use distinct validated cycle names; a delivered PR lookup failure is a recovered degradation, a closed result channel is `rpc_error`, and thread creation failure is `process_spawn_error`. Provider probes report attempted/changed/degraded work without erasing adapter failures and open an autonomous root before substantive polling. Host instance refresh wraps due blocking work; agent-status transition/watchdog reactions are autonomous roots while quiet evidence passes are metric-only. Autonomous roots clear stale caller invocation identity. Remaining cycle work is integrated conformance evidence.
 - Govern agent-transition event/metric attribute contracts, map the authoritative status source, record flap behavior, and prove same-state silence plus reporter-ID/privacy absence.
-- PTY exit events now classify wait failures as `io_error`, signal/non-zero exits as `process_exit_nonzero`, and operator termination as `cancelled`, without formatting the underlying error or PTY content. Remaining: add exporter-backed paired spawn/exit privacy coverage.
+- PTY exit events classify wait failures as `io_error`, signal/non-zero exits as `process_exit_nonzero`, and operator termination as `cancelled`, without formatting the underlying error or PTY content. Unit coverage exercises all five closed exit reasons; exporter-backed paired spawn/exit coverage proves one event per endpoint, stable agent/conversation correlation, and that secret-bearing wait errors and paths never export.
 - Replace Capsule pane action spans with `WidgetFocusTracker` lifecycle for pane, tab, and command palette focus plus bounded duration.
 - Prewarm scheduling/attempt paths emit count, active, and duration metrics keyed only by `job.type`, outcome, and stable error type. The registry rejects `job.id` as a metric dimension. Connection state, queue depth, standard process health, and established Tokio runtime instruments are also wired to cheap snapshots.
 - Image jobs now preserve one producer/job identity while opening one linked consumer per target; sidecar lock/live-state dedup classifies `outcome=skip`, and failure/error outcomes are typed. Helper tests prove shared job identity, per-attempt fan-out, links, and the skip/failure/error/timeout/panic/abort matrix. Remaining: representative production-flow conformance.
@@ -136,7 +136,7 @@ In `handle_state_tick`'s transition block (`daemon.rs:885-909` region, where `St
 - [ ] `cargo nextest run --workspace --all-features --locked` exits 0
 - [ ] Producer/consumer link + shared `job.id` test passes; cycles carry no `job.id`
 - [ ] Agent-state event fires only on change; `reported` has no source id
-- [ ] `pty.exit.reason` mapping covers all five values with tests
+- [x] `pty.exit.reason` mapping covers all five values, including operator cancellation, with paired exporter privacy coverage
 - [x] `network.mode=none` launch injects no telemetry env or firewall OTLP host (production-shape helper test)
 - [ ] `cargo xtask lint --strict` exits 0
 - [ ] `plans/unified-otel-observability/README.md` status row updated
