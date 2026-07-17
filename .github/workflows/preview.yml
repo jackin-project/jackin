@@ -271,10 +271,10 @@ jobs:
       RUSTUP_HOME: ${{ matrix.config.rustup_home }}
     strategy:
       fail-fast: false
-      # The first lane owns the runner-independent result cache. GitHub exposes
-      # a newly saved cache to Velnor after the workflow completes, so a cold
-      # dual-lane population fails fast on Velnor and its immediate repeat is
-      # the parity proof. Velnor must never compile the duplicate inputs.
+      # The first lane owns the runner-independent result cache. Velnor cannot
+      # access GitHub's cache service, so it finds the latest completed-run
+      # artifact with the exact archive contract. Velnor must never compile
+      # the duplicate inputs.
       max-parallel: 1
       matrix:
         config: ${{ fromJSON((github.event_name != 'workflow_dispatch' || inputs.lanes == 'github') && '[{"lane":"GitHub","runner":"\"ubuntu-24.04\"","mise_data_dir":"/home/runner/.local/share/mise","rustup_home":"/home/runner/.rustup","cache_writer":true}]' || inputs.lanes == 'velnor' && '[{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","mise_data_dir":"/opt/mise","rustup_home":"/opt/rustup","cache_writer":true}]' || '[{"lane":"GitHub","runner":"\"ubuntu-24.04\"","mise_data_dir":"/home/runner/.local/share/mise","rustup_home":"/home/runner/.rustup","cache_writer":true},{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","mise_data_dir":"/opt/mise","rustup_home":"/opt/rustup","cache_writer":false}]') }}
@@ -291,11 +291,14 @@ jobs:
           key: preview-archives-v2-jackin-${{ needs.source-changed.outputs.jackin_archive_contract }}
       - name: Reuse the first lane's complete jackin archive set
         if: matrix.config.cache_writer == false
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: dawidd6/action-download-artifact@b6e2e70617bc3265edd6dab6c906732b2f1ae151 # v21
         with:
+          workflow: preview.yml
+          workflow_search: true
+          workflow_conclusion: completed
+          search_artifacts: true
+          name: preview-GitHub-jackin-${{ needs.source-changed.outputs.jackin_archive_contract }}
           path: dist
-          key: preview-archives-v2-jackin-${{ needs.source-changed.outputs.jackin_archive_contract }}
-          fail-on-cache-miss: true
       - uses: ./.github/actions/download-ci-xtask
         if: matrix.config.cache_writer && steps.archive-cache.outputs.cache-hit != 'true'
         with:
@@ -370,7 +373,7 @@ jobs:
       - name: Upload complete jackin archive set
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: preview-${{ matrix.config.lane }}-jackin
+          name: preview-${{ matrix.config.lane }}-jackin-${{ needs.source-changed.outputs.jackin_archive_contract }}
           path: dist/*.tar.gz*
       - name: Upload jackin cargo timings
         if: always()
@@ -426,11 +429,14 @@ jobs:
           key: preview-archives-v2-capsule-${{ needs.source-changed.outputs.capsule_archive_contract }}
       - name: Reuse the first lane's complete capsule archive set
         if: matrix.config.cache_writer == false
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: dawidd6/action-download-artifact@b6e2e70617bc3265edd6dab6c906732b2f1ae151 # v21
         with:
+          workflow: preview.yml
+          workflow_search: true
+          workflow_conclusion: completed
+          search_artifacts: true
+          name: preview-GitHub-jackin-capsule-${{ needs.source-changed.outputs.capsule_archive_contract }}
           path: dist
-          key: preview-archives-v2-capsule-${{ needs.source-changed.outputs.capsule_archive_contract }}
-          fail-on-cache-miss: true
       - uses: ./.github/actions/download-ci-xtask
         if: matrix.config.cache_writer && steps.archive-cache.outputs.cache-hit != 'true'
         with:
@@ -499,7 +505,7 @@ jobs:
       - name: Upload complete capsule archive set
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: preview-${{ matrix.config.lane }}-jackin-capsule
+          name: preview-${{ matrix.config.lane }}-jackin-capsule-${{ needs.source-changed.outputs.capsule_archive_contract }}
           path: dist/*.tar.gz*
       - name: Upload capsule cargo timings
         if: always()
