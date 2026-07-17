@@ -360,8 +360,7 @@ impl RepoResolveOptions {
 
     /// `debug` is intentionally absent — non-interactive callers run
     /// from inside the TUI alt-screen, where streaming git output via
-    /// `--debug` would corrupt the render. Diagnostics go through the
-    /// buffered `jackin_diagnostics::telemetry_debug!` channel instead.
+    /// `--debug` would corrupt the render.
     pub(super) fn non_interactive() -> Self {
         Self {
             debug: false,
@@ -507,15 +506,6 @@ pub(super) async fn resolve_agent_repo_with(
                 jackin_telemetry::schema::enums::CacheName::RoleRepository,
                 jackin_telemetry::schema::enums::CacheResult::Stale,
             );
-            // TUI alt-screen corruption: `eprintln!` from inside a
-            // console session paints over the render.
-            jackin_diagnostics::telemetry_debug!(
-                "repo_cache",
-                "cached role repo remote mismatch: expected={git_url:?} \
-                 found={remote_url:?} path={}",
-                cached_repo.repo_dir.display()
-            );
-
             if confirm_removal()? {
                 std::fs::remove_dir_all(&cached_repo.repo_dir)?;
                 let clone_args = clone_args(git_url, &repo_path, opts.branch_override.as_deref());
@@ -568,12 +558,6 @@ pub(super) async fn resolve_agent_repo_with(
                 jackin_telemetry::schema::enums::CacheName::RoleRepository,
                 jackin_telemetry::schema::enums::CacheResult::Hit,
             );
-            jackin_diagnostics::telemetry_debug!(
-                "repo_cache",
-                "skipping role repo fetch for {}: FETCH_HEAD is {}s old",
-                selector.key(),
-                age.as_secs()
-            );
             if let Some(run) = jackin_diagnostics::active_run() {
                 run.compact(
                     "repo_refresh_skipped",
@@ -616,12 +600,7 @@ pub(super) async fn resolve_agent_repo_with(
                 )
                 .await;
             if ff_result.is_err() {
-                // Route through buffered debug channel so the TUI alt-screen
-                // is not corrupted when this fires under `jackin console`.
-                jackin_diagnostics::telemetry_debug!(
-                    "repo_cache",
-                    "cached role branch diverged (remote may have been force-pushed) — resetting to origin/{branch}"
-                );
+                let _warning = jackin_telemetry::record_recovered_degradation();
                 runner
                     .run(
                         "git",
