@@ -95,6 +95,7 @@ predicates = "=3.1.4"
 proptest = "1.9"
 proc-macro2 = { version = "1", features = ["span-locations"] }
 procfs = "0.18"
+quick-xml = "0.41.0"
 rand = "0.10"
 ratatui = "0.30"
 # Must stay lockstep-compatible with ratatui 0.30; pinned when workspace was

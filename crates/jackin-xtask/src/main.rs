@@ -12,6 +12,7 @@ mod ci;
 mod ci_audit;
 mod ci_doctest;
 mod ci_fuzz;
+mod ci_junit;
 mod ci_result;
 mod ci_route;
 mod ci_stage;
@@ -72,6 +73,9 @@ enum Command {
     /// Run every bounded fuzz target owned by one crate.
     #[command(name = "ci-fuzz")]
     CiFuzz(ci_fuzz::CiFuzzArgs),
+    /// Analyze one JUnit report and enforce the flake quarantine.
+    #[command(name = "ci-junit")]
+    CiJunit(ci_junit::CiJunitArgs),
     /// Resolve reusable per-crate CI results.
     #[command(name = "ci-result", subcommand)]
     CiResult(ci_result::CiResultCommand),
@@ -269,6 +273,7 @@ fn main() -> ExitCode {
         Command::CiAudit(args) => ci_audit::run(args),
         Command::CiDoctest(args) => ci_doctest::run(args),
         Command::CiFuzz(args) => ci_fuzz::run(args),
+        Command::CiJunit(args) => ci_junit::run(args),
         Command::CiResult(command) => ci_result::run(command),
         Command::CiRoute(args) => ci_route::run(args),
         Command::CiStage(args) => ci_stage::run(args),

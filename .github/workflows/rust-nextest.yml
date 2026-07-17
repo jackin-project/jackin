@@ -289,16 +289,13 @@ jobs:
           name: nextest-junit-${{ matrix.package }}-${{ matrix.config.lane }}
           path: target/nextest/ci/junit.xml
           if-no-files-found: ignore
-      - name: Detect junit timing report
+      - name: Analyze junit timing and flakes
         id: junit
         if: always() && steps.crate-result.outputs.hit != 'true'
-        shell: bash
-        run: |
-          if [ -f target/nextest/ci/junit.xml ]; then
-            echo "exists=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "exists=false" >> "$GITHUB_OUTPUT"
-          fi
+        run: >-
+          "$CI_XTASK" ci-junit
+          --report target/nextest/ci/junit.xml
+          --group "${{ matrix.package }}"
       # Plan 027: suite-time family enforces when junit exists (skipped locally).
       - name: Suite-time ratchet (scheduled enforce)
         if: >-
@@ -306,67 +303,6 @@ jobs:
           steps.junit.outputs.exists == 'true'
         run: |
           "$CI_XTASK" lint ratchet --only suite-time
-      - name: Slowest tests summary
-        if: always() && steps.crate-result.outputs.hit != 'true'
-        shell: bash
-        run: |
-          if [ -f target/nextest/ci/junit.xml ]; then
-            python3 - "$GITHUB_STEP_SUMMARY" "${{ matrix.package }}" <<'PY'
-          import sys
-          import xml.etree.ElementTree as ET
-          from pathlib import Path
-
-          summary_path = Path(sys.argv[1])
-          group = sys.argv[2]
-          junit_path = Path("target/nextest/ci/junit.xml")
-          root = ET.parse(junit_path).getroot()
-
-          cases = []
-          for case in root.iter("testcase"):
-              name = case.attrib.get("name", "")
-              try:
-                  seconds = float(case.attrib.get("time", "0") or 0)
-              except ValueError:
-                  seconds = 0.0
-              cases.append((seconds, name))
-
-          with summary_path.open("a", encoding="utf-8") as summary:
-              print(f"### Slowest tests ({group})", file=summary)
-              for seconds, name in sorted(cases, reverse=True)[:10]:
-                  print(f"- {seconds:g}s `{name}`", file=summary)
-              print("", file=summary)
-              print(
-                  f"Crate wall time (sum of testcase times): {sum(seconds for seconds, _ in cases):.3f}s",
-                  file=summary,
-              )
-          PY
-          fi
-      - name: Fail on unquarantined flakes
-        if: always() && steps.crate-result.outputs.hit != 'true'
-        shell: bash
-        run: |
-          [ -f target/nextest/ci/junit.xml ] || exit 0
-          if ! grep -q 'flaky="true"' target/nextest/ci/junit.xml; then
-            exit 0
-          fi
-          # Extract testcase names from lines that also carry flaky="true".
-          mapfile -t flaky_names < <(
-            grep 'flaky="true"' target/nextest/ci/junit.xml \
-              | sed -n 's/.*name="\([^"]*\)".*/\1/p'
-          )
-          unquarantined=()
-          for name in "${flaky_names[@]}"; do
-            [ -n "$name" ] || continue
-            if ! grep -Fq "name = \"$name\"" flaky-tests.toml 2>/dev/null; then
-              unquarantined+=("$name")
-            fi
-          done
-          if [ "${#unquarantined[@]}" -gt 0 ]; then
-            echo "::error::flaky test(s) detected and not quarantined in flaky-tests.toml"
-            printf "%s\n" "${unquarantined[@]}"
-            exit 1
-          fi
-
       - name: Set up Docker Buildx for Docker E2E
         if: >-
           steps.crate-result.outputs.hit != 'true' && matrix.package == 'jackin' &&
@@ -445,30 +381,14 @@ jobs:
           name: nextest-junit-docker-e2e-${{ matrix.config.lane }}
           path: target/nextest/docker-e2e/junit.xml
           if-no-files-found: ignore
-      - name: Fail on unquarantined Docker E2E flakes
+      - name: Analyze Docker E2E timing and flakes
         if: >-
           always() && steps.crate-result.outputs.hit != 'true' &&
           matrix.package == 'jackin' && inputs.docker-e2e
-        shell: bash
-        run: |
-          [ -f target/nextest/docker-e2e/junit.xml ] || exit 0
-          if ! grep -q 'flaky="true"' target/nextest/docker-e2e/junit.xml; then exit 0; fi
-          mapfile -t flaky_names < <(
-            grep 'flaky="true"' target/nextest/docker-e2e/junit.xml \
-              | sed -n 's/.*name="\([^"]*\)".*/\1/p'
-          )
-          unquarantined=()
-          for name in "${flaky_names[@]}"; do
-            [ -n "$name" ] || continue
-            if ! grep -Fq "name = \"$name\"" flaky-tests.toml 2>/dev/null; then
-              unquarantined+=("$name")
-            fi
-          done
-          if [ "${#unquarantined[@]}" -gt 0 ]; then
-            echo "::error::flaky Docker E2E test(s) detected and not quarantined in flaky-tests.toml"
-            printf "%s\n" "${unquarantined[@]}"
-            exit 1
-          fi
+        run: >-
+          "$CI_XTASK" ci-junit
+          --report target/nextest/docker-e2e/junit.xml
+          --group Docker-E2E
 
       - name: Pack reusable crate target seed
         if: >-

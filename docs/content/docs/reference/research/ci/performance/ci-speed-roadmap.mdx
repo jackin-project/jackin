@@ -1111,6 +1111,27 @@ the same reusable-artifact fallback. The strict scan found no registry update,
 crate download, external compile/check, toolchain synchronization/component
 download, cache-path failure, or workflow argument/substitution error.
 
+Runs `29572197999`, `29572481010`, `29572727487`, and `29573000462`
+closed the remaining reusable-target portability gaps. GitHub Actions and
+Velnor expose separate cache namespaces, and Velnor restores a single cached
+file as a directory, so the shared contract now caches a directory containing
+the target archive. Each backend writes one native post-test seed because
+Cargo fingerprints include the different workspace roots; only GitHub owns
+the portable cross-backend artifact name. The packer also retains nextest's
+extensionless crate test executable instead of forcing an ephemeral hosted
+runner to relink it. That completeness cost only about 3 MB: the `jackin-env`
+archive grew from 197,999,447 bytes to 200,934,109 bytes.
+
+The identical v13 repeat, run `29573000462`, is the decisive proof. The whole
+GitHub crate job took 27 seconds and the whole Velnor crate job took 42
+seconds. Both restored the exact native key, executed the complete crate
+test/doctest/check/clippy/fuzz contract, and emitted no `Compiling`,
+`Checking`, dependency-download, registry-update, or Rustup-sync marker. Every
+job remained below one minute. JUnit existence detection, slow-test summaries,
+and flake-quarantine enforcement subsequently moved from duplicated
+Bash/Python fragments into the tested `ci-junit` xtask command, preserving one
+semantic analysis step for both normal and Docker E2E reports.
+
 ## Guardrails
 
 - Keep one stable aggregator per workflow for branch protection, but allow separate early-signal jobs to finish before the full aggregator.

@@ -2,9 +2,7 @@ use std::fs;
 
 use tempfile::tempdir;
 
-use super::{
-    Artifact, excluded, excluded_file, has_reusable_local_target, key_for_package, reusable_paths,
-};
+use super::{Artifact, excluded, has_reusable_local_target, key_for_package, reusable_paths};
 
 #[test]
 fn resolves_exact_key_without_workflow_expression_parsing() {
@@ -28,9 +26,17 @@ fn reusable_paths_keep_outputs_and_drop_transport_state() {
     fs::write(target.join("debug/incremental/state/data"), b"state").unwrap();
     fs::write(target.join("nextest/default/junit.xml"), b"report").unwrap();
 
-    let paths = reusable_paths(&target).unwrap();
+    let mut paths = reusable_paths(&target).unwrap();
+    paths.sort_unstable();
 
-    assert_eq!(paths, vec![target.join("debug/deps/libexample.rlib")]);
+    assert_eq!(
+        paths,
+        vec![
+            target.join("debug/deps/example-abc123"),
+            target.join("debug/deps/libexample.rlib"),
+            target.join("debug/jackin"),
+        ]
+    );
 }
 
 #[test]
@@ -82,14 +88,4 @@ fn transport_exclusions_are_semantic_directories() {
     assert!(excluded("nextest/ci/junit.xml".as_ref()));
     assert!(excluded("telemetry-volume-ratchet.json".as_ref()));
     assert!(!excluded("debug/deps/libexample.rlib".as_ref()));
-}
-
-#[test]
-fn generated_binaries_are_rebuilt_instead_of_transported() {
-    assert!(excluded_file("debug/jackin".as_ref()));
-    assert!(excluded_file("debug/deps/example-abc123".as_ref()));
-    assert!(excluded_file("debug/examples/demo-abc123".as_ref()));
-    assert!(!excluded_file("debug/deps/libexample.rlib".as_ref()));
-    assert!(!excluded_file("debug/deps/libproc_macro.so".as_ref()));
-    assert!(!excluded_file("debug/.cargo-lock".as_ref()));
 }
