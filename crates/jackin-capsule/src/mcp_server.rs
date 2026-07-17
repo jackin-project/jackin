@@ -21,7 +21,7 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader};
 
 const PROTOCOL_VERSION: &str = "2024-11-05";
 const SERVER_NAME: &str = "jackin-exec";
@@ -208,42 +208,60 @@ async fn handle_tool_call(params: &Value) -> Value {
 
 /// Run the MCP stdio server. Reads JSON-RPC from stdin, writes to stdout.
 pub async fn run() -> Result<()> {
-    let stdin = tokio::io::stdin();
-    let mut stdout = tokio::io::stdout();
+    run_with_io(tokio::io::stdin(), tokio::io::stdout()).await
+}
+
+async fn run_with_io<R, W>(stdin: R, mut stdout: W) -> Result<()>
+where
+    R: AsyncRead + Unpin,
+    W: AsyncWrite + Unpin,
+{
+    let open =
+        jackin_telemetry::stream::phase(jackin_telemetry::schema::enums::StreamOperation::Open);
     let mut reader = BufReader::new(stdin);
     let mut line = String::new();
+    jackin_telemetry::stream::complete_success(open);
+    let close = jackin_telemetry::stream::close_on_drop();
 
-    loop {
-        line.clear();
-        let n = reader.read_line(&mut line).await?;
-        if n == 0 {
-            // EOF — client closed the connection.
-            break;
+    let result = async {
+        loop {
+            line.clear();
+            let n = reader.read_line(&mut line).await?;
+            if n == 0 {
+                // EOF — client closed the connection.
+                break;
+            }
+
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+
+            let response = match serde_json::from_str::<JsonRpcRequest>(trimmed) {
+                Err(e) => Some(JsonRpcResponse::err(
+                    Value::Null,
+                    -32700,
+                    format!("parse error: {e}"),
+                )),
+                Ok(req) => dispatch(req).await,
+            };
+
+            if let Some(resp) = response {
+                let mut out = serde_json::to_string(&resp)?;
+                out.push('\n');
+                stdout.write_all(out.as_bytes()).await?;
+                stdout.flush().await?;
+            }
         }
-
-        let trimmed = line.trim();
-        if trimmed.is_empty() {
-            continue;
-        }
-
-        let response = match serde_json::from_str::<JsonRpcRequest>(trimmed) {
-            Err(e) => Some(JsonRpcResponse::err(
-                Value::Null,
-                -32700,
-                format!("parse error: {e}"),
-            )),
-            Ok(req) => dispatch(req).await,
-        };
-
-        if let Some(resp) = response {
-            let mut out = serde_json::to_string(&resp)?;
-            out.push('\n');
-            stdout.write_all(out.as_bytes()).await?;
-            stdout.flush().await?;
-        }
+        Ok(())
     }
+    .await;
 
-    Ok(())
+    match &result {
+        Ok(()) => close.complete_success(),
+        Err(_) => close.complete_error(jackin_telemetry::schema::enums::ErrorType::IoError),
+    }
+    result
 }
 
 /// Returns `None` for JSON-RPC notifications (no response required by spec).
@@ -282,5 +300,108 @@ async fn dispatch(req: JsonRpcRequest) -> Option<JsonRpcResponse> {
             -32601,
             format!("method not found: {other}"),
         )),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use opentelemetry::trace::TracerProvider as _;
+    use tracing_subscriber::prelude::*;
+
+    use super::*;
+
+    async fn exported_stream_outcomes(
+        input: &[u8],
+        output_open: bool,
+    ) -> (Result<()>, Vec<String>, Vec<String>) {
+        let exporter = opentelemetry_sdk::trace::InMemorySpanExporter::default();
+        let provider = opentelemetry_sdk::trace::SdkTracerProvider::builder()
+            .with_simple_exporter(exporter.clone())
+            .build();
+        let subscriber = tracing_subscriber::registry()
+            .with(tracing_opentelemetry::layer().with_tracer(provider.tracer("mcp-stream-test")));
+        let _guard = tracing::subscriber::set_default(subscriber);
+
+        let (mut input_writer, input_reader) = tokio::io::duplex(1024);
+        input_writer.write_all(input).await.unwrap();
+        input_writer.shutdown().await.unwrap();
+        let (output_writer, output_reader) = tokio::io::duplex(1024);
+        if !output_open {
+            drop(output_reader);
+        }
+        let result = run_with_io(input_reader, output_writer).await;
+        provider.force_flush().unwrap();
+        let spans = exporter
+            .get_finished_spans()
+            .unwrap()
+            .into_iter()
+            .filter(|span| span.name == jackin_telemetry::schema::spans::STREAM_OPERATION)
+            .collect::<Vec<_>>();
+        let outcomes = spans
+            .iter()
+            .filter_map(|span| {
+                span.attributes
+                    .iter()
+                    .find(|attribute| {
+                        attribute.key.as_str() == jackin_telemetry::schema::attrs::OUTCOME
+                    })
+                    .map(|attribute| attribute.value.as_str().into_owned())
+            })
+            .collect();
+        let errors = spans
+            .iter()
+            .filter_map(|span| {
+                span.attributes
+                    .iter()
+                    .find(|attribute| {
+                        attribute.key.as_str()
+                            == jackin_telemetry::schema::attrs::std_attrs::ERROR_TYPE
+                    })
+                    .map(|attribute| attribute.value.as_str().into_owned())
+            })
+            .collect();
+        (result, outcomes, errors)
+    }
+
+    #[tokio::test]
+    async fn stdio_stream_closes_successfully_on_eof() {
+        let (result, outcomes, errors) = exported_stream_outcomes(&[], true).await;
+        result.unwrap();
+        assert_eq!(
+            outcomes,
+            [
+                jackin_telemetry::schema::enums::OutcomeValue::Success
+                    .as_str()
+                    .to_owned(),
+                jackin_telemetry::schema::enums::OutcomeValue::Success
+                    .as_str()
+                    .to_owned(),
+            ]
+        );
+        assert!(errors.is_empty());
+    }
+
+    #[tokio::test]
+    async fn stdio_stream_closes_with_typed_error_on_write_failure() {
+        let (result, outcomes, errors) = exported_stream_outcomes(
+            br#"{"jsonrpc":"2.0","id":1,"method":"ping"}
+"#,
+            false,
+        )
+        .await;
+        result.unwrap_err();
+        assert!(
+            outcomes.contains(
+                &jackin_telemetry::schema::enums::OutcomeValue::Error
+                    .as_str()
+                    .to_owned()
+            )
+        );
+        assert_eq!(
+            errors,
+            [jackin_telemetry::schema::enums::ErrorType::IoError
+                .as_str()
+                .to_owned()]
+        );
     }
 }
