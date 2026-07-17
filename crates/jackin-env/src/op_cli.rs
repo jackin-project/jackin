@@ -644,9 +644,6 @@ struct RawCreatedItemField {
 
 impl OpWriteRunner for OpCli {
     fn item_create(&self, params: OpItemCreateParams<'_>) -> anyhow::Result<OpRef> {
-        use std::io::Write;
-        use std::process::{Command, Stdio};
-
         // Build the JSON template. `op item create -` reads it from
         // stdin so the secret value never crosses argv. Tags and
         // notesPlain ride along inside the same template — neither
@@ -674,81 +671,33 @@ impl OpWriteRunner for OpCli {
         let body = serde_json::to_vec(&template)
             .map_err(|e| anyhow::anyhow!("failed to encode op item template: {e}"))?;
 
-        let (mut child, operation) = spawn_op_with_retry(|| {
-            let mut command = Command::new(&self.binary);
-            if let Some(account) = self.account.as_deref() {
-                command.args(["--account", account]);
-            }
-            command.args([
-                "item",
-                "create",
-                "--vault",
-                params.vault_id,
-                "--format",
-                "json",
-            ]);
-            command.arg("-");
-            command
-                .stdin(Stdio::piped())
-                .stdout(Stdio::piped())
-                .stderr(Stdio::piped());
-            command
-        })
-        .map_err(|failure| {
-            let (error, operation) = *failure;
-            operation.spawn_failed();
-            op_spawn_error(&self.binary, &error)
-        })?;
-
-        // Write the template body to the child's stdin and drop the
-        // handle so `op` sees EOF and proceeds. Scoping the stdin
-        // borrow with `take()` ensures the pipe is closed before we
-        // call `wait_with_output()` — leaving it open would deadlock
-        // if `op` waits for EOF before printing JSON.
-        //
-        // If the write fails (typically `EPIPE` because `op` rejected
-        // the template body and exited), drain its stderr before
-        // surfacing the error so the operator sees the real cause
-        // (auth failure, vault permission, schema mismatch) instead
-        // of a generic "stdin write failed".
-        let Some(mut stdin) = child.stdin.take() else {
-            drop(child.kill());
-            drop(child.wait());
-            operation.io_failed();
-            anyhow::bail!("1Password CLI stdin pipe missing");
-        };
-        if let Err(e) = stdin.write_all(&body) {
-            drop(stdin);
-            let captured = child.wait_with_output().ok();
-            let stderr_msg = captured
-                .as_ref()
-                .map(|o| String::from_utf8_lossy(&o.stderr).into_owned())
-                .unwrap_or_default();
-            operation.io_failed();
-            anyhow::bail!(
-                "failed to write op item template to stdin: {e} (op stderr: {})",
-                truncate_stderr(&stderr_msg).trim()
-            );
+        let mut args = Vec::new();
+        push_account_arg(&mut args, self.account.as_deref());
+        args.extend_from_slice(&[
+            "item",
+            "create",
+            "--vault",
+            params.vault_id,
+            "--format",
+            "json",
+            "-",
+        ]);
+        let mut request = jackin_process::ExecRequest::new(&self.binary, &args);
+        request.stdin = Some(body);
+        request.timeout = Some(self.timeout);
+        let out = crate::process_telemetry::exec_sync_op_with_retry(&request, OP_SPAWN_RETRIES)?;
+        if out.timed_out {
+            anyhow::bail!("1Password CLI item create timed out");
         }
-
-        let out = match child.wait_with_output() {
-            Ok(out) => out,
-            Err(e) => {
-                operation.io_failed();
-                return Err(anyhow::anyhow!("1Password CLI wait failed: {e}"));
-            }
-        };
-
-        if !out.status.success() {
+        if !out.success {
             let stderr = String::from_utf8_lossy(&out.stderr);
-            operation.complete_status(out.status);
             anyhow::bail!(
                 "`op item create` exited with status {}: {}",
-                format_exit_status(out.status),
+                out.code
+                    .map_or_else(|| "signal".to_owned(), |code| code.to_string()),
                 truncate_stderr(&stderr).trim()
             );
         }
-        operation.complete_status(out.status);
 
         // SAFETY: `op item create --format json` echoes the created
         // item's fields back, including the secret `value` for
@@ -860,9 +809,6 @@ impl OpWriteRunner for OpCli {
         value: &str,
         section: Option<&str>,
     ) -> anyhow::Result<OpRef> {
-        use std::io::Write;
-        use std::process::Stdio;
-
         // Step 1: fetch the full item JSON so we can modify one field
         // while preserving all other fields and metadata.
         let mut get_args: Vec<&str> = Vec::new();
@@ -891,65 +837,27 @@ impl OpWriteRunner for OpCli {
         // as the item name, not a stdin sentinel (that is the create-only
         // convention). `--template` is mutually exclusive with piped
         // input, so it is intentionally not passed.
-        let (mut child, operation) = spawn_op_with_retry(|| {
-            use std::process::Command;
-            let mut command = Command::new(&self.binary);
-            if let Some(acc) = self.account.as_deref() {
-                command.args(["--account", acc]);
-            }
-            command.args([
-                "item", "edit", item_id, "--vault", vault_id, "--format", "json",
-            ]);
-            command
-                .stdin(Stdio::piped())
-                .stdout(Stdio::piped())
-                .stderr(Stdio::piped());
-            command
-        })
-        .map_err(|failure| {
-            let (error, operation) = *failure;
-            operation.spawn_failed();
-            op_spawn_error(&self.binary, &error)
-        })?;
-
-        let Some(mut stdin) = child.stdin.take() else {
-            drop(child.kill());
-            drop(child.wait());
-            operation.io_failed();
-            anyhow::bail!("1Password CLI stdin pipe missing");
-        };
-        if let Err(e) = stdin.write_all(&body) {
-            drop(stdin);
-            let captured = child.wait_with_output().ok();
-            let stderr_msg = captured
-                .as_ref()
-                .map(|o| String::from_utf8_lossy(&o.stderr).into_owned())
-                .unwrap_or_default();
-            operation.io_failed();
-            anyhow::bail!(
-                "failed to write op item template to stdin: {e} (op stderr: {})",
-                truncate_stderr(&stderr_msg).trim()
-            );
+        let mut args = Vec::new();
+        push_account_arg(&mut args, self.account.as_deref());
+        args.extend_from_slice(&[
+            "item", "edit", item_id, "--vault", vault_id, "--format", "json",
+        ]);
+        let mut request = jackin_process::ExecRequest::new(&self.binary, &args);
+        request.stdin = Some(body);
+        request.timeout = Some(self.timeout);
+        let out = crate::process_telemetry::exec_sync_op_with_retry(&request, OP_SPAWN_RETRIES)?;
+        if out.timed_out {
+            anyhow::bail!("1Password CLI item edit timed out");
         }
-
-        let out = match child.wait_with_output() {
-            Ok(out) => out,
-            Err(e) => {
-                operation.io_failed();
-                return Err(anyhow::anyhow!("1Password CLI wait failed: {e}"));
-            }
-        };
-
-        if !out.status.success() {
+        if !out.success {
             let stderr = String::from_utf8_lossy(&out.stderr);
-            operation.complete_status(out.status);
             anyhow::bail!(
                 "`op item edit` exited with status {}: {}",
-                format_exit_status(out.status),
+                out.code
+                    .map_or_else(|| "signal".to_owned(), |code| code.to_string()),
                 truncate_stderr(&stderr).trim()
             );
         }
-        operation.complete_status(out.status);
 
         // Step 4: parse the returned item JSON and build the ref.
         let updated: serde_json::Value = serde_json::from_slice(&out.stdout)
