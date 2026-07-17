@@ -124,7 +124,7 @@ Swap joined sites (`spawn_joined`/`joined_blocking`/JoinSet trait). Then regener
 
 ```
 grep -rn "tokio::spawn(\|spawn_blocking(\|thread::spawn(" crates/ --include='*.rs' \
-  | grep -v "jackin-telemetry/src/spawn\|/tests.rs\|/benches/\|jackin-xtask\|jackin-dev\|jackin-pr-trailers\|jackin-tui-lookbook\|jackin-lints"
+  | grep -v "jackin-telemetry/src/spawn\|/tests.rs\|/tests/\|/benches/\|jackin-xtask\|jackin-dev\|jackin-pr-trailers\|jackin-tui-lookbook\|jackin-lints"
 ```
 
 **Verify**: the grep returns no matches (or only reasoned allowlist rows that also appear in the lint config); workspace tests pass.
