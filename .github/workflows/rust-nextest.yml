@@ -157,7 +157,9 @@ jobs:
           tools-contract: ${{ inputs.ci-tools-contract }}
           xtask-contract: ${{ inputs.ci-xtask-contract }}
       - name: Cache prepared Rust toolchains
-        if: steps.crate-result.outputs.hit != 'true'
+        if: >-
+          steps.crate-result.outputs.hit != 'true' &&
+          matrix.config.lane == 'GitHub'
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -169,7 +171,7 @@ jobs:
       - name: Use the prepared current Rust toolchain
         if: steps.crate-result.outputs.hit != 'true'
         run: >-
-          "$CI_XTASK" ci-toolchain prepare
+          "$CI_XTASK" ci-toolchain activate
           --version "${{ inputs.rust-version }}"
       - id: cargo-registry-cache
         if: steps.crate-result.outputs.hit != 'true'
