@@ -5,6 +5,7 @@ use std::ffi::OsStr;
 use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
+use std::thread;
 
 use anyhow::{Context, Result, bail};
 use clap::{Args, ValueEnum};
@@ -86,32 +87,60 @@ pub(crate) fn run(args: ReleaseArchivesArgs) -> Result<()> {
         .with_context(|| format!("creating {}", args.output_dir.display()))?;
     let target_dir =
         env::var_os("CARGO_TARGET_DIR").map_or_else(|| PathBuf::from("target"), PathBuf::from);
+    let build_root = target_dir.join("release-archives");
     let zig_cache = zig_cache()?;
     let macos_sdk = (args.package == ArchivePackage::Jackin)
         .then(prepare_macos_sdk)
         .transpose()?;
 
-    for target in targets(args.package) {
+    let targets = targets(args.package);
+    for target in targets {
         prepare_target(target.rust)?;
-        build(
-            args.package,
-            *target,
-            &args.version,
-            &zig_cache,
-            macos_sdk.as_deref(),
-        )?;
+    }
+
+    thread::scope(|scope| -> Result<()> {
+        let builds = targets
+            .iter()
+            .map(|target| {
+                scope.spawn(|| {
+                    build(
+                        args.package,
+                        *target,
+                        &args.version,
+                        &build_root.join(target.rust),
+                        &zig_cache,
+                        macos_sdk.as_deref(),
+                    )
+                })
+            })
+            .collect::<Vec<_>>();
+        for (target, build) in targets.iter().zip(builds) {
+            build.join().map_err(|_| {
+                anyhow::anyhow!(
+                    "building {} for {} panicked",
+                    package_name(args.package),
+                    target.rust
+                )
+            })??;
+        }
+        Ok(())
+    })?;
+
+    for target in targets {
         let archive = package(
             args.package,
             target.rust,
             args.archive_version.as_deref(),
-            &target_dir,
+            &build_root.join(target.rust),
             &args.output_dir,
         )?;
         write_checksum(&archive)?;
         sign(&archive)?;
         write_sbom(&archive)?;
     }
-    preserve_cargo_timings(&target_dir, &args.output_dir)?;
+    for target in targets {
+        preserve_cargo_timings(&build_root.join(target.rust), &args.output_dir)?;
+    }
     if let Some(path) = args.sccache_stats.as_deref() {
         write_sccache_stats(path)?;
     }
@@ -195,6 +224,7 @@ fn build(
     package: ArchivePackage,
     target: TargetSpec,
     version: &str,
+    target_dir: &Path,
     zig_cache: &ZigCache,
     macos_sdk: Option<&Path>,
 ) -> Result<()> {
@@ -204,6 +234,7 @@ fn build(
         command.args(["-p", "jackin-capsule"]);
     }
     command.args(["--target", target.zigbuild]);
+    command.env("CARGO_TARGET_DIR", target_dir);
     command.env("JACKIN_VERSION_OVERRIDE", version);
     if package == ArchivePackage::Jackin {
         // The host binary's dependency graph can otherwise feed the Zig Apple
