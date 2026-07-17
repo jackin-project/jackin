@@ -39,35 +39,56 @@ fn complete(operation: jackin_telemetry::OperationGuard, result: &anyhow::Result
     operation.complete(completion.0, completion.1);
 }
 
-pub(crate) struct ChildOperation(jackin_telemetry::OperationGuard);
+pub(crate) struct ChildOperation {
+    operation: Option<jackin_telemetry::OperationGuard>,
+}
 
 impl ChildOperation {
     pub(crate) fn begin(request: &ExecRequest) -> Self {
-        Self(operation(request))
+        Self {
+            operation: Some(operation(request)),
+        }
+    }
+
+    fn finish(mut self, outcome: OutcomeValue, error_type: Option<ErrorType>) {
+        if let Some(operation) = self.operation.take() {
+            operation.complete(outcome, error_type);
+        }
     }
 
     pub(crate) fn complete_status(self, status: ExitStatus) {
-        if let Some(code) = status.code() {
-            let _attribute = self.0.set_attr(jackin_telemetry::Attr {
+        if let Some(code) = status.code()
+            && let Some(operation) = self.operation.as_ref()
+        {
+            let _attribute = operation.set_attr(jackin_telemetry::Attr {
                 key: jackin_telemetry::schema::attrs::std_attrs::PROCESS_EXIT_CODE,
                 value: jackin_telemetry::Value::I64(i64::from(code)),
             });
         }
         if status.success() {
-            self.0.complete(OutcomeValue::Success, None);
+            self.finish(OutcomeValue::Success, None);
         } else {
-            self.0
-                .complete(OutcomeValue::Failure, Some(ErrorType::ProcessExitNonzero));
+            self.finish(OutcomeValue::Failure, Some(ErrorType::ProcessExitNonzero));
         }
     }
 
     pub(crate) fn complete_timeout(self) {
-        self.0
-            .complete(OutcomeValue::Timeout, Some(ErrorType::Timeout));
+        self.finish(OutcomeValue::Timeout, Some(ErrorType::Timeout));
     }
 
     pub(crate) fn complete_failure(self, error_type: ErrorType) {
-        self.0.complete(OutcomeValue::Failure, Some(error_type));
+        self.finish(OutcomeValue::Failure, Some(error_type));
+    }
+}
+
+impl Drop for ChildOperation {
+    fn drop(&mut self) {
+        if let Some(operation) = self.operation.take() {
+            operation.complete(
+                OutcomeValue::Failure,
+                Some(ErrorType::TelemetryInstrumentationFault),
+            );
+        }
     }
 }
 
@@ -164,7 +185,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn child_operations_complete_on_exit_timeout_and_spawn_failure() {
+    async fn child_operations_complete_on_exit_timeout_spawn_and_abandonment() {
         let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
         let _subscriber = tracing::subscriber::set_default(subscriber);
 
@@ -186,13 +207,19 @@ mod tests {
         };
         assert_eq!(error.to_string(), "process spawn failed");
 
+        let abandoned_request = ExecRequest::new("sh", ["-c", "exit 0"]);
+        let (abandoned_operation, mut abandoned_child) = spawn_async(&abandoned_request).unwrap();
+        abandoned_child.wait().await.unwrap();
+        drop(abandoned_operation);
+
         export.force_flush();
-        assert_eq!(export.finished_spans().len(), 3);
-        assert_eq!(export.error_span_count(), 3);
+        assert_eq!(export.finished_spans().len(), 4);
+        assert_eq!(export.error_span_count(), 4);
         assert!(export.contains_span_text("19"));
         assert!(export.contains_span_text("process_exit_nonzero"));
         assert!(export.contains_span_text("timeout"));
         assert!(export.contains_span_text("process_spawn_error"));
+        assert!(export.contains_span_text("telemetry_instrumentation_fault"));
         assert!(!export.contains_span_text("operator-secret-missing-child"));
         assert!(!export.contains_span_text("operator-secret-child-argument"));
     }
