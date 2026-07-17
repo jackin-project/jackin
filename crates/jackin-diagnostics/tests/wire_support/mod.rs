@@ -89,6 +89,19 @@ pub(crate) fn assert_three_signal_delivery(
             .any(|name| name == "telemetry.validate"),
         "governed validation metric missing"
     );
+    let metric_names = testbed.metric_names();
+    for expected in [
+        "process.cpu.utilization",
+        "process.memory.usage",
+        "tokio.runtime.workers",
+        "tokio.runtime.alive_tasks",
+        "tokio.runtime.global_queue.depth",
+    ] {
+        assert!(
+            metric_names.iter().any(|name| name == expected),
+            "runtime/process metric {expected} missing from wire export: {metric_names:?}"
+        );
+    }
     assert_eq!(
         testbed.legacy_namespace_violations(),
         Vec::<String>::new(),

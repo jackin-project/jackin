@@ -1787,8 +1787,10 @@ mod otlp {
                 .i64_observable_up_down_counter(
                     opentelemetry_semantic_conventions::metric::PROCESS_MEMORY_USAGE,
                 )
-                .with_unit("By")
-                .with_description("Resident set size of the jackin process")
+                .with_unit(jackin_telemetry::schema::metrics::PROCESS_MEMORY_USAGE_DEF.unit)
+                .with_description(
+                    jackin_telemetry::schema::metrics::PROCESS_MEMORY_USAGE_DEF.description,
+                )
                 .with_callback(move |observer| {
                     if snapshot.valid.load(Ordering::Acquire) {
                         observer.observe(snapshot.memory_bytes.load(Ordering::Relaxed), &[]);
