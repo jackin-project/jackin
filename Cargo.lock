@@ -3274,6 +3274,7 @@ dependencies = [
  "jackin-isolation",
  "jackin-launch",
  "jackin-manifest",
+ "jackin-otlp-testbed",
  "jackin-process",
  "jackin-protocol",
  "jackin-telemetry",

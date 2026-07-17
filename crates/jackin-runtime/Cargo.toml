@@ -57,11 +57,12 @@ nix = { workspace = true, features = ["user"] }
 
 [dev-dependencies]
 jackin-diagnostics = { workspace = true, features = ["test-support"] }
+jackin-otlp-testbed = { workspace = true }
 jackin-test-support = { workspace = true }
 jackin-image = { workspace = true }
 jackin-manifest = { workspace = true }
 criterion = { workspace = true, features = ["html_reports"] }
-tokio = { workspace = true, features = ["test-util"] }
+tokio = { workspace = true, features = ["rt-multi-thread", "test-util"] }
 
 [build-dependencies]
 jackin-build-meta = { workspace = true }

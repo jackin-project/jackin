@@ -204,6 +204,100 @@ fn daemon_socket_exports_client_parent_server_and_completes_after_response_write
 }
 
 #[test]
+fn conformance_wire_real_daemon_socket_exports_bounded_parented_rpc() -> Result<()> {
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()?;
+    let testbed = runtime.block_on(async { jackin_otlp_testbed::Testbed::start() })?;
+    jackin_diagnostics::init_wire_test_export(
+        &testbed.endpoint(),
+        jackin_diagnostics::ServiceIdentity::DAEMON,
+    )?;
+    let (temp, _paths, layout) = layout();
+    ensure_run_dir(&layout)?;
+    let listener = UnixListener::bind(&layout.socket_path)?;
+    let server_layout = layout.clone();
+    let server = std::thread::spawn(move || {
+        let (mut stream, _) = listener.accept().expect("accept daemon client");
+        let mut attention = AttentionAdapter::new(RecordingNotifier::default());
+        handle_stream(
+            &mut stream,
+            &server_layout,
+            "wire-private-daemon-build",
+            &CoredumpPolicy::Disabled,
+            &mut attention,
+        )
+        .expect("serve daemon request")
+    });
+
+    let response = request(
+        &layout.socket_path,
+        "wire-private-daemon-build",
+        DaemonRequestKind::Status,
+    )?;
+    assert!(matches!(response.kind, DaemonResponseKind::Status(_)));
+    server.join().expect("server thread");
+    jackin_diagnostics::flush_wire_test_export()?;
+
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+    let spans = runtime.block_on(async {
+        loop {
+            let spans = testbed
+                .spans()
+                .into_iter()
+                .filter(|span| {
+                    matches!(
+                        span.name.as_str(),
+                        "rpc.client" | "rpc.server" | "connection.attempt"
+                    )
+                })
+                .collect::<Vec<_>>();
+            if spans.len() == 3 {
+                break spans;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "daemon RPC wire spans did not arrive exactly once"
+            );
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+    });
+    let client = spans
+        .iter()
+        .find(|span| span.name == "rpc.client")
+        .expect("client span");
+    let server_span = spans
+        .iter()
+        .find(|span| span.name == "rpc.server")
+        .expect("server span");
+    let connection = spans
+        .iter()
+        .find(|span| span.name == "connection.attempt")
+        .expect("connection span");
+    assert_eq!(server_span.trace_id, client.trace_id);
+    assert_eq!(server_span.parent_span_id, client.span_id);
+    assert_eq!(connection.trace_id, client.trace_id);
+    assert_eq!(connection.parent_span_id, client.span_id);
+    let wire_text = format!("{spans:?}");
+    for expected in ["rpc.client", "rpc.server", "connection.attempt", "status"] {
+        assert!(
+            wire_text.contains(expected),
+            "missing {expected}: {wire_text}"
+        );
+    }
+    let private_root = temp.path().to_string_lossy().into_owned();
+    let prohibited = ["wire-private-daemon-build", private_root.as_str()];
+    assert_eq!(
+        testbed.prohibited_value_violations(&prohibited),
+        Vec::<String>::new()
+    );
+    assert_eq!(testbed.legacy_namespace_violations(), Vec::<String>::new());
+    jackin_diagnostics::shutdown_capsule_tracing();
+    Ok(())
+}
+
+#[test]
 fn daemon_socket_marks_server_failure_when_peer_closes_before_response() {
     use std::net::Shutdown;
 
