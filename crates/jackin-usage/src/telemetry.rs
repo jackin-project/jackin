@@ -132,7 +132,7 @@ impl FlushGuard {
     ///
     /// Before listener readiness, the startup operation owns the failure in
     /// `Drop`; afterwards that bounded operation is gone, so the process owner
-    /// emits one bodyless typed error instead.
+    /// emits one body-free typed error instead.
     pub fn daemon_failed(&self) {
         if self.daemon_failure_needs_terminal_event() {
             let _error = jackin_telemetry::record_error(
