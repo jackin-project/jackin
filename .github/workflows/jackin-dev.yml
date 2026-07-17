@@ -132,44 +132,12 @@ jobs:
             exit 1
           fi
 
-  matrix-setup:
-    name: Select runner lane
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    outputs:
-      configs: ${{ steps.set.outputs.configs }}
-      has_github: ${{ steps.set.outputs.has_github }}
-    steps:
-      - id: set
-        env:
-          LANES: ${{ github.event_name == 'workflow_dispatch' && inputs.lanes || 'github' }}
-        run: |
-          github='{"lane":"GitHub","runner":"\"ubuntu-24.04\"","runner_os":"Linux","runner_arch":"X64"}'
-          velnor='{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","runner_os":"Linux","runner_arch":"X64"}'
-          case "$LANES" in
-            velnor)
-              configs="[$velnor]"
-              has_github=false
-              ;;
-            both)
-              configs="[$github,$velnor]"
-              has_github=true
-              ;;
-            *)
-              configs="[$github]"
-              has_github=true
-              ;;
-          esac
-          {
-            echo "configs=$configs"
-            echo "has_github=$has_github"
-          } >> "$GITHUB_OUTPUT"
-
   version:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
       version: ${{ steps.version.outputs.version }}
+      runner-configs: ${{ (github.event_name != 'workflow_dispatch' || inputs.lanes == 'github') && '[{"lane":"GitHub","runner":"\"ubuntu-24.04\"","runner_os":"Linux","runner_arch":"X64"}]' || inputs.lanes == 'velnor' && '[{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","runner_os":"Linux","runner_arch":"X64"}]' || '[{"lane":"GitHub","runner":"\"ubuntu-24.04\"","runner_os":"Linux","runner_arch":"X64"},{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","runner_os":"Linux","runner_arch":"X64"}]' }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - id: version
@@ -223,7 +191,7 @@ jobs:
     if: >-
       github.event_name != 'pull_request' &&
       needs.assert-version.outputs.published != 'true'
-    needs: [version, matrix-setup, assert-version]
+    needs: [version, assert-version]
     runs-on: ${{ fromJSON(matrix.config.runner) }}
     timeout-minutes: 60
     name: build ${{ matrix.target.target }} (${{ matrix.config.lane }})
@@ -240,7 +208,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
+        config: ${{ fromJSON(needs.version.outputs.runner-configs) }}
         target:
           - target: aarch64-apple-darwin
             zigbuild_target: aarch64-apple-darwin
@@ -361,9 +329,9 @@ jobs:
   publish:
     if: >-
       github.ref == 'refs/heads/main' &&
-      needs.matrix-setup.outputs.has_github == 'true' &&
+      (github.event_name != 'workflow_dispatch' || inputs.lanes != 'velnor') &&
       needs.assert-version.outputs.published != 'true'
-    needs: [version, matrix-setup, assert-version, build]
+    needs: [version, assert-version, build]
     runs-on: ubuntu-latest
     timeout-minutes: 60
     concurrency:
