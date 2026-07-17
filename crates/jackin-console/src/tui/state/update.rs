@@ -326,31 +326,7 @@ fn start_manager_action(
     state: &ManagerState<'_>,
     action: jackin_telemetry::schema::enums::UiActionName,
 ) -> Option<jackin_telemetry::operation::OperationGuard> {
-    let mut attrs = vec![
-        jackin_telemetry::Attr {
-            key: jackin_telemetry::schema::attrs::UI_ACTION_NAME,
-            value: jackin_telemetry::Value::Str(action.as_str()),
-        },
-        jackin_telemetry::Attr {
-            key: jackin_telemetry::schema::attrs::std_attrs::APP_SCREEN_ID,
-            value: jackin_telemetry::Value::Str(telemetry_screen(state).as_str()),
-        },
-        jackin_telemetry::Attr {
-            key: jackin_telemetry::schema::attrs::std_attrs::APP_SCREEN_NAME,
-            value: jackin_telemetry::Value::Str(telemetry_screen(state).as_str()),
-        },
-    ];
-    if let Some(widget) = telemetry_widget(state) {
-        attrs.push(jackin_telemetry::Attr {
-            key: jackin_telemetry::schema::attrs::std_attrs::APP_WIDGET_ID,
-            value: jackin_telemetry::Value::Str(widget),
-        });
-        attrs.push(jackin_telemetry::Attr {
-            key: jackin_telemetry::schema::attrs::std_attrs::APP_WIDGET_NAME,
-            value: jackin_telemetry::Value::Str(widget),
-        });
-    }
-    jackin_telemetry::root_operation(&jackin_telemetry::operation::UI_ACTION, &attrs).ok()
+    jackin_telemetry::ui::start_action(action, telemetry_screen(state), telemetry_widget(state))
 }
 
 fn telemetry_screen(state: &ManagerState<'_>) -> jackin_telemetry::schema::enums::ScreenId {

@@ -128,6 +128,7 @@ impl RichDriver {
                         rr.restore_terminal();
                         break;
                     }
+                    let action_parent = jackin_telemetry::ui::take_action_parent();
                     let snapshot = match view.lock() {
                         Ok(mut v) => {
                             let build_log_lines = jackin_diagnostics::build_log::snapshot();
@@ -150,7 +151,12 @@ impl RichDriver {
                         }
                         Err(_) => continue,
                     };
-                    drop(rr.render(&snapshot, &run_id));
+                    if let Some(parent) = action_parent.as_ref() {
+                        parent.in_scope(|| drop(rr.render(&snapshot, &run_id)));
+                    } else {
+                        drop(rr.render(&snapshot, &run_id));
+                    }
+                    drop(action_parent);
                 }
             })
         };

@@ -8,8 +8,9 @@ use ratatui::layout::Rect;
 
 use super::{
     BUILD_LOG_SCROLL_STEP, CockpitContext, QuitConfirmOutcome, apply_quit_confirm_key,
-    cockpit_outcome_for_quit_confirm, emit_dialog_mouse_debug_telemetry, handle_cockpit_mouse_down,
-    is_ctrl_c, should_emit_dialog_mouse, update_build_log_mouse_scroll,
+    build_log_action_name, cockpit_action_name, cockpit_outcome_for_quit_confirm,
+    emit_dialog_mouse_debug_telemetry, handle_cockpit_mouse_down, is_ctrl_c,
+    should_emit_dialog_mouse, update_build_log_mouse_scroll,
 };
 use crate::LaunchHostTerminal;
 use crate::tui::components::container_info_dialog::{
@@ -379,4 +380,38 @@ fn quit_confirm_focus_toggle_keeps_dialog_open() {
     // After toggling away from the exit prompt's focused Yes, Enter dismisses.
     let out = apply_quit_confirm_key(&mut view, KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
     assert_eq!(out, QuitConfirmOutcome::Dismissed);
+}
+
+#[test]
+fn cockpit_actions_are_exhaustively_semantic() {
+    use crate::tui::keymap::CockpitAction;
+    use jackin_telemetry::schema::enums::UiActionName;
+
+    assert_eq!(
+        cockpit_action_name(CockpitAction::HardExit),
+        UiActionName::AppExitRequest
+    );
+    assert_eq!(
+        cockpit_action_name(CockpitAction::OpenQuitConfirm),
+        UiActionName::AppExitRequest
+    );
+}
+
+#[test]
+fn build_log_actions_classify_close_only() {
+    use crate::tui::keymap::BuildLogAction;
+    use jackin_telemetry::schema::enums::UiActionName;
+
+    assert_eq!(
+        build_log_action_name(BuildLogAction::Close),
+        Some(UiActionName::DialogCancel)
+    );
+    for action in [
+        BuildLogAction::ScrollUp,
+        BuildLogAction::ScrollDown,
+        BuildLogAction::PageUp,
+        BuildLogAction::PageDown,
+    ] {
+        assert_eq!(build_log_action_name(action), None);
+    }
 }

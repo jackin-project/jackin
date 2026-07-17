@@ -66,6 +66,18 @@ pub fn record_action(
     screen: schema::enums::ScreenId,
     widget: Option<&'static str>,
 ) {
+    if let Some(guard) = start_action(action, screen, widget) {
+        guard.complete(schema::enums::OutcomeValue::Success, None);
+    }
+}
+
+/// Start a bounded semantic UI action for an owner that must retain causality
+/// through synchronous effects or one immediate render.
+pub fn start_action(
+    action: schema::enums::UiActionName,
+    screen: schema::enums::ScreenId,
+    widget: Option<&'static str>,
+) -> Option<crate::operation::OperationGuard> {
     let mut attrs = vec![Attr {
         key: schema::attrs::UI_ACTION_NAME,
         value: Value::Str(action.as_str()),
@@ -88,14 +100,13 @@ pub fn record_action(
             value: Value::Str(widget),
         });
     }
-    if let Ok(guard) = crate::root_operation(&crate::operation::UI_ACTION, &attrs) {
-        guard.complete(schema::enums::OutcomeValue::Success, None);
-    }
+    let guard = crate::root_operation(&crate::operation::UI_ACTION, &attrs).ok();
     let counter_attrs = [Attr {
         key: schema::attrs::UI_ACTION_NAME,
         value: Value::Str(action.as_str()),
     }];
     let _counter_result = counter(&metric::UI_ACTIONS).add(1, &counter_attrs);
+    guard
 }
 
 /// Record one bounded UI frame. Continuous rendering remains metric-only.

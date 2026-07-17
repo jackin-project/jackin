@@ -18,7 +18,7 @@ Execute in the order below unless the dependency graph says otherwise. Each exec
 | [006](006-cross-process-propagation.md) | Versioned W3C envelopes on all protocols; CLIENT/SERVER RPC spans | P1 | L | 004, 005 | IN PROGRESS — focused implementation complete; integrated gates pending |
 | [007](007-identity-lifecycle-roots.md) | `cli.invocation.id`, `session.id`, command/startup/shutdown roots | P1 | L | 004, 006 | IN PROGRESS — focused implementation complete; integrated gates pending |
 | [008](008-execution-boundaries.md) | Launch, subprocess, Docker, provider HTTP, usage DB, connections | P1 | L | 004, 005, 007 | IN PROGRESS — boundary/privacy migration underway |
-| [009](009-tui-screens-actions.md) | Screen lifecycle events, `ui.action` roots, widget focus, render health | P1 | L | 004, 007 | IN PROGRESS — host mapping exhaustive; launch/render causality pending |
+| [009](009-tui-screens-actions.md) | Screen lifecycle events, `ui.action` roots, widget focus, render health | P1 | L | 004, 007 | IN PROGRESS — action maps exhaustive; integrated causality proof pending |
 | [010](010-capsule-cycles-agents-jobs.md) | Capsule cycles, agent state, PTY lifecycle, streams, prewarm jobs | P1 | L | 005, 006, 007, 009 | IN PROGRESS — focused conformance complete; integrated gates pending |
 | [011](011-legacy-callsite-migration.md) | Classify + migrate every legacy/generic telemetry macro site | P1 | L | 004, 008, 009, 010 | TODO — reopened by audit |
 | [012](012-diagnostics-validate-health.md) | `jackin diagnostics validate` + typed health over daemon protocols | P2 | M | 002, 004, 006, 007 | IN PROGRESS — implementation complete; receiver/workspace/lint gates pending |
