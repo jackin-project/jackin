@@ -290,11 +290,13 @@ jobs:
           key: preview-archives-v2-jackin-${{ needs.source-changed.outputs.jackin_archive_contract }}
       - name: Reuse the first lane's complete jackin archive set
         if: matrix.config.cache_writer == false
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v8.0.1
         with:
+          name: preview-GitHub-jackin
           path: dist
-          key: preview-archives-v2-jackin-${{ needs.source-changed.outputs.jackin_archive_contract }}
-          fail-on-cache-miss: true
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ github.run_id }}
       - uses: ./.github/actions/download-ci-xtask
         if: matrix.config.cache_writer && steps.archive-cache.outputs.cache-hit != 'true'
         with:
@@ -425,11 +427,13 @@ jobs:
           key: preview-archives-v2-capsule-${{ needs.source-changed.outputs.capsule_archive_contract }}
       - name: Reuse the first lane's complete capsule archive set
         if: matrix.config.cache_writer == false
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v8.0.1
         with:
+          name: preview-GitHub-jackin-capsule
           path: dist
-          key: preview-archives-v2-capsule-${{ needs.source-changed.outputs.capsule_archive_contract }}
-          fail-on-cache-miss: true
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ github.run_id }}
       - uses: ./.github/actions/download-ci-xtask
         if: matrix.config.cache_writer && steps.archive-cache.outputs.cache-hit != 'true'
         with:
