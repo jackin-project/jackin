@@ -159,8 +159,16 @@ async function exportTools(destination) {
   core.addPath(destination);
 }
 
+async function main() {
+  try {
+    await run();
+  } catch (error) {
+    core.setFailed(error.message);
+  }
+}
+
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  run().catch((error) => core.setFailed(error.message));
+  main();
 }
 
 export {
@@ -168,4 +176,5 @@ export {
   latestArtifact,
   splitRepository,
   waitForArtifact,
+  main,
 };
