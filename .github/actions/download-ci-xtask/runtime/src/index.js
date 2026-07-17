@@ -19,6 +19,20 @@ function splitRepository(repository) {
   return { owner, repo };
 }
 
+function validateContracts({
+  includeTools,
+  includeXtask,
+  toolsContract,
+  xtaskContract,
+}) {
+  if (includeTools && !toolsContract) {
+    throw new Error("tools-contract is required with tools");
+  }
+  if (includeXtask && !xtaskContract) {
+    throw new Error("xtask-contract is required with xtask");
+  }
+}
+
 async function latestArtifact(octokit, owner, repo, name) {
   const response = await octokit.rest.actions.listArtifactsForRepo({
     owner,
@@ -71,12 +85,17 @@ async function run() {
   const xtaskContract = process.env.JACKIN_XTASK_CONTRACT;
   const fallbackXtaskContract = process.env.JACKIN_FALLBACK_XTASK_CONTRACT;
   if (!token) throw new Error("token is required");
-  if (!xtaskContract) throw new Error("xtask-contract is required");
   const toolsArtifact = `ci-tools-${os}-${arch}-${toolsContract}`;
   const xtaskArtifact = `ci-xtask-${os}-${arch}-${xtaskContract}`;
   const includeTools = process.env.JACKIN_INCLUDE_TOOLS === "true";
   const includeXtask = process.env.JACKIN_INCLUDE_XTASK !== "false";
   const allowMiss = process.env.JACKIN_ALLOW_MISS === "true";
+  validateContracts({
+    includeTools,
+    includeXtask,
+    toolsContract,
+    xtaskContract,
+  });
   const octokit = github.getOctokit(token);
   const deadline = Date.now() + (allowMiss ? 0 : DEADLINE_MILLISECONDS);
   let toolsHit =
@@ -103,7 +122,6 @@ async function run() {
   if (toolsHit) core.setOutput("tools-hit", "true");
   if (xtaskHit) core.setOutput("xtask-hit", "true");
   if (includeTools && !toolsHit) {
-    if (!toolsContract) throw new Error("tools-contract is required with tools");
     const tools = await waitForArtifact(
       () => latestArtifact(octokit, owner, repo, toolsArtifact),
       toolsArtifact,
@@ -224,6 +242,7 @@ export {
   exportPrepared,
   latestArtifact,
   splitRepository,
+  validateContracts,
   waitForArtifact,
   main,
 };

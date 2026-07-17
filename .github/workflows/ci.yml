@@ -74,7 +74,7 @@ jobs:
         shell: bash
         env:
           AUDIT: ${{ hashFiles('Cargo.lock', '.cargo/audit.toml') }}
-          CI_TOOLS: ${{ hashFiles('mise.toml', 'mise.lock') }}
+          CI_TOOLS: ${{ hashFiles('mise.toml', 'mise.lock', 'crates/jackin-xtask/src/ci_stage.rs') }}
           CI_XTASK: ${{ hashFiles('Cargo.lock', 'Cargo.toml', 'rust-toolchain.toml', '.cargo/**', 'crates/*/Cargo.toml', 'crates/jackin-xtask/src/**', 'crates/jackin-process/src/**') }}
           DOCKER: ${{ hashFiles('docker/**', 'docker-bake.hcl') }}
           REGISTRY: ${{ hashFiles('Cargo.lock', 'crates/**/fuzz/Cargo.lock', 'rust-toolchain.toml', '.cargo/config.toml') }}
@@ -546,7 +546,7 @@ jobs:
           install_args: >-
             rust@${{ needs.changes.outputs.rust-version }}
             ${{ env.CI_TOOLS_HIT != 'true' &&
-                'cargo-binstall cargo:sccache cargo:cargo-nextest cargo:cargo-deny cargo:cargo-shear cargo:cargo-audit cargo:cargo-fuzz cargo:cargo-hack' || '' }}
+                'cargo-binstall cargo:sccache cargo:cargo-nextest cargo:cargo-deny cargo:cargo-shear cargo:cargo-audit cargo:cargo-dylint cargo:cargo-fuzz cargo:cargo-hack cargo:cargo-hakari cargo:cargo-llvm-cov cargo:cargo-mutants cargo:cargo-zigbuild cargo:dylint-link' || '' }}
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         if: >-

@@ -9,6 +9,7 @@ import {
   exportPrepared,
   latestArtifact,
   splitRepository,
+  validateContracts,
   waitForArtifact,
 } from "../src/index.js";
 
@@ -19,6 +20,27 @@ test("splits an exact owner/repository pair", () => {
   });
   assert.throws(() => splitRepository("jackin"), /invalid repository/);
   assert.throws(() => splitRepository("one/two/three"), /invalid repository/);
+});
+
+test("accepts a tools-only artifact contract", () => {
+  assert.doesNotThrow(() =>
+    validateContracts({
+      includeTools: true,
+      includeXtask: false,
+      toolsContract: "tools",
+      xtaskContract: "",
+    }),
+  );
+  assert.throws(
+    () =>
+      validateContracts({
+        includeTools: false,
+        includeXtask: true,
+        toolsContract: "",
+        xtaskContract: "",
+      }),
+    /xtask-contract is required with xtask/,
+  );
 });
 
 test("selects the first unexpired repository artifact", async () => {
