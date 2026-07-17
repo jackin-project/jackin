@@ -144,5 +144,9 @@ required-features = ["test-support"]
 name = "wire_registry_events"
 required-features = ["test-support"]
 
+[[test]]
+name = "soak"
+required-features = ["test-support"]
+
 [lints]
 workspace = true
