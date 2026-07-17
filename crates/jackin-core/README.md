@@ -59,7 +59,6 @@ Remaining root `pub mod`s (individually justified):
 | Module | Why public |
 |---|---|
 | `container_paths` | Namespace for container-side `/jackin/` path constants (`use jackin_core::container_paths`) across runtime/capsule/usage |
-| `debug_log` | Hosts `debug_log!` macro + sink; `#[macro_export]` shares the `jackin_core::debug_log` path with the module name |
 
 Higher crates implement the port traits defined here (e.g. `CommandRunner`) and pass the domain types through. Debug-info product presentation is `jackin_tui::operator_info`.
 
