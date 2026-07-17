@@ -32,6 +32,67 @@ async fn docker_response_failure_stays_inside_http_owner_without_payload() {
     }
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn conformance_wire_docker_http_exports_bounded_private_shapes() -> anyhow::Result<()> {
+    let testbed = jackin_otlp_testbed::Testbed::start()?;
+    jackin_diagnostics::init_wire_test_export(
+        &testbed.endpoint(),
+        jackin_diagnostics::ServiceIdentity::HOST_ONE_SHOT,
+    )?;
+
+    docker_http(CONTAINER_LIST, async { Ok::<_, anyhow::Error>(()) }).await?;
+    let failure: anyhow::Result<()> = docker_http(EXEC_START, async {
+        anyhow::bail!("private-container private-command private-output")
+    })
+    .await;
+    assert!(failure.is_err());
+    jackin_diagnostics::flush_wire_test_export()?;
+
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+    let spans = loop {
+        let spans = testbed
+            .spans()
+            .into_iter()
+            .filter(|span| span.name == "http.client")
+            .collect::<Vec<_>>();
+        if spans.len() == 2 {
+            break spans;
+        }
+        anyhow::ensure!(
+            std::time::Instant::now() < deadline,
+            "Docker HTTP wire spans did not arrive"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+    };
+    let wire_text = format!("{spans:?}");
+    for expected in [
+        "/containers/json",
+        "/exec/{id}/start",
+        "success",
+        "failure",
+        "http_error",
+    ] {
+        assert!(
+            wire_text.contains(expected),
+            "missing {expected}: {wire_text}"
+        );
+    }
+    for prohibited in ["private-container", "private-command", "private-output"] {
+        assert!(!wire_text.contains(prohibited), "exported {prohibited}");
+    }
+    assert_eq!(
+        testbed.prohibited_value_violations(&[
+            "private-container",
+            "private-command",
+            "private-output",
+        ]),
+        Vec::<String>::new()
+    );
+    assert_eq!(testbed.legacy_namespace_violations(), Vec::<String>::new());
+    jackin_diagnostics::shutdown_capsule_tracing();
+    Ok(())
+}
+
 #[test]
 fn choose_connection_env_only_returns_defaults() {
     assert_eq!(choose_connection(true, None), ConnectionChoice::Defaults);
