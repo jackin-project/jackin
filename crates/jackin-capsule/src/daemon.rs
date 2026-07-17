@@ -810,40 +810,9 @@ fn emit_agent_state_change(
 ) {
     use jackin_telemetry::{Attr, FieldSet, Value};
 
-    let Some(agent) = session.agent.as_deref() else {
+    let Some(metric_attrs) = agent_status_metric_attrs(session, transition.effective) else {
         return;
     };
-    let source = match session.status.report(None).source {
-        jackin_protocol::agent_status::AgentStatusSource::None => "none",
-        jackin_protocol::agent_status::AgentStatusSource::VisibleScreen => "visible_screen",
-        jackin_protocol::agent_status::AgentStatusSource::ShellIntegration => "shell_integration",
-        jackin_protocol::agent_status::AgentStatusSource::ForegroundProcess => "foreground_process",
-        jackin_protocol::agent_status::AgentStatusSource::Reported { .. } => "reported",
-    };
-    let confidence = match session.status.confidence {
-        jackin_protocol::agent_status::AgentStatusConfidence::Unknown => "unknown",
-        jackin_protocol::agent_status::AgentStatusConfidence::Weak => "weak",
-        jackin_protocol::agent_status::AgentStatusConfidence::Strong => "strong",
-        jackin_protocol::agent_status::AgentStatusConfidence::Authoritative => "authoritative",
-    };
-    let metric_attrs = [
-        Attr {
-            key: jackin_telemetry::schema::attrs::std_attrs::GEN_AI_AGENT_NAME,
-            value: Value::Str(agent),
-        },
-        Attr {
-            key: jackin_telemetry::schema::attrs::AGENT_STATE,
-            value: Value::Str(transition.effective.label()),
-        },
-        Attr {
-            key: jackin_telemetry::schema::attrs::AGENT_STATUS_SOURCE,
-            value: Value::Str(source),
-        },
-        Attr {
-            key: jackin_telemetry::schema::attrs::AGENT_STATUS_CONFIDENCE,
-            value: Value::Str(confidence),
-        },
-    ];
     let event_attrs = [
         metric_attrs[0],
         metric_attrs[1],
@@ -862,8 +831,100 @@ fn emit_agent_state_change(
         jackin_telemetry::counter(&jackin_telemetry::metric::AGENT_STATE_TRANSITIONS)
             .add(1, &metric_attrs);
     if stuck {
-        let _stuck_result = jackin_telemetry::counter(&jackin_telemetry::metric::AGENT_STATE_STUCK)
-            .add(1, &metric_attrs);
+        record_agent_stuck(&metric_attrs);
+    }
+}
+
+fn agent_status_metric_attrs(
+    session: &Session,
+    state: crate::protocol::AgentState,
+) -> Option<[jackin_telemetry::Attr<'_>; 4]> {
+    use jackin_telemetry::{Attr, Value};
+
+    let agent = session.agent.as_deref()?;
+    let source = match session.status.report(None).source {
+        jackin_protocol::agent_status::AgentStatusSource::None => "none",
+        jackin_protocol::agent_status::AgentStatusSource::VisibleScreen => "visible_screen",
+        jackin_protocol::agent_status::AgentStatusSource::ShellIntegration => "shell_integration",
+        jackin_protocol::agent_status::AgentStatusSource::ForegroundProcess => "foreground_process",
+        jackin_protocol::agent_status::AgentStatusSource::Reported { .. } => "reported",
+    };
+    let confidence = match session.status.confidence {
+        jackin_protocol::agent_status::AgentStatusConfidence::Unknown => "unknown",
+        jackin_protocol::agent_status::AgentStatusConfidence::Weak => "weak",
+        jackin_protocol::agent_status::AgentStatusConfidence::Strong => "strong",
+        jackin_protocol::agent_status::AgentStatusConfidence::Authoritative => "authoritative",
+    };
+    Some([
+        Attr {
+            key: jackin_telemetry::schema::attrs::std_attrs::GEN_AI_AGENT_NAME,
+            value: Value::Str(agent),
+        },
+        Attr {
+            key: jackin_telemetry::schema::attrs::AGENT_STATE,
+            value: Value::Str(state.label()),
+        },
+        Attr {
+            key: jackin_telemetry::schema::attrs::AGENT_STATUS_SOURCE,
+            value: Value::Str(source),
+        },
+        Attr {
+            key: jackin_telemetry::schema::attrs::AGENT_STATUS_CONFIDENCE,
+            value: Value::Str(confidence),
+        },
+    ])
+}
+
+fn record_agent_stuck(attrs: &[jackin_telemetry::Attr<'_>]) {
+    let _stuck_result =
+        jackin_telemetry::counter(&jackin_telemetry::metric::AGENT_STATE_STUCK).add(1, attrs);
+}
+
+fn agent_status_cycle_attrs() -> [jackin_telemetry::Attr<'static>; 1] {
+    [jackin_telemetry::Attr {
+        key: jackin_telemetry::schema::attrs::BACKGROUND_CYCLE_NAME,
+        value: jackin_telemetry::Value::Str(
+            jackin_telemetry::schema::enums::BackgroundCycleName::AgentStatus.as_str(),
+        ),
+    }]
+}
+
+fn record_skipped_agent_status() {
+    let attrs = [
+        agent_status_cycle_attrs()[0],
+        jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::OUTCOME,
+            value: jackin_telemetry::Value::Str(
+                jackin_telemetry::schema::enums::OutcomeValue::Skip.as_str(),
+            ),
+        },
+    ];
+    let _metric =
+        jackin_telemetry::counter(&jackin_telemetry::metric::BACKGROUND_CYCLES).add(1, &attrs);
+}
+
+fn record_agent_status_tick(session: &Session, tick: crate::session::StatusTick) {
+    if tick.transition.is_none() && !tick.stuck {
+        record_skipped_agent_status();
+        return;
+    }
+    let cycle = jackin_telemetry::autonomous_root_operation(
+        &jackin_telemetry::operation::BACKGROUND_CYCLE,
+        &agent_status_cycle_attrs(),
+    )
+    .ok();
+    let record_result = || {
+        if let Some(transition) = tick.transition {
+            emit_agent_state_change(session, &transition, tick.stuck);
+        } else if let Some(attrs) = agent_status_metric_attrs(session, session.state) {
+            record_agent_stuck(&attrs);
+        }
+    };
+    if let Some(cycle) = cycle {
+        cycle.span().in_scope(record_result);
+        cycle.complete(jackin_telemetry::schema::enums::OutcomeValue::Success, None);
+    } else {
+        record_result();
     }
 }
 
@@ -978,9 +1039,7 @@ async fn handle_state_tick(mux: &mut Multiplexer, rule_registry: Option<&RulePac
         // Session::advance_status is the sole state-authoring path; the daemon
         // only reacts to the resulting transition.
         let tick = session.advance_status(rule_registry, now);
-        if let Some(transition) = tick.transition {
-            emit_agent_state_change(session, &transition, tick.stuck);
-        }
+        record_agent_status_tick(session, tick);
     }
     // Seen/ack: the focused pane is being reviewed, so it must never linger on
     // `done`. Acknowledge it each tick (idempotent — only done→idle changes

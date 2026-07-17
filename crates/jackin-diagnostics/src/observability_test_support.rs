@@ -46,6 +46,26 @@ impl TestExport {
             .count()
     }
 
+    pub fn event_count(&self, event_name: &str) -> usize {
+        self.logs
+            .get_emitted_logs()
+            .unwrap_or_default()
+            .iter()
+            .filter(|log| log.record.event_name() == Some(event_name))
+            .count()
+    }
+
+    pub fn traced_event_count(&self, event_name: &str) -> usize {
+        self.logs
+            .get_emitted_logs()
+            .unwrap_or_default()
+            .iter()
+            .filter(|log| {
+                log.record.event_name() == Some(event_name) && log.record.trace_context().is_some()
+            })
+            .count()
+    }
+
     pub fn error_span_count(&self) -> usize {
         self.spans
             .get_finished_spans()

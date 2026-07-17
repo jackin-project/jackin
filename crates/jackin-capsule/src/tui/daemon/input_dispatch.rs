@@ -1,7 +1,3 @@
-#![expect(
-    clippy::too_many_lines,
-    reason = "documented residual allow; prefer expect when site is lint-true"
-)]
 //! TUI input dispatch methods for the daemon-owned `Multiplexer`.
 
 use std::sync::Arc;

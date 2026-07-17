@@ -15,6 +15,80 @@ fn provider_probe_noop_tick_exports_no_span() {
     assert!(export.finished_spans().is_empty());
 }
 
+#[test]
+fn quiet_agent_status_pass_exports_no_span() {
+    let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
+    let (session, _session_rx) = test_session_with_agent(24, 80, Some("codex".to_owned()));
+    tracing::subscriber::with_default(subscriber, || {
+        record_agent_status_tick(
+            &session,
+            crate::session::StatusTick {
+                transition: None,
+                stuck: false,
+            },
+        );
+    });
+    export.force_flush();
+    assert!(export.finished_spans().is_empty());
+}
+
+#[test]
+fn substantive_agent_status_pass_exports_one_autonomous_root() {
+    let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
+    let (session, _session_rx) = test_session_with_agent(24, 80, Some("codex".to_owned()));
+    tracing::subscriber::with_default(subscriber, || {
+        record_agent_status_tick(
+            &session,
+            crate::session::StatusTick {
+                transition: Some(crate::session::StatusTransition {
+                    previous: crate::protocol::AgentState::Unknown,
+                    effective: crate::protocol::AgentState::Working,
+                    winner: crate::agent_status::evidence::EvidenceWinner::Unknown,
+                }),
+                stuck: false,
+            },
+        );
+    });
+    export.force_flush();
+
+    let spans = export.finished_spans();
+    assert_eq!(spans.len(), 1);
+    assert_eq!(
+        spans[0].name,
+        jackin_telemetry::schema::spans::BACKGROUND_CYCLE
+    );
+    assert_eq!(spans[0].parent_span_id, "0000000000000000");
+    assert_eq!(
+        export.event_count(jackin_telemetry::schema::events::AGENT_STATE_CHANGED),
+        1
+    );
+    assert_eq!(
+        export.traced_event_count(jackin_telemetry::schema::events::AGENT_STATE_CHANGED),
+        1
+    );
+}
+
+#[test]
+fn watchdog_demotion_without_transition_is_still_substantive() {
+    let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
+    let (session, _session_rx) = test_session_with_agent(24, 80, Some("codex".to_owned()));
+    tracing::subscriber::with_default(subscriber, || {
+        record_agent_status_tick(
+            &session,
+            crate::session::StatusTick {
+                transition: None,
+                stuck: true,
+            },
+        );
+    });
+    export.force_flush();
+    assert_eq!(export.finished_spans().len(), 1);
+    assert_eq!(
+        export.event_count(jackin_telemetry::schema::events::AGENT_STATE_CHANGED),
+        0
+    );
+}
+
 fn serialized_control_spans(
     context: jackin_protocol::TelemetryContext,
 ) -> (bool, Vec<jackin_diagnostics::TestSpanSnapshot>) {
