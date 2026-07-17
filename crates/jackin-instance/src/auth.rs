@@ -332,7 +332,7 @@ fn read_host_gh_token(host_home: &Path) -> anyhow::Result<HostGhResolution> {
     let mut cli_failure: Option<HostMissingReason> = None;
 
     if host_home_is_real(host_home) {
-        match jackin_process::exec_sync(&jackin_process::ExecRequest::new(
+        match crate::process_telemetry::exec_sync(&jackin_process::ExecRequest::new(
             "gh",
             ["auth", "token", "--hostname", "github.com"],
         )) {
@@ -351,24 +351,14 @@ fn read_host_gh_token(host_home: &Path) -> anyhow::Result<HostGhResolution> {
                 }
                 cli_failure = Some(HostMissingReason::GhCliEmpty);
             }
-            Ok(output) => {
-                let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+            Ok(_) => {
                 cli_failure = Some(HostMissingReason::GhCliFailed {
-                    stderr: stderr.trim().to_owned(),
+                    stderr: "gh authentication command failed".to_owned(),
                 });
             }
-            Err(e)
-                if e.chain().any(|cause| {
-                    cause
-                        .downcast_ref::<std::io::Error>()
-                        .is_some_and(|io| io.kind() == std::io::ErrorKind::NotFound)
-                }) => {}
-            Err(e) => {
-                // Treat any non-NotFound spawn error as a CLI failure
-                // signal too — the operator's gh is in a broken state
-                // and the launch notice should say so.
+            Err(_) => {
                 cli_failure = Some(HostMissingReason::GhCliFailed {
-                    stderr: e.to_string(),
+                    stderr: "gh authentication command could not start".to_owned(),
                 });
             }
         }
@@ -1180,7 +1170,7 @@ const CLAUDE_KEYCHAIN_SERVICE_BASE: &str = "Claude Code-credentials";
 /// Returns `None` on lookup failure or an empty value.
 #[cfg(target_os = "macos")]
 fn read_claude_keychain(service: &str) -> Option<String> {
-    let output = jackin_process::exec_sync(&jackin_process::ExecRequest::new(
+    let output = crate::process_telemetry::exec_sync(&jackin_process::ExecRequest::new(
         "security",
         ["find-generic-password", "-s", service, "-w"],
     ))

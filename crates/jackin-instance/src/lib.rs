@@ -16,6 +16,7 @@ mod error;
 pub use error::{InstanceError, SyncSourceValidationError};
 pub mod manifest;
 pub mod naming;
+mod process_telemetry;
 pub use manifest::{
     AppleContainerResources, BackendResources, DockerResources, InstanceIndex, InstanceIndexEntry,
     InstanceManifest, InstanceQuery, InstanceStatus, NewInstanceManifest, SessionRecord,
