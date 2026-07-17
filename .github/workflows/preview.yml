@@ -271,9 +271,10 @@ jobs:
       RUSTUP_HOME: ${{ matrix.config.rustup_home }}
     strategy:
       fail-fast: false
-      # The first lane owns the runner-independent result cache. A dual-lane
-      # run hands its complete archive artifact to the second lane instead of
-      # racing same-run cache visibility or compiling identical inputs twice.
+      # The first lane owns the runner-independent result cache. GitHub exposes
+      # a newly saved cache to Velnor after the workflow completes, so a cold
+      # dual-lane population fails fast on Velnor and its immediate repeat is
+      # the parity proof. Velnor must never compile the duplicate inputs.
       max-parallel: 1
       matrix:
         config: ${{ fromJSON((github.event_name != 'workflow_dispatch' || inputs.lanes == 'github') && '[{"lane":"GitHub","runner":"\"ubuntu-24.04\"","mise_data_dir":"/home/runner/.local/share/mise","rustup_home":"/home/runner/.rustup","cache_writer":true}]' || inputs.lanes == 'velnor' && '[{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","mise_data_dir":"/opt/mise","rustup_home":"/opt/rustup","cache_writer":true}]' || '[{"lane":"GitHub","runner":"\"ubuntu-24.04\"","mise_data_dir":"/home/runner/.local/share/mise","rustup_home":"/home/runner/.rustup","cache_writer":true},{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","mise_data_dir":"/opt/mise","rustup_home":"/opt/rustup","cache_writer":false}]') }}
@@ -290,13 +291,11 @@ jobs:
           key: preview-archives-v2-jackin-${{ needs.source-changed.outputs.jackin_archive_contract }}
       - name: Reuse the first lane's complete jackin archive set
         if: matrix.config.cache_writer == false
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v8.0.1
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          name: preview-GitHub-jackin
           path: dist
-          github-token: ${{ github.token }}
-          repository: ${{ github.repository }}
-          run-id: ${{ github.run_id }}
+          key: preview-archives-v2-jackin-${{ needs.source-changed.outputs.jackin_archive_contract }}
+          fail-on-cache-miss: true
       - uses: ./.github/actions/download-ci-xtask
         if: matrix.config.cache_writer && steps.archive-cache.outputs.cache-hit != 'true'
         with:
@@ -427,13 +426,11 @@ jobs:
           key: preview-archives-v2-capsule-${{ needs.source-changed.outputs.capsule_archive_contract }}
       - name: Reuse the first lane's complete capsule archive set
         if: matrix.config.cache_writer == false
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v8.0.1
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          name: preview-GitHub-jackin-capsule
           path: dist
-          github-token: ${{ github.token }}
-          repository: ${{ github.repository }}
-          run-id: ${{ github.run_id }}
+          key: preview-archives-v2-capsule-${{ needs.source-changed.outputs.capsule_archive_contract }}
+          fail-on-cache-miss: true
       - uses: ./.github/actions/download-ci-xtask
         if: matrix.config.cache_writer && steps.archive-cache.outputs.cache-hit != 'true'
         with:
