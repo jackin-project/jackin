@@ -132,10 +132,12 @@ If default-mode signal counts changed (removed duplicate span events can lower t
 ## Done criteria
 
 - [ ] `cargo nextest run --workspace --all-features --locked` exits 0
-- [ ] `conformance_single_delivery` exists and passes
-- [ ] `grep -n "with_error_events_to_status\|error_records_to_exceptions" crates/jackin-diagnostics/src/` shows inference disabled (or documented 0.33 equivalent)
+- [x] `conformance_single_delivery_preserves_native_shape` exists and passes; it proves native name, severity, body, typed attributes, Resource, trace correlation, and zero span-event duplication
+- [x] Span events are rejected by `GovernedSpanFilter` before the tracing layer, which is the documented 0.33 mechanism used here; `governed_event_level_gates_are_exact_and_do_not_infer_span_state` proves zero inferred status/exception state across ERROR/WARN/INFO/DEBUG/TRACE
 - [ ] `cargo xtask lint --strict` exits 0 (export-volume ratchet consistent)
-- [ ] `plans/unified-otel-observability/README.md` status row updated
+- [x] `plans/unified-otel-observability/README.md` status row updated
+
+Focused evidence revalidated at `a862fcd72`: `every_registered_event_round_trips_once_with_canonical_severity` and `governed_event_level_gates_are_exact_and_do_not_infer_span_state` pass with `--all-features`. The registry-wide test derives expected severity from generated definitions rather than maintaining a manual case table.
 
 ## STOP conditions
 
