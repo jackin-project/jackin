@@ -50,7 +50,7 @@ const serverLoader = createServerFn({
   .validator((slugs: string[]) => slugs)
   .middleware([staticFunctionMiddleware])
   .handler(async ({ data: slugs }) => {
-    const { source } = await import('@/lib/source')
+    const { freshSerializedPageTree, publicPageUrls, source } = await import('@/lib/source')
     const { findNeighbour } = await import('fumadocs-core/page-tree')
     const page = source.getPage(slugs)
     if (!page) throw notFound()
@@ -75,20 +75,15 @@ const serverLoader = createServerFn({
     // The public/jackin❯ tab is the catch-all section — every page not under the
     // /reference or /roadmap roots. It can't be matched by a url prefix (the
     // section has several), so the switcher matches it by exact membership.
-    const publicUrls = source
-      .getPages()
-      .map((p) => p.url)
-      .filter((url) => !url.startsWith('/reference') && !url.startsWith('/roadmap'))
-
     return {
       path: page.path,
       markdownUrl: slugsToMarkdownPath(page.slugs).url,
-      publicUrls,
+      publicUrls: publicPageUrls,
       footerItems: {
         previous: serializeFooterItem(footerItems.previous),
         next: serializeFooterItem(footerItems.next),
       },
-      pageTree: await source.serializePageTree(source.getPageTree()),
+      pageTree: await freshSerializedPageTree(),
       seo: pageSeo({
         title: page.data.title,
         description: page.data.description,
