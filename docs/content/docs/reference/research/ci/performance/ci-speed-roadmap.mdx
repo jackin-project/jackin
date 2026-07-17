@@ -1134,6 +1134,17 @@ and flake-quarantine enforcement subsequently moved from duplicated
 Bash/Python fragments into the tested `ci-junit` xtask command, preserving one
 semantic analysis step for both normal and Docker E2E reports.
 
+Runs `29573869202` and `29574113061` then verified the exact runner-local
+source-key correction and the Rust-owned JUnit analysis. The first forced
+`jackin-env` refresh was green with every job below one minute: the complete
+crate job took 35 seconds on GitHub and 43 seconds on Velnor. Its only compile
+markers came from producing the changed shared xtask itself; neither crate job
+compiled or downloaded anything. The input-identical repeat is the steady-state
+acceptance proof: warmup took 15 seconds on GitHub and 20 seconds on Velnor,
+while the complete, unsharded `jackin-env` job took 33 and 39 seconds. A scan of
+the entire repeat log found zero compile, check, dependency-download,
+registry-update, fetch, or Rustup-sync markers.
+
 ## Guardrails
 
 - Keep one stable aggregator per workflow for branch protection, but allow separate early-signal jobs to finish before the full aggregator.
