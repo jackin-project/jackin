@@ -253,7 +253,10 @@ fn tls_config(key: &ChannelKey) -> anyhow::Result<rustls::ClientConfig> {
                 .map_err(|_| anyhow::anyhow!("OTLP CA certificate is invalid"))?;
         }
     }
-    let builder = rustls::ClientConfig::builder().with_root_certificates(roots);
+    let builder = rustls::ClientConfig::builder_with_provider(crypto_provider())
+        .with_safe_default_protocol_versions()
+        .map_err(|_| anyhow::anyhow!("OTLP TLS protocol configuration is unavailable"))?
+        .with_root_certificates(roots);
     let mut config = match (&key.client_certificate, &key.client_key) {
         (Some(certificate), Some(key_path)) => {
             let certificate = std::fs::read(certificate)
@@ -273,6 +276,10 @@ fn tls_config(key: &ChannelKey) -> anyhow::Result<rustls::ClientConfig> {
     };
     config.alpn_protocols = vec![b"h2".to_vec()];
     Ok(config)
+}
+
+fn crypto_provider() -> Arc<rustls::crypto::CryptoProvider> {
+    Arc::new(rustls::crypto::ring::default_provider())
 }
 
 fn publish_observation(observation: AttemptObservation) {

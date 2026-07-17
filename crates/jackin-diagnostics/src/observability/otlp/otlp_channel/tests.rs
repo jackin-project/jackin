@@ -103,7 +103,9 @@ async fn tls_handshake_is_inside_the_physical_attempt() {
     let certificate_der = certified.cert.der().clone();
     let key_der =
         rustls::pki_types::PrivatePkcs8KeyDer::from(certified.signing_key.serialize_der());
-    let mut server_config = rustls::ServerConfig::builder()
+    let mut server_config = rustls::ServerConfig::builder_with_provider(crypto_provider())
+        .with_safe_default_protocol_versions()
+        .unwrap()
         .with_no_client_auth()
         .with_single_cert(vec![certificate_der], key_der.into())
         .unwrap();
@@ -144,7 +146,9 @@ async fn untrusted_tls_certificate_fails_the_physical_attempt() {
     let certified = rcgen::generate_simple_self_signed(["localhost".to_owned()]).unwrap();
     let key_der =
         rustls::pki_types::PrivatePkcs8KeyDer::from(certified.signing_key.serialize_der());
-    let server_config = rustls::ServerConfig::builder()
+    let server_config = rustls::ServerConfig::builder_with_provider(crypto_provider())
+        .with_safe_default_protocol_versions()
+        .unwrap()
         .with_no_client_auth()
         .with_single_cert(vec![certified.cert.der().clone()], key_der.into())
         .unwrap();
