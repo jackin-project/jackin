@@ -845,6 +845,11 @@ workflow remains a valid lookup source because artifacts are uploaded only
 after the package build, deterministic packaging, signatures, checksums, SBOMs,
 and provenance step succeed. This preserves one complete job per package and
 runner-neutral configuration while preventing duplicate cold compilation.
+For an explicit `lanes=both` producer run, Velnor is listed first under that
+same lock so its purpose-built persistent runner performs a cold build before
+the hosted parity consumer; GitHub-only automatic and manual runs are
+unchanged. This prevents optional release work from occupying the hosted slots
+needed by required pull-request admission.
 
 ### Phase 5 -- Docker and construct-image speedups
 
