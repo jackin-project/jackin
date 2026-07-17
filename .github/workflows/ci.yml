@@ -457,6 +457,7 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: ./.github/actions/download-ci-xtask
         with:
+          token: ${{ github.token }}
           lane: ${{ matrix.config.lane }}
           xtask-contract: ${{ needs.changes.outputs.ci-xtask-contract }}
           include-tools: "false"
@@ -732,6 +733,7 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: ./.github/actions/download-ci-xtask
         with:
+          token: ${{ github.token }}
           lane: GitHub
           tools-contract: ${{ needs.changes.outputs.ci-tools-contract }}
           xtask-contract: ${{ needs.changes.outputs.ci-xtask-contract }}
@@ -768,6 +770,7 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: ./.github/actions/download-ci-xtask
         with:
+          token: ${{ github.token }}
           lane: ${{ matrix.config.lane }}
           tools-contract: ${{ needs.changes.outputs.ci-tools-contract }}
           xtask-contract: ${{ needs.changes.outputs.ci-xtask-contract }}
@@ -791,6 +794,7 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: ./.github/actions/download-ci-xtask
         with:
+          token: ${{ github.token }}
           lane: ${{ matrix.config.lane }}
           tools-contract: ${{ needs.changes.outputs.ci-tools-contract }}
           xtask-contract: ${{ needs.changes.outputs.ci-xtask-contract }}
@@ -829,6 +833,7 @@ jobs:
           fetch-depth: 0
       - uses: ./.github/actions/download-ci-xtask
         with:
+          token: ${{ github.token }}
           lane: ${{ matrix.config.lane }}
           tools-contract: ${{ needs.changes.outputs.ci-tools-contract }}
           xtask-contract: ${{ needs.changes.outputs.ci-xtask-contract }}
@@ -867,6 +872,7 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: ./.github/actions/download-ci-xtask
         with:
+          token: ${{ github.token }}
           lane: ${{ matrix.config.lane }}
           tools-contract: ${{ needs.changes.outputs.ci-tools-contract }}
           xtask-contract: ${{ needs.changes.outputs.ci-xtask-contract }}
@@ -936,6 +942,7 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: ./.github/actions/download-ci-xtask
         with:
+          token: ${{ github.token }}
           lane: ${{ matrix.config.lane }}
           tools-contract: ${{ needs.changes.outputs.ci-tools-contract }}
           xtask-contract: ${{ needs.changes.outputs.ci-xtask-contract }}
@@ -1001,6 +1008,7 @@ jobs:
       - uses: ./.github/actions/download-ci-xtask
         if: always()
         with:
+          token: ${{ github.token }}
           lane: GitHub
           tools-contract: ${{ needs.changes.outputs.ci-tools-contract }}
           xtask-contract: ${{ needs.changes.outputs.ci-xtask-contract }}

@@ -496,6 +496,7 @@ jobs:
       - uses: ./.github/actions/download-ci-xtask
         if: always()
         with:
+          token: ${{ github.token }}
           lane: GitHub
           xtask-contract: ${{ hashFiles('Cargo.lock', 'Cargo.toml', 'rust-toolchain.toml', '.cargo/**', 'crates/*/Cargo.toml', 'crates/jackin-xtask/src/**', 'crates/jackin-process/src/**') }}
           include-tools: "false"

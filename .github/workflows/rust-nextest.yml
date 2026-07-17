@@ -110,6 +110,7 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: ./.github/actions/download-ci-xtask
         with:
+          token: ${{ github.token }}
           lane: ${{ matrix.config.lane }}
           xtask-contract: ${{ inputs.ci-xtask-contract }}
           include-tools: "false"
@@ -147,6 +148,7 @@ jobs:
       - uses: ./.github/actions/download-ci-xtask
         if: steps.crate-result.outputs.hit != 'true'
         with:
+          token: ${{ github.token }}
           lane: ${{ matrix.config.lane }}
           tools-contract: ${{ inputs.ci-tools-contract }}
           xtask-contract: ${{ inputs.ci-xtask-contract }}

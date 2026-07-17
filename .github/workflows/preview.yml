@@ -303,6 +303,7 @@ jobs:
       - uses: ./.github/actions/download-ci-xtask
         if: matrix.config.cache_writer && steps.archive-cache.outputs.cache-hit != 'true'
         with:
+          token: ${{ github.token }}
           lane: ${{ matrix.config.lane }}
           xtask-contract: ${{ needs.source-changed.outputs.xtask_contract }}
           include-tools: "false"
@@ -442,6 +443,7 @@ jobs:
       - uses: ./.github/actions/download-ci-xtask
         if: matrix.config.cache_writer && steps.archive-cache.outputs.cache-hit != 'true'
         with:
+          token: ${{ github.token }}
           lane: ${{ matrix.config.lane }}
           xtask-contract: ${{ needs.source-changed.outputs.xtask_contract }}
           include-tools: "false"
@@ -589,7 +591,9 @@ jobs:
       - name: Restore prepared CI xtask
         uses: ./.github/actions/download-ci-xtask
         with:
+          token: ${{ github.token }}
           lane: GitHub
+          xtask-contract: ${{ hashFiles('Cargo.lock', 'Cargo.toml', 'rust-toolchain.toml', '.cargo/**', 'crates/*/Cargo.toml', 'crates/jackin-xtask/src/**', 'crates/jackin-process/src/**') }}
           include-tools: "false"
 
       - name: Verify source SHA is on main

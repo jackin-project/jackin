@@ -5,6 +5,9 @@ name: Download CI xtask
 description: Restore the lane-scoped jackin-xtask binary prepared once by CI.
 
 inputs:
+  token:
+    description: Token with Actions artifact read access.
+    required: true
   lane:
     description: Runner lane that produced the binary.
     required: true
@@ -16,22 +19,15 @@ inputs:
     description: Runner-independent xtask artifact contract computed by the metadata job.
     required: false
     default: ""
+  fallback-xtask-contract:
+    description: Exact xtask contract used when a specialized artifact is not available yet.
+    required: false
+    default: ""
   include-tools:
     description: Download the Cargo tool bundle in addition to jackin-xtask.
     required: false
     default: "true"
 
 runs:
-  using: composite
-  steps:
-    - uses: ./.github/actions/download-ci-xtask/runtime
-      with:
-        token: ${{ github.token }}
-        repository: ${{ github.repository }}
-        run-id: ${{ github.run_id }}
-        destination: ${{ github.workspace }}/.ci-tools/${{ inputs.lane }}
-        lane-artifact: ci-xtask-${{ inputs.lane }}
-        tools-artifact: ci-tools-${{ runner.os }}-${{ runner.arch }}-${{ inputs.tools-contract || hashFiles('mise.toml', 'mise.lock') }}
-        xtask-artifact: ci-xtask-${{ runner.os }}-${{ runner.arch }}-${{ inputs.xtask-contract || hashFiles('Cargo.lock', 'Cargo.toml', 'rust-toolchain.toml', '.cargo/**', 'crates/*/Cargo.toml', 'crates/jackin-xtask/src/**', 'crates/jackin-process/src/**') }}
-        exact-xtask-artifact: ci-xtask-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'rust-toolchain.toml', '.cargo/**', 'crates/*/Cargo.toml', 'crates/jackin-xtask/src/**', 'crates/jackin-process/src/**') }}
-        include-tools: ${{ inputs.include-tools }}
+  using: node24
+  main: runtime/dist/index.js

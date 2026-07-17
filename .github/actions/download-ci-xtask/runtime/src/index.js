@@ -73,23 +73,25 @@ async function downloadArtifact(octokit, owner, repo, artifact, destination) {
 
 async function run() {
   const token = core.getInput("token", { required: true });
-  const { owner, repo } = splitRepository(
-    core.getInput("repository", { required: true }),
-  );
-  const runId = Number.parseInt(core.getInput("run-id", { required: true }), 10);
-  const destination = core.getInput("destination", { required: true });
-  const laneArtifact = core.getInput("lane-artifact", { required: true });
-  const toolsArtifact = core.getInput("tools-artifact", { required: true });
-  const xtaskArtifact = core.getInput("xtask-artifact", { required: true });
-  const exactXtaskArtifact = core.getInput("exact-xtask-artifact", {
-    required: true,
-  });
+  const { owner, repo } = splitRepository(process.env.GITHUB_REPOSITORY);
+  const runId = Number.parseInt(process.env.GITHUB_RUN_ID, 10);
+  const lane = core.getInput("lane", { required: true });
+  const destination = path.join(process.env.GITHUB_WORKSPACE, ".ci-tools", lane);
+  const os = process.env.RUNNER_OS;
+  const arch = process.env.RUNNER_ARCH;
+  const toolsContract = core.getInput("tools-contract");
+  const xtaskContract = core.getInput("xtask-contract", { required: true });
+  const fallbackXtaskContract = core.getInput("fallback-xtask-contract");
+  const laneArtifact = `ci-xtask-${lane}`;
+  const toolsArtifact = `ci-tools-${os}-${arch}-${toolsContract}`;
+  const xtaskArtifact = `ci-xtask-${os}-${arch}-${xtaskContract}`;
   const includeTools = core.getBooleanInput("include-tools", { required: true });
   const octokit = github.getOctokit(token);
   const deadline = Date.now() + DEADLINE_MILLISECONDS;
 
   await fs.mkdir(destination, { recursive: true });
   if (includeTools) {
+    if (!toolsContract) throw new Error("tools-contract is required with tools");
     const lane = await currentRunArtifact(
       octokit,
       owner,
@@ -111,7 +113,10 @@ async function run() {
     await downloadArtifact(octokit, owner, repo, tools, destination);
   }
 
-  const candidates = [...new Set([xtaskArtifact, exactXtaskArtifact])];
+  const candidates = [xtaskArtifact];
+  if (fallbackXtaskContract && fallbackXtaskContract !== xtaskContract) {
+    candidates.push(`ci-xtask-${os}-${arch}-${fallbackXtaskContract}`);
+  }
   let xtask;
   for (const name of candidates) {
     xtask = await waitForArtifact(

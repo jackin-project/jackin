@@ -168,8 +168,10 @@ jobs:
           github.event_name == 'workflow_dispatch'
         uses: ./.github/actions/download-ci-xtask
         with:
+          token: ${{ github.token }}
           lane: GitHub
           xtask-contract: ${{ steps.contracts.outputs.docs-xtask }}
+          fallback-xtask-contract: ${{ hashFiles('Cargo.lock', 'Cargo.toml', 'rust-toolchain.toml', '.cargo/**', 'crates/*/Cargo.toml', 'crates/jackin-xtask/src/**', 'crates/jackin-process/src/**') }}
           include-tools: "false"
 
       - name: Find semantically identical successful Pages deployment
@@ -215,8 +217,10 @@ jobs:
 
       - uses: ./.github/actions/download-ci-xtask
         with:
+          token: ${{ github.token }}
           lane: GitHub
           xtask-contract: ${{ needs.changes.outputs.docs-xtask-contract }}
+          fallback-xtask-contract: ${{ hashFiles('Cargo.lock', 'Cargo.toml', 'rust-toolchain.toml', '.cargo/**', 'crates/*/Cargo.toml', 'crates/jackin-xtask/src/**', 'crates/jackin-process/src/**') }}
           include-tools: "false"
 
       # Plan 049 residual: generate crate README → Fumadocs pages so repo-link
@@ -274,8 +278,10 @@ jobs:
 
       - uses: ./.github/actions/download-ci-xtask
         with:
+          token: ${{ github.token }}
           lane: GitHub
           xtask-contract: ${{ needs.changes.outputs.docs-xtask-contract }}
+          fallback-xtask-contract: ${{ hashFiles('Cargo.lock', 'Cargo.toml', 'rust-toolchain.toml', '.cargo/**', 'crates/*/Cargo.toml', 'crates/jackin-xtask/src/**', 'crates/jackin-process/src/**') }}
           include-tools: "false"
 
       - name: Find repository-wide successful link result
@@ -749,8 +755,10 @@ jobs:
       - uses: ./.github/actions/download-ci-xtask
         if: always()
         with:
+          token: ${{ github.token }}
           lane: GitHub
           xtask-contract: ${{ needs.changes.outputs.docs-xtask-contract }}
+          fallback-xtask-contract: ${{ hashFiles('Cargo.lock', 'Cargo.toml', 'rust-toolchain.toml', '.cargo/**', 'crates/*/Cargo.toml', 'crates/jackin-xtask/src/**', 'crates/jackin-process/src/**') }}
           include-tools: "false"
       - name: Audit every Docs job's performance
         if: always()

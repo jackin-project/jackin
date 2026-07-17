@@ -138,6 +138,7 @@ jobs:
       - uses: ./.github/actions/download-ci-xtask
         if: steps.archive-cache.outputs.cache-hit != 'true'
         with:
+          token: ${{ github.token }}
           lane: ${{ matrix.config.lane }}
           xtask-contract: ${{ needs.check-version.outputs.xtask_contract }}
           include-tools: "false"
@@ -264,6 +265,7 @@ jobs:
       - uses: ./.github/actions/download-ci-xtask
         if: steps.archive-cache.outputs.cache-hit != 'true'
         with:
+          token: ${{ github.token }}
           lane: ${{ matrix.config.lane }}
           xtask-contract: ${{ needs.check-version.outputs.xtask_contract }}
           include-tools: "false"
