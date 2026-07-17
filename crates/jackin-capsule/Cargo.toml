@@ -90,6 +90,7 @@ tracing-opentelemetry = { workspace = true }
 tracing-subscriber = { workspace = true }
 opentelemetry = { workspace = true }
 opentelemetry_sdk = { workspace = true, features = ["testing", "trace"] }
+opentelemetry-proto = { workspace = true }
 
 [lints]
 workspace = true

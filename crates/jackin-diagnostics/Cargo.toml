@@ -25,6 +25,7 @@ test-support = ["opentelemetry_sdk/testing"]
 crossterm = { workspace = true }
 jackin-core = { workspace = true }
 jackin-telemetry = { workspace = true }
+hyper-util = { workspace = true }
 serde_json = { workspace = true }
 rand = { workspace = true }
 anyhow = { workspace = true }
@@ -64,11 +65,16 @@ opentelemetry-appender-tracing = { workspace = true }
 tracing-opentelemetry = { workspace = true }
 # Process metrics (CPU, memory) for the OTLP gauge callbacks.
 sysinfo = { version = "0.39", default-features = false, features = ["system"] }
+rustls = { workspace = true, features = ["ring", "std"] }
+rustls-native-certs = { workspace = true }
+rustls-pemfile = { workspace = true }
 # `rt-multi-thread` powers the dedicated telemetry runtime (see
 # `observability::otlp::otel_runtime`); `Handle::metrics()` feeds the tokio
 # runtime gauges from the app's handle, captured at subscriber init.
 tokio = { workspace = true, features = ["rt", "rt-multi-thread"] }
+tokio-rustls = { workspace = true }
 tonic = { workspace = true }
+tower = { workspace = true }
 url = { workspace = true }
 
 [build-dependencies]
@@ -78,6 +84,7 @@ rustc_version = "0.4"
 jackin-otlp-testbed = { workspace = true }
 opentelemetry-proto = { workspace = true }
 opentelemetry_sdk = { workspace = true, features = ["testing", "trace", "logs", "metrics"] }
+rcgen = { workspace = true }
 tempfile = { workspace = true }
 
 [[test]]
