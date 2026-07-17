@@ -25,19 +25,5 @@ jobs:
       - name: Delete scoped caches
         env:
           GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
           CACHE_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || format('refs/pull/{0}/merge', github.event.pull_request.number) }}
-        run: |
-          set -euo pipefail
-
-          echo "Deleting caches for ${CACHE_REF}"
-          while :; do
-            cache_ids=$(gh cache list --ref "$CACHE_REF" --limit 100 --json id --jq '.[].id')
-            if [ -z "$cache_ids" ]; then
-              break
-            fi
-            while IFS= read -r cache_id; do
-              [ -z "$cache_id" ] && continue
-              gh cache delete "$cache_id" || true
-            done <<< "$cache_ids"
-          done
+        run: gh cache delete --all --ref "$CACHE_REF" --succeed-on-no-caches
