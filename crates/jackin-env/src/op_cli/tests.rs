@@ -184,3 +184,31 @@ fn op_process_owner_exports_outcome_matrix_without_sensitive_material() {
         assert!(!export.contains_span_text(secret), "exported {secret}");
     }
 }
+
+#[test]
+fn op_transport_faults_are_owned_once_without_sensitive_material() {
+    let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
+    let _subscriber = tracing::subscriber::set_default(subscriber);
+
+    for fault in [
+        OpTransportFault::MissingStdout,
+        OpTransportFault::MissingStderr,
+        OpTransportFault::Wait,
+    ] {
+        run_op_with_timeout_inner(
+            "sh",
+            &["-c", "printf op-transport-secret"],
+            std::time::Duration::from_secs(1),
+            fault,
+        )
+        .unwrap_err();
+    }
+
+    export.force_flush();
+    assert_eq!(export.finished_spans().len(), 3);
+    assert_eq!(export.error_span_count(), 3);
+    assert!(export.contains_span_text("op"));
+    assert!(export.contains_span_text("io_error"));
+    assert!(!export.contains_span_text("op-transport-secret"));
+    assert!(!export.contains_span_text("injected wait failure"));
+}

@@ -215,6 +215,16 @@ fn spawn_wait_thread(
     });
 }
 
+fn kill_and_reap(child: &std::sync::Arc<std::sync::Mutex<Option<std::process::Child>>>) {
+    let Ok(mut guard) = child.lock() else {
+        return;
+    };
+    if let Some(mut child) = guard.take() {
+        drop(child.kill());
+        drop(child.wait());
+    }
+}
+
 fn is_text_file_busy(error: &std::io::Error) -> bool {
     error.raw_os_error() == Some(TEXT_FILE_BUSY_OS_ERROR)
 }
@@ -364,6 +374,7 @@ impl OpRunner for OpCli {
         let status = match rx.recv_timeout(timeout) {
             Ok(Ok(status)) => status,
             Ok(Err(e)) => {
+                kill_and_reap(&child);
                 operation.io_failed();
                 anyhow::bail!("1Password CLI wait failed for {reference:?}: {e}");
             }
@@ -372,14 +383,7 @@ impl OpRunner for OpCli {
                 // and the take below (yielding Err(InvalidInput) on
                 // kill), which is not a real failure. Reap so pipes
                 // close and reader threads exit.
-                let killed = child
-                    .lock()
-                    .map_err(|_| anyhow::anyhow!("child mutex poisoned"))?
-                    .take();
-                if let Some(mut c) = killed {
-                    drop(c.kill());
-                    drop(c.wait());
-                }
+                kill_and_reap(&child);
                 operation.timed_out();
                 anyhow::bail!(
                     "1Password CLI timed out after {}s resolving {reference:?}",
@@ -444,8 +448,31 @@ fn run_op_with_timeout(
     args: &[&str],
     timeout: std::time::Duration,
 ) -> anyhow::Result<Vec<u8>> {
+    run_op_with_timeout_inner(binary, args, timeout, OpTransportFault::None)
+}
+
+#[derive(Clone, Copy)]
+enum OpTransportFault {
+    None,
+    #[cfg(test)]
+    MissingStdout,
+    #[cfg(test)]
+    MissingStderr,
+    #[cfg(test)]
+    Wait,
+}
+
+fn run_op_with_timeout_inner(
+    binary: &str,
+    args: &[&str],
+    timeout: std::time::Duration,
+    fault: OpTransportFault,
+) -> anyhow::Result<Vec<u8>> {
     use std::io::Read;
     use std::process::{Command, Stdio};
+
+    #[cfg(not(test))]
+    let _ = fault;
 
     let (mut child, operation) = spawn_op_with_retry(|| {
         let mut command = Command::new(binary);
@@ -461,6 +488,15 @@ fn run_op_with_timeout(
         operation.spawn_failed();
         op_spawn_error(binary, &error)
     })?;
+
+    #[cfg(test)]
+    if matches!(fault, OpTransportFault::MissingStdout) {
+        drop(child.stdout.take());
+    }
+    #[cfg(test)]
+    if matches!(fault, OpTransportFault::MissingStderr) {
+        drop(child.stderr.take());
+    }
 
     let (tx, rx) = std::sync::mpsc::channel();
     let Some(mut stdout) = child.stdout.take() else {
@@ -485,12 +521,20 @@ fn run_op_with_timeout(
         jackin_telemetry::spawn::thread_stream("op.stderr", move || drain_bounded_stderr(stderr));
 
     let child = std::sync::Arc::new(std::sync::Mutex::new(Some(child)));
+    #[cfg(test)]
+    if matches!(fault, OpTransportFault::Wait) {
+        drop(tx.send(Err(std::io::Error::other("injected wait failure"))));
+    } else {
+        spawn_wait_thread(std::sync::Arc::clone(&child), tx);
+    }
+    #[cfg(not(test))]
     spawn_wait_thread(std::sync::Arc::clone(&child), tx);
 
     let cmd_label = format!("op {}", args.join(" "));
     let status = match rx.recv_timeout(timeout) {
         Ok(Ok(status)) => status,
         Ok(Err(e)) => {
+            kill_and_reap(&child);
             operation.io_failed();
             let message = format!("1Password CLI wait failed for `{cmd_label}`: {e}");
             return Err(anyhow::Error::new(jackin_core::OpProbeError::Other {
@@ -499,14 +543,7 @@ fn run_op_with_timeout(
             .context(message));
         }
         Err(_) => {
-            let killed = child
-                .lock()
-                .map_err(|_| anyhow::anyhow!("child mutex poisoned"))?
-                .take();
-            if let Some(mut c) = killed {
-                drop(c.kill());
-                drop(c.wait());
-            }
+            kill_and_reap(&child);
             operation.timed_out();
             let seconds = timeout.as_secs();
             let message = format!("1Password CLI timed out after {seconds}s running `{cmd_label}`");
