@@ -173,7 +173,7 @@ async fn conformance_wire_docker_http_exports_bounded_private_shapes() -> anyhow
         "/containers/create",
         "/exec/{id}/start",
         "success",
-        "failure",
+        "error",
         "http_error",
     ] {
         assert!(

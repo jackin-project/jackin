@@ -54,6 +54,7 @@ fn provider_connector_exports_physical_attempts_without_endpoint_material() {
     );
     assert_eq!(export.error_span_count(), 1);
     assert!(export.contains_span_text("provider"));
+    assert!(export.contains_span_text("error"));
     assert!(export.contains_span_text("io_error"));
     for prohibited in [
         secret_route,

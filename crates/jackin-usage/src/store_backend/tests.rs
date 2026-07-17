@@ -121,7 +121,7 @@ fn conformance_wire_sql_operations_are_bounded_and_private() -> anyhow::Result<(
     assert_eq!(spans.len(), 5);
     let wire = format!("{spans:?}");
     for expected in [
-        "sqlite", "connect", "update", "upsert", "select", "success", "failure", "db_error",
+        "sqlite", "connect", "update", "upsert", "select", "success", "error", "db_error",
     ] {
         assert!(wire.contains(expected), "missing {expected}: {wire}");
     }

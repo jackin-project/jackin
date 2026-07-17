@@ -33,7 +33,7 @@ pub async fn operation<T, E>(
     let outcome = if result.is_ok() {
         jackin_telemetry::schema::enums::OutcomeValue::Success
     } else {
-        jackin_telemetry::schema::enums::OutcomeValue::Failure
+        jackin_telemetry::schema::enums::OutcomeValue::Error
     };
     span.complete(
         outcome,
