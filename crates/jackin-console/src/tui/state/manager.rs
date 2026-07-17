@@ -421,11 +421,7 @@ impl ManagerState<'_> {
         let selected = self.selected_row();
         let visual_rows = self.visual_rows_vec();
         workspace_visual_selected_index(&visual_rows, selected).unwrap_or_else(|| {
-            jackin_diagnostics::telemetry_debug!(
-                "console",
-                "visual_selected: {:?} not in visual list, clamping to 0",
-                selected
-            );
+            record_manager_recovery();
             0 // CurrentDirectory is always row 0 and is never removed
         })
     }
@@ -571,10 +567,7 @@ impl ManagerState<'_> {
         self.selected =
             collapsed_workspace_selected_index(&rows, self.selected, selected_row, ws_idx)
                 .unwrap_or_else(|| {
-                    jackin_diagnostics::telemetry_debug!(
-                        "console",
-                        "collapse_workspace: ws_idx={ws_idx} not in selectable rows, clamping to 0"
-                    );
+                    record_manager_recovery();
                     0 // CurrentDirectory is always row 0 and is never removed
                 });
     }
@@ -1169,10 +1162,8 @@ impl ManagerState<'_> {
             crate::tui::screens::settings::model::AuthFormFocus::Save,
             op_ref,
         ) {
-            jackin_diagnostics::telemetry_debug!(
-                "auth",
-                "AUTH005 apply_op_picker_op_ref_committed_for_editor: \
-                 modal parent auth form missing — async OpRef commit dropped"
+            super::record_console_error(
+                jackin_telemetry::schema::enums::ErrorType::TelemetryInstrumentationFault,
             );
         }
     }
@@ -1197,10 +1188,8 @@ impl ManagerState<'_> {
             ..
         }) = settings.auth.pop_parent_modal()
         else {
-            jackin_diagnostics::telemetry_debug!(
-                "auth",
-                "apply_op_picker_op_ref_committed_for_settings: modal_parents missing \
-                 — async OpRef commit dropped"
+            super::record_console_error(
+                jackin_telemetry::schema::enums::ErrorType::TelemetryInstrumentationFault,
             );
             return;
         };
@@ -1221,6 +1210,10 @@ impl ManagerState<'_> {
             crate::tui::screens::settings::view::settings_auth_op_read_failed_message(error),
         );
     }
+}
+
+fn record_manager_recovery() {
+    let _recorded = jackin_telemetry::record_recovered_degradation();
 }
 
 impl ListShellState for ManagerState<'_> {
