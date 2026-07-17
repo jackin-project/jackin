@@ -1122,6 +1122,110 @@ fn governed_unknown_attribute_is_dropped() {
 }
 
 #[test]
+fn conformance_no_lifetime_spans() {
+    use std::time::Duration;
+
+    let (export, subscriber) = super::test_layers(false, "unused");
+    let idle = Duration::from_millis(80);
+    tracing::subscriber::with_default(subscriber, || {
+        for (definition, emit_session_start) in [
+            (&jackin_telemetry::operation::APP_STARTUP, false),
+            (&jackin_telemetry::operation::CLI_COMMAND, true),
+        ] {
+            let operation = jackin_telemetry::root_operation(definition, &cli_command_test_attrs())
+                .expect("bounded operation");
+            let entered = operation.span().enter();
+            if emit_session_start {
+                let attrs = [
+                    jackin_telemetry::Attr {
+                        key: jackin_telemetry::schema::attrs::std_attrs::SESSION_ID,
+                        value: jackin_telemetry::Value::Str("session-proof"),
+                    },
+                    jackin_telemetry::Attr {
+                        key: jackin_telemetry::schema::attrs::CLI_INVOCATION_ID,
+                        value: jackin_telemetry::Value::Str("invocation-test"),
+                    },
+                ];
+                jackin_telemetry::emit_event(
+                    &jackin_telemetry::event::SESSION_START,
+                    jackin_telemetry::FieldSet::new(&attrs, None),
+                )
+                .unwrap();
+            }
+            drop(entered);
+            operation.complete(jackin_telemetry::schema::enums::OutcomeValue::Success, None);
+        }
+
+        std::thread::park_timeout(idle);
+
+        let shutdown = jackin_telemetry::root_operation(
+            &jackin_telemetry::operation::APP_SHUTDOWN,
+            &cli_command_test_attrs(),
+        )
+        .expect("bounded shutdown");
+        shutdown.complete(jackin_telemetry::schema::enums::OutcomeValue::Success, None);
+    });
+    export.logger_provider.force_flush().unwrap();
+    export.tracer_provider.force_flush().unwrap();
+
+    let spans = export.spans.get_finished_spans().unwrap();
+    assert_eq!(spans.len(), 3);
+    assert!(spans.iter().all(|span| {
+        !matches!(
+            span.name.as_ref(),
+            "process" | "invocation" | "session" | "console.session" | "capsule.session"
+        )
+    }));
+    assert!(
+        spans
+            .iter()
+            .all(|span| { span.end_time.duration_since(span.start_time).unwrap() < idle / 2 }),
+        "no bounded operation may cover the idle session interval"
+    );
+    assert!(
+        spans
+            .iter()
+            .all(|span| span.attributes.iter().any(|attribute| {
+                attribute.key.as_str() == jackin_telemetry::schema::attrs::CLI_INVOCATION_ID
+                    && attribute.value.as_str() == "invocation-test"
+            }))
+    );
+    let logs = export.logs.get_emitted_logs().unwrap();
+    let session_start = logs
+        .iter()
+        .find(|log| log.record.event_name() == Some("session.start"))
+        .expect("in-session log");
+    assert_eq!(
+        log_attribute(
+            &session_start.record,
+            jackin_telemetry::schema::attrs::CLI_INVOCATION_ID,
+        ),
+        Some(&opentelemetry::logs::AnyValue::String(
+            "invocation-test".into()
+        ))
+    );
+    assert!(
+        session_start
+            .resource
+            .get(&opentelemetry::Key::from_static_str(
+                jackin_telemetry::schema::attrs::CLI_INVOCATION_ID,
+            ))
+            .is_none(),
+        "provider Resource must not contain invocation identity"
+    );
+    assert_eq!(
+        jackin_telemetry::counter(&jackin_telemetry::metric::TELEMETRY_VALIDATE).add(
+            1,
+            &[jackin_telemetry::Attr {
+                key: jackin_telemetry::schema::attrs::CLI_INVOCATION_ID,
+                value: jackin_telemetry::Value::Str("invocation-test"),
+            }],
+        ),
+        Err(jackin_telemetry::Rejection::Cardinality)
+    );
+}
+
+#[test]
 fn metric_export_contract_rejects_names_shapes_and_dimensions() {
     use jackin_telemetry::Rejection;
 

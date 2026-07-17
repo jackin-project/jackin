@@ -137,7 +137,7 @@ Add `conformance_no_lifetime_spans`: simulate (test-level) a console session wit
 - [ ] `cargo nextest run --workspace --all-features --locked` exits 0
 - [ ] `grep -rn "cli.invocation.id" crates/ --include='*.rs' | grep -v tests | head` shows facade/schema usage (no ad-hoc string duplicates outside jackin-telemetry)
 - [ ] `grep -n "emit_session_start" crates/jackin-diagnostics/src/observability.rs` returns no span-emitting variant (event only)
-- [ ] `conformance_no_lifetime_spans` passes
+- [x] `conformance_no_lifetime_spans` passes and proves bounded startup/command/shutdown operations do not cover the idle session interval, invocation identity is present on roots/logs but absent from Resource, and metric dimensions reject it
 - [ ] One-shot smoke: `cargo run --bin jackin -- status` works with no endpoint set (no-op path intact)
 - [ ] `cargo xtask lint --strict` exits 0 (export-volume regenerated)
 - [ ] `plans/unified-otel-observability/README.md` status row updated
