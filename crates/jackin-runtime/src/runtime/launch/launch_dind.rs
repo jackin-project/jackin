@@ -304,9 +304,16 @@ pub async fn prewarm_dind_sidecar_container(
         "sidecar_container_prewarm"
     });
 
-    let _remove_stale_dind = docker.remove_container(&dind).await;
-    let _remove_stale_volume = docker.remove_volume(&certs_volume).await;
-    let _remove_stale_network = docker.remove_network(&network).await;
+    let stale_cleanup_degraded = [
+        docker.remove_container(&dind).await,
+        docker.remove_volume(&certs_volume).await,
+        docker.remove_network(&network).await,
+    ]
+    .into_iter()
+    .any(|result| result.is_err());
+    if stale_cleanup_degraded {
+        let _warning = jackin_telemetry::record_recovered_degradation();
+    }
 
     let started = std::time::Instant::now();
     // Prewarm warms the privileged DinD path (the only one a prewarmed sidecar

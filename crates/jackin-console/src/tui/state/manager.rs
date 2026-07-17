@@ -1172,6 +1172,7 @@ impl ManagerState<'_> {
         let ManagerStage::Editor(editor) = &mut self.stage else {
             return;
         };
+        super::record_console_error(jackin_telemetry::schema::enums::ErrorType::IoError);
         editor.open_error_popup(
             crate::tui::components::error_popup::op_read_failed_error_popup_state(error),
         );
@@ -1206,6 +1207,7 @@ impl ManagerState<'_> {
         let ManagerStage::Settings(settings) = &mut self.stage else {
             return;
         };
+        super::record_console_error(jackin_telemetry::schema::enums::ErrorType::IoError);
         settings.auth.set_error(
             crate::tui::screens::settings::view::settings_auth_op_read_failed_message(error),
         );

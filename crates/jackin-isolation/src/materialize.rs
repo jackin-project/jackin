@@ -380,13 +380,18 @@ fn find_local_branch_tip(repo: &str, branch: &str) -> Option<String> {
             }
         }
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-        Err(_) => {}
+        Err(_) => {
+            let _warning = jackin_telemetry::record_recovered_degradation();
+        }
     }
     let packed = git_dir.join("packed-refs");
     let contents = match std::fs::read_to_string(&packed) {
         Ok(c) => c,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return None,
-        Err(_) => return None,
+        Err(_) => {
+            let _warning = jackin_telemetry::record_recovered_degradation();
+            return None;
+        }
     };
     let want = format!("refs/heads/{branch}");
     for line in contents.lines() {

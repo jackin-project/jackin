@@ -59,9 +59,11 @@ async fn main() -> Result<()> {
         let supported_agents = launch_config.supported_agents();
         let agent = resolve_initial_agent(&args, &supported_agents)
             .record_telemetry_error(jackin_telemetry::schema::enums::ErrorType::ConfigError)?;
-        daemon::run_daemon(agent, launch_config, &mut telemetry)
-            .await
-            .record_telemetry_error(jackin_telemetry::schema::enums::ErrorType::LaunchFailed)
+        let result = daemon::run_daemon(agent, launch_config, &mut telemetry).await;
+        if result.is_err() {
+            telemetry.daemon_failed();
+        }
+        result
     } else {
         let subcommand = args.get(1).map(String::as_str);
         let focus_session = parse_focus_flag(&args);

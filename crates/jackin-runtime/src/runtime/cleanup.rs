@@ -54,10 +54,9 @@ fn cleanup_timing(name: &'static str) -> CleanupTiming {
     CleanupTiming { name }
 }
 
-fn cleanup_failure(message: impl AsRef<str>) {
-    if let Some(run) = jackin_diagnostics::active_run() {
-        run.compact("cleanup", message.as_ref());
-    }
+fn cleanup_failure(_message: impl AsRef<str>) {
+    let _error =
+        jackin_telemetry::record_error(jackin_telemetry::schema::enums::ErrorType::IoError);
 }
 
 pub async fn purge_class_data(

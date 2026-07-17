@@ -904,6 +904,8 @@ pub(crate) fn open_role_resolution_error(
     source_url: Option<&String>,
     err: &anyhow::Error,
 ) {
+    let _error =
+        jackin_telemetry::record_error(jackin_telemetry::schema::enums::ErrorType::ConfigError);
     use jackin_console::tui::components::error_popup::{
         configured_role_load_error_message, repository_role_load_error_message,
     };

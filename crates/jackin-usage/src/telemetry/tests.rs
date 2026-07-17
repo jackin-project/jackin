@@ -48,3 +48,23 @@ fn listener_readiness_completes_bounded_startup_once() {
     drop(guard);
     assert_eq!(jackin_telemetry::identity::current_session(), None);
 }
+
+#[test]
+fn daemon_failure_has_exactly_one_owner_across_readiness() {
+    let _serial = TEST_LOCK.lock().unwrap();
+    let session = jackin_telemetry::identity::SessionGuard::claim(
+        jackin_telemetry::identity::SessionKind::Capsule,
+    )
+    .unwrap();
+    let startup =
+        jackin_telemetry::root_operation(&jackin_telemetry::operation::APP_STARTUP, &[]).ok();
+    let mut guard = FlushGuard {
+        session: Some(session),
+        startup,
+        active: false,
+    };
+
+    assert!(!guard.daemon_failure_needs_terminal_event());
+    guard.listener_ready();
+    assert!(guard.daemon_failure_needs_terminal_event());
+}

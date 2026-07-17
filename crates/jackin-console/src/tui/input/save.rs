@@ -318,6 +318,9 @@ pub fn commit_editor_save_with_runner(
 }
 
 pub fn open_save_error_popup(editor: &mut EditorState<'_>, message: &str) {
+    crate::tui::state::record_console_error(
+        jackin_telemetry::schema::enums::ErrorType::ConfigError,
+    );
     editor.open_error_popup(
         crate::tui::components::error_popup::save_failed_error_popup_state(message),
     );
