@@ -467,6 +467,8 @@ mod tests;
 /// so there is zero link-time cost. No `fmt` layer is attached: OTLP export is
 /// a separate sink from the operator's screen, which stays free of the firehose.
 mod otlp {
+    mod otlp_channel;
+
     use opentelemetry::trace::TracerProvider as _;
     use opentelemetry_appender_tracing::layer::OpenTelemetryTracingBridge;
     use opentelemetry_otlp::{Compression, WithExportConfig, WithTonicConfig};
@@ -988,6 +990,7 @@ mod otlp {
         SdkTracerProvider,
         SdkLoggerProvider,
         Option<tokio::runtime::Handle>,
+        otlp_channel::PhysicalChannels,
     )> {
         ensure_grpc_protocol().map_err(|e| anyhow::anyhow!(e))?;
         validate_standard_env()?;
@@ -1004,37 +1007,46 @@ mod otlp {
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("telemetry runtime was not initialized"))?;
         let _runtime_guard = runtime.enter();
-        let mut span_builder = opentelemetry_otlp::SpanExporter::builder()
+        otlp_channel::validate_tls_assets(&endpoints.traces_tls, "traces")?;
+        otlp_channel::validate_tls_assets(&endpoints.logs_tls, "logs")?;
+        otlp_channel::validate_tls_assets(&endpoints.metrics_tls, "metrics")?;
+        let trace_channel = otlp_channel::ChannelKey::new(
+            &endpoints.traces,
+            endpoints.traces_timeout,
+            &endpoints.traces_tls,
+        );
+        let log_channel = otlp_channel::ChannelKey::new(
+            &endpoints.logs,
+            endpoints.logs_timeout,
+            &endpoints.logs_tls,
+        );
+        let metric_channel = otlp_channel::ChannelKey::new(
+            &endpoints.metrics,
+            endpoints.metrics_timeout,
+            &endpoints.metrics_tls,
+        );
+        let physical_channels = otlp_channel::PhysicalChannels::build([
+            trace_channel.clone(),
+            log_channel.clone(),
+            metric_channel,
+        ])?;
+        let span_builder = opentelemetry_otlp::SpanExporter::builder()
             .with_tonic()
             .with_endpoint(endpoints.traces.clone())
             .with_timeout(endpoints.traces_timeout)
             .with_compression(Compression::Gzip)
-            .with_retry_policy(retry::policy());
-        if let Some(tls) = exporter_tls(
-            &endpoints.traces_tls,
-            "traces",
-            &endpoints.traces,
-            endpoints.traces_timeout,
-        )? {
-            span_builder = span_builder.with_tls_config(tls);
-        }
+            .with_retry_policy(retry::policy())
+            .with_channel(physical_channels.get(&trace_channel)?);
         let span_exporter = span_builder
             .build()
             .map_err(|_| anyhow::anyhow!("OTLP span exporter init failed"))?;
-        let mut log_builder = opentelemetry_otlp::LogExporter::builder()
+        let log_builder = opentelemetry_otlp::LogExporter::builder()
             .with_tonic()
             .with_endpoint(endpoints.logs.clone())
             .with_timeout(endpoints.logs_timeout)
             .with_compression(Compression::Gzip)
-            .with_retry_policy(retry::policy());
-        if let Some(tls) = exporter_tls(
-            &endpoints.logs_tls,
-            "logs",
-            &endpoints.logs,
-            endpoints.logs_timeout,
-        )? {
-            log_builder = log_builder.with_tls_config(tls);
-        }
+            .with_retry_policy(retry::policy())
+            .with_channel(physical_channels.get(&log_channel)?);
         let log_exporter = log_builder
             .build()
             .map_err(|_| anyhow::anyhow!("OTLP log exporter init failed"))?;
@@ -1074,7 +1086,12 @@ mod otlp {
             ))
             .with_resource(resource)
             .build();
-        Ok((tracer_provider, logger_provider, app_handle))
+        Ok((
+            tracer_provider,
+            logger_provider,
+            app_handle,
+            physical_channels,
+        ))
     }
 
     #[derive(Debug)]
@@ -1185,37 +1202,6 @@ mod otlp {
         }
     }
 
-    fn exporter_tls(
-        config: &super::config::TlsConfig,
-        signal: &'static str,
-        endpoint: &str,
-        timeout: std::time::Duration,
-    ) -> anyhow::Result<Option<opentelemetry_otlp::tonic_types::transport::ClientTlsConfig>> {
-        use opentelemetry_otlp::tonic_types::transport::{Certificate, ClientTlsConfig, Identity};
-
-        if !endpoint.starts_with("https://")
-            && config.certificate.is_none()
-            && config.client_key.is_none()
-            && config.client_certificate.is_none()
-        {
-            return Ok(None);
-        }
-        let mut tls = ClientTlsConfig::new().with_enabled_roots().timeout(timeout);
-        if let Some(path) = &config.certificate {
-            let pem = std::fs::read(path)
-                .map_err(|_| anyhow::anyhow!("OTLP {signal} CA certificate is unavailable"))?;
-            tls = tls.ca_certificate(Certificate::from_pem(pem));
-        }
-        if let (Some(certificate), Some(key)) = (&config.client_certificate, &config.client_key) {
-            let certificate = std::fs::read(certificate)
-                .map_err(|_| anyhow::anyhow!("OTLP {signal} client certificate is unavailable"))?;
-            let key = std::fs::read(key)
-                .map_err(|_| anyhow::anyhow!("OTLP {signal} client key is unavailable"))?;
-            tls = tls.identity(Identity::from_pem(certificate, key));
-        }
-        Ok(Some(tls))
-    }
-
     pub(super) fn init(
         debug: bool,
         _run_id: &str,
@@ -1227,7 +1213,7 @@ mod otlp {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         ensure_inactive()?;
         let resource = build_resource_for(identity);
-        let (tracer_provider, logger_provider, app_handle) =
+        let (tracer_provider, logger_provider, app_handle, physical_channels) =
             match build_otlp_providers(resource.clone(), endpoints) {
                 Ok(providers) => providers,
                 Err(error) => {
@@ -1235,14 +1221,15 @@ mod otlp {
                     return Err(error);
                 }
             };
-        let meter_provider = match init_metrics(&resource, endpoints, app_handle) {
-            Ok(provider) => provider,
-            Err(error) => {
-                cleanup_partial(&tracer_provider, &logger_provider, None);
-                rollback_runtime();
-                return Err(error);
-            }
-        };
+        let meter_provider =
+            match init_metrics(&resource, endpoints, app_handle, &physical_channels) {
+                Ok(provider) => provider,
+                Err(error) => {
+                    cleanup_partial(&tracer_provider, &logger_provider, None);
+                    rollback_runtime();
+                    return Err(error);
+                }
+            };
         use opentelemetry::metrics::MeterProvider as _;
         let meter_reservation =
             match jackin_telemetry::reserve_meter(&meter_provider.meter("jackin")) {
@@ -1326,7 +1313,7 @@ mod otlp {
         ensure_inactive()?;
         let resource = build_resource_for(ServiceIdentity::CAPSULE);
         let endpoints = OtlpEndpoints::from_config(config);
-        let (tracer_provider, logger_provider, app_handle) =
+        let (tracer_provider, logger_provider, app_handle, physical_channels) =
             match build_otlp_providers(resource.clone(), &endpoints) {
                 Ok(providers) => providers,
                 Err(error) => {
@@ -1334,14 +1321,15 @@ mod otlp {
                     return Err(error);
                 }
             };
-        let meter_provider = match init_metrics(&resource, &endpoints, app_handle) {
-            Ok(provider) => provider,
-            Err(error) => {
-                cleanup_partial(&tracer_provider, &logger_provider, None);
-                rollback_runtime();
-                return Err(error);
-            }
-        };
+        let meter_provider =
+            match init_metrics(&resource, &endpoints, app_handle, &physical_channels) {
+                Ok(provider) => provider,
+                Err(error) => {
+                    cleanup_partial(&tracer_provider, &logger_provider, None);
+                    rollback_runtime();
+                    return Err(error);
+                }
+            };
         use opentelemetry::metrics::MeterProvider as _;
         let meter_reservation =
             match jackin_telemetry::reserve_meter(&meter_provider.meter("jackin")) {
@@ -1725,6 +1713,7 @@ mod otlp {
         resource: &Resource,
         endpoints: &OtlpEndpoints,
         app_handle: Option<tokio::runtime::Handle>,
+        physical_channels: &otlp_channel::PhysicalChannels,
     ) -> anyhow::Result<SdkMeterProvider> {
         use opentelemetry::metrics::MeterProvider as _;
         let runtime = otel_runtime()?;
@@ -1732,21 +1721,19 @@ mod otlp {
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("telemetry runtime was not initialized"))?;
         let _runtime_guard = runtime.enter();
-        let mut metric_builder = opentelemetry_otlp::MetricExporter::builder()
+        let metric_channel = otlp_channel::ChannelKey::new(
+            &endpoints.metrics,
+            endpoints.metrics_timeout,
+            &endpoints.metrics_tls,
+        );
+        let metric_builder = opentelemetry_otlp::MetricExporter::builder()
             .with_tonic()
             .with_temporality(opentelemetry_sdk::metrics::Temporality::Cumulative)
             .with_endpoint(endpoints.metrics.clone())
             .with_timeout(endpoints.metrics_timeout)
             .with_compression(Compression::Gzip)
-            .with_retry_policy(retry::policy());
-        if let Some(tls) = exporter_tls(
-            &endpoints.metrics_tls,
-            "metrics",
-            &endpoints.metrics,
-            endpoints.metrics_timeout,
-        )? {
-            metric_builder = metric_builder.with_tls_config(tls);
-        }
+            .with_retry_policy(retry::policy())
+            .with_channel(physical_channels.get(&metric_channel)?);
         let metric_exporter = metric_builder
             .build()
             .map_err(|_| anyhow::anyhow!("OTLP metric exporter init failed"))?;

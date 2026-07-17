@@ -1,5 +1,5 @@
 use super::{
-    build_resource_for, build_resource_for_sources, exporter_tls, flush_before, grpc_endpoint,
+    build_resource_for, build_resource_for_sources, flush_before, grpc_endpoint,
     install_observable_metrics, resolve_endpoint, runtime_creation_count, semantic_os_type,
     shutdown, unsupported_protocol,
 };
@@ -79,16 +79,7 @@ fn endpoint_diagnostics_show_only_sanitized_authority() {
 
 #[test]
 fn ordinary_https_enables_tls_without_custom_certificates() {
-    assert!(
-        exporter_tls(
-            &super::super::config::TlsConfig::default(),
-            "traces",
-            "https://collector:4317",
-            std::time::Duration::from_secs(1),
-        )
-        .expect("TLS config")
-        .is_some()
-    );
+    assert!(super::otlp_channel::uses_tls("https://collector:4317"));
 }
 
 #[test]
@@ -379,15 +370,10 @@ fn tls_file_errors_do_not_expose_configured_paths() {
         client_key: None,
         client_certificate: None,
     };
-    let error = exporter_tls(
-        &config,
-        "traces",
-        "https://collector:4317",
-        std::time::Duration::from_secs(1),
-    )
-    .expect_err("missing certificate must fail");
+    let error = super::otlp_channel::validate_transport("https://collector:4317", &config)
+        .expect_err("missing certificate must fail");
     let error = error.to_string();
-    assert_eq!(error, "OTLP traces CA certificate is unavailable");
+    assert_eq!(error, "OTLP CA certificate is unavailable");
     assert!(!error.contains("/secret/tenant-ca.pem"));
     assert!(!error.contains("No such file"));
 }
@@ -400,15 +386,10 @@ fn tls_client_key_errors_expose_only_the_bounded_signal_and_asset() {
         client_key: Some("/secret/tenant-client.key".to_owned()),
         client_certificate: Some(certificate.path().to_string_lossy().into_owned()),
     };
-    let error = exporter_tls(
-        &config,
-        "logs",
-        "https://collector:4317",
-        std::time::Duration::from_secs(1),
-    )
-    .expect_err("missing client key must fail")
-    .to_string();
-    assert_eq!(error, "OTLP logs client key is unavailable");
+    let error = super::otlp_channel::validate_transport("https://collector:4317", &config)
+        .expect_err("missing client key must fail")
+        .to_string();
+    assert_eq!(error, "OTLP client key is unavailable");
     assert!(!error.contains("/secret/tenant-client.key"));
     assert!(!error.contains("No such file"));
 }
@@ -439,16 +420,11 @@ fn conformance_wire_tls_paths_are_consumed_without_export() -> anyhow::Result<()
         client_certificate: Some(certificate_path.to_string_lossy().into_owned()),
     };
 
-    let tls = exporter_tls(
-        &config,
-        "traces",
-        "https://collector.invalid:4317",
-        std::time::Duration::from_secs(1),
-    )?;
-    assert!(
-        tls.is_some(),
-        "production TLS resolver ignored private files"
-    );
+    let tls_error =
+        super::otlp_channel::validate_transport("https://collector.invalid:4317", &config)
+            .expect_err("invalid private TLS material must be consumed and rejected")
+            .to_string();
+    assert!(!tls_error.contains("wire-private"));
 
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(2)
