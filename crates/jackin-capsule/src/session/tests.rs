@@ -3,9 +3,9 @@
 
 //! Tests for `session`.
 use super::{
-    AgentState, OscPolicy, Session, SessionEvent, agent_model_args, build_agent_command,
-    build_shell_command, child_exit_reason, emit_pty_exit, emit_pty_spawn, inject_status_env,
-    osc8_uri_is_safe, pty_exit_error_type, pty_exit_reason, validate_agent_slug,
+    AgentState, OscPolicy, Session, SessionEvent, SessionTerminal, agent_model_args,
+    build_agent_command, build_shell_command, child_exit_reason, emit_pty_exit, emit_pty_spawn,
+    inject_status_env, osc8_uri_is_safe, pty_exit_error_type, pty_exit_reason, validate_agent_slug,
 };
 
 use std::path::Path;
@@ -1255,6 +1255,95 @@ fn pty_spawn_exit_pair_is_bounded_and_does_not_export_wait_errors() {
     assert!(export.contains_log_text("conversation-proof"));
     assert!(!export.contains_log_text("private PTY bytes"));
     assert!(!export.contains_log_text("/private/workspace"));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn conformance_wire_real_pty_spawn_stream_and_exit_exclude_private_content() {
+    let testbed = jackin_otlp_testbed::Testbed::start().expect("start OTLP testbed");
+    jackin_diagnostics::init_wire_test_export(
+        &testbed.endpoint(),
+        jackin_diagnostics::ServiceIdentity::CAPSULE,
+    )
+    .expect("initialize wire test export");
+    let (event_tx, mut event_rx) = mpsc::unbounded_channel();
+    let mut command = CommandBuilder::new("/bin/sh");
+    command.arg("-c");
+    command.arg("printf wire-private-pty-output; exit 17");
+    let terminal = SessionTerminal {
+        rows: 24,
+        cols: 80,
+        row_arena: jackin_term::RowArena::default(),
+        default_fg: None,
+        default_bg: None,
+    };
+
+    let (_session, session_id) = Session::spawn(
+        "wire-private-tab-label",
+        Some("codex".to_owned()),
+        None,
+        command,
+        terminal,
+        event_tx,
+    )
+    .expect("spawn real PTY session");
+    let exit_reason = tokio::time::timeout(std::time::Duration::from_secs(2), async {
+        loop {
+            if let Some(SessionEvent::Exited {
+                session_id: exited_id,
+                reason,
+            }) = event_rx.recv().await
+            {
+                assert_eq!(exited_id, session_id);
+                break reason;
+            }
+        }
+    })
+    .await
+    .expect("PTY session exits before deadline");
+    assert_eq!(
+        exit_reason.as_deref(),
+        Some("session process exited with code 17")
+    );
+    jackin_diagnostics::flush_wire_test_export().expect("flush wire test export");
+
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+    let records = loop {
+        let records = testbed
+            .log_records()
+            .into_iter()
+            .filter(|record| matches!(record.event_name.as_str(), "pty.spawn" | "pty.exit"))
+            .collect::<Vec<_>>();
+        if records.len() == 2 {
+            break records;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "PTY spawn and exit wire events did not arrive exactly once"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+    };
+    let wire_text = format!("{records:?}");
+    for expected in ["pty.spawn", "pty.exit", "nonzero_exit", "codex", "17"] {
+        assert!(
+            wire_text.contains(expected),
+            "missing {expected}: {wire_text}"
+        );
+    }
+    let prohibited = [
+        "wire-private-pty-output",
+        "wire-private-tab-label",
+        "printf wire-private-pty-output",
+        "/bin/sh",
+    ];
+    for value in prohibited {
+        assert!(!wire_text.contains(value), "exported {value}");
+    }
+    assert_eq!(
+        testbed.prohibited_value_violations(&prohibited),
+        Vec::<String>::new()
+    );
+    assert_eq!(testbed.legacy_namespace_violations(), Vec::<String>::new());
+    jackin_diagnostics::shutdown_capsule_tracing();
 }
 
 #[test]
