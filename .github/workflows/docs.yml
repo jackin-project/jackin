@@ -206,7 +206,7 @@ jobs:
       - name: Setup mise
         uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4
         with:
-          version: "2026.6.11"
+          version: "2026.7.7"
           cache_key_prefix: "mise-v2"
           cache_save: ${{ github.ref == 'refs/heads/main' }}
           working_directory: docs
@@ -344,7 +344,7 @@ jobs:
            needs.changes.outputs.deployment-reuse != 'true')
         uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4
         with:
-          version: "2026.6.11"
+          version: "2026.7.7"
           cache_key_prefix: "mise-v2"
           cache_save: ${{ github.ref == 'refs/heads/main' }}
           working_directory: docs
@@ -490,7 +490,7 @@ jobs:
         if: steps.codebook-artifact.outputs.hit != 'true'
         uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4
         with:
-          version: "2026.6.11"
+          version: "2026.7.7"
           cache_key_prefix: "mise-v2"
           cache_save: ${{ github.ref == 'refs/heads/main' }}
           install_args: "cargo-binstall cargo:codebook-lsp"

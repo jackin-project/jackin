@@ -758,7 +758,7 @@ Measurement (Phase 0) still comes first in practice: capture a lane's baseline b
 
 ### Phase 1 -- No-risk cache hygiene
 
-1. Done in this branch: every `jdx/mise-action` call in workflows and composite actions now pins `version: "2026.6.11"` so the action's internal mise cache is reproducible instead of fetching the latest mise release on every cold cache.
+1. Done in this branch: every `jdx/mise-action` call in workflows and composite actions now pins `version: "2026.7.7"` so the action's internal mise cache is reproducible instead of fetching the latest mise release on every cold cache.
 2. Done in this branch: rely on `jdx/mise-action`'s cache with the stable `mise-v2` prefix for mise-managed tools, while keeping only targeted manual caches where measurement showed they own different data (`~/.bun/install/cache`, Lychee's link cache, Rust toolchain, Cargo registry, Rust target caches, construct Buildx, shellfirm, RustSec advisory DB, and macOS SDK archives). This avoids broad duplicate tool caches that would compete with the 10GB GitHub Actions cache budget.
 3. Done in this branch: audited cargo-installed tools and declared them through mise's Cargo backend with pinned `cargo-binstall`: `cargo-nextest`, `cargo-deny`, `cargo-audit`, `cargo-hack`, `cargo-zigbuild`, `cargo-shear`, `cargo-fuzz`, `codebook-lsp`, `sccache`, and `shellfirm`. CI now uses prebuilt Cargo binaries when available while keeping portable source-build fallback for architectures without upstream assets.
 4. Done in this branch: docs jobs use `bun ci` for locked installs, keep the Bun download cache, and do not cache `node_modules` because the measured warm path is already small and deterministic.

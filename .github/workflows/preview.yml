@@ -322,7 +322,7 @@ jobs:
           # to cargo, which would probe rustc through a missing sccache.
           RUSTC_WRAPPER: ""
         with:
-          version: "2026.6.11"
+          version: "2026.7.7"
           cache_key_prefix: "mise-v2"
           cache_save: ${{ github.event_name == 'workflow_run' || github.ref == 'refs/heads/main' }}
           install_args: "cargo-binstall zig cargo:cargo-zigbuild cosign syft cargo:sccache"
@@ -457,7 +457,7 @@ jobs:
           # to cargo, which would probe rustc through a missing sccache.
           RUSTC_WRAPPER: ""
         with:
-          version: "2026.6.11"
+          version: "2026.7.7"
           cache_key_prefix: "mise-v2"
           cache_save: ${{ github.event_name == 'workflow_run' || github.ref == 'refs/heads/main' }}
           install_args: "cargo-binstall zig cargo:cargo-zigbuild cosign syft cargo:sccache"
