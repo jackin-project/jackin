@@ -188,6 +188,71 @@ fn conformance_serialized_control_propagation_matrix_preserves_parentage_and_rej
     );
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn conformance_wire_real_capsule_control_status_preserves_parent_and_delivery() {
+    let testbed = jackin_otlp_testbed::Testbed::start().expect("start OTLP testbed");
+    jackin_diagnostics::init_wire_test_export(
+        &testbed.endpoint(),
+        jackin_diagnostics::ServiceIdentity::CAPSULE,
+    )
+    .expect("initialize wire test export");
+    let trace_id = "4bf92f3577b34da6a3ce929d0e0e4736";
+    let parent_id = "00f067aa0ba902b7";
+    let request = jackin_protocol::control::ControlRequest {
+        ctx: jackin_protocol::TelemetryContext {
+            traceparent: Some(format!("00-{trace_id}-{parent_id}-01")),
+            ..jackin_protocol::TelemetryContext::v1()
+        },
+        msg: ClientMsg::Status,
+    };
+    let wire = serde_json::to_vec(&request).expect("serialize control request");
+    let decoded: jackin_protocol::control::ControlRequest =
+        serde_json::from_slice(&wire).expect("decode control request");
+    let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
+    let mut mux = single_pane_tab_mux();
+
+    handle_control_request(
+        &mut mux,
+        ControlRequest {
+            ctx: decoded.ctx,
+            msg: decoded.msg,
+            reply_tx,
+        },
+    );
+    let response = reply_rx.await.expect("receive control response");
+    assert!(matches!(response.msg, ServerMsg::SessionList { .. }));
+    response.complete(&Ok(()));
+    jackin_diagnostics::flush_wire_test_export().expect("flush wire test export");
+
+    let deadline = Instant::now() + Duration::from_secs(2);
+    let spans = loop {
+        let spans = testbed
+            .spans()
+            .into_iter()
+            .filter(|span| span.name == "rpc.server")
+            .collect::<Vec<_>>();
+        if spans.len() == 1 {
+            break spans;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "Capsule control wire span did not arrive exactly once"
+        );
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    };
+    assert_eq!(spans[0].trace_id, hex::decode(trace_id).unwrap());
+    assert_eq!(spans[0].parent_span_id, hex::decode(parent_id).unwrap());
+    let wire_text = format!("{spans:?}");
+    for expected in ["jackin", "status", "success"] {
+        assert!(
+            wire_text.contains(expected),
+            "missing {expected}: {wire_text}"
+        );
+    }
+    assert_eq!(testbed.legacy_namespace_violations(), Vec::<String>::new());
+    jackin_diagnostics::shutdown_capsule_tracing();
+}
+
 #[test]
 fn conformance_exec_command_rpc_spans_exclude_command_and_args() {
     let command_secret = "PRIVATE_EXECUTABLE_PAYLOAD";
