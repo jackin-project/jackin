@@ -2840,6 +2840,78 @@ fn cli_output_collector_treats_reaped_child_as_success() {
     assert_eq!(output.stdout, "usage rows");
 }
 
+#[cfg(unix)]
+#[test]
+fn usage_cli_owner_exports_outcomes_without_process_material() {
+    use std::io::Write as _;
+    use std::os::unix::fs::PermissionsExt as _;
+
+    let directory = tempfile::tempdir().unwrap();
+    let executable = directory.path().join("claude");
+    let mut file = fs::File::create(&executable).unwrap();
+    writeln!(file, "#!/bin/sh\nexec sh \"$@\"").unwrap();
+    let mut permissions = file.metadata().unwrap().permissions();
+    permissions.set_mode(0o700);
+    file.set_permissions(permissions).unwrap();
+    drop(file);
+    let command = executable.to_string_lossy();
+
+    let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
+    let _subscriber = tracing::subscriber::set_default(subscriber);
+
+    run_cli_with_timeout_full(
+        &command,
+        &["-c", "printf usage-secret-output"],
+        Duration::from_secs(1),
+    )
+    .unwrap();
+    run_cli_with_timeout_full(
+        &command,
+        &["-c", "printf usage-secret-stderr >&2; exit 17"],
+        Duration::from_secs(1),
+    )
+    .unwrap();
+    let _timeout =
+        run_cli_with_timeout_full(&command, &["-c", "sleep 1"], Duration::from_millis(5))
+            .unwrap_err();
+    let _spawn = run_cli_with_timeout_full(
+        "/usage-secret/missing/claude",
+        &["usage-secret-argument"],
+        Duration::from_secs(1),
+    )
+    .unwrap_err();
+
+    export.force_flush();
+    assert_eq!(export.finished_spans().len(), 4);
+    assert_eq!(export.error_span_count(), 3);
+    for expected in [
+        "claude",
+        "process_exit_nonzero",
+        "process_spawn_error",
+        "timeout",
+    ] {
+        assert!(export.contains_span_text(expected), "missing {expected}");
+    }
+    for prohibited in [
+        command.as_ref(),
+        "usage-secret-output",
+        "usage-secret-stderr",
+        "/usage-secret/missing/claude",
+        "usage-secret-argument",
+    ] {
+        assert!(!export.contains_span_text(prohibited));
+    }
+}
+
+#[test]
+fn usage_cli_output_capture_is_bounded() {
+    let oversized = vec![b'x'; format::PROCESS_OUTPUT_MAX + 1];
+    assert_eq!(
+        format::read_process_pipe(std::io::Cursor::new(oversized)).unwrap_err(),
+        "process output exceeded limit"
+    );
+}
+
 #[test]
 fn amp_api_usage_maps_display_balance_info() {
     let usage = AmpApiUsage::from_value(serde_json::json!({
