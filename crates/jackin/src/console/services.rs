@@ -612,17 +612,28 @@ pub(super) mod role_load {
         runner: &mut impl jackin_docker::CommandRunner,
         debug: bool,
     ) -> anyhow::Result<()> {
-        std::panic::AssertUnwindSafe(async {
+        use jackin_telemetry::ResultTelemetryExt as _;
+
+        let result = std::panic::AssertUnwindSafe(async {
             jackin_runtime::runtime::register_agent_repo(paths, selector, git_url, runner, debug)
                 .await?;
             Ok::<_, anyhow::Error>(())
         })
         .catch_unwind()
-        .await
-        .unwrap_or_else(|payload| {
-            let panic_message = panic_payload_message(payload.as_ref());
-            Err(anyhow::anyhow!("role loader panicked: {panic_message}"))
-        })
+        .await;
+
+        match result {
+            Ok(result) => {
+                result.record_telemetry_error(jackin_telemetry::schema::enums::ErrorType::IoError)
+            }
+            Err(payload) => {
+                let _event = jackin_telemetry::record_error(
+                    jackin_telemetry::schema::enums::ErrorType::Panic,
+                );
+                let panic_message = panic_payload_message(payload.as_ref());
+                Err(anyhow::anyhow!("role loader panicked: {panic_message}"))
+            }
+        }
     }
 
     fn panic_payload_message(payload: &(dyn std::any::Any + Send)) -> String {
