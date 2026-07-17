@@ -32,48 +32,48 @@ fn managed_children() -> &'static Mutex<HashSet<i32>> {
 
 pub fn register_managed_child(pid: u32) {
     let Ok(pid) = i32::try_from(pid) else {
+        record_io_error();
         return;
     };
     match managed_children().lock() {
         Ok(mut children) => {
             children.insert(pid);
         }
-        Err(_) => {
+        Err(_poisoned) => {
             // Poisoned mutex: every subsequent register/unregister silently
             // no-ops, and `is_managed_child` returns false for live pids —
             // the PID-1 reaper then races session owners for their children
             // (the exact bug `reap_zombies_does_not_steal_registered_session_child`
             // pins). Surface so the operator can restart the daemon.
-            jackin_diagnostics::telemetry_info!(
-                "capsule",
-                "pid1: managed_children mutex poisoned; cannot register pid {pid}. Reaper may steal session children."
-            );
+            record_panic_error();
         }
     }
 }
 
 pub fn unregister_managed_child(pid: u32) {
     let Ok(pid) = i32::try_from(pid) else {
+        record_io_error();
         return;
     };
     match managed_children().lock() {
         Ok(mut children) => {
             children.remove(&pid);
         }
-        Err(_) => {
-            jackin_diagnostics::telemetry_info!(
-                "capsule",
-                "pid1: managed_children mutex poisoned; cannot unregister pid {pid}"
-            );
+        Err(_poisoned) => {
+            record_panic_error();
         }
     }
 }
 
 #[cfg(all(target_os = "linux", not(target_env = "uclibc")))]
 fn is_managed_child(pid: Pid) -> bool {
-    managed_children()
-        .lock()
-        .is_ok_and(|children| children.contains(&pid.as_raw()))
+    match managed_children().lock() {
+        Ok(children) => children.contains(&pid.as_raw()),
+        Err(_poisoned) => {
+            record_panic_error();
+            false
+        }
+    }
 }
 
 /// PID 1 zombie reaper. tokio's signal handler cannot cover this
@@ -89,14 +89,13 @@ pub fn install_sigchld_reaper() {
     // not start with a half-installed handler.
     let mut mask = SigSet::empty();
     mask.add(Signal::SIGCHLD);
-    if let Err(error) = mask.thread_block() {
-        jackin_diagnostics::telemetry_info!(
-            "capsule",
-            "failed to block SIGCHLD on PID 1 main thread: {error}"
-        );
+    if let Err(_error) = mask.thread_block() {
+        record_io_error();
         return;
     }
 
+    let open =
+        jackin_telemetry::stream::phase(jackin_telemetry::schema::enums::StreamOperation::Open);
     let reaper = jackin_telemetry::spawn::thread_stream_named("zombie-reaper".into(), move || {
         let mut sigset = SigSet::empty();
         sigset.add(Signal::SIGCHLD);
@@ -105,15 +104,16 @@ pub fn install_sigchld_reaper() {
             // on signal-handler interrupt — sleep briefly so a tight
             // loop does not hammer the kernel queue, then retry. A
             // non-EINTR error is unexpected (corrupt sigset, ENOSYS
-            // on a stripped kernel) and warrants a log line.
+            // on a stripped kernel) and warrants a typed error.
             match sigset.wait() {
                 Ok(_) => reap_zombies(),
-                Err(nix::errno::Errno::EINTR) => {}
-                Err(e) => {
-                    jackin_diagnostics::telemetry_info!(
-                        "capsule",
-                        "zombie-reaper sigwait error: {e}; backing off 100ms"
-                    );
+                Err(nix::errno::Errno::EINTR) => {
+                    record_io_error();
+                    let _retry = jackin_telemetry::record_retry_scheduled();
+                }
+                Err(_error) => {
+                    record_io_error();
+                    let _retry = jackin_telemetry::record_retry_scheduled();
                     #[expect(
                         clippy::disallowed_methods,
                         reason = "zombie reaper owns its OS thread and is not the multiplexer render thread"
@@ -123,10 +123,13 @@ pub fn install_sigchld_reaper() {
             }
         }
     });
-    if let Err(error) = reaper {
-        jackin_diagnostics::telemetry_info!(
-            "capsule",
-            "failed to spawn zombie-reaper thread: {error}"
+    if reaper.is_ok() {
+        jackin_telemetry::stream::complete_success(open);
+    } else {
+        record_io_error();
+        jackin_telemetry::stream::complete_error(
+            open,
+            jackin_telemetry::schema::enums::ErrorType::IoError,
         );
     }
 }
@@ -172,25 +175,17 @@ fn reap_zombies_linux() {
                     Ok(WaitStatus::StillAlive) => break,
                     Ok(_) => {}
                     Err(nix::errno::Errno::ECHILD) => break,
-                    Err(e) => {
-                        jackin_diagnostics::telemetry_info!(
-                            "capsule",
-                            "pid1: waitpid({pid}) failed unexpectedly: {e} (errno={:?})",
-                            e as i32
-                        );
+                    Err(_error) => {
+                        record_io_error();
                         break;
                     }
                 }
             }
             // ECHILD already matched above. Any other errno indicates a
             // kernel/libc bug (EINVAL, EFAULT) we cannot recover from —
-            // log so triage isn't blind, then break to avoid spinning.
-            Err(e) => {
-                jackin_diagnostics::telemetry_info!(
-                    "capsule",
-                    "pid1: waitid(Id::All) failed unexpectedly: {e} (errno={:?})",
-                    e as i32
-                );
+            // export a typed error, then break to avoid spinning.
+            Err(_error) => {
+                record_io_error();
                 break;
             }
         }
@@ -204,16 +199,21 @@ fn reap_zombies_unfiltered() {
             Ok(WaitStatus::StillAlive) => break,
             Ok(_) => {}
             Err(nix::errno::Errno::ECHILD) => break,
-            Err(e) => {
-                jackin_diagnostics::telemetry_info!(
-                    "capsule",
-                    "pid1: waitpid(-1) failed unexpectedly: {e} (errno={:?})",
-                    e as i32
-                );
+            Err(_error) => {
+                record_io_error();
                 break;
             }
         }
     }
+}
+
+fn record_io_error() {
+    let _error =
+        jackin_telemetry::record_error(jackin_telemetry::schema::enums::ErrorType::IoError);
+}
+
+fn record_panic_error() {
+    let _error = jackin_telemetry::record_error(jackin_telemetry::schema::enums::ErrorType::Panic);
 }
 
 #[cfg(test)]
