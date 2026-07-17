@@ -78,7 +78,7 @@ jobs:
           token: ${{ github.token }}
           lane: shared
           tools-contract: ${{ hashFiles('mise.toml', 'mise.lock', 'crates/jackin-xtask/src/ci_stage.rs') }}
-          include-xtask: "false"
+          xtask-contract: ${{ hashFiles('Cargo.lock', 'Cargo.toml', 'rust-toolchain.toml', '.cargo/**', 'crates/*/Cargo.toml', 'crates/jackin-xtask/src/**', 'crates/jackin-process/src/**') }}
           allow-miss: "true"
       - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
         with:
@@ -892,7 +892,7 @@ jobs:
           token: ${{ github.token }}
           lane: shared
           tools-contract: ${{ hashFiles('mise.toml', 'mise.lock', 'crates/jackin-xtask/src/ci_stage.rs') }}
-          include-xtask: "false"
+          xtask-contract: ${{ hashFiles('Cargo.lock', 'Cargo.toml', 'rust-toolchain.toml', '.cargo/**', 'crates/*/Cargo.toml', 'crates/jackin-xtask/src/**', 'crates/jackin-process/src/**') }}
           allow-miss: "true"
       - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
         with:
