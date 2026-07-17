@@ -672,6 +672,7 @@ where
     for attempt in 0..max_attempts {
         if attempt > 0 {
             let delay = initial_delay * (1 << (attempt - 1));
+            let _retry = jackin_telemetry::record_retry_scheduled();
             record(
                 "retry_backoff",
                 &format!("attempt {attempt}/{max_attempts}, waiting {delay:?}"),
@@ -706,6 +707,7 @@ where
     for attempt in 0..max_attempts {
         if attempt > 0 {
             let delay = initial_delay * (1 << (attempt - 1));
+            let _retry = jackin_telemetry::record_retry_scheduled();
             record(
                 "retry_backoff",
                 &format!("attempt {attempt}/{max_attempts}, waiting {delay:?}"),

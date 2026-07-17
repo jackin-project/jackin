@@ -4,9 +4,35 @@
 //! Tests for `agent_binary`.
 use super::*;
 use std::cell::Cell;
+use std::sync::{
+    Arc,
+    atomic::{AtomicUsize, Ordering},
+};
+use tracing_subscriber::layer::{Context, Layer};
+
+#[derive(Clone)]
+struct RetryCounter(Arc<AtomicUsize>);
+
+impl<S: tracing::Subscriber> Layer<S> for RetryCounter {
+    fn on_event(&self, event: &tracing::Event<'_>, _context: Context<'_, S>) {
+        if event.metadata().name() == jackin_telemetry::schema::events::RETRY_SCHEDULED {
+            self.0.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+}
+
+fn capture_retries() -> (Arc<AtomicUsize>, tracing::subscriber::DefaultGuard) {
+    let count = Arc::new(AtomicUsize::new(0));
+    let guard = tracing::subscriber::set_default(tracing_subscriber::layer::SubscriberExt::with(
+        tracing_subscriber::registry(),
+        RetryCounter(Arc::clone(&count)),
+    ));
+    (count, guard)
+}
 
 #[tokio::test(start_paused = true)]
 async fn retry_succeeds_on_first_try() {
+    let (retries, _guard) = capture_retries();
     let calls = Cell::new(0u32);
     let r: Result<u32> = retry_with_backoff(3, Duration::from_millis(10), || {
         calls.set(calls.get() + 1);
@@ -15,10 +41,12 @@ async fn retry_succeeds_on_first_try() {
     .await;
     assert_eq!(r.unwrap(), 42);
     assert_eq!(calls.get(), 1);
+    assert_eq!(retries.load(Ordering::Relaxed), 0);
 }
 
 #[tokio::test(start_paused = true)]
 async fn retry_recovers_after_transient_failures() {
+    let (retries, _guard) = capture_retries();
     let calls = Cell::new(0u32);
     let r: Result<u32> = retry_with_backoff(3, Duration::from_millis(10), || {
         let n = calls.get() + 1;
@@ -33,10 +61,12 @@ async fn retry_recovers_after_transient_failures() {
     .await;
     assert_eq!(r.unwrap(), 3);
     assert_eq!(calls.get(), 3);
+    assert_eq!(retries.load(Ordering::Relaxed), 2);
 }
 
 #[tokio::test(start_paused = true)]
 async fn retry_exhausts_and_returns_last_error() {
+    let (retries, _guard) = capture_retries();
     let calls = Cell::new(0u32);
     let r: Result<()> = retry_with_backoff(3, Duration::from_millis(10), || {
         let n = calls.get() + 1;
@@ -50,6 +80,7 @@ async fn retry_exhausts_and_returns_last_error() {
     let err = format!("{:#}", r.unwrap_err());
     assert!(err.contains("giving up after 3 attempts"), "{err}");
     assert!(err.contains("attempt 3 failed"), "{err}");
+    assert_eq!(retries.load(Ordering::Relaxed), 2);
 }
 
 #[tokio::test(start_paused = true)]
@@ -77,6 +108,7 @@ async fn retry_backoff_grows_exponentially() {
 
 #[tokio::test(start_paused = true)]
 async fn metadata_retry_uses_two_attempts_for_transient_failures() {
+    let (retries, _guard) = capture_retries();
     let calls = Cell::new(0u32);
     let r: Result<()> = retry_metadata_with_backoff(2, Duration::from_millis(10), || {
         let n = calls.get() + 1;
@@ -89,6 +121,7 @@ async fn metadata_retry_uses_two_attempts_for_transient_failures() {
     let err = format!("{:#}", r.unwrap_err());
     assert!(err.contains("giving up after 2 attempts"), "{err}");
     assert!(err.contains("metadata attempt 2 failed"), "{err}");
+    assert_eq!(retries.load(Ordering::Relaxed), 1);
 }
 
 fn release_fixture() -> AgentRelease {
