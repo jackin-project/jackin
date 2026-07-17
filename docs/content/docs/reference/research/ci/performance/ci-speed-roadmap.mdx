@@ -816,6 +816,22 @@ Measurement (Phase 0) still comes first in practice: capture a lane's baseline b
    the required admission graph. Keep the separate post-CI workflow unless
    measurements prove isolated capacity for release builds.
 
+Main run `29542209357` records the rejected preview baseline after PR #794:
+six target-specific jobs took between `7m00s` and `15m42s`, and the complete
+workflow took `16m24s`. The current branch instead keeps one complete archive
+job per package. Input-identical parity run `29554843310` completed those jobs
+in `19s`--`40s`, but exposed a remaining structural mismatch: GitHub restored
+an Actions cache while Velnor downloaded a GitHub-owned artifact. The preview
+jobs now use one runner-neutral completed-result lookup on both lanes, fall
+back to the other lane's byte-identical artifact under the same source
+contract, and execute the same complete cold-build path only when neither
+result exists. The old `cache_writer` role and serial lane ordering are gone;
+runner persistence may make Velnor faster, but it no longer changes the
+workflow algorithm. Completed archive artifacts also replace the duplicate
+preview archive cache family, releasing roughly `100MB` of active cache budget
+for toolchains and dependency state that cannot be reconstructed from a final
+release archive.
+
 ### Phase 5 -- Docker and construct-image speedups
 
 1. Corrected after parity measurement: CI Docker E2E keeps its scoped GHA cache, while standalone Construct builds on both lanes restore the same durable registry cache written by `main`. A dual-lane GHA-export trial made every platform build exceed five minutes, so it was rejected rather than forcing Velnor through a slower hosted-cache path.

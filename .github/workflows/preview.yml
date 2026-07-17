@@ -271,44 +271,46 @@ jobs:
       RUSTUP_HOME: ${{ matrix.config.rustup_home }}
     strategy:
       fail-fast: false
-      # The first lane owns the runner-independent result cache. Velnor cannot
-      # access GitHub's cache service, so it finds the latest completed-run
-      # artifact with the exact archive contract. Velnor must never compile
-      # the duplicate inputs.
-      max-parallel: 1
       matrix:
-        config: ${{ fromJSON((github.event_name != 'workflow_dispatch' || inputs.lanes == 'github') && '[{"lane":"GitHub","runner":"\"ubuntu-24.04\"","mise_data_dir":"/home/runner/.local/share/mise","rustup_home":"/home/runner/.rustup","cache_writer":true}]' || inputs.lanes == 'velnor' && '[{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","mise_data_dir":"/opt/mise","rustup_home":"/opt/rustup","cache_writer":true}]' || '[{"lane":"GitHub","runner":"\"ubuntu-24.04\"","mise_data_dir":"/home/runner/.local/share/mise","rustup_home":"/home/runner/.rustup","cache_writer":true},{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","mise_data_dir":"/opt/mise","rustup_home":"/opt/rustup","cache_writer":false}]') }}
+        config: ${{ fromJSON((github.event_name != 'workflow_dispatch' || inputs.lanes == 'github') && '[{"lane":"GitHub","runner":"\"ubuntu-24.04\"","mise_data_dir":"/home/runner/.local/share/mise","rustup_home":"/home/runner/.rustup"}]' || inputs.lanes == 'velnor' && '[{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","mise_data_dir":"/opt/mise","rustup_home":"/opt/rustup"}]' || '[{"lane":"GitHub","runner":"\"ubuntu-24.04\"","mise_data_dir":"/home/runner/.local/share/mise","rustup_home":"/home/runner/.rustup"},{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","mise_data_dir":"/opt/mise","rustup_home":"/opt/rustup"}]') }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           ref: ${{ needs.source-changed.outputs.sha }}
       - name: Restore input-identical jackin archive set
-        id: archive-cache
-        if: matrix.config.cache_writer
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: dist
-          key: preview-archives-v2-jackin-${{ needs.source-changed.outputs.jackin_archive_contract }}
-      - name: Reuse the first lane's complete jackin archive set
-        if: matrix.config.cache_writer == false
+        id: archive-github
         uses: dawidd6/action-download-artifact@b6e2e70617bc3265edd6dab6c906732b2f1ae151 # v21
         with:
           workflow: preview.yml
           workflow_search: true
-          workflow_conclusion: completed
+          workflow_conclusion: success
           branch: ${{ github.ref_name }}
           search_artifacts: true
           name: preview-GitHub-jackin-${{ needs.source-changed.outputs.jackin_archive_contract }}
           path: dist
+          if_no_artifact_found: ignore
+      - name: Restore input-identical jackin archive set from alternate lane
+        id: archive-velnor
+        if: steps.archive-github.outputs.found_artifact != 'true'
+        uses: dawidd6/action-download-artifact@b6e2e70617bc3265edd6dab6c906732b2f1ae151 # v21
+        with:
+          workflow: preview.yml
+          workflow_search: true
+          workflow_conclusion: success
+          branch: ${{ github.ref_name }}
+          search_artifacts: true
+          name: preview-Velnor-jackin-${{ needs.source-changed.outputs.jackin_archive_contract }}
+          path: dist
+          if_no_artifact_found: ignore
       - uses: ./.github/actions/download-ci-xtask
-        if: matrix.config.cache_writer && steps.archive-cache.outputs.cache-hit != 'true'
+        if: steps.archive-github.outputs.found_artifact != 'true' && steps.archive-velnor.outputs.found_artifact != 'true'
         with:
           token: ${{ github.token }}
           lane: ${{ matrix.config.lane }}
           xtask-contract: ${{ needs.source-changed.outputs.xtask_contract }}
           include-tools: "false"
       - name: Cache Rust toolchain
-        if: matrix.config.cache_writer && steps.archive-cache.outputs.cache-hit != 'true'
+        if: steps.archive-github.outputs.found_artifact != 'true' && steps.archive-velnor.outputs.found_artifact != 'true'
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -318,11 +320,11 @@ jobs:
           restore-keys: |
             rustup-v2-${{ runner.os }}-${{ runner.arch }}-
       - name: Use the prepared current Rust toolchain
-        if: matrix.config.cache_writer && steps.archive-cache.outputs.cache-hit != 'true'
+        if: steps.archive-github.outputs.found_artifact != 'true' && steps.archive-velnor.outputs.found_artifact != 'true'
         run: >-
           "$CI_XTASK" ci-toolchain prepare
       - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
-        if: matrix.config.cache_writer && steps.archive-cache.outputs.cache-hit != 'true'
+        if: steps.archive-github.outputs.found_artifact != 'true' && steps.archive-velnor.outputs.found_artifact != 'true'
         env:
           # sccache install: blank wrapper in case binstall source-falls-back
           # to cargo, which would probe rustc through a missing sccache.
@@ -334,10 +336,10 @@ jobs:
           install_args: "cargo-binstall zig cargo:cargo-zigbuild cosign syft cargo:sccache"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
-        if: matrix.config.cache_writer && steps.archive-cache.outputs.cache-hit != 'true'
+        if: steps.archive-github.outputs.found_artifact != 'true' && steps.archive-velnor.outputs.found_artifact != 'true'
         uses: ./.github/actions/cache-cargo-registry
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-        if: matrix.config.cache_writer && steps.archive-cache.outputs.cache-hit != 'true'
+        if: steps.archive-github.outputs.found_artifact != 'true' && steps.archive-velnor.outputs.found_artifact != 'true'
         with:
           shared-key: release-archive-jackin-workspace-v3
           cache-all-crates: "true"
@@ -348,13 +350,13 @@ jobs:
           # PR/branch/release reads the default branch's warm cache via fallback.
           # Only main saves, preserving limited cache quota for reusable entries.
       - name: Cache macOS SDK
-        if: matrix.config.cache_writer && steps.archive-cache.outputs.cache-hit != 'true'
+        if: steps.archive-github.outputs.found_artifact != 'true' && steps.archive-velnor.outputs.found_artifact != 'true'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}/macos-sdk
           key: macos-sdk-26.1
       - name: Build complete signed jackin archive set
-        if: matrix.config.cache_writer && steps.archive-cache.outputs.cache-hit != 'true'
+        if: steps.archive-github.outputs.found_artifact != 'true' && steps.archive-velnor.outputs.found_artifact != 'true'
         env:
           VERSION: ${{ needs.source-changed.outputs.version }}
         run: >-
@@ -362,12 +364,6 @@ jobs:
           --package jackin
           --version "$VERSION"
           --sccache-stats sccache-stats.txt
-      - name: Save input-identical jackin archive set
-        if: matrix.config.cache_writer && steps.archive-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: dist
-          key: preview-archives-v2-jackin-${{ needs.source-changed.outputs.jackin_archive_contract }}
       - name: Attest complete jackin archive set
         uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
@@ -415,40 +411,46 @@ jobs:
       RUSTUP_HOME: ${{ matrix.config.rustup_home }}
     strategy:
       fail-fast: false
-      max-parallel: 1
       matrix:
-        config: ${{ fromJSON((github.event_name != 'workflow_dispatch' || inputs.lanes == 'github') && '[{"lane":"GitHub","runner":"\"ubuntu-24.04\"","mise_data_dir":"/home/runner/.local/share/mise","rustup_home":"/home/runner/.rustup","cache_writer":true}]' || inputs.lanes == 'velnor' && '[{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","mise_data_dir":"/opt/mise","rustup_home":"/opt/rustup","cache_writer":true}]' || '[{"lane":"GitHub","runner":"\"ubuntu-24.04\"","mise_data_dir":"/home/runner/.local/share/mise","rustup_home":"/home/runner/.rustup","cache_writer":true},{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","mise_data_dir":"/opt/mise","rustup_home":"/opt/rustup","cache_writer":false}]') }}
+        config: ${{ fromJSON((github.event_name != 'workflow_dispatch' || inputs.lanes == 'github') && '[{"lane":"GitHub","runner":"\"ubuntu-24.04\"","mise_data_dir":"/home/runner/.local/share/mise","rustup_home":"/home/runner/.rustup"}]' || inputs.lanes == 'velnor' && '[{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","mise_data_dir":"/opt/mise","rustup_home":"/opt/rustup"}]' || '[{"lane":"GitHub","runner":"\"ubuntu-24.04\"","mise_data_dir":"/home/runner/.local/share/mise","rustup_home":"/home/runner/.rustup"},{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","mise_data_dir":"/opt/mise","rustup_home":"/opt/rustup"}]') }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           ref: ${{ needs.source-changed.outputs.sha }}
       - name: Restore input-identical capsule archive set
-        id: archive-cache
-        if: matrix.config.cache_writer
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: dist
-          key: preview-archives-v2-capsule-${{ needs.source-changed.outputs.capsule_archive_contract }}
-      - name: Reuse the first lane's complete capsule archive set
-        if: matrix.config.cache_writer == false
+        id: archive-github
         uses: dawidd6/action-download-artifact@b6e2e70617bc3265edd6dab6c906732b2f1ae151 # v21
         with:
           workflow: preview.yml
           workflow_search: true
-          workflow_conclusion: completed
+          workflow_conclusion: success
           branch: ${{ github.ref_name }}
           search_artifacts: true
           name: preview-GitHub-jackin-capsule-${{ needs.source-changed.outputs.capsule_archive_contract }}
           path: dist
+          if_no_artifact_found: ignore
+      - name: Restore input-identical capsule archive set from alternate lane
+        id: archive-velnor
+        if: steps.archive-github.outputs.found_artifact != 'true'
+        uses: dawidd6/action-download-artifact@b6e2e70617bc3265edd6dab6c906732b2f1ae151 # v21
+        with:
+          workflow: preview.yml
+          workflow_search: true
+          workflow_conclusion: success
+          branch: ${{ github.ref_name }}
+          search_artifacts: true
+          name: preview-Velnor-jackin-capsule-${{ needs.source-changed.outputs.capsule_archive_contract }}
+          path: dist
+          if_no_artifact_found: ignore
       - uses: ./.github/actions/download-ci-xtask
-        if: matrix.config.cache_writer && steps.archive-cache.outputs.cache-hit != 'true'
+        if: steps.archive-github.outputs.found_artifact != 'true' && steps.archive-velnor.outputs.found_artifact != 'true'
         with:
           token: ${{ github.token }}
           lane: ${{ matrix.config.lane }}
           xtask-contract: ${{ needs.source-changed.outputs.xtask_contract }}
           include-tools: "false"
       - name: Cache Rust toolchain
-        if: matrix.config.cache_writer && steps.archive-cache.outputs.cache-hit != 'true'
+        if: steps.archive-github.outputs.found_artifact != 'true' && steps.archive-velnor.outputs.found_artifact != 'true'
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -458,11 +460,11 @@ jobs:
           restore-keys: |
             rustup-v2-${{ runner.os }}-${{ runner.arch }}-
       - name: Use the prepared current Rust toolchain
-        if: matrix.config.cache_writer && steps.archive-cache.outputs.cache-hit != 'true'
+        if: steps.archive-github.outputs.found_artifact != 'true' && steps.archive-velnor.outputs.found_artifact != 'true'
         run: >-
           "$CI_XTASK" ci-toolchain prepare
       - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
-        if: matrix.config.cache_writer && steps.archive-cache.outputs.cache-hit != 'true'
+        if: steps.archive-github.outputs.found_artifact != 'true' && steps.archive-velnor.outputs.found_artifact != 'true'
         env:
           # sccache install: blank wrapper in case binstall source-falls-back
           # to cargo, which would probe rustc through a missing sccache.
@@ -474,10 +476,10 @@ jobs:
           install_args: "cargo-binstall zig cargo:cargo-zigbuild cosign syft cargo:sccache"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
-        if: matrix.config.cache_writer && steps.archive-cache.outputs.cache-hit != 'true'
+        if: steps.archive-github.outputs.found_artifact != 'true' && steps.archive-velnor.outputs.found_artifact != 'true'
         uses: ./.github/actions/cache-cargo-registry
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-        if: matrix.config.cache_writer && steps.archive-cache.outputs.cache-hit != 'true'
+        if: steps.archive-github.outputs.found_artifact != 'true' && steps.archive-velnor.outputs.found_artifact != 'true'
         with:
           shared-key: release-archive-capsule-workspace-v3
           cache-all-crates: "true"
@@ -488,7 +490,7 @@ jobs:
           # PR/branch/release reads the default branch's warm cache via fallback.
           # Only main saves, preserving limited cache quota for reusable entries.
       - name: Build complete signed capsule archive set
-        if: matrix.config.cache_writer && steps.archive-cache.outputs.cache-hit != 'true'
+        if: steps.archive-github.outputs.found_artifact != 'true' && steps.archive-velnor.outputs.found_artifact != 'true'
         env:
           VERSION: ${{ needs.source-changed.outputs.version }}
         run: >-
@@ -496,12 +498,6 @@ jobs:
           --package jackin-capsule
           --version "$VERSION"
           --sccache-stats sccache-stats.txt
-      - name: Save input-identical capsule archive set
-        if: matrix.config.cache_writer && steps.archive-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: dist
-          key: preview-archives-v2-capsule-${{ needs.source-changed.outputs.capsule_archive_contract }}
       - name: Attest complete capsule archive set
         uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
