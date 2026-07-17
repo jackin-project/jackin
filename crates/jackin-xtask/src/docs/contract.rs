@@ -170,7 +170,7 @@ fn link_contract(git_ref: &str, legacy: bool) -> Result<String> {
     push_line(&mut input, &lychee_contract(git_ref)?);
     push_line(
         &mut input,
-        &object_id(git_ref, "scripts/ci/docs-link-check.sh")?,
+        &object_id(git_ref, "crates/jackin-xtask/src/docs/site_links.rs")?,
     );
     Ok(hash(&input))
 }

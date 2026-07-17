@@ -28,6 +28,7 @@ use crate::report::{self, FormatArgs};
 
 mod brand;
 pub(crate) mod contract;
+mod site_links;
 mod specs;
 
 const DOCS_ROOT: &str = "docs/content/docs";
@@ -92,6 +93,8 @@ pub(crate) enum DocsCommand {
     /// Resolve and publish the reusable docs-link result for GitHub Actions.
     #[command(hide = true)]
     CiLinkResult,
+    /// Validate links in the generated documentation site.
+    SiteLinks,
 }
 
 #[derive(Args, Clone, Copy)]
@@ -202,6 +205,7 @@ pub(crate) fn run_docs(command: DocsCommand) -> Result<()> {
         ),
         DocsCommand::Contract(args) => contract::run(args),
         DocsCommand::CiLinkResult => contract::run_ci_link_result(),
+        DocsCommand::SiteLinks => site_links::run(),
     }
 }
 

@@ -87,6 +87,7 @@ jobs:
               - '.github/workflows/docs.yml'
               - '.github/actions/check-deployed-docs/**'
               - 'crates/jackin-xtask/src/docs/contract.rs'
+              - 'crates/jackin-xtask/src/docs/site_links.rs'
               - 'scripts/ci/codebook-contract.sh'
               - 'docs/**'
             source:
@@ -391,15 +392,15 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: .lycheecache
-          key: lychee-v1-${{ runner.os }}-${{ hashFiles('docs/lychee.toml', 'scripts/ci/docs-link-check.sh') }}
+          key: lychee-v1-${{ runner.os }}-${{ hashFiles('docs/lychee.toml', 'crates/jackin-xtask/src/docs/site_links.rs') }}
           restore-keys: lychee-v1-${{ runner.os }}-
 
       - name: Check built site links
         if: steps.link-result.outputs.verified != 'true'
         env:
           GITHUB_TOKEN: ${{ github.token }}
-        run: |
-          scripts/ci/docs-link-check.sh
+        run: >-
+          "$CI_XTASK" docs site-links
 
       - name: Stage repository-wide successful link result
         if: steps.link-result.outputs.refresh == 'true'
