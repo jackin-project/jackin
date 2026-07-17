@@ -415,10 +415,7 @@ pub fn open_role_trust_confirm(
 
 /// Open an editor action error popup with the given error.
 pub fn open_editor_action_error(editor: &mut EditorState<'_>, err: &dyn std::fmt::Display) {
-    jackin_diagnostics::telemetry_debug!(
-        "editor",
-        "failed to apply confirmed editor action: {err}"
-    );
+    record_console_error(jackin_telemetry::schema::enums::ErrorType::ConfigError);
     editor.open_error_popup(
         crate::tui::components::error_popup::editor_action_error_popup_state(err),
     );
@@ -426,10 +423,34 @@ pub fn open_editor_action_error(editor: &mut EditorState<'_>, err: &dyn std::fmt
 
 /// Open a role-input error popup with the given message.
 pub fn open_role_input_error(editor: &mut EditorState<'_>, message: &str) {
-    jackin_diagnostics::telemetry_debug!("role", "showing direct role-load error popup: {message}");
+    record_console_error(jackin_telemetry::schema::enums::ErrorType::ConfigError);
     editor.open_error_popup(
         crate::tui::components::error_popup::role_load_error_popup_state(message),
     );
+}
+
+pub(crate) fn record_console_error(error_type: jackin_telemetry::schema::enums::ErrorType) {
+    let _recorded = jackin_telemetry::record_error(error_type);
+}
+
+#[cfg(test)]
+mod telemetry_tests {
+    use super::*;
+
+    #[test]
+    fn console_error_export_is_bodyless() {
+        let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
+        tracing::subscriber::with_default(subscriber, || {
+            record_console_error(jackin_telemetry::schema::enums::ErrorType::ConfigError);
+        });
+
+        export.force_flush();
+        assert_eq!(export.event_count("error.typed"), 1);
+        assert!(export.contains_log_text("config_error"));
+        for private in ["selector", "repository", "popup", "raw error"] {
+            assert!(!export.contains_log_text(private));
+        }
+    }
 }
 
 mod manager;
