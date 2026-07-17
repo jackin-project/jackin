@@ -94,6 +94,7 @@ pub(crate) fn run(args: ReleaseArchivesArgs) -> Result<()> {
         .transpose()?;
 
     let targets = targets(args.package);
+    let jobs_per_target = jobs_per_target(targets.len());
     for target in targets {
         prepare_target(target.rust)?;
     }
@@ -107,6 +108,7 @@ pub(crate) fn run(args: ReleaseArchivesArgs) -> Result<()> {
                         args.package,
                         *target,
                         &args.version,
+                        jobs_per_target,
                         &build_root.join(target.rust),
                         &zig_cache,
                         macos_sdk.as_deref(),
@@ -145,6 +147,17 @@ pub(crate) fn run(args: ReleaseArchivesArgs) -> Result<()> {
         write_sccache_stats(path)?;
     }
     Ok(())
+}
+
+fn jobs_per_target(target_count: usize) -> usize {
+    jobs_per_target_for(
+        thread::available_parallelism().map_or(1, usize::from),
+        target_count,
+    )
+}
+
+fn jobs_per_target_for(available: usize, target_count: usize) -> usize {
+    available.checked_div(target_count).unwrap_or(1).max(1)
 }
 
 fn targets(package: ArchivePackage) -> &'static [TargetSpec] {
@@ -224,6 +237,7 @@ fn build(
     package: ArchivePackage,
     target: TargetSpec,
     version: &str,
+    jobs: usize,
     target_dir: &Path,
     zig_cache: &ZigCache,
     macos_sdk: Option<&Path>,
@@ -234,6 +248,7 @@ fn build(
         command.args(["-p", "jackin-capsule"]);
     }
     command.args(["--target", target.zigbuild]);
+    command.env("CARGO_BUILD_JOBS", jobs.to_string());
     command.env("CARGO_TARGET_DIR", target_dir);
     command.env("JACKIN_VERSION_OVERRIDE", version);
     if package == ArchivePackage::Jackin {
