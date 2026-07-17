@@ -40,7 +40,8 @@ jobs:
       version: ${{ steps.meta.outputs.version }}
       toolchain_key: ${{ steps.toolchain.outputs.key }}
       xtask_contract: ${{ steps.toolchain.outputs.xtask_contract }}
-      archive_contract: ${{ steps.toolchain.outputs.archive_contract }}
+      jackin_archive_contract: ${{ steps.toolchain.outputs.jackin_archive_contract }}
+      capsule_archive_contract: ${{ steps.toolchain.outputs.capsule_archive_contract }}
     steps:
       - name: Resolve source SHA
         id: source
@@ -75,12 +76,14 @@ jobs:
         env:
           CACHE_KEY: ${{ hashFiles('rust-toolchain.toml') }}
           XTASK_CONTRACT: ${{ hashFiles('Cargo.lock', 'Cargo.toml', 'rust-toolchain.toml', '.cargo/**', 'crates/*/Cargo.toml', 'crates/jackin-xtask/src/**', 'crates/jackin-process/src/**') }}
-          ARCHIVE_CONTRACT: ${{ hashFiles('Cargo.lock', 'Cargo.toml', 'rust-toolchain.toml', 'mise.toml', 'mise.lock', '.cargo/**', 'build.rs', 'src/**', 'crates/**') }}
+          JACKIN_ARCHIVE_CONTRACT: ${{ hashFiles('Cargo.lock', 'Cargo.toml', 'rust-toolchain.toml', 'mise.toml', 'mise.lock', '.cargo/**', 'crates/jackin/Cargo.toml', 'crates/jackin-brand/Cargo.toml', 'crates/jackin-build-meta/Cargo.toml', 'crates/jackin-config/Cargo.toml', 'crates/jackin-console/Cargo.toml', 'crates/jackin-core/Cargo.toml', 'crates/jackin-diagnostics/Cargo.toml', 'crates/jackin-docker/Cargo.toml', 'crates/jackin-env/Cargo.toml', 'crates/jackin-host/Cargo.toml', 'crates/jackin-image/Cargo.toml', 'crates/jackin-instance/Cargo.toml', 'crates/jackin-isolation/Cargo.toml', 'crates/jackin-launch/Cargo.toml', 'crates/jackin-manifest/Cargo.toml', 'crates/jackin-oppicker/Cargo.toml', 'crates/jackin-process/Cargo.toml', 'crates/jackin-protocol/Cargo.toml', 'crates/jackin-runtime/Cargo.toml', 'crates/jackin-test-support/Cargo.toml', 'crates/jackin-tui/Cargo.toml', 'crates/jackin-usage/Cargo.toml', 'crates/jackin/src/**', 'crates/jackin-brand/src/**', 'crates/jackin-build-meta/src/**', 'crates/jackin-config/src/**', 'crates/jackin-console/src/**', 'crates/jackin-core/src/**', 'crates/jackin-diagnostics/src/**', 'crates/jackin-docker/src/**', 'crates/jackin-env/src/**', 'crates/jackin-host/src/**', 'crates/jackin-image/src/**', 'crates/jackin-instance/src/**', 'crates/jackin-isolation/src/**', 'crates/jackin-launch/src/**', 'crates/jackin-manifest/src/**', 'crates/jackin-oppicker/src/**', 'crates/jackin-process/src/**', 'crates/jackin-protocol/src/**', 'crates/jackin-runtime/src/**', 'crates/jackin-test-support/src/**', 'crates/jackin-tui/src/**', 'crates/jackin-usage/src/**', 'crates/jackin-xtask/src/release_archive.rs', 'crates/jackin-xtask/src/cmd.rs') }}
+          CAPSULE_ARCHIVE_CONTRACT: ${{ hashFiles('Cargo.lock', 'Cargo.toml', 'rust-toolchain.toml', 'mise.toml', 'mise.lock', '.cargo/**', 'crates/jackin-agent-status/Cargo.toml', 'crates/jackin-agent-status/src/**', 'crates/jackin-brand/Cargo.toml', 'crates/jackin-brand/src/**', 'crates/jackin-build-meta/Cargo.toml', 'crates/jackin-build-meta/src/**', 'crates/jackin-capsule/Cargo.toml', 'crates/jackin-capsule/src/**', 'crates/jackin-core/Cargo.toml', 'crates/jackin-core/src/**', 'crates/jackin-diagnostics/Cargo.toml', 'crates/jackin-diagnostics/src/**', 'crates/jackin-process/Cargo.toml', 'crates/jackin-process/src/**', 'crates/jackin-protocol/Cargo.toml', 'crates/jackin-protocol/src/**', 'crates/jackin-term/Cargo.toml', 'crates/jackin-term/src/**', 'crates/jackin-tui/Cargo.toml', 'crates/jackin-tui/src/**', 'crates/jackin-usage/Cargo.toml', 'crates/jackin-usage/src/**', 'crates/jackin-xtask/src/release_archive.rs', 'crates/jackin-xtask/src/cmd.rs') }}
         run: |
           {
             echo "key=$CACHE_KEY"
             echo "xtask_contract=$XTASK_CONTRACT"
-            echo "archive_contract=$ARCHIVE_CONTRACT"
+            echo "jackin_archive_contract=$JACKIN_ARCHIVE_CONTRACT"
+            echo "capsule_archive_contract=$CAPSULE_ARCHIVE_CONTRACT"
           } >> "$GITHUB_OUTPUT"
 
       - name: Classify changed paths
@@ -283,7 +286,7 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: dist
-          key: preview-archives-v1-jackin-${{ needs.source-changed.outputs.archive_contract }}
+          key: preview-archives-v2-jackin-${{ needs.source-changed.outputs.jackin_archive_contract }}
       - uses: ./.github/actions/download-ci-xtask
         if: steps.archive-cache.outputs.cache-hit != 'true'
         with:
@@ -350,7 +353,7 @@ jobs:
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: dist
-          key: preview-archives-v1-jackin-${{ needs.source-changed.outputs.archive_contract }}
+          key: preview-archives-v2-jackin-${{ needs.source-changed.outputs.jackin_archive_contract }}
       - name: Attest complete jackin archive set
         uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
@@ -410,7 +413,7 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: dist
-          key: preview-archives-v1-capsule-${{ needs.source-changed.outputs.archive_contract }}
+          key: preview-archives-v2-capsule-${{ needs.source-changed.outputs.capsule_archive_contract }}
       - uses: ./.github/actions/download-ci-xtask
         if: steps.archive-cache.outputs.cache-hit != 'true'
         with:
@@ -471,7 +474,7 @@ jobs:
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: dist
-          key: preview-archives-v1-capsule-${{ needs.source-changed.outputs.archive_contract }}
+          key: preview-archives-v2-capsule-${{ needs.source-changed.outputs.capsule_archive_contract }}
       - name: Attest complete capsule archive set
         uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
