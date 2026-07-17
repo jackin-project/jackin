@@ -725,6 +725,91 @@ fn test_mux(rows: u16, cols: u16) -> Multiplexer {
 }
 
 #[test]
+fn conformance_wire_generated_codename_reaches_child_without_export() -> Result<()> {
+    const CHILD: &str = "JACKIN_CODENAME_PRIVACY_WIRE_CHILD";
+    if std::env::var_os(CHILD).is_none() {
+        let status = Command::new(std::env::current_exe()?)
+            .args([
+                "--exact",
+                "daemon::tests::conformance_wire_generated_codename_reaches_child_without_export",
+                "--nocapture",
+            ])
+            .env(CHILD, "1")
+            .status()?;
+        anyhow::ensure!(status.success(), "isolated codename privacy test failed");
+        return Ok(());
+    }
+
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()?;
+    let testbed = runtime.block_on(async { jackin_otlp_testbed::Testbed::start() })?;
+    let runtime_guard = runtime.enter();
+    jackin_diagnostics::init_wire_test_export(
+        &testbed.endpoint(),
+        jackin_diagnostics::ServiceIdentity::CAPSULE,
+    )?;
+    let workdir = tempfile::tempdir()?;
+    let mut mux = test_mux(24, 80);
+    mux.launch_env.workdir = workdir.path().to_path_buf();
+    let session_id = mux.spawn_session(None, &[], None)?;
+    let codename = mux.session_supervisor.tabs[0].codename.clone();
+    anyhow::ensure!(
+        mux.session_supervisor.codename_live.contains(&codename)
+            && mux.session_supervisor.agent_history[0].codename == codename,
+        "generated codename did not reach tab/history state"
+    );
+    anyhow::ensure!(
+        mux.session_supervisor.sessions.get(session_id).is_some_and(
+            |session| session.send_input(b"printf '%s' \"$JACKIN_AGENT_CODENAME\"; exit\n")
+        ),
+        "failed to query child codename environment"
+    );
+    let child_reported_codename = runtime.block_on(async {
+        tokio::time::timeout(Duration::from_secs(2), async {
+            loop {
+                if let Some(SessionEvent::Output { data, .. }) = mux.control.event_rx.recv().await
+                    && String::from_utf8_lossy(&data).contains(&codename)
+                {
+                    break true;
+                }
+            }
+        })
+        .await
+        .unwrap_or(false)
+    });
+    anyhow::ensure!(
+        child_reported_codename,
+        "spawned shell did not receive generated codename"
+    );
+    let operation =
+        jackin_telemetry::root_operation(&jackin_telemetry::operation::TELEMETRY_VALIDATE, &[])
+            .map_err(|reason| anyhow::anyhow!("validation operation rejected: {reason:?}"))?;
+    jackin_telemetry::emit_event(
+        &jackin_telemetry::event::TELEMETRY_VALIDATE,
+        jackin_telemetry::FieldSet::default(),
+    )
+    .map_err(|reason| anyhow::anyhow!("validation event rejected: {reason:?}"))?;
+    jackin_telemetry::counter(&jackin_telemetry::metric::TELEMETRY_VALIDATE)
+        .add(1, &[])
+        .map_err(|reason| anyhow::anyhow!("validation metric rejected: {reason:?}"))?;
+    operation.complete(jackin_telemetry::schema::enums::OutcomeValue::Success, None);
+    jackin_diagnostics::flush_wire_test_export()?;
+    drop(runtime_guard);
+    anyhow::ensure!(
+        runtime.block_on(testbed.wait_for_all_signals(Duration::from_secs(2))),
+        "codename route did not export all three signals"
+    );
+    anyhow::ensure!(
+        testbed.prohibited_value_violations(&[&codename]).is_empty(),
+        "generated codename escaped to OTLP"
+    );
+    jackin_diagnostics::shutdown_capsule_tracing();
+    Ok(())
+}
+
+#[test]
 fn begin_exec_picker_supersedes_pending_reply_and_dialog() {
     let mut mux = test_mux(40, 20);
     let (tx1, mut rx1) = tokio::sync::oneshot::channel();
