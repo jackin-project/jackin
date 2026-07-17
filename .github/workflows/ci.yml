@@ -546,7 +546,7 @@ jobs:
           install_args: >-
             rust@${{ needs.changes.outputs.rust-version }}
             ${{ env.CI_TOOLS_HIT != 'true' &&
-                'cargo-binstall cargo:sccache cargo:cargo-nextest cargo:cargo-deny cargo:cargo-shear cargo:cargo-audit cargo:cargo-dylint cargo:cargo-fuzz cargo:cargo-hack cargo:cargo-hakari cargo:cargo-llvm-cov cargo:cargo-mutants cargo:cargo-zigbuild cargo:dylint-link' || '' }}
+                'cargo-binstall cargo:sccache cargo:cargo-nextest cargo:cargo-deny cargo:cargo-shear cargo:cargo-audit cargo:cargo-fuzz cargo:cargo-hack cargo:cargo-hakari cargo:cargo-llvm-cov cargo:cargo-mutants cargo:cargo-zigbuild' || '' }}
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         if: >-

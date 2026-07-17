@@ -847,23 +847,12 @@ jobs:
           key: rustup-${{ runner.os }}-${{ runner.arch }}-dylint-v1
           restore-keys: |
             rustup-${{ runner.os }}-${{ runner.arch }}-
-      - name: Restore prepared CI tools
-        uses: ./.github/actions/download-ci-xtask
-        with:
-          token: ${{ github.token }}
-          lane: shared
-          tools-contract: ${{ hashFiles('mise.toml', 'mise.lock', 'crates/jackin-xtask/src/ci_stage.rs') }}
-          include-xtask: "false"
-          allow-miss: "true"
       - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
         with:
           version: "2026.7.7"
           cache_key_prefix: "mise-v2"
           cache_save: ${{ github.ref == 'refs/heads/main' }}
-          install_args: >-
-            rust
-            ${{ env.CI_TOOLS_HIT != 'true' &&
-                'cargo-binstall cargo:cargo-dylint cargo:dylint-link' || '' }}
+          install_args: "rust"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
@@ -873,6 +862,10 @@ jobs:
           cache-all-crates: "true"
           cache-workspace-crates: "true"
           env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTFLAGS RUSTDOC RUSTUP"
+      - name: Install pinned Dylint tools from source
+        run: |
+          cargo install --locked --version 6.0.1 --root target/dylint-tools \
+            cargo-dylint dylint-link
       - name: cargo dylint
         id: dylint-run
         run: |

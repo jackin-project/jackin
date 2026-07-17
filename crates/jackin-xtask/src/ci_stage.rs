@@ -16,14 +16,12 @@ const TOOLS: &[&str] = &[
     "cargo-deny",
     "cargo-shear",
     "cargo-audit",
-    "cargo-dylint",
     "cargo-fuzz",
     "cargo-hack",
     "cargo-hakari",
     "cargo-llvm-cov",
     "cargo-mutants",
     "cargo-zigbuild",
-    "dylint-link",
 ];
 
 #[derive(Args, Debug)]
