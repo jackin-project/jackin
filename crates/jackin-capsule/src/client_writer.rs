@@ -158,21 +158,6 @@ impl ClientWriter {
             metrics.cursor_moves as u64,
             metrics.painted_cells as u64,
         );
-        // Per-frame text row demoted to TRACE (metrics replace the firehose).
-        jackin_diagnostics::telemetry_debug!(
-            "capsule",
-            "send: bytes={} cursor_moves={} sgr_resets={} osc8_opens={} osc8_closes={} max_row_addressed={} max_col_addressed={} full_screen_erases={} painted_cells={} full_frame_repaint={}",
-            metrics.bytes,
-            metrics.cursor_moves,
-            metrics.sgr_resets,
-            metrics.osc8_opens,
-            metrics.osc8_closes,
-            metrics.max_row_addressed,
-            metrics.max_col_addressed,
-            metrics.full_screen_erases,
-            metrics.painted_cells,
-            metrics.full_frame_repaint,
-        );
     }
 }
 

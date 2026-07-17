@@ -198,16 +198,10 @@ impl ClipboardImageTransfers {
             })
             .collect();
         for transfer_id in &stale_ids {
-            if let Some(active) = self.active.remove(transfer_id) {
-                jackin_diagnostics::telemetry_debug!(
-                    "capsule",
-                    "clipboard-image: abort stale transfer id={} format={:?} buffered={} expected={}",
-                    transfer_id,
-                    active.format,
-                    active.bytes.len(),
-                    active.expected_size
-                );
-            }
+            self.active.remove(transfer_id);
+        }
+        if !stale_ids.is_empty() {
+            let _warning = jackin_telemetry::record_recovered_degradation();
         }
         stale_ids
     }

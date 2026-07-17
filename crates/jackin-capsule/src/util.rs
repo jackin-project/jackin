@@ -15,40 +15,23 @@ use std::time::{Duration, Instant};
 /// cannot pin daemon memory while parsing branch state or hostnames.
 /// `label` is a static tag so governed DEBUG events traces name which call site
 /// hit the cap or failed.
-pub fn read_text_bounded(label: &'static str, path: &Path, max_bytes: u64) -> Option<String> {
+pub fn read_text_bounded(path: &Path, max_bytes: u64) -> Option<String> {
     #[expect(
         clippy::disallowed_methods,
         reason = "bounded metadata reads are small, synchronous capsule-side helpers outside render emission"
     )]
-    let file = match std::fs::File::open(path) {
-        Ok(f) => f,
-        Err(e) => {
-            jackin_diagnostics::telemetry_debug!(
-                "capsule",
-                "read_text_bounded[{label}]: open {} failed: {e} (errno={:?})",
-                path.display(),
-                e.raw_os_error()
-            );
-            return None;
-        }
+    let Ok(file) = std::fs::File::open(path) else {
+        let _warning = jackin_telemetry::record_recovered_degradation();
+        return None;
     };
     let mut buf = String::new();
     let read = file.take(max_bytes).read_to_string(&mut buf);
-    if let Err(e) = read {
-        jackin_diagnostics::telemetry_debug!(
-            "capsule",
-            "read_text_bounded[{label}]: read {} failed: {e} (errno={:?})",
-            path.display(),
-            e.raw_os_error()
-        );
+    if read.is_err() {
+        let _warning = jackin_telemetry::record_recovered_degradation();
         return None;
     }
     if buf.len() as u64 == max_bytes {
-        jackin_diagnostics::telemetry_debug!(
-            "capsule",
-            "read_text_bounded[{label}]: capped at {max_bytes} bytes; file {} likely larger and downstream parsing may fail",
-            path.display()
-        );
+        let _warning = jackin_telemetry::record_recovered_degradation();
     }
     Some(buf)
 }

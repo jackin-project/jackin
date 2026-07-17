@@ -329,8 +329,7 @@ fn git_context_from_subprocess(workdir: &Path) -> GitContext {
 pub(crate) fn read_context_from_git_metadata(workdir: &Path) -> Option<GitContext> {
     let metadata = git_metadata_dirs(workdir)?;
     let head_path = metadata.git_dir.join("HEAD");
-    let head =
-        crate::util::read_text_bounded(".git/HEAD", &head_path, GIT_METADATA_FILE_MAX_BYTES)?;
+    let head = crate::util::read_text_bounded(&head_path, GIT_METADATA_FILE_MAX_BYTES)?;
     let trimmed = head.trim();
     if let Some(ref_name) = trimmed.strip_prefix("ref: ") {
         let oid = read_git_ref_oid(
@@ -367,7 +366,7 @@ fn git_metadata_dirs(workdir: &Path) -> Option<GitMetadataDirs> {
             common_git_dir: None,
         });
     }
-    let git_file = crate::util::read_text_bounded(".git", &git_path, GIT_METADATA_FILE_MAX_BYTES)?;
+    let git_file = crate::util::read_text_bounded(&git_path, GIT_METADATA_FILE_MAX_BYTES)?;
     let Some(suffix) = git_file.trim().strip_prefix("gitdir:") else {
         cdebug_malformed_git_file(".git", &git_path, &git_file);
         return None;
@@ -386,8 +385,7 @@ fn git_metadata_dirs(workdir: &Path) -> Option<GitMetadataDirs> {
 }
 
 fn common_git_dir(git_dir: &Path, max_bytes: u64) -> Option<PathBuf> {
-    let raw =
-        crate::util::read_text_bounded(".git/commondir", &git_dir.join("commondir"), max_bytes)?;
+    let raw = crate::util::read_text_bounded(&git_dir.join("commondir"), max_bytes)?;
     let path = PathBuf::from(raw.trim());
     Some(if path.is_absolute() {
         path
@@ -421,7 +419,7 @@ pub(crate) fn read_git_ref_oid(
 }
 
 fn read_loose_git_ref_oid(path: &Path) -> Option<Oid> {
-    let raw = crate::util::read_text_bounded("git ref", path, GIT_LOOSE_REF_MAX_BYTES)?;
+    let raw = crate::util::read_text_bounded(path, GIT_LOOSE_REF_MAX_BYTES)?;
     let trimmed = raw.trim();
     if trimmed.starts_with("ref: ") {
         // Legitimate symref content (`git symbolic-ref refs/heads/foo
@@ -506,7 +504,7 @@ fn load_packed_refs(
     metadata: &std::fs::Metadata,
 ) -> Option<(HashMap<String, Oid>, bool)> {
     let truncated = metadata.len() > PACKED_REFS_MAX_BYTES;
-    let raw = crate::util::read_text_bounded("packed-refs", path, PACKED_REFS_MAX_BYTES)?;
+    let raw = crate::util::read_text_bounded(path, PACKED_REFS_MAX_BYTES)?;
     Some((parse_packed_git_refs(&raw, truncated), truncated))
 }
 

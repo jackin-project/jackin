@@ -67,7 +67,6 @@ fn resolve_container_name() -> String {
     }
     const ETC_HOSTNAME_MAX_BYTES: u64 = 256;
     if let Some(value) = crate::util::read_text_bounded(
-        "/etc/hostname",
         std::path::Path::new("/etc/hostname"),
         ETC_HOSTNAME_MAX_BYTES,
     )
