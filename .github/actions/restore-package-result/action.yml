@@ -24,11 +24,15 @@ inputs:
     description: Artifact extraction directory.
     required: false
     default: dist
+  dry-run:
+    description: Check for an artifact without downloading it.
+    required: false
+    default: "false"
 
 outputs:
   found:
     description: Whether an input-identical artifact was restored.
-    value: ${{ steps.primary.outputs.found_artifact == 'true' || steps.alternate.outputs.found_artifact == 'true' || steps.current.outputs.found_artifact == 'true' }}
+    value: ${{ steps.primary.outputs.found_artifact == 'true' || steps.primary.outputs.dry_run == 'true' || steps.alternate.outputs.found_artifact == 'true' || steps.alternate.outputs.dry_run == 'true' || steps.current.outputs.found_artifact == 'true' || steps.current.outputs.dry_run == 'true' }}
 
 runs:
   using: composite
@@ -44,9 +48,10 @@ runs:
         search_artifacts: true
         name: ${{ inputs.primary-name }}
         path: ${{ inputs.path }}
+        dry_run: ${{ inputs.dry-run }}
         if_no_artifact_found: ignore
     - id: alternate
-      if: steps.primary.outputs.found_artifact != 'true'
+      if: steps.primary.outputs.found_artifact != 'true' && steps.primary.outputs.dry_run != 'true'
       uses: dawidd6/action-download-artifact@b6e2e70617bc3265edd6dab6c906732b2f1ae151 # v21
       with:
         workflow: ${{ inputs.workflow }}
@@ -57,9 +62,14 @@ runs:
         search_artifacts: true
         name: ${{ inputs.alternate-name }}
         path: ${{ inputs.path }}
+        dry_run: ${{ inputs.dry-run }}
         if_no_artifact_found: ignore
     - id: current
-      if: steps.primary.outputs.found_artifact != 'true' && steps.alternate.outputs.found_artifact != 'true'
+      if: >-
+        steps.primary.outputs.found_artifact != 'true' &&
+        steps.primary.outputs.dry_run != 'true' &&
+        steps.alternate.outputs.found_artifact != 'true' &&
+        steps.alternate.outputs.dry_run != 'true'
       uses: dawidd6/action-download-artifact@b6e2e70617bc3265edd6dab6c906732b2f1ae151 # v21
       with:
         run_id: ${{ github.run_id }}
@@ -67,4 +77,5 @@ runs:
         name_is_regexp: true
         path: ${{ inputs.path }}
         merge_multiple: true
+        dry_run: ${{ inputs.dry-run }}
         if_no_artifact_found: ignore

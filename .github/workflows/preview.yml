@@ -290,6 +290,7 @@ jobs:
           primary-name: preview-GitHub-jackin-${{ needs.source-changed.outputs.jackin_archive_contract }}
           alternate-name: preview-Velnor-jackin-${{ needs.source-changed.outputs.jackin_archive_contract }}
           current-name-regexp: ^preview-(GitHub|Velnor)-jackin-${{ needs.source-changed.outputs.jackin_archive_contract }}$
+          dry-run: ${{ github.event_name == 'workflow_dispatch' }}
       - uses: ./.github/actions/download-ci-xtask
         if: steps.archive-result.outputs.found != 'true'
         with:
@@ -353,16 +354,18 @@ jobs:
           --version "$VERSION"
           --sccache-stats sccache-stats.txt
       - name: Attest complete jackin archive set
+        if: steps.archive-result.outputs.found != 'true' || github.event_name != 'workflow_dispatch'
         uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
           subject-path: dist/*.tar.gz
       - name: Upload complete jackin archive set
+        if: steps.archive-result.outputs.found != 'true' || github.event_name != 'workflow_dispatch'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: preview-${{ matrix.config.lane }}-jackin-${{ needs.source-changed.outputs.jackin_archive_contract }}
           path: dist/*.tar.gz*
       - name: Upload jackin cargo timings
-        if: always()
+        if: always() && steps.archive-result.outputs.found != 'true'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: cargo-timings-preview-jackin-${{ matrix.config.lane }}
@@ -370,7 +373,7 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
       - name: Upload jackin sccache stats
-        if: always()
+        if: always() && steps.archive-result.outputs.found != 'true'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: sccache-stats-preview-jackin-${{ matrix.config.lane }}
@@ -418,6 +421,7 @@ jobs:
           primary-name: preview-GitHub-jackin-capsule-${{ needs.source-changed.outputs.capsule_archive_contract }}
           alternate-name: preview-Velnor-jackin-capsule-${{ needs.source-changed.outputs.capsule_archive_contract }}
           current-name-regexp: ^preview-(GitHub|Velnor)-jackin-capsule-${{ needs.source-changed.outputs.capsule_archive_contract }}$
+          dry-run: ${{ github.event_name == 'workflow_dispatch' }}
       - uses: ./.github/actions/download-ci-xtask
         if: steps.archive-result.outputs.found != 'true'
         with:
@@ -475,16 +479,18 @@ jobs:
           --version "$VERSION"
           --sccache-stats sccache-stats.txt
       - name: Attest complete capsule archive set
+        if: steps.archive-result.outputs.found != 'true' || github.event_name != 'workflow_dispatch'
         uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
           subject-path: dist/*.tar.gz
       - name: Upload complete capsule archive set
+        if: steps.archive-result.outputs.found != 'true' || github.event_name != 'workflow_dispatch'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: preview-${{ matrix.config.lane }}-jackin-capsule-${{ needs.source-changed.outputs.capsule_archive_contract }}
           path: dist/*.tar.gz*
       - name: Upload capsule cargo timings
-        if: always()
+        if: always() && steps.archive-result.outputs.found != 'true'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: cargo-timings-preview-capsule-${{ matrix.config.lane }}
@@ -492,7 +498,7 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
       - name: Upload capsule sccache stats
-        if: always()
+        if: always() && steps.archive-result.outputs.found != 'true'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: sccache-stats-preview-capsule-${{ matrix.config.lane }}
