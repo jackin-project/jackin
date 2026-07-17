@@ -414,6 +414,88 @@ fn tls_client_key_errors_expose_only_the_bounded_signal_and_asset() {
 }
 
 #[test]
+fn conformance_wire_tls_paths_are_consumed_without_export() -> anyhow::Result<()> {
+    let _lock = crate::DIAGNOSTICS_TEST_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let private_dir = tempfile::tempdir()?;
+    let ca_path = private_dir.path().join("wire-private-tenant-ca.pem");
+    let certificate_path = private_dir
+        .path()
+        .join("wire-private-tenant-client-certificate.pem");
+    let key_path = private_dir
+        .path()
+        .join("wire-private-tenant-client-key.pem");
+    let ca_pem = "wire-private-ca-material";
+    let certificate_pem = "wire-private-client-certificate-material";
+    let key_pem = "wire-private-client-key-material";
+    std::fs::write(&ca_path, ca_pem)?;
+    std::fs::write(&certificate_path, certificate_pem)?;
+    std::fs::write(&key_path, key_pem)?;
+    let config = super::super::config::TlsConfig {
+        certificate: Some(ca_path.to_string_lossy().into_owned()),
+        client_key: Some(key_path.to_string_lossy().into_owned()),
+        client_certificate: Some(certificate_path.to_string_lossy().into_owned()),
+    };
+
+    let tls = exporter_tls(
+        &config,
+        "traces",
+        "https://collector.invalid:4317",
+        std::time::Duration::from_secs(1),
+    )?;
+    assert!(
+        tls.is_some(),
+        "production TLS resolver ignored private files"
+    );
+
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()?;
+    let testbed = runtime.block_on(async { jackin_otlp_testbed::Testbed::start() })?;
+    super::super::init_wire_test_export(
+        &testbed.endpoint(),
+        super::super::ServiceIdentity::HOST_ONE_SHOT,
+    )?;
+    let operation =
+        jackin_telemetry::root_operation(&jackin_telemetry::operation::TELEMETRY_VALIDATE, &[])
+            .map_err(|reason| anyhow::anyhow!("validation operation rejected: {reason:?}"))?;
+    jackin_telemetry::emit_event(
+        &jackin_telemetry::event::TELEMETRY_VALIDATE,
+        jackin_telemetry::FieldSet::default(),
+    )
+    .map_err(|reason| anyhow::anyhow!("validation event rejected: {reason:?}"))?;
+    jackin_telemetry::counter(&jackin_telemetry::metric::TELEMETRY_VALIDATE)
+        .add(1, &[])
+        .map_err(|reason| anyhow::anyhow!("validation metric rejected: {reason:?}"))?;
+    operation.complete(jackin_telemetry::schema::enums::OutcomeValue::Success, None);
+    super::super::flush_wire_test_export()?;
+    assert!(
+        runtime.block_on(testbed.wait_for_all_signals(std::time::Duration::from_secs(2))),
+        "TLS privacy fixture did not deliver all three signals"
+    );
+
+    let ca_path = ca_path.to_string_lossy();
+    let certificate_path = certificate_path.to_string_lossy();
+    let key_path = key_path.to_string_lossy();
+    assert_eq!(
+        testbed.prohibited_value_violations(&[
+            ca_path.as_ref(),
+            certificate_path.as_ref(),
+            key_path.as_ref(),
+            ca_pem,
+            certificate_pem,
+            key_pem,
+        ]),
+        Vec::<String>::new(),
+        "private TLS path or credential material escaped onto the OTLP wire"
+    );
+    super::super::shutdown_capsule_tracing();
+    Ok(())
+}
+
+#[test]
 fn facade_event_exports_native_event_name_once() {
     let (export, subscriber) = super::test_layers(false, "unused");
     tracing::subscriber::with_default(subscriber, || {
