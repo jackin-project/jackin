@@ -218,8 +218,7 @@ jobs:
       - name: Use runner-local target seed
         id: local-target
         if: steps.crate-target.outputs.hit == 'true'
-        run: >-
-          "$CI_XTASK" ci-target validate-local --target "$CARGO_TARGET_DIR"
+        run: $CI_XTASK ci-target validate-local
       - name: Download reusable crate target seed
         if: steps.crate-target.outputs.hit == 'true' && steps.local-target.outputs.hit != 'true'
         env:
