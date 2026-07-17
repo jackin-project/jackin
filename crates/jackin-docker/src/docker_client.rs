@@ -10,7 +10,7 @@
 //! Not responsible for: subprocess-level `docker` CLI invocations
 //! (`shell_runner.rs`), or the launch pipeline orchestration.
 
-use std::{collections::HashMap, ffi::OsStr, future::Future, process::Command, sync::OnceLock};
+use std::{collections::HashMap, ffi::OsStr, future::Future, sync::OnceLock};
 
 use crate::DockerError;
 use anyhow::Context;
@@ -288,24 +288,22 @@ fn cached_context_endpoint() -> Option<DockerContextEndpoint> {
 }
 
 fn active_docker_context_endpoint() -> Option<DockerContextEndpoint> {
-    let mut cmd = Command::new("docker");
-    cmd.args(["context", "inspect", "--format", "{{json .}}"]);
+    let mut request = jackin_process::ExecRequest::new(
+        "docker",
+        ["context", "inspect", "--format", "{{json .}}"],
+    );
     // Pin `DOCKER_CONTEXT` so resolution survives any future Docker CLI drift,
     // even though `docker context inspect` already honors it today.
     if let Some(ctx) = std::env::var("DOCKER_CONTEXT")
         .ok()
         .filter(|v| !v.is_empty())
     {
-        cmd.arg(ctx);
+        request.args.push(ctx.into());
     }
-    #[expect(
-        clippy::disallowed_methods,
-        reason = "Docker context inspection runs before launch render/runtime work begins"
-    )]
-    let Ok(output) = cmd.output() else {
+    let Ok(output) = crate::process_telemetry::exec_sync(&request) else {
         return None;
     };
-    if !output.status.success() {
+    if !output.success {
         return None;
     }
     parse_docker_context_endpoint(&output.stdout)

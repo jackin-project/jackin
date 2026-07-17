@@ -3014,6 +3014,7 @@ dependencies = [
  "jackin-build-meta",
  "jackin-core",
  "jackin-diagnostics",
+ "jackin-process",
  "jackin-telemetry",
  "reqwest",
  "serde",
