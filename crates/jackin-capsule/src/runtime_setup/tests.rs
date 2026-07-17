@@ -10,6 +10,53 @@ use std::sync::{
 };
 
 #[test]
+fn runtime_setup_process_boundary_classifies_and_redacts_failures() {
+    let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
+    tracing::subscriber::with_default(subscriber, || {
+        let success = runtime_setup_request(&jackin_process::ExecRequest::new(
+            "sh",
+            ["-c", "printf operator-secret-success"],
+        ))
+        .expect("successful process request");
+        assert!(success.success);
+
+        let nonzero = runtime_setup_request(&jackin_process::ExecRequest::new(
+            "sh",
+            ["-c", "printf operator-secret-failure >&2; exit 7"],
+        ))
+        .expect("nonzero process result");
+        assert!(!nonzero.success);
+
+        let spawn_error = runtime_setup_request(&jackin_process::ExecRequest::new(
+            "operator-secret-missing-program",
+            std::iter::empty::<&str>(),
+        ))
+        .err();
+        assert!(spawn_error.is_some());
+    });
+    export.force_flush();
+
+    let spans = export.finished_spans();
+    assert_eq!(spans.len(), 3);
+    assert!(
+        spans
+            .iter()
+            .all(|span| span.name == jackin_telemetry::schema::spans::PROCESS_COMMAND)
+    );
+    assert_eq!(export.error_span_count(), 2);
+    assert!(export.contains_span_text("process_exit_nonzero"));
+    assert!(export.contains_span_text("process_spawn_error"));
+    for secret in [
+        "operator-secret-success",
+        "operator-secret-failure",
+        "operator-secret-missing-program",
+    ] {
+        assert!(!export.contains_span_text(secret));
+        assert!(!export.contains_log_text(secret));
+    }
+}
+
+#[test]
 fn container_init_marker_is_container_local() {
     assert_eq!(CONTAINER_INIT_MARKER, "/jackin/state/container-init.done");
 }

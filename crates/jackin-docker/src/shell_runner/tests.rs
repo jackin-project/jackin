@@ -450,9 +450,12 @@ fn process_execute_completion_classifies_success() {
 fn executable_classification_is_bounded_and_private() {
     use jackin_telemetry::schema::enums::ProcessExecutableName;
 
-    assert_eq!(classify_executable("git"), ProcessExecutableName::Git);
     assert_eq!(
-        classify_executable("operator-private-tool"),
+        jackin_telemetry::process::classify_executable(Path::new("git")),
+        ProcessExecutableName::Git
+    );
+    assert_eq!(
+        jackin_telemetry::process::classify_executable(Path::new("operator-private-tool")),
         ProcessExecutableName::Other
     );
 }

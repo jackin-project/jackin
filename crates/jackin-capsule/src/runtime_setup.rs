@@ -1600,7 +1600,7 @@ fn gh_auth_status_ok() -> bool {
     let request = jackin_process::ExecRequest::new("gh", ["auth", "status"])
         .stdout_mode(jackin_process::StdioMode::Null)
         .stderr_mode(jackin_process::StdioMode::Null);
-    jackin_process::exec_sync(&request).is_ok_and(|result| result.success)
+    runtime_setup_request(&request).is_ok_and(|result| result.success)
 }
 
 pub(crate) fn run_command(program: &str, args: &[&str]) -> Result<()> {
@@ -1623,7 +1623,43 @@ fn runtime_setup_output(
     program: &str,
     args: impl IntoIterator<Item = impl AsRef<OsStr>>,
 ) -> Result<jackin_process::ExecResult> {
-    jackin_process::exec_sync(&jackin_process::ExecRequest::new(program, args))
+    runtime_setup_request(&jackin_process::ExecRequest::new(program, args))
+}
+
+fn runtime_setup_request(
+    request: &jackin_process::ExecRequest,
+) -> Result<jackin_process::ExecResult> {
+    use jackin_telemetry::schema::enums::{ErrorType, OutcomeValue};
+
+    let executable = jackin_telemetry::process::classify_executable(&request.program);
+    let operation = jackin_telemetry::operation_or_disabled(
+        &jackin_telemetry::operation::PROCESS_COMMAND,
+        &[jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::std_attrs::PROCESS_EXECUTABLE_NAME,
+            value: jackin_telemetry::Value::Str(executable.as_str()),
+        }],
+    );
+    let result = jackin_process::exec_sync(request);
+    let completion = match &result {
+        Ok(output) => {
+            if let Some(code) = output.code {
+                let _attribute = operation.set_attr(jackin_telemetry::Attr {
+                    key: jackin_telemetry::schema::attrs::std_attrs::PROCESS_EXIT_CODE,
+                    value: jackin_telemetry::Value::I64(i64::from(code)),
+                });
+            }
+            if output.timed_out {
+                (OutcomeValue::Timeout, Some(ErrorType::Timeout))
+            } else if output.success {
+                (OutcomeValue::Success, None)
+            } else {
+                (OutcomeValue::Failure, Some(ErrorType::ProcessExitNonzero))
+            }
+        }
+        Err(_) => (OutcomeValue::Failure, Some(ErrorType::ProcessSpawnError)),
+    };
+    operation.complete(completion.0, completion.1);
+    result
 }
 
 fn run_optional_command(program: &str, args: &[&str]) -> bool {
@@ -1640,29 +1676,9 @@ fn run_optional_command(program: &str, args: &[&str]) -> bool {
     let request = jackin_process::ExecRequest::new(program, args.iter().copied())
         .stdout_mode(mode)
         .stderr_mode(mode);
-    // "Optional" means "do not abort runtime_setup", not "swallow the
-    // exit code." A failing `claude mcp add tirith` or `shellfirm`
-    // call leaves the role launched without the MCP wired up, so log
-    // the exact failure through governed telemetry for operator triage.
-    match jackin_process::exec_sync(&request) {
+    match runtime_setup_request(&request) {
         Ok(result) if result.success => true,
-        Ok(result) => {
-            jackin_diagnostics::telemetry_info!(
-                "capsule",
-                "optional command {} exited with code {:?}",
-                format_command(program, args),
-                result.code
-            );
-            false
-        }
-        Err(e) => {
-            jackin_diagnostics::telemetry_info!(
-                "capsule",
-                "optional command {} failed to spawn: {e}",
-                format_command(program, args)
-            );
-            false
-        }
+        Ok(_) | Err(_) => false,
     }
 }
 
