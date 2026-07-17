@@ -2885,6 +2885,7 @@ dependencies = [
  "jackin-build-meta",
  "jackin-core",
  "jackin-diagnostics",
+ "jackin-otlp-testbed",
  "jackin-process",
  "jackin-protocol",
  "jackin-telemetry",

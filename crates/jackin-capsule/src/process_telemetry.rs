@@ -133,7 +133,7 @@ pub(crate) async fn exec_async_as(
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
+    use std::time::{Duration, Instant};
 
     use super::*;
 
@@ -189,6 +189,64 @@ mod tests {
         ] {
             assert!(!export.contains_span_text(secret));
         }
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn conformance_wire_exec_spawn_failure_is_owned_once_without_command_material() {
+        let testbed = jackin_otlp_testbed::Testbed::start().expect("start OTLP testbed");
+        jackin_diagnostics::init_wire_test_export(
+            &testbed.endpoint(),
+            jackin_diagnostics::ServiceIdentity::CAPSULE,
+        )
+        .expect("initialize wire test export");
+
+        let request = ExecRequest::new(
+            "/wire-secret/missing-command",
+            ["wire-secret-argument", "wire-secret-token"],
+        );
+        let error = exec_async_as(&request, ProcessExecutableName::ConfiguredCommand)
+            .await
+            .unwrap_err();
+        assert_eq!(error.to_string(), "process spawn failed");
+        jackin_diagnostics::flush_wire_test_export().expect("flush wire test export");
+
+        let deadline = Instant::now() + Duration::from_secs(2);
+        let spans = loop {
+            let spans = testbed
+                .spans()
+                .into_iter()
+                .filter(|span| span.name == "process.command")
+                .collect::<Vec<_>>();
+            if spans.len() == 1 {
+                break spans;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "process command wire span did not arrive exactly once"
+            );
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        };
+        let wire_text = format!("{spans:?}");
+        for expected in ["configured_command", "failure", "process_spawn_error"] {
+            assert!(
+                wire_text.contains(expected),
+                "missing {expected}: {wire_text}"
+            );
+        }
+        let prohibited = [
+            "/wire-secret/missing-command",
+            "wire-secret-argument",
+            "wire-secret-token",
+        ];
+        for value in prohibited {
+            assert!(!wire_text.contains(value), "exported {value}");
+        }
+        assert_eq!(
+            testbed.prohibited_value_violations(&prohibited),
+            Vec::<String>::new()
+        );
+        assert_eq!(testbed.legacy_namespace_violations(), Vec::<String>::new());
+        jackin_diagnostics::shutdown_capsule_tracing();
     }
 
     #[test]

@@ -81,9 +81,10 @@ harness = false
 [dev-dependencies]
 criterion = { workspace = true, features = ["html_reports"] }
 jackin-diagnostics = { workspace = true, features = ["test-support"] }
+jackin-otlp-testbed = { workspace = true }
 tempfile = { workspace = true }
 insta = { workspace = true, features = ["filters"] }
-tokio = { workspace = true, features = ["test-util"] }
+tokio = { workspace = true, features = ["rt-multi-thread", "test-util"] }
 tracing = { workspace = true }
 tracing-opentelemetry = { workspace = true }
 tracing-subscriber = { workspace = true }
