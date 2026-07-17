@@ -759,35 +759,21 @@ jobs:
           include-tools: "false"
       - id: select
         name: Select affected crate tests once
-        shell: bash
         env:
-          BASE_REF: ${{ github.base_ref }}
-          BEFORE_SHA: ${{ github.event.before }}
-          COMMON_CONTRACT_KEY: ${{ needs.changes.outputs.nextest-contract }}
-          CONSTRUCT_IMAGE_CHANGED: ${{ needs.changes.outputs.construct_image }}
-          DOCKER_CONTRACT_KEY: ${{ needs.changes.outputs.docker-contract }}
-          DOCKER_E2E: ${{ needs.changes.outputs.docker_e2e }}
-          EVENT_NAME: ${{ github.event_name }}
-          FORCE_PACKAGE: ${{ github.event_name == 'workflow_dispatch' && inputs.refresh-package || '' }}
           GH_TOKEN: ${{ github.token }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-          SOURCE_SHA: ${{ github.sha }}
-        run: |
-          set -euo pipefail
-          result=$(scripts/ci/select-affected-crates.sh)
-          {
-            echo "packages=$(jq -c '.packages' <<< "$result")"
-            echo "cache-keys=$(jq -c '.cache_keys' <<< "$result")"
-            echo "reused-packages=$(jq -c '.reused_packages' <<< "$result")"
-            echo "target-results=$(jq -c '.target_results' <<< "$result")"
-          } >> "$GITHUB_OUTPUT"
-          {
-            echo "### Crate test routing"
-            echo
-            echo "Reused: $(jq '.reused_packages | length' <<< "$result"); scheduled: $(jq '.packages | length' <<< "$result")."
-            jq -r '.reused_packages[] | "- reused `\(.)`"' <<< "$result"
-            jq -r '.packages[] | "- scheduled `\(.)`"' <<< "$result"
-          } >> "$GITHUB_STEP_SUMMARY"
+        run: >-
+          "$CI_XTASK" ci-route
+          --metadata "$CI_METADATA"
+          --base-ref "${{ github.base_ref }}"
+          --before-sha "${{ github.event.before }}"
+          --event-name "${{ github.event_name }}"
+          --force-package "${{ github.event_name == 'workflow_dispatch' && inputs.refresh-package || '' }}"
+          --common-contract-key "${{ needs.changes.outputs.nextest-contract }}"
+          --construct-image-changed "${{ needs.changes.outputs.construct_image }}"
+          --docker-contract-key "${{ needs.changes.outputs.docker-contract }}"
+          --docker-e2e "${{ needs.changes.outputs.docker_e2e }}"
+          --source-sha "${{ github.sha }}"
+          --repository "${{ github.repository }}"
 
   schema-check:
     needs: [changes, matrix-setup, cargo-registry-warmup]

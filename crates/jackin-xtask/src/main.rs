@@ -10,6 +10,7 @@ mod arch;
 mod ci;
 mod ci_audit;
 mod ci_result;
+mod ci_route;
 mod ci_target;
 mod ci_toolchain;
 mod cmd;
@@ -64,6 +65,9 @@ enum Command {
     /// Resolve reusable per-crate CI results.
     #[command(name = "ci-result", subcommand)]
     CiResult(ci_result::CiResultCommand),
+    /// Resolve affected crates and reusable test inputs in one CI step.
+    #[command(name = "ci-route")]
+    CiRoute(ci_route::CiRouteArgs),
     /// Manage the reusable per-crate Cargo target used by CI.
     #[command(name = "ci-target", subcommand)]
     CiTarget(ci_target::CiTargetCommand),
@@ -248,6 +252,7 @@ fn main() -> ExitCode {
         Command::Ci(args) => ci::run(args),
         Command::CiAudit(args) => ci_audit::run(args),
         Command::CiResult(command) => ci_result::run(command),
+        Command::CiRoute(args) => ci_route::run(args),
         Command::CiTarget(command) => ci_target::run(command),
         Command::CiToolchain(command) => ci_toolchain::run(command),
         Command::Github(command) => github::run(command),
