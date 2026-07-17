@@ -185,6 +185,8 @@ fn observable_callbacks_are_snapshot_only() {
     for prohibited in [
         "std::fs::read_to_string(\"state\")",
         "state.lock()",
+        "cache.refresh()",
+        "state.snapshot()",
         "handle.block_on(work())",
         "handle.enter()",
         "socket.read(&mut bytes)",
@@ -207,6 +209,18 @@ fn observable_callbacks_are_snapshot_only() {
     assert_eq!(
         source_policy_violations("crates/jackin-diagnostics/src/example.rs", indirect),
         ["observable callback performs blocking/runtime work"]
+    );
+
+    let runtime_metrics = r"fn install(builder: Builder, handle: Handle) {
+        builder.with_callback(move |observer| {
+            observer.observe(handle.metrics().num_workers() as u64, &[]);
+            observer.observe(handle.metrics().num_alive_tasks() as u64, &[]);
+            observer.observe(handle.metrics().global_queue_depth() as u64, &[]);
+        });
+    }";
+    assert!(
+        source_policy_violations("crates/jackin-diagnostics/src/example.rs", runtime_metrics)
+            .is_empty()
     );
 }
 

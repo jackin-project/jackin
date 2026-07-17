@@ -739,18 +739,14 @@ impl<'ast> syn::visit::Visit<'ast> for ObservableCallbackScanner {
     }
 
     fn visit_expr_method_call(&mut self, node: &'ast syn::ExprMethodCall) {
-        if matches!(
+        if !matches!(
             node.method.to_string().as_str(),
-            "lock"
-                | "read"
-                | "read_to_string"
-                | "read_dir"
-                | "write"
-                | "open"
-                | "connect"
-                | "enter"
-                | "entered"
-                | "block_on"
+            "observe"
+                | "load"
+                | "metrics"
+                | "num_workers"
+                | "num_alive_tasks"
+                | "global_queue_depth"
         ) {
             self.reject(node.span());
         }
