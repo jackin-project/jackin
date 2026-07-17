@@ -413,6 +413,7 @@ fn tls_client_key_errors_expose_only_the_bounded_signal_and_asset() {
     assert!(!error.contains("No such file"));
 }
 
+#[cfg(feature = "test-support")]
 #[test]
 fn conformance_wire_tls_paths_are_consumed_without_export() -> anyhow::Result<()> {
     let _lock = crate::DIAGNOSTICS_TEST_LOCK
