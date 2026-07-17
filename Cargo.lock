@@ -2915,6 +2915,7 @@ dependencies = [
  "criterion",
  "directories",
  "jackin-core",
+ "jackin-diagnostics",
  "jackin-telemetry",
  "proptest",
  "serde",
@@ -2922,6 +2923,7 @@ dependencies = [
  "thiserror 2.0.18",
  "toml",
  "toml_edit",
+ "tracing",
 ]
 
 [[package]]

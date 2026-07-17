@@ -31,6 +31,9 @@ pub enum ConfigError {
     /// Lower-level config operation whose taxonomy has not yet been narrowed.
     #[error(transparent)]
     Other(#[from] anyhow::Error),
+    /// Failure already exported by its semantic configuration-operation owner.
+    #[error(transparent)]
+    TelemetryOwned(Box<ConfigError>),
     /// Free-form operator-facing message (migrations, fixes, etc.).
     #[error("{0}")]
     Message(String),
@@ -100,5 +103,17 @@ impl ConfigError {
     /// Wrap a free-form message as [`ConfigError::Message`].
     pub fn msg(message: impl Into<String>) -> Self {
         Self::Message(message.into())
+    }
+
+    pub(crate) fn telemetry_owned(self) -> Self {
+        if self.is_telemetry_owned() {
+            self
+        } else {
+            Self::TelemetryOwned(Box::new(self))
+        }
+    }
+
+    pub(crate) const fn is_telemetry_owned(&self) -> bool {
+        matches!(self, Self::TelemetryOwned(_))
     }
 }

@@ -281,7 +281,9 @@ impl std::fmt::Display for KubernetesVersion {
 pub fn migrate_config_file_if_needed(path: &Path) -> crate::ConfigResult<bool> {
     let result = migrate_file_if_needed(path, "config", CURRENT_CONFIG_VERSION, CONFIG_MIGRATIONS);
     emit_migration_result("global", CURRENT_CONFIG_VERSION, CONFIG_MIGRATIONS, &result);
-    Ok(result?.is_some())
+    result
+        .map(|version| version.is_some())
+        .map_err(ConfigError::telemetry_owned)
 }
 
 /// Migrate a split workspace file to the current schema if needed.
@@ -298,7 +300,9 @@ pub fn migrate_workspace_file_if_needed(path: &Path) -> crate::ConfigResult<bool
         WORKSPACE_MIGRATIONS,
         &result,
     );
-    Ok(result?.is_some())
+    result
+        .map(|version| version.is_some())
+        .map_err(ConfigError::telemetry_owned)
 }
 
 fn emit_migration_result(

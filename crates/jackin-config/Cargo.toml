@@ -29,8 +29,10 @@ directories = { workspace = true }
 
 [dev-dependencies]
 criterion = { workspace = true, features = ["html_reports"] }
+jackin-diagnostics = { workspace = true, features = ["test-support"] }
 proptest = { workspace = true }
 tempfile = { workspace = true }
+tracing = { workspace = true }
 
 [features]
 test-support = []

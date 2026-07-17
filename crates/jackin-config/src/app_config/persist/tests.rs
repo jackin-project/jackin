@@ -66,6 +66,37 @@ git = "https://github.com/jackin-project/jackin-agent-smith.git"
 }
 
 #[test]
+fn load_failure_exports_once_without_path_or_config_contents() {
+    let temp = tempdir().unwrap();
+    let root = temp.path().join("config-secret-root");
+    let paths = JackinPaths::for_tests(&root);
+    paths.ensure_base_dirs().unwrap();
+    std::fs::write(
+        &paths.config_file,
+        "config-secret-invalid-content = [unterminated",
+    )
+    .unwrap();
+    let config_path = paths.config_file.to_string_lossy().into_owned();
+    let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
+    let _subscriber = tracing::subscriber::set_default(subscriber);
+
+    AppConfig::load_or_init(&paths).unwrap_err();
+
+    export.force_flush();
+    assert_eq!(export.event_count("config.operation"), 1);
+    assert!(export.contains_log_text("load"));
+    assert!(export.contains_log_text("config_error"));
+    for prohibited in [
+        config_path.as_str(),
+        "config-secret-root",
+        "config-secret-invalid-content",
+        "unterminated",
+    ] {
+        assert!(!export.contains_log_text(prohibited));
+    }
+}
+
+#[test]
 fn load_or_init_migrates_legacy_config_version() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
