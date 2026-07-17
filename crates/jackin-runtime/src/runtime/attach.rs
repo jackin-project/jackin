@@ -312,16 +312,11 @@ fn inspect_unavailable_message(container_name: &str, reason: &str) -> String {
 }
 
 fn set_role_terminal_title(paths: &JackinPaths, container_name: &str) {
-    let title = match InstanceManifest::read(&paths.data_dir.join(container_name)) {
-        Ok(m) => m.role_display_name,
-        Err(e) => {
-            jackin_diagnostics::telemetry_debug!(
-                "attach",
-                "set_role_terminal_title: manifest read failed for {container_name}: {e:#}; \
-                 using container name as title",
-            );
-            container_name.to_owned()
-        }
+    let title = if let Ok(manifest) = InstanceManifest::read(&paths.data_dir.join(container_name)) {
+        manifest.role_display_name
+    } else {
+        let _warning = jackin_telemetry::record_recovered_degradation();
+        container_name.to_owned()
     };
     jackin_diagnostics::set_terminal_title(&title);
 }
@@ -898,11 +893,8 @@ pub(crate) async fn hardline_docker_agent_with_focus(
     // on it: `finalize_reconnected_foreground_session` re-inspects the container
     // and reads exit-action.json, so it handles both a clean exit and a genuine
     // failure. Only a clean exit reaches here in practice; log and proceed.
-    if let Err(err) = attach_outcome {
-        jackin_diagnostics::telemetry_debug!(
-            "hardline",
-            "attach for {container_name} ended with ({err}); proceeding to finalize"
-        );
+    if attach_outcome.is_err() {
+        let _warning = jackin_telemetry::record_recovered_degradation();
     }
 
     finalize_reconnected_foreground_session(paths, container_name, docker, runner).await
