@@ -22,11 +22,6 @@ file = "crates/jackin-capsule/src/container_context.rs"
 reason = "reads the container's kernel hostname path (host-visible /etc inside the capsule PID namespace)"
 
 [[forbidden-roots]]
-path = "/etc/hostname"
-file = "crates/jackin-capsule/src/container_context.rs"
-reason = "second Path::new site for the same host hostname file"
-
-[[forbidden-roots]]
 path = "/etc/sudoers.d/agent"
 file = "crates/jackin-capsule/src/sudo_provision.rs"
 reason = "installs the agent sudoers drop-in at the distro path inside the container"

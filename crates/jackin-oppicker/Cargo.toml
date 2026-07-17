@@ -12,7 +12,6 @@ repository.workspace = true
 anyhow = { workspace = true }
 crossterm = { workspace = true }
 jackin-core = { workspace = true }
-jackin-diagnostics = { workspace = true }
 jackin-telemetry = { workspace = true }
 jackin-tui = { workspace = true }
 termrock = { workspace = true }

@@ -30,6 +30,87 @@ fn string_attribute<'a>(
     })
 }
 
+fn assert_soak_export(
+    testbed: &jackin_otlp_testbed::Testbed,
+    screens: &jackin_telemetry::ui::ScreenVisitTracker,
+    sessions: &BTreeSet<String>,
+    invocation: &str,
+) {
+    let spans = testbed.spans();
+    let mut counts = BTreeMap::new();
+    for span in &spans {
+        *counts.entry(span.name.as_str()).or_insert(0_usize) += 1;
+        assert!(span.end_time_unix_nano >= span.start_time_unix_nano);
+        assert!(
+            span.end_time_unix_nano - span.start_time_unix_nano
+                < Duration::from_secs(1).as_nanos() as u64,
+            "unbounded {} span: {span:?}",
+            span.name
+        );
+    }
+    for (name, expected) in [
+        ("ui.action", ITERATIONS),
+        ("background.cycle", ITERATIONS / CYCLE_INTERVAL),
+        ("connection.attempt", ITERATIONS / CYCLE_INTERVAL),
+        ("prewarm.schedule", ITERATIONS / JOB_INTERVAL),
+        ("prewarm.attempt", ITERATIONS / JOB_INTERVAL),
+    ] {
+        assert_eq!(counts.get(name), Some(&expected));
+    }
+    let producers = spans
+        .iter()
+        .filter(|span| span.name == "prewarm.schedule")
+        .map(|span| (span.span_id.clone(), span.trace_id.clone()))
+        .collect::<BTreeSet<_>>();
+    for consumer in spans.iter().filter(|span| span.name == "prewarm.attempt") {
+        assert_eq!(consumer.links.len(), 1);
+        let link = &consumer.links[0];
+        assert!(producers.contains(&(link.span_id.clone(), link.trace_id.clone())));
+    }
+    for action in spans.iter().filter(|span| span.name == "ui.action") {
+        assert_eq!(
+            string_attribute(&action.attributes, "cli.invocation.id"),
+            Some(invocation)
+        );
+    }
+    assert!(
+        spans
+            .iter()
+            .filter(|span| span.name == "background.cycle")
+            .all(|span| string_attribute(&span.attributes, "cli.invocation.id").is_none())
+    );
+    assert_eq!(screens.sequence(), (ITERATIONS * 2) as u64);
+    assert_eq!(screens.current_screen(), None);
+    assert_eq!(sessions.len(), ITERATIONS / JOB_INTERVAL);
+    assert_eq!(jackin_telemetry::identity::current_session(), None);
+
+    let metric_names = testbed.metric_names();
+    for expected in [
+        "background.cycles",
+        "background.cycle.duration",
+        "connection.active",
+        "connection.attempts",
+        "connection.duration",
+        "prewarm.active",
+        "prewarm.duration",
+        "prewarm.jobs",
+        "process.memory.usage",
+        "tokio.runtime.global_queue.depth",
+    ] {
+        assert!(
+            metric_names.iter().any(|name| name == expected),
+            "missing {expected}"
+        );
+    }
+    assert!(
+        !testbed
+            .metric_dimension_keys()
+            .iter()
+            .any(|key| key == "job.id")
+    );
+    assert_eq!(testbed.legacy_namespace_violations(), Vec::<String>::new());
+}
+
 #[test]
 #[ignore = "accelerated lifecycle soak runs in the scheduled soak profile"]
 fn soak_week_long_console_has_only_bounded_operations() -> anyhow::Result<()> {
@@ -104,90 +185,8 @@ fn soak_week_long_console_has_only_bounded_operations() -> anyhow::Result<()> {
         }
     }
     jackin_diagnostics::flush_wire_test_export()?;
-    assert!(started.elapsed() < Duration::from_secs(60));
-
-    let spans = testbed.spans();
-    let mut counts = BTreeMap::new();
-    for span in &spans {
-        *counts.entry(span.name.as_str()).or_insert(0_usize) += 1;
-        assert!(span.end_time_unix_nano >= span.start_time_unix_nano);
-        assert!(
-            span.end_time_unix_nano - span.start_time_unix_nano
-                < Duration::from_secs(1).as_nanos() as u64,
-            "unbounded {} span: {span:?}",
-            span.name
-        );
-    }
-    assert_eq!(counts.get("ui.action"), Some(&ITERATIONS));
-    assert_eq!(
-        counts.get("background.cycle"),
-        Some(&(ITERATIONS / CYCLE_INTERVAL))
-    );
-    assert_eq!(
-        counts.get("connection.attempt"),
-        Some(&(ITERATIONS / CYCLE_INTERVAL))
-    );
-    assert_eq!(
-        counts.get("prewarm.schedule"),
-        Some(&(ITERATIONS / JOB_INTERVAL))
-    );
-    assert_eq!(
-        counts.get("prewarm.attempt"),
-        Some(&(ITERATIONS / JOB_INTERVAL))
-    );
-
-    let producers = spans
-        .iter()
-        .filter(|span| span.name == "prewarm.schedule")
-        .map(|span| (span.span_id.clone(), span.trace_id.clone()))
-        .collect::<BTreeSet<_>>();
-    for consumer in spans.iter().filter(|span| span.name == "prewarm.attempt") {
-        assert_eq!(consumer.links.len(), 1);
-        let link = &consumer.links[0];
-        assert!(producers.contains(&(link.span_id.clone(), link.trace_id.clone())));
-    }
-    for action in spans.iter().filter(|span| span.name == "ui.action") {
-        assert_eq!(
-            string_attribute(&action.attributes, "cli.invocation.id"),
-            Some(invocation.as_str())
-        );
-    }
-    assert!(
-        spans
-            .iter()
-            .filter(|span| span.name == "background.cycle")
-            .all(|span| string_attribute(&span.attributes, "cli.invocation.id").is_none())
-    );
-    assert_eq!(screens.sequence(), (ITERATIONS * 2) as u64);
-    assert_eq!(screens.current_screen(), None);
-    assert_eq!(sessions.len(), ITERATIONS / JOB_INTERVAL);
-    assert_eq!(jackin_telemetry::identity::current_session(), None);
-
-    let metric_names = testbed.metric_names();
-    for expected in [
-        "background.cycles",
-        "background.cycle.duration",
-        "connection.active",
-        "connection.attempts",
-        "connection.duration",
-        "prewarm.active",
-        "prewarm.duration",
-        "prewarm.jobs",
-        "process.memory.usage",
-        "tokio.runtime.global_queue.depth",
-    ] {
-        assert!(
-            metric_names.iter().any(|name| name == expected),
-            "missing {expected}"
-        );
-    }
-    assert!(
-        !testbed
-            .metric_dimension_keys()
-            .iter()
-            .any(|key| key == "job.id")
-    );
-    assert_eq!(testbed.legacy_namespace_violations(), Vec::<String>::new());
+    assert!(started.elapsed() < Duration::from_mins(1));
+    assert_soak_export(&testbed, &screens, &sessions, &invocation);
     jackin_diagnostics::shutdown_capsule_tracing();
     drop(runtime_guard);
     Ok(())

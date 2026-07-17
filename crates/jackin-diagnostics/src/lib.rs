@@ -1,7 +1,7 @@
 //! jackin-diagnostics: governed telemetry and observability plumbing.
 //!
 //! **Architecture Invariant:** T2.
-//! Entry points are the registered event, operation, metric, and operator-notice facades.
+//! Entry point: [`init_tracing`] — installs the governed providers and subscriber.
 
 pub mod build_log;
 pub mod logging;
