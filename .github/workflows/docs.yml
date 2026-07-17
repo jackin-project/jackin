@@ -165,8 +165,9 @@ jobs:
 
       - name: Restore prepared CI xtask
         if: >-
-          github.event_name == 'push' ||
-          github.event_name == 'workflow_dispatch'
+          github.ref == 'refs/heads/main' &&
+          (github.event_name == 'push' ||
+           github.event_name == 'workflow_dispatch')
         uses: ./.github/actions/download-ci-xtask
         with:
           token: ${{ github.token }}
@@ -178,8 +179,9 @@ jobs:
       - name: Find semantically identical successful Pages deployment
         id: deployed
         if: >-
-          github.event_name == 'push' ||
-          github.event_name == 'workflow_dispatch'
+          github.ref == 'refs/heads/main' &&
+          (github.event_name == 'push' ||
+           github.event_name == 'workflow_dispatch')
         env:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}

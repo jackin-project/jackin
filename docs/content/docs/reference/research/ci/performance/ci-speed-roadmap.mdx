@@ -1186,6 +1186,17 @@ reporting is disabled without changing emitted or uploaded files; the complete
 local 1,080-route build fell from 55.3 to 49.7 seconds and passed without hidden
 SSR errors. The pushed GitHub run remains the acceptance measurement.
 
+Docs run `29578050289` passed the corrected 1,080-route contract. Its first
+attempt took 100 seconds: 56 seconds for the complete build, nine seconds for
+link validation, and 35 seconds of runner, setup, publication, and teardown
+overhead. An exact rerun is not a valid reuse probe because GitHub replaces the
+artifacts associated with the rerun attempt. A separate input-identical manual
+run `29578314469` did find the published semantic result and skipped every
+validation job, but its audit correctly rejected a cache miss emitted while
+preparing an xtask used only for main-branch deployment lookup. Feature-branch
+manual runs now skip that irrelevant deployment preparation; main push and
+manual runs retain the deployment-reuse check.
+
 Runs `29575485166` and `29575735792` validated the closure-key migration with
 one complete `jackin-xtask` job per lane. The first run populated the new key
 and finished at the one-minute boundary on both runners. The input-identical
