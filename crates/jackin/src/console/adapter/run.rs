@@ -978,8 +978,6 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
     let backend = ratatui::backend::CrosstermBackend::new(std::io::stdout());
     let mut terminal = ratatui::Terminal::new(backend)?;
     let mut mouse_state = ConsoleMouseState::new();
-    // Async event source: yields to the Tokio reactor between events so
-    // background tasks can progress instead of blocking for up to TICK_MS.
     let mut event_stream = crossterm::event::EventStream::new();
     // Animation tick: redraws the TUI when no events arrive so spinners,
     // the op-picker panel rain, and other animations stay live.
@@ -988,9 +986,7 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
     let mut pending_events = std::collections::VecDeque::new();
     let mut needs_redraw = true;
 
-    // The Debug-info dialog paints OSC 8 hyperlinks as a raw overlay outside the
-    // Ratatui buffer; when it closes we must force a full clear so that residue
-    // does not linger on the screen behind it.
+    // Force a full clear after the raw OSC 8 Debug-info overlay closes.
     let mut container_info_overlay_active = false;
 
     let mut screen_tracker = jackin_telemetry::ui::ScreenVisitTracker::new();
@@ -1034,10 +1030,7 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
             // buffer (marks every cell dirty) without emitting \x1b[2J — this
             // avoids the blank-screen flash that terminal.clear() causes while
             // still guaranteeing that every cell is redrawn next tick.
-            if let Ok(size) = terminal.size() {
-                let rect = ratatui::layout::Rect::new(0, 0, size.width, size.height);
-                drop(terminal.resize(rect));
-            }
+            invalidate_terminal(&mut terminal);
             needs_redraw = true;
             if let ConsoleStage::Manager(ms) = &mut state.stage {
                 crate::console::effects::apply_token_generate_result(ms, mint);
@@ -1146,4 +1139,11 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
     // reload when nothing was written (and still sees in-session mutations
     // that already updated `config` on successful save).
     Ok((result?, config))
+}
+
+fn invalidate_terminal<B: ratatui::backend::Backend>(terminal: &mut ratatui::Terminal<B>) {
+    if let Ok(size) = terminal.size() {
+        let rect = ratatui::layout::Rect::new(0, 0, size.width, size.height);
+        drop(terminal.resize(rect));
+    }
 }
