@@ -92,7 +92,7 @@ pub(crate) struct AttachResponseCompletion {
 }
 
 impl AttachResponseCompletion {
-    fn complete(self, write_result: &std::io::Result<()>) {
+    pub(crate) fn complete(self, write_result: &std::io::Result<()>) {
         if let Some(operation) = self.operation {
             operation.complete(
                 if write_result.is_ok() {

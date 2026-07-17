@@ -484,16 +484,42 @@ fn handle_pending_clipboard_transfer(
 
 fn handle_attach_control(mux: &mut Multiplexer, request: AttachControlRequest) {
     let request_id = request.request_id;
+    let method = match &request.operation {
+        AttachControlOperation::Detach => "jackin.capsule.Attach/Detach",
+        AttachControlOperation::FocusIn | AttachControlOperation::FocusOut => {
+            "jackin.capsule.Attach/Focus"
+        }
+        _ => "jackin.capsule.Attach/ClipboardImageTransfer",
+    };
     if matches!(
         jackin_telemetry::propagation::extract(&request.context),
         jackin_telemetry::propagation::ExtractOutcome::RejectRequest
     ) {
-        let _error = jackin_telemetry::record_error(RPC_ERROR);
+        let attrs = [
+            jackin_telemetry::Attr {
+                key: jackin_telemetry::schema::attrs::std_attrs::RPC_SYSTEM_NAME,
+                value: jackin_telemetry::Value::Str("jackin"),
+            },
+            jackin_telemetry::Attr {
+                key: jackin_telemetry::schema::attrs::std_attrs::RPC_METHOD,
+                value: jackin_telemetry::Value::Str(method),
+            },
+        ];
+        let operation =
+            jackin_telemetry::operation(&jackin_telemetry::operation::RPC_SERVER, &attrs).ok();
+        let record = || {
+            let _error = jackin_telemetry::record_error(RPC_ERROR);
+        };
+        if let Some(operation) = operation.as_ref() {
+            operation.span().in_scope(record);
+        } else {
+            record();
+        }
         send_attach_control_response(
             mux,
             request_id,
             AttachControlResult::InvalidCorrelation,
-            None,
+            operation,
         );
         return;
     }
@@ -501,13 +527,6 @@ fn handle_attach_control(mux: &mut Multiplexer, request: AttachControlRequest) {
         return;
     }
 
-    let method = match request.operation {
-        AttachControlOperation::Detach => "jackin.capsule.Attach/Detach",
-        AttachControlOperation::FocusIn | AttachControlOperation::FocusOut => {
-            "jackin.capsule.Attach/Focus"
-        }
-        _ => "jackin.capsule.Attach/ClipboardImageTransfer",
-    };
     let operation = match attach_control_operation(&request, method) {
         Ok(operation) => operation,
         Err(result) => {

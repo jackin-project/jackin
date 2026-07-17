@@ -231,21 +231,29 @@ fn conformance_exec_command_rpc_spans_exclude_command_and_args() {
 fn conformance_invalid_attach_control_has_no_detach_side_effect() {
     let mut mux = test_mux(24, 80);
     let (out_tx, mut out_rx) = mpsc::unbounded_channel();
-    let (completion_tx, _completion_rx) = mpsc::unbounded_channel();
+    let (completion_tx, mut completion_rx) = mpsc::unbounded_channel();
     mux.client_registry
         .client
         .attach_with_completions(out_tx, completion_tx);
-    handle_client_frame(
-        &mut mux,
-        ClientFrame::AttachControl(jackin_protocol::attach::AttachControlRequest {
-            request_id: 77,
-            context: jackin_protocol::TelemetryContext {
-                invocation_id: Some("not-a-uuid".to_owned()),
-                ..jackin_protocol::TelemetryContext::v1()
-            },
-            operation: jackin_protocol::attach::AttachControlOperation::Detach,
-        }),
-    );
+    let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
+    tracing::subscriber::with_default(subscriber, || {
+        handle_client_frame(
+            &mut mux,
+            ClientFrame::AttachControl(jackin_protocol::attach::AttachControlRequest {
+                request_id: 77,
+                context: jackin_protocol::TelemetryContext {
+                    invocation_id: Some("not-a-uuid".to_owned()),
+                    ..jackin_protocol::TelemetryContext::v1()
+                },
+                operation: jackin_protocol::attach::AttachControlOperation::Detach,
+            }),
+        );
+        completion_rx
+            .try_recv()
+            .expect("rejection must retain its RPC owner through delivery")
+            .complete(&Ok(()));
+    });
+    export.force_flush();
     assert!(!mux.client_registry.detach_requested);
     let encoded = out_rx
         .try_recv()
@@ -259,6 +267,37 @@ fn conformance_invalid_attach_control_has_no_detach_side_effect() {
             result: jackin_protocol::attach::AttachControlResult::InvalidCorrelation,
         })
     );
+    let spans = export.finished_spans();
+    assert_eq!(spans.len(), 1);
+    assert_eq!(spans[0].name, "rpc.server");
+    assert!(spans[0].error);
+    assert_eq!(export.typed_error_count("error.typed", "rpc_error"), 1);
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn conformance_invalid_attach_handshake_has_one_typed_write_owner() {
+    let (mut client, mut server) = UnixStream::pair().expect("attach socket pair");
+    let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
+    let guard = tracing::subscriber::set_default(subscriber);
+    reject_invalid_attach_handshake(&mut server).await;
+    let mut tag = [0_u8; 1];
+    client.read_exact(&mut tag).await.expect("shutdown tag");
+    let response = read_server_frame(&mut client, tag[0])
+        .await
+        .expect("read shutdown")
+        .expect("shutdown frame");
+    drop(guard);
+    export.force_flush();
+
+    assert!(matches!(
+        response,
+        ServerFrame::Shutdown { reason: Some(reason) } if reason == "invalid correlation"
+    ));
+    let spans = export.finished_spans();
+    assert_eq!(spans.len(), 1);
+    assert_eq!(spans[0].name, "rpc.server");
+    assert!(spans[0].error);
+    assert_eq!(export.typed_error_count("error.typed", "rpc_error"), 1);
 }
 
 #[test]
@@ -3919,7 +3958,7 @@ fn pointer_shape_updates_only_when_shape_changes() {
 #[tokio::test]
 async fn drain_and_exit_delivers_shutdown_before_closing_attach_socket() {
     let mut mux = test_mux(24, 80);
-    let (daemon_stream, mut client_stream) = tokio::net::UnixStream::pair().unwrap();
+    let (daemon_stream, mut client_stream) = UnixStream::pair().unwrap();
     let (out_tx, out_rx) = mpsc::unbounded_channel();
     let (_completion_tx, completion_rx) = mpsc::unbounded_channel();
     let (cmd_tx, _cmd_rx) = mpsc::unbounded_channel();

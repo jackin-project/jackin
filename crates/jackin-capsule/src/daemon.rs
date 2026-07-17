@@ -37,7 +37,7 @@ use std::time::Instant;
 
 use anyhow::Result;
 use jackin_protocol::CapsuleConfig;
-use jackin_telemetry::ResultTelemetryExt as _;
+use tokio::net::UnixStream;
 use tokio::signal::unix::{SignalKind, signal};
 use tokio::sync::mpsc;
 use tokio::time::{Duration, interval};
@@ -1104,6 +1104,40 @@ fn configured_escape_time() -> Duration {
     Duration::from_millis(ms)
 }
 
+async fn reject_invalid_attach_handshake(stream: &mut UnixStream) {
+    let attrs = [
+        jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::std_attrs::RPC_SYSTEM_NAME,
+            value: jackin_telemetry::Value::Str("jackin"),
+        },
+        jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::std_attrs::RPC_METHOD,
+            value: jackin_telemetry::Value::Str("jackin.capsule.Attach/Handshake"),
+        },
+    ];
+    let operation =
+        jackin_telemetry::operation(&jackin_telemetry::operation::RPC_SERVER, &attrs).ok();
+    let record = || {
+        let _error = jackin_telemetry::record_error(RPC_ERROR);
+    };
+    if let Some(operation) = operation.as_ref() {
+        operation.span().in_scope(record);
+    } else {
+        record();
+    }
+    let response = encode_server(ServerFrame::Shutdown {
+        reason: Some("invalid correlation".to_owned()),
+    });
+    let write_result = tokio::io::AsyncWriteExt::write_all(stream, &response).await;
+    if let Some(operation) = operation {
+        operation.complete(
+            jackin_telemetry::schema::enums::OutcomeValue::Failure,
+            Some(RPC_ERROR),
+        );
+    }
+    drop(write_result);
+}
+
 /// Run the multiplexer daemon. Called from `main` when PID == 1.
 #[expect(
     clippy::too_many_lines,
@@ -1290,14 +1324,7 @@ pub async fn run_daemon(
                     jackin_telemetry::propagation::ExtractOutcome::RejectRequest
                 ) {
                     let mut stream = stream;
-                    let response = encode_server(ServerFrame::Shutdown {
-                        reason: Some("invalid correlation".to_owned()),
-                    });
-                    drop(
-                        tokio::io::AsyncWriteExt::write_all(&mut stream, &response)
-                            .await
-                            .record_telemetry_error(RPC_ERROR),
-                    );
+                    reject_invalid_attach_handshake(&mut stream).await;
                     drop(client_permit);
                     continue;
                 }
