@@ -206,7 +206,7 @@ fn build(
     command.args(["--target", target.zigbuild]);
     command.env("JACKIN_VERSION_OVERRIDE", version);
     if package == ArchivePackage::Jackin {
-        // The host binary's dependency graph can otherwise feed Zig's Apple
+        // The host binary's dependency graph can otherwise feed the Zig Apple
         // linker more than 1,500 objects and exceed a container's descriptor
         // quota. A single release codegen unit also produces the intended
         // fully optimized distribution binary.
