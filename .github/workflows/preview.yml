@@ -268,6 +268,10 @@ jobs:
       RUSTUP_HOME: ${{ matrix.config.rustup_home }}
     strategy:
       fail-fast: false
+      # The GitHub lane owns the runner-independent result cache. Running the
+      # same crate's Velnor lane afterward lets a cold parity run reuse the
+      # completed archive instead of compiling identical inputs twice.
+      max-parallel: 1
       matrix:
         config: ${{ fromJSON((github.event_name != 'workflow_dispatch' || inputs.lanes == 'github') && '[{"lane":"GitHub","runner":"\"ubuntu-24.04\"","mise_data_dir":"/home/runner/.local/share/mise","rustup_home":"/home/runner/.rustup"}]' || inputs.lanes == 'velnor' && '[{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","mise_data_dir":"/opt/mise","rustup_home":"/opt/rustup"}]' || '[{"lane":"GitHub","runner":"\"ubuntu-24.04\"","mise_data_dir":"/home/runner/.local/share/mise","rustup_home":"/home/runner/.rustup"},{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","mise_data_dir":"/opt/mise","rustup_home":"/opt/rustup"}]') }}
     steps:
@@ -394,6 +398,7 @@ jobs:
       RUSTUP_HOME: ${{ matrix.config.rustup_home }}
     strategy:
       fail-fast: false
+      max-parallel: 1
       matrix:
         config: ${{ fromJSON((github.event_name != 'workflow_dispatch' || inputs.lanes == 'github') && '[{"lane":"GitHub","runner":"\"ubuntu-24.04\"","mise_data_dir":"/home/runner/.local/share/mise","rustup_home":"/home/runner/.rustup"}]' || inputs.lanes == 'velnor' && '[{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","mise_data_dir":"/opt/mise","rustup_home":"/opt/rustup"}]' || '[{"lane":"GitHub","runner":"\"ubuntu-24.04\"","mise_data_dir":"/home/runner/.local/share/mise","rustup_home":"/home/runner/.rustup"},{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","mise_data_dir":"/opt/mise","rustup_home":"/opt/rustup"}]') }}
     steps:
