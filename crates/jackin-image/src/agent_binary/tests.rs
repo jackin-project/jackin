@@ -10,6 +10,22 @@ use std::sync::{
 };
 use tracing_subscriber::layer::{Context, Layer};
 
+const DOWNLOAD_WIRE_CHILD: &str = "JACKIN_DOWNLOAD_WIRE_CHILD";
+const DOWNLOAD_WIRE_TEST: &str =
+    "agent_binary::tests::conformance_wire_download_cache_and_retry_are_bounded_and_private";
+
+fn dispatch_download_wire_child() -> Result<bool> {
+    if std::env::var_os(DOWNLOAD_WIRE_CHILD).is_some() {
+        return Ok(false);
+    }
+    let status = std::process::Command::new(std::env::current_exe()?)
+        .args(["--exact", DOWNLOAD_WIRE_TEST, "--nocapture"])
+        .env(DOWNLOAD_WIRE_CHILD, "1")
+        .status()?;
+    anyhow::ensure!(status.success(), "isolated download wire test failed");
+    Ok(true)
+}
+
 #[derive(Clone)]
 struct RetryCounter(Arc<AtomicUsize>);
 
@@ -122,6 +138,157 @@ async fn metadata_retry_uses_two_attempts_for_transient_failures() {
     assert!(err.contains("giving up after 2 attempts"), "{err}");
     assert!(err.contains("metadata attempt 2 failed"), "{err}");
     assert_eq!(retries.load(Ordering::Relaxed), 1);
+}
+
+#[test]
+fn conformance_wire_download_cache_and_retry_are_bounded_and_private() -> Result<()> {
+    if dispatch_download_wire_child()? {
+        return Ok(());
+    }
+
+    use std::io::{Read as _, Write as _};
+
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()?;
+    let testbed = runtime.block_on(async { jackin_otlp_testbed::Testbed::start() })?;
+    jackin_diagnostics::init_wire_test_export(
+        &testbed.endpoint(),
+        jackin_diagnostics::ServiceIdentity::HOST_ONE_SHOT,
+    )?;
+
+    let listener = std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))?;
+    let address = listener.local_addr()?;
+    let server = std::thread::spawn(move || -> std::io::Result<()> {
+        let (mut stream, _) = listener.accept()?;
+        let mut request = [0_u8; 1024];
+        let _read = stream.read(&mut request)?;
+        stream.write_all(
+            b"HTTP/1.1 200 OK\r\ncontent-length: 20\r\nconnection: close\r\n\r\nwire-private-payload",
+        )
+    });
+    let private_url = format!("http://{address}/wire-private-artifact?token=wire-private-token");
+    let client = jackin_docker::net::http_client(HeaderMap::new())?;
+    let payload = runtime.block_on(crate::telemetry_boundary::download_request(
+        crate::telemetry_boundary::DownloadRoute::AgentMetadata,
+        &private_url,
+        jackin_docker::net::get_text(&client, &private_url),
+    ))?;
+    assert_eq!(payload, "wire-private-payload");
+    server.join().expect("download server thread")?;
+
+    let failed_url = "https://downloads.claude.ai/wire-private-failed-artifact?secret=value";
+    let failure = runtime.block_on(crate::telemetry_boundary::download_request(
+        crate::telemetry_boundary::DownloadRoute::AgentArtifact,
+        failed_url,
+        async { Err::<(), _>(anyhow::anyhow!("wire-private-download-error")) },
+    ));
+    assert!(failure.is_err());
+    for route in [
+        crate::telemetry_boundary::DownloadRoute::CapsuleArtifact,
+        crate::telemetry_boundary::DownloadRoute::CapsuleManifest,
+        crate::telemetry_boundary::DownloadRoute::CapsuleManifestBundle,
+    ] {
+        runtime.block_on(crate::telemetry_boundary::download_request(
+            route,
+            "https://github.com/wire-private-capsule-route?token=wire-private-capsule-token",
+            async { Ok::<_, anyhow::Error>(()) },
+        ))?;
+    }
+    for name in jackin_telemetry::schema::enums::CacheName::ALL
+        .iter()
+        .copied()
+    {
+        for result in jackin_telemetry::schema::enums::CacheResult::ALL
+            .iter()
+            .copied()
+        {
+            crate::telemetry_boundary::cache_decision(name, result);
+        }
+    }
+    let attempts = Cell::new(0_u32);
+    let recovered = runtime.block_on(retry_metadata_with_backoff(2, Duration::ZERO, || {
+        let attempt = attempts.get() + 1;
+        attempts.set(attempt);
+        async move {
+            if attempt == 1 {
+                anyhow::bail!("wire-private-retry-error")
+            }
+            Ok(attempt)
+        }
+    }))?;
+    assert_eq!(recovered, 2);
+    jackin_diagnostics::flush_wire_test_export()?;
+    assert!(runtime.block_on(testbed.wait_for_all_signals(Duration::from_secs(2))));
+
+    let http_spans = testbed
+        .spans()
+        .into_iter()
+        .filter(|span| span.name == "http.client")
+        .collect::<Vec<_>>();
+    assert_eq!(http_spans.len(), 5);
+    let span_wire = format!("{http_spans:?}");
+    for expected in [
+        "/agent-binaries/{version}/metadata",
+        "/agent-binaries/{version}/{artifact}",
+        "/releases/download/{version}/{artifact}",
+        "/releases/download/{version}/capsule-manifest.json",
+        "/releases/download/{version}/capsule-manifest.json.bundle",
+        "downloads.claude.ai",
+        "github.com",
+        "success",
+        "failure",
+        "http_error",
+    ] {
+        assert!(
+            span_wire.contains(expected),
+            "missing {expected}: {span_wire}"
+        );
+    }
+    let events = testbed.log_records();
+    assert_eq!(
+        events
+            .iter()
+            .filter(|event| event.event_name == "cache.decision")
+            .count(),
+        25
+    );
+    assert_eq!(
+        events
+            .iter()
+            .filter(|event| event.event_name == "retry.scheduled")
+            .count(),
+        1
+    );
+    let metric_names = testbed.metric_names();
+    for expected in [
+        "cache.decisions",
+        "cache.decision.active",
+        "cache.decision.duration",
+    ] {
+        assert!(metric_names.iter().any(|name| name == expected));
+    }
+    let address = address.to_string();
+    let prohibited = [
+        private_url.as_str(),
+        address.as_str(),
+        "wire-private-artifact",
+        "wire-private-token",
+        "wire-private-payload",
+        "wire-private-failed-artifact",
+        "wire-private-download-error",
+        "wire-private-retry-error",
+        "wire-private-capsule-route",
+        "wire-private-capsule-token",
+    ];
+    assert_eq!(
+        testbed.prohibited_value_violations(&prohibited),
+        Vec::<String>::new()
+    );
+    assert_eq!(testbed.legacy_namespace_violations(), Vec::<String>::new());
+    jackin_diagnostics::shutdown_capsule_tracing();
+    Ok(())
 }
 
 fn release_fixture() -> AgentRelease {

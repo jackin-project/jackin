@@ -3094,6 +3094,7 @@ dependencies = [
  "jackin-diagnostics",
  "jackin-docker",
  "jackin-manifest",
+ "jackin-otlp-testbed",
  "jackin-process",
  "jackin-telemetry",
  "nix 0.31.3",
@@ -3347,6 +3348,7 @@ dependencies = [
 name = "jackin-usage"
 version = "0.6.0-dev"
 dependencies = [
+ "anyhow",
  "base64 0.22.1",
  "chrono",
  "criterion",
