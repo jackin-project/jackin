@@ -30,6 +30,27 @@ impl NotificationDispatcher for RecordingDispatcher {
     }
 }
 
+#[test]
+fn notification_dispatch_exports_spawn_failure_without_command_material() {
+    let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
+    tracing::subscriber::with_default(subscriber, || {
+        let mut dispatcher = StdNotificationDispatcher;
+        dispatcher
+            .dispatch(&NotificationCommand {
+                program: "operator-secret-missing-notifier".into(),
+                args: vec!["operator-secret-notification-body".into()],
+            })
+            .unwrap_err();
+    });
+    export.force_flush();
+
+    assert_eq!(export.finished_spans().len(), 1);
+    assert_eq!(export.error_span_count(), 1);
+    assert!(export.contains_span_text("process_spawn_error"));
+    assert!(!export.contains_span_text("operator-secret-missing-notifier"));
+    assert!(!export.contains_span_text("operator-secret-notification-body"));
+}
+
 fn layout() -> (tempfile::TempDir, JackinPaths, DaemonLayout) {
     let temp = tempfile::tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());

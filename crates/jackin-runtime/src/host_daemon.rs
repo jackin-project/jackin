@@ -209,16 +209,12 @@ impl NotificationDispatcher for StdNotificationDispatcher {
             .stdin_mode(jackin_process::StdioMode::Inherit)
             .stdout_mode(jackin_process::StdioMode::Inherit)
             .stderr_mode(jackin_process::StdioMode::Inherit);
-        let status = jackin_process::exec_sync(&request)
-            .with_context(|| format!("dispatching notification via {}", command.program))?;
+        let status = crate::process_telemetry::exec_sync(&request)
+            .context("dispatching notification command")?;
         if status.success {
             Ok(())
         } else {
-            bail!(
-                "notification command {} exited with code {:?}",
-                command.program,
-                status.code
-            )
+            bail!("notification command exited unsuccessfully")
         }
     }
 }

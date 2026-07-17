@@ -31,7 +31,9 @@ async fn credential_process_exports_typed_spawn_failure_without_program_or_argum
         "operator-secret-missing-program",
         ["operator-secret-argument"],
     );
-    exec_credential_process(&request).await.unwrap_err();
+    crate::process_telemetry::exec_async(&request)
+        .await
+        .unwrap_err();
     export.force_flush();
 
     assert_eq!(export.finished_spans().len(), 1);

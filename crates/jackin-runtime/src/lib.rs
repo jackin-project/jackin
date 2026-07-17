@@ -8,6 +8,7 @@ pub mod exec_host;
 #[cfg(unix)]
 pub mod host_daemon;
 pub mod isolation;
+mod process_telemetry;
 #[cfg(all(feature = "daemon-spike", unix))]
 pub mod reactive_daemon;
 pub mod runtime;
