@@ -388,7 +388,6 @@ jobs:
                   'file-size-budget.toml' \
                   'ratchet.toml' \
                   'rust-toolchain.toml' \
-                  'scripts/ci/check-agent-status-truthful.sh' \
                   'src/**' \
                   'test-layout-allowlist.toml' \
                   'tests/**'
@@ -889,7 +888,7 @@ jobs:
         with:
           contract-key: ${{ needs.changes.outputs.registry-contract }}
       - run: cargo shear --deny-warnings
-      - run: bash scripts/ci/check-agent-status-truthful.sh
+      - run: '"$CI_XTASK" lint agent-status-truth'
       - run: cargo deny check licenses bans sources
 
   test:

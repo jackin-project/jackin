@@ -6,6 +6,7 @@
 mod affected_crates;
 mod agent_files;
 mod agent_links;
+mod agent_status_truth;
 mod arch;
 mod ci;
 mod ci_audit;
@@ -174,6 +175,8 @@ enum LintCommand {
     /// Enforce that no `README.md` or `AGENTS.md` links to an `AGENTS.md`
     /// (both files are self-contained; nearest-`AGENTS.md`-wins).
     AgentLinks(agent_links::LintAgentLinksArgs),
+    /// Keep the agent-runtime-status roadmap claim bound to compiled wiring.
+    AgentStatusTruth(agent_status_truth::LintAgentStatusTruthArgs),
     /// Dependency-direction gate (Workstream 4).
     Arch(arch::LintArchArgs),
     /// Residual `/jackin` production-literal shrink-only gate.
@@ -234,6 +237,7 @@ fn run_lint(command: Option<LintCommand>, strict: bool) -> anyhow::Result<()> {
         Some(LintCommand::Tests(args)) => test_layout::run(args),
         Some(LintCommand::Agents(args)) => agent_files::run(args),
         Some(LintCommand::AgentLinks(args)) => agent_links::run(args),
+        Some(LintCommand::AgentStatusTruth(args)) => agent_status_truth::run(args),
         Some(LintCommand::Arch(args)) => arch::run(args),
         Some(LintCommand::ContainerPaths(args)) => container_paths_gate::run(args),
         Some(LintCommand::Headers(args)) => headers::run(args),
