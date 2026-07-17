@@ -158,9 +158,28 @@ proved the intended parity shape independently: the shared amd64 command took
 Follow-up run `29542190448` rejected repair from every downstream job: four
 Velnor jobs concurrently invoked mise against the same persistent install,
 downloaded six or seven Rust components apiece, and invalidated one another's
-toolchain directories. Warmup is now the only installation owner, the invalid
-rustup cache namespace advances to `v2`, and downstream jobs use the
-download-free `ci-toolchain activate` command against that prepared cache.
+toolchain directories. The invalid rustup cache namespace advances to `v2`,
+and `jackin-xtask ci-toolchain prepare` now installs the pinned toolchain
+directly through rustup, including every component and target declared in
+`rust-toolchain.toml`. Velnor persistence is runner-slot-local rather than
+shared across every matrix slot, so each downstream job validates and repairs
+only its own slot instead of assuming the warmup slot's filesystem is visible.
+GitHub restores the same toolchain contract from its portable cache.
+
+Runs `29542466968` through `29543767415` rejected, in sequence, an exact-cache
+hit that skipped rustup restoration, stale mise installations, cross-slot
+toolchain assumptions, a minimal Rust profile without `rustfmt`, and complex
+GitHub expression values embedded directly in a Velnor command. The final
+workflow normalizes runner expressions into ordinary environment inputs before
+calling Rust, so both runners execute the same argument contract. Population
+run `29544036610` then passed both lanes: every completed job stayed below one
+minute, the Velnor warmup was the high-water mark at `59s`, and the complete
+log audit found no third-party or source-tool compilation. Its four download
+and miss markers were the explicit first population of separate Velnor runner
+slots. Input-identical repeat `29544175664` completed in about `18s`; all
+substantive jobs were admitted as already proven, and the strict audit found
+zero download, compile, source-tool-build, or cache-miss markers across every
+job and step.
 
 Target archives remain the cold-population fallback, not the final warm path.
 An exact source-closure miss now consults a small per-crate latest-target
