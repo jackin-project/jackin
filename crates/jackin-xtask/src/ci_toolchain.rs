@@ -64,6 +64,23 @@ fn activate(version: &str, repair: bool) -> Result<()> {
         )?;
         return Ok(());
     }
+    if let Some(toolchain) = find_mise_toolchain(version, &config) {
+        append_github_file("GITHUB_PATH", &toolchain.join("bin").display().to_string())?;
+        append_github_file(
+            "GITHUB_ENV",
+            &format!("RUSTC={}", toolchain.join("bin/rustc").display()),
+        )?;
+        append_github_file(
+            "GITHUB_ENV",
+            &format!("RUSTDOC={}", toolchain.join("bin/rustdoc").display()),
+        )?;
+        writeln!(
+            io::stdout().lock(),
+            "prepared Rust toolchain {} from mise storage",
+            toolchain.display()
+        )?;
+        return Ok(());
+    }
 
     if !repair {
         bail!("prepared Rust toolchain {version} is unavailable; the warmup job must repair it");
@@ -87,6 +104,16 @@ fn activate(version: &str, repair: bool) -> Result<()> {
         return Ok(());
     }
     bail!("rustup reported Rust {version} installed, but its toolchain is incomplete")
+}
+
+fn find_mise_toolchain(version: &str, config: &ToolchainConfig) -> Option<PathBuf> {
+    let root = env::var_os("MISE_DATA_DIR").map(PathBuf::from)?;
+    mise_toolchain_at(&root, version, config)
+}
+
+fn mise_toolchain_at(root: &Path, version: &str, config: &ToolchainConfig) -> Option<PathBuf> {
+    let candidate = root.join("installs/rust").join(version);
+    valid_toolchain(&candidate, config).then_some(candidate)
 }
 
 fn pinned_config() -> Result<ToolchainConfig> {
