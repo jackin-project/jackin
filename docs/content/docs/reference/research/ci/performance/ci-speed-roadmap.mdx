@@ -1228,6 +1228,21 @@ exact-SHA crate-result alias that can only be consumed after the commit reaches
 `main`; they retain the semantic closure-key result, while `main` retains the
 exact-SHA alias needed by merged-commit consumers.
 
+Docs run `29581465702` exposed a second cold-cache failure mode after the
+page-tree serialization experiment: the generated 1,080-route site was valid,
+but the evicted lychee response cache forced a live sweep of 6,103 unique URLs
+and 216 external sites timed out. Run `29581818619` repopulated that proof and
+passed, but its one-time xtask contract build made both xtask consumers wait
+about one minute; the complete link job took 146 seconds and the repository
+link job took 71 seconds. Link-result invalidation now hashes the actual link
+surface of ordinary TypeScript/TSX implementation files while retaining full
+invalidation for link-producing helpers, MDX components, generated crate-page
+rewrites, metadata, public assets, and dependency/configuration inputs. Pure
+implementation and prose changes therefore reuse the existing successful link
+proof instead of rebuilding the site and repeating thousands of network
+requests. A changed link target still invalidates the proof and runs the whole
+unsharded validation.
+
 Runs `29575485166` and `29575735792` validated the closure-key migration with
 one complete `jackin-xtask` job per lane. The first run populated the new key
 and finished at the one-minute boundary on both runners. The input-identical
