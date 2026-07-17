@@ -4435,10 +4435,8 @@ fn gh_lookup_output_rejects_statusless_stderr_only_failure() {
     let err = command_output_or_lookup_error("gh", None, b"", b"HTTP 401: Bad credentials\n")
         .expect_err("stderr-only statusless gh output is a transient failure");
 
-    assert!(
-        err.to_string().contains("HTTP 401"),
-        "stderr detail should survive for logs: {err}"
-    );
+    assert_eq!(err, crate::pr_context::LookupError::Io);
+    assert!(!err.to_string().contains("HTTP 401"));
 }
 
 // Action-boundary dispatch tests: drive apply_action directly without

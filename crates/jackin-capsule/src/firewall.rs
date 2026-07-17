@@ -213,24 +213,24 @@ fn install_ipset(members: &BTreeSet<String>) -> Result<()> {
     let request = ExecRequest::new("ipset", ["restore", "-exist"])
         .stdin_mode(StdioMode::Capture)
         .stdout_mode(StdioMode::Inherit);
-    let mut child = jackin_process::spawn_sync(&request).context("spawning ipset restore")?;
+    let (operation, mut child) = crate::process_telemetry::spawn_sync(&request)
+        .context("spawning firewall restore process")?;
     let Some(mut stdin) = child.stdin.take() else {
-        bail!("ipset restore stdin was not piped");
+        operation.complete_io_failure();
+        bail!("firewall restore stdin was unavailable");
     };
-    stdin
-        .write_all(stream.as_bytes())
-        .context("writing ipset restore stream")?;
+    if stdin.write_all(stream.as_bytes()).is_err() {
+        operation.complete_io_failure();
+        bail!("writing firewall restore policy failed");
+    }
     drop(stdin);
-    let output = child
-        .wait_with_output()
-        .context("waiting for ipset restore")?;
+    let Ok(output) = child.wait_with_output() else {
+        operation.complete_io_failure();
+        bail!("waiting for firewall restore process failed");
+    };
+    operation.complete_status(output.status, &[0]);
     if !output.status.success() {
-        // Name the rejected member rather than reducing it to an exit code.
-        bail!(
-            "ipset restore failed ({}): {}",
-            output.status,
-            String::from_utf8_lossy(&output.stderr).trim()
-        );
+        bail!("firewall restore process exited unsuccessfully");
     }
     Ok(())
 }

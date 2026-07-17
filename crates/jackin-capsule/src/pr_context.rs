@@ -17,20 +17,28 @@ use termrock::text::sanitize_terminal_title;
 
 use std::sync::Arc;
 
-/// Distinguishes "lookup succeeded but command was unavailable / failed
-/// in a way that means we should not cache" from "lookup succeeded with
-/// data (or with no data)". The string carries an operator-readable
-/// reason for the daemon log; callers should not parse it.
-#[derive(Debug)]
+/// Stable failure classes for pull-request lookup. Operator-derived command
+/// output and response payloads never enter the error value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum LookupError {
-    Failed(String),
+    Spawn,
+    Timeout,
+    Io,
+    Nonzero,
+    Decode,
+    InvalidResponse,
 }
 
 impl std::fmt::Display for LookupError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            LookupError::Failed(reason) => f.write_str(reason),
-        }
+        f.write_str(match self {
+            Self::Spawn => "pull-request lookup process could not start",
+            Self::Timeout => "pull-request lookup process timed out",
+            Self::Io => "pull-request lookup process I/O failed",
+            Self::Nonzero => "pull-request lookup process exited unsuccessfully",
+            Self::Decode => "pull-request lookup response was invalid",
+            Self::InvalidResponse => "pull-request lookup response was not allowed",
+        })
     }
 }
 
@@ -66,9 +74,7 @@ struct GhStatusCheck {
 /// Run `gh <args>` and parse stdout as JSON. `Ok(None)` means
 /// `gh` exited successfully (per `accepted_statuses`) with empty
 /// stdout, the documented "no rows" shape. Failure is mapped to
-/// `LookupError::Failed` with the JSON parse error and a payload
-/// prefix so the operator can triage via governed telemetry /
-/// `--debug` traces.
+/// a stable decode failure without retaining the response payload.
 fn gh_json<T: serde::de::DeserializeOwned>(
     workdir: &Path,
     label: &str,
@@ -82,11 +88,8 @@ fn gh_json<T: serde::de::DeserializeOwned>(
     let Some(json) = json else {
         return Ok(None);
     };
-    let parsed = serde_json::from_str::<T>(&json).map_err(|e| {
-        LookupError::Failed(format!(
-            "{label} JSON parse failed: {e}; payload prefix: {json:.200?}"
-        ))
-    })?;
+    let _ = label;
+    let parsed = serde_json::from_str::<T>(&json).map_err(|_| LookupError::Decode)?;
     Ok(Some(parsed))
 }
 
@@ -134,10 +137,7 @@ pub(crate) fn gh_pull_request_info(
         .as_ref()
         .is_none_or(|u| !matches!(u.scheme(), "http" | "https"))
     {
-        return Err(LookupError::Failed(format!(
-            "gh pr list returned non-http(s) url: {:?}",
-            pr.url
-        )));
+        return Err(LookupError::InvalidResponse);
     }
     // Checks lookup is best-effort — a parse failure on checks should
     // not poison the PR cache. Demote any error to `None` checks.
@@ -282,100 +282,87 @@ pub(crate) fn command_stdout_trimmed(command: &mut Command) -> Option<String> {
 
 /// Result-returning command runner that distinguishes success (returns
 /// `Ok(Some(stdout))` or `Ok(None)` for empty stdout) from genuine
-/// failure (returns `Err(LookupError::Failed)`). Used by the gh
+/// failure (returns a typed [`LookupError`]). Used by the gh
 /// helpers so cache-poisoning can be avoided.
 ///
 /// Differences from `command_stdout_trimmed_with_timeout`:
 /// - stdin is set to `Stdio::null()` so a misbehaving subprocess never
 ///   blocks reading from the daemon's stdin awaiting a prompt.
-/// - stderr is captured into a bounded buffer and surfaced in the error
-///   reason — the operator can see "gh: not logged in" / "HTTP 401"
-///   when triaging via governed telemetry.
+/// - stderr is drained into a bounded buffer solely to prevent child blocking;
+///   it is never retained in errors or telemetry.
 fn run_command_capturing_output(
     request: &jackin_process::ExecRequest,
     timeout: Duration,
     accepted_statuses: &[i32],
 ) -> Result<Option<String>, LookupError> {
-    let program = request.program.display().to_string();
-    let mut child = match jackin_process::spawn_sync(request) {
-        Ok(child) => child,
-        Err(e) => {
-            return Err(LookupError::Failed(format!("{program}: spawn failed: {e}")));
-        }
+    let Ok((operation, mut child)) = crate::process_telemetry::spawn_sync(request) else {
+        return Err(LookupError::Spawn);
     };
-    let stdout = child
-        .stdout
-        .take()
-        .ok_or_else(|| LookupError::Failed(format!("{program}: stdout pipe missing")))?;
-    let stderr = child
-        .stderr
-        .take()
-        .ok_or_else(|| LookupError::Failed(format!("{program}: stderr pipe missing")))?;
-    let stdout_label: &'static str = "stdout";
-    let stderr_label: &'static str = "stderr";
-    let stdout_reader = read_pipe_bounded(program.clone(), stdout_label, stdout, 64 * 1024);
-    let stderr_reader = read_pipe_bounded(program.clone(), stderr_label, stderr, 4 * 1024);
-    let status_success: Option<bool> = match wait_child_with_timeout(&mut child, &program, timeout)
-    {
-        WaitOutcome::Exited(status) => Some(
-            status
-                .code()
-                .is_some_and(|code| accepted_statuses.contains(&code)),
-        ),
+    let Some(stdout) = child.stdout.take() else {
+        operation.complete_io_failure();
+        return Err(LookupError::Io);
+    };
+    let Some(stderr) = child.stderr.take() else {
+        operation.complete_io_failure();
+        return Err(LookupError::Io);
+    };
+    let stdout_reader = read_pipe_bounded(stdout, 64 * 1024);
+    let stderr_reader = read_pipe_bounded(stderr, 4 * 1024);
+    let status = match wait_child_with_timeout(&mut child, timeout) {
+        WaitOutcome::Exited(status) => Some(status),
         WaitOutcome::Reaped => None,
         WaitOutcome::TimedOut => {
             drop(stdout_reader.join());
             drop(stderr_reader.join());
-            return Err(LookupError::Failed(format!(
-                "{program}: timed out after {timeout:?}"
-            )));
+            operation.complete_timeout();
+            return Err(LookupError::Timeout);
         }
-        WaitOutcome::Failed(e) => {
+        WaitOutcome::Failed => {
             drop(stdout_reader.join());
             drop(stderr_reader.join());
-            return Err(LookupError::Failed(format!(
-                "{program}: try_wait failed: {e} (errno={:?})",
-                e.raw_os_error()
-            )));
+            operation.complete_io_failure();
+            return Err(LookupError::Io);
         }
     };
-    let stdout_bytes = stdout_reader
-        .join()
-        .map_err(|_| LookupError::Failed(format!("{program}: stdout reader panicked")))?
-        .map_err(|e| LookupError::Failed(format!("{program}: stdout read failed: {e}")))?;
-    let stderr_bytes = stderr_reader
-        .join()
-        .unwrap_or(Ok(Vec::new()))
-        .unwrap_or_default();
-    command_output_or_lookup_error(&program, status_success, &stdout_bytes, &stderr_bytes)
+    let Ok(Ok(stdout_bytes)) = stdout_reader.join() else {
+        operation.complete_io_failure();
+        return Err(LookupError::Io);
+    };
+    let Ok(Ok(stderr_bytes)) = stderr_reader.join() else {
+        operation.complete_io_failure();
+        return Err(LookupError::Io);
+    };
+    let status_success = status.as_ref().map(|status| {
+        status
+            .code()
+            .is_some_and(|code| accepted_statuses.contains(&code))
+    });
+    let result = command_output_or_lookup_error("gh", status_success, &stdout_bytes, &stderr_bytes);
+    match status {
+        Some(status) => operation.complete_status(status, accepted_statuses),
+        None if result.is_ok() => operation.complete_reaped(),
+        None => operation.complete_io_failure(),
+    }
+    result
 }
 
 pub(crate) fn command_output_or_lookup_error(
-    program: &str,
+    _program: &str,
     status_success: Option<bool>,
     stdout_bytes: &[u8],
     stderr_bytes: &[u8],
 ) -> Result<Option<String>, LookupError> {
     let stderr_nonempty = stderr_bytes.iter().any(|b| !b.is_ascii_whitespace());
-    let trimmed_stderr = || String::from_utf8_lossy(stderr_bytes).trim().to_owned();
     let value = String::from_utf8_lossy(stdout_bytes).trim().to_owned();
     match status_success {
-        Some(false) => Err(LookupError::Failed(format!(
-            "{program}: non-accepted status; stderr: {}",
-            trimmed_stderr()
-        ))),
-        None if value.is_empty() && stderr_nonempty => Err(LookupError::Failed(format!(
-            "{program}: status unavailable; stderr: {}",
-            trimmed_stderr()
-        ))),
+        Some(false) => Err(LookupError::Nonzero),
+        None if value.is_empty() && stderr_nonempty => Err(LookupError::Io),
         _ if value.is_empty() => Ok(None),
         _ => Ok(Some(value)),
     }
 }
 
 fn read_pipe_bounded<R: std::io::Read + Send + 'static>(
-    program: String,
-    stream: &'static str,
     mut pipe: R,
     cap: usize,
 ) -> std::thread::JoinHandle<std::io::Result<Vec<u8>>> {
@@ -384,7 +371,6 @@ fn read_pipe_bounded<R: std::io::Read + Send + 'static>(
         move || -> std::io::Result<Vec<u8>> {
             let mut bytes = Vec::with_capacity(cap.min(16 * 1024));
             let mut buf = [0u8; 4096];
-            let mut truncated = false;
             loop {
                 let n = pipe.read(&mut buf)?;
                 if n == 0 {
@@ -395,16 +381,9 @@ fn read_pipe_bounded<R: std::io::Read + Send + 'static>(
                 if bytes.len() >= cap {
                     // Cap reached; drain remaining bytes so the writer
                     // doesn't block on SIGPIPE waiting for us.
-                    truncated = true;
                     while pipe.read(&mut buf)? > 0 {}
                     break;
                 }
-            }
-            if truncated {
-                jackin_diagnostics::telemetry_debug!(
-                    "capsule",
-                    "read_pipe_bounded[{program} {stream}]: capped at {cap} bytes; downstream parsing may fail"
-                );
             }
             Ok(bytes)
         },

@@ -109,43 +109,30 @@ pub(crate) fn command_in_path(name: &str) -> bool {
     let request = jackin_process::ExecRequest::new(name, ["--version"])
         .stdout_mode(jackin_process::StdioMode::Null)
         .stderr_mode(jackin_process::StdioMode::Null);
-    let mut child = match jackin_process::spawn_sync(&request) {
-        Ok(child) => child,
-        Err(e) => {
-            jackin_diagnostics::telemetry_info!(
-                "capsule",
-                "command_in_path[{name}]: spawn failed: {e}; treating as unavailable for the daemon lifetime"
-            );
-            return false;
-        }
+    let Ok((operation, mut child)) = crate::process_telemetry::spawn_sync(&request) else {
+        return false;
     };
-    let label = format!("command_in_path[{name}]");
-    match wait_child_with_timeout(&mut child, &label, GIT_CONTEXT_COMMAND_TIMEOUT) {
-        WaitOutcome::Exited(status) if status.success() => true,
+    match wait_child_with_timeout(&mut child, GIT_CONTEXT_COMMAND_TIMEOUT) {
+        WaitOutcome::Exited(status) if status.success() => {
+            operation.complete_status(status, &[0]);
+            true
+        }
         WaitOutcome::Exited(status) => {
-            jackin_diagnostics::telemetry_debug!(
-                "capsule",
-                "command_in_path[{name}]: --version exited non-zero ({:?}); treating as unavailable",
-                status.code()
-            );
+            operation.complete_status(status, &[0]);
             false
         }
         WaitOutcome::Reaped => {
-            jackin_diagnostics::telemetry_info!(
-                "capsule",
-                "command_in_path[{name}]: child was reaped before status collection; treating as available"
-            );
+            operation.complete_reaped();
             true
         }
-        WaitOutcome::Failed(e) => {
-            jackin_diagnostics::telemetry_info!(
-                "capsule",
-                "command_in_path[{name}]: try_wait failed: {e} (errno={:?}); treating as unavailable for the daemon lifetime",
-                e.raw_os_error()
-            );
+        WaitOutcome::Failed => {
+            operation.complete_io_failure();
             false
         }
-        WaitOutcome::TimedOut => false,
+        WaitOutcome::TimedOut => {
+            operation.complete_timeout();
+            false
+        }
     }
 }
 

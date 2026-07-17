@@ -69,18 +69,13 @@ pub(crate) enum WaitOutcome {
     /// attempted `kill()` + `wait()` (best-effort) before returning.
     TimedOut,
     /// `try_wait` itself returned a non-`ECHILD` error.
-    Failed(std::io::Error),
+    Failed,
 }
 
 /// Poll `child.try_wait()` at `COMMAND_PROBE_POLL_INTERVAL` until it
 /// finishes, the kernel reaps it, the deadline fires, or `try_wait`
-/// itself errors. `label` is only used in the "kill after timeout
-/// failed" log so the line names the program that lingered.
-pub(crate) fn wait_child_with_timeout(
-    child: &mut Child,
-    label: &str,
-    timeout: Duration,
-) -> WaitOutcome {
+/// itself errors.
+pub(crate) fn wait_child_with_timeout(child: &mut Child, timeout: Duration) -> WaitOutcome {
     let started = Instant::now();
     loop {
         match child.try_wait() {
@@ -89,16 +84,10 @@ pub(crate) fn wait_child_with_timeout(
             Err(e) if e.raw_os_error() == Some(nix::errno::Errno::ECHILD as i32) => {
                 return WaitOutcome::Reaped;
             }
-            Err(e) => return WaitOutcome::Failed(e),
+            Err(_) => return WaitOutcome::Failed,
         }
         if started.elapsed() >= timeout {
-            if let Err(e) = child.kill() {
-                jackin_diagnostics::telemetry_info!(
-                    "capsule",
-                    "{label}: timeout ({timeout:?}) and child.kill() failed: {e} (errno={:?})",
-                    e.raw_os_error()
-                );
-            }
+            drop(child.kill());
             drop(child.wait());
             return WaitOutcome::TimedOut;
         }
@@ -114,18 +103,13 @@ pub(crate) fn command_stdout_trimmed_with_timeout(
     request: &jackin_process::ExecRequest,
     timeout: Duration,
 ) -> Option<String> {
-    let mut child = match jackin_process::spawn_sync(request) {
-        Ok(child) => child,
-        Err(e) => {
-            jackin_diagnostics::telemetry_info!(
-                "capsule",
-                "command spawn failed ({}): {e}",
-                request.program.display()
-            );
-            return None;
-        }
+    let Ok((operation, mut child)) = crate::process_telemetry::spawn_sync(request) else {
+        return None;
     };
-    let mut stdout = child.stdout.take()?;
+    let Some(mut stdout) = child.stdout.take() else {
+        operation.complete_io_failure();
+        return None;
+    };
     let stdout_reader = jackin_telemetry::spawn::thread_stream(
         "process.stdout",
         move || -> std::io::Result<Vec<u8>> {
@@ -134,9 +118,8 @@ pub(crate) fn command_stdout_trimmed_with_timeout(
             Ok(bytes)
         },
     );
-    let label = request.program.display().to_string();
-    let status_success: Option<bool> = match wait_child_with_timeout(&mut child, &label, timeout) {
-        WaitOutcome::Exited(status) => Some(status.code() == Some(0)),
+    let status = match wait_child_with_timeout(&mut child, timeout) {
+        WaitOutcome::Exited(status) => Some(status),
         // Status is lost; trust the stdout pipe (callers like the
         // Container info dialog would otherwise show empty fields for
         // healthy git/gh commands).
@@ -147,42 +130,38 @@ pub(crate) fn command_stdout_trimmed_with_timeout(
             // the join the OS-thread is leaked across every timeout
             // firing.
             drop(stdout_reader.join());
+            operation.complete_timeout();
             return None;
         }
-        WaitOutcome::Failed(e) => {
-            jackin_diagnostics::telemetry_info!(
-                "capsule",
-                "command try_wait failed ({}): {e} (errno={:?})",
-                request.program.display(),
-                e.raw_os_error()
-            );
+        WaitOutcome::Failed => {
             drop(stdout_reader.join());
+            operation.complete_io_failure();
             return None;
         }
     };
-    if status_success == Some(false) {
-        jackin_diagnostics::telemetry_debug!(
-            "capsule",
-            "command exited non-accepted status ({}); stderr was nulled so reason is unavailable",
-            request.program.display()
-        );
-        return None;
-    }
+    let status = match status {
+        Some(status) if !status.success() => {
+            operation.complete_status(status, &[0]);
+            return None;
+        }
+        status => status,
+    };
     let stdout = match stdout_reader.join() {
         Ok(Ok(bytes)) => bytes,
-        Ok(Err(e)) => {
-            jackin_diagnostics::telemetry_info!(
-                "capsule",
-                "command stdout read failed: {e} (errno={:?})",
-                e.raw_os_error()
-            );
+        Ok(Err(_)) => {
+            operation.complete_io_failure();
             return None;
         }
         Err(_) => {
-            jackin_diagnostics::telemetry_info!("capsule", "command stdout reader thread panicked");
+            operation.complete_io_failure();
             return None;
         }
     };
+    if let Some(status) = status {
+        operation.complete_status(status, &[0]);
+    } else {
+        operation.complete_reaped();
+    }
     let value = String::from_utf8_lossy(&stdout).trim().to_owned();
     if value.is_empty() { None } else { Some(value) }
 }
