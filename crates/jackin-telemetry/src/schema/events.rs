@@ -1283,7 +1283,7 @@ pub const TRUST_DECISION_DEF: super::EventMetadata = super::EventMetadata {
         },
     ],
 };
-// registry: attributes=app.screen.id:required,cli.invocation.id:recommended,session.id:recommended,ui.navigation.sequence:required,ui.screen.visit.id:required
+// registry: attributes=app.screen.id:required,app.screen.name:required,cli.invocation.id:recommended,session.id:recommended,ui.navigation.sequence:required,ui.screen.visit.id:required
 pub const UI_SCREEN_ENTERED: &str = "ui.screen.entered";
 pub const UI_SCREEN_ENTERED_DEF: super::EventMetadata = super::EventMetadata {
     name: UI_SCREEN_ENTERED,
@@ -1302,6 +1302,12 @@ pub const UI_SCREEN_ENTERED_DEF: super::EventMetadata = super::EventMetadata {
                 "launch.progress",
                 "capsule",
             ],
+        },
+        super::AttributeRequirement {
+            name: "app.screen.name",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Required,
+            allowed_values: &[],
         },
         super::AttributeRequirement {
             name: "cli.invocation.id",
@@ -1329,7 +1335,7 @@ pub const UI_SCREEN_ENTERED_DEF: super::EventMetadata = super::EventMetadata {
         },
     ],
 };
-// registry: attributes=app.screen.id:required,cli.invocation.id:recommended,session.id:recommended,ui.navigation.sequence:required,ui.screen.visit.id:required,ui.transition.reason:required
+// registry: attributes=app.screen.id:required,app.screen.name:required,cli.invocation.id:recommended,session.id:recommended,ui.navigation.sequence:required,ui.screen.visit.id:required,ui.transition.reason:required
 pub const UI_SCREEN_EXITED: &str = "ui.screen.exited";
 pub const UI_SCREEN_EXITED_DEF: super::EventMetadata = super::EventMetadata {
     name: UI_SCREEN_EXITED,
@@ -1348,6 +1354,12 @@ pub const UI_SCREEN_EXITED_DEF: super::EventMetadata = super::EventMetadata {
                 "launch.progress",
                 "capsule",
             ],
+        },
+        super::AttributeRequirement {
+            name: "app.screen.name",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Required,
+            allowed_values: &[],
         },
         super::AttributeRequirement {
             name: "cli.invocation.id",
@@ -1391,7 +1403,7 @@ pub const UI_SCREEN_EXITED_DEF: super::EventMetadata = super::EventMetadata {
         },
     ],
 };
-// registry: attributes=app.widget.id:required,cli.invocation.id:recommended,session.id:recommended
+// registry: attributes=app.widget.id:required,app.widget.name:required,cli.invocation.id:recommended,session.id:recommended
 pub const UI_WIDGET_FOCUSED: &str = "ui.widget.focused";
 pub const UI_WIDGET_FOCUSED_DEF: super::EventMetadata = super::EventMetadata {
     name: UI_WIDGET_FOCUSED,
@@ -1400,6 +1412,12 @@ pub const UI_WIDGET_FOCUSED_DEF: super::EventMetadata = super::EventMetadata {
     attributes: &[
         super::AttributeRequirement {
             name: "app.widget.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Required,
+            allowed_values: &[],
+        },
+        super::AttributeRequirement {
+            name: "app.widget.name",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Required,
             allowed_values: &[],
@@ -1418,7 +1436,7 @@ pub const UI_WIDGET_FOCUSED_DEF: super::EventMetadata = super::EventMetadata {
         },
     ],
 };
-// registry: attributes=app.widget.id:required,cli.invocation.id:recommended,session.id:recommended
+// registry: attributes=app.widget.id:required,app.widget.name:required,cli.invocation.id:recommended,session.id:recommended
 pub const UI_WIDGET_UNFOCUSED: &str = "ui.widget.unfocused";
 pub const UI_WIDGET_UNFOCUSED_DEF: super::EventMetadata = super::EventMetadata {
     name: UI_WIDGET_UNFOCUSED,
@@ -1427,6 +1445,12 @@ pub const UI_WIDGET_UNFOCUSED_DEF: super::EventMetadata = super::EventMetadata {
     attributes: &[
         super::AttributeRequirement {
             name: "app.widget.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Required,
+            allowed_values: &[],
+        },
+        super::AttributeRequirement {
+            name: "app.widget.name",
             value_type: super::ValueType::String,
             requirement: super::RequirementLevel::Required,
             allowed_values: &[],

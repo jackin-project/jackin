@@ -238,7 +238,15 @@ fn transition_exports_destination_under_action() {
         .unwrap();
     assert_eq!(transition.parent_span_id, action.span_context.span_id());
     assert_eq!(
+        span_attr(transition, schema::attrs::UI_TRANSITION_FROM_SCREEN_ID).as_deref(),
+        Some("workspace.list")
+    );
+    assert_eq!(
         span_attr(transition, schema::attrs::std_attrs::APP_SCREEN_ID).as_deref(),
+        Some("workspace.editor")
+    );
+    assert_eq!(
+        span_attr(transition, schema::attrs::std_attrs::APP_SCREEN_NAME).as_deref(),
         Some("workspace.editor")
     );
     assert_eq!(

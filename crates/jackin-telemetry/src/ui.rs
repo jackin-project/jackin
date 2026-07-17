@@ -223,7 +223,15 @@ impl ScreenVisitTracker {
         }
         let transition_attrs = [
             Attr {
+                key: schema::attrs::UI_TRANSITION_FROM_SCREEN_ID,
+                value: Value::Str(previous.as_str()),
+            },
+            Attr {
                 key: schema::attrs::std_attrs::APP_SCREEN_ID,
+                value: Value::Str(screen.as_str()),
+            },
+            Attr {
+                key: schema::attrs::std_attrs::APP_SCREEN_NAME,
                 value: Value::Str(screen.as_str()),
             },
             Attr {
@@ -286,6 +294,10 @@ impl ScreenVisitTracker {
                 value: Value::Str(screen.as_str()),
             },
             Attr {
+                key: schema::attrs::std_attrs::APP_SCREEN_NAME,
+                value: Value::Str(screen.as_str()),
+            },
+            Attr {
                 key: schema::attrs::UI_SCREEN_VISIT_ID,
                 value: Value::Str(&id),
             },
@@ -314,6 +326,10 @@ impl ScreenVisitTracker {
         let attrs = [
             Attr {
                 key: schema::attrs::std_attrs::APP_SCREEN_ID,
+                value: Value::Str(visit.screen.as_str()),
+            },
+            Attr {
+                key: schema::attrs::std_attrs::APP_SCREEN_NAME,
                 value: Value::Str(visit.screen.as_str()),
             },
             Attr {
@@ -370,10 +386,16 @@ pub struct WidgetFocusTracker {
 impl WidgetFocusTracker {
     pub fn focus(&mut self, widget: &'static str) -> Result<(), Rejection> {
         self.unfocus()?;
-        let attrs = [Attr {
-            key: schema::attrs::std_attrs::APP_WIDGET_ID,
-            value: Value::Str(widget),
-        }];
+        let attrs = [
+            Attr {
+                key: schema::attrs::std_attrs::APP_WIDGET_ID,
+                value: Value::Str(widget),
+            },
+            Attr {
+                key: schema::attrs::std_attrs::APP_WIDGET_NAME,
+                value: Value::Str(widget),
+            },
+        ];
         emit_event(
             &crate::event::UI_WIDGET_FOCUSED,
             FieldSet::new(&attrs, None),
@@ -389,15 +411,22 @@ impl WidgetFocusTracker {
         let Some(focus) = self.current.take() else {
             return Ok(());
         };
-        let attrs = [Attr {
-            key: schema::attrs::std_attrs::APP_WIDGET_ID,
-            value: Value::Str(focus.widget),
-        }];
+        let attrs = [
+            Attr {
+                key: schema::attrs::std_attrs::APP_WIDGET_ID,
+                value: Value::Str(focus.widget),
+            },
+            Attr {
+                key: schema::attrs::std_attrs::APP_WIDGET_NAME,
+                value: Value::Str(focus.widget),
+            },
+        ];
         emit_event(
             &crate::event::UI_WIDGET_UNFOCUSED,
             FieldSet::new(&attrs, None),
         )?;
-        histogram(&metric::UI_FOCUS_DURATION).record(focus.focused.elapsed().as_secs_f64(), &attrs)
+        histogram(&metric::UI_FOCUS_DURATION)
+            .record(focus.focused.elapsed().as_secs_f64(), &attrs[..1])
     }
 
     #[must_use]

@@ -12,13 +12,12 @@ impl Multiplexer {
     const PANE_WIDGET: &'static str = "capsule.pane";
     const TAB_BAR_WIDGET: &'static str = "capsule.tab";
     const PALETTE_WIDGET: &'static str = "capsule.command_palette";
-    const DIALOG_WIDGET: &'static str = "capsule.dialog";
 
     pub(super) fn sync_widget_focus(&mut self) {
         let target = if matches!(self.dialog_top(), Some(Dialog::CommandPalette { .. })) {
             Self::PALETTE_WIDGET
         } else if self.dialog_open() {
-            Self::DIALOG_WIDGET
+            Self::PANE_WIDGET
         } else if self.render.tab_bar_focused {
             Self::TAB_BAR_WIDGET
         } else {

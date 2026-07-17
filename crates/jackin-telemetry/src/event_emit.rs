@@ -621,6 +621,7 @@ fn emit_ui_screen_entered(def: &'static EventDef, fields: FieldSet<'_>) {
         fields,
         [
             ("app.screen.id", field_app_screen_id, String),
+            ("app.screen.name", field_app_screen_name, String),
             ("cli.invocation.id", field_cli_invocation_id, String),
             ("session.id", field_session_id, String),
             (
@@ -640,6 +641,7 @@ fn emit_ui_screen_exited(def: &'static EventDef, fields: FieldSet<'_>) {
         fields,
         [
             ("app.screen.id", field_app_screen_id, String),
+            ("app.screen.name", field_app_screen_name, String),
             ("cli.invocation.id", field_cli_invocation_id, String),
             ("session.id", field_session_id, String),
             (
@@ -660,6 +662,7 @@ fn emit_ui_widget_focused(def: &'static EventDef, fields: FieldSet<'_>) {
         fields,
         [
             ("app.widget.id", field_app_widget_id, String),
+            ("app.widget.name", field_app_widget_name, String),
             ("cli.invocation.id", field_cli_invocation_id, String),
             ("session.id", field_session_id, String),
         ]
@@ -673,6 +676,7 @@ fn emit_ui_widget_unfocused(def: &'static EventDef, fields: FieldSet<'_>) {
         fields,
         [
             ("app.widget.id", field_app_widget_id, String),
+            ("app.widget.name", field_app_widget_name, String),
             ("cli.invocation.id", field_cli_invocation_id, String),
             ("session.id", field_session_id, String),
         ]

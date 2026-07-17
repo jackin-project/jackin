@@ -134,6 +134,7 @@ values = ["v1alpha1", "v1alpha2", "v1alpha3", "v1alpha4", "v1alpha5", "v1alpha6"
 [rust_type_overrides]
 "outcome" = "OutcomeValue"
 "ui.transition.reason" = "TransitionReason"
+"ui.transition.from_screen.id" = "ScreenId"
 
 # Fixed seconds buckets for every governed duration histogram. Keeping the
 # boundaries in registry metadata makes the SDK view and generated definitions

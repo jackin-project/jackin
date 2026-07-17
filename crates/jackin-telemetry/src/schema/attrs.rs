@@ -646,6 +646,21 @@ pub const UI_SCREEN_VISIT_ID_DEF: super::AttributeMetadata = super::AttributeMet
     allowed_values: &[],
 };
 // registry-type: enum
+pub const UI_TRANSITION_FROM_SCREEN_ID: &str = "ui.transition.from_screen.id";
+pub const UI_TRANSITION_FROM_SCREEN_ID_DEF: super::AttributeMetadata = super::AttributeMetadata {
+    name: UI_TRANSITION_FROM_SCREEN_ID,
+    description: "Stable previous-screen identifier for a screen transition.",
+    value_type: super::ValueType::String,
+    allowed_values: &[
+        "workspace.list",
+        "workspace.editor",
+        "settings",
+        "workspace.create",
+        "launch.progress",
+        "capsule",
+    ],
+};
+// registry-type: enum
 pub const UI_TRANSITION_REASON: &str = "ui.transition.reason";
 pub const UI_TRANSITION_REASON_DEF: super::AttributeMetadata = super::AttributeMetadata {
     name: UI_TRANSITION_REASON,
@@ -723,6 +738,7 @@ pub const ALL_KEYS: &[&str] = &[
     UI_ACTION_NAME,
     UI_NAVIGATION_SEQUENCE,
     UI_SCREEN_VISIT_ID,
+    UI_TRANSITION_FROM_SCREEN_ID,
     UI_TRANSITION_REASON,
     WORKSPACE_ISOLATION_MODE,
 ];
@@ -778,6 +794,7 @@ pub const ALL_DEFINITIONS: &[super::AttributeMetadata] = &[
     UI_ACTION_NAME_DEF,
     UI_NAVIGATION_SEQUENCE_DEF,
     UI_SCREEN_VISIT_ID_DEF,
+    UI_TRANSITION_FROM_SCREEN_ID_DEF,
     UI_TRANSITION_REASON_DEF,
     WORKSPACE_ISOLATION_MODE_DEF,
 ];

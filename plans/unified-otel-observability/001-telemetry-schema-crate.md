@@ -70,6 +70,7 @@ The closed registry comes verbatim from the roadmap item (`docs/content/docs/roa
 | `ui.screen.visit.id` | opaque UUID string |
 | `ui.navigation.sequence` | int (monotonic per session) |
 | `ui.transition.reason` | enum: `action`, `launch`, `attach`, `detach`, `back`, `cancel`, `completion`, `failure`, `shutdown` |
+| `ui.transition.from_screen.id` | enum: `workspace.list`, `workspace.editor`, `settings`, `workspace.create`, `launch.progress`, `capsule`; bounded previous screen on `ui.screen.transition` |
 | `job.id` | opaque string |
 | `job.type` | enum: `image_prewarm`, `sidecar_prewarm` |
 | `outcome` | enum: `success`, `failure`, `error`, `timeout`, `skip`, `cancellation` |
