@@ -147,7 +147,7 @@ fn generated_definition_tables_are_bidirectionally_complete() {
 }
 
 #[test]
-fn facade_definitions_exactly_cover_generated_events_and_metrics() {
+fn facade_definitions_exactly_cover_every_generated_signal() {
     let facade_events = crate::event::ALL
         .iter()
         .map(|definition| definition.name)
@@ -157,7 +157,21 @@ fn facade_definitions_exactly_cover_generated_events_and_metrics() {
         let generated = events::definition(definition.name).unwrap();
         definition.metadata.name == generated.name
             && definition.metadata.description == generated.description
+            && definition.metadata.severity == generated.severity
             && definition.metadata.attributes.len() == generated.attributes.len()
+    }));
+
+    let facade_spans = crate::operation::ALL
+        .iter()
+        .map(|definition| definition.name)
+        .collect::<BTreeSet<_>>();
+    assert_eq!(facade_spans, spans::ALL.iter().copied().collect());
+    assert!(crate::operation::ALL.iter().all(|definition| {
+        let generated = spans::definition(definition.name).unwrap();
+        definition.metadata.name == generated.name
+            && definition.metadata.description == generated.description
+            && definition.metadata.kind == generated.kind
+            && definition.metadata.attributes == generated.attributes
     }));
 
     let facade_metrics = crate::metric::ALL
@@ -165,6 +179,13 @@ fn facade_definitions_exactly_cover_generated_events_and_metrics() {
         .map(|definition| definition.name)
         .collect::<BTreeSet<_>>();
     assert_eq!(facade_metrics, metrics::ALL.iter().copied().collect());
+    assert!(crate::metric::ALL.iter().all(|definition| {
+        let generated = metrics::definition(definition.name()).unwrap();
+        definition.description() == generated.description
+            && definition.unit() == generated.unit
+            && definition.boundaries() == generated.boundaries
+            && definition.dimensions() == generated.attributes
+    }));
 }
 
 #[test]

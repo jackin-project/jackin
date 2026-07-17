@@ -7,6 +7,7 @@ pub const AGENT_STATE_CHANGED: &str = "agent.state.changed";
 pub const AGENT_STATE_CHANGED_DEF: super::EventMetadata = super::EventMetadata {
     name: AGENT_STATE_CHANGED,
     description: "Effective coding-agent state changed.",
+    severity: super::EventSeverity::Info,
     attributes: &[
         super::AttributeRequirement {
             name: "agent.state",
@@ -63,6 +64,7 @@ pub const AUTH_PROVISION: &str = "auth.provision";
 pub const AUTH_PROVISION_DEF: super::EventMetadata = super::EventMetadata {
     name: AUTH_PROVISION,
     description: "Agent authentication material provisioning completed.",
+    severity: super::EventSeverity::Info,
     attributes: &[
         super::AttributeRequirement {
             name: "auth.mode",
@@ -127,6 +129,7 @@ pub const CACHE_DECISION: &str = "cache.decision";
 pub const CACHE_DECISION_DEF: super::EventMetadata = super::EventMetadata {
     name: CACHE_DECISION,
     description: "Product cache decision made.",
+    severity: super::EventSeverity::Info,
     attributes: &[
         super::AttributeRequirement {
             name: "cache.name",
@@ -165,6 +168,7 @@ pub const CAPSULE_SESSION_CLEAN_SHUTDOWN: &str = "capsule.session.clean.shutdown
 pub const CAPSULE_SESSION_CLEAN_SHUTDOWN_DEF: super::EventMetadata = super::EventMetadata {
     name: CAPSULE_SESSION_CLEAN_SHUTDOWN,
     description: "Capsule session shut down cleanly.",
+    severity: super::EventSeverity::Info,
     attributes: &[
         super::AttributeRequirement {
             name: "cli.invocation.id",
@@ -198,6 +202,7 @@ pub const CAPSULE_SESSION_DETACH: &str = "capsule.session.detach";
 pub const CAPSULE_SESSION_DETACH_DEF: super::EventMetadata = super::EventMetadata {
     name: CAPSULE_SESSION_DETACH,
     description: "Operator detached from a capsule session.",
+    severity: super::EventSeverity::Info,
     attributes: &[
         super::AttributeRequirement {
             name: "cli.invocation.id",
@@ -231,6 +236,7 @@ pub const CONFIG_OPERATION: &str = "config.operation";
 pub const CONFIG_OPERATION_DEF: super::EventMetadata = super::EventMetadata {
     name: CONFIG_OPERATION,
     description: "Configuration operation completed.",
+    severity: super::EventSeverity::Info,
     attributes: &[
         super::AttributeRequirement {
             name: "cli.invocation.id",
@@ -300,6 +306,7 @@ pub const DEBUG_LINE: &str = "debug.line";
 pub const DEBUG_LINE_DEF: super::EventMetadata = super::EventMetadata {
     name: DEBUG_LINE,
     description: "Governed debug breadcrumb.",
+    severity: super::EventSeverity::Debug,
     attributes: &[
         super::AttributeRequirement {
             name: "cli.invocation.id",
@@ -333,6 +340,7 @@ pub const ERROR_TYPED: &str = "error.typed";
 pub const ERROR_TYPED_DEF: super::EventMetadata = super::EventMetadata {
     name: ERROR_TYPED,
     description: "Typed product error occurred.",
+    severity: super::EventSeverity::Error,
     attributes: &[
         super::AttributeRequirement {
             name: "cli.invocation.id",
@@ -372,6 +380,7 @@ pub const ISOLATION_DECISION: &str = "isolation.decision";
 pub const ISOLATION_DECISION_DEF: super::EventMetadata = super::EventMetadata {
     name: ISOLATION_DECISION,
     description: "Workspace isolation and network policy selected.",
+    severity: super::EventSeverity::Info,
     attributes: &[
         super::AttributeRequirement {
             name: "cli.invocation.id",
@@ -423,6 +432,7 @@ pub const ISOLATION_FIREWALL_FAILED: &str = "isolation.firewall.failed";
 pub const ISOLATION_FIREWALL_FAILED_DEF: super::EventMetadata = super::EventMetadata {
     name: ISOLATION_FIREWALL_FAILED,
     description: "Fail-closed firewall application failed.",
+    severity: super::EventSeverity::Error,
     attributes: &[
         super::AttributeRequirement {
             name: "cli.invocation.id",
@@ -468,6 +478,7 @@ pub const APP_CRASH: &str = "app.crash";
 pub const APP_CRASH_DEF: super::EventMetadata = super::EventMetadata {
     name: APP_CRASH,
     description: "Application crashed.",
+    severity: super::EventSeverity::Error,
     attributes: &[
         super::AttributeRequirement {
             name: "app.build_id",
@@ -536,6 +547,7 @@ pub const APP_JANK: &str = "app.jank";
 pub const APP_JANK_DEF: super::EventMetadata = super::EventMetadata {
     name: APP_JANK,
     description: "Render jank threshold crossed.",
+    severity: super::EventSeverity::Warn,
     attributes: &[
         super::AttributeRequirement {
             name: "app.jank.frame_count",
@@ -574,6 +586,7 @@ pub const LAUNCH_STAGE_DONE: &str = "launch.stage.done";
 pub const LAUNCH_STAGE_DONE_DEF: super::EventMetadata = super::EventMetadata {
     name: LAUNCH_STAGE_DONE,
     description: "Launch stage completed.",
+    severity: super::EventSeverity::Info,
     attributes: &[
         super::AttributeRequirement {
             name: "cli.invocation.id",
@@ -625,6 +638,7 @@ pub const LAUNCH_STAGE_FAILED: &str = "launch.stage.failed";
 pub const LAUNCH_STAGE_FAILED_DEF: super::EventMetadata = super::EventMetadata {
     name: LAUNCH_STAGE_FAILED,
     description: "Launch stage failed.",
+    severity: super::EventSeverity::Error,
     attributes: &[
         super::AttributeRequirement {
             name: "cli.invocation.id",
@@ -682,6 +696,7 @@ pub const LAUNCH_STAGE_SKIPPED: &str = "launch.stage.skipped";
 pub const LAUNCH_STAGE_SKIPPED_DEF: super::EventMetadata = super::EventMetadata {
     name: LAUNCH_STAGE_SKIPPED,
     description: "Launch stage skipped.",
+    severity: super::EventSeverity::Info,
     attributes: &[
         super::AttributeRequirement {
             name: "cli.invocation.id",
@@ -733,6 +748,7 @@ pub const LAUNCH_STAGE_STARTED: &str = "launch.stage.started";
 pub const LAUNCH_STAGE_STARTED_DEF: super::EventMetadata = super::EventMetadata {
     name: LAUNCH_STAGE_STARTED,
     description: "Launch stage started.",
+    severity: super::EventSeverity::Info,
     attributes: &[
         super::AttributeRequirement {
             name: "cli.invocation.id",
@@ -784,6 +800,7 @@ pub const OPERATION_LOG: &str = "operation.log";
 pub const OPERATION_LOG_DEF: super::EventMetadata = super::EventMetadata {
     name: OPERATION_LOG,
     description: "Bounded operation breadcrumb.",
+    severity: super::EventSeverity::Info,
     attributes: &[
         super::AttributeRequirement {
             name: "cli.invocation.id",
@@ -817,6 +834,7 @@ pub const OPERATION_WARN: &str = "operation.warn";
 pub const OPERATION_WARN_DEF: super::EventMetadata = super::EventMetadata {
     name: OPERATION_WARN,
     description: "Bounded operation warning.",
+    severity: super::EventSeverity::Warn,
     attributes: &[
         super::AttributeRequirement {
             name: "cli.invocation.id",
@@ -856,6 +874,7 @@ pub const PERFORMANCE_SLOW_FOREGROUND_WAIT: &str = "performance.slow.foreground.
 pub const PERFORMANCE_SLOW_FOREGROUND_WAIT_DEF: super::EventMetadata = super::EventMetadata {
     name: PERFORMANCE_SLOW_FOREGROUND_WAIT,
     description: "Foreground wait exceeded its threshold.",
+    severity: super::EventSeverity::Warn,
     attributes: &[
         super::AttributeRequirement {
             name: "cli.invocation.id",
@@ -889,6 +908,7 @@ pub const PROCESS_SUBPROCESS_DONE: &str = "process.subprocess.done";
 pub const PROCESS_SUBPROCESS_DONE_DEF: super::EventMetadata = super::EventMetadata {
     name: PROCESS_SUBPROCESS_DONE,
     description: "Subprocess completed.",
+    severity: super::EventSeverity::Info,
     attributes: &[
         super::AttributeRequirement {
             name: "cli.invocation.id",
@@ -928,6 +948,7 @@ pub const PTY_EXIT: &str = "pty.exit";
 pub const PTY_EXIT_DEF: super::EventMetadata = super::EventMetadata {
     name: PTY_EXIT,
     description: "PTY child process exited.",
+    severity: super::EventSeverity::Info,
     attributes: &[
         super::AttributeRequirement {
             name: "cli.invocation.id",
@@ -984,6 +1005,7 @@ pub const PTY_SPAWN: &str = "pty.spawn";
 pub const PTY_SPAWN_DEF: super::EventMetadata = super::EventMetadata {
     name: PTY_SPAWN,
     description: "PTY child process spawned.",
+    severity: super::EventSeverity::Info,
     attributes: &[
         super::AttributeRequirement {
             name: "cli.invocation.id",
@@ -1016,6 +1038,7 @@ pub const RUN_SUMMARY: &str = "run.summary";
 pub const RUN_SUMMARY_DEF: super::EventMetadata = super::EventMetadata {
     name: RUN_SUMMARY,
     description: "Invocation summary produced.",
+    severity: super::EventSeverity::Info,
     attributes: &[
         super::AttributeRequirement {
             name: "cli.invocation.id",
@@ -1049,6 +1072,7 @@ pub const SESSION_END: &str = "session.end";
 pub const SESSION_END_DEF: super::EventMetadata = super::EventMetadata {
     name: SESSION_END,
     description: "Interactive session ended.",
+    severity: super::EventSeverity::Info,
     attributes: &[
         super::AttributeRequirement {
             name: "cli.invocation.id",
@@ -1075,6 +1099,7 @@ pub const SESSION_START: &str = "session.start";
 pub const SESSION_START_DEF: super::EventMetadata = super::EventMetadata {
     name: SESSION_START,
     description: "Interactive session started.",
+    severity: super::EventSeverity::Info,
     attributes: &[
         super::AttributeRequirement {
             name: "cli.invocation.id",
@@ -1101,6 +1126,7 @@ pub const TELEMETRY_VALIDATE: &str = "telemetry.validate";
 pub const TELEMETRY_VALIDATE_DEF: super::EventMetadata = super::EventMetadata {
     name: TELEMETRY_VALIDATE,
     description: "Telemetry delivery validation marker.",
+    severity: super::EventSeverity::Info,
     attributes: &[
         super::AttributeRequirement {
             name: "cli.invocation.id",
@@ -1121,6 +1147,7 @@ pub const TIMING_DONE: &str = "timing.done";
 pub const TIMING_DONE_DEF: super::EventMetadata = super::EventMetadata {
     name: TIMING_DONE,
     description: "Timing interval completed.",
+    severity: super::EventSeverity::Info,
     attributes: &[
         super::AttributeRequirement {
             name: "cli.invocation.id",
@@ -1154,6 +1181,7 @@ pub const TIMING_STARTED: &str = "timing.started";
 pub const TIMING_STARTED_DEF: super::EventMetadata = super::EventMetadata {
     name: TIMING_STARTED,
     description: "Timing interval started.",
+    severity: super::EventSeverity::Trace,
     attributes: &[
         super::AttributeRequirement {
             name: "cli.invocation.id",
@@ -1187,6 +1215,7 @@ pub const TRUST_DECISION: &str = "trust.decision";
 pub const TRUST_DECISION_DEF: super::EventMetadata = super::EventMetadata {
     name: TRUST_DECISION,
     description: "Role-source trust decision applied.",
+    severity: super::EventSeverity::Info,
     attributes: &[
         super::AttributeRequirement {
             name: "cli.invocation.id",
@@ -1238,6 +1267,7 @@ pub const UI_SCREEN_ENTERED: &str = "ui.screen.entered";
 pub const UI_SCREEN_ENTERED_DEF: super::EventMetadata = super::EventMetadata {
     name: UI_SCREEN_ENTERED,
     description: "Screen visit entered.",
+    severity: super::EventSeverity::Info,
     attributes: &[
         super::AttributeRequirement {
             name: "app.screen.id",
@@ -1283,6 +1313,7 @@ pub const UI_SCREEN_EXITED: &str = "ui.screen.exited";
 pub const UI_SCREEN_EXITED_DEF: super::EventMetadata = super::EventMetadata {
     name: UI_SCREEN_EXITED,
     description: "Screen visit exited.",
+    severity: super::EventSeverity::Info,
     attributes: &[
         super::AttributeRequirement {
             name: "app.screen.id",
@@ -1344,6 +1375,7 @@ pub const UI_WIDGET_FOCUSED: &str = "ui.widget.focused";
 pub const UI_WIDGET_FOCUSED_DEF: super::EventMetadata = super::EventMetadata {
     name: UI_WIDGET_FOCUSED,
     description: "Widget gained focus.",
+    severity: super::EventSeverity::Debug,
     attributes: &[
         super::AttributeRequirement {
             name: "app.widget.id",
@@ -1370,6 +1402,7 @@ pub const UI_WIDGET_UNFOCUSED: &str = "ui.widget.unfocused";
 pub const UI_WIDGET_UNFOCUSED_DEF: super::EventMetadata = super::EventMetadata {
     name: UI_WIDGET_UNFOCUSED,
     description: "Widget lost focus.",
+    severity: super::EventSeverity::Debug,
     attributes: &[
         super::AttributeRequirement {
             name: "app.widget.id",

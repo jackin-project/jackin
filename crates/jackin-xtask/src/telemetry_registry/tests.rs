@@ -2,8 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::{
-    contains_legacy_telemetry_name, generate_rust_sources, repo_root, rust_pascal,
-    source_policy_violations, source_policy_violations_for_files, validate_registry_matches_rust,
+    contains_legacy_telemetry_name, event_runtime_severity, generate_rust_sources, repo_root,
+    rust_pascal, source_policy_violations, source_policy_violations_for_files,
+    validate_registry_matches_rust,
 };
 
 #[test]
@@ -233,9 +234,44 @@ fn registry_generation_is_deterministic_and_covers_dotted_commands() {
     assert!(events.contains("app.crash.id:recommended"));
     assert!(events.contains("exception.stacktrace:recommended"));
     assert!(events.contains("app.jank.frame_count:recommended"));
+    assert!(events.contains("severity: super::EventSeverity::Warn"));
+    for path in ["event_defs.rs", "operation_defs.rs", "metric_defs.rs"] {
+        let facade = first
+            .iter()
+            .find(|(candidate, _)| candidate.ends_with(path))
+            .map_or_else(
+                || panic!("{path} output must exist"),
+                |(_, contents)| contents,
+            );
+        assert!(facade.contains("pub const ALL:"));
+        assert!(facade.contains("::generated(&schema::"));
+    }
     assert!(enums.contains("GlobalConfigSchemaVersion"));
     assert!(enums.contains("WorkspaceConfigSchemaVersion"));
     assert!(!enums.contains("bounded_values!(ConfigSchemaVersion"));
+}
+
+#[test]
+fn checked_in_generation_rejects_single_byte_drift() {
+    let root = repo_root().expect("repository root must resolve");
+    let mut generated = generate_rust_sources(&root).expect("registry must generate");
+    generated[0].1.push(' ');
+    assert!(validate_registry_matches_rust(&root, &generated).is_err());
+}
+
+#[test]
+fn event_severity_registry_rejects_missing_and_unknown_values() {
+    let valid: serde_yaml_ng::Value =
+        serde_yaml_ng::from_str("name: example.event\nnote: runtime_severity=error\n")
+            .expect("fixture parses");
+    assert_eq!(event_runtime_severity(&valid).unwrap(), "error");
+    for source in [
+        "name: example.event\n",
+        "name: example.event\nnote: runtime_severity=verbose\n",
+    ] {
+        let invalid = serde_yaml_ng::from_str(source).expect("fixture parses");
+        event_runtime_severity(&invalid).unwrap_err();
+    }
 }
 
 #[test]

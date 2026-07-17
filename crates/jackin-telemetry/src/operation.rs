@@ -24,33 +24,16 @@ pub struct SpanDef {
     pub(crate) metadata: &'static schema::SpanMetadata,
 }
 
-macro_rules! span_def {
-    ($constant:ident, $definition:ident) => {
-        pub const $constant: SpanDef = SpanDef {
-            name: schema::spans::$constant,
-            metadata: &schema::spans::$definition,
-        };
-    };
+impl SpanDef {
+    const fn generated(metadata: &'static schema::SpanMetadata) -> Self {
+        Self {
+            name: metadata.name,
+            metadata,
+        }
+    }
 }
 
-span_def!(CLI_COMMAND, CLI_COMMAND_DEF);
-span_def!(APP_STARTUP, APP_STARTUP_DEF);
-span_def!(APP_SHUTDOWN, APP_SHUTDOWN_DEF);
-span_def!(UI_ACTION, UI_ACTION_DEF);
-span_def!(UI_SCREEN_TRANSITION, UI_SCREEN_TRANSITION_DEF);
-span_def!(UI_RENDER, UI_RENDER_DEF);
-span_def!(BACKGROUND_CYCLE, BACKGROUND_CYCLE_DEF);
-span_def!(PREWARM_SCHEDULE, PREWARM_SCHEDULE_DEF);
-span_def!(PREWARM_ATTEMPT, PREWARM_ATTEMPT_DEF);
-span_def!(CONNECTION_ATTEMPT, CONNECTION_ATTEMPT_DEF);
-span_def!(PROCESS_COMMAND, PROCESS_COMMAND_DEF);
-span_def!(LAUNCH, LAUNCH_DEF);
-span_def!(LAUNCH_STAGE, LAUNCH_STAGE_DEF);
-span_def!(HTTP_CLIENT, HTTP_CLIENT_DEF);
-span_def!(DB_CLIENT, DB_CLIENT_DEF);
-span_def!(RPC_CLIENT, RPC_CLIENT_DEF);
-span_def!(RPC_SERVER, RPC_SERVER_DEF);
-span_def!(TELEMETRY_VALIDATE, TELEMETRY_VALIDATE_DEF);
+include!("operation_defs.rs");
 
 #[derive(Debug)]
 pub struct OperationGuard {

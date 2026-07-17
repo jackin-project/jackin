@@ -309,6 +309,8 @@ struct RustRegistryMetadata {
     skip_attribute_enums: Vec<String>,
     #[serde(default)]
     metric_boundaries: BTreeMap<String, Vec<f64>>,
+    #[serde(default)]
+    facade_name_overrides: BTreeMap<String, String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -882,6 +884,7 @@ fn generate_rust_sources(root: &Path) -> Result<Vec<(String, String)>> {
             .ok_or_else(|| anyhow::anyhow!("resolved upstream registry has no {id} group"))?;
         local_groups.push(group.clone());
     }
+    validate_facade_name_overrides(&local_groups, &metadata)?;
 
     let generated = vec![
         (
@@ -908,6 +911,10 @@ fn generate_rust_sources(root: &Path) -> Result<Vec<(String, String)>> {
             generate_event_emitters(&header, &local_groups)?,
         ),
         (
+            "crates/jackin-telemetry/src/event_defs.rs".to_owned(),
+            generate_facade_definitions(&header, &local_groups, SignalKind::Event, &metadata)?,
+        ),
+        (
             "crates/jackin-telemetry/src/schema/spans.rs".to_owned(),
             generate_signal_constants(
                 &header,
@@ -917,6 +924,10 @@ fn generate_rust_sources(root: &Path) -> Result<Vec<(String, String)>> {
                 SignalKind::Span,
                 &metadata,
             )?,
+        ),
+        (
+            "crates/jackin-telemetry/src/operation_defs.rs".to_owned(),
+            generate_facade_definitions(&header, &local_groups, SignalKind::Span, &metadata)?,
         ),
         (
             "crates/jackin-telemetry/src/schema/metrics.rs".to_owned(),
@@ -929,11 +940,59 @@ fn generate_rust_sources(root: &Path) -> Result<Vec<(String, String)>> {
                 &metadata,
             )?,
         ),
+        (
+            "crates/jackin-telemetry/src/metric_defs.rs".to_owned(),
+            generate_facade_definitions(&header, &local_groups, SignalKind::Metric, &metadata)?,
+        ),
     ];
     generated
         .into_iter()
         .map(|(path, source)| Ok((path, format_generated_rust(&source)?)))
         .collect()
+}
+
+fn validate_facade_name_overrides(
+    groups: &[YamlValue],
+    metadata: &RustRegistryMetadata,
+) -> Result<()> {
+    let signal_names = groups
+        .iter()
+        .filter_map(
+            |group| match group.get("type").and_then(YamlValue::as_str) {
+                Some("event") => group.get("name").and_then(YamlValue::as_str),
+                Some("span") => group
+                    .get("id")
+                    .and_then(YamlValue::as_str)
+                    .map(|name| name.strip_prefix("span.").unwrap_or(name)),
+                Some("metric") => group.get("metric_name").and_then(YamlValue::as_str),
+                _ => None,
+            },
+        )
+        .collect::<BTreeSet<_>>();
+    let unknown = metadata
+        .facade_name_overrides
+        .keys()
+        .filter(|name| !signal_names.contains(name.as_str()))
+        .cloned()
+        .collect::<Vec<_>>();
+    if !unknown.is_empty() {
+        bail!(
+            "facade name overrides reference unknown signals: {}",
+            unknown.join(", ")
+        );
+    }
+    let mut identifiers = BTreeSet::new();
+    for name in signal_names {
+        let identifier = metadata
+            .facade_name_overrides
+            .get(name)
+            .cloned()
+            .unwrap_or_else(|| rust_constant(name));
+        if !identifiers.insert(identifier.clone()) {
+            bail!("duplicate generated facade identifier {identifier}");
+        }
+    }
+    Ok(())
 }
 
 fn format_generated_rust(source: &str) -> Result<String> {
@@ -1182,7 +1241,10 @@ fn generate_signal_constants(
         output.push_str(&format!("    name: {constant},\n"));
         output.push_str(&format!("    description: {description:?},\n"));
         match kind {
-            SignalKind::Event => {}
+            SignalKind::Event => output.push_str(&format!(
+                "    severity: super::EventSeverity::{},\n",
+                rust_pascal(event_runtime_severity(group)?)
+            )),
             SignalKind::Span => output.push_str(&format!(
                 "    kind: super::SpanKind::{},\n",
                 rust_pascal(yaml_string(group, "span_kind")?)
@@ -1234,6 +1296,63 @@ fn generate_signal_constants(
         "\n#[must_use]\npub fn definition(name: &str) -> Option<&'static super::{}> {{\n    DEFINITIONS.iter().find(|definition| definition.name == name)\n}}\n",
         signal_metadata_type(kind)
     ));
+    Ok(output)
+}
+
+fn event_runtime_severity(group: &YamlValue) -> Result<&str> {
+    let note = yaml_string(group, "note")?;
+    let severity = note.strip_prefix("runtime_severity=").ok_or_else(|| {
+        anyhow::anyhow!(
+            "event {} has no runtime severity note",
+            yaml_string(group, "name").unwrap_or("<unknown>")
+        )
+    })?;
+    match severity {
+        "trace" | "debug" | "info" | "warn" | "error" => Ok(severity),
+        other => bail!("unsupported event runtime severity {other}"),
+    }
+}
+
+fn generate_facade_definitions(
+    header: &str,
+    groups: &[YamlValue],
+    kind: SignalKind,
+    metadata: &RustRegistryMetadata,
+) -> Result<String> {
+    let (expected_type, schema_module, definition_type) = match kind {
+        SignalKind::Event => ("event", "events", "EventDef"),
+        SignalKind::Span => ("span", "spans", "SpanDef"),
+        SignalKind::Metric => ("metric", "metrics", "InstrumentDef"),
+    };
+    let mut output = header.to_owned();
+    let mut constants = Vec::new();
+    for group in groups {
+        if group.get("type").and_then(YamlValue::as_str) != Some(expected_type) {
+            continue;
+        }
+        let raw_name = match kind {
+            SignalKind::Event => yaml_string(group, "name")?,
+            SignalKind::Span => yaml_string(group, "id")?
+                .strip_prefix("span.")
+                .unwrap_or(yaml_string(group, "id")?),
+            SignalKind::Metric => yaml_string(group, "metric_name")?,
+        };
+        let schema_constant = rust_constant(raw_name);
+        let constant = metadata
+            .facade_name_overrides
+            .get(raw_name)
+            .cloned()
+            .unwrap_or_else(|| schema_constant.clone());
+        output.push_str(&format!(
+            "pub const {constant}: {definition_type} = {definition_type}::generated(&schema::{schema_module}::{schema_constant}_DEF);\n"
+        ));
+        constants.push(constant);
+    }
+    output.push_str(&format!("\npub const ALL: &[{definition_type}] = &[\n"));
+    for constant in constants {
+        output.push_str(&format!("    {constant},\n"));
+    }
+    output.push_str("];\n");
     Ok(output)
 }
 

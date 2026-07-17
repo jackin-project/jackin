@@ -40,6 +40,23 @@ pub struct EventDef {
     pub(crate) metadata: &'static schema::EventMetadata,
 }
 
+impl EventDef {
+    const fn generated(metadata: &'static schema::EventMetadata) -> Self {
+        let severity = match metadata.severity {
+            schema::EventSeverity::Trace => Severity::Trace,
+            schema::EventSeverity::Debug => Severity::Debug,
+            schema::EventSeverity::Info => Severity::Info,
+            schema::EventSeverity::Warn => Severity::Warn,
+            schema::EventSeverity::Error => Severity::Error,
+        };
+        Self {
+            name: metadata.name,
+            severity,
+            metadata,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 pub enum Value<'a> {
     Str(&'a str),
@@ -142,189 +159,7 @@ pub fn take_pending_event_arrays() -> PendingEventArrays {
     PENDING_EVENT_ARRAYS.with(|slot| slot.borrow_mut().take().unwrap_or_default())
 }
 
-pub const SESSION_START: EventDef = EventDef {
-    name: schema::events::SESSION_START,
-    severity: Severity::Info,
-    metadata: &schema::events::SESSION_START_DEF,
-};
-pub const SESSION_END: EventDef = EventDef {
-    name: schema::events::SESSION_END,
-    severity: Severity::Info,
-    metadata: &schema::events::SESSION_END_DEF,
-};
-pub const UI_SCREEN_ENTERED: EventDef = EventDef {
-    name: schema::events::UI_SCREEN_ENTERED,
-    severity: Severity::Info,
-    metadata: &schema::events::UI_SCREEN_ENTERED_DEF,
-};
-pub const UI_SCREEN_EXITED: EventDef = EventDef {
-    name: schema::events::UI_SCREEN_EXITED,
-    severity: Severity::Info,
-    metadata: &schema::events::UI_SCREEN_EXITED_DEF,
-};
-pub const UI_WIDGET_FOCUSED: EventDef = EventDef {
-    name: schema::events::UI_WIDGET_FOCUSED,
-    severity: Severity::Debug,
-    metadata: &schema::events::UI_WIDGET_FOCUSED_DEF,
-};
-pub const UI_WIDGET_UNFOCUSED: EventDef = EventDef {
-    name: schema::events::UI_WIDGET_UNFOCUSED,
-    severity: Severity::Debug,
-    metadata: &schema::events::UI_WIDGET_UNFOCUSED_DEF,
-};
-pub const APP_JANK: EventDef = EventDef {
-    name: schema::events::APP_JANK,
-    severity: Severity::Warn,
-    metadata: &schema::events::APP_JANK_DEF,
-};
-pub const APP_CRASH: EventDef = EventDef {
-    name: schema::events::APP_CRASH,
-    severity: Severity::Error,
-    metadata: &schema::events::APP_CRASH_DEF,
-};
-pub const AGENT_STATE_CHANGED: EventDef = EventDef {
-    name: schema::events::AGENT_STATE_CHANGED,
-    severity: Severity::Info,
-    metadata: &schema::events::AGENT_STATE_CHANGED_DEF,
-};
-pub const PTY_SPAWN: EventDef = EventDef {
-    name: schema::events::PTY_SPAWN,
-    severity: Severity::Info,
-    metadata: &schema::events::PTY_SPAWN_DEF,
-};
-pub const PTY_EXIT: EventDef = EventDef {
-    name: schema::events::PTY_EXIT,
-    severity: Severity::Info,
-    metadata: &schema::events::PTY_EXIT_DEF,
-};
-pub const TELEMETRY_VALIDATE: EventDef = EventDef {
-    name: schema::events::TELEMETRY_VALIDATE,
-    severity: Severity::Info,
-    metadata: &schema::events::TELEMETRY_VALIDATE_DEF,
-};
-
-macro_rules! event_def {
-    ($constant:ident, $name:ident, $definition:ident, $severity:ident) => {
-        pub const $constant: EventDef = EventDef {
-            name: schema::events::$name,
-            severity: Severity::$severity,
-            metadata: &schema::events::$definition,
-        };
-    };
-}
-
-event_def!(
-    LAUNCH_STAGE_STARTED,
-    LAUNCH_STAGE_STARTED,
-    LAUNCH_STAGE_STARTED_DEF,
-    Info
-);
-event_def!(
-    LAUNCH_STAGE_DONE,
-    LAUNCH_STAGE_DONE,
-    LAUNCH_STAGE_DONE_DEF,
-    Info
-);
-event_def!(
-    LAUNCH_STAGE_FAILED,
-    LAUNCH_STAGE_FAILED,
-    LAUNCH_STAGE_FAILED_DEF,
-    Error
-);
-event_def!(
-    LAUNCH_STAGE_SKIPPED,
-    LAUNCH_STAGE_SKIPPED,
-    LAUNCH_STAGE_SKIPPED_DEF,
-    Info
-);
-event_def!(TIMING_STARTED, TIMING_STARTED, TIMING_STARTED_DEF, Trace);
-event_def!(TIMING_DONE, TIMING_DONE, TIMING_DONE_DEF, Info);
-event_def!(DEBUG_LINE, DEBUG_LINE, DEBUG_LINE_DEF, Debug);
-event_def!(
-    PROCESS_SUBPROCESS_DONE,
-    PROCESS_SUBPROCESS_DONE,
-    PROCESS_SUBPROCESS_DONE_DEF,
-    Info
-);
-event_def!(RUN_SUMMARY, RUN_SUMMARY, RUN_SUMMARY_DEF, Info);
-event_def!(
-    PERFORMANCE_SLOW_FOREGROUND_WAIT,
-    PERFORMANCE_SLOW_FOREGROUND_WAIT,
-    PERFORMANCE_SLOW_FOREGROUND_WAIT_DEF,
-    Warn
-);
-event_def!(
-    CAPSULE_SESSION_DETACH,
-    CAPSULE_SESSION_DETACH,
-    CAPSULE_SESSION_DETACH_DEF,
-    Info
-);
-event_def!(
-    CAPSULE_SESSION_CLEAN_SHUTDOWN,
-    CAPSULE_SESSION_CLEAN_SHUTDOWN,
-    CAPSULE_SESSION_CLEAN_SHUTDOWN_DEF,
-    Info
-);
-event_def!(ERROR_TYPED, ERROR_TYPED, ERROR_TYPED_DEF, Error);
-event_def!(
-    CONFIG_OPERATION,
-    CONFIG_OPERATION,
-    CONFIG_OPERATION_DEF,
-    Info
-);
-event_def!(TRUST_DECISION, TRUST_DECISION, TRUST_DECISION_DEF, Info);
-event_def!(
-    ISOLATION_DECISION,
-    ISOLATION_DECISION,
-    ISOLATION_DECISION_DEF,
-    Info
-);
-event_def!(
-    ISOLATION_FIREWALL_FAILED,
-    ISOLATION_FIREWALL_FAILED,
-    ISOLATION_FIREWALL_FAILED_DEF,
-    Error
-);
-event_def!(CACHE_DECISION, CACHE_DECISION, CACHE_DECISION_DEF, Info);
-event_def!(OPERATION_LOG, OPERATION_LOG, OPERATION_LOG_DEF, Info);
-event_def!(OPERATION_WARN, OPERATION_WARN, OPERATION_WARN_DEF, Warn);
-event_def!(AUTH_PROVISION, AUTH_PROVISION, AUTH_PROVISION_DEF, Info);
-
-pub const ALL: &[EventDef] = &[
-    SESSION_START,
-    SESSION_END,
-    UI_SCREEN_ENTERED,
-    UI_SCREEN_EXITED,
-    UI_WIDGET_FOCUSED,
-    UI_WIDGET_UNFOCUSED,
-    APP_JANK,
-    APP_CRASH,
-    AGENT_STATE_CHANGED,
-    PTY_SPAWN,
-    PTY_EXIT,
-    TELEMETRY_VALIDATE,
-    LAUNCH_STAGE_STARTED,
-    LAUNCH_STAGE_DONE,
-    LAUNCH_STAGE_FAILED,
-    LAUNCH_STAGE_SKIPPED,
-    TIMING_STARTED,
-    TIMING_DONE,
-    DEBUG_LINE,
-    PROCESS_SUBPROCESS_DONE,
-    RUN_SUMMARY,
-    PERFORMANCE_SLOW_FOREGROUND_WAIT,
-    CAPSULE_SESSION_DETACH,
-    CAPSULE_SESSION_CLEAN_SHUTDOWN,
-    ERROR_TYPED,
-    CONFIG_OPERATION,
-    TRUST_DECISION,
-    ISOLATION_DECISION,
-    ISOLATION_FIREWALL_FAILED,
-    CACHE_DECISION,
-    OPERATION_LOG,
-    OPERATION_WARN,
-    AUTH_PROVISION,
-];
+include!("event_defs.rs");
 
 #[must_use]
 pub fn definition(name: &str) -> Option<&'static EventDef> {

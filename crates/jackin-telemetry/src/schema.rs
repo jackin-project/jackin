@@ -43,10 +43,20 @@ pub struct AttributeMetadata {
     pub allowed_values: &'static [&'static str],
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum EventSeverity {
+    Trace,
+    Debug,
+    Info,
+    Warn,
+    Error,
+}
+
 #[derive(Clone, Copy, Debug)]
 pub struct EventMetadata {
     pub name: &'static str,
     pub description: &'static str,
+    pub severity: EventSeverity,
     pub attributes: &'static [AttributeRequirement],
 }
 

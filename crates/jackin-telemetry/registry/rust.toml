@@ -12,6 +12,12 @@ root_standard_reexports = ["APP_JANK_FRAME_COUNT", "APP_JANK_PERIOD", "APP_JANK_
 standard_event_groups = []
 skip_attribute_enums = []
 
+# Public facade identifiers whose concise API names intentionally differ from
+# the exact wire-name-derived schema constants.
+[facade_name_overrides]
+"ui.screen.dwell" = "UI_DWELL"
+"terminal.io.bytes" = "TERMINAL_BYTES"
+
 [adoption]
 upstream_available = "reexport"
 upstream_absent = "local_pin_with_schema_version"
