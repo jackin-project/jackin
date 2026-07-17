@@ -29,6 +29,10 @@ impl<P: opentelemetry_sdk::logs::LogProcessor> opentelemetry_sdk::logs::LogProce
                 );
                 return;
             };
+            if let Err(reason) = jackin_telemetry::limits::validate_name(event_name) {
+                reject(jackin_telemetry::Signal::Log, reason);
+                return;
+            }
             let Some(canonical_severity) = jackin_telemetry::event::canonical_severity(event_name)
             else {
                 reject(
@@ -101,6 +105,10 @@ impl<P: opentelemetry_sdk::trace::SpanProcessor> opentelemetry_sdk::trace::SpanP
     }
 
     fn on_end(&self, span: opentelemetry_sdk::trace::SpanData) {
+        if let Err(reason) = jackin_telemetry::limits::validate_name(span.name.as_ref()) {
+            reject(jackin_telemetry::Signal::Trace, reason);
+            return;
+        }
         let Some(definition) = jackin_telemetry::schema::spans::definition(span.name.as_ref())
         else {
             reject(

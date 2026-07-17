@@ -1164,6 +1164,17 @@ fn governed_unknown_names_and_forged_severity_are_rejected() {
             "unknown.governed.span"
         );
         drop(span);
+        tracing::event!(
+            name: "overlong.governed.event.xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+            target: jackin_telemetry::TELEMETRY_TARGET,
+            tracing::Level::INFO,
+            {}
+        );
+        let span = tracing::info_span!(
+            target: jackin_telemetry::TELEMETRY_TARGET,
+            "overlong.governed.span.xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+        );
+        drop(span);
     });
     export.logger_provider.force_flush().unwrap();
     export.tracer_provider.force_flush().unwrap();
@@ -1172,6 +1183,7 @@ fn governed_unknown_names_and_forged_severity_are_rejected() {
     let after = jackin_telemetry::facade_health();
     assert!(after.unknown_name >= before.unknown_name + 2);
     assert!(after.invalid_value > before.invalid_value);
+    assert!(after.size_limit >= before.size_limit + 2);
 }
 
 #[test]
