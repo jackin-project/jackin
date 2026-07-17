@@ -706,12 +706,48 @@ fn screen_transition_correlates_old_and_new_lifecycle_logs() {
         Some(&AnyValue::String("workspace.list".into()))
     );
     assert_eq!(
+        log_attribute(&entered[0].record, "app.screen.name"),
+        Some(&AnyValue::String("workspace.list".into()))
+    );
+    assert_eq!(
         log_attribute(&exited.record, "app.screen.id"),
+        Some(&AnyValue::String("workspace.list".into()))
+    );
+    assert_eq!(
+        log_attribute(&exited.record, "app.screen.name"),
         Some(&AnyValue::String("workspace.list".into()))
     );
     assert_eq!(
         log_attribute(&entered[1].record, "app.screen.id"),
         Some(&AnyValue::String("workspace.editor".into()))
+    );
+    assert_eq!(
+        log_attribute(&entered[1].record, "app.screen.name"),
+        Some(&AnyValue::String("workspace.editor".into()))
+    );
+    assert_eq!(
+        span_attribute(transition, "ui.transition.from_screen.id").as_deref(),
+        Some("workspace.list")
+    );
+    assert_eq!(
+        span_attribute(transition, "app.screen.name").as_deref(),
+        Some("workspace.editor")
+    );
+    let mut transition_keys = transition
+        .attributes
+        .iter()
+        .map(|attribute| attribute.key.as_str())
+        .collect::<Vec<_>>();
+    transition_keys.sort_unstable();
+    assert_eq!(
+        transition_keys,
+        [
+            "app.screen.id",
+            "app.screen.name",
+            "outcome",
+            "ui.transition.from_screen.id",
+            "ui.transition.reason",
+        ]
     );
     for (log, sequence) in [
         (&entered[0].record, 1),
@@ -732,10 +768,44 @@ fn screen_transition_correlates_old_and_new_lifecycle_logs() {
         log_attribute(&entered[1].record, "ui.screen.visit.id"),
         first_visit
     );
+    assert_eq!(entered[0].record.attributes_iter().count(), 4);
+    assert_eq!(exited.record.attributes_iter().count(), 5);
+    assert_eq!(entered[1].record.attributes_iter().count(), 4);
     for log in [exited, entered[1]] {
         let context = log.record.trace_context().expect("transition log context");
         assert_eq!(context.span_id, transition.span_context.span_id());
         assert_eq!(context.trace_id, transition.span_context.trace_id());
+    }
+}
+
+#[test]
+fn widget_lifecycle_exports_exact_stable_identity_pair() {
+    use opentelemetry::logs::AnyValue;
+
+    let (export, subscriber) = super::test_layers(true, "unused");
+    tracing::subscriber::with_default(subscriber, || {
+        let mut tracker = jackin_telemetry::ui::WidgetFocusTracker::default();
+        tracker.focus("capsule.pane").unwrap();
+        tracker.unfocus().unwrap();
+    });
+    export.logger_provider.force_flush().unwrap();
+
+    let logs = export.logs.get_emitted_logs().unwrap();
+    assert_eq!(logs.len(), 2);
+    for (log, event_name) in logs
+        .iter()
+        .zip(["ui.widget.focused", "ui.widget.unfocused"])
+    {
+        assert_eq!(log.record.event_name(), Some(event_name));
+        assert_eq!(
+            log_attribute(&log.record, "app.widget.id"),
+            Some(&AnyValue::String("capsule.pane".into()))
+        );
+        assert_eq!(
+            log_attribute(&log.record, "app.widget.name"),
+            Some(&AnyValue::String("capsule.pane".into()))
+        );
+        assert_eq!(log.record.attributes_iter().count(), 2);
     }
 }
 
@@ -809,6 +879,16 @@ fn log_attribute<'a>(
     record
         .attributes_iter()
         .find_map(|(key, value)| (key.as_str() == name).then_some(value))
+}
+
+fn span_attribute<'a>(
+    span: &'a opentelemetry_sdk::trace::SpanData,
+    name: &str,
+) -> Option<std::borrow::Cow<'a, str>> {
+    span.attributes
+        .iter()
+        .find(|attribute| attribute.key.as_str() == name)
+        .map(|attribute| attribute.value.as_str())
 }
 
 fn cli_command_test_attrs() -> [jackin_telemetry::Attr<'static>; 2] {
