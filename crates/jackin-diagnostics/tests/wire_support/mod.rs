@@ -122,24 +122,7 @@ pub(crate) fn assert_three_signal_delivery(
         Vec::<String>::new(),
         "prohibited fixture material escaped onto the OTLP wire"
     );
-    for resource in traces
-        .iter()
-        .flat_map(|request| &request.resource_spans)
-        .filter_map(|batch| batch.resource.as_ref())
-        .chain(
-            logs.iter()
-                .flat_map(|request| &request.resource_logs)
-                .filter_map(|batch| batch.resource.as_ref()),
-        )
-        .chain(
-            metrics
-                .iter()
-                .flat_map(|request| &request.resource_metrics)
-                .filter_map(|batch| batch.resource.as_ref()),
-        )
-    {
-        assert_resource_contract(resource, identity.service_name());
-    }
+    assert_cross_provider_resources(&traces, &logs, &metrics, identity)?;
     jackin_diagnostics::shutdown_capsule_tracing();
     let shutdown = jackin_diagnostics::telemetry_health_snapshot();
     assert_eq!(shutdown.active_signals, 0);
@@ -151,6 +134,65 @@ pub(crate) fn assert_three_signal_delivery(
         std::fs::read_dir(home.path())?.next().is_none(),
         "governed telemetry created a local artifact"
     );
+    Ok(())
+}
+
+fn assert_cross_provider_resources(
+    traces: &[opentelemetry_proto::tonic::collector::trace::v1::ExportTraceServiceRequest],
+    logs: &[opentelemetry_proto::tonic::collector::logs::v1::ExportLogsServiceRequest],
+    metrics: &[opentelemetry_proto::tonic::collector::metrics::v1::ExportMetricsServiceRequest],
+    identity: jackin_diagnostics::ServiceIdentity,
+) -> anyhow::Result<()> {
+    let trace_resources = traces
+        .iter()
+        .flat_map(|request| &request.resource_spans)
+        .map(|batch| {
+            batch
+                .resource
+                .as_ref()
+                .ok_or_else(|| anyhow::anyhow!("trace batch missing Resource"))
+        })
+        .collect::<anyhow::Result<Vec<_>>>()?;
+    let log_resources = logs
+        .iter()
+        .flat_map(|request| &request.resource_logs)
+        .map(|batch| {
+            batch
+                .resource
+                .as_ref()
+                .ok_or_else(|| anyhow::anyhow!("log batch missing Resource"))
+        })
+        .collect::<anyhow::Result<Vec<_>>>()?;
+    let metric_resources = metrics
+        .iter()
+        .flat_map(|request| &request.resource_metrics)
+        .map(|batch| {
+            batch
+                .resource
+                .as_ref()
+                .ok_or_else(|| anyhow::anyhow!("metric batch missing Resource"))
+        })
+        .collect::<anyhow::Result<Vec<_>>>()?;
+    anyhow::ensure!(!log_resources.is_empty(), "log Resource missing");
+    anyhow::ensure!(!metric_resources.is_empty(), "metric Resource missing");
+    let canonical_resource = trace_resources
+        .first()
+        .ok_or_else(|| anyhow::anyhow!("trace Resource missing"))?;
+    anyhow::ensure!(
+        trace_resources
+            .iter()
+            .chain(&log_resources)
+            .chain(&metric_resources)
+            .all(|resource| *resource == *canonical_resource),
+        "trace, log, and metric providers must export the same immutable Resource"
+    );
+    for resource in trace_resources
+        .into_iter()
+        .chain(log_resources)
+        .chain(metric_resources)
+    {
+        assert_resource_contract(resource, identity.service_name());
+    }
     Ok(())
 }
 
@@ -173,7 +215,40 @@ fn assert_resource_contract(
     assert!(attribute("service.version").is_some());
     assert!(attribute("service.instance.id").is_some());
     assert!(attribute("app.mode").is_some());
-    assert!(resource.attributes.iter().all(|attribute| {
-        !attribute.key.starts_with("jackin.") && !attribute.key.starts_with("parallax.")
-    }));
+    let allowed = [
+        "service.namespace",
+        "service.name",
+        "service.version",
+        "service.instance.id",
+        "process.pid",
+        "process.executable.name",
+        "app.mode",
+        "process.runtime.name",
+        "process.runtime.version",
+        "os.type",
+        "os.version",
+        "container.id",
+    ];
+    assert!(
+        resource
+            .attributes
+            .iter()
+            .all(|attribute| allowed.contains(&attribute.key.as_str())),
+        "Resource contains an attribute outside the fixed allowlist"
+    );
+    for forbidden in [
+        "cli.invocation.id",
+        "session.id",
+        "session.previous_id",
+        "job.id",
+        "ui.screen.visit.id",
+        "gen_ai.conversation.id",
+        "app.crash.id",
+        "parallax.run.id",
+    ] {
+        assert!(
+            attribute(forbidden).is_none(),
+            "correlation identifier {forbidden} must not be stored on Resource"
+        );
+    }
 }
