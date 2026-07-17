@@ -22,6 +22,22 @@ Cold bootstrap runs remain measurable exceptions until the shared service in
 this item exists; they must populate one cache owner rather than making every
 fan-out job repeat the bootstrap.
 
+### July 2026 cache-capacity evidence
+
+The PR #810 audit measured 57 active GitHub Actions cache entries totaling
+10,570,355,881 bytes (9.844 GiB), effectively exhausting the repository's
+10 GiB budget. Four superseded per-target release caches on `main` accounted
+for about 4.8 GiB, while duplicate pull-request/head Rust toolchain entries
+accounted for about 1.7 GiB. Compact input-identical archive sets were only
+tens of MiB, but could still be evicted by those older multi-GiB generations.
+
+This is direct evidence against using GitHub's repository cache as the shared
+compiler backend for either `sccache` or `kache`. Until the remote bake-off is
+complete, cache-generation changes must include a retirement plan: preserve a
+generation while `main` still references it, then delete it after the compact
+replacement has completed successfully on `main`. Branch and merge refs must
+not each become durable owners of identical toolchain or target payloads.
+
 ## Why a shared compiler cache
 
 Cargo target archives are large snapshots coupled to a job's profile, flags,
@@ -105,6 +121,9 @@ Sources: [`sccache` repository and backend documentation](https://github.com/moz
 5. Roll out to non-release jobs, then preview/release after provenance checks.
 6. Reduce or remove redundant Cargo target archives once remote hit rates prove
    they are unnecessary, preventing another cache-quota eviction cycle.
+7. After the compact release-archive cache contract lands on `main`, retire the
+   four superseded `v0-rust-release-archive-jackin-*-workspace-v2` entries and
+   verify the repository remains below 70% of its GitHub cache budget.
 
 ## Related work
 
