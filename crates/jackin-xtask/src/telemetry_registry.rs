@@ -589,6 +589,13 @@ impl<'ast> syn::visit::Visit<'ast> for SourcePolicyScanner<'_> {
     fn visit_expr_method_call(&mut self, node: &'ast syn::ExprMethodCall) {
         if node.method == "with_callback" {
             for argument in &node.args {
+                if !matches!(argument, syn::Expr::Closure(_)) {
+                    self.reject(
+                        argument.span(),
+                        "observable callback must be an inline snapshot-only closure",
+                    );
+                    continue;
+                }
                 let mut callback = ObservableCallbackScanner::default();
                 callback.visit_expr(argument);
                 for (span, violation) in callback.violations {

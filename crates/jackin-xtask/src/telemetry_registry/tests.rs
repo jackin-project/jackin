@@ -210,6 +210,18 @@ fn observable_callbacks_are_snapshot_only() {
         source_policy_violations("crates/jackin-diagnostics/src/example.rs", indirect),
         ["observable callback performs blocking/runtime work"]
     );
+    for indirect_callback in [
+        "fn install(builder: Builder) { let callback = move |_observer| std::fs::read_to_string(\"state\"); builder.with_callback(callback); }",
+        "fn callback() -> impl Fn(&Observer) { move |_observer| std::fs::read_to_string(\"state\") } fn install(builder: Builder) { builder.with_callback(callback()); }",
+    ] {
+        assert_eq!(
+            source_policy_violations(
+                "crates/jackin-diagnostics/src/example.rs",
+                indirect_callback
+            ),
+            ["observable callback must be an inline snapshot-only closure"]
+        );
+    }
 
     let runtime_metrics = r"fn install(builder: Builder, handle: Handle) {
         builder.with_callback(move |observer| {
