@@ -176,10 +176,6 @@ pub(super) async fn decide_role_image(
                 }
             };
             if stale {
-                jackin_diagnostics::telemetry_debug!(
-                    "image",
-                    "published image {published} is out of date; building from workspace Dockerfile"
-                );
                 base_image_override = None;
                 reason = ImageInvalidationReason::PublishedImageStale;
             }
@@ -235,10 +231,6 @@ pub(super) async fn decide_role_image(
 
     match classify_image_labels(&labels, &expected_recipes) {
         None => {
-            jackin_diagnostics::telemetry_debug!(
-                "image",
-                "reusing derived image {image}; recipe hash matches one current recipe"
-            );
             emit_image_reuse(&image);
             Ok(ImageDecision::Reuse { image })
         }
@@ -252,17 +244,8 @@ pub(super) async fn decide_role_image(
                 )
                 .await
             {
-                jackin_diagnostics::telemetry_debug!(
-                    "image",
-                    "published image {published} is out of date; building from workspace Dockerfile"
-                );
                 base_image_override = None;
             }
-            jackin_diagnostics::telemetry_debug!(
-                "image",
-                "derived image {image} invalidated ({}); expected one of current recipe hashes",
-                reason.as_str()
-            );
             emit_image_decision(&image, reason);
             Ok(build_decision(reason, head_sha, base_image_override))
         }
@@ -990,15 +973,10 @@ async fn reuse_staleness_reason(
     {
         let _warning = jackin_telemetry::record_recovered_degradation();
     }
-    if let Some((agent, _)) = results
+    if results
         .into_iter()
-        .find(|(_, check)| *check == version_check::AgentVersionCheck::Stale)
+        .any(|(_, check)| check == version_check::AgentVersionCheck::Stale)
     {
-        jackin_diagnostics::telemetry_debug!(
-            "image",
-            "derived image {image}: {} baked version is outdated",
-            agent.runtime().slug()
-        );
         return Some(ImageInvalidationReason::AgentVersionChanged);
     }
 
@@ -1011,10 +989,6 @@ async fn reuse_staleness_reason(
         )
         .await
     {
-        jackin_diagnostics::telemetry_debug!(
-            "image",
-            "published image {published} is out of date; refreshing reused workspace image"
-        );
         return Some(ImageInvalidationReason::PublishedImageStale);
     }
 
@@ -1087,12 +1061,6 @@ async fn prewarm_agent_image_from_validated_repo(
             role_git_sha,
             base_image,
         } => {
-            jackin_diagnostics::telemetry_debug!(
-                "image_prewarm",
-                "building {} image from published base: {}",
-                agent.slug(),
-                reason.as_str()
-            );
             let runtime_binaries =
                 prepare_runtime_binaries_for_agents(paths, validated_repo, &[agent], None).await?;
             let image = build_agent_image(
@@ -1124,12 +1092,6 @@ async fn prewarm_agent_image_from_validated_repo(
             reason,
             role_git_sha,
         } => {
-            jackin_diagnostics::telemetry_debug!(
-                "image_prewarm",
-                "building {} image from workspace Dockerfile: {}",
-                agent.slug(),
-                reason.as_str()
-            );
             let runtime_binaries =
                 prepare_runtime_binaries_for_agents(paths, validated_repo, &[agent], None).await?;
             let image = build_agent_image(
@@ -1181,12 +1143,6 @@ async fn refresh_agent_image_from_validated_repo(
     role_git_sha: Option<&str>,
 ) -> anyhow::Result<RoleImagePrewarmRow> {
     super::launch::emit_prewarm_launch_plan(&format!("image_refresh:{}", reason.as_str()));
-    jackin_diagnostics::telemetry_debug!(
-        "image_prewarm",
-        "refreshing {} image from workspace Dockerfile: {}",
-        agent.slug(),
-        reason.as_str()
-    );
     let runtime_binaries =
         prepare_runtime_binaries_for_agents(paths, validated_repo, &[agent], None).await?;
     let image = build_agent_image(
@@ -1296,6 +1252,7 @@ async fn prepare_agent_binaries(
                 ))
             }
             Err(error) => {
+                let _warning = jackin_telemetry::record_recovered_degradation();
                 jackin_diagnostics::active_timing_done(
                     timing_stage,
                     &timing_name,
@@ -1309,12 +1266,6 @@ async fn prepare_agent_binaries(
                             agent.slug(),
                             agent.fallback_install_command()
                         ),
-                    );
-                } else {
-                    jackin_diagnostics::telemetry_debug!(
-                        "runtime_prewarm",
-                        "could not prewarm {} binary; fallback installer remains available: {error:#}",
-                        agent.slug()
                     );
                 }
                 Ok((agent, AgentInstall::ScriptFallback, None))
