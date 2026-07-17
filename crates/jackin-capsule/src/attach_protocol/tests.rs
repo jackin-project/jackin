@@ -201,13 +201,16 @@ async fn conformance_attach_protocol_failure_and_expected_detach() {
             "error.typed",
             jackin_telemetry::schema::enums::ErrorType::RpcError.as_str(),
         ),
-        1
+        0,
+        "the bounded close operation owns the malformed-frame failure"
     );
     assert_eq!(
         export.error_span_count(),
-        0,
-        "attach failure is a typed event, not a session-lifetime span"
+        1,
+        "only the bounded close operation fails"
     );
+    assert_eq!(export.finished_spans().len(), 2);
+    assert!(export.contains_span_text("rpc_error"));
 
     let (clean_export, clean_subscriber) =
         jackin_diagnostics::observability::test_capsule_layers(false);
@@ -222,8 +225,38 @@ async fn conformance_attach_protocol_failure_and_expected_detach() {
     drop(clean_guard);
     clean_export.force_flush();
     assert_eq!(clean_export.error_span_count(), 0);
+    assert_eq!(clean_export.finished_spans().len(), 2);
     assert_eq!(
         clean_export.typed_error_count(
+            "error.typed",
+            jackin_telemetry::schema::enums::ErrorType::RpcError.as_str(),
+        ),
+        0
+    );
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn attach_stream_marks_takeover_channel_loss_as_cancellation() {
+    let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
+    let guard = tracing::subscriber::set_default(subscriber);
+    let (server, mut client) = UnixStream::pair().expect("create attach socket pair");
+    let (_out_tx, out_rx) = mpsc::unbounded_channel();
+    let (cmd_tx, cmd_rx) = mpsc::unbounded_channel();
+    drop(cmd_rx);
+    client
+        .write_all(&jackin_protocol::attach::encode_client(ClientFrame::Input(vec![b'x'])).unwrap())
+        .await
+        .expect("write input frame");
+
+    handle_attach_client(server, out_rx, cmd_tx).await;
+
+    drop(guard);
+    export.force_flush();
+    assert_eq!(export.finished_spans().len(), 2);
+    assert_eq!(export.error_span_count(), 0);
+    assert!(export.contains_span_text("cancellation"));
+    assert_eq!(
+        export.typed_error_count(
             "error.typed",
             jackin_telemetry::schema::enums::ErrorType::RpcError.as_str(),
         ),

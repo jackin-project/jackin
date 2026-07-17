@@ -17,10 +17,6 @@ use crate::socket;
 const RPC_ERROR: jackin_telemetry::schema::enums::ErrorType =
     jackin_telemetry::schema::enums::ErrorType::RpcError;
 
-fn record_attach_failure() {
-    let _error = jackin_telemetry::record_error(RPC_ERROR);
-}
-
 /// A validated attach handshake produced by `perform_handshake`. The
 /// main loop applies these — `client_permit` is kept alive until the
 /// spawned persistent attach task drops it.
@@ -420,8 +416,14 @@ pub(crate) async fn handle_attach_client_with_handshake(
     cmd_tx: mpsc::UnboundedSender<ClientFrame>,
     mut handshake_operation: Option<jackin_telemetry::operation::OperationGuard>,
 ) {
+    let open =
+        jackin_telemetry::stream::phase(jackin_telemetry::schema::enums::StreamOperation::Open);
+    jackin_telemetry::stream::complete_success(open);
+    let close = jackin_telemetry::stream::close_on_drop();
     let mut completions = std::collections::HashMap::new();
     let mut tag = [0u8; 1];
+    let mut terminal_error = None;
+    let mut cancelled = false;
     loop {
         tokio::select! {
             biased;
@@ -431,18 +433,18 @@ pub(crate) async fn handle_attach_client_with_handshake(
             result = stream.read_exact(&mut tag) => {
                 if let Err(e) = result {
                     if e.kind() != std::io::ErrorKind::UnexpectedEof {
-                        record_attach_failure();
+                        terminal_error = Some(RPC_ERROR);
                     }
                     break;
                 }
                 let frame = match read_client_frame(&mut stream, tag[0]).await {
                     Ok(Some(frame)) => frame,
                     Ok(None) => {
-                        record_attach_failure();
+                        terminal_error = Some(RPC_ERROR);
                         break;
                     }
                     Err(_) => {
-                        record_attach_failure();
+                        terminal_error = Some(RPC_ERROR);
                         break;
                     }
                 };
@@ -461,11 +463,13 @@ pub(crate) async fn handle_attach_client_with_handshake(
                     continue;
                 }
                 if cmd_tx.send(frame).is_err() {
-                    return;
+                    cancelled = true;
+                    break;
                 }
             }
             Some(bytes) = out_rx.recv() => {
                 let write_result = stream.write_all(&bytes).await;
+                let mut response_owned_error = false;
                 if bytes.first() == Some(&jackin_protocol::attach::TAG_ATTACH_CONTROL_RESPONSE)
                     && bytes.len() >= 13
                 {
@@ -473,9 +477,11 @@ pub(crate) async fn handle_attach_client_with_handshake(
                         bytes[5..13].try_into().unwrap_or_default(),
                     );
                     if let Some(completion) = completions.remove(&request_id) {
+                        response_owned_error = write_result.is_err();
                         completion.complete(&write_result);
                     }
                 }
+                let handshake_owned_error = handshake_operation.is_some() && write_result.is_err();
                 if let Some(operation) = handshake_operation.take() {
                     operation.complete(
                         if write_result.is_ok() {
@@ -490,8 +496,10 @@ pub(crate) async fn handle_attach_client_with_handshake(
                     if !matches!(
                         e.kind(),
                         std::io::ErrorKind::UnexpectedEof | std::io::ErrorKind::BrokenPipe
-                    ) {
-                        record_attach_failure();
+                    ) && !handshake_owned_error
+                        && !response_owned_error
+                    {
+                        terminal_error = Some(RPC_ERROR);
                     }
                     break;
                 }
@@ -513,6 +521,11 @@ pub(crate) async fn handle_attach_client_with_handshake(
     // and the daemon keeps treating the dead socket as live. If the
     // main loop is already shutting down, channel closure is expected.
     drop(cmd_tx.send(ClientFrame::Detach));
+    match terminal_error {
+        Some(error) => close.complete_error(error),
+        None if cancelled => drop(close),
+        None => close.complete_success(),
+    }
 }
 
 #[cfg(test)]
