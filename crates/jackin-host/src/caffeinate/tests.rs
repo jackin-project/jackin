@@ -109,6 +109,21 @@ fn is_caffeinate_alive_at_returns_gone_for_nonexistent_pid() {
 }
 
 #[test]
+fn liveness_probe_exports_nonzero_without_pid_or_output() {
+    let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
+    tracing::subscriber::with_default(subscriber, || {
+        assert_eq!(is_caffeinate_alive_at(2_000_000_000), Liveness::Gone);
+    });
+    export.force_flush();
+
+    assert_eq!(export.finished_spans().len(), 1);
+    assert_eq!(export.error_span_count(), 1);
+    assert!(export.contains_span_text("process_exit_nonzero"));
+    assert!(export.contains_span_text("ps"));
+    assert!(!export.contains_span_text("2000000000"));
+}
+
+#[test]
 fn is_caffeinate_alive_at_returns_gone_for_unrelated_process() {
     // PID 1 is launchd on macOS / init on Linux — alive, but its
     // comm is not "caffeinate". This is exactly the PID-reuse race

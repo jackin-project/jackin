@@ -3062,6 +3062,7 @@ dependencies = [
  "jackin-test-support",
  "tempfile",
  "tokio",
+ "tracing",
  "url",
 ]
 

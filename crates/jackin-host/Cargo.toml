@@ -34,6 +34,8 @@ url = { workspace = true }
 workspace = true
 
 [dev-dependencies]
+jackin-diagnostics = { workspace = true, features = ["test-support"] }
 jackin-test-support = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt"] }
+tracing = { workspace = true }
