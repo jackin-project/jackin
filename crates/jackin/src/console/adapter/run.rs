@@ -18,7 +18,6 @@ use jackin_console::tui::components::error_popup::{
 use jackin_console::tui::components::status_popup::{
     instance_action_busy_message, instance_action_busy_title,
 };
-use jackin_console::tui::debug::console_location_debug;
 use jackin_console::tui::message::PromptOutcome;
 use jackin_console::tui::message::launch_prompt_should_probe_agents;
 use jackin_console::tui::model::{clear_pending_launch_role_plan, take_pending_launch_plan};
@@ -32,10 +31,10 @@ use jackin_console::tui::prompts::{
 use jackin_console::tui::run::{
     ConsoleChromeHover, ConsoleModalMouseLayerFacts, QuitConfirmPlan, console_pointer_shape,
     debug_chip_activation_allowed, debug_chip_row, debug_invocation_id_label,
-    letter_input_state_for_console, modal_mouse_layer_plan, quit_confirm_area,
-    quit_intercept_state_for_console, should_debug_log_mouse, should_open_quit_confirm,
-    split_debug_area, startup_error_dismissed, startup_error_modal_active_for_console,
-    token_generate_scope_label_for_console, token_generate_status_message,
+    modal_mouse_layer_plan, quit_confirm_area, quit_intercept_state_for_console,
+    should_open_quit_confirm, split_debug_area, startup_error_dismissed,
+    startup_error_modal_active_for_console, token_generate_scope_label_for_console,
+    token_generate_status_message,
 };
 
 use jackin_config::AppConfig;
@@ -730,15 +729,6 @@ where
     {
         return Ok(ConsoleLoopFlow::Continue);
     }
-    jackin_diagnostics::telemetry_debug!(
-        "tui",
-        "key={} location={}",
-        jackin_console::tui::debug::key_debug_name_for_input(
-            key,
-            jackin_console::tui::run::consumes_letter_input(letter_input_state_for_console(state)),
-        ),
-        console_location_debug(state)
-    );
     if matches!(key.code, KeyCode::Char('c')) && key.modifiers.contains(KeyModifiers::CONTROL) {
         return Ok(ConsoleLoopFlow::Exit(None));
     }
@@ -841,13 +831,6 @@ fn handle_mouse_event<H, R>(
     needs_redraw: &mut bool,
 ) -> anyhow::Result<ConsoleLoopFlow> {
     mouse_state.last_event_at = Some(std::time::Instant::now());
-    if should_debug_log_mouse(mouse) {
-        jackin_diagnostics::telemetry_debug!(
-            "tui",
-            "mouse={mouse:?} location={}",
-            console_location_debug(state)
-        );
-    }
     let no_modal_open = no_modal_open(state);
     let modal_plan = {
         let (main_area, _) = split_debug_area(term_size, jackin_diagnostics::is_debug_mode());
