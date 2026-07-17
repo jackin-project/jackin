@@ -73,7 +73,7 @@ enum Command {
     /// Run every bounded fuzz target owned by one crate.
     #[command(name = "ci-fuzz")]
     CiFuzz(ci_fuzz::CiFuzzArgs),
-    /// Analyze one JUnit report and enforce the flake quarantine.
+    /// Analyze one `JUnit` report and enforce the flake quarantine.
     #[command(name = "ci-junit")]
     CiJunit(ci_junit::CiJunitArgs),
     /// Resolve reusable per-crate CI results.

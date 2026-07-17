@@ -82,6 +82,10 @@ fn parse_report(path: &Path) -> Result<Vec<TestCase>> {
     Ok(cases)
 }
 
+#[expect(
+    clippy::disallowed_methods,
+    reason = "the synchronous CI tool owns this short-lived summary writer"
+)]
 fn write_summary(group: &str, cases: &[TestCase]) -> Result<()> {
     let Some(path) = env::var_os("GITHUB_STEP_SUMMARY") else {
         return Ok(());
