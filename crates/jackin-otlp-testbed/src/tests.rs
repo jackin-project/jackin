@@ -1,5 +1,14 @@
 use super::*;
 
+fn authenticated<T>(message: T) -> Request<T> {
+    let mut request = Request::new(message);
+    request.metadata_mut().insert(
+        "authorization",
+        "Bearer capsule-safe".parse().expect("valid metadata"),
+    );
+    request
+}
+
 #[tokio::test(flavor = "current_thread")]
 async fn serves_all_three_otlp_services() {
     let testbed = Testbed::start().expect("start testbed");
@@ -51,6 +60,27 @@ async fn serves_all_three_otlp_services() {
             .map(|partial| partial.rejected_spans),
         Some(1)
     );
+
+    testbed.set_behavior(Behavior::RequireHeader {
+        name: "authorization",
+        value: "Bearer capsule-safe",
+    });
+    let error = traces
+        .export(ExportTraceServiceRequest::default())
+        .await
+        .expect_err("missing authentication metadata");
+    assert_eq!(error.code(), tonic::Code::Unauthenticated);
+    traces
+        .export(authenticated(ExportTraceServiceRequest::default()))
+        .await
+        .expect("authenticated trace export");
+    logs.export(authenticated(ExportLogsServiceRequest::default()))
+        .await
+        .expect("authenticated log export");
+    metrics
+        .export(authenticated(ExportMetricsServiceRequest::default()))
+        .await
+        .expect("authenticated metric export");
 }
 
 #[test]

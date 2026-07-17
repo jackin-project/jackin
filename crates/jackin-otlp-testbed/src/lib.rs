@@ -37,6 +37,13 @@ pub enum Behavior {
     PartialSuccess,
     /// Hold a response to exercise exporter deadline behavior.
     Delay(std::time::Duration),
+    /// Accept only requests carrying the exact ASCII gRPC metadata entry.
+    RequireHeader {
+        /// Metadata key required on every signal request.
+        name: &'static str,
+        /// Exact metadata value required on every signal request.
+        value: &'static str,
+    },
 }
 
 #[derive(Debug, Default)]
@@ -63,7 +70,23 @@ impl State {
                 tokio::time::sleep(*duration).await;
                 Ok(())
             }
-            Behavior::Ok | Behavior::PartialSuccess => Ok(()),
+            Behavior::Ok | Behavior::PartialSuccess | Behavior::RequireHeader { .. } => Ok(()),
+        }
+    }
+
+    fn authenticate(
+        behavior: &Behavior,
+        metadata: &tonic::metadata::MetadataMap,
+    ) -> Result<(), Status> {
+        let Behavior::RequireHeader { name, value } = behavior else {
+            return Ok(());
+        };
+        if metadata.get(*name).and_then(|actual| actual.to_str().ok()) == Some(*value) {
+            Ok(())
+        } else {
+            Err(Status::unauthenticated(
+                "required OTLP testbed metadata missing",
+            ))
         }
     }
 }
@@ -77,13 +100,14 @@ impl TraceService for Services {
         &self,
         request: Request<ExportTraceServiceRequest>,
     ) -> Result<Response<ExportTraceServiceResponse>, Status> {
+        let behavior = self.0.behavior();
+        State::authenticate(&behavior, request.metadata())?;
         self.0
             .traces
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .push(request.into_inner());
         self.0.received.notify_one();
-        let behavior = self.0.behavior();
         State::apply(&behavior).await?;
         let partial_success =
             matches!(behavior, Behavior::PartialSuccess).then(|| ExportTracePartialSuccess {
@@ -102,13 +126,14 @@ impl LogsService for Services {
         &self,
         request: Request<ExportLogsServiceRequest>,
     ) -> Result<Response<ExportLogsServiceResponse>, Status> {
+        let behavior = self.0.behavior();
+        State::authenticate(&behavior, request.metadata())?;
         self.0
             .logs
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .push(request.into_inner());
         self.0.received.notify_one();
-        let behavior = self.0.behavior();
         State::apply(&behavior).await?;
         let partial_success =
             matches!(behavior, Behavior::PartialSuccess).then(|| ExportLogsPartialSuccess {
@@ -125,13 +150,14 @@ impl MetricsService for Services {
         &self,
         request: Request<ExportMetricsServiceRequest>,
     ) -> Result<Response<ExportMetricsServiceResponse>, Status> {
+        let behavior = self.0.behavior();
+        State::authenticate(&behavior, request.metadata())?;
         self.0
             .metrics
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .push(request.into_inner());
         self.0.received.notify_one();
-        let behavior = self.0.behavior();
         State::apply(&behavior).await?;
         let partial_success =
             matches!(behavior, Behavior::PartialSuccess).then(|| ExportMetricsPartialSuccess {
