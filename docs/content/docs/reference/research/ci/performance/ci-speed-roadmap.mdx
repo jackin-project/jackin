@@ -869,6 +869,13 @@ runner-neutral configuration while preventing duplicate cold compilation.
 3. Done in this branch: keep final release artifacts on deterministic settings. Archive build jobs keep `CARGO_INCREMENTAL=0`, pinned toolchain, pinned SDK/tool versions, and unchanged SBOM/signing/attestation, while the shared archive action now normalizes tar entry order, mtime, owner/group metadata, numeric owners, and gzip header names.
 4. Done in this branch: extend `sccache` to release archive builds using the same release-profile archive action and short-retention stats artifacts as preview, while keeping deterministic release settings and `Swatinem/rust-cache` in place.
 5. Done in this branch: standardize on `cargo-zigbuild`-from-Linux for every release target, including macOS, and drop the `macos-latest` runners from the release critical path. Preview already cross-compiles macOS this way with a cached SDK, so this also collapses preview and release onto one build implementation. Keep a single native-macOS build-and-test in the scheduled hygiene lane for parity, so a macOS-specific link or runtime regression is still caught -- just not on the release critical path. Unify the `Swatinem/rust-cache` `shared-key` across the preview and release build jobs so one target triple warms a single cache instead of `build-preview-<target>` and `build-<target>` never sharing.
+6. Corrected in this branch: preview and tagged Release now invoke the same
+   declarative package-result restore action. Both lanes search completed
+   artifacts from either runner, then the current run, before invoking the
+   shared Rust archive producer. Package-contract concurrency admits one cold
+   producer and makes the other lane reuse its complete result. The old
+   GitHub-only archive-cache writer and duplicate final-archive cache families
+   are removed; runner choice changes performance, not the build algorithm.
 
 ### Phase 8 -- Warm persistent-runner fast lane (highest-leverage Rust speedup)
 

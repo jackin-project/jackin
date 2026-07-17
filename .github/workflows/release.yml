@@ -108,11 +108,13 @@ jobs:
     needs: [check-version]
     strategy:
       fail-fast: false
-      max-parallel: 1
       matrix:
         config: ${{ fromJSON((github.event_name != 'workflow_dispatch' || inputs.lanes == 'github') && '[{"lane":"GitHub","runner":"\"ubuntu-24.04\"","mise_data_dir":"/home/runner/.local/share/mise","rustup_home":"/home/runner/.rustup"}]' || inputs.lanes == 'velnor' && '[{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","mise_data_dir":"/opt/mise","rustup_home":"/opt/rustup"}]' || '[{"lane":"GitHub","runner":"\"ubuntu-24.04\"","mise_data_dir":"/home/runner/.local/share/mise","rustup_home":"/home/runner/.rustup"},{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","mise_data_dir":"/opt/mise","rustup_home":"/opt/rustup"}]') }}
     runs-on: ${{ fromJSON(matrix.config.runner) }}
     timeout-minutes: 60
+    concurrency:
+      group: release-jackin-${{ github.sha }}-${{ needs.check-version.outputs.version }}
+      cancel-in-progress: false
     name: build jackin (${{ matrix.config.lane }})
     permissions:
       actions: read
@@ -130,20 +132,23 @@ jobs:
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - name: Restore input-identical jackin release
-        id: archive-cache
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: archive-result
+        uses: ./.github/actions/restore-package-result
         with:
-          path: dist
-          key: release-archives-v1-jackin-${{ github.sha }}-${{ needs.check-version.outputs.version }}
+          workflow: release.yml
+          commit: ${{ github.sha }}
+          primary-name: release-GitHub-jackin
+          alternate-name: release-Velnor-jackin
+          current-name-regexp: ^release-(GitHub|Velnor)-jackin$
       - uses: ./.github/actions/download-ci-xtask
-        if: steps.archive-cache.outputs.cache-hit != 'true'
+        if: steps.archive-result.outputs.found != 'true'
         with:
           token: ${{ github.token }}
           lane: ${{ matrix.config.lane }}
           xtask-contract: ${{ needs.check-version.outputs.xtask_contract }}
           include-tools: "false"
       - name: Cache Rust toolchain
-        if: steps.archive-cache.outputs.cache-hit != 'true'
+        if: steps.archive-result.outputs.found != 'true'
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -153,11 +158,11 @@ jobs:
           restore-keys: |
             rustup-v2-${{ runner.os }}-${{ runner.arch }}-
       - name: Use the prepared current Rust toolchain
-        if: steps.archive-cache.outputs.cache-hit != 'true'
+        if: steps.archive-result.outputs.found != 'true'
         run: >-
           "$CI_XTASK" ci-toolchain prepare
       - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
-        if: steps.archive-cache.outputs.cache-hit != 'true'
+        if: steps.archive-result.outputs.found != 'true'
         env:
           # sccache install: blank wrapper in case binstall source-falls-back
           # to cargo, which would probe rustc through a missing sccache.
@@ -169,10 +174,10 @@ jobs:
           install_args: "cargo-binstall zig cargo:cargo-zigbuild cosign syft cargo:sccache"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
-        if: steps.archive-cache.outputs.cache-hit != 'true'
+        if: steps.archive-result.outputs.found != 'true'
         uses: ./.github/actions/cache-cargo-registry
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-        if: steps.archive-cache.outputs.cache-hit != 'true'
+        if: steps.archive-result.outputs.found != 'true'
         with:
           shared-key: release-archive-jackin-workspace-v3
           cache-all-crates: "true"
@@ -183,13 +188,13 @@ jobs:
           # PR/branch/release reads the default branch's warm cache via fallback.
           # Only main saves, preserving limited cache quota for reusable entries.
       - name: Cache macOS SDK
-        if: steps.archive-cache.outputs.cache-hit != 'true'
+        if: steps.archive-result.outputs.found != 'true'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}/macos-sdk
           key: macos-sdk-26.1
       - name: Build complete signed jackin archive set
-        if: steps.archive-cache.outputs.cache-hit != 'true'
+        if: steps.archive-result.outputs.found != 'true'
         env:
           VERSION: ${{ needs.check-version.outputs.version }}
         run: >-
@@ -198,12 +203,6 @@ jobs:
           --version "$VERSION"
           --archive-version "$VERSION"
           --sccache-stats sccache-stats.txt
-      - name: Save input-identical jackin release
-        if: steps.archive-cache.outputs.cache-hit != 'true' && matrix.config.lane == 'GitHub'
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: dist
-          key: release-archives-v1-jackin-${{ github.sha }}-${{ needs.check-version.outputs.version }}
       - name: Attest complete jackin archive set
         uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
@@ -235,6 +234,9 @@ jobs:
     needs: [check-version]
     runs-on: ${{ fromJSON(matrix.config.runner) }}
     timeout-minutes: 60
+    concurrency:
+      group: release-capsule-${{ github.sha }}-${{ needs.check-version.outputs.version }}
+      cancel-in-progress: false
     name: build jackin-capsule (${{ matrix.config.lane }})
     permissions:
       actions: read
@@ -251,26 +253,28 @@ jobs:
       RUSTUP_HOME: ${{ matrix.config.rustup_home }}
     strategy:
       fail-fast: false
-      max-parallel: 1
       matrix:
         config: ${{ fromJSON((github.event_name != 'workflow_dispatch' || inputs.lanes == 'github') && '[{"lane":"GitHub","runner":"\"ubuntu-24.04\"","mise_data_dir":"/home/runner/.local/share/mise","rustup_home":"/home/runner/.rustup"}]' || inputs.lanes == 'velnor' && '[{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","mise_data_dir":"/opt/mise","rustup_home":"/opt/rustup"}]' || '[{"lane":"GitHub","runner":"\"ubuntu-24.04\"","mise_data_dir":"/home/runner/.local/share/mise","rustup_home":"/home/runner/.rustup"},{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","mise_data_dir":"/opt/mise","rustup_home":"/opt/rustup"}]') }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - name: Restore input-identical capsule release
-        id: archive-cache
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: archive-result
+        uses: ./.github/actions/restore-package-result
         with:
-          path: dist
-          key: release-archives-v1-capsule-${{ github.sha }}-${{ needs.check-version.outputs.version }}
+          workflow: release.yml
+          commit: ${{ github.sha }}
+          primary-name: release-GitHub-jackin-capsule
+          alternate-name: release-Velnor-jackin-capsule
+          current-name-regexp: ^release-(GitHub|Velnor)-jackin-capsule$
       - uses: ./.github/actions/download-ci-xtask
-        if: steps.archive-cache.outputs.cache-hit != 'true'
+        if: steps.archive-result.outputs.found != 'true'
         with:
           token: ${{ github.token }}
           lane: ${{ matrix.config.lane }}
           xtask-contract: ${{ needs.check-version.outputs.xtask_contract }}
           include-tools: "false"
       - name: Cache Rust toolchain
-        if: steps.archive-cache.outputs.cache-hit != 'true'
+        if: steps.archive-result.outputs.found != 'true'
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -280,11 +284,11 @@ jobs:
           restore-keys: |
             rustup-v2-${{ runner.os }}-${{ runner.arch }}-
       - name: Use the prepared current Rust toolchain
-        if: steps.archive-cache.outputs.cache-hit != 'true'
+        if: steps.archive-result.outputs.found != 'true'
         run: >-
           "$CI_XTASK" ci-toolchain prepare
       - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
-        if: steps.archive-cache.outputs.cache-hit != 'true'
+        if: steps.archive-result.outputs.found != 'true'
         env:
           # sccache install: blank wrapper in case binstall source-falls-back
           # to cargo, which would probe rustc through a missing sccache.
@@ -296,10 +300,10 @@ jobs:
           install_args: "cargo-binstall zig cargo:cargo-zigbuild cosign syft cargo:sccache"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
-        if: steps.archive-cache.outputs.cache-hit != 'true'
+        if: steps.archive-result.outputs.found != 'true'
         uses: ./.github/actions/cache-cargo-registry
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-        if: steps.archive-cache.outputs.cache-hit != 'true'
+        if: steps.archive-result.outputs.found != 'true'
         with:
           shared-key: release-archive-capsule-workspace-v3
           cache-all-crates: "true"
@@ -310,7 +314,7 @@ jobs:
           # PR/branch/release reads the default branch's warm cache via fallback.
           # Only main saves, preserving limited cache quota for reusable entries.
       - name: Build complete signed capsule archive set
-        if: steps.archive-cache.outputs.cache-hit != 'true'
+        if: steps.archive-result.outputs.found != 'true'
         env:
           VERSION: ${{ needs.check-version.outputs.version }}
         run: >-
@@ -319,12 +323,6 @@ jobs:
           --version "$VERSION"
           --archive-version "$VERSION"
           --sccache-stats sccache-stats.txt
-      - name: Save input-identical capsule release
-        if: steps.archive-cache.outputs.cache-hit != 'true' && matrix.config.lane == 'GitHub'
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: dist
-          key: release-archives-v1-capsule-${{ github.sha }}-${{ needs.check-version.outputs.version }}
       - name: Attest complete capsule archive set
         uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
