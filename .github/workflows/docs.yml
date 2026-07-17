@@ -200,8 +200,6 @@ jobs:
     needs: changes
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    env:
-      DOCS_XTASK: ${{ github.workspace }}/.ci-tools/GitHub/jackin-xtask
     steps:
       - name: Checkout repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -234,7 +232,7 @@ jobs:
         run: echo "::add-matcher::.github/problem-matchers/xtask.json"
       - name: Check source repository links
         run: |
-          "$DOCS_XTASK" docs repo-links
+          "$CI_XTASK" docs repo-links
 
       # README links are not part of the generated docs site. Check them live
       # without cache so a malformed or removed destination fails this PR.
@@ -250,19 +248,19 @@ jobs:
 
       - name: Check brand prose
         run: |
-          "$DOCS_XTASK" docs brand
+          "$CI_XTASK" docs brand
 
       - name: Check behavioral-spec test citations
         run: |
-          env -u CI "$DOCS_XTASK" docs specs
+          env -u CI "$CI_XTASK" docs specs
 
       - name: Check roadmap sidebar completeness
         run: |
-          "$DOCS_XTASK" roadmap audit
+          "$CI_XTASK" roadmap audit
 
       - name: Check research sidebar completeness
         run: |
-          "$DOCS_XTASK" research check
+          "$CI_XTASK" research check
 
   docs-link-check:
     needs: changes
