@@ -205,6 +205,13 @@ fn build(
     }
     command.args(["--target", target.zigbuild]);
     command.env("JACKIN_VERSION_OVERRIDE", version);
+    if package == ArchivePackage::Jackin {
+        // The host binary's dependency graph can otherwise feed Zig's Apple
+        // linker more than 1,500 objects and exceed a container's descriptor
+        // quota. A single release codegen unit also produces the intended
+        // fully optimized distribution binary.
+        command.env("CARGO_PROFILE_RELEASE_CODEGEN_UNITS", "1");
+    }
     command.env("ZIG_GLOBAL_CACHE_DIR", &zig_cache.global);
     command.env("ZIG_LOCAL_CACHE_DIR", &zig_cache.local);
     if target.rust.contains("apple") {
