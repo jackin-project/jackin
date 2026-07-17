@@ -277,23 +277,9 @@ jobs:
         if: >-
           steps.crate-result.outputs.hit != 'true' &&
           contains(fromJSON('["jackin-config","jackin-env","jackin-manifest","jackin-protocol","jackin-term"]'), matrix.package)
-        shell: bash
         env:
           CARGO_TARGET_DIR: ${{ github.workspace }}/target
-        run: |
-          case "${{ matrix.package }}" in
-            jackin-config) dir=crates/jackin-config; targets="config_migrate workspace_migrate" ;;
-            jackin-env) dir=crates/jackin-env; targets="env_resolve" ;;
-            jackin-manifest) dir=crates/jackin-manifest; targets="manifest_migrate manifest_validate" ;;
-            jackin-protocol) dir=crates/jackin-protocol; targets="decode_frames" ;;
-            jackin-term) dir=crates/jackin-term; targets="damage_grid_process" ;;
-          esac
-          cd "$dir"
-          cargo fetch --locked --offline
-          for fuzz_target in $targets; do
-            "$CI_CARGO_FUZZ" fuzz run --sanitizer none --target x86_64-unknown-linux-gnu \
-              "$fuzz_target" -- -max_total_time=5
-          done
+        run: $CI_XTASK ci-fuzz --package "${{ matrix.package }}"
       - name: Enforce telemetry volume ratchet
         if: steps.crate-result.outputs.hit != 'true' && matrix.package == 'jackin-diagnostics'
         run: |
