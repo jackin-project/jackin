@@ -602,12 +602,16 @@ async fn github_auth_token() -> Option<String> {
 async fn github_auth_token_uncached() -> Option<String> {
     // Degrade to unauthenticated (60 req/hr) on any failure. Do not emit the
     // subprocess error or stderr: either may contain host or account data.
-    match tokio::process::Command::new("gh")
-        .args(["auth", "token", "--hostname", "github.com"])
-        .output()
-        .await
+    let request =
+        jackin_process::ExecRequest::new("gh", ["auth", "token", "--hostname", "github.com"])
+            .timeout(Duration::from_secs(15));
+    match crate::process_telemetry::exec_async(
+        &request,
+        jackin_telemetry::schema::enums::ProcessExecutableName::Gh,
+    )
+    .await
     {
-        Ok(output) if output.status.success() => {
+        Ok(output) if output.success => {
             let token = String::from_utf8(output.stdout).ok()?.trim().to_owned();
             (!token.is_empty()).then_some(token)
         }
@@ -831,27 +835,19 @@ async fn download_and_cache_inner(
     // machines we cannot natively exec them; Grok remains the one prefetched
     // install block that keeps a Docker-build `grok --version` smoke check.
     if release.checksum.is_none() && cfg!(target_os = "linux") {
-        let status = tokio::process::Command::new(tmp_binary)
-            .arg("--version")
-            .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status()
-            .await
-            .with_context(|| {
-                format!(
-                    "spawning {} --version smoke test for downloaded binary",
-                    release.agent.slug()
-                )
-            })?;
-        if !status.success() {
-            return Err(ImageError::msg(format!(
-                "{} {} failed --version smoke test after download (status: {:?})",
-                release.agent.slug(),
-                release.version,
-                status
-            ))
-            .into());
+        let request = jackin_process::ExecRequest::new(tmp_binary, ["--version"])
+            .stdin_mode(jackin_process::StdioMode::Null)
+            .stdout_mode(jackin_process::StdioMode::Null)
+            .stderr_mode(jackin_process::StdioMode::Null)
+            .timeout(Duration::from_secs(15));
+        let output = crate::process_telemetry::exec_async(
+            &request,
+            crate::process_telemetry::agent_executable(release.agent),
+        )
+        .await
+        .context("running downloaded agent verification process")?;
+        if !output.success {
+            return Err(ImageError::msg("downloaded agent verification failed").into());
         }
     }
 

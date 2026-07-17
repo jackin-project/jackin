@@ -3080,6 +3080,7 @@ dependencies = [
  "jackin-diagnostics",
  "jackin-docker",
  "jackin-manifest",
+ "jackin-process",
  "jackin-telemetry",
  "nix 0.31.3",
  "reqwest",
@@ -3091,6 +3092,7 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.18",
  "tokio",
+ "tracing",
  "x509-cert 0.3.0",
 ]
 

@@ -211,26 +211,3 @@ fn is_allowed_signer_san_accepts_release_and_preview_workflows() {
     // Rejected: empty string.
     assert!(!is_allowed_signer_san(""));
 }
-
-#[test]
-fn format_exit_detail_produces_expected_output() {
-    // Both streams present.
-    assert_eq!(
-        format_exit_detail("out text", "err text"),
-        "stdout: out text\nstderr: err text"
-    );
-    // Only stdout.
-    assert_eq!(format_exit_detail("out text", ""), "stdout: out text");
-    // Only stderr.
-    assert_eq!(format_exit_detail("", "err text"), "stderr: err text");
-    // Both empty (signal/crash).
-    assert_eq!(
-        format_exit_detail("", ""),
-        "(no output — possible signal/crash)"
-    );
-    // Whitespace-only streams treated as empty.
-    assert_eq!(
-        format_exit_detail("  \n  ", ""),
-        "(no output — possible signal/crash)"
-    );
-}

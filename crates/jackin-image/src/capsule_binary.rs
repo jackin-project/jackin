@@ -890,28 +890,6 @@ pub fn install_test_stub(paths: &JackinPaths) -> Result<()> {
     Ok(())
 }
 
-/// Format stdout/stderr streams from a process exit for an error message.
-/// Returns a human-readable detail block; falls back to a signal-crash hint when
-/// both streams are empty.
-// Only called from the Linux `verify_version` exec path; on macOS/Windows the
-// sole non-test call site is compiled out while unit tests still exercise it.
-#[cfg_attr(
-    all(not(target_os = "linux"), not(test)),
-    expect(dead_code, reason = "Linux-only verify_version exec detail formatter")
-)]
-fn format_exit_detail(stdout: &str, stderr: &str) -> String {
-    let streams: Vec<String> = [("stdout", stdout.trim()), ("stderr", stderr.trim())]
-        .into_iter()
-        .filter(|(_, v)| !v.is_empty())
-        .map(|(k, v)| format!("{k}: {v}"))
-        .collect();
-    if streams.is_empty() {
-        "(no output — possible signal/crash)".to_owned()
-    } else {
-        streams.join("\n")
-    }
-}
-
 /// Verify the downloaded binary is a jackin-capsule of the expected
 /// version. Strict matching is only meaningful for stable releases —
 /// dev/preview builds share a single rolling `preview` tag whose SHA
@@ -930,43 +908,28 @@ fn format_exit_detail(stdout: &str, stderr: &str) -> String {
 async fn verify_version(binary: &Path, expected: &str, is_preview: bool) -> Result<()> {
     #[cfg(target_os = "linux")]
     {
-        let output = tokio::process::Command::new(binary)
-            .arg("--version")
-            .output()
-            .await
-            .context("failed to run jackin-capsule --version")?;
-        if !output.status.success() {
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            let detail = format_exit_detail(&stdout, &stderr);
-            return Err(ImageError::msg(format!(
-                "jackin-capsule --version at {} exited with {}\n{detail}\n\
-                 If the binary is corrupted, delete it and retry: rm -f {}",
-                binary.display(),
-                output.status,
-                binary.display()
-            ))
-            .into());
+        let request = jackin_process::ExecRequest::new(binary, ["--version"])
+            .timeout(std::time::Duration::from_secs(15));
+        let output = crate::process_telemetry::exec_async(
+            &request,
+            jackin_telemetry::schema::enums::ProcessExecutableName::JackinCapsule,
+        )
+        .await
+        .context("running downloaded capsule verification process")?;
+        if !output.success {
+            return Err(ImageError::msg("downloaded capsule verification failed").into());
         }
         let stdout = String::from_utf8_lossy(&output.stdout);
         if is_preview {
             if !stdout.contains(ASSET_PREFIX) {
-                return Err(ImageError::msg(format!(
-                    "downloaded binary does not identify as {ASSET_PREFIX} (got {stdout:?})"
-                ))
-                .into());
+                return Err(
+                    ImageError::msg("downloaded capsule identity verification failed").into(),
+                );
             }
             return Ok(());
         }
         if !stdout.contains(expected) {
-            return Err(ImageError::msg(format!(
-                "downloaded jackin-capsule reports {:?} but expected {expected}.\n\
-                 Stable release ↔ asset mapping appears to have drifted.\n\
-                 Delete and retry: rm -f {}",
-                stdout.trim(),
-                binary.display()
-            ))
-            .into());
+            return Err(ImageError::msg("downloaded capsule version verification failed").into());
         }
         Ok(())
     }
