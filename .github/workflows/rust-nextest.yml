@@ -116,21 +116,33 @@ jobs:
       - name: Find input-identical successful crate result
         id: crate-result
         env:
+          ALL_FEATURES: ${{ inputs.all-features }}
+          CACHE_KEY: ${{ fromJSON(inputs.package-cache-keys-json)[matrix.package] }}
+          COMMON_CONTRACT_KEY: ${{ inputs.nextest-contract }}
+          CONSTRUCT_IMAGE_CHANGED: ${{ inputs.construct-image-changed }}
+          DOCKER_CONTRACT_KEY: ${{ inputs.docker-contract || hashFiles('docker/**', 'docker-bake.hcl') }}
+          DOCKER_E2E: ${{ inputs.docker-e2e }}
           GH_TOKEN: ${{ github.token }}
+          PACKAGE: ${{ matrix.package }}
+          REFRESH_PACKAGE: ${{ inputs.refresh-package }}
+          REPOSITORY: ${{ github.repository }}
+          RUNNER_ARCH: ${{ runner.arch }}
+          RUNNER_OS: ${{ runner.os }}
+          SOURCE_SHA: ${{ github.sha }}
         run: >-
           "$CI_XTASK" ci-result find
-          --package "${{ matrix.package }}"
-          --cache-key "${{ fromJSON(inputs.package-cache-keys-json)[matrix.package] }}"
-          --all-features "${{ inputs.all-features }}"
-          --docker-e2e "${{ inputs.docker-e2e }}"
-          --construct-image-changed "${{ inputs.construct-image-changed }}"
-          --common-contract-key "${{ inputs.nextest-contract }}"
-          --docker-contract-key "${{ inputs.docker-contract || hashFiles('docker/**', 'docker-bake.hcl') }}"
-          --runner-os "${{ runner.os }}"
-          --runner-arch "${{ runner.arch }}"
-          --source-sha "${{ github.sha }}"
-          --repository "${{ github.repository }}"
-          --refresh-package "${{ inputs.refresh-package }}"
+          --package "$PACKAGE"
+          --cache-key "$CACHE_KEY"
+          --all-features "$ALL_FEATURES"
+          --docker-e2e "$DOCKER_E2E"
+          --construct-image-changed "$CONSTRUCT_IMAGE_CHANGED"
+          --common-contract-key "$COMMON_CONTRACT_KEY"
+          --docker-contract-key "$DOCKER_CONTRACT_KEY"
+          --runner-os "$RUNNER_OS"
+          --runner-arch "$RUNNER_ARCH"
+          --source-sha "$SOURCE_SHA"
+          --repository "$REPOSITORY"
+          --refresh-package "$REFRESH_PACKAGE"
           --github-output
       - uses: ./.github/actions/download-ci-xtask
         if: steps.crate-result.outputs.hit != 'true'
