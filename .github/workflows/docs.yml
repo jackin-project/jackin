@@ -86,7 +86,7 @@ jobs:
               - '.github/**/*.yml'
               - '.github/workflows/docs.yml'
               - '.github/actions/check-deployed-docs/**'
-              - 'scripts/ci/docs-site-contract.sh'
+              - 'crates/jackin-xtask/src/docs/contract.rs'
               - 'scripts/ci/codebook-contract.sh'
               - 'docs/**'
             source:
@@ -95,7 +95,6 @@ jobs:
               - 'docker/**/*.sh'
               - 'docker/**/*.toml'
               - '.github/workflows/docs.yml'
-              - 'scripts/ci/docs-site-contract.sh'
               - 'scripts/ci/codebook-contract.sh'
 
       - name: Find input-identical successful Docs result
@@ -138,7 +137,6 @@ jobs:
                   'docs/**' \
                   'mise.lock' \
                   'mise.toml' \
-                  'scripts/ci/docs-site-contract.sh' \
                   'scripts/ci/codebook-contract.sh'
               )
             } | sha256sum | cut -d ' ' -f 1
@@ -306,7 +304,7 @@ jobs:
           REPOSITORY: ${{ github.repository }}
         run: |
           set -euo pipefail
-          name="docs-site-v3-${RUNNER_OS}-$(scripts/ci/docs-site-contract.sh)"
+          name="docs-site-v3-${RUNNER_OS}-$("$CI_XTASK" docs contract site)"
           artifact_id=
           exact=false
           if ! artifact_id=$(
