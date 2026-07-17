@@ -89,15 +89,10 @@ fn copy_cached_tools(source: &Path, destination: &Path) -> Result<()> {
 
 fn stage_mise_tools(destination: &Path) -> Result<()> {
     for tool in TOOLS {
-        let output = Command::new("mise")
-            .args(["which", tool])
-            .output()
+        let mut command = Command::new("mise");
+        command.args(["which", tool]);
+        let source = cmd::output_string(&mut command)
             .with_context(|| format!("locating {tool} through mise"))?;
-        if !output.status.success() {
-            bail!("mise could not locate {tool}");
-        }
-        let source = String::from_utf8(output.stdout)
-            .with_context(|| format!("mise returned a non-UTF-8 path for {tool}"))?;
         let staged = destination.join(tool);
         copy_file(Path::new(source.trim()), &staged)?;
         strip(&staged)?;
@@ -113,15 +108,10 @@ fn strip(path: &Path) -> Result<()> {
 }
 
 fn write_workspace_metadata(destination: &Path) -> Result<()> {
-    let output = Command::new("cargo")
-        .args(["metadata", "--format-version", "1", "--locked", "--offline"])
-        .output()
-        .context("collecting offline workspace metadata")?;
-    if !output.status.success() {
-        bail!("cargo metadata failed while staging the shared CI xtask");
-    }
-    fs::write(destination, output.stdout)
-        .with_context(|| format!("writing {}", destination.display()))
+    let mut command = Command::new("cargo");
+    command.args(["metadata", "--format-version", "1", "--locked", "--offline"]);
+    let output = cmd::output(&mut command).context("collecting offline workspace metadata")?;
+    fs::write(destination, output).with_context(|| format!("writing {}", destination.display()))
 }
 
 fn copy_dir_files(source: &Path, destination: &Path) -> Result<()> {
