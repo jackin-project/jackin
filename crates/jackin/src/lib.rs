@@ -28,6 +28,7 @@ pub mod terminal_ownership;
 pub mod error;
 mod lifecycle;
 pub(crate) mod preflight;
+mod process_telemetry;
 pub mod prompt;
 pub mod role_authoring;
 mod role_claude_plugins;

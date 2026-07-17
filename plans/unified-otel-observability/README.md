@@ -38,7 +38,7 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
 - 008/009/010 can run in parallel after 007 (independent surfaces: execution boundaries / host TUI / capsule+jobs). 009 before 010 only for the shared widget-event defs.
 - 011 (call-site migration) requires the boundaries (008–010) to exist so most sites become deletions; the roadmap's inventory note ("classify each site rather than replace calls mechanically") is its rulebook.
 - 012 before 013: `diagnostics validate` must exist before `diagnostics summary/compare` are removed.
-- 013 is the single subtractive plan; everything before it keeps old and new contracts running side by side.
+- 013's local-artifact and legacy-namespace subtraction is independently closed. The reopened 011 audit discovered generic prose-macro migration outside that artifact inventory; completing it removes the remaining parallel call-site API without restoring any removed artifact contract.
 - 014's testbed harness can be built any time after 002, but its acceptance-map run is meaningful only post-013.
 - 015 finishes the docs sweep. 016 independently proves every requirement, removes links to the retired roadmap route, and only then deletes this plan directory and roadmap item.
 

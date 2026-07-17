@@ -436,14 +436,9 @@ pub(super) mod instances {
         );
         // Instance refresh is launched through spawn_blocking_subscription;
         // keep the docker listing on the shared process transport.
-        let output = jackin_process::exec_sync(&request)
-            .context("starting docker ps for live instance reconciliation")?;
-        anyhow::ensure!(
-            output.success,
-            "docker ps exited with status {:?}: {}",
-            output.code,
-            String::from_utf8_lossy(&output.stderr).trim()
-        );
+        let output = crate::process_telemetry::exec_sync(&request)
+            .context("starting live instance reconciliation")?;
+        anyhow::ensure!(output.success, "live instance reconciliation failed");
         Ok(String::from_utf8_lossy(&output.stdout)
             .lines()
             .map(str::trim)

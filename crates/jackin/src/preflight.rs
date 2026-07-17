@@ -231,7 +231,7 @@ async fn report_docker_version() -> CheckResult {
     // we don't expose a version endpoint on the DockerApi trait.
     let request =
         jackin_process::ExecRequest::new("docker", ["version", "--format", "{{.Server.Version}}"]);
-    match jackin_process::exec_async(&request).await {
+    match crate::process_telemetry::exec_async(&request).await {
         Ok(out) if out.success => {
             let version = String::from_utf8_lossy(&out.stdout);
             docker_version_report_result(&version)
@@ -358,7 +358,7 @@ fn check_capsule_cache(paths: &jackin_core::JackinPaths) -> CheckResult {
 
 fn check_gh_auth() -> CheckResult {
     let request = jackin_process::ExecRequest::new("gh", ["auth", "status"]);
-    match jackin_process::exec_sync(&request) {
+    match crate::process_telemetry::exec_sync(&request) {
         Ok(out) if out.success => CheckResult::ok("gh_auth", "gh CLI authenticated"),
         Ok(_) => CheckResult::warn(
             "gh_auth",
@@ -371,7 +371,7 @@ fn check_gh_auth() -> CheckResult {
 
 fn check_op_cli() -> CheckResult {
     let request = jackin_process::ExecRequest::new("op", ["account", "list", "--format=json"]);
-    match jackin_process::exec_sync(&request) {
+    match crate::process_telemetry::exec_sync(&request) {
         Ok(out) if out.success => CheckResult::ok("op_cli", "1Password CLI signed in"),
         Ok(_) => CheckResult::skip(
             "op_cli",
@@ -391,7 +391,7 @@ fn check_mise() -> CheckResult {
         return CheckResult::skip("mise", "Not in a source checkout — mise not required");
     }
     let request = jackin_process::ExecRequest::new("mise", ["--version"]);
-    match jackin_process::exec_sync(&request) {
+    match crate::process_telemetry::exec_sync(&request) {
         Ok(out) if out.success => {
             let version = String::from_utf8_lossy(&out.stdout).trim().to_owned();
             CheckResult::ok("mise", format!("mise {version}"))
