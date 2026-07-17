@@ -50,10 +50,6 @@ impl AuthFormKeyOutcome {
 /// what's there.
 pub fn open_auth_form_modal(editor: &mut EditorState<'_>, config: &AppConfig) {
     let Some((target, form)) = editor.focused_auth_form(config) else {
-        jackin_diagnostics::telemetry_debug!(
-            "auth_form",
-            "open_auth_form_modal: no target for cursor row (cursor may be on Spacer / AddSentinel / out-of-range)"
-        );
         return;
     };
     let literal_buffer = form.literal_buffer();
@@ -73,10 +69,6 @@ pub fn open_auth_form_modal(editor: &mut EditorState<'_>, config: &AppConfig) {
 /// rendered dimmed in that state).
 pub fn open_auth_role_picker(editor: &mut EditorState<'_>, config: &AppConfig) {
     let Some(candidates) = editor.auth_role_override_selectors(config.roles.keys()) else {
-        jackin_diagnostics::telemetry_debug!(
-            "auth_role_picker",
-            "open_auth_role_picker: no auth kind selected (root view or stale state)"
-        );
         return;
     };
     if candidates.is_empty() {
@@ -248,24 +240,9 @@ fn open_auth_source_picker_from_form(editor: &mut EditorState<'_>, op_available:
     )
 }
 
-/// Stash-miss debug-log codes. Emitted when a side modal commits or
-/// cancels and the auth form parent is
-/// unexpectedly empty — the side handler fired without a paired
-/// open. Codes are stable so grepping `--debug` output stays cheap.
-const AUTH_MISSING_PLAIN_SOURCE: &str = "AUTH001";
-const AUTH_MISSING_PLAIN_TEXT: &str = "AUTH002";
-const AUTH_MISSING_OP_SOURCE: &str = "AUTH003";
-const AUTH_MISSING_OP_CANCEL: &str = "AUTH004";
-const AUTH_MISSING_OP_COMMIT: &str = "AUTH005";
-const AUTH_MISSING_FOLDER_COMMIT: &str = "AUTH006";
-
-fn log_missing_return_path(code: &'static str, fn_name: &'static str, suffix: &str) {
-    jackin_diagnostics::telemetry_debug!(
-        "auth",
-        "{} {}: modal parent auth form missing{}",
-        code,
-        fn_name,
-        suffix
+fn record_missing_return_path() {
+    let _recorded = jackin_telemetry::record_error(
+        jackin_telemetry::schema::enums::ErrorType::TelemetryInstrumentationFault,
     );
 }
 
@@ -281,11 +258,7 @@ pub fn apply_plain_source_picker_to_auth_form(editor: &mut EditorState<'_>) {
         TextInputTarget::AuthCredential,
         auth_credential_input_state,
     ) {
-        log_missing_return_path(
-            AUTH_MISSING_PLAIN_SOURCE,
-            "apply_plain_source_picker_to_auth_form",
-            "",
-        );
+        record_missing_return_path();
     }
 }
 
@@ -301,11 +274,7 @@ pub fn apply_plain_text_to_auth_form(editor: &mut EditorState<'_>, value: &str) 
         AuthFormFocus::Save,
         value,
     ) {
-        log_missing_return_path(
-            AUTH_MISSING_PLAIN_TEXT,
-            "apply_plain_text_to_auth_form",
-            " — typed credential dropped",
-        );
+        record_missing_return_path();
     }
 }
 
@@ -316,11 +285,7 @@ pub fn apply_source_folder_to_auth_form(editor: &mut EditorState<'_>, value: Pat
         AuthFormFocus::Save,
         value,
     ) {
-        log_missing_return_path(
-            AUTH_MISSING_FOLDER_COMMIT,
-            "apply_source_folder_to_auth_form",
-            " — selected folder dropped",
-        );
+        record_missing_return_path();
     }
 }
 
@@ -338,11 +303,7 @@ pub fn open_op_picker_from_auth_source(
         AuthFormFocus::CredentialSource,
         || OpPickerState::new_with_cache(op_cache),
     ) {
-        log_missing_return_path(
-            AUTH_MISSING_OP_SOURCE,
-            "open_op_picker_from_auth_source",
-            " — closing modal",
-        );
+        record_missing_return_path();
     }
 }
 
@@ -376,11 +337,7 @@ pub fn apply_op_picker_to_auth_form_committed(
         AuthFormFocus::Save,
         op_ref,
     ) {
-        log_missing_return_path(
-            AUTH_MISSING_OP_COMMIT,
-            "apply_op_picker_to_auth_form_committed",
-            " — async OpRef commit dropped",
-        );
+        record_missing_return_path();
     }
 }
 
@@ -392,11 +349,7 @@ pub fn restore_auth_form_after_op_picker_cancel(editor: &mut EditorState<'_>) {
         &mut editor.modal,
         &mut editor.modal_parents,
     ) {
-        log_missing_return_path(
-            AUTH_MISSING_OP_CANCEL,
-            "restore_auth_form_after_op_picker_cancel",
-            "",
-        );
+        record_missing_return_path();
     }
 }
 
@@ -420,11 +373,7 @@ fn apply_op_picker_to_auth_form_with_validator(
     validate: impl FnOnce(&jackin_core::OpRef) -> anyhow::Result<()>,
 ) {
     if !editor.has_auth_form_parent() {
-        log_missing_return_path(
-            AUTH_MISSING_OP_COMMIT,
-            "apply_op_picker_to_auth_form",
-            " — OpRef commit dropped",
-        );
+        record_missing_return_path();
         return;
     }
     let read_result = validate(&op_ref);

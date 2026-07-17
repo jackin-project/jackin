@@ -2949,6 +2949,7 @@ dependencies = [
  "termrock",
  "tokio",
  "toml",
+ "tracing",
 ]
 
 [[package]]
