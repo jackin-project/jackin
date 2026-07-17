@@ -1285,10 +1285,16 @@ fn emit_severity_matrix() {
         jackin_telemetry::FieldSet::new(&outcome, None),
     )
     .unwrap();
-    let widget = [jackin_telemetry::Attr {
-        key: jackin_telemetry::schema::attrs::std_attrs::APP_WIDGET_ID,
-        value: jackin_telemetry::Value::Str("matrix.widget"),
-    }];
+    let widget = [
+        jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::std_attrs::APP_WIDGET_ID,
+            value: jackin_telemetry::Value::Str("matrix.widget"),
+        },
+        jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::std_attrs::APP_WIDGET_NAME,
+            value: jackin_telemetry::Value::Str("matrix.widget"),
+        },
+    ];
     jackin_telemetry::emit_event(
         &jackin_telemetry::event::UI_WIDGET_FOCUSED,
         jackin_telemetry::FieldSet::new(&widget, None),
