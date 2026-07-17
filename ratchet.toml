@@ -142,7 +142,7 @@ key = "clippy::excessive_nesting@jackin-launch"
 bound = 5
 [[family.entry]]
 key = "clippy::excessive_nesting@jackin-runtime"
-bound = 2
+bound = 1
 [[family.entry]]
 key = "clippy::excessive_nesting@jackin-term"
 bound = 1
