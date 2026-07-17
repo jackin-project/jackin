@@ -90,7 +90,8 @@ Cargo metadata graph and maps a diff to changed crates plus their transitive
 reverse workspace dependents. Workspace-wide inputs and unrecognized Rust paths
 fail safe to every crate. Workflow and composite-action plumbing is not a crate
 input and therefore creates no crate job by itself. The stable semantic
-identifier in [`scripts/ci/crate-test-contract.sh`](scripts/ci/crate-test-contract.sh)
+identifier in the `nextest-contract` output of
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml)
 must be bumped whenever the
 per-crate commands or acceptance criteria change; cache transport, artifact
 lookup, and reporting changes keep the identifier and reuse prior proofs. Each

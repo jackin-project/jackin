@@ -47,7 +47,7 @@ jobs:
       docs-xtask-contract: ${{ steps.contracts.outputs.docs-xtask }}
       ci-tools-contract: ${{ steps.contracts.outputs.ci-tools }}
       docker-contract: ${{ steps.contracts.outputs.docker }}
-      nextest-contract: ${{ steps.contracts.outputs.nextest }}
+      nextest-contract: 2c87e22194a8df9228603249e7d4efdee1df4ab829909d9350b0194d8b0ab83b
       registry-contract: ${{ steps.contracts.outputs.registry }}
       rustup-contract: ${{ steps.contracts.outputs.rustup }}
       rust-version: ${{ steps.contracts.outputs.rust-version }}
@@ -78,7 +78,6 @@ jobs:
             echo "ci-xtask=$CI_XTASK"
             echo "docs-xtask=$(scripts/ci/docs-xtask-contract.sh)"
             echo "docker=$DOCKER"
-            echo "nextest=$(scripts/ci/crate-test-contract.sh)"
             echo "registry=$REGISTRY"
             echo "rustup=$RUSTUP"
             echo "rust-version=$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)"
@@ -118,7 +117,6 @@ jobs:
               - '.cargo/**'
               - '.github/workflows/ci.yml'
               - '.github/workflows/rust-nextest.yml'
-              - 'scripts/ci/crate-test-contract.sh'
               - 'Cargo.toml'
               - 'Cargo.lock'
               - 'clippy.toml'

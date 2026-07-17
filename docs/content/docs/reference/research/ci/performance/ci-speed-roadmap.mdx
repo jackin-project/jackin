@@ -193,9 +193,10 @@ when the `jackin-xtask` crate's new exact target key had no seed.
 After every successful crate job, the first admitted lane publishes a seven-day result marker
 keyed by the crate's exact forward dependency closure, Cargo/toolchain inputs,
 runner platform, feature and Docker modes, and the semantic crate-test
-contract. The contract is a stable identifier owned by
-<RepoFile path="scripts/ci/crate-test-contract.sh">scripts/ci/crate-test-contract.sh</RepoFile>,
-not a hash of the complete reusable workflow. A cache-transport, artifact, or
+contract. The contract is a stable declarative identifier in the
+`nextest-contract` output of
+<RepoFile path=".github/workflows/ci.yml">.github/workflows/ci.yml</RepoFile>,
+not a hash of the complete reusable workflow and not a runtime shell program. A cache-transport, artifact, or
 reporting edit therefore does not discard still-valid crate proofs. Changing a
 test command or its acceptance criteria requires bumping that identifier and
 intentionally misses every affected proof. Workflow and composite-action paths
@@ -592,6 +593,12 @@ warmup seed was `38,114,507` bytes, replacing the previous transport shape with
 a compact dependency-output seed. The complete `jackin-xtask` job reached
 clippy in `62s`; clippy caught a needless borrow in the new current-run lookup,
 which the follow-up removed before repeating the proof.
+Run `29563157833` then completed warmup in `40s` and the whole one-crate
+`jackin-xtask` contract in `55s`, including target transport, tests, doctests,
+default checking, all-feature clippy, feature powerset, and benchmark build.
+The semantic crate-test identifier is now a declarative workflow output rather
+than a Bash program; changing transport code still preserves test proofs, while
+changing the commands or acceptance criteria still requires an explicit bump.
 
 Dual-lane crate tests no longer assign target and successful-result publication
 to a configured cache-writer lane. A per-crate concurrency group serializes only
