@@ -618,6 +618,18 @@ jobs:
           ${{ env.CI_TOOLS_HIT == 'true' && '--tools-hit' || '' }}
           --cached-xtask "$CI_XTASK"
           --cached-tools "$CI_TOOLS_PATH"
+      - name: Cache newly prepared Cargo tools
+        if: steps.prepared-artifacts.outputs.tools-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ github.workspace }}/.ci-prebuilt-tools
+          key: ci-prepared-tools-v1-${{ runner.os }}-${{ runner.arch }}-${{ needs.changes.outputs.ci-tools-contract }}
+      - name: Cache newly prepared CI xtask
+        if: steps.prepared-artifacts.outputs.xtask-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ github.workspace }}/.ci-prebuilt-xtask
+          key: ci-prepared-xtask-v1-${{ runner.os }}-${{ runner.arch }}-${{ needs.changes.outputs.ci-xtask-contract }}
       - name: Publish resolved CI tool binaries
         if: >-
           env.CI_TOOLS_HIT != 'true' &&
@@ -647,14 +659,6 @@ jobs:
           compression-level: 0
           retention-days: 7
           include-hidden-files: true
-      - name: Upload shared CI xtask
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: ci-xtask-${{ matrix.config.lane }}
-          path: target/ci-tools/*
-          compression-level: 0
-          retention-days: 1
-
   affected-crates:
     needs: [changes, cargo-registry-warmup]
     if: needs.changes.outputs.rust == 'true' && needs.changes.outputs.result-reuse != 'true'

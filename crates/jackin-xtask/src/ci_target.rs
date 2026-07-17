@@ -17,6 +17,8 @@ mod tests;
 
 #[derive(Subcommand, Debug)]
 pub(crate) enum CiTargetCommand {
+    /// Resolve one crate's exact source key from the affected-crates result.
+    ResolveKey(ResolveKeyArgs),
     /// Find the newest compatible target artifact and emit step outputs.
     Find(FindArgs),
     /// Download and extract one GitHub Actions artifact.
@@ -25,6 +27,17 @@ pub(crate) enum CiTargetCommand {
     Restore(RestoreArgs),
     /// Pack the reusable portion of a Cargo target into one archive.
     Pack(PackArgs),
+}
+
+#[derive(Args, Debug)]
+pub(crate) struct ResolveKeyArgs {
+    #[arg(long)]
+    package: String,
+    #[arg(long)]
+    cache_keys_json: String,
+    /// Append the key to `GITHUB_OUTPUT` instead of printing it.
+    #[arg(long)]
+    github_output: bool,
 }
 
 #[derive(Args, Debug)]
@@ -95,11 +108,30 @@ struct Artifact {
 
 pub(crate) fn run(command: CiTargetCommand) -> Result<()> {
     match command {
+        CiTargetCommand::ResolveKey(args) => resolve_key(args),
         CiTargetCommand::Find(args) => find(args),
         CiTargetCommand::Download(args) => download(args),
         CiTargetCommand::Restore(args) => restore(args),
         CiTargetCommand::Pack(args) => pack(args),
     }
+}
+
+fn resolve_key(args: ResolveKeyArgs) -> Result<()> {
+    let key = key_for_package(&args.cache_keys_json, &args.package)?;
+    if args.github_output {
+        return write_output("key", &key);
+    }
+    writeln!(std::io::stdout().lock(), "{key}").context("writing crate source key")
+}
+
+fn key_for_package(cache_keys_json: &str, package: &str) -> Result<String> {
+    let keys: JsonValue =
+        serde_json::from_str(cache_keys_json).context("parsing per-package cache keys")?;
+    keys.get(package)
+        .and_then(JsonValue::as_str)
+        .filter(|key| !key.is_empty())
+        .map(ToOwned::to_owned)
+        .with_context(|| format!("cache key is missing for crate `{package}`"))
 }
 
 fn find(args: FindArgs) -> Result<()> {

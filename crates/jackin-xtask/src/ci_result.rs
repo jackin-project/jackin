@@ -1,7 +1,7 @@
 use std::env;
 use std::fs;
 use std::io::{self, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
 
@@ -19,6 +19,20 @@ mod tests;
 pub(crate) enum CiResultCommand {
     /// Find an input-identical successful crate result.
     Find(FindArgs),
+    /// Stage the runner-independent successful-result marker.
+    Stage(StageArgs),
+}
+
+#[derive(Args, Debug)]
+pub(crate) struct StageArgs {
+    #[arg(long)]
+    package: String,
+    #[arg(long)]
+    source_key: String,
+    #[arg(long)]
+    source_sha: String,
+    #[arg(long, default_value = "crate-result.txt")]
+    output: PathBuf,
 }
 
 #[derive(Args, Debug)]
@@ -95,7 +109,17 @@ impl std::fmt::Display for Toggle {
 pub(crate) fn run(command: CiResultCommand) -> Result<()> {
     match command {
         CiResultCommand::Find(args) => find(args),
+        CiResultCommand::Stage(args) => stage(args),
     }
+}
+
+fn stage(args: StageArgs) -> Result<()> {
+    let marker = format!(
+        "package={}\nsource-key={}\nsource-sha={}\n",
+        args.package, args.source_key, args.source_sha
+    );
+    fs::write(&args.output, marker)
+        .with_context(|| format!("writing successful crate result {}", args.output.display()))
 }
 
 fn find(args: FindArgs) -> Result<()> {

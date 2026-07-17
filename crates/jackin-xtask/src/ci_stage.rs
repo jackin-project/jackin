@@ -41,21 +41,37 @@ pub(crate) struct CiStageArgs {
 }
 
 pub(crate) fn run(args: CiStageArgs) -> Result<()> {
-    recreate_dir(&args.tools_output)?;
-    recreate_dir(&args.xtask_output)?;
+    let tools_in_place = args.tools_hit && same_path(&args.cached_tools, &args.tools_output);
+    let staged_xtask = args.xtask_output.join("jackin-xtask");
+    let xtask_in_place = args.xtask_hit && same_path(&args.cached_xtask, &staged_xtask);
+    if !tools_in_place {
+        recreate_dir(&args.tools_output)?;
+    }
+    if !xtask_in_place {
+        recreate_dir(&args.xtask_output)?;
+    }
     recreate_dir(&args.combined_output)?;
 
     if args.tools_hit {
-        copy_cached_tools(&args.cached_tools, &args.tools_output)?;
+        if tools_in_place {
+            validate_cached_tools(&args.tools_output)?;
+        } else {
+            copy_cached_tools(&args.cached_tools, &args.tools_output)?;
+        }
     } else {
         stage_mise_tools(&args.tools_output)?;
     }
 
-    let staged_xtask = args.xtask_output.join("jackin-xtask");
     if args.xtask_hit {
-        copy_file(&args.cached_xtask, &staged_xtask)?;
-        let metadata = args.cached_tools.join("workspace-metadata.json");
-        if metadata.is_file() {
+        if !xtask_in_place {
+            copy_file(&args.cached_xtask, &staged_xtask)?;
+        }
+        let metadata = args
+            .cached_xtask
+            .parent()
+            .unwrap_or_else(|| Path::new(""))
+            .join("workspace-metadata.json");
+        if !xtask_in_place && metadata.is_file() {
             copy_file(
                 &metadata,
                 &args.xtask_output.join("workspace-metadata.json"),
@@ -71,6 +87,13 @@ pub(crate) fn run(args: CiStageArgs) -> Result<()> {
     copy_dir_files(&args.xtask_output, &args.combined_output)
 }
 
+fn same_path(left: &Path, right: &Path) -> bool {
+    match (fs::canonicalize(left), fs::canonicalize(right)) {
+        (Ok(left), Ok(right)) => left == right,
+        _ => false,
+    }
+}
+
 fn recreate_dir(path: &Path) -> Result<()> {
     if path.exists() {
         fs::remove_dir_all(path)
@@ -81,8 +104,21 @@ fn recreate_dir(path: &Path) -> Result<()> {
 }
 
 fn copy_cached_tools(source: &Path, destination: &Path) -> Result<()> {
+    validate_cached_tools(source)?;
     for tool in TOOLS {
         copy_file(&source.join(tool), &destination.join(tool))?;
+    }
+    Ok(())
+}
+
+fn validate_cached_tools(source: &Path) -> Result<()> {
+    for tool in TOOLS {
+        if !source.join(tool).is_file() {
+            bail!(
+                "required staged CI input is missing: {}",
+                source.join(tool).display()
+            );
+        }
     }
     Ok(())
 }

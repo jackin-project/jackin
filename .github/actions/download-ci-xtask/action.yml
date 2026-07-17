@@ -1,8 +1,16 @@
 # SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 # SPDX-License-Identifier: Apache-2.0
 
-name: Download CI xtask
-description: Restore the lane-scoped jackin-xtask binary prepared once by CI.
+name: Restore CI xtask
+description: Restore contract-keyed CI binaries from cache or the cross-ref artifact fallback.
+
+outputs:
+  tools-hit:
+    description: Whether the requested Cargo tool bundle is available.
+    value: ${{ steps.restore.outputs.tools-hit }}
+  xtask-hit:
+    description: Whether the requested jackin-xtask binary is available.
+    value: ${{ steps.restore.outputs.xtask-hit }}
 
 inputs:
   token:
@@ -39,7 +47,22 @@ inputs:
 runs:
   using: composite
   steps:
+    - name: Restore cached Cargo tools
+      id: tools-cache
+      if: inputs.include-tools == 'true'
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ github.workspace }}/.ci-prebuilt-tools
+        key: ci-prepared-tools-v1-${{ runner.os }}-${{ runner.arch }}-${{ inputs.tools-contract }}
+    - name: Restore cached CI xtask
+      id: xtask-cache
+      if: inputs.include-xtask == 'true'
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ github.workspace }}/.ci-prebuilt-xtask
+        key: ci-prepared-xtask-v1-${{ runner.os }}-${{ runner.arch }}-${{ inputs.xtask-contract }}
     - name: Restore prepared CI tools
+      id: restore
       uses: actions/github-script@373c709c69115d41ff229c7e5df9f8788daa9553 # v9.0.0
       env:
         JACKIN_TOKEN: ${{ inputs.token }}
@@ -54,8 +77,28 @@ runs:
         JACKIN_FALLBACK_XTASK_CONTRACT: ${{ inputs.fallback-xtask-contract }}
         JACKIN_INCLUDE_TOOLS: ${{ inputs.include-tools }}
         JACKIN_INCLUDE_XTASK: ${{ inputs.include-xtask }}
+        JACKIN_TOOLS_CACHE_HIT: ${{ steps.tools-cache.outputs.cache-hit }}
+        JACKIN_XTASK_CACHE_HIT: ${{ steps.xtask-cache.outputs.cache-hit }}
         JACKIN_ALLOW_MISS: ${{ inputs.allow-miss }}
         JACKIN_ACTION_RUNTIME: ${{ github.action_path }}/runtime/dist/index.js
       with:
         github-token: ${{ inputs.token }}
         script: return await import(process.env.JACKIN_ACTION_RUNTIME).then(({ main }) => main())
+    - name: Cache restored Cargo tools
+      if: >-
+        inputs.include-tools == 'true' &&
+        steps.tools-cache.outputs.cache-hit != 'true' &&
+        steps.restore.outputs.tools-hit == 'true'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ github.workspace }}/.ci-prebuilt-tools
+        key: ci-prepared-tools-v1-${{ runner.os }}-${{ runner.arch }}-${{ inputs.tools-contract }}
+    - name: Cache restored CI xtask
+      if: >-
+        inputs.include-xtask == 'true' &&
+        steps.xtask-cache.outputs.cache-hit != 'true' &&
+        steps.restore.outputs.xtask-hit == 'true'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ github.workspace }}/.ci-prebuilt-xtask
+        key: ci-prepared-xtask-v1-${{ runner.os }}-${{ runner.arch }}-${{ inputs.xtask-contract }}

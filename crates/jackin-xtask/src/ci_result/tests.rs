@@ -1,4 +1,23 @@
-use super::{FindArgs, Toggle, result_names};
+use tempfile::tempdir;
+
+use super::{FindArgs, StageArgs, Toggle, result_names, stage};
+
+#[test]
+fn stages_complete_result_marker_without_shell_interpolation() {
+    let temp = tempdir().unwrap();
+    let output = temp.path().join("crate-result.txt");
+    stage(StageArgs {
+        package: "jackin-xtask".to_owned(),
+        source_key: "source-key".to_owned(),
+        source_sha: "abc123".to_owned(),
+        output: output.clone(),
+    })
+    .unwrap();
+    assert_eq!(
+        std::fs::read_to_string(output).unwrap(),
+        "package=jackin-xtask\nsource-key=source-key\nsource-sha=abc123\n"
+    );
+}
 
 fn args(package: &str) -> FindArgs {
     FindArgs {

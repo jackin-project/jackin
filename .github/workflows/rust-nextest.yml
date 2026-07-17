@@ -119,12 +119,22 @@ jobs:
           tools-contract: ${{ inputs.ci-tools-contract }}
           xtask-contract: ${{ inputs.ci-xtask-contract }}
           include-tools: ${{ matrix.package == inputs.refresh-package }}
+      - name: Resolve exact crate target key
+        id: crate-target-key
+        env:
+          CACHE_KEYS: ${{ inputs.package-cache-keys-json }}
+          PACKAGE: ${{ matrix.package }}
+        run: >-
+          "$CI_XTASK" ci-target resolve-key
+          --package "$PACKAGE"
+          --cache-keys-json "$CACHE_KEYS"
+          --github-output
       - name: Find input-identical successful crate result
         id: crate-result
         if: matrix.package != inputs.refresh-package
         env:
           ALL_FEATURES: ${{ inputs.all-features }}
-          CACHE_KEY: ${{ fromJSON(inputs.package-cache-keys-json)[matrix.package] }}
+          CACHE_KEY: ${{ steps.crate-target-key.outputs.key }}
           COMMON_CONTRACT_KEY: ${{ inputs.nextest-contract }}
           CONSTRUCT_IMAGE_CHANGED: ${{ inputs.construct-image-changed }}
           DOCKER_CONTRACT_KEY: ${{ inputs.docker-contract || hashFiles('docker/**', 'docker-bake.hcl') }}
@@ -183,25 +193,9 @@ jobs:
         uses: ./.github/actions/cache-cargo-registry
         with:
           contract-key: ${{ inputs.registry-contract }}
-      - name: Resolve exact crate target key
-        id: crate-target-key
-        if: steps.crate-result.outputs.hit != 'true'
-        shell: bash
-        env:
-          PACKAGE: ${{ matrix.package }}
-          SUPPLIED_KEY: ${{ fromJSON(inputs.package-cache-keys-json)[matrix.package] }}
-        run: |
-          set -euo pipefail
-          key=$SUPPLIED_KEY
-          if [ -z "$key" ]; then
-            key=$("$CI_XTASK" affected-crates --metadata "$CI_METADATA" --all --cache-keys \
-              | jq -er --arg package "$PACKAGE" '.[$package]')
-          fi
-          echo "key=$key" >> "$GITHUB_OUTPUT"
       - name: Find reusable crate target seed
         id: crate-target
         if: steps.crate-result.outputs.hit != 'true'
-        shell: bash
         env:
           ALL_FEATURES: ${{ inputs.all-features }}
           CACHE_KEY: ${{ steps.crate-target-key.outputs.key }}
@@ -211,16 +205,16 @@ jobs:
           RUNNER_ARCH: ${{ runner.arch }}
           RUNNER_OS: ${{ runner.os }}
           TARGET_RESULTS: ${{ inputs.package-target-results-json }}
-        run: |
-          "$CI_XTASK" ci-target find \
-            --package "$PACKAGE" \
-            --cache-key "$CACHE_KEY" \
-            --all-features "$ALL_FEATURES" \
-            --runner-os "$RUNNER_OS" \
-            --runner-arch "$RUNNER_ARCH" \
-            --repository "$REPOSITORY" \
-            --supplied-results "$TARGET_RESULTS" \
-            --github-output
+        run: >-
+          "$CI_XTASK" ci-target find
+          --package "$PACKAGE"
+          --cache-key "$CACHE_KEY"
+          --all-features "$ALL_FEATURES"
+          --runner-os "$RUNNER_OS"
+          --runner-arch "$RUNNER_ARCH"
+          --repository "$REPOSITORY"
+          --supplied-results "$TARGET_RESULTS"
+          --github-output
       - name: Use runner-local target seed
         id: local-target
         if: steps.crate-target.outputs.hit == 'true'
@@ -552,12 +546,15 @@ jobs:
            github.event_name == 'workflow_dispatch' ||
            (github.event_name == 'pull_request' &&
             github.event.pull_request.head.repo.full_name == github.repository))
-        run: |
-          printf '%s\n' \
-            "package=${{ matrix.package }}" \
-            "source-key=${{ steps.crate-target-key.outputs.key }}" \
-            "source-sha=${{ github.sha }}" \
-            > crate-result.txt
+        env:
+          PACKAGE: ${{ matrix.package }}
+          SOURCE_KEY: ${{ steps.crate-target-key.outputs.key }}
+          SOURCE_SHA: ${{ github.sha }}
+        run: >-
+          "$CI_XTASK" ci-result stage
+          --package "$PACKAGE"
+          --source-key "$SOURCE_KEY"
+          --source-sha "$SOURCE_SHA"
       - name: Publish input-identical successful crate result
         if: >-
           always() && !cancelled() && !failure() &&

@@ -2,7 +2,16 @@ use std::fs;
 
 use tempfile::tempdir;
 
-use super::{excluded, excluded_file, reusable_paths};
+use super::{excluded, excluded_file, key_for_package, reusable_paths};
+
+#[test]
+fn resolves_exact_key_without_workflow_expression_parsing() {
+    assert_eq!(
+        key_for_package(r#"{"jackin-xtask":"source-key"}"#, "jackin-xtask").unwrap(),
+        "source-key"
+    );
+    key_for_package("{}", "jackin-xtask").unwrap_err();
+}
 
 #[test]
 fn reusable_paths_keep_outputs_and_drop_transport_state() {
