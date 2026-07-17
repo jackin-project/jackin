@@ -1265,6 +1265,67 @@ fn governed_unknown_attribute_is_dropped() {
 }
 
 #[test]
+fn governed_second_line_drops_private_and_oversized_raw_records() {
+    let before = jackin_telemetry::facade_health();
+    let (export, subscriber) = super::test_layers_at("trace", "unused");
+    let oversized = "x".repeat(jackin_telemetry::limits::MAX_STRING_ATTRIBUTE_BYTES + 1);
+    tracing::subscriber::with_default(subscriber, || {
+        tracing::event!(
+            name: "app.crash",
+            target: jackin_telemetry::TELEMETRY_TARGET,
+            tracing::Level::ERROR,
+            "exception.message" = "token=private-secret"
+        );
+        tracing::event!(
+            name: "app.crash",
+            target: jackin_telemetry::TELEMETRY_TARGET,
+            tracing::Level::ERROR,
+            "service.version" = oversized.as_str()
+        );
+        drop(tracing::info_span!(
+            target: jackin_telemetry::TELEMETRY_TARGET,
+            "telemetry.validate",
+            "session.id" = "/private/workspace"
+        ));
+        drop(tracing::info_span!(
+            target: jackin_telemetry::TELEMETRY_TARGET,
+            "telemetry.validate",
+            "session.id" = oversized.as_str()
+        ));
+    });
+    export.logger_provider.force_flush().unwrap();
+    export.tracer_provider.force_flush().unwrap();
+
+    assert!(export.logs.get_emitted_logs().unwrap().is_empty());
+    assert!(export.spans.get_finished_spans().unwrap().is_empty());
+    let after = jackin_telemetry::facade_health();
+    for (signal, reason) in [
+        (
+            jackin_telemetry::Signal::Log,
+            jackin_telemetry::Rejection::Privacy,
+        ),
+        (
+            jackin_telemetry::Signal::Log,
+            jackin_telemetry::Rejection::SizeLimit,
+        ),
+        (
+            jackin_telemetry::Signal::Trace,
+            jackin_telemetry::Rejection::Privacy,
+        ),
+        (
+            jackin_telemetry::Signal::Trace,
+            jackin_telemetry::Rejection::SizeLimit,
+        ),
+    ] {
+        assert_eq!(
+            after.by_signal_reason[signal as usize][reason as usize],
+            before.by_signal_reason[signal as usize][reason as usize] + 1,
+            "missing second-line rejection for {signal:?}/{reason:?}; before={before:?} after={after:?}"
+        );
+    }
+}
+
+#[test]
 fn conformance_no_lifetime_spans() {
     use std::time::Duration;
 
@@ -1451,6 +1512,8 @@ fn metric_export_contract_rejects_names_shapes_and_dimensions() {
 
 #[test]
 fn rejected_metric_collection_is_not_reported_as_exported() {
+    let facade_before = jackin_telemetry::facade_health();
+    let export_before = crate::telemetry_health_snapshot();
     let result =
         super::governed_metric_export_result(Err(jackin_telemetry::Rejection::UnknownName));
 
@@ -1459,4 +1522,25 @@ fn rejected_metric_collection_is_not_reported_as_exported() {
         Err(opentelemetry_sdk::error::OTelSdkError::InternalFailure(message))
             if message == "metric export rejected by telemetry governance"
     ));
+    let facade_after = jackin_telemetry::facade_health();
+    let export_after = crate::telemetry_health_snapshot();
+    assert_eq!(
+        facade_after.by_signal_reason[jackin_telemetry::Signal::Metric as usize]
+            [jackin_telemetry::Rejection::UnknownName as usize],
+        facade_before.by_signal_reason[jackin_telemetry::Signal::Metric as usize]
+            [jackin_telemetry::Rejection::UnknownName as usize]
+            + 1
+    );
+    assert_eq!(
+        export_after.metrics.attempts,
+        export_before.metrics.attempts + 1
+    );
+    assert_eq!(
+        export_after.metrics.successes,
+        export_before.metrics.successes
+    );
+    assert_eq!(
+        export_after.metrics.failures,
+        export_before.metrics.failures + 1
+    );
 }
