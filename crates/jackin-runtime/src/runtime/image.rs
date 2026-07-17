@@ -334,7 +334,7 @@ pub(super) fn spawn_sibling_runtime_prewarm(
     validated_repo: &jackin_manifest::repo::ValidatedRoleRepo,
     selected_agent: Agent,
     selected_image_reused: bool,
-) -> Option<tokio::task::JoinHandle<()>> {
+) -> Option<tokio::task::JoinHandle<jackin_telemetry::spawn::DetachedCompletion>> {
     let active_run = jackin_diagnostics::active_run_for_paths(paths);
     let siblings = validated_repo
         .manifest
@@ -386,8 +386,8 @@ pub(super) fn spawn_sibling_runtime_prewarm(
             Some(&detail),
         );
     }
-    Some(jackin_telemetry::spawn::spawn_detached_with_completion(
-        &jackin_telemetry::operation::BACKGROUND_CYCLE,
+    Some(jackin_telemetry::spawn::spawn_prewarm_job(
+        jackin_telemetry::schema::enums::JobType::ImagePrewarm,
         async move {
             if let Some(run) = &active_run {
                 run.stage(
@@ -446,6 +446,7 @@ pub(super) fn spawn_sibling_runtime_prewarm(
                 )
             }
         },
+        |completion| *completion,
     ))
 }
 
@@ -501,8 +502,8 @@ pub(super) fn spawn_sibling_image_prewarm(
         let selector = selector.clone();
         let role_git = role_git.to_owned();
         let branch_override = branch_override.map(str::to_owned);
-        jackin_telemetry::spawn::spawn_detached_with_completion(
-            &jackin_telemetry::operation::BACKGROUND_CYCLE,
+        jackin_telemetry::spawn::spawn_prewarm_job(
+            jackin_telemetry::schema::enums::JobType::ImagePrewarm,
             async move {
                 let agents = siblings
                     .iter()
@@ -566,6 +567,7 @@ pub(super) fn spawn_sibling_image_prewarm(
                     )
                 }
             },
+            |completion| *completion,
         );
     }
 }
@@ -642,8 +644,8 @@ pub(super) fn spawn_selected_image_refresh(
         let selector = selector.clone();
         let role_git = role_git.to_owned();
         let branch_override = branch_override.map(str::to_owned);
-        jackin_telemetry::spawn::spawn_detached_with_completion(
-            &jackin_telemetry::operation::BACKGROUND_CYCLE,
+        jackin_telemetry::spawn::spawn_prewarm_job(
+            jackin_telemetry::schema::enums::JobType::ImagePrewarm,
             async move {
                 if let Some(run) = jackin_diagnostics::active_run() {
                     run.stage(
@@ -708,6 +710,7 @@ pub(super) fn spawn_selected_image_refresh(
                     )
                 }
             },
+            |completion| *completion,
         );
     }
 }
@@ -754,8 +757,8 @@ pub(super) fn spawn_reuse_staleness_sentinel(
         let role_git = role_git.to_owned();
         let branch_override = branch_override.map(str::to_owned);
         let image = image.to_owned();
-        jackin_telemetry::spawn::spawn_detached_with_completion(
-            &jackin_telemetry::operation::BACKGROUND_CYCLE,
+        jackin_telemetry::spawn::spawn_prewarm_job(
+            jackin_telemetry::schema::enums::JobType::ImagePrewarm,
             async move {
                 if let Some(run) = jackin_diagnostics::active_run() {
                     run.stage(
@@ -812,6 +815,7 @@ pub(super) fn spawn_reuse_staleness_sentinel(
                     )
                 }
             },
+            |completion| *completion,
         );
     }
 }

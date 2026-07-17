@@ -47,9 +47,8 @@ fn record_skipped_instance_refresh() {
 }
 
 fn run_instance_refresh_cycle<T, E>(work: impl FnOnce() -> Result<T, E>) -> Result<T, E> {
-    let cycle = jackin_telemetry::autonomous_root_operation(
-        &jackin_telemetry::operation::BACKGROUND_CYCLE,
-        &instance_refresh_attrs(),
+    let cycle = jackin_telemetry::autonomous_cycle_operation(
+        jackin_telemetry::schema::enums::BackgroundCycleName::InstanceRefresh,
     )
     .ok();
     let result = work();

@@ -912,9 +912,8 @@ fn record_agent_status_tick(session: &Session, tick: crate::session::StatusTick)
         record_skipped_agent_status();
         return;
     }
-    let cycle = jackin_telemetry::autonomous_root_operation(
-        &jackin_telemetry::operation::BACKGROUND_CYCLE,
-        &agent_status_cycle_attrs(),
+    let cycle = jackin_telemetry::autonomous_cycle_operation(
+        jackin_telemetry::schema::enums::BackgroundCycleName::AgentStatus,
     )
     .ok();
     let record_result = || {
@@ -1010,9 +1009,8 @@ async fn handle_state_tick(mux: &mut Multiplexer, rule_registry: Option<&RulePac
     if mux.usage.token_monitor.due_session_count() == 0 {
         record_skipped_provider_probe();
     } else {
-        let cycle = jackin_telemetry::autonomous_root_operation(
-            &jackin_telemetry::operation::BACKGROUND_CYCLE,
-            &provider_probe_attrs(),
+        let cycle = jackin_telemetry::autonomous_cycle_operation(
+            jackin_telemetry::schema::enums::BackgroundCycleName::ProviderProbe,
         )
         .ok();
         let report = mux.usage.token_monitor.poll_due_sessions().await;

@@ -86,6 +86,10 @@ impl DetachedGuard {
         Self(operation)
     }
 
+    fn autonomous_cycle(name: crate::schema::enums::BackgroundCycleName) -> Self {
+        Self(crate::autonomous_cycle_operation(name).ok())
+    }
+
     fn span(&self) -> Span {
         self.0
             .as_ref()
@@ -205,6 +209,21 @@ where
     F::Output: Send + 'static,
 {
     tokio::spawn(fut)
+}
+
+/// Spawn substantive persistent-daemon work as an autonomous governed cycle.
+pub fn spawn_autonomous_cycle<F, C>(
+    name: crate::schema::enums::BackgroundCycleName,
+    fut: F,
+    classify: C,
+) -> JoinHandle<F::Output>
+where
+    F: Future + Send + 'static,
+    F::Output: Send + 'static,
+    C: FnOnce(&F::Output) -> DetachedCompletion + Send + 'static,
+{
+    let guard = DetachedGuard::autonomous_cycle(name);
+    tokio::spawn(run_detached(guard, fut, classify).with_current_subscriber())
 }
 
 pub fn spawn_stream<F>(_name: &'static str, fut: F) -> JoinHandle<F::Output>
@@ -455,6 +474,26 @@ where
     })
 }
 
+/// Run blocking persistent-daemon work without inherited invocation/job
+/// correlation, retaining the Capsule session only for Capsule-owned cycles.
+pub fn autonomous_cycle_blocking<F, C, R>(
+    name: crate::schema::enums::BackgroundCycleName,
+    work: F,
+    classify: C,
+) -> JoinHandle<R>
+where
+    F: FnOnce() -> R + Send + 'static,
+    C: FnOnce(&R) -> DetachedCompletion + Send + 'static,
+    R: Send + 'static,
+{
+    let guard = DetachedGuard::autonomous_cycle(name);
+    tokio::task::spawn_blocking(move || {
+        let result = in_span_scope(guard.span(), work);
+        guard.complete(classify(&result));
+        result
+    })
+}
+
 pub fn stream_blocking<F, R>(_name: &'static str, work: F) -> JoinHandle<R>
 where
     F: FnOnce() -> R + Send + 'static,
@@ -592,6 +631,49 @@ where
     let guard = std::sync::Arc::new(std::sync::Mutex::new(Some(DetachedGuard::new(
         def, attrs, &parent,
     ))));
+    let worker_guard = std::sync::Arc::clone(&guard);
+    let spawned = thread::Builder::new().name(name).spawn(move || {
+        let guard = worker_guard
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take();
+        let Some(guard) = guard else {
+            let _error =
+                crate::record_error(crate::schema::enums::ErrorType::TelemetryInstrumentationFault);
+            return work();
+        };
+        let result = in_span_scope(guard.span(), work);
+        guard.complete(classify(&result));
+        result
+    });
+    if spawned.is_err()
+        && let Some(guard) = guard
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take()
+    {
+        guard.complete(DetachedCompletion::error(
+            crate::schema::enums::ErrorType::ProcessSpawnError,
+        ));
+    }
+    spawned
+}
+
+/// Thread fallback for [`autonomous_cycle_blocking`].
+pub fn thread_autonomous_cycle_named<F, C, R>(
+    name: String,
+    cycle: crate::schema::enums::BackgroundCycleName,
+    work: F,
+    classify: C,
+) -> std::io::Result<thread::JoinHandle<R>>
+where
+    F: FnOnce() -> R + Send + 'static,
+    C: FnOnce(&R) -> DetachedCompletion + Send + 'static,
+    R: Send + 'static,
+{
+    let guard = std::sync::Arc::new(std::sync::Mutex::new(Some(
+        DetachedGuard::autonomous_cycle(cycle),
+    )));
     let worker_guard = std::sync::Arc::clone(&guard);
     let spawned = thread::Builder::new().name(name).spawn(move || {
         let guard = worker_guard

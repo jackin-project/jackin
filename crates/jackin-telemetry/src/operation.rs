@@ -516,7 +516,7 @@ fn make_child_execution_span(name: &str) -> Option<Span> {
 }
 
 pub fn operation(def: &'static SpanDef, attrs: &[Attr<'_>]) -> Result<OperationGuard, Rejection> {
-    operation_inner(def, attrs, false, true)
+    operation_inner(def, attrs, false, true, true)
 }
 
 /// Start a governed operation, degrading to a disabled guard on rejection.
@@ -536,7 +536,7 @@ pub fn operation_with_remote_parent(
 ) -> Result<OperationGuard, Rejection> {
     use opentelemetry::trace::TraceContextExt as _;
 
-    let guard = operation_inner(def, attrs, true, true)?;
+    let guard = operation_inner(def, attrs, true, true, true)?;
     drop(
         guard
             .span
@@ -549,7 +549,7 @@ pub fn root_operation(
     def: &'static SpanDef,
     attrs: &[Attr<'_>],
 ) -> Result<OperationGuard, Rejection> {
-    operation_inner(def, attrs, true, true)
+    operation_inner(def, attrs, true, true, true)
 }
 
 /// Start an autonomous root that belongs to the process session but not to the
@@ -558,7 +558,24 @@ pub fn autonomous_root_operation(
     def: &'static SpanDef,
     attrs: &[Attr<'_>],
 ) -> Result<OperationGuard, Rejection> {
-    operation_inner(def, attrs, true, false)
+    operation_inner(def, attrs, true, false, true)
+}
+
+/// Start an autonomous cycle root with the correlation owned by that cycle.
+///
+/// Capsule cycles retain the Capsule session, while the host instance refresh
+/// is process-owned and therefore carries neither launch nor console identity.
+pub fn autonomous_cycle_operation(
+    name: schema::enums::BackgroundCycleName,
+) -> Result<OperationGuard, Rejection> {
+    let attrs = [Attr {
+        key: schema::attrs::BACKGROUND_CYCLE_NAME,
+        value: Value::Str(name.as_str()),
+    }];
+    let capsule_owned = name != schema::enums::BackgroundCycleName::InstanceRefresh
+        && crate::identity::current_session()
+            .is_some_and(|session| session.kind == crate::identity::SessionKind::Capsule);
+    operation_inner(&BACKGROUND_CYCLE, &attrs, true, false, capsule_owned)
 }
 
 fn operation_inner(
@@ -566,6 +583,7 @@ fn operation_inner(
     attrs: &[Attr<'_>],
     root: bool,
     include_invocation: bool,
+    include_session: bool,
 ) -> Result<OperationGuard, Rejection> {
     let canonical = schema::spans::definition(def.name)
         .filter(|metadata| {
@@ -585,7 +603,10 @@ fn operation_inner(
         .then(crate::identity::current_invocation)
         .flatten()
         .map(|id| id.to_string());
-    let session = crate::identity::current_session().map(|value| value.current.to_string());
+    let session = include_session
+        .then(crate::identity::current_session)
+        .flatten()
+        .map(|value| value.current.to_string());
     let mut ambient_attrs = attrs.to_vec();
     let supplied = |key| attrs.iter().any(|attr| attr.key == key);
     if !include_invocation && supplied(schema::attrs::CLI_INVOCATION_ID) {

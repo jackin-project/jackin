@@ -101,14 +101,10 @@ fn run_usage_probe<F>(
 ) where
     F: Fn(UsageRefreshTarget) -> UsageRefreshResult + Send + Sync + 'static,
 {
-    let attrs = [jackin_telemetry::Attr {
-        key: jackin_telemetry::schema::attrs::BACKGROUND_CYCLE_NAME,
-        value: jackin_telemetry::Value::Str(
-            jackin_telemetry::schema::enums::BackgroundCycleName::UsageAccount.as_str(),
-        ),
-    }];
-    let operation =
-        jackin_telemetry::operation(&jackin_telemetry::operation::BACKGROUND_CYCLE, &attrs).ok();
+    let operation = jackin_telemetry::autonomous_cycle_operation(
+        jackin_telemetry::schema::enums::BackgroundCycleName::UsageAccount,
+    )
+    .ok();
     let span = operation.as_ref().map(|guard| guard.span().clone());
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         span.map_or_else(

@@ -186,8 +186,8 @@ fn spawn_release_metadata_refresh(paths: JackinPaths, agent: Agent) {
         drop((paths, agent));
     }
     #[cfg(not(test))]
-    jackin_telemetry::spawn::spawn_detached_with_completion(
-        &jackin_telemetry::operation::BACKGROUND_CYCLE,
+    jackin_telemetry::spawn::spawn_prewarm_job(
+        jackin_telemetry::schema::enums::JobType::ImagePrewarm,
         async move {
             record(
                 "agent_binary_resolve_started",
@@ -221,6 +221,7 @@ fn spawn_release_metadata_refresh(paths: JackinPaths, agent: Agent) {
                 }
             }
         },
+        |completion| *completion,
     );
 }
 

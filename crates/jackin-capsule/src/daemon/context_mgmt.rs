@@ -159,24 +159,16 @@ impl Multiplexer {
         // `spawn_blocking` so the runtime accounts for blocking work;
         // outside one (unit tests, ad-hoc tools) a plain OS thread
         // avoids spinning up a second runtime.
-        let attrs = [jackin_telemetry::Attr {
-            key: jackin_telemetry::schema::attrs::BACKGROUND_CYCLE_NAME,
-            value: jackin_telemetry::Value::Str(cycle.as_str()),
-        }];
         match tokio::runtime::Handle::try_current() {
             Ok(_handle) => {
-                drop(jackin_telemetry::spawn::detached_blocking_with_attrs(
-                    &jackin_telemetry::operation::BACKGROUND_CYCLE,
-                    &attrs,
-                    emit,
-                    classify,
+                drop(jackin_telemetry::spawn::autonomous_cycle_blocking(
+                    cycle, emit, classify,
                 ));
             }
             Err(_) => {
-                drop(jackin_telemetry::spawn::thread_detached_named_with_attrs(
+                drop(jackin_telemetry::spawn::thread_autonomous_cycle_named(
                     format!("capsule-blocking[{}]", cycle.as_str()),
-                    &jackin_telemetry::operation::BACKGROUND_CYCLE,
-                    &attrs,
+                    cycle,
                     emit,
                     classify,
                 ));
@@ -224,16 +216,8 @@ impl Multiplexer {
             // it doesn't stall the daemon's render thread (Defect 43).
             let workdir = self.launch_env.workdir.clone();
             if tokio::runtime::Handle::try_current().is_ok() {
-                let attrs = [jackin_telemetry::Attr {
-                    key: jackin_telemetry::schema::attrs::BACKGROUND_CYCLE_NAME,
-                    value: jackin_telemetry::Value::Str(
-                        jackin_telemetry::schema::enums::BackgroundCycleName::BranchContext
-                            .as_str(),
-                    ),
-                }];
-                drop(jackin_telemetry::spawn::detached_blocking_with_attrs(
-                    &jackin_telemetry::operation::BACKGROUND_CYCLE,
-                    &attrs,
+                drop(jackin_telemetry::spawn::autonomous_cycle_blocking(
+                    jackin_telemetry::schema::enums::BackgroundCycleName::BranchContext,
                     move || {
                         // Result discarded: the next git-branch watcher tick will
                         // pick up the default branch via inotify or periodic poll.
