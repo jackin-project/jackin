@@ -13,10 +13,6 @@ impl Multiplexer {
         let mut env = self.launch_env.env_passthrough.clone();
         for (key, value) in overrides {
             if !SESSION_ENV_PASSTHROUGH.iter().any(|allowed| allowed == key) {
-                jackin_diagnostics::telemetry_info!(
-                    "capsule",
-                    "spawn env: rejected non-allowlisted key {key:?}"
-                );
                 continue;
             }
             if let Some((_, existing)) =
@@ -133,13 +129,6 @@ impl Multiplexer {
         provider: jackin_protocol::Provider,
     ) -> Vec<(String, String)> {
         let token = self.token_for_provider(provider);
-        if token.is_none() && provider.adapter().needs_key_for_agent(agent_slug) {
-            jackin_diagnostics::telemetry_info!(
-                "capsule",
-                "spawn: provider {:?} selected but its API key is unresolved in container; session falls back to the agent's default auth",
-                provider.label()
-            );
-        }
         let mut env = provider.env_overrides(token);
         // Codex activates an alt provider through a v2 `--profile`. Inject the
         // profile name only when the key resolved: runtime-setup writes the
@@ -209,12 +198,6 @@ impl Multiplexer {
         ) {
             self.render.wipe_pending = Some(reason);
         }
-        jackin_diagnostics::telemetry_debug!(
-            "capsule",
-            "invalidate: reason={} generation={}",
-            reason.as_str(),
-            self.render.frame_generation,
-        );
     }
 
     pub(super) fn has_pending_render(&self) -> bool {
@@ -324,10 +307,12 @@ impl Multiplexer {
                 true
             }
             Err(error) => {
-                jackin_diagnostics::telemetry_info!(
-                    "capsule",
-                    "usage-refresh: background worker failed: {error}"
-                );
+                let error_type = if error.is_panic() {
+                    jackin_telemetry::schema::enums::ErrorType::Panic
+                } else {
+                    jackin_telemetry::schema::enums::ErrorType::DependencyCancelled
+                };
+                let _error = jackin_telemetry::record_error(error_type);
                 false
             }
         }

@@ -33,32 +33,8 @@ pub(crate) enum FullRedrawReason {
     PaneClear,
     ExplicitRedraw,
     StatusChange,
-    /// PTY bytes arrived for a pane. Telemetry-only label: under derived
-    /// rendering every invalidation reason produces the same composed frame.
+    /// PTY bytes arrived for a pane.
     PtyOutput,
-}
-
-impl FullRedrawReason {
-    pub(crate) fn as_str(self) -> &'static str {
-        match self {
-            Self::FirstAttach => "first-attach",
-            Self::Resize => "resize",
-            Self::TabSwitch => "tab-switch",
-            Self::LayoutChange => "layout-change",
-            Self::SplitClose => "split-close",
-            Self::ZoomChange => "zoom-change",
-            Self::ScrollbackMovement => "scrollback-movement",
-            Self::DialogChange => "dialog-change",
-            Self::SelectionRepaint => "selection-repaint",
-            Self::PaletteOverlay => "palette-overlay",
-            Self::FocusChange => "focus-change",
-            Self::SessionExit => "session-exit",
-            Self::PaneClear => "pane-clear",
-            Self::ExplicitRedraw => "explicit-redraw",
-            Self::StatusChange => "status-change",
-            Self::PtyOutput => "pty-output",
-        }
-    }
 }
 
 pub(crate) fn prefix_full_redraw_reason(cmd: &PrefixCommand) -> FullRedrawReason {

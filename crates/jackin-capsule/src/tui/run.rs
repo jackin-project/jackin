@@ -134,37 +134,14 @@ pub async fn run_client(
                             break Err(anyhow::anyhow!("stdout flush failed after Bell: {e}"));
                         }
                     }
-                    ServerFrame::HostOpenUrl(url) => {
-                        let redacted = crate::tui::url_text::redact_url_for_log(&url);
-                        jackin_diagnostics::telemetry_debug!("capsule",
-                            "attach-client: ignoring host-open-url frame in in-container client: {redacted:?}"
-                        );
-                    }
-                    ServerFrame::HostRevealPath(_) => {
-                        jackin_diagnostics::telemetry_debug!("capsule",
-                            "attach-client: ignoring host-reveal-path frame in in-container client"
-                        );
-                    }
-                    ServerFrame::HostStageImageFromClipboardPath => {
-                        jackin_diagnostics::telemetry_debug!("capsule",
-                            "attach-client: ignoring host-stage-image-path frame in in-container client"
-                        );
-                    }
-                    ServerFrame::HostPasteImageFromClipboard => {
-                        jackin_diagnostics::telemetry_debug!("capsule",
-                            "attach-client: ignoring host-paste-image frame in in-container client"
-                        );
-                    }
-                    ServerFrame::HostStageImageFromClipboard => {
-                        jackin_diagnostics::telemetry_debug!("capsule",
-                            "attach-client: ignoring host-stage-image frame in in-container client"
-                        );
-                    }
-                    ServerFrame::FileExportStart(_)
+                    ServerFrame::HostOpenUrl(_)
+                    | ServerFrame::HostRevealPath(_)
+                    | ServerFrame::HostStageImageFromClipboardPath
+                    | ServerFrame::HostPasteImageFromClipboard
+                    | ServerFrame::HostStageImageFromClipboard
+                    | ServerFrame::FileExportStart(_)
                     | ServerFrame::FileExportChunk(_)
-                    | ServerFrame::FileExportEnd(_) => {
-                        jackin_diagnostics::telemetry_debug!("capsule","attach-client: ignoring host file-export frame");
-                    }
+                    | ServerFrame::FileExportEnd(_) => {}
                     ServerFrame::Welcome { .. }
                     | ServerFrame::SessionList(_)
                     | ServerFrame::AttachControlResponse(_) => {}

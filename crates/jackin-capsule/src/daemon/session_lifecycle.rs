@@ -78,12 +78,6 @@ impl Multiplexer {
         let closed_codename = self.session_supervisor.tabs[self.session_supervisor.active_tab]
             .codename
             .clone();
-        jackin_diagnostics::telemetry_info!(
-            "capsule",
-            "action: close_focused_tab tab_idx={} pane_count={}",
-            self.session_supervisor.active_tab,
-            tab_ids.len()
-        );
         for id in tab_ids {
             if let Some(session) = self.session_supervisor.sessions.remove(id) {
                 self.mark_agent_session_exited(id);
@@ -104,12 +98,6 @@ impl Multiplexer {
 
     pub(super) fn exit_all_sessions(&mut self) {
         self.cancel_drag();
-        jackin_diagnostics::telemetry_info!(
-            "capsule",
-            "action: exit_all_sessions session_count={} tab_count={}",
-            self.session_supervisor.sessions.len(),
-            self.session_supervisor.tabs.len()
-        );
         for (_, session) in self.session_supervisor.sessions.drain() {
             session.terminate();
         }
@@ -138,10 +126,6 @@ impl Multiplexer {
               reflow protocol."
     )]
     pub(super) fn remove_exited_session(&mut self, session_id: u64) {
-        jackin_diagnostics::telemetry_info!(
-            "capsule",
-            "action: remove_exited_session id={session_id}"
-        );
         // Any in-flight selection / drag-resize was anchored to a
         // pane that may be about to disappear (or whose siblings
         // are about to reflow). Drop both gestures so the next motion
@@ -248,10 +232,6 @@ impl Multiplexer {
                 {
                     self.provider_spawn_env(&slug, provider)
                 } else {
-                    jackin_diagnostics::telemetry_info!(
-                        "capsule",
-                        "spawn: unknown provider label {provider_label:?}; no env redirect applied"
-                    );
                     env_overrides.to_vec()
                 };
                 let id = self.spawn_session(Some(slug), &resolved_env, Some(&provider_label))?;
@@ -336,9 +316,9 @@ impl Multiplexer {
 
     /// Single dispatch point for `DialogAction::SpawnAgent`. Spawn
     /// failures (PTY allocation, missing agent binary, cap hit) are
-    /// clog'd with their intent and agent label so a `jackin load
-    /// --debug` shows the cause; the dialog dismisses regardless so
-    /// the operator can retry.
+    /// exported once as a bodyless typed error; operator detail stays
+    /// local to the dialog. The dialog dismisses regardless so the
+    /// operator can retry.
     pub(super) fn dispatch_spawn_intent(&mut self, agent: Option<String>, intent: PickerIntent) {
         let result: Result<()> = match intent {
             PickerIntent::NewTab => self.spawn_session(agent.clone(), &[], None).map(|_| ()),
@@ -348,9 +328,8 @@ impl Multiplexer {
         };
         if let Err(err) = result {
             let agent_label = spawn_failure_agent_label(agent.as_deref());
-            jackin_diagnostics::telemetry_info!(
-                "capsule",
-                "spawn ({intent:?}, agent={agent_label}) failed: {err:?}"
+            let _error = jackin_telemetry::record_error(
+                jackin_telemetry::schema::enums::ErrorType::LaunchFailed,
             );
             self.open_spawn_failure_dialog(spawn_failure_message(agent_label, &err));
         }
@@ -373,9 +352,8 @@ impl Multiplexer {
         };
         if let Err(err) = result {
             let agent_label = spawn_failure_agent_label(agent.as_deref());
-            jackin_diagnostics::telemetry_info!(
-                "capsule",
-                "spawn ({intent:?}, agent={agent_label}) failed: {err:?}"
+            let _error = jackin_telemetry::record_error(
+                jackin_telemetry::schema::enums::ErrorType::LaunchFailed,
             );
             self.open_spawn_failure_dialog(spawn_failure_message(agent_label, &err));
         }
@@ -448,13 +426,6 @@ impl Multiplexer {
         // past the pane's bottom border.
         self.resize_panes();
         self.synthesise_focus_swap(prev_focused, Some(id));
-        jackin_diagnostics::telemetry_info!(
-            "capsule",
-            "action: spawn_session id={id} agent={:?} label={label} tab_idx={tab_idx}",
-            agent,
-            label = launch.label,
-            tab_idx = self.session_supervisor.active_tab
-        );
         Ok(id)
     }
 
@@ -500,10 +471,5 @@ impl Multiplexer {
             .is_some_and(|zoom_id| tab.tree.all_ids().contains(&zoom_id));
         tab.zoomed = if was_zoomed { None } else { Some(focused) };
         self.resize_panes();
-        jackin_diagnostics::telemetry_info!(
-            "capsule",
-            "action: toggle_zoom from={was_zoomed} to={} focused={focused:?}",
-            self.active_zoomed_id().is_some()
-        );
     }
 }
