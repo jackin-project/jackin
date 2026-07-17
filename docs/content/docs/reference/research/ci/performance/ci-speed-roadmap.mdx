@@ -1119,7 +1119,9 @@ the target archive. Each backend writes one native post-test seed because
 Cargo fingerprints include the different workspace roots; only GitHub owns
 the portable cross-backend artifact name. The packer also retains nextest's
 extensionless crate test executable instead of forcing an ephemeral hosted
-runner to relink it. That completeness cost only about 3 MB: the `jackin-env`
+runner to relink it. Runner-local reuse requires the same stored source key as
+archive reuse; structural target contents alone cannot prove input identity
+after a lockfile or source change. That completeness cost only about 3 MB: the `jackin-env`
 archive grew from 197,999,447 bytes to 200,934,109 bytes.
 
 The identical v13 repeat, run `29573000462`, is the decisive proof. The whole

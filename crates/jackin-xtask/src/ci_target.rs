@@ -198,8 +198,16 @@ fn has_reusable_local_target(target: &Path, package: &str) -> Result<bool> {
     }))
 }
 
+fn has_exact_local_target(target: &Path, package: &str, source_key: &str) -> Result<bool> {
+    if !has_reusable_local_target(target, package)? {
+        return Ok(false);
+    }
+    let stored_key = fs::read_to_string(target.join(".ci-source-key")).unwrap_or_default();
+    Ok(stored_key.trim() == source_key)
+}
+
 fn prepare(args: PrepareArgs) -> Result<()> {
-    if has_reusable_local_target(&args.target, &args.package)? {
+    if has_exact_local_target(&args.target, &args.package, &args.cache_key)? {
         writeln!(
             io::stdout().lock(),
             "::notice::using complete runner-local Cargo target"
@@ -388,10 +396,6 @@ fn restore(args: RestoreArgs) -> Result<()> {
     let source_key_path = args.target.join(".ci-source-key");
     let source_key = fs::read_to_string(&source_key_path).unwrap_or_default();
     let canonical_hit = args.known_exact || source_key.trim() == args.cache_key;
-    if source_key_path.exists() {
-        fs::remove_file(&source_key_path)
-            .with_context(|| format!("removing {}", source_key_path.display()))?;
-    }
     if let Some(restore_dir) = args.archive.parent()
         && restore_dir
             .file_name()
@@ -491,8 +495,6 @@ fn pack(args: PackArgs) -> Result<()> {
         "packing reusable Cargo target",
     )?;
     fs::remove_file(&list_path).with_context(|| format!("removing {}", list_path.display()))?;
-    fs::remove_file(&source_key_path)
-        .with_context(|| format!("removing {}", source_key_path.display()))?;
     Ok(())
 }
 
