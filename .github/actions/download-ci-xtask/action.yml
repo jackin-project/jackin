@@ -32,7 +32,7 @@ runs:
   using: composite
   steps:
     - name: Restore prepared CI tools
-      shell: sh
+      uses: actions/github-script@373c709c69115d41ff229c7e5df9f8788daa9553 # v9.0.0
       env:
         JACKIN_TOKEN: ${{ inputs.token }}
         JACKIN_LANE: ${{ inputs.lane }}
@@ -41,4 +41,6 @@ runs:
         JACKIN_FALLBACK_XTASK_CONTRACT: ${{ inputs.fallback-xtask-contract }}
         JACKIN_INCLUDE_TOOLS: ${{ inputs.include-tools }}
         JACKIN_ACTION_RUNTIME: ${{ github.action_path }}/runtime/dist/index.js
-      run: node "$JACKIN_ACTION_RUNTIME"
+      with:
+        github-token: ${{ inputs.token }}
+        script: await import(process.env.JACKIN_ACTION_RUNTIME).then(({ main }) => main())
