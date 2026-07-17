@@ -1,6 +1,24 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+fn string_attribute<'a>(
+    record: &'a opentelemetry_proto::tonic::logs::v1::LogRecord,
+    key: &str,
+) -> Option<&'a str> {
+    record
+        .attributes
+        .iter()
+        .find(|attribute| attribute.key == key)
+        .and_then(|attribute| attribute.value.as_ref())
+        .and_then(|value| value.value.as_ref())
+        .and_then(|value| match value {
+            opentelemetry_proto::tonic::common::v1::any_value::Value::StringValue(value) => {
+                Some(value.as_str())
+            }
+            _ => None,
+        })
+}
+
 #[test]
 fn conformance_interleaved_sessions_never_cross_contaminate_ids() -> anyhow::Result<()> {
     let invocation = jackin_telemetry::identity::InvocationId::mint();
@@ -94,6 +112,17 @@ fn conformance_interleaved_sessions_never_cross_contaminate_ids() -> anyhow::Res
                 })
         }));
     }
+    let second_start = logs
+        .iter()
+        .find(|record| {
+            record.event_name == "session.start"
+                && string_attribute(record, "session.id") == Some(second_id.as_str())
+        })
+        .ok_or_else(|| anyhow::anyhow!("second session start missing"))?;
+    assert_eq!(
+        string_attribute(second_start, "session.previous_id"),
+        Some(first_id.as_str())
+    );
     let breadcrumbs: Vec<_> = logs
         .iter()
         .filter(|record| record.event_name == "operation.log")
