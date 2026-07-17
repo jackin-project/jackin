@@ -305,7 +305,7 @@ fn run_agent_setup() -> Result<()> {
     // Observability must never break the agent: a failure is logged, not fatal.
     if let Err(e) = install_agent_status_reporter(&agent) {
         let message = reporter_install_failure_message(&agent, &e);
-        jackin_diagnostics::telemetry_info!("capsule", "{message}");
+        record_recovered_degradation();
         crate::output::stderr_line(format_args!("[entrypoint] {message}"));
     }
 
@@ -810,25 +810,13 @@ fn write_codex_provider_config_inner(
             "[entrypoint] codex: wrote MiniMax provider block to {}",
             config_path.display()
         ));
-    } else {
-        jackin_diagnostics::telemetry_debug!(
-            "capsule",
-            "codex: [model_providers.minimax] already present in {}; skipping append",
-            config_path.display()
-        );
     }
 
     // ── minimax.config.toml: Codex v2 profile file, loaded by `--profile minimax` ──
     // Do NOT also write `[profiles.minimax]` into config.toml: Codex errors when
     // `--profile` is passed alongside a legacy v1 profiles table.
     let profile_path = codex_dir.join("minimax.config.toml");
-    if profile_path.exists() {
-        jackin_diagnostics::telemetry_debug!(
-            "capsule",
-            "codex: {} already exists; leaving operator/prior profile as-is",
-            profile_path.display()
-        );
-    } else {
+    if !profile_path.exists() {
         let profile = codex_minimax_profile_toml(model)?;
         fs::write(&profile_path, profile.as_bytes()).with_context(|| {
             format!(
@@ -916,18 +904,9 @@ fn codex_minimax_profile_toml(model: &str) -> Result<String> {
 fn write_codex_minimax_catalog(codex_dir: &Path, model: &str) -> Result<()> {
     let catalog_path = codex_dir.join("minimax.models.json");
     if catalog_path.exists() {
-        jackin_diagnostics::telemetry_debug!(
-            "capsule",
-            "codex: {} already exists; leaving as-is",
-            catalog_path.display()
-        );
         return Ok(());
     }
     let Some(template) = codex_catalog_template_entry() else {
-        jackin_diagnostics::telemetry_info!(
-            "capsule",
-            "codex: no usable entry from `codex debug models`; skipping MiniMax model catalog (Codex falls back to generic metadata)"
-        );
         return Ok(());
     };
     let catalog = build_minimax_catalog(&template, model);
@@ -1475,27 +1454,30 @@ fn cache_dco_identity_if_needed() {
     ) else {
         // DCO is on but git identity is unreadable at startup; the commit-time
         // hook will fall back to live `git config` (and warn) per commit.
-        jackin_diagnostics::telemetry_info!(
-            "capsule",
-            "dco identity cache skipped: user.name/user.email not configured at startup"
-        );
+        record_recovered_degradation();
         return;
     };
     let cache_path = git_dco_identity_cache_path();
-    if let Err(err) = fs::write(&cache_path, format!("{name}\n{email}\n")) {
+    if let Err(_error) = fs::write(&cache_path, format!("{name}\n{email}\n")) {
         // A failed cache write means every commit shells out to live git
         // config — the exact failure this cache exists to prevent.
-        jackin_diagnostics::telemetry_info!(
-            "capsule",
-            "dco identity cache write to {} failed: {err} (errno={:?})",
-            cache_path.display(),
-            err.raw_os_error()
-        );
+        record_recovered_degradation();
     }
 }
 
+fn record_recovered_degradation() {
+    let _warning = jackin_telemetry::record_recovered_degradation();
+}
+
 fn read_cached_dco_identity() -> Option<(String, String)> {
-    let content = fs::read_to_string(git_dco_identity_cache_path()).ok()?;
+    let content = match fs::read_to_string(git_dco_identity_cache_path()) {
+        Ok(content) => content,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return None,
+        Err(_error) => {
+            record_recovered_degradation();
+            return None;
+        }
+    };
     let mut lines = content.lines();
     let name = lines.next().filter(|s| !s.is_empty())?.to_owned();
     let email = lines.next().filter(|s| !s.is_empty())?.to_owned();
