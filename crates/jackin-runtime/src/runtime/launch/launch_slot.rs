@@ -57,8 +57,10 @@ pub(crate) async fn claim_container_name(
             | ContainerState::Dead => false,
             ContainerState::NotFound => true,
             ContainerState::InspectUnavailable(reason) => {
-                jackin_diagnostics::operation::telemetry_error_line(
+                let _error = jackin_telemetry::record_error(
                     jackin_telemetry::schema::enums::ErrorType::LaunchFailed,
+                );
+                jackin_diagnostics::emit_operator_notice(
                     "container name availability inspection failed",
                 );
                 anyhow::bail!(

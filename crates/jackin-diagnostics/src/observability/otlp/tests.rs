@@ -890,7 +890,15 @@ fn governed_operation_line_does_not_duplicate_active_run_log() {
         .expect("diagnostics run");
         let _active = run.activate();
         export.logs.reset();
-        crate::operation::telemetry_line(crate::OperationLevel::Info, "test", "one delivery");
+        let attrs = [jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::OUTCOME,
+            value: jackin_telemetry::Value::Str("success"),
+        }];
+        jackin_telemetry::emit_event(
+            &jackin_telemetry::event::OPERATION_LOG,
+            jackin_telemetry::FieldSet::new(&attrs, Some("one delivery")),
+        )
+        .expect("registered operation log");
     });
     export.logger_provider.force_flush().unwrap();
     let logs = export.logs.get_emitted_logs().unwrap();

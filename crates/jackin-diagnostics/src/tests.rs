@@ -223,9 +223,63 @@ fn telemetry_volume_artifact_path() -> std::path::PathBuf {
 /// Capsule phase: separate `test_capsule_layers` bootstrap (no host-only layers)
 /// driving production [`emit_session_start_for_test`] plus capsule-target
 /// breadcrumbs — not synthetic events on the host subscriber.
-fn drive_standard_conformance_scenario() -> ConformanceExport {
-    use crate::operation::{OperationLevel, telemetry_error_line, telemetry_line};
+fn conformance_operation_log(body: &str) {
+    let attrs = [jackin_telemetry::Attr {
+        key: jackin_telemetry::schema::attrs::OUTCOME,
+        value: jackin_telemetry::Value::Str("success"),
+    }];
+    jackin_telemetry::emit_event(
+        &jackin_telemetry::event::OPERATION_LOG,
+        jackin_telemetry::FieldSet::new(&attrs, Some(body)),
+    )
+    .expect("registered conformance event");
+}
 
+fn conformance_operation_warning(body: &str) {
+    let attrs = [
+        jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::OUTCOME,
+            value: jackin_telemetry::Value::Str(
+                jackin_telemetry::schema::enums::OutcomeValue::Success.as_str(),
+            ),
+        },
+        jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::std_attrs::ERROR_TYPE,
+            value: jackin_telemetry::Value::Str(
+                jackin_telemetry::schema::enums::ErrorType::RecoveredDegradation.as_str(),
+            ),
+        },
+    ];
+    jackin_telemetry::emit_event(
+        &jackin_telemetry::event::OPERATION_WARN,
+        jackin_telemetry::FieldSet::new(&attrs, Some(body)),
+    )
+    .expect("registered conformance warning");
+}
+
+fn conformance_operation_error(body: &str) {
+    let attrs = [
+        jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::OUTCOME,
+            value: jackin_telemetry::Value::Str(
+                jackin_telemetry::schema::enums::OutcomeValue::Error.as_str(),
+            ),
+        },
+        jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::std_attrs::ERROR_TYPE,
+            value: jackin_telemetry::Value::Str(
+                jackin_telemetry::schema::enums::ErrorType::RpcError.as_str(),
+            ),
+        },
+    ];
+    jackin_telemetry::emit_event(
+        &jackin_telemetry::event::ERROR_TYPED,
+        jackin_telemetry::FieldSet::new(&attrs, Some(body)),
+    )
+    .expect("registered conformance error");
+}
+
+fn drive_standard_conformance_scenario() -> ConformanceExport {
     const RUN_ID: &str = "conformance-run";
     const SESSION_ID: &str = "conformance-session";
 
@@ -254,8 +308,8 @@ fn drive_standard_conformance_scenario() -> ConformanceExport {
         .expect("run start");
         let _guard = run.activate();
 
-        telemetry_line(OperationLevel::Info, "screen", "list entered");
-        telemetry_line(OperationLevel::Warn, "docker", "process retry exhausted");
+        conformance_operation_log("list entered");
+        conformance_operation_warning("process retry exhausted");
         let launch_attrs = [jackin_telemetry::Attr {
             key: jackin_telemetry::schema::attrs::LAUNCH_TARGET_KIND,
             value: jackin_telemetry::Value::Str("workspace"),
@@ -276,13 +330,10 @@ fn drive_standard_conformance_scenario() -> ConformanceExport {
             jackin_telemetry::operation(&jackin_telemetry::operation::PROCESS_COMMAND, &[])
                 .expect("registered process operation");
         let guard = operation.span().enter();
-        telemetry_line(OperationLevel::Info, "docker", "process executed");
+        conformance_operation_log("process executed");
         // Representative host failure; the actual attach failure seam is
         // asserted in jackin-capsule's conformance test.
-        telemetry_error_line(
-            jackin_telemetry::schema::enums::ErrorType::RpcError,
-            "forced attach failure for conformance",
-        );
+        conformance_operation_error("forced attach failure for conformance");
         drop(guard);
         operation.complete(
             jackin_telemetry::schema::enums::OutcomeValue::Failure,
@@ -296,13 +347,9 @@ fn drive_standard_conformance_scenario() -> ConformanceExport {
             crate::metrics::record_render(50, 4);
         }
 
-        telemetry_line(
-            OperationLevel::Info,
-            "security",
-            &format!(
-                "argv={CONFORMANCE_ARGV_CANARY} url={CONFORMANCE_URL_CANARY} inspect={CONFORMANCE_INSPECT_CANARY}"
-            ),
-        );
+        conformance_operation_log(&format!(
+            "argv={CONFORMANCE_ARGV_CANARY} url={CONFORMANCE_URL_CANARY} inspect={CONFORMANCE_INSPECT_CANARY}"
+        ));
     });
     drop(host.logger_provider.force_flush());
     drop(host.tracer_provider.force_flush());

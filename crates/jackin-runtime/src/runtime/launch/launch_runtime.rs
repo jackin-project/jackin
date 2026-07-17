@@ -1061,10 +1061,10 @@ pub(crate) async fn launch_role_runtime(
         },
     );
     if run_role_result.is_err() {
-        jackin_diagnostics::operation::telemetry_error_line(
+        let _error = jackin_telemetry::record_error(
             jackin_telemetry::schema::enums::ErrorType::LaunchFailed,
-            "role container start failed",
         );
+        jackin_diagnostics::emit_operator_notice("role container start failed");
     }
     run_role_result?;
 

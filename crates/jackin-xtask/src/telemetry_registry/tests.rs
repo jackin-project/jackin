@@ -40,6 +40,35 @@ fn source_policy_is_syntax_aware_and_blocks_raw_meters() {
 }
 
 #[test]
+fn source_policy_blocks_legacy_and_generic_telemetry_macros_syntax_aware() {
+    let path = "crates/example/src/lib.rs";
+    for name in [
+        "debug_log",
+        "clog",
+        "cdebug",
+        "ctrace_payload",
+        "cwarn",
+        "cerror",
+        "telemetry_info",
+        "telemetry_debug",
+        "telemetry_warn",
+        "telemetry_error",
+    ] {
+        let source = format!("fn rejected() {{ diagnostics::{name}!(\"body\"); }}");
+        assert_eq!(
+            source_policy_violations(path, &source),
+            ["prohibited legacy/generic telemetry macro"],
+            "{name}"
+        );
+
+        let inert = format!(
+            "// diagnostics::{name}!(\"comment\");\nconst TEXT: &str = \"{name}! in a string\";"
+        );
+        assert!(source_policy_violations(path, &inert).is_empty(), "{name}");
+    }
+}
+
+#[test]
 fn spawn_policy_resolves_cross_module_executor_aliases() {
     let files = [
         (

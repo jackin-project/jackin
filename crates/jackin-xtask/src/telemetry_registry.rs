@@ -35,6 +35,19 @@ const RAW_SCOPED_THREAD_ALLOWLIST: &[(&str, &str)] = &[(
 
 const RAW_TRACING_ALLOWLIST: &[&str] = &[];
 
+const PROHIBITED_TELEMETRY_MACROS: &[&str] = &[
+    "debug_log",
+    "clog",
+    "cdebug",
+    "ctrace_payload",
+    "cwarn",
+    "cerror",
+    "telemetry_info",
+    "telemetry_debug",
+    "telemetry_warn",
+    "telemetry_error",
+];
+
 const NON_TELEMETRY_EXEMPTIONS: &[(&str, &str, &str)] = &[
     (
         "crates/jackin-core/src/constants.rs",
@@ -642,6 +655,11 @@ impl<'ast> syn::visit::Visit<'ast> for SourcePolicyScanner<'_> {
 
     fn visit_macro(&mut self, node: &'ast syn::Macro) {
         let name = Self::path_name(&node.path);
+        if node.path.segments.last().is_some_and(|segment| {
+            PROHIBITED_TELEMETRY_MACROS.contains(&segment.ident.to_string().as_str())
+        }) {
+            self.reject(node.span(), "prohibited legacy/generic telemetry macro");
+        }
         if !self.allows_telemetry_apis()
             && !RAW_TRACING_ALLOWLIST.contains(&self.path)
             && matches!(

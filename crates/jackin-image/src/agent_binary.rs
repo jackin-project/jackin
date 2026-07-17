@@ -30,10 +30,10 @@ const GROK_BASE_FALLBACK: &str = "https://storage.googleapis.com/grok-build-publ
 static GITHUB_AUTH_TOKEN: OnceCell<Option<String>> = OnceCell::const_new();
 
 fn record_agent_binary_failure(body: &'static str) {
-    jackin_diagnostics::operation::telemetry_error_line(
+    let _error = jackin_telemetry::record_error(
         jackin_telemetry::schema::enums::ErrorType::CapsuleDownloadFailed,
-        body,
     );
+    jackin_diagnostics::emit_operator_notice(body);
 }
 
 #[derive(Debug, Clone)]
