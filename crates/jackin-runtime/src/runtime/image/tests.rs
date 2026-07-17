@@ -14,6 +14,19 @@ use std::sync::{Mutex, MutexGuard};
 
 static RICH_SURFACE_TEST_LOCK: Mutex<()> = Mutex::new(());
 
+#[test]
+fn github_token_recovery_export_is_bodyless() {
+    let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
+    tracing::subscriber::with_default(subscriber, record_github_token_recovery);
+
+    export.force_flush();
+    assert_eq!(export.event_count("operation.warn"), 1);
+    assert!(export.contains_log_text("recovered_degradation"));
+    for private in ["token", "command", "stderr", "path", "raw error"] {
+        assert!(!export.contains_log_text(private));
+    }
+}
+
 struct RichSurfaceTestGuard {
     _guard: MutexGuard<'static, ()>,
 }

@@ -149,17 +149,15 @@ pub async fn resolve_github_token(runner: &mut impl CommandRunner) -> Option<Str
             return Some(t.trim().to_owned());
         }
     }
-    match runner.capture_secret("gh", &["auth", "token"], None).await {
-        Ok(s) => {
-            let s = s.trim().to_owned();
-            (!s.is_empty()).then_some(s)
-        }
-        Err(e) => {
-            jackin_diagnostics::telemetry_debug!(
-                "github_token",
-                "gh auth token failed (no token): {e}"
-            );
-            None
-        }
+    if let Ok(token) = runner.capture_secret("gh", &["auth", "token"], None).await {
+        let token = token.trim().to_owned();
+        (!token.is_empty()).then_some(token)
+    } else {
+        record_github_token_recovery();
+        None
     }
+}
+
+pub(crate) fn record_github_token_recovery() {
+    let _warning = jackin_telemetry::record_recovered_degradation();
 }
