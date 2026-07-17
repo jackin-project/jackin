@@ -206,8 +206,10 @@ expansion and before any crate runner is requested. A hit is reported in the
 routing summary and creates no empty matrix job; a miss creates exactly one
 dedicated job for that crate. This distinction is required for the one-minute
 pipeline target because hosted-runner admission serialized the nominally
-parallel matrix even when each cache-hit job did no work. The producer also
-publishes an exact-SHA alias for release workflows. A per-crate concurrency
+parallel matrix even when each cache-hit job did no work. Main-branch producers
+also publish an exact-SHA alias for release workflows; PR source SHAs cannot
+become the merged main SHA and do not publish that otherwise-unused duplicate
+marker. A per-crate concurrency
 contract prevents GitHub and Velnor from rebuilding or publishing the same
 input simultaneously; both lanes read the same marker names and execute the
 same lookup and test contract.
