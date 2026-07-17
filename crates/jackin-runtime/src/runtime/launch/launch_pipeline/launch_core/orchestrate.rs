@@ -1518,8 +1518,11 @@ where
     let dirty_exit_policy =
         config.resolve_dirty_exit_policy(config.workspaces.get(workspace_label.as_str()));
     let launch_config = workspace_launch_config(
+        config,
         selector,
         workspace,
+        environment.workspace_opt.as_ref(),
+        role_key,
         validated_repo,
         opts,
         &materialized,

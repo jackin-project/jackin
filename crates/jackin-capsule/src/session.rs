@@ -1594,6 +1594,7 @@ fn grade_for_runtime(runtime: &str) -> crate::agent_status::evidence::AuthorityG
 pub fn build_agent_command(
     agent: &str,
     model: Option<&str>,
+    auth_mode: Option<&str>,
     env_passthrough: &[(String, String)],
     cwd: &Path,
     codename: &str,
@@ -1606,6 +1607,11 @@ pub fn build_agent_command(
         cmd.env(k, v);
     }
     cmd.env("JACKIN_AGENT", agent);
+    if let Some(auth_mode) = auth_mode {
+        cmd.env(jackin_protocol::AUTH_MODE_ENV, auth_mode);
+    } else {
+        cmd.env_remove(jackin_protocol::AUTH_MODE_ENV);
+    }
     cmd.env("JACKIN_AGENT_CODENAME", codename);
     apply_terminal_env(&mut cmd);
     cmd.cwd(cwd);

@@ -287,6 +287,7 @@ impl Multiplexer {
                     cmd: build_agent_command(
                         slug,
                         self.launch_model(slug, provider_label),
+                        self.launch_env.launch_config.auth_mode_for_agent(slug),
                         env_passthrough,
                         cwd,
                         codename,

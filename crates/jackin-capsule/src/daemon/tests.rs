@@ -598,6 +598,7 @@ fn test_mux(rows: u16, cols: u16) -> Multiplexer {
             workdir: "/workspace".to_owned(),
             agents: Vec::new(),
             models: BTreeMap::new(),
+            auth_modes: BTreeMap::new(),
             provider_models: BTreeMap::new(),
             initial_provider: None,
             claude_marketplaces: Vec::new(),

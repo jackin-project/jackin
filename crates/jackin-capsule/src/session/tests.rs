@@ -703,7 +703,7 @@ fn drain_clears_pending_between_calls() {
 #[test]
 fn build_agent_command_overrides_stale_agent_env() {
     let env = vec![("JACKIN_AGENT".to_owned(), "claude".to_owned())];
-    let cmd = build_agent_command("codex", None, &env, Path::new("/workspace"), "test");
+    let cmd = build_agent_command("codex", None, None, &env, Path::new("/workspace"), "test");
 
     assert_eq!(
         cmd.get_env("JACKIN_AGENT").and_then(|value| value.to_str()),
@@ -712,9 +712,31 @@ fn build_agent_command_overrides_stale_agent_env() {
 }
 
 #[test]
+fn build_agent_command_injects_only_bounded_auth_mode() {
+    let env = vec![(
+        jackin_protocol::AUTH_MODE_ENV.to_owned(),
+        "private-stale-mode".to_owned(),
+    )];
+    let cmd = build_agent_command(
+        "codex",
+        None,
+        Some("api_key"),
+        &env,
+        Path::new("/workspace"),
+        "test",
+    );
+
+    assert_eq!(
+        cmd.get_env(jackin_protocol::AUTH_MODE_ENV)
+            .and_then(|value| value.to_str()),
+        Some("api_key")
+    );
+}
+
+#[test]
 fn build_agent_command_uses_stable_pane_term() {
     let env = vec![("TERM".to_owned(), "xterm-ghostty".to_owned())];
-    let cmd = build_agent_command("codex", None, &env, Path::new("/workspace"), "test");
+    let cmd = build_agent_command("codex", None, None, &env, Path::new("/workspace"), "test");
 
     assert_eq!(
         cmd.get_env("TERM").and_then(|value| value.to_str()),
@@ -725,7 +747,7 @@ fn build_agent_command_uses_stable_pane_term() {
 #[test]
 fn build_agent_command_advertises_truecolor() {
     let env = vec![("COLORTERM".to_owned(), "24bit".to_owned())];
-    let cmd = build_agent_command("claude", None, &env, Path::new("/workspace"), "test");
+    let cmd = build_agent_command("claude", None, None, &env, Path::new("/workspace"), "test");
 
     assert_eq!(
         cmd.get_env("COLORTERM").and_then(|value| value.to_str()),

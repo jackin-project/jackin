@@ -243,6 +243,12 @@ model = "zai/glm"
     let manifest = jackin_manifest::load_role_manifest(temp.path()).unwrap();
     let selector = RoleSelector::new(Some("chainargos"), "the-architect");
     let config = capsule_config(&selector, "/workspace", &manifest, None, "ask", Vec::new());
+    let auth_modes = super::capsule_setup::capsule_auth_modes(
+        &jackin_config::AppConfig::default(),
+        None,
+        &selector.key(),
+        &manifest,
+    );
 
     assert_eq!(config.role, "chainargos/the-architect");
     assert_eq!(config.workdir, "/workspace");
@@ -255,6 +261,8 @@ model = "zai/glm"
     assert_eq!(config.models.get("kimi").unwrap(), "kimi-k2");
     assert_eq!(config.models.get("opencode").unwrap(), "zai/glm");
     assert!(!config.models.contains_key("amp"));
+    assert_eq!(auth_modes.len(), config.agents.len());
+    assert!(auth_modes.values().all(|mode| mode == "sync"));
 }
 #[tokio::test]
 async fn diagnose_premature_exit_returns_none_when_container_running() {

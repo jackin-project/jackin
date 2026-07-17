@@ -55,5 +55,45 @@ fn validate(config: &CapsuleConfig) -> Result<()> {
     if config.workdir.trim().is_empty() {
         anyhow::bail!("{} workdir is empty", jackin_protocol::CAPSULE_CONFIG_PATH);
     }
+    for agent in &config.agents {
+        let mode = config.auth_mode_for_agent(agent).ok_or_else(|| {
+            anyhow::anyhow!("missing bounded auth mode for configured agent {agent}")
+        })?;
+        if !matches!(mode, "sync" | "api_key" | "oauth_token" | "ignore") {
+            anyhow::bail!("invalid bounded auth mode for configured agent {agent}");
+        }
+    }
+    if config
+        .auth_modes
+        .keys()
+        .any(|agent| !config.agents.contains(agent))
+    {
+        anyhow::bail!("auth mode names an agent outside the configured allowlist");
+    }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn auth_modes_are_complete_bounded_and_allowlisted() {
+        let valid = CapsuleConfig {
+            workdir: "/workspace".to_owned(),
+            agents: vec!["codex".to_owned()],
+            auth_modes: BTreeMap::from([("codex".to_owned(), "api_key".to_owned())]),
+            ..CapsuleConfig::default()
+        };
+        validate(&valid).unwrap();
+
+        let mut invalid = valid.clone();
+        invalid
+            .auth_modes
+            .insert("codex".to_owned(), "private-mode".to_owned());
+        assert!(validate(&invalid).is_err());
+        invalid.auth_modes = BTreeMap::from([("claude".to_owned(), "sync".to_owned())]);
+        assert!(validate(&invalid).is_err());
+    }
 }
