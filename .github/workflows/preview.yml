@@ -312,7 +312,7 @@ jobs:
         with:
           ref: ${{ needs.source-changed.outputs.sha }}
       - name: Cache Rust toolchain
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ${{ env.RUSTUP_HOME }}/toolchains
@@ -410,7 +410,7 @@ jobs:
         with:
           ref: ${{ needs.source-changed.outputs.sha }}
       - name: Cache Rust toolchain
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ${{ env.RUSTUP_HOME }}/toolchains
