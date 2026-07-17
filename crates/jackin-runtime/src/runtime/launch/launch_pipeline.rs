@@ -645,31 +645,30 @@ fn initialize_launch_progress(
     workspace: &jackin_config::ResolvedWorkspace,
     workspace_name: Option<&str>,
 ) -> anyhow::Result<()> {
-    let Some(run) = jackin_diagnostics::active_run() else {
-        return Ok(());
-    };
-    #[cfg(test)]
-    let mut progress = crate::runtime::progress::LaunchProgress::for_test(run);
-    #[cfg(not(test))]
-    let mut progress = crate::runtime::progress::LaunchProgress::new(
-        run,
-        std::env::var_os("JACKIN_NO_MOTION").is_some(),
-        crate::runtime::progress::host_terminal(),
-        env!("JACKIN_VERSION"),
-    )?;
-    progress.started(crate::runtime::progress::LaunchIdentity {
-        role: selector.name.clone(),
-        agent: opts
-            .agent
-            .or(workspace.default_agent)
-            .map_or_else(|| "resolving".to_owned(), |agent| agent.slug().to_owned()),
-        target_kind: super::launch_target_kind(workspace_name),
-        target_label: super::launch_target_label(workspace_name, workspace),
-        mounts: super::launch_mount_lines(workspace),
-        image: None,
-        container: None,
-    });
-    steps.start_progress(progress);
+    if let Some(run) = jackin_diagnostics::active_run() {
+        #[cfg(test)]
+        let mut progress = crate::runtime::progress::LaunchProgress::for_test(run);
+        #[cfg(not(test))]
+        let mut progress = crate::runtime::progress::LaunchProgress::new(
+            run,
+            std::env::var_os("JACKIN_NO_MOTION").is_some(),
+            crate::runtime::progress::host_terminal(),
+            env!("JACKIN_VERSION"),
+        )?;
+        progress.started(crate::runtime::progress::LaunchIdentity {
+            role: selector.name.clone(),
+            agent: opts
+                .agent
+                .or(workspace.default_agent)
+                .map_or_else(|| "resolving".to_owned(), |agent| agent.slug().to_owned()),
+            target_kind: super::launch_target_kind(workspace_name),
+            target_label: super::launch_target_label(workspace_name, workspace),
+            mounts: super::launch_mount_lines(workspace),
+            image: None,
+            container: None,
+        });
+        steps.start_progress(progress);
+    }
     steps.stage_done(
         crate::runtime::progress::LaunchStage::Identity,
         "resolved operator",
@@ -1228,7 +1227,6 @@ pub(crate) async fn load_role_with(
     // build work that follows.
     let rebuild = opts.rebuild;
     mark_construct_ready(&mut steps);
-    steps.next("Preparing derived image").await?;
     let repo_lock = Some(repo_lock);
     let image_decision = crate::runtime::image::decide_role_image(
         paths,

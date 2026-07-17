@@ -82,6 +82,9 @@ impl StepCounter {
         stage: crate::runtime::progress::LaunchStage,
         detail: impl Into<String>,
     ) {
+        if self.current_stage == Some(stage) {
+            self.current_stage = None;
+        }
         let index = stage_index(stage);
         if let Some(previous) = self.stage_telemetry[index].take() {
             previous.complete(
@@ -140,6 +143,17 @@ impl StepCounter {
         if let Some(progress) = &mut self.progress {
             progress.stage_failed(failure).await;
         }
+    }
+
+    pub(in crate::runtime::launch) fn stage_error(
+        &mut self,
+        stage: crate::runtime::progress::LaunchStage,
+    ) {
+        self.finish_stage(
+            stage,
+            jackin_telemetry::schema::enums::OutcomeValue::Failure,
+            Some(jackin_telemetry::schema::enums::ErrorType::LaunchStageFailed),
+        );
     }
 
     pub(in crate::runtime::launch) fn opening_hardline(&mut self) {

@@ -840,6 +840,9 @@ where
     let binaries = match binaries {
         Ok(binaries) => binaries,
         Err(error) => {
+            common
+                .steps
+                .stage_error(crate::runtime::progress::LaunchStage::AgentBinaries);
             common.cleanup.run(common.docker).await;
             return Err(error);
         }
@@ -876,11 +879,19 @@ where
     )
     .await;
     match image {
-        Ok(image) => Ok(ImageMaterialized {
-            image,
-            selected_image_reused: false,
-        }),
+        Ok(image) => {
+            common
+                .steps
+                .stage_done(crate::runtime::progress::LaunchStage::DerivedImage, "built");
+            Ok(ImageMaterialized {
+                image,
+                selected_image_reused: false,
+            })
+        }
         Err(error) => {
+            common
+                .steps
+                .stage_error(crate::runtime::progress::LaunchStage::DerivedImage);
             common.cleanup.run(common.docker).await;
             Err(error)
         }
@@ -1180,6 +1191,7 @@ async fn prepare_active_launch<D, R, S>(
     launch: &mut ActiveLaunch<'_, D, R>,
     mut sidecar: Pin<&mut S>,
     early_sidecar_result: &mut Option<anyhow::Result<()>>,
+    sidecar_required: bool,
 ) -> anyhow::Result<(InstancePrepared, WorkspaceMaterialized)>
 where
     D: DockerApi,
@@ -1290,6 +1302,7 @@ where
         },
         sidecar,
         early_sidecar_result.take(),
+        sidecar_required,
     )
     .await?;
     Ok((prepared, workspace))
@@ -1349,6 +1362,7 @@ where
 async fn run_active_launch<D, R, S>(
     mut launch: ActiveLaunch<'_, D, R>,
     sidecar: Pin<&mut S>,
+    sidecar_required: bool,
 ) -> anyhow::Result<String>
 where
     D: DockerApi,
@@ -1356,8 +1370,13 @@ where
     S: Future<Output = anyhow::Result<()>>,
 {
     let mut early_sidecar_result = None;
-    let (prepared, workspace) =
-        prepare_active_launch(&mut launch, sidecar, &mut early_sidecar_result).await?;
+    let (prepared, workspace) = prepare_active_launch(
+        &mut launch,
+        sidecar,
+        &mut early_sidecar_result,
+        sidecar_required,
+    )
+    .await?;
     execute_active_launch(launch, prepared, workspace).await
 }
 
@@ -1365,6 +1384,7 @@ async fn materialize_workspace_phase<D, R, S>(
     input: MaterializeWorkspace<'_, D, R>,
     mut sidecar: Pin<&mut S>,
     early_sidecar_result: Option<anyhow::Result<()>>,
+    sidecar_required: bool,
 ) -> anyhow::Result<WorkspaceMaterialized>
 where
     D: DockerApi,
@@ -1444,6 +1464,15 @@ where
     };
     let (sidecar_result, materialize_result) = tokio::join!(sidecar_wait, materialize_wait);
     steps.stage_done(crate::runtime::progress::LaunchStage::Network, "isolated");
+    match &sidecar_result {
+        Ok(()) if sidecar_required => {
+            steps.stage_done(crate::runtime::progress::LaunchStage::Sidecar, "ready");
+        }
+        Err(_) if sidecar_required => {
+            steps.stage_error(crate::runtime::progress::LaunchStage::Sidecar);
+        }
+        _ => {}
+    }
     if let Err(error) = sidecar_result {
         super::super::launch_phases::mark_failed_setup_then_cleanup(
             paths,
@@ -1767,6 +1796,18 @@ where
     );
     let adopted_sidecar_was_used = launch.initialized.adopted_sidecar_was_used;
     let dind_started = launch.initialized.dind_started;
+    let sidecar_required = adopted_sidecar_was_used || dind_started;
+    if sidecar_required {
+        launch.steps.stage_started(
+            crate::runtime::progress::LaunchStage::Sidecar,
+            "starting sidecar",
+        );
+    } else {
+        launch.steps.stage_skipped(
+            crate::runtime::progress::LaunchStage::Sidecar,
+            "sidecar not required",
+        );
+    }
     let docker = launch.docker;
     let sidecar = async move {
         if adopted_sidecar_was_used {
@@ -1794,5 +1835,5 @@ where
         }
     };
     let mut sidecar = std::pin::pin!(sidecar);
-    run_active_launch(launch, sidecar.as_mut()).await
+    run_active_launch(launch, sidecar.as_mut(), sidecar_required).await
 }
