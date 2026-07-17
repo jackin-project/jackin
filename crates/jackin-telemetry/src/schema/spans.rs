@@ -1011,6 +1011,46 @@ pub const RPC_SERVER_DEF: super::SpanMetadata = super::SpanMetadata {
         },
     ],
 };
+// registry: kind=internal; attributes=error.type:recommended,outcome:recommended,session.id:recommended,stream.operation:required
+pub const STREAM_OPERATION: &str = "stream.operation";
+pub const STREAM_OPERATION_DEF: super::SpanMetadata = super::SpanMetadata {
+    name: STREAM_OPERATION,
+    description: "One bounded stream lifecycle phase.",
+    kind: super::SpanKind::Internal,
+    attributes: &[
+        super::AttributeRequirement {
+            name: "error.type",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
+        super::AttributeRequirement {
+            name: "outcome",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[
+                "success",
+                "failure",
+                "error",
+                "timeout",
+                "skip",
+                "cancellation",
+            ],
+        },
+        super::AttributeRequirement {
+            name: "session.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
+        super::AttributeRequirement {
+            name: "stream.operation",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Required,
+            allowed_values: &["open", "close"],
+        },
+    ],
+};
 // registry: kind=internal; attributes=cli.invocation.id:recommended,outcome:recommended,session.id:recommended
 pub const TELEMETRY_VALIDATE: &str = "telemetry.validate";
 pub const TELEMETRY_VALIDATE_DEF: super::SpanMetadata = super::SpanMetadata {
@@ -1271,6 +1311,7 @@ pub const ALL: &[&str] = &[
     PROCESS_COMMAND,
     RPC_CLIENT,
     RPC_SERVER,
+    STREAM_OPERATION,
     TELEMETRY_VALIDATE,
     UI_ACTION,
     UI_RENDER,
@@ -1292,6 +1333,7 @@ pub const DEFINITIONS: &[super::SpanMetadata] = &[
     PROCESS_COMMAND_DEF,
     RPC_CLIENT_DEF,
     RPC_SERVER_DEF,
+    STREAM_OPERATION_DEF,
     TELEMETRY_VALIDATE_DEF,
     UI_ACTION_DEF,
     UI_RENDER_DEF,

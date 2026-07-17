@@ -16,6 +16,7 @@ pub const PREWARM_SCHEDULE: SpanDef = SpanDef::generated(&schema::spans::PREWARM
 pub const PROCESS_COMMAND: SpanDef = SpanDef::generated(&schema::spans::PROCESS_COMMAND_DEF);
 pub const RPC_CLIENT: SpanDef = SpanDef::generated(&schema::spans::RPC_CLIENT_DEF);
 pub const RPC_SERVER: SpanDef = SpanDef::generated(&schema::spans::RPC_SERVER_DEF);
+pub const STREAM_OPERATION: SpanDef = SpanDef::generated(&schema::spans::STREAM_OPERATION_DEF);
 pub const TELEMETRY_VALIDATE: SpanDef = SpanDef::generated(&schema::spans::TELEMETRY_VALIDATE_DEF);
 pub const UI_ACTION: SpanDef = SpanDef::generated(&schema::spans::UI_ACTION_DEF);
 pub const UI_RENDER: SpanDef = SpanDef::generated(&schema::spans::UI_RENDER_DEF);
@@ -37,6 +38,7 @@ pub const ALL: &[SpanDef] = &[
     PROCESS_COMMAND,
     RPC_CLIENT,
     RPC_SERVER,
+    STREAM_OPERATION,
     TELEMETRY_VALIDATE,
     UI_ACTION,
     UI_RENDER,

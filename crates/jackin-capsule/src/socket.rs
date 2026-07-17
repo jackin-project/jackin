@@ -86,13 +86,18 @@ fn start_listener_at_with_limiter(path: &Path) -> Result<ListenerWithLimiter> {
     start_listener_at_inner(path)
 }
 
-#[expect(
-    clippy::excessive_nesting,
-    reason = "Unix-socket listener setup: per-step (unlink stale, bind, set- \
-              perms, nonblocking) nested `match` over `Result` outcomes. The \
-              nesting is the per-step error-propagation protocol."
-)]
 fn start_listener_at_inner(path: &Path) -> Result<ListenerWithLimiter> {
+    let operation = stream_operation(jackin_telemetry::schema::enums::StreamOperation::Open);
+    let result = start_listener_at_inner_uninstrumented(path);
+    if result.is_err() {
+        let _error_event =
+            jackin_telemetry::record_error(jackin_telemetry::schema::enums::ErrorType::IoError);
+    }
+    complete_stream_operation(operation, result.is_ok());
+    result
+}
+
+fn start_listener_at_inner_uninstrumented(path: &Path) -> Result<ListenerWithLimiter> {
     match std::fs::remove_file(path) {
         Ok(()) => {}
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
@@ -127,13 +132,6 @@ fn start_listener_at_inner(path: &Path) -> Result<ListenerWithLimiter> {
     jackin_telemetry::spawn::spawn_stream("capsule.socket.accept", async move {
         let limiter = limiter_for_task;
         let mut consecutive_failures = 0u32;
-        // `true` while the semaphore is fully acquired. Used to log
-        // the saturation transition exactly once instead of once per
-        // dropped over-cap connection — a flood attacker (the exact
-        // threat the cap defends against) would otherwise drown the
-        // compact log tier in repeated drop lines, masking other
-        // lifecycle events.
-        let mut at_cap_logged = false;
         loop {
             match listener.accept().await {
                 Ok((stream, _)) => {
@@ -144,28 +142,7 @@ fn start_listener_at_inner(path: &Path) -> Result<ListenerWithLimiter> {
                     // peers cannot starve the legitimate operator's
                     // attach. Once a task finishes, its OwnedSemaphorePermit
                     // drops and a fresh accept proceeds.
-                    let permit = if let Ok(p) = Arc::clone(&limiter).try_acquire_owned() {
-                        if at_cap_logged {
-                            jackin_diagnostics::telemetry_info!(
-                                "capsule",
-                                "socket: capacity recovered below cap {MAX_CONCURRENT_CLIENTS}"
-                            );
-                            at_cap_logged = false;
-                        }
-                        p
-                    } else {
-                        if at_cap_logged {
-                            jackin_diagnostics::telemetry_debug!(
-                                "capsule",
-                                "socket: dropping over-cap connection (cap={MAX_CONCURRENT_CLIENTS})"
-                            );
-                        } else {
-                            jackin_diagnostics::telemetry_info!(
-                                "capsule",
-                                "socket: at concurrent-client cap {MAX_CONCURRENT_CLIENTS}; over-cap connections will be dropped silently until capacity recovers"
-                            );
-                            at_cap_logged = true;
-                        }
+                    let Ok(permit) = Arc::clone(&limiter).try_acquire_owned() else {
                         drop(stream);
                         continue;
                     };
@@ -174,26 +151,30 @@ fn start_listener_at_inner(path: &Path) -> Result<ListenerWithLimiter> {
                         // Stop accepting so we don't burn cycles
                         // accepting connections that are immediately
                         // dropped on the floor.
-                        jackin_diagnostics::telemetry_info!(
-                            "capsule",
-                            "socket: client queue closed; listener stopping"
+                        complete_stream_operation(
+                            stream_operation(
+                                jackin_telemetry::schema::enums::StreamOperation::Close,
+                            ),
+                            true,
                         );
                         return;
                     }
                 }
-                Err(e) => {
+                Err(_error) => {
                     consecutive_failures = consecutive_failures.saturating_add(1);
-                    jackin_diagnostics::telemetry_info!(
-                        "capsule",
-                        "socket accept error ({consecutive_failures}/{ACCEPT_FAILURE_BAIL}): {e}"
+                    let _error_event = jackin_telemetry::record_error(
+                        jackin_telemetry::schema::enums::ErrorType::IoError,
                     );
                     if consecutive_failures >= ACCEPT_FAILURE_BAIL {
-                        jackin_diagnostics::telemetry_info!(
-                            "capsule",
-                            "socket: giving up after {ACCEPT_FAILURE_BAIL} consecutive accept failures"
+                        complete_stream_operation(
+                            stream_operation(
+                                jackin_telemetry::schema::enums::StreamOperation::Close,
+                            ),
+                            false,
                         );
                         return;
                     }
+                    let _retry_event = jackin_telemetry::record_retry_scheduled();
                     // Exponential backoff capped at 5 s so an EMFILE
                     // storm doesn't spin the runtime. The 5 s `.min()`
                     // is the load-bearing cap; the shift cap at 16 is
@@ -202,14 +183,6 @@ fn start_listener_at_inner(path: &Path) -> Result<ListenerWithLimiter> {
                     // ladder and tripping the `1u64 << N` UB shift.
                     let shift = consecutive_failures.saturating_sub(1).min(16);
                     let backoff_ms = 50u64.saturating_mul(1u64 << shift).min(5_000);
-                    // Backoff timing is mechanical detail — the
-                    // accept-error clog above already names the
-                    // failure. Keep this on the debug tier so the
-                    // 1-line-per-failure compact-log invariant holds.
-                    jackin_diagnostics::telemetry_debug!(
-                        "capsule",
-                        "socket: backing off {backoff_ms}ms before next accept"
-                    );
                     tokio::time::sleep(Duration::from_millis(backoff_ms)).await;
                 }
             }
@@ -217,6 +190,33 @@ fn start_listener_at_inner(path: &Path) -> Result<ListenerWithLimiter> {
     });
 
     Ok((rx, limiter))
+}
+
+fn stream_operation(
+    phase: jackin_telemetry::schema::enums::StreamOperation,
+) -> Option<jackin_telemetry::OperationGuard> {
+    let attrs = [jackin_telemetry::Attr {
+        key: jackin_telemetry::schema::attrs::STREAM_OPERATION,
+        value: jackin_telemetry::Value::Str(phase.as_str()),
+    }];
+    jackin_telemetry::autonomous_root_operation(
+        &jackin_telemetry::operation::STREAM_OPERATION,
+        &attrs,
+    )
+    .ok()
+}
+
+fn complete_stream_operation(operation: Option<jackin_telemetry::OperationGuard>, success: bool) {
+    if let Some(operation) = operation {
+        if success {
+            operation.complete(jackin_telemetry::schema::enums::OutcomeValue::Success, None);
+        } else {
+            operation.complete(
+                jackin_telemetry::schema::enums::OutcomeValue::Error,
+                Some(jackin_telemetry::schema::enums::ErrorType::IoError),
+            );
+        }
+    }
 }
 
 /// Maximum wall-clock time for a single control-channel read. Capped

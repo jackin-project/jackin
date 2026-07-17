@@ -541,6 +541,14 @@ pub const STREAM_DIRECTION_DEF: super::AttributeMetadata = super::AttributeMetad
     allowed_values: &["input", "output"],
 };
 // registry-type: enum
+pub const STREAM_OPERATION: &str = "stream.operation";
+pub const STREAM_OPERATION_DEF: super::AttributeMetadata = super::AttributeMetadata {
+    name: STREAM_OPERATION,
+    description: "Bounded stream lifecycle phase.",
+    value_type: super::ValueType::String,
+    allowed_values: &["open", "close"],
+};
+// registry-type: enum
 pub const TELEMETRY_REJECTION_REASON: &str = "telemetry.rejection.reason";
 pub const TELEMETRY_REJECTION_REASON_DEF: super::AttributeMetadata = super::AttributeMetadata {
     name: TELEMETRY_REJECTION_REASON,
@@ -702,6 +710,7 @@ pub const ALL_KEYS: &[&str] = &[
     RPC_SYSTEM_NAME,
     SESSION_PREVIOUS_ID,
     STREAM_DIRECTION,
+    STREAM_OPERATION,
     TELEMETRY_REJECTION_REASON,
     TELEMETRY_SIGNAL,
     TRUST_DECISION,
@@ -756,6 +765,7 @@ pub const ALL_DEFINITIONS: &[super::AttributeMetadata] = &[
     RPC_SYSTEM_NAME_DEF,
     SESSION_PREVIOUS_ID_DEF,
     STREAM_DIRECTION_DEF,
+    STREAM_OPERATION_DEF,
     TELEMETRY_REJECTION_REASON_DEF,
     TELEMETRY_SIGNAL_DEF,
     TRUST_DECISION_DEF,
@@ -817,15 +827,15 @@ pub mod std_attrs {
     pub use opentelemetry_semantic_conventions::attribute::SESSION_ID;
     pub use opentelemetry_semantic_conventions::attribute::SESSION_PREVIOUS_ID;
     pub use opentelemetry_semantic_conventions::attribute::URL_TEMPLATE;
-    // Local pin: not authoritative in opentelemetry-semantic-conventions =0.32.1; registry schema 1.44.0.
+    // Local pin: not authoritative in opentelemetry-semantic-conventions =0.32.1; registry schema 1.45.0.
     pub const GEN_AI_AGENT_NAME: &str = "gen_ai.agent.name";
-    // Local pin: not authoritative in opentelemetry-semantic-conventions =0.32.1; registry schema 1.44.0.
+    // Local pin: not authoritative in opentelemetry-semantic-conventions =0.32.1; registry schema 1.45.0.
     pub const GEN_AI_CONVERSATION_ID: &str = "gen_ai.conversation.id";
-    // Local pin: not authoritative in opentelemetry-semantic-conventions =0.32.1; registry schema 1.44.0.
+    // Local pin: not authoritative in opentelemetry-semantic-conventions =0.32.1; registry schema 1.45.0.
     pub const GEN_AI_OPERATION_NAME: &str = "gen_ai.operation.name";
-    // Local pin: not authoritative in opentelemetry-semantic-conventions =0.32.1; registry schema 1.44.0.
+    // Local pin: not authoritative in opentelemetry-semantic-conventions =0.32.1; registry schema 1.45.0.
     pub const GEN_AI_PROVIDER_NAME: &str = "gen_ai.provider.name";
-    // Local pin: not authoritative in opentelemetry-semantic-conventions =0.32.1; registry schema 1.44.0.
+    // Local pin: not authoritative in opentelemetry-semantic-conventions =0.32.1; registry schema 1.45.0.
     pub const GEN_AI_TOKEN_TYPE: &str = "gen_ai.token.type";
     pub const ALL_KEYS: &[&str] = &[
         APP_BUILD_ID,

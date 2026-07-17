@@ -1,5 +1,5 @@
-registry_schema_version = "1.44.0"
-registry_schema_url = "https://jackin.tailrocks.com/telemetry/schemas/1.44.0"
+registry_schema_version = "1.45.0"
+registry_schema_url = "https://jackin.tailrocks.com/telemetry/schemas/1.45.0"
 dependency_schema_version = "1.43.0"
 dependency_schema_url = "https://opentelemetry.io/schemas/1.43.0"
 dependency_registry_path = "crates/jackin-telemetry/vendor/semconv-1.43.0"

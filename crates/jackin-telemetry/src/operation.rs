@@ -436,6 +436,9 @@ fn make_root_execution_span(name: &str) -> Option<Span> {
         schema::spans::RPC_SERVER => {
             tracing::info_span!(target: crate::TELEMETRY_TARGET, parent: None, "rpc.server", otel.kind = "server")
         }
+        schema::spans::STREAM_OPERATION => {
+            tracing::info_span!(target: crate::TELEMETRY_TARGET, parent: None, "stream.operation")
+        }
         schema::spans::TELEMETRY_VALIDATE => {
             tracing::info_span!(target: crate::TELEMETRY_TARGET, parent: None, "telemetry.validate")
         }
@@ -501,6 +504,9 @@ fn make_child_execution_span(name: &str) -> Option<Span> {
         }
         schema::spans::RPC_SERVER => {
             tracing::info_span!(target: crate::TELEMETRY_TARGET, "rpc.server", otel.kind = "server")
+        }
+        schema::spans::STREAM_OPERATION => {
+            tracing::info_span!(target: crate::TELEMETRY_TARGET, "stream.operation")
         }
         schema::spans::TELEMETRY_VALIDATE => {
             tracing::info_span!(target: crate::TELEMETRY_TARGET, "telemetry.validate")
