@@ -3,6 +3,7 @@
 
 use jackin_process::{ExecRequest, ExecResult};
 use jackin_telemetry::schema::enums::{ErrorType, OutcomeValue};
+use std::process::ExitStatus;
 
 fn operation(request: &ExecRequest) -> jackin_telemetry::OperationGuard {
     jackin_telemetry::operation_or_disabled(
@@ -36,6 +37,60 @@ fn complete(operation: jackin_telemetry::OperationGuard, result: &anyhow::Result
         Err(_) => (OutcomeValue::Failure, Some(ErrorType::ProcessSpawnError)),
     };
     operation.complete(completion.0, completion.1);
+}
+
+pub(crate) struct ChildOperation(jackin_telemetry::OperationGuard);
+
+impl ChildOperation {
+    pub(crate) fn begin(request: &ExecRequest) -> Self {
+        Self(operation(request))
+    }
+
+    pub(crate) fn complete_status(self, status: ExitStatus) {
+        if let Some(code) = status.code() {
+            let _attribute = self.0.set_attr(jackin_telemetry::Attr {
+                key: jackin_telemetry::schema::attrs::std_attrs::PROCESS_EXIT_CODE,
+                value: jackin_telemetry::Value::I64(i64::from(code)),
+            });
+        }
+        if status.success() {
+            self.0.complete(OutcomeValue::Success, None);
+        } else {
+            self.0
+                .complete(OutcomeValue::Failure, Some(ErrorType::ProcessExitNonzero));
+        }
+    }
+
+    pub(crate) fn complete_timeout(self) {
+        self.0
+            .complete(OutcomeValue::Timeout, Some(ErrorType::Timeout));
+    }
+
+    pub(crate) fn complete_failure(self, error_type: ErrorType) {
+        self.0.complete(OutcomeValue::Failure, Some(error_type));
+    }
+}
+
+pub(crate) fn spawn_sync(
+    request: &ExecRequest,
+) -> anyhow::Result<(ChildOperation, std::process::Child)> {
+    let operation = ChildOperation::begin(request);
+    let Ok(child) = jackin_process::spawn_sync(request) else {
+        operation.complete_failure(ErrorType::ProcessSpawnError);
+        return Err(anyhow::anyhow!("process spawn failed"));
+    };
+    Ok((operation, child))
+}
+
+pub(crate) fn spawn_async(
+    request: &ExecRequest,
+) -> anyhow::Result<(ChildOperation, tokio::process::Child)> {
+    let operation = ChildOperation::begin(request);
+    let Ok(child) = jackin_process::spawn_async(request) else {
+        operation.complete_failure(ErrorType::ProcessSpawnError);
+        return Err(anyhow::anyhow!("process spawn failed"));
+    };
+    Ok((operation, child))
 }
 
 pub(crate) fn exec_sync(request: &ExecRequest) -> anyhow::Result<ExecResult> {
@@ -106,5 +161,39 @@ mod tests {
         ] {
             assert!(!export.contains_span_text(secret));
         }
+    }
+
+    #[tokio::test]
+    async fn child_operations_complete_on_exit_timeout_and_spawn_failure() {
+        let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
+        let _subscriber = tracing::subscriber::set_default(subscriber);
+
+        let nonzero_request = ExecRequest::new("sh", ["-c", "exit 19"]);
+        let (nonzero_operation, mut nonzero_child) = spawn_async(&nonzero_request).unwrap();
+        nonzero_operation.complete_status(nonzero_child.wait().await.unwrap());
+
+        let timeout_request = ExecRequest::new("sh", ["-c", "sleep 1"]);
+        let (timeout_operation, mut timeout_child) = spawn_async(&timeout_request).unwrap();
+        timeout_child.kill().await.unwrap();
+        timeout_operation.complete_timeout();
+
+        let missing_request = ExecRequest::new(
+            "operator-secret-missing-child",
+            ["operator-secret-child-argument"],
+        );
+        let Err(error) = spawn_async(&missing_request) else {
+            panic!("missing executable must fail to spawn");
+        };
+        assert_eq!(error.to_string(), "process spawn failed");
+
+        export.force_flush();
+        assert_eq!(export.finished_spans().len(), 3);
+        assert_eq!(export.error_span_count(), 3);
+        assert!(export.contains_span_text("19"));
+        assert!(export.contains_span_text("process_exit_nonzero"));
+        assert!(export.contains_span_text("timeout"));
+        assert!(export.contains_span_text("process_spawn_error"));
+        assert!(!export.contains_span_text("operator-secret-missing-child"));
+        assert!(!export.contains_span_text("operator-secret-child-argument"));
     }
 }

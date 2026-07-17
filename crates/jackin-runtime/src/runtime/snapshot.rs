@@ -258,19 +258,25 @@ fn run_docker_exec_capsule(container_name: &str, script: &str) -> Result<std::pr
     }
     args.extend_from_slice(&[container_name, "sh", "-lc", script]);
     let request = jackin_process::ExecRequest::new("docker", &args);
-    let mut child = jackin_process::spawn_sync(&request)
-        .with_context(|| format!("starting docker exec snapshot for {container_name}"))?;
+    let (operation, mut child) = crate::process_telemetry::spawn_sync(&request)
+        .context("starting docker snapshot process")?;
 
     let deadline = Instant::now() + SOCKET_TIMEOUT;
     loop {
-        if child
-            .try_wait()
-            .context("polling docker exec snapshot child")?
-            .is_some()
-        {
-            return child
-                .wait_with_output()
-                .context("collecting docker exec snapshot output");
+        match child.try_wait() {
+            Ok(Some(_)) => {
+                let Ok(output) = child.wait_with_output() else {
+                    operation.complete_failure(jackin_telemetry::schema::enums::ErrorType::IoError);
+                    bail!("collecting docker snapshot output failed");
+                };
+                operation.complete_status(output.status);
+                return Ok(output);
+            }
+            Ok(None) => {}
+            Err(_) => {
+                operation.complete_failure(jackin_telemetry::schema::enums::ErrorType::IoError);
+                bail!("polling docker snapshot process failed");
+            }
         }
         if Instant::now() >= deadline {
             drop(child.kill());
@@ -290,12 +296,9 @@ fn run_docker_exec_capsule(container_name: &str, script: &str) -> Result<std::pr
                 )]
                 std::thread::sleep(Duration::from_millis(20));
             }
-            let output = child.wait_with_output().ok();
-            let stderr = output
-                .as_ref()
-                .map(|out| String::from_utf8_lossy(&out.stderr).trim().to_owned())
-                .unwrap_or_default();
-            bail!("docker exec snapshot timed out after {SOCKET_TIMEOUT:?}: {stderr}");
+            drop(child.wait_with_output());
+            operation.complete_timeout();
+            bail!("docker snapshot process timed out");
         }
         #[expect(
             clippy::disallowed_methods,

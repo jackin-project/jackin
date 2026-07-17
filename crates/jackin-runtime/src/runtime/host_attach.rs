@@ -109,11 +109,6 @@ pub(super) async fn run_host_attach_session(
 
     match select_host_attach_transport(paths, container_name) {
         HostAttachTransportPlan::DirectSocket { socket_path } => {
-            jackin_diagnostics::telemetry_debug!(
-                "attach",
-                "host attach using direct socket {}",
-                socket_path.display()
-            );
             let stream = jackin_diagnostics::operation::connection_attempt(
                 jackin_telemetry::schema::enums::ConnectionPeerType::CapsuleAttach,
                 UnixStream::connect(&socket_path),
@@ -123,35 +118,32 @@ pub(super) async fn run_host_attach_session(
             let (reader, writer) = stream.into_split();
             run_terminal_attach(reader, writer, request).await
         }
-        HostAttachTransportPlan::AttachProxy {
-            socket_path,
-            direct_error,
-        } => {
-            jackin_diagnostics::telemetry_debug!(
-                "attach",
-                "host attach using attach-proxy for {} (direct_error={:?})",
-                socket_path.display(),
-                direct_error
-            );
+        HostAttachTransportPlan::AttachProxy { .. } => {
             let process_request =
                 jackin_process::ExecRequest::new("docker", attach_proxy_exec_args(container_name))
                     .stdin_mode(jackin_process::StdioMode::Capture)
                     .stdout_mode(jackin_process::StdioMode::Capture)
                     .stderr_mode(jackin_process::StdioMode::Inherit);
-            let mut child = jackin_process::spawn_async(&process_request)
-                .context("starting docker attach-proxy")?;
-            let stdout = child
-                .stdout
-                .take()
-                .context("attach-proxy stdout was not piped")?;
-            let stdin = child
-                .stdin
-                .take()
-                .context("attach-proxy stdin was not piped")?;
+            let (operation, mut child) = crate::process_telemetry::spawn_async(&process_request)
+                .context("starting Docker attach proxy")?;
+            let Some(stdout) = child.stdout.take() else {
+                drop(child.kill().await);
+                operation.complete_failure(jackin_telemetry::schema::enums::ErrorType::IoError);
+                bail!("Docker attach proxy stdout was unavailable");
+            };
+            let Some(stdin) = child.stdin.take() else {
+                drop(child.kill().await);
+                operation.complete_failure(jackin_telemetry::schema::enums::ErrorType::IoError);
+                bail!("Docker attach proxy stdin was unavailable");
+            };
             let attach_result = run_terminal_attach(stdout, stdin, request).await;
-            let status = child.wait().await.context("waiting for attach-proxy")?;
+            let Ok(status) = child.wait().await else {
+                operation.complete_failure(jackin_telemetry::schema::enums::ErrorType::IoError);
+                bail!("waiting for Docker attach proxy failed");
+            };
+            operation.complete_status(status);
             if attach_result.is_ok() && !status.success() {
-                bail!("attach-proxy exited with {status}");
+                bail!("Docker attach proxy exited unsuccessfully");
             }
             attach_result
         }
