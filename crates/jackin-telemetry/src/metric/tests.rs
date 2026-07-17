@@ -85,9 +85,8 @@ fn cardinality_rejects_the_257th_set_without_eviction() {
     );
     assert_eq!(crate::facade_health().cardinality, before + 1);
     provider.force_flush().expect("metric flush");
-    let point_count = exporter
-        .get_finished_metrics()
-        .expect("metric export")
+    let exported = exporter.get_finished_metrics().expect("metric export");
+    let point_count = exported
         .iter()
         .flat_map(opentelemetry_sdk::metrics::data::ResourceMetrics::scope_metrics)
         .flat_map(opentelemetry_sdk::metrics::data::ScopeMetrics::metrics)
@@ -100,6 +99,57 @@ fn cardinality_rejects_the_257th_set_without_eviction() {
         })
         .expect("exported governed histogram");
     assert_eq!(point_count, limits::MAX_CARDINALITY);
+
+    let health_points = exported
+        .iter()
+        .flat_map(opentelemetry_sdk::metrics::data::ResourceMetrics::scope_metrics)
+        .flat_map(opentelemetry_sdk::metrics::data::ScopeMetrics::metrics)
+        .find(|metric| metric.name() == TELEMETRY_REJECTIONS.name())
+        .and_then(|metric| match metric.data() {
+            opentelemetry_sdk::metrics::data::AggregatedMetrics::U64(
+                opentelemetry_sdk::metrics::data::MetricData::Sum(sum),
+            ) => Some(
+                sum.data_points()
+                    .map(|point| {
+                        point
+                            .attributes()
+                            .map(|attribute| {
+                                (
+                                    attribute.key.as_str(),
+                                    attribute.value.as_str().into_owned(),
+                                )
+                            })
+                            .collect::<HashMap<_, _>>()
+                    })
+                    .collect::<Vec<_>>(),
+            ),
+            _ => None,
+        })
+        .expect("exported rejection health counter");
+    let reasons = [
+        "unknown_name",
+        "unknown_attribute",
+        "invalid_value",
+        "privacy",
+        "cardinality",
+        "size_limit",
+    ];
+    assert_eq!(
+        health_points.len(),
+        health::Signal::ALL.len() * reasons.len()
+    );
+    for signal in health::Signal::ALL {
+        for reason in reasons {
+            assert!(health_points.iter().any(|attributes| {
+                attributes
+                    .get(attrs::TELEMETRY_SIGNAL)
+                    .is_some_and(|value| value == signal.as_str())
+                    && attributes
+                        .get(attrs::TELEMETRY_REJECTION_REASON)
+                        .is_some_and(|value| value == reason)
+            }));
+        }
+    }
 }
 
 #[test]
