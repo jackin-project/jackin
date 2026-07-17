@@ -23,6 +23,24 @@ fn validate_op_source_rejects_flag_segments() {
     validate_op_source("op://-vault/item").unwrap_err();
 }
 
+#[tokio::test]
+async fn credential_process_exports_typed_spawn_failure_without_program_or_arguments() {
+    let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
+    let _subscriber = tracing::subscriber::set_default(subscriber);
+    let request = jackin_process::ExecRequest::new(
+        "operator-secret-missing-program",
+        ["operator-secret-argument"],
+    );
+    exec_credential_process(&request).await.unwrap_err();
+    export.force_flush();
+
+    assert_eq!(export.finished_spans().len(), 1);
+    assert_eq!(export.error_span_count(), 1);
+    assert!(export.contains_span_text("process_spawn_error"));
+    assert!(!export.contains_span_text("operator-secret-missing-program"));
+    assert!(!export.contains_span_text("operator-secret-argument"));
+}
+
 /// Drive `handle_connection` over an in-memory socket pair and return the
 /// decoded JSON reply (`{"values":…}` or `{"error":…}`).
 async fn roundtrip(

@@ -405,17 +405,51 @@ async fn resolve_op(op_ref: &str) -> Result<String> {
     // via crafted op:// values containing flags. No timeout: Touch ID
     // prompts may block arbitrarily long (same semantic as pre-transport).
     let request = jackin_process::ExecRequest::new("op", ["read", "--", op_ref]).no_timeout();
-    let output = jackin_process::exec_async(&request)
-        .await
-        .context("running `op read`")?;
+    let output = exec_credential_process(&request).await?;
 
     if output.success {
         let raw = String::from_utf8_lossy(&output.stdout);
         Ok(raw.trim_end_matches('\n').to_owned())
     } else {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        anyhow::bail!("`op read` failed: {}", stderr.trim())
+        anyhow::bail!("credential process exited unsuccessfully")
     }
+}
+
+async fn exec_credential_process(
+    request: &jackin_process::ExecRequest,
+) -> Result<jackin_process::ExecResult> {
+    use jackin_telemetry::schema::enums::{ErrorType, OutcomeValue};
+
+    let operation = jackin_telemetry::operation_or_disabled(
+        &jackin_telemetry::operation::PROCESS_COMMAND,
+        &[jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::std_attrs::PROCESS_EXECUTABLE_NAME,
+            value: jackin_telemetry::Value::Str(
+                jackin_telemetry::process::classify_executable(&request.program).as_str(),
+            ),
+        }],
+    );
+    let result = jackin_process::exec_async(request).await;
+    let completion = match &result {
+        Ok(output) => {
+            if let Some(code) = output.code {
+                let _attribute = operation.set_attr(jackin_telemetry::Attr {
+                    key: jackin_telemetry::schema::attrs::std_attrs::PROCESS_EXIT_CODE,
+                    value: jackin_telemetry::Value::I64(i64::from(code)),
+                });
+            }
+            if output.timed_out {
+                (OutcomeValue::Timeout, Some(ErrorType::Timeout))
+            } else if output.success {
+                (OutcomeValue::Success, None)
+            } else {
+                (OutcomeValue::Failure, Some(ErrorType::ProcessExitNonzero))
+            }
+        }
+        Err(_) => (OutcomeValue::Failure, Some(ErrorType::ProcessSpawnError)),
+    };
+    operation.complete(completion.0, completion.1);
+    result.context("running credential process")
 }
 
 #[cfg(test)]
