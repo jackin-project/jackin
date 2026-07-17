@@ -190,7 +190,7 @@ registry/git outputs survive a source-key transition. This addresses cold run
 `29502952627`, which downloaded no dependencies but still emitted 160
 third-party compile lines: 63 while rebuilding the changed shared xtask and 97
 when the `jackin-xtask` crate's new exact target key had no seed.
-After every successful crate job, the configured canonical lane publishes a seven-day result marker
+After every successful crate job, the first admitted lane publishes a seven-day result marker
 keyed by the crate's exact forward dependency closure, Cargo/toolchain inputs,
 runner platform, feature and Docker modes, and the semantic crate-test
 contract. The contract is a stable identifier owned by
@@ -205,10 +205,11 @@ expansion and before any crate runner is requested. A hit is reported in the
 routing summary and creates no empty matrix job; a miss creates exactly one
 dedicated job for that crate. This distinction is required for the one-minute
 pipeline target because hosted-runner admission serialized the nominally
-parallel matrix even when each cache-hit job did no work. The writer also
-publishes an exact-SHA alias for release workflows. GitHub is the canonical
-writer when present, while a Velnor-only dispatch makes Velnor the writer; both
-lanes read the same marker names and execute the same lookup and test contract.
+parallel matrix even when each cache-hit job did no work. The producer also
+publishes an exact-SHA alias for release workflows. A per-crate concurrency
+contract prevents GitHub and Velnor from rebuilding or publishing the same
+input simultaneously; both lanes read the same marker names and execute the
+same lookup and test contract.
 A changed crate/dependency,
 lockfile, toolchain, test configuration, semantic test contract, fuzz input, Docker
 input, or execution mode produces a miss and runs the complete crate contract.
@@ -581,6 +582,15 @@ then the workflow invokes Cargo through `mise exec rust@<version> -- ...`; all
 subsequent preparation, validation, packing, and cache decisions remain in
 `jackin-xtask`. Removing the now-unreferenced activation and discovery scripts
 also removes a second, runner-specific toolchain selection implementation.
+
+Dual-lane crate tests no longer assign target and successful-result publication
+to a configured cache-writer lane. A per-crate concurrency group serializes only
+the GitHub and Velnor copies of the same complete crate job; unrelated crates
+remain parallel. The first admitted lane publishes the runner-independent target
+and result contract, and the second lane performs the same lookup and reuses that
+result instead of compiling it again. This keeps one crate per job, introduces no
+test partitions, and makes lane speed determine the producer rather than a
+GitHub-specific cache policy.
 
 ## Problem
 

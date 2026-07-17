@@ -93,6 +93,9 @@ jobs:
     runs-on: ${{ fromJSON(matrix.config.runner) }}
     timeout-minutes: 60
     name: cargo test ${{ matrix.package }} (${{ matrix.config.lane }})
+    concurrency:
+      group: crate-test-${{ github.run_id }}-${{ matrix.package }}
+      cancel-in-progress: false
     env:
       BUILDX_BUILDER: jackin-construct-${{ github.run_id }}-${{ github.run_attempt }}-${{ strategy.job-index }}
       CARGO_INCREMENTAL: "0"
@@ -504,7 +507,6 @@ jobs:
           always() && !cancelled() && !failure() &&
           steps.crate-result.outputs.hit != 'true' &&
           steps.restored-target.outputs.canonical-hit != 'true' &&
-          matrix.config.cache_writer &&
           (github.ref == 'refs/heads/main' ||
            github.event_name == 'workflow_dispatch' ||
            (github.event_name == 'pull_request' &&
@@ -519,7 +521,6 @@ jobs:
           always() && !cancelled() && !failure() &&
           steps.crate-result.outputs.hit != 'true' &&
           steps.restored-target.outputs.canonical-hit != 'true' &&
-          matrix.config.cache_writer &&
           (github.ref == 'refs/heads/main' ||
            github.event_name == 'workflow_dispatch' ||
            (github.event_name == 'pull_request' &&
@@ -542,7 +543,6 @@ jobs:
           always() && !cancelled() && !failure() &&
           steps.crate-result.outputs.hit != 'true' &&
           matrix.package != inputs.refresh-package &&
-          matrix.config.cache_writer &&
           (github.ref == 'refs/heads/main' ||
            github.event_name == 'workflow_dispatch' ||
            (github.event_name == 'pull_request' &&
@@ -558,7 +558,6 @@ jobs:
           always() && !cancelled() && !failure() &&
           steps.crate-result.outputs.hit != 'true' &&
           matrix.package != inputs.refresh-package &&
-          matrix.config.cache_writer &&
           (github.ref == 'refs/heads/main' ||
            github.event_name == 'workflow_dispatch' ||
            (github.event_name == 'pull_request' &&
@@ -575,7 +574,6 @@ jobs:
           steps.crate-result.outputs.hit != 'true' &&
           matrix.package != inputs.refresh-package &&
           steps.crate-result.outputs.name != steps.crate-result.outputs.sha-name &&
-          matrix.config.cache_writer &&
           (github.ref == 'refs/heads/main' ||
            github.event_name == 'workflow_dispatch' ||
            (github.event_name == 'pull_request' &&
