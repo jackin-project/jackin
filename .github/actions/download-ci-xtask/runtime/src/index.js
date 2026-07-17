@@ -73,12 +73,12 @@ async function downloadArtifact(octokit, owner, repo, artifact, destination) {
 
 async function run() {
   const token = process.env.JACKIN_TOKEN;
-  const { owner, repo } = splitRepository(process.env.GITHUB_REPOSITORY);
-  const runId = Number.parseInt(process.env.GITHUB_RUN_ID, 10);
+  const { owner, repo } = splitRepository(process.env.JACKIN_REPOSITORY);
+  const runId = Number.parseInt(process.env.JACKIN_RUN_ID, 10);
   const lane = process.env.JACKIN_LANE;
-  const destination = path.join(process.env.GITHUB_WORKSPACE, ".ci-tools", lane);
-  const os = process.env.RUNNER_OS;
-  const arch = process.env.RUNNER_ARCH;
+  const destination = path.join(process.env.JACKIN_WORKSPACE, ".ci-tools", lane);
+  const os = process.env.JACKIN_RUNNER_OS;
+  const arch = process.env.JACKIN_RUNNER_ARCH;
   const toolsContract = process.env.JACKIN_TOOLS_CONTRACT;
   const xtaskContract = process.env.JACKIN_XTASK_CONTRACT;
   const fallbackXtaskContract = process.env.JACKIN_FALLBACK_XTASK_CONTRACT;

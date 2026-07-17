@@ -35,6 +35,11 @@ runs:
       uses: actions/github-script@373c709c69115d41ff229c7e5df9f8788daa9553 # v9.0.0
       env:
         JACKIN_TOKEN: ${{ inputs.token }}
+        JACKIN_REPOSITORY: ${{ github.repository }}
+        JACKIN_RUN_ID: ${{ github.run_id }}
+        JACKIN_WORKSPACE: ${{ github.workspace }}
+        JACKIN_RUNNER_OS: ${{ runner.os }}
+        JACKIN_RUNNER_ARCH: ${{ runner.arch }}
         JACKIN_LANE: ${{ inputs.lane }}
         JACKIN_TOOLS_CONTRACT: ${{ inputs.tools-contract }}
         JACKIN_XTASK_CONTRACT: ${{ inputs.xtask-contract }}
