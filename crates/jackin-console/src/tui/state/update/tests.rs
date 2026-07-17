@@ -3,7 +3,7 @@
 
 use crate::tui::auth::AuthKind;
 use crate::tui::components::ErrorPopupState;
-use crate::tui::state::update::{ManagerMessage, update_manager};
+use crate::tui::state::update::{ManagerMessage, action_of, update_manager};
 use crate::tui::state::{
     AuthForm, AuthFormFocus, AuthFormTarget, CreatePreludeState, DragState, EditorState, EditorTab,
     FieldFocus, ManagerStage, ManagerState, MountScrollFocus, SettingsModal, SettingsState,
@@ -26,6 +26,21 @@ fn state_with_saved_count(count: usize) -> ManagerState<'static> {
         );
     }
     ManagerState::from_config(&config, cwd)
+}
+
+#[test]
+fn keyboard_and_mouse_tab_switches_share_one_semantic_action() {
+    let keyboard = ManagerMessage::MoveEditorTab {
+        delta: 1,
+        focus_tab_bar: true,
+    };
+    let mouse = ManagerMessage::SelectEditorTab(EditorTab::Mounts);
+
+    assert_eq!(
+        action_of(&keyboard),
+        Some(jackin_telemetry::schema::enums::UiActionName::TabSwitch)
+    );
+    assert_eq!(action_of(&mouse), action_of(&keyboard));
 }
 
 #[test]
