@@ -32,6 +32,12 @@ retry = 10
 [registries.crates-io]
 protocol = "sparse"
 
+# Target artifacts move between isolated CI workspaces and runner providers.
+# Relative dep-info paths prevent Cargo from invalidating an otherwise exact
+# target seed only because the checkout root changed.
+[build]
+dep-info-basedir = "."
+
 # `cargo xtask` is the standard entrypoint for workspace tasks
 # (e.g. `cargo xtask construct <subcommand>`).
 # mise tasks delegate to it via this alias (singular only; the plural

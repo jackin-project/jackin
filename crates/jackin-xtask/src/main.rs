@@ -10,6 +10,7 @@ mod agent_status_truth;
 mod arch;
 mod ci;
 mod ci_audit;
+mod ci_doctest;
 mod ci_result;
 mod ci_route;
 mod ci_stage;
@@ -64,6 +65,9 @@ enum Command {
     /// Audit every job and step in the current GitHub Actions run.
     #[command(name = "ci-audit")]
     CiAudit(ci_audit::CiAuditArgs),
+    /// Run doctests when the selected crate owns a doctestable library target.
+    #[command(name = "ci-doctest")]
+    CiDoctest(ci_doctest::CiDoctestArgs),
     /// Resolve reusable per-crate CI results.
     #[command(name = "ci-result", subcommand)]
     CiResult(ci_result::CiResultCommand),
@@ -259,6 +263,7 @@ fn main() -> ExitCode {
         Command::Construct(cmd) => construct::run(cmd),
         Command::Ci(args) => ci::run(args),
         Command::CiAudit(args) => ci_audit::run(args),
+        Command::CiDoctest(args) => ci_doctest::run(args),
         Command::CiResult(command) => ci_result::run(command),
         Command::CiRoute(args) => ci_route::run(args),
         Command::CiStage(args) => ci_stage::run(args),
