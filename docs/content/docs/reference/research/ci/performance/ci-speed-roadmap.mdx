@@ -1214,6 +1214,20 @@ site build made `docs-link-check` take 124 seconds. Input-identical manual run
 and passed the clean-log audit in 13 seconds. The cold changed-input path still
 needs independent improvement; the steady-state no-repeat contract is proven.
 
+Focused dual-lane run `29579832025` then forced one complete
+`jackin-xtask` crate validation in each lane after the PR-only exact-SHA result
+alias was removed. The unsharded job took 51 seconds on GitHub and 41 seconds
+on Velnor; every supporting job also stayed below one minute. The complete log
+contained zero dependency downloads, registry updates, toolchain downloads, or
+Rust dependency `Compiling`/`Checking` markers. The prepared-xtask cache lookup
+missed its exact key, but both warmup jobs staged the already published binary
+instead of rebuilding it. Velnor likewise missed the runner-local crate-target
+key and restored the reusable target archive before testing. These are
+transport fallbacks, not repeated compilation. PR runs no longer publish an
+exact-SHA crate-result alias that can only be consumed after the commit reaches
+`main`; they retain the semantic closure-key result, while `main` retains the
+exact-SHA alias needed by merged-commit consumers.
+
 Runs `29575485166` and `29575735792` validated the closure-key migration with
 one complete `jackin-xtask` job per lane. The first run populated the new key
 and finished at the one-minute boundary on both runners. The input-identical
