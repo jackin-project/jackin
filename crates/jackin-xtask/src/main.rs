@@ -27,6 +27,7 @@ mod profile_matrix;
 mod pty_fixture;
 mod ratchet;
 mod readme_freshness;
+mod release_archive;
 mod release_verify;
 mod report;
 mod schema;
@@ -144,6 +145,9 @@ enum Command {
     /// Use as `cargo xtask release-verify <archive>.tar.gz`.
     #[command(name = "release-verify")]
     ReleaseVerify(release_verify::ReleaseVerifyArgs),
+    /// Build, package, sign, and describe every release target for one crate.
+    #[command(name = "release-archives")]
+    ReleaseArchives(release_archive::ReleaseArchivesArgs),
     /// Report-only code-health dashboard (completed codebase-health Phase 0).
     ///
     /// Use as `cargo xtask health`, `cargo xtask health --format json`, or
@@ -257,6 +261,7 @@ fn main() -> ExitCode {
         Command::SchemaCheck(args) => schema::run(args),
         Command::ProfileMatrix(args) => profile_matrix::run(args),
         Command::ReleaseVerify(args) => release_verify::run(args),
+        Command::ReleaseArchives(args) => release_archive::run(args),
         Command::Health(args) => health::run(args),
         Command::Lint { command, strict } => run_lint(command, strict),
     };

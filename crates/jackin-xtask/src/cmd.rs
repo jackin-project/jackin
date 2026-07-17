@@ -59,6 +59,46 @@ pub(crate) fn run_stdout_file(cmd: &mut Command, path: &Path) -> Result<()> {
     }
 }
 
+/// Pipe one command into another and write the second command's stdout to a file.
+pub(crate) fn run_pipeline_to_file(
+    producer: &mut Command,
+    consumer: &mut Command,
+    path: &Path,
+) -> Result<()> {
+    let producer_display = display_command(producer);
+    let consumer_display = display_command(consumer);
+    let mut producer = producer
+        .stdout(Stdio::piped())
+        .stderr(Stdio::inherit())
+        .spawn()
+        .with_context(|| format!("running {producer_display}"))?;
+    let producer_stdout = producer
+        .stdout
+        .take()
+        .context("producer stdout was not piped")?;
+    let file = File::create(path).with_context(|| format!("creating {}", path.display()))?;
+    let consumer_status = consumer
+        .stdin(Stdio::from(producer_stdout))
+        .stdout(Stdio::from(file))
+        .stderr(Stdio::inherit())
+        .status()
+        .with_context(|| format!("running {consumer_display}"))?;
+    let producer_status = producer
+        .wait()
+        .with_context(|| format!("waiting for {producer_display}"))?;
+    if !producer_status.success() {
+        bail_process(&producer_display, producer_status)
+    } else if !consumer_status.success() {
+        bail_process(&consumer_display, consumer_status)
+    } else {
+        Ok(())
+    }
+}
+
+fn bail_process(display: &str, status: std::process::ExitStatus) -> Result<()> {
+    Err(anyhow!("{display} failed with {status}"))
+}
+
 /// Capture stdout as bytes. On failure, error includes trimmed stderr.
 ///
 /// Routes through [`jackin_process`] when the command is a simple program+args
