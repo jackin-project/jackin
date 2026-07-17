@@ -30,6 +30,10 @@ fn quiet_agent_status_pass_exports_no_span() {
     });
     export.force_flush();
     assert!(export.finished_spans().is_empty());
+    assert!(
+        !export.contains_span_text(jackin_telemetry::schema::attrs::JOB_ID),
+        "metric-only cycle ticks must never acquire job identity"
+    );
 }
 
 #[test]
@@ -58,6 +62,11 @@ fn substantive_agent_status_pass_exports_one_autonomous_root() {
         jackin_telemetry::schema::spans::BACKGROUND_CYCLE
     );
     assert_eq!(spans[0].parent_span_id, "0000000000000000");
+    assert!(export.contains_span_text("agent_status"));
+    assert!(
+        !export.contains_span_text(jackin_telemetry::schema::attrs::JOB_ID),
+        "substantive cycles must not carry job.id"
+    );
     assert_eq!(
         export.event_count(jackin_telemetry::schema::events::AGENT_STATE_CHANGED),
         1
