@@ -3,10 +3,18 @@
 
 use super::{StepCounter, stage_index, telemetry_stage};
 use crate::runtime::progress::LaunchProgress;
+use jackin_config::{AppConfig, RoleSource};
+use jackin_core::RoleSelector;
 use jackin_launch::{LaunchCancelled, LaunchDiagnostics};
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 const LAUNCH_WIRE_CHILD: &str = "JACKIN_LAUNCH_WIRE_CHILD";
+const PRIVATE_ROLE_OWNER: &str = "wire-private-role-owner";
+const PRIVATE_ROLE: &str = "wire-private-launch-role";
+const PRIVATE_ROLE_ID: &str = "wire-private-role-owner/wire-private-launch-role";
+const PRIVATE_ROLE_URL: &str =
+    "https://wire-private-role-source.invalid/roles.git?token=wire-private-role-token";
 
 struct TestDiagnostics;
 
@@ -39,6 +47,47 @@ fn steps_with_progress(cancelled: bool) -> StepCounter {
     );
     steps.start_progress(progress);
     steps
+}
+
+fn resolve_private_role_source() -> anyhow::Result<()> {
+    let selector = RoleSelector::new(Some(PRIVATE_ROLE_OWNER), PRIVATE_ROLE);
+    assert_eq!(selector.key(), PRIVATE_ROLE_ID);
+    let mut config = AppConfig::default();
+    config.roles.insert(
+        selector.key(),
+        RoleSource {
+            git: PRIVATE_ROLE_URL.to_owned(),
+            trusted: true,
+            env: BTreeMap::new(),
+        },
+    );
+    let (source, is_new, restore_override) =
+        super::super::resolve_launch_role_source(&mut config, &selector, None)?;
+    assert_eq!(source.git, PRIVATE_ROLE_URL);
+    assert!(!is_new);
+    assert!(!restore_override);
+    Ok(())
+}
+
+fn assert_private_launch_values_absent(testbed: &jackin_otlp_testbed::Testbed) {
+    let prohibited = [
+        PRIVATE_ROLE_OWNER,
+        PRIVATE_ROLE,
+        PRIVATE_ROLE_ID,
+        PRIVATE_ROLE_URL,
+        "wire-private-role-source.invalid",
+        "wire-private-role-token",
+        "wire-private-launch-title",
+        "wire-private-launch-summary",
+        "wire-private-launch-detail",
+        "wire-private-launch-next-step",
+        "wire-private-skip-reason",
+        "wire-private-stage-done",
+    ];
+    assert_eq!(
+        testbed.prohibited_value_violations(&prohibited),
+        Vec::<String>::new()
+    );
 }
 
 #[tokio::test]
@@ -115,7 +164,7 @@ fn conformance_wire_representative_launch_exports_complete_private_pipeline() ->
         jackin_diagnostics::ServiceIdentity::HOST_ONE_SHOT,
     )?;
 
-    let private_role = "wire-private-launch-role";
+    resolve_private_role_source()?;
     let private_failure = jackin_core::LaunchFailure {
         title: "wire-private-launch-title".to_owned(),
         summary: "wire-private-launch-summary".to_owned(),
@@ -133,7 +182,7 @@ fn conformance_wire_representative_launch_exports_complete_private_pipeline() ->
         let root_span = root.span().clone();
         let _entered = root_span.enter();
         let mut steps = StepCounter::new(
-            private_role,
+            PRIVATE_ROLE,
             jackin_telemetry::schema::enums::LaunchTargetKind::Directory,
         );
         for stage in jackin_core::LaunchStage::ALL {
@@ -230,19 +279,7 @@ fn conformance_wire_representative_launch_exports_complete_private_pipeline() ->
     ] {
         assert!(metric_names.iter().any(|name| name == expected));
     }
-    let prohibited = [
-        private_role,
-        "wire-private-launch-title",
-        "wire-private-launch-summary",
-        "wire-private-launch-detail",
-        "wire-private-launch-next-step",
-        "wire-private-skip-reason",
-        "wire-private-stage-done",
-    ];
-    assert_eq!(
-        testbed.prohibited_value_violations(&prohibited),
-        Vec::<String>::new()
-    );
+    assert_private_launch_values_absent(&testbed);
     assert_eq!(testbed.legacy_namespace_violations(), Vec::<String>::new());
     jackin_diagnostics::shutdown_capsule_tracing();
     Ok(())
