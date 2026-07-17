@@ -511,7 +511,6 @@ jobs:
           allow-miss: "true"
       - id: cargo-registry-lookup
         name: Restore prepared Cargo registry
-        if: env.CI_XTASK_HIT != 'true'
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -549,9 +548,7 @@ jobs:
                 'cargo-binstall cargo:sccache cargo:cargo-nextest cargo:cargo-deny cargo:cargo-shear cargo:cargo-audit cargo:cargo-dylint cargo:cargo-fuzz cargo:cargo-hack cargo:cargo-hakari cargo:cargo-llvm-cov cargo:cargo-mutants cargo:cargo-zigbuild cargo:dylint-link' || '' }}
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
-        if: >-
-          env.CI_XTASK_HIT != 'true' &&
-          steps.cargo-registry-lookup.outputs.cache-hit != 'true'
+        if: steps.cargo-registry-lookup.outputs.cache-hit != 'true'
         uses: ./.github/actions/cache-cargo-registry
         with:
           contract-key: ${{ needs.changes.outputs.registry-contract }}
