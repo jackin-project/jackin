@@ -38,13 +38,28 @@ fn local_target_requires_rustc_metadata_and_an_rlib() {
     let temp = tempdir().unwrap();
     let target = temp.path().join("target");
     fs::create_dir_all(target.join("debug/deps")).unwrap();
-    assert!(!has_reusable_local_target(&target).unwrap());
+    assert!(!has_reusable_local_target(&target, "").unwrap());
 
     fs::write(target.join(".rustc_info.json"), b"{}").unwrap();
-    assert!(!has_reusable_local_target(&target).unwrap());
+    assert!(!has_reusable_local_target(&target, "").unwrap());
 
     fs::write(target.join("debug/deps/libexample.rlib"), b"output").unwrap();
-    assert!(has_reusable_local_target(&target).unwrap());
+    assert!(has_reusable_local_target(&target, "").unwrap());
+}
+
+#[test]
+fn fuzzing_crate_local_target_requires_release_fuzz_binary() {
+    let temp = tempdir().unwrap();
+    let target = temp.path().join("target");
+    fs::create_dir_all(target.join("debug/deps")).unwrap();
+    fs::write(target.join(".rustc_info.json"), b"{}").unwrap();
+    fs::write(target.join("debug/deps/libexample.rlib"), b"output").unwrap();
+    assert!(!has_reusable_local_target(&target, "jackin-env").unwrap());
+
+    let release = target.join("x86_64-unknown-linux-gnu/release");
+    fs::create_dir_all(&release).unwrap();
+    fs::write(release.join("env_resolve"), b"fuzzer").unwrap();
+    assert!(has_reusable_local_target(&target, "jackin-env").unwrap());
 }
 
 #[test]

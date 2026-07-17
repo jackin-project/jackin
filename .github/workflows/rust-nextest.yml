@@ -215,30 +215,20 @@ jobs:
           --repository "$REPOSITORY"
           --supplied-results "$TARGET_RESULTS"
           --github-output
-      - name: Use runner-local target seed
-        id: local-target
-        if: steps.crate-target.outputs.hit == 'true'
-        run: $CI_XTASK ci-target validate-local
-      - name: Download reusable crate target seed
-        if: steps.crate-target.outputs.hit == 'true' && steps.local-target.outputs.hit != 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPOSITORY: ${{ github.repository }}
-        run: >-
-          "$CI_XTASK" ci-target download
-          --artifact-id "${{ steps.crate-target.outputs.artifact-id }}"
-          --destination target/.ci-restore
-          --repository "$REPOSITORY"
-      - name: Restore reusable crate target seed
+      - name: Prepare reusable crate target seed
         id: restored-target
-        if: steps.crate-target.outputs.hit == 'true' && steps.local-target.outputs.hit != 'true'
+        if: steps.crate-target.outputs.hit == 'true'
         env:
           CACHE_KEY: ${{ steps.crate-target-key.outputs.key }}
+          GH_TOKEN: ${{ github.token }}
           KNOWN_EXACT: ${{ steps.crate-target.outputs.known-exact }}
+          REPOSITORY: ${{ github.repository }}
         run: >-
-          "$CI_XTASK" ci-target restore
-          --archive target/.ci-restore/target.tar.zst
+          "$CI_XTASK" ci-target prepare
+          --package "${{ matrix.package }}"
           --target target
+          --artifact-id "${{ steps.crate-target.outputs.artifact-id }}"
+          --repository "$REPOSITORY"
           --cache-key "$CACHE_KEY"
           --known-exact "$KNOWN_EXACT"
       - name: Run package tests
@@ -474,7 +464,7 @@ jobs:
         if: >-
           always() && !cancelled() && !failure() &&
           steps.crate-result.outputs.hit != 'true' &&
-          steps.local-target.outputs.hit != 'true' &&
+          steps.restored-target.outputs.local-hit != 'true' &&
           steps.restored-target.outputs.canonical-hit != 'true' &&
           (github.ref == 'refs/heads/main' ||
            github.event_name == 'workflow_dispatch' ||
@@ -490,7 +480,7 @@ jobs:
         if: >-
           always() && !cancelled() && !failure() &&
           steps.crate-result.outputs.hit != 'true' &&
-          steps.local-target.outputs.hit != 'true' &&
+          steps.restored-target.outputs.local-hit != 'true' &&
           steps.restored-target.outputs.canonical-hit != 'true' &&
           (github.ref == 'refs/heads/main' ||
            github.event_name == 'workflow_dispatch' ||

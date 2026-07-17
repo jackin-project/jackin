@@ -25,6 +25,8 @@ pub(crate) enum CiTargetCommand {
     Download(DownloadArgs),
     /// Restore a target archive and emit whether it exactly matches the source.
     Restore(RestoreArgs),
+    /// Select a complete local target or restore its reusable artifact.
+    Prepare(PrepareArgs),
     /// Validate the runner-local Cargo target as a reusable seed.
     ValidateLocal(ValidateLocalArgs),
     /// Pack the reusable portion of a Cargo target into one archive.
@@ -87,6 +89,22 @@ pub(crate) struct RestoreArgs {
 }
 
 #[derive(Args, Debug)]
+pub(crate) struct PrepareArgs {
+    #[arg(long)]
+    package: String,
+    #[arg(long, default_value = "target")]
+    target: PathBuf,
+    #[arg(long)]
+    artifact_id: u64,
+    #[arg(long)]
+    repository: String,
+    #[arg(long)]
+    cache_key: String,
+    #[arg(long, action = clap::ArgAction::Set)]
+    known_exact: bool,
+}
+
+#[derive(Args, Debug)]
 pub(crate) struct PackArgs {
     #[arg(long, default_value = "target")]
     target: PathBuf,
@@ -131,13 +149,14 @@ pub(crate) fn run(command: CiTargetCommand) -> Result<()> {
         CiTargetCommand::Find(args) => find(args),
         CiTargetCommand::Download(args) => download(args),
         CiTargetCommand::Restore(args) => restore(args),
+        CiTargetCommand::Prepare(args) => prepare(args),
         CiTargetCommand::ValidateLocal(args) => validate_local(args),
         CiTargetCommand::Pack(args) => pack(args),
     }
 }
 
 fn validate_local(args: ValidateLocalArgs) -> Result<()> {
-    let hit = has_reusable_local_target(&args.target)?;
+    let hit = has_reusable_local_target(&args.target, "")?;
     if hit {
         writeln!(
             io::stdout().lock(),
@@ -147,7 +166,7 @@ fn validate_local(args: ValidateLocalArgs) -> Result<()> {
     write_output("hit", if hit { "true" } else { "false" })
 }
 
-fn has_reusable_local_target(target: &Path) -> Result<bool> {
+fn has_reusable_local_target(target: &Path, package: &str) -> Result<bool> {
     if !target.join(".rustc_info.json").is_file() {
         return Ok(false);
     }
@@ -155,14 +174,50 @@ fn has_reusable_local_target(target: &Path) -> Result<bool> {
     if !dependencies.is_dir() {
         return Ok(false);
     }
-    Ok(crate::fs_util::read_dir_sorted(&dependencies)?
+    let has_library = crate::fs_util::read_dir_sorted(&dependencies)?
         .into_iter()
         .any(|entry| {
             entry
                 .path()
                 .extension()
                 .is_some_and(|extension| extension == "rlib")
-        }))
+        });
+    if !has_library {
+        return Ok(false);
+    }
+    let Some(fuzz_targets) = crate::ci_fuzz::target_names(package) else {
+        return Ok(true);
+    };
+    Ok(fuzz_targets.iter().all(|binary| {
+        target
+            .join("x86_64-unknown-linux-gnu/release")
+            .join(binary)
+            .is_file()
+    }))
+}
+
+fn prepare(args: PrepareArgs) -> Result<()> {
+    if has_reusable_local_target(&args.target, &args.package)? {
+        writeln!(
+            io::stdout().lock(),
+            "::notice::using complete runner-local Cargo target"
+        )?;
+        write_output("local-hit", "true")?;
+        return write_output("canonical-hit", "false");
+    }
+    write_output("local-hit", "false")?;
+    let destination = args.target.join(".ci-restore");
+    download(DownloadArgs {
+        artifact_id: args.artifact_id,
+        destination: destination.clone(),
+        repository: args.repository,
+    })?;
+    restore(RestoreArgs {
+        archive: destination.join("target.tar.zst"),
+        target: args.target,
+        cache_key: args.cache_key,
+        known_exact: args.known_exact,
+    })
 }
 
 fn resolve_key(args: ResolveKeyArgs) -> Result<()> {
@@ -347,7 +402,7 @@ fn normalize_checkout_timestamps() -> Result<()> {
 }
 
 fn pack(args: PackArgs) -> Result<()> {
-    if !args.enabled || !has_reusable_local_target(&args.target)? {
+    if !args.enabled || !has_reusable_local_target(&args.target, "")? {
         if args.output.exists() {
             fs::remove_file(&args.output)
                 .with_context(|| format!("removing stale {}", args.output.display()))?;

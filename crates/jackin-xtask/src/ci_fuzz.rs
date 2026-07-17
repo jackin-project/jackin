@@ -78,3 +78,7 @@ fn contract_for(package: &str) -> Option<FuzzContract> {
     };
     Some(FuzzContract { directory, targets })
 }
+
+pub(crate) fn target_names(package: &str) -> Option<&'static [&'static str]> {
+    contract_for(package).map(|contract| contract.targets)
+}
