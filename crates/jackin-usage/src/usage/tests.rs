@@ -12,6 +12,61 @@ fn compact_count_uses_token_suffixes() {
 }
 
 #[test]
+fn provider_connector_exports_physical_attempts_without_endpoint_material() {
+    use std::io::{Read as _, Write as _};
+
+    let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
+    let _subscriber = tracing::subscriber::set_default(subscriber);
+    let listener = std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).unwrap();
+    let address = listener.local_addr().unwrap();
+    let server = thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        let mut request = [0_u8; 1024];
+        let _read = stream.read(&mut request).unwrap();
+        stream
+            .write_all(b"HTTP/1.1 200 OK\r\ncontent-length: 2\r\nconnection: close\r\n\r\nok")
+            .unwrap();
+    });
+    let secret_route = "provider-secret-route?token=provider-secret-query";
+    provider_http_client()
+        .unwrap()
+        .get(format!("http://{address}/{secret_route}"))
+        .send()
+        .unwrap();
+    server.join().unwrap();
+
+    let refused = std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).unwrap();
+    let refused_address = refused.local_addr().unwrap();
+    drop(refused);
+    provider_http_client()
+        .unwrap()
+        .get(format!("http://{refused_address}/{secret_route}"))
+        .send()
+        .unwrap_err();
+
+    export.force_flush();
+    let spans = export.finished_spans();
+    assert_eq!(spans.len(), 2);
+    assert!(
+        spans
+            .iter()
+            .all(|span| span.name == jackin_telemetry::schema::spans::CONNECTION_ATTEMPT)
+    );
+    assert_eq!(export.error_span_count(), 1);
+    assert!(export.contains_span_text("provider"));
+    assert!(export.contains_span_text("io_error"));
+    for prohibited in [
+        secret_route,
+        "provider-secret-query",
+        &address.to_string(),
+        &refused_address.to_string(),
+    ] {
+        assert!(!export.contains_span_text(prohibited));
+        assert!(!export.contains_log_text(prohibited));
+    }
+}
+
+#[test]
 fn provider_labels_resolve_all_account_refresh_surfaces() {
     assert_eq!(
         resolve_surface("codex", Some("Claude")),

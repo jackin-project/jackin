@@ -10,6 +10,7 @@
 use jackin_core::container_paths;
 use std::collections::{BTreeMap, HashMap};
 use std::fs;
+use std::future::Future;
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -1191,6 +1192,87 @@ pub(crate) fn write_json_line(
 pub(crate) const CODEX_OAUTH_TOKEN_URL: &str = "https://auth.openai.com/oauth/token";
 pub(crate) const CODEX_OAUTH_CLIENT_ID: &str = "app_EMoamEEZ73f0CkXaXp7hrann";
 
+#[derive(Clone)]
+struct ProviderConnectionLayer {
+    dispatcher: tracing::Dispatch,
+}
+
+impl ProviderConnectionLayer {
+    fn capture() -> Self {
+        Self {
+            dispatcher: tracing::dispatcher::get_default(Clone::clone),
+        }
+    }
+}
+
+impl<S> tower::Layer<S> for ProviderConnectionLayer {
+    type Service = ProviderConnectionService<S>;
+
+    fn layer(&self, inner: S) -> Self::Service {
+        ProviderConnectionService {
+            inner,
+            dispatcher: self.dispatcher.clone(),
+        }
+    }
+}
+
+#[derive(Clone)]
+struct ProviderConnectionService<S> {
+    inner: S,
+    dispatcher: tracing::Dispatch,
+}
+
+impl<S, Request> tower::Service<Request> for ProviderConnectionService<S>
+where
+    S: tower::Service<Request> + Send,
+    S::Future: Send + 'static,
+    S::Response: 'static,
+    S::Error: 'static,
+{
+    type Response = S::Response;
+    type Error = S::Error;
+    type Future = std::pin::Pin<
+        Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send + 'static>,
+    >;
+
+    fn poll_ready(
+        &mut self,
+        context: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        self.inner.poll_ready(context)
+    }
+
+    fn call(&mut self, request: Request) -> Self::Future {
+        let operation = tracing::dispatcher::with_default(&self.dispatcher, || {
+            jackin_telemetry::operation_or_disabled(
+                &jackin_telemetry::operation::CONNECTION_ATTEMPT,
+                &[jackin_telemetry::Attr {
+                    key: jackin_telemetry::schema::attrs::CONNECTION_PEER_TYPE,
+                    value: jackin_telemetry::Value::Str(
+                        jackin_telemetry::schema::enums::ConnectionPeerType::Provider.as_str(),
+                    ),
+                }],
+            )
+        });
+        let future = self.inner.call(request);
+        Box::pin(async move {
+            let result = future.await;
+            operation.complete(
+                if result.is_ok() {
+                    jackin_telemetry::schema::enums::OutcomeValue::Success
+                } else {
+                    jackin_telemetry::schema::enums::OutcomeValue::Failure
+                },
+                result
+                    .as_ref()
+                    .err()
+                    .map(|_| jackin_telemetry::schema::enums::ErrorType::IoError),
+            );
+            result
+        })
+    }
+}
+
 pub(crate) fn parse_chatgpt_base_url(contents: &str) -> Option<String> {
     for raw_line in contents.lines() {
         let line = raw_line.split('#').next().unwrap_or_default().trim();
@@ -1217,6 +1299,7 @@ pub(crate) fn provider_http_client() -> Result<reqwest::blocking::Client, String
     reqwest::blocking::Client::builder()
         .timeout(PROVIDER_HTTP_TIMEOUT)
         .connect_timeout(PROVIDER_HTTP_TIMEOUT)
+        .connector_layer(ProviderConnectionLayer::capture())
         .build()
         .map_err(|err| format!("provider HTTP client unavailable: {err}"))
 }
