@@ -76,7 +76,8 @@ async function run() {
   const { owner, repo } = splitRepository(process.env.JACKIN_REPOSITORY);
   const runId = Number.parseInt(process.env.JACKIN_RUN_ID, 10);
   const lane = process.env.JACKIN_LANE;
-  const destination = path.join(process.env.JACKIN_WORKSPACE, ".ci-tools", lane);
+  const workspace = process.env.JACKIN_WORKSPACE;
+  const destination = path.join(workspace, ".ci-tools", lane);
   const os = process.env.JACKIN_RUNNER_OS;
   const arch = process.env.JACKIN_RUNNER_ARCH;
   const toolsContract = process.env.JACKIN_TOOLS_CONTRACT;
