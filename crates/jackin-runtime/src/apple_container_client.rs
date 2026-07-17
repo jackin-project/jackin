@@ -79,8 +79,6 @@ pub trait AppleContainerApi: Send + Sync {
     /// Attach to a running container and return the child process handle.
     /// The caller pipes stdio through the child for the interactive session.
     /// Equivalent to: `container exec -it <name> jackin-capsule`
-    async fn exec_attach(&self, name: &str) -> Result<tokio::process::Child>;
-
     /// Stop a running container.
     /// Equivalent to: `container stop <name>`
     async fn stop_container(&self, name: &str) -> Result<()>;
@@ -111,26 +109,14 @@ impl AppleContainerClient {
     /// outcome and bailing on a non-zero exit. Shared by `stop`/`remove`, which
     /// differ only in the subcommand.
     async fn lifecycle(&self, name: &str, sub: &str) -> Result<()> {
-        jackin_diagnostics::telemetry_debug!(
-            "apple-container",
-            "container_state action={sub} name={name}"
-        );
-        let output =
-            jackin_process::exec_async(&jackin_process::ExecRequest::new("container", [sub, name]))
-                .await?;
+        let output = crate::process_telemetry::exec_async(&jackin_process::ExecRequest::new(
+            "container",
+            [sub, name],
+        ))
+        .await?;
         if !output.success {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            jackin_diagnostics::telemetry_debug!(
-                "apple-container",
-                "container_state action={sub} name={name} result=failure reason={}",
-                stderr.trim()
-            );
-            anyhow::bail!("container {sub} failed: {}", stderr.trim());
+            anyhow::bail!("container lifecycle command exited unsuccessfully");
         }
-        jackin_diagnostics::telemetry_debug!(
-            "apple-container",
-            "container_state action={sub} name={name} result=ok"
-        );
         Ok(())
     }
 }
@@ -160,35 +146,15 @@ impl AppleContainerApi for AppleContainerClient {
         }
         args.extend([spec.image.clone().into(), "jackin-capsule".into()]);
 
-        jackin_diagnostics::telemetry_debug!(
-            "apple-container",
-            "container_run name={name} image={}",
-            spec.image
-        );
-
-        let output =
-            jackin_process::exec_async(&jackin_process::ExecRequest::new("container", &args))
-                .await?;
+        let output = crate::process_telemetry::exec_async(&jackin_process::ExecRequest::new(
+            "container",
+            &args,
+        ))
+        .await?;
         if !output.success {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            anyhow::bail!("container run failed: {}", stderr.trim());
+            anyhow::bail!("container run exited unsuccessfully");
         }
-        jackin_diagnostics::telemetry_debug!("apple-container", "container_run name={name} ok");
         Ok(())
-    }
-
-    async fn exec_attach(&self, name: &str) -> Result<tokio::process::Child> {
-        jackin_diagnostics::telemetry_debug!(
-            "apple-container",
-            "attach transport=container-exec name={name}"
-        );
-        let request =
-            jackin_process::ExecRequest::new("container", ["exec", "-it", name, "jackin-capsule"])
-                .stdin_mode(jackin_process::StdioMode::Inherit)
-                .stdout_mode(jackin_process::StdioMode::Inherit)
-                .stderr_mode(jackin_process::StdioMode::Inherit);
-        let child = jackin_process::spawn_async(&request)?;
-        Ok(child)
     }
 
     async fn stop_container(&self, name: &str) -> Result<()> {
@@ -209,7 +175,7 @@ impl AppleContainerApi for AppleContainerClient {
     }
 
     async fn list_containers(&self, name_prefix: &str) -> Result<Vec<AppleContainerInfo>> {
-        let output = jackin_process::exec_async(&jackin_process::ExecRequest::new(
+        let output = crate::process_telemetry::exec_async(&jackin_process::ExecRequest::new(
             "container",
             ["ps", "--all", "--format", "json"],
         ))
@@ -219,13 +185,7 @@ impl AppleContainerApi for AppleContainerClient {
             // from "no containers". Returning Ok(vec![]) here would mask the
             // failure as an empty list, making is_container_running report
             // false and producing inexplicable reconnect behavior.
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            jackin_diagnostics::telemetry_debug!(
-                "apple-container",
-                "container ps failed: {}",
-                stderr.trim()
-            );
-            anyhow::bail!("container ps failed: {}", stderr.trim());
+            anyhow::bail!("container list exited unsuccessfully");
         }
         let stdout = String::from_utf8_lossy(&output.stdout);
         let all = parse_all_containers_json(&stdout);
@@ -322,16 +282,6 @@ impl AppleContainerApi for FakeAppleContainerClient {
             status: "running".to_owned(),
         });
         Ok(())
-    }
-
-    async fn exec_attach(&self, _name: &str) -> Result<tokio::process::Child> {
-        // Fake exec — returns a command that exits immediately.
-        let request = jackin_process::ExecRequest::new("true", None::<&str>)
-            .stdin_mode(jackin_process::StdioMode::Inherit)
-            .stdout_mode(jackin_process::StdioMode::Inherit)
-            .stderr_mode(jackin_process::StdioMode::Inherit);
-        let child = jackin_process::spawn_async(&request)?;
-        Ok(child)
     }
 
     async fn stop_container(&self, name: &str) -> Result<()> {

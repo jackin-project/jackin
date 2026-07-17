@@ -86,7 +86,7 @@ pub fn print_session_contract(
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]
 pub async fn check_dns(container_name: &str) {
-    let result = jackin_process::exec_async(&jackin_process::ExecRequest::new(
+    let result = crate::process_telemetry::exec_async(&jackin_process::ExecRequest::new(
         "container",
         [
             "exec",
@@ -101,7 +101,6 @@ pub async fn check_dns(container_name: &str) {
     match result {
         Ok(o) if o.success => {
             let out = String::from_utf8_lossy(&o.stdout).trim().to_owned();
-            jackin_diagnostics::telemetry_debug!("apple-container", "dns_check result={out}");
             if out == "hiccup" {
                 eprintln!(
                     "[jackin] apple-container: DNS hiccup detected after sleep/wake. \
@@ -109,9 +108,7 @@ pub async fn check_dns(container_name: &str) {
                 );
             }
         }
-        _ => {
-            jackin_diagnostics::telemetry_debug!("apple-container", "dns_check result=unavailable");
-        }
+        _ => {}
     }
 }
 
@@ -130,7 +127,7 @@ pub async fn wait_for_capsule(container_name: &str) -> Result<()> {
             );
         }
 
-        let output = jackin_process::exec_async(&jackin_process::ExecRequest::new(
+        let output = crate::process_telemetry::exec_async(&jackin_process::ExecRequest::new(
             "container",
             ["exec", container_name, "sh", "-c", check_cmd],
         ))
@@ -162,16 +159,11 @@ pub async fn attach(container_name: &str, focus_session: Option<u64>) -> Result<
         args.push(&focus_str);
     }
 
-    jackin_diagnostics::telemetry_debug!(
-        "apple-container",
-        "attach transport=container-exec name={container_name} pty=yes"
-    );
-
     let request = jackin_process::ExecRequest::new("container", &args)
         .stdin_mode(jackin_process::StdioMode::Inherit)
         .stdout_mode(jackin_process::StdioMode::Inherit)
         .stderr_mode(jackin_process::StdioMode::Inherit);
-    let status = jackin_process::exec_async(&request)
+    let status = crate::process_telemetry::exec_async(&request)
         .await
         .context("container exec failed — is apple/container installed?")?;
 
@@ -191,12 +183,11 @@ async fn record_attach_outcome(paths: &JackinPaths, container_name: &str, exit_c
     } else {
         AttachOutcome::stopped(exit_code.unwrap_or(-1))
     };
-    if let Err(e) = super::launch::record_instance_attach_outcome(paths, container_name, outcome) {
-        jackin_diagnostics::telemetry_debug!(
-            "apple-container",
-            "record_attach_outcome failed: {e:#}"
-        );
-    }
+    drop(super::launch::record_instance_attach_outcome(
+        paths,
+        container_name,
+        outcome,
+    ));
 }
 
 /// Inputs for the apple-container launch path. Grouped into a struct so the
@@ -248,18 +239,8 @@ pub async fn launch(args: AppleContainerLaunch<'_>) -> Result<()> {
         debug,
     } = args;
 
-    jackin_diagnostics::telemetry_debug!(
-        "apple-container",
-        "container_run name={container_name} image={image} force_daemon=yes inner_docker=no"
-    );
-
     // Probe container CLI availability.
     let version = probe_version().await;
-    jackin_diagnostics::telemetry_debug!(
-        "apple-container",
-        "container_version version={}",
-        version.as_deref().unwrap_or("not found")
-    );
     if version.is_none() {
         bail!(
             "apple/container CLI (`container`) not found. \
@@ -288,16 +269,6 @@ pub async fn launch(args: AppleContainerLaunch<'_>) -> Result<()> {
         env.push(("JACKIN_EXEC_BINDINGS".to_owned(), names));
     }
 
-    // Log mount telemetry before building spec.
-    for (host, guest) in mount_pairs {
-        jackin_diagnostics::telemetry_debug!(
-            "apple-container",
-            "mount source={} guest={} mode=rw",
-            host.display(),
-            guest.display()
-        );
-    }
-
     // socket dir bind-mount to /jackin/run: carries Capsule's launch config
     // (agent.toml, which the daemon requires at startup) and host.sock.
     let socket_dir = paths.jackin_home.join("sockets").join(container_name);
@@ -318,14 +289,6 @@ pub async fn launch(args: AppleContainerLaunch<'_>) -> Result<()> {
         .run_container(container_name, &spec)
         .await
         .context("container run failed — required capabilities or image may be unavailable")?;
-
-    // Compact launch telemetry line (debug-gated on the host's --debug flag).
-    jackin_diagnostics::telemetry_debug!(
-        "apple-container",
-        "apple-container launch name={container_name} image={} inner_docker=none caps=0 mounts={}",
-        image,
-        mount_pairs.len()
-    );
 
     // Write instance manifest.
     let container_state = paths.data_dir.join(container_name);
@@ -355,11 +318,6 @@ pub async fn launch(args: AppleContainerLaunch<'_>) -> Result<()> {
         }),
     );
     manifest.write(&container_state)?;
-    jackin_diagnostics::telemetry_debug!(
-        "apple-container",
-        "manifest written container={container_name}"
-    );
-
     // Start the host.sock credential resolver before the blocking attach call.
     // Detached on purpose: the spawned task runs for the session independently
     // of this handle (matches the Docker launch path).
@@ -371,8 +329,6 @@ pub async fn launch(args: AppleContainerLaunch<'_>) -> Result<()> {
 
     // Wait for capsule daemon readiness.
     wait_for_capsule(container_name).await?;
-    jackin_diagnostics::telemetry_debug!("apple-container", "capsule ready name={container_name}");
-
     // Printed once after the container starts, before the interactive attach,
     // so the operator sees the security boundary, isolation model, and residual
     // risks before their session begins.
@@ -403,16 +359,7 @@ async fn is_container_running(container_name: &str) -> bool {
         .await
     {
         Ok(v) => v.iter().any(|c| c.name == container_name && c.is_running()),
-        Err(e) => {
-            // `list_containers` bails on `container ps` failure (CLI missing,
-            // daemon down). Log it so a later "start failed" doesn't mask the
-            // real cause; treat as not-running for the caller's decision.
-            jackin_diagnostics::telemetry_debug!(
-                "apple-container",
-                "is_container_running: container ps failed: {e:#}"
-            );
-            false
-        }
+        Err(_) => false,
     }
 }
 
@@ -425,24 +372,15 @@ pub async fn reconnect(
     let running = is_container_running(container_name).await;
 
     if !running {
-        jackin_diagnostics::telemetry_debug!(
-            "apple-container",
-            "container_state action=start name={container_name}"
-        );
-        let start = jackin_process::exec_async(&jackin_process::ExecRequest::new(
+        let start = crate::process_telemetry::exec_async(&jackin_process::ExecRequest::new(
             "container",
             ["start", container_name],
         ))
         .await
         .context("container start failed — is apple/container installed?")?;
         if !start.success {
-            let stderr = String::from_utf8_lossy(&start.stderr);
-            bail!("container start failed: {}", stderr.trim());
+            bail!("container start exited unsuccessfully");
         }
-        jackin_diagnostics::telemetry_debug!(
-            "apple-container",
-            "container_state action=start name={container_name} result=ok"
-        );
     }
 
     wait_for_capsule(container_name).await?;
@@ -518,7 +456,7 @@ pub async fn remove_with(
 
 /// Probe the `container` CLI version. Returns `None` if not installed.
 pub async fn probe_version() -> Option<String> {
-    let output = jackin_process::exec_async(&jackin_process::ExecRequest::new(
+    let output = crate::process_telemetry::exec_async(&jackin_process::ExecRequest::new(
         "container",
         ["--version"],
     ))
@@ -526,7 +464,6 @@ pub async fn probe_version() -> Option<String> {
     .ok()?;
     if output.success {
         let v = String::from_utf8_lossy(&output.stdout).trim().to_owned();
-        jackin_diagnostics::telemetry_debug!("apple-container", "container_version version={v}");
         Some(v)
     } else {
         None
