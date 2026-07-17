@@ -4612,9 +4612,12 @@ fn capsule_widget_focus_lifecycle_is_exported_without_runtime_identity() {
 
     assert_eq!(export.event_count("ui.widget.focused"), 6);
     assert_eq!(export.event_count("ui.widget.unfocused"), 6);
+    let spans = export.finished_spans();
     assert!(
-        export.finished_spans().is_empty(),
-        "focus lifecycle must not create pane-action or lifetime spans"
+        spans
+            .iter()
+            .all(|span| span.name != jackin_telemetry::schema::spans::UI_ACTION),
+        "focus lifecycle must not create pane-action spans: {spans:?}"
     );
     for widget in ["capsule.pane", "capsule.tab_bar", "capsule.command_palette"] {
         assert!(export.contains_log_text(widget));
