@@ -1363,3 +1363,15 @@ fn metric_export_contract_rejects_names_shapes_and_dimensions() {
         Err(Rejection::Cardinality)
     );
 }
+
+#[test]
+fn rejected_metric_collection_is_not_reported_as_exported() {
+    let result =
+        super::governed_metric_export_result(Err(jackin_telemetry::Rejection::UnknownName));
+
+    assert!(matches!(
+        result,
+        Err(opentelemetry_sdk::error::OTelSdkError::InternalFailure(message))
+            if message == "metric export rejected by telemetry governance"
+    ));
+}

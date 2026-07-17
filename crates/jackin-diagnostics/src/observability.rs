@@ -1143,15 +1143,24 @@ mod otlp {
     #[derive(Debug)]
     struct CountingMetricExporter(opentelemetry_otlp::MetricExporter);
 
+    fn governed_metric_export_result(
+        validation: Result<(), jackin_telemetry::Rejection>,
+    ) -> opentelemetry_sdk::error::OTelSdkResult {
+        validation.map_err(|reason| {
+            jackin_telemetry::record_export_rejection(jackin_telemetry::Signal::Metric, reason);
+            health::record_signal_export(health::Signal::Metrics, false);
+            opentelemetry_sdk::error::OTelSdkError::InternalFailure(
+                "metric export rejected by telemetry governance".into(),
+            )
+        })
+    }
+
     impl opentelemetry_sdk::metrics::exporter::PushMetricExporter for CountingMetricExporter {
         async fn export(
             &self,
             metrics: &opentelemetry_sdk::metrics::data::ResourceMetrics,
         ) -> opentelemetry_sdk::error::OTelSdkResult {
-            if let Err(reason) = validate_metric_export(metrics) {
-                jackin_telemetry::record_export_rejection(jackin_telemetry::Signal::Metric, reason);
-                return Ok(());
-            }
+            governed_metric_export_result(validate_metric_export(metrics))?;
             let result = self.0.export(metrics).await;
             health::record_signal_export(health::Signal::Metrics, result.is_ok());
             result
