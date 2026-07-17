@@ -509,24 +509,12 @@ fn reusable_paths(target: &Path) -> Result<Vec<PathBuf>> {
             let file_type = entry.file_type()?;
             if file_type.is_dir() {
                 pending.push(path);
-            } else if (file_type.is_file() || file_type.is_symlink()) && !excluded_file(relative) {
+            } else if file_type.is_file() || file_type.is_symlink() {
                 files.push(path);
             }
         }
     }
     Ok(files)
-}
-
-fn excluded_file(path: &Path) -> bool {
-    let parent = path.parent();
-    let generated_binary = parent == Some(Path::new("debug"))
-        || parent == Some(Path::new("debug/deps"))
-        || parent == Some(Path::new("debug/examples"));
-    let hidden = path
-        .file_name()
-        .and_then(|name| name.to_str())
-        .is_some_and(|name| name.starts_with('.'));
-    generated_binary && !hidden && path.extension().is_none()
 }
 
 fn excluded(path: &Path) -> bool {
