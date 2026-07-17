@@ -12,6 +12,10 @@ pub const BACKGROUND_CYCLE_DURATION: InstrumentDef =
     InstrumentDef::generated(&schema::metrics::BACKGROUND_CYCLE_DURATION_DEF);
 pub const BACKGROUND_CYCLES: InstrumentDef =
     InstrumentDef::generated(&schema::metrics::BACKGROUND_CYCLES_DEF);
+pub const CACHE_DECISION_ACTIVE: InstrumentDef =
+    InstrumentDef::generated(&schema::metrics::CACHE_DECISION_ACTIVE_DEF);
+pub const CACHE_DECISION_DURATION: InstrumentDef =
+    InstrumentDef::generated(&schema::metrics::CACHE_DECISION_DURATION_DEF);
 pub const CACHE_DECISIONS: InstrumentDef =
     InstrumentDef::generated(&schema::metrics::CACHE_DECISIONS_DEF);
 pub const CLI_DURATION: InstrumentDef =
@@ -85,6 +89,8 @@ pub const ALL: &[InstrumentDef] = &[
     AGENT_STATE_TRANSITIONS,
     BACKGROUND_CYCLE_DURATION,
     BACKGROUND_CYCLES,
+    CACHE_DECISION_ACTIVE,
+    CACHE_DECISION_DURATION,
     CACHE_DECISIONS,
     CLI_DURATION,
     CLI_FAILURES,

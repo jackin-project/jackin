@@ -213,6 +213,58 @@ pub const BACKGROUND_CYCLES_DEF: super::MetricMetadata = super::MetricMetadata {
         },
     ],
 };
+// registry: instrument=updowncounter; unit={decision}; attributes=cache.name:required
+pub const CACHE_DECISION_ACTIVE: &str = "cache.decision.active";
+pub const CACHE_DECISION_ACTIVE_DEF: super::MetricMetadata = super::MetricMetadata {
+    name: CACHE_DECISION_ACTIVE,
+    description: "Active product cache decisions.",
+    instrument: super::MetricInstrument::UpDownCounter,
+    unit: "{decision}",
+    boundaries: &[],
+    attributes: &[super::AttributeRequirement {
+        name: "cache.name",
+        value_type: super::ValueType::String,
+        requirement: super::RequirementLevel::Required,
+        allowed_values: &[
+            "role_repository",
+            "agent_binary",
+            "capsule_binary",
+            "derived_image",
+            "usage_snapshot",
+        ],
+    }],
+};
+// registry: instrument=histogram; unit=s; attributes=cache.name:required,cache.result:required
+pub const CACHE_DECISION_DURATION: &str = "cache.decision.duration";
+pub const CACHE_DECISION_DURATION_DEF: super::MetricMetadata = super::MetricMetadata {
+    name: CACHE_DECISION_DURATION,
+    description: "Product cache decision duration.",
+    instrument: super::MetricInstrument::Histogram,
+    unit: "s",
+    boundaries: &[
+        0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0,
+    ],
+    attributes: &[
+        super::AttributeRequirement {
+            name: "cache.name",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Required,
+            allowed_values: &[
+                "role_repository",
+                "agent_binary",
+                "capsule_binary",
+                "derived_image",
+                "usage_snapshot",
+            ],
+        },
+        super::AttributeRequirement {
+            name: "cache.result",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Required,
+            allowed_values: &["hit", "miss", "stale", "reuse", "bypass"],
+        },
+    ],
+};
 // registry: instrument=counter; unit={decision}; attributes=cache.name:required,cache.result:required
 pub const CACHE_DECISIONS: &str = "cache.decisions";
 pub const CACHE_DECISIONS_DEF: super::MetricMetadata = super::MetricMetadata {
@@ -1476,6 +1528,8 @@ pub const ALL: &[&str] = &[
     AGENT_STATE_TRANSITIONS,
     BACKGROUND_CYCLE_DURATION,
     BACKGROUND_CYCLES,
+    CACHE_DECISION_ACTIVE,
+    CACHE_DECISION_DURATION,
     CACHE_DECISIONS,
     CLI_DURATION,
     CLI_FAILURES,
@@ -1519,6 +1573,8 @@ pub const DEFINITIONS: &[super::MetricMetadata] = &[
     AGENT_STATE_TRANSITIONS_DEF,
     BACKGROUND_CYCLE_DURATION_DEF,
     BACKGROUND_CYCLES_DEF,
+    CACHE_DECISION_ACTIVE_DEF,
+    CACHE_DECISION_DURATION_DEF,
     CACHE_DECISIONS_DEF,
     CLI_DURATION_DEF,
     CLI_FAILURES_DEF,
