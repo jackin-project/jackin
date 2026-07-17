@@ -1088,6 +1088,19 @@ runner-provided mise installation. The exact Rust toolchain contract remains
 the cache key, so one cold producer owns a version change and every later job
 restores the same prepared bytes.
 
+The corrected cache proof is runs `29567144700` and `29567250499`. In the
+first, Velnor restored the exact workspace-backed toolchain in 15 milliseconds
+and GitHub restored the same 239 MB archive in about three seconds; both
+validated it from Rustup storage without synchronization or component
+downloads. The second forced `jackin-xtask` refresh so result admission could
+not hide downstream setup. It ran exactly one complete, unsharded crate job
+per lane: 38 seconds on GitHub and 40 seconds on Velnor. Both jobs restored the
+same toolchain contract and reusable target, then executed the whole
+test/doctest/check/clippy contract. Every job remained below one minute. The
+strict log scan found no registry update, crate download, external dependency
+compile/check, Rustup synchronization or component download, missing
+toolchain-cache path, or shell-substitution failure.
+
 ## Guardrails
 
 - Keep one stable aggregator per workflow for branch protection, but allow separate early-signal jobs to finish before the full aggregator.
