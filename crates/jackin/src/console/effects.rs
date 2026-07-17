@@ -923,10 +923,7 @@ fn friendly_role_resolution_error(err: &anyhow::Error) -> String {
         role_repository_remote_mismatch_message, role_repository_unavailable_message,
     };
 
-    if let Some(repo_err) = err
-        .chain()
-        .find_map(|cause| cause.downcast_ref::<jackin_runtime::runtime::RepoError>())
-    {
+    if let Some(repo_err) = find_repo_error(err) {
         return match repo_err {
             jackin_runtime::runtime::RepoError::CloneFailed(_) => {
                 role_repository_unavailable_message().into()
@@ -940,6 +937,27 @@ fn friendly_role_resolution_error(err: &anyhow::Error) -> String {
         };
     }
     generic_role_repository_error_message().into()
+}
+
+fn find_repo_error(err: &anyhow::Error) -> Option<&jackin_runtime::runtime::RepoError> {
+    for cause in err.chain() {
+        if let Some(repo_error) = cause.downcast_ref::<jackin_runtime::runtime::RepoError>() {
+            return Some(repo_error);
+        }
+        let Some(carrier) = cause.downcast_ref::<jackin_telemetry::TelemetryError>() else {
+            continue;
+        };
+        let Some(inner) = carrier.downcast_ref::<anyhow::Error>() else {
+            continue;
+        };
+        if let Some(repo_error) = inner
+            .chain()
+            .find_map(|source| source.downcast_ref::<jackin_runtime::runtime::RepoError>())
+        {
+            return Some(repo_error);
+        }
+    }
+    None
 }
 
 fn humanize_invalid_role_repo(err: &jackin_manifest::repo::RoleRepoValidationError) -> String {

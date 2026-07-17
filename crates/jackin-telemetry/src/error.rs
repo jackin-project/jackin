@@ -7,8 +7,8 @@ use crate::{Attr, FieldSet, Rejection, Value, emit_event, event, schema};
 
 /// An error whose semantic owner has already emitted its typed telemetry.
 ///
-/// The original error remains available through the standard error source
-/// chain for operator-facing reporting. Re-owning this carrier is idempotent:
+/// The original error remains available through [`TelemetryError::downcast_ref`]
+/// for operator-facing reporting. Re-owning this carrier is idempotent:
 /// the first semantic owner and its bounded type remain authoritative.
 pub struct TelemetryError {
     source: Box<dyn std::any::Any + Send + Sync>,
