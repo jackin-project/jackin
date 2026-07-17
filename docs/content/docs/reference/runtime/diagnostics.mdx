@@ -19,7 +19,7 @@ Provider construction is best-effort and product work stays fail-open. Export us
 
 ## Schema authority
 
-<RepoFile path="crates/jackin-telemetry/registry/manifest.yaml">`crates/jackin-telemetry/registry`</RepoFile> is the closed OpenTelemetry semantic-convention 1.43 extension registry and generates the current names and bounded enums. Complete offline-reproducible Weaver generation, bidirectional schema comparison, per-event required/allowed-field enforcement, and the remaining limit and second-line validation matrices are active roadmap work.
+<RepoFile path="crates/jackin-telemetry/registry/manifest.yaml">`crates/jackin-telemetry/registry`</RepoFile> is the closed OpenTelemetry semantic-convention 1.43 extension registry and generates names, bounded enums, descriptors, and facade inventories. Offline Weaver generation, bidirectional checked-in drift detection, registry-wide required/allowed-field and value enforcement, facade limits, and second-line log/span/metric validation are implemented and dynamically tested.
 
 Product instrumentation uses `jackin-telemetry` registered events, operation guards, metric handles, and ownership-aware spawn helpers. All legacy and generic telemetry macro call sites, definitions, and bridge machinery have been removed. A syntax-aware architecture gate rejects their reintroduction and constrains direct OpenTelemetry SDK use and arbitrary telemetry targets. Operator-facing prose remains a separate output port.
 
@@ -27,17 +27,17 @@ Product instrumentation uses `jackin-telemetry` registered events, operation gua
 
 Resources are stable for one process and identical across its three providers. They contain service identity and deployment-safe process attributes such as `service.name`, `service.version`, `service.instance.id`, and `app.mode`. Invocation, session, job, workspace, role, container, and other correlation values do not belong on the Resource.
 
-The command process mints a `cli.invocation.id`. Interactive attachments mint a `session.id`, and detached work can use `job.id`. These identifiers are UUID correlation fields rather than backend-specific resource keys. Complete dotted-command roots, reconnect linkage, detached-work coverage, and metric-dimension conformance remain active work.
+The command process mints a `cli.invocation.id`. Interactive attachments mint a `session.id`, and detached work can use `job.id`. These identifiers are UUID correlation fields rather than backend-specific resource keys. Exhaustive dotted-command roots, reconnect linkage, detached-work identity, and correlation exclusion from Resource and metric dimensions are implemented and tested.
 
 Internal launch handoff uses `JACKIN_INVOCATION_ID` and marks a network-safe Capsule endpoint with `JACKIN_CAPSULE_OTLP_SAFE`. They are process-boundary implementation variables, not operator configuration.
 
 ## Trace model
 
-The contract prohibits process-, console-, screen-, tab-, pane-, and session-lifetime spans. Implemented instrumentation uses bounded operations; complete coverage of launch stages, subprocess and provider boundaries, connections, cycles, RPCs, streams, and prewarm attempts remains tracked by the active roadmap.
+The contract prohibits process-, console-, screen-, tab-, pane-, and session-lifetime spans. Bounded owners exist for launch stages, subprocess and provider boundaries, connections, cycles, RPCs, streams, and prewarm attempts. The active roadmap still requires integrated real-flow trace-shape, outcome, and privacy evidence across those owners.
 
-The target RPC model uses `CLIENT` and `SERVER` span kinds, and detached scheduling uses producer/consumer links rather than false parentage. Helpers exist for joined and detached ownership, but full protocol, cycle, stream, blocking, cancellation, and response-write coverage is not yet complete.
+RPC boundaries use `CLIENT` and `SERVER` span kinds, and detached scheduling uses producer/consumer links rather than false parentage. Joined, detached, cycle, stream, blocking, thread, and response-write helpers own bounded completion; the active audit still requires final integrated and source-policy evidence across the full executor matrix.
 
-W3C context and versioned correlation fields are implemented on selected CLI/daemon and host/Capsule boundaries. Completing every sender, serialized protocol matrix, response-write outcome, and payload privacy negative remains active work. Missing, malformed, unsupported, or disabled context must create a safe local root.
+W3C context and versioned correlation fields are implemented across daemon, control, attach, jobs, and `jackin-exec` protocols. Focused tests cover sampling, malformed identifiers, response-write outcomes, peer closure, and payload privacy. The remaining acceptance work replaces helper-only evidence with representative serialized real-flow and concurrent-session conformance. Missing, malformed, unsupported, or disabled context creates a safe local root.
 
 ## Events and metrics
 
@@ -45,9 +45,9 @@ The native event bridge emits OpenTelemetry log records with `EventName`, severi
 
 Every `Err` consumed or propagated at a semantic ownership boundary is recorded exactly once. Use `ResultTelemetryExt::record_telemetry_error` for the generic case or the boundary-specific facade for subprocess, HTTP, RPC, database, launch, and similar operations. The helper accepts any Rust error type, returns the `Result` unchanged, and exports only the registered bounded `error.type`; it never formats the raw error. The operation owner separately completes its span with the same type when the operation fails. Automatic `tracing-opentelemetry` error inference stays disabled because it can duplicate ownership, poison a successful outer operation with a handled inner error, and export sensitive error text.
 
-Selected UI, agent, PTY/session, attach, and periodic-work instrumentation has landed. Complete action causality, screen/focus lifecycle, background-cycle ownership, and the corresponding low-cardinality metric families remain active roadmap work.
+UI action causality, screen/focus lifecycle, agent and PTY/session state, attach controls, background cycles, and their low-cardinality metric families are implemented with focused exporter tests. Integrated host/launch/Capsule input-equivalence and lifecycle causality scenarios remain active acceptance work.
 
-Metric handles and cardinality controls exist for selected streams. Complete family coverage, second-line metric rejection, cardinality conformance, and runtime/export health are unfinished. Identifiers must not become metric dimensions unless the registry explicitly permits them.
+Registered metric handles, fixed views, exact 256-series cardinality caps, observable process/runtime health, exporter health, and second-line raw-SDK metric rejection are implemented and tested. Identifiers do not become metric dimensions unless the registry explicitly permits them. The active acceptance work is non-vacuous real-flow volume, soak, queue, memory, duration, and linkage evidence.
 
 ## Privacy
 
@@ -67,7 +67,7 @@ Generative-AI signals use standard semantic conventions only where content captu
 
 ## Verification
 
-The dev-only <RepoFile path="crates/jackin-otlp-testbed/README.md">`jackin-otlp-testbed`</RepoFile> receives real OTLP/gRPC requests and supports deterministic failure responses. Current tests cover selected wire, resource, privacy, shutdown, and failure behavior. Representative host/daemon/Capsule flows, complete protocol and privacy matrices, cardinality/volume/soak proof, required CI wiring, and the reviewed active-path performance gate remain unfinished.
+The dev-only <RepoFile path="crates/jackin-otlp-testbed/README.md">`jackin-otlp-testbed`</RepoFile> receives real OTLP/gRPC requests and supports deterministic failure responses. Current wire tests cover direct host/daemon/Capsule delivery, exact Resource consistency, correlation rules, payload-wide privacy detectors, shutdown, and failure behavior. Representative product flows, concurrent serialized protocols, registry-wide delivery, cardinality/volume/soak properties, required CI wiring, and calibrated active-path performance evidence remain unfinished.
 
 Run focused contract checks with:
 
