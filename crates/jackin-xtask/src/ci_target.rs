@@ -146,7 +146,12 @@ fn has_reusable_local_target(target: &Path) -> Result<bool> {
     }
     Ok(crate::fs_util::read_dir_sorted(&dependencies)?
         .into_iter()
-        .any(|entry| entry.path().extension().is_some_and(|extension| extension == "rlib")))
+        .any(|entry| {
+            entry
+                .path()
+                .extension()
+                .is_some_and(|extension| extension == "rlib")
+        }))
 }
 
 fn resolve_key(args: ResolveKeyArgs) -> Result<()> {

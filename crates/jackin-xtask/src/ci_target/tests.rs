@@ -2,9 +2,7 @@ use std::fs;
 
 use tempfile::tempdir;
 
-use super::{
-    excluded, excluded_file, has_reusable_local_target, key_for_package, reusable_paths,
-};
+use super::{excluded, excluded_file, has_reusable_local_target, key_for_package, reusable_paths};
 
 #[test]
 fn resolves_exact_key_without_workflow_expression_parsing() {
