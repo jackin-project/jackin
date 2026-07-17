@@ -312,6 +312,8 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           ref: ${{ needs.source-changed.outputs.sha }}
+      - name: Verify checked-out source
+        run: git status --short
       - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
         env:
           # sccache install: blank wrapper in case binstall source-falls-back
@@ -402,6 +404,8 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           ref: ${{ needs.source-changed.outputs.sha }}
+      - name: Verify checked-out source
+        run: git status --short
       - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
         env:
           # sccache install: blank wrapper in case binstall source-falls-back
