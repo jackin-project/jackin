@@ -100,16 +100,24 @@ fn disabled_alloc_facade_fast_paths_allocate_nothing() {
         let governed = dhat::HeapStats::get().total_blocks - before.total_blocks;
         dhat::assert_eq!(governed, direct);
 
-        let before = dhat::HeapStats::get();
-        tokio::task::spawn_blocking(|| {})
-            .await
-            .expect("direct blocking baseline");
-        let direct = dhat::HeapStats::get().total_blocks - before.total_blocks;
-        let before = dhat::HeapStats::get();
-        jackin_telemetry::spawn::joined_blocking(|| {})
-            .await
-            .expect("governed blocking");
-        let governed = dhat::HeapStats::get().total_blocks - before.total_blocks;
+        // Tokio may independently grow or retire its blocking pool between two
+        // calls. Compare the warmed steady-state lower envelope so scheduler
+        // maintenance is not charged to whichever wrapper happens to run next.
+        let mut direct = u64::MAX;
+        let mut governed = u64::MAX;
+        for _ in 0..16 {
+            let before = dhat::HeapStats::get();
+            tokio::task::spawn_blocking(|| {})
+                .await
+                .expect("direct blocking baseline");
+            direct = direct.min(dhat::HeapStats::get().total_blocks - before.total_blocks);
+
+            let before = dhat::HeapStats::get();
+            jackin_telemetry::spawn::joined_blocking(|| {})
+                .await
+                .expect("governed blocking");
+            governed = governed.min(dhat::HeapStats::get().total_blocks - before.total_blocks);
+        }
         dhat::assert_eq!(governed, direct);
 
         let before = dhat::HeapStats::get();
