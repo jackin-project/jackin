@@ -817,9 +817,9 @@ fn reap_orphaned_name_locks(paths: &JackinPaths) {
     for entry in entries.flatten() {
         let name = entry.file_name();
         let name = name.to_string_lossy();
-        let Some(base) = name.strip_suffix(".lock") else {
+        if !name.ends_with(".lock") {
             continue;
-        };
+        }
         // Check whether a live process holds the lock.
         let lock_path = paths.data_dir.join(name.as_ref());
         #[expect(
@@ -833,18 +833,10 @@ fn reap_orphaned_name_locks(paths: &JackinPaths) {
             // Lock acquired → no live holder → orphaned.
             drop(file); // Release before removing
             match std::fs::remove_file(&lock_path) {
-                Ok(()) => {
-                    jackin_diagnostics::telemetry_debug!(
-                        "runtime",
-                        "reap_orphaned_name_locks: removed orphaned lock for {base}",
-                    );
-                }
+                Ok(()) => {}
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-                Err(error) => {
-                    eprintln!(
-                        "jackin: warning: could not remove orphaned lock {}: {error}",
-                        lock_path.display()
-                    );
+                Err(_) => {
+                    let _warning = jackin_telemetry::record_recovered_degradation();
                 }
             }
         }

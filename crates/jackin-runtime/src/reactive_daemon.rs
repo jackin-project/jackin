@@ -85,15 +85,7 @@ pub trait AttentionNotifier {
 pub struct DiagnosticNotifier;
 
 impl AttentionNotifier for DiagnosticNotifier {
-    fn notify(&mut self, notification: &AttentionNotification) -> Result<()> {
-        jackin_diagnostics::telemetry_debug!(
-            "daemon",
-            "attention container={} session={} state={} label={}",
-            notification.container_name,
-            notification.session_id,
-            notification.state.label(),
-            notification.label
-        );
+    fn notify(&mut self, _notification: &AttentionNotification) -> Result<()> {
         Ok(())
     }
 }

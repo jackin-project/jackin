@@ -197,6 +197,10 @@ fn remove_empty_pending_dir(paths: &JackinPaths) {
     }
 }
 
+fn record_exit_claim_recovery() {
+    let _warning = jackin_telemetry::record_recovered_degradation();
+}
+
 /// Claim the construct-exit boundary.
 ///
 /// The marker is the single-consumer close claim: whichever exit path removes
@@ -214,9 +218,9 @@ pub(super) fn take_exit_claim(paths: &JackinPaths) -> ExitClaim {
         // NotFound is the normal "no marker / already claimed" path. Any other
         // errno (e.g. a permissions drift on the data dir) is unexpected and
         // would silently suppress the outro, so leave a breadcrumb under
-        // --debug to tell the two cases apart.
+        // telemetry to tell the two cases apart.
         if error.kind() != std::io::ErrorKind::NotFound {
-            jackin_diagnostics::telemetry_debug!("universe", "exit-claim rename failed: {error}");
+            record_exit_claim_recovery();
         }
         return ExitClaim::Missing;
     }
