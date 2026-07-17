@@ -218,53 +218,41 @@ jobs:
       - name: Use runner-local target seed
         id: local-target
         if: steps.crate-target.outputs.hit == 'true'
-        shell: bash
-        run: |
-          set -euo pipefail
-          target_dir=${CARGO_TARGET_DIR:-target}
-          hit=false
-          if [ -f "$target_dir/.rustc_info.json" ] &&
-             [ -d "$target_dir/debug/deps" ] &&
-             find "$target_dir/debug/deps" -maxdepth 1 -type f -name '*.rlib' -print -quit | grep -q .; then
-            hit=true
-            echo "::notice::using runner-local current Cargo target as a validated seed"
-          fi
-          echo "hit=$hit" >> "$GITHUB_OUTPUT"
+        run: >-
+          "$CI_XTASK" ci-target validate-local --target "$CARGO_TARGET_DIR"
       - name: Download reusable crate target seed
         if: steps.crate-target.outputs.hit == 'true' && steps.local-target.outputs.hit != 'true'
-        shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
-        run: |
-          "$CI_XTASK" ci-target download \
-            --artifact-id "${{ steps.crate-target.outputs.artifact-id }}" \
-            --destination target/.ci-restore \
-            --repository "$REPOSITORY"
+        run: >-
+          "$CI_XTASK" ci-target download
+          --artifact-id "${{ steps.crate-target.outputs.artifact-id }}"
+          --destination target/.ci-restore
+          --repository "$REPOSITORY"
       - name: Restore reusable crate target seed
         id: restored-target
         if: steps.crate-target.outputs.hit == 'true' && steps.local-target.outputs.hit != 'true'
-        shell: bash
         env:
           CACHE_KEY: ${{ steps.crate-target-key.outputs.key }}
           KNOWN_EXACT: ${{ steps.crate-target.outputs.known-exact }}
-        run: |
-          "$CI_XTASK" ci-target restore \
-            --archive target/.ci-restore/target.tar.zst \
-            --target target \
-            --cache-key "$CACHE_KEY" \
-            --known-exact "$KNOWN_EXACT"
+        run: >-
+          "$CI_XTASK" ci-target restore
+          --archive target/.ci-restore/target.tar.zst
+          --target target
+          --cache-key "$CACHE_KEY"
+          --known-exact "$KNOWN_EXACT"
       - name: Run package tests
         if: steps.crate-result.outputs.hit != 'true'
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          args=(-p "${{ matrix.package }}" --no-tests=pass --color=always --locked --offline --profile ci)
-          if [ "${{ inputs.all-features }}" = "true" ]; then
-            args+=(--all-features)
-          fi
-          cargo nextest run "${args[@]}"
+        run: >-
+          cargo nextest run
+          -p "${{ matrix.package }}"
+          ${{ inputs.all-features && '--all-features' || '' }}
+          --no-tests=pass
+          --color=always
+          --locked
+          --offline
+          --profile ci
       - name: Run crate doctests
         if: steps.crate-result.outputs.hit != 'true'
         run: >-

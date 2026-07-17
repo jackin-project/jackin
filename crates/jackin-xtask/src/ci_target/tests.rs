@@ -2,7 +2,9 @@ use std::fs;
 
 use tempfile::tempdir;
 
-use super::{excluded, excluded_file, key_for_package, reusable_paths};
+use super::{
+    excluded, excluded_file, has_reusable_local_target, key_for_package, reusable_paths,
+};
 
 #[test]
 fn resolves_exact_key_without_workflow_expression_parsing() {
@@ -29,6 +31,20 @@ fn reusable_paths_keep_outputs_and_drop_transport_state() {
     let paths = reusable_paths(&target).unwrap();
 
     assert_eq!(paths, vec![target.join("debug/deps/libexample.rlib")]);
+}
+
+#[test]
+fn local_target_requires_rustc_metadata_and_an_rlib() {
+    let temp = tempdir().unwrap();
+    let target = temp.path().join("target");
+    fs::create_dir_all(target.join("debug/deps")).unwrap();
+    assert!(!has_reusable_local_target(&target).unwrap());
+
+    fs::write(target.join(".rustc_info.json"), b"{}").unwrap();
+    assert!(!has_reusable_local_target(&target).unwrap());
+
+    fs::write(target.join("debug/deps/libexample.rlib"), b"output").unwrap();
+    assert!(has_reusable_local_target(&target).unwrap());
 }
 
 #[test]

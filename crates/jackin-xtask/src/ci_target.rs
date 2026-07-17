@@ -1,6 +1,6 @@
 use std::env;
 use std::fs::{self, File};
-use std::io::Write;
+use std::io::{self, Write};
 use std::os::unix::ffi::OsStringExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -25,6 +25,8 @@ pub(crate) enum CiTargetCommand {
     Download(DownloadArgs),
     /// Restore a target archive and emit whether it exactly matches the source.
     Restore(RestoreArgs),
+    /// Validate the runner-local Cargo target as a reusable seed.
+    ValidateLocal(ValidateLocalArgs),
     /// Pack the reusable portion of a Cargo target into one archive.
     Pack(PackArgs),
 }
@@ -94,6 +96,12 @@ pub(crate) struct PackArgs {
     output: PathBuf,
 }
 
+#[derive(Args, Debug)]
+pub(crate) struct ValidateLocalArgs {
+    #[arg(long, default_value = "target")]
+    target: PathBuf,
+}
+
 #[derive(Deserialize)]
 struct ArtifactsResponse {
     artifacts: Vec<Artifact>,
@@ -112,8 +120,33 @@ pub(crate) fn run(command: CiTargetCommand) -> Result<()> {
         CiTargetCommand::Find(args) => find(args),
         CiTargetCommand::Download(args) => download(args),
         CiTargetCommand::Restore(args) => restore(args),
+        CiTargetCommand::ValidateLocal(args) => validate_local(args),
         CiTargetCommand::Pack(args) => pack(args),
     }
+}
+
+fn validate_local(args: ValidateLocalArgs) -> Result<()> {
+    let hit = has_reusable_local_target(&args.target)?;
+    if hit {
+        writeln!(
+            io::stdout().lock(),
+            "::notice::using runner-local current Cargo target as a validated seed"
+        )?;
+    }
+    write_output("hit", if hit { "true" } else { "false" })
+}
+
+fn has_reusable_local_target(target: &Path) -> Result<bool> {
+    if !target.join(".rustc_info.json").is_file() {
+        return Ok(false);
+    }
+    let dependencies = target.join("debug/deps");
+    if !dependencies.is_dir() {
+        return Ok(false);
+    }
+    Ok(crate::fs_util::read_dir_sorted(&dependencies)?
+        .into_iter()
+        .any(|entry| entry.path().extension().is_some_and(|extension| extension == "rlib")))
 }
 
 fn resolve_key(args: ResolveKeyArgs) -> Result<()> {
@@ -121,7 +154,7 @@ fn resolve_key(args: ResolveKeyArgs) -> Result<()> {
     if args.github_output {
         return write_output("key", &key);
     }
-    writeln!(std::io::stdout().lock(), "{key}").context("writing crate source key")
+    writeln!(io::stdout().lock(), "{key}").context("writing crate source key")
 }
 
 fn key_for_package(cache_keys_json: &str, package: &str) -> Result<String> {
@@ -198,7 +231,7 @@ fn emit_find_result(
         "known_exact": known_exact,
         "artifact_id": artifact_id,
     });
-    writeln!(std::io::stdout().lock(), "{result}").context("writing target result JSON")
+    writeln!(io::stdout().lock(), "{result}").context("writing target result JSON")
 }
 
 fn newest_artifact(repository: &str, name: &str) -> Result<Option<Artifact>> {
