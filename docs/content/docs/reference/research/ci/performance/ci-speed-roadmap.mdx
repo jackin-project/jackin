@@ -1146,10 +1146,11 @@ the entire repeat log found zero compile, check, dependency-download,
 registry-update, fetch, or Rustup-sync markers.
 
 PR run `29574530427` exposed a broader invalidation bug after the JUnit parser
-added `quick-xml`: `Cargo.lock` and the root workspace manifest were treated as
-unconditional full-workspace changes, and every crate target key hashed both
-files wholesale. The run therefore launched all 28 crate jobs even though the
-dependency was consumed only by `jackin-xtask`; completed cold jobs included
+added `quick-xml`: <RepoFile path="Cargo.lock" /> and the root workspace
+manifest were treated as unconditional full-workspace changes, and every crate
+target key hashed both files wholesale. The run therefore launched all 28 crate
+jobs even though the dependency was consumed only by `jackin-xtask`; completed
+cold jobs included
 `jackin-protocol` at 65 seconds and `jackin-diagnostics` at 82 seconds, already
 violating the one-minute gate before concurrency cancelled the obsolete run.
 Affected-crate routing now compares base/head lock package records and
@@ -1160,6 +1161,15 @@ normalized workspace-wide build inputs instead of the whole lockfile or
 dependency table. Removed or otherwise unresolvable packages still fail safe
 to the full workspace, as do compiler, profile, lint, and Cargo configuration
 changes.
+
+Manual run `29576400249` is the input-identical acceptance proof for the
+dependency-closure cache contract. Every one of its 15 jobs completed below one
+minute: the complete, unsharded `jackin-xtask` crate job took 42 seconds on
+GitHub and 39 seconds on Velnor, while the shared warmup took 21 and 22 seconds.
+The longest GitHub step was the complete package test at eight seconds. A scan
+of the entire run log found zero compile, check, dependency-download,
+registry-update, fetch, or Rustup-sync markers; the remaining elapsed time was
+cache transport and the requested validation itself.
 
 Runs `29575485166` and `29575735792` validated the closure-key migration with
 one complete `jackin-xtask` job per lane. The first run populated the new key
