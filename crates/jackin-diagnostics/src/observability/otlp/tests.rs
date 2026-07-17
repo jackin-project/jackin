@@ -1,7 +1,65 @@
 use super::{
     build_resource_for, build_resource_for_sources, exporter_tls, flush_before, grpc_endpoint,
-    resolve_endpoint, runtime_creation_count, semantic_os_type, shutdown, unsupported_protocol,
+    install_observable_metrics, resolve_endpoint, runtime_creation_count, semantic_os_type,
+    shutdown, unsupported_protocol,
 };
+
+#[test]
+fn production_observable_callbacks_collect_promptly() {
+    use opentelemetry::metrics::MeterProvider as _;
+    use opentelemetry_sdk::metrics::{InMemoryMetricExporter, PeriodicReader, SdkMeterProvider};
+
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()
+        .unwrap();
+    let exporter = InMemoryMetricExporter::default();
+    let provider = SdkMeterProvider::builder()
+        .with_reader(PeriodicReader::builder(exporter.clone()).build())
+        .build();
+    install_observable_metrics(
+        &provider.meter("observable-callback-test"),
+        Some(runtime.handle().clone()),
+    );
+
+    let expected = [
+        "process.cpu.utilization",
+        "process.memory.usage",
+        "tokio.runtime.workers",
+        "tokio.runtime.alive_tasks",
+        "tokio.runtime.global_queue.depth",
+    ];
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+    loop {
+        exporter.reset();
+        let started = std::time::Instant::now();
+        provider.force_flush().unwrap();
+        assert!(
+            started.elapsed() < std::time::Duration::from_millis(500),
+            "production observable callbacks exceeded their collection bound"
+        );
+        let names = exporter
+            .get_finished_metrics()
+            .unwrap()
+            .iter()
+            .flat_map(opentelemetry_sdk::metrics::data::ResourceMetrics::scope_metrics)
+            .flat_map(opentelemetry_sdk::metrics::data::ScopeMetrics::metrics)
+            .map(|metric| metric.name().to_owned())
+            .collect::<Vec<_>>();
+        if expected
+            .iter()
+            .all(|expected| names.iter().any(|name| name == expected))
+        {
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "production observable callbacks did not emit all metrics: {names:?}"
+        );
+        std::thread::park_timeout(std::time::Duration::from_millis(10));
+    }
+}
 
 #[test]
 fn grpc_endpoint_is_normalized_without_http_signal_paths() {

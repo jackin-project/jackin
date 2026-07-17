@@ -1771,6 +1771,14 @@ mod otlp {
             .with_resource(resource.clone())
             .build();
         let meter = provider.meter("jackin");
+        install_observable_metrics(&meter, app_handle);
+        Ok(provider)
+    }
+
+    fn install_observable_metrics(
+        meter: &opentelemetry::metrics::Meter,
+        app_handle: Option<tokio::runtime::Handle>,
+    ) {
         if let Ok(pid) = sysinfo::get_current_pid() {
             use std::sync::atomic::Ordering;
 
@@ -1840,8 +1848,6 @@ mod otlp {
                 })
                 .build();
         }
-
-        Ok(provider)
     }
 
     pub(super) fn shutdown() {
