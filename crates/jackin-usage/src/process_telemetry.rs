@@ -15,6 +15,8 @@ impl ChildOperation {
         {
             Some("claude") => ProcessExecutableName::Claude,
             Some("amp") => ProcessExecutableName::Amp,
+            Some("codex") => ProcessExecutableName::Codex,
+            Some("grok") => ProcessExecutableName::Grok,
             _ => ProcessExecutableName::Other,
         };
         Self {
@@ -56,6 +58,26 @@ impl ChildOperation {
         self.complete((OutcomeValue::Timeout, Some(ErrorType::Timeout)));
     }
 
+    pub(crate) fn reap_managed(child: &mut std::process::Child) -> bool {
+        let killed = child.kill().is_ok();
+        let reaped = child.wait().is_ok();
+        killed && reaped
+    }
+
+    pub(crate) fn finish_managed(mut self, succeeded: bool) {
+        self.complete(if succeeded {
+            (OutcomeValue::Success, None)
+        } else {
+            (OutcomeValue::Failure, Some(ErrorType::IoError))
+        });
+    }
+
+    pub(crate) fn fail_managed_io(mut self, child: &mut std::process::Child) {
+        drop(child.kill());
+        drop(child.wait());
+        self.complete((OutcomeValue::Failure, Some(ErrorType::IoError)));
+    }
+
     fn complete(&mut self, completion: (OutcomeValue, Option<ErrorType>)) {
         if let Some(operation) = self.operation.take() {
             operation.complete(completion.0, completion.1);
@@ -70,4 +92,46 @@ impl Drop for ChildOperation {
             Some(ErrorType::TelemetryInstrumentationFault),
         ));
     }
+}
+
+pub(crate) fn external_rpc_operation(
+    system: jackin_telemetry::schema::enums::RpcSystemName,
+    method: &str,
+) -> jackin_telemetry::OperationGuard {
+    jackin_telemetry::operation_or_disabled(
+        &jackin_telemetry::operation::RPC_CLIENT,
+        &[
+            jackin_telemetry::Attr {
+                key: jackin_telemetry::schema::attrs::std_attrs::RPC_SYSTEM_NAME,
+                value: jackin_telemetry::Value::Str(system.as_str()),
+            },
+            jackin_telemetry::Attr {
+                key: jackin_telemetry::schema::attrs::std_attrs::RPC_METHOD,
+                value: jackin_telemetry::Value::Str(method),
+            },
+        ],
+    )
+}
+
+pub(crate) fn complete_external_rpc<T>(
+    operation: jackin_telemetry::OperationGuard,
+    result: &Result<T, String>,
+    timed_out: bool,
+) {
+    operation.complete(
+        if result.is_ok() {
+            OutcomeValue::Success
+        } else if timed_out {
+            OutcomeValue::Timeout
+        } else {
+            OutcomeValue::Failure
+        },
+        if result.is_ok() {
+            None
+        } else if timed_out {
+            Some(ErrorType::Timeout)
+        } else {
+            Some(ErrorType::RpcError)
+        },
+    );
 }

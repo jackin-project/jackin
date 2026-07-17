@@ -357,6 +357,8 @@ pub(crate) fn fetch_grok_rpc_billing(
 ) -> Result<GrokBillingResponse, String> {
     gate.can_launch("Grok ACP billing", Instant::now())?;
     let executable = grok_binary_path();
+    let process =
+        crate::process_telemetry::ChildOperation::begin(executable.to_string_lossy().as_ref());
     let mut child = match Command::new(&executable)
         .args(["agent", "stdio"])
         .stdin(Stdio::piped())
@@ -366,6 +368,7 @@ pub(crate) fn fetch_grok_rpc_billing(
     {
         Ok(child) => child,
         Err(err) => {
+            process.spawn_failed();
             let message = format!(
                 "{} agent stdio failed to start: {err}",
                 executable.display()
@@ -375,14 +378,14 @@ pub(crate) fn fetch_grok_rpc_billing(
         }
     };
 
-    let mut stdin = child
-        .stdin
-        .take()
-        .ok_or_else(|| "grok agent stdio stdin unavailable".to_owned())?;
-    let stdout = child
-        .stdout
-        .take()
-        .ok_or_else(|| "grok agent stdio stdout unavailable".to_owned())?;
+    let Some(mut stdin) = child.stdin.take() else {
+        process.fail_managed_io(&mut child);
+        return Err("grok agent stdio stdin unavailable".to_owned());
+    };
+    let Some(stdout) = child.stdout.take() else {
+        process.fail_managed_io(&mut child);
+        return Err("grok agent stdio stdout unavailable".to_owned());
+    };
     let (tx, rx) = mpsc::channel();
     let reader = jackin_telemetry::spawn::thread_stream("grok.stdout", move || {
         for line in BufReader::new(stdout).lines().map_while(Result::ok) {
@@ -423,9 +426,9 @@ pub(crate) fn fetch_grok_rpc_billing(
     })();
 
     drop(stdin);
-    drop(child.kill());
-    drop(child.wait());
-    drop(reader.join());
+    let reaped = crate::process_telemetry::ChildOperation::reap_managed(&mut child);
+    let reader_joined = reader.join().is_ok();
+    process.finish_managed(reaped && reader_joined);
     if result.is_ok() {
         gate.record_success();
     } else if let Err(message) = &result {
@@ -718,42 +721,53 @@ pub(crate) fn grok_rpc_request(
     params: serde_json::Value,
     timeout: Duration,
 ) -> Result<serde_json::Value, String> {
-    let payload = grok_rpc_request_payload(id, method, params);
-    write_json_line(
-        stdin,
-        &payload,
-        "Grok RPC request encode failed",
-        "Grok RPC request write failed",
-    )?;
-
+    let operation = crate::process_telemetry::external_rpc_operation(
+        jackin_telemetry::schema::enums::RpcSystemName::GrokAcp,
+        method,
+    );
     let started = Instant::now();
-    loop {
-        let remaining = timeout
-            .checked_sub(started.elapsed())
-            .unwrap_or_else(|| Duration::from_secs(0));
-        if remaining.is_zero() {
-            return Err(format!("Grok RPC timed out waiting for {method}"));
+    let result = (|| {
+        let payload = grok_rpc_request_payload(id, method, params);
+        write_json_line(
+            stdin,
+            &payload,
+            "Grok RPC request encode failed",
+            "Grok RPC request write failed",
+        )?;
+        loop {
+            let remaining = timeout
+                .checked_sub(started.elapsed())
+                .unwrap_or_else(|| Duration::from_secs(0));
+            if remaining.is_zero() {
+                return Err(format!("Grok RPC timed out waiting for {method}"));
+            }
+            let line = rx
+                .recv_timeout(remaining)
+                .map_err(|_| format!("Grok RPC timed out waiting for {method}"))?;
+            let value: serde_json::Value = serde_json::from_str(&line)
+                .map_err(|err| format!("Grok RPC decode failed: {err}"))?;
+            if value.get("id").and_then(serde_json::Value::as_i64) != Some(id) {
+                continue;
+            }
+            if let Some(error) = value.get("error") {
+                let message = error
+                    .get("message")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or("unknown error");
+                return Err(format!("Grok RPC {method} failed: {message}"));
+            }
+            return value
+                .get("result")
+                .cloned()
+                .ok_or_else(|| format!("Grok RPC {method} response missing result"));
         }
-        let line = rx
-            .recv_timeout(remaining)
-            .map_err(|_| format!("Grok RPC timed out waiting for {method}"))?;
-        let value: serde_json::Value =
-            serde_json::from_str(&line).map_err(|err| format!("Grok RPC decode failed: {err}"))?;
-        if value.get("id").and_then(serde_json::Value::as_i64) != Some(id) {
-            continue;
-        }
-        if let Some(error) = value.get("error") {
-            let message = error
-                .get("message")
-                .and_then(serde_json::Value::as_str)
-                .unwrap_or("unknown error");
-            return Err(format!("Grok RPC {method} failed: {message}"));
-        }
-        return value
-            .get("result")
-            .cloned()
-            .ok_or_else(|| format!("Grok RPC {method} response missing result"));
-    }
+    })();
+    crate::process_telemetry::complete_external_rpc(
+        operation,
+        &result,
+        started.elapsed() >= timeout,
+    );
+    result
 }
 
 pub(crate) fn grok_rpc_request_payload(
