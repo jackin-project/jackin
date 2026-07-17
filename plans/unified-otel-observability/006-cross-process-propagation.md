@@ -139,6 +139,7 @@ New tests in the telemetry conformance group are selected by CI with `-E 'test(/
 - Emit RPC count, active, and duration metrics keyed only by registered `rpc.method`, outcome, and stable error type.
 - The serialized `{valid, malformed, missing, unsampled, bad product id} × {host daemon, Capsule control}` matrix proves same-trace parentage, local-root fallback, sampling preservation, rejection, and no side effects.
 - The `jackin-exec` host credential socket carries the shared envelope and uses CLIENT/SERVER operations through the actual reply write. Invalid product correlation is extracted and rejected before constructing a local SERVER owner; that owner emits one typed `rpc_error`, returns the bounded protocol error, consumes reply-write failure, and completes as failure without allowing the listener to emit a duplicate terminal error. Focused exporter tests prove the bad-ID root/error count and the peer-close write-failure path.
+- Before an exec request can be decoded, peer-authentication failure, truncated length, oversized length, truncated body, and malformed JSON are consumed at the fixed credential-resolver RPC boundary. Each creates exactly one local bounded SERVER failure only after decoding has failed, emits exactly one typed `rpc_error`, never formats the peer error or payload, and returns cleanly so the accept loop cannot double-report it. A four-shape exporter matrix proves one root and one error per framing failure.
 
 ## Test plan
 

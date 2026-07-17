@@ -151,23 +151,6 @@ async fn handle_connection(
     caller_auth: CallerAuth,
 ) -> Result<()> {
     const MAX_REQ: usize = 512 * 1024;
-    if authenticate_caller(&stream, caller_auth).is_err() {
-        let _error =
-            jackin_telemetry::record_error(jackin_telemetry::schema::enums::ErrorType::RpcError);
-        return Ok(());
-    }
-
-    // Read 4-byte BE length + JSON body (same framing as control channel).
-    let mut len_buf = [0u8; 4];
-    stream.read_exact(&mut len_buf).await?;
-    let len = u32::from_be_bytes(len_buf) as usize;
-    anyhow::ensure!(len <= MAX_REQ, "request too large: {len}");
-
-    let mut body = vec![0u8; len];
-    stream.read_exact(&mut body).await?;
-
-    let req: CredRequest = serde_json::from_slice(&body).context("parsing CredRequest")?;
-    let extracted = jackin_telemetry::propagation::extract(&req.ctx);
     let attrs = [
         jackin_telemetry::Attr {
             key: jackin_telemetry::schema::attrs::std_attrs::RPC_SYSTEM_NAME,
@@ -178,6 +161,27 @@ async fn handle_connection(
             value: jackin_telemetry::Value::Str("jackin.host.Credentials/Resolve"),
         },
     ];
+    if authenticate_caller(&stream, caller_auth).is_err() {
+        complete_local_rpc_failure(&attrs);
+        return Ok(());
+    }
+
+    // Read 4-byte BE length + JSON body (same framing as control channel).
+    let request = async {
+        let mut len_buf = [0u8; 4];
+        stream.read_exact(&mut len_buf).await?;
+        let len = u32::from_be_bytes(len_buf) as usize;
+        anyhow::ensure!(len <= MAX_REQ, "request too large: {len}");
+        let mut body = vec![0u8; len];
+        stream.read_exact(&mut body).await?;
+        serde_json::from_slice::<CredRequest>(&body).context("parsing CredRequest")
+    }
+    .await;
+    let Ok(req) = request else {
+        complete_local_rpc_failure(&attrs);
+        return Ok(());
+    };
+    let extracted = jackin_telemetry::propagation::extract(&req.ctx);
     if matches!(
         extracted,
         jackin_telemetry::propagation::ExtractOutcome::RejectRequest
@@ -263,6 +267,18 @@ async fn handle_connection(
     }
     drop(write_result);
     Ok(())
+}
+
+fn complete_local_rpc_failure(attrs: &[jackin_telemetry::Attr<'_>]) {
+    let operation =
+        jackin_telemetry::operation(&jackin_telemetry::operation::RPC_SERVER, attrs).ok();
+    record_rpc_error(operation.as_ref());
+    if let Some(operation) = operation {
+        operation.complete(
+            jackin_telemetry::schema::enums::OutcomeValue::Failure,
+            Some(jackin_telemetry::schema::enums::ErrorType::RpcError),
+        );
+    }
 }
 
 fn record_rpc_error(operation: Option<&jackin_telemetry::OperationGuard>) {

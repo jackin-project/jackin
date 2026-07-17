@@ -261,6 +261,49 @@ async fn exec_socket_marks_server_failure_when_peer_closes_before_reply() {
     assert_eq!(export.typed_error_count("error.typed", "rpc_error"), 1);
 }
 
+#[tokio::test(flavor = "current_thread")]
+async fn exec_socket_predecode_failures_have_one_typed_rpc_owner() {
+    const MAX_REQ: u32 = 512 * 1024;
+    let cases = [
+        vec![0, 1],
+        (MAX_REQ + 1).to_be_bytes().to_vec(),
+        [10_u32.to_be_bytes().as_slice(), b"{}"].concat(),
+        [1_u32.to_be_bytes().as_slice(), b"{"].concat(),
+    ];
+
+    for wire in cases {
+        #[cfg(target_os = "linux")]
+        let caller_auth = CallerAuth::PeerPid(std::process::id());
+        #[cfg(not(target_os = "linux"))]
+        let caller_auth = CallerAuth::CapsuleDaemon;
+        let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
+        let guard = tracing::subscriber::set_default(subscriber);
+        let (mut client, server) = UnixStream::pair().expect("host socket pair");
+        client
+            .write_all(&wire)
+            .await
+            .expect("write malformed request");
+        client.shutdown().await.expect("close malformed request");
+
+        handle_connection(server, &[], caller_auth)
+            .await
+            .expect("framing failure is consumed by the RPC owner");
+        drop(guard);
+        export.force_flush();
+
+        let spans = export.finished_spans();
+        assert_eq!(spans.len(), 1, "wire={wire:?}");
+        assert_eq!(spans[0].name, "rpc.server");
+        assert_eq!(spans[0].parent_span_id, "0000000000000000");
+        assert!(spans[0].error);
+        assert_eq!(
+            export.typed_error_count("error.typed", "rpc_error"),
+            1,
+            "wire={wire:?}"
+        );
+    }
+}
+
 #[tokio::test]
 async fn unauthorized_credential_payload_is_absent_from_telemetry() {
     let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(true);
