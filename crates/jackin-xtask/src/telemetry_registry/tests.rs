@@ -190,6 +190,8 @@ fn observable_callbacks_are_snapshot_only() {
         "handle.block_on(work())",
         "handle.enter()",
         "socket.read(&mut bytes)",
+        "std::println!(\"callback\")",
+        "(hooks.sample)()",
     ] {
         let source = format!(
             "fn install(builder: Builder) {{ builder.with_callback(move |_observer| {{ let _ = {prohibited}; }}); }}"

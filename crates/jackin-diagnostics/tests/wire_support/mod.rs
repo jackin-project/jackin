@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-const CORRELATION_KEYS: [&str; 8] = [
+const CORRELATION_KEYS: [&str; 7] = [
     "cli.invocation.id",
     "session.id",
     "session.previous_id",
@@ -9,7 +9,6 @@ const CORRELATION_KEYS: [&str; 8] = [
     "ui.screen.visit.id",
     "gen_ai.conversation.id",
     "app.crash.id",
-    "parallax.run.id",
 ];
 
 pub(crate) fn assert_three_signal_delivery(

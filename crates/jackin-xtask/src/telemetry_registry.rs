@@ -731,16 +731,15 @@ impl ObservableCallbackScanner {
 
 impl<'ast> syn::visit::Visit<'ast> for ObservableCallbackScanner {
     fn visit_expr_call(&mut self, node: &'ast syn::ExprCall) {
-        if let syn::Expr::Path(function) = node.func.as_ref() {
-            let name = SourcePolicyScanner::path_name(&function.path);
-            let snapshot_call = matches!(name.as_str(), "f64::from_bits" | "health::count");
-            if !snapshot_call
-                || name.starts_with("std::fs::")
-                || name.starts_with("tokio::fs::")
-                || name.starts_with("fs::")
-            {
-                self.reject(node.span());
-            }
+        let allowed = match node.func.as_ref() {
+            syn::Expr::Path(function) => matches!(
+                SourcePolicyScanner::path_name(&function.path).as_str(),
+                "f64::from_bits" | "health::count"
+            ),
+            _ => false,
+        };
+        if !allowed {
+            self.reject(node.span());
         }
         syn::visit::visit_expr_call(self, node);
     }
@@ -763,6 +762,11 @@ impl<'ast> syn::visit::Visit<'ast> for ObservableCallbackScanner {
     fn visit_expr_await(&mut self, node: &'ast syn::ExprAwait) {
         self.reject(node.span());
         syn::visit::visit_expr_await(self, node);
+    }
+
+    fn visit_macro(&mut self, node: &'ast syn::Macro) {
+        self.reject(node.span());
+        syn::visit::visit_macro(self, node);
     }
 }
 
