@@ -160,10 +160,7 @@ pub(crate) async fn inspect_attach_outcome(
         | ContainerState::Created
         | ContainerState::Removing => AttachOutcome::still_running(),
         ContainerState::Dead => {
-            jackin_diagnostics::telemetry_debug!(
-                "isolation",
-                "inspect_attach_outcome: container {container} status=dead; treating as still_running to preserve records for inspection",
-            );
+            let _warning = jackin_telemetry::record_recovered_degradation();
             AttachOutcome::still_running()
         }
         ContainerState::Stopped {
@@ -171,10 +168,7 @@ pub(crate) async fn inspect_attach_outcome(
         } => AttachOutcome::oom_killed(),
         ContainerState::Stopped { exit_code, .. } => AttachOutcome::stopped(exit_code),
         ContainerState::NotFound | ContainerState::InspectUnavailable(_) => {
-            jackin_diagnostics::telemetry_debug!(
-                "isolation",
-                "inspect_attach_outcome: docker inspect failed for {container}; treating as still_running (conservative — finalize_clean_exit's auto-cleanup never fires)",
-            );
+            let _warning = jackin_telemetry::record_recovered_degradation();
             AttachOutcome::still_running()
         }
     })
