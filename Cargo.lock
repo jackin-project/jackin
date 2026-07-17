@@ -2946,6 +2946,7 @@ dependencies = [
  "jackin-diagnostics",
  "jackin-env",
  "jackin-oppicker",
+ "jackin-otlp-testbed",
  "jackin-protocol",
  "jackin-telemetry",
  "jackin-tui",

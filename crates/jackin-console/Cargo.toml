@@ -32,6 +32,7 @@ ratatui = { workspace = true }
 insta = { workspace = true, features = ["filters"] }
 jackin-config = { workspace = true, features = ["test-support"] }
 jackin-diagnostics = { workspace = true, features = ["test-support"] }
+jackin-otlp-testbed = { workspace = true }
 tempfile = { workspace = true }
 toml = { workspace = true }
 tracing.workspace = true

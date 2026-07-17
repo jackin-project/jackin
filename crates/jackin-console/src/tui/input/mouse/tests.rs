@@ -35,6 +35,98 @@ fn list_state() -> ManagerState<'static> {
     ManagerState::from_config(&config, tmp.path())
 }
 
+#[test]
+fn conformance_wire_mouse_coordinates_become_only_semantic_action() -> anyhow::Result<()> {
+    const CHILD: &str = "JACKIN_MOUSE_PRIVACY_WIRE_CHILD";
+    if std::env::var_os(CHILD).is_none() {
+        let status = std::process::Command::new(std::env::current_exe()?)
+            .args([
+                "--exact",
+                "tui::input::mouse::tests::conformance_wire_mouse_coordinates_become_only_semantic_action",
+                "--nocapture",
+            ])
+            .env(CHILD, "1")
+            .status()?;
+        anyhow::ensure!(status.success(), "isolated mouse privacy test failed");
+        return Ok(());
+    }
+
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()?;
+    let testbed = runtime.block_on(async { jackin_otlp_testbed::Testbed::start() })?;
+    let runtime_guard = runtime.enter();
+    jackin_diagnostics::init_wire_test_export(
+        &testbed.endpoint(),
+        jackin_diagnostics::ServiceIdentity::HOST_INTERACTIVE,
+    )?;
+    let mut state = list_state();
+    state.stage = ManagerStage::Editor(EditorState::new_edit(
+        "wire-private-workspace".into(),
+        WorkspaceConfig::default(),
+    ));
+    let coordinate = MouseEvent {
+        kind: MouseEventKind::Down(MouseButton::Left),
+        column: 11,
+        row: crate::tui::layout::SCREEN_HEADER_HEIGHT,
+        modifiers: KeyModifiers::NONE,
+    };
+    handle_mouse_with_config(&mut state, coordinate, term(100), None);
+    let ManagerStage::Editor(editor) = &state.stage else {
+        anyhow::bail!("mouse route left editor stage");
+    };
+    anyhow::ensure!(
+        editor.active_tab == EditorTab::Mounts,
+        "coordinates did not reach the real tab hit-test"
+    );
+    drop(jackin_telemetry::ui::take_action_parent());
+    jackin_telemetry::emit_event(
+        &jackin_telemetry::event::TELEMETRY_VALIDATE,
+        jackin_telemetry::FieldSet::default(),
+    )
+    .map_err(|reason| anyhow::anyhow!("validation event rejected: {reason:?}"))?;
+    jackin_diagnostics::flush_wire_test_export()?;
+    drop(runtime_guard);
+    anyhow::ensure!(
+        runtime.block_on(testbed.wait_for_all_signals(std::time::Duration::from_secs(2))),
+        "mouse route did not export all three signals"
+    );
+    let action_spans = testbed
+        .spans()
+        .into_iter()
+        .filter(|span| span.name == "ui.action")
+        .collect::<Vec<_>>();
+    anyhow::ensure!(action_spans.len() == 1, "unexpected ui.action spans");
+    let action = &action_spans[0];
+    anyhow::ensure!(
+        format!("{:?}", action.attributes).contains("tab.switch"),
+        "mouse action was not exported semantically: {action:?}"
+    );
+    for key in action
+        .attributes
+        .iter()
+        .map(|attribute| attribute.key.as_str())
+        .chain(testbed.metric_dimension_keys().iter().map(String::as_str))
+    {
+        anyhow::ensure!(
+            !matches!(
+                key,
+                "row" | "column" | "mouse.row" | "mouse.column" | "ui.pointer.x" | "ui.pointer.y"
+            ),
+            "raw pointer coordinate key escaped to OTLP: {key}"
+        );
+    }
+    anyhow::ensure!(
+        testbed
+            .prohibited_value_violations(&["wire-private-workspace"])
+            .is_empty(),
+        "private editor identity escaped to OTLP"
+    );
+    jackin_diagnostics::shutdown_capsule_tracing();
+    Ok(())
+}
+
 fn file_browser_with_dirs(
     root: &std::path::Path,
     count: usize,
