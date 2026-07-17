@@ -151,25 +151,25 @@ pub(crate) fn truncate_stderr(stderr: &str) -> String {
 
 /// Drain stderr capped at `OP_STDERR_MAX + 1` bytes; further output is
 /// sunk so the child exits cleanly.
-fn drain_bounded_stderr(mut stderr: std::process::ChildStderr) -> Vec<u8> {
+fn drain_bounded_stderr(mut stderr: std::process::ChildStderr) -> std::io::Result<Vec<u8>> {
     use std::io::Read;
 
     let mut buf = Vec::new();
     let mut chunk = [0u8; 1024];
     loop {
-        match stderr.read(&mut chunk) {
-            Ok(0) | Err(_) => break,
-            Ok(n) => {
+        match stderr.read(&mut chunk)? {
+            0 => break,
+            n => {
                 buf.extend_from_slice(&chunk[..n]);
                 if buf.len() > OP_STDERR_MAX + 1 {
                     let mut sink = [0u8; 4096];
-                    while matches!(stderr.read(&mut sink), Ok(n) if n > 0) {}
+                    while stderr.read(&mut sink)? > 0 {}
                     break;
                 }
             }
         }
     }
-    buf
+    Ok(buf)
 }
 
 /// Poll `try_wait` and forward the exit status, releasing the mutex
@@ -361,8 +361,7 @@ impl OpRunner for OpCli {
 
         let stdout_handle = jackin_telemetry::spawn::thread_stream("op.stdout", move || {
             let mut buf = Vec::new();
-            drop(stdout.read_to_end(&mut buf));
-            buf
+            stdout.read_to_end(&mut buf).map(|_| buf)
         });
         let stderr_handle = jackin_telemetry::spawn::thread_stream("op.stderr", move || {
             drain_bounded_stderr(stderr)
@@ -392,8 +391,16 @@ impl OpRunner for OpCli {
             }
         };
 
-        let stdout_bytes = stdout_handle.join().unwrap_or_default();
-        let stderr_bytes = stderr_handle.join().unwrap_or_default();
+        let stdout_bytes = stdout_handle
+            .join()
+            .unwrap_or_else(|_| Err(std::io::Error::other("stdout reader panicked")));
+        let stderr_bytes = stderr_handle
+            .join()
+            .unwrap_or_else(|_| Err(std::io::Error::other("stderr reader panicked")));
+        let (Ok(stdout_bytes), Ok(stderr_bytes)) = (stdout_bytes, stderr_bytes) else {
+            operation.io_failed();
+            anyhow::bail!("1Password CLI output pipe read failed");
+        };
 
         if status.success() {
             operation.complete_status(status);
@@ -460,6 +467,10 @@ enum OpTransportFault {
     MissingStderr,
     #[cfg(test)]
     Wait,
+    #[cfg(test)]
+    StdoutRead,
+    #[cfg(test)]
+    StderrRead,
 }
 
 fn run_op_with_timeout_inner(
@@ -514,8 +525,7 @@ fn run_op_with_timeout_inner(
 
     let stdout_handle = jackin_telemetry::spawn::thread_stream("op.stdout", move || {
         let mut buf = Vec::new();
-        drop(stdout.read_to_end(&mut buf));
-        buf
+        stdout.read_to_end(&mut buf).map(|_| buf)
     });
     let stderr_handle =
         jackin_telemetry::spawn::thread_stream("op.stderr", move || drain_bounded_stderr(stderr));
@@ -553,8 +563,28 @@ fn run_op_with_timeout_inner(
         }
     };
 
-    let stdout_bytes = stdout_handle.join().unwrap_or_default();
-    let stderr_bytes = stderr_handle.join().unwrap_or_default();
+    let stdout_bytes = stdout_handle
+        .join()
+        .unwrap_or_else(|_| Err(std::io::Error::other("stdout reader panicked")));
+    let stderr_bytes = stderr_handle
+        .join()
+        .unwrap_or_else(|_| Err(std::io::Error::other("stderr reader panicked")));
+    #[cfg(test)]
+    let stdout_bytes = if matches!(fault, OpTransportFault::StdoutRead) {
+        Err(std::io::Error::other("injected stdout read failure"))
+    } else {
+        stdout_bytes
+    };
+    #[cfg(test)]
+    let stderr_bytes = if matches!(fault, OpTransportFault::StderrRead) {
+        Err(std::io::Error::other("injected stderr read failure"))
+    } else {
+        stderr_bytes
+    };
+    let (Ok(stdout_bytes), Ok(stderr_bytes)) = (stdout_bytes, stderr_bytes) else {
+        operation.io_failed();
+        anyhow::bail!("1Password CLI output pipe read failed");
+    };
 
     if status.success() {
         operation.complete_status(status);

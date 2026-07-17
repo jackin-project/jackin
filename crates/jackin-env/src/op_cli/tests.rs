@@ -194,6 +194,8 @@ fn op_transport_faults_are_owned_once_without_sensitive_material() {
         OpTransportFault::MissingStdout,
         OpTransportFault::MissingStderr,
         OpTransportFault::Wait,
+        OpTransportFault::StdoutRead,
+        OpTransportFault::StderrRead,
     ] {
         run_op_with_timeout_inner(
             "sh",
@@ -205,10 +207,12 @@ fn op_transport_faults_are_owned_once_without_sensitive_material() {
     }
 
     export.force_flush();
-    assert_eq!(export.finished_spans().len(), 3);
-    assert_eq!(export.error_span_count(), 3);
+    assert_eq!(export.finished_spans().len(), 5);
+    assert_eq!(export.error_span_count(), 5);
     assert!(export.contains_span_text("op"));
     assert!(export.contains_span_text("io_error"));
     assert!(!export.contains_span_text("op-transport-secret"));
     assert!(!export.contains_span_text("injected wait failure"));
+    assert!(!export.contains_span_text("injected stdout read failure"));
+    assert!(!export.contains_span_text("injected stderr read failure"));
 }
