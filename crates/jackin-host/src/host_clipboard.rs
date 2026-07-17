@@ -10,15 +10,7 @@
 use std::path::Path;
 
 #[cfg(any(target_os = "linux", test))]
-use std::{
-    ffi::OsStr,
-    io::Read,
-    path::PathBuf,
-    process::{Command, Stdio},
-};
-
-#[cfg(all(target_os = "macos", not(test)))]
-use std::process::Command;
+use std::{ffi::OsStr, io::Read, path::PathBuf};
 
 use anyhow::{Context, Result};
 use jackin_protocol::attach::{
@@ -305,12 +297,10 @@ end try"#
         clippy::disallowed_methods,
         reason = "host clipboard probes run in the foreground host attach client, not in Capsule render code"
     )]
-    let output = Command::new("/usr/bin/osascript")
-        .arg("-e")
-        .arg(script)
-        .env("JACKIN_CLIPBOARD_IMAGE_OUT", &path)
-        .output()?;
-    if !output.status.success() {
+    let request = jackin_process::ExecRequest::new("/usr/bin/osascript", ["-e", &script])
+        .envs([("JACKIN_CLIPBOARD_IMAGE_OUT", path.as_os_str())]);
+    let output = crate::process_telemetry::exec_sync(&request)?;
+    if !output.success {
         drop(fs::remove_file(&path));
         return Ok(None);
     }
@@ -344,11 +334,9 @@ end try"
         clippy::disallowed_methods,
         reason = "host clipboard probes run in the foreground host attach client, not in Capsule render code"
     )]
-    let output = Command::new("/usr/bin/osascript")
-        .arg("-e")
-        .arg(script)
-        .output()?;
-    if !output.status.success() {
+    let request = jackin_process::ExecRequest::new("/usr/bin/osascript", ["-e", &script]);
+    let output = crate::process_telemetry::exec_sync(&request)?;
+    if !output.success {
         return Ok(None);
     }
     let path = String::from_utf8_lossy(&output.stdout)
@@ -371,11 +359,9 @@ end try";
         clippy::disallowed_methods,
         reason = "host clipboard probes run in the foreground host attach client, not in Capsule render code"
     )]
-    let output = Command::new("/usr/bin/osascript")
-        .arg("-e")
-        .arg(script)
-        .output()?;
-    if !output.status.success() || output.stdout.len() > MAX_CLIPBOARD_TEXT_PATH_BYTES {
+    let request = jackin_process::ExecRequest::new("/usr/bin/osascript", ["-e", script]);
+    let output = crate::process_telemetry::exec_sync(&request)?;
+    if !output.success || output.stdout.len() > MAX_CLIPBOARD_TEXT_PATH_BYTES {
         return Ok(None);
     }
     let text = String::from_utf8_lossy(&output.stdout);
@@ -512,41 +498,46 @@ fn read_command_stdout_bounded<I, S>(
     program: &Path,
     args: I,
     max_bytes: usize,
-    what: &str,
+    _what: &str,
 ) -> Result<Option<Vec<u8>>>
 where
     I: IntoIterator<Item = S>,
     S: AsRef<OsStr>,
 {
-    let mut child = Command::new(program)
-        .args(args)
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
-        .with_context(|| format!("spawning clipboard {what} command {}", program.display()))?;
-    let mut stdout = child
-        .stdout
-        .take()
-        .with_context(|| format!("clipboard {what} command did not expose stdout"))?;
+    let request = jackin_process::ExecRequest::new(program, args)
+        .stdout_mode(jackin_process::StdioMode::Capture)
+        .stderr_mode(jackin_process::StdioMode::Null);
+    let (operation, mut child) = crate::process_telemetry::spawn_sync(&request)?;
+    let Some(mut stdout) = child.stdout.take() else {
+        operation.complete_io_failure();
+        anyhow::bail!("clipboard command did not expose stdout");
+    };
     let mut bytes = Vec::new();
     {
         let mut limited = stdout.by_ref().take((max_bytes + 1) as u64);
-        limited
-            .read_to_end(&mut bytes)
-            .with_context(|| format!("reading clipboard {what} command stdout"))?;
+        if limited.read_to_end(&mut bytes).is_err() {
+            operation.complete_io_failure();
+            anyhow::bail!("reading clipboard command stdout failed");
+        }
     }
     drop(stdout);
     if bytes.len() > max_bytes {
         drop(child.kill());
-        drop(child.wait());
+        if child.wait().is_err() {
+            operation.complete_io_failure();
+            anyhow::bail!("reaping clipboard command failed");
+        }
+        operation.complete_cancelled();
         return Ok(None);
     }
 
-    let status = child
-        .wait()
-        .with_context(|| format!("waiting for clipboard {what} command to exit"))?;
-    if !status.success() || bytes.is_empty() {
+    let Ok(status) = child.wait() else {
+        operation.complete_io_failure();
+        anyhow::bail!("waiting for clipboard command failed");
+    };
+    let success = status.success();
+    operation.complete_status(status);
+    if !success || bytes.is_empty() {
         return Ok(None);
     }
     Ok(Some(bytes))
