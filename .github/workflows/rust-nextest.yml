@@ -221,8 +221,8 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .ci-target-cache
-          key: ci-crate-target-v13-${{ runner.os }}-${{ runner.arch }}-${{ matrix.package }}-${{ steps.crate-target-key.outputs.key }}
-          restore-keys: ci-crate-target-v13-${{ runner.os }}-${{ runner.arch }}-${{ matrix.package }}-
+          key: ci-crate-target-v14-${{ runner.os }}-${{ runner.arch }}-${{ matrix.package }}-${{ steps.crate-target-key.outputs.key }}
+          restore-keys: ci-crate-target-v14-${{ runner.os }}-${{ runner.arch }}-${{ matrix.package }}-
       - name: Prepare reusable crate target seed
         id: restored-target
         if: steps.crate-result.outputs.hit != 'true'
@@ -430,7 +430,7 @@ jobs:
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .ci-target-cache
-          key: ci-crate-target-v13-${{ runner.os }}-${{ runner.arch }}-${{ matrix.package }}-${{ steps.crate-target-key.outputs.key }}
+          key: ci-crate-target-v14-${{ runner.os }}-${{ runner.arch }}-${{ matrix.package }}-${{ steps.crate-target-key.outputs.key }}
 
       - name: Capture sccache stats
         if: always() && steps.crate-result.outputs.hit != 'true'

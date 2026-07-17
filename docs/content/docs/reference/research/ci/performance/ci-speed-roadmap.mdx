@@ -1286,6 +1286,19 @@ new 204 MB immutable contract in 35 seconds. Dylint also enables failure-path
 target persistence, so nightly incompatibility cannot force the next run to
 repeat an otherwise valid dependency build.
 
+CI run `29588439870` then proved the exact registry contract is reusable: the
+single warmup owner restored it and skipped every fetch step. The complete,
+unsharded `jackin-term` crate job finished in 56 seconds with no dependency
+downloads or external-crate compilation. Its separately attributable reverse
+dependent, `jackin-capsule`, took 157 seconds. The raw step ledger located 17
+seconds in restoration of a non-canonical target seed, 29 seconds in the
+feature powerset, and 33 seconds compressing a 472 MB replacement seed at Zstd
+level 10. Cache-only target archives now use Zstd level 3 and a new archive
+contract; this preserves every crate check while removing avoidable
+high-compression CPU from the critical job. The remaining repeated
+`jackin-capsule` compilations are distinct feature combinations, not dependency
+cache misses, and require a separate semantic optimization rather than shards.
+
 The same Hygiene evidence shows why the remaining multi-minute jobs cannot be
 classified as cache setup. Miri `jackin-term` runs one complete crate job, but
 main run `29499861725` spent 9,432 seconds interpreting 43 conformance tests;
