@@ -720,7 +720,7 @@ jobs:
           retention-days: 1
 
   affected-crates:
-    needs: [changes]
+    needs: [changes, cargo-registry-warmup]
     if: needs.changes.outputs.rust == 'true' && needs.changes.outputs.result-reuse != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 5
