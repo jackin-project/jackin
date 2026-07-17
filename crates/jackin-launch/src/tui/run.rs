@@ -152,7 +152,34 @@ impl RichDriver {
                         Err(_) => continue,
                     };
                     if let Some(parent) = action_parent.as_ref() {
-                        parent.in_scope(|| drop(rr.render(&snapshot, &run_id)));
+                        let render_attrs = [jackin_telemetry::Attr {
+                            key: jackin_telemetry::schema::attrs::std_attrs::APP_SCREEN_ID,
+                            value: jackin_telemetry::Value::Str(
+                                jackin_telemetry::schema::enums::ScreenId::LaunchProgress.as_str(),
+                            ),
+                        }];
+                        let render_operation = parent.in_scope(|| {
+                            jackin_telemetry::operation(
+                                &jackin_telemetry::operation::UI_RENDER,
+                                &render_attrs,
+                            )
+                            .ok()
+                        });
+                        let render_result = parent.in_scope(|| rr.render(&snapshot, &run_id));
+                        if let Some(guard) = render_operation {
+                            if render_result.is_ok() {
+                                guard.complete(
+                                    jackin_telemetry::schema::enums::OutcomeValue::Success,
+                                    None,
+                                );
+                            } else {
+                                guard.complete(
+                                    jackin_telemetry::schema::enums::OutcomeValue::Failure,
+                                    Some(jackin_telemetry::schema::enums::ErrorType::IoError),
+                                );
+                            }
+                        }
+                        drop(render_result);
                     } else {
                         drop(rr.render(&snapshot, &run_id));
                     }
