@@ -28,6 +28,12 @@ pub(crate) struct CiArgs {
     /// Include Docker E2E with capsule export and Docker daemon preflight.
     #[arg(long)]
     e2e: bool,
+    /// Existing capsule binary to use instead of exporting a new one.
+    #[arg(long, value_name = "PATH")]
+    e2e_capsule: Option<PathBuf>,
+    /// Optional nextest expression for a focused Docker E2E invocation.
+    #[arg(long, value_name = "EXPRESSION")]
+    e2e_filter: Option<String>,
     /// Git ref used by schema-check.
     #[arg(long, default_value = "origin/main")]
     base: String,
@@ -103,7 +109,7 @@ pub(crate) fn run(args: CiArgs) -> Result<()> {
     }
 
     if e2e_selected(&args) {
-        match build_e2e_step(&root) {
+        match build_e2e_step(&root, &args) {
             Ok(step) => {
                 if let Err(err) = run_step(&root, &step) {
                     failures.push(format!("{} [{}]: {err:#}", step.name, step.partition));
@@ -302,7 +308,7 @@ fn actionlint_args(root: &Path) -> Result<Vec<OsString>> {
     Ok(files)
 }
 
-fn build_e2e_step(root: &Path) -> Result<Step> {
+fn build_e2e_step(root: &Path, args: &CiArgs) -> Result<Step> {
     run_step(
         root,
         &Step::new("docker preflight", "docker", &["info"], "e2e"),
@@ -311,32 +317,53 @@ fn build_e2e_step(root: &Path) -> Result<Step> {
         "Docker daemon is not reachable; start Docker before running `cargo xtask ci --e2e`",
     )?;
 
-    let export = output_step(
-        root,
-        &cargo(
-            "build-jackin-capsule export",
-            &["run", "--bin", "build-jackin-capsule", "--", "--export"],
-            "e2e",
-        ),
-    )?;
-    let capsule_bin = parse_capsule_export(&export)?;
+    let capsule_bin = match &args.e2e_capsule {
+        Some(path) => validate_capsule_path(root, path)?,
+        None => {
+            let export = output_step(
+                root,
+                &cargo(
+                    "build-jackin-capsule export",
+                    &["run", "--bin", "build-jackin-capsule", "--", "--export"],
+                    "e2e",
+                ),
+            )?;
+            parse_capsule_export(&export)?
+        }
+    };
+    let mut command = vec![
+        "nextest".into(),
+        "run".into(),
+        "-p".into(),
+        "jackin".into(),
+        "--features".into(),
+        "e2e".into(),
+        "--profile".into(),
+        "docker-e2e".into(),
+        "--locked".into(),
+        "--offline".into(),
+    ];
+    if let Some(filter) = &args.e2e_filter {
+        command.extend(["-E".into(), filter.into()]);
+    }
+    let mut step = Step::with_args("docker e2e", "cargo", command, "e2e")
+        .with_env("JACKIN_CAPSULE_BIN", capsule_bin);
+    if let Some(temp) = std::env::var_os("VELNOR_DOCKER_HOST_TEMP") {
+        step = step.with_env("TMPDIR", temp);
+    }
+    Ok(step)
+}
 
-    Ok(cargo(
-        "docker e2e",
-        &[
-            "nextest",
-            "run",
-            "-p",
-            "jackin",
-            "--features",
-            "e2e",
-            "--profile",
-            "docker-e2e",
-            "--locked",
-        ],
-        "e2e",
-    )
-    .with_env("JACKIN_CAPSULE_BIN", capsule_bin))
+fn validate_capsule_path(root: &Path, path: &Path) -> Result<PathBuf> {
+    let path = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        root.join(path)
+    };
+    if path.is_file() {
+        return Ok(path);
+    }
+    bail!("capsule binary does not exist: {}", path.display())
 }
 
 fn parse_capsule_export(output: &str) -> Result<PathBuf> {

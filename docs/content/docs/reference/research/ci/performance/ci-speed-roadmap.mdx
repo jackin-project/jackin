@@ -1298,6 +1298,12 @@ contract; this preserves every crate check while removing avoidable
 high-compression CPU from the critical job. The remaining repeated
 `jackin-capsule` compilations are distinct feature combinations, not dependency
 cache misses, and require a separate semantic optimization rather than shards.
+Docker E2E now follows the same Rust-owned execution contract on GitHub and
+Velnor: xtask resolves the capsule path, carries the optional nextest filter,
+and maps the runner-provided Docker temporary directory into the child process.
+The shared per-crate workflow no longer uses shell logic or a Velnor-specific
+execution branch to mutate `JACKIN_CAPSULE_BIN`; runner differences are inputs
+to one implementation.
 
 The same Hygiene evidence shows why the remaining multi-minute jobs cannot be
 classified as cache setup. Miri `jackin-term` runs one complete crate job, but

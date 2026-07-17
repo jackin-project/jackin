@@ -350,28 +350,13 @@ jobs:
         if: >-
           steps.crate-result.outputs.hit != 'true' && matrix.package == 'jackin' && inputs.docker-e2e
         run: cargo build -p jackin-capsule --bin jackin-capsule --locked --offline
-      - name: Point nextest at jackin-capsule
-        if: >-
-          steps.crate-result.outputs.hit != 'true' && matrix.package == 'jackin' && inputs.docker-e2e
-        run: |
-          capsule_bin="${CARGO_TARGET_DIR:-target}/debug/jackin-capsule"
-          chmod +x "$capsule_bin"
-          case "$capsule_bin" in
-            /*) echo "JACKIN_CAPSULE_BIN=$capsule_bin" >> "$GITHUB_ENV" ;;
-            *) echo "JACKIN_CAPSULE_BIN=$PWD/$capsule_bin" >> "$GITHUB_ENV" ;;
-          esac
       - name: Run Docker E2E smoke test
         if: >-
           steps.crate-result.outputs.hit != 'true' && matrix.package == 'jackin' && inputs.docker-e2e
-        shell: bash
-        run: |
-          set -euo pipefail
-          if [ -n "${VELNOR_DOCKER_HOST_TEMP:-}" ]; then
-            export TMPDIR="$VELNOR_DOCKER_HOST_TEMP"
-          fi
-          cargo nextest run -p jackin --test dind_e2e --features e2e --profile docker-e2e \
-            -E 'test(jackin_load_ctrl_q_yes_exits_cold_build_quickly)' \
-            --no-tests=pass --color=always --locked --offline
+        run: >-
+          "$CI_XTASK" ci --only e2e
+          --e2e-capsule target/debug/jackin-capsule
+          --e2e-filter 'test(jackin_load_ctrl_q_yes_exits_cold_build_quickly)'
       - name: Upload Docker E2E junit + timing
         if: >-
           always() && steps.crate-result.outputs.hit != 'true' &&
