@@ -94,10 +94,13 @@ async function run() {
   const deadline = Date.now() + (allowMiss ? 0 : DEADLINE_MILLISECONDS);
   let toolsHit = false;
   let xtaskHit = false;
-  const result = () => ({
-    tools_hit: toolsHit ? "true" : "false",
-    xtask_hit: xtaskHit ? "true" : "false",
-  });
+  const result = () => {
+    const tools = toolsHit ? "true" : "false";
+    const xtask = xtaskHit ? "true" : "false";
+    core.exportVariable("CI_TOOLS_HIT", tools);
+    core.exportVariable("CI_XTASK_HIT", xtask);
+    return { tools_hit: tools, xtask_hit: xtask };
+  };
 
   core.setOutput("tools-hit", "false");
   core.setOutput("xtask-hit", "false");
