@@ -27,6 +27,10 @@ inputs:
     description: Download the Cargo tool bundle in addition to jackin-xtask.
     required: false
     default: "true"
+  include-xtask:
+    description: Download jackin-xtask in addition to any requested Cargo tools.
+    required: false
+    default: "true"
   allow-miss:
     description: Return miss outputs instead of failing when preparation must build the artifacts.
     required: false
@@ -49,6 +53,7 @@ runs:
         JACKIN_XTASK_CONTRACT: ${{ inputs.xtask-contract }}
         JACKIN_FALLBACK_XTASK_CONTRACT: ${{ inputs.fallback-xtask-contract }}
         JACKIN_INCLUDE_TOOLS: ${{ inputs.include-tools }}
+        JACKIN_INCLUDE_XTASK: ${{ inputs.include-xtask }}
         JACKIN_ALLOW_MISS: ${{ inputs.allow-miss }}
         JACKIN_ACTION_RUNTIME: ${{ github.action_path }}/runtime/dist/index.js
       with:

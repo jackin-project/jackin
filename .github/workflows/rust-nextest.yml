@@ -162,6 +162,7 @@ jobs:
           lane: ${{ matrix.config.lane }}
           tools-contract: ${{ inputs.ci-tools-contract }}
           xtask-contract: ${{ inputs.ci-xtask-contract }}
+          include-xtask: "false"
       - name: Cache prepared Rust toolchains
         if: steps.crate-result.outputs.hit != 'true'
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -508,6 +509,7 @@ jobs:
         if: >-
           always() && !cancelled() && !failure() &&
           steps.crate-result.outputs.hit != 'true' &&
+          steps.local-target.outputs.hit != 'true' &&
           steps.restored-target.outputs.canonical-hit != 'true' &&
           (github.ref == 'refs/heads/main' ||
            github.event_name == 'workflow_dispatch' ||
@@ -522,6 +524,7 @@ jobs:
         if: >-
           always() && !cancelled() && !failure() &&
           steps.crate-result.outputs.hit != 'true' &&
+          steps.local-target.outputs.hit != 'true' &&
           steps.restored-target.outputs.canonical-hit != 'true' &&
           (github.ref == 'refs/heads/main' ||
            github.event_name == 'workflow_dispatch' ||

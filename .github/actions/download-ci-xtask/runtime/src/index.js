@@ -90,6 +90,7 @@ async function run() {
   const toolsArtifact = `ci-tools-${os}-${arch}-${toolsContract}`;
   const xtaskArtifact = `ci-xtask-${os}-${arch}-${xtaskContract}`;
   const includeTools = process.env.JACKIN_INCLUDE_TOOLS === "true";
+  const includeXtask = process.env.JACKIN_INCLUDE_XTASK !== "false";
   const allowMiss = process.env.JACKIN_ALLOW_MISS === "true";
   const octokit = github.getOctokit(token);
   const deadline = Date.now() + (allowMiss ? 0 : DEADLINE_MILLISECONDS);
@@ -98,7 +99,7 @@ async function run() {
   const result = () => {
     const tools = toolsHit ? "true" : "false";
     const xtask = xtaskHit ? "true" : "false";
-    if (!xtaskHit) {
+    if (includeXtask && !xtaskHit) {
       core.exportVariable(
         "CI_XTASK",
         path.join(workspace, "target", "debug", "jackin-xtask"),
@@ -106,7 +107,7 @@ async function run() {
     }
     core.exportVariable("CI_TOOLS_PATH", destination);
     core.exportVariable("CI_TOOLS_HIT", tools);
-    core.exportVariable("CI_XTASK_HIT", xtask);
+    if (includeXtask) core.exportVariable("CI_XTASK_HIT", xtask);
     return { tools_hit: tools, xtask_hit: xtask };
   };
 
@@ -115,13 +116,9 @@ async function run() {
   await fs.mkdir(destination, { recursive: true });
   if (includeTools) {
     if (!toolsContract) throw new Error("tools-contract is required with tools");
-    const lane = await currentRunArtifact(
-      octokit,
-      owner,
-      repo,
-      runId,
-      laneArtifact,
-    );
+    const lane = includeXtask
+      ? await currentRunArtifact(octokit, owner, repo, runId, laneArtifact)
+      : undefined;
     if (lane) {
       await downloadArtifact(octokit, owner, repo, lane, destination);
       toolsHit = true;
@@ -148,6 +145,11 @@ async function run() {
     }
   }
 
+  if (!includeXtask) {
+    await exportTools(destination, false);
+    return result();
+  }
+
   const candidates = [xtaskArtifact];
   if (fallbackXtaskContract && fallbackXtaskContract !== xtaskContract) {
     candidates.push(`ci-xtask-${os}-${arch}-${fallbackXtaskContract}`);
@@ -172,7 +174,7 @@ async function run() {
   return result();
 }
 
-async function exportTools(destination) {
+async function exportTools(destination, includeXtask = true) {
   const xtask = path.join(destination, "jackin-xtask");
   const cargoFuzz = path.join(destination, "cargo-fuzz");
   try {
@@ -186,9 +188,9 @@ async function exportTools(destination) {
     core.exportVariable("CI_CARGO_FUZZ", cargoFuzz);
   } catch (error) {
     if (error.code !== "ENOENT") throw error;
-    await fs.chmod(xtask, 0o755);
+    if (includeXtask) await fs.chmod(xtask, 0o755);
   }
-  core.exportVariable("CI_XTASK", xtask);
+  if (includeXtask) core.exportVariable("CI_XTASK", xtask);
 
   const metadata = path.join(destination, "workspace-metadata.json");
   try {

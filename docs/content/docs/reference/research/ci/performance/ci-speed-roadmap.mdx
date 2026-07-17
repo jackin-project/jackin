@@ -632,6 +632,25 @@ listing had not converged and Velnor entered setup. Result lookup now falls back
 to the current run's artifact endpoint, allowing the queued lane to observe the
 producer directly without a sleep, polling shell, or runner-specific branch.
 
+Dual-lane run `29563873715` rejected the first runner-neutral producer proof.
+Velnor was admitted first, while the equivalent GitHub crate job remained queued,
+so per-crate concurrency correctly selected the faster available lane without
+sharding the crate. The Velnor crate steps took `52s`: result lookup consumed
+`11s`, toolchain preparation `8s`, tests `6s`, default checking `1s`, doctests
+`1s`, and clippy `3s`; the Actions job displayed `1m09s` because Velnor added
+about `16s` of post-job log transport. The crate used its validated runner-local
+target seed and emitted no dependency downloads or third-party compilation, but
+the workflow then incorrectly tried to repack that same seed because it checked
+only the artifact-restore output. The pack failed before publishing the complete
+result, so the queued GitHub lane could not reuse it and the run was cancelled
+before duplicate Cargo work began. Runner-local hits now bypass both target pack
+and publication. The post-miss bootstrap also preserves the xtask restored by
+the first action and retrieves only the Cargo tool bundle, removing a redundant
+xtask lookup, download, and extraction from the crate critical path. The next
+accepted proof must show one complete producer job, a current-run result hit in
+the queued lane, no Cargo execution in that consumer, and displayed job times
+below one minute on both lanes.
+
 ## Problem
 
 PR feedback, main-branch confidence, preview publishing, and tagged releases all need faster wall-clock results without dropping coverage. jackin❯ already has many good CI primitives -- path filters, PR cancellation, aggregator jobs, `Swatinem/rust-cache`, `cargo-nextest`, Docker Buildx layer caches, Bun download caching, pinned mise tools, and split workflows -- but the run triggered by commit [`4c8b94bd05f84a62a04f9f235e2d846f14d04366`](https://github.com/jackin-project/jackin/commit/4c8b94bd05f84a62a04f9f235e2d846f14d04366) shows that broad Rust/runtime changes still produce a long post-merge feedback loop: roughly 12.5 minutes to green `CI`, then roughly 8.5 more minutes before preview artifacts publish.
