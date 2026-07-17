@@ -64,7 +64,7 @@ fn activate(version: &str, repair: bool) -> Result<()> {
         )?;
         return Ok(());
     }
-    if let Some(toolchain) = find_mise_toolchain(version, &config) {
+    if !repair && let Some(toolchain) = find_mise_toolchain(version, &config) {
         append_github_file("GITHUB_PATH", &toolchain.join("bin").display().to_string())?;
         append_github_file(
             "GITHUB_ENV",

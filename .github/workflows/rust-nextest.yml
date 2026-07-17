@@ -109,7 +109,7 @@ jobs:
       RUSTC_WRAPPER: sccache
       SCCACHE_BASEDIRS: ${{ github.workspace }}
       SCCACHE_GHA_ENABLED: "off"
-      RUSTUP_HOME: ${{ matrix.config.rustup_home || '/home/runner/.rustup' }}
+      RUSTUP_HOME: ${{ github.workspace }}/.ci-rustup
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: ./.github/actions/download-ci-xtask

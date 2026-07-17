@@ -1071,6 +1071,23 @@ CI, Docs, and Construct must each finish below one minute without Cargo crate
 downloads or unchanged dependency compilation. Workflow transport, cache
 plumbing, and path-classification edits are not semantic build inputs.
 
+Dual-lane run `29566477117` kept every job below one minute and proved the
+crate-result handoff: Velnor ran one complete `jackin-xtask` producer in 52
+seconds, while the queued GitHub job consumed its result in 9 seconds. The log
+audit found no registry update, crate download, dependency compilation, or
+external dependency check. It rejected the initial Rustup cache location,
+however. The Velnor warmup on slot 4 and crate producer on slot 2 each
+downloaded six toolchain components. The warmup's cache post-step reported
+that neither `/opt/rustup/toolchains` nor `/opt/rustup/update-hashes` existed:
+those container-private paths are not visible to the cache action after the
+job exits, and `ci-toolchain prepare` had accepted the mise installation
+without populating Rustup. Prepared toolchains therefore now use the same
+workspace-backed `.ci-rustup` store on every lane. Repair mode must populate
+that portable store; download-free activation may still accept a complete
+runner-provided mise installation. The exact Rust toolchain contract remains
+the cache key, so one cold producer owns a version change and every later job
+restores the same prepared bytes.
+
 ## Guardrails
 
 - Keep one stable aggregator per workflow for branch protection, but allow separate early-signal jobs to finish before the full aggregator.

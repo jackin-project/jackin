@@ -55,7 +55,7 @@ jobs:
       result-name: ${{ steps.ci-result.outputs.name }}
       policy-reuse: ${{ steps.policy-result.outputs.hit }}
       policy-result-name: ${{ steps.policy-result.outputs.name }}
-      runner-configs: ${{ (github.event_name != 'workflow_dispatch' || inputs.lanes == 'github') && '[{"lane":"GitHub","runner":"\"ubuntu-24.04\"","runner_os":"Linux","runner_arch":"X64","mise_data_dir":"/home/runner/.local/share/mise","cache_writer":true}]' || inputs.lanes == 'velnor' && '[{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","runner_os":"Linux","runner_arch":"X64","mise_data_dir":"/opt/mise","rustup_home":"/opt/rustup","cache_writer":true}]' || '[{"lane":"GitHub","runner":"\"ubuntu-24.04\"","runner_os":"Linux","runner_arch":"X64","mise_data_dir":"/home/runner/.local/share/mise","cache_writer":true},{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","runner_os":"Linux","runner_arch":"X64","mise_data_dir":"/opt/mise","rustup_home":"/opt/rustup","cache_writer":false}]' }}
+      runner-configs: ${{ (github.event_name != 'workflow_dispatch' || inputs.lanes == 'github') && '[{"lane":"GitHub","runner":"\"ubuntu-24.04\"","runner_os":"Linux","runner_arch":"X64","mise_data_dir":"/home/runner/.local/share/mise","cache_writer":true}]' || inputs.lanes == 'velnor' && '[{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","runner_os":"Linux","runner_arch":"X64","mise_data_dir":"/opt/mise","cache_writer":true}]' || '[{"lane":"GitHub","runner":"\"ubuntu-24.04\"","runner_os":"Linux","runner_arch":"X64","mise_data_dir":"/home/runner/.local/share/mise","cache_writer":true},{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","runner_os":"Linux","runner_arch":"X64","mise_data_dir":"/opt/mise","cache_writer":false}]' }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -456,7 +456,7 @@ jobs:
     name: cargo fmt (${{ matrix.config.lane }})
     env:
       CARGO_TERM_COLOR: always
-      RUSTUP_HOME: ${{ matrix.config.rustup_home || '/home/runner/.rustup' }}
+      RUSTUP_HOME: ${{ github.workspace }}/.ci-rustup
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: ./.github/actions/download-ci-xtask
@@ -497,7 +497,7 @@ jobs:
       CARGO_PROFILE_TEST_DEBUG: "0"
       CARGO_TERM_COLOR: always
       MISE_DATA_DIR: ${{ matrix.config.mise_data_dir }}
-      RUSTUP_HOME: ${{ matrix.config.rustup_home || '/home/runner/.rustup' }}
+      RUSTUP_HOME: ${{ github.workspace }}/.ci-rustup
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - id: prepared-artifacts
@@ -799,7 +799,7 @@ jobs:
     name: cargo dependency policy (${{ matrix.config.lane }})
     env:
       CARGO_TERM_COLOR: always
-      RUSTUP_HOME: ${{ matrix.config.rustup_home || '/home/runner/.rustup' }}
+      RUSTUP_HOME: ${{ github.workspace }}/.ci-rustup
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: ./.github/actions/download-ci-xtask
@@ -869,7 +869,7 @@ jobs:
     name: cargo audit (${{ matrix.config.lane }})
     env:
       CARGO_TERM_COLOR: always
-      RUSTUP_HOME: ${{ matrix.config.rustup_home || '/home/runner/.rustup' }}
+      RUSTUP_HOME: ${{ github.workspace }}/.ci-rustup
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: ./.github/actions/download-ci-xtask
