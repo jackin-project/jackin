@@ -4,7 +4,7 @@ The roadmap acceptance criteria are binding. This worksheet maps each criterion 
 
 | # | Acceptance criterion | Named evidence |
 |---:|---|---|
-| 1 | Governed facade and composition-root-only SDK use | `facade_event_exports_native_event_name_once`; `governed_unknown_attribute_is_dropped`; `cargo xtask lint --strict` telemetry bypass/target gates |
+| 1 | Governed facade and composition-root-only SDK use | `facade_event_exports_native_event_name_once`; `governed_unknown_names_and_forged_severity_are_rejected`; `governed_unknown_attribute_is_dropped`; `governed_second_line_drops_private_and_oversized_raw_records`; `governed_raw_meter_rejects_every_metric_contract_class`; `rejected_metric_collection_is_not_reported_as_exported`; `cargo xtask lint --strict` telemetry bypass/target gates |
 | 2 | Closed neutral namespace; no `jackin.*` / `parallax.*` on the wire | `extension_namespaces_are_neutral_and_unique`; `contract_closed_set_sizes_are_stable`; `conformance_wire_host_delivers_all_three_signals`; `namespace_detector_rejects_synthetic_legacy_attribute`; `cargo xtask telemetry-registry` |
 | 3 | No lifetime traces; bounded actions/cycles/jobs/streams | `conformance_has_no_screen_lifetime_spans`; `conformance_waterfall_has_distinct_rows`; `soak_week_long_console_has_only_bounded_operations`; spawn-helper unit tests |
 | 4 | W3C synchronous parentage and linked prewarm jobs | `rpc_server_honors_remote_parent_and_kind`; `conformance_wire_preserves_remote_parent_and_detached_link`; `conformance_serialized_daemon_propagation_matrix_preserves_parentage_sampling_and_rejection`; `conformance_serialized_control_propagation_matrix_preserves_parentage_and_rejection`; cycle helpers have no job-id field |
