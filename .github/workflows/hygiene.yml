@@ -408,6 +408,12 @@ jobs:
       CARGO_TERM_COLOR: always
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: ./.github/actions/download-ci-xtask
+        with:
+          token: ${{ github.token }}
+          lane: shared
+          xtask-contract: ${{ hashFiles('Cargo.lock', 'Cargo.toml', 'rust-toolchain.toml', '.cargo/**', 'crates/*/Cargo.toml', 'crates/jackin-xtask/src/**', 'crates/jackin-process/src/**') }}
+          include-tools: "false"
       - name: Cache Rust toolchain
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -432,59 +438,18 @@ jobs:
           cache-all-crates: "true"
           cache-workspace-crates: "true"
           env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTFLAGS RUSTDOC RUSTUP"
-      - name: Fetch deps (exclude network from timings)
-        run: cargo fetch --locked
       - name: Measure clean + incremental builds
-        run: |
-          set -euo pipefail
-          crates=(jackin-runtime jackin-capsule jackin-console jackin-term jackin-config)
-          echo '{' > build-times.json
-          first=1
-          {
-            echo "### Per-crate build times (advisory)"
-            echo
-            echo "| Crate | Clean (s) | Incremental (s) |"
-            echo "| --- | ---: | ---: |"
-          } >> "$GITHUB_STEP_SUMMARY"
-          for crate in "${crates[@]}"; do
-            cargo clean -p "$crate" --locked || cargo clean -p "$crate"
-            start=$(date +%s)
-            cargo build -p "$crate" --locked
-            end=$(date +%s)
-            clean_s=$((end - start))
-            # touch one source root if present for incremental recompile
-            lib_rs=$(cargo metadata --format-version 1 --no-deps --locked \
-              | jq -r --arg c "$crate" '.packages[] | select(.name==$c) | .targets[] | select(.kind[]?=="lib") | .src_path' \
-              | head -1)
-            if [[ -n "${lib_rs}" && -f "${lib_rs}" ]]; then
-              touch "$lib_rs"
-            fi
-            start=$(date +%s)
-            cargo build -p "$crate" --locked
-            end=$(date +%s)
-            incr_s=$((end - start))
-            if [[ $first -eq 0 ]]; then
-              echo ',' >> build-times.json
-            fi
-            first=0
-            printf '  "%s": {"clean_s": %s, "incremental_s": %s}' "$crate" "$clean_s" "$incr_s" >> build-times.json
-            printf "| \`%s\` | %s | %s |\n" "$crate" "$clean_s" "$incr_s" >> "$GITHUB_STEP_SUMMARY"
-          done
-          echo >> build-times.json
-          echo '}' >> build-times.json
-          cat build-times.json
+        run: >-
+          "$CI_XTASK" ci-build-times
       - name: Enforce scheduled build-time ceilings
-        run: |
-          set -euo pipefail
-          mkdir -p target
-          cp build-times.json target/build-times.json
-          cargo run -p jackin-xtask --locked -- lint ratchet --only build-time
+        run: >-
+          "$CI_XTASK" lint ratchet --only build-time
       - name: Upload build-time artifact
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: build-time-measure
-          path: build-times.json
+          path: target/build-times.json
           if-no-files-found: error
 
   # Plan 022: beta-toolchain clippy canary (advisory — never blocks).

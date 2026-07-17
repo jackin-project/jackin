@@ -317,19 +317,18 @@ fn build_e2e_step(root: &Path, args: &CiArgs) -> Result<Step> {
         "Docker daemon is not reachable; start Docker before running `cargo xtask ci --e2e`",
     )?;
 
-    let capsule_bin = match &args.e2e_capsule {
-        Some(path) => validate_capsule_path(root, path)?,
-        None => {
-            let export = output_step(
-                root,
-                &cargo(
-                    "build-jackin-capsule export",
-                    &["run", "--bin", "build-jackin-capsule", "--", "--export"],
-                    "e2e",
-                ),
-            )?;
-            parse_capsule_export(&export)?
-        }
+    let capsule_bin = if let Some(path) = &args.e2e_capsule {
+        validate_capsule_path(root, path)?
+    } else {
+        let export = output_step(
+            root,
+            &cargo(
+                "build-jackin-capsule export",
+                &["run", "--bin", "build-jackin-capsule", "--", "--export"],
+                "e2e",
+            ),
+        )?;
+        parse_capsule_export(&export)?
     };
     let mut command = vec![
         "nextest".into(),

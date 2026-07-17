@@ -10,6 +10,7 @@ mod agent_status_truth;
 mod arch;
 mod ci;
 mod ci_audit;
+mod ci_build_times;
 mod ci_cargo_audit;
 mod ci_doctest;
 mod ci_fuzz;
@@ -68,6 +69,9 @@ enum Command {
     /// Audit every job and step in the current GitHub Actions run.
     #[command(name = "ci-audit")]
     CiAudit(ci_audit::CiAuditArgs),
+    /// Measure clean-package and incremental build time without discarding dependencies.
+    #[command(name = "ci-build-times")]
+    CiBuildTimes(ci_build_times::CiBuildTimesArgs),
     /// Run `cargo audit` without fetching when a restored advisory database is usable.
     #[command(name = "ci-cargo-audit")]
     CiCargoAudit(ci_cargo_audit::CiCargoAuditArgs),
@@ -275,6 +279,7 @@ fn main() -> ExitCode {
         Command::Construct(cmd) => construct::run(cmd),
         Command::Ci(args) => ci::run(args),
         Command::CiAudit(args) => ci_audit::run(args),
+        Command::CiBuildTimes(args) => ci_build_times::run(args),
         Command::CiCargoAudit(args) => ci_cargo_audit::run(args),
         Command::CiDoctest(args) => ci_doctest::run(args),
         Command::CiFuzz(args) => ci_fuzz::run(args),
