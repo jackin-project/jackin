@@ -27,11 +27,24 @@ inputs:
     description: Download the Cargo tool bundle in addition to jackin-xtask.
     required: false
     default: "true"
+  allow-miss:
+    description: Return miss outputs instead of failing when preparation must build the artifacts.
+    required: false
+    default: "false"
+
+outputs:
+  xtask-hit:
+    description: Whether the prepared xtask artifact was restored.
+    value: ${{ steps.restore.outputs.xtask-hit }}
+  tools-hit:
+    description: Whether the prepared Cargo tool artifact was restored.
+    value: ${{ steps.restore.outputs.tools-hit }}
 
 runs:
   using: composite
   steps:
     - name: Restore prepared CI tools
+      id: restore
       uses: actions/github-script@373c709c69115d41ff229c7e5df9f8788daa9553 # v9.0.0
       env:
         JACKIN_TOKEN: ${{ inputs.token }}
@@ -45,6 +58,7 @@ runs:
         JACKIN_XTASK_CONTRACT: ${{ inputs.xtask-contract }}
         JACKIN_FALLBACK_XTASK_CONTRACT: ${{ inputs.fallback-xtask-contract }}
         JACKIN_INCLUDE_TOOLS: ${{ inputs.include-tools }}
+        JACKIN_ALLOW_MISS: ${{ inputs.allow-miss }}
         JACKIN_ACTION_RUNTIME: ${{ github.action_path }}/runtime/dist/index.js
       with:
         github-token: ${{ inputs.token }}

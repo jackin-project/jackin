@@ -496,77 +496,29 @@ jobs:
       RUSTUP_HOME: ${{ matrix.config.rustup_home || '/home/runner/.rustup' }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-      - id: ci-xtask-artifact
-        name: Restore input-identical CI xtask
-        shell: bash
-        env:
-          ARTIFACT_NAME: ci-xtask-${{ runner.os }}-${{ runner.arch }}-${{ needs.changes.outputs.ci-xtask-contract }}
-          GH_TOKEN: ${{ github.token }}
-          REPOSITORY: ${{ github.repository }}
-        run: |
-          set -euo pipefail
-          mkdir -p .ci-prebuilt-xtask
-          artifact_id=$(
-            gh api "repos/${REPOSITORY}/actions/artifacts?name=${ARTIFACT_NAME}&per_page=10" \
-              --jq '.artifacts[] | select(.expired == false) | .id' \
-              | head -n 1
-          )
-          if [ -z "$artifact_id" ]; then
-            echo "hit=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          archive=.ci-prebuilt-xtask/.artifact.zip
-          gh api "repos/${REPOSITORY}/actions/artifacts/${artifact_id}/zip" > "$archive"
-          python3 -m zipfile -e "$archive" .ci-prebuilt-xtask
-          rm "$archive"
-          chmod +x .ci-prebuilt-xtask/jackin-xtask
-          echo "hit=true" >> "$GITHUB_OUTPUT"
-      - id: ci-tools-artifact
-        name: Restore resolved CI tool binaries
-        shell: bash
-        env:
-          ARTIFACT_NAME: ci-tools-${{ runner.os }}-${{ runner.arch }}-${{ needs.changes.outputs.ci-tools-contract }}
-          GH_TOKEN: ${{ github.token }}
-          REPOSITORY: ${{ github.repository }}
-        run: |
-          set -euo pipefail
-          mkdir -p .ci-prebuilt-tools
-          artifact_id=$(
-            gh api "repos/${REPOSITORY}/actions/artifacts?name=${ARTIFACT_NAME}&per_page=10" \
-              --jq '.artifacts[] | select(.expired == false) | .id' \
-              | head -n 1
-          )
-          if [ -z "$artifact_id" ]; then
-            echo "hit=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          archive=.ci-prebuilt-tools/.artifact.zip
-          gh api "repos/${REPOSITORY}/actions/artifacts/${artifact_id}/zip" > "$archive"
-          python3 -m zipfile -e "$archive" .ci-prebuilt-tools
-          rm "$archive"
-          chmod +x .ci-prebuilt-tools/*
-          echo "hit=true" >> "$GITHUB_OUTPUT"
+      - id: prepared-artifacts
+        name: Restore prepared xtask and Cargo tools
+        uses: ./.github/actions/download-ci-xtask
+        with:
+          token: ${{ github.token }}
+          lane: ${{ matrix.config.lane }}
+          tools-contract: ${{ needs.changes.outputs.ci-tools-contract }}
+          xtask-contract: ${{ needs.changes.outputs.ci-xtask-contract }}
+          allow-miss: "true"
       - id: cargo-registry-lookup
         name: Restore prepared Cargo registry
-        if: steps.ci-xtask-artifact.outputs.hit != 'true'
+        if: steps.prepared-artifacts.outputs.xtask-hit != 'true'
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git/db
           key: cargo-registry-v5-${{ needs.changes.outputs.registry-contract }}
-      - id: prepared-inputs
-        name: Resolve warmup ownership
-        shell: bash
-        run: |
-          if [ "${{ steps.ci-xtask-artifact.outputs.hit }}" = "true" ] && \
-             [ "${{ steps.ci-tools-artifact.outputs.hit }}" = "true" ]; then
-            echo "ready=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "ready=false" >> "$GITHUB_OUTPUT"
-          fi
       - name: Restore prepared Rust toolchains
         id: toolchain-lookup
+        if: >-
+          steps.prepared-artifacts.outputs.xtask-hit != 'true' ||
+          steps.prepared-artifacts.outputs.tools-hit != 'true'
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -575,12 +527,17 @@ jobs:
           key: rustup-v2-${{ runner.os }}-${{ runner.arch }}-${{ needs.changes.outputs.rustup-contract }}
           restore-keys: rustup-v2-${{ runner.os }}-${{ runner.arch }}-
       - name: Use the minimal Rust CI profile
-        if: steps.toolchain-lookup.outputs.cache-hit != 'true'
+        if: >-
+          (steps.prepared-artifacts.outputs.xtask-hit != 'true' ||
+           steps.prepared-artifacts.outputs.tools-hit != 'true') &&
+          steps.toolchain-lookup.outputs.cache-hit != 'true'
         run: rustup set profile minimal
       - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
         if: >-
-          steps.toolchain-lookup.outputs.cache-hit != 'true' ||
-          steps.ci-tools-artifact.outputs.hit != 'true'
+          (steps.prepared-artifacts.outputs.xtask-hit != 'true' ||
+           steps.prepared-artifacts.outputs.tools-hit != 'true') &&
+          (steps.toolchain-lookup.outputs.cache-hit != 'true' ||
+           steps.prepared-artifacts.outputs.tools-hit != 'true')
         with:
           version: "2026.7.7"
           cache_key_prefix: "mise-v2"
@@ -591,16 +548,19 @@ jobs:
                  github.event.pull_request.head.repo.full_name == github.repository) }}
           install_args: >-
             rust@${{ needs.changes.outputs.rust-version }}
-            ${{ steps.ci-tools-artifact.outputs.hit != 'true' &&
+            ${{ steps.prepared-artifacts.outputs.tools-hit != 'true' &&
                 'cargo-binstall cargo:sccache cargo:cargo-nextest cargo:cargo-deny cargo:cargo-shear cargo:cargo-audit cargo:cargo-fuzz cargo:cargo-hack' || '' }}
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - name: Validate the prepared current Rust toolchain
-        if: steps.ci-xtask-artifact.outputs.hit == 'true'
+        if: >-
+          (steps.prepared-artifacts.outputs.xtask-hit != 'true' ||
+           steps.prepared-artifacts.outputs.tools-hit != 'true') &&
+          steps.prepared-artifacts.outputs.xtask-hit == 'true'
         run: >-
-          .ci-prebuilt-xtask/jackin-xtask ci-toolchain prepare
+          "$CI_XTASK" ci-toolchain prepare
           --version "${{ needs.changes.outputs.rust-version }}"
       - name: Prepare the exact current Rust toolchain
-        if: steps.ci-xtask-artifact.outputs.hit != 'true'
+        if: steps.prepared-artifacts.outputs.xtask-hit != 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -617,7 +577,8 @@ jobs:
           scripts/ci/activate-installed-rust-toolchain.sh "$version"
       - name: Save prepared Rust toolchain
         if: >-
-          steps.prepared-inputs.outputs.ready != 'true' &&
+          (steps.prepared-artifacts.outputs.xtask-hit != 'true' ||
+           steps.prepared-artifacts.outputs.tools-hit != 'true') &&
           steps.toolchain-lookup.outputs.cache-hit != 'true' &&
           matrix.config.cache_writer
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -628,13 +589,13 @@ jobs:
           key: rustup-v2-${{ runner.os }}-${{ runner.arch }}-${{ needs.changes.outputs.rustup-contract }}
       - id: cargo-registry-cache
         if: >-
-          steps.ci-xtask-artifact.outputs.hit != 'true' &&
+          steps.prepared-artifacts.outputs.xtask-hit != 'true' &&
           steps.cargo-registry-lookup.outputs.cache-hit != 'true'
         uses: ./.github/actions/cache-cargo-registry
         with:
           contract-key: ${{ needs.changes.outputs.registry-contract }}
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-        if: steps.ci-xtask-artifact.outputs.hit != 'true'
+        if: steps.prepared-artifacts.outputs.xtask-hit != 'true'
         with:
           shared-key: ci-xtask-dev-v2-debugless
           cache-all-crates: "false"
@@ -646,19 +607,19 @@ jobs:
                 (github.event_name == 'pull_request' &&
                  github.event.pull_request.head.repo.full_name == github.repository) }}
       - name: Build shared CI xtask
-        if: steps.ci-xtask-artifact.outputs.hit != 'true'
+        if: steps.prepared-artifacts.outputs.xtask-hit != 'true'
         env:
           CARGO_NET_OFFLINE: "true"
         run: cargo build -p jackin-xtask --locked
       - name: Pack shared CI xtask target seed
-        if: steps.ci-xtask-artifact.outputs.hit != 'true' && matrix.config.cache_writer
+        if: steps.prepared-artifacts.outputs.xtask-hit != 'true' && matrix.config.cache_writer
         run: >-
           target/debug/jackin-xtask ci-target pack
           --target target
           --source-key warmup
           --output target.tar.zst
       - name: Publish shared CI xtask target seed
-        if: steps.ci-xtask-artifact.outputs.hit != 'true' && matrix.config.cache_writer
+        if: steps.prepared-artifacts.outputs.xtask-hit != 'true' && matrix.config.cache_writer
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ci-crate-target-v7-${{ runner.os }}-${{ runner.arch }}-jackin-xtask-warmup
@@ -668,23 +629,30 @@ jobs:
       - name: Stage shared CI xtask
         run: |
           mkdir -p .ci-prebuilt-tools .ci-prebuilt-xtask target/ci-tools
-          if [ "${{ steps.ci-tools-artifact.outputs.hit }}" != "true" ]; then
+          if [ "${{ steps.prepared-artifacts.outputs.tools-hit }}" != "true" ]; then
             for tool in sccache cargo-nextest cargo-deny cargo-shear cargo-audit cargo-fuzz cargo-hack; do
               cp "$(mise which "$tool")" ".ci-prebuilt-tools/$tool"
             done
             strip .ci-prebuilt-tools/*
+          else
+            cp "$CI_TOOLS_PATH"/cargo-* "$CI_TOOLS_PATH"/sccache .ci-prebuilt-tools/
           fi
-          if [ "${{ steps.ci-xtask-artifact.outputs.hit }}" != "true" ]; then
+          if [ "${{ steps.prepared-artifacts.outputs.xtask-hit }}" != "true" ]; then
             cp target/debug/jackin-xtask .ci-prebuilt-xtask/jackin-xtask
             strip .ci-prebuilt-xtask/jackin-xtask
             cargo metadata --format-version 1 --locked --offline \
               > .ci-prebuilt-xtask/workspace-metadata.json
+          else
+            cp "$CI_XTASK" .ci-prebuilt-xtask/jackin-xtask
+            if [ -f "$CI_TOOLS_PATH/workspace-metadata.json" ]; then
+              cp "$CI_TOOLS_PATH/workspace-metadata.json" .ci-prebuilt-xtask/
+            fi
           fi
           cp .ci-prebuilt-tools/* target/ci-tools/
           cp .ci-prebuilt-xtask/* target/ci-tools/
       - name: Publish resolved CI tool binaries
         if: >-
-          steps.ci-tools-artifact.outputs.hit != 'true' &&
+          steps.prepared-artifacts.outputs.tools-hit != 'true' &&
           matrix.config.cache_writer
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -694,7 +662,7 @@ jobs:
           retention-days: 7
           include-hidden-files: true
       - name: Publish input-identical CI xtask
-        if: steps.ci-xtask-artifact.outputs.hit != 'true' && matrix.config.cache_writer
+        if: steps.prepared-artifacts.outputs.xtask-hit != 'true' && matrix.config.cache_writer
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ci-xtask-${{ runner.os }}-${{ runner.arch }}-${{ needs.changes.outputs.ci-xtask-contract }}

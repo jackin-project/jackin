@@ -89,9 +89,12 @@ async function run() {
   const toolsArtifact = `ci-tools-${os}-${arch}-${toolsContract}`;
   const xtaskArtifact = `ci-xtask-${os}-${arch}-${xtaskContract}`;
   const includeTools = process.env.JACKIN_INCLUDE_TOOLS === "true";
+  const allowMiss = process.env.JACKIN_ALLOW_MISS === "true";
   const octokit = github.getOctokit(token);
-  const deadline = Date.now() + DEADLINE_MILLISECONDS;
+  const deadline = Date.now() + (allowMiss ? 0 : DEADLINE_MILLISECONDS);
 
+  core.setOutput("tools-hit", "false");
+  core.setOutput("xtask-hit", "false");
   await fs.mkdir(destination, { recursive: true });
   if (includeTools) {
     if (!toolsContract) throw new Error("tools-contract is required with tools");
@@ -104,6 +107,8 @@ async function run() {
     );
     if (lane) {
       await downloadArtifact(octokit, owner, repo, lane, destination);
+      core.setOutput("tools-hit", "true");
+      core.setOutput("xtask-hit", "true");
       return exportTools(destination);
     }
 
@@ -112,8 +117,14 @@ async function run() {
       toolsArtifact,
       deadline,
     );
-    if (!tools) throw new Error(`prepared CI artifact not found: ${toolsArtifact}`);
-    await downloadArtifact(octokit, owner, repo, tools, destination);
+    if (!tools) {
+      if (!allowMiss) {
+        throw new Error(`prepared CI artifact not found: ${toolsArtifact}`);
+      }
+    } else {
+      await downloadArtifact(octokit, owner, repo, tools, destination);
+      core.setOutput("tools-hit", "true");
+    }
   }
 
   const candidates = [xtaskArtifact];
@@ -129,8 +140,12 @@ async function run() {
     );
     if (xtask) break;
   }
-  if (!xtask) throw new Error("prepared CI xtask artifact not found");
+  if (!xtask) {
+    if (allowMiss) return;
+    throw new Error("prepared CI xtask artifact not found");
+  }
   await downloadArtifact(octokit, owner, repo, xtask, destination);
+  core.setOutput("xtask-hit", "true");
   await exportTools(destination);
 }
 
@@ -160,6 +175,7 @@ async function exportTools(destination) {
     if (error.code !== "ENOENT") throw error;
   }
   core.addPath(destination);
+  core.exportVariable("CI_TOOLS_PATH", destination);
 }
 
 async function main() {
