@@ -96,6 +96,24 @@ async fn docker_http<T>(
     result
 }
 
+async fn consume_exec_start(container: &str, start: StartExecResults) -> anyhow::Result<String> {
+    let StartExecResults::Attached { mut output, .. } = start else {
+        return Err(DockerError::ExecDetached {
+            container: container.to_owned(),
+        }
+        .into());
+    };
+    let mut output_buf = String::new();
+    while let Some(chunk) = output.next().await {
+        if let LogOutput::StdOut { message } | LogOutput::StdErr { message } =
+            chunk.with_context(|| format!("reading exec output from {container}"))?
+        {
+            output_buf.push_str(&String::from_utf8_lossy(&message));
+        }
+    }
+    Ok(output_buf)
+}
+
 #[derive(Debug)]
 pub struct BollardDockerClient {
     inner: Docker,
@@ -717,32 +735,15 @@ impl DockerApi for BollardDockerClient {
         })
         .await?;
 
-        let mut output_buf = String::new();
-        let start = docker_http(EXEC_START, async {
-            self.inner
+        let output_buf = docker_http(EXEC_START, async {
+            let start = self
+                .inner
                 .start_exec(&exec.id, None::<StartExecOptions>)
                 .await
-                .with_context(|| format!("starting exec in {container}"))
+                .with_context(|| format!("starting exec in {container}"))?;
+            consume_exec_start(container, start).await
         })
         .await?;
-        match start {
-            StartExecResults::Attached { mut output, .. } => {
-                while let Some(chunk) = output.next().await {
-                    match chunk.with_context(|| format!("reading exec output from {container}"))? {
-                        LogOutput::StdOut { message } | LogOutput::StdErr { message } => {
-                            output_buf.push_str(&String::from_utf8_lossy(&message));
-                        }
-                        _ => {}
-                    }
-                }
-            }
-            StartExecResults::Detached => {
-                return Err(DockerError::ExecDetached {
-                    container: container.to_owned(),
-                }
-                .into());
-            }
-        }
 
         let inspect = docker_http(EXEC_INSPECT, async {
             self.inner

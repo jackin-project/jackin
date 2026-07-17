@@ -11,6 +11,27 @@ use super::*;
 // build-time error.
 const _: fn() -> Result<Docker, bollard::errors::Error> = Docker::connect_with_ssl_defaults;
 
+#[tokio::test]
+async fn docker_response_failure_stays_inside_http_owner_without_payload() {
+    let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
+    let _subscriber = tracing::subscriber::set_default(subscriber);
+    let result: anyhow::Result<()> = docker_http(EXEC_START, async {
+        anyhow::bail!("private-container private-command private-output")
+    })
+    .await;
+    assert!(result.is_err());
+
+    export.force_flush();
+    assert_eq!(export.finished_spans().len(), 1);
+    assert_eq!(export.error_span_count(), 1);
+    assert!(export.contains_span_text("/exec/{id}/start"));
+    assert!(export.contains_span_text("http_error"));
+    for prohibited in ["private-container", "private-command", "private-output"] {
+        assert!(!export.contains_span_text(prohibited));
+        assert!(!export.contains_log_text(prohibited));
+    }
+}
+
 #[test]
 fn choose_connection_env_only_returns_defaults() {
     assert_eq!(choose_connection(true, None), ConnectionChoice::Defaults);
