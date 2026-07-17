@@ -832,6 +832,20 @@ preview archive cache family, releasing roughly `100MB` of active cache budget
 for toolchains and dependency state that cannot be reconstructed from a final
 release archive.
 
+Cold parity run `29560061337` rejected unconstrained symmetric production. All
+four package/lane jobs followed the same miss path, but Velnor's first complete
+capsule archive still took `500s`; its GitHub duplicate and both `jackin` jobs
+continued compiling past eleven minutes. The run also delayed a new required
+PR run, where the complete `jackin` crate job had already measured `320s` under
+the competing load. Preview package jobs now serialize by package source
+contract, not by lane: whichever runner is admitted first produces the one
+complete package, and the next runner executes the identical lookup sequence
+and restores the current run's finished artifact. A completed or cancelled
+workflow remains a valid lookup source because artifacts are uploaded only
+after the package build, deterministic packaging, signatures, checksums, SBOMs,
+and provenance step succeed. This preserves one complete job per package and
+runner-neutral configuration while preventing duplicate cold compilation.
+
 ### Phase 5 -- Docker and construct-image speedups
 
 1. Corrected after parity measurement: CI Docker E2E keeps its scoped GHA cache, while standalone Construct builds on both lanes restore the same durable registry cache written by `main`. A dual-lane GHA-export trial made every platform build exceed five minutes, so it was rejected rather than forcing Velnor through a slower hosted-cache path.
