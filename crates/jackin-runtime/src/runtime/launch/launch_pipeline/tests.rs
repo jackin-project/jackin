@@ -21,6 +21,69 @@ use tempfile::TempDir;
 
 const INTEGRATED_LAUNCH_WIRE_CHILD: &str = "JACKIN_INTEGRATED_LAUNCH_WIRE_CHILD";
 
+fn observe_launch_process(command: &str) {
+    let program = command.split_whitespace().next().unwrap_or("unknown");
+    let operation = jackin_telemetry::operation_or_disabled(
+        &jackin_telemetry::operation::PROCESS_COMMAND,
+        &[jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::std_attrs::PROCESS_EXECUTABLE_NAME,
+            value: jackin_telemetry::Value::Str(
+                jackin_telemetry::process::classify_executable(std::path::Path::new(program))
+                    .as_str(),
+            ),
+        }],
+    );
+    operation.complete(jackin_telemetry::schema::enums::OutcomeValue::Success, None);
+}
+
+fn observe_launch_docker(operation_name: &str) {
+    let (method, template) = if operation_name.starts_with("docker inspect image:") {
+        ("GET", "/images/{name}/json")
+    } else if operation_name.starts_with("docker inspect ") {
+        ("GET", "/containers/{id}/json")
+    } else if operation_name.starts_with("docker ps") {
+        ("GET", "/containers/json")
+    } else if operation_name.starts_with("create_container:") {
+        ("POST", "/containers/create")
+    } else if operation_name.starts_with("start_container:") {
+        ("POST", "/containers/{id}/start")
+    } else if operation_name.starts_with("docker exec ") {
+        ("POST", "/exec/{id}/start")
+    } else if operation_name.starts_with("docker network create ") {
+        ("POST", "/networks/create")
+    } else if operation_name.starts_with("docker network inspect ") {
+        ("GET", "/networks/{id}")
+    } else if operation_name.starts_with("docker network ls") {
+        ("GET", "/networks")
+    } else if operation_name.starts_with("docker network rm ") {
+        ("DELETE", "/networks/{id}")
+    } else if operation_name.starts_with("docker pull ") {
+        ("POST", "/images/create")
+    } else if operation_name.starts_with("docker rmi ") {
+        ("DELETE", "/images/{name}")
+    } else if operation_name.starts_with("docker volume rm ") {
+        ("DELETE", "/volumes/{name}")
+    } else if operation_name.starts_with("docker rm ") {
+        ("DELETE", "/containers/{id}")
+    } else {
+        ("GET", "/_ping")
+    };
+    let operation = jackin_telemetry::operation_or_disabled(
+        &jackin_telemetry::operation::HTTP_CLIENT,
+        &[
+            jackin_telemetry::Attr {
+                key: jackin_telemetry::schema::attrs::std_attrs::HTTP_REQUEST_METHOD,
+                value: jackin_telemetry::Value::Str(method),
+            },
+            jackin_telemetry::Attr {
+                key: jackin_telemetry::schema::attrs::std_attrs::URL_TEMPLATE,
+                value: jackin_telemetry::Value::Str(template),
+            },
+        ],
+    );
+    operation.complete(jackin_telemetry::schema::enums::OutcomeValue::Success, None);
+}
+
 /// Fully-populated `LaunchCore` fixture over fakes + real grant/profile config.
 struct LaunchCoreFixture {
     _temp: TempDir,
@@ -342,6 +405,7 @@ fn conformance_wire_public_launch_controller_exports_complete_pipeline() -> anyh
     )?;
 
     let mut fixture = LaunchCoreFixture::new();
+    fixture.docker.operation_hook = Some(observe_launch_docker);
     let private_source = "https://integrated-private.invalid/role.git?token=private-launch-token";
     fixture.config.roles.insert(
         fixture.selector.key(),
@@ -357,6 +421,7 @@ fn conformance_wire_public_launch_controller_exports_complete_pipeline() -> anyh
         "false 0 false".to_owned(),
         "false 0 false".to_owned(),
     ]);
+    fixture.runner.command_hook = Some(observe_launch_process);
     runtime.block_on(load_role(
         &fixture.paths,
         &mut fixture.config,
@@ -386,6 +451,14 @@ fn conformance_wire_public_launch_controller_exports_complete_pipeline() -> anyh
         .iter()
         .filter(|span| span.name == "launch.stage")
         .collect::<Vec<_>>();
+    let process_children = spans
+        .iter()
+        .filter(|span| span.name == "process.command")
+        .collect::<Vec<_>>();
+    let docker_children = spans
+        .iter()
+        .filter(|span| span.name == "http.client")
+        .collect::<Vec<_>>();
     let stage_wire = format!("{stages:?}");
     assert_eq!(roots.len(), 1, "public controller must own one launch root");
     assert_eq!(
@@ -396,6 +469,24 @@ fn conformance_wire_public_launch_controller_exports_complete_pipeline() -> anyh
     for stage in &stages {
         assert_eq!(stage.trace_id, roots[0].trace_id);
         assert_eq!(stage.parent_span_id, roots[0].span_id);
+    }
+    assert!(
+        !process_children.is_empty(),
+        "public launch must contain governed subprocess children"
+    );
+    assert!(
+        !docker_children.is_empty(),
+        "public launch must contain governed Docker HTTP children"
+    );
+    for child in process_children.iter().chain(&docker_children) {
+        assert_eq!(child.trace_id, roots[0].trace_id);
+        assert!(
+            child.parent_span_id == roots[0].span_id
+                || stages
+                    .iter()
+                    .any(|stage| stage.span_id == child.parent_span_id),
+            "boundary child must belong to the launch tree: {child:?}"
+        );
     }
     for expected in jackin_telemetry::schema::enums::LaunchStageName::ALL {
         assert!(
