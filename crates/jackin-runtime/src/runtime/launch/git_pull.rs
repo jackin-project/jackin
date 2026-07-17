@@ -51,9 +51,6 @@ pub(crate) fn pull_git_sources_with_git(
     for src in sources {
         if debug {
             jackin_diagnostics::active_debug("git_pull", &format!("git pull in {src}"));
-            if jackin_diagnostics::active_run().is_none() {
-                jackin_diagnostics::telemetry_debug!("git_pull", "git pull in workspace");
-            }
         }
         if print_starts {
             let src_display = jackin_diagnostics::shorten_home(&src);
@@ -65,7 +62,7 @@ pub(crate) fn pull_git_sources_with_git(
             jackin_telemetry::spawn::thread_joined(move || {
                 let request = jackin_process::ExecRequest::new(git_program, ["-C", &src, "pull"])
                     .envs([("GIT_TERMINAL_PROMPT", "0")]);
-                match jackin_process::exec_sync(&request) {
+                match crate::process_telemetry::exec_sync(&request) {
                     Ok(out) if out.success => GitPullResult::Success {
                         src,
                         stdout: String::from_utf8_lossy(&out.stdout).into_owned(),

@@ -52,7 +52,7 @@ The contract: no `Span::enter()`/`.entered()`/OTel `ContextGuard` across `.await
 | cycle | launch-tui `tui/run.rs:92` (33 ms input poll); capsule tickers are select-arms not spawns (instrumented in plan 010) |
 | joined | all `JoinSet` sites (`cli/prewarm.rs:306,478,658`, `image.rs:614`, `image/prewarm.rs:77`); awaited `spawn_blocking` (image `capsule_binary.rs:306`, `agent_binary.rs:758-1032` ×8; host `caffeinate.rs:136`, `host_clipboard.rs:191,226`; `jackin` `app.rs:164`, console services/effects ×6; runtime `launch_runtime.rs:173,840`, `launch_pipeline.rs:135,970,988`, `orchestrate.rs:699`; capsule `resource_metrics.rs:40`, `multiplexer_utils.rs:296` — the last two are polled-joined); threads: usage `refresh.rs:60` (worker pool, re-establishes span in-thread), env `op_cli.rs:182`, runtime `git_pull.rs:66`, `jackin` `role_claude_plugins.rs:57`, capsule `runtime_setup.rs:130` |
 
-- OS threads do not inherit the tracing dispatcher's current span automatically for later-created spans in that thread's context — the helper must capture `Span::current()` at spawn and enter/instrument inside.
+- OS threads inherit neither the tracing dispatcher nor its current span. Joined helpers must capture both at spawn, install the dispatcher in the new thread, and enter the captured span around the closure so operations created inside the thread are exported and parented correctly.
 
 ## Target helper family (in `crates/jackin-telemetry/src/spawn.rs`)
 
@@ -67,7 +67,7 @@ pub fn spawn_stream<F: Future>(…) -> JoinHandle<…>;  // declares stream owne
 ```
 
 Semantics:
-- **joined**: wrap the future/closure in `tracing::Span::current().or_current()` semantics — concretely `fut.instrument(Span::current())` (and for threads, capture the span then `span.in_scope(...)` around the closure body / instrument the moved work). Inherits the owning operation; creates no new span itself.
+- **joined**: wrap the future/closure in `tracing::Span::current().or_current()` semantics — concretely `fut.instrument(Span::current())`. For OS threads, capture both `tracing::Dispatch` and the current span, install the dispatcher, then enter the span around the moved work. Inherits the owning operation; creates no new span itself.
 - **detached**: capture `Span::current().context()` at the spawn site, create a new ROOT span from `def` inside the task with a **span link** to the captured context (≤ 8 links, plan 004 guard API), so detached work is a linked root, never a child.
 - **cycle** / **stream**: no lifetime span; they only declare ownership (a `&'static str` name recorded as a field on an optional DEBUG event) and give plans 008–010 the hook point where per-cycle `background.cycle` roots and per-attempt `connection.attempt` roots get created. Streams must never create a span per frame/byte.
 - All helpers are no-op-cheap when telemetry is disabled (delegate straight to `tokio::spawn` etc.).
@@ -144,6 +144,7 @@ Add to the lint lane a textual heuristic: flag `.enter()`/`.entered()` appearing
 - Detached helpers are outcome-aware for success/failure/error/timeout, panic, and abort instead of completing every returned future as success. Preserve names and generic outputs.
 - Detached completion now automatically emits one bodyless `error.typed` event for failure/error/timeout and panic while completing the owning span with the same bounded `error.type`; callers do not repeat error-recording code.
 - Tests prove parent identity, detached root plus one link, unsampled/invalid/disabled behavior, no lifetime retention, all helper families, panic/abort outcomes, and disabled-path allocation behavior.
+- A production Git-pull exporter test proved that span-only OS-thread propagation disabled spans created inside the worker. Joined named and unnamed thread helpers now propagate both dispatcher and span; the subprocess failure is exported with its owning context and without repository/program paths.
 
 ## Test plan
 

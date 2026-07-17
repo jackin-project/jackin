@@ -1748,6 +1748,30 @@ echo "pulled $2"
     assert!(marker_dir.join("repo-b.started").is_file());
 }
 
+#[test]
+fn git_pull_exports_spawn_failure_without_repo_or_program_paths() {
+    let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
+    let _subscriber = tracing::subscriber::set_default(subscriber);
+    let results = pull_git_sources_with_git(
+        vec!["/operator-secret/repository".to_owned()],
+        false,
+        Path::new("/operator-secret/missing-git"),
+        false,
+    );
+    assert!(matches!(
+        results.as_slice(),
+        [super::git_pull::GitPullResult::SpawnError { .. }]
+    ));
+    export.force_flush();
+
+    assert_eq!(export.finished_spans().len(), 1);
+    assert_eq!(export.error_span_count(), 1);
+    assert!(export.contains_span_text("process_spawn_error"));
+    assert!(!export.contains_span_text("operator-secret"));
+    assert!(!export.contains_span_text("repository"));
+    assert!(!export.contains_span_text("missing-git"));
+}
+
 fn repo_workspace(repo_dir: &Path) -> jackin_config::ResolvedWorkspace {
     jackin_config::ResolvedWorkspace {
         name: String::new(),

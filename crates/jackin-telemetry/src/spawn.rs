@@ -469,7 +469,10 @@ where
     R: Send + 'static,
 {
     let span = Span::current();
-    thread::spawn(move || in_span_scope(span, work))
+    let dispatcher = tracing::dispatcher::get_default(Clone::clone);
+    thread::spawn(move || {
+        tracing::dispatcher::with_default(&dispatcher, || in_span_scope(span, work))
+    })
 }
 
 pub fn thread_stream<F, R>(_name: &'static str, work: F) -> thread::JoinHandle<R>
@@ -486,9 +489,10 @@ where
     R: Send + 'static,
 {
     let span = Span::current();
+    let dispatcher = tracing::dispatcher::get_default(Clone::clone);
     thread::Builder::new()
         .name(name)
-        .spawn(move || in_span_scope(span, work))
+        .spawn(move || tracing::dispatcher::with_default(&dispatcher, || in_span_scope(span, work)))
 }
 
 pub fn thread_stream_named<F, R>(name: String, work: F) -> std::io::Result<thread::JoinHandle<R>>
