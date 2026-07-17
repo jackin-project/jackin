@@ -1171,6 +1171,21 @@ of the entire run log found zero compile, check, dependency-download,
 registry-update, fetch, or Rustup-sync markers; the remaining elapsed time was
 cache transport and the requested validation itself.
 
+Docs run `29576710869` isolated the remaining changed-input long pole:
+`docs-link-check` took 94 seconds, of which the complete site build consumed 57
+seconds. The build compiled 2,748 client modules, 646 SSR modules, and 3,068
+Nitro modules before the custom prerenderer requested 1,080 static routes. That
+prerenderer also launched all requests simultaneously while leaving the preview
+server's stdout and stderr pipes unread. A local route audit exposed three SSR
+render failures that the HTTP status check did not detect, plus the possibility
+of the child blocking when either pipe filled. <RepoFile path="docs/scripts/prerender-static.ts" />
+now drains and forwards both streams, fails on React stream-render errors, and
+uses one hardware-adaptive bounded worker pool on every runner. The three
+invalid MDX brace expressions are corrected. Vite's unused compressed-size
+reporting is disabled without changing emitted or uploaded files; the complete
+local 1,080-route build fell from 55.3 to 49.7 seconds and passed without hidden
+SSR errors. The pushed GitHub run remains the acceptance measurement.
+
 Runs `29575485166` and `29575735792` validated the closure-key migration with
 one complete `jackin-xtask` job per lane. The first run populated the new key
 and finished at the one-minute boundary on both runners. The input-identical

@@ -135,7 +135,7 @@ Before changing models, change effort: the same model at lower effort thinks les
 - **Availability:** CLAUDE-CODE-TODAY / SDK
 - **Effort to adopt:** minutes — one command or frontmatter line.
 - **Composability:** orthogonal to model choice — `model: haiku` + `effort: low` in one subagent frontmatter is the maximum-downtier worker. Anti-synergy: mid-session flips (cache invalidation — batch with `/clear` or task switches, technique 9).
-- **Validation protocol:** 15 fixed tasks × {high, medium, low} on Sonnet 4.6; record output tokens, tool-call count, tests-pass rate. Publish the per-level % — it would be the first public number (see [16 — Validation Harness: the No-Quality-Loss Proof Protocol](/reference/research/token-optimization-techniques/16-validation-harness/)).
+- **Validation protocol:** 15 fixed tasks × `high, medium, low` on Sonnet 4.6; record output tokens, tool-call count, tests-pass rate. Publish the per-level % — it would be the first public number (see [16 — Validation Harness: the No-Quality-Loss Proof Protocol](/reference/research/token-optimization-techniques/16-validation-harness/)).
 
 ### 6. Tokenizer-divergence double saving when crossing the Opus-4.7 boundary
 
