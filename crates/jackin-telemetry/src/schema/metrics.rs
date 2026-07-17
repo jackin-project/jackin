@@ -857,29 +857,60 @@ pub const LAUNCH_STAGE_EXECUTIONS_DEF: super::MetricMetadata = super::MetricMeta
         },
     ],
 };
-// registry: instrument=updowncounter; unit={job}; attributes=
+// registry: instrument=updowncounter; unit={attempt}; attributes=job.type:required
 pub const PREWARM_ACTIVE: &str = "prewarm.active";
 pub const PREWARM_ACTIVE_DEF: super::MetricMetadata = super::MetricMetadata {
     name: PREWARM_ACTIVE,
-    description: "Active detached prewarm jobs.",
+    description: "Active detached prewarm attempts.",
     instrument: super::MetricInstrument::UpDownCounter,
-    unit: "{job}",
+    unit: "{attempt}",
     boundaries: &[],
-    attributes: &[],
+    attributes: &[super::AttributeRequirement {
+        name: "job.type",
+        value_type: super::ValueType::String,
+        requirement: super::RequirementLevel::Required,
+        allowed_values: &["image_prewarm", "sidecar_prewarm"],
+    }],
 };
-// registry: instrument=histogram; unit=s; attributes=
+// registry: instrument=histogram; unit=s; attributes=error.type:recommended,job.type:required,outcome:required
 pub const PREWARM_DURATION: &str = "prewarm.duration";
 pub const PREWARM_DURATION_DEF: super::MetricMetadata = super::MetricMetadata {
     name: PREWARM_DURATION,
-    description: "Detached prewarm job duration.",
+    description: "Detached prewarm attempt duration.",
     instrument: super::MetricInstrument::Histogram,
     unit: "s",
     boundaries: &[
         0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0,
     ],
-    attributes: &[],
+    attributes: &[
+        super::AttributeRequirement {
+            name: "error.type",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
+        super::AttributeRequirement {
+            name: "job.type",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Required,
+            allowed_values: &["image_prewarm", "sidecar_prewarm"],
+        },
+        super::AttributeRequirement {
+            name: "outcome",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Required,
+            allowed_values: &[
+                "success",
+                "failure",
+                "error",
+                "timeout",
+                "skip",
+                "cancellation",
+            ],
+        },
+    ],
 };
-// registry: instrument=counter; unit={job}; attributes=
+// registry: instrument=counter; unit={job}; attributes=job.type:required
 pub const PREWARM_JOBS: &str = "prewarm.jobs";
 pub const PREWARM_JOBS_DEF: super::MetricMetadata = super::MetricMetadata {
     name: PREWARM_JOBS,
@@ -887,7 +918,12 @@ pub const PREWARM_JOBS_DEF: super::MetricMetadata = super::MetricMetadata {
     instrument: super::MetricInstrument::Counter,
     unit: "{job}",
     boundaries: &[],
-    attributes: &[],
+    attributes: &[super::AttributeRequirement {
+        name: "job.type",
+        value_type: super::ValueType::String,
+        requirement: super::RequirementLevel::Required,
+        allowed_values: &["image_prewarm", "sidecar_prewarm"],
+    }],
 };
 // registry: instrument=counter; unit=s; attributes=cpu.mode:required
 pub const PROCESS_CPU_TIME: &str = "process.cpu.time";

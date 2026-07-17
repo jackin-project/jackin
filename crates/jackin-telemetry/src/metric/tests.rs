@@ -123,6 +123,30 @@ fn series_identity_is_order_independent_and_duplicates_reject() {
 }
 
 #[test]
+fn prewarm_metrics_use_only_bounded_job_and_outcome_dimensions() {
+    let job = Attr {
+        key: attrs::JOB_TYPE,
+        value: Value::Str(schema::enums::JobType::ImagePrewarm.as_str()),
+    };
+    let outcome = Attr {
+        key: attrs::OUTCOME,
+        value: Value::Str(schema::enums::OutcomeValue::Failure.as_str()),
+    };
+    let error = Attr {
+        key: attrs::std_attrs::ERROR_TYPE,
+        value: Value::Str(schema::enums::ErrorType::LaunchFailed.as_str()),
+    };
+
+    validate_attributes(&PREWARM_JOBS, &[job]).unwrap();
+    validate_attributes(&PREWARM_ACTIVE, &[job]).unwrap();
+    validate_attributes(&PREWARM_DURATION, &[job, outcome, error]).unwrap();
+    assert_eq!(
+        validate_attributes(&PREWARM_DURATION, &[job]),
+        Err(Rejection::InvalidValue)
+    );
+}
+
+#[test]
 fn correlation_identities_are_never_metric_dimensions() {
     for key in [
         attrs::CLI_INVOCATION_ID,

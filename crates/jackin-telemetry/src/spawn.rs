@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use std::{future::Future, thread};
+use std::{future::Future, thread, time::Instant};
 
 use opentelemetry::trace::TraceContextExt as _;
 use tokio::{
@@ -49,6 +49,14 @@ impl DetachedCompletion {
         Self {
             outcome: crate::schema::enums::OutcomeValue::Timeout,
             error_type: Some(crate::schema::enums::ErrorType::Timeout),
+        }
+    }
+
+    #[must_use]
+    pub const fn skip() -> Self {
+        Self {
+            outcome: crate::schema::enums::OutcomeValue::Skip,
+            error_type: None,
         }
     }
 
@@ -117,6 +125,68 @@ impl Drop for DetachedGuard {
             );
         } else {
             operation.complete(crate::schema::enums::OutcomeValue::Cancellation, None);
+        }
+    }
+}
+
+#[derive(Debug)]
+struct PrewarmAttemptMetrics {
+    job_type: crate::schema::enums::JobType,
+    started_at: Instant,
+    completed: bool,
+}
+
+impl PrewarmAttemptMetrics {
+    fn start(job_type: crate::schema::enums::JobType) -> Self {
+        let attrs = [crate::Attr {
+            key: crate::schema::attrs::JOB_TYPE,
+            value: crate::Value::Str(job_type.as_str()),
+        }];
+        let _active = crate::up_down_counter(&crate::metric::PREWARM_ACTIVE).add(1, &attrs);
+        Self {
+            job_type,
+            started_at: Instant::now(),
+            completed: false,
+        }
+    }
+
+    fn finish(&mut self, completion: DetachedCompletion) {
+        self.completed = true;
+        let active_attrs = [crate::Attr {
+            key: crate::schema::attrs::JOB_TYPE,
+            value: crate::Value::Str(self.job_type.as_str()),
+        }];
+        let _active = crate::up_down_counter(&crate::metric::PREWARM_ACTIVE).add(-1, &active_attrs);
+        let mut duration_attrs = vec![
+            active_attrs[0],
+            crate::Attr {
+                key: crate::schema::attrs::OUTCOME,
+                value: crate::Value::Str(completion.outcome.as_str()),
+            },
+        ];
+        if let Some(error_type) = completion.error_type {
+            duration_attrs.push(crate::Attr {
+                key: crate::schema::attrs::std_attrs::ERROR_TYPE,
+                value: crate::Value::Str(error_type.as_str()),
+            });
+        }
+        let _duration = crate::histogram(&crate::metric::PREWARM_DURATION)
+            .record(self.started_at.elapsed().as_secs_f64(), &duration_attrs);
+    }
+}
+
+impl Drop for PrewarmAttemptMetrics {
+    fn drop(&mut self) {
+        if !self.completed {
+            let completion = if thread::panicking() {
+                DetachedCompletion::error(crate::schema::enums::ErrorType::Panic)
+            } else {
+                DetachedCompletion {
+                    outcome: crate::schema::enums::OutcomeValue::Cancellation,
+                    error_type: None,
+                }
+            };
+            self.finish(completion);
         }
     }
 }
@@ -250,6 +320,61 @@ where
     F::Output: Send + 'static,
     C: FnOnce(&F::Output) -> DetachedCompletion + Send + 'static,
 {
+    spawn_prewarm_job_attempts(job_type, |attempts| async move {
+        attempts.run(fut, classify).await
+    })
+}
+
+#[derive(Clone, Debug)]
+pub struct PrewarmJobAttempts {
+    job_id: String,
+    job_type: crate::schema::enums::JobType,
+    producer_context: Option<opentelemetry::trace::SpanContext>,
+}
+
+impl PrewarmJobAttempts {
+    pub async fn run<F, C>(&self, fut: F, classify: C) -> F::Output
+    where
+        F: Future + Send,
+        F::Output: Send,
+        C: FnOnce(&F::Output) -> DetachedCompletion,
+    {
+        let mut metrics = PrewarmAttemptMetrics::start(self.job_type);
+        let attrs = [
+            crate::Attr {
+                key: crate::schema::attrs::JOB_ID,
+                value: crate::Value::Str(&self.job_id),
+            },
+            crate::Attr {
+                key: crate::schema::attrs::JOB_TYPE,
+                value: crate::Value::Str(self.job_type.as_str()),
+            },
+        ];
+        let consumer = root_operation(&crate::operation::PREWARM_ATTEMPT, &attrs).ok();
+        if let Some(producer_context) = self.producer_context.as_ref()
+            && producer_context.is_valid()
+            && let Some(consumer) = &consumer
+        {
+            let _link_result = consumer.link(producer_context);
+        }
+        let guard = DetachedGuard(consumer);
+        let output = fut.instrument(guard.span()).await;
+        let completion = classify(&output);
+        guard.complete(completion);
+        metrics.finish(completion);
+        output
+    }
+}
+
+pub fn spawn_prewarm_job_attempts<F, Fut>(
+    job_type: crate::schema::enums::JobType,
+    work: F,
+) -> JoinHandle<Fut::Output>
+where
+    F: FnOnce(PrewarmJobAttempts) -> Fut + Send + 'static,
+    Fut: Future + Send + 'static,
+    Fut::Output: Send + 'static,
+{
     let job_id = uuid::Uuid::new_v4().to_string();
     let attrs = [
         crate::Attr {
@@ -268,35 +393,18 @@ where
             producer.complete(crate::schema::enums::OutcomeValue::Success, None);
             context
         });
-    let _counter_result = crate::counter(&crate::metric::PREWARM_JOBS).add(1, &attrs);
+    let metric_attrs = [crate::Attr {
+        key: crate::schema::attrs::JOB_TYPE,
+        value: crate::Value::Str(job_type.as_str()),
+    }];
+    let _counter_result = crate::counter(&crate::metric::PREWARM_JOBS).add(1, &metric_attrs);
 
-    tokio::spawn(
-        async move {
-            let attrs = [
-                crate::Attr {
-                    key: crate::schema::attrs::JOB_ID,
-                    value: crate::Value::Str(&job_id),
-                },
-                crate::Attr {
-                    key: crate::schema::attrs::JOB_TYPE,
-                    value: crate::Value::Str(job_type.as_str()),
-                },
-            ];
-            let Ok(consumer) = root_operation(&crate::operation::PREWARM_ATTEMPT, &attrs) else {
-                return fut.await;
-            };
-            if let Some(producer_context) = producer_context.as_ref()
-                && producer_context.is_valid()
-            {
-                let _link_result = consumer.link(producer_context);
-            }
-            let guard = DetachedGuard(Some(consumer));
-            let output = fut.instrument(guard.span()).await;
-            guard.complete(classify(&output));
-            output
-        }
-        .with_current_subscriber(),
-    )
+    let attempts = PrewarmJobAttempts {
+        job_id,
+        job_type,
+        producer_context,
+    };
+    tokio::spawn(work(attempts).with_current_subscriber())
 }
 
 pub fn joined_blocking<F, R>(work: F) -> JoinHandle<R>

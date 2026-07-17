@@ -482,7 +482,58 @@ async fn prewarm_job_exports_linked_roots_with_shared_job_id() {
 }
 
 #[tokio::test(flavor = "current_thread")]
-async fn prewarm_job_classifies_failure_error_timeout_panic_and_abort() {
+async fn prewarm_job_exports_one_consumer_per_attempt() {
+    let exporter = opentelemetry_sdk::trace::InMemorySpanExporter::default();
+    let provider = opentelemetry_sdk::trace::SdkTracerProvider::builder()
+        .with_simple_exporter(exporter.clone())
+        .build();
+    let subscriber = tracing_subscriber::registry()
+        .with(tracing_opentelemetry::layer().with_tracer(provider.tracer("test")));
+    let default = tracing::subscriber::set_default(subscriber);
+
+    spawn_prewarm_job_attempts(
+        crate::schema::enums::JobType::ImagePrewarm,
+        |attempts| async move {
+            attempts
+                .run(async { true }, |_| DetachedCompletion::success())
+                .await;
+            attempts
+                .run(async { false }, |_| {
+                    DetachedCompletion::failure(crate::schema::enums::ErrorType::LaunchFailed)
+                })
+                .await;
+        },
+    )
+    .await
+    .unwrap();
+    drop(default);
+    provider.force_flush().expect("flush prewarm spans");
+
+    let spans = exporter.get_finished_spans().expect("export prewarm spans");
+    let producer = spans
+        .iter()
+        .find(|span| span.name == crate::schema::spans::PREWARM_SCHEDULE)
+        .expect("producer span");
+    let consumers = spans
+        .iter()
+        .filter(|span| span.name == crate::schema::spans::PREWARM_ATTEMPT)
+        .collect::<Vec<_>>();
+    assert_eq!(consumers.len(), 2);
+    for consumer in consumers {
+        assert_eq!(consumer.links.len(), 1);
+        assert_eq!(
+            consumer.links[0].span_context.span_id(),
+            producer.span_context.span_id()
+        );
+        assert_eq!(
+            span_attr(consumer, crate::schema::attrs::JOB_ID),
+            span_attr(producer, crate::schema::attrs::JOB_ID)
+        );
+    }
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn prewarm_job_classifies_skip_failure_error_timeout_panic_and_abort() {
     let exporter = opentelemetry_sdk::trace::InMemorySpanExporter::default();
     let provider = opentelemetry_sdk::trace::SdkTracerProvider::builder()
         .with_simple_exporter(exporter.clone())
@@ -492,6 +543,7 @@ async fn prewarm_job_classifies_failure_error_timeout_panic_and_abort() {
     let default = tracing::subscriber::set_default(subscriber);
 
     for completion in [
+        DetachedCompletion::skip(),
         DetachedCompletion::failure(crate::schema::enums::ErrorType::LaunchFailed),
         DetachedCompletion::error(crate::schema::enums::ErrorType::RpcError),
         DetachedCompletion::timeout(),
@@ -532,7 +584,7 @@ async fn prewarm_job_classifies_failure_error_timeout_panic_and_abort() {
         .iter()
         .filter(|span| span.name == crate::schema::spans::PREWARM_ATTEMPT)
         .collect::<Vec<_>>();
-    for outcome in ["failure", "error", "timeout", "cancellation"] {
+    for outcome in ["skip", "failure", "error", "timeout", "cancellation"] {
         assert!(attempts.iter().any(|span| {
             span_attr(span, crate::schema::attrs::OUTCOME).as_deref() == Some(outcome)
         }));

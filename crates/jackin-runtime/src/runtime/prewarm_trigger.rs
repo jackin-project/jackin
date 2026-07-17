@@ -109,9 +109,9 @@ pub fn spawn_background_image_prewarm(
     #[cfg(not(test))]
     {
         let paths = paths.clone();
-        jackin_telemetry::spawn::spawn_prewarm_job(
+        jackin_telemetry::spawn::spawn_prewarm_job_attempts(
             jackin_telemetry::schema::enums::JobType::ImagePrewarm,
-            async move {
+            move |attempts| async move {
                 let mut failed = false;
                 if let Some(run) = jackin_diagnostics::active_run() {
                     run.stage(
@@ -122,15 +122,19 @@ pub fn spawn_background_image_prewarm(
                     );
                 }
                 for target in targets {
-                    let result = super::image::prewarm_role_images(
-                        &paths,
-                        &target.selector,
-                        &target.role_git,
-                        None,
-                        &target.agents,
-                        debug,
-                    )
-                    .await;
+                    let result = attempts
+                        .run(
+                            super::image::prewarm_role_images(
+                                &paths,
+                                &target.selector,
+                                &target.role_git,
+                                None,
+                                &target.agents,
+                                debug,
+                            ),
+                            classify_image_prewarm_attempt,
+                        )
+                        .await;
                     failed |= result.is_err();
                     if let Some(run) = jackin_diagnostics::active_run() {
                         match result {
@@ -171,16 +175,20 @@ pub fn spawn_background_image_prewarm(
                 }
                 failed
             },
-            |failed| {
-                if *failed {
-                    jackin_telemetry::spawn::DetachedCompletion::failure(
-                        jackin_telemetry::schema::enums::ErrorType::LaunchFailed,
-                    )
-                } else {
-                    jackin_telemetry::spawn::DetachedCompletion::success()
-                }
-            },
         );
+    }
+}
+
+#[cfg(not(test))]
+fn classify_image_prewarm_attempt<T, E>(
+    result: &Result<T, E>,
+) -> jackin_telemetry::spawn::DetachedCompletion {
+    if result.is_ok() {
+        jackin_telemetry::spawn::DetachedCompletion::success()
+    } else {
+        jackin_telemetry::spawn::DetachedCompletion::failure(
+            jackin_telemetry::schema::enums::ErrorType::LaunchFailed,
+        )
     }
 }
 
@@ -217,14 +225,13 @@ pub fn spawn_background_sidecar_prewarm(paths: &JackinPaths, debug: bool) {
                     );
                 }
                 let result = background_sidecar_prewarm_once(&paths, debug).await;
-                let failed = result.is_err();
                 if let Some(run) = jackin_diagnostics::active_run() {
-                    match result {
-                        Ok(detail) => run.stage(
+                    match &result {
+                        Ok(outcome) => run.stage(
                             "background_sidecar_prewarm_done",
                             jackin_diagnostics::DiagnosticStage::Sidecar,
                             "background sidecar prewarm complete",
-                            Some(&detail),
+                            Some(outcome.detail()),
                         ),
                         Err(error) => run.stage(
                             "background_sidecar_prewarm_failed",
@@ -234,18 +241,41 @@ pub fn spawn_background_sidecar_prewarm(paths: &JackinPaths, debug: bool) {
                         ),
                     }
                 }
-                failed
+                result
             },
-            |failed| {
-                if *failed {
-                    jackin_telemetry::spawn::DetachedCompletion::failure(
-                        jackin_telemetry::schema::enums::ErrorType::LaunchFailed,
-                    )
-                } else {
-                    jackin_telemetry::spawn::DetachedCompletion::success()
-                }
-            },
+            classify_sidecar_prewarm_attempt,
         );
+    }
+}
+
+#[derive(Debug)]
+enum SidecarPrewarmOutcome {
+    Completed(String),
+    Skipped(&'static str),
+}
+
+impl SidecarPrewarmOutcome {
+    fn detail(&self) -> &str {
+        match self {
+            Self::Completed(detail) => detail,
+            Self::Skipped(detail) => detail,
+        }
+    }
+}
+
+fn classify_sidecar_prewarm_attempt(
+    result: &anyhow::Result<SidecarPrewarmOutcome>,
+) -> jackin_telemetry::spawn::DetachedCompletion {
+    match result {
+        Ok(SidecarPrewarmOutcome::Completed(_)) => {
+            jackin_telemetry::spawn::DetachedCompletion::success()
+        }
+        Ok(SidecarPrewarmOutcome::Skipped(_)) => {
+            jackin_telemetry::spawn::DetachedCompletion::skip()
+        }
+        Err(_) => jackin_telemetry::spawn::DetachedCompletion::failure(
+            jackin_telemetry::schema::enums::ErrorType::LaunchFailed,
+        ),
     }
 }
 
@@ -253,23 +283,26 @@ pub fn spawn_background_sidecar_prewarm(paths: &JackinPaths, debug: bool) {
 async fn background_sidecar_prewarm_once(
     paths: &JackinPaths,
     debug: bool,
-) -> anyhow::Result<String> {
+) -> anyhow::Result<SidecarPrewarmOutcome> {
     let Some(_lock) = super::launch::try_lock_prewarmed_dind(paths) else {
-        return Ok("skip:locked".to_owned());
+        return Ok(SidecarPrewarmOutcome::Skipped("skip:locked"));
     };
     let docker = BollardDockerClient::connect()?;
     if super::launch::prewarmed_dind_state_is_live(paths, &docker).await {
-        return Ok("skip:state-live".to_owned());
+        return Ok(SidecarPrewarmOutcome::Skipped("skip:state-live"));
     }
     let warmed = super::launch::prewarm_dind_sidecar_container(&docker, true).await?;
     super::launch::write_prewarmed_dind_state(paths, &warmed)?;
     if debug {
-        Ok(format!(
+        Ok(SidecarPrewarmOutcome::Completed(format!(
             "prewarmed:{};ready_ms={}",
             warmed.dind, warmed.ready_ms
-        ))
+        )))
     } else {
-        Ok(format!("prewarmed;ready_ms={}", warmed.ready_ms))
+        Ok(SidecarPrewarmOutcome::Completed(format!(
+            "prewarmed;ready_ms={}",
+            warmed.ready_ms
+        )))
     }
 }
 

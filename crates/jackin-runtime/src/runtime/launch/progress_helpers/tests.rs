@@ -4,7 +4,6 @@
 use super::{StepCounter, stage_index, telemetry_stage};
 use crate::runtime::progress::LaunchProgress;
 use jackin_launch::{LaunchCancelled, LaunchDiagnostics};
-use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 struct TestDiagnostics;
