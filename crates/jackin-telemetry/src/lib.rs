@@ -21,6 +21,7 @@ pub mod propagation;
 mod retry;
 pub mod schema;
 pub mod spawn;
+pub mod stream;
 pub mod ui;
 mod validation;
 

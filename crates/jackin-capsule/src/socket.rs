@@ -87,13 +87,21 @@ fn start_listener_at_with_limiter(path: &Path) -> Result<ListenerWithLimiter> {
 }
 
 fn start_listener_at_inner(path: &Path) -> Result<ListenerWithLimiter> {
-    let operation = stream_operation(jackin_telemetry::schema::enums::StreamOperation::Open);
+    let operation =
+        jackin_telemetry::stream::phase(jackin_telemetry::schema::enums::StreamOperation::Open);
     let result = start_listener_at_inner_uninstrumented(path);
     if result.is_err() {
         let _error_event =
             jackin_telemetry::record_error(jackin_telemetry::schema::enums::ErrorType::IoError);
     }
-    complete_stream_operation(operation, result.is_ok());
+    if result.is_ok() {
+        jackin_telemetry::stream::complete_success(operation);
+    } else {
+        jackin_telemetry::stream::complete_error(
+            operation,
+            jackin_telemetry::schema::enums::ErrorType::IoError,
+        );
+    }
     result
 }
 
@@ -151,11 +159,10 @@ fn start_listener_at_inner_uninstrumented(path: &Path) -> Result<ListenerWithLim
                         // Stop accepting so we don't burn cycles
                         // accepting connections that are immediately
                         // dropped on the floor.
-                        complete_stream_operation(
-                            stream_operation(
+                        jackin_telemetry::stream::complete_success(
+                            jackin_telemetry::stream::phase(
                                 jackin_telemetry::schema::enums::StreamOperation::Close,
                             ),
-                            true,
                         );
                         return;
                     }
@@ -166,11 +173,11 @@ fn start_listener_at_inner_uninstrumented(path: &Path) -> Result<ListenerWithLim
                         jackin_telemetry::schema::enums::ErrorType::IoError,
                     );
                     if consecutive_failures >= ACCEPT_FAILURE_BAIL {
-                        complete_stream_operation(
-                            stream_operation(
+                        jackin_telemetry::stream::complete_error(
+                            jackin_telemetry::stream::phase(
                                 jackin_telemetry::schema::enums::StreamOperation::Close,
                             ),
-                            false,
+                            jackin_telemetry::schema::enums::ErrorType::IoError,
                         );
                         return;
                     }
@@ -190,33 +197,6 @@ fn start_listener_at_inner_uninstrumented(path: &Path) -> Result<ListenerWithLim
     });
 
     Ok((rx, limiter))
-}
-
-fn stream_operation(
-    phase: jackin_telemetry::schema::enums::StreamOperation,
-) -> Option<jackin_telemetry::OperationGuard> {
-    let attrs = [jackin_telemetry::Attr {
-        key: jackin_telemetry::schema::attrs::STREAM_OPERATION,
-        value: jackin_telemetry::Value::Str(phase.as_str()),
-    }];
-    jackin_telemetry::autonomous_root_operation(
-        &jackin_telemetry::operation::STREAM_OPERATION,
-        &attrs,
-    )
-    .ok()
-}
-
-fn complete_stream_operation(operation: Option<jackin_telemetry::OperationGuard>, success: bool) {
-    if let Some(operation) = operation {
-        if success {
-            operation.complete(jackin_telemetry::schema::enums::OutcomeValue::Success, None);
-        } else {
-            operation.complete(
-                jackin_telemetry::schema::enums::OutcomeValue::Error,
-                Some(jackin_telemetry::schema::enums::ErrorType::IoError),
-            );
-        }
-    }
 }
 
 /// Maximum wall-clock time for a single control-channel read. Capped
