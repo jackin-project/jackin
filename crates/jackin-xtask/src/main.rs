@@ -10,6 +10,7 @@ mod agent_status_truth;
 mod arch;
 mod ci;
 mod ci_audit;
+mod ci_cargo_audit;
 mod ci_doctest;
 mod ci_fuzz;
 mod ci_junit;
@@ -67,6 +68,9 @@ enum Command {
     /// Audit every job and step in the current GitHub Actions run.
     #[command(name = "ci-audit")]
     CiAudit(ci_audit::CiAuditArgs),
+    /// Run `cargo audit` without fetching when a restored advisory database is usable.
+    #[command(name = "ci-cargo-audit")]
+    CiCargoAudit(ci_cargo_audit::CiCargoAuditArgs),
     /// Run documentation tests when the selected crate owns a library target that supports them.
     #[command(name = "ci-doctest")]
     CiDoctest(ci_doctest::CiDoctestArgs),
@@ -271,6 +275,7 @@ fn main() -> ExitCode {
         Command::Construct(cmd) => construct::run(cmd),
         Command::Ci(args) => ci::run(args),
         Command::CiAudit(args) => ci_audit::run(args),
+        Command::CiCargoAudit(args) => ci_cargo_audit::run(args),
         Command::CiDoctest(args) => ci_doctest::run(args),
         Command::CiFuzz(args) => ci_fuzz::run(args),
         Command::CiJunit(args) => ci_junit::run(args),

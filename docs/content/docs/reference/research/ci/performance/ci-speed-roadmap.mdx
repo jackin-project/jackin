@@ -1161,6 +1161,17 @@ dependency table. Removed or otherwise unresolvable packages still fail safe
 to the full workspace, as do compiler, profile, lint, and Cargo configuration
 changes.
 
+Runs `29575485166` and `29575735792` validated the closure-key migration with
+one complete `jackin-xtask` job per lane. The first run populated the new key
+and finished at the one-minute boundary on both runners. The input-identical
+repeat took 37 seconds on GitHub and 40 seconds on Velnor; both restored the
+same exact closure key and the complete run log contained zero compile, check,
+download, fetch, registry-update, or Rustup-sync markers. The cold run also
+showed that `actions/cache` can restore a valid advisory database through a
+prefix key while reporting `cache-hit=false`, causing the Bash audit step to
+fetch unnecessarily. `ci-cargo-audit` now inspects the restored database
+itself and owns the offline/stale decision in Rust.
+
 ## Guardrails
 
 - Keep one stable aggregator per workflow for branch protection, but allow separate early-signal jobs to finish before the full aggregator.

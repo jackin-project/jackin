@@ -903,15 +903,8 @@ jobs:
         with:
           contract-key: ${{ needs.changes.outputs.registry-contract }}
       - name: Run cargo audit
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          args=(--no-yanked)
-          if [ "${{ steps.audit-cache.outputs.cache-hit }}" = "true" ]; then
-            args+=(--no-fetch --stale)
-          fi
-          cargo audit "${args[@]}"
+        run: >-
+          "$CI_XTASK" ci-cargo-audit
 
   # Single stable check name for branch-protection required-status,
   # regardless of which gated jobs skipped under it.
