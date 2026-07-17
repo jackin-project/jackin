@@ -175,7 +175,7 @@ fn link_contract(git_ref: &str, legacy: bool) -> Result<String> {
     Ok(hash(&input))
 }
 
-fn site_contract(git_ref: &str) -> Result<String> {
+pub(crate) fn site_contract(git_ref: &str) -> Result<String> {
     let mut input = b"docs-site-contract-v2\n".to_vec();
     for entry in tree(git_ref)? {
         if is_site_input(&entry.path) {

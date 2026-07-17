@@ -18,6 +18,7 @@ mod container_paths_gate;
 mod docs;
 mod frame_timing;
 mod fs_util;
+mod github;
 mod headers;
 mod health;
 mod lint;
@@ -68,6 +69,9 @@ enum Command {
     /// Validate and activate the prepared Rust toolchain used by CI.
     #[command(name = "ci-toolchain", subcommand)]
     CiToolchain(ci_toolchain::CiToolchainCommand),
+    /// Perform resilient GitHub API and release operations for CI.
+    #[command(name = "github", subcommand)]
+    Github(github::GithubCommand),
     /// Construct base-image build and publish tasks.
     ///
     /// Use as `cargo xtask construct <subcommand>`.
@@ -242,6 +246,7 @@ fn main() -> ExitCode {
         Command::CiResult(command) => ci_result::run(command),
         Command::CiTarget(command) => ci_target::run(command),
         Command::CiToolchain(command) => ci_toolchain::run(command),
+        Command::Github(command) => github::run(command),
         Command::Pr(cmd) => pr::run(cmd),
         Command::PtyFixture(args) => pty_fixture::run(args),
         Command::FrameTiming(args) => frame_timing::run(args),

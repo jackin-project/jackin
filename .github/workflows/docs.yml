@@ -162,6 +162,16 @@ jobs:
             echo "name=$name"
           } >> "$GITHUB_OUTPUT"
 
+      - name: Restore prepared CI xtask
+        if: >-
+          github.event_name == 'push' ||
+          github.event_name == 'workflow_dispatch'
+        uses: ./.github/actions/download-ci-xtask
+        with:
+          lane: GitHub
+          xtask-contract: ${{ steps.contracts.outputs.docs-xtask }}
+          include-tools: "false"
+
       - name: Find semantically identical successful Pages deployment
         id: deployed
         if: >-
@@ -170,36 +180,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
-        run: |
-          set -euo pipefail
-          reuse=false
-          deployments=$(
-            gh api "repos/${REPOSITORY}/deployments?environment=github-pages&per_page=10" \
-              --jq '.[] | [.id, .sha] | @tsv'
-          )
-          while IFS=$'\t' read -r deployment_id source_sha; do
-            if [ -z "$deployment_id" ] || [ -z "$source_sha" ]; then
-              continue
-            fi
-            state=$(
-              gh api "repos/${REPOSITORY}/deployments/${deployment_id}/statuses?per_page=1" \
-                --jq '.[0].state // empty'
-            )
-            if [ "$state" != success ]; then
-              continue
-            fi
-            if ! git cat-file -e "$source_sha^{commit}" 2>/dev/null && \
-               ! git fetch --no-tags --depth=1 origin "$source_sha"; then
-              break
-            fi
-            if [ "$(scripts/ci/docs-site-contract.sh "$source_sha")" = \
-                 "$(scripts/ci/docs-site-contract.sh)" ]; then
-              echo "::notice::reusing semantically identical successful Pages deployment"
-              reuse=true
-            fi
-            break
-          done <<< "$deployments"
-          echo "reuse=$reuse" >> "$GITHUB_OUTPUT"
+        run: >-
+          "$CI_XTASK" github docs-deployment-reuse
+          --repository "$REPOSITORY"
+          --github-output
 
   # The docs site links to repository files via the <RepoFile path="…" />
   # component, which renders a `blob/main` URL that lychee remaps to the

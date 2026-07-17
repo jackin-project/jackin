@@ -504,6 +504,12 @@ jobs:
           pattern: preview-GitHub-*
           merge-multiple: true
 
+      - name: Restore prepared CI xtask
+        uses: ./.github/actions/download-ci-xtask
+        with:
+          lane: GitHub
+          include-tools: "false"
+
       - name: Verify source SHA is on main
         env:
           GITHUB_TOKEN: ${{ github.token }}
@@ -555,49 +561,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.source-changed.outputs.version }}
           SHA: ${{ needs.source-changed.outputs.sha }}
-        run: |
-          set -euo pipefail
-          notes="Preview build from [${SHA:0:7}](https://github.com/${GITHUB_REPOSITORY}/commit/${SHA})."
-          assets=(
-            artifacts/jackin-[ax]*.tar.gz
-            artifacts/jackin-[ax]*.tar.gz.sha256
-            artifacts/jackin-[ax]*.tar.gz.bundle
-            artifacts/jackin-[ax]*.tar.gz.sbom.json
-            artifacts/jackin-capsule-*.tar.gz
-            artifacts/jackin-capsule-*.tar.gz.sha256
-            artifacts/jackin-capsule-*.tar.gz.bundle
-            artifacts/jackin-capsule-*.tar.gz.sbom.json
-            artifacts/capsule-manifest.json
-            artifacts/capsule-manifest.json.bundle
-          )
-
-          # The repository protects tags from deletion and non-fast-forward
-          # updates, so the rolling preview channel must not delete and
-          # recreate the `preview` tag. Keep the release as a stable download
-          # alias and replace assets in place.
-          if view_output=$(gh release view preview --json tagName 2>&1); then
-            echo "preview release exists: $view_output"
-            gh release edit preview \
-              --prerelease \
-              --target "$SHA" \
-              --title "Preview ${VERSION}" \
-              --notes "$notes"
-            gh release upload preview "${assets[@]}" --clobber
-            exit 0
-          fi
-
-          status=$?
-          if echo "$view_output" | grep -qiE 'release not found|not found|release does not exist'; then
-            gh release create preview \
-              --prerelease \
-              --target "$SHA" \
-              --title "Preview ${VERSION}" \
-              --notes "$notes" \
-              "${assets[@]}"
-          else
-            echo "::error::gh release view failed: $view_output"
-            exit "$status"
-          fi
+        run: >-
+          "$CI_XTASK" github publish-preview
+          --repository "$GITHUB_REPOSITORY"
+          --version "$VERSION"
+          --sha "$SHA"
+          --assets artifacts
 
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:

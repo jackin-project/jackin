@@ -27,7 +27,7 @@ use serde_json::{Value, json};
 use crate::report::{self, FormatArgs};
 
 mod brand;
-mod contract;
+pub(crate) mod contract;
 mod specs;
 
 const DOCS_ROOT: &str = "docs/content/docs";
