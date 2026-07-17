@@ -255,9 +255,9 @@ fn find(args: FindArgs) -> Result<()> {
         }
     }
     let version = if args.all_features {
-        "v8"
+        "v9"
     } else {
-        "default-v8"
+        "default-v9"
     };
     let name = format!(
         "ci-crate-target-{version}-{}-{}-{}",
@@ -448,6 +448,7 @@ fn pack(args: PackArgs) -> Result<()> {
     checked(
         Command::new("tar")
             .current_dir(target_parent)
+            .env("ZSTD_CLEVEL", "10")
             .args(["--zstd", "--null", "--no-recursion"])
             .arg(format!("--transform=s|^{target_name}/|target/|"))
             .arg("--files-from")

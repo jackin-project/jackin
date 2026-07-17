@@ -585,7 +585,7 @@ jobs:
         if: env.CI_XTASK_HIT != 'true' && matrix.config.cache_writer
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: ci-crate-target-v8-${{ runner.os }}-${{ runner.arch }}-jackin-xtask-warmup
+          name: ci-crate-target-v9-${{ runner.os }}-${{ runner.arch }}-jackin-xtask-warmup
           path: target.tar.zst
           compression-level: 0
           retention-days: 1
