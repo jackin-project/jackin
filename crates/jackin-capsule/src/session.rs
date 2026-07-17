@@ -125,7 +125,11 @@ pub struct StatusTransition {
 pub struct StatusTick {
     pub transition: Option<StatusTransition>,
     pub stuck: bool,
+    pub flap: bool,
 }
+
+const STATUS_FLAP_WINDOW: std::time::Duration = std::time::Duration::from_secs(30);
+const STATUS_FLAP_THRESHOLD: usize = 3;
 
 #[expect(
     missing_debug_implementations,
@@ -144,6 +148,8 @@ pub struct Session {
     pub status: SessionStatus,
     /// Debounce bookkeeping for the inferred working→idle hold.
     pub pending_transition: crate::agent_status::policy::PendingTransition,
+    status_transition_times: std::collections::VecDeque<std::time::Instant>,
+    status_flapping: bool,
     /// Per-source gate state for runtime-event reporters (one per hook/plugin
     /// source addressing this session).
     pub gate_states:
@@ -606,6 +612,8 @@ impl Session {
                 state: AgentState::Unknown,
                 status: SessionStatus::new(),
                 pending_transition: crate::agent_status::policy::PendingTransition::default(),
+                status_transition_times: std::collections::VecDeque::new(),
+                status_flapping: false,
                 gate_states: std::collections::HashMap::new(),
                 authority: None,
                 subagents_active: 0,
@@ -1007,6 +1015,7 @@ impl Session {
         // confirmation + CPU/OSC-quiet). Only commit through SessionStatus when
         // it permits.
         let mut transition = None;
+        let mut flap = false;
         if debounce(self.state, &candidate, &mut self.pending_transition, now).is_some() {
             let previous = self.state;
             // Clone the winner only on the committing tick — most ticks debounce
@@ -1019,12 +1028,32 @@ impl Session {
                     effective,
                     winner,
                 });
+                flap = self.record_status_transition(now);
             }
         }
         if exiting {
             self.clear_runtime_authority();
         }
-        StatusTick { transition, stuck }
+        StatusTick {
+            transition,
+            stuck,
+            flap,
+        }
+    }
+
+    fn record_status_transition(&mut self, now: std::time::Instant) -> bool {
+        while self
+            .status_transition_times
+            .front()
+            .is_some_and(|at| now.saturating_duration_since(*at) > STATUS_FLAP_WINDOW)
+        {
+            self.status_transition_times.pop_front();
+        }
+        self.status_transition_times.push_back(now);
+        let flapping = self.status_transition_times.len() >= STATUS_FLAP_THRESHOLD;
+        let started = flapping && !self.status_flapping;
+        self.status_flapping = flapping;
+        started
     }
 
     /// True when the session's program has enabled any mouse protocol
@@ -1485,6 +1514,8 @@ impl Session {
             state: AgentState::Unknown,
             status: SessionStatus::new(),
             pending_transition: crate::agent_status::policy::PendingTransition::default(),
+            status_transition_times: std::collections::VecDeque::new(),
+            status_flapping: false,
             gate_states: std::collections::HashMap::new(),
             authority: None,
             subagents_active: 0,

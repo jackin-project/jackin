@@ -25,6 +25,7 @@ fn quiet_agent_status_pass_exports_no_span() {
             crate::session::StatusTick {
                 transition: None,
                 stuck: false,
+                flap: false,
             },
         );
     });
@@ -50,6 +51,7 @@ fn substantive_agent_status_pass_exports_one_autonomous_root() {
                     winner: crate::agent_status::evidence::EvidenceWinner::Unknown,
                 }),
                 stuck: false,
+                flap: false,
             },
         );
     });
@@ -87,6 +89,7 @@ fn watchdog_demotion_without_transition_is_still_substantive() {
             crate::session::StatusTick {
                 transition: None,
                 stuck: true,
+                flap: false,
             },
         );
     });
@@ -4813,6 +4816,19 @@ fn conformance_wire_capsule_mouse_dispatch_counts_once_without_coordinates() -> 
         row: 37,
         button: 0,
     });
+    let (session, _session_rx) = test_session_with_agent(24, 80, Some("codex".to_owned()));
+    record_agent_status_tick(
+        &session,
+        crate::session::StatusTick {
+            transition: Some(crate::session::StatusTransition {
+                previous: crate::protocol::AgentState::Idle,
+                effective: crate::protocol::AgentState::Working,
+                winner: crate::agent_status::evidence::EvidenceWinner::Unknown,
+            }),
+            stuck: false,
+            flap: true,
+        },
+    );
     jackin_telemetry::emit_event(
         &jackin_telemetry::event::TELEMETRY_VALIDATE,
         jackin_telemetry::FieldSet::default(),
@@ -4849,8 +4865,35 @@ fn conformance_wire_capsule_mouse_dispatch_counts_once_without_coordinates() -> 
         })
         .sum::<f64>();
     anyhow::ensure!(
-        mouse_count == 2.0,
+        (mouse_count - 2.0).abs() < f64::EPSILON,
         "expected two mouse events, got {mouse_count}"
+    );
+    let flap_count = testbed
+        .metrics()
+        .into_iter()
+        .flat_map(|request| request.resource_metrics)
+        .flat_map(|resource| resource.scope_metrics)
+        .flat_map(|scope| scope.metrics)
+        .filter(|metric| metric.name == "agent.state.flaps")
+        .filter_map(|metric| metric.data)
+        .filter_map(|data| match data {
+            opentelemetry_proto::tonic::metrics::v1::metric::Data::Sum(sum) => Some(sum),
+            _ => None,
+        })
+        .flat_map(|sum| sum.data_points)
+        .filter_map(|point| point.value)
+        .map(|value| match value {
+            opentelemetry_proto::tonic::metrics::v1::number_data_point::Value::AsInt(value) => {
+                value as f64
+            }
+            opentelemetry_proto::tonic::metrics::v1::number_data_point::Value::AsDouble(value) => {
+                value
+            }
+        })
+        .sum::<f64>();
+    anyhow::ensure!(
+        (flap_count - 1.0).abs() < f64::EPSILON,
+        "expected one flap episode, got {flap_count}"
     );
     for key in testbed.metric_dimension_keys() {
         anyhow::ensure!(

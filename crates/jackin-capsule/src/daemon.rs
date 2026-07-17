@@ -811,6 +811,7 @@ fn emit_agent_state_change(
     session: &Session,
     transition: &crate::session::StatusTransition,
     stuck: bool,
+    flap: bool,
 ) {
     use jackin_telemetry::{Attr, FieldSet, Value};
 
@@ -836,6 +837,10 @@ fn emit_agent_state_change(
             .add(1, &metric_attrs);
     if stuck {
         record_agent_stuck(&metric_attrs);
+    }
+    if flap {
+        let _flap_result = jackin_telemetry::counter(&jackin_telemetry::metric::AGENT_STATE_FLAPS)
+            .add(1, &metric_attrs);
     }
 }
 
@@ -908,7 +913,7 @@ fn record_skipped_agent_status() {
 }
 
 fn record_agent_status_tick(session: &Session, tick: crate::session::StatusTick) {
-    if tick.transition.is_none() && !tick.stuck {
+    if tick.transition.is_none() && !tick.stuck && !tick.flap {
         record_skipped_agent_status();
         return;
     }
@@ -918,7 +923,7 @@ fn record_agent_status_tick(session: &Session, tick: crate::session::StatusTick)
     .ok();
     let record_result = || {
         if let Some(transition) = tick.transition {
-            emit_agent_state_change(session, &transition, tick.stuck);
+            emit_agent_state_change(session, &transition, tick.stuck, tick.flap);
         } else if let Some(attrs) = agent_status_metric_attrs(session, session.state) {
             record_agent_stuck(&attrs);
         }

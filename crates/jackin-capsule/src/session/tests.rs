@@ -127,6 +127,20 @@ fn test_session_with_policy(policy: OscPolicy) -> Session {
     session
 }
 
+#[test]
+fn effective_state_flaps_count_once_per_rolling_window_episode() {
+    let mut session = test_session_with_policy(OscPolicy::default());
+    let started = std::time::Instant::now();
+    assert!(!session.record_status_transition(started));
+    assert!(!session.record_status_transition(started + std::time::Duration::from_secs(10)));
+    assert!(session.record_status_transition(started + std::time::Duration::from_secs(20)));
+    assert!(!session.record_status_transition(started + std::time::Duration::from_secs(25)));
+
+    assert!(!session.record_status_transition(started + std::time::Duration::from_secs(61)));
+    assert!(!session.record_status_transition(started + std::time::Duration::from_secs(70)));
+    assert!(session.record_status_transition(started + std::time::Duration::from_secs(80)));
+}
+
 fn test_process_info(pid: u32, agent: Agent) -> ProcessInfo {
     ProcessInfo {
         pid,
