@@ -140,6 +140,47 @@ async fn metadata_retry_uses_two_attempts_for_transient_failures() {
     assert_eq!(retries.load(Ordering::Relaxed), 1);
 }
 
+fn exercise_private_cache(
+    runtime: &tokio::runtime::Runtime,
+) -> Result<(tempfile::TempDir, String, String)> {
+    let temp = tempfile::tempdir()?;
+    let root = temp.path().join("wire-private-cache-key");
+    let paths = JackinPaths::for_tests(&root);
+    let cached_agent = runtime.block_on(ensure_available_impl(&paths, Agent::Kimi, true))?;
+    assert!(
+        cached_agent.path.starts_with(&root),
+        "real cache path did not consume private root: {}",
+        cached_agent.path.display()
+    );
+    Ok((
+        temp,
+        root.to_string_lossy().into_owned(),
+        cached_agent.path.to_string_lossy().into_owned(),
+    ))
+}
+
+fn exercise_deceptive_host(runtime: &tokio::runtime::Runtime, url: &str) -> Result<()> {
+    runtime.block_on(crate::telemetry_boundary::download_request(
+        crate::telemetry_boundary::DownloadRoute::AgentMetadata,
+        url,
+        async { Ok::<_, anyhow::Error>(()) },
+    ))
+}
+
+fn emit_all_cache_decisions() {
+    for name in jackin_telemetry::schema::enums::CacheName::ALL
+        .iter()
+        .copied()
+    {
+        for result in jackin_telemetry::schema::enums::CacheResult::ALL
+            .iter()
+            .copied()
+        {
+            crate::telemetry_boundary::cache_decision(name, result);
+        }
+    }
+}
+
 #[test]
 fn conformance_wire_download_cache_and_retry_are_bounded_and_private() -> Result<()> {
     if dispatch_download_wire_child()? {
@@ -196,17 +237,13 @@ fn conformance_wire_download_cache_and_retry_are_bounded_and_private() -> Result
             async { Ok::<_, anyhow::Error>(()) },
         ))?;
     }
-    for name in jackin_telemetry::schema::enums::CacheName::ALL
-        .iter()
-        .copied()
-    {
-        for result in jackin_telemetry::schema::enums::CacheResult::ALL
-            .iter()
-            .copied()
-        {
-            crate::telemetry_boundary::cache_decision(name, result);
-        }
-    }
+    let deceptive_host =
+        "https://downloads.claude.ai.evil.invalid/wire-private-host?token=wire-private-host-token";
+    exercise_deceptive_host(&runtime, deceptive_host)?;
+
+    let (_private_cache_temp, private_cache_root, cached_agent_path) =
+        exercise_private_cache(&runtime)?;
+    emit_all_cache_decisions();
     let attempts = Cell::new(0_u32);
     let recovered = runtime.block_on(retry_metadata_with_backoff(2, Duration::ZERO, || {
         let attempt = attempts.get() + 1;
@@ -227,7 +264,7 @@ fn conformance_wire_download_cache_and_retry_are_bounded_and_private() -> Result
         .into_iter()
         .filter(|span| span.name == "http.client")
         .collect::<Vec<_>>();
-    assert_eq!(http_spans.len(), 5);
+    assert_eq!(http_spans.len(), 6);
     let span_wire = format!("{http_spans:?}");
     for expected in [
         "/agent-binaries/{version}/metadata",
@@ -252,7 +289,7 @@ fn conformance_wire_download_cache_and_retry_are_bounded_and_private() -> Result
             .iter()
             .filter(|event| event.event_name == "cache.decision")
             .count(),
-        25
+        26
     );
     assert_eq!(
         events
@@ -281,6 +318,12 @@ fn conformance_wire_download_cache_and_retry_are_bounded_and_private() -> Result
         "wire-private-retry-error",
         "wire-private-capsule-route",
         "wire-private-capsule-token",
+        deceptive_host,
+        "downloads.claude.ai.evil.invalid",
+        "wire-private-host-token",
+        private_cache_root.as_str(),
+        cached_agent_path.as_str(),
+        "wire-private-cache-key",
     ];
     assert_eq!(
         testbed.prohibited_value_violations(&prohibited),
