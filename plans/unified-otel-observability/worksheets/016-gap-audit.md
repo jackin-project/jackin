@@ -25,6 +25,8 @@ Post-row 014 evidence supersedes its performance residual: the active-path gate 
 
 Post-row evidence supersedes Plan 008's launch residual: `conformance_wire_public_launch_controller_exports_complete_pipeline` drives the public launch controller across the canonical injected process and Docker ports, then proves one launch root, all eleven stage children, and governed subprocess and Docker HTTP children occupy the same private, namespace-clean trace. Fresh integrated gates remain required.
 
+Post-row evidence supersedes Plan 009's integrated host-console residual: `conformance_wire_console_reducer_preserves_ui_causality` drives the production manager reducer through workspace-open and mouse-equivalent tab-select messages, then the production adapter owns screen transition, widget focus/unfocus, dwell/focus metrics, and one render beneath each semantic action over live OTLP without the private display label. The production coordinate hit-test and keyboard/mouse semantic equivalence remain separately proven by the named Plan 014 cases. Fresh integrated gates remain required.
+
 ## Rejected audit noise
 
 - Executor instructions in operator-authored plan files are intentional workflow data, not a product security vulnerability.

@@ -1147,3 +1147,6 @@ fn invalidate_terminal<B: ratatui::backend::Backend>(terminal: &mut ratatui::Ter
         drop(terminal.resize(rect));
     }
 }
+
+#[cfg(test)]
+mod tests;
