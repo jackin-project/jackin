@@ -1,0 +1,29 @@
+# SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+# SPDX-License-Identifier: Apache-2.0
+
+name: Download prepared CI tools
+description: Artifact transport bootstrap for the prepared jackin-xtask binary.
+
+inputs:
+  token:
+    required: true
+  repository:
+    required: true
+  run-id:
+    required: true
+  destination:
+    required: true
+  lane-artifact:
+    required: true
+  tools-artifact:
+    required: true
+  xtask-artifact:
+    required: true
+  exact-xtask-artifact:
+    required: true
+  include-tools:
+    required: true
+
+runs:
+  using: node24
+  main: dist/index.js

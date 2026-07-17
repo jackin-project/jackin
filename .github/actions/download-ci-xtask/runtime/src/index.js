@@ -1,0 +1,166 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
+import * as core from "@actions/core";
+import * as github from "@actions/github";
+import AdmZip from "adm-zip";
+import fs from "node:fs/promises";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const WAIT_MILLISECONDS = 2_000;
+const DEADLINE_MILLISECONDS = 55_000;
+
+function splitRepository(repository) {
+  const [owner, repo, extra] = repository.split("/");
+  if (!owner || !repo || extra) {
+    throw new Error(`invalid repository: ${repository}`);
+  }
+  return { owner, repo };
+}
+
+async function latestArtifact(octokit, owner, repo, name) {
+  const response = await octokit.rest.actions.listArtifactsForRepo({
+    owner,
+    repo,
+    name,
+    per_page: 10,
+  });
+  return response.data.artifacts.find((artifact) => !artifact.expired);
+}
+
+async function currentRunArtifact(octokit, owner, repo, runId, name) {
+  const response = await octokit.rest.actions.listWorkflowRunArtifacts({
+    owner,
+    repo,
+    run_id: runId,
+    per_page: 100,
+  });
+  return response.data.artifacts.find(
+    (artifact) => artifact.name === name && !artifact.expired,
+  );
+}
+
+async function waitForArtifact(
+  find,
+  name,
+  deadline,
+  waitMilliseconds = WAIT_MILLISECONDS,
+) {
+  let announced = false;
+  while (Date.now() < deadline) {
+    const artifact = await find();
+    if (artifact) return artifact;
+    if (!announced) {
+      core.notice(`waiting up to 55 seconds for prepared CI artifact: ${name}`);
+      announced = true;
+    }
+    await new Promise((resolve) => setTimeout(resolve, waitMilliseconds));
+  }
+  return find();
+}
+
+async function downloadArtifact(octokit, owner, repo, artifact, destination) {
+  const response = await octokit.rest.actions.downloadArtifact({
+    owner,
+    repo,
+    artifact_id: artifact.id,
+    archive_format: "zip",
+  });
+  await fs.mkdir(destination, { recursive: true });
+  new AdmZip(Buffer.from(response.data)).extractAllTo(destination, true);
+}
+
+async function run() {
+  const token = core.getInput("token", { required: true });
+  const { owner, repo } = splitRepository(
+    core.getInput("repository", { required: true }),
+  );
+  const runId = Number.parseInt(core.getInput("run-id", { required: true }), 10);
+  const destination = core.getInput("destination", { required: true });
+  const laneArtifact = core.getInput("lane-artifact", { required: true });
+  const toolsArtifact = core.getInput("tools-artifact", { required: true });
+  const xtaskArtifact = core.getInput("xtask-artifact", { required: true });
+  const exactXtaskArtifact = core.getInput("exact-xtask-artifact", {
+    required: true,
+  });
+  const includeTools = core.getBooleanInput("include-tools", { required: true });
+  const octokit = github.getOctokit(token);
+  const deadline = Date.now() + DEADLINE_MILLISECONDS;
+
+  await fs.mkdir(destination, { recursive: true });
+  if (includeTools) {
+    const lane = await currentRunArtifact(
+      octokit,
+      owner,
+      repo,
+      runId,
+      laneArtifact,
+    );
+    if (lane) {
+      await downloadArtifact(octokit, owner, repo, lane, destination);
+      return exportTools(destination);
+    }
+
+    const tools = await waitForArtifact(
+      () => latestArtifact(octokit, owner, repo, toolsArtifact),
+      toolsArtifact,
+      deadline,
+    );
+    if (!tools) throw new Error(`prepared CI artifact not found: ${toolsArtifact}`);
+    await downloadArtifact(octokit, owner, repo, tools, destination);
+  }
+
+  const candidates = [...new Set([xtaskArtifact, exactXtaskArtifact])];
+  let xtask;
+  for (const name of candidates) {
+    xtask = await waitForArtifact(
+      () => latestArtifact(octokit, owner, repo, name),
+      name,
+      deadline,
+    );
+    if (xtask) break;
+  }
+  if (!xtask) throw new Error("prepared CI xtask artifact not found");
+  await downloadArtifact(octokit, owner, repo, xtask, destination);
+  await exportTools(destination);
+}
+
+async function exportTools(destination) {
+  const xtask = path.join(destination, "jackin-xtask");
+  const cargoFuzz = path.join(destination, "cargo-fuzz");
+  try {
+    await fs.access(cargoFuzz);
+    const entries = await fs.readdir(destination, { withFileTypes: true });
+    await Promise.all(
+      entries
+        .filter((entry) => entry.isFile())
+        .map((entry) => fs.chmod(path.join(destination, entry.name), 0o755)),
+    );
+    core.exportVariable("CI_CARGO_FUZZ", cargoFuzz);
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+    await fs.chmod(xtask, 0o755);
+  }
+  core.exportVariable("CI_XTASK", xtask);
+
+  const metadata = path.join(destination, "workspace-metadata.json");
+  try {
+    await fs.access(metadata);
+    core.exportVariable("CI_METADATA", metadata);
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+  }
+  core.addPath(destination);
+}
+
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  run().catch((error) => core.setFailed(error.message));
+}
+
+export {
+  currentRunArtifact,
+  latestArtifact,
+  splitRepository,
+  waitForArtifact,
+};
