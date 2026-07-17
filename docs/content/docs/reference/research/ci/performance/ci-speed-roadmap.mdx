@@ -1246,6 +1246,17 @@ proof: `docs-link-check` fell from 146 seconds to nine seconds, skipped the
 build, dependency installation, lychee cache, all 6,103 network checks, and
 site-artifact publication, and every Docs job stayed below one minute.
 
+Docs run `29583135163` populated a runner-neutral, 90-day lychee response
+artifact so GitHub cache eviction no longer forces thousands of repeat network
+requests. The complete unsharded link job took 111 seconds because a new xtask
+contract required a 28-second artifact wait and the changed site contract
+required a 53-second 1,080-route build. Dependency installation took one
+second, the existing Actions response cache restored in one second, and the
+full link check took three seconds with no repeated downloads or compilation.
+The job then published the same response state as a durable artifact keyed by
+the lychee semantic contract; later runners can restore it when the bounded
+Actions cache misses.
+
 Runs `29575485166` and `29575735792` validated the closure-key migration with
 one complete `jackin-xtask` job per lane. The first run populated the new key
 and finished at the one-minute boundary on both runners. The input-identical
