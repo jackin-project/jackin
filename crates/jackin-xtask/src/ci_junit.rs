@@ -1,8 +1,7 @@
 use std::{
     collections::BTreeSet,
-    env,
-    fs::{self, OpenOptions},
-    io::{BufWriter, Write},
+    env, fs,
+    io::Write,
     path::{Path, PathBuf},
 };
 
@@ -82,20 +81,11 @@ fn parse_report(path: &Path) -> Result<Vec<TestCase>> {
     Ok(cases)
 }
 
-#[expect(
-    clippy::disallowed_methods,
-    reason = "the synchronous CI tool owns this short-lived summary writer"
-)]
 fn write_summary(group: &str, cases: &[TestCase]) -> Result<()> {
     let Some(path) = env::var_os("GITHUB_STEP_SUMMARY") else {
         return Ok(());
     };
-    let file = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&path)
-        .with_context(|| format!("opening step summary {}", Path::new(&path).display()))?;
-    let mut summary = BufWriter::new(file);
+    let mut summary = Vec::new();
     writeln!(summary, "### Slowest tests ({group})")?;
     let mut slowest = cases.iter().collect::<Vec<_>>();
     slowest.sort_by(|left, right| right.seconds.total_cmp(&left.seconds));
@@ -107,7 +97,10 @@ fn write_summary(group: &str, cases: &[TestCase]) -> Result<()> {
         summary,
         "\nCrate wall time (sum of testcase times): {total:.3}s"
     )?;
-    Ok(())
+    let path = Path::new(&path);
+    let mut contents = fs::read(path).unwrap_or_default();
+    contents.extend_from_slice(&summary);
+    fs::write(path, contents).with_context(|| format!("writing {}", path.display()))
 }
 
 fn enforce_quarantine(path: &Path, cases: &[TestCase]) -> Result<()> {

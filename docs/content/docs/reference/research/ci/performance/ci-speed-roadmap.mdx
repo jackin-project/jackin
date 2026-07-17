@@ -1145,6 +1145,22 @@ while the complete, unsharded `jackin-env` job took 33 and 39 seconds. A scan of
 the entire repeat log found zero compile, check, dependency-download,
 registry-update, fetch, or Rustup-sync markers.
 
+PR run `29574530427` exposed a broader invalidation bug after the JUnit parser
+added `quick-xml`: `Cargo.lock` and the root workspace manifest were treated as
+unconditional full-workspace changes, and every crate target key hashed both
+files wholesale. The run therefore launched all 28 crate jobs even though the
+dependency was consumed only by `jackin-xtask`; completed cold jobs included
+`jackin-protocol` at 65 seconds and `jackin-diagnostics` at 82 seconds, already
+violating the one-minute gate before concurrency cancelled the obsolete run.
+Affected-crate routing now compares base/head lock package records and
+workspace dependency entries, maps changed packages through Cargo's resolved
+graph, and selects only their workspace consumers plus reverse-dependents.
+Per-crate target keys likewise hash the complete resolved forward closure and
+normalized workspace-wide build inputs instead of the whole lockfile or
+dependency table. Removed or otherwise unresolvable packages still fail safe
+to the full workspace, as do compiler, profile, lint, and Cargo configuration
+changes.
+
 ## Guardrails
 
 - Keep one stable aggregator per workflow for branch protection, but allow separate early-signal jobs to finish before the full aggregator.
