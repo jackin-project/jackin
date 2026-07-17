@@ -56,6 +56,23 @@ const RESET_CLEAR_HOME: &[u8] = b"\x1b[0m\x1b[2J\x1b[H";
 const CLIENT_OWNED_MODE_STATE: &[u8] =
     b"\x1b[?7l\x1b[?9l\x1b[?1000l\x1b[?1002l\x1b[?1005l\x1b[?1015l\x1b[?1007l\x1b[?1003h\x1b[?1006h\x1b[?1004h";
 const HOST_FILE_EXPORT_DESTINATION_CATEGORY: &str = "host-downloads-jackin-instance";
+
+fn record_io_error() {
+    let _error =
+        jackin_telemetry::record_error(jackin_telemetry::schema::enums::ErrorType::IoError);
+}
+
+fn record_recovered_degradation() {
+    let _warning = jackin_telemetry::record_recovered_degradation();
+}
+
+fn remove_export_file(path: impl AsRef<Path>) {
+    if let Err(error) = fs::remove_file(path)
+        && error.kind() != std::io::ErrorKind::NotFound
+    {
+        record_io_error();
+    }
+}
 const RPC_ERROR: jackin_telemetry::schema::enums::ErrorType =
     jackin_telemetry::schema::enums::ErrorType::RpcError;
 
@@ -334,28 +351,18 @@ where
                         let message = match open_host_url(&url) {
                             Ok(()) => "Opening URL in host browser".to_owned(),
                             Err(err) => {
-                                let redacted = jackin_core::redact_url_for_log(&url);
-                                jackin_diagnostics::telemetry_debug!(
-                                    "attach",
-                                    "host open URL failed for {redacted:?}: {err:#}"
-                                );
+                                record_io_error();
                                 format!("Host open URL failed: {err:#}")
                             }
                         };
-                        if let Err(err) = send_host_notice(&mut server_writer, &message).await {
-                            jackin_diagnostics::telemetry_debug!(
-                                "attach",
-                                "host open URL notice failed: {err:#}"
-                            );
+                        if let Err(_error) = send_host_notice(&mut server_writer, &message).await {
+                            record_io_error();
                         }
                     }
                     ServerFrame::HostRevealPath(_) => {
                         let message = "Local telemetry files are not supported";
-                        if let Err(err) = send_host_notice(&mut server_writer, message).await {
-                            jackin_diagnostics::telemetry_debug!(
-                                "attach",
-                                "host reveal path notice failed: {err:#}"
-                            );
+                        if let Err(_error) = send_host_notice(&mut server_writer, message).await {
+                            record_io_error();
                         }
                     }
                     ServerFrame::HostStageImageFromClipboardPath => {
@@ -365,7 +372,6 @@ where
                             read_host_clipboard_text_path_image().await,
                             "host clipboard text is not an absolute readable image path or file:// image URL",
                             "host clipboard image path probe failed",
-                            "host clipboard image path response failed",
                         )
                         .await;
                     }
@@ -379,24 +385,17 @@ where
                             read_host_clipboard_image().await,
                             "host clipboard does not contain a readable image",
                             "host clipboard image probe failed",
-                            "host clipboard image response failed",
                         )
                         .await;
                     }
                     ServerFrame::FileExportStart(start) => {
                         if let Err(err) = file_exports.start(start) {
-                            jackin_diagnostics::telemetry_debug!(
-                                "attach",
-                                "host file export start failed: {err:#}"
-                            );
+                            record_io_error();
                             let message = format!("File export rejected: {err:#}");
-                            if let Err(notice_err) =
+                            if let Err(_notice_error) =
                                 send_host_notice(&mut server_writer, &message).await
                             {
-                                jackin_diagnostics::telemetry_debug!(
-                                    "attach",
-                                    "host file export start notice failed: {notice_err:#}"
-                                );
+                                record_io_error();
                             }
                         }
                     }
@@ -404,18 +403,12 @@ where
                         let transfer_id = chunk.transfer_id;
                         if let Err(err) = file_exports.chunk(chunk) {
                             file_exports.abort(transfer_id);
-                            jackin_diagnostics::telemetry_debug!(
-                                "attach",
-                                "host file export chunk failed: {err:#}"
-                            );
+                            record_io_error();
                             let message = format!("File export rejected: {err:#}");
-                            if let Err(notice_err) =
+                            if let Err(_notice_error) =
                                 send_host_notice(&mut server_writer, &message).await
                             {
-                                jackin_diagnostics::telemetry_debug!(
-                                    "attach",
-                                    "host file export chunk notice failed: {notice_err:#}"
-                                );
+                                record_io_error();
                             }
                         }
                     }
@@ -423,18 +416,12 @@ where
                         let message = match file_exports.end(end) {
                             Ok(export) => file_export_success_notice(&export),
                             Err(err) => {
-                                jackin_diagnostics::telemetry_debug!(
-                                    "attach",
-                                    "host file export end failed: {err:#}"
-                                );
+                                record_io_error();
                                 format!("File export rejected: {err:#}")
                             }
                         };
-                        if let Err(err) = send_host_notice(&mut server_writer, &message).await {
-                            jackin_diagnostics::telemetry_debug!(
-                                "attach",
-                                "host file export end notice failed: {err:#}"
-                            );
+                        if let Err(_error) = send_host_notice(&mut server_writer, &message).await {
+                            record_io_error();
                         }
                     }
                     ServerFrame::Welcome { .. } => {
@@ -519,23 +506,14 @@ where
                         log_clipboard_image_paste_trigger();
                         match read_image_for_paste_trigger(input).await {
                             Ok(Some(image)) => {
-                                jackin_diagnostics::telemetry_debug!(
-                                    "attach",
-                                    "host clipboard image paste: format={:?} bytes={}",
-                                    image.format,
-                                    image.bytes.len()
-                                );
                                 Some((image, &[][..], &[][..]))
                             }
                             Ok(None) => {
                                 log_clipboard_image_no_image_forwarded();
                                 None
                             }
-                            Err(err) => {
-                                jackin_diagnostics::telemetry_debug!(
-                                    "attach",
-                                    "host clipboard image paste probe failed: {err:#}"
-                                );
+                            Err(_error) => {
+                                record_recovered_degradation();
                                 log_clipboard_image_no_image_forwarded();
                                 None
                             }
@@ -547,21 +525,12 @@ where
                         // substituted downstream). Everything else forwards as text.
                         match read_image_from_pasted_path(input).await {
                             Ok(Some((image, prefix, suffix))) => {
-                                jackin_diagnostics::telemetry_debug!(
-                                    "attach",
-                                    "host pasted-path image: format={:?} bytes={}",
-                                    image.format,
-                                    image.bytes.len()
-                                );
                                 log_clipboard_image_pasted_path_staged();
                                 Some((image, prefix, suffix))
                             }
                             Ok(None) => None,
-                            Err(err) => {
-                                jackin_diagnostics::telemetry_debug!(
-                                    "attach",
-                                    "host pasted-path image probe failed: {err:#}"
-                                );
+                            Err(_error) => {
+                                record_recovered_degradation();
                                 None
                             }
                         }
@@ -584,11 +553,7 @@ where
                                 write_input_frame(&mut server_writer, suffix, "paste suffix").await?;
                             }
                         }
-                        Err(err) => {
-                            jackin_diagnostics::telemetry_debug!(
-                                "attach",
-                                "host clipboard image frame rejected; forwarding original input: {err:#}"
-                            );
+                        Err(_error) => {
                             // The prefix already went out, so forward the remainder of
                             // the read verbatim (markers + body + suffix) to reconstruct
                             // the original input exactly — no double-send.
@@ -618,11 +583,8 @@ where
                         "File export interrupted: cleaned up {cleaned} temporary host file{}",
                         if cleaned == 1 { "" } else { "s" }
                     );
-                    if let Err(err) = send_host_notice(&mut server_writer, &message).await {
-                        jackin_diagnostics::telemetry_debug!(
-                            "attach",
-                            "host file export cleanup notice failed: {err:#}"
-                        );
+                    if let Err(_error) = send_host_notice(&mut server_writer, &message).await {
+                        record_io_error();
                     }
                 }
             }
@@ -709,18 +671,6 @@ impl HostFileExports {
             .write(true)
             .open(&temp_path)
             .context("creating temporary host export file")?;
-        jackin_diagnostics::telemetry_debug!(
-            "attach",
-            "host file export start transfer_id={} source_category={} basename={:?} bytes={} destination_category={} destination_basename={:?} reveal_after_export={} open_after_export={}",
-            start.transfer_id,
-            export_source_path_category(&start.source_path),
-            file_name,
-            start.size,
-            HOST_FILE_EXPORT_DESTINATION_CATEGORY,
-            host_file_basename(&final_path),
-            start.reveal_after_export,
-            start.open_after_export
-        );
         self.active.insert(
             start.transfer_id,
             ActiveHostFileExport {
@@ -790,7 +740,7 @@ impl HostFileExports {
             );
         };
         if active.written != active.expected_size {
-            drop(fs::remove_file(&active.temp_path));
+            remove_export_file(&active.temp_path);
             bail!(
                 "file export transfer {} ended after {} bytes, expected {}",
                 end.transfer_id,
@@ -809,31 +759,11 @@ impl HostFileExports {
         drop(active.file);
         let actual: [u8; 32] = active.hasher.finalize().into();
         if actual != end.sha256 {
-            drop(fs::remove_file(&active.temp_path));
-            jackin_diagnostics::telemetry_debug!(
-                "attach",
-                "host file export digest mismatch transfer_id={} source_category={} bytes={} expected_sha256={} actual_sha256={} destination_category={}",
-                end.transfer_id,
-                export_source_path_category(&active.source_path),
-                active.written,
-                hex::encode(end.sha256),
-                hex::encode(actual),
-                HOST_FILE_EXPORT_DESTINATION_CATEGORY
-            );
+            remove_export_file(&active.temp_path);
             bail!("file export transfer {} SHA-256 mismatch", end.transfer_id);
         }
         fs::rename(&active.temp_path, &active.final_path)
             .context("moving temporary host export into final destination")?;
-        jackin_diagnostics::telemetry_debug!(
-            "attach",
-            "host file export committed transfer_id={} source_category={} bytes={} sha256={} destination_category={} destination_basename={:?}",
-            end.transfer_id,
-            export_source_path_category(&active.source_path),
-            active.written,
-            hex::encode(actual),
-            HOST_FILE_EXPORT_DESTINATION_CATEGORY,
-            host_file_basename(&active.final_path)
-        );
         jackin_diagnostics::emit_compact_line(
             "host_file_export",
             &host_file_export_compact_line(
@@ -852,16 +782,7 @@ impl HostFileExports {
 
     fn abort(&mut self, transfer_id: u64) {
         if let Some(active) = self.active.remove(&transfer_id) {
-            jackin_diagnostics::telemetry_debug!(
-                "attach",
-                "host file export abort transfer_id={} source_category={} bytes_written={} destination_category={} destination_basename={:?}",
-                transfer_id,
-                export_source_path_category(&active.source_path),
-                active.written,
-                HOST_FILE_EXPORT_DESTINATION_CATEGORY,
-                host_file_basename(&active.final_path)
-            );
-            drop(fs::remove_file(active.temp_path));
+            remove_export_file(active.temp_path);
         }
     }
 
@@ -891,7 +812,7 @@ impl HostFileExports {
 impl Drop for HostFileExports {
     fn drop(&mut self) {
         for (_, active) in self.active.drain() {
-            drop(fs::remove_file(active.temp_path));
+            remove_export_file(active.temp_path);
         }
     }
 }
@@ -932,6 +853,7 @@ fn host_file_export_compact_line(
     )
 }
 
+#[cfg(test)]
 fn host_file_basename(path: &Path) -> String {
     path.file_name()
         .and_then(|name| name.to_str())
@@ -1117,7 +1039,6 @@ async fn write_clipboard_image_request_result<W>(
     image: Result<Option<ClipboardImage>>,
     empty_message: &str,
     probe_log_message: &str,
-    response_log_message: &str,
 ) where
     W: AsyncWrite + Unpin,
 {
@@ -1125,14 +1046,12 @@ async fn write_clipboard_image_request_result<W>(
         Ok(Some(image)) => write_clipboard_image_frames(writer, operations, image).await,
         Ok(None) => send_clipboard_image_error(writer, operations, empty_message).await,
         Err(err) => {
-            jackin_diagnostics::telemetry_debug!("attach", "{probe_log_message}: {err:#}");
+            record_recovered_degradation();
             send_clipboard_image_error(writer, operations, &format!("{probe_log_message}: {err:#}"))
                 .await
         }
     };
-    if let Err(err) = result {
-        jackin_diagnostics::telemetry_debug!("attach", "{response_log_message}: {err:#}");
-    }
+    drop(result);
 }
 
 async fn send_host_notice<W>(writer: &mut W, message: &str) -> Result<()>
@@ -1239,8 +1158,7 @@ fn terminal_size() -> (u16, u16) {
 
 /// Run a post-export desktop action (`open`/`reveal`) and build the user
 /// notice. `success_verb` is the past-tense word for the OK message ("opened",
-/// "revealed"); `fail_verb` is the bare action word reused in both the debug
-/// log and the failure notice ("open", "reveal").
+/// "revealed"); `fail_verb` is the bare action word used in the failure notice.
 fn export_action_notice(
     export: &CompletedHostFileExport,
     action: impl FnOnce(&Path) -> Result<()>,
@@ -1253,12 +1171,8 @@ fn export_action_notice(
             export.final_path.display(),
             export.bytes
         ),
-        Err(err) => {
-            jackin_diagnostics::telemetry_debug!(
-                "attach",
-                "host file export {fail_verb} failed for destination_basename={:?}: {err:#}",
-                host_file_basename(&export.final_path)
-            );
+        Err(_error) => {
+            record_io_error();
             format!(
                 "File exported; {fail_verb} failed: {} ({} bytes)",
                 export.final_path.display(),

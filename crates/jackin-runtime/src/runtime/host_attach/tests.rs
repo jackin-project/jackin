@@ -130,7 +130,6 @@ async fn explicit_clipboard_image_request_returns_probe_error_to_capsule() {
         )),
         "host clipboard does not contain a readable image",
         "host clipboard image probe failed",
-        "host clipboard image response failed",
     )
     .await;
     drop(client);
@@ -165,7 +164,6 @@ async fn explicit_clipboard_path_request_mentions_file_url_support() {
         Ok(None),
         "host clipboard text is not an absolute readable image path or file:// image URL",
         "host clipboard image path probe failed",
-        "host clipboard image path response failed",
     )
     .await;
     drop(client);
