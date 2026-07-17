@@ -13,6 +13,7 @@ fn args(package: &str) -> FindArgs {
         runner_arch: "X64".to_owned(),
         source_sha: "abc123".to_owned(),
         repository: "jackin-project/jackin".to_owned(),
+        run_id: 0,
         refresh_package: String::new(),
         github_output: false,
     }

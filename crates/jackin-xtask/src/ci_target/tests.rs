@@ -2,7 +2,7 @@ use std::fs;
 
 use tempfile::tempdir;
 
-use super::{excluded, reusable_paths};
+use super::{excluded, excluded_file, reusable_paths};
 
 #[test]
 fn reusable_paths_keep_outputs_and_drop_transport_state() {
@@ -12,6 +12,8 @@ fn reusable_paths_keep_outputs_and_drop_transport_state() {
     fs::create_dir_all(target.join("debug/incremental/state")).unwrap();
     fs::create_dir_all(target.join("nextest/default")).unwrap();
     fs::write(target.join("debug/deps/libexample.rlib"), b"output").unwrap();
+    fs::write(target.join("debug/deps/example-abc123"), b"test binary").unwrap();
+    fs::write(target.join("debug/jackin"), b"application binary").unwrap();
     fs::write(target.join("debug/incremental/state/data"), b"state").unwrap();
     fs::write(target.join("nextest/default/junit.xml"), b"report").unwrap();
 
@@ -26,4 +28,14 @@ fn transport_exclusions_are_semantic_directories() {
     assert!(excluded("nextest/ci/junit.xml".as_ref()));
     assert!(excluded("telemetry-volume-ratchet.json".as_ref()));
     assert!(!excluded("debug/deps/libexample.rlib".as_ref()));
+}
+
+#[test]
+fn generated_binaries_are_rebuilt_instead_of_transported() {
+    assert!(excluded_file("debug/jackin".as_ref()));
+    assert!(excluded_file("debug/deps/example-abc123".as_ref()));
+    assert!(excluded_file("debug/examples/demo-abc123".as_ref()));
+    assert!(!excluded_file("debug/deps/libexample.rlib".as_ref()));
+    assert!(!excluded_file("debug/deps/libproc_macro.so".as_ref()));
+    assert!(!excluded_file("debug/.cargo-lock".as_ref()));
 }

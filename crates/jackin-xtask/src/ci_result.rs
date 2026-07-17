@@ -45,6 +45,9 @@ pub(crate) struct FindArgs {
     source_sha: String,
     #[arg(long)]
     repository: String,
+    /// Current workflow run whose newly published artifacts should be checked.
+    #[arg(long, default_value_t = 0)]
+    run_id: u64,
     #[arg(long, default_value = "")]
     refresh_package: String,
     #[arg(long)]
@@ -100,10 +103,15 @@ fn find(args: FindArgs) -> Result<()> {
     let artifact = if args.cache_key.is_empty() {
         Lookup::Missing
     } else {
-        lookup_artifact(&args.repository, &names.name, &args.package)
+        lookup_artifact(&args.repository, args.run_id, &names.name, &args.package)
     };
     let artifact = match artifact {
-        Lookup::Missing => lookup_artifact(&args.repository, &names.sha_name, &args.package),
+        Lookup::Missing => lookup_artifact(
+            &args.repository,
+            args.run_id,
+            &names.sha_name,
+            &args.package,
+        ),
         result => result,
     };
     let artifact = match artifact {
@@ -171,8 +179,18 @@ enum Lookup {
     Unavailable,
 }
 
-fn lookup_artifact(repository: &str, name: &str, package: &str) -> Lookup {
+fn lookup_artifact(repository: &str, run_id: u64, name: &str, package: &str) -> Lookup {
     let endpoint = format!("repos/{repository}/actions/artifacts?name={name}&per_page=10");
+    let global = lookup_endpoint(&endpoint, package);
+    if !matches!(global, Lookup::Missing | Lookup::Unavailable) || run_id == 0 {
+        return global;
+    }
+    let endpoint =
+        format!("repos/{repository}/actions/runs/{run_id}/artifacts?name={name}&per_page=10");
+    lookup_endpoint(&endpoint, package)
+}
+
+fn lookup_endpoint(endpoint: &str, package: &str) -> Lookup {
     let response = cmd::output_timeout(
         Command::new("gh").args(["api", &endpoint]),
         Duration::from_secs(5),

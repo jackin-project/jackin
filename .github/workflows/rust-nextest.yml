@@ -133,6 +133,7 @@ jobs:
           PACKAGE: ${{ matrix.package }}
           REFRESH_PACKAGE: ${{ inputs.refresh-package }}
           REPOSITORY: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
           RUNNER_ARCH: ${{ runner.arch }}
           RUNNER_OS: ${{ runner.os }}
           SOURCE_SHA: ${{ github.sha }}
@@ -149,6 +150,7 @@ jobs:
           --runner-arch "$RUNNER_ARCH"
           --source-sha "$SOURCE_SHA"
           --repository "$REPOSITORY"
+          --run-id "$RUN_ID"
           --refresh-package "$REFRESH_PACKAGE"
           --github-output
       - uses: ./.github/actions/download-ci-xtask
