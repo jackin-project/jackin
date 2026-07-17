@@ -189,7 +189,7 @@ version = "27.1.0"
 backend = "cargo:cargo-mutants"
 
 [[tools."cargo:cargo-nextest"]]
-version = "0.9.136"
+version = "0.9.140"
 backend = "cargo:cargo-nextest"
 
 [[tools."cargo:cargo-shear"]]
