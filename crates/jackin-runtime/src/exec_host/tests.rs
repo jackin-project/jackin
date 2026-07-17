@@ -78,7 +78,11 @@ async fn roundtrip_with_auth(
 
 async fn exported_exec_roundtrip(
     context: jackin_protocol::TelemetryContext,
-) -> (serde_json::Value, Vec<jackin_diagnostics::TestSpanSnapshot>) {
+) -> (
+    serde_json::Value,
+    Vec<jackin_diagnostics::TestSpanSnapshot>,
+    usize,
+) {
     #[cfg(target_os = "linux")]
     let caller_auth = CallerAuth::PeerPid(std::process::id());
     #[cfg(not(target_os = "linux"))]
@@ -105,10 +109,10 @@ async fn exported_exec_roundtrip(
     client.read_exact(&mut body).await.expect("read reply body");
     drop(guard);
     export.force_flush();
-    (
-        serde_json::from_slice(&body).expect("decode credential reply"),
-        export.finished_spans(),
-    )
+    let reply = serde_json::from_slice(&body).expect("decode credential reply");
+    let spans = export.finished_spans();
+    let errors = export.typed_error_count("error.typed", "rpc_error");
+    (reply, spans, errors)
 }
 
 #[tokio::test(flavor = "current_thread")]
@@ -181,8 +185,9 @@ async fn exec_socket_propagation_matrix_handles_remote_context_and_bad_ids() {
     let parent_id = "00f067aa0ba902b7";
     let mut sampled = jackin_protocol::TelemetryContext::v1();
     sampled.traceparent = Some(format!("00-{trace_id}-{parent_id}-01"));
-    let (reply, spans) = exported_exec_roundtrip(sampled).await;
+    let (reply, spans, errors) = exported_exec_roundtrip(sampled).await;
     assert_eq!(reply["status"], "ok");
+    assert_eq!(errors, 0);
     assert_eq!(spans.len(), 1);
     assert_eq!(spans[0].trace_id, trace_id);
     assert_eq!(spans[0].parent_span_id, parent_id);
@@ -194,25 +199,31 @@ async fn exec_socket_propagation_matrix_handles_remote_context_and_bad_ids() {
             ..jackin_protocol::TelemetryContext::v1()
         },
     ] {
-        let (reply, spans) = exported_exec_roundtrip(context).await;
+        let (reply, spans, errors) = exported_exec_roundtrip(context).await;
         assert_eq!(reply["status"], "ok");
+        assert_eq!(errors, 0);
         assert_eq!(spans.len(), 1);
         assert_eq!(spans[0].parent_span_id, "0000000000000000");
     }
 
     let mut unsampled = jackin_protocol::TelemetryContext::v1();
     unsampled.traceparent = Some(format!("00-{trace_id}-{parent_id}-00"));
-    let (reply, spans) = exported_exec_roundtrip(unsampled).await;
+    let (reply, spans, errors) = exported_exec_roundtrip(unsampled).await;
     assert_eq!(reply["status"], "ok");
     assert!(spans.is_empty());
+    assert_eq!(errors, 0);
 
     let bad_id = jackin_protocol::TelemetryContext {
         job_id: Some("not-a-uuid".to_owned()),
         ..jackin_protocol::TelemetryContext::v1()
     };
-    let (reply, spans) = exported_exec_roundtrip(bad_id).await;
+    let (reply, spans, errors) = exported_exec_roundtrip(bad_id).await;
     assert_eq!(reply["status"], "error");
-    assert!(spans.is_empty());
+    assert_eq!(spans.len(), 1);
+    assert_eq!(spans[0].name, "rpc.server");
+    assert_eq!(spans[0].parent_span_id, "0000000000000000");
+    assert!(spans[0].error);
+    assert_eq!(errors, 1);
 }
 
 #[tokio::test(flavor = "current_thread")]

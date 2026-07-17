@@ -138,6 +138,7 @@ New tests in the telemetry conformance group are selected by CI with `-E 'test(/
 - Attach handshake, detach, focus, and clipboard-image-transfer controls are bounded operations. Streams remain metric/state only and never receive lifetime spans.
 - Emit RPC count, active, and duration metrics keyed only by registered `rpc.method`, outcome, and stable error type.
 - The serialized `{valid, malformed, missing, unsampled, bad product id} × {host daemon, Capsule control}` matrix proves same-trace parentage, local-root fallback, sampling preservation, rejection, and no side effects.
+- The `jackin-exec` host credential socket carries the shared envelope and uses CLIENT/SERVER operations through the actual reply write. Invalid product correlation is extracted and rejected before constructing a local SERVER owner; that owner emits one typed `rpc_error`, returns the bounded protocol error, consumes reply-write failure, and completes as failure without allowing the listener to emit a duplicate terminal error. Focused exporter tests prove the bad-ID root/error count and the peer-close write-failure path.
 
 ## Test plan
 

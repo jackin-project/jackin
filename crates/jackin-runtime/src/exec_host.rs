@@ -168,19 +168,6 @@ async fn handle_connection(
 
     let req: CredRequest = serde_json::from_slice(&body).context("parsing CredRequest")?;
     let extracted = jackin_telemetry::propagation::extract(&req.ctx);
-    if matches!(
-        extracted,
-        jackin_telemetry::propagation::ExtractOutcome::RejectRequest
-    ) {
-        let _error =
-            jackin_telemetry::record_error(jackin_telemetry::schema::enums::ErrorType::RpcError);
-        stream
-            .write_all(&frame(&CredReply::Error {
-                error: "invalid correlation".to_owned(),
-            }))
-            .await?;
-        return Ok(());
-    }
     let attrs = [
         jackin_telemetry::Attr {
             key: jackin_telemetry::schema::attrs::std_attrs::RPC_SYSTEM_NAME,
@@ -191,6 +178,27 @@ async fn handle_connection(
             value: jackin_telemetry::Value::Str("jackin.host.Credentials/Resolve"),
         },
     ];
+    if matches!(
+        extracted,
+        jackin_telemetry::propagation::ExtractOutcome::RejectRequest
+    ) {
+        let operation =
+            jackin_telemetry::operation(&jackin_telemetry::operation::RPC_SERVER, &attrs).ok();
+        record_rpc_error(operation.as_ref());
+        let write_result = stream
+            .write_all(&frame(&CredReply::Error {
+                error: "invalid correlation".to_owned(),
+            }))
+            .await;
+        if let Some(operation) = operation {
+            operation.complete(
+                jackin_telemetry::schema::enums::OutcomeValue::Failure,
+                Some(jackin_telemetry::schema::enums::ErrorType::RpcError),
+            );
+        }
+        drop(write_result);
+        return Ok(());
+    }
     let operation = match &extracted {
         jackin_telemetry::propagation::ExtractOutcome::Parent(parent) => {
             jackin_telemetry::operation_with_remote_parent(
