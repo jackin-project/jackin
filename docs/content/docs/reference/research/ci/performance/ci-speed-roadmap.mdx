@@ -603,6 +603,11 @@ The Docs-specific xtask source contract now uses the same declarative `hashFiles
 expression in CI and Docs, exported through the already-pinned bootstrap action.
 This removes another Bash hashing implementation while preserving the narrower
 Docs command surface that prevents unrelated xtask edits from rebuilding Docs.
+Exact-repeat run `29563490993` completed CI warmup in `21s`, affected-crate
+routing in `11s`, and the required gate in `8s`; the crate matrix was empty
+because the previous complete proof remained valid. Companion Docs run
+`29563490851` completed its required gate with link checks at `29s` and `32s`
+and no redundant xtask build, proving the shared declarative contract handoff.
 
 Dual-lane crate tests no longer assign target and successful-result publication
 to a configured cache-writer lane. A per-crate concurrency group serializes only
