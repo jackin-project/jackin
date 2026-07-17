@@ -296,6 +296,7 @@ jobs:
           workflow: preview.yml
           workflow_search: true
           workflow_conclusion: completed
+          branch: ${{ github.ref_name }}
           search_artifacts: true
           name: preview-GitHub-jackin-${{ needs.source-changed.outputs.jackin_archive_contract }}
           path: dist
@@ -434,6 +435,7 @@ jobs:
           workflow: preview.yml
           workflow_search: true
           workflow_conclusion: completed
+          branch: ${{ github.ref_name }}
           search_artifacts: true
           name: preview-GitHub-jackin-capsule-${{ needs.source-changed.outputs.capsule_archive_contract }}
           path: dist
