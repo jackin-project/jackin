@@ -221,8 +221,8 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: target.tar.zst
-          key: ci-crate-target-v10-${{ runner.os }}-${{ runner.arch }}-${{ matrix.package }}-${{ steps.crate-target-key.outputs.key }}
-          restore-keys: ci-crate-target-v10-${{ runner.os }}-${{ runner.arch }}-${{ matrix.package }}-
+          key: ci-crate-target-v11-${{ runner.os }}-${{ runner.arch }}-${{ matrix.package }}-${{ steps.crate-target-key.outputs.key }}
+          restore-keys: ci-crate-target-v11-${{ runner.os }}-${{ runner.arch }}-${{ matrix.package }}-
       - name: Prepare reusable crate target seed
         id: restored-target
         if: steps.crate-result.outputs.hit != 'true'
@@ -474,8 +474,7 @@ jobs:
         if: >-
           always() && !cancelled() && !failure() &&
           steps.crate-result.outputs.hit != 'true' &&
-          steps.restored-target.outputs.local-hit != 'true' &&
-          steps.restored-target.outputs.canonical-hit != 'true' &&
+          steps.target-archive-cache.outputs.cache-hit != 'true' &&
           (github.ref == 'refs/heads/main' ||
            github.event_name == 'workflow_dispatch' ||
            (github.event_name == 'pull_request' &&
@@ -489,9 +488,9 @@ jobs:
       - name: Publish reusable crate target seed
         if: >-
           always() && !cancelled() && !failure() &&
+          matrix.config.artifact_writer &&
           steps.crate-result.outputs.hit != 'true' &&
-          steps.restored-target.outputs.local-hit != 'true' &&
-          steps.restored-target.outputs.canonical-hit != 'true' &&
+          steps.target-archive-cache.outputs.cache-hit != 'true' &&
           (github.ref == 'refs/heads/main' ||
            github.event_name == 'workflow_dispatch' ||
            (github.event_name == 'pull_request' &&
@@ -511,7 +510,7 @@ jobs:
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: target.tar.zst
-          key: ci-crate-target-v10-${{ runner.os }}-${{ runner.arch }}-${{ matrix.package }}-${{ steps.crate-target-key.outputs.key }}
+          key: ci-crate-target-v11-${{ runner.os }}-${{ runner.arch }}-${{ matrix.package }}-${{ steps.crate-target-key.outputs.key }}
 
       - name: Capture sccache stats
         if: always() && steps.crate-result.outputs.hit != 'true'
