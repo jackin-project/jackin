@@ -518,13 +518,13 @@ key = "crates/jackin-capsule/README.md"
 bound = 6348
 [[family.entry]]
 key = "crates/jackin-config/README.md"
-bound = 2745
+bound = 2892
 [[family.entry]]
 key = "crates/jackin-oppicker/README.md"
 bound = 1575
 [[family.entry]]
 key = "crates/jackin-console/README.md"
-bound = 2498
+bound = 2553
 [[family.entry]]
 key = "crates/jackin-core/README.md"
 bound = 5351
@@ -536,19 +536,19 @@ key = "crates/jackin-diagnostics/README.md"
 bound = 2137
 [[family.entry]]
 key = "crates/jackin-docker/README.md"
-bound = 1673
+bound = 1864
 [[family.entry]]
 key = "crates/jackin-env/README.md"
-bound = 2860
+bound = 3051
 [[family.entry]]
 key = "crates/jackin-host/README.md"
-bound = 1803
+bound = 1999
 [[family.entry]]
 key = "crates/jackin-image/README.md"
-bound = 2685
+bound = 2988
 [[family.entry]]
 key = "crates/jackin-instance/README.md"
-bound = 1807
+bound = 2007
 [[family.entry]]
 key = "crates/jackin-isolation/README.md"
 bound = 2171
