@@ -230,6 +230,9 @@ fn prepare(args: PrepareArgs) -> Result<()> {
         repository: args.repository,
     })?;
     let downloaded = destination.join("target.tar.zst");
+    if let Some(parent) = args.cached_archive.parent() {
+        fs::create_dir_all(parent).with_context(|| format!("creating {}", parent.display()))?;
+    }
     fs::rename(&downloaded, &args.cached_archive).with_context(|| {
         format!(
             "promoting {} to {}",
@@ -467,6 +470,9 @@ fn pack(args: PackArgs) -> Result<()> {
     } else {
         current_dir.join(&args.output)
     };
+    if let Some(parent) = output.parent() {
+        fs::create_dir_all(parent).with_context(|| format!("creating {}", parent.display()))?;
+    }
     let target_name = args
         .target
         .file_name()

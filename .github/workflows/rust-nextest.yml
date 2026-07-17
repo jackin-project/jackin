@@ -220,9 +220,9 @@ jobs:
         id: target-archive-cache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: target.tar.zst
-          key: ci-crate-target-v11-${{ runner.os }}-${{ runner.arch }}-${{ matrix.package }}-${{ steps.crate-target-key.outputs.key }}
-          restore-keys: ci-crate-target-v11-${{ runner.os }}-${{ runner.arch }}-${{ matrix.package }}-
+          path: .ci-target-cache
+          key: ci-crate-target-v12-${{ runner.os }}-${{ runner.arch }}-${{ matrix.package }}-${{ steps.crate-target-key.outputs.key }}
+          restore-keys: ci-crate-target-v12-${{ runner.os }}-${{ runner.arch }}-${{ matrix.package }}-
       - name: Prepare reusable crate target seed
         id: restored-target
         if: steps.crate-result.outputs.hit != 'true'
@@ -239,7 +239,7 @@ jobs:
           --artifact-id "$ARTIFACT_ID"
           --repository "$REPOSITORY"
           --cache-key "$CACHE_KEY"
-          --cached-archive target.tar.zst
+          --cached-archive .ci-target-cache/target.tar.zst
           --known-exact "$KNOWN_EXACT"
       - name: Run package tests
         if: steps.crate-result.outputs.hit != 'true'
@@ -484,7 +484,7 @@ jobs:
             --target target \
             --source-key "${{ steps.crate-target-key.outputs.key }}" \
             --enabled "${{ matrix.config.cache_writer }}" \
-            --output target.tar.zst
+            --output .ci-target-cache/target.tar.zst
       - name: Publish reusable crate target seed
         if: >-
           always() && !cancelled() && !failure() &&
@@ -498,7 +498,7 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ${{ steps.crate-target.outputs.name }}
-          path: target.tar.zst
+          path: .ci-target-cache/target.tar.zst
           if-no-files-found: ignore
           compression-level: 0
           retention-days: 7
@@ -509,8 +509,8 @@ jobs:
           steps.target-archive-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: target.tar.zst
-          key: ci-crate-target-v11-${{ runner.os }}-${{ runner.arch }}-${{ matrix.package }}-${{ steps.crate-target-key.outputs.key }}
+          path: .ci-target-cache
+          key: ci-crate-target-v12-${{ runner.os }}-${{ runner.arch }}-${{ matrix.package }}-${{ steps.crate-target-key.outputs.key }}
 
       - name: Capture sccache stats
         if: always() && steps.crate-result.outputs.hit != 'true'
