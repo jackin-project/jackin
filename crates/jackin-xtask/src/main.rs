@@ -65,7 +65,7 @@ enum Command {
     /// Audit every job and step in the current GitHub Actions run.
     #[command(name = "ci-audit")]
     CiAudit(ci_audit::CiAuditArgs),
-    /// Run doctests when the selected crate owns a doctestable library target.
+    /// Run documentation tests when the selected crate owns a library target that supports them.
     #[command(name = "ci-doctest")]
     CiDoctest(ci_doctest::CiDoctestArgs),
     /// Resolve reusable per-crate CI results.
