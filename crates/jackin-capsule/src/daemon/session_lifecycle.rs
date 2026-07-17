@@ -316,7 +316,7 @@ impl Multiplexer {
 
     /// Single dispatch point for `DialogAction::SpawnAgent`. Spawn
     /// failures (PTY allocation, missing agent binary, cap hit) are
-    /// exported once as a bodyless typed error; operator detail stays
+    /// exported once as a typed error without a body; operator detail stays
     /// local to the dialog. The dialog dismisses regardless so the
     /// operator can retry.
     pub(super) fn dispatch_spawn_intent(&mut self, agent: Option<String>, intent: PickerIntent) {
