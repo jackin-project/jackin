@@ -55,7 +55,7 @@ runs:
         done
 
     - name: Setup lychee via mise
-      uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4
+      uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4
       with:
         version: "2026.6.11"
         cache_key_prefix: "mise-v2"
