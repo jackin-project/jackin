@@ -229,8 +229,18 @@ fn prepare(args: PrepareArgs) -> Result<()> {
         destination: destination.clone(),
         repository: args.repository,
     })?;
+    let downloaded = destination.join("target.tar.zst");
+    fs::rename(&downloaded, &args.cached_archive).with_context(|| {
+        format!(
+            "promoting {} to {}",
+            downloaded.display(),
+            args.cached_archive.display()
+        )
+    })?;
+    fs::remove_dir_all(&destination)
+        .with_context(|| format!("removing {}", destination.display()))?;
     restore(RestoreArgs {
-        archive: destination.join("target.tar.zst"),
+        archive: args.cached_archive,
         target: args.target,
         cache_key: args.cache_key,
         known_exact: args.known_exact,
