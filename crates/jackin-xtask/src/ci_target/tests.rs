@@ -2,7 +2,9 @@ use std::fs;
 
 use tempfile::tempdir;
 
-use super::{excluded, excluded_file, has_reusable_local_target, key_for_package, reusable_paths};
+use super::{
+    Artifact, excluded, excluded_file, has_reusable_local_target, key_for_package, reusable_paths,
+};
 
 #[test]
 fn resolves_exact_key_without_workflow_expression_parsing() {
@@ -43,6 +45,20 @@ fn local_target_requires_rustc_metadata_and_an_rlib() {
 
     fs::write(target.join("debug/deps/libexample.rlib"), b"output").unwrap();
     assert!(has_reusable_local_target(&target).unwrap());
+}
+
+#[test]
+fn rejects_empty_or_expired_target_artifacts() {
+    let artifact = |size_in_bytes, expired| Artifact {
+        id: 1,
+        expired,
+        created_at: "2026-07-17T00:00:00Z".to_owned(),
+        size_in_bytes,
+    };
+
+    assert!(!artifact(285, false).reusable());
+    assert!(!artifact(2 * 1024 * 1024, true).reusable());
+    assert!(artifact(2 * 1024 * 1024, false).reusable());
 }
 
 #[test]

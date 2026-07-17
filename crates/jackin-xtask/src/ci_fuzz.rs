@@ -1,9 +1,10 @@
 //! Run the bounded fuzz contract for one workspace crate without workflow scripting.
 
 use std::env;
+use std::io::{self, Write};
 use std::process::Command;
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result};
 use clap::Args;
 
 use crate::cmd;
@@ -20,7 +21,14 @@ pub(crate) struct CiFuzzArgs {
 }
 
 pub(crate) fn run(args: CiFuzzArgs) -> Result<()> {
-    let contract = contract_for(&args.package)?;
+    let Some(contract) = contract_for(&args.package) else {
+        writeln!(
+            io::stdout().lock(),
+            "crate `{}` has no bounded fuzz contract",
+            args.package
+        )?;
+        return Ok(());
+    };
     let cargo_fuzz = env::var_os("CI_CARGO_FUZZ").context("CI_CARGO_FUZZ must be set")?;
     cmd::run(Command::new("cargo").current_dir(contract.directory).args([
         "fetch",
@@ -53,7 +61,7 @@ struct FuzzContract {
     targets: &'static [&'static str],
 }
 
-fn contract_for(package: &str) -> Result<FuzzContract> {
+fn contract_for(package: &str) -> Option<FuzzContract> {
     let (directory, targets): (&str, &[&str]) = match package {
         "jackin-config" => (
             "crates/jackin-config",
@@ -66,7 +74,7 @@ fn contract_for(package: &str) -> Result<FuzzContract> {
         ),
         "jackin-protocol" => ("crates/jackin-protocol", &["decode_frames"]),
         "jackin-term" => ("crates/jackin-term", &["damage_grid_process"]),
-        _ => bail!("crate `{package}` does not own a bounded CI fuzz contract"),
+        _ => return None,
     };
-    Ok(FuzzContract { directory, targets })
+    Some(FuzzContract { directory, targets })
 }

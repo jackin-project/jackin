@@ -35,5 +35,5 @@ fn maps_each_fuzzing_crate_to_its_complete_contract() {
 
 #[test]
 fn rejects_crates_without_a_fuzz_contract() {
-    assert!(contract_for("jackin-xtask").is_err());
+    assert!(contract_for("jackin-xtask").is_none());
 }

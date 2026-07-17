@@ -94,6 +94,8 @@ pub(crate) struct PackArgs {
     source_key: String,
     #[arg(long, default_value = "target.tar.zst")]
     output: PathBuf,
+    #[arg(long, default_value_t = true, action = clap::ArgAction::Set)]
+    enabled: bool,
 }
 
 #[derive(Args, Debug)]
@@ -112,6 +114,15 @@ struct Artifact {
     id: u64,
     expired: bool,
     created_at: String,
+    size_in_bytes: u64,
+}
+
+const MINIMUM_REUSABLE_TARGET_BYTES: u64 = 1024 * 1024;
+
+impl Artifact {
+    fn reusable(&self) -> bool {
+        !self.expired && self.size_in_bytes >= MINIMUM_REUSABLE_TARGET_BYTES
+    }
 }
 
 pub(crate) fn run(command: CiTargetCommand) -> Result<()> {
@@ -245,7 +256,7 @@ fn newest_artifact(repository: &str, name: &str) -> Result<Option<Artifact>> {
         .with_context(|| format!("querying GitHub Actions artifact `{name}`"))?;
     let mut response: ArtifactsResponse =
         serde_json::from_slice(&output).context("parsing GitHub artifact response")?;
-    response.artifacts.retain(|artifact| !artifact.expired);
+    response.artifacts.retain(Artifact::reusable);
     response
         .artifacts
         .sort_unstable_by(|left, right| right.created_at.cmp(&left.created_at));
@@ -307,6 +318,10 @@ fn restore(args: RestoreArgs) -> Result<()> {
     if canonical_hit {
         normalize_checkout_timestamps()?;
     }
+    writeln!(
+        io::stdout().lock(),
+        "restored Cargo target canonical-hit={canonical_hit}"
+    )?;
     write_output(
         "canonical-hit",
         if canonical_hit { "true" } else { "false" },
@@ -332,6 +347,17 @@ fn normalize_checkout_timestamps() -> Result<()> {
 }
 
 fn pack(args: PackArgs) -> Result<()> {
+    if !args.enabled || !has_reusable_local_target(&args.target)? {
+        if args.output.exists() {
+            fs::remove_file(&args.output)
+                .with_context(|| format!("removing stale {}", args.output.display()))?;
+        }
+        writeln!(
+            io::stdout().lock(),
+            "Cargo target publication disabled or empty; no reusable archive was produced"
+        )?;
+        return Ok(());
+    }
     let current_dir = env::current_dir().context("resolving current directory")?;
     let target_parent = args
         .target
