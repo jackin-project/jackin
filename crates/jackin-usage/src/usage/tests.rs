@@ -3474,6 +3474,84 @@ fn provider_boundary_exports_only_bounded_request_fields() {
     }
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn conformance_wire_provider_boundary_exports_bounded_private_shapes() {
+    let testbed = jackin_otlp_testbed::Testbed::start().expect("start OTLP testbed");
+    jackin_diagnostics::init_wire_test_export(
+        &testbed.endpoint(),
+        jackin_diagnostics::ServiceIdentity::CAPSULE,
+    )
+    .expect("initialize wire test export");
+
+    let success = provider_request(
+        jackin_telemetry::schema::enums::ProviderName::Openai,
+        "GET",
+        "/backend-api/wham/usage",
+        || Ok::<_, String>("private-provider-response"),
+    );
+    assert_eq!(
+        success.expect("provider request succeeds"),
+        "private-provider-response"
+    );
+    let failure = provider_request(
+        jackin_telemetry::schema::enums::ProviderName::Anthropic,
+        "POST",
+        "/api/oauth/usage",
+        || Err::<(), _>("private-token private-account ?private=query".to_owned()),
+    );
+    assert!(failure.is_err());
+    jackin_diagnostics::flush_wire_test_export().expect("flush wire test export");
+
+    let deadline = Instant::now() + Duration::from_secs(2);
+    let spans = loop {
+        let spans = testbed
+            .spans()
+            .into_iter()
+            .filter(|span| span.name == "http.client")
+            .collect::<Vec<_>>();
+        if spans.len() == 2 {
+            break spans;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "provider HTTP wire spans did not arrive"
+        );
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    };
+    let wire_text = format!("{spans:?}");
+    for expected in [
+        "openai",
+        "anthropic",
+        "GET",
+        "POST",
+        "/backend-api/wham/usage",
+        "/api/oauth/usage",
+        "success",
+        "failure",
+        "http_error",
+    ] {
+        assert!(
+            wire_text.contains(expected),
+            "missing {expected}: {wire_text}"
+        );
+    }
+    let prohibited = [
+        "private-provider-response",
+        "private-token",
+        "private-account",
+        "?private=query",
+    ];
+    for value in prohibited {
+        assert!(!wire_text.contains(value), "exported {value}");
+    }
+    assert_eq!(
+        testbed.prohibited_value_violations(&prohibited),
+        Vec::<String>::new()
+    );
+    assert_eq!(testbed.legacy_namespace_violations(), Vec::<String>::new());
+    jackin_diagnostics::shutdown_capsule_tracing();
+}
+
 #[test]
 fn managed_probe_boundaries_export_fixed_private_shapes() {
     use std::sync::mpsc;
