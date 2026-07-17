@@ -1241,7 +1241,10 @@ rewrites, metadata, public assets, and dependency/configuration inputs. Pure
 implementation and prose changes therefore reuse the existing successful link
 proof instead of rebuilding the site and repeating thousands of network
 requests. A changed link target still invalidates the proof and runs the whole
-unsharded validation.
+unsharded validation. Prose-only acceptance run `29582046782` then reused that
+proof: `docs-link-check` fell from 146 seconds to nine seconds, skipped the
+build, dependency installation, lychee cache, all 6,103 network checks, and
+site-artifact publication, and every Docs job stayed below one minute.
 
 Runs `29575485166` and `29575735792` validated the closure-key migration with
 one complete `jackin-xtask` job per lane. The first run populated the new key
