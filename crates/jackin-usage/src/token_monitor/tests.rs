@@ -144,8 +144,19 @@ fn standard_token_usage_delta_includes_cached_input_without_regression() {
         cache_write_tokens: 14,
         ..TokenTotals::default()
     };
-    assert_eq!(token_usage_delta(&previous, &current), (42, 15));
-    assert_eq!(token_usage_delta(&current, &previous), (0, 0));
+    assert_eq!(
+        token_usage_delta(Agent::Claude, &previous, &current),
+        (42, 15)
+    );
+    assert_eq!(
+        token_usage_delta(Agent::Claude, &current, &previous),
+        (0, 0)
+    );
+    assert_eq!(
+        token_usage_delta(Agent::Codex, &previous, &current),
+        (30, 15),
+        "Codex input totals already contain cached input"
+    );
 }
 
 #[test]

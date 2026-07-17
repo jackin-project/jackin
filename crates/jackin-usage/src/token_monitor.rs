@@ -203,25 +203,25 @@ fn record_token_usage(agent: Agent, previous: &TokenTotals, current: &TokenTotal
     let Some(provider) = provider_name(agent) else {
         return;
     };
-    let (input, output) = token_usage_delta(previous, current);
+    let (input, output) = token_usage_delta(agent, previous, current);
     record_token_type(provider, schema::enums::GenAiTokenType::Input, input);
     record_token_type(provider, schema::enums::GenAiTokenType::Output, output);
 }
 
-fn token_usage_delta(previous: &TokenTotals, current: &TokenTotals) -> (u64, u64) {
-    let input = current
-        .input_tokens
-        .saturating_sub(previous.input_tokens)
-        .saturating_add(
-            current
-                .cache_read_tokens
-                .saturating_sub(previous.cache_read_tokens),
-        )
-        .saturating_add(
-            current
-                .cache_write_tokens
-                .saturating_sub(previous.cache_write_tokens),
-        );
+fn token_usage_delta(agent: Agent, previous: &TokenTotals, current: &TokenTotals) -> (u64, u64) {
+    let uncached_input = current.input_tokens.saturating_sub(previous.input_tokens);
+    let separate_cached_input = match agent {
+        Agent::Claude | Agent::Amp | Agent::Kimi => current
+            .cache_read_tokens
+            .saturating_sub(previous.cache_read_tokens)
+            .saturating_add(
+                current
+                    .cache_write_tokens
+                    .saturating_sub(previous.cache_write_tokens),
+            ),
+        Agent::Codex | Agent::Opencode | Agent::Grok => 0,
+    };
+    let input = uncached_input.saturating_add(separate_cached_input);
     let output = current.output_tokens.saturating_sub(previous.output_tokens);
     (input, output)
 }
