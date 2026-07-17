@@ -587,6 +587,11 @@ rustup archive caused mise setup to skip even though changed xtask source still
 needed `mise exec`, producing exit 127 before Cargo. Warmup now prepares mise
 whenever either the xtask or tool bundle misses; a rustup cache hit no longer
 claims that the separate mise execution environment exists.
+Replacement run `29562925946` proved the corrected bootstrap in `46s`. Its v8
+warmup seed was `38,114,507` bytes, replacing the previous transport shape with
+a compact dependency-output seed. The complete `jackin-xtask` job reached
+clippy in `62s`; clippy caught a needless borrow in the new current-run lookup,
+which the follow-up removed before repeating the proof.
 
 Dual-lane crate tests no longer assign target and successful-result publication
 to a configured cache-writer lane. A per-crate concurrency group serializes only

@@ -192,7 +192,7 @@ fn lookup_artifact(repository: &str, run_id: u64, name: &str, package: &str) -> 
 
 fn lookup_endpoint(endpoint: &str, package: &str) -> Lookup {
     let response = cmd::output_timeout(
-        Command::new("gh").args(["api", &endpoint]),
+        Command::new("gh").args(["api", endpoint]),
         Duration::from_secs(5),
     )
     .and_then(|output| {
