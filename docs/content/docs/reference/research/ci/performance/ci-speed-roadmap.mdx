@@ -599,6 +599,10 @@ default checking, all-feature clippy, feature powerset, and benchmark build.
 The semantic crate-test identifier is now a declarative workflow output rather
 than a Bash program; changing transport code still preserves test proofs, while
 changing the commands or acceptance criteria still requires an explicit bump.
+The Docs-specific xtask source contract now uses the same declarative `hashFiles`
+expression in CI and Docs, exported through the already-pinned bootstrap action.
+This removes another Bash hashing implementation while preserving the narrower
+Docs command surface that prevents unrelated xtask edits from rebuilding Docs.
 
 Dual-lane crate tests no longer assign target and successful-result publication
 to a configured cache-writer lane. A per-crate concurrency group serializes only

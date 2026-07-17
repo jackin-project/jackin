@@ -38,13 +38,21 @@ jobs:
       source: ${{ steps.dispatch.outputs.source || steps.filter.outputs.source }}
       result-reuse: ${{ steps.docs-result.outputs.hit }}
       result-name: ${{ steps.docs-result.outputs.name }}
-      docs-xtask-contract: ${{ steps.contracts.outputs.docs-xtask }}
+      docs-xtask-contract: ${{ steps.docs-xtask-contract.outputs.docs-xtask }}
       deployment-reuse: ${{ steps.deployed.outputs.reuse }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 0
+
+      - name: Resolve Docs xtask contract
+        id: docs-xtask-contract
+        uses: actions/github-script@373c709c69115d41ff229c7e5df9f8788daa9553 # v9.0.0
+        env:
+          CONTRACT: ${{ hashFiles('.cargo/**', 'Cargo.lock', 'Cargo.toml', 'rust-toolchain.toml', 'crates/*/Cargo.toml', 'crates/jackin-xtask/src/arch.rs', 'crates/jackin-xtask/src/cmd.rs', 'crates/jackin-xtask/src/docs.rs', 'crates/jackin-xtask/src/docs/**', 'crates/jackin-xtask/src/fs_util.rs', 'crates/jackin-xtask/src/main.rs', 'crates/jackin-xtask/src/report.rs') }}
+        with:
+          script: core.setOutput('docs-xtask', process.env.CONTRACT)
 
       - name: Force docs=true on workflow_dispatch
         id: dispatch
@@ -55,10 +63,6 @@ jobs:
             echo "docs=true"
             echo "source=true"
           } >> "$GITHUB_OUTPUT"
-
-      - name: Resolve Docs xtask contract
-        id: contracts
-        run: echo "docs-xtask=$(scripts/ci/docs-xtask-contract.sh)" >> "$GITHUB_OUTPUT"
 
       - name: Classify changed paths
         id: filter
@@ -82,7 +86,6 @@ jobs:
               - '.github/**/*.yml'
               - '.github/workflows/docs.yml'
               - '.github/actions/check-deployed-docs/**'
-              - 'scripts/ci/docs-xtask-contract.sh'
               - 'scripts/ci/docs-site-contract.sh'
               - 'scripts/ci/codebook-contract.sh'
               - 'docs/**'
@@ -92,7 +95,6 @@ jobs:
               - 'docker/**/*.sh'
               - 'docker/**/*.toml'
               - '.github/workflows/docs.yml'
-              - 'scripts/ci/docs-xtask-contract.sh'
               - 'scripts/ci/docs-site-contract.sh'
               - 'scripts/ci/codebook-contract.sh'
 
@@ -136,7 +138,6 @@ jobs:
                   'docs/**' \
                   'mise.lock' \
                   'mise.toml' \
-                  'scripts/ci/docs-xtask-contract.sh' \
                   'scripts/ci/docs-site-contract.sh' \
                   'scripts/ci/codebook-contract.sh'
               )
@@ -170,7 +171,7 @@ jobs:
         with:
           token: ${{ github.token }}
           lane: GitHub
-          xtask-contract: ${{ steps.contracts.outputs.docs-xtask }}
+          xtask-contract: ${{ steps.docs-xtask-contract.outputs.docs-xtask }}
           fallback-xtask-contract: ${{ hashFiles('Cargo.lock', 'Cargo.toml', 'rust-toolchain.toml', '.cargo/**', 'crates/*/Cargo.toml', 'crates/jackin-xtask/src/**', 'crates/jackin-process/src/**') }}
           include-tools: "false"
 

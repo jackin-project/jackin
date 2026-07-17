@@ -44,7 +44,7 @@ jobs:
       workflows: ${{ steps.route.outputs.workflows }}
       audit-contract: ${{ steps.contracts.outputs.audit }}
       ci-xtask-contract: ${{ steps.contracts.outputs.ci-xtask }}
-      docs-xtask-contract: ${{ steps.contracts.outputs.docs-xtask }}
+      docs-xtask-contract: ${{ steps.docs-xtask-contract.outputs.docs-xtask }}
       ci-tools-contract: ${{ steps.contracts.outputs.ci-tools }}
       docker-contract: ${{ steps.contracts.outputs.docker }}
       nextest-contract: 2c87e22194a8df9228603249e7d4efdee1df4ab829909d9350b0194d8b0ab83b
@@ -61,6 +61,14 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Resolve Docs xtask contract
+        id: docs-xtask-contract
+        uses: actions/github-script@373c709c69115d41ff229c7e5df9f8788daa9553 # v9.0.0
+        env:
+          CONTRACT: ${{ hashFiles('.cargo/**', 'Cargo.lock', 'Cargo.toml', 'rust-toolchain.toml', 'crates/*/Cargo.toml', 'crates/jackin-xtask/src/arch.rs', 'crates/jackin-xtask/src/cmd.rs', 'crates/jackin-xtask/src/docs.rs', 'crates/jackin-xtask/src/docs/**', 'crates/jackin-xtask/src/fs_util.rs', 'crates/jackin-xtask/src/main.rs', 'crates/jackin-xtask/src/report.rs') }}
+        with:
+          script: core.setOutput('docs-xtask', process.env.CONTRACT)
+
       - name: Resolve runner-independent cache contracts
         id: contracts
         shell: bash
@@ -76,7 +84,6 @@ jobs:
             echo "audit=$AUDIT"
             echo "ci-tools=$CI_TOOLS"
             echo "ci-xtask=$CI_XTASK"
-            echo "docs-xtask=$(scripts/ci/docs-xtask-contract.sh)"
             echo "docker=$DOCKER"
             echo "registry=$REGISTRY"
             echo "rustup=$RUSTUP"
@@ -139,7 +146,6 @@ jobs:
             docker_e2e:
               - '.config/nextest.toml'
               - '.github/workflows/ci.yml'
-              - 'scripts/ci/crate-test-contract.sh'
               - 'docker/**'
               - 'crates/jackin/tests/dind_e2e.rs'
               - 'crates/jackin/tests/dind_e2e/**'
