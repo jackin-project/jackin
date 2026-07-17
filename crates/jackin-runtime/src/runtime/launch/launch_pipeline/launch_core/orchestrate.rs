@@ -252,7 +252,6 @@ where
                     instance_manifest,
                     docker,
                     runner,
-                    "clean exit",
                 )
                 .await?;
             }
@@ -290,7 +289,6 @@ where
                     instance_manifest,
                     docker,
                     runner,
-                    "NotFound clean exit",
                 )
                 .await?;
             }

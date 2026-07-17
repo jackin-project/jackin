@@ -346,27 +346,18 @@ pub async fn resolve_supported_agents_for_console(
                 );
                 return Ok(manifest.supported_agents());
             }
-            Err(error) => {
+            Err(_error) => {
                 jackin_telemetry::cache::decision(
                     jackin_telemetry::schema::enums::CacheName::RoleRepository,
                     jackin_telemetry::schema::enums::CacheResult::Stale,
                 );
-                jackin_diagnostics::telemetry_debug!(
-                    "console",
-                    "cached manifest for {} present but failed to parse ({error:#}); refetching",
-                    selector.key()
-                );
+                let _warning = jackin_telemetry::record_recovered_degradation();
             }
         }
     } else {
         jackin_telemetry::cache::decision(
             jackin_telemetry::schema::enums::CacheName::RoleRepository,
             jackin_telemetry::schema::enums::CacheResult::Miss,
-        );
-        jackin_diagnostics::telemetry_debug!(
-            "console",
-            "no cached repo for {}; falling back to git fetch",
-            selector.key()
         );
     }
     let (_, validated_repo, _repo_lock) = resolve_agent_repo_with(
@@ -456,11 +447,6 @@ async fn restore_explicit_container(
             "explicit_restore_container_running"
         },
         Some(container),
-    );
-    jackin_diagnostics::telemetry_debug!(
-        "restore",
-        "{} explicit restore container {container} before role repo, credentials, and image prep",
-        if start { "starting" } else { "attaching" }
     );
     restore_current_role_now(paths, container, docker, runner, steps, start).await?;
     Ok(true)
@@ -794,132 +780,115 @@ pub(crate) async fn load_role_with(
     // session is left intact (a fresh, rebuilt instance is created alongside
     // it), while a stopped/crashed/missing container is reclaimed and recreated
     // from the rebuilt image.
-    let early_restore_container = if opts.restore_container_base.is_none()
-        && opts.role_branch.is_none()
-        && !opts.rebuild
-    {
-        if let Some(agent) = selected_agent_before_role {
-            match super::resolve_current_restore_candidate_timed(
-                paths,
-                workspace_name.as_deref(),
-                workspace.label.as_str(),
-                &workspace.workdir,
-                &role_key,
-                agent,
-                docker,
-            )
-            .await?
-            {
-                Some(super::RestoreResolution::StartCurrentRole(container)) => {
-                    jackin_diagnostics::telemetry_debug!(
-                        "restore",
-                        "starting current stopped instance {container} before role repo, credentials, and image prep"
-                    );
-                    return restore_current_role_now(
-                        paths, &container, docker, runner, &mut steps, true,
-                    )
-                    .await;
+    let early_restore_container =
+        if opts.restore_container_base.is_none() && opts.role_branch.is_none() && !opts.rebuild {
+            if let Some(agent) = selected_agent_before_role {
+                match super::resolve_current_restore_candidate_timed(
+                    paths,
+                    workspace_name.as_deref(),
+                    workspace.label.as_str(),
+                    &workspace.workdir,
+                    &role_key,
+                    agent,
+                    docker,
+                )
+                .await?
+                {
+                    Some(super::RestoreResolution::StartCurrentRole(container)) => {
+                        return restore_current_role_now(
+                            paths, &container, docker, runner, &mut steps, true,
+                        )
+                        .await;
+                    }
+                    Some(super::RestoreResolution::RecreateCurrentRole(container)) => {
+                        early_current_scan = super::EarlyCurrentRestoreScan::Scanned {
+                            agent,
+                            current: Some(super::RestoreResolution::RecreateCurrentRole(
+                                container.clone(),
+                            )),
+                        };
+                        Some(container)
+                    }
+                    Some(other) => {
+                        early_current_scan = super::EarlyCurrentRestoreScan::Scanned {
+                            agent,
+                            current: Some(other),
+                        };
+                        None
+                    }
+                    None => {
+                        early_current_scan = super::EarlyCurrentRestoreScan::Scanned {
+                            agent,
+                            current: None,
+                        };
+                        None
+                    }
                 }
-                Some(super::RestoreResolution::RecreateCurrentRole(container)) => {
-                    early_current_scan = super::EarlyCurrentRestoreScan::Scanned {
+            } else {
+                match super::resolve_unselected_current_restore_candidate_with_agent_timed(
+                    paths,
+                    workspace_name.as_deref(),
+                    workspace.label.as_str(),
+                    &workspace.workdir,
+                    &role_key,
+                    docker,
+                )
+                .await?
+                {
+                    Some(super::UnselectedCurrentRestoreResolution {
+                        resolution: super::RestoreResolution::StartCurrentRole(container),
+                        ..
+                    }) => {
+                        return restore_current_role_now(
+                            paths, &container, docker, runner, &mut steps, true,
+                        )
+                        .await;
+                    }
+                    Some(super::UnselectedCurrentRestoreResolution {
+                        resolution: super::RestoreResolution::RecreateCurrentRole(container),
                         agent,
-                        current: Some(super::RestoreResolution::RecreateCurrentRole(
-                            container.clone(),
-                        )),
-                    };
-                    jackin_diagnostics::telemetry_debug!(
-                        "restore",
-                        "recreating missing current instance {container} after role repo resolution"
-                    );
-                    Some(container)
-                }
-                Some(other) => {
-                    early_current_scan = super::EarlyCurrentRestoreScan::Scanned {
-                        agent,
-                        current: Some(other),
-                    };
-                    None
-                }
-                None => {
-                    early_current_scan = super::EarlyCurrentRestoreScan::Scanned {
-                        agent,
-                        current: None,
-                    };
-                    None
+                    }) => {
+                        early_restore_agent = Some(agent);
+                        early_current_scan = super::EarlyCurrentRestoreScan::Scanned {
+                            agent,
+                            current: Some(super::RestoreResolution::RecreateCurrentRole(
+                                container.clone(),
+                            )),
+                        };
+                        Some(container)
+                    }
+                    Some(super::UnselectedCurrentRestoreResolution { resolution, agent }) => {
+                        early_current_scan = super::EarlyCurrentRestoreScan::Scanned {
+                            agent,
+                            current: Some(resolution),
+                        };
+                        None
+                    }
+                    None => {
+                        // Unselected scan found no single-agent hit. When the role
+                        // also has no is_restore_candidate manifests, stash
+                        // ScannedUnselectedEmpty so a later selected agent skips a
+                        // pure-waste current-role re-inspect (008c residual).
+                        let role_empty = !super::restore::matching_current_role_manifests(
+                            paths,
+                            workspace_name.as_deref(),
+                            workspace.label.as_str(),
+                            &workspace.workdir,
+                            &role_key,
+                        )?
+                        .into_iter()
+                        .any(|m| m.is_restore_candidate());
+                        if role_empty {
+                            early_current_scan =
+                                super::EarlyCurrentRestoreScan::ScannedUnselectedEmpty;
+                        }
+                        None
+                    }
                 }
             }
         } else {
-            match super::resolve_unselected_current_restore_candidate_with_agent_timed(
-                paths,
-                workspace_name.as_deref(),
-                workspace.label.as_str(),
-                &workspace.workdir,
-                &role_key,
-                docker,
-            )
-            .await?
-            {
-                Some(super::UnselectedCurrentRestoreResolution {
-                    resolution: super::RestoreResolution::StartCurrentRole(container),
-                    ..
-                }) => {
-                    jackin_diagnostics::telemetry_debug!(
-                        "restore",
-                        "starting single-agent current instance {container} before role repo, credentials, and image prep"
-                    );
-                    return restore_current_role_now(
-                        paths, &container, docker, runner, &mut steps, true,
-                    )
-                    .await;
-                }
-                Some(super::UnselectedCurrentRestoreResolution {
-                    resolution: super::RestoreResolution::RecreateCurrentRole(container),
-                    agent,
-                }) => {
-                    early_restore_agent = Some(agent);
-                    early_current_scan = super::EarlyCurrentRestoreScan::Scanned {
-                        agent,
-                        current: Some(super::RestoreResolution::RecreateCurrentRole(
-                            container.clone(),
-                        )),
-                    };
-                    jackin_diagnostics::telemetry_debug!(
-                        "restore",
-                        "recreating single-agent missing current instance {container} after role repo resolution"
-                    );
-                    Some(container)
-                }
-                Some(super::UnselectedCurrentRestoreResolution { resolution, agent }) => {
-                    early_current_scan = super::EarlyCurrentRestoreScan::Scanned {
-                        agent,
-                        current: Some(resolution),
-                    };
-                    None
-                }
-                None => {
-                    // Unselected scan found no single-agent hit. When the role
-                    // also has no is_restore_candidate manifests, stash
-                    // ScannedUnselectedEmpty so a later selected agent skips a
-                    // pure-waste current-role re-inspect (008c residual).
-                    let role_empty = !super::restore::matching_current_role_manifests(
-                        paths,
-                        workspace_name.as_deref(),
-                        workspace.label.as_str(),
-                        &workspace.workdir,
-                        &role_key,
-                    )?
-                    .into_iter()
-                    .any(|m| m.is_restore_candidate());
-                    if role_empty {
-                        early_current_scan = super::EarlyCurrentRestoreScan::ScannedUnselectedEmpty;
-                    }
-                    None
-                }
-            }
-        }
-    } else {
-        None
-    };
+            None
+        };
 
     if restore_explicit_container(
         paths,
@@ -1063,20 +1032,12 @@ pub(crate) async fn load_role_with(
         {
             super::RestoreResolution::StartFresh => None,
             super::RestoreResolution::StartCurrentRole(container) => {
-                jackin_diagnostics::telemetry_debug!(
-                    "restore",
-                    "starting current stopped instance {container} before credentials and image prep"
-                );
                 return restore_current_role_now(
                     paths, &container, docker, runner, &mut steps, true,
                 )
                 .await;
             }
             super::RestoreResolution::RecreateCurrentRole(container) => {
-                jackin_diagnostics::telemetry_debug!(
-                    "restore",
-                    "recreating missing current instance {container} with normal image decision"
-                );
                 // D7: extract pinned recipe so Tier 3 rebuild uses the original
                 // role SHA rather than current HEAD of the cached repo.
                 let container_state = paths.data_dir.join(&container);
@@ -1141,16 +1102,12 @@ pub(crate) async fn load_role_with(
                 // Best-effort: a failed purge leaves stale state the next prune
                 // reaps, but trace it so a delete-then-launch that didn't clean
                 // up is diagnosable rather than silent.
-                if let Err(err) = crate::runtime::cleanup::purge_container_state(
+                if let Err(_error) = crate::runtime::cleanup::purge_container_state(
                     paths, &container, docker, runner,
                 )
                 .await
                 {
-                    jackin_diagnostics::telemetry_debug!(
-                        "instance",
-                        "purge after launch-dialog delete failed for {container}: {err}; \
-                         state will be removed on next prune",
-                    );
+                    let _warning = jackin_telemetry::record_recovered_degradation();
                 }
                 None
             }
@@ -1574,7 +1531,7 @@ fn known_agent_credential_env(key: &str) -> bool {
 /// D9: purge per-instance data, the name-claim lock, and the index row inline on
 /// a clean terminal outcome so no manual prune is needed. If the purge itself
 /// fails, fall back to stamping `CleanExited` so the next prune removes the row.
-/// Shared by the clean-exit and `NotFound` arms, which differ only in `context`.
+/// Shared by the clean-exit and `NotFound` arms.
 pub(super) async fn purge_or_mark_clean_exited(
     paths: &JackinPaths,
     container_name: &str,
@@ -1582,16 +1539,11 @@ pub(super) async fn purge_or_mark_clean_exited(
     manifest: &mut InstanceManifest,
     docker: &impl DockerApi,
     runner: &mut impl CommandRunner,
-    context: &str,
 ) -> anyhow::Result<()> {
-    if let Err(err) =
+    if let Err(_error) =
         crate::runtime::cleanup::purge_container_state(paths, container_name, docker, runner).await
     {
-        jackin_diagnostics::telemetry_debug!(
-            "instance",
-            "inline cleanup after {context} failed for {container_name}: {err}; \
-             state will be removed on next prune",
-        );
+        let _warning = jackin_telemetry::record_recovered_degradation();
         super::write_instance_status(paths, state_dir, manifest, InstanceStatus::CleanExited)?;
     }
     Ok(())
