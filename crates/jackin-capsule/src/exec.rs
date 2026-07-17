@@ -215,9 +215,12 @@ pub async fn execute_command(
 ) -> Result<(i32, String, String, u32)> {
     let mut request = jackin_process::ExecRequest::new(command, args).no_timeout();
     request = request.envs(extra_env.iter().map(|(k, v)| (k.as_str(), v.as_str())));
-    let output = jackin_process::exec_async(&request)
-        .await
-        .with_context(|| format!("running {command:?}"))?;
+    let output = crate::process_telemetry::exec_async_as(
+        &request,
+        jackin_telemetry::schema::enums::ProcessExecutableName::ConfiguredCommand,
+    )
+    .await
+    .context("running configured command")?;
 
     let exit_code = output.code.unwrap_or(-1);
 

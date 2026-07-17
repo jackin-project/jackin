@@ -274,23 +274,16 @@ fn ensure_tool(tool: &str) -> Result<()> {
     let request = ExecRequest::new(tool, ["--version"])
         .stdout_mode(StdioMode::Null)
         .stderr_mode(StdioMode::Null);
-    match jackin_process::exec_sync(&request) {
+    match crate::process_telemetry::exec_sync(&request) {
         Ok(_) => Ok(()),
-        Err(e)
-            if e.chain().any(|cause| {
-                cause
-                    .downcast_ref::<std::io::Error>()
-                    .is_some_and(|error| error.kind() == std::io::ErrorKind::NotFound)
-            }) =>
-        {
+        Err(_) => {
             bail!(
-                "`{tool}` is not installed in this container image, but the `allowlist` network tier \
+                "a required firewall tool is unavailable in this container image, but the `allowlist` network tier \
                  requires `iptables` and `ipset`. Rebuild the role image on a construct image that \
                  installs them (jackin❯ construct >= 0.17-trixie), or use a profile whose network \
                  tier does not enforce an egress allowlist."
             )
         }
-        Err(e) => Err(e).context(format!("checking for `{tool}`")),
     }
 }
 
