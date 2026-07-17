@@ -92,6 +92,12 @@ async function run() {
   const allowMiss = process.env.JACKIN_ALLOW_MISS === "true";
   const octokit = github.getOctokit(token);
   const deadline = Date.now() + (allowMiss ? 0 : DEADLINE_MILLISECONDS);
+  let toolsHit = false;
+  let xtaskHit = false;
+  const result = () => ({
+    tools_hit: toolsHit ? "true" : "false",
+    xtask_hit: xtaskHit ? "true" : "false",
+  });
 
   core.setOutput("tools-hit", "false");
   core.setOutput("xtask-hit", "false");
@@ -107,9 +113,12 @@ async function run() {
     );
     if (lane) {
       await downloadArtifact(octokit, owner, repo, lane, destination);
+      toolsHit = true;
+      xtaskHit = true;
       core.setOutput("tools-hit", "true");
       core.setOutput("xtask-hit", "true");
-      return exportTools(destination);
+      await exportTools(destination);
+      return result();
     }
 
     const tools = await waitForArtifact(
@@ -123,6 +132,7 @@ async function run() {
       }
     } else {
       await downloadArtifact(octokit, owner, repo, tools, destination);
+      toolsHit = true;
       core.setOutput("tools-hit", "true");
     }
   }
@@ -141,12 +151,14 @@ async function run() {
     if (xtask) break;
   }
   if (!xtask) {
-    if (allowMiss) return;
+    if (allowMiss) return result();
     throw new Error("prepared CI xtask artifact not found");
   }
   await downloadArtifact(octokit, owner, repo, xtask, destination);
+  xtaskHit = true;
   core.setOutput("xtask-hit", "true");
   await exportTools(destination);
+  return result();
 }
 
 async function exportTools(destination) {
@@ -180,7 +192,7 @@ async function exportTools(destination) {
 
 async function main() {
   try {
-    await run();
+    return await run();
   } catch (error) {
     core.setFailed(error.message);
   }

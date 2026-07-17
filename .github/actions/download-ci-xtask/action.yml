@@ -35,10 +35,10 @@ inputs:
 outputs:
   xtask-hit:
     description: Whether the prepared xtask artifact was restored.
-    value: ${{ steps.restore.outputs.xtask-hit }}
+    value: ${{ fromJSON(steps.restore.outputs.result).xtask_hit }}
   tools-hit:
     description: Whether the prepared Cargo tool artifact was restored.
-    value: ${{ steps.restore.outputs.tools-hit }}
+    value: ${{ fromJSON(steps.restore.outputs.result).tools_hit }}
 
 runs:
   using: composite
@@ -62,4 +62,4 @@ runs:
         JACKIN_ACTION_RUNTIME: ${{ github.action_path }}/runtime/dist/index.js
       with:
         github-token: ${{ inputs.token }}
-        script: await import(process.env.JACKIN_ACTION_RUNTIME).then(({ main }) => main())
+        script: return await import(process.env.JACKIN_ACTION_RUNTIME).then(({ main }) => main())
