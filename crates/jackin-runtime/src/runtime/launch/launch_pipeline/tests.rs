@@ -184,6 +184,62 @@ agents = ["codex"]
 }
 
 #[test]
+fn launch_trust_rejection_exports_typed_decision_without_source_identity() {
+    let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
+    let _subscriber = tracing::subscriber::set_default(subscriber);
+    let selector = RoleSelector::new(Some("private-owner"), "private-role");
+    let source = jackin_config::RoleSource {
+        git: "https://secret.example/private-repository.git".to_owned(),
+        trusted: false,
+        env: BTreeMap::new(),
+    };
+    let mut config = AppConfig::default();
+    config.roles.insert(selector.key(), source.clone());
+    let mut steps = super::super::StepCounter::new(
+        "private-role",
+        jackin_telemetry::schema::enums::LaunchTargetKind::Directory,
+    );
+
+    let result = ensure_role_trust(&mut config, &selector, &source, &mut steps, |_, _| {
+        anyhow::bail!("private prompt transport failure")
+    });
+    result.unwrap_err();
+
+    export.force_flush();
+    assert_eq!(export.event_count("trust.decision"), 1);
+    for expected in ["rejected", "external", "failure", "trust_error"] {
+        assert!(export.contains_log_text(expected));
+    }
+    for private in [
+        "private-owner",
+        "private-role",
+        "secret.example",
+        "private-repository",
+        "private prompt transport failure",
+    ] {
+        assert!(!export.contains_log_text(private));
+    }
+}
+
+#[test]
+fn persisted_launch_trust_grant_exports_success_without_error_type() {
+    let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
+    tracing::subscriber::with_default(subscriber, || {
+        emit_launch_trust_decision(
+            jackin_telemetry::schema::enums::TrustDecision::Granted,
+            None,
+        );
+    });
+
+    export.force_flush();
+    assert_eq!(export.event_count("trust.decision"), 1);
+    for expected in ["granted", "external", "success"] {
+        assert!(export.contains_log_text(expected));
+    }
+    assert!(!export.contains_log_text("error.type"));
+}
+
+#[test]
 fn tag_errors_prefixes_each_with_source_tag() {
     let out = tag_errors("workspace", vec!["root+sudo", "bad pids"]);
     assert_eq!(

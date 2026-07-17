@@ -494,13 +494,26 @@ fn ensure_role_trust(
     if source.trusted {
         return Ok(false);
     }
-    let confirmed = if let Some(progress) = steps.progress_mut() {
-        progress.confirm_role_trust(selector.key(), source.git.clone())?
+    let confirmation = if let Some(progress) = steps.progress_mut() {
+        progress.confirm_role_trust(selector.key(), source.git.clone())
     } else {
-        confirm(selector, source)?;
-        true
+        confirm(selector, source).map(|()| true)
+    };
+    let confirmed = match confirmation {
+        Ok(confirmed) => confirmed,
+        Err(error) => {
+            emit_launch_trust_decision(
+                jackin_telemetry::schema::enums::TrustDecision::Rejected,
+                Some(jackin_telemetry::schema::enums::ErrorType::TrustError),
+            );
+            return Err(error);
+        }
     };
     if !confirmed {
+        emit_launch_trust_decision(
+            jackin_telemetry::schema::enums::TrustDecision::Rejected,
+            Some(jackin_telemetry::schema::enums::ErrorType::RoleSourceNotTrusted),
+        );
         anyhow::bail!(
             "role source \"{selector}\" not trusted — aborting.\n\
              To trust it later, run `jackin config trust grant {selector}` or try loading again."
@@ -510,6 +523,47 @@ fn ensure_role_trust(
         entry.trusted = true;
     }
     Ok(true)
+}
+
+fn emit_launch_trust_decision(
+    decision: jackin_telemetry::schema::enums::TrustDecision,
+    error_type: Option<jackin_telemetry::schema::enums::ErrorType>,
+) {
+    let outcome = match decision {
+        jackin_telemetry::schema::enums::TrustDecision::Granted => {
+            jackin_telemetry::schema::enums::OutcomeValue::Success
+        }
+        jackin_telemetry::schema::enums::TrustDecision::Rejected
+        | jackin_telemetry::schema::enums::TrustDecision::Revoked => {
+            jackin_telemetry::schema::enums::OutcomeValue::Failure
+        }
+    };
+    let mut attrs = vec![
+        jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::TRUST_DECISION,
+            value: jackin_telemetry::Value::Str(decision.as_str()),
+        },
+        jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::TRUST_SOURCE_TYPE,
+            value: jackin_telemetry::Value::Str(
+                jackin_telemetry::schema::enums::TrustSourceType::External.as_str(),
+            ),
+        },
+        jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::OUTCOME,
+            value: jackin_telemetry::Value::Str(outcome.as_str()),
+        },
+    ];
+    if let Some(error_type) = error_type {
+        attrs.push(jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::std_attrs::ERROR_TYPE,
+            value: jackin_telemetry::Value::Str(error_type.as_str()),
+        });
+    }
+    let _event = jackin_telemetry::emit_event(
+        &jackin_telemetry::event::TRUST_DECISION,
+        jackin_telemetry::FieldSet::new(&attrs, None),
+    );
 }
 
 fn select_launch_agent(
@@ -945,6 +999,12 @@ pub(crate) async fn load_role_with(
         is_new,
         newly_trusted,
     )?;
+    if newly_trusted {
+        emit_launch_trust_decision(
+            jackin_telemetry::schema::enums::TrustDecision::Granted,
+            None,
+        );
+    }
 
     let agent_display_name = validated_repo.manifest.display_name(&selector.name);
     steps.role_name.clone_from(&agent_display_name);
