@@ -1668,7 +1668,7 @@ pub fn build_shell_command(
     cwd: &Path,
     codename: &str,
 ) -> CommandBuilder {
-    let mut cmd = CommandBuilder::new("/bin/zsh");
+    let mut cmd = CommandBuilder::new(shell_executable());
     for (k, v) in env_passthrough {
         cmd.env(k, v);
     }
@@ -1677,6 +1677,16 @@ pub fn build_shell_command(
     apply_terminal_env(&mut cmd);
     cmd.cwd(cwd);
     cmd
+}
+
+#[cfg(not(test))]
+fn shell_executable() -> std::ffi::OsString {
+    "/bin/zsh".into()
+}
+
+#[cfg(test)]
+fn shell_executable() -> std::ffi::OsString {
+    std::env::var_os("JACKIN_TEST_SHELL").unwrap_or_else(|| "/bin/zsh".into())
 }
 
 /// Apply the stable pane terminal environment. The active outer terminal is

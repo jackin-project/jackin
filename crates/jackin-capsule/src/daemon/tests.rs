@@ -738,6 +738,7 @@ fn conformance_wire_generated_codename_reaches_child_without_export() -> Result<
                 "--nocapture",
             ])
             .env(CHILD, "1")
+            .env("JACKIN_TEST_SHELL", "sh")
             .status()?;
         anyhow::ensure!(status.success(), "isolated codename privacy test failed");
         return Ok(());

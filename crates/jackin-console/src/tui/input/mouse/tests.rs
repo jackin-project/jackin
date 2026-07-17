@@ -127,7 +127,7 @@ fn conformance_wire_mouse_coordinates_become_only_semantic_action() -> anyhow::R
         })
         .sum::<f64>();
     anyhow::ensure!(
-        ui_action_count == 1.0,
+        (ui_action_count - 1.0).abs() < f64::EPSILON,
         "one semantic mouse action must increment ui.actions exactly once, got {ui_action_count}"
     );
     for key in action
