@@ -100,6 +100,8 @@ pub(crate) struct PrepareArgs {
     repository: String,
     #[arg(long)]
     cache_key: String,
+    #[arg(long, default_value = "target.tar.zst")]
+    cached_archive: PathBuf,
     #[arg(long, action = clap::ArgAction::Set)]
     known_exact: bool,
 }
@@ -206,6 +208,21 @@ fn prepare(args: PrepareArgs) -> Result<()> {
         return write_output("canonical-hit", "false");
     }
     write_output("local-hit", "false")?;
+    if args.cached_archive.is_file() {
+        return restore(RestoreArgs {
+            archive: args.cached_archive,
+            target: args.target,
+            cache_key: args.cache_key,
+            known_exact: args.known_exact,
+        });
+    }
+    if args.artifact_id == 0 {
+        writeln!(
+            io::stdout().lock(),
+            "no reusable Cargo target is available; building from the prepared registry"
+        )?;
+        return write_output("canonical-hit", "false");
+    }
     let destination = args.target.join(".ci-restore");
     download(DownloadArgs {
         artifact_id: args.artifact_id,

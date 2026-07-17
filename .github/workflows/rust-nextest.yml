@@ -216,10 +216,18 @@ jobs:
           --repository "$REPOSITORY"
           --supplied-results "$TARGET_RESULTS"
           --github-output
+      - name: Restore exact crate target archive
+        id: target-archive-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: target.tar.zst
+          key: ci-crate-target-v10-${{ runner.os }}-${{ runner.arch }}-${{ matrix.package }}-${{ steps.crate-target-key.outputs.key }}
+          restore-keys: ci-crate-target-v10-${{ runner.os }}-${{ runner.arch }}-${{ matrix.package }}-
       - name: Prepare reusable crate target seed
         id: restored-target
-        if: steps.crate-target.outputs.hit == 'true'
+        if: steps.crate-result.outputs.hit != 'true'
         env:
+          ARTIFACT_ID: ${{ steps.crate-target.outputs.artifact-id || '0' }}
           CACHE_KEY: ${{ steps.crate-target-key.outputs.key }}
           GH_TOKEN: ${{ github.token }}
           KNOWN_EXACT: ${{ steps.crate-target.outputs.known-exact }}
@@ -228,9 +236,10 @@ jobs:
           "$CI_XTASK" ci-target prepare
           --package "${{ matrix.package }}"
           --target target
-          --artifact-id "${{ steps.crate-target.outputs.artifact-id }}"
+          --artifact-id "$ARTIFACT_ID"
           --repository "$REPOSITORY"
           --cache-key "$CACHE_KEY"
+          --cached-archive target.tar.zst
           --known-exact "$KNOWN_EXACT"
       - name: Run package tests
         if: steps.crate-result.outputs.hit != 'true'
@@ -494,6 +503,16 @@ jobs:
           if-no-files-found: ignore
           compression-level: 0
           retention-days: 7
+      - name: Cache reusable crate target seed
+        if: >-
+          always() && !cancelled() && !failure() &&
+          steps.crate-result.outputs.hit != 'true' &&
+          steps.restored-target.outputs.local-hit != 'true' &&
+          steps.restored-target.outputs.canonical-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: target.tar.zst
+          key: ci-crate-target-v10-${{ runner.os }}-${{ runner.arch }}-${{ matrix.package }}-${{ steps.crate-target-key.outputs.key }}
 
       - name: Capture sccache stats
         if: always() && steps.crate-result.outputs.hit != 'true'
