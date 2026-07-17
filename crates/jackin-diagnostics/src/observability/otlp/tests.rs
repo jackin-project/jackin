@@ -1346,6 +1346,33 @@ fn metric_export_contract_rejects_names_shapes_and_dimensions() {
         super::validate_metric_attributes(requirements, unknown.iter()),
         Err(Rejection::UnknownAttribute)
     );
+    let sensitive = [opentelemetry::KeyValue::new(
+        "app.screen.id",
+        "/private/workspace",
+    )];
+    assert_eq!(
+        super::validate_metric_attributes(requirements, sensitive.iter()),
+        Err(Rejection::Privacy)
+    );
+    let duplicate = [
+        opentelemetry::KeyValue::new("app.screen.id", "workspace.list"),
+        opentelemetry::KeyValue::new("app.screen.id", "workspace.list"),
+    ];
+    assert_eq!(
+        super::validate_metric_attributes(requirements, duplicate.iter()),
+        Err(Rejection::InvalidValue)
+    );
+    assert_eq!(
+        super::validate_metric_attributes(requirements, std::iter::empty()),
+        Err(Rejection::InvalidValue)
+    );
+    let excessive = (0..=jackin_telemetry::limits::MAX_METRIC_ATTRIBUTES)
+        .map(|_| opentelemetry::KeyValue::new("app.screen.id", "workspace.list"))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        super::validate_metric_attributes(requirements, excessive.iter()),
+        Err(Rejection::SizeLimit)
+    );
     let oversized = [opentelemetry::KeyValue::new(
         "app.screen.id",
         "x".repeat(jackin_telemetry::limits::MAX_STRING_ATTRIBUTE_BYTES + 1),
