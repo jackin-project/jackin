@@ -507,7 +507,7 @@ fn host_file_export_start_does_not_overwrite_stale_temp_file() {
 
 #[tokio::test]
 async fn attach_protocol_sends_hello_with_spawn_focus_env_and_terminal() {
-    let (_export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
+    let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
     let _subscriber = tracing::subscriber::set_default(subscriber);
     let (client, mut server) = duplex(4096);
     let (client_reader, client_writer) = tokio::io::split(client);
@@ -595,6 +595,75 @@ async fn attach_protocol_sends_hello_with_spawn_focus_env_and_terminal() {
             },
         }
     );
+    export.force_flush();
+    let spans = export.finished_spans();
+    assert_eq!(
+        spans
+            .iter()
+            .filter(|span| span.name == "rpc.client")
+            .count(),
+        1
+    );
+    assert_eq!(
+        spans
+            .iter()
+            .filter(|span| span.name == "stream.operation")
+            .count(),
+        2
+    );
+    assert_eq!(export.error_span_count(), 0);
+    assert!(export.contains_span_text("open"));
+    assert!(export.contains_span_text("close"));
+}
+
+#[tokio::test]
+async fn attach_protocol_marks_close_error_after_welcome_eof() {
+    let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
+    let _subscriber = tracing::subscriber::set_default(subscriber);
+    let (client, mut server) = duplex(4096);
+    let (client_reader, client_writer) = tokio::io::split(client);
+    let server_task = tokio::spawn(async move {
+        let mut tag = [0u8; 1];
+        server.read_exact(&mut tag).await.unwrap();
+        drop(read_client_frame(&mut server, tag[0]).await.unwrap());
+        server
+            .write_all(&encode_server(ServerFrame::Welcome { session_count: 1 }))
+            .await
+            .unwrap();
+    });
+    let (_input_writer, input_reader) = duplex(64);
+    let winch = signal(SignalKind::window_change()).unwrap();
+    let result = run_attach_protocol(
+        client_reader,
+        client_writer,
+        input_reader,
+        Cursor::new(Vec::<u8>::new()),
+        24,
+        80,
+        HostAttachRequest {
+            spawn_request: None,
+            focus_session: None,
+            env: Vec::new(),
+            terminal: ClientTerminal::default(),
+            export_subdir: "jk-agent-smith".to_owned(),
+        },
+        Vec::new(),
+        winch,
+    )
+    .await;
+    server_task.await.unwrap();
+    assert!(result.is_err());
+    export.force_flush();
+    let spans = export.finished_spans();
+    assert_eq!(
+        spans
+            .iter()
+            .filter(|span| span.name == "stream.operation")
+            .count(),
+        2
+    );
+    assert_eq!(export.error_span_count(), 1);
+    assert!(export.contains_span_text("rpc_error"));
 }
 
 #[tokio::test]

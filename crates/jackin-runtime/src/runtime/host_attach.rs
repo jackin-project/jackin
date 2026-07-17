@@ -255,6 +255,9 @@ where
     ];
     let mut handshake_operation =
         jackin_telemetry::operation(&jackin_telemetry::operation::RPC_CLIENT, &attrs).ok();
+    let mut stream_open =
+        jackin_telemetry::stream::phase(jackin_telemetry::schema::enums::StreamOperation::Open);
+    let mut stream_close = None;
     let mut context = jackin_protocol::TelemetryContext::v1();
     if let Some(operation) = handshake_operation.as_ref() {
         operation
@@ -282,6 +285,7 @@ where
                     Some(RPC_ERROR),
                 );
             }
+            jackin_telemetry::stream::complete_error(stream_open, RPC_ERROR);
             return Err(error);
         }
     };
@@ -296,6 +300,7 @@ where
                 Some(RPC_ERROR),
             );
         }
+        jackin_telemetry::stream::complete_error(stream_open, RPC_ERROR);
         return Err(error);
     }
     let mut stdin_buf = [0u8; 4096];
@@ -431,6 +436,8 @@ where
                                 None,
                             );
                         }
+                        jackin_telemetry::stream::complete_success(stream_open.take());
+                        stream_close = Some(jackin_telemetry::stream::close_on_drop());
                     }
                     ServerFrame::SessionList(_) => {}
                     ServerFrame::AttachControlResponse(response) => {
@@ -603,6 +610,15 @@ where
             jackin_telemetry::schema::enums::OutcomeValue::Failure,
             Some(RPC_ERROR),
         );
+    }
+    if stream_open.is_some() {
+        jackin_telemetry::stream::complete_error(stream_open, RPC_ERROR);
+    }
+    if let Some(close) = stream_close {
+        match &result {
+            Ok(()) => close.complete_success(),
+            Err(_) => close.complete_error(RPC_ERROR),
+        }
     }
     result
 }
