@@ -1515,6 +1515,7 @@ mod otlp {
     ) -> (TestExport, impl tracing::Subscriber) {
         use opentelemetry::trace::TracerProvider as _;
 
+        jackin_telemetry::limits::install_redactor(crate::redact::redact_text);
         let spans = opentelemetry_sdk::trace::InMemorySpanExporter::default();
         let logs = opentelemetry_sdk::logs::InMemoryLogExporter::default();
         let resource = build_resource_for(ServiceIdentity::HOST_ONE_SHOT);

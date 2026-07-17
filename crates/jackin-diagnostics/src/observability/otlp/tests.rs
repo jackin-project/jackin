@@ -430,6 +430,71 @@ fn crash_event_exports_complete_bounded_private_shape() {
 }
 
 #[test]
+fn facade_redacts_then_utf8_truncates_body_and_exception_fields() {
+    use opentelemetry::logs::AnyValue;
+
+    let _lock = crate::DIAGNOSTICS_TEST_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let (export, subscriber) = super::test_layers(false, "unused");
+    let sensitive = format!("token=supersecret {}", "🦀".repeat(2_000));
+    let attrs = [
+        jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::std_attrs::EXCEPTION_TYPE,
+            value: jackin_telemetry::Value::Str("panic"),
+        },
+        jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::std_attrs::EXCEPTION_MESSAGE,
+            value: jackin_telemetry::Value::Str(&sensitive),
+        },
+        jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::std_attrs::EXCEPTION_STACKTRACE,
+            value: jackin_telemetry::Value::Str(&sensitive),
+        },
+    ];
+    tracing::subscriber::with_default(subscriber, || {
+        jackin_telemetry::emit_event(
+            &jackin_telemetry::event::APP_CRASH,
+            jackin_telemetry::FieldSet::new(&attrs, Some(&sensitive)),
+        )
+        .expect("oversized private crash fields are sanitized before validation");
+    });
+    export.logger_provider.force_flush().unwrap();
+
+    let logs = export.logs.get_emitted_logs().unwrap();
+    assert_eq!(
+        logs.len(),
+        1,
+        "facade health after dropped sanitized event: {:?}",
+        jackin_telemetry::facade_health()
+    );
+    let record = &logs[0].record;
+    let body = match record.body() {
+        Some(AnyValue::String(value)) => value.as_str(),
+        other => panic!("expected string body, got {other:?}"),
+    };
+    for value in [
+        body,
+        log_attribute(record, "exception.message")
+            .and_then(|value| match value {
+                AnyValue::String(value) => Some(value.as_str()),
+                _ => None,
+            })
+            .expect("exception message"),
+        log_attribute(record, "exception.stacktrace")
+            .and_then(|value| match value {
+                AnyValue::String(value) => Some(value.as_str()),
+                _ => None,
+            })
+            .expect("exception stacktrace"),
+    ] {
+        assert!(value.len() <= jackin_telemetry::limits::MAX_BODY_BYTES);
+        assert!(value.is_char_boundary(value.len()));
+        assert!(!value.contains("supersecret"));
+    }
+}
+
+#[test]
 fn jank_event_exports_once_per_active_crossing() {
     use opentelemetry::logs::AnyValue;
 
