@@ -8,6 +8,44 @@ use tracing_subscriber::prelude::*;
 
 use super::*;
 
+#[test]
+fn cumulative_span_attribute_and_link_limits_reject_first_overflow() {
+    let guard = OperationGuard {
+        definition: &TELEMETRY_VALIDATE,
+        span: Span::none(),
+        completed: AtomicBool::new(false),
+        links: AtomicUsize::new(0),
+        attributes: AtomicUsize::new(limits::MAX_SPAN_ATTRIBUTES - 2),
+        attribute_keys: Mutex::new(Vec::new()),
+        rpc: None,
+        connection: None,
+        background_cycle: None,
+    };
+    let before = health::count(health::Signal::Trace, Rejection::SizeLimit);
+    assert_eq!(
+        guard.set_attr(Attr {
+            key: schema::attrs::std_attrs::SESSION_ID,
+            value: Value::Str("fixture-session"),
+        }),
+        Err(Rejection::SizeLimit)
+    );
+    assert_eq!(
+        health::count(health::Signal::Trace, Rejection::SizeLimit),
+        before + 1
+    );
+
+    let context = SpanContext::empty_context();
+    for _ in 0..limits::MAX_SPAN_LINKS {
+        assert_eq!(guard.link(&context), Ok(()));
+    }
+    let before = health::count(health::Signal::Trace, Rejection::SizeLimit);
+    assert_eq!(guard.link(&context), Err(Rejection::SizeLimit));
+    assert_eq!(
+        health::count(health::Signal::Trace, Rejection::SizeLimit),
+        before + 1
+    );
+}
+
 fn exported_span(
     outcome: Option<schema::enums::OutcomeValue>,
     error_type: Option<schema::enums::ErrorType>,
