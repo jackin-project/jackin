@@ -74,20 +74,26 @@ async fn start(layout: &DaemonLayout) -> Result<()> {
     }
     jackin_runtime::host_daemon::ensure_run_dir(layout)?;
     let exe = std::env::current_exe().context("resolving current jackin executable")?;
-    let child = tokio::process::Command::new(exe)
-        .args(["daemon", "serve"])
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .spawn()
+    let process_request = jackin_process::ExecRequest::new(exe, ["daemon", "serve"])
+        .stdout_mode(jackin_process::StdioMode::Null)
+        .stderr_mode(jackin_process::StdioMode::Null);
+    let (operation, child) = crate::process_telemetry::spawn_async(&process_request)
         .context("starting jackin daemon")?;
     println!(
         "started daemon pid {} at {}",
         child.id().unwrap_or_default(),
         layout.socket_path.display()
     );
-    wait_until_ready(layout).await?;
-    Ok(())
+    match wait_until_ready(layout).await {
+        Ok(()) => {
+            operation.complete_ready();
+            Ok(())
+        }
+        Err(error) => {
+            operation.complete_io_failure();
+            Err(error)
+        }
+    }
 }
 
 #[cfg(unix)]
