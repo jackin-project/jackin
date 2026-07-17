@@ -36,47 +36,6 @@ env:
   # treats BUILDX_BUILDER as the default-builder selection.
 
 jobs:
-  matrix-setup:
-    name: Select runner lane
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    outputs:
-      build_configs: ${{ steps.set.outputs.build_configs }}
-      lane_configs: ${{ steps.set.outputs.lane_configs }}
-      has_github: ${{ steps.set.outputs.has_github }}
-    steps:
-      - id: set
-        env:
-          LANES: ${{ github.event_name == 'workflow_dispatch' && inputs.lanes || 'github' }}
-        run: |
-          github='{"lane":"GitHub","runner":"\"ubuntu-24.04\"","runner_os":"Linux","runner_arch":"X64"}'
-          velnor='{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","runner_os":"Linux","runner_arch":"X64"}'
-          github_amd64='{"lane":"GitHub","runner":"\"ubuntu-24.04\"","runner_os":"Linux","runner_arch":"X64","platform":"amd64"}'
-          github_arm64='{"lane":"GitHub","runner":"\"ubuntu-24.04-arm\"","runner_os":"Linux","runner_arch":"ARM64","platform":"arm64"}'
-          velnor_amd64='{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","runner_os":"Linux","runner_arch":"X64","platform":"amd64"}'
-          case "$LANES" in
-            velnor)
-              build_configs="[$velnor_amd64]"
-              lane_configs="[$velnor]"
-              has_github=false
-              ;;
-            both)
-              build_configs="[$github_amd64,$github_arm64,$velnor_amd64]"
-              lane_configs="[$github,$velnor]"
-              has_github=true
-              ;;
-            *)
-              build_configs="[$github_amd64,$github_arm64]"
-              lane_configs="[$github]"
-              has_github=true
-              ;;
-          esac
-          {
-            echo "build_configs=$build_configs"
-            echo "lane_configs=$lane_configs"
-            echo "has_github=$has_github"
-          } >> "$GITHUB_OUTPUT"
-
   changes:
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -88,6 +47,8 @@ jobs:
       construct_image: ${{ steps.dispatch.outputs.construct_image || steps.filter.outputs.construct_image }}
       registry-contract: ${{ steps.construct-result.outputs.registry-contract }}
       rustup-contract: ${{ steps.construct-result.outputs.rustup-contract }}
+      build-configs: ${{ (github.event_name != 'workflow_dispatch' || inputs.lanes == 'github') && '[{"lane":"GitHub","runner":"\"ubuntu-24.04\"","runner_os":"Linux","runner_arch":"X64","platform":"amd64"},{"lane":"GitHub","runner":"\"ubuntu-24.04-arm\"","runner_os":"Linux","runner_arch":"ARM64","platform":"arm64"}]' || inputs.lanes == 'velnor' && '[{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","runner_os":"Linux","runner_arch":"X64","platform":"amd64"}]' || '[{"lane":"GitHub","runner":"\"ubuntu-24.04\"","runner_os":"Linux","runner_arch":"X64","platform":"amd64"},{"lane":"GitHub","runner":"\"ubuntu-24.04-arm\"","runner_os":"Linux","runner_arch":"ARM64","platform":"arm64"},{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","runner_os":"Linux","runner_arch":"X64","platform":"amd64"}]' }}
+      lane-configs: ${{ (github.event_name != 'workflow_dispatch' || inputs.lanes == 'github') && '[{"lane":"GitHub","runner":"\"ubuntu-24.04\"","runner_os":"Linux","runner_arch":"X64"}]' || inputs.lanes == 'velnor' && '[{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","runner_os":"Linux","runner_arch":"X64"}]' || '[{"lane":"GitHub","runner":"\"ubuntu-24.04\"","runner_os":"Linux","runner_arch":"X64"},{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","runner_os":"Linux","runner_arch":"X64"}]' }}
       # Single source of truth for "should this run produce / publish
       # registry artifacts" — true on push-to-main and on
       # workflow_dispatch from main, false everywhere else (PRs,
@@ -227,7 +188,7 @@ jobs:
   # eliminating ~60 lines of cross-job copy-paste.
   build:
     name: ${{ matrix.config.platform }} (${{ matrix.config.lane }})
-    needs: [changes, matrix-setup]
+    needs: [changes]
     if: needs.changes.outputs.construct == 'true'
     runs-on: ${{ fromJSON(matrix.config.runner) }}
     timeout-minutes: 60
@@ -249,7 +210,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        config: ${{ fromJSON(needs.matrix-setup.outputs.build_configs) }}
+        config: ${{ fromJSON(needs.changes.outputs.build-configs) }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -356,8 +317,8 @@ jobs:
 
   publish-manifest:
     name: publish manifest
-    if: needs.matrix-setup.outputs.has_github == 'true' && needs.changes.outputs.is_publish == 'true' && needs.changes.outputs.construct_image == 'true'
-    needs: [changes, matrix-setup, build]
+    if: (github.event_name != 'workflow_dispatch' || inputs.lanes != 'velnor') && needs.changes.outputs.is_publish == 'true' && needs.changes.outputs.construct_image == 'true'
+    needs: [changes, build]
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     permissions:
@@ -440,7 +401,7 @@ jobs:
   publish-manifest-rehearsal:
     name: publish manifest (rehearsal, ${{ matrix.config.lane }})
     if: needs.changes.outputs.construct == 'true' && needs.changes.outputs.is_publish != 'true'
-    needs: [changes, matrix-setup, build]
+    needs: [changes, build]
     runs-on: ${{ fromJSON(matrix.config.runner) }}
     timeout-minutes: 60
     permissions:
@@ -452,7 +413,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        config: ${{ fromJSON(needs.matrix-setup.outputs.lane_configs) }}
+        config: ${{ fromJSON(needs.changes.outputs.lane-configs) }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -523,7 +484,7 @@ jobs:
 
   construct-required:
     if: always()
-    needs: [matrix-setup, changes, build, publish-manifest, publish-manifest-rehearsal]
+    needs: [changes, build, publish-manifest, publish-manifest-rehearsal]
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
