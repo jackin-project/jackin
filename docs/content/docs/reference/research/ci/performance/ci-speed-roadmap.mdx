@@ -1101,6 +1101,16 @@ strict log scan found no registry update, crate download, external dependency
 compile/check, Rustup synchronization or component download, missing
 toolchain-cache path, or shell-substitution failure.
 
+Run `29567929549` then proved the first per-crate shell removal. Runner-local
+target validation moved into tested `ci-target validate-local`; reusable target
+download/restore and nextest execution became direct single-tool steps instead
+of shell programs. The forced refresh ran the complete `jackin-xtask` contract
+in 50 seconds on GitHub and 52 seconds on Velnor. Every other job also stayed
+below one minute. When neither lane had a valid runner-local seed, both took
+the same reusable-artifact fallback. The strict scan found no registry update,
+crate download, external compile/check, toolchain synchronization/component
+download, cache-path failure, or workflow argument/substitution error.
+
 ## Guardrails
 
 - Keep one stable aggregator per workflow for branch protection, but allow separate early-signal jobs to finish before the full aggregator.
