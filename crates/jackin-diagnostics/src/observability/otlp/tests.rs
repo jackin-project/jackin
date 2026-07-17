@@ -1282,6 +1282,12 @@ fn governed_second_line_drops_private_and_oversized_raw_records() {
             tracing::Level::ERROR,
             "service.version" = oversized.as_str()
         );
+        tracing::event!(
+            name: "app.crash",
+            target: jackin_telemetry::TELEMETRY_TARGET,
+            tracing::Level::ERROR,
+            "service.version" = true
+        );
         drop(tracing::info_span!(
             target: jackin_telemetry::TELEMETRY_TARGET,
             "telemetry.validate",
@@ -1291,6 +1297,11 @@ fn governed_second_line_drops_private_and_oversized_raw_records() {
             target: jackin_telemetry::TELEMETRY_TARGET,
             "telemetry.validate",
             "session.id" = oversized.as_str()
+        ));
+        drop(tracing::info_span!(
+            target: jackin_telemetry::TELEMETRY_TARGET,
+            "telemetry.validate",
+            "session.id" = true
         ));
     });
     export.logger_provider.force_flush().unwrap();
@@ -1315,6 +1326,14 @@ fn governed_second_line_drops_private_and_oversized_raw_records() {
         (
             jackin_telemetry::Signal::Trace,
             jackin_telemetry::Rejection::SizeLimit,
+        ),
+        (
+            jackin_telemetry::Signal::Log,
+            jackin_telemetry::Rejection::InvalidValue,
+        ),
+        (
+            jackin_telemetry::Signal::Trace,
+            jackin_telemetry::Rejection::InvalidValue,
         ),
     ] {
         assert_eq!(
@@ -1508,6 +1527,113 @@ fn metric_export_contract_rejects_names_shapes_and_dimensions() {
         ),
         Err(Rejection::Cardinality)
     );
+}
+
+fn assert_raw_metric_batch_rejected(
+    reason: jackin_telemetry::Rejection,
+    record: impl FnOnce(&opentelemetry::metrics::Meter),
+) {
+    use opentelemetry::metrics::MeterProvider as _;
+    use opentelemetry_sdk::metrics::{InMemoryMetricExporter, PeriodicReader, SdkMeterProvider};
+
+    let before = jackin_telemetry::facade_health().by_signal_reason
+        [jackin_telemetry::Signal::Metric as usize][reason as usize];
+    let exporter = InMemoryMetricExporter::default();
+    let provider = SdkMeterProvider::builder()
+        .with_reader(
+            PeriodicReader::builder(super::GovernedMetricExporter(exporter.clone())).build(),
+        )
+        .build();
+    record(&provider.meter("jackin"));
+
+    assert!(
+        provider.force_flush().is_err(),
+        "raw metric batch unexpectedly passed governance for {reason:?}"
+    );
+    assert!(exporter.get_finished_metrics().unwrap().is_empty());
+    assert_eq!(
+        jackin_telemetry::facade_health().by_signal_reason
+            [jackin_telemetry::Signal::Metric as usize][reason as usize],
+        before + 1,
+        "raw batch did not move the exact metric rejection cell"
+    );
+}
+
+#[test]
+fn governed_raw_meter_rejects_every_metric_contract_class() {
+    use opentelemetry::{Array, KeyValue, Value};
+
+    assert_raw_metric_batch_rejected(jackin_telemetry::Rejection::UnknownName, |meter| {
+        meter.u64_counter("unknown.metric").build().add(1, &[]);
+    });
+    assert_raw_metric_batch_rejected(jackin_telemetry::Rejection::InvalidValue, |meter| {
+        meter
+            .f64_histogram(jackin_telemetry::schema::metrics::UI_JANK)
+            .with_description(jackin_telemetry::schema::metrics::UI_JANK_DEF.description)
+            .with_unit(jackin_telemetry::schema::metrics::UI_JANK_DEF.unit)
+            .build()
+            .record(1.0, &[KeyValue::new("app.screen.id", "workspace.list")]);
+    });
+    assert_raw_metric_batch_rejected(jackin_telemetry::Rejection::UnknownAttribute, |meter| {
+        meter
+            .u64_counter(jackin_telemetry::schema::metrics::UI_JANK)
+            .with_description(jackin_telemetry::schema::metrics::UI_JANK_DEF.description)
+            .with_unit(jackin_telemetry::schema::metrics::UI_JANK_DEF.unit)
+            .build()
+            .add(1, &[KeyValue::new("bogus.secret", "bounded")]);
+    });
+    assert_raw_metric_batch_rejected(jackin_telemetry::Rejection::Privacy, |meter| {
+        meter
+            .u64_counter(jackin_telemetry::schema::metrics::UI_JANK)
+            .with_description(jackin_telemetry::schema::metrics::UI_JANK_DEF.description)
+            .with_unit(jackin_telemetry::schema::metrics::UI_JANK_DEF.unit)
+            .build()
+            .add(1, &[KeyValue::new("app.screen.id", "/private/workspace")]);
+    });
+    assert_raw_metric_batch_rejected(jackin_telemetry::Rejection::SizeLimit, |meter| {
+        meter
+            .u64_counter(jackin_telemetry::schema::metrics::UI_JANK)
+            .with_description(jackin_telemetry::schema::metrics::UI_JANK_DEF.description)
+            .with_unit(jackin_telemetry::schema::metrics::UI_JANK_DEF.unit)
+            .build()
+            .add(
+                1,
+                &[KeyValue::new(
+                    "app.screen.id",
+                    "x".repeat(jackin_telemetry::limits::MAX_STRING_ATTRIBUTE_BYTES + 1),
+                )],
+            );
+    });
+    assert_raw_metric_batch_rejected(jackin_telemetry::Rejection::InvalidValue, |meter| {
+        meter
+            .u64_counter(jackin_telemetry::schema::metrics::UI_JANK)
+            .with_description(jackin_telemetry::schema::metrics::UI_JANK_DEF.description)
+            .with_unit(jackin_telemetry::schema::metrics::UI_JANK_DEF.unit)
+            .build()
+            .add(
+                1,
+                &[KeyValue::new(
+                    "app.screen.id",
+                    Value::Array(Array::String(vec!["workspace.list".into()])),
+                )],
+            );
+    });
+    assert_raw_metric_batch_rejected(jackin_telemetry::Rejection::Cardinality, |meter| {
+        let histogram = meter
+            .f64_histogram(jackin_telemetry::schema::metrics::UI_FOCUS_DURATION)
+            .with_description(jackin_telemetry::schema::metrics::UI_FOCUS_DURATION_DEF.description)
+            .with_unit(jackin_telemetry::schema::metrics::UI_FOCUS_DURATION_DEF.unit)
+            .build();
+        for index in 0..=jackin_telemetry::limits::MAX_CARDINALITY {
+            histogram.record(
+                0.001,
+                &[
+                    KeyValue::new("app.screen.id", "workspace.list"),
+                    KeyValue::new("app.widget.id", format!("widget-{index}")),
+                ],
+            );
+        }
+    });
 }
 
 #[test]

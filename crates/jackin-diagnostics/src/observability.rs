@@ -1141,7 +1141,7 @@ mod otlp {
     }
 
     #[derive(Debug)]
-    struct CountingMetricExporter(opentelemetry_otlp::MetricExporter);
+    struct GovernedMetricExporter<E>(E);
 
     fn governed_metric_export_result(
         validation: Result<(), jackin_telemetry::Rejection>,
@@ -1155,7 +1155,10 @@ mod otlp {
         })
     }
 
-    impl opentelemetry_sdk::metrics::exporter::PushMetricExporter for CountingMetricExporter {
+    impl<E> opentelemetry_sdk::metrics::exporter::PushMetricExporter for GovernedMetricExporter<E>
+    where
+        E: opentelemetry_sdk::metrics::exporter::PushMetricExporter,
+    {
         async fn export(
             &self,
             metrics: &opentelemetry_sdk::metrics::data::ResourceMetrics,
@@ -1747,7 +1750,7 @@ mod otlp {
         let metric_exporter = metric_builder
             .build()
             .map_err(|_| anyhow::anyhow!("OTLP metric exporter init failed"))?;
-        let reader = PeriodicReader::builder(CountingMetricExporter(metric_exporter), Tokio)
+        let reader = PeriodicReader::builder(GovernedMetricExporter(metric_exporter), Tokio)
             .with_interval(std::time::Duration::from_secs(30))
             .with_timeout(EXPORT_ATTEMPT_TIMEOUT)
             .build();
