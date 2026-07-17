@@ -33,27 +33,6 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  matrix-setup:
-    name: Select runner lane
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    outputs:
-      configs: ${{ steps.set.outputs.configs }}
-    steps:
-      - id: set
-        env:
-          LANES: ${{ github.event_name == 'workflow_dispatch' && inputs.lanes || 'github' }}
-        run: |
-          github_writer='{"lane":"GitHub","runner":"\"ubuntu-24.04\"","runner_os":"Linux","runner_arch":"X64","mise_data_dir":"/home/runner/.local/share/mise","cache_writer":true}'
-          velnor_writer='{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","runner_os":"Linux","runner_arch":"X64","mise_data_dir":"/opt/mise","rustup_home":"/opt/rustup","cache_writer":true}'
-          velnor_reader='{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","runner_os":"Linux","runner_arch":"X64","mise_data_dir":"/opt/mise","rustup_home":"/opt/rustup","cache_writer":false}'
-          case "$LANES" in
-            velnor) configs="[$velnor_writer]" ;;
-            both)   configs="[$github_writer,$velnor_reader]" ;;
-            *)      configs="[$github_writer]" ;;
-          esac
-          echo "configs=$configs" >> "$GITHUB_OUTPUT"
-
   changes:
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -76,6 +55,7 @@ jobs:
       result-name: ${{ steps.ci-result.outputs.name }}
       policy-reuse: ${{ steps.policy-result.outputs.hit }}
       policy-result-name: ${{ steps.policy-result.outputs.name }}
+      runner-configs: ${{ (github.event_name != 'workflow_dispatch' || inputs.lanes == 'github') && '[{"lane":"GitHub","runner":"\"ubuntu-24.04\"","runner_os":"Linux","runner_arch":"X64","mise_data_dir":"/home/runner/.local/share/mise","cache_writer":true}]' || inputs.lanes == 'velnor' && '[{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","runner_os":"Linux","runner_arch":"X64","mise_data_dir":"/opt/mise","rustup_home":"/opt/rustup","cache_writer":true}]' || '[{"lane":"GitHub","runner":"\"ubuntu-24.04\"","runner_os":"Linux","runner_arch":"X64","mise_data_dir":"/home/runner/.local/share/mise","cache_writer":true},{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","runner_os":"Linux","runner_arch":"X64","mise_data_dir":"/opt/mise","rustup_home":"/opt/rustup","cache_writer":false}]' }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -438,12 +418,12 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
   actionlint:
-    needs: [changes, matrix-setup]
+    needs: [changes]
     if: needs.changes.outputs.workflows == 'true' && needs.changes.outputs.result-reuse != 'true'
     strategy:
       fail-fast: false
       matrix:
-        config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
+        config: ${{ fromJSON(needs.changes.outputs.runner-configs) }}
     runs-on: ${{ fromJSON(matrix.config.runner) }}
     timeout-minutes: 60
     name: actionlint (${{ matrix.config.lane }})
@@ -459,7 +439,7 @@ jobs:
       - run: actionlint .github/workflows/*.yml
 
   fmt:
-    needs: [changes, matrix-setup, cargo-registry-warmup]
+    needs: [changes, cargo-registry-warmup]
     if: >-
       needs.changes.outputs.rust == 'true' &&
       needs.changes.outputs.result-reuse != 'true' &&
@@ -467,7 +447,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
+        config: ${{ fromJSON(needs.changes.outputs.runner-configs) }}
     runs-on: ${{ fromJSON(matrix.config.runner) }}
     timeout-minutes: 60
     name: cargo fmt (${{ matrix.config.lane }})
@@ -497,12 +477,12 @@ jobs:
       - run: cargo fmt --check
 
   cargo-registry-warmup:
-    needs: [changes, matrix-setup]
+    needs: [changes]
     if: needs.changes.outputs.rust == 'true' && needs.changes.outputs.result-reuse != 'true'
     strategy:
       fail-fast: false
       matrix:
-        config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
+        config: ${{ fromJSON(needs.changes.outputs.runner-configs) }}
     runs-on: ${{ fromJSON(matrix.config.runner) }}
     timeout-minutes: 60
     name: cargo registry warmup (${{ matrix.config.lane }})
@@ -776,12 +756,12 @@ jobs:
           --repository "${{ github.repository }}"
 
   schema-check:
-    needs: [changes, matrix-setup, cargo-registry-warmup]
+    needs: [changes, cargo-registry-warmup]
     if: needs.changes.outputs.rust == 'true' && needs.changes.outputs.policy-reuse != 'true'
     strategy:
       fail-fast: false
       matrix:
-        config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
+        config: ${{ fromJSON(needs.changes.outputs.runner-configs) }}
     runs-on: ${{ fromJSON(matrix.config.runner) }}
     timeout-minutes: 60
     name: schema-check (${{ matrix.config.lane }})
@@ -799,12 +779,12 @@ jobs:
           "$CI_XTASK" schema-check --base origin/main
 
   file-size-gate:
-    needs: [changes, matrix-setup, cargo-registry-warmup]
+    needs: [changes, cargo-registry-warmup]
     if: needs.changes.outputs.rust == 'true' && needs.changes.outputs.policy-reuse != 'true'
     strategy:
       fail-fast: false
       matrix:
-        config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
+        config: ${{ fromJSON(needs.changes.outputs.runner-configs) }}
     runs-on: ${{ fromJSON(matrix.config.runner) }}
     timeout-minutes: 60
     name: file-size ratchet gate (${{ matrix.config.lane }})
@@ -831,7 +811,7 @@ jobs:
 
   # Plan 028: README freshness owns checkout (fetch-depth 0) so the gate can run.
   readme-freshness:
-    needs: [changes, matrix-setup, cargo-registry-warmup]
+    needs: [changes, cargo-registry-warmup]
     if: >-
       needs.changes.outputs.rust == 'true' &&
       needs.changes.outputs.policy-reuse != 'true' &&
@@ -839,7 +819,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
+        config: ${{ fromJSON(needs.changes.outputs.runner-configs) }}
     runs-on: ${{ fromJSON(matrix.config.runner) }}
     timeout-minutes: 20
     name: README freshness (advisory) (${{ matrix.config.lane }})
@@ -872,12 +852,12 @@ jobs:
           # Advisory job: either non-zero (fail-closed) or empty-diff OK message is acceptable.
 
   dependency-policy:
-    needs: [changes, matrix-setup, cargo-registry-warmup]
+    needs: [changes, cargo-registry-warmup]
     if: needs.changes.outputs.rust == 'true' && needs.changes.outputs.policy-reuse != 'true'
     strategy:
       fail-fast: false
       matrix:
-        config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
+        config: ${{ fromJSON(needs.changes.outputs.runner-configs) }}
     runs-on: ${{ fromJSON(matrix.config.runner) }}
     timeout-minutes: 60
     name: cargo dependency policy (${{ matrix.config.lane }})
@@ -913,7 +893,7 @@ jobs:
       - run: cargo deny check licenses bans sources
 
   test:
-    needs: [changes, affected-crates, matrix-setup, cargo-registry-warmup]
+    needs: [changes, affected-crates, cargo-registry-warmup]
     if: >-
       always() && needs.changes.outputs.rust == 'true' &&
       needs.changes.outputs.result-reuse != 'true' &&
@@ -921,7 +901,7 @@ jobs:
       !failure() && !cancelled()
     uses: ./.github/workflows/rust-nextest.yml
     with:
-      runner-configs-json: ${{ needs.matrix-setup.outputs.configs }}
+      runner-configs-json: ${{ needs.changes.outputs.runner-configs }}
       packages-json: ${{ needs.affected-crates.outputs.packages }}
       package-cache-keys-json: ${{ needs.affected-crates.outputs.cache-keys }}
       package-target-results-json: ${{ needs.affected-crates.outputs.target-results }}
@@ -941,12 +921,12 @@ jobs:
     # Advisories are also covered daily by hygiene.yml (cargo deny check
     # advisories); in PR CI the audit only needs to run when the dependency
     # graph can change (the rust filter includes Cargo.lock).
-    needs: [changes, matrix-setup, cargo-registry-warmup]
+    needs: [changes, cargo-registry-warmup]
     if: needs.changes.outputs.rust == 'true' && needs.changes.outputs.policy-reuse != 'true'
     strategy:
       fail-fast: false
       matrix:
-        config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
+        config: ${{ fromJSON(needs.changes.outputs.runner-configs) }}
     runs-on: ${{ fromJSON(matrix.config.runner) }}
     timeout-minutes: 60
     name: cargo audit (${{ matrix.config.lane }})
@@ -1001,7 +981,6 @@ jobs:
   ci-required:
     if: always()
     needs:
-      - matrix-setup
       - changes
       - actionlint
       - affected-crates
