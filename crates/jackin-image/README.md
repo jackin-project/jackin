@@ -25,6 +25,8 @@ Image generation and binary-artifact management for jackin❯. Builds the derive
 | [`binary_artifact.rs`](src/binary_artifact.rs) · [`binary_artifact/`](src/binary_artifact) | shared artifact helpers | [`tests.rs`](src/binary_artifact/tests.rs) |
 | [`image_decision.rs`](src/image_decision.rs) · [`image_decision/`](src/image_decision) | build-vs-reuse decision | [`tests.rs`](src/image_decision/tests.rs) |
 | [`version_check.rs`](src/version_check.rs) · [`version_check/`](src/version_check) | version check | [`tests.rs`](src/version_check/tests.rs) |
+| [`process_telemetry.rs`](src/process_telemetry.rs) · [`process_telemetry/`](src/process_telemetry) | bounded image subprocess telemetry ownership | [`tests.rs`](src/process_telemetry/tests.rs) |
+| [`telemetry_boundary.rs`](src/telemetry_boundary.rs) | governed download/cache/retry boundaries | — |
 | [`naming.rs`](src/naming.rs) | image naming | — |
 
 ## Public API
@@ -37,4 +39,3 @@ The image-build decision and materialization entry points consumed by `jackin-ru
 cargo nextest run -p jackin-image
 cargo clippy -p jackin-image --all-targets -- -D warnings
 ```
-

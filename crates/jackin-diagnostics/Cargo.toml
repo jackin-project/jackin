@@ -67,7 +67,7 @@ tracing-opentelemetry = { workspace = true }
 sysinfo = { version = "0.39", default-features = false, features = ["system"] }
 rustls = { workspace = true, features = ["ring", "std"] }
 rustls-native-certs = { workspace = true }
-rustls-pemfile = { workspace = true }
+rustls-pki-types = { workspace = true }
 # `rt-multi-thread` powers the dedicated telemetry runtime (see
 # `observability::otlp::otel_runtime`); `Handle::metrics()` feeds the tokio
 # runtime gauges from the app's handle, captured at subscriber init.

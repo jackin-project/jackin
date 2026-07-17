@@ -87,6 +87,7 @@ jobs:
         env:
           AUDIT: ${{ hashFiles('Cargo.lock', '.cargo/audit.toml') }}
           CI_TOOLS: ${{ hashFiles('mise.toml', 'mise.lock') }}
+          CI_TOOLS_LAYOUT: v2-weaver
           CI_XTASK: ${{ hashFiles('Cargo.lock', 'Cargo.toml', 'rust-toolchain.toml', '.cargo/**', 'crates/*/Cargo.toml', 'crates/jackin-xtask/src/**', 'crates/jackin-process/src/**') }}
           DOCKER: ${{ hashFiles('docker/**', 'docker-bake.hcl') }}
           REGISTRY: ${{ hashFiles('Cargo.lock', 'crates/**/fuzz/Cargo.lock', 'rust-toolchain.toml', '.cargo/config.toml') }}
@@ -94,7 +95,7 @@ jobs:
         run: |
           {
             echo "audit=$AUDIT"
-            echo "ci-tools=$CI_TOOLS"
+            echo "ci-tools=$(printf '%s:%s' "$CI_TOOLS" "$CI_TOOLS_LAYOUT" | sha256sum | cut -d' ' -f1)"
             echo "ci-xtask=$CI_XTASK"
             echo "docs-xtask=$(scripts/ci/docs-xtask-contract.sh)"
             echo "docker=$DOCKER"
@@ -654,7 +655,7 @@ jobs:
           install_args: >-
             rust@${{ needs.changes.outputs.rust-version }}
             ${{ steps.ci-tools-artifact.outputs.hit != 'true' &&
-                'cargo-binstall cargo:sccache cargo:cargo-nextest cargo:cargo-deny cargo:cargo-shear cargo:cargo-audit cargo:cargo-fuzz cargo:cargo-hack' || '' }}
+                'cargo-binstall cargo:sccache cargo:cargo-nextest cargo:cargo-deny cargo:cargo-shear cargo:cargo-audit cargo:cargo-fuzz cargo:cargo-hack github:open-telemetry/weaver@0.24.2' || '' }}
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - name: Prepare the exact current Rust toolchain
         if: steps.prepared-inputs.outputs.ready != 'true'
@@ -711,7 +712,7 @@ jobs:
         run: |
           mkdir -p .ci-prebuilt-tools .ci-prebuilt-xtask target/ci-tools
           if [ "${{ steps.ci-tools-artifact.outputs.hit }}" != "true" ]; then
-            for tool in sccache cargo-nextest cargo-deny cargo-shear cargo-audit cargo-fuzz cargo-hack; do
+            for tool in sccache cargo-nextest cargo-deny cargo-shear cargo-audit cargo-fuzz cargo-hack weaver; do
               cp "$(mise which "$tool")" ".ci-prebuilt-tools/$tool"
             done
             strip .ci-prebuilt-tools/*

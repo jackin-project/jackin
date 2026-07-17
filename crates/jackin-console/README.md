@@ -23,8 +23,8 @@ Canonical host-console product surface. Owns reusable console state, update/inpu
 | [`mount_info.rs`](src/mount_info.rs) · [`mount_info/`](src/mount_info) | mount info | [`tests.rs`](src/mount_info/tests.rs) |
 | [`mount_info_cache.rs`](src/mount_info_cache.rs) | mount-info cache | — |
 | [`mount_diff.rs`](src/mount_diff.rs) | mount diff | — |
-| [`tui.rs`](src/tui.rs) · [`tui/`](src/tui) | chrome/input using TermRock and shared operator-info UI | — |
-| [`tui/state.rs`](src/tui/state.rs) · [`tui/state/`](src/tui/state) | console manager state + bindings | — |
+| [`tui.rs`](src/tui.rs) · [`tui/`](src/tui) | chrome/input using TermRock and shared operator-info UI | [`input/`](src/tui/input) |
+| [`tui/state.rs`](src/tui/state.rs) · [`tui/state/`](src/tui/state) | console manager state + bindings | [`tests.rs`](src/tui/state/tests.rs) |
 | [`tui/state/manager.rs`](src/tui/state/manager.rs) · [`tui/state/manager/`](src/tui/state/manager) | concrete manager stage state | [`tests.rs`](src/tui/state/manager/tests.rs) |
 | [`tui/screens/form_model.rs`](src/tui/screens/form_model.rs) | shared form `FieldRow` / `FormSection` view models | — |
 

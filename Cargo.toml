@@ -118,7 +118,7 @@ regex = "1"
 reqwest = { version = "0.13", default-features = false }
 rustls = { version = "0.23", default-features = false }
 rustls-native-certs = "0.8"
-rustls-pemfile = "2"
+rustls-pki-types = "1"
 secrecy = "0.10"
 semver = "1"
 serde = "1.0"

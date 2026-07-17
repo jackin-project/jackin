@@ -5,10 +5,10 @@
 
 use super::super::config::TlsConfig;
 use jackin_telemetry::schema::enums::{ConnectionPeerType, ErrorType, OutcomeValue};
-use rustls::pki_types::{CertificateDer, ServerName};
+use rustls::pki_types::ServerName;
+use rustls_pki_types::{CertificateDer, PrivateKeyDer, pem::PemObject as _};
 use std::collections::{HashMap, VecDeque};
 use std::future::Future;
-use std::io::{BufReader, Cursor};
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
@@ -247,7 +247,7 @@ fn tls_config(key: &ChannelKey) -> anyhow::Result<rustls::ClientConfig> {
     if let Some(path) = &key.certificate {
         let pem = std::fs::read(path)
             .map_err(|_| anyhow::anyhow!("OTLP CA certificate is unavailable"))?;
-        for certificate in rustls_pemfile::certs(&mut BufReader::new(Cursor::new(pem))) {
+        for certificate in CertificateDer::pem_slice_iter(&pem) {
             roots
                 .add(certificate.map_err(|_| anyhow::anyhow!("OTLP CA certificate is invalid"))?)
                 .map_err(|_| anyhow::anyhow!("OTLP CA certificate is invalid"))?;
@@ -258,14 +258,13 @@ fn tls_config(key: &ChannelKey) -> anyhow::Result<rustls::ClientConfig> {
         (Some(certificate), Some(key_path)) => {
             let certificate = std::fs::read(certificate)
                 .map_err(|_| anyhow::anyhow!("OTLP client certificate is unavailable"))?;
-            let certificates = rustls_pemfile::certs(&mut BufReader::new(Cursor::new(certificate)))
+            let certificates = CertificateDer::pem_slice_iter(&certificate)
                 .collect::<Result<Vec<CertificateDer<'static>>, _>>()
                 .map_err(|_| anyhow::anyhow!("OTLP client certificate is invalid"))?;
             let key_bytes = std::fs::read(key_path)
                 .map_err(|_| anyhow::anyhow!("OTLP client key is unavailable"))?;
-            let key = rustls_pemfile::private_key(&mut BufReader::new(Cursor::new(key_bytes)))
-                .map_err(|_| anyhow::anyhow!("OTLP client key is invalid"))?
-                .ok_or_else(|| anyhow::anyhow!("OTLP client key is invalid"))?;
+            let key = PrivateKeyDer::from_pem_slice(&key_bytes)
+                .map_err(|_| anyhow::anyhow!("OTLP client key is invalid"))?;
             builder
                 .with_client_auth_cert(certificates, key)
                 .map_err(|_| anyhow::anyhow!("OTLP client identity is invalid"))?

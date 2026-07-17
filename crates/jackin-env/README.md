@@ -28,6 +28,7 @@ Operator-environment resolution and 1Password (`op`) CLI integration. Turns decl
 | [`host_claude.rs`](src/host_claude.rs) *(internal)* · [`host_claude/`](src/host_claude) | host-side Claude env wiring | [`tests.rs`](src/host_claude/tests.rs) |
 | [`output.rs`](src/output.rs) | output helpers | — |
 | [`parse_helpers.rs`](src/parse_helpers.rs) | parse helpers | — |
+| [`process_telemetry.rs`](src/process_telemetry.rs) · [`process_telemetry/`](src/process_telemetry) | bounded subprocess telemetry ownership | [`tests.rs`](src/process_telemetry/tests.rs) |
 | [`test_support.rs`](src/test_support.rs) | test fixtures | — |
 
 ## Public API
@@ -46,4 +47,3 @@ Typed errors (thiserror): `OperatorEnvError`, `ResolveEnvError`.
 cargo nextest run -p jackin-env
 cargo clippy -p jackin-env --all-targets -- -D warnings
 ```
-
