@@ -14,11 +14,4 @@ pub fn record_retry_scheduled() -> Result<(), Rejection> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn registered_retry_event_accepts_no_dynamic_fields() {
-        record_retry_scheduled().expect("registered retry scheduling event");
-    }
-}
+mod tests;
