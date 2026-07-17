@@ -114,7 +114,7 @@ Remove `ScreenGuard`/`enter_screen`/`record_action`/`launch_trace`/`record_capsu
 ## Reopened audit additions (2026-07-16)
 
 - Move semantic action ownership to the actual keyboard/mouse dispatch boundary so the root remains active through reducer effects, screen transition, and one action-triggered render. Continuous frames remain metric-only.
-- Exhaustively map the bounded host and launch-TUI action vocabulary, including launch, save/open, confirm/cancel, exit request, and instance/cockpit/build-log actions, with current bounded screen/widget context.
+- The host console reducer mapping is now compile-time exhaustive: every message is explicitly classified as a bounded semantic action or as non-semantic/background mechanics, so new messages cannot silently inherit a wildcard fallback. Complete the equivalent launch-TUI vocabulary, including launch, save/open, confirm/cancel, exit request, and instance/cockpit/build-log actions, with current bounded screen/widget context.
 - Add `launch.progress` lifecycle/dwell and produce `ui.screen.transition` children with old/new screen plus the true bounded reason; initial entry is not a transition.
 - Replace legacy panic telemetry with complete standard `app.crash` shape and final flush. Implement the specified one-second sliding-window jank threshold/crossing plus counter through a shared render hook.
 - Exporter-backed scenarios prove keyboard/mouse equivalence, lifecycle/focus/dwell/action causality, render/jank/crash shapes, and absence of visit IDs, raw input/coordinates, and dynamic labels in metric dimensions or payloads.

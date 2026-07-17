@@ -415,7 +415,64 @@ pub(crate) const fn action_of(
         | ManagerMessage::DismissInlineAgentPicker
         | ManagerMessage::DismissInlineProviderPicker
         | ManagerMessage::DismissLaunchProviderPicker => Some(UiActionName::DialogCancel),
-        _ => None,
+        ManagerMessage::CollapseSelectedTree
+        | ManagerMessage::ClearEditorAuthKind
+        | ManagerMessage::EnterPreview
+        | ManagerMessage::EnterConfirmDelete { .. }
+        | ManagerMessage::EnterConfirmInstancePurge { .. }
+        | ManagerMessage::EnterCreateEditor { .. }
+        | ManagerMessage::EnterEditorAuthKind { .. }
+        | ManagerMessage::FileBrowserCommitValidated(_)
+        | ManagerMessage::FileBrowserListingLoaded(_)
+        | ManagerMessage::InstancesRefreshed(_)
+        | ManagerMessage::MountInfoRefreshed(_)
+        | ManagerMessage::OpCommitResolved { .. }
+        | ManagerMessage::PollFileBrowserGitUrls
+        | ManagerMessage::PollPickerLoads
+        | ManagerMessage::FocusEditorContent
+        | ManagerMessage::FocusEditorTabBar
+        | ManagerMessage::FocusSettingsContent
+        | ManagerMessage::FocusSettingsTabBar
+        | ManagerMessage::ExitPreview
+        | ManagerMessage::ExpandSelectedTree
+        | ManagerMessage::ClearSettingsAuthKind
+        | ManagerMessage::OpenSettingsErrorPopup { .. }
+        | ManagerMessage::EnterSettingsAuthKind
+        | ManagerMessage::ScrollEditorTabHorizontal { .. }
+        | ManagerMessage::SelectEditorMountRow(_)
+        | ManagerMessage::SelectListRow(_)
+        | ManagerMessage::SelectSettingsTrustRow(_)
+        | ManagerMessage::ScrollEditorWorkspaceMountsHorizontal { .. }
+        | ManagerMessage::ScrollSettingsGlobalMountsHorizontal { .. }
+        | ManagerMessage::ScrollSettingsTrustHorizontal { .. }
+        | ManagerMessage::MoveSettingsGlobalMountsSelection { .. }
+        | ManagerMessage::MoveSettingsEnvSelection { .. }
+        | ManagerMessage::MoveSettingsTrustSelection { .. }
+        | ManagerMessage::MoveEditorFieldSelection { .. }
+        | ManagerMessage::MoveSettingsGeneralSelection { .. }
+        | ManagerMessage::MoveSettingsAuthSelection { .. }
+        | ManagerMessage::SetSettingsEnvRoleExpanded { .. }
+        | ManagerMessage::SetEditorAuthRoleExpanded { .. }
+        | ManagerMessage::SetEditorSecretsRoleExpanded { .. }
+        | ManagerMessage::ToggleSettingsGlobalMountReadonly
+        | ManagerMessage::ToggleEditorGeneralSelected
+        | ManagerMessage::ToggleEditorMountReadonlySelected
+        | ManagerMessage::ToggleEditorSecretMask { .. }
+        | ManagerMessage::ToggleSettingsGeneralSelected
+        | ManagerMessage::ToggleSettingsTrustSelected
+        | ManagerMessage::MoveListSelection(_)
+        | ManagerMessage::MovePreviewPane { .. }
+        | ManagerMessage::ReloadFromConfig { .. }
+        | ManagerMessage::ScrollListHorizontal(_)
+        | ManagerMessage::ScrollFocusedListBlockVertical(_)
+        | ManagerMessage::SetListScrollFocus(_)
+        | ManagerMessage::SetListNamesFocused(_)
+        | ManagerMessage::SetDragState(_)
+        | ManagerMessage::SetListSplitPct(_)
+        | ManagerMessage::OpenListErrorPopup { .. }
+        | ManagerMessage::OpenStatusPopup { .. }
+        | ManagerMessage::OpenListContainerInfo { .. }
+        | ManagerMessage::OpenListGithubPicker { .. } => None,
     }
 }
 
