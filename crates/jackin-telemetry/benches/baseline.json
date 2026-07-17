@@ -1,11 +1,12 @@
 {
   "max_regression_percent": 5.0,
   "unit": "ns",
-  "reference": "x86_64 Linux, rustc 1.97.0, Criterion quick medians, 2026-07-16",
+  "reference": "aarch64 Linux, rustc 1.97.0, same-run Criterion 0.8.2 quick medians normalized by telemetry_calibration, 2026-07-17",
+  "calibration": 665.6671752929688,
   "benchmarks": {
-    "console_frame": 162417.1416015625,
-    "launch_pipeline": 7466997.5595703125,
-    "pane_body": 155060.9833984375,
-    "pty_byte_pump": 443222.296875
+    "console_frame": 175509.396484375,
+    "launch_pipeline": 12407495.375,
+    "pane_body": 164137.9189453125,
+    "pty_byte_pump": 344838.78125
   }
 }

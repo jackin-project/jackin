@@ -160,9 +160,8 @@ jobs:
       - run: cargo build --release --locked
       - run: cargo nextest run --workspace --locked
 
-  # Advisory measured lane for criterion benches (plan 014). Compile failure
-  # fails the job; numbers are recorded as artifacts only — no threshold
-  # comparison until the plan 017 ratchet engine lands.
+  # Measured Criterion lane for plan 014. Workload medians are normalized by a
+  # same-run calibration benchmark before the reviewed 5% threshold is applied.
   bench-run:
     name: Criterion bench run (advisory)
     runs-on: ubuntu-latest

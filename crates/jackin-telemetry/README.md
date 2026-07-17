@@ -34,7 +34,10 @@ The operation guard separately completes failed span status with the same type.
 
 `cargo nextest run -p jackin-telemetry --locked`
 
-The scheduled performance lane runs the four product Criterion targets then
-`cargo xtask telemetry-bench --capture`. Refresh the reviewed
-[`baseline`](benches/baseline.json) only with inspected `--quick` medians and
-reference machine/toolchain data; a regression above 5% fails.
+The scheduled performance lane runs the calibration benchmark and four product
+Criterion targets, then `cargo xtask telemetry-bench --capture`. The comparator
+normalizes every workload median by the same-run `telemetry_calibration` median,
+so uniform runner-speed changes do not masquerade as product regressions.
+Refresh the reviewed [`baseline`](benches/baseline.json) only from one complete,
+inspected run with reference machine/toolchain data; a normalized regression
+above 5% fails.

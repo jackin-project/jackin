@@ -15,6 +15,7 @@ use crate::docs::repo_root;
 
 const BASELINE: &str = "crates/jackin-telemetry/benches/baseline.json";
 const CURRENT: &str = "target/telemetry-bench-current.json";
+const CALIBRATION: &str = "target/criterion/telemetry_calibration/new/estimates.json";
 const SOURCES: &[(&str, &str)] = &[
     (
         "launch_pipeline",
@@ -53,6 +54,7 @@ struct Measurements {
     unit: String,
     #[serde(default)]
     reference: String,
+    calibration: f64,
     benchmarks: BTreeMap<String, f64>,
 }
 
@@ -78,19 +80,16 @@ pub(crate) fn run(args: TelemetryBenchArgs) -> Result<()> {
 
 fn capture(root: &Path, baseline_path: &Path, current_path: &Path) -> Result<()> {
     let baseline = read_measurements(baseline_path)?;
+    let calibration = read_median(&root.join(CALIBRATION))?;
     let mut benchmarks = BTreeMap::new();
     for (name, relative) in SOURCES {
-        let path = root.join(relative);
-        let estimate: CriterionEstimate = serde_json::from_slice(
-            &fs::read(&path).with_context(|| format!("reading {}", path.display()))?,
-        )
-        .with_context(|| format!("parsing {}", path.display()))?;
-        benchmarks.insert((*name).to_owned(), estimate.median.point_estimate);
+        benchmarks.insert((*name).to_owned(), read_median(&root.join(relative))?);
     }
     let current = Measurements {
         max_regression_percent: baseline.max_regression_percent,
         unit: baseline.unit,
-        reference: "captured Criterion medians".to_owned(),
+        reference: "same-run Criterion medians normalized by telemetry_calibration".to_owned(),
+        calibration,
         benchmarks,
     };
     if let Some(parent) = current_path.parent() {
@@ -106,18 +105,42 @@ fn compare(baseline_path: &Path, current_path: &Path) -> Result<()> {
     if baseline.unit != current.unit {
         bail!("telemetry benchmark units differ");
     }
+    validate_measurements("baseline", &baseline)?;
+    validate_measurements("current", &current)?;
     for (name, baseline_value) in &baseline.benchmarks {
         let current_value = current
             .benchmarks
             .get(name)
             .with_context(|| format!("current results omit {name}"))?;
-        let limit = baseline_value * (1.0 + baseline.max_regression_percent / 100.0);
-        if *current_value > limit {
+        let baseline_ratio = baseline_value / baseline.calibration;
+        let current_ratio = current_value / current.calibration;
+        let limit = baseline_ratio * (1.0 + baseline.max_regression_percent / 100.0);
+        if current_ratio > limit {
             bail!(
-                "{name} regressed {:.2}% (baseline {baseline_value:.2}, current {current_value:.2}, limit {:.2}%)",
-                (current_value / baseline_value - 1.0) * 100.0,
+                "{name} regressed {:.2}% after calibration (baseline ratio {baseline_ratio:.6}, current ratio {current_ratio:.6}, limit {:.2}%)",
+                (current_ratio / baseline_ratio - 1.0) * 100.0,
                 baseline.max_regression_percent
             );
+        }
+    }
+    Ok(())
+}
+
+fn read_median(path: &Path) -> Result<f64> {
+    let estimate: CriterionEstimate = serde_json::from_slice(
+        &fs::read(path).with_context(|| format!("reading {}", path.display()))?,
+    )
+    .with_context(|| format!("parsing {}", path.display()))?;
+    Ok(estimate.median.point_estimate)
+}
+
+fn validate_measurements(label: &str, measurements: &Measurements) -> Result<()> {
+    if !measurements.calibration.is_finite() || measurements.calibration <= 0.0 {
+        bail!("{label} calibration must be finite and positive");
+    }
+    for (name, value) in &measurements.benchmarks {
+        if !value.is_finite() || *value <= 0.0 {
+            bail!("{label} benchmark {name} must be finite and positive");
         }
     }
     Ok(())

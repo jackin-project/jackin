@@ -1,4 +1,18 @@
+use std::hint::black_box;
+
 use criterion::{Criterion, criterion_group, criterion_main};
+
+fn bench_calibration(c: &mut Criterion) {
+    c.bench_function("telemetry_calibration", |b| {
+        b.iter(|| {
+            let mut value = black_box(0x9e37_79b9_7f4a_7c15_u64);
+            for index in 0..1_024_u64 {
+                value = value.rotate_left(7) ^ black_box(index.wrapping_mul(0x100_0000_01b3));
+            }
+            black_box(value)
+        });
+    });
+}
 
 fn bench_disabled(c: &mut Criterion) {
     c.bench_function("disabled event", |b| {
@@ -26,5 +40,5 @@ fn bench_disabled(c: &mut Criterion) {
     });
 }
 
-criterion_group!(benches, bench_disabled);
+criterion_group!(benches, bench_calibration, bench_disabled);
 criterion_main!(benches);
