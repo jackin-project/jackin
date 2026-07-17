@@ -288,6 +288,7 @@ event_def!(
 event_def!(CACHE_DECISION, CACHE_DECISION, CACHE_DECISION_DEF, Info);
 event_def!(OPERATION_LOG, OPERATION_LOG, OPERATION_LOG_DEF, Info);
 event_def!(OPERATION_WARN, OPERATION_WARN, OPERATION_WARN_DEF, Warn);
+event_def!(AUTH_PROVISION, AUTH_PROVISION, AUTH_PROVISION_DEF, Info);
 
 pub const ALL: &[EventDef] = &[
     SESSION_START,
@@ -322,6 +323,7 @@ pub const ALL: &[EventDef] = &[
     CACHE_DECISION,
     OPERATION_LOG,
     OPERATION_WARN,
+    AUTH_PROVISION,
 ];
 
 #[must_use]

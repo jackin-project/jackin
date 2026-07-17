@@ -18,10 +18,12 @@ macro_rules! event_field_value {
 }
 
 fn emit_registered_event(def: &'static EventDef, fields: FieldSet<'_>) {
-    if def.name <= "operation.log" {
+    if def.name <= "launch.stage.started" {
         emit_registered_event_0(def, fields);
-    } else if def.name <= "ui.widget.unfocused" {
+    } else if def.name <= "ui.widget.focused" {
         emit_registered_event_1(def, fields);
+    } else if def.name <= "ui.widget.unfocused" {
+        emit_registered_event_2(def, fields);
     } else {
         unreachable!("validated event registry");
     }
@@ -37,6 +39,9 @@ fn emit_registered_event_0(def: &'static EventDef, fields: FieldSet<'_>) {
         }
         schema::events::APP_JANK => {
             emit_app_jank(def, fields);
+        }
+        schema::events::AUTH_PROVISION => {
+            emit_auth_provision(def, fields);
         }
         schema::events::CACHE_DECISION => {
             emit_cache_decision(def, fields);
@@ -74,15 +79,15 @@ fn emit_registered_event_0(def: &'static EventDef, fields: FieldSet<'_>) {
         schema::events::LAUNCH_STAGE_STARTED => {
             emit_launch_stage_started(def, fields);
         }
-        schema::events::OPERATION_LOG => {
-            emit_operation_log(def, fields);
-        }
         _ => unreachable!("validated event registry chunk"),
     }
 }
 
 fn emit_registered_event_1(def: &'static EventDef, fields: FieldSet<'_>) {
     match def.name {
+        schema::events::OPERATION_LOG => {
+            emit_operation_log(def, fields);
+        }
         schema::events::OPERATION_WARN => {
             emit_operation_warn(def, fields);
         }
@@ -128,6 +133,12 @@ fn emit_registered_event_1(def: &'static EventDef, fields: FieldSet<'_>) {
         schema::events::UI_WIDGET_FOCUSED => {
             emit_ui_widget_focused(def, fields);
         }
+        _ => unreachable!("validated event registry chunk"),
+    }
+}
+
+fn emit_registered_event_2(def: &'static EventDef, fields: FieldSet<'_>) {
+    match def.name {
         schema::events::UI_WIDGET_UNFOCUSED => {
             emit_ui_widget_unfocused(def, fields);
         }
@@ -186,6 +197,27 @@ fn emit_app_jank(def: &'static EventDef, fields: FieldSet<'_>) {
             ("app.jank.period", field_app_jank_period, Double),
             ("app.jank.threshold", field_app_jank_threshold, Double),
             ("cli.invocation.id", field_cli_invocation_id, String),
+            ("session.id", field_session_id, String),
+        ]
+    );
+}
+
+fn emit_auth_provision(def: &'static EventDef, fields: FieldSet<'_>) {
+    emit_schema_event!(
+        "auth.provision",
+        def.severity,
+        fields,
+        [
+            ("auth.mode", field_auth_mode, String),
+            ("cli.invocation.id", field_cli_invocation_id, String),
+            (
+                "credential.source.type",
+                field_credential_source_type,
+                String
+            ),
+            ("error.type", field_error_type, String),
+            ("gen_ai.agent.name", field_gen_ai_agent_name, String),
+            ("outcome", field_outcome, String),
             ("session.id", field_session_id, String),
         ]
     );

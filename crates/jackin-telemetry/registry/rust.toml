@@ -106,6 +106,7 @@ values = [
   "firewall_apply_failed", "config_error", "trust_error", "launch_failed",
   "launch_stage_failed", "deadline_exceeded", "dependency_cancelled",
   "telemetry_instrumentation_fault", "recovered_degradation",
+  "credential_unavailable",
 ]
 
 [[scoped_enum]]

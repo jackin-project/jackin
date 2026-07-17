@@ -58,6 +58,70 @@ pub const AGENT_STATE_CHANGED_DEF: super::EventMetadata = super::EventMetadata {
         },
     ],
 };
+// registry: attributes=auth.mode:required,cli.invocation.id:recommended,credential.source.type:required,error.type:recommended,gen_ai.agent.name:required,outcome:required,session.id:recommended
+pub const AUTH_PROVISION: &str = "auth.provision";
+pub const AUTH_PROVISION_DEF: super::EventMetadata = super::EventMetadata {
+    name: AUTH_PROVISION,
+    description: "Agent authentication material provisioning completed.",
+    attributes: &[
+        super::AttributeRequirement {
+            name: "auth.mode",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Required,
+            allowed_values: &["sync", "api_key", "oauth_token", "ignore"],
+        },
+        super::AttributeRequirement {
+            name: "cli.invocation.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
+        super::AttributeRequirement {
+            name: "credential.source.type",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Required,
+            allowed_values: &[
+                "environment",
+                "agent_home",
+                "onepassword",
+                "github_cli",
+                "oauth_store",
+                "none",
+            ],
+        },
+        super::AttributeRequirement {
+            name: "error.type",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
+        super::AttributeRequirement {
+            name: "gen_ai.agent.name",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Required,
+            allowed_values: &["claude", "codex", "amp", "kimi", "opencode", "grok"],
+        },
+        super::AttributeRequirement {
+            name: "outcome",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Required,
+            allowed_values: &[
+                "success",
+                "failure",
+                "error",
+                "timeout",
+                "skip",
+                "cancellation",
+            ],
+        },
+        super::AttributeRequirement {
+            name: "session.id",
+            value_type: super::ValueType::String,
+            requirement: super::RequirementLevel::Recommended,
+            allowed_values: &[],
+        },
+    ],
+};
 // registry: attributes=cache.name:required,cache.result:required,cli.invocation.id:recommended,session.id:recommended
 pub const CACHE_DECISION: &str = "cache.decision";
 pub const CACHE_DECISION_DEF: super::EventMetadata = super::EventMetadata {
@@ -1330,6 +1394,7 @@ pub const UI_WIDGET_UNFOCUSED_DEF: super::EventMetadata = super::EventMetadata {
 
 pub const ALL: &[&str] = &[
     AGENT_STATE_CHANGED,
+    AUTH_PROVISION,
     CACHE_DECISION,
     CAPSULE_SESSION_CLEAN_SHUTDOWN,
     CAPSULE_SESSION_DETACH,
@@ -1365,6 +1430,7 @@ pub const ALL: &[&str] = &[
 
 pub const DEFINITIONS: &[super::EventMetadata] = &[
     AGENT_STATE_CHANGED_DEF,
+    AUTH_PROVISION_DEF,
     CACHE_DECISION_DEF,
     CAPSULE_SESSION_CLEAN_SHUTDOWN_DEF,
     CAPSULE_SESSION_DETACH_DEF,

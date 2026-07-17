@@ -273,6 +273,76 @@ struct AgentAuthProvision {
     outcome: AuthProvisionOutcome,
 }
 
+fn emit_agent_auth_provision(
+    agent: jackin_core::Agent,
+    mode: AuthForwardMode,
+    result: Result<AuthProvisionOutcome, jackin_telemetry::schema::enums::ErrorType>,
+) {
+    use jackin_telemetry::{Attr, FieldSet, Value, event, schema};
+
+    let auth_mode = match mode {
+        AuthForwardMode::Sync => schema::enums::AuthMode::Sync,
+        AuthForwardMode::ApiKey => schema::enums::AuthMode::ApiKey,
+        AuthForwardMode::OAuthToken => schema::enums::AuthMode::OauthToken,
+        AuthForwardMode::Ignore => schema::enums::AuthMode::Ignore,
+    };
+    let configured_source = match mode {
+        AuthForwardMode::Sync => schema::enums::CredentialSourceType::AgentHome,
+        AuthForwardMode::ApiKey | AuthForwardMode::OAuthToken => {
+            schema::enums::CredentialSourceType::Environment
+        }
+        AuthForwardMode::Ignore => schema::enums::CredentialSourceType::None,
+    };
+    let (source, outcome, error_type) = match result {
+        Ok(AuthProvisionOutcome::Synced | AuthProvisionOutcome::TokenMode) => (
+            configured_source,
+            schema::enums::OutcomeValue::Success,
+            None,
+        ),
+        Ok(AuthProvisionOutcome::Skipped) => (
+            schema::enums::CredentialSourceType::None,
+            schema::enums::OutcomeValue::Skip,
+            None,
+        ),
+        Ok(AuthProvisionOutcome::HostMissing) => (
+            schema::enums::CredentialSourceType::None,
+            schema::enums::OutcomeValue::Failure,
+            Some(schema::enums::ErrorType::CredentialUnavailable),
+        ),
+        Err(error_type) => (
+            configured_source,
+            schema::enums::OutcomeValue::Error,
+            Some(error_type),
+        ),
+    };
+    let mut attrs = vec![
+        Attr {
+            key: schema::attrs::GEN_AI_AGENT_NAME,
+            value: Value::Str(agent.slug()),
+        },
+        Attr {
+            key: schema::attrs::AUTH_MODE,
+            value: Value::Str(auth_mode.as_str()),
+        },
+        Attr {
+            key: schema::attrs::CREDENTIAL_SOURCE_TYPE,
+            value: Value::Str(source.as_str()),
+        },
+        Attr {
+            key: schema::attrs::OUTCOME,
+            value: Value::Str(outcome.as_str()),
+        },
+    ];
+    if let Some(error_type) = error_type {
+        attrs.push(Attr {
+            key: schema::attrs::std_attrs::ERROR_TYPE,
+            value: Value::Str(error_type.as_str()),
+        });
+    }
+    let _telemetry_result =
+        jackin_telemetry::emit_event(&event::AUTH_PROVISION, FieldSet::new(&attrs, None));
+}
+
 #[derive(Debug, Clone)]
 pub struct RoleState {
     pub root: PathBuf,
@@ -511,7 +581,7 @@ impl RoleState {
                         sync_src.as_deref(),
                     )
                 });
-                handles.push((supported, handle));
+                handles.push((supported, mode, handle));
             }
 
             let gh_provision_outcome =
@@ -539,12 +609,32 @@ impl RoleState {
                 };
 
             let mut auth_provisions = Vec::with_capacity(handles.len());
-            for (agent, handle) in handles {
-                auth_provisions.push(handle.join().map_err(|_| {
-                    InstanceError::AuthProvisionTaskPanicked {
-                        agent: agent.slug().to_owned(),
+            for (agent, mode, handle) in handles {
+                match handle.join() {
+                    Ok(Ok(provision)) => {
+                        emit_agent_auth_provision(agent, mode, Ok(provision.outcome));
+                        auth_provisions.push(provision);
                     }
-                })??);
+                    Ok(Err(error)) => {
+                        emit_agent_auth_provision(
+                            agent,
+                            mode,
+                            Err(jackin_telemetry::schema::enums::ErrorType::IoError),
+                        );
+                        return Err(error);
+                    }
+                    Err(_) => {
+                        emit_agent_auth_provision(
+                            agent,
+                            mode,
+                            Err(jackin_telemetry::schema::enums::ErrorType::Panic),
+                        );
+                        return Err(InstanceError::AuthProvisionTaskPanicked {
+                            agent: agent.slug().to_owned(),
+                        }
+                        .into());
+                    }
+                }
             }
 
             anyhow::Ok((gh_provision_outcome, auth_provisions))
@@ -665,7 +755,7 @@ impl RoleState {
                     let sync_src = sync_src.clone();
                     let supported = *supported;
                     let mode = *mode;
-                    jackin_telemetry::spawn::thread_scoped_joined(scope, move || {
+                    let handle = jackin_telemetry::spawn::thread_scoped_joined(scope, move || {
                         Self::provision_agent_auth_slot(
                             &root,
                             &home_dir,
@@ -674,17 +764,35 @@ impl RoleState {
                             mode,
                             sync_src.as_deref(),
                         )
-                    })
+                    });
+                    (supported, mode, handle)
                 })
                 .collect::<Vec<_>>();
 
             let mut prepared = Vec::with_capacity(handles.len());
-            for handle in handles {
-                prepared.push(
-                    handle
-                        .join()
-                        .map_err(|_| InstanceError::BackgroundAuthTaskPanicked)??,
-                );
+            for (agent, mode, handle) in handles {
+                match handle.join() {
+                    Ok(Ok(provision)) => {
+                        emit_agent_auth_provision(agent, mode, Ok(provision.outcome));
+                        prepared.push(provision);
+                    }
+                    Ok(Err(error)) => {
+                        emit_agent_auth_provision(
+                            agent,
+                            mode,
+                            Err(jackin_telemetry::schema::enums::ErrorType::IoError),
+                        );
+                        return Err(error);
+                    }
+                    Err(_) => {
+                        emit_agent_auth_provision(
+                            agent,
+                            mode,
+                            Err(jackin_telemetry::schema::enums::ErrorType::Panic),
+                        );
+                        return Err(InstanceError::BackgroundAuthTaskPanicked.into());
+                    }
+                }
             }
             anyhow::Ok(prepared)
         })?;
@@ -706,18 +814,23 @@ impl RoleState {
             &timing_name,
             Some(&mode.to_string()),
         );
-        if mode == AuthForwardMode::Ignore && agent_ignore_can_skip_state_prepare(root, supported)?
-        {
+        let ignore_can_skip = if mode == AuthForwardMode::Ignore {
+            agent_ignore_can_skip_state_prepare(root, supported)?
+        } else {
+            false
+        };
+        if ignore_can_skip {
             jackin_diagnostics::active_timing_done(
                 jackin_diagnostics::DiagnosticStage::Credentials,
                 &timing_name,
                 Some("skipped_no_state"),
             );
-            return Ok(AgentAuthProvision {
+            let provision = AgentAuthProvision {
                 agent: supported,
                 slot: skipped_ignore_auth_slot(root, supported),
                 outcome: AuthProvisionOutcome::Skipped,
-            });
+            };
+            return Ok(provision);
         }
         let provision_result: anyhow::Result<(ProvisionedAuthSlot, AuthProvisionOutcome)> =
             match supported {
