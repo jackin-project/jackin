@@ -582,6 +582,11 @@ then the workflow invokes Cargo through `mise exec rust@<version> -- ...`; all
 subsequent preparation, validation, packing, and cache decisions remain in
 `jackin-xtask`. Removing the now-unreferenced activation and discovery scripts
 also removes a second, runner-specific toolchain selection implementation.
+Run `29562776673` rejected an incomplete condition on that change: a restored
+rustup archive caused mise setup to skip even though changed xtask source still
+needed `mise exec`, producing exit 127 before Cargo. Warmup now prepares mise
+whenever either the xtask or tool bundle misses; a rustup cache hit no longer
+claims that the separate mise execution environment exists.
 
 Dual-lane crate tests no longer assign target and successful-result publication
 to a configured cache-writer lane. A per-crate concurrency group serializes only
