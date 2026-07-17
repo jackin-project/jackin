@@ -372,21 +372,13 @@ fn read_prewarmed_dind_state(
     let json = match std::fs::read_to_string(&path) {
         Ok(json) => json,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(error) => {
-            jackin_diagnostics::telemetry_debug!(
-                "sidecar",
-                "could not read prewarm sidecar state {}: {error:#}",
-                path.display()
-            );
+        Err(_error) => {
+            record_recovered_degradation();
             return Err("state-read-error");
         }
     };
-    serde_json::from_str(&json).map(Some).map_err(|error| {
-        jackin_diagnostics::telemetry_debug!(
-            "sidecar",
-            "could not parse prewarm sidecar state {}: {error:#}",
-            path.display()
-        );
+    serde_json::from_str(&json).map(Some).map_err(|_error| {
+        record_recovered_degradation();
         "state-parse-error"
     })
 }
@@ -396,11 +388,7 @@ fn remove_prewarmed_dind_state(paths: &JackinPaths) {
     if let Err(error) = std::fs::remove_file(&path)
         && error.kind() != std::io::ErrorKind::NotFound
     {
-        jackin_diagnostics::telemetry_debug!(
-            "sidecar",
-            "could not remove consumed prewarm sidecar state {}: {error:#}",
-            path.display()
-        );
+        record_recovered_degradation();
     }
 }
 
@@ -553,11 +541,8 @@ pub(super) async fn adopt_prewarmed_dind_sidecar(
             remove_prewarmed_dind_state(paths);
             return None;
         }
-        Err(error) => {
-            jackin_diagnostics::telemetry_debug!(
-                "sidecar",
-                "could not inspect kept prewarm network {network}: {error:#}"
-            );
+        Err(_error) => {
+            record_recovered_degradation();
             jackin_diagnostics::active_timing_done(
                 jackin_diagnostics::DiagnosticStage::Sidecar,
                 "adopt_prewarmed_dind",
@@ -586,11 +571,8 @@ pub(super) async fn adopt_prewarmed_dind_sidecar(
     }
 
     let started = std::time::Instant::now();
-    if let Err(error) = wait_for_dind(&dind, &certs_volume, docker).await {
-        jackin_diagnostics::telemetry_debug!(
-            "sidecar",
-            "kept prewarm dind {dind} was running but not ready: {error:#}"
-        );
+    if let Err(_error) = wait_for_dind(&dind, &certs_volume, docker).await {
+        record_recovered_degradation();
         jackin_diagnostics::active_timing_done(
             jackin_diagnostics::DiagnosticStage::Sidecar,
             "adopt_prewarmed_dind",
@@ -628,35 +610,27 @@ pub(super) async fn adopt_prewarmed_dind_sidecar(
 }
 
 pub(crate) fn try_lock_prewarmed_dind(paths: &JackinPaths) -> Option<std::fs::File> {
-    if let Err(error) = std::fs::create_dir_all(&paths.data_dir) {
-        jackin_diagnostics::telemetry_debug!(
-            "sidecar",
-            "could not create prewarm sidecar lock dir {}: {error:#}",
-            paths.data_dir.display()
-        );
+    if let Err(_error) = std::fs::create_dir_all(&paths.data_dir) {
+        record_recovered_degradation();
         return None;
     }
     let lock_path = paths.data_dir.join("prewarm-dind-adoption.lock");
     let lock = match std::fs::File::create(&lock_path) {
         Ok(lock) => lock,
-        Err(error) => {
-            jackin_diagnostics::telemetry_debug!(
-                "sidecar",
-                "could not open prewarm sidecar lock {}: {error:#}",
-                lock_path.display()
-            );
+        Err(_error) => {
+            record_recovered_degradation();
             return None;
         }
     };
-    if let Err(error) = FileExt::try_lock(&lock) {
-        jackin_diagnostics::telemetry_debug!(
-            "sidecar",
-            "prewarm sidecar lock {} is held by another launch: {error:#}",
-            lock_path.display()
-        );
+    if let Err(_error) = FileExt::try_lock(&lock) {
+        record_recovered_degradation();
         return None;
     }
     Some(lock)
+}
+
+fn record_recovered_degradation() {
+    let _warning = jackin_telemetry::record_recovered_degradation();
 }
 
 fn emit_prewarmed_dind_adoption(outcome: &str, detail: &str) {
