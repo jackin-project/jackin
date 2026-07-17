@@ -1270,6 +1270,33 @@ archive crossed the network. The cold population run remains one complete
 multi-target archive job per package; the warm path does not introduce target
 parts, batches, or test shards.
 
+Hygiene run `29587713698` restored one 106.7 MB contract-keyed bundle of
+stripped Cargo utilities in every Linux consumer instead of installing the
+same tools independently. Restore took one to four seconds. Mise then took two
+seconds in the complete scheduled-hygiene job, down from 131 seconds in main
+run `29580885810`; coverage, mutation, Hakari, Dylint, and DinD entered their
+semantic work within 28 to 35 seconds of job start. Dylint no longer spends
+minutes installing its driver from source. Its first measured analysis still
+downloaded and compiled the standalone lint workspace because the shared
+registry contract omitted `crates/jackin-lints/Cargo.lock`, then failed on a
+nightly compiler API change before its target cache could save. CI run
+`29588123914` corrected that ownership: the single registry-warmup job restored
+the prior registry, fetched the missing lint dependencies once, and saved the
+new 204 MB immutable contract in 35 seconds. Dylint also enables failure-path
+target persistence, so nightly incompatibility cannot force the next run to
+repeat an otherwise valid dependency build.
+
+The same Hygiene evidence shows why the remaining multi-minute jobs cannot be
+classified as cache setup. Miri `jackin-term` runs one complete crate job, but
+main run `29499861725` spent 9,432 seconds interpreting 43 conformance tests;
+`sanity_high_volume_plain_text` alone took about 46 minutes and
+`vt_decawm_autowrap_off` about 61 minutes. The unit-test binary spent another
+1,162 seconds, dominated by bounded hyperlink-map and resize-equivalence
+stress cases. Any Miri optimization must preserve one attributable crate job
+and the memory-semantics coverage while scaling interpreter-hostile stress
+inputs or reusing an input-identical result; it must not shard the crate or
+silently drop the conformance suite.
+
 Runs `29575485166` and `29575735792` validated the closure-key migration with
 one complete `jackin-xtask` job per lane. The first run populated the new key
 and finished at the one-minute boundary on both runners. The input-identical
