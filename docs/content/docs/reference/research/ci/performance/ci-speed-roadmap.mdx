@@ -1195,7 +1195,11 @@ run `29578314469` did find the published semantic result and skipped every
 validation job, but its audit correctly rejected a cache miss emitted while
 preparing an xtask used only for main-branch deployment lookup. Feature-branch
 manual runs now skip that irrelevant deployment preparation; main push and
-manual runs retain the deployment-reuse check.
+manual runs retain the deployment-reuse check. PR run `29578455310` then kept
+every Docs job below one minute: link validation took nine seconds, repository
+links 17 seconds, and the aggregator 13 seconds. Separate input-identical
+manual run `29578518792` reused the complete published result, skipped all
+validation jobs, and passed the clean-log performance audit in 11 seconds.
 
 Runs `29575485166` and `29575735792` validated the closure-key migration with
 one complete `jackin-xtask` job per lane. The first run populated the new key
