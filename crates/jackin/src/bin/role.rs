@@ -28,7 +28,8 @@ fn main() -> ExitCode {
     let cli = match Cli::try_parse() {
         Ok(cli) => cli,
         Err(error) => {
-            let _classification = jackin::classify_parse_error(&error);
+            let _classification =
+                jackin::record_parse_outcome(lifecycle, jackin::BinaryKind::Role, &error);
             error.exit();
         }
     };

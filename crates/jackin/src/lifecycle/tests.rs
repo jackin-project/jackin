@@ -60,3 +60,29 @@ fn result_classification_aligns_exit_outcome_and_error() {
         assert!(!code.telemetry_error().as_str().is_empty());
     }
 }
+
+#[test]
+fn parse_outcomes_finish_one_bounded_help_root() {
+    let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
+    tracing::subscriber::with_default(subscriber, || {
+        let lifecycle = ProductLifecycle {
+            invocation_id: jackin_telemetry::identity::InvocationId::mint(),
+            started_at: Instant::now(),
+        };
+        let invocation =
+            InvocationTelemetry::start(lifecycle, CliCommandName::Help, AppMode::OneShot);
+        invocation.finish_classification(ResultClassification {
+            exit_code: 2,
+            outcome: OutcomeValue::Failure,
+            error_type: Some(ErrorType::ConfigError),
+        });
+    });
+    export.force_flush();
+
+    let spans = export.finished_spans();
+    assert_eq!(spans.len(), 1);
+    assert_eq!(spans[0].name, jackin_telemetry::schema::spans::CLI_COMMAND);
+    assert!(spans[0].error);
+    assert!(export.contains_span_text("help"));
+    assert!(export.contains_span_text("config_error"));
+}

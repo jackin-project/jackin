@@ -39,7 +39,7 @@ pub use app::run;
 #[doc(hidden)]
 pub use lifecycle::{
     BinaryKind, InvocationTelemetry, LifecyclePolicy, ProductLifecycle, ResultClassification,
-    classify_error, classify_parse_error, lifecycle_policy,
+    classify_error, classify_parse_error, lifecycle_policy, record_parse_outcome,
 };
 
 #[doc(hidden)]

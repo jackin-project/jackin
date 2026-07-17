@@ -88,9 +88,9 @@ async fn main() {
     clippy::exit,
     reason = "binary entrypoint — exit after rendering the version splash"
 )]
-fn handle_parse_error(err: clap::Error, _lifecycle: jackin::ProductLifecycle) -> ! {
+fn handle_parse_error(err: clap::Error, lifecycle: jackin::ProductLifecycle) -> ! {
     use clap::error::ErrorKind;
-    let classification = jackin::classify_parse_error(&err);
+    let classification = jackin::record_parse_outcome(lifecycle, jackin::BinaryKind::Host, &err);
     debug_assert_eq!(classification.exit_code, i64::from(err.exit_code()));
     match err.kind() {
         ErrorKind::DisplayHelp | ErrorKind::DisplayHelpOnMissingArgumentOrSubcommand => {

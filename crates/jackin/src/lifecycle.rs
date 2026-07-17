@@ -149,6 +149,39 @@ pub fn classify_parse_error(error: &clap::Error) -> ResultClassification {
     }
 }
 
+/// Record a bounded invocation for a product-binary parse outcome before clap
+/// terminates the process. Help and version are successful `help` invocations;
+/// malformed input is a failed `help` invocation with `config_error`.
+#[must_use]
+pub fn record_parse_outcome(
+    lifecycle: ProductLifecycle,
+    binary: BinaryKind,
+    error: &clap::Error,
+) -> ResultClassification {
+    let classification = classify_parse_error(error);
+    let Ok(paths) = jackin_core::JackinPaths::detect() else {
+        return classification;
+    };
+    let identity = match binary {
+        BinaryKind::Host => jackin_diagnostics::ServiceIdentity::HOST_ONE_SHOT,
+        BinaryKind::Role => jackin_diagnostics::ServiceIdentity::ROLE,
+        BinaryKind::BuildCapsuleDeveloperTool => return classification,
+    };
+    let Ok(diagnostics) = jackin_diagnostics::RunDiagnostics::start(
+        &paths,
+        false,
+        CliCommandName::Help.as_str(),
+        identity,
+    ) else {
+        return classification;
+    };
+    let _active = diagnostics.activate();
+    let invocation = InvocationTelemetry::start(lifecycle, CliCommandName::Help, AppMode::OneShot);
+    diagnostics.emit_run_summary();
+    invocation.finish_classification(classification);
+    classification
+}
+
 #[derive(Debug)]
 pub struct InvocationTelemetry {
     command: CliCommandName,
@@ -254,8 +287,13 @@ impl InvocationTelemetry {
         }
     }
 
-    pub fn finish(mut self, result: &anyhow::Result<()>) -> ResultClassification {
+    pub fn finish(self, result: &anyhow::Result<()>) -> ResultClassification {
         let classification = classify_result(result);
+        self.finish_classification(classification);
+        classification
+    }
+
+    fn finish_classification(mut self, classification: ResultClassification) {
         match &mut self.roots {
             InvocationRoots::OneShot(operation) => {
                 if let Some(operation) = operation.take() {
@@ -279,7 +317,6 @@ impl InvocationTelemetry {
             }
         }
         self.record_metrics(classification);
-        classification
     }
 
     fn record_metrics(&self, classification: ResultClassification) {
