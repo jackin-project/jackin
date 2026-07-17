@@ -285,18 +285,21 @@ pub fn run_prepare_commit_msg_hook(args: &[String]) -> Result<()> {
 
 fn run_agent_setup() -> Result<()> {
     let agent = std::env::var("JACKIN_AGENT").context("JACKIN_AGENT must be set")?;
+    let mode = AuthMode::from_env()?;
     // Home emptiness is the gate: first seed copies auth; subsequent starts
     // leave in-container credentials untouched (agent refreshes tokens in-place
     // inside the durable home). No external marker file.
-    match agent.as_str() {
-        "claude" => setup_claude(),
-        "codex" => setup_codex(),
-        "amp" => setup_amp(),
-        "kimi" => setup_kimi(),
-        "opencode" => setup_opencode(),
-        "grok" => setup_grok(),
+    let materialization = match agent.as_str() {
+        "claude" => setup_claude(mode),
+        "codex" => setup_codex(mode),
+        "amp" => setup_amp(mode),
+        "kimi" => setup_kimi(mode),
+        "opencode" => setup_opencode(mode),
+        "grok" => setup_grok(mode),
         other => bail!("unknown JACKIN_AGENT: {other}"),
-    }?;
+    };
+    emit_capsule_auth_provision(&agent, mode, materialization.as_ref());
+    materialization?;
 
     // Install/repair the agent-status reporter on every launch (drift repair).
     // Observability must never break the agent: a failure is logged, not fatal.
@@ -307,6 +310,96 @@ fn run_agent_setup() -> Result<()> {
     }
 
     Ok(())
+}
+
+#[derive(Clone, Copy)]
+enum AuthMode {
+    Sync,
+    ApiKey,
+    OauthToken,
+    Ignore,
+}
+
+impl AuthMode {
+    fn from_env() -> Result<Self> {
+        let mode = std::env::var(jackin_protocol::AUTH_MODE_ENV)
+            .context("JACKIN_AUTH_MODE must be set")?;
+        match mode.as_str() {
+            "sync" => Ok(Self::Sync),
+            "api_key" => Ok(Self::ApiKey),
+            "oauth_token" => Ok(Self::OauthToken),
+            "ignore" => Ok(Self::Ignore),
+            _ => bail!("JACKIN_AUTH_MODE must contain a bounded auth mode"),
+        }
+    }
+
+    const fn as_schema(self) -> jackin_telemetry::schema::enums::AuthMode {
+        use jackin_telemetry::schema::enums::AuthMode as SchemaMode;
+        match self {
+            Self::Sync => SchemaMode::Sync,
+            Self::ApiKey => SchemaMode::ApiKey,
+            Self::OauthToken => SchemaMode::OauthToken,
+            Self::Ignore => SchemaMode::Ignore,
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+struct AuthMaterialization {
+    source: jackin_telemetry::schema::enums::CredentialSourceType,
+    outcome: jackin_telemetry::schema::enums::OutcomeValue,
+    error: Option<jackin_telemetry::schema::enums::ErrorType>,
+}
+
+fn emit_capsule_auth_provision(
+    agent: &str,
+    mode: AuthMode,
+    result: Result<&AuthMaterialization, &anyhow::Error>,
+) {
+    use jackin_telemetry::{Attr, FieldSet, Value, event, schema};
+    let fallback = AuthMaterialization {
+        source: configured_credential_source(mode),
+        outcome: schema::enums::OutcomeValue::Error,
+        error: Some(schema::enums::ErrorType::IoError),
+    };
+    let materialization = result.copied().unwrap_or(fallback);
+    let mut attrs = vec![
+        Attr {
+            key: schema::attrs::GEN_AI_AGENT_NAME,
+            value: Value::Str(agent),
+        },
+        Attr {
+            key: schema::attrs::AUTH_MODE,
+            value: Value::Str(mode.as_schema().as_str()),
+        },
+        Attr {
+            key: schema::attrs::CREDENTIAL_SOURCE_TYPE,
+            value: Value::Str(materialization.source.as_str()),
+        },
+        Attr {
+            key: schema::attrs::OUTCOME,
+            value: Value::Str(materialization.outcome.as_str()),
+        },
+    ];
+    if let Some(error) = materialization.error {
+        attrs.push(Attr {
+            key: schema::attrs::std_attrs::ERROR_TYPE,
+            value: Value::Str(error.as_str()),
+        });
+    }
+    let _emitted =
+        jackin_telemetry::emit_event(&event::AUTH_PROVISION, FieldSet::new(&attrs, None));
+}
+
+const fn configured_credential_source(
+    mode: AuthMode,
+) -> jackin_telemetry::schema::enums::CredentialSourceType {
+    use jackin_telemetry::schema::enums::CredentialSourceType as Source;
+    match mode {
+        AuthMode::Sync => Source::AgentHome,
+        AuthMode::ApiKey | AuthMode::OauthToken => Source::Environment,
+        AuthMode::Ignore => Source::None,
+    }
 }
 
 fn reporter_install_failure_message(agent: &str, error: &anyhow::Error) -> String {
@@ -347,23 +440,32 @@ fn install_agent_status_reporter(agent: &str) -> Result<()> {
     Ok(())
 }
 
-fn setup_claude() -> Result<()> {
+fn setup_claude(mode: AuthMode) -> Result<AuthMaterialization> {
     // Claude is the one sync-capable agent with two forwarded files. Seed its
     // home once, then apply the shared credential policy to credentials.json and
     // the Claude-only account.json (.claude.json onboarding metadata) under that
     // single first-seed signal — same policy as every other agent.
     let first_seed = seed_agent_home_from_enum(jackin_core::Agent::Claude)?.is_first_seed();
     let credentials_path = claude_credentials_path();
-    apply_forwarded_credential(
+    let materialization = apply_forwarded_credential(
         first_seed,
+        mode,
         &ForwardedCredential {
             label: "claude",
             forwarded: Path::new(container_paths::CLAUDE_CREDENTIALS),
             target: &credentials_path,
-            api_key_envs: &["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"],
+            api_key_envs: &[
+                "ANTHROPIC_API_KEY",
+                "ANTHROPIC_AUTH_TOKEN",
+                "CLAUDE_CODE_OAUTH_TOKEN",
+            ],
         },
     )?;
-    seed_claude_account_json(first_seed)?;
+    if matches!(mode, AuthMode::Sync) {
+        seed_claude_account_json(first_seed)?;
+    } else {
+        remove_file_if_exists(claude_account_path())?;
+    }
 
     if env_is_one("JACKIN_DISABLE_TIRITH") {
         crate::output::stdout_line(format_args!(
@@ -399,7 +501,7 @@ fn setup_claude() -> Result<()> {
         );
     }
     setup_claude_plugins();
-    Ok(())
+    Ok(materialization)
 }
 
 /// Seed Claude's `.claude.json` onboarding metadata (organization type drives
@@ -539,28 +641,57 @@ struct ForwardedCredential<'a> {
 ///   clobbered.
 fn seed_forwarded_credential(
     agent: jackin_core::Agent,
+    mode: AuthMode,
     spec: &ForwardedCredential<'_>,
-) -> Result<()> {
+) -> Result<AuthMaterialization> {
     let first_seed = seed_agent_home_from_enum(agent)?.is_first_seed();
-    apply_forwarded_credential(first_seed, spec)
+    apply_forwarded_credential(first_seed, mode, spec)
 }
 
 /// The credential-seeding policy, decoupled from the home-seed signal so a
 /// multi-file agent (Claude: credentials.json + account.json) can seed its home
 /// once and apply this same policy to each file under that one `first_seed`.
-fn apply_forwarded_credential(first_seed: bool, spec: &ForwardedCredential<'_>) -> Result<()> {
+fn apply_forwarded_credential(
+    first_seed: bool,
+    mode: AuthMode,
+    spec: &ForwardedCredential<'_>,
+) -> Result<AuthMaterialization> {
+    use jackin_telemetry::schema::enums::{
+        CredentialSourceType as Source, ErrorType, OutcomeValue as Outcome,
+    };
+    if matches!(mode, AuthMode::Ignore) {
+        remove_file_if_exists(spec.target)?;
+        return Ok(AuthMaterialization {
+            source: Source::None,
+            outcome: Outcome::Skip,
+            error: None,
+        });
+    }
+    if matches!(mode, AuthMode::ApiKey | AuthMode::OauthToken) {
+        remove_file_if_exists(spec.target)?;
+        let available = spec
+            .api_key_envs
+            .iter()
+            .any(|key| nonempty_env(key).is_some());
+        return Ok(AuthMaterialization {
+            source: if available {
+                Source::Environment
+            } else {
+                Source::None
+            },
+            outcome: if available {
+                Outcome::Success
+            } else {
+                Outcome::Failure
+            },
+            error: (!available).then_some(ErrorType::CredentialUnavailable),
+        });
+    }
+    let mut copied = false;
     if first_seed {
         if spec.forwarded.is_file() {
             copy_file_with_mode(spec.forwarded, spec.target, 0o600)?;
-        } else if spec
-            .api_key_envs
-            .iter()
-            .any(|key| nonempty_env(key).is_some())
-        {
-            crate::output::stderr_line(format_args!(
-                "[entrypoint] {}: no forwarded credential; using api-key auth from env",
-                spec.label
-            ));
+            copied = true;
         } else {
             remove_file_if_exists(spec.target)?;
             crate::output::stderr_line(format_args!(
@@ -570,16 +701,33 @@ fn apply_forwarded_credential(first_seed: bool, spec: &ForwardedCredential<'_>) 
         }
     } else if !spec.target.exists() && spec.forwarded.is_file() {
         copy_file_with_mode(spec.forwarded, spec.target, 0o600)?;
+        copied = true;
     }
-    Ok(())
+    let available = spec.target.is_file();
+    Ok(AuthMaterialization {
+        source: if copied {
+            Source::AgentHome
+        } else if available {
+            Source::OauthStore
+        } else {
+            Source::None
+        },
+        outcome: if available {
+            Outcome::Success
+        } else {
+            Outcome::Failure
+        },
+        error: (!available).then_some(ErrorType::CredentialUnavailable),
+    })
 }
 
-fn setup_codex() -> Result<()> {
+fn setup_codex(mode: AuthMode) -> Result<AuthMaterialization> {
     // Provider config is idempotent and runs every start; the credential seed
     // (last, fallible step) handles first-seed vs re-seed uniformly.
     write_codex_provider_config(&codex_home())?;
     seed_forwarded_credential(
         jackin_core::Agent::Codex,
+        mode,
         &ForwardedCredential {
             label: "codex",
             forwarded: Path::new(container_paths::CODEX_AUTH),
@@ -842,9 +990,10 @@ fn build_minimax_catalog(
     json!({ "models": [entry] })
 }
 
-fn setup_amp() -> Result<()> {
+fn setup_amp(mode: AuthMode) -> Result<AuthMaterialization> {
     seed_forwarded_credential(
         jackin_core::Agent::Amp,
+        mode,
         &ForwardedCredential {
             label: "amp",
             forwarded: Path::new(container_paths::AMP_SECRETS),
@@ -854,24 +1003,52 @@ fn setup_amp() -> Result<()> {
     )
 }
 
-/// Kimi is the one sync-capable agent whose credential is a directory, not a
-/// single file, so it cannot use [`seed_forwarded_credential`]. It follows the
-/// same first-seed / re-seed / api-key-fallback policy, applied to a directory:
-/// the only divergence is that a stale destination is not cleared (clearing a
-/// directory is riskier than removing one file, and Kimi has no destructive
-/// "no auth" case).
-fn setup_kimi() -> Result<()> {
+/// Kimi is the one sync-capable agent whose credential store is a directory, so
+/// it cannot use [`seed_forwarded_credential`]. It applies the same closed mode
+/// policy to the whole store: sync seeds/reuses it, environment modes and ignore
+/// remove it so stale credentials cannot silently override the selected mode.
+fn setup_kimi(mode: AuthMode) -> Result<AuthMaterialization> {
+    use jackin_telemetry::schema::enums::{
+        CredentialSourceType as Source, ErrorType, OutcomeValue as Outcome,
+    };
     let first_seed = seed_agent_home_from_enum(jackin_core::Agent::Kimi)?.is_first_seed();
     let forwarded = Path::new(container_paths::KIMI_CODE_DIR);
     let target = Path::new("/home/agent/.kimi-code");
     let forwarded_present = forwarded.is_dir() && dir_nonempty(forwarded)?;
+    if matches!(mode, AuthMode::Ignore) {
+        if target.exists() {
+            fs::remove_dir_all(target).context("failed to clear ignored Kimi credentials")?;
+        }
+        return Ok(AuthMaterialization {
+            source: Source::None,
+            outcome: Outcome::Skip,
+            error: None,
+        });
+    }
+    if matches!(mode, AuthMode::ApiKey | AuthMode::OauthToken) {
+        if target.exists() {
+            fs::remove_dir_all(target).context("failed to clear Kimi credential store")?;
+        }
+        let available = nonempty_env("KIMI_CODE_API_KEY").is_some();
+        return Ok(AuthMaterialization {
+            source: if available {
+                Source::Environment
+            } else {
+                Source::None
+            },
+            outcome: if available {
+                Outcome::Success
+            } else {
+                Outcome::Failure
+            },
+            error: (!available).then_some(ErrorType::CredentialUnavailable),
+        });
+    }
+    let mut copied = false;
     if first_seed {
         if forwarded_present {
             copy_dir_contents(forwarded, target)?;
-        } else if nonempty_env("KIMI_CODE_API_KEY").is_some() {
-            crate::output::stderr_line(format_args!(
-                "[entrypoint] kimi: no forwarded credential; using api-key auth from env"
-            ));
+            copied = true;
         } else {
             crate::output::stderr_line(format_args!(
                 "[entrypoint] kimi: no forwarded credential and no api key in env - agent will require interactive login"
@@ -879,11 +1056,27 @@ fn setup_kimi() -> Result<()> {
         }
     } else if forwarded_present && !(target.is_dir() && dir_nonempty(target)?) {
         copy_dir_contents(forwarded, target)?;
+        copied = true;
     }
-    Ok(())
+    let available = target.is_dir() && dir_nonempty(target)?;
+    Ok(AuthMaterialization {
+        source: if copied {
+            Source::AgentHome
+        } else if available {
+            Source::OauthStore
+        } else {
+            Source::None
+        },
+        outcome: if available {
+            Outcome::Success
+        } else {
+            Outcome::Failure
+        },
+        error: (!available).then_some(ErrorType::CredentialUnavailable),
+    })
 }
 
-fn setup_opencode() -> Result<()> {
+fn setup_opencode(mode: AuthMode) -> Result<AuthMaterialization> {
     // Runtime provider config is written every start, layered on top of the
     // seeded `.config/opencode` defaults: it embeds live API keys from container
     // env, so it is never baked into default-home. Written before the credential
@@ -897,6 +1090,7 @@ fn setup_opencode() -> Result<()> {
     write_opencode_config(Path::new("/home/agent/.config/opencode/opencode.json"))?;
     seed_forwarded_credential(
         jackin_core::Agent::Opencode,
+        mode,
         &ForwardedCredential {
             label: "opencode",
             forwarded: Path::new(container_paths::OPENCODE_AUTH),
@@ -906,9 +1100,10 @@ fn setup_opencode() -> Result<()> {
     )
 }
 
-fn setup_grok() -> Result<()> {
+fn setup_grok(mode: AuthMode) -> Result<AuthMaterialization> {
     seed_forwarded_credential(
         jackin_core::Agent::Grok,
+        mode,
         &ForwardedCredential {
             label: "grok",
             forwarded: Path::new(container_paths::GROK_AUTH),
