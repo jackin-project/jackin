@@ -29,7 +29,7 @@ Baseline reconstructed from the last commits before each atomic cutover. Counts 
 | `crates/jackin-capsule/src/pid1.rs` | 0 | 8 | 0 | 0 | 0 | 0 | governed INFO lifecycle/state |
 | `crates/jackin-capsule/src/pr_context.rs` | 0 | 1 | 3 | 0 | 0 | 0 | governed INFO lifecycle/state; governed DEBUG detail |
 | `crates/jackin-capsule/src/runtime_setup.rs` | 0 | 7 | 3 | 0 | 0 | 0 | governed INFO lifecycle/state; governed DEBUG detail |
-| `crates/jackin-capsule/src/services/input_bindings.rs` | 0 | 2 | 0 | 0 | 0 | 0 | governed INFO lifecycle/state |
+| `crates/jackin-capsule/src/services/input_bindings.rs` | 0 | 2 | 0 | 0 | 0 | 0 | COMPLETE — parser return values own invalid-input fallback; raw environment values and key material are prohibited telemetry data, so generic narration is deleted |
 | `crates/jackin-capsule/src/session.rs` | 0 | 20 | 6 | 2 | 0 | 0 | COMPLETE — PTY/lock/resize failures use bounded `ResultTelemetryExt`; PTY exit owns wait classification; expected closure/EOF and raw byte/identity/detail chatter deleted |
 | `crates/jackin-capsule/src/socket.rs` | 0 | 7 | 2 | 0 | 0 | 0 | governed INFO lifecycle/state; governed DEBUG detail |
 | `crates/jackin-capsule/src/tui/run.rs` | 0 | 0 | 6 | 0 | 0 | 0 | governed DEBUG detail |
@@ -100,4 +100,4 @@ Baseline reconstructed from the last commits before each atomic cutover. Counts 
 
 Baseline totals: 283 legacy host debug sites, 169 capsule INFO sites, 107 capsule DEBUG sites, 9 payload-trace sites, 2 WARN sites, and 3 ERROR sites.
 
-Current production invocation census after the isolation, instance, host, image-fallback, launch-TUI, usage-collector, oppicker, PTY-session, Capsule daemon/attach/client/clipboard/context/firewall/compositor/context-management/control/file-export/input-dispatch/pane-layout/ports/resource-metrics, and recovered-degradation migration passes: 51 `telemetry_info!` and 209 `telemetry_debug!` sites. The generic macro machinery and these 260 sites remain open; `telemetry_trace!`, `telemetry_warn!`, and `telemetry_error!` invocations are zero, and macro names in definitions or documentation are excluded.
+Current production invocation census after the isolation, instance, host, image-fallback, launch-TUI, usage-collector, oppicker, PTY-session, Capsule daemon/attach/client/clipboard/context/firewall/compositor/context-management/control/file-export/input-dispatch/pane-layout/ports/resource-metrics, input-binding, and recovered-degradation migration passes: 50 `telemetry_info!` and 205 `telemetry_debug!` sites. The generic macro machinery and these 255 sites remain open; `telemetry_trace!`, `telemetry_warn!`, and `telemetry_error!` invocations are zero, and macro names in definitions or documentation are excluded.
