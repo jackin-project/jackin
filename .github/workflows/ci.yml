@@ -623,29 +623,12 @@ jobs:
           compression-level: 0
           retention-days: 1
       - name: Stage shared CI xtask
-        run: |
-          mkdir -p .ci-prebuilt-tools .ci-prebuilt-xtask target/ci-tools
-          if [ "$CI_TOOLS_HIT" != "true" ]; then
-            for tool in sccache cargo-nextest cargo-deny cargo-shear cargo-audit cargo-fuzz cargo-hack; do
-              cp "$(mise which "$tool")" ".ci-prebuilt-tools/$tool"
-            done
-            strip .ci-prebuilt-tools/*
-          else
-            cp "$CI_TOOLS_PATH"/cargo-* "$CI_TOOLS_PATH"/sccache .ci-prebuilt-tools/
-          fi
-          if [ "$CI_XTASK_HIT" != "true" ]; then
-            cp target/debug/jackin-xtask .ci-prebuilt-xtask/jackin-xtask
-            strip .ci-prebuilt-xtask/jackin-xtask
-            cargo metadata --format-version 1 --locked --offline \
-              > .ci-prebuilt-xtask/workspace-metadata.json
-          else
-            cp "$CI_XTASK" .ci-prebuilt-xtask/jackin-xtask
-            if [ -f "$CI_TOOLS_PATH/workspace-metadata.json" ]; then
-              cp "$CI_TOOLS_PATH/workspace-metadata.json" .ci-prebuilt-xtask/
-            fi
-          fi
-          cp .ci-prebuilt-tools/* target/ci-tools/
-          cp .ci-prebuilt-xtask/* target/ci-tools/
+        run: >-
+          "$CI_XTASK" ci-stage
+          ${{ env.CI_XTASK_HIT == 'true' && '--xtask-hit' || '' }}
+          ${{ env.CI_TOOLS_HIT == 'true' && '--tools-hit' || '' }}
+          --cached-xtask "$CI_XTASK"
+          --cached-tools "$CI_TOOLS_PATH"
       - name: Publish resolved CI tool binaries
         if: >-
           env.CI_TOOLS_HIT != 'true' &&

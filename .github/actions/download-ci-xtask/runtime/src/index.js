@@ -97,6 +97,13 @@ async function run() {
   const result = () => {
     const tools = toolsHit ? "true" : "false";
     const xtask = xtaskHit ? "true" : "false";
+    if (!xtaskHit) {
+      core.exportVariable(
+        "CI_XTASK",
+        path.join(workspace, "target", "debug", "jackin-xtask"),
+      );
+    }
+    core.exportVariable("CI_TOOLS_PATH", destination);
     core.exportVariable("CI_TOOLS_HIT", tools);
     core.exportVariable("CI_XTASK_HIT", xtask);
     return { tools_hit: tools, xtask_hit: xtask };
