@@ -80,3 +80,35 @@ fn parse_porcelain_basic() {
 fn parse_porcelain_empty() {
     assert!(parse_porcelain("").is_empty());
 }
+
+#[test]
+fn git_inspection_exports_bounded_process_outcomes_without_paths() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let dir = tmp.path();
+    git(dir, &["init", "-q"]);
+    git(dir, &["config", "user.email", "t@example.com"]);
+    git(dir, &["config", "user.name", "Test"]);
+    std::fs::write(dir.join("operator-secret-file.txt"), b"secret\n").unwrap();
+
+    let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
+    tracing::subscriber::with_default(subscriber, || {
+        assert_eq!(changed_files_sync(dir.to_str().unwrap()).len(), 1);
+        assert_eq!(
+            head_content_sync(dir.to_str().unwrap(), "operator-secret-file.txt"),
+            None
+        );
+    });
+    export.force_flush();
+
+    let spans = export.finished_spans();
+    assert_eq!(spans.len(), 2);
+    assert!(
+        spans
+            .iter()
+            .all(|span| span.name == jackin_telemetry::schema::spans::PROCESS_COMMAND)
+    );
+    assert_eq!(export.error_span_count(), 1);
+    assert!(export.contains_span_text("process_exit_nonzero"));
+    assert!(!export.contains_span_text("operator-secret-file.txt"));
+    assert!(!export.contains_span_text(dir.to_string_lossy().as_ref()));
+}

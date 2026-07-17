@@ -116,7 +116,7 @@ Extend the conformance group: every span/event added in this plan appears in the
 
 - Inventory long-lived streams and watchers. Trace bounded open, handshake, control, and close operations with truthful outcomes, while proving no stream/watcher lifetime span exists.
 - Emit launch-stage/cache and connection count, active, and duration metrics at the shared boundary choke points with only their bounded dimensions.
-- Capsule runtime setup now routes captured, null-output, and optional synchronous commands through one `process.command` owner. It exports only the closed executable class, exit code, outcome, and stable spawn/nonzero/timeout type; exporter tests prohibit argv, program paths, stdout, stderr, and operator values. Continue the same shared-boundary migration for runtime container commands, `jackin-exec` credential resolution, isolation Git inspection, and host liveness probes.
+- Capsule runtime setup now routes captured, null-output, and optional synchronous commands through one `process.command` owner. Isolation Git inspection uses the same shape and no longer makes spawn/nonzero indistinguishable from clean/absent telemetry. Both export only the closed executable class, exit code, outcome, and stable spawn/nonzero/timeout type; exporter tests prohibit argv, program/worktree paths, refs, stdout, stderr, and operator values. Continue the shared-boundary migration for runtime container commands, `jackin-exec` credential resolution, and host liveness probes.
 
 ## Test plan
 

@@ -3130,12 +3130,14 @@ dependencies = [
  "jackin-docker",
  "jackin-process",
  "jackin-protocol",
+ "jackin-telemetry",
  "jackin-test-support",
  "serde",
  "serde_json",
  "tempfile",
  "thiserror 2.0.18",
  "tokio",
+ "tracing",
 ]
 
 [[package]]
