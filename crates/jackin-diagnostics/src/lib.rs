@@ -1,7 +1,7 @@
-//! jackin-diagnostics: compact/debug telemetry and observability plumbing.
+//! jackin-diagnostics: governed telemetry and observability plumbing.
 //!
 //! **Architecture Invariant:** T2.
-//! Entry point: [`telemetry_debug!`] — compact always-on telemetry macro.
+//! Entry points are the registered event, operation, metric, and operator-notice facades.
 
 pub mod build_log;
 pub mod logging;
