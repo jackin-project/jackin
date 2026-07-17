@@ -4,7 +4,7 @@
 use std::{fs, io, time::Instant};
 
 use jackin_telemetry::{
-    Attr, ResultTelemetryExt, Value, counter, gauge,
+    Attr, Value, counter, gauge,
     metric::{PROCESS_CPU_TIME, PROCESS_UPTIME},
     schema::{attrs, enums::ErrorType},
 };
@@ -123,9 +123,7 @@ impl Multiplexer {
                     .unwrap_or(());
             }
             Some(Err(error_type)) => {
-                Err::<(), _>(())
-                    .record_telemetry_error(error_type)
-                    .unwrap_or(());
+                jackin_telemetry::record_error(error_type).unwrap_or(());
             }
             None => {}
         }

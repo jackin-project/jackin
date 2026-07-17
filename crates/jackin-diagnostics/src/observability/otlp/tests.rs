@@ -1173,7 +1173,16 @@ fn result_error_helper_exports_one_typed_error_without_raw_value() {
     use jackin_telemetry::ResultTelemetryExt as _;
     use opentelemetry::logs::{AnyValue, Severity};
 
+    #[derive(Debug)]
     struct PrivateError;
+
+    impl std::fmt::Display for PrivateError {
+        fn fmt(&self, _: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            panic!("telemetry formatted a private error")
+        }
+    }
+
+    impl std::error::Error for PrivateError {}
 
     let _lock = crate::DIAGNOSTICS_TEST_LOCK.lock().expect("test lock");
     let (export, subscriber) = super::test_layers(false, "unused");
@@ -1185,10 +1194,20 @@ fn result_error_helper_exports_one_typed_error_without_raw_value() {
         ));
 
         let error: Result<(), PrivateError> = Err(PrivateError);
-        assert!(matches!(
-            error.record_telemetry_error(jackin_telemetry::schema::enums::ErrorType::DbError),
-            Err(PrivateError)
-        ));
+        let owned = error
+            .record_telemetry_error(jackin_telemetry::schema::enums::ErrorType::DbError)
+            .unwrap_err();
+        assert_eq!(
+            owned.error_type(),
+            jackin_telemetry::schema::enums::ErrorType::DbError
+        );
+        let reowned = Err::<(), _>(owned)
+            .record_telemetry_error(jackin_telemetry::schema::enums::ErrorType::IoError)
+            .unwrap_err();
+        assert_eq!(
+            reowned.error_type(),
+            jackin_telemetry::schema::enums::ErrorType::DbError
+        );
     });
     export.logger_provider.force_flush().unwrap();
 

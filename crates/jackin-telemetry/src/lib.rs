@@ -25,7 +25,7 @@ pub mod stream;
 pub mod ui;
 mod validation;
 
-pub use error::{ResultTelemetryExt, record_error, record_recovered_degradation};
+pub use error::{ResultTelemetryExt, TelemetryError, record_error, record_recovered_degradation};
 pub use event::{
     Attr, EventDef, FieldSet, Rejection, Severity, Value, emit_event, emit_event_display,
 };

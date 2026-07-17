@@ -621,9 +621,8 @@ pub(super) mod role_load {
         .await;
 
         match result {
-            Ok(result) => {
-                result.record_telemetry_error(jackin_telemetry::schema::enums::ErrorType::IoError)
-            }
+            Ok(result) => Ok(result
+                .record_telemetry_error(jackin_telemetry::schema::enums::ErrorType::IoError)?),
             Err(payload) => {
                 let _event = jackin_telemetry::record_error(
                     jackin_telemetry::schema::enums::ErrorType::Panic,

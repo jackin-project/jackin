@@ -36,7 +36,7 @@ use pty_exit::{error_type as pty_exit_error_type, reason as pty_exit_reason};
 use jackin_core::container_paths;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard};
 
 use anyhow::{Context, Result};
 use jackin_telemetry::ResultTelemetryExt as _;
@@ -477,12 +477,9 @@ impl Session {
         // the latter panics inside spawn_blocking on a current-thread
         // runtime ("Cannot block the current thread from within a runtime").
         jackin_telemetry::spawn::stream_blocking("pty.reader", move || {
-            let writer = match master_for_write
-                .lock()
-                .record_telemetry_error(jackin_telemetry::schema::enums::ErrorType::Panic)
-            {
-                Err(_) => None,
-                Ok(guard) => guard
+            let writer = match lock_or_record_poison(&master_for_write) {
+                None => None,
+                Some(guard) => guard
                     .take_writer()
                     .record_telemetry_error(jackin_telemetry::schema::enums::ErrorType::IoError)
                     .ok(),
@@ -514,12 +511,9 @@ impl Session {
 
         let event_tx_reader_err = event_tx.clone();
         jackin_telemetry::spawn::stream_blocking("pty.writer", move || {
-            let reader = match master_for_read
-                .lock()
-                .record_telemetry_error(jackin_telemetry::schema::enums::ErrorType::Panic)
-            {
-                Err(_) => None,
-                Ok(guard) => guard
+            let reader = match lock_or_record_poison(&master_for_read) {
+                None => None,
+                Some(guard) => guard
                     .try_clone_reader()
                     .record_telemetry_error(jackin_telemetry::schema::enums::ErrorType::IoError)
                     .ok(),
@@ -1327,11 +1321,7 @@ impl Session {
 
     pub fn terminate(&self) {
         self.termination_requested.store(true, Ordering::Release);
-        if let Ok(mut killer) = self
-            .child_killer
-            .lock()
-            .record_telemetry_error(jackin_telemetry::schema::enums::ErrorType::Panic)
-        {
+        if let Some(mut killer) = lock_or_record_poison(&self.child_killer) {
             drop(
                 killer
                     .kill()
@@ -1356,11 +1346,7 @@ impl Session {
         // this keeps TIOCSWINSZ and the model in agreement on the floor.
         let rows = rows.max(1);
         let cols = cols.max(1);
-        if let Ok(master) = self
-            .pty_master
-            .lock()
-            .record_telemetry_error(jackin_telemetry::schema::enums::ErrorType::Panic)
-        {
+        if let Some(master) = lock_or_record_poison(&self.pty_master) {
             drop(
                 master
                     .resize(PtySize {
@@ -1376,6 +1362,16 @@ impl Session {
         // Re-clamp through the grid: set_size may have shrunk the filled
         // scrollback the offset was clamped against.
         self.shadow_grid.set_scrollback(self.scrollback_offset());
+    }
+}
+
+fn lock_or_record_poison<T>(mutex: &Mutex<T>) -> Option<MutexGuard<'_, T>> {
+    if let Ok(guard) = mutex.lock() {
+        Some(guard)
+    } else {
+        let _event =
+            jackin_telemetry::record_error(jackin_telemetry::schema::enums::ErrorType::Panic);
+        None
     }
 }
 
