@@ -79,7 +79,7 @@ impl StageGuard {
         let _active =
             crate::up_down_counter(&crate::metric::LAUNCH_STAGE_ACTIVE).add(-1, &active_attrs);
 
-        let mut terminal_attrs = vec![
+        let mut metric_attrs = vec![
             active_attrs[0],
             active_attrs[1],
             Attr {
@@ -88,15 +88,20 @@ impl StageGuard {
             },
         ];
         if let Some(error_type) = error_type {
-            terminal_attrs.push(Attr {
+            metric_attrs.push(Attr {
                 key: crate::schema::attrs::std_attrs::ERROR_TYPE,
                 value: Value::Str(error_type.as_str()),
             });
         }
         let _executions =
-            crate::counter(&crate::metric::LAUNCH_STAGE_EXECUTIONS).add(1, &terminal_attrs);
+            crate::counter(&crate::metric::LAUNCH_STAGE_EXECUTIONS).add(1, &metric_attrs);
         let _duration = crate::histogram(&crate::metric::LAUNCH_STAGE_DURATION)
-            .record(self.started_at.elapsed().as_secs_f64(), &terminal_attrs);
+            .record(self.started_at.elapsed().as_secs_f64(), &metric_attrs);
+
+        let mut event_attrs = vec![metric_attrs[0], metric_attrs[2]];
+        if let Some(error_attr) = metric_attrs.get(3) {
+            event_attrs.push(*error_attr);
+        }
 
         let event = match outcome {
             OutcomeValue::Success => &crate::event::LAUNCH_STAGE_DONE,
@@ -105,7 +110,7 @@ impl StageGuard {
                 &crate::event::LAUNCH_STAGE_FAILED
             }
         };
-        let _terminal = crate::emit_event(event, FieldSet::new(&terminal_attrs, None));
+        let _terminal = crate::emit_event(event, FieldSet::new(&event_attrs, None));
     }
 }
 
