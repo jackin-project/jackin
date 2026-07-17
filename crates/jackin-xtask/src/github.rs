@@ -268,9 +268,9 @@ fn release_command(
 }
 
 fn release_assets(directory: &Path) -> Result<Vec<PathBuf>> {
-    let mut assets = fs::read_dir(directory)
+    let mut assets = crate::fs_util::read_dir_sorted(directory)
         .with_context(|| format!("reading preview assets from {}", directory.display()))?
-        .filter_map(Result::ok)
+        .into_iter()
         .map(|entry| entry.path())
         .filter(|path| path.is_file() && is_release_asset(path))
         .collect::<Vec<_>>();
