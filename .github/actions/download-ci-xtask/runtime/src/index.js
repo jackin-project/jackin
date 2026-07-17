@@ -72,20 +72,23 @@ async function downloadArtifact(octokit, owner, repo, artifact, destination) {
 }
 
 async function run() {
-  const token = core.getInput("token", { required: true });
+  const token = process.env.JACKIN_TOKEN;
   const { owner, repo } = splitRepository(process.env.GITHUB_REPOSITORY);
   const runId = Number.parseInt(process.env.GITHUB_RUN_ID, 10);
-  const lane = core.getInput("lane", { required: true });
+  const lane = process.env.JACKIN_LANE;
   const destination = path.join(process.env.GITHUB_WORKSPACE, ".ci-tools", lane);
   const os = process.env.RUNNER_OS;
   const arch = process.env.RUNNER_ARCH;
-  const toolsContract = core.getInput("tools-contract");
-  const xtaskContract = core.getInput("xtask-contract", { required: true });
-  const fallbackXtaskContract = core.getInput("fallback-xtask-contract");
+  const toolsContract = process.env.JACKIN_TOOLS_CONTRACT;
+  const xtaskContract = process.env.JACKIN_XTASK_CONTRACT;
+  const fallbackXtaskContract = process.env.JACKIN_FALLBACK_XTASK_CONTRACT;
+  if (!token) throw new Error("token is required");
+  if (!lane) throw new Error("lane is required");
+  if (!xtaskContract) throw new Error("xtask-contract is required");
   const laneArtifact = `ci-xtask-${lane}`;
   const toolsArtifact = `ci-tools-${os}-${arch}-${toolsContract}`;
   const xtaskArtifact = `ci-xtask-${os}-${arch}-${xtaskContract}`;
-  const includeTools = core.getBooleanInput("include-tools", { required: true });
+  const includeTools = process.env.JACKIN_INCLUDE_TOOLS === "true";
   const octokit = github.getOctokit(token);
   const deadline = Date.now() + DEADLINE_MILLISECONDS;
 

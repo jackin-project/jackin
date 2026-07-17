@@ -34,11 +34,11 @@ runs:
     - name: Restore prepared CI tools
       shell: sh
       env:
-        INPUT_TOKEN: ${{ inputs.token }}
-        INPUT_LANE: ${{ inputs.lane }}
-        INPUT_TOOLS-CONTRACT: ${{ inputs.tools-contract }}
-        INPUT_XTASK-CONTRACT: ${{ inputs.xtask-contract }}
-        INPUT_FALLBACK-XTASK-CONTRACT: ${{ inputs.fallback-xtask-contract }}
-        INPUT_INCLUDE-TOOLS: ${{ inputs.include-tools }}
+        JACKIN_TOKEN: ${{ inputs.token }}
+        JACKIN_LANE: ${{ inputs.lane }}
+        JACKIN_TOOLS_CONTRACT: ${{ inputs.tools-contract }}
+        JACKIN_XTASK_CONTRACT: ${{ inputs.xtask-contract }}
+        JACKIN_FALLBACK_XTASK_CONTRACT: ${{ inputs.fallback-xtask-contract }}
+        JACKIN_INCLUDE_TOOLS: ${{ inputs.include-tools }}
         JACKIN_ACTION_RUNTIME: ${{ github.action_path }}/runtime/dist/index.js
       run: node "$JACKIN_ACTION_RUNTIME"
