@@ -514,6 +514,11 @@ pub const RPC_METHOD_DEF: super::AttributeMetadata = super::AttributeMetadata {
         "jackin.host.Daemon/TelemetryHealth",
         "jackin.host.Daemon/AttentionSnapshot",
         "jackin.host.Daemon/Shutdown",
+        "initialize",
+        "initialized",
+        "account/rateLimits/read",
+        "account/read",
+        "x.ai/billing",
     ],
 };
 // registry-type: enum
@@ -522,7 +527,7 @@ pub const RPC_SYSTEM_NAME_DEF: super::AttributeMetadata = super::AttributeMetada
     name: RPC_SYSTEM_NAME,
     description: "Identifies the remote system being called.",
     value_type: super::ValueType::String,
-    allowed_values: &["jackin"],
+    allowed_values: &["jackin", "codex.app-server", "grok.acp"],
 };
 // registry-type: string
 pub const SESSION_PREVIOUS_ID: &str = "session.previous_id";
