@@ -3,6 +3,7 @@ use std::fs;
 use std::io::{self, Write};
 use std::path::Path;
 use std::process::Command;
+use std::time::Duration;
 
 use anyhow::{Context, Result};
 use clap::{Args, Subcommand, ValueEnum};
@@ -97,11 +98,18 @@ pub(crate) fn run(command: CiResultCommand) -> Result<()> {
 fn find(args: FindArgs) -> Result<()> {
     let names = result_names(&args);
     let artifact = if args.cache_key.is_empty() {
-        None
+        Lookup::Missing
     } else {
         lookup_artifact(&args.repository, &names.name, &args.package)
-    }
-    .or_else(|| lookup_artifact(&args.repository, &names.sha_name, &args.package));
+    };
+    let artifact = match artifact {
+        Lookup::Missing => lookup_artifact(&args.repository, &names.sha_name, &args.package),
+        result => result,
+    };
+    let artifact = match artifact {
+        Lookup::Found(artifact) => Some(artifact),
+        Lookup::Missing | Lookup::Unavailable => None,
+    };
     let artifact_id = artifact.map(|artifact| artifact.id);
     let hit = artifact_id.is_some() && args.package != args.refresh_package;
     if args.github_output {
@@ -157,9 +165,19 @@ fn result_names(args: &FindArgs) -> ResultNames {
     ResultNames { name, sha_name }
 }
 
-fn lookup_artifact(repository: &str, name: &str, package: &str) -> Option<Artifact> {
+enum Lookup {
+    Found(Artifact),
+    Missing,
+    Unavailable,
+}
+
+fn lookup_artifact(repository: &str, name: &str, package: &str) -> Lookup {
     let endpoint = format!("repos/{repository}/actions/artifacts?name={name}&per_page=10");
-    let response = cmd::output(Command::new("gh").args(["api", &endpoint])).and_then(|output| {
+    let response = cmd::output_timeout(
+        Command::new("gh").args(["api", &endpoint]),
+        Duration::from_secs(5),
+    )
+    .and_then(|output| {
         serde_json::from_slice::<ArtifactsResponse>(&output)
             .context("parsing GitHub artifact response")
     });
@@ -170,12 +188,15 @@ fn lookup_artifact(repository: &str, name: &str, package: &str) -> Option<Artifa
                 io::stderr().lock(),
                 "::warning::successful-result lookup failed for {package}; scheduling crate: {error:#}"
             );
-            return None;
+            return Lookup::Unavailable;
         }
     };
     artifacts.retain(|artifact| !artifact.expired);
     artifacts.sort_unstable_by(|left, right| right.created_at.cmp(&left.created_at));
-    artifacts.into_iter().next()
+    artifacts
+        .into_iter()
+        .next()
+        .map_or(Lookup::Missing, Lookup::Found)
 }
 
 fn write_output(name: &str, value: &str) -> Result<()> {

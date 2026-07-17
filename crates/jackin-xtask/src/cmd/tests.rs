@@ -1,7 +1,8 @@
 use std::ffi::OsStr;
 use std::process::Command;
+use std::time::{Duration, Instant};
 
-use super::{display_command, output, output_string, run, shell_quote};
+use super::{display_command, output, output_string, output_timeout, run, shell_quote};
 
 #[test]
 fn shell_quote_leaves_plain_paths_bare() {
@@ -37,6 +38,16 @@ fn output_failure_includes_program_and_stderr() {
     let err = output(&mut cmd).expect_err("should fail");
     let msg = format!("{err:#}");
     assert!(msg.contains("sh"), "msg={msg}");
+}
+
+#[test]
+fn output_timeout_bounds_stalled_commands() {
+    let mut cmd = Command::new("sleep");
+    cmd.arg("2");
+    let started = Instant::now();
+    let err = output_timeout(&mut cmd, Duration::from_millis(20)).expect_err("should time out");
+    assert!(format!("{err:#}").contains("timed out"));
+    assert!(started.elapsed() < Duration::from_secs(1));
 }
 
 #[test]

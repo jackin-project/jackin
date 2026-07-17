@@ -8,6 +8,7 @@ use std::ffi::OsStr;
 use std::fs::File;
 use std::path::Path;
 use std::process::{Command, Stdio};
+use std::time::Duration;
 
 use anyhow::{Context, Result, anyhow};
 
@@ -105,11 +106,26 @@ fn bail_process(display: &str, status: std::process::ExitStatus) -> Result<()> {
 /// capture with inherited env; keeps `Command::output` for complex configured
 /// commands (env/cwd/stdio already set on the builder).
 pub(crate) fn output(cmd: &mut Command) -> Result<Vec<u8>> {
+    output_request(cmd, None)
+}
+
+/// Capture stdout with a bounded wall-clock wait.
+pub(crate) fn output_timeout(cmd: &mut Command, timeout: Duration) -> Result<Vec<u8>> {
+    output_request(cmd, Some(timeout))
+}
+
+fn output_request(cmd: &mut Command, timeout: Option<Duration>) -> Result<Vec<u8>> {
     let display = display_command(cmd);
-    let output = jackin_process::exec_sync(&exec_request(cmd))
-        .with_context(|| format!("running {display}"))?;
+    let mut request = exec_request(cmd);
+    if let Some(timeout) = timeout {
+        request = request.timeout(timeout);
+    }
+    let output =
+        jackin_process::exec_sync(&request).with_context(|| format!("running {display}"))?;
     if output.success {
         Ok(output.stdout)
+    } else if output.timed_out {
+        Err(anyhow!("{display} timed out"))
     } else {
         let stderr = String::from_utf8_lossy(&output.stderr);
         Err(anyhow!(
