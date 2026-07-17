@@ -282,6 +282,10 @@ impl Testbed {
         for request in self.traces() {
             for resource in &request.resource_spans {
                 scan_resource(resource.resource.as_ref(), &mut violations);
+                scan_name(&resource.schema_url, &mut violations);
+                for scope in &resource.scope_spans {
+                    scan_scope(scope.scope.as_ref(), &scope.schema_url, &mut violations);
+                }
             }
             for span in request
                 .resource_spans
@@ -303,6 +307,10 @@ impl Testbed {
         for request in self.logs() {
             for resource in &request.resource_logs {
                 scan_resource(resource.resource.as_ref(), &mut violations);
+                scan_name(&resource.schema_url, &mut violations);
+                for scope in &resource.scope_logs {
+                    scan_scope(scope.scope.as_ref(), &scope.schema_url, &mut violations);
+                }
             }
             for record in request
                 .resource_logs
@@ -317,6 +325,10 @@ impl Testbed {
         for request in self.metrics() {
             for resource in &request.resource_metrics {
                 scan_resource(resource.resource.as_ref(), &mut violations);
+                scan_name(&resource.schema_url, &mut violations);
+                for scope in &resource.scope_metrics {
+                    scan_scope(scope.scope.as_ref(), &scope.schema_url, &mut violations);
+                }
             }
             for metric in request
                 .resource_metrics
@@ -337,6 +349,7 @@ impl Testbed {
         let mut violations = Vec::new();
         for request in self.traces() {
             for resource in &request.resource_spans {
+                scan_text(&resource.schema_url, prohibited, &mut violations);
                 scan_values(
                     resource
                         .resource
@@ -345,6 +358,14 @@ impl Testbed {
                     prohibited,
                     &mut violations,
                 );
+                for scope in &resource.scope_spans {
+                    scan_scope_values(
+                        scope.scope.as_ref(),
+                        &scope.schema_url,
+                        prohibited,
+                        &mut violations,
+                    );
+                }
                 for span in resource.scope_spans.iter().flat_map(|scope| &scope.spans) {
                     scan_span_values(span, prohibited, &mut violations);
                 }
@@ -352,6 +373,7 @@ impl Testbed {
         }
         for request in self.logs() {
             for resource in &request.resource_logs {
+                scan_text(&resource.schema_url, prohibited, &mut violations);
                 scan_values(
                     resource
                         .resource
@@ -360,6 +382,14 @@ impl Testbed {
                     prohibited,
                     &mut violations,
                 );
+                for scope in &resource.scope_logs {
+                    scan_scope_values(
+                        scope.scope.as_ref(),
+                        &scope.schema_url,
+                        prohibited,
+                        &mut violations,
+                    );
+                }
                 for record in resource
                     .scope_logs
                     .iter()
@@ -373,6 +403,7 @@ impl Testbed {
         }
         for request in self.metrics() {
             for resource in &request.resource_metrics {
+                scan_text(&resource.schema_url, prohibited, &mut violations);
                 scan_values(
                     resource
                         .resource
@@ -381,6 +412,24 @@ impl Testbed {
                     prohibited,
                     &mut violations,
                 );
+                for scope in &resource.scope_metrics {
+                    scan_scope_values(
+                        scope.scope.as_ref(),
+                        &scope.schema_url,
+                        prohibited,
+                        &mut violations,
+                    );
+                }
+                for metric in resource
+                    .scope_metrics
+                    .iter()
+                    .flat_map(|scope| &scope.metrics)
+                {
+                    scan_text(&metric.name, prohibited, &mut violations);
+                    scan_text(&metric.description, prohibited, &mut violations);
+                    scan_text(&metric.unit, prohibited, &mut violations);
+                    scan_metric_point_values(metric.data.as_ref(), prohibited, &mut violations);
+                }
             }
         }
         violations
@@ -422,8 +471,38 @@ fn scan_span_values(
         scan_text(&event.name, prohibited, violations);
         scan_values(Some(&event.attributes), prohibited, violations);
     }
+    for link in &span.links {
+        scan_values(Some(&link.attributes), prohibited, violations);
+    }
     if let Some(status) = &span.status {
         scan_text(&status.message, prohibited, violations);
+    }
+}
+
+fn scan_scope(
+    scope: Option<&opentelemetry_proto::tonic::common::v1::InstrumentationScope>,
+    schema_url: &str,
+    violations: &mut Vec<String>,
+) {
+    scan_name(schema_url, violations);
+    if let Some(scope) = scope {
+        scan_name(&scope.name, violations);
+        scan_name(&scope.version, violations);
+        scan_attributes(&scope.attributes, violations);
+    }
+}
+
+fn scan_scope_values(
+    scope: Option<&opentelemetry_proto::tonic::common::v1::InstrumentationScope>,
+    schema_url: &str,
+    prohibited: &[&str],
+    violations: &mut Vec<String>,
+) {
+    scan_text(schema_url, prohibited, violations);
+    if let Some(scope) = scope {
+        scan_text(&scope.name, prohibited, violations);
+        scan_text(&scope.version, prohibited, violations);
+        scan_values(Some(&scope.attributes), prohibited, violations);
     }
 }
 
@@ -498,31 +577,81 @@ fn scan_metric_points(
     data: Option<&opentelemetry_proto::tonic::metrics::v1::metric::Data>,
     violations: &mut Vec<String>,
 ) {
-    use opentelemetry_proto::tonic::metrics::v1::metric::Data;
+    use opentelemetry_proto::tonic::metrics::v1::{Exemplar, metric::Data};
+
+    let mut scan_point = |attributes, exemplars: &[Exemplar]| {
+        scan_attributes(attributes, violations);
+        for exemplar in exemplars {
+            scan_attributes(&exemplar.filtered_attributes, violations);
+        }
+    };
     match data {
         Some(Data::Gauge(value)) => {
             for point in &value.data_points {
-                scan_attributes(&point.attributes, violations);
+                scan_point(&point.attributes, &point.exemplars);
             }
         }
         Some(Data::Sum(value)) => {
             for point in &value.data_points {
-                scan_attributes(&point.attributes, violations);
+                scan_point(&point.attributes, &point.exemplars);
             }
         }
         Some(Data::Histogram(value)) => {
             for point in &value.data_points {
-                scan_attributes(&point.attributes, violations);
+                scan_point(&point.attributes, &point.exemplars);
             }
         }
         Some(Data::ExponentialHistogram(value)) => {
             for point in &value.data_points {
-                scan_attributes(&point.attributes, violations);
+                scan_point(&point.attributes, &point.exemplars);
             }
         }
         Some(Data::Summary(value)) => {
             for point in &value.data_points {
                 scan_attributes(&point.attributes, violations);
+            }
+        }
+        None => {}
+    }
+}
+
+fn scan_metric_point_values(
+    data: Option<&opentelemetry_proto::tonic::metrics::v1::metric::Data>,
+    prohibited: &[&str],
+    violations: &mut Vec<String>,
+) {
+    use opentelemetry_proto::tonic::metrics::v1::{Exemplar, metric::Data};
+
+    let mut scan_point = |attributes, exemplars: &[Exemplar]| {
+        scan_values(Some(attributes), prohibited, violations);
+        for exemplar in exemplars {
+            scan_values(Some(&exemplar.filtered_attributes), prohibited, violations);
+        }
+    };
+    match data {
+        Some(Data::Gauge(value)) => {
+            for point in &value.data_points {
+                scan_point(&point.attributes, &point.exemplars);
+            }
+        }
+        Some(Data::Sum(value)) => {
+            for point in &value.data_points {
+                scan_point(&point.attributes, &point.exemplars);
+            }
+        }
+        Some(Data::Histogram(value)) => {
+            for point in &value.data_points {
+                scan_point(&point.attributes, &point.exemplars);
+            }
+        }
+        Some(Data::ExponentialHistogram(value)) => {
+            for point in &value.data_points {
+                scan_point(&point.attributes, &point.exemplars);
+            }
+        }
+        Some(Data::Summary(value)) => {
+            for point in &value.data_points {
+                scan_values(Some(&point.attributes), prohibited, violations);
             }
         }
         None => {}

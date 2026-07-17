@@ -77,3 +77,87 @@ fn privacy_detector_rejects_nested_synthetic_value() {
     scan_any_value(Some(&value), &["fixture-secret"], &mut violations);
     assert_eq!(violations, ["fixture-secret"]);
 }
+
+#[test]
+fn namespace_detector_scans_scope_and_metric_exemplar_metadata() {
+    use opentelemetry_proto::tonic::common::v1::{InstrumentationScope, KeyValue};
+    use opentelemetry_proto::tonic::metrics::v1::{
+        Exemplar, Gauge, Metric, NumberDataPoint, metric::Data,
+    };
+
+    let scope = InstrumentationScope {
+        attributes: vec![KeyValue {
+            key: "jackin.scope".to_owned(),
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+    let metric = Metric {
+        data: Some(Data::Gauge(Gauge {
+            data_points: vec![NumberDataPoint {
+                exemplars: vec![Exemplar {
+                    filtered_attributes: vec![KeyValue {
+                        key: "parallax.exemplar".to_owned(),
+                        ..Default::default()
+                    }],
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+        })),
+        ..Default::default()
+    };
+    let mut violations = Vec::new();
+
+    scan_scope(Some(&scope), "", &mut violations);
+    scan_metric_points(metric.data.as_ref(), &mut violations);
+
+    assert_eq!(violations, ["jackin.scope", "parallax.exemplar"]);
+}
+
+#[test]
+fn privacy_detector_scans_links_scopes_and_metric_exemplars() {
+    use opentelemetry_proto::tonic::common::v1::{AnyValue, InstrumentationScope, KeyValue};
+    use opentelemetry_proto::tonic::metrics::v1::{Exemplar, Gauge, NumberDataPoint, metric::Data};
+    use opentelemetry_proto::tonic::trace::v1::{Span, span::Link};
+
+    let secret = |text: &str| KeyValue {
+        key: "fixture.key".to_owned(),
+        value: Some(AnyValue {
+            value: Some(
+                opentelemetry_proto::tonic::common::v1::any_value::Value::StringValue(
+                    text.to_owned(),
+                ),
+            ),
+        }),
+        ..Default::default()
+    };
+    let scope = InstrumentationScope {
+        attributes: vec![secret("scope-secret")],
+        ..Default::default()
+    };
+    let span = Span {
+        links: vec![Link {
+            attributes: vec![secret("link-secret")],
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+    let metric = Data::Gauge(Gauge {
+        data_points: vec![NumberDataPoint {
+            exemplars: vec![Exemplar {
+                filtered_attributes: vec![secret("exemplar-secret")],
+                ..Default::default()
+            }],
+            ..Default::default()
+        }],
+    });
+    let prohibited = ["scope-secret", "link-secret", "exemplar-secret"];
+    let mut violations = Vec::new();
+
+    scan_scope_values(Some(&scope), "", &prohibited, &mut violations);
+    scan_span_values(&span, &prohibited, &mut violations);
+    scan_metric_point_values(Some(&metric), &prohibited, &mut violations);
+
+    assert_eq!(violations, prohibited);
+}
