@@ -1201,6 +1201,17 @@ links 17 seconds, and the aggregator 13 seconds. Separate input-identical
 manual run `29578518792` reused the complete published result, skipped all
 validation jobs, and passed the clean-log performance audit in 11 seconds.
 
+The Docs site-cache digest and generated-site link invocation no longer have
+Bash implementations: the prepared xtask owns both contracts identically on
+every runner. Cold contract-migration run `29579136651` also proved that Docs
+does not compile a second xtask while CI prepares the new binary; both waiting
+jobs restored the one published artifact. That run still exposed a cold-path
+limit: combining the 41-second cross-workflow artifact wait with the 56-second
+site build made `docs-link-check` take 124 seconds. Input-identical manual run
+`29579330028` then reused the complete result, skipped every validation job,
+and passed the clean-log audit in 13 seconds. The cold changed-input path still
+needs independent improvement; the steady-state no-repeat contract is proven.
+
 Runs `29575485166` and `29575735792` validated the closure-key migration with
 one complete `jackin-xtask` job per lane. The first run populated the new key
 and finished at the one-minute boundary on both runners. The input-identical
