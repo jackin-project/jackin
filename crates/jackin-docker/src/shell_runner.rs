@@ -79,6 +79,14 @@ fn should_null_stdin(opts: &RunOptions) -> bool {
     opts.null_stdin || (!opts.interactive && jackin_diagnostics::rich_terminal_owned())
 }
 
+#[derive(Debug, thiserror::Error)]
+enum ProcessBoundaryError {
+    #[error("process spawn failed")]
+    Spawn,
+    #[error("process I/O failed")]
+    Io,
+}
+
 fn record_subprocess_done(
     operation: &jackin_telemetry::OperationGuard,
     program: &str,
@@ -255,9 +263,12 @@ async fn await_child_with_timeout(
     timeout: Option<std::time::Duration>,
 ) -> anyhow::Result<ExitStatus> {
     match timeout {
-        None => Ok(child.wait().await?),
+        None => child
+            .wait()
+            .await
+            .map_err(|_| ProcessBoundaryError::Io.into()),
         Some(dur) => match tokio::time::timeout(dur, child.wait()).await {
-            Ok(status) => Ok(status?),
+            Ok(status) => status.map_err(|_| ProcessBoundaryError::Io.into()),
             Err(_elapsed) => {
                 drop(child.kill().await);
                 drop(child.wait().await);
@@ -319,6 +330,17 @@ fn process_execute_completion<T>(
                 Some(jackin_telemetry::schema::enums::ErrorType::ProcessExitNonzero),
             )
         }
+        Err(error)
+            if matches!(
+                error.downcast_ref::<ProcessBoundaryError>(),
+                Some(ProcessBoundaryError::Io)
+            ) =>
+        {
+            (
+                jackin_telemetry::schema::enums::OutcomeValue::Failure,
+                Some(jackin_telemetry::schema::enums::ErrorType::IoError),
+            )
+        }
         Err(_) => (
             jackin_telemetry::schema::enums::OutcomeValue::Failure,
             Some(jackin_telemetry::schema::enums::ErrorType::ProcessSpawnError),
@@ -361,7 +383,7 @@ impl CommandRunner for ShellRunner {
                 let mut cmd = Self::build_command(program, args, cwd);
                 Self::apply_run_opts(&mut cmd, opts);
                 let started = Instant::now();
-                let mut child = cmd.spawn()?;
+                let mut child = cmd.spawn().map_err(|_| ProcessBoundaryError::Spawn)?;
                 let status = await_child_with_timeout(&mut child, program, opts.timeout).await?;
                 record_subprocess_done(&op_guard, program, started, status);
                 if !status.success() {
@@ -373,7 +395,7 @@ impl CommandRunner for ShellRunner {
                 let started = Instant::now();
                 cmd.stdout(std::process::Stdio::null())
                     .stderr(std::process::Stdio::null());
-                let mut child = cmd.spawn()?;
+                let mut child = cmd.spawn().map_err(|_| ProcessBoundaryError::Spawn)?;
                 let status = await_child_with_timeout(&mut child, program, opts.timeout).await?;
                 record_subprocess_done(&op_guard, program, started, status);
                 if !status.success() {
@@ -396,7 +418,7 @@ impl CommandRunner for ShellRunner {
                 let mut cmd = Self::build_command(program, args, cwd);
                 Self::apply_run_opts(&mut cmd, opts);
                 let started = Instant::now();
-                let mut child = cmd.spawn()?;
+                let mut child = cmd.spawn().map_err(|_| ProcessBoundaryError::Spawn)?;
                 let status = await_child_with_timeout(&mut child, program, opts.timeout).await?;
                 record_subprocess_done(&op_guard, program, started, status);
                 if !status.success() {
@@ -453,11 +475,8 @@ impl ShellRunner {
             cmd.stderr(std::process::Stdio::piped());
         }
         let started = Instant::now();
-        let mut child = match cmd.spawn() {
-            Ok(child) => child,
-            Err(error) => {
-                return Err(error.into());
-            }
+        let Ok(mut child) = cmd.spawn() else {
+            return Err(ProcessBoundaryError::Spawn.into());
         };
         let stdout_pipe = child.stdout.take();
         let stderr_pipe = child.stderr.take();
@@ -513,9 +532,9 @@ impl ShellRunner {
         } else {
             tokio::join!(child.wait(), read_stdout, read_stderr)
         };
-        stdout_result?;
-        let stderr_buf = stderr_result?;
-        let status = status?;
+        stdout_result.map_err(|_| ProcessBoundaryError::Io)?;
+        let stderr_buf = stderr_result.map_err(|_| ProcessBoundaryError::Io)?;
+        let status = status.map_err(|_| ProcessBoundaryError::Io)?;
         record_subprocess_done(op_guard, program, started, status);
         if !status.success() {
             if opts.tee_to_build_log {
@@ -565,7 +584,11 @@ impl ShellRunner {
                 command.stdin(std::process::Stdio::null());
             }
             let started = Instant::now();
-            let output = command.output().await?;
+            let child = command.spawn().map_err(|_| ProcessBoundaryError::Spawn)?;
+            let output = child
+                .wait_with_output()
+                .await
+                .map_err(|_| ProcessBoundaryError::Io)?;
             record_subprocess_done(&operation, program, started, output.status);
             if !output.status.success() {
                 return Err(captured_command_error(program, args, &output.stderr, mode));

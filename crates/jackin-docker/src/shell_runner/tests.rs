@@ -498,12 +498,24 @@ fn process_execute_completion_classifies_nonzero_exit() {
 
 #[test]
 fn process_execute_completion_classifies_spawn_failure() {
-    let result = Err::<(), _>(anyhow::anyhow!("spawn failed for /private/path"));
+    let result = Err::<(), _>(ProcessBoundaryError::Spawn.into());
     assert_eq!(
         process_execute_completion(&result),
         (
             jackin_telemetry::schema::enums::OutcomeValue::Failure,
             Some(jackin_telemetry::schema::enums::ErrorType::ProcessSpawnError)
+        )
+    );
+}
+
+#[test]
+fn process_execute_completion_classifies_io_failure() {
+    let result = Err::<(), anyhow::Error>(ProcessBoundaryError::Io.into());
+    assert_eq!(
+        process_execute_completion(&result),
+        (
+            jackin_telemetry::schema::enums::OutcomeValue::Failure,
+            Some(jackin_telemetry::schema::enums::ErrorType::IoError)
         )
     );
 }
