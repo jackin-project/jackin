@@ -1257,6 +1257,19 @@ The job then published the same response state as a durable artifact keyed by
 the lychee semantic contract; later runners can restore it when the bounded
 Actions cache misses.
 
+Preview run `29586027432` proves the input-identical archive fast path across
+both runner lanes. The workflow completed in 54 seconds; its complete package
+jobs took 19 seconds and 20 seconds on Velnor and 13 seconds and nine seconds
+on GitHub. Each job performed an artifact-existence probe, then skipped the
+toolchain, Cargo registry, target cache, complete multi-target build,
+attestation, diagnostics, artifact download, and artifact upload steps. The
+full log contained zero Cargo or Rustup dependency downloads and zero Rust
+compile/check markers. GitHub still prefetched declared action implementations
+during job setup, including the skipped attestation action, but no package
+archive crossed the network. The cold population run remains one complete
+multi-target archive job per package; the warm path does not introduce target
+parts, batches, or test shards.
+
 Runs `29575485166` and `29575735792` validated the closure-key migration with
 one complete `jackin-xtask` job per lane. The first run populated the new key
 and finished at the one-minute boundary on both runners. The input-identical
