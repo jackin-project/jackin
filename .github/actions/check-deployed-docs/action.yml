@@ -55,7 +55,7 @@ runs:
         done
 
     - name: Setup lychee via mise
-      uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4
+      uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4
       with:
         version: "2026.6.11"
         cache_key_prefix: "mise-v2"
@@ -74,7 +74,7 @@ runs:
     - name: Collect deployed docs URLs
       shell: bash
       run: |
-        lychee --dump "${{ inputs.sitemap-url }}" > lychee/deployed-pages.txt
+        MISE_CONFIG_FILE=docs/mise.toml mise exec -- lychee --dump "${{ inputs.sitemap-url }}" > lychee/deployed-pages.txt
 
     - name: Check deployed docs links
       shell: bash
@@ -104,7 +104,7 @@ runs:
             args+=(--include "^${site_origin_re}(/|$)|^file://")
           fi
 
-          lychee \
+          MISE_CONFIG_FILE=docs/mise.toml mise exec -- lychee \
             "${args[@]}"
         }
 
