@@ -13,9 +13,13 @@ permissions:
   actions: read
   contents: read
 
+concurrency:
+  group: renovate-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   renovate:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7

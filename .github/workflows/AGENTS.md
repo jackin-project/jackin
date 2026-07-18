@@ -10,6 +10,10 @@ Apply these rules to every workflow under this directory. They define the reposi
 
 ## Caches
 
+- Rust compilation uses the runner-neutral standard stack: mold, sccache
+  v0.16.0, and the shared Cargo registry composite. Never layer
+  a second target cache or an explicit cache-statistics step over it; the setup
+  action or Velnor adapter owns cache reporting after the job.
 - Add or widen a cache only after measuring cache usage and workflow timing. Specify its owner, invalidation inputs, restore source, and write policy.
 - `main` owns durable cache state. PRs may restore default-branch state but should not write duplicate caches without a measured repeated-PR benefit.
 - Every `jdx/mise-action` sets `cache_save: ${{ github.ref == 'refs/heads/main' }}`. Branches, tags, and PRs restore but never write its cache.
@@ -26,7 +30,10 @@ Apply these rules to every workflow under this directory. They define the reposi
 
 ## Runner Capacity
 
-- GitHub-hosted runners are the default and required PR path. Every runner-selectable pipeline exposes a `workflow_dispatch` `lanes` choice with `github`, `velnor`, and `both`; omitted input resolves to `github`. `velnor` runs only when explicitly selected, never from automatic PR or push triggers.
+- Velnor is the automatic and dispatch default. Every runner-selectable
+  pipeline exposes a `workflow_dispatch` `lanes` choice ordered `velnor`,
+  `github`, and `both`; omitted input resolves to Velnor. The GitHub lane is
+  pinned to `ubuntu-26.04`, and workflows do not use macOS runners.
 
 ## Semantic Boundaries
 

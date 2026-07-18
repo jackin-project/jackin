@@ -83,6 +83,10 @@ permissions:
   actions: read
   contents: read
 
+concurrency:
+  group: rust-nextest-${{ github.run_id }}-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   packages:
     strategy:
@@ -109,7 +113,8 @@ jobs:
       MISE_DATA_DIR: ${{ matrix.config.mise_data_dir }}
       RUSTC_WRAPPER: sccache
       SCCACHE_BASEDIRS: ${{ github.workspace }}
-      SCCACHE_GHA_ENABLED: "off"
+      SCCACHE_GHA_ENABLED: "false"
+      SCCACHE_CACHE_SIZE: 20G
       RUSTUP_HOME: ${{ github.workspace }}/.ci-rustup
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -417,12 +422,6 @@ jobs:
           path: .ci-target-cache
           key: ci-crate-target-v14-${{ runner.os }}-${{ runner.arch }}-${{ matrix.package }}-${{ steps.crate-target-key.outputs.key }}
 
-      - name: Capture sccache stats
-        if: always() && steps.crate-result.outputs.hit != 'true'
-        uses: ./.github/actions/sccache-stats
-        with:
-          artifact-name: sccache-stats-nextest-${{ matrix.package }}-${{ matrix.config.lane }}
-          heading: sccache test ${{ matrix.package }} (${{ matrix.config.lane }})
       - name: Stage input-identical successful crate result
         if: >-
           always() && !cancelled() && !failure() &&

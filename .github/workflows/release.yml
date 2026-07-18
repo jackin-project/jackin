@@ -11,10 +11,10 @@ on:
     inputs:
       lanes:
         description: |
-          Which runner(s) to run on. Default github; use both for parity runs.
+          Which runner(s) to run on. Default velnor; use both for parity runs.
         type: choice
-        default: github
-        options: [github, velnor, both]
+        default: velnor
+        options: [velnor, github, both]
 
 permissions:
   actions: read
@@ -31,7 +31,7 @@ concurrency:
 
 jobs:
   check-version:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     outputs:
       published: ${{ steps.published.outputs.published }}
@@ -99,7 +99,7 @@ jobs:
     needs: [check-version]
     uses: ./.github/workflows/rust-nextest.yml
     with:
-      runner-configs-json: ${{ (github.event_name != 'workflow_dispatch' || inputs.lanes == 'github') && '[{"lane":"GitHub","runner":"\"ubuntu-24.04\"","mise_data_dir":"/home/runner/.local/share/mise"}]' || inputs.lanes == 'velnor' && '[{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","mise_data_dir":"/opt/mise"}]' || '[{"lane":"GitHub","runner":"\"ubuntu-24.04\"","mise_data_dir":"/home/runner/.local/share/mise"},{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","mise_data_dir":"/opt/mise"}]' }}
+      runner-configs-json: ${{ (github.event_name == 'workflow_dispatch' && inputs.lanes == 'github') && '[{"lane":"GitHub","runner":"\"ubuntu-26.04\"","mise_data_dir":"/home/runner/.local/share/mise"}]' || (github.event_name != 'workflow_dispatch' || inputs.lanes == 'velnor') && '[{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","mise_data_dir":"/opt/mise"}]' || '[{"lane":"GitHub","runner":"\"ubuntu-26.04\"","mise_data_dir":"/home/runner/.local/share/mise"},{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","mise_data_dir":"/opt/mise"}]' }}
       all-features: false
     secrets: inherit
 
@@ -110,7 +110,7 @@ jobs:
       fail-fast: false
       max-parallel: 1
       matrix:
-        config: ${{ fromJSON((github.event_name != 'workflow_dispatch' || inputs.lanes == 'github') && '[{"lane":"GitHub","runner":"\"ubuntu-24.04\"","mise_data_dir":"/home/runner/.local/share/mise"}]' || inputs.lanes == 'velnor' && '[{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","mise_data_dir":"/opt/mise"}]' || '[{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","mise_data_dir":"/opt/mise"},{"lane":"GitHub","runner":"\"ubuntu-24.04\"","mise_data_dir":"/home/runner/.local/share/mise"}]') }}
+        config: ${{ fromJSON((github.event_name == 'workflow_dispatch' && inputs.lanes == 'github') && '[{"lane":"GitHub","runner":"\"ubuntu-26.04\"","mise_data_dir":"/home/runner/.local/share/mise"}]' || (github.event_name != 'workflow_dispatch' || inputs.lanes == 'velnor') && '[{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","mise_data_dir":"/opt/mise"}]' || '[{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","mise_data_dir":"/opt/mise"},{"lane":"GitHub","runner":"\"ubuntu-26.04\"","mise_data_dir":"/home/runner/.local/share/mise"}]') }}
     runs-on: ${{ fromJSON(matrix.config.runner) }}
     timeout-minutes: 60
     concurrency:
@@ -127,7 +127,8 @@ jobs:
       CARGO_TERM_COLOR: always
       RUSTC_WRAPPER: sccache
       SCCACHE_BASEDIRS: ${{ github.workspace }}
-      SCCACHE_GHA_ENABLED: "off"
+      SCCACHE_GHA_ENABLED: "false"
+      SCCACHE_CACHE_SIZE: 20G
       MISE_DATA_DIR: ${{ matrix.config.mise_data_dir }}
       RUSTUP_HOME: ${{ github.workspace }}/.ci-rustup
     steps:
@@ -177,17 +178,6 @@ jobs:
       - id: cargo-registry-cache
         if: steps.archive-result.outputs.found != 'true'
         uses: ./.github/actions/cache-cargo-registry
-      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-        if: steps.archive-result.outputs.found != 'true'
-        with:
-          shared-key: release-archive-jackin-workspace-v3
-          cache-all-crates: "true"
-          cache-workspace-crates: "true"
-          env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTC_WRAPPER RUSTFLAGS RUSTDOC RUSTUP"
-          save-if: ${{ github.ref == 'refs/heads/main' }}
-          # No branch in the cache key: GitHub isolates branch caches, so every
-          # PR/branch/release reads the default branch's warm cache via fallback.
-          # Only main saves, preserving limited cache quota for reusable entries.
       - name: Cache macOS SDK
         if: steps.archive-result.outputs.found != 'true'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -203,7 +193,6 @@ jobs:
           --package jackin
           --version "$VERSION"
           --archive-version "$VERSION"
-          --sccache-stats sccache-stats.txt
       - name: Attest complete jackin archive set
         uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
@@ -219,14 +208,6 @@ jobs:
         with:
           name: cargo-timings-release-jackin-${{ matrix.config.lane }}
           path: dist/cargo-timings/*.html
-          if-no-files-found: ignore
-          retention-days: 7
-      - name: Upload jackin sccache stats
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: sccache-stats-release-jackin-${{ matrix.config.lane }}
-          path: sccache-stats.txt
           if-no-files-found: ignore
           retention-days: 7
 
@@ -249,14 +230,15 @@ jobs:
       CARGO_TERM_COLOR: always
       RUSTC_WRAPPER: sccache
       SCCACHE_BASEDIRS: ${{ github.workspace }}
-      SCCACHE_GHA_ENABLED: "off"
+      SCCACHE_GHA_ENABLED: "false"
+      SCCACHE_CACHE_SIZE: 20G
       MISE_DATA_DIR: ${{ matrix.config.mise_data_dir }}
       RUSTUP_HOME: ${{ github.workspace }}/.ci-rustup
     strategy:
       fail-fast: false
       max-parallel: 1
       matrix:
-        config: ${{ fromJSON((github.event_name != 'workflow_dispatch' || inputs.lanes == 'github') && '[{"lane":"GitHub","runner":"\"ubuntu-24.04\"","mise_data_dir":"/home/runner/.local/share/mise"}]' || inputs.lanes == 'velnor' && '[{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","mise_data_dir":"/opt/mise"}]' || '[{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","mise_data_dir":"/opt/mise"},{"lane":"GitHub","runner":"\"ubuntu-24.04\"","mise_data_dir":"/home/runner/.local/share/mise"}]') }}
+        config: ${{ fromJSON((github.event_name == 'workflow_dispatch' && inputs.lanes == 'github') && '[{"lane":"GitHub","runner":"\"ubuntu-26.04\"","mise_data_dir":"/home/runner/.local/share/mise"}]' || (github.event_name != 'workflow_dispatch' || inputs.lanes == 'velnor') && '[{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","mise_data_dir":"/opt/mise"}]' || '[{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","mise_data_dir":"/opt/mise"},{"lane":"GitHub","runner":"\"ubuntu-26.04\"","mise_data_dir":"/home/runner/.local/share/mise"}]') }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - name: Restore input-identical capsule release
@@ -304,17 +286,6 @@ jobs:
       - id: cargo-registry-cache
         if: steps.archive-result.outputs.found != 'true'
         uses: ./.github/actions/cache-cargo-registry
-      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-        if: steps.archive-result.outputs.found != 'true'
-        with:
-          shared-key: release-archive-capsule-workspace-v3
-          cache-all-crates: "true"
-          cache-workspace-crates: "true"
-          env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTC_WRAPPER RUSTFLAGS RUSTDOC RUSTUP"
-          save-if: ${{ github.ref == 'refs/heads/main' }}
-          # No branch in the cache key: GitHub isolates branch caches, so every
-          # PR/branch/release reads the default branch's warm cache via fallback.
-          # Only main saves, preserving limited cache quota for reusable entries.
       - name: Build complete signed capsule archive set
         if: steps.archive-result.outputs.found != 'true'
         env:
@@ -324,7 +295,6 @@ jobs:
           --package jackin-capsule
           --version "$VERSION"
           --archive-version "$VERSION"
-          --sccache-stats sccache-stats.txt
       - name: Attest complete capsule archive set
         uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
@@ -342,21 +312,13 @@ jobs:
           path: dist/cargo-timings/*.html
           if-no-files-found: ignore
           retention-days: 7
-      - name: Upload capsule sccache stats
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: sccache-stats-release-capsule-${{ matrix.config.lane }}
-          path: sccache-stats.txt
-          if-no-files-found: ignore
-          retention-days: 7
 
   release:
     if: >-
       (github.event_name != 'workflow_dispatch' || inputs.lanes != 'velnor') &&
       needs.check-version.outputs.published != 'true'
     needs: [check-version, test, build, build-jackin-capsule]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 60
     permissions:
       contents: write
@@ -432,7 +394,7 @@ jobs:
     # cannot silently ship a formula update for an unreleased version.
     if: needs.release.result == 'success'
     needs: [check-version, release]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0

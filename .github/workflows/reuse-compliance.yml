@@ -7,9 +7,13 @@ on:
     branches: [main]
 permissions:
   contents: read
+concurrency:
+  group: reuse-compliance-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   reuse:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
       - name: REUSE Compliance Check

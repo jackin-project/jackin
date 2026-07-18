@@ -21,10 +21,10 @@ on:
     inputs:
       lanes:
         description: |
-          Which runner(s) to run on. Default github; use both for parity runs.
+          Which runner(s) to run on. Default velnor; use both for parity runs.
         type: choice
-        default: github
-        options: [github, velnor, both]
+        default: velnor
+        options: [velnor, github, both]
 
 concurrency:
   # PRs are validation-only, not part of the publish stream. Scope them by
@@ -37,11 +37,12 @@ concurrency:
 jobs:
   validate-version-bump:
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
+          # Version policy compares the complete pull-request base range.
           fetch-depth: 0
       - name: Classify version-check inputs
         id: version-inputs
@@ -148,11 +149,11 @@ jobs:
           fi
 
   version:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     outputs:
       version: ${{ steps.version.outputs.version }}
-      runner-configs: ${{ (github.event_name != 'workflow_dispatch' || inputs.lanes == 'github') && '[{"lane":"GitHub","runner":"\"ubuntu-24.04\"","runner_os":"Linux","runner_arch":"X64"}]' || inputs.lanes == 'velnor' && '[{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","runner_os":"Linux","runner_arch":"X64"}]' || '[{"lane":"GitHub","runner":"\"ubuntu-24.04\"","runner_os":"Linux","runner_arch":"X64"},{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","runner_os":"Linux","runner_arch":"X64"}]' }}
+      runner-configs: ${{ (github.event_name == 'workflow_dispatch' && inputs.lanes == 'github') && '[{"lane":"GitHub","runner":"\"ubuntu-26.04\"","runner_os":"Linux","runner_arch":"X64"}]' || (github.event_name != 'workflow_dispatch' || inputs.lanes == 'velnor') && '[{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","runner_os":"Linux","runner_arch":"X64"}]' || '[{"lane":"GitHub","runner":"\"ubuntu-26.04\"","runner_os":"Linux","runner_arch":"X64"},{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","runner_os":"Linux","runner_arch":"X64"}]' }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - id: version
@@ -163,7 +164,7 @@ jobs:
 
   assert-version:
     needs: version
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 60
     outputs:
       published: ${{ steps.result.outputs.published || steps.off-main.outputs.published }}
@@ -219,7 +220,8 @@ jobs:
       CARGO_TERM_COLOR: always
       RUSTC_WRAPPER: sccache
       SCCACHE_BASEDIRS: ${{ github.workspace }}
-      SCCACHE_GHA_ENABLED: "off"
+      SCCACHE_GHA_ENABLED: "false"
+      SCCACHE_CACHE_SIZE: 20G
     strategy:
       fail-fast: false
       matrix:
@@ -257,15 +259,6 @@ jobs:
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
-      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-        with:
-          shared-key: jackin-dev-${{ matrix.target.target }}-workspace-v2
-          cache-all-crates: "true"
-          cache-workspace-crates: "true"
-          env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTC_WRAPPER RUSTFLAGS RUSTDOC RUSTUP"
-          # Match release/preview archive builds: one target-scoped workspace
-          # cache, shared across branches through GitHub's default-branch
-          # fallback, plus the lockfile-bound Cargo registry cache above.
       - run: rustup target add ${{ matrix.target.target }}
       - name: Cache macOS SDK
         if: contains(matrix.target.target, 'apple')
@@ -310,12 +303,6 @@ jobs:
           path: target/cargo-timings/*.html
           if-no-files-found: ignore
           retention-days: 7
-      - name: Capture sccache stats
-        if: always()
-        uses: ./.github/actions/sccache-stats
-        with:
-          artifact-name: sccache-stats-jackin-dev-${{ matrix.config.lane }}-${{ matrix.target.target }}
-          heading: sccache jackin-dev ${{ matrix.target.target }} (${{ matrix.config.lane }})
       - name: Package
         env:
           TARGET: ${{ matrix.target.target }}
@@ -347,7 +334,7 @@ jobs:
       (github.event_name != 'workflow_dispatch' || inputs.lanes != 'velnor') &&
       needs.assert-version.outputs.published != 'true'
     needs: [version, assert-version, build]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 60
     concurrency:
       group: homebrew-tap-publish

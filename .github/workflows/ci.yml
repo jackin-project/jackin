@@ -15,10 +15,10 @@ on:
     inputs:
       lanes:
         description: |
-          Which runner(s) to run on. Default github; use both for parity runs.
+          Which runner(s) to run on. Default velnor; use both for parity runs.
         type: choice
-        default: github
-        options: [github, velnor, both]
+        default: velnor
+        options: [velnor, github, both]
       refresh-package:
         description: Optional exact crate name whose successful result and target should be refreshed.
         type: string
@@ -34,7 +34,7 @@ concurrency:
 
 jobs:
   changes:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     outputs:
       rust: ${{ steps.route.outputs.rust }}
@@ -55,10 +55,11 @@ jobs:
       result-name: ${{ steps.ci-result.outputs.name }}
       policy-reuse: ${{ steps.policy-result.outputs.hit }}
       policy-result-name: ${{ steps.policy-result.outputs.name }}
-      runner-configs: ${{ (github.event_name != 'workflow_dispatch' || inputs.lanes == 'github') && '[{"lane":"GitHub","runner":"\"ubuntu-24.04\"","runner_os":"Linux","runner_arch":"X64","mise_data_dir":"/home/runner/.local/share/mise","cache_writer":true,"artifact_writer":true}]' || inputs.lanes == 'velnor' && '[{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","runner_os":"Linux","runner_arch":"X64","mise_data_dir":"/opt/mise","cache_writer":true,"artifact_writer":false}]' || '[{"lane":"GitHub","runner":"\"ubuntu-24.04\"","runner_os":"Linux","runner_arch":"X64","mise_data_dir":"/home/runner/.local/share/mise","cache_writer":true,"artifact_writer":true},{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","runner_os":"Linux","runner_arch":"X64","mise_data_dir":"/opt/mise","cache_writer":true,"artifact_writer":false}]' }}
+      runner-configs: ${{ (github.event_name == 'workflow_dispatch' && inputs.lanes == 'github') && '[{"lane":"GitHub","runner":"\"ubuntu-26.04\"","runner_os":"Linux","runner_arch":"X64","mise_data_dir":"/home/runner/.local/share/mise","cache_writer":true,"artifact_writer":true}]' || (github.event_name != 'workflow_dispatch' || inputs.lanes == 'velnor') && '[{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","runner_os":"Linux","runner_arch":"X64","mise_data_dir":"/opt/mise","cache_writer":true,"artifact_writer":false}]' || '[{"lane":"GitHub","runner":"\"ubuntu-26.04\"","runner_os":"Linux","runner_arch":"X64","mise_data_dir":"/home/runner/.local/share/mise","cache_writer":true,"artifact_writer":true},{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","runner_os":"Linux","runner_arch":"X64","mise_data_dir":"/opt/mise","cache_writer":true,"artifact_writer":false}]' }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
+          # Result-reuse classification compares earlier source commits.
           fetch-depth: 0
 
       - name: Resolve Docs xtask contract
@@ -302,7 +303,7 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          LANES: ${{ github.event_name == 'workflow_dispatch' && inputs.lanes || 'github' }}
+          LANES: ${{ github.event_name == 'workflow_dispatch' && inputs.lanes || 'velnor' }}
           REFRESH_PACKAGE: ${{ github.event_name == 'workflow_dispatch' && inputs.refresh-package || '' }}
           REPOSITORY: ${{ github.repository }}
         run: |
@@ -366,7 +367,7 @@ jobs:
         env:
           BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
           GH_TOKEN: ${{ github.token }}
-          LANES: ${{ github.event_name == 'workflow_dispatch' && inputs.lanes || 'github' }}
+          LANES: ${{ github.event_name == 'workflow_dispatch' && inputs.lanes || 'velnor' }}
           REPOSITORY: ${{ github.repository }}
         run: |
           set -euo pipefail
@@ -552,18 +553,6 @@ jobs:
         uses: ./.github/actions/cache-cargo-registry
         with:
           contract-key: ${{ needs.changes.outputs.registry-contract }}
-      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-        if: env.CI_XTASK_HIT != 'true'
-        with:
-          shared-key: ci-xtask-dev-v2-debugless
-          cache-all-crates: "false"
-          cache-workspace-crates: "false"
-          env-vars: "CARGO CARGO_TARGET_DIR RUSTFLAGS RUSTDOC RUSTUP"
-          save-if: >-
-            ${{ github.ref == 'refs/heads/main' ||
-                github.event_name == 'workflow_dispatch' ||
-                (github.event_name == 'pull_request' &&
-                 github.event.pull_request.head.repo.full_name == github.repository) }}
       - name: Build shared CI xtask
         if: env.CI_XTASK_HIT != 'true'
         env:
@@ -650,7 +639,7 @@ jobs:
   affected-crates:
     needs: [changes, cargo-registry-warmup]
     if: needs.changes.outputs.rust == 'true' && needs.changes.outputs.result-reuse != 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     outputs:
       packages: ${{ steps.select.outputs.packages }}
@@ -758,6 +747,7 @@ jobs:
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
+          # README freshness compares the pull request with its base branch.
           fetch-depth: 0
       - uses: ./.github/actions/download-ci-xtask
         with:
@@ -918,7 +908,7 @@ jobs:
       - schema-check
       - file-size-gate
       - test
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0

@@ -17,9 +17,13 @@ permissions:
   actions: write
   contents: read
 
+concurrency:
+  group: cache-cleanup-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   cleanup:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 15
     steps:
       - name: Delete scoped caches

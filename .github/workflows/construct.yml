@@ -9,10 +9,10 @@ on:
     inputs:
       lanes:
         description: |
-          Which runner(s) to run on. Default github; use both for parity runs.
+          Which runner(s) to run on. Default velnor; use both for parity runs.
         type: choice
-        default: github
-        options: [github, velnor, both]
+        default: velnor
+        options: [velnor, github, both]
 
 permissions:
   actions: read
@@ -37,7 +37,7 @@ env:
 
 jobs:
   changes:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     outputs:
       reuse: ${{ steps.construct-result.outputs.hit }}
@@ -47,8 +47,8 @@ jobs:
       construct_image: ${{ steps.dispatch.outputs.construct_image || steps.filter.outputs.construct_image }}
       registry-contract: ${{ steps.construct-result.outputs.registry-contract }}
       rustup-contract: ${{ steps.construct-result.outputs.rustup-contract }}
-      build-configs: ${{ (github.event_name != 'workflow_dispatch' || inputs.lanes == 'github') && '[{"lane":"GitHub","runner":"\"ubuntu-24.04\"","runner_os":"Linux","runner_arch":"X64","platform":"amd64"},{"lane":"GitHub","runner":"\"ubuntu-24.04-arm\"","runner_os":"Linux","runner_arch":"ARM64","platform":"arm64"}]' || inputs.lanes == 'velnor' && '[{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","runner_os":"Linux","runner_arch":"X64","platform":"amd64"}]' || '[{"lane":"GitHub","runner":"\"ubuntu-24.04\"","runner_os":"Linux","runner_arch":"X64","platform":"amd64"},{"lane":"GitHub","runner":"\"ubuntu-24.04-arm\"","runner_os":"Linux","runner_arch":"ARM64","platform":"arm64"},{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","runner_os":"Linux","runner_arch":"X64","platform":"amd64"}]' }}
-      lane-configs: ${{ (github.event_name != 'workflow_dispatch' || inputs.lanes == 'github') && '[{"lane":"GitHub","runner":"\"ubuntu-24.04\"","runner_os":"Linux","runner_arch":"X64"}]' || inputs.lanes == 'velnor' && '[{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","runner_os":"Linux","runner_arch":"X64"}]' || '[{"lane":"GitHub","runner":"\"ubuntu-24.04\"","runner_os":"Linux","runner_arch":"X64"},{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","runner_os":"Linux","runner_arch":"X64"}]' }}
+      build-configs: ${{ (github.event_name == 'workflow_dispatch' && inputs.lanes == 'github') && '[{"lane":"GitHub","runner":"\"ubuntu-26.04\"","runner_os":"Linux","runner_arch":"X64","platform":"amd64"},{"lane":"GitHub","runner":"\"ubuntu-26.04-arm\"","runner_os":"Linux","runner_arch":"ARM64","platform":"arm64"}]' || (github.event_name != 'workflow_dispatch' || inputs.lanes == 'velnor') && '[{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","runner_os":"Linux","runner_arch":"X64","platform":"amd64"}]' || '[{"lane":"GitHub","runner":"\"ubuntu-26.04\"","runner_os":"Linux","runner_arch":"X64","platform":"amd64"},{"lane":"GitHub","runner":"\"ubuntu-26.04-arm\"","runner_os":"Linux","runner_arch":"ARM64","platform":"arm64"},{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","runner_os":"Linux","runner_arch":"X64","platform":"amd64"}]' }}
+      lane-configs: ${{ (github.event_name == 'workflow_dispatch' && inputs.lanes == 'github') && '[{"lane":"GitHub","runner":"\"ubuntu-26.04\"","runner_os":"Linux","runner_arch":"X64"}]' || (github.event_name != 'workflow_dispatch' || inputs.lanes == 'velnor') && '[{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","runner_os":"Linux","runner_arch":"X64"}]' || '[{"lane":"GitHub","runner":"\"ubuntu-26.04\"","runner_os":"Linux","runner_arch":"X64"},{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","runner_os":"Linux","runner_arch":"X64"}]' }}
       # Single source of truth for "should this run produce / publish
       # registry artifacts" — true on push-to-main and on
       # workflow_dispatch from main, false everywhere else (PRs,
@@ -60,6 +60,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
+          # Construct result reuse compares earlier semantic source commits.
           fetch-depth: 0
 
       - name: Find input-identical successful construct result
@@ -67,7 +68,7 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          LANES: ${{ github.event_name == 'workflow_dispatch' && inputs.lanes || 'github' }}
+          LANES: ${{ github.event_name == 'workflow_dispatch' && inputs.lanes || 'velnor' }}
           REGISTRY_CONTRACT: ${{ hashFiles('Cargo.lock', 'crates/**/fuzz/Cargo.lock', 'crates/jackin-lints/Cargo.lock', 'rust-toolchain.toml', '.cargo/config.toml') }}
           REPOSITORY: ${{ github.repository }}
           RUSTUP_CONTRACT: ${{ hashFiles('rust-toolchain.toml') }}
@@ -237,17 +238,6 @@ jobs:
         uses: ./.github/actions/cache-cargo-registry
         with:
           contract-key: ${{ needs.changes.outputs.registry-contract }}
-
-      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-        with:
-          shared-key: construct-workspace-v2
-          cache-all-crates: "true"
-          cache-workspace-crates: "true"
-          env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTFLAGS RUSTDOC RUSTUP"
-          # No branch in the cache key: GitHub isolates branch caches, so every
-          # PR/branch/release reads the default branch's warm cache via fallback,
-          # and each branch also writes its own small pruned (deps-only) cache so
-          # reruns skip recompiling unchanged dependencies.
       - name: Prefetch Cargo dependencies
         shell: bash
         run: |
@@ -319,7 +309,7 @@ jobs:
     name: publish manifest
     if: (github.event_name != 'workflow_dispatch' || inputs.lanes != 'velnor') && needs.changes.outputs.is_publish == 'true' && needs.changes.outputs.construct_image == 'true'
     needs: [changes, build]
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 60
     permissions:
       contents: read
@@ -354,17 +344,6 @@ jobs:
         uses: ./.github/actions/cache-cargo-registry
         with:
           contract-key: ${{ needs.changes.outputs.registry-contract }}
-
-      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-        with:
-          shared-key: construct-workspace-v2
-          cache-all-crates: "true"
-          cache-workspace-crates: "true"
-          env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTFLAGS RUSTDOC RUSTUP"
-          # No branch in the cache key: GitHub isolates branch caches, so every
-          # PR/branch/release reads the default branch's warm cache via fallback,
-          # and each branch also writes its own small pruned (deps-only) cache so
-          # reruns skip recompiling unchanged dependencies.
       - name: Prefetch Cargo dependencies
         shell: bash
         run: |
@@ -440,17 +419,6 @@ jobs:
         uses: ./.github/actions/cache-cargo-registry
         with:
           contract-key: ${{ needs.changes.outputs.registry-contract }}
-
-      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-        with:
-          shared-key: construct-workspace-v2
-          cache-all-crates: "true"
-          cache-workspace-crates: "true"
-          env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTFLAGS RUSTDOC RUSTUP"
-          # No branch in the cache key: GitHub isolates branch caches, so every
-          # PR/branch/release reads the default branch's warm cache via fallback,
-          # and each branch also writes its own small pruned (deps-only) cache so
-          # reruns skip recompiling unchanged dependencies.
       - name: Prefetch Cargo dependencies
         shell: bash
         run: |
@@ -485,7 +453,7 @@ jobs:
   construct-required:
     if: always()
     needs: [changes, build, publish-manifest, publish-manifest-rehearsal]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0

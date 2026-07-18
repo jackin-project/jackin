@@ -24,7 +24,7 @@ concurrency:
 jobs:
   cache-usage:
     name: Cache usage review
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 60
     steps:
       - name: Summarize GitHub Actions cache usage
@@ -56,7 +56,7 @@ jobs:
 
   scheduled-hygiene:
     name: Scheduled hygiene
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 60
     env:
       CARGO_INCREMENTAL: "0"
@@ -92,16 +92,6 @@ jobs:
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
-      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-        with:
-          shared-key: ci-policy-workspace-v2
-          cache-all-crates: "true"
-          cache-workspace-crates: "true"
-          env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTFLAGS RUSTDOC RUSTUP"
-          # No branch in the cache key: GitHub isolates branch caches, so every
-          # PR/branch/release reads the default branch's warm cache via fallback,
-          # and each branch also writes its own small pruned (deps-only) cache so
-          # reruns skip recompiling unchanged dependencies.
       - run: cargo deny check advisories
       - run: cargo hack check --workspace --feature-powerset --all-targets --locked
       - run: cargo test --doc --workspace --locked
@@ -135,48 +125,12 @@ jobs:
           cd crates/jackin-term
           cargo +nightly fuzz run --sanitizer address --target x86_64-unknown-linux-gnu damage_grid_process -- -max_total_time=300
 
-  native-macos:
-    name: Native macOS smoke
-    runs-on: macos-latest
-    timeout-minutes: 60
-    env:
-      CARGO_INCREMENTAL: "0"
-      CARGO_TERM_COLOR: always
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-      - name: Cache Rust toolchain
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            ~/.rustup/toolchains
-            ~/.rustup/update-hashes
-          key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}
-          restore-keys: |
-            rustup-${{ runner.os }}-${{ runner.arch }}-
-      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
-        with:
-          version: "2026.7.7"
-          cache_key_prefix: "mise-v2"
-          cache_save: ${{ github.ref == 'refs/heads/main' }}
-          install_args: "rust cargo-binstall cargo:cargo-nextest"
-          github_token: ${{ secrets.GH_READONLY_TOKEN }}
-      - id: cargo-registry-cache
-        uses: ./.github/actions/cache-cargo-registry
-      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-        with:
-          shared-key: native-macos-workspace-v2
-          cache-all-crates: "true"
-          cache-workspace-crates: "true"
-          env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTFLAGS RUSTDOC RUSTUP"
-      - run: cargo build --release --locked
-      - run: cargo nextest run --workspace --locked
-
-  # Advisory measured lane for criterion benches (plan 014). Compile failure
+   # Advisory measured lane for criterion benches (plan 014). Compile failure
   # fails the job; numbers are recorded as artifacts only — no threshold
   # comparison until the plan 017 ratchet engine lands.
   bench-run:
     name: Criterion bench run (advisory)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 90
     env:
       CARGO_INCREMENTAL: "0"
@@ -201,12 +155,6 @@ jobs:
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
-      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-        with:
-          shared-key: hygiene-bench-run-workspace-v2
-          cache-all-crates: "true"
-          cache-workspace-crates: "true"
-          env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTFLAGS RUSTDOC RUSTUP"
       - run: cargo bench --workspace --locked -- --quick 2>&1 | tee bench-output.txt
       - name: Upload bench results
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -223,7 +171,7 @@ jobs:
   # multi-run stability is proven (see TESTING.md allocation lane).
   dhat-allocation:
     name: dhat allocation suites (advisory)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 45
     continue-on-error: true
     env:
@@ -249,12 +197,6 @@ jobs:
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
-      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-        with:
-          shared-key: dhat-allocation-v1
-          cache-all-crates: "true"
-          cache-workspace-crates: "true"
-          env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTFLAGS RUSTDOC RUSTUP"
       - name: Run dhat-heap allocation tests
         run: |
           set -euo pipefail
@@ -269,7 +211,7 @@ jobs:
 
   cold-start-bench:
     name: Cold-start and PTY frame timing (advisory)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 45
     env:
       CARGO_INCREMENTAL: "0"
@@ -294,12 +236,6 @@ jobs:
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
-      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-        with:
-          shared-key: cold-start-v1
-          cache-all-crates: "true"
-          cache-workspace-crates: "true"
-          env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTFLAGS RUSTDOC RUSTUP"
       - run: cargo build --release --locked -p jackin
       - name: Hyperfine cold-start
         run: |
@@ -339,7 +275,7 @@ jobs:
   # Advisory rust-analyzer workspace load check (plan 048).
   rust-analyzer-clean:
     name: rust-analyzer clean (advisory)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 45
     env:
       CARGO_INCREMENTAL: "0"
@@ -364,12 +300,6 @@ jobs:
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
-      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-        with:
-          shared-key: rust-analyzer-clean-v1
-          cache-all-crates: "true"
-          cache-workspace-crates: "true"
-          env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTFLAGS RUSTDOC RUSTUP"
       - run: rustup component add rust-analyzer
       - name: rust-analyzer analysis-stats
         run: |
@@ -401,7 +331,7 @@ jobs:
   # Scheduled per-crate clean + incremental build-time ceiling (plans 026/048).
   build-time-measure:
     name: Per-crate build-time ratchet
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 90
     env:
       CARGO_INCREMENTAL: "0"
@@ -432,12 +362,6 @@ jobs:
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
-      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-        with:
-          shared-key: build-time-v1
-          cache-all-crates: "true"
-          cache-workspace-crates: "true"
-          env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTFLAGS RUSTDOC RUSTUP"
       - name: Measure clean + incremental builds
         run: >-
           "$CI_XTASK" ci-build-times
@@ -455,7 +379,7 @@ jobs:
   # Plan 022: beta-toolchain clippy canary (advisory — never blocks).
   beta-clippy-canary:
     name: Beta clippy canary (advisory)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 60
     continue-on-error: true
     env:
@@ -481,12 +405,6 @@ jobs:
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
-      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-        with:
-          shared-key: hygiene-beta-clippy-v1
-          cache-all-crates: "true"
-          cache-workspace-crates: "true"
-          env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTFLAGS RUSTDOC RUSTUP"
       - name: Install beta toolchain + clippy
         run: rustup toolchain install beta --profile minimal --component clippy
       - name: cargo +beta clippy
@@ -505,7 +423,7 @@ jobs:
   # Plan 035: coverage artifact lane (advisory).
   coverage:
     name: Coverage (advisory)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 45
     env:
       CARGO_INCREMENTAL: "0"
@@ -541,12 +459,6 @@ jobs:
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
-      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-        with:
-          shared-key: hygiene-coverage-v1
-          cache-all-crates: "true"
-          cache-workspace-crates: "true"
-          env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTFLAGS RUSTDOC RUSTUP"
       - run: rustup component add llvm-tools
       - name: llvm-cov nextest
         run: |
@@ -565,7 +477,7 @@ jobs:
   # Plan 035: Miri pure-crate lane (advisory).
   miri:
     name: Miri ${{ matrix.crate }} (advisory)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 180
     strategy:
       fail-fast: false
@@ -596,12 +508,6 @@ jobs:
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
-      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-        with:
-          shared-key: hygiene-miri-v1
-          cache-all-crates: "true"
-          cache-workspace-crates: "true"
-          env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTFLAGS RUSTDOC RUSTUP"
       - name: Install nightly + miri
         run: rustup toolchain install nightly --profile minimal --component miri
       # Independent matrix invocations prevent one slow crate from starving the rest.
@@ -622,7 +528,7 @@ jobs:
   # Plan 035: cargo-mutants on smallest pure crates (advisory; never fails job).
   mutants:
     name: cargo-mutants pure crates (advisory)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 90
     env:
       CARGO_INCREMENTAL: "0"
@@ -658,12 +564,6 @@ jobs:
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
-      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-        with:
-          shared-key: hygiene-mutants-v1
-          cache-all-crates: "true"
-          cache-workspace-crates: "true"
-          env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTFLAGS RUSTDOC RUSTUP"
       - name: cargo mutants (manifest + config)
         run: |
           set +e
@@ -684,7 +584,7 @@ jobs:
   # Plan 012: create an ephemeral workspace-hack in the CI checkout for timing only.
   hakari-timing:
     name: hakari timing investigation (advisory)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 45
     env:
       CARGO_INCREMENTAL: "0"
@@ -720,12 +620,6 @@ jobs:
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
-      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-        with:
-          shared-key: hygiene-hakari-timing-v1
-          cache-all-crates: "true"
-          cache-workspace-crates: "true"
-          env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTFLAGS RUSTDOC RUSTUP"
       # Exit-checked hakari with before/after wall-clock (advisory job; summary distinguishes tool failure).
       - name: baseline workspace build (before)
         id: hakari-before
@@ -796,7 +690,7 @@ jobs:
   # Plan 048: hyperfine cold-start measurement (advisory).
   dylint-advisory:
     name: dylint render purity
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 60
     env:
       CARGO_INCREMENTAL: "0"
@@ -832,13 +726,6 @@ jobs:
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
-      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-        with:
-          shared-key: hygiene-dylint-v1
-          cache-on-failure: "true"
-          cache-all-crates: "true"
-          cache-workspace-crates: "true"
-          env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTFLAGS RUSTDOC RUSTUP"
       - name: cargo dylint
         id: dylint-run
         run: |
@@ -869,7 +756,7 @@ jobs:
 
   dind-chaos:
     name: Full DinD E2E
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 90
     env:
       CARGO_INCREMENTAL: "0"
@@ -906,12 +793,6 @@ jobs:
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
-      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-        with:
-          shared-key: hygiene-dind-chaos-v1
-          cache-all-crates: "true"
-          cache-workspace-crates: "true"
-          env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTFLAGS RUSTDOC RUSTUP"
       - name: Run full DinD E2E suite
         run: >-
           "$CI_XTASK" ci --only e2e
@@ -921,7 +802,7 @@ jobs:
   health-trend:
     name: Health trend snapshot (advisory)
     if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 30
     continue-on-error: true
     env:
