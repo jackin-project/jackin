@@ -298,7 +298,7 @@ fn conformance_wire_real_daemon_socket_exports_bounded_parented_rpc() -> Result<
 }
 
 #[test]
-fn daemon_socket_marks_server_failure_when_peer_closes_before_response() {
+fn daemon_socket_marks_server_failure_when_response_transport_is_closed() {
     use std::net::Shutdown;
 
     let (_temp, _paths, layout) = layout();
@@ -316,9 +316,9 @@ fn daemon_socket_marks_server_failure_when_peer_closes_before_response() {
     let (mut client, mut server) = UnixStream::pair().expect("daemon socket pair");
     serde_json::to_writer(&mut client, &request).expect("write daemon request");
     client.write_all(b"\n").expect("terminate daemon request");
-    client
-        .shutdown(Shutdown::Both)
-        .expect("close daemon client");
+    server
+        .shutdown(Shutdown::Write)
+        .expect("close daemon response transport");
     let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
     let guard = tracing::subscriber::set_default(subscriber);
     handle_stream(
@@ -328,7 +328,7 @@ fn daemon_socket_marks_server_failure_when_peer_closes_before_response() {
         &CoredumpPolicy::Disabled,
         &mut attention,
     )
-    .expect_err("closed client must fail the daemon response write");
+    .expect_err("closed response transport must fail the daemon response write");
     drop(guard);
     export.force_flush();
     assert_eq!(export.error_span_count(), 1);
