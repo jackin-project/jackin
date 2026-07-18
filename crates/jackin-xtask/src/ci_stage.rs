@@ -24,6 +24,7 @@ const TOOLS: &[&str] = &[
     "cargo-mutants",
     "cargo-zigbuild",
     "dylint-link",
+    "weaver",
 ];
 
 #[derive(Args, Debug)]

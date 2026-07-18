@@ -710,6 +710,13 @@ jobs:
     name: file-size ratchet gate (${{ matrix.config.lane }})
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: ./.github/actions/download-ci-xtask
+        with:
+          token: ${{ github.token }}
+          lane: ${{ matrix.config.lane }}
+          tools-contract: ${{ needs.changes.outputs.ci-tools-contract }}
+          xtask-contract: ${{ needs.changes.outputs.ci-xtask-contract }}
+          include-tools: "true"
       - name: Cache Rust toolchain
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -721,22 +728,15 @@ jobs:
             rustup-${{ runner.os }}-${{ runner.arch }}-
       - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
         with:
-          version: "2026.6.11"
+          version: "2026.7.7"
           cache_key_prefix: "mise-v2"
           cache_save: ${{ github.ref == 'refs/heads/main' }}
           install_args: rust@${{ needs.changes.outputs.rust-version }}
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - name: Use the prepared current Rust toolchain
-        run: |
-          version=$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)
-          scripts/ci/activate-installed-rust-toolchain.sh "$version"
-      - uses: ./.github/actions/download-ci-xtask
-        with:
-          token: ${{ github.token }}
-          lane: ${{ matrix.config.lane }}
-          tools-contract: ${{ needs.changes.outputs.ci-tools-contract }}
-          xtask-contract: ${{ needs.changes.outputs.ci-xtask-contract }}
-          include-tools: "true"
+        run: >-
+          "$CI_XTASK" ci-toolchain activate
+          --version "${{ needs.changes.outputs.rust-version }}"
       # Gate: codebase-health lint checks via the umbrella `lint --strict`
       # command. The file-size ratchet (file-size-budget.toml: production
       # ≤1850L production / ≤10000L tests via ratchet.toml + file-size-budget.toml) and the test-file-layout ratchet
