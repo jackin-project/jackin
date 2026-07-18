@@ -37,6 +37,12 @@ mod procfs {
             pub(crate) stime: u64,
         }
 
+        // Keep method receivers identical to procfs' Linux API so shared call
+        // sites compile unchanged on platforms where the shim returns no data.
+        #[expect(
+            clippy::unused_self,
+            reason = "the non-Linux shim mirrors procfs Process methods"
+        )]
         impl Process {
             pub(crate) fn new(_pid: i32) -> Result<Self, ()> {
                 Err(())
