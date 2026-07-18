@@ -4,9 +4,9 @@
 //! Headless Defect 52 terminal performance experiment runner.
 //!
 //! This does not replace the Defect 54 live capsule smoke ledger. It captures
-//! machine-doable measurements from the owned jackin-term grid and writes them
-//! to a normal diagnostics run JSONL so the checklist has a run id for the
-//! headless part of Experiments 1-4.
+//! machine-doable measurements from the owned jackin-term grid, emits governed
+//! measurement events, and prints an invocation id for correlating the headless
+//! part of Experiments 1-4.
 
 use std::{
     process::Command,
@@ -246,12 +246,17 @@ fn measurement_json(measurement: &Measurement) -> serde_json::Value {
 
 #[expect(
     clippy::print_stdout,
-    reason = "example runner must print the diagnostics run id for checklist evidence"
+    reason = "example runner must print the invocation id for checklist evidence"
 )]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let root = std::env::current_dir()?.join("target/jackin-term-perf-runs");
     let paths = JackinPaths::for_tests(&root);
-    let run = RunDiagnostics::start(&paths, false, "jackin-term-perf-experiments")?;
+    let run = RunDiagnostics::start(
+        &paths,
+        false,
+        "jackin-term-perf-experiments",
+        jackin_diagnostics::ServiceIdentity::HOST_ONE_SHOT,
+    )?;
     let _guard = run.activate();
 
     let datasets = [
@@ -274,6 +279,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     run.emit_run_summary();
 
     println!("run_id={}", run.run_id());
-    println!("run_log={}", run.path().display());
+    println!("invocation_id={}", run.run_id());
     Ok(())
 }

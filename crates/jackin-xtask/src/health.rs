@@ -1,4 +1,4 @@
-//! Report-only code-health dashboard (completed codebase-health Phase 0).
+//! Report-only code-health dashboard.
 //!
 //! ```sh
 //! cargo xtask health                  # human report

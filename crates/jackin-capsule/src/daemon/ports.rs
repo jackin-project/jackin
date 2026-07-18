@@ -96,11 +96,6 @@ impl ControlPort for DefaultDaemonPorts {
                 event.payload,
                 event.observed_at,
             );
-        } else {
-            crate::cdebug!(
-                "agent-status: runtime event for unknown session {}",
-                event.session_id
-            );
         }
         // INV-D12: reporter hooks always receive an ACK, including when the
         // addressed session disappeared before the event was processed.

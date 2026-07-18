@@ -5,15 +5,6 @@
 use super::*;
 use std::time::Instant;
 
-fn ambient_telemetry_disables_debug() -> bool {
-    std::env::var("JACKIN_TELEMETRY_LEVEL").is_ok_and(|value| {
-        !matches!(
-            value.trim().to_ascii_lowercase().as_str(),
-            "debug" | "trace"
-        )
-    })
-}
-
 #[cfg(unix)]
 #[tokio::test]
 async fn run_capture_stderr_returns_hint_after_streaming_stderr() {
@@ -64,6 +55,36 @@ async fn run_capture_reports_stderr_when_streaming_is_suppressed() {
     assert!(
         !message.contains("see stderr above"),
         "must not point at terminal output that was not streamed: {message}"
+    );
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn debug_run_reports_suppressed_stderr_without_artifact_hint() {
+    let mut runner = ShellRunner { debug: true };
+    let opts = RunOptions {
+        capture_stderr: true,
+        ..RunOptions::default()
+    };
+
+    let error = runner
+        .run(
+            "sh",
+            &["-c", "printf 'debug failure detail\\n' >&2; exit 2"],
+            None,
+            &opts,
+        )
+        .await
+        .unwrap_err();
+    let message = error.to_string();
+
+    assert!(
+        message.contains("debug failure detail"),
+        "captured stderr must remain operator-visible: {message}"
+    );
+    assert!(
+        !message.contains("diagnostics run"),
+        "removed local artifacts must not be offered: {message}"
     );
 }
 
@@ -244,61 +265,6 @@ async fn capture_secret_omits_stderr_from_error_on_failure() {
     assert!(msg.contains("sh"), "program name must appear: {msg}");
 }
 
-#[cfg(unix)]
-#[tokio::test]
-async fn debug_run_captures_noncapturing_command_into_diagnostics() {
-    if ambient_telemetry_disables_debug() {
-        return;
-    }
-    // A non-quiet, non-capturing `run` would inherit the terminal and
-    // stream straight to the screen. Under --debug it must capture both
-    // streams and route them to the diagnostics run file instead — never
-    // to the terminal (which would flood a rich TUI).
-    let dir = tempfile::tempdir().unwrap();
-    let paths = jackin_core::JackinPaths::for_tests(dir.path());
-    let run = jackin_diagnostics::RunDiagnostics::start(&paths, true, "test").unwrap();
-    let _active = run.activate();
-    let mut runner = ShellRunner { debug: true };
-    runner
-        .run(
-            "sh",
-            &["-c", "echo hello-from-cmd"],
-            None,
-            &RunOptions::default(),
-        )
-        .await
-        .unwrap();
-    let contents = std::fs::read_to_string(run.path()).unwrap();
-    assert!(
-        contents.contains("hello-from-cmd"),
-        "non-capturing command stdout must be captured into the run file under --debug: {contents}"
-    );
-}
-
-#[cfg(unix)]
-#[tokio::test]
-async fn debug_run_scrubs_captured_command_output() {
-    if ambient_telemetry_disables_debug() {
-        return;
-    }
-    let dir = tempfile::tempdir().unwrap();
-    let token_file = dir.path().join("token.txt");
-    std::fs::write(&token_file, "token=ghp_1234567890abcdef\n").unwrap();
-    let script = format!("cat '{}'", token_file.display());
-    let paths = jackin_core::JackinPaths::for_tests(dir.path());
-    let run = jackin_diagnostics::RunDiagnostics::start(&paths, true, "test").unwrap();
-    let _active = run.activate();
-    let mut runner = ShellRunner { debug: true };
-    runner
-        .run("sh", &["-c", &script], None, &RunOptions::default())
-        .await
-        .unwrap();
-
-    let contents = std::fs::read_to_string(run.path()).unwrap();
-    assert!(!contents.contains("ghp_1234567890abcdef"));
-    assert!(contents.contains("<redacted>"));
-}
-
 #[test]
 fn rich_surface_closes_stdin_for_noninteractive_commands() {
     jackin_diagnostics::set_rich_surface_active(false);
@@ -324,16 +290,9 @@ fn rich_surface_closes_stdin_for_noninteractive_commands() {
 
 #[cfg(unix)]
 #[tokio::test]
-#[expect(
-    clippy::await_holding_lock,
-    reason = "documented residual allow; prefer expect when site is lint-true"
-)]
 async fn capture_secret_suppresses_stdout_debug_echo() {
-    use std::sync::Mutex;
-    static LOCK: Mutex<()> = Mutex::new(());
-    let _guard = LOCK
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    static LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+    let _guard = LOCK.lock().await;
 
     let dir = tempfile::tempdir().unwrap();
     let token_file = dir.path().join("t.txt");
@@ -360,6 +319,36 @@ async fn capture_secret_suppresses_stdout_debug_echo() {
             "secret must not appear in debug output: {line}"
         );
     }
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn debug_capture_does_not_emit_command_arguments_or_output() {
+    static LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+    let _guard = LOCK.lock().await;
+
+    jackin_diagnostics::set_debug_mode(true);
+    jackin_diagnostics::begin_debug_buffering();
+    let mut runner = ShellRunner { debug: true };
+    let output = runner
+        .capture(
+            "sh",
+            &[
+                "-c",
+                "printf telemetry-private-output",
+                "telemetry-private-argument",
+            ],
+            None,
+        )
+        .await
+        .unwrap();
+    let lines = jackin_diagnostics::drain_debug_buffer_for_test();
+    jackin_diagnostics::set_debug_mode(false);
+
+    assert_eq!(output, "telemetry-private-output");
+    let exported = lines.join("\n");
+    assert!(!exported.contains("telemetry-private-output"));
+    assert!(!exported.contains("telemetry-private-argument"));
 }
 
 #[cfg(unix)]
@@ -401,6 +390,134 @@ async fn run_emits_process_execute_span_name_on_success() {
         .run("true", &[], None, &RunOptions::default())
         .await
         .expect("true succeeds");
+}
+
+#[cfg(unix)]
+#[tokio::test(flavor = "current_thread")]
+async fn captured_run_exports_one_privacy_safe_process_span() {
+    let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
+    let guard = tracing::subscriber::set_default(subscriber);
+    let mut runner = ShellRunner::default();
+    let temp = tempfile::tempdir().unwrap();
+    let private_cwd = temp.path().join("telemetry-private-cwd");
+    std::fs::create_dir(&private_cwd).unwrap();
+    let opts = RunOptions {
+        capture_stdout: true,
+        ..RunOptions::default()
+    };
+    runner
+        .run(
+            "sh",
+            &[
+                "-c",
+                "printf telemetry-private-output",
+                "telemetry-private-argument",
+            ],
+            Some(&private_cwd),
+            &opts,
+        )
+        .await
+        .unwrap();
+    drop(guard);
+    export.force_flush();
+
+    let process_spans = export
+        .finished_spans()
+        .into_iter()
+        .filter(|span| span.name == jackin_telemetry::schema::spans::PROCESS_COMMAND)
+        .collect::<Vec<_>>();
+    assert_eq!(process_spans.len(), 1);
+    for prohibited in [
+        "telemetry-private-output",
+        "telemetry-private-argument",
+        "telemetry-private-cwd",
+    ] {
+        assert!(!export.contains_span_text(prohibited));
+        assert!(!export.contains_log_text(prohibited));
+    }
+}
+
+#[test]
+fn process_execute_completion_classifies_success() {
+    let result = Ok::<_, anyhow::Error>("captured output");
+    assert_eq!(
+        process_execute_completion(&result),
+        (jackin_telemetry::schema::enums::OutcomeValue::Success, None)
+    );
+}
+
+#[test]
+fn executable_classification_is_bounded_and_private() {
+    use jackin_telemetry::schema::enums::ProcessExecutableName;
+
+    assert_eq!(
+        jackin_telemetry::process::classify_executable(Path::new("git")),
+        ProcessExecutableName::Git
+    );
+    assert_eq!(
+        jackin_telemetry::process::classify_executable(Path::new("operator-private-tool")),
+        ProcessExecutableName::Other
+    );
+}
+
+#[test]
+fn process_execute_completion_classifies_timeout() {
+    let result = Err::<(), _>(
+        DockerError::CommandTimeout {
+            secs: 1.0,
+            program: "tool".to_owned(),
+        }
+        .into(),
+    );
+    assert_eq!(
+        process_execute_completion(&result),
+        (
+            jackin_telemetry::schema::enums::OutcomeValue::Timeout,
+            Some(jackin_telemetry::schema::enums::ErrorType::Timeout)
+        )
+    );
+}
+
+#[test]
+fn process_execute_completion_classifies_nonzero_exit() {
+    let result = Err::<(), _>(
+        DockerError::CommandFailed {
+            program: "tool".to_owned(),
+            args: "--private user-value".to_owned(),
+        }
+        .into(),
+    );
+    assert_eq!(
+        process_execute_completion(&result),
+        (
+            jackin_telemetry::schema::enums::OutcomeValue::Failure,
+            Some(jackin_telemetry::schema::enums::ErrorType::ProcessExitNonzero)
+        )
+    );
+}
+
+#[test]
+fn process_execute_completion_classifies_spawn_failure() {
+    let result = Err::<(), _>(ProcessBoundaryError::Spawn.into());
+    assert_eq!(
+        process_execute_completion(&result),
+        (
+            jackin_telemetry::schema::enums::OutcomeValue::Failure,
+            Some(jackin_telemetry::schema::enums::ErrorType::ProcessSpawnError)
+        )
+    );
+}
+
+#[test]
+fn process_execute_completion_classifies_io_failure() {
+    let result = Err::<(), anyhow::Error>(ProcessBoundaryError::Io.into());
+    assert_eq!(
+        process_execute_completion(&result),
+        (
+            jackin_telemetry::schema::enums::OutcomeValue::Failure,
+            Some(jackin_telemetry::schema::enums::ErrorType::IoError)
+        )
+    );
 }
 
 #[test]

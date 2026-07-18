@@ -5,9 +5,8 @@
 
 use super::{
     Arc, BranchName, GIT_BRANCH_CONTEXT_POLL_INTERVAL, GitContext, Instant, Multiplexer, Oid,
-    PULL_REQUEST_CONTEXT_LOOKUP_INTERVAL, PullRequestContextCacheEntry, PullRequestInfo,
-    PullRequestLookupMode, PullRequestLookupOutcome, SessionEvent, gh_pull_request_info,
-    git_current_context, resolve_default_branch,
+    PullRequestContextCacheEntry, PullRequestInfo, PullRequestLookupMode, PullRequestLookupOutcome,
+    SessionEvent, gh_pull_request_info, git_current_context, resolve_default_branch,
 };
 
 impl Multiplexer {
@@ -48,12 +47,13 @@ impl Multiplexer {
         let request_id = self.pr_watch.git_branch_lookup.begin_spawn(now);
         let workdir = self.launch_env.workdir.clone();
         self.spawn_context_lookup(
-            "git-branch-context",
+            jackin_telemetry::schema::enums::BackgroundCycleName::BranchContext,
             move || git_current_context(&workdir),
             move |context| SessionEvent::GitBranchContextLoaded {
                 request_id,
                 context,
             },
+            |_| jackin_telemetry::spawn::DetachedCompletion::success(),
         );
     }
 
@@ -71,34 +71,17 @@ impl Multiplexer {
         mode: PullRequestLookupMode,
     ) -> bool {
         if self.pr_watch.pull_request_lookup.in_flight {
-            if mode == PullRequestLookupMode::ForceRefresh {
-                crate::cdebug!(
-                    "pull-request-context: force-refresh skipped: in-flight lookup request_id={} will satisfy",
-                    self.pr_watch.pull_request_lookup.request_id
-                );
-            }
             return false;
         }
-        if !self.launch_env.workdir_context.gh_available {
-            if mode == PullRequestLookupMode::RespectCache {
-                return false;
-            }
-            crate::clog!(
-                "pull-request-context: force-refresh scheduling lookup despite startup gh unavailable"
-            );
+        if !self.launch_env.workdir_context.gh_available
+            && mode == PullRequestLookupMode::RespectCache
+        {
+            return false;
         }
         let Some(branch) = self.pr_watch.pull_request_context_branch.clone() else {
-            if mode == PullRequestLookupMode::ForceRefresh {
-                crate::cdebug!("pull-request-context: force-refresh skipped: no branch");
-            }
             return false;
         };
         if self.launch_env.workdir_context.is_default_branch(&branch) {
-            if mode == PullRequestLookupMode::ForceRefresh {
-                crate::cdebug!(
-                    "pull-request-context: force-refresh skipped: branch {branch} is default"
-                );
-            }
             return false;
         }
         if self.pull_request_cache_blocks_lookup(&branch, now, mode) {
@@ -113,21 +96,24 @@ impl Multiplexer {
         // at apply time.
         let head_for_event = self.pr_watch.pull_request_context_head.clone();
         self.spawn_context_lookup(
-            "pull-request-context",
+            jackin_telemetry::schema::enums::BackgroundCycleName::PrContext,
             move || match gh_pull_request_info(&workdir, branch.as_str()) {
                 Ok(pr) => PullRequestLookupOutcome::Resolved(pr),
-                Err(err) => {
-                    crate::clog!(
-                        "pull-request-context: gh lookup failed for branch {branch}: {err}"
-                    );
-                    PullRequestLookupOutcome::TransientFailure
-                }
+                Err(_) => PullRequestLookupOutcome::TransientFailure,
             },
             move |outcome| SessionEvent::PullRequestContextLoaded {
                 request_id,
                 branch: Some(branch_for_event),
                 head: head_for_event,
                 outcome,
+            },
+            |outcome| match outcome {
+                PullRequestLookupOutcome::Resolved(_) => {
+                    jackin_telemetry::spawn::DetachedCompletion::success()
+                }
+                PullRequestLookupOutcome::TransientFailure => {
+                    jackin_telemetry::spawn::DetachedCompletion::recovered_degradation()
+                }
             },
         );
         true
@@ -137,20 +123,35 @@ impl Multiplexer {
     /// `work` runs the actual `git`/`gh` subprocess (off the daemon's
     /// main thread); `to_event` maps the worker's return value into
     /// the `SessionEvent` variant the main loop dispatches. The
-    /// channel-closed `clog!` is uniform across callers so a future
-    /// triage of "why didn't the bar refresh?" has the same shape
-    /// regardless of which lookup misbehaved.
-    pub(super) fn spawn_context_lookup<F, T, E>(&self, label: &'static str, work: F, to_event: E)
-    where
+    /// Delivery and work outcomes are classified independently so a successful
+    /// lookup cannot hide a closed result channel, and a delivered failure
+    /// cannot be reported as success.
+    pub(super) fn spawn_context_lookup<F, T, E, C>(
+        &self,
+        cycle: jackin_telemetry::schema::enums::BackgroundCycleName,
+        work: F,
+        to_event: E,
+        classify_work: C,
+    ) where
         F: FnOnce() -> T + Send + 'static,
         T: Send + 'static,
         E: FnOnce(T) -> SessionEvent + Send + 'static,
+        C: FnOnce(&T) -> jackin_telemetry::spawn::DetachedCompletion + Send + 'static,
     {
         let event_tx = self.control.event_tx.clone();
         let emit = move || {
             let value = work();
-            if event_tx.send(to_event(value)).is_err() {
-                crate::clog!("{label}: event channel closed before result reached main loop");
+            let completion = classify_work(&value);
+            let delivered = event_tx.send(to_event(value)).is_ok();
+            (delivered, completion)
+        };
+        let classify = |(delivered, completion): &(bool, _)| {
+            if *delivered {
+                *completion
+            } else {
+                jackin_telemetry::spawn::DetachedCompletion::error(
+                    jackin_telemetry::schema::enums::ErrorType::RpcError,
+                )
             }
         };
         // Fire-and-forget worker — no `await`, no tokio context needed.
@@ -159,16 +160,18 @@ impl Multiplexer {
         // outside one (unit tests, ad-hoc tools) a plain OS thread
         // avoids spinning up a second runtime.
         match tokio::runtime::Handle::try_current() {
-            Ok(handle) => {
-                handle.spawn_blocking(emit);
+            Ok(_handle) => {
+                drop(jackin_telemetry::spawn::autonomous_cycle_blocking(
+                    cycle, emit, classify,
+                ));
             }
             Err(_) => {
-                if let Err(e) = std::thread::Builder::new()
-                    .name(format!("capsule-blocking[{label}]"))
-                    .spawn(emit)
-                {
-                    crate::clog!("{label}: failed to spawn blocking worker thread: {e}");
-                }
+                drop(jackin_telemetry::spawn::thread_autonomous_cycle_named(
+                    format!("capsule-blocking[{}]", cycle.as_str()),
+                    cycle,
+                    emit,
+                    classify,
+                ));
             }
         }
     }
@@ -179,12 +182,6 @@ impl Multiplexer {
         context: GitContext,
         now: Instant,
     ) -> bool {
-        crate::cdebug!(
-            "git-branch-context: lookup loaded request_id={} current_request_id={} context={:?}",
-            request_id,
-            self.pr_watch.git_branch_lookup.request_id,
-            context,
-        );
         if request_id != self.pr_watch.git_branch_lookup.request_id {
             return false;
         }
@@ -218,12 +215,16 @@ impl Multiplexer {
             // Offload the synchronous `git` subprocess to the blocking pool so
             // it doesn't stall the daemon's render thread (Defect 43).
             let workdir = self.launch_env.workdir.clone();
-            if let Ok(handle) = tokio::runtime::Handle::try_current() {
-                handle.spawn_blocking(move || {
-                    // Result discarded: the next git-branch watcher tick will
-                    // pick up the default branch via inotify or periodic poll.
-                    drop(resolve_default_branch(&workdir));
-                });
+            if tokio::runtime::Handle::try_current().is_ok() {
+                drop(jackin_telemetry::spawn::autonomous_cycle_blocking(
+                    jackin_telemetry::schema::enums::BackgroundCycleName::BranchContext,
+                    move || {
+                        // Result discarded: the next git-branch watcher tick will
+                        // pick up the default branch via inotify or periodic poll.
+                        drop(resolve_default_branch(&workdir));
+                    },
+                    |()| jackin_telemetry::spawn::DetachedCompletion::success(),
+                ));
             } else {
                 self.launch_env.workdir_context.default_branch = resolve_default_branch(&workdir);
             }
@@ -238,16 +239,7 @@ impl Multiplexer {
         // apply path also runs a second (branch, head) equality check as
         // defense-in-depth for any future call site that bypasses this
         // path.
-        let in_flight_before = self.pr_watch.pull_request_lookup.in_flight;
         self.pr_watch.pull_request_lookup.invalidate_in_flight();
-        crate::cdebug!(
-            "git-branch-context: context flip old_branch={:?} old_head={:?} new_branch={:?} new_head={:?} invalidated_in_flight={}",
-            old_branch,
-            old_head,
-            self.pr_watch.pull_request_context_branch,
-            self.pr_watch.pull_request_context_head,
-            in_flight_before
-        );
         let changed = old_branch != self.pr_watch.pull_request_context_branch
             || old_head != self.pr_watch.pull_request_context_head
             || old_pull_request != self.pr_watch.pull_request_context;
@@ -283,10 +275,6 @@ impl Multiplexer {
         now: Instant,
     ) -> bool {
         if request_id != self.pr_watch.pull_request_lookup.request_id {
-            crate::cdebug!(
-                "pull-request-context: dropping stale result request_id={request_id} (current={})",
-                self.pr_watch.pull_request_lookup.request_id
-            );
             // `in_flight` belongs to the NEW lookup spawned during the
             // branch flip — clearing it here lets the spawn-gate admit
             // a third concurrent worker.
@@ -312,7 +300,6 @@ impl Multiplexer {
         let pull_request = match outcome {
             PullRequestLookupOutcome::Resolved(pr) => {
                 if !self.launch_env.workdir_context.gh_available {
-                    crate::clog!("pull-request-context: gh lookup succeeded after startup miss");
                     self.launch_env.workdir_context.gh_available = true;
                 }
                 pr
@@ -330,14 +317,6 @@ impl Multiplexer {
         if self.pr_watch.pull_request_context_branch.as_ref() != Some(&branch)
             || self.pr_watch.pull_request_context_head != head
         {
-            crate::cdebug!(
-                "pull-request-context: (branch, head) drift between spawn and apply — \
-                 spawn=({:?}, {:?}) apply=({:?}, {:?}); refusing to assign or cache",
-                branch,
-                head,
-                self.pr_watch.pull_request_context_branch,
-                self.pr_watch.pull_request_context_head,
-            );
             // We just cleared in_flight a few lines above; schedule a
             // fresh lookup for the current (branch, head) so the bar
             // doesn't sit stale until the next git-branch poll happens
@@ -362,23 +341,15 @@ impl Multiplexer {
         changed || loading_changed
     }
 
-    /// Drop cache entries older than `2 * PULL_REQUEST_CONTEXT_LOOKUP_INTERVAL`
+    /// Drop cache entries older than the cache entry's bounded lifetime
     /// so a session that visits many feature branches does not grow the
     /// cache without bound. Two intervals = enough that an "I'm flipping
     /// between two PRs" workflow keeps both warm, while monotonic growth
     /// across hundreds of branches gets pruned.
     pub(super) fn purge_expired_pull_request_cache_entries(&mut self, now: Instant) {
-        let before = self.pr_watch.pull_request_context_cache.len();
         self.pr_watch
             .pull_request_context_cache
             .retain(|_, entry| !entry.is_expired(now));
-        let dropped = before - self.pr_watch.pull_request_context_cache.len();
-        if dropped > 0 {
-            crate::cdebug!(
-                "pull-request-context: purged {dropped} expired cache entries (ttl=2x{:?})",
-                PULL_REQUEST_CONTEXT_LOOKUP_INTERVAL
-            );
-        }
     }
 
     pub(super) fn cached_pull_request_for_branch(

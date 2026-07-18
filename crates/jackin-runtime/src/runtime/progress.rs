@@ -1,61 +1,24 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Re-export of launch TUI progress types plus host-side prelaunch helpers.
+//! Host wiring for launch progress: re-exports presentation types from
+//! `jackin-launch` and installs host-terminal/desktop adapters.
 //!
-//! Not responsible for rendering — the TUI render functions are re-exported
-//! only for test use (`#[cfg(test)]`). Production callers use `LaunchProgress`
-//! and `LaunchStage` exclusively.
+//! Not responsible for rendering or product composition tests — those live in
+//! `jackin-launch` (`progress` + `tui`). This module only bridges host I/O
+//! (clipboard, reveal/open, diagnostics compact lines) into the launch surface.
 
 use std::io::Write;
-#[cfg(test)]
-use std::time::Duration;
 
 pub use jackin_core::LaunchCancelled;
-#[cfg(test)]
-use jackin_core::tui_theme::DANGER_RED;
 use jackin_core::{LaunchHostTerminal, LaunchOutputSink};
-use jackin_launch_tui::LaunchTuiOutputSink;
-pub use jackin_launch_tui::progress::LaunchProgress;
-#[cfg(test)]
-use jackin_launch_tui::tui::components::build_log_dialog::BUILD_LOG_WRAP_PREFIX;
-#[cfg(test)]
-use jackin_launch_tui::tui::components::build_log_dialog::{
-    build_log_scroll_metrics, refresh_build_log_layout, render_build_log_dialog,
-    wrap_build_log_lines,
-};
-#[cfg(test)]
-use jackin_launch_tui::tui::components::failure_dialog::failure_popup_hyperlink_overlay;
-#[cfg(test)]
-use jackin_launch_tui::tui::components::failure_dialog::{
-    failure_copy_payload, failure_copy_target_at,
-};
-#[cfg(test)]
-use jackin_launch_tui::tui::components::failure_dialog::{
-    failure_popup_rect_for_rows, failure_popup_rows, failure_popup_value_rect,
-};
-#[cfg(test)]
-use jackin_launch_tui::tui::components::progress_rail::{
-    LABEL_SLIDE_FRAMES, LABEL_VIEW_WIDTH, PROGRESS_RAIL_WIDTH, animated_label_center,
-    display_stage_statuses, faded_color, label_edge_fade_factor, label_strip, labels_line,
-};
-#[cfg(test)]
-use jackin_launch_tui::tui::components::prompts::{
-    PromptConfirm, PromptError, PromptText, draw_confirm, draw_error_popup, draw_text_prompt,
-};
-#[cfg(test)]
-use jackin_launch_tui::tui::view::render_launch_frame as render_launch_frame_view;
-pub use jackin_launch_tui::{
+use jackin_launch::LaunchTuiOutputSink;
+pub use jackin_launch::progress::LaunchProgress;
+pub use jackin_launch::{
     FailureCopyTarget, LaunchFailure, LaunchIdentity, LaunchMessage, LaunchStage, LaunchTargetKind,
     LaunchView, PromptContextLine, StageLabelTransition, StageStatus, StageView,
     active_stage_index, initial_view, update_launch_view, update_stage,
 };
-#[cfg(test)]
-use ratatui::Frame;
-#[cfg(test)]
-use ratatui::layout::Rect;
-#[cfg(test)]
-use ratatui::style::Color;
 
 struct HostTerminal;
 
@@ -74,30 +37,26 @@ impl LaunchHostTerminal for HostTerminal {
 
     fn emit_compact_line(&self, kind: &str, line: &str) {
         jackin_diagnostics::emit_compact_line(kind, line);
-        tracing::info!(kind, "{line}");
     }
 
     fn emit_debug_line(&self, category: &str, line: &str) {
         jackin_diagnostics::emit_debug_line(category, line);
-        tracing::debug!(category, "{line}");
     }
 
     fn set_pointer_shape(&self, pointer: bool) {
-        let seq = if pointer {
-            jackin_core::POINTER_HAND
-        } else {
-            jackin_core::POINTER_DEFAULT
-        };
+        let seq = jackin_launch::terminal_protocol::encode_pointer_shape(pointer);
         let mut out = std::io::stdout();
-        drop(out.write_all(seq.as_bytes()));
+        drop(out.write_all(&seq));
         drop(out.flush());
     }
 
     fn copy_to_clipboard(&self, payload: &str) -> bool {
         let mut out = std::io::stdout();
-        out.write_all(&jackin_core::encode_osc52_clipboard_write(payload))
-            .and_then(|()| out.flush())
-            .is_ok()
+        out.write_all(&jackin_launch::terminal_protocol::encode_clipboard_write(
+            payload,
+        ))
+        .and_then(|()| out.flush())
+        .is_ok()
     }
 
     fn reveal_file(&self, path: &std::path::Path) -> bool {
@@ -144,7 +103,7 @@ pub fn prelaunch_select_choice(
     title: &str,
     items: Vec<String>,
 ) -> anyhow::Result<usize> {
-    jackin_launch_tui::progress::prelaunch_select_choice(
+    jackin_launch::progress::prelaunch_select_choice(
         no_motion,
         title,
         items,
@@ -163,7 +122,7 @@ pub fn standalone_select_with_context(
     context: &[PromptContextLine],
     items: Vec<String>,
 ) -> anyhow::Result<usize> {
-    jackin_launch_tui::progress::standalone_select_with_context(
+    jackin_launch::progress::standalone_select_with_context(
         title,
         context,
         items,
@@ -175,7 +134,7 @@ pub fn standalone_select_with_context(
 /// Standalone error popup for launch-adjacent failures that need operator
 /// acknowledgement in the same rich surface.
 pub fn standalone_error_popup(title: &str, message: &str) -> anyhow::Result<()> {
-    jackin_launch_tui::progress::standalone_error_popup(
+    jackin_launch::progress::standalone_error_popup(
         title,
         message,
         host_terminal(),
@@ -190,7 +149,7 @@ pub fn standalone_exit_dialog_with_inspect(
     options: Vec<String>,
     worktrees_per_record: &[Vec<jackin_core::WorktreeInspect>],
 ) -> anyhow::Result<usize> {
-    jackin_launch_tui::progress::standalone_exit_dialog_with_inspect(
+    jackin_launch::progress::standalone_exit_dialog_with_inspect(
         title,
         context,
         options,
@@ -205,7 +164,7 @@ pub fn standalone_launch_dialog(
     title: &str,
     candidates: &[jackin_core::LaunchCandidate],
 ) -> anyhow::Result<jackin_core::LaunchDialogResult> {
-    jackin_launch_tui::progress::standalone_launch_dialog(
+    jackin_launch::progress::standalone_launch_dialog(
         title,
         candidates,
         host_terminal(),
@@ -214,33 +173,5 @@ pub fn standalone_launch_dialog(
 }
 
 pub fn rich_terminal_supported() -> bool {
-    jackin_launch_tui::tui::terminal::rich_terminal_supported()
+    jackin_launch::tui::terminal::rich_terminal_supported()
 }
-
-/// Bail with the canonical rich-terminal requirement message unless the
-/// current terminal can host the launch surface. Both `LaunchProgress::new`
-/// and the pre-launch `prelaunch_select_choice` picker gate through this so
-/// the message cannot drift between them.
-#[cfg(test)]
-fn render_launch_frame(
-    frame: &mut Frame<'_>,
-    view: &LaunchView,
-    run_id: &str,
-    run_log_path: &str,
-    no_motion: bool,
-    rain: Option<&jackin_launch_tui::tui::components::rain::RainState>,
-) {
-    render_launch_frame_view(
-        frame,
-        view,
-        run_id,
-        Some(run_log_path),
-        no_motion,
-        rain,
-        jackin_diagnostics::is_debug_mode(),
-        env!("JACKIN_VERSION"),
-    );
-}
-
-#[cfg(test)]
-mod tests;

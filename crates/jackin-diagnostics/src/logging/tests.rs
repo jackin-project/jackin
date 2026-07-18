@@ -10,7 +10,6 @@ fn sink_level_falls_back_to_global() {
     assert_eq!(sink_level(TelemetrySink::OtlpSpans, true), global);
     assert_eq!(sink_level(TelemetrySink::OtlpLogs, true), global);
     assert_eq!(sink_level(TelemetrySink::Console, true), global);
-    assert_eq!(sink_level(TelemetrySink::DiagnosticsFile, true), global);
 }
 
 #[test]

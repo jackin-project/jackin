@@ -400,6 +400,10 @@ fn handle_confirm_instance_purge_key(state: &mut ManagerState<'_>, key: KeyEvent
     match plan {
         InstancePurgeKeyPlan::Purge { container } => {
             drop(update_manager(state, ManagerMessage::ReturnToList));
+            crate::tui::state::update::record_manager_action(
+                state,
+                jackin_telemetry::schema::enums::UiActionName::InstancePurge,
+            );
             InputOutcome::InstanceAction {
                 container,
                 action: crate::tui::message::ConsoleInstanceAction::Purge,
@@ -429,6 +433,10 @@ fn handle_confirm_delete_key(
     match plan {
         WorkspaceDeleteKeyPlan::RemoveWorkspace { name } => {
             drop(update_manager(state, ManagerMessage::ReturnToList));
+            crate::tui::state::update::record_manager_action(
+                state,
+                jackin_telemetry::schema::enums::UiActionName::WorkspaceDelete,
+            );
             state.request_effect(ManagerEffect::RemoveWorkspace {
                 name,
                 cwd: cwd.to_path_buf(),

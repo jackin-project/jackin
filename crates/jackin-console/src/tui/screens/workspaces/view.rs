@@ -426,11 +426,14 @@ pub fn list_name_lines(
         .position(|row| row.as_ref().is_some_and(|row| row.selected))
         && let Some(line) = lines.get_mut(selected_idx)
     {
-        let current_w = termrock::scroll::line_width(line);
+        let current_w = line.width();
         if current_w < content_w {
             let bg = match visual_rows[selected_idx].as_ref().map(|row| row.tone) {
-                Some(WorkspaceListRowTone::Instance) => jackin_core::tui_theme::CYAN,
-                _ => termrock::style::PHOSPHOR_GREEN,
+                Some(WorkspaceListRowTone::Instance) => jackin_tui::tokens::CYAN,
+                _ => termrock::Theme::default()
+                    .style(termrock::style::Role::Accent)
+                    .fg
+                    .unwrap_or_default(),
             };
             line.spans.push(Span::styled(
                 " ".repeat(content_w - current_w),
@@ -445,13 +448,19 @@ pub fn list_name_lines(
         && let Some(line) = lines.get_mut(hovered_idx)
     {
         for span in &mut line.spans {
-            span.style = span.style.bg(jackin_core::tui_theme::TAB_BG_INACTIVE_HOVER);
+            span.style = span.style.bg(termrock::Theme::default()
+                .style(termrock::style::Role::TabInactiveHovered)
+                .bg
+                .unwrap_or_default());
         }
-        let current_w = termrock::scroll::line_width(line);
+        let current_w = line.width();
         if current_w < content_w {
             line.spans.push(Span::styled(
                 " ".repeat(content_w - current_w),
-                Style::default().bg(jackin_core::tui_theme::TAB_BG_INACTIVE_HOVER),
+                Style::default().bg(termrock::Theme::default()
+                    .style(termrock::style::Role::TabInactiveHovered)
+                    .bg
+                    .unwrap_or_default()),
             ));
         }
     }
@@ -505,10 +514,26 @@ pub fn render_list_names_block(
         render_list_name_line(frame, inner, row_idx as u16, line, usize::from(scroll_x));
     }
     if h_scrollable {
-        termrock::scroll::render_horizontal_scrollbar(frame, area, content_width, scroll_x);
+        termrock::scroll::render_scrollbar(
+            frame.buffer_mut(),
+            termrock::scroll::horizontal_scrollbar_area(area),
+            termrock::scroll::ScrollbarSpec::new(
+                termrock::scroll::ScrollAxis::Horizontal,
+                termrock::scroll::ScrollbarGeometry::new(content_width, viewport_w, scroll_x),
+            ),
+            &theme,
+        );
     }
     if v_scrollable {
-        termrock::scroll::render_vertical_scrollbar(frame, area, content_height, scroll_y);
+        termrock::scroll::render_scrollbar(
+            frame.buffer_mut(),
+            termrock::scroll::vertical_scrollbar_area(area),
+            termrock::scroll::ScrollbarSpec::new(
+                termrock::scroll::ScrollAxis::Vertical,
+                termrock::scroll::ScrollbarGeometry::new(content_height, viewport_h, scroll_y),
+            ),
+            &theme,
+        );
     }
 }
 
@@ -532,9 +557,15 @@ fn render_list_name_line(
 
 fn row_fg(row: &WorkspaceListDisplayRow) -> Color {
     match row.tone {
-        WorkspaceListRowTone::White => jackin_core::tui_theme::WHITE,
-        WorkspaceListRowTone::Workspace => termrock::style::PHOSPHOR_GREEN,
-        WorkspaceListRowTone::Instance => jackin_core::tui_theme::CYAN,
+        WorkspaceListRowTone::White => termrock::Theme::default()
+            .style(termrock::style::Role::Text)
+            .fg
+            .unwrap_or_default(),
+        WorkspaceListRowTone::Workspace => termrock::Theme::default()
+            .style(termrock::style::Role::Accent)
+            .fg
+            .unwrap_or_default(),
+        WorkspaceListRowTone::Instance => jackin_tui::tokens::CYAN,
     }
 }
 
@@ -568,19 +599,28 @@ fn push_tree_workspace_line(
                 Span::styled(
                     cursor,
                     Style::default()
-                        .bg(termrock::style::PHOSPHOR_GREEN)
+                        .bg(termrock::Theme::default()
+                            .style(termrock::style::Role::Accent)
+                            .fg
+                            .unwrap_or_default())
                         .fg(Color::Black),
                 ),
                 Span::styled(
                     arrow,
                     Style::default()
-                        .bg(termrock::style::PHOSPHOR_GREEN)
+                        .bg(termrock::Theme::default()
+                            .style(termrock::style::Role::Accent)
+                            .fg
+                            .unwrap_or_default())
                         .fg(Color::Black),
                 ),
                 Span::styled(
                     format!(" {}", row.label),
                     Style::default()
-                        .bg(termrock::style::PHOSPHOR_GREEN)
+                        .bg(termrock::Theme::default()
+                            .style(termrock::style::Role::Accent)
+                            .fg
+                            .unwrap_or_default())
                         .fg(Color::Black),
                 ),
             ])
@@ -598,7 +638,10 @@ fn push_tree_workspace_line(
             Line::from(Span::styled(
                 format!("{cursor}  {}", row.label),
                 Style::default()
-                    .bg(termrock::style::PHOSPHOR_GREEN)
+                    .bg(termrock::Theme::default()
+                        .style(termrock::style::Role::Accent)
+                        .fg
+                        .unwrap_or_default())
                     .fg(Color::Black),
             ))
         } else {
@@ -629,7 +672,7 @@ fn push_tree_instance_line(
         Line::from(Span::styled(
             format!("{cursor}    {}", row.label),
             Style::default()
-                .bg(jackin_core::tui_theme::CYAN)
+                .bg(jackin_tui::tokens::CYAN)
                 .fg(Color::Black),
         ))
     } else {
@@ -639,16 +682,16 @@ fn push_tree_instance_line(
         Line::from(vec![
             Span::styled(
                 format!("{cursor}    "),
-                Style::default().fg(jackin_core::tui_theme::CYAN_DIM),
+                Style::default().fg(jackin_tui::tokens::CYAN_DIM),
             ),
             Span::styled(
                 instance_id.to_owned(),
-                Style::default().fg(jackin_core::tui_theme::CYAN_DIM),
+                Style::default().fg(jackin_tui::tokens::CYAN_DIM),
             ),
             Span::styled("  ", Style::default()),
             Span::styled(
                 role_key.to_owned(),
-                Style::default().fg(jackin_core::tui_theme::CYAN),
+                Style::default().fg(jackin_tui::tokens::CYAN),
             ),
         ])
     };
@@ -708,19 +751,19 @@ pub fn render_compact_instances_summary(
 ) {
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(jackin_core::tui_theme::CYAN))
+        .border_style(Style::default().fg(jackin_tui::tokens::CYAN))
         .title(Span::styled(
             " Running ",
             Style::default()
-                .fg(jackin_core::tui_theme::CYAN)
+                .fg(jackin_tui::tokens::CYAN)
                 .add_modifier(Modifier::BOLD),
         ));
     let plural = if count == 1 { "instance" } else { "instances" };
     let line = Line::from(vec![
-        Span::styled("  ● ", Style::default().fg(jackin_core::tui_theme::CYAN)),
+        Span::styled("  ● ", Style::default().fg(jackin_tui::tokens::CYAN)),
         Span::styled(
             format!("{count} {plural} running"),
-            Style::default().fg(jackin_core::tui_theme::CYAN),
+            Style::default().fg(jackin_tui::tokens::CYAN),
         ),
         Span::styled(
             if expanded {
@@ -728,13 +771,13 @@ pub fn render_compact_instances_summary(
             } else {
                 "  ·  → expand"
             },
-            Style::default().fg(jackin_core::tui_theme::CYAN_DIM),
+            Style::default().fg(jackin_tui::tokens::CYAN_DIM),
         ),
     ]);
     frame.render_widget(
         Paragraph::new(vec![line])
             .block(block)
-            .style(Style::default().fg(jackin_core::tui_theme::CYAN)),
+            .style(Style::default().fg(jackin_tui::tokens::CYAN)),
         area,
     );
 }
@@ -752,21 +795,33 @@ pub fn render_sentinel_description_pane(frame: &mut Frame<'_>, area: Rect) {
     let intro_lines = vec![
         Line::from(Span::styled(
             "  A workspace saves a project boundary once so you",
-            Style::default().fg(termrock::style::PHOSPHOR_GREEN),
+            Style::default().fg(termrock::Theme::default()
+                .style(termrock::style::Role::Accent)
+                .fg
+                .unwrap_or_default()),
         )),
         Line::from(Span::styled(
             "  can launch roles into it from anywhere \u{2014} without",
-            Style::default().fg(termrock::style::PHOSPHOR_GREEN),
+            Style::default().fg(termrock::Theme::default()
+                .style(termrock::style::Role::Accent)
+                .fg
+                .unwrap_or_default()),
         )),
         Line::from(Span::styled(
             "  retyping mount paths.",
-            Style::default().fg(termrock::style::PHOSPHOR_GREEN),
+            Style::default().fg(termrock::Theme::default()
+                .style(termrock::style::Role::Accent)
+                .fg
+                .unwrap_or_default()),
         )),
     ];
     frame.render_widget(Paragraph::new(intro_lines).block(intro_block), rows[0]);
 
     let why_block = panel(&theme, Some(" Why create one? "), false).block();
-    let bullet_style = Style::default().fg(termrock::style::PHOSPHOR_GREEN);
+    let bullet_style = Style::default().fg(termrock::Theme::default()
+        .style(termrock::style::Role::Accent)
+        .fg
+        .unwrap_or_default());
     let bullets = [
         "Name a project once, launch from any cwd",
         "Keep extra mounts consistent across sessions",
@@ -849,7 +904,7 @@ pub fn render_role_picker_sidebar<R: crate::tui::components::role_picker::RoleCh
         area,
         &title,
         labels,
-        picker.list_state.selected,
+        picker.list_state.selected().copied(),
         focused,
     );
 }
@@ -881,13 +936,19 @@ pub fn render_general_subpanel(frame: &mut Frame<'_>, area: Rect, workdir_displa
         Span::raw("  "),
         Span::styled(
             "Working dir ",
-            Style::default().fg(jackin_core::tui_theme::WHITE),
+            Style::default().fg(termrock::Theme::default()
+                .style(termrock::style::Role::Text)
+                .fg
+                .unwrap_or_default()),
         ),
         Span::raw(workdir_display.to_owned()),
     ])];
-    let panel = Paragraph::new(lines)
-        .block(block)
-        .style(Style::default().fg(termrock::style::PHOSPHOR_GREEN));
+    let panel = Paragraph::new(lines).block(block).style(
+        Style::default().fg(termrock::Theme::default()
+            .style(termrock::style::Role::Accent)
+            .fg
+            .unwrap_or_default()),
+    );
     frame.render_widget(panel, area);
 }
 
@@ -949,9 +1010,12 @@ pub fn render_environments_subpanel(
         .map(|row| env_row_line(row, inner_width))
         .collect();
 
-    let panel = Paragraph::new(lines)
-        .block(block)
-        .style(Style::default().fg(termrock::style::PHOSPHOR_GREEN));
+    let panel = Paragraph::new(lines).block(block).style(
+        Style::default().fg(termrock::Theme::default()
+            .style(termrock::style::Role::Accent)
+            .fg
+            .unwrap_or_default()),
+    );
     frame.render_widget(panel, area);
 }
 
@@ -963,7 +1027,7 @@ pub fn render_mounts_subpanel(
     scroll_y: u16,
     focused: bool,
 ) {
-    termrock::scroll::render_scrollable_block_at(
+    crate::tui::scroll_block::render_scrollable_block_at(
         frame,
         area,
         crate::tui::mount_display::workspace_mount_block_lines(rows),
@@ -996,7 +1060,7 @@ pub fn render_global_mounts_subpanel(
     scroll_y: u16,
     focused: bool,
 ) {
-    termrock::scroll::render_scrollable_block_at(
+    crate::tui::scroll_block::render_scrollable_block_at(
         frame,
         area,
         crate::tui::mount_display::global_mount_block_lines(rows),
@@ -1058,13 +1122,19 @@ pub fn render_roles_subpanel(
         || {
             (
                 "(none)".to_owned(),
-                Style::default().fg(jackin_core::tui_theme::PHOSPHOR_DIM),
+                Style::default().fg(termrock::Theme::default()
+                    .style(termrock::style::Role::TextMuted)
+                    .fg
+                    .unwrap_or_default()),
             )
         },
         |name| {
             (
                 name.to_owned(),
-                Style::default().fg(termrock::style::PHOSPHOR_GREEN),
+                Style::default().fg(termrock::Theme::default()
+                    .style(termrock::style::Role::Accent)
+                    .fg
+                    .unwrap_or_default()),
             )
         },
     );
@@ -1072,7 +1142,10 @@ pub fn render_roles_subpanel(
         Span::raw("  "),
         Span::styled(
             "Default ",
-            Style::default().fg(jackin_core::tui_theme::WHITE),
+            Style::default().fg(termrock::Theme::default()
+                .style(termrock::style::Role::Text)
+                .fg
+                .unwrap_or_default()),
         ),
         Span::styled(value_text, value_style),
     ]));
@@ -1080,27 +1153,39 @@ pub fn render_roles_subpanel(
 
     for row in rows {
         let name_style = if row.exists {
-            Style::default().fg(termrock::style::PHOSPHOR_GREEN)
+            Style::default().fg(termrock::Theme::default()
+                .style(termrock::style::Role::Accent)
+                .fg
+                .unwrap_or_default())
         } else {
-            Style::default().fg(jackin_core::tui_theme::PHOSPHOR_DIM)
+            Style::default().fg(termrock::Theme::default()
+                .style(termrock::style::Role::TextMuted)
+                .fg
+                .unwrap_or_default())
         };
         let mut spans = vec![Span::styled(format!("  {}", row.name), name_style)];
         if row.is_default {
             spans.push(Span::styled(
                 " \u{2605}",
-                Style::default().fg(jackin_core::tui_theme::PHOSPHOR_DIM),
+                Style::default().fg(termrock::Theme::default()
+                    .style(termrock::style::Role::TextMuted)
+                    .fg
+                    .unwrap_or_default()),
             ));
         }
         if row.scoped_mount_count > 0 {
             spans.push(Span::styled(
                 format!("    +{} role mounts", row.scoped_mount_count),
-                Style::default().fg(jackin_core::tui_theme::PHOSPHOR_DIM),
+                Style::default().fg(termrock::Theme::default()
+                    .style(termrock::style::Role::TextMuted)
+                    .fg
+                    .unwrap_or_default()),
             ));
         }
         lines.push(Line::from(spans));
     }
 
-    termrock::scroll::render_scrollable_block_at(
+    crate::tui::scroll_block::render_scrollable_block_at(
         frame,
         area,
         lines,
@@ -1277,9 +1362,12 @@ pub fn render_instance_details_pane(
     let block = panel(&theme, Some(&instance_title), pane.focused).block();
     let lines = instance_detail_lines(&pane.content);
     frame.render_widget(
-        Paragraph::new(lines)
-            .block(block)
-            .style(Style::default().fg(termrock::style::PHOSPHOR_GREEN)),
+        Paragraph::new(lines).block(block).style(
+            Style::default().fg(termrock::Theme::default()
+                .style(termrock::style::Role::Accent)
+                .fg
+                .unwrap_or_default()),
+        ),
         area,
     );
 }
@@ -1290,7 +1378,10 @@ fn instance_detail_lines(content: &WorkspaceInstancePaneContent) -> Vec<Line<'st
         WorkspaceInstancePaneContent::Sessions { rows } => session_instance_lines(rows),
         WorkspaceInstancePaneContent::Empty { message } => vec![Line::from(Span::styled(
             format!("  {message}"),
-            Style::default().fg(jackin_core::tui_theme::PHOSPHOR_DIM),
+            Style::default().fg(termrock::Theme::default()
+                .style(termrock::style::Role::TextMuted)
+                .fg
+                .unwrap_or_default()),
         ))],
     }
 }
@@ -1300,16 +1391,17 @@ fn live_instance_lines(tabs: &[WorkspaceInstanceTab]) -> Vec<Line<'static>> {
     if tabs.is_empty() {
         lines.push(Line::from(Span::styled(
             "  Daemon reports no tabs",
-            Style::default().fg(jackin_core::tui_theme::PHOSPHOR_DIM),
+            Style::default().fg(termrock::Theme::default()
+                .style(termrock::style::Role::TextMuted)
+                .fg
+                .unwrap_or_default()),
         )));
         return lines;
     }
 
     lines.push(Line::from(Span::styled(
         "  Live tab/pane tree (from container daemon)",
-        Style::default()
-            .fg(jackin_core::tui_theme::WHITE)
-            .add_modifier(Modifier::BOLD),
+        termrock::Theme::default().style(termrock::style::Role::TextStrong),
     )));
     for tab in tabs {
         let prefix = if tab.active { "▸" } else { " " };
@@ -1317,20 +1409,24 @@ fn live_instance_lines(tabs: &[WorkspaceInstanceTab]) -> Vec<Line<'static>> {
             Span::styled(
                 format!("  {prefix} Tab {}:  ", tab.index + 1),
                 Style::default().fg(if tab.active {
-                    termrock::style::PHOSPHOR_GREEN
+                    termrock::Theme::default()
+                        .style(termrock::style::Role::Accent)
+                        .fg
+                        .unwrap_or_default()
                 } else {
-                    jackin_core::tui_theme::PHOSPHOR_DIM
+                    termrock::Theme::default()
+                        .style(termrock::style::Role::TextMuted)
+                        .fg
+                        .unwrap_or_default()
                 }),
             ),
             Span::styled(
                 tab.label.clone(),
-                Style::default()
-                    .fg(jackin_core::tui_theme::WHITE)
-                    .add_modifier(if tab.active {
-                        Modifier::BOLD
-                    } else {
-                        Modifier::empty()
-                    }),
+                if tab.active {
+                    termrock::Theme::default().style(termrock::style::Role::TextStrong)
+                } else {
+                    termrock::Theme::default().style(termrock::style::Role::Text)
+                },
             ),
         ]));
         for pane in &tab.panes {
@@ -1338,29 +1434,50 @@ fn live_instance_lines(tabs: &[WorkspaceInstanceTab]) -> Vec<Line<'static>> {
             let cursor_prefix = if pane.selected { "▶ " } else { "  " };
             let label_style = if pane.selected {
                 Style::default()
-                    .fg(jackin_core::tui_theme::WHITE)
-                    .bg(termrock::style::PHOSPHOR_DARK)
+                    .fg(termrock::Theme::default()
+                        .style(termrock::style::Role::Text)
+                        .fg
+                        .unwrap_or_default())
+                    .bg(termrock::Theme::default()
+                        .style(termrock::style::Role::ScrollTrack)
+                        .fg
+                        .unwrap_or_default())
                     .add_modifier(Modifier::BOLD)
             } else {
-                Style::default().fg(termrock::style::PHOSPHOR_GREEN)
+                Style::default().fg(termrock::Theme::default()
+                    .style(termrock::style::Role::Accent)
+                    .fg
+                    .unwrap_or_default())
             };
             lines.push(Line::from(vec![
                 Span::styled(
                     format!("    {cursor_prefix}{marker} "),
                     Style::default().fg(if pane.focused {
-                        termrock::style::PHOSPHOR_GREEN
+                        termrock::Theme::default()
+                            .style(termrock::style::Role::Accent)
+                            .fg
+                            .unwrap_or_default()
                     } else {
-                        jackin_core::tui_theme::PHOSPHOR_DIM
+                        termrock::Theme::default()
+                            .style(termrock::style::Role::TextMuted)
+                            .fg
+                            .unwrap_or_default()
                     }),
                 ),
                 Span::styled(format!("{:<16}", pane.label), label_style),
                 Span::styled(
                     format!("  ({}) ", pane.agent_label),
-                    Style::default().fg(jackin_core::tui_theme::PHOSPHOR_DIM),
+                    Style::default().fg(termrock::Theme::default()
+                        .style(termrock::style::Role::TextMuted)
+                        .fg
+                        .unwrap_or_default()),
                 ),
                 Span::styled(
                     format!("[{}]", pane.state_label),
-                    Style::default().fg(jackin_core::tui_theme::PHOSPHOR_DIM),
+                    Style::default().fg(termrock::Theme::default()
+                        .style(termrock::style::Role::TextMuted)
+                        .fg
+                        .unwrap_or_default()),
                 ),
             ]));
         }
@@ -1371,9 +1488,7 @@ fn live_instance_lines(tabs: &[WorkspaceInstanceTab]) -> Vec<Line<'static>> {
 fn session_instance_lines(rows: &[WorkspaceInstanceSessionRow]) -> Vec<Line<'static>> {
     let mut lines = vec![Line::from(Span::styled(
         format!("  {:<24}  Agent", "Session"),
-        Style::default()
-            .fg(jackin_core::tui_theme::WHITE)
-            .add_modifier(Modifier::BOLD),
+        termrock::Theme::default().style(termrock::style::Role::TextStrong),
     ))];
     for row in rows {
         let name = if row.name.chars().count() > 24 {
@@ -1385,11 +1500,17 @@ fn session_instance_lines(rows: &[WorkspaceInstanceSessionRow]) -> Vec<Line<'sta
         lines.push(Line::from(vec![
             Span::styled(
                 format!("  {name:<24}  "),
-                Style::default().fg(termrock::style::PHOSPHOR_GREEN),
+                Style::default().fg(termrock::Theme::default()
+                    .style(termrock::style::Role::Accent)
+                    .fg
+                    .unwrap_or_default()),
             ),
             Span::styled(
                 row.agent_runtime.clone(),
-                Style::default().fg(jackin_core::tui_theme::PHOSPHOR_DIM),
+                Style::default().fg(termrock::Theme::default()
+                    .style(termrock::style::Role::TextMuted)
+                    .fg
+                    .unwrap_or_default()),
             ),
         ]));
     }
@@ -1409,7 +1530,10 @@ fn env_row_line(row: &WorkspaceEnvRow, inner_width: usize) -> Line<'static> {
         spans.push(Span::styled(
             marker_text,
             Style::default()
-                .fg(jackin_core::tui_theme::PHOSPHOR_DIM)
+                .fg(termrock::Theme::default()
+                    .style(termrock::style::Role::TextMuted)
+                    .fg
+                    .unwrap_or_default())
                 .add_modifier(Modifier::ITALIC),
         ));
     } else {
@@ -1418,7 +1542,10 @@ fn env_row_line(row: &WorkspaceEnvRow, inner_width: usize) -> Line<'static> {
     spans.push(Span::raw(gap));
     spans.push(Span::styled(
         row.name.clone(),
-        Style::default().fg(termrock::style::PHOSPHOR_GREEN),
+        Style::default().fg(termrock::Theme::default()
+            .style(termrock::style::Role::Accent)
+            .fg
+            .unwrap_or_default()),
     ));
 
     if let Some(role) = &row.scope {
@@ -1430,7 +1557,10 @@ fn env_row_line(row: &WorkspaceEnvRow, inner_width: usize) -> Line<'static> {
         spans.push(Span::raw(" ".repeat(pad_count)));
         spans.push(Span::styled(
             role.clone(),
-            Style::default().fg(jackin_core::tui_theme::PHOSPHOR_DIM),
+            Style::default().fg(termrock::Theme::default()
+                .style(termrock::style::Role::TextMuted)
+                .fg
+                .unwrap_or_default()),
         ));
     }
 

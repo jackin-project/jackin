@@ -4,7 +4,7 @@
 //! Modal picker for role disambiguation.
 
 use crossterm::event::{KeyCode, KeyEvent};
-use jackin_core::ModalOutcome;
+use jackin_tui::ModalOutcome;
 use termrock::widgets::ListState;
 
 pub trait RoleChoice: Clone {
@@ -117,12 +117,18 @@ use ratatui::{
     text::{Line, Span},
 };
 
-use jackin_core::tui_theme::WHITE;
-use termrock::layout::{DialogBorder, render_dialog_shell};
+use termrock::layout::render_dialog_shell;
+use termrock::widgets::PanelEmphasis;
 use termrock::widgets::{List, ListRow, RowRole, TextInput, TextInputState, Validation};
 
 pub fn render<R: RoleChoice>(frame: &mut Frame<'_>, area: Rect, state: &RolePickerState<R>) {
-    let inner = render_dialog_shell(frame, area, Some("Select Role"), DialogBorder::Default);
+    let inner = render_dialog_shell(
+        frame,
+        area,
+        Some("Select Role"),
+        PanelEmphasis::Focused,
+        &termrock::Theme::default(),
+    );
 
     let rows = Layout::default()
         .direction(Direction::Vertical)
@@ -158,7 +164,7 @@ pub fn render<R: RoleChoice>(frame: &mut Frame<'_>, area: Rect, state: &RolePick
         frame.render_widget(
             ratatui::widgets::Paragraph::new(Line::from(Span::styled(
                 "no matches",
-                jackin_core::tui_theme::DIM,
+                termrock::Theme::default().style(termrock::style::Role::TextMuted),
             )))
             .alignment(ratatui::layout::Alignment::Center),
             rows[2],
@@ -171,7 +177,13 @@ pub fn render<R: RoleChoice>(frame: &mut Frame<'_>, area: Rect, state: &RolePick
         .enumerate()
         .map(|(id, role)| ListRow {
             id,
-            label: Line::from(vec![Span::styled(role.key(), Style::default().fg(WHITE))]),
+            label: Line::from(vec![Span::styled(
+                role.key(),
+                Style::default().fg(termrock::Theme::default()
+                    .style(termrock::style::Role::Text)
+                    .fg
+                    .unwrap_or_default()),
+            )]),
             trailing: None,
             role: RowRole::Item,
             enabled: true,
@@ -180,7 +192,7 @@ pub fn render<R: RoleChoice>(frame: &mut Frame<'_>, area: Rect, state: &RolePick
     frame.render_stateful_widget(
         &List::new(&items, &theme),
         rows[2],
-        &mut ListState::new(state.list_state.selected),
+        &mut ListState::new(state.list_state.selected().copied()),
     );
 }
 

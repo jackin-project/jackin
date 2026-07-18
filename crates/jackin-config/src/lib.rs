@@ -34,6 +34,7 @@ mod planner;
 mod resolve;
 mod schema;
 mod sensitive;
+mod telemetry;
 mod validation;
 mod versions;
 

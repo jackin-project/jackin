@@ -77,7 +77,10 @@ pub(crate) fn mount_lines(
         let hovered = !selected && hovered_row == Some(i);
         let hb = |s: Style| {
             if hovered {
-                s.bg(jackin_core::tui_theme::TAB_BG_INACTIVE_HOVER)
+                s.bg(termrock::Theme::default()
+                    .style(termrock::style::Role::TabInactiveHovered)
+                    .bg
+                    .unwrap_or_default())
             } else {
                 s
             }
@@ -85,13 +88,22 @@ pub(crate) fn mount_lines(
         let prefix = if selected { "\u{25b8} " } else { "  " };
         let base_style = if selected {
             Style::default()
-                .fg(termrock::style::PHOSPHOR_GREEN)
+                .fg(termrock::Theme::default()
+                    .style(termrock::style::Role::Accent)
+                    .fg
+                    .unwrap_or_default())
                 .add_modifier(Modifier::BOLD)
         } else {
-            Style::default().fg(termrock::style::PHOSPHOR_GREEN)
+            Style::default().fg(termrock::Theme::default()
+                .style(termrock::style::Role::Accent)
+                .fg
+                .unwrap_or_default())
         };
         let dim_style = Style::default()
-            .fg(jackin_core::tui_theme::PHOSPHOR_DIM)
+            .fg(termrock::Theme::default()
+                .style(termrock::style::Role::TextMuted)
+                .fg
+                .unwrap_or_default())
             .add_modifier(Modifier::ITALIC);
         lines.push(Line::from(vec![
             Span::styled(
@@ -100,12 +112,18 @@ pub(crate) fn mount_lines(
             ),
             Span::styled(
                 format!("{:<MOUNT_MODE_COL_WIDTH$}", row.mode),
-                hb(Style::default().fg(jackin_core::tui_theme::PHOSPHOR_DIM)),
+                hb(Style::default().fg(termrock::Theme::default()
+                    .style(termrock::style::Role::TextMuted)
+                    .fg
+                    .unwrap_or_default())),
             ),
             Span::styled("  ", hb(Style::default())),
             Span::styled(
                 format!("{:<MOUNT_ISOLATION_COL_WIDTH$}", row.isolation),
-                hb(Style::default().fg(jackin_core::tui_theme::PHOSPHOR_DIM)),
+                hb(Style::default().fg(termrock::Theme::default()
+                    .style(termrock::style::Role::TextMuted)
+                    .fg
+                    .unwrap_or_default())),
             ),
             Span::styled("  ", hb(Style::default())),
             Span::styled(row.kind.clone(), hb(dim_style)),
@@ -113,7 +131,10 @@ pub(crate) fn mount_lines(
         if let Some(host_source) = &row.host_source {
             lines.push(Line::from(Span::styled(
                 format!("  {host_source:<path_w$}"),
-                Style::default().fg(jackin_core::tui_theme::PHOSPHOR_DIM),
+                Style::default().fg(termrock::Theme::default()
+                    .style(termrock::style::Role::TextMuted)
+                    .fg
+                    .unwrap_or_default()),
             )));
         }
     }

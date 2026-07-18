@@ -60,14 +60,27 @@ impl StatusBarWidget<'_> {
 
 fn tab_cell_style(active: bool, hovered: bool) -> Style {
     let background = match (active, hovered) {
-        (true, true) => jackin_core::tui_theme::TAB_BG_ACTIVE_HOVER,
-        (true, false) => jackin_core::tui_theme::TAB_BG_ACTIVE,
-        (false, true) => jackin_core::tui_theme::TAB_BG_INACTIVE_HOVER,
-        (false, false) => jackin_core::tui_theme::TAB_BG_INACTIVE,
+        (true, true) => Theme::default()
+            .style(termrock::style::Role::TabActiveHovered)
+            .bg
+            .unwrap_or_default(),
+        (true, false) => Theme::default()
+            .style(termrock::style::Role::TabActive)
+            .bg
+            .unwrap_or_default(),
+        (false, true) => Theme::default()
+            .style(termrock::style::Role::TabInactiveHovered)
+            .bg
+            .unwrap_or_default(),
+        (false, false) => Theme::default()
+            .style(termrock::style::Role::TabInactive)
+            .bg
+            .unwrap_or_default(),
     };
-    let style = Style::default()
-        .bg(background)
-        .fg(jackin_core::tui_theme::WHITE);
+    let style = Style::default().bg(background).fg(Theme::default()
+        .style(termrock::style::Role::Text)
+        .fg
+        .unwrap_or_default());
     if active {
         style.add_modifier(Modifier::BOLD)
     } else {
@@ -90,19 +103,22 @@ fn tab_glyph_style(glyph: TabGlyph, bg: Color) -> Option<Style> {
         TabGlyph::Blocked => Some(
             Style::default()
                 .bg(bg)
-                .fg(jackin_core::tui_theme::STATUS_BLOCKED_RED)
+                .fg(jackin_tui::tokens::STATUS_BLOCKED_RED)
                 .add_modifier(Modifier::BOLD),
         ),
         TabGlyph::Working => Some(
             Style::default()
                 .bg(bg)
-                .fg(jackin_core::tui_theme::DEBUG_AMBER)
+                .fg(jackin_tui::tokens::DEBUG_AMBER)
                 .add_modifier(Modifier::BOLD),
         ),
         TabGlyph::Idle => Some(
             Style::default()
                 .bg(bg)
-                .fg(termrock::style::PHOSPHOR_GREEN)
+                .fg(Theme::default()
+                    .style(termrock::style::Role::Accent)
+                    .fg
+                    .unwrap_or_default())
                 .add_modifier(Modifier::BOLD),
         ),
         TabGlyph::Done | TabGlyph::Unknown => None,
@@ -127,14 +143,17 @@ impl Widget for StatusBarWidget<'_> {
 
         // Row 0: brand pill — green block, black word, white chevron.
         let pill = Style::default()
-            .bg(jackin_core::tui_theme::BRAND_BLOCK)
+            .bg(jackin_tui::tokens::BRAND_BLOCK)
             .add_modifier(Modifier::BOLD);
         buf.set_string(area.x, area.y, " jackin", pill.fg(Color::Black));
         buf.set_string(
             area.x.saturating_add(7),
             area.y,
             "❯",
-            pill.fg(jackin_core::tui_theme::WHITE),
+            pill.fg(Theme::default()
+                .style(termrock::style::Role::Text)
+                .fg
+                .unwrap_or_default()),
         );
         buf.set_string(area.x.saturating_add(8), area.y, " ", pill);
 
@@ -147,18 +166,24 @@ impl Widget for StatusBarWidget<'_> {
         if let Some(start_1based) = plan.hint_start {
             let (bg, fg) = match (self.prefix_mode, self.menu_hovered) {
                 (PrefixMode::Idle, false) => (
-                    jackin_core::tui_theme::MENU_IDLE_BG,
-                    jackin_core::tui_theme::WHITE,
+                    jackin_tui::tokens::MENU_IDLE_BG,
+                    Theme::default()
+                        .style(termrock::style::Role::Text)
+                        .fg
+                        .unwrap_or_default(),
                 ),
                 (PrefixMode::Idle, true) => (
-                    jackin_core::tui_theme::MENU_IDLE_HOVER_BG,
-                    jackin_core::tui_theme::WHITE,
+                    jackin_tui::tokens::MENU_IDLE_HOVER_BG,
+                    Theme::default()
+                        .style(termrock::style::Role::Text)
+                        .fg
+                        .unwrap_or_default(),
                 ),
                 (PrefixMode::Awaiting, false) => {
-                    (jackin_core::tui_theme::MENU_AWAITING_BG, Color::Black)
+                    (jackin_tui::tokens::MENU_AWAITING_BG, Color::Black)
                 }
                 (PrefixMode::Awaiting, true) => {
-                    (jackin_core::tui_theme::MENU_AWAITING_HOVER_BG, Color::Black)
+                    (jackin_tui::tokens::MENU_AWAITING_HOVER_BG, Color::Black)
                 }
             };
             buf.set_string(
@@ -175,7 +200,10 @@ impl Widget for StatusBarWidget<'_> {
                 area.x.saturating_add(pos_1based.saturating_sub(1)),
                 area.y,
                 "›",
-                Style::default().fg(jackin_core::tui_theme::PHOSPHOR_DIM),
+                Style::default().fg(Theme::default()
+                    .style(termrock::style::Role::TextMuted)
+                    .fg
+                    .unwrap_or_default()),
             );
         }
 
@@ -186,9 +214,15 @@ impl Widget for StatusBarWidget<'_> {
         {
             let underline = "━".repeat(active.cell_cols as usize);
             let underline_fg = if self.focused {
-                termrock::style::PHOSPHOR_GREEN
+                Theme::default()
+                    .style(termrock::style::Role::Accent)
+                    .fg
+                    .unwrap_or_default()
             } else {
-                jackin_core::tui_theme::WHITE
+                Theme::default()
+                    .style(termrock::style::Role::Text)
+                    .fg
+                    .unwrap_or_default()
             };
             buf.set_string(
                 area.x.saturating_add(active.start_col0),
@@ -211,17 +245,20 @@ pub struct PaneBorderWidget {
     pub focused: bool,
 }
 
+const fn pane_border_emphasis(focused: bool) -> PanelEmphasis {
+    if focused {
+        PanelEmphasis::Focused
+    } else {
+        PanelEmphasis::Normal
+    }
+}
+
 impl Widget for PaneBorderWidget {
     fn render(self, area: Rect, buf: &mut Buffer) {
-        let emphasis = if self.focused {
-            PanelEmphasis::Focused
-        } else {
-            PanelEmphasis::Normal
-        };
         let theme = Theme::default();
         let block = Panel::new(&theme)
             .title(&self.title)
-            .emphasis(emphasis)
+            .emphasis(pane_border_emphasis(self.focused))
             .block();
         block.render(area, buf);
     }
@@ -289,9 +326,9 @@ pub(crate) struct DialogBottomChromeWidget<'a> {
 impl Widget for DialogBottomChromeWidget<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
         // The bottom branch/context bar under a dialog renders only in a debug
-        // launch (where the run id + diagnostics matter); outside debug it is
-        // hidden so the modal stays clean (commit 5f2076a6). Only the dialog
-        // hint renders below the dialog in that case.
+        // launch, where invocation correlation is visible. Outside debug it is
+        // hidden so the modal stays clean; only the dialog hint renders below
+        // the dialog in that case.
         if self.debug_run_id.is_some() {
             render_branch_bar_row(
                 buf,

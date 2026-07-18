@@ -5,7 +5,7 @@ description: "Elm Architecture layers, source code locations, typed effects flow
 
 ## Architecture — Model / Update / View
 
-Every jackin❯ terminal surface uses Ratatui with The Elm Architecture: Model, Message, Update, Effect/Subscription, View, and terminal/run-loop wiring. This is a **hard requirement** for `jackin-console`, `jackin-launch-tui`, `jackin-capsule`, and every new TUI path. It keeps the update layer testable, the render layer pure, and external work outside the visual boundary.
+Every jackin❯ terminal surface uses Ratatui with The Elm Architecture: Model, Message, Update, Effect/Subscription, View, and terminal/run-loop wiring. This is a **hard requirement** for `jackin-console`, `jackin-launch`, `jackin-capsule`, and every new TUI path. It keeps the update layer testable, the render layer pure, and external work outside the visual boundary.
 
 Each layer has a strict scope:
 
@@ -16,7 +16,7 @@ Each layer has a strict scope:
 | Update | `tui/update.rs` | Deterministic state transitions: apply `Message` to the model and return typed effects |
 | Effect / Subscription | `tui/effect.rs`, `tui/subscriptions.rs` | Typed descriptions of non-TUI work and long-lived event sources; they describe work but do not execute external commands |
 | View | `tui/view.rs`, screen `view.rs` | Pure Ratatui frame composition from the current model; capsule-only terminal protocol reconciliation such as cursor/mode state, outer-terminal title, OSC passthrough, and pointer-shape hints stays in the backend/writer layer around the frame |
-| Terminal / run loop | `tui/run.rs`, `tui/terminal.rs` | Terminal lifecycle, backend adapter, event-loop wiring, and routing of completed effects back into messages |
+| Terminal / run loop | `tui/run.rs`, `tui/terminal.rs` | Terminal lifecycle, backend adapter, event-loop policy, and routing of completed effects back into messages |
 | Components | `tui/components/` | Surface-local visual components not reusable enough for TermRock |
 
 **Messages and central update.** Every state change that could be driven by a test goes through a semantic `Message` and an update function instead of mutating model state inline in the event handler. Event handlers translate terminal input into messages; update applies the message and returns dirty state plus typed effects. Existing console code may still use names such as `ManagerMessage`, `ManagerState`, `update_manager`, and `UpdateResult`, but new structure should use the same pattern under the owning surface's `src/tui/`.
@@ -27,7 +27,7 @@ Each layer has a strict scope:
 
 **Async event loop.** Event loops should use async event streams and `tokio::select!` where the surface already runs inside Tokio, so background work can advance between terminal events. Animation ticks drive periodic redraws for spinners and animated components. Synchronous adapters are allowed only at the terminal/backend edge; they must still route state changes through messages.
 
-**Component library.** Product-neutral visual and interaction patterns live in [TermRock](https://github.com/tailrocks/termrock), including the first implementation of a pattern when it is reasonably reusable. TermRock follows an open-component direction inspired by shadcn/ui: inspectable primitives, strong defaults, composition over product policy, and a catalog that covers every public widget. Surface components under `src/tui/components/` may compose those primitives with jackin❯ wording, domain state, effects, security policy, and terminal ownership, but they do not copy neutral painting, geometry, focus, scroll, or hit-testing. TermRock owns its lookbook, generated SVG catalog, and API/catalog drift checks; jackin❯ owns product compositions and their render tests.
+**Component ownership.** Product-neutral visual and interaction patterns live in [TermRock](https://github.com/tailrocks/termrock), including the first implementation of a pattern when it is reasonably reusable. Cross-surface jackin❯ compositions live in `jackin-tui` only when at least two product surfaces consume them. Surface-local composition lives under the owning crate's `src/tui/components/`. Neither jackin❯ layer copies neutral painting, geometry, focus, scroll, or hit-testing. TermRock owns its lookbook, generated SVG catalog, API/catalog drift checks, and exact primitive conformance tests; jackin❯ owns only product composition, state, adapter, and outcome tests.
 
 **Refactor safety.** Moving code into this structure is primarily a refactor. Existing workflows must keep the same command semantics, launch flow, capsule attach behavior, saved state, keyboard/mouse contracts, error handling, and visual affordances unless a PR explicitly calls out and justifies a behavior change. Capture or verify the current behavior before structural moves and rerun the relevant checks afterward.
 
@@ -46,13 +46,25 @@ crates/<surface-crate>/src/tui/
 
 **The one rule:** if it is terminal interaction state, terminal events, terminal rendering, terminal lifecycle, or local UI composition → `src/tui/`. If it executes external work or owns non-visual product behavior → outside `src/tui/`.
 
-**Rule: TUI code has exactly two homes:**
+**Rule: TUI code has exactly three ownership layers:**
 
 1. **[TermRock](https://github.com/tailrocks/termrock)** — Exact-revision external library for neutral panels, lists, scroll, hints, dialogs, tabs, tokens, adapters, and geometry.
 
-2. **`crates/<surface-crate>/src/tui.rs` + `crates/<surface-crate>/src/tui/`** — The whole TUI application layer for that surface: Model, Message, Update, Effects, Subscriptions, View, local components, terminal adapter, and event-loop wiring. Single-screen crates stay flat. Multi-screen crates add `screens.rs` plus `screens/<screen>/` under `src/tui/`.
+2. **`crates/jackin-tui/`** — Product-specific compositions and Ratatui adapters shared by at least two jackin❯ surfaces. It may own cross-surface product update/effect, external-subscription, and one-draw adapter contracts, but cannot own a generic theme facade, neutral widgets, terminal lifecycle, surface event loops, schedulers, or external effects.
 
-**Single-screen crate layout** (`jackin-capsule`, `jackin-launch-tui`):
+3. **`crates/<surface-crate>/src/tui.rs` + `crates/<surface-crate>/src/tui/`** — The whole reusable TUI application layer for that surface: Model, Message, Update, Effects, Subscriptions, View, local components, terminal adapter, and event-loop policy. Single-screen crates stay flat. Multi-screen crates add `screens.rs` plus `screens/<screen>/` under `src/tui/`.
+
+The top-level `jackin` binary has one composition-root exception: the host
+console's concrete runtime, Docker, config, and terminal bindings live under
+`crates/jackin/src/console/adapter/`. The adapter may execute effects described
+by `jackin-console`, but it must not define widgets, neutral component behavior,
+or a parallel TUI model/update/view. Calling this boundary `adapter` is
+mandatory; a second root `console/tui/` tree would falsely claim presentation
+ownership and is rejected by the architecture gate.
+
+`jackin-core` remains terminal-library-free and owns domain facts, never product palettes, Ratatui, Crossterm, or TermRock types. Renderer-neutral identity tokens live in `jackin-brand`; `jackin-tui` adapts the TUI subset to Ratatui.
+
+**Single-screen crate layout** (`jackin-capsule`, `jackin-launch`):
 ```
 src/
 ├── lib.rs
@@ -68,9 +80,17 @@ src/
     ├── run.rs           ← event-loop wiring
     ├── terminal.rs      ← terminal lifecycle/backend
     ├── view.rs          ← top-level render composition
+    ├── daemon/          ← capsule-only TUI adapters over daemon-owned session state
     ├── components.rs    ← thin local-component module root
     └── components/
 ```
+
+The capsule keeps PTY/session authority and effectful daemon ports under
+`src/daemon/`. Its `src/tui/daemon/` bridge contains only terminal-facing
+`Multiplexer` implementations: composition, dialog/input dispatch, mouse hit
+translation, and pane layout. `daemon.rs` declares those bridge modules with
+explicit paths so the model remains daemon-owned while every visual or
+terminal-interaction implementation follows the same `src/tui/` location rule.
 
 **Multi-screen crate layout** (`jackin-console`):
 ```
@@ -134,7 +154,9 @@ src/
 - `Message` / `Action` enums
 - Update functions that mutate only TUI state and return typed effects
 - Effect and subscription type definitions
-- Event-loop wiring and terminal lifecycle/backend adapters
+- Event-loop policy and terminal lifecycle/backend adapters; a composition-root
+  binding may live under `console/adapter/` only when it must cross from the
+  surface crate into higher-tier runtime dependencies
 - Ratatui widget implementations; surface-specific terminal protocol reconciliation belongs in the backend/writer layer, not in widget render functions
 - Frame composition, geometry helpers, hitboxes, focus-visible rendering, hint bars, and local lookbook stories
 
@@ -154,7 +176,8 @@ src/
 tui/update.rs
   -> returns Effect::RefreshInstances
 
-tui/run.rs (effect executor)
+surface tui/run.rs (event-loop policy)
+  -> composition-root adapter when higher-tier runtime binding is required
   -> calls non-TUI service/runtime code
 
 non-TUI service code

@@ -17,10 +17,10 @@ use ratatui::{
     widgets::Paragraph,
 };
 
-use jackin_core::ModalOutcome;
 use jackin_core::shorten_home;
-use jackin_core::tui_theme::PHOSPHOR_DIM;
-use termrock::layout::{DialogBorder, render_dialog_shell};
+use jackin_tui::ModalOutcome;
+use termrock::layout::render_dialog_shell;
+use termrock::widgets::PanelEmphasis;
 use termrock::widgets::{Action, ActionBar, ActionBarState};
 
 /// Outcome of the mount-destination modal.
@@ -96,7 +96,8 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &MountDstChoiceState) {
         frame,
         area,
         Some("Mount destination"),
-        DialogBorder::Default,
+        PanelEmphasis::Focused,
+        &termrock::Theme::default(),
     );
 
     // Canonical dialog layout: leading spacer + content + spacer + buttons + trailing spacer.
@@ -115,7 +116,7 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &MountDstChoiceState) {
     frame.render_widget(
         Paragraph::new(Span::styled(
             "What would you like to do?",
-            jackin_core::tui_theme::BOLD_WHITE,
+            termrock::Theme::default().style(termrock::style::Role::TextStrong),
         ))
         .alignment(Alignment::Center),
         chunks[1],
@@ -127,7 +128,10 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &MountDstChoiceState) {
         Paragraph::new(Span::styled(
             shortened,
             Style::default()
-                .fg(PHOSPHOR_DIM)
+                .fg(termrock::Theme::default()
+                    .style(termrock::style::Role::TextMuted)
+                    .fg
+                    .unwrap_or_default())
                 .add_modifier(Modifier::ITALIC),
         ))
         .alignment(Alignment::Center),

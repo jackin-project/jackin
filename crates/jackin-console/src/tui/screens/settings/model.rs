@@ -42,7 +42,7 @@ use crate::tui::components::modal_rects::{
     ModalAuthFormState, ModalConfirmSavePrepareState, ModalConfirmSaveState, ModalConfirmState,
     ModalOpPickerState, ModalRectMode, ModalRolePickerState,
 };
-use termrock::interaction::{FocusOwner, ModalStack};
+use jackin_tui::runtime::{SurfaceFocus, SurfaceFocusTarget};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SettingsTab {
@@ -90,7 +90,7 @@ impl SettingsTab {
 pub struct SettingsState<Mounts, Env, Auth, Trust, ErrorPopup, PendingToken> {
     pub active_tab: SettingsTab,
     /// W3C ARIA Tabs: focus is either on the tab list or the active tab panel.
-    pub focus_owner: FocusOwner<SettingsTab>,
+    pub focus_owner: SurfaceFocus<SettingsTab>,
     pub hover_target: Option<SettingsHoverTarget>,
     pub general: SettingsGeneralState,
     pub mounts: Mounts,
@@ -153,8 +153,8 @@ impl<Mounts, Env, Auth, Trust, ErrorPopup, PendingToken>
     }
 
     #[must_use]
-    pub const fn focus_owner(&self) -> FocusOwner<SettingsTab> {
-        self.focus_owner
+    pub fn focus_owner(&self) -> SurfaceFocusTarget<SettingsTab> {
+        self.focus_owner.focused()
     }
 
     #[must_use]
@@ -162,8 +162,11 @@ impl<Mounts, Env, Auth, Trust, ErrorPopup, PendingToken>
         crate::tui::layout::tabbed_content_area(term_size, self.cached_footer_h)
     }
 
-    pub fn set_focus_owner(&mut self, owner: FocusOwner<SettingsTab>) {
-        self.focus_owner = owner;
+    pub fn set_focus_owner(&mut self, owner: SurfaceFocusTarget<SettingsTab>) {
+        match owner {
+            SurfaceFocusTarget::TabBar => self.focus_owner.focus_tab_bar(),
+            SurfaceFocusTarget::Content(tab) => self.focus_owner.focus_content(tab),
+        }
     }
 
     pub fn apply_tab_move_plan(
@@ -175,16 +178,16 @@ impl<Mounts, Env, Auth, Trust, ErrorPopup, PendingToken>
     }
 
     #[must_use]
-    pub const fn tab_bar_focused(&self) -> bool {
+    pub fn tab_bar_focused(&self) -> bool {
         self.focus_owner.is_tab_bar()
     }
 
     pub fn set_tab_bar_focused(&mut self, focused: bool) {
-        self.focus_owner = if focused {
-            FocusOwner::TabBar
+        if focused {
+            self.focus_owner.focus_tab_bar();
         } else {
-            FocusOwner::Content(self.active_tab)
-        };
+            self.focus_owner.focus_content(self.active_tab);
+        }
     }
 
     pub fn apply_tab_bar_focus_plan(&mut self, focused: bool) {
@@ -193,14 +196,14 @@ impl<Mounts, Env, Auth, Trust, ErrorPopup, PendingToken>
 
     #[must_use]
     pub fn content_focused(&self, tab: SettingsTab) -> bool {
-        self.focus_owner == FocusOwner::Content(tab)
+        self.focus_owner.is_content(tab)
     }
 
     pub fn set_content_focused(&mut self, tab: SettingsTab, focused: bool) {
         if focused {
-            self.focus_owner = FocusOwner::Content(tab);
+            self.focus_owner.focus_content(tab);
         } else if self.content_focused(tab) {
-            self.focus_owner = FocusOwner::TabBar;
+            self.focus_owner.focus_tab_bar();
         }
     }
 
@@ -429,7 +432,7 @@ impl<MountModal, EnvModal, AuthModal, PendingOpCommit, ErrorPopup, PendingToken>
     pub fn from_config(config: &jackin_config::AppConfig) -> Self {
         Self {
             active_tab: SettingsTab::General,
-            focus_owner: FocusOwner::TabBar,
+            focus_owner: SurfaceFocus::tab_bar(SettingsTab::General),
             hover_target: None,
             general: SettingsGeneralState::from_values(config.git.coauthor_trailer, config.git.dco),
             mounts: GlobalMountsState::from_rows(config.list_mount_rows()),
@@ -1099,8 +1102,7 @@ pub struct GlobalMountsState<Row, Modal> {
     pub pending: Vec<Row>,
     pub original: Vec<Row>,
     pub mount_info_cache: crate::mount_info_cache::MountInfoCache,
-    pub modal: Option<Modal>,
-    pub modal_parents: Vec<Modal>,
+    pub modals: jackin_tui::runtime::ModalFlow<Modal>,
     pub add_draft: Option<GlobalMountDraft>,
     pub error: Option<String>,
     pub scroll_x: u16,
@@ -1126,8 +1128,7 @@ impl<Row, Modal> GlobalMountsState<Row, Modal> {
             pending: rows.clone(),
             original: rows,
             mount_info_cache: crate::mount_info_cache::MountInfoCache::default(),
-            modal: None,
-            modal_parents: Vec::new(),
+            modals: jackin_tui::runtime::ModalFlow::new(),
             add_draft: None,
             error: None,
             scroll_x: 0,
@@ -1160,10 +1161,7 @@ impl<Row, Modal> GlobalMountsState<Row, Modal> {
         self.mount_info_cache.clear();
         self.selected = self.selected.min(self.pending.len().saturating_sub(1));
         self.add_draft = None;
-        let mut stack =
-            ModalStack::from_parts(self.modal.take(), std::mem::take(&mut self.modal_parents));
-        stack.clear_chain();
-        (self.modal, self.modal_parents) = stack.into_parts();
+        self.modals.clear();
         self.error = None;
     }
 
@@ -1188,18 +1186,12 @@ impl<Row, Modal> GlobalMountsState<Row, Modal> {
     }
 
     pub fn open_sub_modal(&mut self, child: Modal) {
-        let mut stack =
-            ModalStack::from_parts(self.modal.take(), std::mem::take(&mut self.modal_parents));
-        stack.open_sub(child);
-        (self.modal, self.modal_parents) = stack.into_parts();
+        self.modals.open_sub(child);
     }
 
     pub fn start_add_draft(&mut self) {
         self.add_draft = Some(GlobalMountDraft::default());
-        let mut stack =
-            ModalStack::from_parts(self.modal.take(), std::mem::take(&mut self.modal_parents));
-        stack.clear_chain();
-        (self.modal, self.modal_parents) = stack.into_parts();
+        self.modals.clear();
     }
 
     pub fn remove_row_and_select(&mut self, remove_index: usize, selected: usize) {
@@ -1208,24 +1200,18 @@ impl<Row, Modal> GlobalMountsState<Row, Modal> {
     }
 
     pub fn pop_modal_chain(&mut self) {
-        let mut stack =
-            ModalStack::from_parts(self.modal.take(), std::mem::take(&mut self.modal_parents));
-        stack.pop();
-        (self.modal, self.modal_parents) = stack.into_parts();
+        self.modals.pop();
     }
 
     pub fn pop_modal_chain_and_clear_add_draft_if_closed(&mut self) {
         self.pop_modal_chain();
-        if self.modal.is_none() {
+        if !self.modals.is_open() {
             self.add_draft = None;
         }
     }
 
     pub fn clear_modal_chain(&mut self) {
-        let mut stack =
-            ModalStack::from_parts(self.modal.take(), std::mem::take(&mut self.modal_parents));
-        stack.clear_chain();
-        (self.modal, self.modal_parents) = stack.into_parts();
+        self.modals.clear();
     }
 
     pub fn set_error(&mut self, error: impl Into<String>) {
@@ -1360,9 +1346,8 @@ pub struct SettingsAuthState<EnvValue, Modal, PendingOpCommit> {
     pub original: Vec<SettingsAuthRow<AuthKind, AuthMode>>,
     pub github_env: BTreeMap<String, EnvValue>,
     pub original_github_env: BTreeMap<String, EnvValue>,
-    pub modal: Option<Modal>,
-    /// Parent modal chain for the auth sub-modal stack.
-    pub modal_parents: Vec<Modal>,
+    /// Atomic modal chain and matching `TermRock` focus scopes.
+    pub modals: jackin_tui::runtime::ModalFlow<Modal>,
     /// Set while the `g`/`G` generate action's Create-mode `OpPicker` is open.
     pub generating_token: bool,
     pub error: Option<String>,

@@ -10,7 +10,7 @@ The backend code has landed and compiles: the `container` CLI client (<RepoFile 
 
 **Backend selection for `jackin load` is wired:** the load pipeline (<RepoFile path="crates/jackin-runtime/src/runtime/launch/launch_pipeline.rs" />) reads `[runtime].backend` / `[runtime].default_backend` via `resolve_backend` (unit-tested, fails closed on an unrecognised backend string) and routes a fresh load to `apple_container::launch`, so `apple-container` is a selectable backend at launch (`jackin load the-architect . --backend apple-container`).
 
-**Session contract and telemetry are also wired, not just planned:** `apple_container::launch` calls `print_session_contract` (kernel boundary, mounts, DinD state, residual risks) and `check_dns` on attach, and emits `debug_log!("apple-container", …)` lines for version probe, container run, capsule-ready, and DNS check.
+**Session contract and telemetry are also wired, not just planned:** `apple_container::launch` calls `print_session_contract` (kernel boundary, mounts, DinD state, residual risks) and `check_dns` on attach. Runtime boundaries export through the governed OpenTelemetry facade without creating a local diagnostics artifact.
 
 **Persisted lifecycle dispatch is wired:** <RepoFile path="crates/jackin-runtime/src/runtime/backend.rs" /> defines `ContainerBackend` with required `finalize`, Docker and Apple Container implementations, and manifest-based backend resolution. <RepoFile path="crates/jackin-runtime/src/runtime/cleanup.rs" /> routes purge guards, `eject`, and `exile_all` through it; <RepoFile path="crates/jackin-runtime/src/runtime/attach.rs" /> routes `hardline` through it. Legacy manifests with no backend field still resolve to Docker.
 

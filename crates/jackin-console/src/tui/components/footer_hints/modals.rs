@@ -5,7 +5,7 @@
 //! (auth form, confirm save, container info, status popup, op picker).
 
 use crate::tui::components::{error_popup_hint_spans, save_discard_hint_spans};
-use termrock::layout::ScrollAxes;
+use termrock::scroll::ScrollAxes;
 use termrock::{keymap::glyph, widgets::HintSpan};
 
 use crate::tui::components::auth_panel;
@@ -218,7 +218,7 @@ pub fn container_info_footer_items_for_dialog(
     content_height: usize,
     dialog_rect: ratatui::layout::Rect,
 ) -> Vec<HintSpan<'static>> {
-    let axes = termrock::layout::dialog_scroll_axes(content_width, content_height, dialog_rect);
+    let axes = termrock::scroll::dialog_scroll_axes(content_width, content_height, dialog_rect);
     container_info_footer_items(axes)
 }
 
@@ -237,69 +237,69 @@ pub fn auth_form_footer_items(
         AuthFormFocus::Mode => {
             let mut v = vec![
                 // UNREGISTERABLE(auth-form-no-keymap): Space cycles mode inline.
-                HintSpan::Key("␣"),
+                super::key_span("␣"),
                 HintSpan::Text("cycle"),
             ];
             if shows_source_folder || shows_credential_block {
                 v.extend([
                     HintSpan::Sep,
                     // UNREGISTERABLE(auth-form-no-keymap): Down navigates fields inline.
-                    HintSpan::Key("↓"),
+                    super::key_span("↓"),
                     HintSpan::Text("navigate"),
                 ]);
             }
             v.extend([
                 HintSpan::GroupSep,
                 // UNREGISTERABLE(auth-form-no-keymap): Tab moves to button row inline.
-                HintSpan::Key("⇥"),
+                super::key_span("⇥"),
                 HintSpan::Text("button row"),
             ]);
             v
         }
         AuthFormFocus::SourceFolder => vec![
             // UNREGISTERABLE(auth-form-no-keymap): Enter handled inline.
-            HintSpan::Key("↵"),
+            super::key_span("↵"),
             HintSpan::Text("browse"),
             HintSpan::Sep,
             // UNREGISTERABLE(multi-key-display-group): combined navigate display.
-            HintSpan::Key(glyph::UP_DOWN),
+            super::key_span(glyph::UP_DOWN),
             HintSpan::Text("navigate"),
             HintSpan::GroupSep,
             // UNREGISTERABLE(auth-form-no-keymap): Tab moves to button row inline.
-            HintSpan::Key("⇥"),
+            super::key_span("⇥"),
             HintSpan::Text("button row"),
         ],
         AuthFormFocus::CredentialSource => vec![
             // UNREGISTERABLE(auth-form-no-keymap): Enter confirms the field inline.
-            HintSpan::Key("↵"),
+            super::key_span("↵"),
             HintSpan::Text("set"),
             HintSpan::Sep,
             // UNREGISTERABLE(auth-form-no-keymap): ↑↓ navigates credential source list inline.
-            HintSpan::Key("↑"),
+            super::key_span("↑"),
             HintSpan::Text("navigate"),
             HintSpan::GroupSep,
             // UNREGISTERABLE(auth-form-no-keymap): Tab moves to button row inline.
-            HintSpan::Key("⇥"),
+            super::key_span("⇥"),
             HintSpan::Text("button row"),
         ],
         AuthFormFocus::Save | AuthFormFocus::Cancel | AuthFormFocus::Reset => vec![
             // UNREGISTERABLE(multi-key-display-group): combined left/right display.
-            HintSpan::Key(glyph::LEFT_RIGHT),
+            super::key_span(glyph::LEFT_RIGHT),
             HintSpan::Text("move"),
             HintSpan::GroupSep,
             // UNREGISTERABLE(auth-form-no-keymap): Tab moves to button row inline.
-            HintSpan::Key("⇥"),
+            super::key_span("⇥"),
             HintSpan::Text("fields"),
             HintSpan::GroupSep,
             // UNREGISTERABLE(auth-form-no-keymap): Enter handled inline.
-            HintSpan::Key("↵"),
+            super::key_span("↵"),
             HintSpan::Text("select"),
         ],
     };
     items.extend([
         HintSpan::GroupSep,
         // UNREGISTERABLE(auth-form-no-keymap): Esc cancels inline.
-        HintSpan::Key("Esc"),
+        super::key_span("Esc"),
         HintSpan::Text("cancel"),
     ]);
     items

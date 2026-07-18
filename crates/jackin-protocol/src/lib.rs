@@ -20,6 +20,9 @@ pub mod attach;
 pub mod control;
 pub mod provider_adapter;
 pub mod snapshot;
+pub mod telemetry_context;
+
+pub use telemetry_context::TelemetryContext;
 
 pub use provider_adapter::ProviderAdapter;
 pub use snapshot::InstanceSnapshot;
@@ -60,6 +63,8 @@ pub struct ExecBinding {
 /// [`control::frame`], same as the control socket.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct CredRequest {
+    /// Cross-process trace and product correlation.
+    pub ctx: TelemetryContext,
     /// `refs` field.
     pub refs: Vec<ExecBinding>,
 }
@@ -93,6 +98,8 @@ pub const CAPSULE_CONFIG_PATH: &str = container_paths::CAPSULE_CONFIG;
 /// credentials. Single source of truth so the mount side and the connect side
 /// cannot drift.
 pub const HOST_SOCK_CONTAINER_PATH: &str = container_paths::HOST_SOCK;
+/// Bounded, non-secret auth-mode carrier from Capsule config to runtime setup.
+pub const AUTH_MODE_ENV: &str = "JACKIN_AUTH_MODE";
 
 /// Filename the capsule writes the operator's dirty-exit choice to, under the
 /// per-instance state dir, for the host to read and execute on cleanup.
@@ -129,6 +136,9 @@ pub struct CapsuleConfig {
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     /// `models` field.
     pub models: BTreeMap<String, String>,
+    /// Resolved per-agent auth modes (`sync|api_key|oauth_token|ignore`).
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub auth_modes: BTreeMap<String, String>,
     /// Per-(agent, provider) model overrides from the role manifest. Outer key
     /// is the agent slug, inner key the provider's lowercase slug
     /// ([`Provider::manifest_id`]). Selects the model the capsule uses when the
@@ -378,6 +388,12 @@ impl CapsuleConfig {
         self.models.get(agent).map(String::as_str)
     }
 
+    /// Resolved bounded authentication mode for an agent runtime.
+    #[must_use]
+    pub fn auth_mode_for_agent(&self, agent: &str) -> Option<&str> {
+        self.auth_modes.get(agent).map(String::as_str)
+    }
+
     /// Model override for `(agent, provider_id)`, where `provider_id` is a
     /// [`Provider::manifest_id`] slug. `None` when the role set no override for
     /// that pair, leaving the caller's own default in force.
@@ -390,5 +406,6 @@ impl CapsuleConfig {
     }
 }
 
+pub mod host_terminal;
 #[cfg(test)]
 mod tests;

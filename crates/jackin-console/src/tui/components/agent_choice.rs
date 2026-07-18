@@ -6,12 +6,13 @@
 //! Arrow keys move focus, Enter commits, Esc cancels.
 
 use crossterm::event::{KeyCode, KeyEvent};
-use jackin_core::ModalOutcome;
+use jackin_tui::ModalOutcome;
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use termrock::widgets::{List, ListRow, ListState, RowRole};
 
-use termrock::layout::{DialogBorder, render_dialog_shell};
+use termrock::layout::render_dialog_shell;
+use termrock::widgets::PanelEmphasis;
 
 pub trait AgentChoice: Copy + Eq + 'static {
     const ALL: &'static [Self];
@@ -86,7 +87,13 @@ impl<A: AgentChoice> Default for AgentChoiceState<A> {
 }
 
 pub fn render<A: AgentChoice>(frame: &mut Frame<'_>, area: Rect, state: &AgentChoiceState<A>) {
-    let inner = render_dialog_shell(frame, area, Some("Pick Agent"), DialogBorder::Default);
+    let inner = render_dialog_shell(
+        frame,
+        area,
+        Some("Pick Agent"),
+        PanelEmphasis::Focused,
+        &termrock::Theme::default(),
+    );
 
     let rows = Layout::default()
         .direction(Direction::Vertical)

@@ -12,14 +12,14 @@ This crate is broad by design; the code-health program tracks decomposing it int
 
 ## Architecture tier and allowed dependencies
 
-**L1 application / orchestration.** Allowed workspace dependencies: `jackin-core`, `jackin-config`, `jackin-env`, `jackin-manifest`, `jackin-docker`, `jackin-image`, `jackin-diagnostics`, `jackin-launch-tui`, `jackin-host`, `jackin-protocol`, `jackin-isolation`, `jackin-instance`, `jackin-tui`, `jackin-build-meta`. It is the integration point — the broadest dependency fan-in.
+**L1 application / orchestration.** Allowed workspace dependencies: `jackin-brand`, `jackin-core`, `jackin-config`, `jackin-env`, `jackin-manifest`, `jackin-docker`, `jackin-image`, `jackin-diagnostics`, `jackin-launch`, `jackin-host`, `jackin-protocol`, `jackin-isolation`, `jackin-instance`, `jackin-build-meta`. Host attach uses `crossterm` for raw mode only. Launch TUI presentation and its product tests live in `jackin-launch` / `jackin-tui` — not here.
 
 ## Structure
 
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | crate root, re-exports | — |
-| [`runtime.rs`](src/runtime.rs) · [`runtime/`](src/runtime) | launch pipeline + phases | — |
+| [`runtime.rs`](src/runtime.rs) · [`runtime/`](src/runtime) | launch pipeline + phases with governed telemetry; no local log-artifact subsystem | — |
 | [`apple_container_client.rs`](src/apple_container_client.rs) · [`apple_container_client/`](src/apple_container_client) | Apple container backend | [`tests.rs`](src/apple_container_client/tests.rs) |
 | [`host_daemon.rs`](src/host_daemon.rs) · [`host_daemon/`](src/host_daemon) | host daemon backend | [`tests.rs`](src/host_daemon/tests.rs) |
 | [`exec_host.rs`](src/exec_host.rs) · [`exec_host/`](src/exec_host) | host-side command exec | [`tests.rs`](src/exec_host/tests.rs) |
@@ -39,4 +39,3 @@ The launch entry points (`launch_role_runtime`, `load_role_with`, `run_launch_co
 cargo nextest run -p jackin-runtime
 cargo clippy -p jackin-runtime --all-targets -- -D warnings
 ```
-

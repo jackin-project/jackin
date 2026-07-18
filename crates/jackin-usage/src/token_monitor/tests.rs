@@ -67,7 +67,8 @@ fn find_provider_files_walks_nested_dirs_and_filters_extension() {
     std::fs::write(base.join("top.jsonl"), "{}").unwrap();
     std::fs::write(nested.join("ignore.txt"), "x").unwrap();
 
-    let mut found = find_provider_files(&[base.to_str().unwrap()], "jsonl", PROVIDER_WALK_DEPTH);
+    let mut found =
+        find_provider_files(&[base.to_str().unwrap()], "jsonl", PROVIDER_WALK_DEPTH).unwrap();
     found.sort();
     assert_eq!(
         found.len(),
@@ -79,9 +80,27 @@ fn find_provider_files_walks_nested_dirs_and_filters_extension() {
 
     // max_depth 0 reads only the top level (Amp's flat layout): the nested
     // rollout is excluded, the top-level file is kept.
-    let flat = find_provider_files(&[base.to_str().unwrap()], "jsonl", 0);
+    let flat = find_provider_files(&[base.to_str().unwrap()], "jsonl", 0).unwrap();
     assert_eq!(flat.len(), 1, "flat walk keeps only the top-level jsonl");
     assert!(flat[0].ends_with("top.jsonl"));
+}
+
+#[test]
+fn provider_discovery_failure_exports_one_typed_error_without_path() {
+    let dir = TempDir::new().unwrap();
+    let not_a_directory = dir.path().join("private-provider-file");
+    std::fs::write(&not_a_directory, "private-provider-content").unwrap();
+    let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
+
+    let result = tracing::subscriber::with_default(subscriber, || {
+        find_provider_files(&[not_a_directory.to_str().unwrap()], "jsonl", 0)
+    });
+    export.force_flush();
+
+    assert!(matches!(result, Err(ProviderReadDegraded)));
+    assert_eq!(export.typed_error_count("error.typed", "io_error"), 1);
+    assert!(!export.contains_log_text("private-provider-file"));
+    assert!(!export.contains_log_text("private-provider-content"));
 }
 
 #[test]
@@ -107,6 +126,76 @@ fn token_monitor_poll_due_respects_interval() {
     let mut session = TokenSession::new(Agent::Claude);
     session.last_polled = Instant::now();
     assert!(!session.poll_due());
+}
+
+#[test]
+fn standard_token_usage_delta_includes_cached_input_without_regression() {
+    let previous = TokenTotals {
+        input_tokens: 100,
+        output_tokens: 40,
+        cache_read_tokens: 20,
+        cache_write_tokens: 10,
+        ..TokenTotals::default()
+    };
+    let current = TokenTotals {
+        input_tokens: 130,
+        output_tokens: 55,
+        cache_read_tokens: 28,
+        cache_write_tokens: 14,
+        ..TokenTotals::default()
+    };
+    assert_eq!(
+        token_usage_delta(Agent::Claude, &previous, &current),
+        (42, 15)
+    );
+    assert_eq!(
+        token_usage_delta(Agent::Claude, &current, &previous),
+        (0, 0)
+    );
+    assert_eq!(
+        token_usage_delta(Agent::Codex, &previous, &current),
+        (30, 15),
+        "Codex input totals already contain cached input"
+    );
+}
+
+#[test]
+fn standard_token_usage_uses_only_truthful_bounded_providers() {
+    use schema::enums::GenAiProviderName;
+
+    assert_eq!(
+        provider_name(Agent::Claude),
+        Some(GenAiProviderName::Anthropic)
+    );
+    assert_eq!(provider_name(Agent::Codex), Some(GenAiProviderName::Openai));
+    assert_eq!(provider_name(Agent::Amp), Some(GenAiProviderName::Amp));
+    assert_eq!(provider_name(Agent::Kimi), Some(GenAiProviderName::Kimi));
+    assert_eq!(provider_name(Agent::Grok), Some(GenAiProviderName::Xai));
+    assert_eq!(provider_name(Agent::Opencode), None);
+}
+
+#[tokio::test]
+async fn due_poll_report_distinguishes_attempted_unchanged_work() {
+    let mut monitor = TokenMonitor::new();
+    monitor.register_session(1, Agent::Grok);
+    monitor.sessions.get_mut(&1).unwrap().last_polled = Instant::now()
+        .checked_sub(std::time::Duration::from_secs(31))
+        .unwrap();
+
+    let report = monitor.poll_due_sessions().await;
+
+    assert_eq!(report.attempted, 1);
+    assert_eq!(report.changed, 0);
+    assert_eq!(report.degraded, 0);
+}
+
+#[test]
+fn recompute_spend_preserves_a_real_read_degradation() {
+    let directory = tempfile::tempdir().expect("temporary provider directory");
+    assert!(matches!(
+        recompute_spend(&[directory.path().to_owned()], |_, _| {}),
+        Err(ProviderReadDegraded)
+    ));
 }
 
 #[test]

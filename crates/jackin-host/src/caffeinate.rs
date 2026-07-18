@@ -133,7 +133,7 @@ async fn reconcile_inner(
     // Offload the synchronous `ps` check to the blocking pool so it never
     // stalls the tokio render thread (Defect 43 — async-first rule).
     let liveness = if let Some(pid) = current_pid {
-        tokio::task::spawn_blocking(move || is_caffeinate_alive_at(pid))
+        jackin_telemetry::spawn::joined_blocking(move || is_caffeinate_alive_at(pid))
             .await
             .unwrap_or(Liveness::Unknown)
     } else {
@@ -306,7 +306,7 @@ fn is_caffeinate_alive_at(pid: u32) -> Liveness {
         // Caffeinate process liveness probe runs inside spawn_blocking.
         let request = ExecRequest::new("ps", ["-p", &pid.to_string(), "-o", "comm="])
             .stderr_mode(StdioMode::Null);
-        if let Ok(output) = jackin_process::exec_sync(&request) {
+        if let Ok(output) = crate::process_telemetry::exec_sync(&request) {
             return classify_ps_comm_output(
                 output.success,
                 &String::from_utf8_lossy(&output.stdout),
@@ -400,12 +400,8 @@ async fn spawn_caffeinate(runner: &mut impl CommandRunner) -> anyhow::Result<u32
 /// TOCTOU the comm check exists to prevent) both surface here so the
 /// operator sees a breadcrumb when the rare race fires.
 async fn stop_caffeinate(runner: &mut impl CommandRunner, pid: u32) -> anyhow::Result<()> {
-    // Routed through `CommandRunner` for the same reason as the spawn:
-    // `--debug` must show the kill so operators can correlate the
-    // teardown with the role exit. `capture` (vs `run`) folds the
-    // kill's stderr into the error message — preserving the prior
-    // behaviour where `ESRCH`/`EPERM` text reached the breadcrumb.
-    jackin_diagnostics::debug_log!("keep_awake", "stopping caffeinate (PID {pid})");
+    // `capture` folds the kill's stderr into the returned error so the caller owns
+    // the rare ESRCH/EPERM diagnostic without exporting the process identifier.
     runner
         .capture("kill", &[&pid.to_string()], None)
         .await

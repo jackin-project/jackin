@@ -66,6 +66,99 @@ git = "https://github.com/jackin-project/jackin-agent-smith.git"
 }
 
 #[test]
+fn load_failure_exports_once_without_path_or_config_contents() {
+    let temp = tempdir().unwrap();
+    let root = temp.path().join("config-secret-root");
+    let paths = JackinPaths::for_tests(&root);
+    paths.ensure_base_dirs().unwrap();
+    std::fs::write(
+        &paths.config_file,
+        "config-secret-invalid-content = [unterminated",
+    )
+    .unwrap();
+    let config_path = paths.config_file.to_string_lossy().into_owned();
+    let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
+    let _subscriber = tracing::subscriber::set_default(subscriber);
+
+    AppConfig::load_or_init(&paths).unwrap_err();
+
+    export.force_flush();
+    assert_eq!(export.event_count("config.operation"), 1);
+    assert!(export.contains_log_text("load"));
+    assert!(export.contains_log_text("config_error"));
+    for prohibited in [
+        config_path.as_str(),
+        "config-secret-root",
+        "config-secret-invalid-content",
+        "unterminated",
+    ] {
+        assert!(!export.contains_log_text(prohibited));
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn conformance_wire_config_load_failure_exports_once_without_private_input() {
+    let temp = tempdir().unwrap();
+    let root = temp.path().join("wire-config-secret-root");
+    let paths = JackinPaths::for_tests(&root);
+    paths.ensure_base_dirs().unwrap();
+    std::fs::write(
+        &paths.config_file,
+        "wire-config-secret-key = [wire-config-secret-value",
+    )
+    .unwrap();
+    let config_path = paths.config_file.to_string_lossy().into_owned();
+    let testbed = jackin_otlp_testbed::Testbed::start().expect("start OTLP testbed");
+    jackin_diagnostics::init_wire_test_export(
+        &testbed.endpoint(),
+        jackin_diagnostics::ServiceIdentity::CAPSULE,
+    )
+    .expect("initialize wire test export");
+
+    AppConfig::load_or_init(&paths).unwrap_err();
+    jackin_diagnostics::flush_wire_test_export().expect("flush wire test export");
+
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+    let records = loop {
+        let records = testbed
+            .log_records()
+            .into_iter()
+            .filter(|record| record.event_name == "config.operation")
+            .collect::<Vec<_>>();
+        if records.len() == 1 {
+            break records;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "config operation wire event did not arrive exactly once"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+    };
+    let wire_text = format!("{records:?}");
+    for expected in ["global", "load", "failure", "config_error"] {
+        assert!(
+            wire_text.contains(expected),
+            "missing {expected}: {wire_text}"
+        );
+    }
+    let prohibited = [
+        config_path.as_str(),
+        "wire-config-secret-root",
+        "wire-config-secret-key",
+        "wire-config-secret-value",
+    ];
+    for value in prohibited {
+        assert!(!wire_text.contains(value), "exported {value}");
+    }
+    assert_eq!(
+        testbed.prohibited_value_violations(&prohibited),
+        Vec::<String>::new()
+    );
+    assert_eq!(testbed.legacy_namespace_violations(), Vec::<String>::new());
+    jackin_diagnostics::shutdown_capsule_tracing();
+}
+
+#[test]
 fn load_or_init_migrates_legacy_config_version() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());

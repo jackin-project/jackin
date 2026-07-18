@@ -3,6 +3,19 @@
 
 //! Tests for `universe`.
 use super::*;
+
+#[test]
+fn exit_claim_recovery_export_is_bodyless() {
+    let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
+    tracing::subscriber::with_default(subscriber, record_exit_claim_recovery);
+
+    export.force_flush();
+    assert_eq!(export.event_count("operation.warn"), 1);
+    assert!(export.contains_log_text("recovered_degradation"));
+    for private in ["marker", "claim", "permission", "path", "raw error"] {
+        assert!(!export.contains_log_text(private));
+    }
+}
 use jackin_docker::docker_client::ContainerRow;
 use jackin_test_support::FakeDockerClient;
 use std::collections::{HashMap, VecDeque};

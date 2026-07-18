@@ -2,17 +2,17 @@
 title: "jackin❯ join & Debug Export"
 ---
 
-**Status**: Open — diagnostics JSONL, reveal, and open surfaces exist; project join and redacted debug bundles remain unimplemented
+**Status**: Open — local telemetry artifacts and their reveal/open surfaces have been removed; project join and a non-telemetry redacted debug bundle remain unimplemented
 
 ## Shipped facts
 
-jackin❯ now writes diagnostics JSONL for runs and exposes reveal/open affordances for those host-side diagnostic artifacts from launch failure and Debug info surfaces. That makes it easier for an operator to find the raw evidence for a failed run. It is not yet a redacted, shareable bundle.
+jackin❯ exports production telemetry directly over OTLP and keeps only bounded current-invocation state in memory for operator UI. The configured backend owns history; Debug info uses `cli.invocation.id` as the correlation handle and exposes no local telemetry artifact or reveal/open action. A future shareable debug bundle therefore covers redacted product/configuration state while telemetry retention and queries remain the operator's backend responsibility.
 
 ## Remaining work
 
 ### 1. Redacted debug bundle
 
-Add a diagnostic export command, name still open (`jackin debug export <run-id>`, `jackin diagnostics export <run-id>`, or similar), that packages a local `.tar.zst` bundle for a run-id. The bundle should include redacted workspace config, redacted role manifest, redacted env/auth summary, diagnostics JSONL, jackin❯ and Capsule versions, OS info, and container runtime details.
+Add a diagnostic export command, name still open (`jackin debug export` or similar), that packages a local `.tar.zst` bundle containing redacted workspace config, redacted role manifest, redacted env/auth summary, jackin❯ and Capsule versions, OS info, container/runtime state, and sanitized static exporter configuration. Live exporter health is not persisted. An optional `cli.invocation.id` may be recorded as a backend correlation reference, but the bundle never queries the backend or contains logs, traces, metrics, OTLP payloads, or another telemetry serialization.
 
 Redaction must hide token/API-key values and 1Password vault/item/field specifics while preserving enough structure to debug resolution failures. Bundles stay local; no upload service and no import/replay command in this item.
 
@@ -23,12 +23,12 @@ Research project-level onboarding separately from debug export. `jackin join <or
 ## Non-goals
 
 - Do not implement `jackin join` before the project-config trust model is designed.
-- Do not treat diagnostics JSONL reveal/open as a debug bundle; it is raw evidence only.
+- Do not reintroduce diagnostics JSONL, create an OTLP file export, or query a configured backend as part of the bundle.
 - Do not store bundles remotely.
 
 ## Related files
 
-- <RepoFile path="crates/jackin-diagnostics/src/run.rs" /> — diagnostics framework.
+- <RepoFile path="crates/jackin-diagnostics/src/run.rs" /> — current diagnostics artifact framework retired by the unified observability cutover.
 - <RepoFile path="crates/jackin-env/src/resolve.rs" /> — env resolution and redaction source.
 - <RepoFile path="crates/jackin-instance/src/auth.rs" /> — credential locations that bundle redaction must understand.
 

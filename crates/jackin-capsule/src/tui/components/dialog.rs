@@ -18,15 +18,15 @@
 /// `src/console/manager/render/list.rs`):
 ///
 /// - **Phosphor palette** — same RGB values as the console:
-///   `PHOSPHOR_GREEN` rgb(0,255,65) (list text + selection bg),
-///   `PHOSPHOR_DIM` rgb(0,140,30) (dim labels), `PHOSPHOR_DARK`
-///   rgb(0,80,18) (border + separator), `WHITE` rgb(255,255,255)
+///   `accent_fg()` rgb(0,255,65) (list text + selection bg),
+///   `muted_fg()` rgb(0,140,30) (dim labels), `scroll_track_fg()`
+///   rgb(0,80,18) (border + separator), `text_fg()` rgb(255,255,255)
 ///   (title + hotkey glyphs).
 /// - **Selection** uses a green highlight bar with black text and the
 ///   `▸ ` highlight symbol — identical to the role picker sidebar.
 /// - **Hint footer** follows the console TUI's structured format:
-///   `Key WHITE+BOLD`, label `PHOSPHOR_GREEN`, dot separator
-///   `PHOSPHOR_DARK`, three-space group gap between logical groups.
+///   `Key text_fg()+BOLD`, label `accent_fg()`, dot separator
+///   `scroll_track_fg()`, three-space group gap between logical groups.
 use std::sync::Arc;
 
 #[cfg_attr(
@@ -182,7 +182,7 @@ pub enum Dialog {
     /// container-name segment of the bottom branch/PR context bar.
     /// Surfaces role key, focused-agent runtime, full container ID,
     /// and workspace path with shared copy-to-clipboard affordances.
-    /// Enter copies the shared default row (Run ID when available) and
+    /// Enter copies the shared default row (Invocation ID when available) and
     /// clicks copy whichever copyable value was hit. The dialog stays
     /// open so copied-row feedback can render. Esc / q / a click
     /// outside the box dismisses. `focused_agent` is the slug of
@@ -202,7 +202,7 @@ pub enum Dialog {
         /// Persisted scroll offsets. The shared `ContainerInfoState` is rebuilt
         /// every frame, so the scroll must live here on the dialog enum to
         /// survive across redraws.
-        scroll: termrock::layout::DialogBodyScroll,
+        scroll: termrock::scroll::DialogScroll,
     },
     /// Read-only modal opened from the bottom branch/PR context.
     /// Branch / PR / loading state come from `GithubContextView` at
@@ -211,7 +211,7 @@ pub enum Dialog {
     GitHubContext {
         copied: bool,
         /// Persisted scroll offsets (rebuilt each frame like `ContainerInfo`).
-        scroll: termrock::layout::DialogBodyScroll,
+        scroll: termrock::scroll::DialogScroll,
     },
     /// Read-only usage/quota modal for the focused pane.
     Usage {
@@ -219,7 +219,7 @@ pub enum Dialog {
         selected: UsageDialogTab,
         tab_bar_focused: bool,
         hovered_tab: Option<usize>,
-        scroll: termrock::layout::DialogBodyScroll,
+        scroll: termrock::scroll::DialogScroll,
     },
     /// Operator-facing spawn failure surfaced through the shared error popup.
     /// This is intentionally modal: Enter / Esc / O dismiss, while unrelated
@@ -540,9 +540,10 @@ impl Dialog {
                 return DialogAction::Redraw;
             }
             if let Self::Usage { scroll, .. } = self
-                && scroll.handle_raw_key_for_axes(
+                && crate::tui::scroll_input::apply_raw_dialog_scroll_key(
+                    scroll,
                     key,
-                    termrock::layout::ScrollAxes {
+                    termrock::scroll::ScrollAxes {
                         vertical: true,
                         horizontal: true,
                     },
@@ -572,9 +573,10 @@ impl Dialog {
                 _ => None,
             };
             if let Some(scroll) = body_scroll
-                && scroll.handle_raw_key_for_axes(
+                && crate::tui::scroll_input::apply_raw_dialog_scroll_key(
+                    scroll,
                     key,
-                    termrock::layout::ScrollAxes {
+                    termrock::scroll::ScrollAxes {
                         vertical: true,
                         horizontal: true,
                     },
@@ -613,13 +615,6 @@ impl Dialog {
                         .map_or(DialogAction::Redraw, |pr| {
                             DialogAction::OpenHostUrl(pr.url.clone())
                         }),
-                    Self::ContainerInfo { diagnostics, .. } => diagnostics
-                        .run_log_href
-                        .as_deref()
-                        .and_then(file_url_path)
-                        .map_or(DialogAction::Redraw, |path| {
-                            DialogAction::RevealHostPath(path.to_owned())
-                        }),
                     _ => DialogAction::Redraw,
                 },
                 b"c" | b"C" => {
@@ -634,15 +629,7 @@ impl Dialog {
                             DialogAction::OpenHostUrl(url.to_owned())
                         })
                 }
-                b"r" | b"R" => {
-                    if let Self::ContainerInfo { diagnostics, .. } = self
-                        && let Some(path) =
-                            diagnostics.run_log_href.as_deref().and_then(file_url_path)
-                    {
-                        return DialogAction::RevealHostPath(path.to_owned());
-                    }
-                    DialogAction::Redraw
-                }
+                b"r" | b"R" => DialogAction::Redraw,
                 _ => DialogAction::Redraw,
             };
         }
@@ -959,7 +946,7 @@ impl Dialog {
         if matches!(self, Self::SpawnFailure(_)) {
             return DialogAction::Consume;
         }
-        // ContainerInfo: any copyable row (Container ID, Run ID, Diagnostics
+        // ContainerInfo: any copyable row (Container ID or Invocation ID)
         // log) copies via the shared hit-test. The clicked row's value goes to
         // the clipboard and that row shows the copied check affordance.
         if matches!(self, Self::ContainerInfo { .. }) {

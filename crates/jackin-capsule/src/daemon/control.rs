@@ -7,10 +7,73 @@
 
 use super::{
     ClientFrame, ClientMsg, ClipboardImageInsertMode, Instant, Multiplexer, PathBuf, Result,
-    ServerMsg, Session, TokenTotals, explicit_redraw_reason, log_clipboard_image_rejection,
-    prefix_mode_for_mux_mode,
+    ServerMsg, Session, TokenTotals, explicit_redraw_reason, prefix_mode_for_mux_mode,
 };
 use jackin_core::container_paths;
+use jackin_protocol::attach::{
+    AttachControlOperation, AttachControlRequest, AttachControlResponse, AttachControlResult,
+};
+use jackin_telemetry::ResultTelemetryExt as _;
+
+const RPC_ERROR: jackin_telemetry::schema::enums::ErrorType =
+    jackin_telemetry::schema::enums::ErrorType::RpcError;
+
+fn attach_control_operation(
+    request: &AttachControlRequest,
+    method: &'static str,
+) -> Result<Option<jackin_telemetry::operation::OperationGuard>, AttachControlResult> {
+    let extracted = jackin_telemetry::propagation::extract(&request.context);
+    if matches!(
+        extracted,
+        jackin_telemetry::propagation::ExtractOutcome::RejectRequest
+    ) {
+        return Err(AttachControlResult::InvalidCorrelation);
+    }
+    let attrs = [
+        jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::std_attrs::RPC_SYSTEM_NAME,
+            value: jackin_telemetry::Value::Str("jackin"),
+        },
+        jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::std_attrs::RPC_METHOD,
+            value: jackin_telemetry::Value::Str(method),
+        },
+    ];
+    let operation = match extracted {
+        jackin_telemetry::propagation::ExtractOutcome::Parent(parent) => {
+            jackin_telemetry::operation_with_remote_parent(
+                &jackin_telemetry::operation::RPC_SERVER,
+                &attrs,
+                &parent,
+            )
+        }
+        _ => jackin_telemetry::operation(&jackin_telemetry::operation::RPC_SERVER, &attrs),
+    }
+    .ok();
+    Ok(operation)
+}
+
+pub(super) fn send_attach_control_response(
+    mux: &mut Multiplexer,
+    request_id: u64,
+    result: AttachControlResult,
+    operation: Option<jackin_telemetry::operation::OperationGuard>,
+) {
+    let failed = result != AttachControlResult::Success;
+    mux.client_registry.client.send_attach_response(
+        AttachControlResponse { request_id, result },
+        crate::attach_protocol::AttachResponseCompletion {
+            request_id,
+            operation,
+            outcome: if failed {
+                jackin_telemetry::schema::enums::OutcomeValue::Failure
+            } else {
+                jackin_telemetry::schema::enums::OutcomeValue::Success
+            },
+            error_type: failed.then_some(RPC_ERROR),
+        },
+    );
+}
 
 /// Write a capture fixture for `session`: its live visible grid (`visible.txt`)
 /// and the current evidence report (`evidence.json`), under
@@ -32,12 +95,17 @@ pub fn write_status_capture(session_id: u64, session: &Session) -> Result<()> {
         dir.join("evidence.json"),
         serde_json::to_string_pretty(&report)?,
     )?;
-    crate::clog!("status.capture: wrote {}", dir.display());
     Ok(())
 }
 
 pub fn control_reply_for_request(mux: &mut Multiplexer, msg: ClientMsg) -> ServerMsg {
     match msg {
+        ClientMsg::TelemetryHealth => {
+            let health = jackin_diagnostics::telemetry_health_snapshot();
+            ServerMsg::TelemetryHealth {
+                report: Box::new(telemetry_health_report(health)),
+            }
+        }
         ClientMsg::Status => ServerMsg::SessionList {
             sessions: mux.session_infos(),
         },
@@ -73,11 +141,13 @@ pub fn control_reply_for_request(mux: &mut Multiplexer, msg: ClientMsg) -> Serve
         // Contributor diagnostic: snapshot the live grid + evidence to a fixture.
         ClientMsg::StatusCapture { session_id } => {
             if let Some(session) = mux.session_supervisor.sessions.get(session_id) {
-                if let Err(e) = write_status_capture(session_id, session) {
-                    crate::clog!("status.capture: session {session_id} failed: {e:#}");
-                }
+                drop(
+                    write_status_capture(session_id, session).record_telemetry_error(
+                        jackin_telemetry::schema::enums::ErrorType::IoError,
+                    ),
+                );
             } else {
-                crate::clog!("status.capture: no live session {session_id} to capture");
+                let _error = jackin_telemetry::record_error(RPC_ERROR);
             }
             ServerMsg::Ack
         }
@@ -110,41 +180,148 @@ pub fn control_reply_for_request(mux: &mut Multiplexer, msg: ClientMsg) -> Serve
                 .map(TokenTotals::to_summary),
         },
         ClientMsg::Unknown => {
-            crate::clog!("control: ignoring unknown ClientMsg variant from peer");
+            let _error = jackin_telemetry::record_error(RPC_ERROR);
             ServerMsg::Unknown
         }
     }
 }
 
+fn telemetry_health_report(
+    health: jackin_diagnostics::TelemetryHealth,
+) -> jackin_protocol::control::TelemetryHealthReport {
+    fn signal(
+        health: jackin_diagnostics::TelemetrySignalHealth,
+    ) -> jackin_protocol::control::TelemetrySignalHealth {
+        jackin_protocol::control::TelemetrySignalHealth {
+            attempts: health.attempts,
+            successes: health.successes,
+            failures: health.failures,
+        }
+    }
+    let flush = match health.flush {
+        jackin_diagnostics::TelemetryFlushStatus::Pending => {
+            jackin_protocol::control::TelemetryFlushStatus::Pending
+        }
+        jackin_diagnostics::TelemetryFlushStatus::Succeeded => {
+            jackin_protocol::control::TelemetryFlushStatus::Succeeded
+        }
+        jackin_diagnostics::TelemetryFlushStatus::Failed => {
+            jackin_protocol::control::TelemetryFlushStatus::Failed
+        }
+    };
+    let capsule_export = match health.capsule_export {
+        jackin_diagnostics::CapsuleExportCoverage::Enabled => {
+            jackin_protocol::control::CapsuleExportCoverage::Enabled
+        }
+        jackin_diagnostics::CapsuleExportCoverage::DisabledNoEndpoint => {
+            jackin_protocol::control::CapsuleExportCoverage::DisabledNoEndpoint
+        }
+        jackin_diagnostics::CapsuleExportCoverage::DisabledNetworkNone => {
+            jackin_protocol::control::CapsuleExportCoverage::DisabledNetworkNone
+        }
+        jackin_diagnostics::CapsuleExportCoverage::DisabledUnclassifiedEndpoint => {
+            jackin_protocol::control::CapsuleExportCoverage::DisabledUnclassifiedEndpoint
+        }
+        jackin_diagnostics::CapsuleExportCoverage::DisabledUnclassifiedAuth => {
+            jackin_protocol::control::CapsuleExportCoverage::DisabledUnclassifiedAuth
+        }
+        jackin_diagnostics::CapsuleExportCoverage::NotApplicable => {
+            jackin_protocol::control::CapsuleExportCoverage::NotApplicable
+        }
+    };
+    let (resolved, config_failure) = match jackin_diagnostics::resolved_otlp_config_fingerprint() {
+        Ok(config) => (config, None),
+        Err(failure) => (None, Some(telemetry_config_failure(failure))),
+    };
+    let config_signal = |value: jackin_diagnostics::OtlpSignalFingerprint| {
+        jackin_protocol::control::TelemetrySignalConfigFingerprint {
+            authority: value.authority,
+            tls: value.tls,
+        }
+    };
+    let (traces, logs, metrics, compression, sampler) = resolved.map_or_else(
+        || {
+            (
+                None,
+                None,
+                None,
+                "gzip".to_owned(),
+                "parentbased_always_on".to_owned(),
+            )
+        },
+        |config| {
+            (
+                Some(config_signal(config.traces)),
+                Some(config_signal(config.logs)),
+                Some(config_signal(config.metrics)),
+                config.compression.to_owned(),
+                config.sampler.to_owned(),
+            )
+        },
+    );
+    jackin_protocol::control::TelemetryHealthReport {
+        fingerprint: jackin_protocol::control::SanitizedConfigFingerprint {
+            traces,
+            logs,
+            metrics,
+            compression,
+            sampler,
+            active_signals: health.active_signals,
+            service_name: "jackin-capsule".to_owned(),
+            app_mode: "capsule".to_owned(),
+        },
+        config_failure,
+        health: jackin_protocol::control::TelemetryHealthSnapshot {
+            active_signals: health.active_signals,
+            traces: signal(health.traces),
+            logs: signal(health.logs),
+            metrics: signal(health.metrics),
+            facade_rejections: health.facade_rejections,
+            capsule_export,
+            flush,
+            shutdown_completed: health.shutdown_completed,
+            shutdown_succeeded: health.shutdown_succeeded,
+            shutdown_timed_out: health.shutdown_timed_out,
+        },
+    }
+}
+
+const fn telemetry_config_failure(
+    failure: jackin_diagnostics::TelemetryConfigFailure,
+) -> jackin_protocol::control::TelemetryConfigFailure {
+    use jackin_diagnostics::TelemetryConfigFailure as Source;
+    use jackin_protocol::control::TelemetryConfigFailure as Target;
+
+    match failure {
+        Source::MissingSignalEndpoint => Target::MissingSignalEndpoint,
+        Source::UnsupportedProtocol => Target::UnsupportedProtocol,
+        Source::ConflictingSampler => Target::ConflictingSampler,
+        Source::UnsupportedCompression => Target::UnsupportedCompression,
+        Source::InvalidTimeout => Target::InvalidTimeout,
+        Source::InvalidHeaders => Target::InvalidHeaders,
+        Source::InvalidResourceAttributes => Target::InvalidResourceAttributes,
+        Source::InvalidEndpoint => Target::InvalidEndpoint,
+        Source::EmptyValue => Target::EmptyValue,
+        Source::IncompleteClientIdentity => Target::IncompleteClientIdentity,
+    }
+}
+
 pub fn handle_client_frame(mux: &mut Multiplexer, frame: ClientFrame) {
     match frame {
+        ClientFrame::AttachControl(request) => handle_attach_control(mux, request),
         ClientFrame::Hello { .. } => {
             // The initial Hello is consumed by the accept handler; any
-            // further Hello on the same connection is ignored.
+            // further Hello on the same connection is a protocol error.
+            let _error = jackin_telemetry::record_error(RPC_ERROR);
         }
         ClientFrame::Resize { rows, cols } => {
-            crate::cdebug!("resize-event: source=client-frame rows={rows} cols={cols}");
             // resize() records the Resize invalidation (and its wipe); the
             // render loop composes the resized frame on the next pass.
             mux.resize(rows, cols);
         }
         ClientFrame::Input(bytes) => {
-            // Debug-only input-path telemetry: every chunk from the
-            // client and every parser event lands in the log when
-            // debug telemetry. Production runs stay quiet — the macro
-            // skips the format + write entirely. The pair is the
-            // canonical trace for "key X did nothing" triage: chunk
-            // line proves the byte reached the daemon, event line
-            // proves the parser classified it.
-            crate::ctrace_payload!(
-                "rx ClientFrame::Input len={} bytes={:02x?}",
-                bytes.len(),
-                bytes
-            );
             let events = mux.control.input_parser.parse(&bytes);
             for event in events {
-                let mode = mux.mux_mode();
-                crate::ctrace_payload!("  -> InputEvent::{:?} mode={mode:?}", event,);
                 mux.handle_input(event);
             }
             let prefix_mode = prefix_mode_for_mux_mode(mux.mux_mode());
@@ -156,11 +333,13 @@ pub fn handle_client_frame(mux: &mut Multiplexer, frame: ClientFrame) {
         ClientFrame::Command(_payload) => {
             // Reserved for future structured commands from the host CLI.
         }
-        ClientFrame::ClipboardImage(image) => mux.stage_clipboard_image_response(image),
+        ClientFrame::ClipboardImage(image) => {
+            mux.stage_clipboard_image_response(image);
+        }
         ClientFrame::ClipboardImageStart(start) => {
             let size = start.size;
             if let Err(err) = mux.clipboard.clipboard_image_transfers.start(start) {
-                log_clipboard_image_rejection("transfer-start", &err);
+                let _error = jackin_telemetry::record_error(RPC_ERROR);
                 mux.clipboard.clipboard_image_insert_mode = ClipboardImageInsertMode::PastePath;
                 mux.set_clipboard_image_notice(format!("Image paste rejected: {err:#}"));
             } else if mux.clipboard.clipboard_image_insert_mode
@@ -173,30 +352,29 @@ pub fn handle_client_frame(mux: &mut Multiplexer, frame: ClientFrame) {
         }
         ClientFrame::ClipboardImageChunk(chunk) => {
             if let Err(err) = mux.clipboard.clipboard_image_transfers.chunk(chunk) {
-                log_clipboard_image_rejection("transfer-chunk", &err);
+                let _error = jackin_telemetry::record_error(RPC_ERROR);
                 mux.clipboard.clipboard_image_insert_mode = ClipboardImageInsertMode::PastePath;
                 mux.set_clipboard_image_notice(format!("Image paste rejected: {err:#}"));
             }
         }
         ClientFrame::ClipboardImageEnd(end) => {
             match mux.clipboard.clipboard_image_transfers.end(end) {
-                Ok(image) => mux.stage_clipboard_image_response(image),
+                Ok(image) => {
+                    mux.stage_clipboard_image_response(image);
+                }
                 Err(err) => {
-                    log_clipboard_image_rejection("transfer-end", &err);
+                    let _error = jackin_telemetry::record_error(RPC_ERROR);
                     mux.clipboard.clipboard_image_insert_mode = ClipboardImageInsertMode::PastePath;
                     mux.set_clipboard_image_notice(format!("Image paste rejected: {err:#}"));
                 }
             }
         }
         ClientFrame::ClipboardImageError(error) => {
-            let reason = error.reason_code();
-            crate::clog!("clipboard-image: host request failed reason={reason}");
-            crate::cdebug!("clipboard-image: host request failed detail={error}");
+            let _error_event = jackin_telemetry::record_error(RPC_ERROR);
             mux.clipboard.clipboard_image_insert_mode = ClipboardImageInsertMode::PastePath;
             mux.set_clipboard_image_notice(format!("Image paste rejected: {error}"));
         }
         ClientFrame::HostNotice(message) => {
-            crate::clog!("host-affordance: {message}");
             mux.set_clipboard_image_notice(message);
         }
         ClientFrame::Detach => {
@@ -224,6 +402,201 @@ pub fn handle_client_frame(mux: &mut Multiplexer, frame: ClientFrame) {
                 s.send_input(b"\x1b[O");
             }
         }
+    }
+}
+
+fn handle_pending_clipboard_transfer(
+    mux: &mut Multiplexer,
+    request: &AttachControlRequest,
+) -> bool {
+    let request_id = request.request_id;
+    match &request.operation {
+        AttachControlOperation::ClipboardImageChunk(chunk) => {
+            let Some(pending) = mux
+                .clipboard
+                .attach_control_operations
+                .get(&chunk.transfer_id)
+            else {
+                send_attach_control_response(mux, request_id, AttachControlResult::Rejected, None);
+                return true;
+            };
+            if pending.request_id != request_id || pending.context != request.context {
+                send_attach_control_response(mux, request_id, AttachControlResult::Rejected, None);
+                return true;
+            }
+            let result = mux.clipboard.clipboard_image_transfers.chunk(chunk.clone());
+            if result.is_err()
+                && let Some(pending) = mux
+                    .clipboard
+                    .attach_control_operations
+                    .remove(&chunk.transfer_id)
+            {
+                send_attach_control_response(
+                    mux,
+                    pending.request_id,
+                    AttachControlResult::Rejected,
+                    pending.operation,
+                );
+            }
+            true
+        }
+        AttachControlOperation::ClipboardImageEnd(end) => {
+            let Some(pending) = mux
+                .clipboard
+                .attach_control_operations
+                .get(&end.transfer_id)
+            else {
+                send_attach_control_response(mux, request_id, AttachControlResult::Rejected, None);
+                return true;
+            };
+            if pending.request_id != request_id || pending.context != request.context {
+                send_attach_control_response(mux, request_id, AttachControlResult::Rejected, None);
+                return true;
+            }
+            let Some(pending) = mux
+                .clipboard
+                .attach_control_operations
+                .remove(&end.transfer_id)
+            else {
+                send_attach_control_response(mux, request_id, AttachControlResult::Rejected, None);
+                return true;
+            };
+            let succeeded = mux
+                .clipboard
+                .clipboard_image_transfers
+                .end(end.clone())
+                .is_ok_and(|image| mux.stage_clipboard_image_response(image));
+            send_attach_control_response(
+                mux,
+                pending.request_id,
+                if succeeded {
+                    AttachControlResult::Success
+                } else {
+                    AttachControlResult::Rejected
+                },
+                pending.operation,
+            );
+            true
+        }
+        _ => false,
+    }
+}
+
+fn handle_attach_control(mux: &mut Multiplexer, request: AttachControlRequest) {
+    let request_id = request.request_id;
+    let method = match &request.operation {
+        AttachControlOperation::Detach => "jackin.capsule.Attach/Detach",
+        AttachControlOperation::FocusIn | AttachControlOperation::FocusOut => {
+            "jackin.capsule.Attach/Focus"
+        }
+        _ => "jackin.capsule.Attach/ClipboardImageTransfer",
+    };
+    if matches!(
+        jackin_telemetry::propagation::extract(&request.context),
+        jackin_telemetry::propagation::ExtractOutcome::RejectRequest
+    ) {
+        let attrs = [
+            jackin_telemetry::Attr {
+                key: jackin_telemetry::schema::attrs::std_attrs::RPC_SYSTEM_NAME,
+                value: jackin_telemetry::Value::Str("jackin"),
+            },
+            jackin_telemetry::Attr {
+                key: jackin_telemetry::schema::attrs::std_attrs::RPC_METHOD,
+                value: jackin_telemetry::Value::Str(method),
+            },
+        ];
+        let operation =
+            jackin_telemetry::operation(&jackin_telemetry::operation::RPC_SERVER, &attrs).ok();
+        let record = || {
+            let _error = jackin_telemetry::record_error(RPC_ERROR);
+        };
+        if let Some(operation) = operation.as_ref() {
+            operation.span().in_scope(record);
+        } else {
+            record();
+        }
+        send_attach_control_response(
+            mux,
+            request_id,
+            AttachControlResult::InvalidCorrelation,
+            operation,
+        );
+        return;
+    }
+    if handle_pending_clipboard_transfer(mux, &request) {
+        return;
+    }
+
+    let operation = match attach_control_operation(&request, method) {
+        Ok(operation) => operation,
+        Err(result) => {
+            send_attach_control_response(mux, request_id, result, None);
+            return;
+        }
+    };
+    match request.operation {
+        AttachControlOperation::Detach => {
+            let attrs = [jackin_telemetry::Attr {
+                key: jackin_telemetry::schema::attrs::UI_ACTION_NAME,
+                value: jackin_telemetry::Value::Str(
+                    jackin_telemetry::schema::enums::UiActionName::SessionDetach.as_str(),
+                ),
+            }];
+            let action =
+                jackin_telemetry::operation(&jackin_telemetry::operation::UI_ACTION, &attrs).ok();
+            mux.client_registry.detach_requested = true;
+            if let Some(action) = action {
+                action.complete(jackin_telemetry::schema::enums::OutcomeValue::Success, None);
+            }
+            send_attach_control_response(mux, request_id, AttachControlResult::Success, operation);
+        }
+        AttachControlOperation::FocusIn => {
+            handle_client_frame(mux, ClientFrame::FocusIn);
+            send_attach_control_response(mux, request_id, AttachControlResult::Success, operation);
+        }
+        AttachControlOperation::FocusOut => {
+            handle_client_frame(mux, ClientFrame::FocusOut);
+            send_attach_control_response(mux, request_id, AttachControlResult::Success, operation);
+        }
+        AttachControlOperation::ClipboardImage(image) => {
+            let succeeded = mux.stage_clipboard_image_response(image);
+            send_attach_control_response(
+                mux,
+                request_id,
+                if succeeded {
+                    AttachControlResult::Success
+                } else {
+                    AttachControlResult::Rejected
+                },
+                operation,
+            );
+        }
+        AttachControlOperation::ClipboardImageStart(start) => {
+            let transfer_id = start.transfer_id;
+            if mux.clipboard.clipboard_image_transfers.start(start).is_ok() {
+                mux.clipboard.attach_control_operations.insert(
+                    transfer_id,
+                    super::PendingAttachControl {
+                        request_id,
+                        context: request.context.clone(),
+                        operation,
+                    },
+                );
+            } else {
+                send_attach_control_response(
+                    mux,
+                    request_id,
+                    AttachControlResult::Rejected,
+                    operation,
+                );
+            }
+        }
+        AttachControlOperation::ClipboardImageError(error) => {
+            handle_client_frame(mux, ClientFrame::ClipboardImageError(error));
+            send_attach_control_response(mux, request_id, AttachControlResult::Rejected, operation);
+        }
+        AttachControlOperation::ClipboardImageChunk(_)
+        | AttachControlOperation::ClipboardImageEnd(_) => unreachable!(),
     }
 }
 

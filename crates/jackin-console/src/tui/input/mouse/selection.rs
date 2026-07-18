@@ -41,8 +41,8 @@ pub fn update_tab_hover(state: &mut ManagerState<'_>, mouse: MouseEvent) {
         }
         ManagerStage::Settings(settings) => {
             settings.set_hover_target(settings_tab_hover_target_plan(
-                settings.mounts.modal.is_some(),
-                settings.env.modal.is_some(),
+                settings.mounts.modals.is_open(),
+                settings.env.modals.is_open(),
                 mouse.row,
                 mouse.column,
             ));
@@ -55,7 +55,7 @@ pub fn try_select_settings_tab(state: &mut ManagerState<'_>, mouse: MouseEvent) 
     let ManagerStage::Settings(settings) = &state.stage else {
         return false;
     };
-    if settings.mounts.modal.is_some() || settings.env.modal.is_some() {
+    if settings.mounts.modals.is_open() || settings.env.modals.is_open() {
         return false;
     }
 
@@ -75,7 +75,7 @@ pub fn try_select_settings_trust_row(
     let ManagerStage::Settings(settings) = &state.stage else {
         return false;
     };
-    if settings.active_tab != SettingsTab::Trust || settings.mounts.modal.is_some() {
+    if settings.active_tab != SettingsTab::Trust || settings.mounts.modals.is_open() {
         return false;
     }
     let area = settings.content_area(term_size);

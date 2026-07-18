@@ -168,7 +168,7 @@ fn confirm_save_keymap_covers_each_action() {
             CONFIRM_SAVE_KEYMAP
                 .bindings()
                 .iter()
-                .any(|binding| binding.action == expected),
+                .any(|binding| *binding.action() == expected),
             "missing {expected:?} binding"
         );
     }

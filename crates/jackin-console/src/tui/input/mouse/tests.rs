@@ -35,6 +35,125 @@ fn list_state() -> ManagerState<'static> {
     ManagerState::from_config(&config, tmp.path())
 }
 
+#[test]
+fn conformance_wire_mouse_coordinates_become_only_semantic_action() -> anyhow::Result<()> {
+    const CHILD: &str = "JACKIN_MOUSE_PRIVACY_WIRE_CHILD";
+    if std::env::var_os(CHILD).is_none() {
+        let status = std::process::Command::new(std::env::current_exe()?)
+            .args([
+                "--exact",
+                "tui::input::mouse::tests::conformance_wire_mouse_coordinates_become_only_semantic_action",
+                "--nocapture",
+            ])
+            .env(CHILD, "1")
+            .status()?;
+        anyhow::ensure!(status.success(), "isolated mouse privacy test failed");
+        return Ok(());
+    }
+
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()?;
+    let testbed = runtime.block_on(async { jackin_otlp_testbed::Testbed::start() })?;
+    let runtime_guard = runtime.enter();
+    jackin_diagnostics::init_wire_test_export(
+        &testbed.endpoint(),
+        jackin_diagnostics::ServiceIdentity::HOST_INTERACTIVE,
+    )?;
+    let mut state = list_state();
+    state.stage = ManagerStage::Editor(EditorState::new_edit(
+        "wire-private-workspace".into(),
+        WorkspaceConfig::default(),
+    ));
+    let coordinate = MouseEvent {
+        kind: MouseEventKind::Down(MouseButton::Left),
+        column: 11,
+        row: crate::tui::layout::SCREEN_HEADER_HEIGHT,
+        modifiers: KeyModifiers::NONE,
+    };
+    handle_mouse_with_config(&mut state, coordinate, term(100), None);
+    let ManagerStage::Editor(editor) = &state.stage else {
+        anyhow::bail!("mouse route left editor stage");
+    };
+    anyhow::ensure!(
+        editor.active_tab == EditorTab::Mounts,
+        "coordinates did not reach the real tab hit-test"
+    );
+    drop(jackin_telemetry::ui::take_action_parent());
+    jackin_telemetry::emit_event(
+        &jackin_telemetry::event::TELEMETRY_VALIDATE,
+        jackin_telemetry::FieldSet::default(),
+    )
+    .map_err(|reason| anyhow::anyhow!("validation event rejected: {reason:?}"))?;
+    jackin_diagnostics::flush_wire_test_export()?;
+    drop(runtime_guard);
+    anyhow::ensure!(
+        runtime.block_on(testbed.wait_for_all_signals(std::time::Duration::from_secs(2))),
+        "mouse route did not export all three signals"
+    );
+    let action_spans = testbed
+        .spans()
+        .into_iter()
+        .filter(|span| span.name == "ui.action")
+        .collect::<Vec<_>>();
+    anyhow::ensure!(action_spans.len() == 1, "unexpected ui.action spans");
+    let action = &action_spans[0];
+    anyhow::ensure!(
+        format!("{:?}", action.attributes).contains("tab.switch"),
+        "mouse action was not exported semantically: {action:?}"
+    );
+    let ui_action_count = testbed
+        .metrics()
+        .into_iter()
+        .flat_map(|request| request.resource_metrics)
+        .flat_map(|resource| resource.scope_metrics)
+        .flat_map(|scope| scope.metrics)
+        .filter(|metric| metric.name == "ui.actions")
+        .filter_map(|metric| metric.data)
+        .filter_map(|data| match data {
+            opentelemetry_proto::tonic::metrics::v1::metric::Data::Sum(sum) => Some(sum),
+            _ => None,
+        })
+        .flat_map(|sum| sum.data_points)
+        .filter_map(|point| point.value)
+        .map(|value| match value {
+            opentelemetry_proto::tonic::metrics::v1::number_data_point::Value::AsInt(value) => {
+                value as f64
+            }
+            opentelemetry_proto::tonic::metrics::v1::number_data_point::Value::AsDouble(value) => {
+                value
+            }
+        })
+        .sum::<f64>();
+    anyhow::ensure!(
+        (ui_action_count - 1.0).abs() < f64::EPSILON,
+        "one semantic mouse action must increment ui.actions exactly once, got {ui_action_count}"
+    );
+    for key in action
+        .attributes
+        .iter()
+        .map(|attribute| attribute.key.as_str())
+        .chain(testbed.metric_dimension_keys().iter().map(String::as_str))
+    {
+        anyhow::ensure!(
+            !matches!(
+                key,
+                "row" | "column" | "mouse.row" | "mouse.column" | "ui.pointer.x" | "ui.pointer.y"
+            ),
+            "raw pointer coordinate key escaped to OTLP: {key}"
+        );
+    }
+    anyhow::ensure!(
+        testbed
+            .prohibited_value_violations(&["wire-private-workspace"])
+            .is_empty(),
+        "private editor identity escaped to OTLP"
+    );
+    jackin_diagnostics::shutdown_capsule_tracing();
+    Ok(())
+}
+
 fn file_browser_with_dirs(
     root: &std::path::Path,
     count: usize,
@@ -279,7 +398,7 @@ fn list_github_picker_wheel_scrolls_modal_selection() {
     let Some(Modal::GithubPicker { state: picker }) = &state.list_modal else {
         panic!("github picker modal expected");
     };
-    assert_eq!(picker.list_state.selected, Some(1));
+    assert_eq!(picker.list_state.selected().copied(), Some(1));
 }
 
 #[test]
@@ -312,7 +431,7 @@ fn editor_workdir_picker_wheel_scrolls_modal_selection_not_background() {
     let Some(Modal::WorkdirPick { state: picker }) = &editor.modal else {
         panic!("workdir picker modal expected");
     };
-    assert_eq!(picker.list_state.selected, Some(1));
+    assert_eq!(picker.list_state.selected().copied(), Some(1));
 }
 
 #[test]
@@ -320,7 +439,7 @@ fn settings_role_picker_wheel_scrolls_modal_selection_not_background() {
     let mut state = list_state();
     let mut settings = SettingsState::from_config(&jackin_config::AppConfig::default());
     settings.mounts.scroll_y = 4;
-    settings.mounts.modal = Some(SettingsModal::MountRolePicker {
+    settings.mounts.modals.open(SettingsModal::MountRolePicker {
         state: crate::tui::state::RolePickerState::new(vec![
             jackin_core::RoleSelector::parse("chainargos/agent-brown").unwrap(),
             jackin_core::RoleSelector::parse("scentbird/agent-jones").unwrap(),
@@ -341,10 +460,11 @@ fn settings_role_picker_wheel_scrolls_modal_selection_not_background() {
         settings.mounts.scroll_y, 4,
         "background settings must not scroll"
     );
-    let Some(SettingsModal::MountRolePicker { state: picker }) = &settings.mounts.modal else {
+    let Some(SettingsModal::MountRolePicker { state: picker }) = settings.mounts.modals.current()
+    else {
         panic!("settings role picker modal expected");
     };
-    assert_eq!(picker.list_state.selected, Some(1));
+    assert_eq!(picker.list_state.selected().copied(), Some(1));
 }
 
 #[test]
@@ -1484,7 +1604,7 @@ fn editor_file_browser_wheel_scrolls_modal_selection_not_background() {
     let Some(Modal::FileBrowser { state: fb, .. }) = &editor.modal else {
         panic!("file browser modal expected");
     };
-    assert_eq!(fb.list_state.selected, Some(1));
+    assert_eq!(fb.list_state.selected().copied(), Some(1));
 }
 
 #[test]
@@ -1526,7 +1646,7 @@ fn editor_file_browser_smoke_hints_pagedown_and_wheel_share_modal_context() {
         panic!("file browser modal expected");
     };
     drop(fb.handle_key_with_page_rows(key(KeyCode::PageDown), Some(4)));
-    assert_eq!(fb.list_state.selected, Some(4));
+    assert_eq!(fb.list_state.selected().copied(), Some(4));
 
     handle_mouse_with_config(
         &mut state,
@@ -1542,7 +1662,7 @@ fn editor_file_browser_smoke_hints_pagedown_and_wheel_share_modal_context() {
     let Some(Modal::FileBrowser { state: fb, .. }) = &editor.modal else {
         panic!("file browser modal expected");
     };
-    assert_eq!(fb.list_state.selected, Some(5));
+    assert_eq!(fb.list_state.selected().copied(), Some(5));
 }
 
 #[test]
@@ -1573,7 +1693,7 @@ fn create_prelude_file_browser_wheel_scrolls_modal_selection() {
     let Some(Modal::FileBrowser { state: fb, .. }) = &prelude.modal else {
         panic!("file browser modal expected");
     };
-    assert_eq!(fb.list_state.selected, Some(1));
+    assert_eq!(fb.list_state.selected().copied(), Some(1));
 }
 
 #[test]
@@ -1583,9 +1703,12 @@ fn settings_mounts_file_browser_wheel_scrolls_modal_selection_not_background() {
     let fb = file_browser_with_dirs(tmp.path(), 8);
     let mut settings = SettingsState::from_config(&jackin_config::AppConfig::default());
     settings.mounts.scroll_y = 4;
-    settings.mounts.modal = Some(SettingsModal::MountFileBrowser {
-        state: Box::new(fb),
-    });
+    settings
+        .mounts
+        .modals
+        .open(SettingsModal::MountFileBrowser {
+            state: Box::new(fb),
+        });
     state.stage = ManagerStage::Settings(settings);
 
     handle_mouse_with_config(
@@ -1602,10 +1725,11 @@ fn settings_mounts_file_browser_wheel_scrolls_modal_selection_not_background() {
         settings.mounts.scroll_y, 4,
         "background settings must not scroll"
     );
-    let Some(SettingsModal::MountFileBrowser { state: fb }) = &settings.mounts.modal else {
+    let Some(SettingsModal::MountFileBrowser { state: fb }) = settings.mounts.modals.current()
+    else {
         panic!("file browser modal expected");
     };
-    assert_eq!(fb.list_state.selected, Some(1));
+    assert_eq!(fb.list_state.selected().copied(), Some(1));
 }
 
 #[test]
@@ -1614,7 +1738,10 @@ fn settings_auth_source_folder_wheel_scrolls_modal_selection() {
     let tmp = tempfile::tempdir().unwrap();
     let fb = file_browser_with_dirs(tmp.path(), 8);
     let mut settings = SettingsState::from_config(&jackin_config::AppConfig::default());
-    settings.auth.modal = Some(SettingsModal::AuthSourceFolderPicker { state: fb });
+    settings
+        .auth
+        .modals
+        .open(SettingsModal::AuthSourceFolderPicker { state: fb });
     state.stage = ManagerStage::Settings(settings);
 
     handle_mouse_with_config(
@@ -1627,10 +1754,11 @@ fn settings_auth_source_folder_wheel_scrolls_modal_selection() {
     let ManagerStage::Settings(settings) = &state.stage else {
         panic!("settings stage expected");
     };
-    let Some(SettingsModal::AuthSourceFolderPicker { state: fb }) = &settings.auth.modal else {
+    let Some(SettingsModal::AuthSourceFolderPicker { state: fb }) = settings.auth.modals.current()
+    else {
         panic!("source-folder file browser modal expected");
     };
-    assert_eq!(fb.list_state.selected, Some(1));
+    assert_eq!(fb.list_state.selected().copied(), Some(1));
 }
 
 #[test]
@@ -1664,7 +1792,7 @@ fn file_browser_wheel_at_edge_is_consumed_before_background_scroll() {
     let Some(Modal::FileBrowser { state: fb, .. }) = &editor.modal else {
         panic!("file browser modal expected");
     };
-    assert_eq!(fb.list_state.selected, Some(0));
+    assert_eq!(fb.list_state.selected().copied(), Some(0));
 }
 
 #[test]
@@ -1708,7 +1836,7 @@ fn settings_vertical_scrollbar_drag_ignores_background_when_modal_open() {
             },
         })
         .collect();
-    settings.mounts.modal = Some(SettingsModal::MountConfirm {
+    settings.mounts.modals.open(SettingsModal::MountConfirm {
         action: GlobalMountConfirm::Save,
         state: global_mount_confirm_state(GlobalMountConfirm::Save),
     });

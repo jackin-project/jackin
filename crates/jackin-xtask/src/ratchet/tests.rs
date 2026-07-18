@@ -89,7 +89,7 @@ fn curated_pub_mods_rejects_extra_root_mod() {
         ("jackin-config", "mod private;\npub mod test_support;\n"),
         (
             "jackin-core",
-            "mod private;\npub mod container_paths;\npub mod debug_log;\npub mod tui_theme;\n",
+            "mod private;\npub mod container_paths;\npub mod tui_theme;\n",
         ),
     ] {
         let lib = dir
@@ -121,10 +121,7 @@ fn curated_pub_mods_accepts_env_pilot_shape() {
     let shapes = [
         ("jackin-env", "mod env_layer;\npub mod test_support;\n"),
         ("jackin-config", "mod private;\npub mod test_support;\n"),
-        (
-            "jackin-core",
-            "mod private;\npub mod container_paths;\npub mod debug_log;\n",
-        ),
+        ("jackin-core", "mod private;\npub mod container_paths;\n"),
     ];
     for (crate_name, body) in shapes {
         let lib = dir

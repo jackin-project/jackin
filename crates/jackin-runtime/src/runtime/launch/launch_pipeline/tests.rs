@@ -19,6 +19,71 @@ use jackin_test_support::{FakeDockerClient, FakeRunner, seed_valid_role_repo};
 use std::collections::{BTreeMap, VecDeque};
 use tempfile::TempDir;
 
+const INTEGRATED_LAUNCH_WIRE_CHILD: &str = "JACKIN_INTEGRATED_LAUNCH_WIRE_CHILD";
+
+fn observe_launch_process(command: &str) {
+    let program = command.split_whitespace().next().unwrap_or("unknown");
+    let operation = jackin_telemetry::operation_or_disabled(
+        &jackin_telemetry::operation::PROCESS_COMMAND,
+        &[jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::std_attrs::PROCESS_EXECUTABLE_NAME,
+            value: jackin_telemetry::Value::Str(
+                jackin_telemetry::process::classify_executable(std::path::Path::new(program))
+                    .as_str(),
+            ),
+        }],
+    );
+    operation.complete(jackin_telemetry::schema::enums::OutcomeValue::Success, None);
+}
+
+fn observe_launch_docker(operation_name: &str) {
+    let (method, template) = if operation_name.starts_with("docker inspect image:") {
+        ("GET", "/images/{name}/json")
+    } else if operation_name.starts_with("docker inspect ") {
+        ("GET", "/containers/{id}/json")
+    } else if operation_name.starts_with("docker ps") {
+        ("GET", "/containers/json")
+    } else if operation_name.starts_with("create_container:") {
+        ("POST", "/containers/create")
+    } else if operation_name.starts_with("start_container:") {
+        ("POST", "/containers/{id}/start")
+    } else if operation_name.starts_with("docker exec ") {
+        ("POST", "/exec/{id}/start")
+    } else if operation_name.starts_with("docker network create ") {
+        ("POST", "/networks/create")
+    } else if operation_name.starts_with("docker network inspect ") {
+        ("GET", "/networks/{id}")
+    } else if operation_name.starts_with("docker network ls") {
+        ("GET", "/networks")
+    } else if operation_name.starts_with("docker network rm ") {
+        ("DELETE", "/networks/{id}")
+    } else if operation_name.starts_with("docker pull ") {
+        ("POST", "/images/create")
+    } else if operation_name.starts_with("docker rmi ") {
+        ("DELETE", "/images/{name}")
+    } else if operation_name.starts_with("docker volume rm ") {
+        ("DELETE", "/volumes/{name}")
+    } else if operation_name.starts_with("docker rm ") {
+        ("DELETE", "/containers/{id}")
+    } else {
+        ("GET", "/_ping")
+    };
+    let operation = jackin_telemetry::operation_or_disabled(
+        &jackin_telemetry::operation::HTTP_CLIENT,
+        &[
+            jackin_telemetry::Attr {
+                key: jackin_telemetry::schema::attrs::std_attrs::HTTP_REQUEST_METHOD,
+                value: jackin_telemetry::Value::Str(method),
+            },
+            jackin_telemetry::Attr {
+                key: jackin_telemetry::schema::attrs::std_attrs::URL_TEMPLATE,
+                value: jackin_telemetry::Value::Str(template),
+            },
+        ],
+    );
+    operation.complete(jackin_telemetry::schema::enums::OutcomeValue::Success, None);
+}
+
 /// Fully-populated `LaunchCore` fixture over fakes + real grant/profile config.
 struct LaunchCoreFixture {
     _temp: TempDir,
@@ -101,7 +166,10 @@ agents = ["codex"]
             workspace,
             docker,
             runner: FakeRunner::default(),
-            steps: super::super::StepCounter::new("agent-smith"),
+            steps: super::super::StepCounter::new(
+                "agent-smith",
+                jackin_telemetry::schema::enums::LaunchTargetKind::Directory,
+            ),
             opts: super::super::LoadOptions {
                 agent: Some(Agent::Codex),
                 ..Default::default()
@@ -181,6 +249,62 @@ agents = ["codex"]
 }
 
 #[test]
+fn launch_trust_rejection_exports_typed_decision_without_source_identity() {
+    let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
+    let _subscriber = tracing::subscriber::set_default(subscriber);
+    let selector = RoleSelector::new(Some("private-owner"), "private-role");
+    let source = jackin_config::RoleSource {
+        git: "https://secret.example/private-repository.git".to_owned(),
+        trusted: false,
+        env: BTreeMap::new(),
+    };
+    let mut config = AppConfig::default();
+    config.roles.insert(selector.key(), source.clone());
+    let mut steps = super::super::StepCounter::new(
+        "private-role",
+        jackin_telemetry::schema::enums::LaunchTargetKind::Directory,
+    );
+
+    let result = ensure_role_trust(&mut config, &selector, &source, &mut steps, |_, _| {
+        anyhow::bail!("private prompt transport failure")
+    });
+    result.unwrap_err();
+
+    export.force_flush();
+    assert_eq!(export.event_count("trust.decision"), 1);
+    for expected in ["rejected", "external", "failure", "trust_error"] {
+        assert!(export.contains_log_text(expected));
+    }
+    for private in [
+        "private-owner",
+        "private-role",
+        "secret.example",
+        "private-repository",
+        "private prompt transport failure",
+    ] {
+        assert!(!export.contains_log_text(private));
+    }
+}
+
+#[test]
+fn persisted_launch_trust_grant_exports_success_without_error_type() {
+    let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
+    tracing::subscriber::with_default(subscriber, || {
+        emit_launch_trust_decision(
+            jackin_telemetry::schema::enums::TrustDecision::Granted,
+            None,
+        );
+    });
+
+    export.force_flush();
+    assert_eq!(export.event_count("trust.decision"), 1);
+    for expected in ["granted", "external", "success"] {
+        assert!(export.contains_log_text(expected));
+    }
+    assert!(!export.contains_log_text("error.type"));
+}
+
+#[test]
 fn tag_errors_prefixes_each_with_source_tag() {
     let out = tag_errors("workspace", vec!["root+sudo", "bad pids"]);
     assert_eq!(
@@ -247,6 +371,142 @@ async fn run_launch_core_happy_path_returns_container_name() {
         !recorded.is_empty(),
         "happy path must exercise Docker via FakeDocker; recorded empty"
     );
+}
+
+#[test]
+fn conformance_wire_public_launch_controller_exports_complete_pipeline() -> anyhow::Result<()> {
+    if std::env::var_os(INTEGRATED_LAUNCH_WIRE_CHILD).is_none() {
+        let status = std::process::Command::new(std::env::current_exe()?)
+            .arg("--exact")
+            .arg(
+                "runtime::launch::launch_pipeline::tests::conformance_wire_public_launch_controller_exports_complete_pipeline",
+            )
+            .arg("--nocapture")
+            .env(INTEGRATED_LAUNCH_WIRE_CHILD, "1")
+            .status()?;
+        anyhow::ensure!(
+            status.success(),
+            "isolated integrated launch wire test failed"
+        );
+        return Ok(());
+    }
+
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()?;
+    let testbed = {
+        let _entered = runtime.enter();
+        jackin_otlp_testbed::Testbed::start()?
+    };
+    jackin_diagnostics::init_wire_test_export(
+        &testbed.endpoint(),
+        jackin_diagnostics::ServiceIdentity::HOST_ONE_SHOT,
+    )?;
+
+    let mut fixture = LaunchCoreFixture::new();
+    fixture.docker.operation_hook = Some(observe_launch_docker);
+    let private_source = "https://integrated-private.invalid/role.git?token=private-launch-token";
+    fixture.config.roles.insert(
+        fixture.selector.key(),
+        jackin_config::RoleSource {
+            git: private_source.to_owned(),
+            trusted: true,
+            env: BTreeMap::new(),
+        },
+    );
+    fixture.runner = FakeRunner::for_load_agent([
+        private_source.to_owned(),
+        String::new(),
+        "false 0 false".to_owned(),
+        "false 0 false".to_owned(),
+    ]);
+    fixture.runner.command_hook = Some(observe_launch_process);
+    runtime.block_on(load_role(
+        &fixture.paths,
+        &mut fixture.config,
+        &fixture.selector,
+        &fixture.workspace,
+        &fixture.docker,
+        &mut fixture.runner,
+        &fixture.opts,
+    ))?;
+    assert!(
+        !fixture.runner.recorded.is_empty(),
+        "public launch must cross the injected process port"
+    );
+    assert!(
+        !fixture.docker.recorded.borrow().is_empty(),
+        "public launch must cross the injected Docker port"
+    );
+
+    jackin_diagnostics::flush_wire_test_export()?;
+    assert!(runtime.block_on(testbed.wait_for_all_signals(std::time::Duration::from_secs(2))));
+    let spans = testbed.spans();
+    let roots = spans
+        .iter()
+        .filter(|span| span.name == "launch")
+        .collect::<Vec<_>>();
+    let stages = spans
+        .iter()
+        .filter(|span| span.name == "launch.stage")
+        .collect::<Vec<_>>();
+    let process_children = spans
+        .iter()
+        .filter(|span| span.name == "process.command")
+        .collect::<Vec<_>>();
+    let docker_children = spans
+        .iter()
+        .filter(|span| span.name == "http.client")
+        .collect::<Vec<_>>();
+    let stage_wire = format!("{stages:?}");
+    assert_eq!(roots.len(), 1, "public controller must own one launch root");
+    assert_eq!(
+        stages.len(),
+        11,
+        "public controller must own every stage once: {stage_wire}"
+    );
+    for stage in &stages {
+        assert_eq!(stage.trace_id, roots[0].trace_id);
+        assert_eq!(stage.parent_span_id, roots[0].span_id);
+    }
+    assert!(
+        !process_children.is_empty(),
+        "public launch must contain governed subprocess children"
+    );
+    assert!(
+        !docker_children.is_empty(),
+        "public launch must contain governed Docker HTTP children"
+    );
+    for child in process_children.iter().chain(&docker_children) {
+        assert_eq!(child.trace_id, roots[0].trace_id);
+        assert!(
+            child.parent_span_id == roots[0].span_id
+                || stages
+                    .iter()
+                    .any(|stage| stage.span_id == child.parent_span_id),
+            "boundary child must belong to the launch tree: {child:?}"
+        );
+    }
+    for expected in jackin_telemetry::schema::enums::LaunchStageName::ALL {
+        assert!(
+            stage_wire.contains(expected.as_str()),
+            "missing {expected:?}: {stage_wire}"
+        );
+    }
+    assert_eq!(
+        testbed.prohibited_value_violations(&[
+            private_source,
+            "integrated-private.invalid",
+            "private-launch-token",
+            &fixture.container_name,
+            &fixture.image,
+        ]),
+        Vec::<String>::new()
+    );
+    assert_eq!(testbed.legacy_namespace_violations(), Vec::<String>::new());
+    jackin_diagnostics::shutdown_capsule_tracing();
+    Ok(())
 }
 
 #[tokio::test]

@@ -11,19 +11,19 @@
 ///
 /// `host_screen_owned` should be `crate::terminal_ownership::host_screen_owned()`.
 pub fn warp_intro(host_screen_owned: bool) {
-    jackin_launch_tui::animation::warp_intro(host_screen_owned);
+    jackin_launch::animation::warp_intro(host_screen_owned);
 }
 
 /// Exit ritual — drop out of hyperspace.
 ///
 /// `host_screen_owned` should be `crate::terminal_ownership::host_screen_owned()`.
 pub fn warp_out(host_screen_owned: bool) {
-    jackin_launch_tui::animation::warp_out(host_screen_owned);
+    jackin_launch::animation::warp_out(host_screen_owned);
 }
 
 /// Closing screen shown when the last container leaves.
 ///
 /// `host_screen_owned` should be `crate::terminal_ownership::host_screen_owned()`.
 pub fn warp_end_caption(elapsed: Option<std::time::Duration>, host_screen_owned: bool) {
-    jackin_launch_tui::animation::warp_end_caption(elapsed, host_screen_owned);
+    jackin_launch::animation::warp_end_caption(elapsed, host_screen_owned);
 }

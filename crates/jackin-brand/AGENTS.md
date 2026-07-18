@@ -1,0 +1,2 @@
+- Keep this crate renderer-neutral: it owns product identity tokens, not Ratatui styles, widgets, terminal protocols, or run loops.
+- Neutral component colors belong to TermRock; add only documented jackin❯ brand or domain semantics consumed by multiple output surfaces.

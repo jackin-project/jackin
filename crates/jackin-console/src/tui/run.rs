@@ -61,14 +61,17 @@ pub const fn console_screen_stage_for_route(route: ConsoleManagerStageRoute) -> 
 /// Which diagnostics screen owns the visible console stage. Confirm dialogs
 /// overlay the workspace list, so their telemetry remains attached to `List`.
 #[must_use]
-pub const fn diagnostics_screen_for_stage(stage: ConsoleScreenStage) -> jackin_diagnostics::Screen {
+pub const fn diagnostics_screen_for_stage(
+    stage: ConsoleScreenStage,
+) -> jackin_telemetry::schema::enums::ScreenId {
+    use jackin_telemetry::schema::enums::ScreenId;
     match stage {
         ConsoleScreenStage::List
         | ConsoleScreenStage::ConfirmDelete
-        | ConsoleScreenStage::ConfirmInstancePurge => jackin_diagnostics::Screen::List,
-        ConsoleScreenStage::Editor => jackin_diagnostics::Screen::Editor,
-        ConsoleScreenStage::Settings => jackin_diagnostics::Screen::Settings,
-        ConsoleScreenStage::CreatePrelude => jackin_diagnostics::Screen::Create,
+        | ConsoleScreenStage::ConfirmInstancePurge => ScreenId::WorkspaceList,
+        ConsoleScreenStage::Editor => ScreenId::WorkspaceEditor,
+        ConsoleScreenStage::Settings => ScreenId::Settings,
+        ConsoleScreenStage::CreatePrelude => ScreenId::WorkspaceCreate,
     }
 }
 
@@ -227,13 +230,13 @@ pub enum QuitConfirmPlan {
 }
 
 #[must_use]
-pub const fn quit_confirm_plan(outcome: jackin_core::ModalOutcome<bool>) -> QuitConfirmPlan {
+pub const fn quit_confirm_plan(outcome: jackin_tui::ModalOutcome<bool>) -> QuitConfirmPlan {
     match outcome {
-        jackin_core::ModalOutcome::Commit(true) => QuitConfirmPlan::Exit,
-        jackin_core::ModalOutcome::Commit(false) | jackin_core::ModalOutcome::Cancel => {
+        jackin_tui::ModalOutcome::Commit(true) => QuitConfirmPlan::Exit,
+        jackin_tui::ModalOutcome::Commit(false) | jackin_tui::ModalOutcome::Cancel => {
             QuitConfirmPlan::Dismiss
         }
-        jackin_core::ModalOutcome::Continue => QuitConfirmPlan::Continue,
+        jackin_tui::ModalOutcome::Continue => QuitConfirmPlan::Continue,
     }
 }
 
@@ -487,10 +490,9 @@ pub fn debug_chip_row(bar: Rect) -> Rect {
 }
 
 #[must_use]
-pub fn debug_run_id_label(active_run_id: Option<&str>, env_run_id: Option<&str>) -> String {
-    active_run_id
-        .filter(|run_id| !run_id.is_empty())
-        .or_else(|| env_run_id.filter(|run_id| !run_id.is_empty()))
+pub fn debug_invocation_id_label(invocation_id: Option<&str>) -> String {
+    invocation_id
+        .filter(|invocation_id| !invocation_id.is_empty())
         .unwrap_or_default()
         .to_owned()
 }
@@ -531,7 +533,9 @@ pub const fn is_on_main_screen(state: &crate::tui::console::ConsoleState) -> boo
     is_main_screen_for_route(ms.stage.route(), ms.list_modal.is_some())
 }
 
-pub const fn screen_of(state: &crate::tui::console::ConsoleState) -> jackin_diagnostics::Screen {
+pub const fn screen_of(
+    state: &crate::tui::console::ConsoleState,
+) -> jackin_telemetry::schema::enums::ScreenId {
     let crate::tui::console::ConsoleStage::Manager(ms) = &state.stage;
     diagnostics_screen_for_stage(console_screen_stage_for_route(ms.stage.route()))
 }
@@ -555,7 +559,7 @@ pub const fn letter_input_state_for_console(
             Some(modal) => modal.letter_input_kind(),
             None => None,
         },
-        ManagerStage::Settings(settings) => match &settings.mounts.modal {
+        ManagerStage::Settings(settings) => match settings.mounts.modals.current() {
             Some(modal) => modal.letter_input_kind(),
             None => None,
         },

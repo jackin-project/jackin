@@ -1,16 +1,15 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! G0 shared-runtime wiring for the console TUI.
+//! Shared jackin❯ application-adapter wiring for the console TUI.
 //!
 //! The shared TEA `Component<Ev, Msg>` and `View<Model>` contracts live in
-//! `termrock::runtime`. This module is the console's implementation of
+//! `jackin_tui::runtime`. This module is the console's implementation of
 //! those traits over its model (`ConsoleState`) and the existing render
 //! function (`crate::tui::view::render`). The trait impls are thin
 //! delegations that satisfy the shared contract at the type level. The
-//! existing event loop in `crates/jackin/src/console/tui/run.rs` continues
-//! to call `view::render` directly; migrating it to trait dispatch is a
-//! follow-up tracked as a later W6 phase.
+//! existing event loop in `crates/jackin/src/console/adapter/run.rs` owns
+//! scheduling and dispatches rendering through this adapter.
 
 #[derive(Debug)]
 pub struct ConsoleViewContext<'a> {
@@ -23,7 +22,7 @@ pub struct ConsoleView<'a> {
     pub context: ConsoleViewContext<'a>,
 }
 
-impl termrock::runtime::View<crate::tui::console::ConsoleState> for ConsoleView<'_> {
+impl jackin_tui::runtime::View<crate::tui::console::ConsoleState> for ConsoleView<'_> {
     fn render(
         &self,
         model: &crate::tui::console::ConsoleState,
@@ -35,8 +34,8 @@ impl termrock::runtime::View<crate::tui::console::ConsoleState> for ConsoleView<
     }
 }
 
+use jackin_tui::runtime::{Subscription, SubscriptionPoll};
 use std::future::Future;
-use termrock::runtime::{Subscription, SubscriptionPoll};
 
 #[derive(Debug)]
 pub struct BlockingSubscription<T>(tokio::sync::oneshot::Receiver<T>);
@@ -77,10 +76,11 @@ where
 {
     let (tx, rx) = tokio::sync::oneshot::channel();
     let run = move || drop(tx.send(worker()));
-    if let Ok(handle) = tokio::runtime::Handle::try_current() {
-        handle.spawn_blocking(run);
+    let name = name.into();
+    if tokio::runtime::Handle::try_current().is_ok() {
+        drop(jackin_telemetry::spawn::joined_blocking(run));
     } else {
-        drop(std::thread::Builder::new().name(name.into()).spawn(run));
+        drop(jackin_telemetry::spawn::thread_joined_named(name, run));
     }
     BlockingSubscription(rx)
 }
@@ -95,21 +95,21 @@ where
 {
     let (tx, rx) = tokio::sync::oneshot::channel();
     let run = async move { drop(tx.send(future.await)) };
-    if let Ok(handle) = tokio::runtime::Handle::try_current() {
-        handle.spawn(run);
+    let name = name.into();
+    if tokio::runtime::Handle::try_current().is_ok() {
+        drop(jackin_telemetry::spawn::spawn_joined(run));
     } else {
-        drop(
-            std::thread::Builder::new()
-                .name(name.into())
-                .spawn(move || {
-                    if let Ok(runtime) = tokio::runtime::Builder::new_current_thread()
-                        .enable_all()
-                        .build()
-                    {
-                        runtime.block_on(run);
-                    }
-                }),
-        );
+        drop(jackin_telemetry::spawn::thread_joined_named(
+            name,
+            move || {
+                if let Ok(runtime) = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                {
+                    runtime.block_on(run);
+                }
+            },
+        ));
     }
     BlockingSubscription(rx)
 }

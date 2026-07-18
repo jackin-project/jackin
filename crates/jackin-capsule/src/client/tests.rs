@@ -7,6 +7,28 @@ use std::path::PathBuf;
 use tempfile::TempDir;
 use tokio::net::UnixListener;
 
+#[tokio::test]
+async fn control_ack_reader_consumes_and_decodes_full_frame() {
+    let (mut writer, mut reader) = UnixStream::pair().unwrap();
+    writer
+        .write_all(&control_frame(&ServerMsg::Ack))
+        .await
+        .unwrap();
+    assert!(matches!(
+        read_control_reply(&mut reader).await.unwrap(),
+        ServerMsg::Ack
+    ));
+}
+
+#[tokio::test]
+async fn control_ack_reader_rejects_truncated_body() {
+    let (mut writer, mut reader) = UnixStream::pair().unwrap();
+    writer.write_all(&8_u32.to_be_bytes()).await.unwrap();
+    writer.write_all(b"{}").await.unwrap();
+    writer.shutdown().await.unwrap();
+    read_control_reply(&mut reader).await.unwrap_err();
+}
+
 fn account(
     provider: &str,
     status: &str,
