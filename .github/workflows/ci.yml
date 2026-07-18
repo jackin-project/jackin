@@ -534,6 +534,7 @@ jobs:
         run: rustup set profile minimal
       - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
         if: >-
+          steps.toolchain-lookup.outputs.cache-hit != 'true' ||
           env.CI_XTASK_HIT != 'true' ||
           env.CI_TOOLS_HIT != 'true'
         with:
