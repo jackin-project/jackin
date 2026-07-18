@@ -22,6 +22,7 @@ proc-macro2 = { workspace = true }
 quick-xml = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true, features = ["preserve_order"] }
+serde_yaml_ng = { workspace = true }
 sha2 = { workspace = true }
 syn = { workspace = true, features = ["full", "visit", "parsing", "extra-traits"] }
 toml = { workspace = true }

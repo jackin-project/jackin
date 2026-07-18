@@ -8,8 +8,9 @@ use ratatui::layout::Rect;
 
 use super::{
     BUILD_LOG_SCROLL_STEP, CockpitContext, QuitConfirmOutcome, apply_quit_confirm_key,
-    cockpit_outcome_for_quit_confirm, emit_dialog_mouse_debug_telemetry, handle_cockpit_mouse_down,
-    is_ctrl_c, should_emit_dialog_mouse, update_build_log_mouse_scroll,
+    build_log_action_name, cockpit_action_name, cockpit_outcome_for_quit_confirm,
+    emit_dialog_mouse_debug_telemetry, handle_cockpit_mouse_down, is_ctrl_c,
+    should_emit_dialog_mouse, update_build_log_mouse_scroll,
 };
 use crate::LaunchHostTerminal;
 use crate::tui::components::container_info_dialog::{
@@ -199,8 +200,6 @@ fn failure_failure() -> LaunchFailure {
         detail: None,
         next_step: None,
         stage: LaunchStage::DerivedImage,
-        diagnostics_path: None,
-        command_output_path: None,
     }
 }
 
@@ -213,7 +212,6 @@ fn failure_popup_outside_click_acknowledges() {
     let ctx = CockpitContext {
         area,
         run_id: "jk-run-test",
-        run_log_path: Some("/tmp/jk-run-test.jsonl"),
         terminal: &terminal,
         jackin_version: "jackin 0.0.0-test",
     };
@@ -240,7 +238,6 @@ fn failure_popup_inside_non_target_click_is_swallowed() {
     let ctx = CockpitContext {
         area,
         run_id: "jk-run-test",
-        run_log_path: Some("/tmp/jk-run-test.jsonl"),
         terminal: &terminal,
         jackin_version: "jackin 0.0.0-test",
     };
@@ -281,7 +278,6 @@ fn build_log_body_click_is_swallowed() {
         CockpitContext {
             area,
             run_id: "jk-run-test",
-            run_log_path: Some("/tmp/jk-run-test.jsonl"),
             terminal,
             jackin_version: "jackin 0.0.0-test",
         },
@@ -294,35 +290,24 @@ fn build_log_body_click_is_swallowed() {
 }
 
 #[test]
-fn container_info_click_copies_real_run_id_and_log_path() {
+fn container_info_click_copies_real_run_id() {
     let mut view = crate::tui::update::initial_view();
     view.container_info_open = true;
     let area = Rect::new(0, 0, 96, 24);
     let run_id = "jk-run-test";
-    let run_log_path = "/tmp/jackin/runs/jk-run-test.jsonl";
     let terminal = RecordingTerminal::new();
     let ctx = CockpitContext {
         area,
         run_id,
-        run_log_path: Some(run_log_path),
         terminal: &terminal,
         jackin_version: "jackin 0.0.0-test",
     };
 
-    let state =
-        launch_container_info_state(&view, run_id, Some(run_log_path), true, "jackin 0.0.0-test");
+    let state = launch_container_info_state(&view, run_id, true, "jackin 0.0.0-test");
     let (run_col, run_row) = hit_point_for_payload(area, &state, run_id);
     handle_cockpit_mouse_down(&mut view, ctx, run_col, run_row);
 
-    let state =
-        launch_container_info_state(&view, run_id, Some(run_log_path), true, "jackin 0.0.0-test");
-    let (log_col, log_row) = hit_point_for_payload(area, &state, run_log_path);
-    handle_cockpit_mouse_down(&mut view, ctx, log_col, log_row);
-
-    assert_eq!(
-        terminal.copied(),
-        vec![run_id.to_owned(), run_log_path.to_owned()]
-    );
+    assert_eq!(terminal.copied(), vec![run_id.to_owned()]);
 }
 
 fn quit_confirm_view() -> crate::LaunchView {
@@ -395,4 +380,38 @@ fn quit_confirm_focus_toggle_keeps_dialog_open() {
     // After toggling away from the exit prompt's focused Yes, Enter dismisses.
     let out = apply_quit_confirm_key(&mut view, KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
     assert_eq!(out, QuitConfirmOutcome::Dismissed);
+}
+
+#[test]
+fn cockpit_actions_are_exhaustively_semantic() {
+    use crate::tui::keymap::CockpitAction;
+    use jackin_telemetry::schema::enums::UiActionName;
+
+    assert_eq!(
+        cockpit_action_name(CockpitAction::HardExit),
+        UiActionName::AppExitRequest
+    );
+    assert_eq!(
+        cockpit_action_name(CockpitAction::OpenQuitConfirm),
+        UiActionName::AppExitRequest
+    );
+}
+
+#[test]
+fn build_log_actions_classify_close_only() {
+    use crate::tui::keymap::BuildLogAction;
+    use jackin_telemetry::schema::enums::UiActionName;
+
+    assert_eq!(
+        build_log_action_name(BuildLogAction::Close),
+        Some(UiActionName::DialogCancel)
+    );
+    for action in [
+        BuildLogAction::ScrollUp,
+        BuildLogAction::ScrollDown,
+        BuildLogAction::PageUp,
+        BuildLogAction::PageDown,
+    ] {
+        assert_eq!(build_log_action_name(action), None);
+    }
 }

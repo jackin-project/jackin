@@ -279,29 +279,103 @@ impl std::fmt::Display for KubernetesVersion {
 
 /// Migrate a global `config.toml` to the current schema if needed.
 pub fn migrate_config_file_if_needed(path: &Path) -> crate::ConfigResult<bool> {
-    Ok(
-        migrate_file_if_needed(path, "config", CURRENT_CONFIG_VERSION, CONFIG_MIGRATIONS)?
-            .is_some(),
-    )
+    let result = migrate_file_if_needed(path, "config", CURRENT_CONFIG_VERSION, CONFIG_MIGRATIONS);
+    emit_migration_result("global", CURRENT_CONFIG_VERSION, CONFIG_MIGRATIONS, &result);
+    result
+        .map(|version| version.is_some())
+        .map_err(ConfigError::telemetry_owned)
 }
 
 /// Migrate a split workspace file to the current schema if needed.
 pub fn migrate_workspace_file_if_needed(path: &Path) -> crate::ConfigResult<bool> {
-    Ok(migrate_file_if_needed(
+    let result = migrate_file_if_needed(
         path,
         "workspace config",
         CURRENT_WORKSPACE_VERSION,
         WORKSPACE_MIGRATIONS,
-    )?
-    .is_some())
+    );
+    emit_migration_result(
+        "workspace",
+        CURRENT_WORKSPACE_VERSION,
+        WORKSPACE_MIGRATIONS,
+        &result,
+    );
+    result
+        .map(|version| version.is_some())
+        .map_err(ConfigError::telemetry_owned)
+}
+
+fn emit_migration_result(
+    scope: &'static str,
+    current: &'static str,
+    migrations: &[MigrationStep],
+    result: &crate::ConfigResult<Option<SchemaVersion>>,
+) {
+    let from = result
+        .as_ref()
+        .ok()
+        .and_then(Option::as_ref)
+        .map(ToString::to_string);
+    let outcome = match result {
+        Ok(Some(_)) => "success",
+        Ok(None) => "skip",
+        Err(_) => "failure",
+    };
+    let mut attrs = vec![
+        jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::CONFIG_SCOPE,
+            value: jackin_telemetry::Value::Str(scope),
+        },
+        jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::CONFIG_OPERATION,
+            value: jackin_telemetry::Value::Str("migrate"),
+        },
+        jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::OUTCOME,
+            value: jackin_telemetry::Value::Str(outcome),
+        },
+    ];
+    if let Some(from) = from.as_deref() {
+        let step_count = u64::try_from(
+            migrations
+                .iter()
+                .skip_while(|step| step.from != from)
+                .take_while(|step| step.from != current)
+                .count(),
+        )
+        .unwrap_or(u64::MAX);
+        attrs.extend([
+            jackin_telemetry::Attr {
+                key: jackin_telemetry::schema::attrs::CONFIG_SCHEMA_VERSION_FROM,
+                value: jackin_telemetry::Value::Str(from),
+            },
+            jackin_telemetry::Attr {
+                key: jackin_telemetry::schema::attrs::CONFIG_SCHEMA_VERSION_TO,
+                value: jackin_telemetry::Value::Str(current),
+            },
+            jackin_telemetry::Attr {
+                key: jackin_telemetry::schema::attrs::CONFIG_MIGRATION_STEP_COUNT,
+                value: jackin_telemetry::Value::U64(step_count),
+            },
+        ]);
+    }
+    if result.is_err() {
+        attrs.push(jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::std_attrs::ERROR_TYPE,
+            value: jackin_telemetry::Value::Str("config_error"),
+        });
+    }
+    let _result = jackin_telemetry::emit_event(
+        &jackin_telemetry::event::CONFIG_OPERATION,
+        jackin_telemetry::FieldSet::new(&attrs, None),
+    );
 }
 
 /// Read `path`, run any pending migrations, write the result back atomically.
 ///
 /// Returns `Some(old_version)` when a migration ran, `None` when the file
-/// was already at `current_raw`. Records `{label} migrated {old} ->
-/// {current_raw}` in the run diagnostics log (debug runs only) — never on
-/// screen, since the operator did not ask for the upgrade. Wrappers
+/// was already at `current_raw`. Emits a governed configuration-operation event
+/// without configuration values or paths. Wrappers
 /// (e.g. `manifest::migrations::migrate_manifest_file`) project the
 /// `SchemaVersion` into display strings for callers that need to print
 /// both ends.
@@ -331,10 +405,6 @@ pub fn migrate_file_if_needed(
     apply_migrations(&mut doc, &old_version, &current, migrations, label)?;
     atomic_write(path, &doc.to_string())
         .with_context(|| format!("writing migrated {label} to {}", path.display()))?;
-    // Migration is a silent, automatic upgrade — the operator never asked for
-    // it and must not see it on screen. Record it in the run diagnostics log
-    // (debug runs only); a clean (non-debug) run stays quiet.
-    jackin_core::debug_log!("config", "{label} migrated {old_version} -> {current_raw}");
     Ok(Some(old_version))
 }
 

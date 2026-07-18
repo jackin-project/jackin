@@ -10,6 +10,53 @@ use std::sync::{
 };
 
 #[test]
+fn runtime_setup_process_boundary_classifies_and_redacts_failures() {
+    let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
+    tracing::subscriber::with_default(subscriber, || {
+        let success = runtime_setup_request(&jackin_process::ExecRequest::new(
+            "sh",
+            ["-c", "printf operator-secret-success"],
+        ))
+        .expect("successful process request");
+        assert!(success.success);
+
+        let nonzero = runtime_setup_request(&jackin_process::ExecRequest::new(
+            "sh",
+            ["-c", "printf operator-secret-failure >&2; exit 7"],
+        ))
+        .expect("nonzero process result");
+        assert!(!nonzero.success);
+
+        let spawn_error = runtime_setup_request(&jackin_process::ExecRequest::new(
+            "operator-secret-missing-program",
+            std::iter::empty::<&str>(),
+        ))
+        .err();
+        assert!(spawn_error.is_some());
+    });
+    export.force_flush();
+
+    let spans = export.finished_spans();
+    assert_eq!(spans.len(), 3);
+    assert!(
+        spans
+            .iter()
+            .all(|span| span.name == jackin_telemetry::schema::spans::PROCESS_COMMAND)
+    );
+    assert_eq!(export.error_span_count(), 2);
+    assert!(export.contains_span_text("process_exit_nonzero"));
+    assert!(export.contains_span_text("process_spawn_error"));
+    for secret in [
+        "operator-secret-success",
+        "operator-secret-failure",
+        "operator-secret-missing-program",
+    ] {
+        assert!(!export.contains_span_text(secret));
+        assert!(!export.contains_log_text(secret));
+    }
+}
+
+#[test]
 fn container_init_marker_is_container_local() {
     assert_eq!(CONTAINER_INIT_MARKER, "/jackin/state/container-init.done");
 }
@@ -29,25 +76,77 @@ fn apply_forwarded_credential_first_seed_reseed_and_no_clobber() {
     };
 
     // First seed with a forwarded file: seeds the target.
-    apply_forwarded_credential(true, &spec).expect("first seed");
+    apply_forwarded_credential(true, AuthMode::Sync, &spec).expect("first seed");
     assert_eq!(fs::read_to_string(&target).unwrap(), "FORWARDED");
 
     // Later launch with the target present: a token the agent refreshed
     // in-container is never clobbered.
     fs::write(&target, b"REFRESHED").unwrap();
-    apply_forwarded_credential(false, &spec).expect("no-clobber");
+    apply_forwarded_credential(false, AuthMode::Sync, &spec).expect("no-clobber");
     assert_eq!(fs::read_to_string(&target).unwrap(), "REFRESHED");
 
     // Later launch with the target missing but forwarded present: re-seeds.
     fs::remove_file(&target).unwrap();
-    apply_forwarded_credential(false, &spec).expect("re-seed");
+    apply_forwarded_credential(false, AuthMode::Sync, &spec).expect("re-seed");
     assert_eq!(fs::read_to_string(&target).unwrap(), "FORWARDED");
 
     // First seed with no forwarded file and no api key: clears the stale target.
     fs::write(&target, b"STALE").unwrap();
     fs::remove_file(&forwarded).unwrap();
-    apply_forwarded_credential(true, &spec).expect("first seed without forward");
+    apply_forwarded_credential(true, AuthMode::Sync, &spec).expect("first seed without forward");
     assert!(!target.exists(), "stale target must be removed");
+}
+
+#[test]
+fn bounded_modes_remove_stale_credentials_and_classify_unavailable_material() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let forwarded = tmp.path().join("private-forwarded.json");
+    let target = tmp.path().join("private-auth.json");
+    fs::write(&target, b"STALE_SECRET").unwrap();
+    let spec = ForwardedCredential {
+        label: "test",
+        forwarded: &forwarded,
+        target: &target,
+        api_key_envs: &[],
+    };
+
+    let ignored = apply_forwarded_credential(false, AuthMode::Ignore, &spec).unwrap();
+    assert!(!target.exists());
+    assert_eq!(ignored.outcome.as_str(), "skip");
+    assert_eq!(ignored.source.as_str(), "none");
+
+    fs::write(&target, b"STALE_SECRET").unwrap();
+    let unavailable = apply_forwarded_credential(false, AuthMode::ApiKey, &spec).unwrap();
+    assert!(!target.exists());
+    assert_eq!(unavailable.outcome.as_str(), "failure");
+    assert_eq!(unavailable.source.as_str(), "none");
+    assert_eq!(
+        unavailable.error.unwrap().as_str(),
+        "credential_unavailable"
+    );
+}
+
+#[test]
+fn capsule_auth_provision_event_is_exactly_once_bounded_and_private() {
+    let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
+    let materialization = AuthMaterialization {
+        source: jackin_telemetry::schema::enums::CredentialSourceType::Environment,
+        outcome: jackin_telemetry::schema::enums::OutcomeValue::Error,
+        error: Some(jackin_telemetry::schema::enums::ErrorType::IoError),
+    };
+
+    tracing::subscriber::with_default(subscriber, || {
+        emit_capsule_auth_provision("codex", AuthMode::ApiKey, Ok(&materialization));
+    });
+    export.force_flush();
+
+    assert_eq!(export.event_count("auth.provision"), 1);
+    assert!(export.contains_log_text("codex"));
+    assert!(export.contains_log_text("api_key"));
+    assert!(export.contains_log_text("environment"));
+    assert!(export.contains_log_text("io_error"));
+    assert!(!export.contains_log_text("private-forwarded.json"));
+    assert!(!export.contains_log_text("STALE_SECRET"));
 }
 
 // ── Agent config-dir env resolution ─────────────────────────────────

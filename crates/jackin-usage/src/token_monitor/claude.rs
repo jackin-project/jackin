@@ -11,7 +11,7 @@
 use std::path::PathBuf;
 use std::time::SystemTime;
 
-use super::{TokenSession, json_u64};
+use super::{PollStatus, TokenSession, json_u64};
 
 /// Per-line token fields from Claude JSONL.
 #[derive(Debug, Default)]
@@ -49,7 +49,7 @@ fn parse_line(line: &str) -> Option<ClaudeUsageLine> {
     })
 }
 
-fn find_jsonl_files() -> Vec<PathBuf> {
+fn find_jsonl_files() -> Result<Vec<PathBuf>, super::ProviderReadDegraded> {
     super::find_provider_files(
         &[
             "/home/agent/.config/claude/projects",
@@ -60,9 +60,11 @@ fn find_jsonl_files() -> Vec<PathBuf> {
     )
 }
 
-pub(crate) fn poll_session(session: &mut TokenSession) -> bool {
-    let files = find_jsonl_files();
-    let Some(acc) = super::recompute_spend(&files, "claude", |text, acc| {
+pub(crate) fn poll_session(session: &mut TokenSession) -> PollStatus {
+    let Ok(files) = find_jsonl_files() else {
+        return PollStatus::Degraded;
+    };
+    let acc = match super::recompute_spend(&files, |text, acc| {
         for line in text.lines() {
             if line.trim().is_empty() {
                 continue;
@@ -89,15 +91,17 @@ pub(crate) fn poll_session(session: &mut TokenSession) -> bool {
             }
             acc.seen = true;
         }
-    }) else {
-        return false;
+    }) {
+        Ok(Some(acc)) => acc,
+        Ok(None) => return PollStatus::Unchanged,
+        Err(super::ProviderReadDegraded) => return PollStatus::Degraded,
     };
 
     let changed = acc.commit(&mut session.totals);
     if changed && session.totals.window_start.is_none() {
         session.totals.window_start = Some(SystemTime::now());
     }
-    changed
+    PollStatus::from_changed(changed)
 }
 
 #[cfg(test)]

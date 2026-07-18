@@ -89,9 +89,16 @@ pub(super) fn emit_auth_breadcrumbs(
     }
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "launch config combines resolved role, workspace, auth, isolation, and policy state"
+)]
 pub(super) fn workspace_launch_config(
+    config: &jackin_config::AppConfig,
     selector: &jackin_core::RoleSelector,
     workspace: &jackin_config::ResolvedWorkspace,
+    workspace_name: Option<&WorkspaceName>,
+    role_key: &str,
     validated_repo: &jackin_manifest::repo::ValidatedRoleRepo,
     opts: &crate::runtime::launch::LoadOptions,
     materialized: &crate::isolation::materialize::MaterializedWorkspace,
@@ -111,6 +118,12 @@ pub(super) fn workspace_launch_config(
         opts.initial_provider(),
         dirty_exit_policy,
         isolated_worktrees,
+    );
+    launch_config.auth_modes = crate::runtime::launch::capsule_setup::capsule_auth_modes(
+        config,
+        workspace_name,
+        role_key,
+        &validated_repo.manifest,
     );
     launch_config.exec_bindings = exec_bindings;
     launch_config

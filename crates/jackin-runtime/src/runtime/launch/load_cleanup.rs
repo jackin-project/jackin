@@ -13,10 +13,9 @@ use jackin_docker::docker_client::DockerApi;
 use crate::runtime::progress::launch_output;
 
 fn record_cleanup_teardown_failure(body: &'static str) {
-    let span = jackin_diagnostics::operation_span("launch.cleanup", &[]);
-    span.in_scope(|| {
-        jackin_diagnostics::operation_error("launch.cleanup", "cleanup_teardown_failed", body, &[]);
-    });
+    let _error =
+        jackin_telemetry::record_error(jackin_telemetry::schema::enums::ErrorType::LaunchFailed);
+    jackin_diagnostics::emit_operator_notice(body);
 }
 
 pub(crate) fn write_if_changed_atomic(

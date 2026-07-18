@@ -1109,15 +1109,14 @@ fn open_role_resolution_error(
     editor: &mut EditorState<'_>,
     raw: &str,
     source_url: Option<&String>,
-    err: &anyhow::Error,
+    _err: &anyhow::Error,
 ) {
     use crate::tui::components::error_popup::{
         configured_role_load_error_message, generic_role_repository_error_message,
         repository_role_load_error_message,
     };
-    jackin_diagnostics::debug_log!(
-        "role",
-        "showing role-load error popup for raw={raw:?}: {err:?}"
+    crate::tui::state::record_console_error(
+        jackin_telemetry::schema::enums::ErrorType::ConfigError,
     );
     let message = source_url.map_or_else(
         || configured_role_load_error_message(raw),

@@ -75,3 +75,34 @@ fn account_hash_is_stable_and_namespaced() {
         account_key_hash("claude", "alexey@example.com")
     );
 }
+
+#[tokio::test]
+async fn host_account_cache_exports_owned_operations_without_payloads() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("host-cache-secret-path");
+    let paths = JackinPaths::for_tests(&root);
+    let mut sensitive_account = account("host-cache-secret-window", 37);
+    sensitive_account.account_label = "host-cache-secret@example.com".to_owned();
+
+    let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
+    let _subscriber = tracing::subscriber::set_default(subscriber);
+
+    upsert_accounts(&paths, &[sensitive_account]).await.unwrap();
+    read_accounts(&paths).await.unwrap();
+
+    export.force_flush();
+    assert_eq!(export.finished_spans().len(), 7);
+    assert_eq!(export.error_span_count(), 0);
+    for expected in ["connect", "update", "upsert", "select"] {
+        assert!(export.contains_span_text(expected), "missing {expected}");
+    }
+    for prohibited in [
+        "host-cache-secret-path",
+        "host-cache-secret-window",
+        "host-cache-secret@example.com",
+        "account_usage_snapshots",
+        "CREATE TABLE",
+    ] {
+        assert!(!export.contains_span_text(prohibited));
+    }
+}

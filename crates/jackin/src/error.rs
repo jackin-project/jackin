@@ -53,6 +53,33 @@ impl ErrorCode {
             Self::E016 => "E016",
         }
     }
+
+    /// Stable semantic-convention `error.type` for this operator error.
+    pub const fn telemetry_error(self) -> jackin_telemetry::schema::enums::ErrorType {
+        use jackin_telemetry::schema::enums::ErrorType;
+        match self {
+            Self::E001 => ErrorType::DockerDaemonUnreachable,
+            Self::E002 => ErrorType::DockerVersionTooOld,
+            Self::E003 => ErrorType::OutOfDiskSpace,
+            Self::E004 => ErrorType::RoleManifestInvalid,
+            Self::E005 => ErrorType::RoleManifestVersionUnsupported,
+            Self::E006 => ErrorType::RoleSourceNotTrusted,
+            Self::E007 => ErrorType::WorkspaceNotFound,
+            Self::E008 => ErrorType::WorkspaceConfigVersionUnsupported,
+            Self::E009 => ErrorType::ContainerNameConflict,
+            Self::E010 => ErrorType::DindHealthCheckFailed,
+            Self::E011 => ErrorType::DindPortConflict,
+            Self::E012 => ErrorType::GhAuthFailed,
+            Self::E013 => ErrorType::OpNotSignedIn,
+            Self::E014 => ErrorType::CapsuleDownloadFailed,
+            Self::E015 => ErrorType::WorktreeConflict,
+            Self::E016 => ErrorType::UnsupportedOtlpProtocol,
+        }
+    }
+
+    pub const fn telemetry_error_type(self) -> &'static str {
+        self.telemetry_error().as_str()
+    }
 }
 
 /// Structured hint for fixing a `JackinError`.
@@ -158,7 +185,7 @@ pub enum JackinError {
     #[error("Worktree materialization conflict: {path}")]
     WorktreeConflict { path: String },
 
-    #[error("Unsupported OTLP protocol: {requested}")]
+    #[error("Unsupported OTLP protocol configured via {requested}")]
     UnsupportedOtlpProtocol { requested: String },
 }
 
@@ -223,7 +250,7 @@ impl JackinError {
             Self::DindHealthCheckFailed { .. } => UserMessage::new(
                 ErrorCode::E010,
                 "Docker-in-Docker sidecar failed its health check",
-                "Run with `--debug` and share the run id to diagnose. Try `jackin purge` to clean up and re-launch.",
+                "Run with `--debug` for additional operator output and share the invocation ID when OTLP export is configured. Try `jackin purge` to clean up and re-launch.",
             ),
 
             Self::DindPortConflict { port } => UserMessage::new(
@@ -261,7 +288,7 @@ impl JackinError {
                 "Unsupported OTLP protocol",
                 "jackin exports OTLP over gRPC only. Set OTEL_EXPORTER_OTLP_PROTOCOL=grpc (point OTEL_EXPORTER_OTLP_ENDPOINT at the gRPC endpoint, e.g. http://localhost:4317), or unset the OTLP endpoint vars to disable export.",
             ).with_detail(format!(
-                "Requested protocol {requested:?} via OTEL_EXPORTER_OTLP_*_PROTOCOL; supported: grpc."
+                "Unsupported value configured via {requested}; supported: grpc."
             )),
         }
     }

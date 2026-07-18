@@ -2,12 +2,69 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use std::thread;
 
 #[test]
 fn compact_count_uses_token_suffixes() {
     assert_eq!(compact_count(999), "999");
     assert_eq!(compact_count(1_500), "1.5K");
     assert_eq!(compact_count(2_000_000), "2.0M");
+}
+
+#[test]
+fn provider_connector_exports_physical_attempts_without_endpoint_material() {
+    use std::io::{Read as _, Write as _};
+
+    let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
+    let _subscriber = tracing::subscriber::set_default(subscriber);
+    let listener = std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).unwrap();
+    let address = listener.local_addr().unwrap();
+    let server = thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        let mut request = [0_u8; 1024];
+        let _read = stream.read(&mut request).unwrap();
+        stream
+            .write_all(b"HTTP/1.1 200 OK\r\ncontent-length: 2\r\nconnection: close\r\n\r\nok")
+            .unwrap();
+    });
+    let secret_route = "provider-secret-route?token=provider-secret-query";
+    provider_http_client()
+        .unwrap()
+        .get(format!("http://{address}/{secret_route}"))
+        .send()
+        .unwrap();
+    server.join().unwrap();
+
+    let refused = std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).unwrap();
+    let refused_address = refused.local_addr().unwrap();
+    drop(refused);
+    provider_http_client()
+        .unwrap()
+        .get(format!("http://{refused_address}/{secret_route}"))
+        .send()
+        .unwrap_err();
+
+    export.force_flush();
+    let spans = export.finished_spans();
+    assert_eq!(spans.len(), 2);
+    assert!(
+        spans
+            .iter()
+            .all(|span| span.name == jackin_telemetry::schema::spans::CONNECTION_ATTEMPT)
+    );
+    assert_eq!(export.error_span_count(), 1);
+    assert!(export.contains_span_text("provider"));
+    assert!(export.contains_span_text("error"));
+    assert!(export.contains_span_text("io_error"));
+    for prohibited in [
+        secret_route,
+        "provider-secret-query",
+        &address.to_string(),
+        &refused_address.to_string(),
+    ] {
+        assert!(!export.contains_span_text(prohibited));
+        assert!(!export.contains_log_text(prohibited));
+    }
 }
 
 #[test]
@@ -231,7 +288,7 @@ fn codex_rpc_maps_spark_windows_and_reset_credits() {
 fn usage_status_label_prefers_in_memory_cache_before_store() {
     let dir = tempfile::tempdir().expect("tempdir");
     let mut cache = UsageCache::default();
-    cache.set_telemetry_store_path(dir.path().join("missing").join("usage.sqlite3"));
+    cache.set_usage_snapshot_store_path(dir.path().join("missing").join("snapshots.db"));
     let view = codex_cached_usage_view();
     let expected = view.status_bar_label.clone();
     cache.snapshots.insert(
@@ -249,7 +306,7 @@ fn usage_status_label_prefers_in_memory_cache_before_store() {
 fn usage_snapshot_prefers_in_memory_cache_before_store() {
     let dir = tempfile::tempdir().expect("tempdir");
     let mut cache = UsageCache::default();
-    cache.set_telemetry_store_path(dir.path().join("missing").join("usage.sqlite3"));
+    cache.set_usage_snapshot_store_path(dir.path().join("missing").join("snapshots.db"));
     let view = codex_cached_usage_view();
     let expected_label = view.status_bar_label.clone();
     cache.snapshots.insert(
@@ -272,11 +329,11 @@ fn usage_snapshot_prefers_in_memory_cache_before_store() {
 #[test]
 fn usage_status_label_does_not_read_store_on_cache_miss() {
     let dir = tempfile::tempdir().expect("tempdir");
-    let db = dir.path().join("usage.sqlite3");
-    crate::telemetry_store::store_usage_snapshot(&db, &codex_cached_usage_view())
+    let db = dir.path().join("snapshots.db");
+    crate::usage_snapshot_store::store_usage_snapshot(&db, &codex_cached_usage_view())
         .expect("store usage snapshot");
     let mut cache = UsageCache::default();
-    cache.set_telemetry_store_path(db);
+    cache.set_usage_snapshot_store_path(db);
 
     // A focused agent with no cached snapshot is mid-load → `refreshing`
     // (P3), computed without touching the store.
@@ -289,11 +346,11 @@ fn usage_status_label_does_not_read_store_on_cache_miss() {
 #[test]
 fn usage_snapshot_does_not_read_store_on_cache_miss() {
     let dir = tempfile::tempdir().expect("tempdir");
-    let db = dir.path().join("usage.sqlite3");
-    crate::telemetry_store::store_usage_snapshot(&db, &codex_cached_usage_view())
+    let db = dir.path().join("snapshots.db");
+    crate::usage_snapshot_store::store_usage_snapshot(&db, &codex_cached_usage_view())
         .expect("store usage snapshot");
     let mut cache = UsageCache::default();
-    cache.set_telemetry_store_path(db);
+    cache.set_usage_snapshot_store_path(db);
 
     let snapshot = cache.focused_snapshot(Some("codex"), Some("OpenAI"));
 
@@ -2839,6 +2896,78 @@ fn cli_output_collector_treats_reaped_child_as_success() {
     assert_eq!(output.stdout, "usage rows");
 }
 
+#[cfg(unix)]
+#[test]
+fn usage_cli_owner_exports_outcomes_without_process_material() {
+    use std::io::Write as _;
+    use std::os::unix::fs::PermissionsExt as _;
+
+    let directory = tempfile::tempdir().unwrap();
+    let executable = directory.path().join("claude");
+    let mut file = fs::File::create(&executable).unwrap();
+    writeln!(file, "#!/bin/sh\nexec sh \"$@\"").unwrap();
+    let mut permissions = file.metadata().unwrap().permissions();
+    permissions.set_mode(0o700);
+    file.set_permissions(permissions).unwrap();
+    drop(file);
+    let command = executable.to_string_lossy();
+
+    let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
+    let _subscriber = tracing::subscriber::set_default(subscriber);
+
+    run_cli_with_timeout_full(
+        &command,
+        &["-c", "printf usage-secret-output"],
+        Duration::from_secs(1),
+    )
+    .unwrap();
+    run_cli_with_timeout_full(
+        &command,
+        &["-c", "printf usage-secret-stderr >&2; exit 17"],
+        Duration::from_secs(1),
+    )
+    .unwrap();
+    let _timeout =
+        run_cli_with_timeout_full(&command, &["-c", "sleep 1"], Duration::from_millis(5))
+            .unwrap_err();
+    let _spawn = run_cli_with_timeout_full(
+        "/usage-secret/missing/claude",
+        &["usage-secret-argument"],
+        Duration::from_secs(1),
+    )
+    .unwrap_err();
+
+    export.force_flush();
+    assert_eq!(export.finished_spans().len(), 4);
+    assert_eq!(export.error_span_count(), 3);
+    for expected in [
+        "claude",
+        "process_exit_nonzero",
+        "process_spawn_error",
+        "timeout",
+    ] {
+        assert!(export.contains_span_text(expected), "missing {expected}");
+    }
+    for prohibited in [
+        command.as_ref(),
+        "usage-secret-output",
+        "usage-secret-stderr",
+        "/usage-secret/missing/claude",
+        "usage-secret-argument",
+    ] {
+        assert!(!export.contains_span_text(prohibited));
+    }
+}
+
+#[test]
+fn usage_cli_output_capture_is_bounded() {
+    let oversized = vec![b'x'; format::PROCESS_OUTPUT_MAX + 1];
+    assert_eq!(
+        format::read_process_pipe(std::io::Cursor::new(oversized)).unwrap_err(),
+        "process output exceeded limit"
+    );
+}
+
 #[test]
 fn amp_api_usage_maps_display_balance_info() {
     let usage = AmpApiUsage::from_value(serde_json::json!({
@@ -3313,4 +3442,224 @@ fn split_fetch_partitions_ok_err_and_absent() {
         (None, Some("boom".to_owned()))
     );
     assert_eq!(split_fetch(None::<Result<u64, String>>), (None, None));
+}
+
+#[test]
+fn provider_boundary_exports_only_bounded_request_fields() {
+    let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
+    tracing::subscriber::with_default(subscriber, || {
+        let result = provider_request(
+            jackin_telemetry::schema::enums::ProviderName::Openai,
+            "GET",
+            "/backend-api/wham/usage",
+            || Ok::<_, String>("telemetry-private-response"),
+        );
+        assert_eq!(result.unwrap(), "telemetry-private-response");
+    });
+    export.force_flush();
+
+    let spans = export
+        .finished_spans()
+        .into_iter()
+        .filter(|span| span.name == jackin_telemetry::schema::spans::HTTP_CLIENT)
+        .collect::<Vec<_>>();
+    assert_eq!(spans.len(), 1);
+    for prohibited in [
+        "authorization",
+        "account_id",
+        "telemetry-private-response",
+        "?private=query",
+    ] {
+        assert!(!export.contains_span_text(prohibited));
+        assert!(!export.contains_log_text(prohibited));
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn conformance_wire_provider_boundary_exports_bounded_private_shapes() {
+    let testbed = jackin_otlp_testbed::Testbed::start().expect("start OTLP testbed");
+    jackin_diagnostics::init_wire_test_export(
+        &testbed.endpoint(),
+        jackin_diagnostics::ServiceIdentity::CAPSULE,
+    )
+    .expect("initialize wire test export");
+
+    let success = provider_request(
+        jackin_telemetry::schema::enums::ProviderName::Openai,
+        "GET",
+        "/backend-api/wham/usage",
+        || Ok::<_, String>("private-provider-response"),
+    );
+    assert_eq!(
+        success.expect("provider request succeeds"),
+        "private-provider-response"
+    );
+    let failure = provider_request(
+        jackin_telemetry::schema::enums::ProviderName::Anthropic,
+        "POST",
+        "/api/oauth/usage",
+        || Err::<(), _>("private-token private-account ?private=query".to_owned()),
+    );
+    assert!(failure.is_err());
+    jackin_diagnostics::flush_wire_test_export().expect("flush wire test export");
+
+    let deadline = Instant::now() + Duration::from_secs(2);
+    let spans = loop {
+        let spans = testbed
+            .spans()
+            .into_iter()
+            .filter(|span| span.name == "http.client")
+            .collect::<Vec<_>>();
+        if spans.len() == 2 {
+            break spans;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "provider HTTP wire spans did not arrive"
+        );
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    };
+    let wire_text = format!("{spans:?}");
+    for expected in [
+        "openai",
+        "anthropic",
+        "GET",
+        "POST",
+        "/backend-api/wham/usage",
+        "/api/oauth/usage",
+        "success",
+        "failure",
+        "http_error",
+    ] {
+        assert!(
+            wire_text.contains(expected),
+            "missing {expected}: {wire_text}"
+        );
+    }
+    let prohibited = [
+        "private-provider-response",
+        "private-token",
+        "private-account",
+        "?private=query",
+    ];
+    for value in prohibited {
+        assert!(!wire_text.contains(value), "exported {value}");
+    }
+    assert_eq!(
+        testbed.prohibited_value_violations(&prohibited),
+        Vec::<String>::new()
+    );
+    assert_eq!(testbed.legacy_namespace_violations(), Vec::<String>::new());
+    jackin_diagnostics::shutdown_capsule_tracing();
+}
+
+#[test]
+fn managed_probe_boundaries_export_fixed_private_shapes() {
+    use std::sync::mpsc;
+
+    let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
+    tracing::subscriber::with_default(subscriber, || {
+        let codex = crate::process_telemetry::ChildOperation::begin("codex");
+        codex.spawn_failed();
+        let grok = crate::process_telemetry::ChildOperation::begin("/private/bin/grok");
+        grok.io_failed();
+
+        let (codex_tx, codex_rx) = mpsc::channel();
+        codex_tx
+            .send(
+                serde_json::json!({
+                    "id": 1,
+                    "result": {"private_response": "codex-secret"}
+                })
+                .to_string(),
+            )
+            .unwrap();
+        let mut codex_wire = Vec::new();
+        codex_rpc_request(
+            &mut codex_wire,
+            &codex_rx,
+            1,
+            "account/rateLimits/read",
+            serde_json::json!({"private_request": "codex-secret"}),
+            Duration::from_secs(1),
+        )
+        .unwrap();
+        codex_rpc_notification(&mut codex_wire, "initialized").unwrap();
+
+        let (grok_tx, grok_rx) = mpsc::channel();
+        grok_tx
+            .send(
+                serde_json::json!({
+                    "id": 2,
+                    "error": {"message": "grok-private-error"}
+                })
+                .to_string(),
+            )
+            .unwrap();
+        let mut grok_wire = Vec::new();
+        grok_rpc_request(
+            &mut grok_wire,
+            &grok_rx,
+            2,
+            "x.ai/billing",
+            serde_json::json!({"private_request": "grok-secret"}),
+            Duration::from_secs(1),
+        )
+        .unwrap_err();
+
+        let (_timeout_tx, timeout_rx) = mpsc::channel();
+        codex_rpc_request(
+            &mut Vec::new(),
+            &timeout_rx,
+            3,
+            "account/read",
+            serde_json::json!({}),
+            Duration::from_millis(1),
+        )
+        .unwrap_err();
+    });
+    export.force_flush();
+
+    let spans = export.finished_spans();
+    assert_eq!(
+        spans
+            .iter()
+            .filter(|span| span.name == jackin_telemetry::schema::spans::PROCESS_COMMAND)
+            .count(),
+        2
+    );
+    assert_eq!(
+        spans
+            .iter()
+            .filter(|span| span.name == jackin_telemetry::schema::spans::RPC_CLIENT)
+            .count(),
+        4
+    );
+    for expected in [
+        "codex",
+        "grok",
+        "codex.app-server",
+        "grok.acp",
+        "account/rateLimits/read",
+        "account/read",
+        "initialized",
+        "x.ai/billing",
+        "process_spawn_error",
+        "io_error",
+        "rpc_error",
+        "timeout",
+    ] {
+        assert!(export.contains_span_text(expected), "missing {expected}");
+    }
+    for prohibited in [
+        "/private/bin/grok",
+        "private_request",
+        "private_response",
+        "codex-secret",
+        "grok-secret",
+        "grok-private-error",
+    ] {
+        assert!(!export.contains_span_text(prohibited));
+        assert!(!export.contains_log_text(prohibited));
+    }
 }

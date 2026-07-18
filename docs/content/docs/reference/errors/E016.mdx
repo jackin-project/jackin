@@ -9,9 +9,9 @@ jackin❯ exports run telemetry over OTLP/gRPC only. This error means an OTLP en
 ## What to try
 
 - Set `OTEL_EXPORTER_OTLP_PROTOCOL=grpc` (the default for backends such as Parallax) and point `OTEL_EXPORTER_OTLP_ENDPOINT` at the gRPC endpoint, e.g. `http://localhost:4317`.
-- Or unset the OTLP endpoint variables to disable export — jackin❯ then records the run to a local diagnostics file instead.
+- Or unset the OTLP endpoint variables to disable export. Product behavior continues without creating a local telemetry fallback.
 
 ## See also
 
 - [Run Telemetry](/guides/run-telemetry/) — how to configure OTLP export and where a run is recorded.
-- Pass `--debug` to any `jackin` command to enable diagnostic tracing.
+- Pass `--debug` to any `jackin` command to enable additional operator output.

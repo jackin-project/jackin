@@ -53,6 +53,8 @@ pub struct RichRenderer {
     host: &'static dyn LaunchHostTerminal,
     jackin_version: &'static str,
     input: LaunchInput,
+    screen_tracker: jackin_telemetry::ui::ScreenVisitTracker,
+    jank_monitor: jackin_telemetry::ui::JankMonitor,
 }
 
 /// Owns the background render task that ticks the cockpit independently of
@@ -79,7 +81,6 @@ impl RichDriver {
         renderer: RichRenderer,
         view: SharedView,
         run_id: String,
-        run_log_path: Option<String>,
         host: &'static dyn LaunchHostTerminal,
         jackin_version: &'static str,
         cancel_token: CancellationToken,
@@ -90,7 +91,7 @@ impl RichDriver {
         let handle = {
             let renderer = std::sync::Arc::clone(&renderer);
             let stop = std::sync::Arc::clone(&stop);
-            tokio::spawn(async move {
+            jackin_telemetry::spawn::spawn_cycle("launch.render", async move {
                 let mut interval = tokio::time::interval(std::time::Duration::from_millis(33));
                 interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
                 loop {
@@ -104,7 +105,6 @@ impl RichDriver {
                     let outcome = handle_cockpit_input(
                         &view,
                         &run_id,
-                        run_log_path.as_deref(),
                         host,
                         jackin_version,
                         &cancel_token,
@@ -128,6 +128,7 @@ impl RichDriver {
                         rr.restore_terminal();
                         break;
                     }
+                    let action_parent = jackin_telemetry::ui::take_action_parent();
                     let snapshot = match view.lock() {
                         Ok(mut v) => {
                             let build_log_lines = jackin_diagnostics::build_log::snapshot();
@@ -150,7 +151,39 @@ impl RichDriver {
                         }
                         Err(_) => continue,
                     };
-                    drop(rr.render(&snapshot, &run_id, run_log_path.as_deref()));
+                    if let Some(parent) = action_parent.as_ref() {
+                        let render_attrs = [jackin_telemetry::Attr {
+                            key: jackin_telemetry::schema::attrs::std_attrs::APP_SCREEN_ID,
+                            value: jackin_telemetry::Value::Str(
+                                jackin_telemetry::schema::enums::ScreenId::LaunchProgress.as_str(),
+                            ),
+                        }];
+                        let render_operation = parent.in_scope(|| {
+                            jackin_telemetry::operation(
+                                &jackin_telemetry::operation::UI_RENDER,
+                                &render_attrs,
+                            )
+                            .ok()
+                        });
+                        let render_result = parent.in_scope(|| rr.render(&snapshot, &run_id));
+                        if let Some(guard) = render_operation {
+                            if render_result.is_ok() {
+                                guard.complete(
+                                    jackin_telemetry::schema::enums::OutcomeValue::Success,
+                                    None,
+                                );
+                            } else {
+                                guard.complete(
+                                    jackin_telemetry::schema::enums::OutcomeValue::Failure,
+                                    Some(jackin_telemetry::schema::enums::ErrorType::IoError),
+                                );
+                            }
+                        }
+                        drop(render_result);
+                    } else {
+                        drop(rr.render(&snapshot, &run_id));
+                    }
+                    drop(action_parent);
                 }
             })
         };
@@ -335,6 +368,9 @@ impl RichRenderer {
         // Ancillary status printers (spinners) go silent while this surface
         // owns the alternate screen.
         host.set_rich_surface_active(true);
+        let mut screen_tracker = jackin_telemetry::ui::ScreenVisitTracker::new();
+        let _screen_result =
+            screen_tracker.enter(jackin_telemetry::schema::enums::ScreenId::LaunchProgress);
         Ok(Self {
             terminal,
             no_motion,
@@ -343,6 +379,8 @@ impl RichRenderer {
             host,
             jackin_version,
             input: LaunchInput::spawn(),
+            screen_tracker,
+            jank_monitor: jackin_telemetry::ui::JankMonitor::default(),
         })
     }
 
@@ -371,12 +409,7 @@ impl RichRenderer {
         self.no_motion
     }
 
-    pub fn render(
-        &mut self,
-        view: &LaunchView,
-        run_id: &str,
-        run_log_path: Option<&str>,
-    ) -> anyhow::Result<()> {
+    pub fn render(&mut self, view: &LaunchView, run_id: &str) -> anyhow::Result<()> {
         let no_motion = self.no_motion;
         // Keep the rain engine sized to the terminal. Advance it every other
         // render so the rainfall reads at the calmer main-branch speed while
@@ -406,7 +439,6 @@ impl RichRenderer {
         let adapter = LaunchViewView {
             context: LaunchRenderContext {
                 run_id,
-                run_log_path,
                 no_motion,
                 rain,
                 debug_mode: self.host.is_debug_mode(),
@@ -415,15 +447,19 @@ impl RichRenderer {
         };
         // Progress frame via shared drive_frame; OSC 8 post-pass
         // remains caller-owned per drive_frame contract.
+        let render_started = std::time::Instant::now();
         jackin_tui::runtime::drive_frame(&mut self.terminal, &adapter, view, area, |_| {})
             .map(|_| ())
             .context("rendering launch progress TUI")?;
+        self.jank_monitor.record_frame(
+            jackin_telemetry::schema::enums::ScreenId::LaunchProgress,
+            render_started.elapsed().as_secs_f64(),
+        );
         if let Some(size) = size {
             let overlays = launch_hyperlink_overlays(
                 Rect::new(0, 0, size.width, size.height),
                 view,
                 run_id,
-                run_log_path,
                 self.host.is_debug_mode(),
                 self.jackin_version,
             );
@@ -1173,6 +1209,9 @@ impl RichRenderer {
 
 impl Drop for RichRenderer {
     fn drop(&mut self) {
+        let _screen_result = self
+            .screen_tracker
+            .exit(jackin_telemetry::schema::enums::TransitionReason::Completion);
         // `restore_terminal()` sets `entered_alt_screen = false` when called
         // explicitly on cancel, making this a no-op for the cancel path.
         self.restore_terminal();

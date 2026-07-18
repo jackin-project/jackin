@@ -893,7 +893,7 @@ async fn prune_instances_reconciles_stale_active_to_crashed() {
         .expect("row retained");
     assert_eq!(entry.status, InstanceStatus::Crashed);
     let manifest =
-        InstanceManifest::read_or_log(&paths.data_dir.join(container), "test").expect("manifest");
+        InstanceManifest::read_optional_lossy(&paths.data_dir.join(container)).expect("manifest");
     assert_eq!(manifest.status, InstanceStatus::Crashed);
 }
 

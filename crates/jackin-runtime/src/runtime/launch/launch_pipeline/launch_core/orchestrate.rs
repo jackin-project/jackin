@@ -212,12 +212,8 @@ where
                     let sessions =
                         inspect_agent_sessions(docker, container_name, &ContainerState::Running)
                             .await;
-                    if let AgentSessionInventory::Unavailable(ref reason) = sessions {
-                        jackin_diagnostics::debug_log!(
-                            "instance",
-                            "inspect_agent_sessions unavailable for {container_name}: {reason}; \
-                             treating conservatively as sessions-present (container preserved)",
-                        );
+                    if let AgentSessionInventory::Unavailable(_) = sessions {
+                        let _warning = jackin_telemetry::record_recovered_degradation();
                     }
                     if matches!(&sessions, AgentSessionInventory::Sessions(v) if v.is_empty()) {
                         super::super::super::write_instance_status(
@@ -256,7 +252,6 @@ where
                     instance_manifest,
                     docker,
                     runner,
-                    "clean exit",
                 )
                 .await?;
             }
@@ -283,12 +278,6 @@ where
                 );
             }
             ContainerState::NotFound if is_preserved => {
-                jackin_diagnostics::debug_log!(
-                    "instance",
-                    "container {container_name} not found after session with Preserved decision; \
-                     removed externally during finalization — tearing down DinD/network, \
-                     preserved status on disk stands",
-                );
                 cleanup.run(docker).await;
             }
             ContainerState::NotFound => {
@@ -300,7 +289,6 @@ where
                     instance_manifest,
                     docker,
                     runner,
-                    "NotFound clean exit",
                 )
                 .await?;
             }
@@ -696,7 +684,7 @@ where
     let role_key_owned = role_key.to_owned();
     let github_ctx_owned = configured.github_ctx.clone();
     let role_state_future = async move {
-        tokio::task::spawn_blocking(move || {
+        jackin_telemetry::spawn::joined_blocking(move || {
             let resolve_mode = |candidate| {
                 jackin_config::resolve_mode(
                     &config_owned,
@@ -809,7 +797,6 @@ struct BuildImage<'a, D, R> {
     reason: crate::runtime::image::ImageInvalidationReason,
     role_git_sha: Option<String>,
     base_image_override: Option<String>,
-    source: String,
 }
 
 async fn build_image<D, R, S>(
@@ -827,18 +814,12 @@ where
         reason,
         role_git_sha,
         base_image_override,
-        source,
     } = input;
     super::super::super::emit_image_materialization_plan(
         false,
         reason.as_str(),
         common.restoring,
         common.container_name,
-    );
-    jackin_diagnostics::debug_log!(
-        "image",
-        "derived image build required from {source}: {}",
-        reason.as_str(),
     );
     common.steps.next("Preparing runtime binaries").await?;
     let image_agents = common.supported_agents.to_vec();
@@ -859,6 +840,9 @@ where
     let binaries = match binaries {
         Ok(binaries) => binaries,
         Err(error) => {
+            common
+                .steps
+                .stage_error(crate::runtime::progress::LaunchStage::AgentBinaries);
             common.cleanup.run(common.docker).await;
             return Err(error);
         }
@@ -895,11 +879,19 @@ where
     )
     .await;
     match image {
-        Ok(image) => Ok(ImageMaterialized {
-            image,
-            selected_image_reused: false,
-        }),
+        Ok(image) => {
+            common
+                .steps
+                .stage_done(crate::runtime::progress::LaunchStage::DerivedImage, "built");
+            Ok(ImageMaterialized {
+                image,
+                selected_image_reused: false,
+            })
+        }
         Err(error) => {
+            common
+                .steps
+                .stage_error(crate::runtime::progress::LaunchStage::DerivedImage);
             common.cleanup.run(common.docker).await;
             Err(error)
         }
@@ -942,16 +934,14 @@ where
                 input.container_name,
             );
             drop(input.repo_lock.take());
-            if let Some(progress) = input.steps.progress_mut() {
-                progress.stage_skipped(
-                    crate::runtime::progress::LaunchStage::AgentBinaries,
-                    "image reused",
-                );
-                progress.stage_done(
-                    crate::runtime::progress::LaunchStage::DerivedImage,
-                    "reused local image",
-                );
-            }
+            input.steps.stage_skipped(
+                crate::runtime::progress::LaunchStage::AgentBinaries,
+                "image reused",
+            );
+            input.steps.stage_done(
+                crate::runtime::progress::LaunchStage::DerivedImage,
+                "reused local image",
+            );
             Ok(ImageMaterialized {
                 image,
                 selected_image_reused: true,
@@ -965,14 +955,12 @@ where
                 base_image,
             },
         ) => {
-            let source = format!("published image {base_image}");
             build_image(
                 BuildImage {
                     common: input,
                     reason,
                     role_git_sha,
                     base_image_override: Some(base_image),
-                    source,
                 },
                 sidecar,
                 early_sidecar_result,
@@ -992,7 +980,6 @@ where
                     reason,
                     role_git_sha,
                     base_image_override: None,
-                    source: "workspace Dockerfile".to_owned(),
                 },
                 sidecar,
                 early_sidecar_result,
@@ -1204,6 +1191,7 @@ async fn prepare_active_launch<D, R, S>(
     launch: &mut ActiveLaunch<'_, D, R>,
     mut sidecar: Pin<&mut S>,
     early_sidecar_result: &mut Option<anyhow::Result<()>>,
+    sidecar_required: bool,
 ) -> anyhow::Result<(InstancePrepared, WorkspaceMaterialized)>
 where
     D: DockerApi,
@@ -1314,6 +1302,7 @@ where
         },
         sidecar,
         early_sidecar_result.take(),
+        sidecar_required,
     )
     .await?;
     Ok((prepared, workspace))
@@ -1373,6 +1362,7 @@ where
 async fn run_active_launch<D, R, S>(
     mut launch: ActiveLaunch<'_, D, R>,
     sidecar: Pin<&mut S>,
+    sidecar_required: bool,
 ) -> anyhow::Result<String>
 where
     D: DockerApi,
@@ -1380,8 +1370,13 @@ where
     S: Future<Output = anyhow::Result<()>>,
 {
     let mut early_sidecar_result = None;
-    let (prepared, workspace) =
-        prepare_active_launch(&mut launch, sidecar, &mut early_sidecar_result).await?;
+    let (prepared, workspace) = prepare_active_launch(
+        &mut launch,
+        sidecar,
+        &mut early_sidecar_result,
+        sidecar_required,
+    )
+    .await?;
     execute_active_launch(launch, prepared, workspace).await
 }
 
@@ -1389,6 +1384,7 @@ async fn materialize_workspace_phase<D, R, S>(
     input: MaterializeWorkspace<'_, D, R>,
     mut sidecar: Pin<&mut S>,
     early_sidecar_result: Option<anyhow::Result<()>>,
+    sidecar_required: bool,
 ) -> anyhow::Result<WorkspaceMaterialized>
 where
     D: DockerApi,
@@ -1426,21 +1422,13 @@ where
     let workspace_label = workspace
         .as_workspace_label()
         .map_err(anyhow::Error::from)?;
-    jackin_diagnostics::debug_log!(
-        "isolation",
-        "load_role: invoking materialize_workspace for container {container_name} \
-         (interactive=true, force={force})",
-        force = opts.force,
-    );
     if let Some(git_pull_join) = git_pull_join {
         super::super::finish_deferred_git_pull(git_pull_join, steps).await?;
     }
-    if let Some(progress) = steps.progress_mut() {
-        progress.stage_started(
-            crate::runtime::progress::LaunchStage::Workspace,
-            "materializing workspace",
-        );
-    }
+    steps.stage_started(
+        crate::runtime::progress::LaunchStage::Workspace,
+        "materializing workspace",
+    );
     let preflight = crate::isolation::materialize::PreflightContext {
         workspace_label: workspace_label.clone(),
         force: opts.force,
@@ -1475,8 +1463,15 @@ where
         }
     };
     let (sidecar_result, materialize_result) = tokio::join!(sidecar_wait, materialize_wait);
-    if let Some(progress) = steps.progress_mut() {
-        progress.stage_done(crate::runtime::progress::LaunchStage::Network, "isolated");
+    steps.stage_done(crate::runtime::progress::LaunchStage::Network, "isolated");
+    match &sidecar_result {
+        Ok(()) if sidecar_required => {
+            steps.stage_done(crate::runtime::progress::LaunchStage::Sidecar, "ready");
+        }
+        Err(_) if sidecar_required => {
+            steps.stage_error(crate::runtime::progress::LaunchStage::Sidecar);
+        }
+        _ => {}
     }
     if let Err(error) = sidecar_result {
         super::super::launch_phases::mark_failed_setup_then_cleanup(
@@ -1517,17 +1512,18 @@ where
         "materialize_workspace",
         Some("materialized"),
     );
-    if let Some(progress) = steps.progress_mut() {
-        progress.stage_done(
-            crate::runtime::progress::LaunchStage::Workspace,
-            "materialized",
-        );
-    }
+    steps.stage_done(
+        crate::runtime::progress::LaunchStage::Workspace,
+        "materialized",
+    );
     let dirty_exit_policy =
         config.resolve_dirty_exit_policy(config.workspaces.get(workspace_label.as_str()));
     let launch_config = workspace_launch_config(
+        config,
         selector,
         workspace,
+        environment.workspace_opt.as_ref(),
+        role_key,
         validated_repo,
         opts,
         &materialized,
@@ -1784,12 +1780,10 @@ where
     };
     // Start the sidecar future before image materialization so network/DinD
     // setup can make progress while runtime binaries and Docker build run.
-    if let Some(progress) = launch.steps.progress_mut() {
-        progress.stage_started(
-            crate::runtime::progress::LaunchStage::Network,
-            "wiring private network",
-        );
-    }
+    launch.steps.stage_started(
+        crate::runtime::progress::LaunchStage::Network,
+        "wiring private network",
+    );
     let sidecar_container = launch.container_name.clone();
     let sidecar_network = launch.initialized.network.clone();
     let sidecar_dind = launch.initialized.dind.clone();
@@ -1802,6 +1796,18 @@ where
     );
     let adopted_sidecar_was_used = launch.initialized.adopted_sidecar_was_used;
     let dind_started = launch.initialized.dind_started;
+    let sidecar_required = adopted_sidecar_was_used || dind_started;
+    if sidecar_required {
+        launch.steps.stage_started(
+            crate::runtime::progress::LaunchStage::Sidecar,
+            "starting sidecar",
+        );
+    } else {
+        launch.steps.stage_skipped(
+            crate::runtime::progress::LaunchStage::Sidecar,
+            "sidecar not required",
+        );
+    }
     let docker = launch.docker;
     let sidecar = async move {
         if adopted_sidecar_was_used {
@@ -1829,5 +1835,5 @@ where
         }
     };
     let mut sidecar = std::pin::pin!(sidecar);
-    run_active_launch(launch, sidecar.as_mut()).await
+    run_active_launch(launch, sidecar.as_mut(), sidecar_required).await
 }

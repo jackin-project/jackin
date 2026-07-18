@@ -60,15 +60,16 @@ pub fn start(
     sock_path: PathBuf,
     allowed_bindings: Vec<ExecBinding>,
 ) -> tokio::task::JoinHandle<()> {
-    tokio::spawn(async move {
-        if let Err(e) = run_listener(&sock_path, &allowed_bindings, CallerAuth::CapsuleDaemon).await
+    jackin_telemetry::spawn::spawn_stream("exec_host.connection", async move {
+        if run_listener(&sock_path, &allowed_bindings, CallerAuth::CapsuleDaemon)
+            .await
+            .is_err()
         {
             // A returned error is a startup failure (bind/chmod/mkdir) — the
             // accept loop never returns otherwise. It means jackin-exec
             // credential resolution is unavailable for the whole session, so
             // surface it on the always-on tier rather than only under --debug.
-            eprintln!("[jackin] warning: jackin-exec credential resolver unavailable: {e:#}");
-            jackin_diagnostics::debug_log!("exec_host", "listener error: {e:#}");
+            eprintln!("[jackin] warning: jackin-exec credential resolver unavailable");
         }
     })
 }
@@ -104,6 +105,42 @@ async fn run_listener(
     allowed_bindings: &[ExecBinding],
     caller_auth: CallerAuth,
 ) -> Result<()> {
+    let open =
+        jackin_telemetry::stream::phase(jackin_telemetry::schema::enums::StreamOperation::Open);
+    let listener = match bind_listener(sock_path) {
+        Ok(listener) => listener,
+        Err(error) => {
+            jackin_telemetry::stream::complete_error(
+                open,
+                jackin_telemetry::schema::enums::ErrorType::IoError,
+            );
+            return Err(error);
+        }
+    };
+    jackin_telemetry::stream::complete_success(open);
+    let _close = jackin_telemetry::stream::close_on_drop();
+
+    loop {
+        if let Ok((stream, _)) = listener.accept().await {
+            if handle_connection(stream, allowed_bindings, caller_auth)
+                .await
+                .is_err()
+            {
+                let _error = jackin_telemetry::record_error(
+                    jackin_telemetry::schema::enums::ErrorType::RpcError,
+                );
+            }
+        } else {
+            let _error =
+                jackin_telemetry::record_error(jackin_telemetry::schema::enums::ErrorType::IoError);
+            let _retry = jackin_telemetry::record_retry_scheduled();
+            // Brief back-off to avoid tight loop on persistent errors.
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+    }
+}
+
+fn bind_listener(sock_path: &Path) -> Result<UnixListener> {
     // Remove stale socket from a previous session.
     drop(std::fs::remove_file(sock_path));
     if let Some(parent) = sock_path.parent() {
@@ -120,30 +157,8 @@ async fn run_listener(
             std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o700))?;
         }
     }
-    let listener = UnixListener::bind(sock_path)
-        .with_context(|| format!("binding host.sock at {}", sock_path.display()))?;
-
-    jackin_diagnostics::debug_log!(
-        "exec_host",
-        "listening at {} with {} allowed bindings",
-        sock_path.display(),
-        allowed_bindings.len()
-    );
-
-    loop {
-        match listener.accept().await {
-            Ok((stream, _)) => {
-                if let Err(e) = handle_connection(stream, allowed_bindings, caller_auth).await {
-                    jackin_diagnostics::debug_log!("exec_host", "connection error: {e:#}");
-                }
-            }
-            Err(e) => {
-                jackin_diagnostics::debug_log!("exec_host", "accept error: {e:#}");
-                // Brief back-off to avoid tight loop on persistent errors.
-                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-            }
-        }
-    }
+    UnixListener::bind(sock_path)
+        .with_context(|| format!("binding host.sock at {}", sock_path.display()))
 }
 
 async fn handle_connection(
@@ -152,21 +167,69 @@ async fn handle_connection(
     caller_auth: CallerAuth,
 ) -> Result<()> {
     const MAX_REQ: usize = 512 * 1024;
-    if let Err(error) = authenticate_caller(&stream, caller_auth) {
-        jackin_diagnostics::debug_log!("exec_host", "rejected unauthenticated caller: {error:#}");
+    let attrs = [
+        jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::std_attrs::RPC_SYSTEM_NAME,
+            value: jackin_telemetry::Value::Str("jackin"),
+        },
+        jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::std_attrs::RPC_METHOD,
+            value: jackin_telemetry::Value::Str("jackin.host.Credentials/Resolve"),
+        },
+    ];
+    if authenticate_caller(&stream, caller_auth).is_err() {
+        complete_local_rpc_failure(&attrs);
         return Ok(());
     }
 
     // Read 4-byte BE length + JSON body (same framing as control channel).
-    let mut len_buf = [0u8; 4];
-    stream.read_exact(&mut len_buf).await?;
-    let len = u32::from_be_bytes(len_buf) as usize;
-    anyhow::ensure!(len <= MAX_REQ, "request too large: {len}");
-
-    let mut body = vec![0u8; len];
-    stream.read_exact(&mut body).await?;
-
-    let req: CredRequest = serde_json::from_slice(&body).context("parsing CredRequest")?;
+    let request = async {
+        let mut len_buf = [0u8; 4];
+        stream.read_exact(&mut len_buf).await?;
+        let len = u32::from_be_bytes(len_buf) as usize;
+        anyhow::ensure!(len <= MAX_REQ, "request too large: {len}");
+        let mut body = vec![0u8; len];
+        stream.read_exact(&mut body).await?;
+        serde_json::from_slice::<CredRequest>(&body).context("parsing CredRequest")
+    }
+    .await;
+    let Ok(req) = request else {
+        complete_local_rpc_failure(&attrs);
+        return Ok(());
+    };
+    let extracted = jackin_telemetry::propagation::extract(&req.ctx);
+    if matches!(
+        extracted,
+        jackin_telemetry::propagation::ExtractOutcome::RejectRequest
+    ) {
+        let operation =
+            jackin_telemetry::operation(&jackin_telemetry::operation::RPC_SERVER, &attrs).ok();
+        record_rpc_error(operation.as_ref());
+        let write_result = stream
+            .write_all(&frame(&CredReply::Error {
+                error: "invalid correlation".to_owned(),
+            }))
+            .await;
+        if let Some(operation) = operation {
+            operation.complete(
+                jackin_telemetry::schema::enums::OutcomeValue::Failure,
+                Some(jackin_telemetry::schema::enums::ErrorType::RpcError),
+            );
+        }
+        drop(write_result);
+        return Ok(());
+    }
+    let operation = match &extracted {
+        jackin_telemetry::propagation::ExtractOutcome::Parent(parent) => {
+            jackin_telemetry::operation_with_remote_parent(
+                &jackin_telemetry::operation::RPC_SERVER,
+                &attrs,
+                parent,
+            )
+        }
+        _ => jackin_telemetry::operation(&jackin_telemetry::operation::RPC_SERVER, &attrs),
+    }
+    .ok();
 
     // Validate every requested ref against the operator-approved bindings.
     // Reject any ref that wasn't explicitly configured — this prevents a
@@ -177,40 +240,73 @@ async fn handle_connection(
             .iter()
             .any(|b| b.name == r.name && b.kind == r.kind && b.source == r.source);
         if !approved {
-            jackin_diagnostics::debug_log!(
-                "exec_host",
-                "rejected unauthorized ref: name={:?} kind={:?} source={:?}",
-                r.name,
-                r.kind,
-                r.source
-            );
+            record_rpc_error(operation.as_ref());
             let reply = CredReply::Error {
-                error: format!(
-                    "credential {:?} is not in the approved binding set for this session",
-                    r.name
-                ),
+                error: "credential reference is not approved".to_owned(),
             };
-            stream.write_all(&frame(&reply)).await?;
+            let write_result = stream.write_all(&frame(&reply)).await;
+            if let Some(operation) = operation {
+                operation.complete(
+                    jackin_telemetry::schema::enums::OutcomeValue::Failure,
+                    Some(jackin_telemetry::schema::enums::ErrorType::RpcError),
+                );
+            }
+            drop(write_result);
             return Ok(());
         }
     }
 
-    jackin_diagnostics::debug_log!(
-        "exec_host",
-        "resolving {} approved credential(s)",
-        req.refs.len()
-    );
-
-    let reply = match resolve_all(&req.refs).await {
-        Ok(values) => CredReply::Ok { values },
-        Err(e) => CredReply::Error {
-            error: format!("{e:#}"),
-        },
+    let reply = if let Ok(values) = resolve_all(&req.refs).await {
+        CredReply::Ok { values }
+    } else {
+        CredReply::Error {
+            error: "credential resolution failed".to_owned(),
+        }
     };
     // Reuse the canonical control-socket encoder so both ends of host.sock
     // frame identically.
-    stream.write_all(&frame(&reply)).await?;
+    let succeeded = matches!(&reply, CredReply::Ok { .. });
+    let write_result = stream.write_all(&frame(&reply)).await;
+    if !succeeded || write_result.is_err() {
+        record_rpc_error(operation.as_ref());
+    }
+    if let Some(operation) = operation {
+        operation.complete(
+            if succeeded && write_result.is_ok() {
+                jackin_telemetry::schema::enums::OutcomeValue::Success
+            } else {
+                jackin_telemetry::schema::enums::OutcomeValue::Failure
+            },
+            (!succeeded || write_result.is_err())
+                .then_some(jackin_telemetry::schema::enums::ErrorType::RpcError),
+        );
+    }
+    drop(write_result);
     Ok(())
+}
+
+fn complete_local_rpc_failure(attrs: &[jackin_telemetry::Attr<'_>]) {
+    let operation =
+        jackin_telemetry::operation(&jackin_telemetry::operation::RPC_SERVER, attrs).ok();
+    record_rpc_error(operation.as_ref());
+    if let Some(operation) = operation {
+        operation.complete(
+            jackin_telemetry::schema::enums::OutcomeValue::Failure,
+            Some(jackin_telemetry::schema::enums::ErrorType::RpcError),
+        );
+    }
+}
+
+fn record_rpc_error(operation: Option<&jackin_telemetry::OperationGuard>) {
+    let record = || {
+        let _error =
+            jackin_telemetry::record_error(jackin_telemetry::schema::enums::ErrorType::RpcError);
+    };
+    if let Some(operation) = operation {
+        operation.span().in_scope(record);
+    } else {
+        record();
+    }
 }
 
 fn authenticate_caller(stream: &UnixStream, caller_auth: CallerAuth) -> Result<()> {
@@ -249,10 +345,6 @@ fn authenticate_capsule_daemon_peer(stream: &UnixStream) -> Result<()> {
 
 #[cfg(not(target_os = "linux"))]
 fn authenticate_capsule_daemon_peer(_stream: &UnixStream) -> Result<()> {
-    jackin_diagnostics::debug_log!(
-        "exec_host",
-        "peer credential daemon authentication unavailable on this host OS"
-    );
     Ok(())
 }
 
@@ -280,7 +372,7 @@ async fn resolve_all(refs: &[ExecBinding]) -> Result<std::collections::BTreeMap<
     let resolved = futures_util::future::try_join_all(refs.iter().map(|r| async move {
         let value = resolve_one(r)
             .await
-            .with_context(|| format!("resolving credential {:?}", r.name))?;
+            .context("resolving approved credential")?;
         Ok::<_, anyhow::Error>((r.name.clone(), value))
     }))
     .await?;
@@ -329,16 +421,15 @@ async fn resolve_op(op_ref: &str) -> Result<String> {
     // via crafted op:// values containing flags. No timeout: Touch ID
     // prompts may block arbitrarily long (same semantic as pre-transport).
     let request = jackin_process::ExecRequest::new("op", ["read", "--", op_ref]).no_timeout();
-    let output = jackin_process::exec_async(&request)
+    let output = crate::process_telemetry::exec_async(&request)
         .await
-        .context("running `op read`")?;
+        .context("running credential process")?;
 
     if output.success {
         let raw = String::from_utf8_lossy(&output.stdout);
         Ok(raw.trim_end_matches('\n').to_owned())
     } else {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        anyhow::bail!("`op read` failed: {}", stderr.trim())
+        anyhow::bail!("credential process exited unsuccessfully")
     }
 }
 

@@ -9,6 +9,31 @@ use super::{
 };
 
 impl Multiplexer {
+    const PANE_WIDGET: &'static str = "capsule.pane";
+    const TAB_BAR_WIDGET: &'static str = "capsule.tab";
+    const PALETTE_WIDGET: &'static str = "capsule.command_palette";
+
+    pub(super) fn sync_widget_focus(&mut self) {
+        let target = if matches!(self.dialog_top(), Some(Dialog::CommandPalette { .. })) {
+            Self::PALETTE_WIDGET
+        } else if self.dialog_open() {
+            Self::PANE_WIDGET
+        } else if self.render.tab_bar_focused {
+            Self::TAB_BAR_WIDGET
+        } else {
+            Self::PANE_WIDGET
+        };
+        if self.widget_focus.current_widget() != Some(target) {
+            let _focus_result = self.widget_focus.focus(target);
+        }
+    }
+
+    pub(super) fn record_pane_focus_change(&mut self) {
+        if self.widget_focus.current_widget() == Some(Self::PANE_WIDGET) {
+            let _focus_result = self.widget_focus.focus(Self::PANE_WIDGET);
+        }
+    }
+
     /// Top of the dialog stack — `Some` when a dialog is visible.
     /// Use this instead of inspecting `dialog_stack` directly so the
     /// "is a dialog open" check stays in one place.
@@ -45,6 +70,7 @@ impl Multiplexer {
     pub(super) fn dialog_push(&mut self, d: Dialog) {
         self.clipboard.dialog_copy_feedback_deadline = None;
         self.control.push_dialog(d);
+        self.sync_widget_focus();
     }
 
     pub(super) fn open_container_info_dialog(&mut self) {
@@ -62,9 +88,7 @@ impl Multiplexer {
             self.launch_env.workdir.to_string_lossy().into_owned(),
             crate::tui::components::dialog::ContainerInfoDiagnostics {
                 host_version: diagnostics.host_version,
-                run_id: diagnostics.run_id,
-                run_log_display: diagnostics.run_log_display,
-                run_log_href: diagnostics.run_log_href,
+                invocation_id: diagnostics.invocation_id,
             },
         ));
     }
@@ -126,6 +150,7 @@ impl Multiplexer {
         {
             self.clipboard.dialog_copy_feedback_deadline = None;
         }
+        self.sync_widget_focus();
         popped
     }
 
@@ -136,6 +161,7 @@ impl Multiplexer {
     pub(super) fn dialog_clear(&mut self) {
         self.control.clear_dialogs();
         self.clipboard.dialog_copy_feedback_deadline = None;
+        self.sync_widget_focus();
     }
 
     pub(super) fn expire_dialog_copy_feedback(&mut self, now: Instant) -> bool {

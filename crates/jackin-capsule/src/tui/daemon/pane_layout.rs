@@ -53,7 +53,7 @@ impl Multiplexer {
             &env_passthrough,
             &tab_codename,
         );
-        let agent_for_log = agent_slug.clone();
+        let agent_for_history = agent_slug.clone();
         let (session, new_id) = Session::spawn(
             &launch.label,
             agent_slug,
@@ -69,7 +69,7 @@ impl Multiplexer {
         self.record_agent_history(
             new_id,
             tab_codename.clone(),
-            agent_for_log.clone(),
+            agent_for_history,
             provider_label,
         );
         let tab = &mut self.session_supervisor.tabs[self.session_supervisor.active_tab];
@@ -91,18 +91,12 @@ impl Multiplexer {
             // could be confirmed. Stamp its exit now so the reaped orphan is not
             // reported as a permanently "active" agent in the registry snapshot.
             self.mark_agent_session_exited(new_id);
-            crate::clog!(
-                "action: split aborted — from_id={from_id} no longer in tab tree; reaped orphan id={new_id}",
-            );
+            let _warning = jackin_telemetry::record_recovered_degradation();
             return Ok(());
         }
         tab.focused_id = new_id;
         self.resize_panes();
         self.synthesise_focus_swap(Some(from_id), Some(new_id));
-        crate::clog!(
-            "action: split id={new_id} from={from_id} dir={direction:?} agent={agent_for_log:?} label={label}",
-            label = launch.label,
-        );
         Ok(())
     }
 
@@ -157,11 +151,6 @@ impl Multiplexer {
         let id = tab.focused_id;
         let all = tab.tree.all_ids();
         let next_focus = all.iter().find(|&&sid| sid != id).copied();
-        crate::clog!(
-            "action: close_focused_pane id={id} tab_idx={} siblings_remaining={}",
-            self.session_supervisor.active_tab,
-            next_focus.is_some()
-        );
         tab.tree.remove(id);
         if let Some(session) = self.session_supervisor.sessions.remove(id) {
             session.terminate();
@@ -207,14 +196,6 @@ impl Multiplexer {
 
     pub(super) fn resize(&mut self, rows: u16, cols: u16) {
         let (rows, cols) = normalize_size(rows, cols);
-        crate::cdebug!(
-            "resize: {}x{} → {}x{} content_rows={}",
-            self.render.term_cols,
-            self.render.term_rows,
-            cols,
-            rows,
-            available_content_rows(rows),
-        );
         // Outer-terminal resize invalidates the drag's saved rect.
         self.cancel_drag();
         self.render.term_rows = rows;
@@ -417,6 +398,7 @@ impl Multiplexer {
         if old == new {
             return;
         }
+        self.record_pane_focus_change();
         // Synthetic `\x1b[I` / `\x1b[O` to the agent's PTY only
         // when the agent enabled focus-event reporting (DEC ?1004).
         // Shells and pre-mount agents leave it off; writing the

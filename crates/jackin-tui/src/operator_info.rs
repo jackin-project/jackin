@@ -126,11 +126,8 @@ pub struct DebugInfo {
     pub agent: Option<String>,
     /// Working directory / target label.
     pub target: Option<String>,
-    /// Bare run id — never the log path.
+    /// Opaque invocation id for backend correlation.
     pub run_id: Option<String>,
-    /// Absolute path to the run's diagnostics JSONL. Rendered copyable with a
-    /// `file://` hyperlink; the bare run id goes in [`Self::run_id`] instead.
-    pub diagnostics_log_path: Option<String>,
 }
 
 impl DebugInfo {
@@ -158,14 +155,6 @@ impl DebugInfo {
         }
         if let Some(target) = self.target {
             rows.push(ContainerInfoRow::new("Target", target));
-        }
-        if let Some(path) = self.diagnostics_log_path {
-            let href = format!("file://{path}");
-            rows.push(
-                ContainerInfoRow::new("Diagnostics log", path)
-                    .copyable()
-                    .hyperlink(href),
-            );
         }
         ContainerInfoState::new("Debug info", rows)
     }
@@ -399,10 +388,6 @@ pub fn debug_info_hint_spans(axes: termrock::scroll::ScrollAxes) -> Vec<HintSpan
     // UNREGISTERABLE(container-info-copy): Enter copies the active row inline; no ContainerInfo keymap.
     spans.push(HintSpan::Key("↵"));
     spans.push(HintSpan::Text("copy value"));
-    spans.push(HintSpan::GroupSep);
-    // UNREGISTERABLE(container-info-reveal): R/O toggle reveals diagnostics inline; no ContainerInfo keymap.
-    spans.push(HintSpan::Key("R/O"));
-    spans.push(HintSpan::Text("reveal diagnostics"));
     spans.push(HintSpan::GroupSep);
     // UNREGISTERABLE(container-info-no-keymap): Esc dismisses inline.
     spans.push(HintSpan::Key("Esc"));

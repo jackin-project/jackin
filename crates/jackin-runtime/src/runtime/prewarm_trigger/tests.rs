@@ -120,3 +120,22 @@ fn sidecar_spawn_is_a_noop_in_unit_tests() {
 
     spawn_background_sidecar_prewarm(&paths, false);
 }
+
+#[test]
+fn sidecar_attempt_preserves_skip_and_failure_outcomes() {
+    use jackin_telemetry::schema::enums::{ErrorType, OutcomeValue};
+
+    let completed_outcome = SidecarPrewarmOutcome::Completed;
+    let completed = classify_sidecar_prewarm_attempt(&Ok(completed_outcome));
+    assert_eq!(completed.outcome, OutcomeValue::Success);
+    assert_eq!(completed.error_type, None);
+
+    let skipped_outcome = SidecarPrewarmOutcome::Skipped;
+    let skipped = classify_sidecar_prewarm_attempt(&Ok(skipped_outcome));
+    assert_eq!(skipped.outcome, OutcomeValue::Skip);
+    assert_eq!(skipped.error_type, None);
+
+    let failed = classify_sidecar_prewarm_attempt(&Err(anyhow::anyhow!("private failure")));
+    assert_eq!(failed.outcome, OutcomeValue::Failure);
+    assert_eq!(failed.error_type, Some(ErrorType::LaunchFailed));
+}

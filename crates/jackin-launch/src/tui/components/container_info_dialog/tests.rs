@@ -33,22 +33,16 @@ fn view_with_identity() -> LaunchView {
 }
 
 #[test]
-fn launch_container_info_keeps_run_id_bare_and_log_path_separate() {
+fn launch_container_info_exposes_run_id_without_local_artifacts() {
     let view = view_with_identity();
 
-    let state = launch_container_info_state(
-        &view,
-        "jk-run-b93735",
-        Some("/Users/donbeave/.jackin-pr-495/data/diagnostics/runs/jk-run-b93735.jsonl"),
-        true,
-        "0.6.0-test",
-    );
+    let state = launch_container_info_state(&view, "jk-run-b93735", true, "0.6.0-test");
     let rows = state.rows();
     assert_eq!(
         rows.first()
             .map(crate::tui::components::container_info::ContainerInfoRow::value),
         Some("jk-run-b93735"),
-        "Run ID must stay the first Debug info row even when launch knows the container"
+        "Invocation ID must stay the first Debug info row even when launch knows the container"
     );
     let run_row = rows
         .iter()
@@ -57,37 +51,15 @@ fn launch_container_info_keeps_run_id_bare_and_log_path_separate() {
     assert!(run_row.is_copyable());
     assert!(
         !run_row.value().contains(".jsonl"),
-        "Run ID row must not contain diagnostics path"
+        "Invocation ID row must not contain a local diagnostics path"
     );
-    let log_row = rows
-        .iter()
-        .find(|row| row.value().ends_with("jk-run-b93735.jsonl"))
-        .expect("diagnostics log path row present");
-    assert!(log_row.is_copyable());
-    assert_eq!(
-        log_row.href(),
-        Some("file:///Users/donbeave/.jackin-pr-495/data/diagnostics/runs/jk-run-b93735.jsonl")
-    );
-    let reveal_row = rows
-        .iter()
-        .find(|row| row.value().ends_with("jk-run-b93735.jsonl") && !row.is_copyable())
-        .expect("diagnostics reveal row present");
-    assert_eq!(
-        reveal_row.href(),
-        Some("file:///Users/donbeave/.jackin-pr-495/data/diagnostics/runs/jk-run-b93735.jsonl")
-    );
+    assert!(rows.iter().all(|row| row.href().is_none()));
 }
 
 #[test]
 fn launch_container_info_omits_run_rows_when_debug_disabled() {
     let view = initial_view();
-    let state = launch_container_info_state(
-        &view,
-        "jk-run-b93735",
-        Some("/Users/donbeave/.jackin-pr-495/data/diagnostics/runs/jk-run-b93735.jsonl"),
-        false,
-        "0.6.0-test",
-    );
+    let state = launch_container_info_state(&view, "jk-run-b93735", false, "0.6.0-test");
     assert!(
         state
             .rows()
@@ -100,7 +72,7 @@ fn launch_container_info_omits_run_rows_when_debug_disabled() {
 #[test]
 fn launch_container_info_backend_only_shows_telemetry_without_reveal() {
     let view = initial_view();
-    let state = launch_container_info_state(&view, "jk-run-b93735", None, true, "0.6.0-test");
+    let state = launch_container_info_state(&view, "jk-run-b93735", true, "0.6.0-test");
     let rows = state.rows();
 
     assert!(
@@ -109,9 +81,7 @@ fn launch_container_info_backend_only_shows_telemetry_without_reveal() {
         "backend-only runs should show a telemetry query hint"
     );
     assert!(
-        rows.iter().all(|row| row.label() != "Diagnostics log"
-            && row.label() != "Reveal diagnostics"
-            && row.href().is_none()),
+        rows.iter().all(|row| row.href().is_none()),
         "backend-only runs must not expose a fabricated diagnostics path"
     );
 }
@@ -130,7 +100,6 @@ fn launch_debug_info_keeps_status_footer_visible() {
                 frame,
                 &view,
                 "jk-run-c46709",
-                Some("/Users/donbeave/.jackin-pr-495/data/diagnostics/runs/jk-run-c46709.jsonl"),
                 true,
                 None,
                 true,
@@ -155,17 +124,15 @@ fn launch_debug_info_keeps_status_footer_visible() {
         "Debug info hint should render in the reserved hint row: {hint:?}"
     );
     assert!(
+        !hint.contains("R/O") && !hint.contains("reveal diagnostics"),
+        "Debug info must not advertise removed artifact actions: {hint:?}"
+    );
+    assert!(
         separator.trim().is_empty(),
         "separator row should stay blank between hint and footer: {separator:?}"
     );
 
-    let state = launch_container_info_state(
-        &view,
-        "jk-run-c46709",
-        Some("/Users/donbeave/.jackin-pr-495/data/diagnostics/runs/jk-run-c46709.jsonl"),
-        true,
-        "0.6.0-test",
-    );
+    let state = launch_container_info_state(&view, "jk-run-c46709", true, "0.6.0-test");
     let rect = launch_container_info_rect(area, &state, true);
     let below_dialog_y = rect.y.saturating_add(rect.height);
     if below_dialog_y < area.height.saturating_sub(3) {
@@ -191,7 +158,6 @@ fn launch_debug_info_hides_status_footer_when_debug_disabled() {
                 frame,
                 &view,
                 "jk-run-c46709",
-                Some("/Users/donbeave/.jackin-pr-495/data/diagnostics/runs/jk-run-c46709.jsonl"),
                 true,
                 None,
                 false,
@@ -204,6 +170,10 @@ fn launch_debug_info_hides_status_footer_when_debug_disabled() {
     assert!(
         bottom.contains("copy value") && bottom.contains("Esc"),
         "Debug info hint should use the bottom row in non-debug: {bottom:?}"
+    );
+    assert!(
+        !bottom.contains("R/O") && !bottom.contains("reveal diagnostics"),
+        "Debug info must not advertise removed artifact actions: {bottom:?}"
     );
     assert!(
         !bottom.contains("jk-run-c46709") && !bottom.contains("2y0t4aw6"),

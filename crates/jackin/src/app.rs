@@ -43,6 +43,7 @@ use helpers::{
 };
 
 use anyhow::Result;
+use tracing::Instrument as _;
 
 use crate::cli::role::ConsoleArgs;
 use crate::cli::{Cli, Command};
@@ -91,19 +92,9 @@ async fn play_construct_intro_if_needed(
     claim
 }
 
-pub async fn run(cli: Cli) -> Result<()> {
+pub async fn run(cli: Cli, lifecycle: crate::lifecycle::ProductLifecycle) -> Result<()> {
     let debug = cli.debug;
     jackin_diagnostics::set_debug_mode(debug);
-    jackin_diagnostics::install_host_panic_hook();
-
-    // Fail fast and loud on an unsupported OTLP protocol: jackin exports over
-    // gRPC only. An OTLP endpoint configured with a non-grpc protocol would
-    // otherwise build an exporter that silently never delivers — surface it as a
-    // structured fatal error at startup rather than running with broken
-    // telemetry the operator believes is working.
-    if let Some(requested) = jackin_diagnostics::unsupported_otlp_protocol() {
-        return Err(crate::error::JackinError::UnsupportedOtlpProtocol { requested }.into());
-    }
 
     // Resolve the subcommand. Bare `jackin` is classified in `cli/dispatch.rs`
     // (TTY-capable → console; otherwise silent help). When `run` is invoked
@@ -113,26 +104,44 @@ pub async fn run(cli: Cli) -> Result<()> {
         Some(cmd) => cmd,
         None => Command::Console(cli.console_args),
     };
-    if let Command::Role(command) = command {
-        return crate::role_authoring::run(command);
+    let command_name = crate::cli::command_name(&command);
+    let app_mode = command_app_mode(&command);
+    let paths = JackinPaths::detect()?;
+    let identity = service_identity(app_mode);
+    let diagnostics =
+        jackin_diagnostics::RunDiagnostics::start(&paths, debug, command_name.as_str(), identity)?;
+    let _diagnostics_guard = diagnostics.activate();
+    let mut invocation =
+        crate::lifecycle::InvocationTelemetry::start(lifecycle, command_name, app_mode);
+
+    // Fail fast and loud on an unsupported OTLP protocol after the lifecycle
+    // subscriber exists, so configuration failures share the one-shot harness.
+    if let Some(requested) = jackin_diagnostics::unsupported_otlp_protocol() {
+        let result = Err(crate::error::JackinError::UnsupportedOtlpProtocol { requested }.into());
+        finish_invocation(&diagnostics, invocation, &result);
+        return result;
     }
 
-    let paths = JackinPaths::detect()?;
-    let mut config = AppConfig::load_or_init(&paths)?;
+    let mut config = match &command {
+        // Role authoring is repository-local and must not create or read the
+        // operator's product configuration as a side effect.
+        Command::Role(_) => AppConfig::default(),
+        _ => match AppConfig::load_or_init(&paths) {
+            Ok(config) => config,
+            Err(error) => {
+                let result: Result<()> = Err(error.into());
+                finish_invocation(&diagnostics, invocation, &result);
+                return result;
+            }
+        },
+    };
     apply_telemetry_config(&config);
-    let command_name = command_name(&command);
-    // Installs the global tracing subscriber (Defect 47.1 foundation) with
-    // the freshly minted run id, so OTLP export (when configured) stamps the
-    // id on every span and log record.
-    let diagnostics = jackin_diagnostics::RunDiagnostics::start(&paths, debug, command_name)?;
-    let _diagnostics_guard = diagnostics.activate();
-    // Wire the jackin-diagnostics operator-notice sink to the
-    // jackin-core::operator_notice port-trait dispatcher so domain
-    // crates (L0) can call `jackin_core::emit_compact_line` without
-    // depending on the L2 diagnostics layer. Per the A5 unblock
-    // work in the completed codebase-health track.
+    let interactive = app_mode == jackin_telemetry::schema::enums::AppMode::Interactive;
+    let command_span = invocation.span();
+    // Wire compact operator output to the jackin-core port dispatcher so
+    // domain crates can call `jackin_core::emit_compact_line` without
+    // depending on the diagnostics implementation.
     jackin_diagnostics::operator_notice::install_operator_notice_sink();
-    jackin_diagnostics::install_debug_log_sink();
     jackin_launch::install_standalone_dialog_sink();
     if debug {
         announce_debug_run(&diagnostics);
@@ -140,69 +149,86 @@ pub async fn run(cli: Cli) -> Result<()> {
     let mut runner = ShellRunner { debug };
     let connect_docker = || BollardDockerClient::connect();
 
-    let result = match command {
-        Command::Load(args) => {
-            load_cmd::handle_load(
-                args,
-                &mut config,
-                &paths,
-                debug,
-                &mut runner,
-                connect_docker,
-            )
-            .await
-        }
-        Command::Console(ConsoleArgs {}) => load_cmd::handle_console(config, paths, debug).await,
-        Command::Hardline(args) => {
-            load_cmd::handle_hardline(args, config, paths, debug, connect_docker).await
-        }
-        Command::Eject(args) => load_cmd::handle_eject(args, &paths, debug, connect_docker).await,
-        Command::Exile => load_cmd::handle_exile(&paths, debug, connect_docker).await,
-        // logs::run blocks on file I/O and a poll sleep when --follow is active.
-        // Wrap in spawn_blocking so the tokio render thread stays responsive.
-        Command::Logs(args) => {
-            let paths_owned = paths.clone();
-            tokio::task::spawn_blocking(move || {
-                runtime::logs::run(
-                    &paths_owned,
-                    args.selector,
-                    args.path,
-                    args.tail,
-                    args.follow,
-                    args.bundle,
+    let result = async {
+        match command {
+            Command::Load(args) => {
+                load_cmd::handle_load(
+                    args,
+                    &mut config,
+                    &paths,
+                    debug,
+                    &mut invocation,
+                    &mut runner,
+                    connect_docker,
                 )
-            })
-            .await?
+                .await
+            }
+            Command::Console(ConsoleArgs {}) => {
+                load_cmd::handle_console(config, paths, debug, &mut invocation).await
+            }
+            Command::Hardline(args) => {
+                load_cmd::handle_hardline(
+                    args,
+                    config,
+                    paths,
+                    debug,
+                    &mut invocation,
+                    connect_docker,
+                )
+                .await
+            }
+            Command::Eject(args) => {
+                load_cmd::handle_eject(args, &paths, debug, connect_docker).await
+            }
+            Command::Exile => load_cmd::handle_exile(&paths, debug, connect_docker).await,
+            Command::Config(config_cmd) => {
+                config_cmd::handle(config_cmd, &mut config, &paths, debug)
+            }
+            #[cfg(unix)]
+            Command::Daemon(command) => daemon_cmd::handle(command, &paths).await,
+            Command::Workspace(command) => {
+                workspace_cmd::handle(command, &mut config, &paths, debug).await
+            }
+            Command::Purge(args) => {
+                prune_cmd::handle_purge(args, &paths, &mut runner, connect_docker).await
+            }
+            Command::Prewarm(args) => crate::cli::prewarm::run(&args, &paths, &config, debug).await,
+            Command::Prune(cmd) => {
+                prune_cmd::handle_prune(cmd, &paths, &mut runner, connect_docker).await
+            }
+            Command::Doctor(args) => crate::cli::doctor::run(&args, &paths).await,
+            Command::Diagnostics(command) => crate::cli::diagnostics::run(&command),
+            Command::Status(args) => crate::cli::status::run(&args, &paths).await,
+            Command::Usage(args) => crate::cli::usage::run(&args, &paths).await,
+            Command::Role(command) => crate::role_authoring::run(command),
+            Command::Help { .. } => {
+                // Handled upstream in dispatch before reaching this function.
+                unreachable!(
+                    "Command::Help is dispatched to Action::PrintHelp before run() is called"
+                )
+            }
         }
-        Command::Config(config_cmd) => config_cmd::handle(config_cmd, &mut config, &paths, debug),
-        #[cfg(unix)]
-        Command::Daemon(command) => daemon_cmd::handle(command, &paths).await,
-        Command::Workspace(command) => {
-            workspace_cmd::handle(command, &mut config, &paths, debug).await
-        }
-        Command::Purge(args) => {
-            prune_cmd::handle_purge(args, &paths, &mut runner, connect_docker).await
-        }
-        Command::Prewarm(args) => crate::cli::prewarm::run(&args, &paths, &config, debug).await,
-        Command::Prune(cmd) => {
-            prune_cmd::handle_prune(cmd, &paths, &mut runner, connect_docker).await
-        }
-        Command::Doctor(args) => crate::cli::doctor::run(&args, &paths).await,
-        Command::Diagnostics(command) => crate::cli::diagnostics::run(&command, &paths),
-        Command::Status(args) => crate::cli::status::run(&args, &paths).await,
-        Command::Usage(args) => crate::cli::usage::run(&args, &paths).await,
-        Command::Help { .. } => {
-            // Handled upstream in dispatch before reaching this function.
-            unreachable!("Command::Help is dispatched to Action::PrintHelp before run() is called")
-        }
-        Command::Role(_) => unreachable!("Command::Role returns before config-backed dispatch"),
-    };
-    record_run_error(&result);
+    }
+    .instrument(command_span)
+    .await;
+    if interactive {
+        invocation.exit_requested();
+    }
+    finish_invocation(&diagnostics, invocation, &result);
+    result
+}
+
+fn finish_invocation(
+    diagnostics: &jackin_diagnostics::RunDiagnostics,
+    invocation: crate::lifecycle::InvocationTelemetry,
+    result: &Result<()>,
+) {
+    record_run_error(result);
     // Emit per-stage duration summary before the run guard drops (Defect 47.5).
     // The guard's Drop then flushes OTLP, so the summary makes the export.
     diagnostics.emit_run_summary();
-    announce_run_teardown(&diagnostics);
-    result
+    announce_run_teardown(diagnostics);
+    let _classification = invocation.finish(result);
 }
 
 fn apply_telemetry_config(config: &AppConfig) {
@@ -233,77 +259,54 @@ fn record_run_error(result: &Result<()>) {
 }
 
 fn announce_run_teardown(diagnostics: &jackin_diagnostics::RunDiagnostics) {
-    let line = if diagnostics.persists() {
-        format!(
-            "telemetry: run {} - file {}",
-            diagnostics.run_id(),
-            diagnostics.path().display()
-        )
-    } else {
-        let backend = jackin_diagnostics::configured_endpoint_summary().map_or_else(
-            || "your OpenTelemetry backend".to_owned(),
-            |endpoint| format!("your OpenTelemetry backend ({endpoint})"),
-        );
-        format!(
-            "telemetry: run {} - query {backend} for parallax.run.id={}",
-            diagnostics.run_id(),
-            diagnostics.run_id()
-        )
-    };
+    let backend = jackin_diagnostics::configured_endpoint_summary().map_or_else(
+        || "OpenTelemetry export disabled".to_owned(),
+        |endpoint| format!("OpenTelemetry endpoint {endpoint}"),
+    );
+    let line = format!("telemetry: invocation {} - {backend}", diagnostics.run_id());
     jackin_diagnostics::emit_operator_notice(&line);
 }
 
-const fn command_name(command: &Command) -> &'static str {
+const fn command_app_mode(command: &Command) -> jackin_telemetry::schema::enums::AppMode {
+    use jackin_telemetry::schema::enums::AppMode;
     match command {
-        Command::Load(_) => "load",
-        Command::Hardline(_) => "hardline",
-        Command::Eject(_) => "eject",
-        Command::Exile => "exile",
-        Command::Purge(_) => "purge",
-        Command::Prewarm(_) => "prewarm",
-        Command::Prune(_) => "prune",
-        Command::Console(_) => "console",
-        Command::Role(_) => "role",
-        Command::Workspace(_) => "workspace",
-        Command::Config(_) => "config",
+        Command::Console(_) => AppMode::Interactive,
+        Command::Load(args) if !args.dry_run => AppMode::Interactive,
+        Command::Hardline(args) if !args.inspect && !args.new && !args.shell => {
+            AppMode::Interactive
+        }
         #[cfg(unix)]
-        Command::Daemon(_) => "daemon",
-        Command::Logs(_) => "logs",
-        Command::Doctor(_) => "doctor",
-        Command::Diagnostics(_) => "diagnostics",
-        Command::Status(_) => "status",
-        Command::Usage(_) => "usage",
-        Command::Help { .. } => "help",
+        Command::Daemon(crate::cli::DaemonCommand::Serve) => AppMode::Daemon,
+        _ => AppMode::OneShot,
     }
 }
 
-/// In `--debug`, surface the diagnostics run id on the plain CLI before
+const fn service_identity(
+    app_mode: jackin_telemetry::schema::enums::AppMode,
+) -> jackin_diagnostics::ServiceIdentity {
+    use jackin_telemetry::schema::enums::AppMode;
+    match app_mode {
+        AppMode::Interactive => jackin_diagnostics::ServiceIdentity::HOST_INTERACTIVE,
+        AppMode::Daemon => jackin_diagnostics::ServiceIdentity::DAEMON,
+        AppMode::OneShot => jackin_diagnostics::ServiceIdentity::HOST_ONE_SHOT,
+        AppMode::Capsule => jackin_diagnostics::ServiceIdentity::CAPSULE,
+    }
+}
+
+/// In `--debug`, surface the invocation id on the plain CLI before
 /// anything else runs — never through a rich TUI. This is identical for
-/// every command (CLI or TUI): print the run id the operator must keep to
-/// retrieve the run's diagnostics file later, then, on an interactive
+/// every command (CLI or TUI): print the invocation id the operator must keep to
+/// query the configured backend later, then, on an interactive
 /// terminal, gate on Enter so the id is read before the normal flow (rich
 /// or CLI, per terminal capability) takes over. Debug evidence itself is
-/// written only to the run file, never echoed here.
+/// exported only through governed OTLP, never echoed here.
 fn announce_debug_run(diagnostics: &jackin_diagnostics::RunDiagnostics) {
     use owo_colors::OwoColorize as _;
     use std::io::{IsTerminal, Write};
     let mut err = std::io::stderr();
     let _unused = writeln!(err);
-    let _unused = writeln!(
-        err,
-        "{} debug mode — save this run id to retrieve the run later:",
-        "[jackin]".bold()
-    );
+    let _unused = writeln!(err, "{} debug mode — invocation id:", "[jackin]".bold());
     let _unused = writeln!(err, "    {}", diagnostics.run_id());
-    if diagnostics.persists() {
-        let _unused = writeln!(err, "[jackin] diagnostics log:");
-        let _unused = writeln!(err, "    {}", diagnostics.path().display());
-    } else {
-        let _unused = writeln!(
-            err,
-            "[jackin] diagnostics file: off (OTLP active; set JACKIN_DIAGNOSTICS_FILE=1 to also write it)"
-        );
-    }
     match jackin_diagnostics::configured_endpoint_summary() {
         Some(endpoint) => {
             let _unused = writeln!(err, "[jackin] OTLP endpoint: {endpoint}");

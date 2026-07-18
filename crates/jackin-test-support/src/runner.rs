@@ -17,6 +17,8 @@ pub struct FakeRunner {
     pub fail_with: Vec<(String, String)>,
     pub capture_queue: VecDeque<String>,
     pub side_effects: Vec<(String, Box<dyn FnOnce()>)>,
+    /// Optional test-only observation hook invoked for every command.
+    pub command_hook: Option<fn(&str)>,
 }
 
 impl FakeRunner {
@@ -47,6 +49,9 @@ impl FakeRunner {
 
 impl FakeRunner {
     fn check_command(&mut self, command: &str) -> anyhow::Result<()> {
+        if let Some(hook) = self.command_hook {
+            hook(command);
+        }
         if let Some((_, message)) = self
             .fail_with
             .iter()

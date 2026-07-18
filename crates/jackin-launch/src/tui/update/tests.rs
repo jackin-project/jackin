@@ -4,7 +4,6 @@
 //! Tests for `update`.
 use super::*;
 use crate::{LaunchFailure, LaunchTargetKind};
-use std::path::PathBuf;
 
 fn identity() -> crate::LaunchIdentity {
     crate::LaunchIdentity {
@@ -33,11 +32,9 @@ fn failure_acknowledged_clears_hover_and_sets_ack() {
             detail: None,
             next_step: None,
             stage: LaunchStage::DerivedImage,
-            diagnostics_path: Some(PathBuf::from("/tmp/run.log")),
-            command_output_path: None,
         }),
     );
-    view.failure_copy_hover = Some(crate::FailureCopyTarget::DiagnosticsPath);
+    view.failure_copy_hover = Some(crate::FailureCopyTarget::RunId);
 
     drop(update_launch_view(
         &mut view,
@@ -63,8 +60,6 @@ fn stage_failed_clears_overlays_so_failure_cannot_be_hidden() {
             detail: None,
             next_step: None,
             stage: LaunchStage::DerivedImage,
-            diagnostics_path: None,
-            command_output_path: None,
         }),
     ));
 
@@ -105,13 +100,10 @@ fn failure_copy_messages_track_hover_and_copied_target() {
 
     let _unused = update_launch_view(
         &mut view,
-        LaunchMessage::FailureCopied(crate::FailureCopyTarget::DiagnosticsPath),
+        LaunchMessage::FailureCopied(crate::FailureCopyTarget::RunId),
     );
 
-    assert_eq!(
-        view.failure_copied,
-        Some(crate::FailureCopyTarget::DiagnosticsPath)
-    );
+    assert_eq!(view.failure_copied, Some(crate::FailureCopyTarget::RunId));
 }
 
 #[test]

@@ -39,7 +39,6 @@ Cross-surface **product presentation** (Debug-info paint, product brand/domain R
 | [`selector.rs`](src/selector.rs) | selector | — |
 | [`docker.rs`](src/docker.rs) | docker types | — |
 | [`docker_security.rs`](src/docker_security.rs) · [`docker_security/`](src/docker_security) | docker security | [`tests.rs`](src/docker_security/tests.rs) |
-| [`debug_log.rs`](src/debug_log.rs) | `debug_log` stub | — |
 | [`build_log_sink.rs`](src/build_log_sink.rs) | build-log sink stub | — |
 | [`standalone_dialog.rs`](src/standalone_dialog.rs) · [`standalone_dialog/`](src/standalone_dialog) | standalone dialog **port** (trait + sink; render impl in `jackin-launch`) | [`tests.rs`](src/standalone_dialog/tests.rs) |
 | [`url_text.rs`](src/url_text.rs) | url text | — |
@@ -60,7 +59,6 @@ Remaining root `pub mod`s (individually justified):
 | Module | Why public |
 |---|---|
 | `container_paths` | Namespace for container-side `/jackin/` path constants (`use jackin_core::container_paths`) across runtime/capsule/usage |
-| `debug_log` | Hosts `debug_log!` macro + sink; `#[macro_export]` shares the `jackin_core::debug_log` path with the module name |
 
 Higher crates implement the port traits defined here (e.g. `CommandRunner`) and pass the domain types through. Debug-info product presentation is `jackin_tui::operator_info`.
 

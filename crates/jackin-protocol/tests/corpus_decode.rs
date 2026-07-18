@@ -22,6 +22,7 @@ fn client_samples() -> Vec<(&'static str, ClientFrame)> {
                 spawn: None,
                 env: vec![],
                 focus_session: None,
+                context: None,
                 terminal: ClientTerminal::default(),
             },
         ),
@@ -33,6 +34,7 @@ fn client_samples() -> Vec<(&'static str, ClientFrame)> {
                 spawn: Some(SpawnRequest::Shell),
                 env: vec![("A".into(), "1".into())],
                 focus_session: Some(7),
+                context: None,
                 terminal: ClientTerminal::default(),
             },
         ),
@@ -168,7 +170,8 @@ fn assert_client_sample_covers(frame: &ClientFrame) {
         | ClientFrame::ClipboardImageChunk(_)
         | ClientFrame::ClipboardImageEnd(_)
         | ClientFrame::ClipboardImageError(_)
-        | ClientFrame::HostNotice(_) => {}
+        | ClientFrame::HostNotice(_)
+        | ClientFrame::AttachControl(_) => {}
     }
 }
 
@@ -186,7 +189,8 @@ fn assert_server_sample_covers(frame: &ServerFrame) {
         | ServerFrame::HostRevealPath(_)
         | ServerFrame::HostStageImageFromClipboardPath
         | ServerFrame::HostPasteImageFromClipboard
-        | ServerFrame::HostStageImageFromClipboard => {}
+        | ServerFrame::HostStageImageFromClipboard
+        | ServerFrame::AttachControlResponse(_) => {}
     }
 }
 

@@ -95,11 +95,45 @@ fn cockpit_outcome_for_quit_confirm(outcome: QuitConfirmOutcome) -> CockpitOutco
     }
 }
 
+fn remember_launch_action(action: jackin_telemetry::schema::enums::UiActionName) {
+    if let Some(guard) = jackin_telemetry::ui::start_action(
+        action,
+        jackin_telemetry::schema::enums::ScreenId::LaunchProgress,
+        None,
+    ) {
+        jackin_telemetry::ui::remember_action_parent(guard);
+    }
+}
+
+const fn cockpit_action_name(
+    action: crate::tui::keymap::CockpitAction,
+) -> jackin_telemetry::schema::enums::UiActionName {
+    use jackin_telemetry::schema::enums::UiActionName;
+
+    match action {
+        crate::tui::keymap::CockpitAction::HardExit
+        | crate::tui::keymap::CockpitAction::OpenQuitConfirm => UiActionName::AppExitRequest,
+    }
+}
+
+const fn build_log_action_name(
+    action: crate::tui::keymap::BuildLogAction,
+) -> Option<jackin_telemetry::schema::enums::UiActionName> {
+    use jackin_telemetry::schema::enums::UiActionName;
+
+    match action {
+        crate::tui::keymap::BuildLogAction::Close => Some(UiActionName::DialogCancel),
+        crate::tui::keymap::BuildLogAction::ScrollUp
+        | crate::tui::keymap::BuildLogAction::ScrollDown
+        | crate::tui::keymap::BuildLogAction::PageUp
+        | crate::tui::keymap::BuildLogAction::PageDown => None,
+    }
+}
+
 #[derive(Clone, Copy)]
 struct CockpitContext<'a> {
     area: Rect,
     run_id: &'a str,
-    run_log_path: Option<&'a str>,
     terminal: &'a dyn LaunchHostTerminal,
     jackin_version: &'static str,
 }
@@ -111,7 +145,6 @@ fn clamp_container_info_scroll(view: &mut LaunchView, ctx: CockpitContext<'_>) {
     let state = launch_container_info_state(
         view,
         ctx.run_id,
-        ctx.run_log_path,
         ctx.terminal.is_debug_mode(),
         ctx.jackin_version,
     );
@@ -316,7 +349,6 @@ fn handle_cockpit_mouse_down(v: &mut LaunchView, ctx: CockpitContext<'_>, col: u
         let state = launch_container_info_state(
             v,
             ctx.run_id,
-            ctx.run_log_path,
             ctx.terminal.is_debug_mode(),
             ctx.jackin_version,
         );
@@ -324,6 +356,7 @@ fn handle_cockpit_mouse_down(v: &mut LaunchView, ctx: CockpitContext<'_>, col: u
         if !rect.contains(ratatui::layout::Position { x: col, y: row }) {
             // Click outside the dialog → dismiss (Defect 11).
             let _dirty = update_launch_view(v, LaunchMessage::ContainerInfoClosed);
+            remember_launch_action(jackin_telemetry::schema::enums::UiActionName::DialogCancel);
         } else if let Some((copy_row, payload)) =
             crate::tui::components::container_info::copy_payload_at(rect, &state, col, row)
         {
@@ -366,6 +399,7 @@ fn handle_cockpit_mouse_down(v: &mut LaunchView, ctx: CockpitContext<'_>, col: u
             // Inside non-target click → swallowed (no overlay behavior).
         } else {
             let _dirty = update_launch_view(v, LaunchMessage::FailureAcknowledged);
+            remember_launch_action(jackin_telemetry::schema::enums::UiActionName::DialogConfirm);
             ctx.terminal.set_pointer_shape(false);
         }
     } else if v.build_log_open {
@@ -401,7 +435,6 @@ fn handle_cockpit_mouse_move(v: &mut LaunchView, ctx: CockpitContext<'_>, col: u
         let state = launch_container_info_state(
             v,
             ctx.run_id,
-            ctx.run_log_path,
             ctx.terminal.is_debug_mode(),
             ctx.jackin_version,
         );
@@ -530,7 +563,6 @@ fn should_emit_dialog_mouse(
 pub fn handle_cockpit_input(
     view: &SharedView,
     run_id: &str,
-    run_log_path: Option<&str>,
     terminal: &dyn LaunchHostTerminal,
     jackin_version: &'static str,
     _cancel_token: &CancellationToken,
@@ -540,7 +572,6 @@ pub fn handle_cockpit_input(
     let ctx = CockpitContext {
         area,
         run_id,
-        run_log_path,
         terminal,
         jackin_version,
     };
@@ -554,6 +585,11 @@ pub fn handle_cockpit_input(
         // open. The input owner also treats a rapid second Ctrl+C as this same
         // hard stop even if the render task is starved.
         if is_ctrl_c(&ev) {
+            jackin_telemetry::ui::record_action(
+                cockpit_action_name(crate::tui::keymap::CockpitAction::HardExit),
+                jackin_telemetry::schema::enums::ScreenId::LaunchProgress,
+                None,
+            );
             return CockpitOutcome::HardExit;
         }
         // While the quit confirmation is open it owns all input: route keys to
@@ -563,6 +599,17 @@ pub fn handle_cockpit_input(
                 && k.kind == KeyEventKind::Press
             {
                 let outcome = cockpit_outcome_for_quit_confirm(apply_quit_confirm_key(&mut v, k));
+                match outcome {
+                    CockpitOutcome::HardExit => jackin_telemetry::ui::record_action(
+                        jackin_telemetry::schema::enums::UiActionName::DialogConfirm,
+                        jackin_telemetry::schema::enums::ScreenId::LaunchProgress,
+                        None,
+                    ),
+                    CockpitOutcome::Continue if v.quit_confirm.is_none() => remember_launch_action(
+                        jackin_telemetry::schema::enums::UiActionName::DialogCancel,
+                    ),
+                    CockpitOutcome::Continue => {}
+                }
                 // Yes confirmed: immediate hard exit, matching Ctrl+C. This
                 // deliberately skips graceful cleanup so a slow build cannot
                 // keep the operator trapped in the launch surface.
@@ -582,6 +629,9 @@ pub fn handle_cockpit_input(
                         .dispatch(KeyChord::from(termrock::input::KeyEvent::from(k)))
                         == Some(crate::tui::keymap::CockpitAction::OpenQuitConfirm) =>
             {
+                remember_launch_action(cockpit_action_name(
+                    crate::tui::keymap::CockpitAction::OpenQuitConfirm,
+                ));
                 v.quit_confirm = Some(
                     crate::tui::components::prompts::PromptConfirm::new("Exit jackin❯?")
                         .with_focus_yes(),
@@ -641,7 +691,6 @@ pub fn handle_cockpit_input(
                         let state = launch_container_info_state(
                             &v,
                             ctx.run_id,
-                            ctx.run_log_path,
                             ctx.terminal.is_debug_mode(),
                             ctx.jackin_version,
                         );
@@ -679,7 +728,6 @@ pub fn handle_cockpit_input(
                 let state = launch_container_info_state(
                     &v,
                     ctx.run_id,
-                    ctx.run_log_path,
                     ctx.terminal.is_debug_mode(),
                     ctx.jackin_version,
                 );
@@ -705,7 +753,6 @@ pub fn handle_cockpit_input(
                         let state = launch_container_info_state(
                             &v,
                             ctx.run_id,
-                            ctx.run_log_path,
                             ctx.terminal.is_debug_mode(),
                             ctx.jackin_version,
                         );
@@ -720,6 +767,9 @@ pub fn handle_cockpit_input(
                     }
                     Some(ContainerInfoAction::Close) => {
                         let _dirty = update_launch_view(&mut v, LaunchMessage::ContainerInfoClosed);
+                        remember_launch_action(
+                            jackin_telemetry::schema::enums::UiActionName::DialogCancel,
+                        );
                         terminal.set_pointer_shape(false);
                     }
                     None => {}
@@ -752,6 +802,9 @@ pub fn handle_cockpit_input(
                 // Failure popup is modal over the cockpit; Enter/Esc acknowledges
                 // it so the awaiting `stage_failed` returns.
                 let _dirty = update_launch_view(&mut v, LaunchMessage::FailureAcknowledged);
+                remember_launch_action(
+                    jackin_telemetry::schema::enums::UiActionName::DialogConfirm,
+                );
                 terminal.set_pointer_shape(false);
             }
             Event::Key(k) if k.kind == KeyEventKind::Press && v.build_log_open => {
@@ -761,6 +814,9 @@ pub fn handle_cockpit_input(
                 {
                     Some(BuildLogAction::Close) => {
                         let _dirty = update_launch_view(&mut v, LaunchMessage::BuildLogClosed);
+                        if let Some(action) = build_log_action_name(BuildLogAction::Close) {
+                            remember_launch_action(action);
+                        }
                     }
                     Some(BuildLogAction::ScrollUp) if vertical => {
                         update_build_log_scroll(&mut v, area, 1);

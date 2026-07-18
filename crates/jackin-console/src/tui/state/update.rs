@@ -91,6 +91,9 @@ pub type ManagerUpdate = crate::tui::update::ConsoleUpdate<ManagerEffect>;
               branch. Inline shape preserves the per-message-arm state machine."
 )]
 pub fn update_manager(state: &mut ManagerState<'_>, message: ManagerMessage) -> ManagerUpdate {
+    let action = action_of(&message);
+    let action_guard = action.and_then(|name| start_manager_action(state, name));
+    let action_span = action_guard.as_ref().map(|guard| guard.span().enter());
     match message {
         ManagerMessage::CollapseSelectedTree => collapse_selected_tree(state),
         ManagerMessage::ClearEditorAuthKind => clear_editor_auth_kind(state),
@@ -127,11 +130,8 @@ pub fn update_manager(state: &mut ManagerState<'_>, message: ManagerMessage) -> 
             result,
             is_settings,
         } => apply_op_commit_result(state, op_ref, result, is_settings),
-        ManagerMessage::PollPickerLoads => {
-            state.request_effect(ManagerEffect::PollPickerLoads);
-        }
-        ManagerMessage::PollFileBrowserGitUrls => {
-            state.request_effect(ManagerEffect::PollFileBrowserGitUrls);
+        poll @ (ManagerMessage::PollPickerLoads | ManagerMessage::PollFileBrowserGitUrls) => {
+            request_poll_effect(state, poll);
         }
         ManagerMessage::FocusEditorContent => set_editor_tab_bar_focus(state, false),
         ManagerMessage::FocusEditorTabBar => set_editor_tab_bar_focus(state, true),
@@ -300,7 +300,150 @@ pub fn update_manager(state: &mut ManagerState<'_>, message: ManagerMessage) -> 
             );
         }
     }
+    drop(action_span);
+    if let Some(guard) = action_guard {
+        jackin_telemetry::ui::remember_action_parent(guard);
+    }
     ManagerUpdate::redraw()
+}
+
+fn request_poll_effect(state: &mut ManagerState<'_>, message: ManagerMessage) {
+    let effect = match message {
+        ManagerMessage::PollPickerLoads => ManagerEffect::PollPickerLoads,
+        ManagerMessage::PollFileBrowserGitUrls => ManagerEffect::PollFileBrowserGitUrls,
+        _ => return,
+    };
+    state.request_effect(effect);
+}
+
+fn start_manager_action(
+    state: &ManagerState<'_>,
+    action: jackin_telemetry::schema::enums::UiActionName,
+) -> Option<jackin_telemetry::operation::OperationGuard> {
+    jackin_telemetry::ui::start_action(action, telemetry_screen(state), telemetry_widget(state))
+}
+
+fn telemetry_screen(state: &ManagerState<'_>) -> jackin_telemetry::schema::enums::ScreenId {
+    use jackin_telemetry::schema::enums::ScreenId;
+
+    match state.stage {
+        ManagerStage::List
+        | ManagerStage::ConfirmDelete { .. }
+        | ManagerStage::ConfirmInstancePurge { .. } => ScreenId::WorkspaceList,
+        ManagerStage::Editor(_) => ScreenId::WorkspaceEditor,
+        ManagerStage::Settings(_) => ScreenId::Settings,
+        ManagerStage::CreatePrelude(_) => ScreenId::WorkspaceCreate,
+    }
+}
+
+fn telemetry_widget(state: &ManagerState<'_>) -> Option<&'static str> {
+    match &state.stage {
+        ManagerStage::Editor(editor) => Some(match editor.active_tab {
+            EditorTab::General => "general",
+            EditorTab::Mounts => "mounts",
+            EditorTab::Roles => "roles",
+            EditorTab::Secrets => "secrets_environments",
+            EditorTab::Auth => "auth",
+        }),
+        ManagerStage::Settings(settings) => Some(match settings.active_tab {
+            SettingsTab::General => "general",
+            SettingsTab::Mounts => "mounts",
+            SettingsTab::Environments => "environments",
+            SettingsTab::Auth => "auth",
+            SettingsTab::Trust => "trust",
+        }),
+        _ => None,
+    }
+}
+
+pub(crate) fn record_manager_action(
+    state: &ManagerState<'_>,
+    action: jackin_telemetry::schema::enums::UiActionName,
+) {
+    jackin_telemetry::ui::record_action(action, telemetry_screen(state), telemetry_widget(state));
+}
+
+pub(crate) const fn action_of(
+    message: &ManagerMessage,
+) -> Option<jackin_telemetry::schema::enums::UiActionName> {
+    use jackin_telemetry::schema::enums::UiActionName;
+
+    match message {
+        ManagerMessage::MoveEditorTab { .. }
+        | ManagerMessage::SelectEditorTab(_)
+        | ManagerMessage::MoveSettingsTab { .. }
+        | ManagerMessage::SelectSettingsTab(_) => Some(UiActionName::TabSwitch),
+        ManagerMessage::EnterCreatePrelude(_) => Some(UiActionName::WorkspaceCreate),
+        ManagerMessage::EnterEditor(_) => Some(UiActionName::WorkspaceOpen),
+        ManagerMessage::EnterSettings(_) => Some(UiActionName::SettingsOpen),
+        ManagerMessage::ReturnToList => Some(UiActionName::ScreenBack),
+        ManagerMessage::DismissSettingsErrorPopup
+        | ManagerMessage::DismissStatusPopup
+        | ManagerMessage::DismissListModal
+        | ManagerMessage::DismissInlineSessionPicker
+        | ManagerMessage::DismissInlineRolePicker
+        | ManagerMessage::DismissInlineAgentPicker
+        | ManagerMessage::DismissInlineProviderPicker
+        | ManagerMessage::DismissLaunchProviderPicker => Some(UiActionName::DialogCancel),
+        ManagerMessage::CollapseSelectedTree
+        | ManagerMessage::ClearEditorAuthKind
+        | ManagerMessage::EnterPreview
+        | ManagerMessage::EnterConfirmDelete { .. }
+        | ManagerMessage::EnterConfirmInstancePurge { .. }
+        | ManagerMessage::EnterCreateEditor { .. }
+        | ManagerMessage::EnterEditorAuthKind { .. }
+        | ManagerMessage::FileBrowserCommitValidated(_)
+        | ManagerMessage::FileBrowserListingLoaded(_)
+        | ManagerMessage::InstancesRefreshed(_)
+        | ManagerMessage::MountInfoRefreshed(_)
+        | ManagerMessage::OpCommitResolved { .. }
+        | ManagerMessage::PollFileBrowserGitUrls
+        | ManagerMessage::PollPickerLoads
+        | ManagerMessage::FocusEditorContent
+        | ManagerMessage::FocusEditorTabBar
+        | ManagerMessage::FocusSettingsContent
+        | ManagerMessage::FocusSettingsTabBar
+        | ManagerMessage::ExitPreview
+        | ManagerMessage::ExpandSelectedTree
+        | ManagerMessage::ClearSettingsAuthKind
+        | ManagerMessage::OpenSettingsErrorPopup { .. }
+        | ManagerMessage::EnterSettingsAuthKind
+        | ManagerMessage::ScrollEditorTabHorizontal { .. }
+        | ManagerMessage::SelectEditorMountRow(_)
+        | ManagerMessage::SelectListRow(_)
+        | ManagerMessage::SelectSettingsTrustRow(_)
+        | ManagerMessage::ScrollEditorWorkspaceMountsHorizontal { .. }
+        | ManagerMessage::ScrollSettingsGlobalMountsHorizontal { .. }
+        | ManagerMessage::ScrollSettingsTrustHorizontal { .. }
+        | ManagerMessage::MoveSettingsGlobalMountsSelection { .. }
+        | ManagerMessage::MoveSettingsEnvSelection { .. }
+        | ManagerMessage::MoveSettingsTrustSelection { .. }
+        | ManagerMessage::MoveEditorFieldSelection { .. }
+        | ManagerMessage::MoveSettingsGeneralSelection { .. }
+        | ManagerMessage::MoveSettingsAuthSelection { .. }
+        | ManagerMessage::SetSettingsEnvRoleExpanded { .. }
+        | ManagerMessage::SetEditorAuthRoleExpanded { .. }
+        | ManagerMessage::SetEditorSecretsRoleExpanded { .. }
+        | ManagerMessage::ToggleSettingsGlobalMountReadonly
+        | ManagerMessage::ToggleEditorGeneralSelected
+        | ManagerMessage::ToggleEditorMountReadonlySelected
+        | ManagerMessage::ToggleEditorSecretMask { .. }
+        | ManagerMessage::ToggleSettingsGeneralSelected
+        | ManagerMessage::ToggleSettingsTrustSelected
+        | ManagerMessage::MoveListSelection(_)
+        | ManagerMessage::MovePreviewPane { .. }
+        | ManagerMessage::ReloadFromConfig { .. }
+        | ManagerMessage::ScrollListHorizontal(_)
+        | ManagerMessage::ScrollFocusedListBlockVertical(_)
+        | ManagerMessage::SetListScrollFocus(_)
+        | ManagerMessage::SetListNamesFocused(_)
+        | ManagerMessage::SetDragState(_)
+        | ManagerMessage::SetListSplitPct(_)
+        | ManagerMessage::OpenListErrorPopup { .. }
+        | ManagerMessage::OpenStatusPopup { .. }
+        | ManagerMessage::OpenListContainerInfo { .. }
+        | ManagerMessage::OpenListGithubPicker { .. } => None,
+    }
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────

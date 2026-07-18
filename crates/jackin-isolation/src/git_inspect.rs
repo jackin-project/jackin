@@ -18,6 +18,41 @@ use std::path::Path;
 use jackin_core::{ChangedFile, parse_porcelain};
 use jackin_process::ExecRequest;
 
+fn git_output(request: &ExecRequest) -> anyhow::Result<jackin_process::ExecResult> {
+    use jackin_telemetry::schema::enums::{ErrorType, OutcomeValue};
+
+    let operation = jackin_telemetry::operation_or_disabled(
+        &jackin_telemetry::operation::PROCESS_COMMAND,
+        &[jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::std_attrs::PROCESS_EXECUTABLE_NAME,
+            value: jackin_telemetry::Value::Str(
+                jackin_telemetry::process::classify_executable(&request.program).as_str(),
+            ),
+        }],
+    );
+    let result = jackin_process::exec_sync(request);
+    let completion = match &result {
+        Ok(output) => {
+            if let Some(code) = output.code {
+                let _attribute = operation.set_attr(jackin_telemetry::Attr {
+                    key: jackin_telemetry::schema::attrs::std_attrs::PROCESS_EXIT_CODE,
+                    value: jackin_telemetry::Value::I64(i64::from(code)),
+                });
+            }
+            if output.timed_out {
+                (OutcomeValue::Timeout, Some(ErrorType::Timeout))
+            } else if output.success {
+                (OutcomeValue::Success, None)
+            } else {
+                (OutcomeValue::Failure, Some(ErrorType::ProcessExitNonzero))
+            }
+        }
+        Err(_) => (OutcomeValue::Failure, Some(ErrorType::ProcessSpawnError)),
+    };
+    operation.complete(completion.0, completion.1);
+    result
+}
+
 /// Run `git -C <worktree> status --porcelain` and parse the output into a list
 /// of changed files.
 ///
@@ -25,7 +60,7 @@ use jackin_process::ExecRequest;
 /// gracefully to an empty changed-files pane.
 pub fn changed_files_sync(worktree_path: &str) -> Vec<ChangedFile> {
     let request = ExecRequest::new("git", ["-C", worktree_path, "status", "--porcelain"]);
-    let Ok(output) = jackin_process::exec_sync(&request) else {
+    let Ok(output) = git_output(&request) else {
         return Vec::new();
     };
     if !output.success {
@@ -43,7 +78,7 @@ pub fn head_content_sync(worktree_path: &str, rel_path: &str) -> Option<String> 
         "git",
         ["-C", worktree_path, "show", &format!("HEAD:{rel_path}")],
     );
-    let output = jackin_process::exec_sync(&request).ok()?;
+    let output = git_output(&request).ok()?;
     if !output.success {
         return None;
     }

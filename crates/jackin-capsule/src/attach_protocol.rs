@@ -14,12 +14,8 @@ use crate::protocol::attach::{
 };
 use crate::socket;
 
-fn record_attach_failure(error_type: &'static str, body: &'static str) {
-    let span = jackin_diagnostics::operation_span("capsule.attach", &[]);
-    span.in_scope(|| {
-        jackin_diagnostics::operation_error("capsule.attach", error_type, body, &[]);
-    });
-}
+const RPC_ERROR: jackin_telemetry::schema::enums::ErrorType =
+    jackin_telemetry::schema::enums::ErrorType::RpcError;
 
 /// A validated attach handshake produced by `perform_handshake`. The
 /// main loop applies these — `client_permit` is kept alive until the
@@ -31,6 +27,7 @@ pub(crate) struct AttachHandshake {
     pub(crate) spawn: Option<SpawnRequest>,
     pub(crate) env: Vec<(String, String)>,
     pub(crate) terminal: ClientTerminal,
+    pub(crate) context: Option<Box<jackin_protocol::TelemetryContext>>,
     /// `Some(session_id)` when the client (typically the host
     /// console picking out of the snapshot preview) wants the daemon
     /// to focus a specific pane before forwarding content. The main
@@ -41,8 +38,81 @@ pub(crate) struct AttachHandshake {
 }
 
 pub(crate) struct ControlRequest {
+    pub(crate) ctx: jackin_protocol::TelemetryContext,
     pub(crate) msg: jackin_protocol::control::ClientMsg,
-    pub(crate) reply_tx: oneshot::Sender<jackin_protocol::control::ServerMsg>,
+    pub(crate) reply_tx: oneshot::Sender<ControlResponse>,
+}
+
+#[derive(Debug)]
+pub(crate) struct ControlResponse {
+    pub(crate) msg: jackin_protocol::control::ServerMsg,
+    pub(crate) operation: Option<jackin_telemetry::operation::OperationGuard>,
+    pub(crate) outcome: jackin_telemetry::schema::enums::OutcomeValue,
+    pub(crate) error_type: Option<jackin_telemetry::schema::enums::ErrorType>,
+}
+
+impl ControlResponse {
+    pub(crate) fn complete(self, write_result: &anyhow::Result<()>) {
+        if let Some(operation) = self.operation {
+            operation.complete(
+                if write_result.is_ok() {
+                    self.outcome
+                } else {
+                    jackin_telemetry::schema::enums::OutcomeValue::Failure
+                },
+                if write_result.is_ok() {
+                    self.error_type
+                } else {
+                    Some(RPC_ERROR)
+                },
+            );
+        }
+    }
+
+    pub(crate) fn complete_delivery_failure(self) {
+        if let Some(operation) = self.operation {
+            operation.complete(
+                jackin_telemetry::schema::enums::OutcomeValue::Failure,
+                Some(RPC_ERROR),
+            );
+        }
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct AttachResponseCompletion {
+    pub(crate) request_id: u64,
+    pub(crate) operation: Option<jackin_telemetry::operation::OperationGuard>,
+    pub(crate) outcome: jackin_telemetry::schema::enums::OutcomeValue,
+    pub(crate) error_type: Option<jackin_telemetry::schema::enums::ErrorType>,
+}
+
+impl AttachResponseCompletion {
+    pub(crate) fn complete(self, write_result: &std::io::Result<()>) {
+        if let Some(operation) = self.operation {
+            operation.complete(
+                if write_result.is_ok() {
+                    self.outcome
+                } else {
+                    jackin_telemetry::schema::enums::OutcomeValue::Failure
+                },
+                if write_result.is_ok() {
+                    self.error_type
+                } else {
+                    Some(RPC_ERROR)
+                },
+            );
+        }
+    }
+
+    pub(crate) fn complete_delivery_failure(self) {
+        if let Some(operation) = self.operation {
+            operation.complete(
+                jackin_telemetry::schema::enums::OutcomeValue::Failure,
+                Some(RPC_ERROR),
+            );
+        }
+    }
 }
 
 /// Per-connection handshake task. Reads the first byte, routes
@@ -56,7 +126,7 @@ pub(crate) async fn perform_handshake(
     client_permit: tokio::sync::OwnedSemaphorePermit,
     handshake_tx: mpsc::UnboundedSender<AttachHandshake>,
     control_tx: mpsc::UnboundedSender<ControlRequest>,
-) {
+) -> jackin_telemetry::spawn::DetachedCompletion {
     // Bound the handshake reads. A client that opens the socket and
     // never sends a byte otherwise holds the `OwnedSemaphorePermit`
     // forever — sixteen silent peers would starve the
@@ -66,83 +136,75 @@ pub(crate) async fn perform_handshake(
     let mut first = [0u8; 1];
     match tokio::time::timeout(HANDSHAKE_TIMEOUT, stream.read_exact(&mut first)).await {
         Ok(Ok(_)) => {}
-        Ok(Err(e)) => {
-            crate::clog!("attach: handshake read_exact(first byte) failed: {e}");
+        Ok(Err(_)) => {
             drop(client_permit);
-            return;
+            return jackin_telemetry::spawn::DetachedCompletion::error(
+                jackin_telemetry::schema::enums::ErrorType::RpcError,
+            );
         }
         Err(_) => {
-            crate::clog!(
-                "attach: handshake first byte not received within {HANDSHAKE_TIMEOUT:?}; dropping connection"
-            );
             drop(client_permit);
-            return;
+            return jackin_telemetry::spawn::DetachedCompletion::timeout();
         }
     }
     if first[0] == 0x00 {
-        // Control channel — one-shot length-prefixed JSON. Decode off the
-        // main loop, then ask the daemon loop to build the reply from current
-        // state so refresh requests and usage APIs stay daemon-owned.
-        let msg = match socket::read_control_msg(&mut stream, first[0]).await {
-            Ok(msg) => msg,
-            Err(e) => {
-                crate::clog!("control: rejecting malformed request: {e:#}");
+        return perform_control_handshake(
+            stream,
+            first[0],
+            client_permit,
+            control_tx,
+            HANDSHAKE_TIMEOUT,
+        )
+        .await;
+    }
+    let initial_frame =
+        match tokio::time::timeout(HANDSHAKE_TIMEOUT, read_client_frame(&mut stream, first[0]))
+            .await
+        {
+            Ok(Ok(Some(frame))) => frame,
+            Ok(Ok(None)) => {
                 drop(client_permit);
-                return;
+                return jackin_telemetry::spawn::DetachedCompletion::failure(
+                    jackin_telemetry::schema::enums::ErrorType::RpcError,
+                );
+            }
+            Ok(Err(_)) => {
+                drop(client_permit);
+                return jackin_telemetry::spawn::DetachedCompletion::error(
+                    jackin_telemetry::schema::enums::ErrorType::RpcError,
+                );
+            }
+            Err(_) => {
+                drop(client_permit);
+                return jackin_telemetry::spawn::DetachedCompletion::timeout();
             }
         };
-        let (reply_tx, reply_rx) = oneshot::channel();
-        if control_tx.send(ControlRequest { msg, reply_tx }).is_err() {
-            crate::clog!("control: daemon loop unavailable while handling request");
-            drop(client_permit);
-            return;
-        }
-        match tokio::time::timeout(HANDSHAKE_TIMEOUT, reply_rx).await {
-            Ok(Ok(reply)) => socket::write_control_reply(stream, &reply).await,
-            Ok(Err(_)) => crate::clog!("control: reply channel closed before response"),
-            Err(_) => crate::clog!("control: daemon reply timed out after {HANDSHAKE_TIMEOUT:?}"),
-        }
-        drop(client_permit);
-        return;
-    }
-    let initial_frame = match tokio::time::timeout(
-        HANDSHAKE_TIMEOUT,
-        read_client_frame(&mut stream, first[0]),
-    )
-    .await
-    {
-        Ok(Ok(Some(frame))) => frame,
-        Ok(Ok(None)) => {
-            crate::clog!("attach: handshake EOF before initial frame");
-            drop(client_permit);
-            return;
-        }
-        Ok(Err(e)) => {
-            crate::clog!("attach: handshake frame decode failed: {e}");
-            drop(client_permit);
-            return;
-        }
-        Err(_) => {
-            crate::clog!(
-                "attach: handshake Hello frame not received within {HANDSHAKE_TIMEOUT:?}; dropping connection"
-            );
-            drop(client_permit);
-            return;
-        }
-    };
     let ClientFrame::Hello {
         rows,
         cols,
         spawn,
         env,
         terminal,
+        context,
         focus_session,
     } = initial_frame
     else {
-        crate::clog!("attach: rejected client whose first frame was not Hello: {initial_frame:?}");
         drop(client_permit);
-        return;
+        return jackin_telemetry::spawn::DetachedCompletion::failure(
+            jackin_telemetry::schema::enums::ErrorType::RpcError,
+        );
     };
+    if context.as_ref().is_some_and(|ctx| {
+        matches!(
+            jackin_telemetry::propagation::extract(ctx.as_ref()),
+            jackin_telemetry::propagation::ExtractOutcome::RejectRequest
+        )
+    }) {
+        drop(client_permit);
+        return jackin_telemetry::spawn::DetachedCompletion::failure(
+            jackin_telemetry::schema::enums::ErrorType::RpcError,
+        );
+    }
     let handshake = AttachHandshake {
         stream,
         rows,
@@ -150,12 +212,63 @@ pub(crate) async fn perform_handshake(
         spawn,
         env,
         terminal,
+        context,
         focus_session,
         client_permit,
     };
     if handshake_tx.send(handshake).is_err() {
-        crate::clog!("attach: handshake channel closed; daemon shutting down");
+        return jackin_telemetry::spawn::DetachedCompletion::error(
+            jackin_telemetry::schema::enums::ErrorType::RpcError,
+        );
     }
+    jackin_telemetry::spawn::DetachedCompletion::success()
+}
+
+async fn perform_control_handshake(
+    mut stream: UnixStream,
+    first_tag: u8,
+    client_permit: tokio::sync::OwnedSemaphorePermit,
+    control_tx: mpsc::UnboundedSender<ControlRequest>,
+    timeout: Duration,
+) -> jackin_telemetry::spawn::DetachedCompletion {
+    let Ok(request) = socket::read_control_msg(&mut stream, first_tag).await else {
+        return jackin_telemetry::spawn::DetachedCompletion::failure(
+            jackin_telemetry::schema::enums::ErrorType::RpcError,
+        );
+    };
+    let (reply_tx, reply_rx) = oneshot::channel();
+    if control_tx
+        .send(ControlRequest {
+            ctx: request.ctx,
+            msg: request.msg,
+            reply_tx,
+        })
+        .is_err()
+    {
+        return jackin_telemetry::spawn::DetachedCompletion::error(
+            jackin_telemetry::schema::enums::ErrorType::RpcError,
+        );
+    }
+    let completion = match tokio::time::timeout(timeout, reply_rx).await {
+        Ok(Ok(response)) => {
+            let write_result = socket::write_control_reply(stream, &response.msg).await;
+            let completion = if write_result.is_ok() {
+                jackin_telemetry::spawn::DetachedCompletion::success()
+            } else {
+                jackin_telemetry::spawn::DetachedCompletion::error(
+                    jackin_telemetry::schema::enums::ErrorType::RpcError,
+                )
+            };
+            response.complete(&write_result);
+            completion
+        }
+        Ok(Err(_)) => jackin_telemetry::spawn::DetachedCompletion::error(
+            jackin_telemetry::schema::enums::ErrorType::RpcError,
+        ),
+        Err(_) => jackin_telemetry::spawn::DetachedCompletion::timeout(),
+    };
+    drop(client_permit);
+    completion
 }
 
 pub(crate) async fn drain_and_exit(mux: &mut Multiplexer) {
@@ -173,23 +286,14 @@ pub(crate) async fn drain_and_exit_with_reason(mux: &mut Multiplexer, reason: Op
 const ATTACH_SHUTDOWN_FLUSH_GRACE_MS: u64 = 50;
 const ATTACH_SHUTDOWN_CLOSE_GRACE_MS: u64 = 1000;
 
-pub(crate) fn send_attached_shutdown(
-    mux: &mut Multiplexer,
-    context: &str,
-    reason: Option<&str>,
-) -> bool {
+pub(crate) fn send_attached_shutdown(mux: &mut Multiplexer, reason: Option<&str>) -> bool {
     mux.client_registry.client.flush_out_of_band();
     let Some(tx) = mux.client_registry.client.take() else {
         return false;
     };
-    if tx
-        .send(encode_server(ServerFrame::Shutdown {
-            reason: reason.map(str::to_owned),
-        }))
-        .is_err()
-    {
-        crate::clog!("{context}: client receiver already dropped; Shutdown frame not delivered");
-    }
+    drop(tx.send(encode_server(ServerFrame::Shutdown {
+        reason: reason.map(str::to_owned),
+    })));
     true
 }
 
@@ -208,10 +312,10 @@ pub(crate) async fn detach_attached_task(mux: &mut Multiplexer, context: &str) {
 
 async fn detach_attached_task_with_reason(
     mux: &mut Multiplexer,
-    context: &str,
+    _context: &str,
     reason: Option<&str>,
 ) {
-    let had_sender = send_attached_shutdown(mux, context, reason);
+    let had_sender = send_attached_shutdown(mux, reason);
     // The latch is paired with the sender's lifetime: clearing
     // `attached_out` invalidates the previous attach, so the next
     // assignment (in the takeover branch of `run_daemon`) starts from
@@ -226,10 +330,10 @@ async fn detach_attached_task_with_reason(
 
 async fn gracefully_detach_attached_task_with_reason(
     mux: &mut Multiplexer,
-    context: &str,
+    _context: &str,
     reason: Option<&str>,
 ) {
-    let had_sender = send_attached_shutdown(mux, context, reason);
+    let had_sender = send_attached_shutdown(mux, reason);
     let Some(mut handle) = mux.client_registry.attached_task.take() else {
         return;
     };
@@ -239,15 +343,17 @@ async fn gracefully_detach_attached_task_with_reason(
     }
     tokio::select! {
         result = &mut handle => {
-            if let Err(err) = result
-                && !err.is_cancelled()
+            if let Err(error) = result
+                && !error.is_cancelled()
             {
-                crate::clog!("{context}: attach task ended with join error: {err}");
+                let _error = jackin_telemetry::record_error(
+                    jackin_telemetry::schema::enums::ErrorType::Panic,
+                );
             }
         }
         () = tokio::time::sleep(Duration::from_millis(ATTACH_SHUTDOWN_CLOSE_GRACE_MS)) => {
-            crate::clog!(
-                "{context}: attach client did not close after Shutdown within {ATTACH_SHUTDOWN_CLOSE_GRACE_MS}ms; aborting"
+            let _error = jackin_telemetry::record_error(
+                jackin_telemetry::schema::enums::ErrorType::Timeout,
             );
             handle.abort();
         }
@@ -293,86 +399,132 @@ pub(crate) async fn detach_client(mux: &mut Multiplexer) {
 /// received on `out_rx` back to the socket. Exits on any I/O error
 /// or when either channel closes (which happens during takeover —
 /// `attached_task.abort()` ends this task before its socket sees EOF).
+#[cfg(test)]
 pub(crate) async fn handle_attach_client(
-    mut stream: UnixStream,
-    mut out_rx: mpsc::UnboundedReceiver<Vec<u8>>,
+    stream: UnixStream,
+    out_rx: mpsc::UnboundedReceiver<Vec<u8>>,
     cmd_tx: mpsc::UnboundedSender<ClientFrame>,
 ) {
+    let (_completion_tx, completion_rx) = mpsc::unbounded_channel();
+    handle_attach_client_with_handshake(stream, out_rx, completion_rx, cmd_tx, None).await;
+}
+
+pub(crate) async fn handle_attach_client_with_handshake(
+    mut stream: UnixStream,
+    mut out_rx: mpsc::UnboundedReceiver<Vec<u8>>,
+    mut completion_rx: mpsc::UnboundedReceiver<AttachResponseCompletion>,
+    cmd_tx: mpsc::UnboundedSender<ClientFrame>,
+    mut handshake_operation: Option<jackin_telemetry::operation::OperationGuard>,
+) {
+    let open =
+        jackin_telemetry::stream::phase(jackin_telemetry::schema::enums::StreamOperation::Open);
+    jackin_telemetry::stream::complete_success(open);
+    let close = jackin_telemetry::stream::close_on_drop();
+    let mut completions = std::collections::HashMap::new();
     let mut tag = [0u8; 1];
+    let mut terminal_error = None;
+    let mut cancelled = false;
     loop {
         tokio::select! {
+            biased;
+            Some(completion) = completion_rx.recv() => {
+                completions.insert(completion.request_id, completion);
+            }
             result = stream.read_exact(&mut tag) => {
                 if let Err(e) = result {
-                    if e.kind() == std::io::ErrorKind::UnexpectedEof {
-                        // Expected detach — not a failure (plan 008).
-                        crate::cdebug!("attach client: socket closed (client detached)");
-                    } else {
-                        // Operator-visible breadcrumb + typed OTLP failure.
-                        crate::cerror!("attach client: socket read failed: {e}");
-                        record_attach_failure(
-                            "attach_socket_read_failed",
-                            "attach socket read failed",
-                        );
+                    if e.kind() != std::io::ErrorKind::UnexpectedEof {
+                        terminal_error = Some(RPC_ERROR);
                     }
                     break;
                 }
                 let frame = match read_client_frame(&mut stream, tag[0]).await {
                     Ok(Some(frame)) => frame,
                     Ok(None) => {
-                        crate::cwarn!("attach client: EOF mid-frame (tag={:#04x})", tag[0]);
-                        record_attach_failure(
-                            "attach_socket_eof",
-                            "attach socket closed mid-frame",
-                        );
+                        terminal_error = Some(RPC_ERROR);
                         break;
                     }
-                    Err(e) => {
-                        crate::cerror!(
-                            "attach client: frame decode failed (tag={:#04x}): {e}",
-                            tag[0]
-                        );
-                        record_attach_failure(
-                            "attach_frame_decode_failed",
-                            "attach frame decode failed",
-                        );
+                    Err(_) => {
+                        terminal_error = Some(RPC_ERROR);
                         break;
                     }
                 };
+                if matches!(
+                    frame,
+                    ClientFrame::Detach
+                        | ClientFrame::FocusIn
+                        | ClientFrame::FocusOut
+                        | ClientFrame::ClipboardImage(_)
+                        | ClientFrame::ClipboardImageStart(_)
+                        | ClientFrame::ClipboardImageChunk(_)
+                        | ClientFrame::ClipboardImageEnd(_)
+                        | ClientFrame::ClipboardImageError(_)
+                ) {
+                    let _warning = jackin_telemetry::record_recovered_degradation();
+                    continue;
+                }
                 if cmd_tx.send(frame).is_err() {
-                    crate::clog!("attach client: cmd_tx closed; daemon shutting down");
-                    return;
+                    cancelled = true;
+                    break;
                 }
             }
             Some(bytes) = out_rx.recv() => {
-                if let Err(e) = stream.write_all(&bytes).await {
-                    if matches!(
+                let write_result = stream.write_all(&bytes).await;
+                let mut response_owned_error = false;
+                if bytes.first() == Some(&jackin_protocol::attach::TAG_ATTACH_CONTROL_RESPONSE)
+                    && bytes.len() >= 13
+                {
+                    let request_id = u64::from_be_bytes(
+                        bytes[5..13].try_into().unwrap_or_default(),
+                    );
+                    if let Some(completion) = completions.remove(&request_id) {
+                        response_owned_error = write_result.is_err();
+                        completion.complete(&write_result);
+                    }
+                }
+                let handshake_owned_error = handshake_operation.is_some() && write_result.is_err();
+                if let Some(operation) = handshake_operation.take() {
+                    operation.complete(
+                        if write_result.is_ok() {
+                            jackin_telemetry::schema::enums::OutcomeValue::Success
+                        } else {
+                            jackin_telemetry::schema::enums::OutcomeValue::Failure
+                        },
+                        write_result.as_ref().err().map(|_| RPC_ERROR),
+                    );
+                }
+                if let Err(e) = write_result {
+                    if !matches!(
                         e.kind(),
                         std::io::ErrorKind::UnexpectedEof | std::io::ErrorKind::BrokenPipe
-                    ) {
-                        crate::cwarn!("attach client: socket write failed: {e}");
-                    } else {
-                        crate::cerror!("attach client: socket write failed: {e}");
-                        record_attach_failure(
-                            "attach_socket_write_failed",
-                            "attach socket write failed",
-                        );
+                    ) && !handshake_owned_error
+                        && !response_owned_error
+                    {
+                        terminal_error = Some(RPC_ERROR);
                     }
                     break;
                 }
             }
         }
     }
+    if let Some(operation) = handshake_operation {
+        operation.complete(
+            jackin_telemetry::schema::enums::OutcomeValue::Failure,
+            Some(RPC_ERROR),
+        );
+    }
+    for (_, completion) in completions {
+        completion.complete_delivery_failure();
+    }
     // Signal the main loop that this client is gone so it can clear
     // `attached_out` / `attached_task` — without this, subsequent
     // `send_to_client` calls silently drop into the closed channel
     // and the daemon keeps treating the dead socket as live. If the
-    // main loop is already shutting down the send fails; log so the
-    // exact symptom this comment warns against does not happen
-    // silently if the cmd_tx side is the one that died first.
-    if cmd_tx.send(ClientFrame::Detach).is_err() {
-        crate::clog!(
-            "attach client: cmd_tx closed before synthetic Detach could fire; main loop is already tearing down"
-        );
+    // main loop is already shutting down, channel closure is expected.
+    drop(cmd_tx.send(ClientFrame::Detach));
+    match terminal_error {
+        Some(error) => close.complete_error(error),
+        None if cancelled => drop(close),
+        None => close.complete_success(),
     }
 }
 

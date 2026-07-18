@@ -14,9 +14,9 @@ extern crate rustc_span;
 use rustc_errors::DiagDecorator;
 use rustc_hir::def::Res;
 use rustc_hir::def_id::{DefId, LocalDefId};
-use rustc_hir::{Body, Expr, ExprKind, FnDecl, HirId, ImplItemKind, ItemKind, StructTailExpr};
+use rustc_hir::{Body, Expr, ExprKind, FnDecl, StructTailExpr};
 use rustc_lint::{LateContext, LateLintPass, LintContext};
-use rustc_span::{Span, Symbol};
+use rustc_span::Span;
 use std::collections::{HashSet, VecDeque};
 
 dylint_linting::declare_late_lint! {
@@ -297,15 +297,6 @@ fn report_if_denied(
             );
         }),
     );
-}
-
-// Keep unused imports intentional for future trait-path matching.
-#[expect(
-    dead_code,
-    reason = "anchors rustc type imports for future trait-path matching"
-)]
-fn _keep(symbol: Symbol, id: HirId, kind: ItemKind<'_>, impl_kind: ImplItemKind<'_>) {
-    let _ = (symbol, id, kind, impl_kind);
 }
 
 #[cfg(test)]

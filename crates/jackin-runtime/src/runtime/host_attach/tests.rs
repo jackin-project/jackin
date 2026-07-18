@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::io::Cursor;
-use std::sync::Mutex;
 
 use jackin_protocol::attach::{
     ClientFrame, ClientTerminal, ClipboardImageFormat, ServerFrame, SpawnRequest, encode_server,
@@ -12,51 +11,11 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt, duplex};
 
 use super::*;
 
-static TERMINAL_STATE_TEST_LOCK: Mutex<()> = Mutex::new(());
-
 #[test]
 fn normalize_size_substitutes_zero_and_clamps_minimums() {
     assert_eq!(normalize_size(0, 0), (DEFAULT_ROWS, DEFAULT_COLS));
     assert_eq!(normalize_size(1, 1), (MIN_ROWS, MIN_COLS));
     assert_eq!(normalize_size(40, 120), (40, 120));
-}
-
-#[test]
-fn clipboard_image_paste_compact_logs_are_captured_in_run_diagnostics() {
-    let _lock = TERMINAL_STATE_TEST_LOCK
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    jackin_diagnostics::set_rich_surface_active(false);
-    jackin_diagnostics::set_host_screen_owned(false);
-
-    let temp = tempfile::tempdir().unwrap();
-    let paths = JackinPaths::for_tests(temp.path());
-    let run = jackin_diagnostics::RunDiagnostics::start(&paths, false, "load").unwrap();
-    let _active = run.activate();
-
-    jackin_diagnostics::set_host_screen_owned(true);
-    log_clipboard_image_paste_trigger();
-    log_clipboard_image_no_image_forwarded();
-    jackin_diagnostics::set_host_screen_owned(false);
-
-    let jsonl = fs::read_to_string(run.path()).unwrap();
-    assert!(
-        jsonl.contains("\"event.name\":\"clipboard-image\"")
-            || jsonl.contains("\"kind\":\"clipboard-image\"")
-            || jsonl.contains("clipboard-image"),
-        "{jsonl}"
-    );
-    assert!(
-        jsonl.contains("clipboard-image: paste trigger source=clipboard"),
-        "{jsonl}"
-    );
-    assert!(
-        jsonl.contains("clipboard-image: no-image source=clipboard text-paste=forwarded"),
-        "{jsonl}"
-    );
-
-    jackin_diagnostics::set_rich_surface_active(false);
-    jackin_diagnostics::set_host_screen_owned(false);
 }
 
 #[tokio::test]
@@ -66,8 +25,9 @@ async fn clipboard_image_writer_keeps_small_images_single_frame() {
         format: ClipboardImageFormat::Png,
         bytes: b"\x89PNG\r\n\x1a\nsmall".to_vec(),
     };
+    let mut operations = HashMap::new();
 
-    write_clipboard_image_frames(&mut client, image.clone())
+    write_clipboard_image_frames(&mut client, &mut operations, image.clone())
         .await
         .unwrap();
     drop(client);
@@ -78,20 +38,28 @@ async fn clipboard_image_writer_keeps_small_images_single_frame() {
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(frame, ClientFrame::ClipboardImage(image));
+    let ClientFrame::AttachControl(request) = frame else {
+        panic!("expected contextual clipboard image");
+    };
+    assert_eq!(
+        request.operation,
+        AttachControlOperation::ClipboardImage(image)
+    );
     assert_eq!(server.read(&mut tag).await.unwrap(), 0);
 }
 
 #[tokio::test]
 async fn clipboard_image_writer_chunks_large_images_with_digest() {
-    let mut bytes = vec![b'x'; MAX_CLIPBOARD_IMAGE_BYTES + 1];
+    let mut bytes = vec![b'x'; MAX_CONTEXTUAL_CLIPBOARD_IMAGE_BYTES + 1];
     bytes[..8].copy_from_slice(b"\x89PNG\r\n\x1a\n");
     let capacity = bytes.len() + 4096;
     let (mut client, mut server) = duplex(capacity);
     let expected_digest: [u8; 32] = Sha256::digest(&bytes).into();
+    let mut operations = HashMap::new();
 
     write_clipboard_image_frames(
         &mut client,
+        &mut operations,
         ClipboardImage {
             format: ClipboardImageFormat::Png,
             bytes: bytes.clone(),
@@ -107,7 +75,10 @@ async fn clipboard_image_writer_chunks_large_images_with_digest() {
         .await
         .unwrap()
         .unwrap();
-    let ClientFrame::ClipboardImageStart(start) = start else {
+    let ClientFrame::AttachControl(request) = start else {
+        panic!("expected contextual chunked image start");
+    };
+    let AttachControlOperation::ClipboardImageStart(start) = request.operation else {
         panic!("expected chunked image start");
     };
     assert_eq!(start.format, ClipboardImageFormat::Png);
@@ -121,13 +92,19 @@ async fn clipboard_image_writer_chunks_large_images_with_digest() {
             .unwrap()
             .unwrap();
         match frame {
-            ClientFrame::ClipboardImageChunk(chunk) => {
+            ClientFrame::AttachControl(AttachControlRequest {
+                operation: AttachControlOperation::ClipboardImageChunk(chunk),
+                ..
+            }) => {
                 assert_eq!(chunk.transfer_id, start.transfer_id);
                 assert_eq!(chunk.offset, received.len() as u64);
                 assert!(chunk.bytes.len() <= MAX_CLIPBOARD_IMAGE_CHUNK_BYTES);
                 received.extend(chunk.bytes);
             }
-            ClientFrame::ClipboardImageEnd(end) => {
+            ClientFrame::AttachControl(AttachControlRequest {
+                operation: AttachControlOperation::ClipboardImageEnd(end),
+                ..
+            }) => {
                 assert_eq!(end.transfer_id, start.transfer_id);
                 assert_eq!(end.sha256, expected_digest);
                 break;
@@ -143,15 +120,16 @@ async fn clipboard_image_writer_chunks_large_images_with_digest() {
 #[tokio::test]
 async fn explicit_clipboard_image_request_returns_probe_error_to_capsule() {
     let (mut client, mut server) = duplex(4096);
+    let mut operations = HashMap::new();
 
     write_clipboard_image_request_result(
         &mut client,
+        &mut operations,
         Err(anyhow::anyhow!(
             "Linux host clipboard image reader needs WAYLAND_DISPLAY with wl-paste or DISPLAY with xclip"
         )),
         "host clipboard does not contain a readable image",
         "host clipboard image probe failed",
-        "host clipboard image response failed",
     )
     .await;
     drop(client);
@@ -162,7 +140,11 @@ async fn explicit_clipboard_image_request_returns_probe_error_to_capsule() {
         .await
         .unwrap()
         .unwrap();
-    let ClientFrame::ClipboardImageError(error) = frame else {
+    let ClientFrame::AttachControl(AttachControlRequest {
+        operation: AttachControlOperation::ClipboardImageError(error),
+        ..
+    }) = frame
+    else {
         panic!("expected ClipboardImageError");
     };
 
@@ -174,13 +156,14 @@ async fn explicit_clipboard_image_request_returns_probe_error_to_capsule() {
 #[tokio::test]
 async fn explicit_clipboard_path_request_mentions_file_url_support() {
     let (mut client, mut server) = duplex(4096);
+    let mut operations = HashMap::new();
 
     write_clipboard_image_request_result(
         &mut client,
+        &mut operations,
         Ok(None),
         "host clipboard text is not an absolute readable image path or file:// image URL",
         "host clipboard image path probe failed",
-        "host clipboard image path response failed",
     )
     .await;
     drop(client);
@@ -191,7 +174,11 @@ async fn explicit_clipboard_path_request_mentions_file_url_support() {
         .await
         .unwrap()
         .unwrap();
-    let ClientFrame::ClipboardImageError(error) = frame else {
+    let ClientFrame::AttachControl(AttachControlRequest {
+        operation: AttachControlOperation::ClipboardImageError(error),
+        ..
+    }) = frame
+    else {
         panic!("expected ClipboardImageError");
     };
 
@@ -492,69 +479,6 @@ fn host_file_basename_omits_parent_directories() {
 }
 
 #[test]
-fn host_reveal_path_category_omits_full_paths() {
-    let diagnostics_dir = Path::new("/Users/operator/.jackin/data/diagnostics/runs");
-
-    assert_eq!(
-        host_reveal_path_category(
-            Path::new("/Users/operator/.jackin/data/diagnostics/runs/jk-run.jsonl"),
-            diagnostics_dir,
-        ),
-        "jackin-diagnostics"
-    );
-    assert_eq!(
-        host_reveal_path_category(Path::new("/Users/operator/private.jsonl"), diagnostics_dir),
-        "host-absolute"
-    );
-    assert_eq!(
-        host_reveal_path_category(Path::new("relative.jsonl"), diagnostics_dir),
-        "host-relative"
-    );
-}
-
-#[test]
-fn host_reveal_path_validation_accepts_diagnostics_jsonl() {
-    let root = tempfile::tempdir().unwrap();
-    let diagnostics_dir = root.path().join("data/diagnostics/runs");
-    fs::create_dir_all(&diagnostics_dir).unwrap();
-    let path = diagnostics_dir.join("jk-run-abc123.jsonl");
-    fs::write(&path, b"{}\n").unwrap();
-
-    assert_eq!(
-        validate_allowed_host_reveal_path(&path, &diagnostics_dir).unwrap(),
-        fs::canonicalize(&path).unwrap()
-    );
-}
-
-#[test]
-fn host_reveal_path_validation_rejects_non_diagnostics_paths() {
-    let root = tempfile::tempdir().unwrap();
-    let diagnostics_dir = root.path().join("data/diagnostics/runs");
-    let other_dir = root.path().join("data/other");
-    fs::create_dir_all(&diagnostics_dir).unwrap();
-    fs::create_dir_all(&other_dir).unwrap();
-    let path = other_dir.join("jk-run-abc123.jsonl");
-    fs::write(&path, b"{}\n").unwrap();
-
-    let err = validate_allowed_host_reveal_path(&path, &diagnostics_dir)
-        .expect_err("outside diagnostics dir should reject");
-    assert!(format!("{err:#}").contains("outside jackin diagnostics"));
-}
-
-#[test]
-fn host_reveal_path_validation_rejects_non_jsonl_file() {
-    let root = tempfile::tempdir().unwrap();
-    let diagnostics_dir = root.path().join("data/diagnostics/runs");
-    fs::create_dir_all(&diagnostics_dir).unwrap();
-    let path = diagnostics_dir.join("jk-run-abc123.txt");
-    fs::write(&path, b"{}\n").unwrap();
-
-    let err = validate_allowed_host_reveal_path(&path, &diagnostics_dir)
-        .expect_err("non-jsonl diagnostics path should reject");
-    assert!(format!("{err:#}").contains("not a diagnostics JSONL"));
-}
-
-#[test]
 fn host_file_export_start_does_not_overwrite_stale_temp_file() {
     let root = tempfile::tempdir().unwrap();
     fs::write(root.path().join("report.txt.part"), b"stale").unwrap();
@@ -583,6 +507,8 @@ fn host_file_export_start_does_not_overwrite_stale_temp_file() {
 
 #[tokio::test]
 async fn attach_protocol_sends_hello_with_spawn_focus_env_and_terminal() {
+    let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
+    let _subscriber = tracing::subscriber::set_default(subscriber);
     let (client, mut server) = duplex(4096);
     let (client_reader, client_writer) = tokio::io::split(client);
     let mut output = Vec::new();
@@ -602,7 +528,6 @@ async fn attach_protocol_sends_hello_with_spawn_focus_env_and_terminal() {
             ..ClientTerminal::default()
         },
         export_subdir: "jk-agent-smith".to_owned(),
-        diagnostics_run_dir: tempfile::tempdir().unwrap().path().join("diagnostics/runs"),
     };
 
     let server_task = tokio::spawn(async move {
@@ -611,6 +536,10 @@ async fn attach_protocol_sends_hello_with_spawn_focus_env_and_terminal() {
         let frame = read_client_frame(&mut server, tag[0])
             .await
             .unwrap()
+            .unwrap();
+        server
+            .write_all(&encode_server(ServerFrame::Welcome { session_count: 1 }))
+            .await
             .unwrap();
         server
             .write_all(&encode_server(ServerFrame::Shutdown { reason: None }))
@@ -635,9 +564,19 @@ async fn attach_protocol_sends_hello_with_spawn_focus_env_and_terminal() {
     .await
     .unwrap();
 
+    let mut received = server_task.await.unwrap();
+    let ClientFrame::Hello { context, .. } = &mut received else {
+        panic!("host attach must begin with Hello")
+    };
+    let propagated = context
+        .as_ref()
+        .expect("Hello must carry telemetry context");
+    assert!(propagated.traceparent.is_some());
+    *context = Some(Box::new(jackin_protocol::TelemetryContext::v1()));
     assert_eq!(
-        server_task.await.unwrap(),
+        received,
         ClientFrame::Hello {
+            context: Some(Box::new(jackin_protocol::TelemetryContext::v1())),
             rows: 30,
             cols: 100,
             spawn: Some(SpawnRequest::AgentWithProvider {
@@ -656,6 +595,75 @@ async fn attach_protocol_sends_hello_with_spawn_focus_env_and_terminal() {
             },
         }
     );
+    export.force_flush();
+    let spans = export.finished_spans();
+    assert_eq!(
+        spans
+            .iter()
+            .filter(|span| span.name == "rpc.client")
+            .count(),
+        1
+    );
+    assert_eq!(
+        spans
+            .iter()
+            .filter(|span| span.name == "stream.operation")
+            .count(),
+        2
+    );
+    assert_eq!(export.error_span_count(), 0);
+    assert!(export.contains_span_text("open"));
+    assert!(export.contains_span_text("close"));
+}
+
+#[tokio::test]
+async fn attach_protocol_marks_close_error_after_welcome_eof() {
+    let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
+    let _subscriber = tracing::subscriber::set_default(subscriber);
+    let (client, mut server) = duplex(4096);
+    let (client_reader, client_writer) = tokio::io::split(client);
+    let server_task = tokio::spawn(async move {
+        let mut tag = [0u8; 1];
+        server.read_exact(&mut tag).await.unwrap();
+        drop(read_client_frame(&mut server, tag[0]).await.unwrap());
+        server
+            .write_all(&encode_server(ServerFrame::Welcome { session_count: 1 }))
+            .await
+            .unwrap();
+    });
+    let (_input_writer, input_reader) = duplex(64);
+    let winch = signal(SignalKind::window_change()).unwrap();
+    let result = run_attach_protocol(
+        client_reader,
+        client_writer,
+        input_reader,
+        Cursor::new(Vec::<u8>::new()),
+        24,
+        80,
+        HostAttachRequest {
+            spawn_request: None,
+            focus_session: None,
+            env: Vec::new(),
+            terminal: ClientTerminal::default(),
+            export_subdir: "jk-agent-smith".to_owned(),
+        },
+        Vec::new(),
+        winch,
+    )
+    .await;
+    server_task.await.unwrap();
+    assert!(result.is_err());
+    export.force_flush();
+    let spans = export.finished_spans();
+    assert_eq!(
+        spans
+            .iter()
+            .filter(|span| span.name == "stream.operation")
+            .count(),
+        2
+    );
+    assert_eq!(export.error_span_count(), 1);
+    assert!(export.contains_span_text("rpc_error"));
 }
 
 #[tokio::test]
@@ -668,7 +676,6 @@ async fn attach_protocol_forwards_terminal_input_as_input_frames() {
         env: Vec::new(),
         terminal: ClientTerminal::default(),
         export_subdir: "jk-agent-smith".to_owned(),
-        diagnostics_run_dir: tempfile::tempdir().unwrap().path().join("diagnostics/runs"),
     };
 
     let server_task = tokio::spawn(async move {
@@ -723,7 +730,6 @@ async fn attach_protocol_preserves_bracketed_paste_and_mouse_bytes() {
         env: Vec::new(),
         terminal: ClientTerminal::default(),
         export_subdir: "jk-agent-smith".to_owned(),
-        diagnostics_run_dir: tempfile::tempdir().unwrap().path().join("diagnostics/runs"),
     };
     let raw_input = b"\x1b[200~/tmp/example.png\x1b[201~\x1b[<0;12;5M\x1b[<0;12;5m".to_vec();
 
@@ -780,7 +786,6 @@ async fn attach_protocol_auto_stages_bracketed_image_path_paste() {
         env: Vec::new(),
         terminal: ClientTerminal::default(),
         export_subdir: "jk-agent-smith".to_owned(),
-        diagnostics_run_dir: tempfile::tempdir().unwrap().path().join("diagnostics/runs"),
     };
     let mut raw_input = b"\x1b[200~".to_vec();
     raw_input.extend_from_slice(image_path.display().to_string().as_bytes());
@@ -825,7 +830,10 @@ async fn attach_protocol_auto_stages_bracketed_image_path_paste() {
     // The pasted host image path is staged as an image frame, not forwarded
     // as the raw path text.
     match server_task.await.unwrap() {
-        ClientFrame::ClipboardImage(image) => {
+        ClientFrame::AttachControl(AttachControlRequest {
+            operation: AttachControlOperation::ClipboardImage(image),
+            ..
+        }) => {
             assert_eq!(image.format, ClipboardImageFormat::Png);
             assert_eq!(image.bytes, b"\x89PNG\r\n\x1a\npayload");
         }
@@ -847,7 +855,6 @@ async fn attach_protocol_forwards_bytes_around_a_staged_paste() {
         env: Vec::new(),
         terminal: ClientTerminal::default(),
         export_subdir: "jk-agent-smith".to_owned(),
-        diagnostics_run_dir: tempfile::tempdir().unwrap().path().join("diagnostics/runs"),
     };
     // A mouse report shares the read after the paste end marker.
     let mut raw_input = b"\x1b[200~".to_vec();
@@ -898,7 +905,13 @@ async fn attach_protocol_forwards_bytes_around_a_staged_paste() {
     // The image stages, and the coincident mouse report is forwarded rather
     // than dropped with the consumed paste body.
     let (image, trailing) = server_task.await.unwrap();
-    assert!(matches!(image, ClientFrame::ClipboardImage(_)));
+    assert!(matches!(
+        image,
+        ClientFrame::AttachControl(AttachControlRequest {
+            operation: AttachControlOperation::ClipboardImage(_),
+            ..
+        })
+    ));
     assert_eq!(trailing, ClientFrame::Input(b"\x1b[<0;1;1M".to_vec()));
 }
 
@@ -916,7 +929,6 @@ async fn attach_protocol_forwards_typed_prefix_before_a_staged_paste() {
         env: Vec::new(),
         terminal: ClientTerminal::default(),
         export_subdir: "jk-agent-smith".to_owned(),
-        diagnostics_run_dir: tempfile::tempdir().unwrap().path().join("diagnostics/runs"),
     };
     // Type-ahead bytes precede the paste in the same read.
     let mut raw_input = b"ab\x1b[200~".to_vec();
@@ -968,7 +980,13 @@ async fn attach_protocol_forwards_typed_prefix_before_a_staged_paste() {
     // wire order.
     let (first, second) = server_task.await.unwrap();
     assert_eq!(first, ClientFrame::Input(b"ab".to_vec()));
-    assert!(matches!(second, ClientFrame::ClipboardImage(_)));
+    assert!(matches!(
+        second,
+        ClientFrame::AttachControl(AttachControlRequest {
+            operation: AttachControlOperation::ClipboardImage(_),
+            ..
+        })
+    ));
 }
 
 #[tokio::test]
@@ -985,7 +1003,6 @@ async fn attach_protocol_forwards_prefix_image_suffix_in_wire_order() {
         env: Vec::new(),
         terminal: ClientTerminal::default(),
         export_subdir: "jk-agent-smith".to_owned(),
-        diagnostics_run_dir: tempfile::tempdir().unwrap().path().join("diagnostics/runs"),
     };
     // Type-ahead before the paste and a mouse report after, all one read.
     let mut raw_input = b"ab\x1b[200~".to_vec();
@@ -1036,7 +1053,13 @@ async fn attach_protocol_forwards_prefix_image_suffix_in_wire_order() {
     // Exactly three frames, in wire order: prefix, image, suffix.
     let frames = server_task.await.unwrap();
     assert_eq!(frames[0], ClientFrame::Input(b"ab".to_vec()));
-    assert!(matches!(frames[1], ClientFrame::ClipboardImage(_)));
+    assert!(matches!(
+        frames[1],
+        ClientFrame::AttachControl(AttachControlRequest {
+            operation: AttachControlOperation::ClipboardImage(_),
+            ..
+        })
+    ));
     assert_eq!(frames[2], ClientFrame::Input(b"\x1b[<0;1;1M".to_vec()));
 }
 
@@ -1053,7 +1076,6 @@ async fn attach_protocol_forwards_unresolved_image_path_paste_as_text() {
         env: Vec::new(),
         terminal: ClientTerminal::default(),
         export_subdir: "jk-agent-smith".to_owned(),
-        diagnostics_run_dir: tempfile::tempdir().unwrap().path().join("diagnostics/runs"),
     };
     let mut raw_input = b"\x1b[200~".to_vec();
     raw_input.extend_from_slice(missing.display().to_string().as_bytes());
@@ -1110,7 +1132,6 @@ async fn attach_protocol_forwards_initial_query_leftovers_as_input() {
         env: Vec::new(),
         terminal: ClientTerminal::default(),
         export_subdir: "jk-agent-smith".to_owned(),
-        diagnostics_run_dir: tempfile::tempdir().unwrap().path().join("diagnostics/runs"),
     };
 
     let server_task = tokio::spawn(async move {
@@ -1165,7 +1186,6 @@ async fn attach_protocol_writes_osc52_output_unchanged() {
         env: Vec::new(),
         terminal: ClientTerminal::default(),
         export_subdir: "jk-agent-smith".to_owned(),
-        diagnostics_run_dir: tempfile::tempdir().unwrap().path().join("diagnostics/runs"),
     };
     let osc52 = b"\x1b]52;c;c2VsZWN0ZWQ=\x07".to_vec();
 
@@ -1255,11 +1275,12 @@ async fn host_notice_writer_bounds_overlong_message() {
 async fn clipboard_image_error_writer_bounds_empty_and_overlong_message() {
     let (mut client, mut server) = duplex(MAX_CLIPBOARD_IMAGE_ERROR_BYTES + 64);
     let message = format!("{}{}", "b".repeat(MAX_CLIPBOARD_IMAGE_ERROR_BYTES), "é");
+    let mut operations = HashMap::new();
 
-    send_clipboard_image_error(&mut client, &message)
+    send_clipboard_image_error(&mut client, &mut operations, &message)
         .await
         .unwrap();
-    send_clipboard_image_error(&mut client, "   ")
+    send_clipboard_image_error(&mut client, &mut operations, "   ")
         .await
         .unwrap();
     drop(client);
@@ -1270,7 +1291,11 @@ async fn clipboard_image_error_writer_bounds_empty_and_overlong_message() {
         .await
         .unwrap()
         .unwrap();
-    let ClientFrame::ClipboardImageError(error) = frame else {
+    let ClientFrame::AttachControl(AttachControlRequest {
+        operation: AttachControlOperation::ClipboardImageError(error),
+        ..
+    }) = frame
+    else {
         panic!("expected ClipboardImageError");
     };
     assert_eq!(error.message().len(), MAX_CLIPBOARD_IMAGE_ERROR_BYTES);
@@ -1281,12 +1306,12 @@ async fn clipboard_image_error_writer_bounds_empty_and_overlong_message() {
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(
-        frame,
-        ClientFrame::ClipboardImageError(
-            jackin_protocol::attach::ClipboardImageError::from_message(
-                "Host action failed".to_owned()
-            )
-        )
-    );
+    let ClientFrame::AttachControl(AttachControlRequest {
+        operation: AttachControlOperation::ClipboardImageError(error),
+        ..
+    }) = frame
+    else {
+        panic!("expected contextual ClipboardImageError");
+    };
+    assert_eq!(error.message(), "Host action failed");
 }

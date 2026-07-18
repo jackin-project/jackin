@@ -115,7 +115,7 @@ pub(crate) enum HoverTarget {
     BranchContext,
     UsageStatus,
     Container,
-    /// The red debug run-id chip at the bottom-right when `--debug` is active.
+    /// The debug invocation-id chip at the bottom-right when `--debug` is active.
     DebugChip,
     DialogCopyTarget,
 }

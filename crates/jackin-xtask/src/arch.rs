@@ -1,7 +1,7 @@
 //! Workspace dependency-direction check — tier-graph model.
 //!
-//! Workstream 4 of the completed codebase-health track. Every workspace member
-//! has a declared tier (`TIERS`); production edges must point at a
+//! Every workspace member has a declared tier (`TIERS`); production edges
+//! must point at a
 //! *strictly lower* tier, so a new crate gets a rule automatically by
 //! appearing in `TIERS`. Dev-dependencies may point anywhere except into
 //! a production+dev cycle (tracked by `DEV_CYCLE_ALLOWLIST` with
@@ -35,6 +35,7 @@ use crate::report::{self, FormatArgs};
 /// ownership headers against this table.
 pub(crate) const TIERS: &[(&str, u8)] = &[
     ("jackin-core", 0),
+    ("jackin-telemetry", 0),
     ("jackin-brand", 0),
     ("jackin-dev", 0),
     ("jackin-process", 0),
@@ -52,6 +53,7 @@ pub(crate) const TIERS: &[(&str, u8)] = &[
     ("jackin-docker", 3),
     ("jackin-env", 3),
     ("jackin-instance", 3),
+    ("jackin-otlp-testbed", 3),
     ("jackin-launch", 3),
     ("jackin-test-support", 3),
     ("jackin-usage", 3),

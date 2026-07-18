@@ -20,13 +20,6 @@ fn payload_explains_wait_over_threshold() {
         "message names the stage and both durations: {}",
         wait.message
     );
-    // Assert the parsed fields, not byte layout: serde_json key order depends on
-    // whether the `preserve_order` feature is unified in (sorted vs. insertion).
-    let parsed: serde_json::Value =
-        serde_json::from_str(&wait.detail).expect("detail is valid JSON");
-    assert_eq!(parsed["label"], "docker_build");
-    assert_eq!(parsed["duration_ms"], 1234);
-    assert_eq!(parsed["threshold_ms"], 500);
 }
 
 #[test]

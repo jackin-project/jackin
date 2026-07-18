@@ -1,0 +1,6 @@
+name: jackin
+description: Closed semantic conventions for jackin telemetry.
+schema_url: https://jackin.tailrocks.com/telemetry/schemas/1.45.0
+dependencies:
+  - schema_url: https://opentelemetry.io/schemas/1.43.0
+    registry_path: crates/jackin-telemetry/vendor/semconv-1.43.0

@@ -40,6 +40,8 @@ mod release_verify;
 mod report;
 mod schema;
 mod suppressions;
+mod telemetry_bench;
+mod telemetry_registry;
 mod test_layout;
 
 use std::{process::ExitCode, thread};
@@ -141,6 +143,12 @@ enum Command {
     ///
     /// Use as `cargo xtask schema-check --base origin/main`.
     SchemaCheck(schema::SchemaCheckArgs),
+    /// Validate the closed OpenTelemetry semantic registry and generated Rust.
+    #[command(name = "telemetry-registry")]
+    TelemetryRegistry(telemetry_registry::TelemetryRegistryArgs),
+    /// Capture and enforce the reviewed telemetry performance baseline.
+    #[command(name = "telemetry-bench")]
+    TelemetryBench(telemetry_bench::TelemetryBenchArgs),
     /// Codebase-health lint gates (completed codebase-health W3 + W4).
     ///
     /// `cargo xtask lint` (no subcommand) runs **every** gate — the file-size
@@ -232,6 +240,14 @@ fn run_all_lints(strict: bool) -> anyhow::Result<()> {
                 scope.spawn(container_paths_gate::enforce),
             ),
             ("headers", scope.spawn(headers::enforce)),
+            (
+                "telemetry-registry",
+                scope.spawn(|| {
+                    telemetry_registry::run(telemetry_registry::TelemetryRegistryArgs {
+                        generate: false,
+                    })
+                }),
+            ),
             // The unified ratchet owns file-size, test-layout, and suppression
             // families. Running their legacy shims would measure the tree twice.
             ("ratchet", scope.spawn(ratchet::enforce)),
@@ -298,6 +314,8 @@ fn main() -> ExitCode {
         Command::Research(cmd) => docs::run_research(cmd),
         Command::Roadmap(cmd) => docs::run_roadmap(cmd),
         Command::SchemaCheck(args) => schema::run(args),
+        Command::TelemetryRegistry(args) => telemetry_registry::run(args),
+        Command::TelemetryBench(args) => telemetry_bench::run(args),
         Command::ProfileMatrix(args) => profile_matrix::run(args),
         Command::ReleaseVerify(args) => release_verify::run(args),
         Command::ReleaseArchives(args) => release_archive::run(args),

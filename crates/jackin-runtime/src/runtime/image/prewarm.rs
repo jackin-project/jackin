@@ -3,6 +3,8 @@
 use jackin_core::Agent;
 #[cfg(not(test))]
 use jackin_core::{JackinPaths, RoleSelector};
+#[cfg(not(test))]
+use jackin_telemetry::spawn::JoinSetExt as _;
 
 /// Result status for one explicit role-image prewarm request.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -80,7 +82,7 @@ pub async fn prewarm_role_images(
         let selector = selector.clone();
         let role_git = role_git.to_owned();
         let branch_override = branch_override.map(str::to_owned);
-        tasks.spawn(async move {
+        tasks.spawn_joined_on(async move {
             let row = super::prewarm_agent_image(
                 &paths,
                 &selector,

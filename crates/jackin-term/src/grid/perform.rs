@@ -453,7 +453,7 @@ impl vte::Perform for DamageGrid {
             _ => {
                 // Default-deny (§3.6 of the capsule rendering plan): an
                 // unhandled CSI never reaches the client. The bytes are
-                // carried out as DroppedCsi so the capsule can `cdebug!`-log
+                // carried out as DroppedCsi so the capsule can governed DEBUG events-log
                 // the exact sequence; allowlist additions (kitty keyboard
                 // push/pop above, modifyOtherKeys) require a documented
                 // sequence + reason in multiplexer-design-rules.

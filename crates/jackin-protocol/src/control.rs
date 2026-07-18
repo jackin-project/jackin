@@ -10,12 +10,24 @@
 //! disconnects.
 use serde::{Deserialize, Serialize};
 
+use crate::TelemetryContext;
 use crate::agent_status::AgentStatusReport;
+
+/// Versioned request envelope for every capsule control RPC.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ControlRequest {
+    /// Cross-process trace and product correlation.
+    pub ctx: TelemetryContext,
+    /// Requested control operation.
+    pub msg: ClientMsg,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 /// `ClientMsg` protocol enum.
 pub enum ClientMsg {
+    /// Request the capsule process's typed telemetry health snapshot.
+    TelemetryHealth,
     /// Request the current session inventory.
     Status,
     /// Request the tab/pane tree snapshot.
@@ -75,12 +87,34 @@ pub enum ClientMsg {
     Unknown,
 }
 
+impl ClientMsg {
+    /// Fully qualified, registry-bounded RPC method.
+    #[must_use]
+    pub const fn rpc_method(&self) -> &'static str {
+        match self {
+            Self::Status => "jackin.capsule.Control/Status",
+            Self::TelemetryHealth => "jackin.capsule.Control/TelemetryHealth",
+            Self::Snapshot => "jackin.capsule.Control/Snapshot",
+            Self::Agents => "jackin.capsule.Control/Agents",
+            Self::ReportRuntimeEvent { .. } => "jackin.capsule.Control/ReportRuntimeEvent",
+            Self::StatusCapture { .. } => "jackin.capsule.Control/StatusCapture",
+            Self::UsageFocused => "jackin.capsule.Control/UsageFocused",
+            Self::UsageRefreshFocused => "jackin.capsule.Control/UsageRefreshFocused",
+            Self::UsageAccountList => "jackin.capsule.Control/UsageAccountList",
+            Self::ExecCommand { .. } => "jackin.capsule.Control/ExecCommand",
+            Self::TokenUsage { .. } => "jackin.capsule.Control/TokenUsage",
+            Self::Unknown => "jackin.capsule.Control/Unknown",
+        }
+    }
+}
+
 impl ServerMsg {
     /// Variant name for diagnostics. Canonical home for the variant→label map so
     /// consumers across crates don't each re-spell it.
     pub fn kind(&self) -> &'static str {
         match self {
             Self::SessionList { .. } => "SessionList",
+            Self::TelemetryHealth { .. } => "TelemetryHealth",
             Self::Snapshot { .. } => "Snapshot",
             Self::AgentRegistry { .. } => "AgentRegistry",
             Self::UsageFocused { .. } => "UsageFocused",
@@ -98,6 +132,11 @@ impl ServerMsg {
 #[serde(tag = "type", rename_all = "snake_case")]
 /// `ServerMsg` protocol enum.
 pub enum ServerMsg {
+    /// Current jackin❯-owned exporter and facade health observations.
+    TelemetryHealth {
+        /// Typed process-local health report.
+        report: Box<TelemetryHealthReport>,
+    },
     /// Current session inventory.
     SessionList {
         /// Current session inventory.
@@ -160,6 +199,140 @@ pub enum ServerMsg {
     /// Forward-compat sink for variants added by a newer peer.
     #[serde(other)]
     Unknown,
+}
+
+/// Sanitized Capsule telemetry configuration and process health.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TelemetryHealthReport {
+    /// Effective per-signal configuration and process identity.
+    pub fingerprint: SanitizedConfigFingerprint,
+    /// Typed invalid-configuration class, if resolution failed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub config_failure: Option<TelemetryConfigFailure>,
+    /// Current jackin❯-owned health observations.
+    pub health: TelemetryHealthSnapshot,
+}
+
+/// Privacy-safe effective Capsule OTLP configuration.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SanitizedConfigFingerprint {
+    /// Effective trace exporter configuration, when enabled and valid.
+    pub traces: Option<TelemetrySignalConfigFingerprint>,
+    /// Effective log exporter configuration, when enabled and valid.
+    pub logs: Option<TelemetrySignalConfigFingerprint>,
+    /// Effective metric exporter configuration, when enabled and valid.
+    pub metrics: Option<TelemetrySignalConfigFingerprint>,
+    /// Enforced exporter compression.
+    pub compression: String,
+    /// Enforced trace sampler.
+    pub sampler: String,
+    /// Number of active exporters.
+    pub active_signals: u8,
+    /// Canonical process service name.
+    pub service_name: String,
+    /// Canonical application mode.
+    pub app_mode: String,
+}
+
+/// Privacy-safe effective configuration for one OTLP signal.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TelemetrySignalConfigFingerprint {
+    /// Sanitized host and port without scheme, credentials, or path.
+    pub authority: String,
+    /// Whether the signal uses TLS.
+    pub tls: bool,
+}
+
+/// Sanitized invalid-configuration class.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum TelemetryConfigFailure {
+    /// At least one required signal endpoint is absent.
+    MissingSignalEndpoint,
+    /// A configured protocol is not supported.
+    UnsupportedProtocol,
+    /// The configured sampler conflicts with the required sampler.
+    ConflictingSampler,
+    /// A configured compression mode is not supported.
+    UnsupportedCompression,
+    /// A configured exporter timeout is invalid.
+    InvalidTimeout,
+    /// A configured header is malformed.
+    InvalidHeaders,
+    /// A configured Resource attribute is malformed.
+    InvalidResourceAttributes,
+    /// A configured endpoint is malformed or contains credentials.
+    InvalidEndpoint,
+    /// An optional configuration value was explicitly empty.
+    EmptyValue,
+    /// A client certificate or key is missing its pair.
+    IncompleteClientIdentity,
+}
+
+/// Sanitized process-local telemetry health exposed over control protocols.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TelemetryHealthSnapshot {
+    /// Number of active OTLP signals.
+    pub active_signals: u8,
+    /// Trace exporter health.
+    pub traces: TelemetrySignalHealth,
+    /// Log exporter health.
+    pub logs: TelemetrySignalHealth,
+    /// Metric exporter health.
+    pub metrics: TelemetrySignalHealth,
+    /// Governed facade rejection count.
+    pub facade_rejections: u64,
+    /// Whether direct Capsule export is safe and enabled.
+    pub capsule_export: CapsuleExportCoverage,
+    /// Latest orderly flush outcome.
+    pub flush: TelemetryFlushStatus,
+    /// Whether orderly shutdown completed.
+    pub shutdown_completed: bool,
+    /// Whether orderly shutdown succeeded.
+    pub shutdown_succeeded: bool,
+    /// Whether orderly shutdown exceeded its bounded deadline.
+    pub shutdown_timed_out: bool,
+}
+
+/// Sanitized direct-export coverage for a Capsule process.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum CapsuleExportCoverage {
+    /// Endpoint and authentication requirements are Capsule-safe.
+    Enabled,
+    /// No host OTLP endpoint is configured.
+    DisabledNoEndpoint,
+    /// The effective network policy forbids all egress.
+    DisabledNetworkNone,
+    /// The endpoint lacks explicit Capsule-safe classification.
+    DisabledUnclassifiedEndpoint,
+    /// Authentication lacks a dedicated Capsule-safe carrier.
+    DisabledUnclassifiedAuth,
+    /// The reporting process is not classified as a Capsule.
+    NotApplicable,
+}
+
+/// Typed orderly-flush state exposed over control protocols.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum TelemetryFlushStatus {
+    /// No flush outcome has been recorded yet.
+    Pending,
+    /// The latest flush completed successfully.
+    Succeeded,
+    /// The latest flush failed.
+    Failed,
+}
+
+/// Outer observations for one OTLP signal.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TelemetrySignalHealth {
+    /// Export attempts.
+    pub attempts: u64,
+    /// Successful exports.
+    pub successes: u64,
+    /// Failed exports.
+    pub failures: u64,
 }
 
 /// Per-session token-spend totals reported by the in-container token monitor.

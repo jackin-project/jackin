@@ -3,9 +3,8 @@
 
 //! `Z.AI` / `GLM` usage snapshot.
 //!
-//! Carved out of `usage.rs` during the completed codebase-health Workstream W5
-//! (file-size ratchet). Items in this module are `pub(crate)` so the
-//! coordinator (`usage.rs`) can re-export them.
+//! Carved out of `usage.rs` for the file-size ratchet. Items in this module
+//! are `pub(crate)` so the coordinator (`usage.rs`) can re-export them.
 
 #[cfg_attr(
     not(test),
@@ -257,7 +256,14 @@ pub(crate) fn zai_count_line(limit: &ZaiLimitRaw) -> Option<String> {
 
 pub(crate) fn fetch_zai_usage(token: &str) -> Result<ZaiQuotaResponse, String> {
     let url = resolve_zai_quota_url();
-    let quota: ZaiQuotaResponse = get_json_bearer("Z.AI quota", &url, token, &[])?;
+    let quota: ZaiQuotaResponse = get_json_bearer(
+        jackin_telemetry::schema::enums::ProviderName::Zai,
+        "/api/monitor/usage/quota/limit",
+        "Z.AI quota",
+        &url,
+        token,
+        &[],
+    )?;
     if quota.success == Some(false) || quota.code.is_some_and(|code| code != 200) {
         return Err(format!(
             "Z.AI quota rejected response: {}",

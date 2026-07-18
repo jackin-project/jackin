@@ -326,9 +326,9 @@ pub(crate) struct DialogBottomChromeWidget<'a> {
 impl Widget for DialogBottomChromeWidget<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
         // The bottom branch/context bar under a dialog renders only in a debug
-        // launch (where the run id + diagnostics matter); outside debug it is
-        // hidden so the modal stays clean (commit 5f2076a6). Only the dialog
-        // hint renders below the dialog in that case.
+        // launch, where invocation correlation is visible. Outside debug it is
+        // hidden so the modal stays clean; only the dialog hint renders below
+        // the dialog in that case.
         if self.debug_run_id.is_some() {
             render_branch_bar_row(
                 buf,

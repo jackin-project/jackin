@@ -27,6 +27,7 @@ pub mod output;
 pub mod perf_budgets;
 pub mod pid1;
 pub mod pr_context;
+mod process_telemetry;
 pub mod protocol;
 pub mod pull_request;
 pub mod runtime_setup;
@@ -40,13 +41,10 @@ pub mod util;
 pub mod tui;
 pub mod wordlist;
 
-// Logging infrastructure lives in jackin-usage; re-export so all
-// capsule modules that call crate::clog! / crate::cdebug! still work —
-// $crate in the macro expands to jackin_usage, which has write_line.
+// Telemetry-level state lives in jackin-usage.
 pub mod logging {
     pub use jackin_usage::logging::*;
 }
-pub use jackin_usage::{cdebug, cdebug_local, cerror, clog, ctrace_payload, cwarn};
 pub mod telemetry {
     pub use jackin_usage::telemetry::*;
 }

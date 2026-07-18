@@ -85,15 +85,7 @@ pub trait AttentionNotifier {
 pub struct DiagnosticNotifier;
 
 impl AttentionNotifier for DiagnosticNotifier {
-    fn notify(&mut self, notification: &AttentionNotification) -> Result<()> {
-        jackin_diagnostics::debug_log!(
-            "daemon",
-            "attention container={} session={} state={} label={}",
-            notification.container_name,
-            notification.session_id,
-            notification.state.label(),
-            notification.label
-        );
+    fn notify(&mut self, _notification: &AttentionNotification) -> Result<()> {
         Ok(())
     }
 }
@@ -197,9 +189,29 @@ pub fn serve_one<N: AttentionNotifier>(
     socket_path: &Path,
     adapter: &mut AttentionAdapter<N>,
 ) -> Result<()> {
-    let listener = bind_control_socket(socket_path)?;
-    let (stream, _) = listener.accept().context("accepting daemon client")?;
-    handle_connection(stream, adapter)
+    let open =
+        jackin_telemetry::stream::phase(jackin_telemetry::schema::enums::StreamOperation::Open);
+    let listener = match bind_control_socket(socket_path) {
+        Ok(listener) => listener,
+        Err(error) => {
+            jackin_telemetry::stream::complete_error(
+                open,
+                jackin_telemetry::schema::enums::ErrorType::IoError,
+            );
+            return Err(error);
+        }
+    };
+    jackin_telemetry::stream::complete_success(open);
+    let close = jackin_telemetry::stream::close_on_drop();
+    let result = listener
+        .accept()
+        .context("accepting daemon client")
+        .and_then(|(stream, _)| handle_connection(stream, adapter));
+    match &result {
+        Ok(()) => close.complete_success(),
+        Err(_) => close.complete_error(jackin_telemetry::schema::enums::ErrorType::IoError),
+    }
+    result
 }
 
 pub fn handle_connection<N: AttentionNotifier>(

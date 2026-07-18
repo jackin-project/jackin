@@ -6,6 +6,7 @@
 pub mod docker_client;
 mod error;
 pub mod net;
+mod process_telemetry;
 pub mod shell_runner;
 
 pub use docker_client::BollardDockerClient;

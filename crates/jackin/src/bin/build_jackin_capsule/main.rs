@@ -57,6 +57,10 @@ use jackin_image::capsule_binary::REQUIRED_VERSION;
 const MANIFEST_DIR: &str = env!("CARGO_MANIFEST_DIR");
 
 fn main() -> Result<()> {
+    debug_assert_eq!(
+        jackin::lifecycle_policy(jackin::BinaryKind::BuildCapsuleDeveloperTool),
+        jackin::LifecyclePolicy::DeveloperExcluded,
+    );
     jackin::install_default_tls_provider();
 
     let Args {

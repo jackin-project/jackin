@@ -14,6 +14,7 @@ mod op_struct;
 mod output;
 mod parse_helpers;
 mod picker;
+mod process_telemetry;
 mod resolve;
 mod token_setup;
 

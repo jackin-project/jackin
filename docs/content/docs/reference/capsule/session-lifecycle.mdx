@@ -88,7 +88,7 @@ If the role container exits non-zero or is OOM-killed, jackin❯ records crash s
 
 ## Debugging Capsule Crashes (Symbolicated Build)
 
-When a container exits with code 101 (Rust panic) and the backtrace in `~/.jackin/data/<container>/state/multiplexer.log` shows only `<unknown>` frames, the capsule binary was built in the default `release` profile which strips all symbols. Rebuild with the `capsule-debug` profile to get resolved frame names.
+When a container exits with code 101 (Rust panic) and `docker logs <container>` shows only `<unknown>` backtrace frames, the capsule binary was built in the default `release` profile, which strips symbols. Rebuild with the `capsule-debug` profile to get resolved frame names.
 
 ### Build the debug capsule
 
@@ -108,9 +108,9 @@ The debug capsule uses `[profile.capsule-debug]` in <RepoFile path="Cargo.toml">
 RUST_BACKTRACE=full cargo run --bin jackin -- load the-architect . --debug
 ```
 
-Set `RUST_BACKTRACE=full` so the panic hook's `Backtrace::force_capture()` in <RepoFile path="crates/jackin-usage/src/logging.rs">crates/jackin-usage/src/logging.rs</RepoFile> emits the full stack. The backtrace is written to `~/.jackin/data/<container>/state/multiplexer.log`; the diagnostics run log (`~/.jackin/data/diagnostics/runs/<run-id>.jsonl`) records the `capsule_log` path so you can locate it from the run id alone.
+Set `RUST_BACKTRACE=full` so the panic hook's `Backtrace::force_capture()` in <RepoFile path="crates/jackin-usage/src/logging.rs">crates/jackin-usage/src/logging.rs</RepoFile> emits the full stack to the container's standard error. Read it with an explicit `docker logs <container>` operator command. jackin❯ does not mirror the backtrace into a local telemetry file.
 
-For a controlled symbolication smoke, set `JACKIN_CAPSULE_FORCE_PANIC=1` on the host launch. The host passes it through to the container only for that run; the capsule initializes logging first, then intentionally panics with a stable diagnostics message so the run JSONL's `capsule_log` path can be checked for resolved `crates/jackin-capsule/...` frames.
+For a controlled symbolication smoke, set `JACKIN_CAPSULE_FORCE_PANIC=1` on the host launch. The host passes it through to the container only for that run; the capsule initializes operator output first, then intentionally panics with a stable message so `docker logs` can be checked for resolved `crates/jackin-capsule/...` frames.
 
 ```bash
 eval "$(cargo run --bin build-jackin-capsule -- --profile debug --export)"
@@ -121,8 +121,8 @@ JACKIN_CAPSULE_FORCE_PANIC=1 RUST_BACKTRACE=full \
 ### Triage flow
 
 1. Reproduce the crash with the debug capsule and `RUST_BACKTRACE=full`.
-2. Share the run id printed at launch start.
-3. Read `multiplexer.log` at the `capsule_log` path in the run JSONL. The panic site now resolves to `function_name at file.rs:line`.
+2. Identify the stopped role container with `docker ps -a`.
+3. Read `docker logs <container>`. The panic site now resolves to `function_name at file.rs:line`.
 
 The panic hook and `Backtrace::force_capture()` are always present — only the debug binary adds the symbol table that makes them useful.
 

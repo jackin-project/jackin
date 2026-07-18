@@ -360,8 +360,7 @@ impl RepoResolveOptions {
 
     /// `debug` is intentionally absent — non-interactive callers run
     /// from inside the TUI alt-screen, where streaming git output via
-    /// `--debug` would corrupt the render. Diagnostics go through the
-    /// buffered `jackin_diagnostics::debug_log!` channel instead.
+    /// `--debug` would corrupt the render.
     pub(super) fn non_interactive() -> Self {
         Self {
             debug: false,
@@ -503,15 +502,10 @@ pub(super) async fn resolve_agent_repo_with(
             )
             .await?;
         if !repo_matches(git_url, &remote_url) {
-            // TUI alt-screen corruption: `eprintln!` from inside a
-            // console session paints over the render.
-            jackin_diagnostics::debug_log!(
-                "repo_cache",
-                "cached role repo remote mismatch: expected={git_url:?} \
-                 found={remote_url:?} path={}",
-                cached_repo.repo_dir.display()
+            jackin_telemetry::cache::decision(
+                jackin_telemetry::schema::enums::CacheName::RoleRepository,
+                jackin_telemetry::schema::enums::CacheResult::Stale,
             );
-
             if confirm_removal()? {
                 std::fs::remove_dir_all(&cached_repo.repo_dir)?;
                 let clone_args = clone_args(git_url, &repo_path, opts.branch_override.as_deref());
@@ -540,11 +534,16 @@ pub(super) async fn resolve_agent_repo_with(
                 None,
             )
             .await?;
-        anyhow::ensure!(
-            status.is_empty(),
-            "cached role repo contains local changes or extra files: {}. Remove the cached repo or clean it before loading.",
-            cached_repo.repo_dir.display()
-        );
+        if !status.is_empty() {
+            jackin_telemetry::cache::decision(
+                jackin_telemetry::schema::enums::CacheName::RoleRepository,
+                jackin_telemetry::schema::enums::CacheResult::Stale,
+            );
+            anyhow::bail!(
+                "cached role repo contains local changes or extra files: {}. Remove the cached repo or clean it before loading.",
+                cached_repo.repo_dir.display()
+            );
+        }
 
         let fresh_fetch_age = opts.refresh_ttl.and_then(|ttl| {
             opts.branch_override
@@ -555,11 +554,9 @@ pub(super) async fn resolve_agent_repo_with(
                 .flatten()
         });
         if let Some(age) = fresh_fetch_age {
-            jackin_diagnostics::debug_log!(
-                "repo_cache",
-                "skipping role repo fetch for {}: FETCH_HEAD is {}s old",
-                selector.key(),
-                age.as_secs()
+            jackin_telemetry::cache::decision(
+                jackin_telemetry::schema::enums::CacheName::RoleRepository,
+                jackin_telemetry::schema::enums::CacheResult::Hit,
             );
             if let Some(run) = jackin_diagnostics::active_run() {
                 run.compact(
@@ -603,12 +600,7 @@ pub(super) async fn resolve_agent_repo_with(
                 )
                 .await;
             if ff_result.is_err() {
-                // Route through buffered debug channel so the TUI alt-screen
-                // is not corrupted when this fires under `jackin console`.
-                jackin_diagnostics::debug_log!(
-                    "repo_cache",
-                    "cached role branch diverged (remote may have been force-pushed) — resetting to origin/{branch}"
-                );
+                let _warning = jackin_telemetry::record_recovered_degradation();
                 runner
                     .run(
                         "git",
@@ -618,8 +610,16 @@ pub(super) async fn resolve_agent_repo_with(
                     )
                     .await?;
             }
+            jackin_telemetry::cache::decision(
+                jackin_telemetry::schema::enums::CacheName::RoleRepository,
+                jackin_telemetry::schema::enums::CacheResult::Reuse,
+            );
         }
     } else {
+        jackin_telemetry::cache::decision(
+            jackin_telemetry::schema::enums::CacheName::RoleRepository,
+            jackin_telemetry::schema::enums::CacheResult::Miss,
+        );
         let clone_args = clone_args(git_url, &repo_path, opts.branch_override.as_deref());
         runner
             .run("git", &clone_args, None, &git_run_opts)

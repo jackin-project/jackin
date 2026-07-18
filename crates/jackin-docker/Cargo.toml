@@ -20,6 +20,8 @@ path = "src/lib.rs"
 [dependencies]
 jackin-core = { workspace = true }
 jackin-diagnostics = { workspace = true }
+jackin-process = { workspace = true }
+jackin-telemetry = { workspace = true }
 bollard = { version = "0.21", features = ["aws-lc-rs"] }
 tokio = { workspace = true, features = ["rt", "process", "io-util", "sync", "macros", "time", "fs"] }
 futures-util = { workspace = true }
@@ -34,7 +36,10 @@ thiserror = { workspace = true }
 jackin-build-meta = { workspace = true }
 
 [dev-dependencies]
+jackin-diagnostics = { workspace = true, features = ["test-support"] }
+jackin-otlp-testbed = { workspace = true }
 tempfile = { workspace = true }
+tracing = { workspace = true }
 
 [lints]
 workspace = true

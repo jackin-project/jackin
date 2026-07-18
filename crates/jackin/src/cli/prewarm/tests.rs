@@ -218,32 +218,6 @@ fn daemon_prewarm_keeps_sidecar_without_duplicate_image_lookup() {
 }
 
 #[test]
-fn daemon_prewarm_records_plan_and_skipped_work() {
-    let temp = tempfile::tempdir().unwrap();
-    let paths = JackinPaths::for_tests(temp.path());
-    let run = jackin_diagnostics::RunDiagnostics::start(&paths, false, "prewarm").unwrap();
-    let _guard = run.activate();
-
-    emit_daemon_prewarm_plan();
-
-    let diagnostics = std::fs::read_to_string(run.path()).unwrap();
-    assert!(
-        diagnostics.contains("\"event.name\":\"launch_plan\"")
-            || diagnostics.contains("\"kind\":\"launch_plan\""),
-        "{diagnostics}"
-    );
-    assert!(diagnostics.contains("PrewarmOnly"), "{diagnostics}");
-    assert!(
-        diagnostics.contains("daemon_prewarm:kept_sidecar"),
-        "{diagnostics}"
-    );
-    assert!(
-        diagnostics.contains("standalone_sidecar_image_prewarm"),
-        "{diagnostics}"
-    );
-}
-
-#[test]
 fn roles_prewarm_can_target_one_role_without_image() {
     let config = config_with_workspace_default(Some(Agent::Codex));
     let args = PrewarmArgs {

@@ -3,9 +3,9 @@
 
 //! Tests for `session`.
 use super::{
-    AgentState, OscPolicy, Session, SessionEvent, agent_model_args, build_agent_command,
-    build_shell_command, child_exit_reason, inject_status_env, osc8_uri_is_safe,
-    validate_agent_slug,
+    AgentState, OscPolicy, Session, SessionEvent, SessionTerminal, agent_model_args,
+    build_agent_command, build_shell_command, child_exit_reason, emit_pty_exit, emit_pty_spawn,
+    inject_status_env, osc8_uri_is_safe, pty_exit_error_type, pty_exit_reason, validate_agent_slug,
 };
 
 use std::path::Path;
@@ -125,6 +125,20 @@ fn test_session_with_policy(policy: OscPolicy) -> Session {
     );
     session.osc_policy = policy;
     session
+}
+
+#[test]
+fn effective_state_flaps_count_once_per_rolling_window_episode() {
+    let mut session = test_session_with_policy(OscPolicy::default());
+    let started = std::time::Instant::now();
+    assert!(!session.record_status_transition(started));
+    assert!(!session.record_status_transition(started + std::time::Duration::from_secs(10)));
+    assert!(session.record_status_transition(started + std::time::Duration::from_secs(20)));
+    assert!(!session.record_status_transition(started + std::time::Duration::from_secs(25)));
+
+    assert!(!session.record_status_transition(started + std::time::Duration::from_secs(61)));
+    assert!(!session.record_status_transition(started + std::time::Duration::from_secs(70)));
+    assert!(session.record_status_transition(started + std::time::Duration::from_secs(80)));
 }
 
 fn test_process_info(pid: u32, agent: Agent) -> ProcessInfo {
@@ -703,7 +717,7 @@ fn drain_clears_pending_between_calls() {
 #[test]
 fn build_agent_command_overrides_stale_agent_env() {
     let env = vec![("JACKIN_AGENT".to_owned(), "claude".to_owned())];
-    let cmd = build_agent_command("codex", None, &env, Path::new("/workspace"), "test");
+    let cmd = build_agent_command("codex", None, None, &env, Path::new("/workspace"), "test");
 
     assert_eq!(
         cmd.get_env("JACKIN_AGENT").and_then(|value| value.to_str()),
@@ -712,9 +726,31 @@ fn build_agent_command_overrides_stale_agent_env() {
 }
 
 #[test]
+fn build_agent_command_injects_only_bounded_auth_mode() {
+    let env = vec![(
+        jackin_protocol::AUTH_MODE_ENV.to_owned(),
+        "private-stale-mode".to_owned(),
+    )];
+    let cmd = build_agent_command(
+        "codex",
+        None,
+        Some("api_key"),
+        &env,
+        Path::new("/workspace"),
+        "test",
+    );
+
+    assert_eq!(
+        cmd.get_env(jackin_protocol::AUTH_MODE_ENV)
+            .and_then(|value| value.to_str()),
+        Some("api_key")
+    );
+}
+
+#[test]
 fn build_agent_command_uses_stable_pane_term() {
     let env = vec![("TERM".to_owned(), "xterm-ghostty".to_owned())];
-    let cmd = build_agent_command("codex", None, &env, Path::new("/workspace"), "test");
+    let cmd = build_agent_command("codex", None, None, &env, Path::new("/workspace"), "test");
 
     assert_eq!(
         cmd.get_env("TERM").and_then(|value| value.to_str()),
@@ -725,7 +761,7 @@ fn build_agent_command_uses_stable_pane_term() {
 #[test]
 fn build_agent_command_advertises_truecolor() {
     let env = vec![("COLORTERM".to_owned(), "24bit".to_owned())];
-    let cmd = build_agent_command("claude", None, &env, Path::new("/workspace"), "test");
+    let cmd = build_agent_command("claude", None, None, &env, Path::new("/workspace"), "test");
 
     assert_eq!(
         cmd.get_env("COLORTERM").and_then(|value| value.to_str()),
@@ -1173,6 +1209,176 @@ fn child_exit_reason_wait_error_reports_failure() {
     let reason = child_exit_reason(Err(&err)).expect("a wait error must yield a reason");
     assert!(reason.starts_with("session process wait failed:"));
     assert!(reason.contains("boom"));
+}
+
+#[test]
+fn pty_exit_reason_covers_the_closed_registry() {
+    use jackin_telemetry::schema::enums::{ErrorType, PtyExitReason};
+
+    let clean = portable_pty::ExitStatus::with_exit_code(0);
+    let nonzero = portable_pty::ExitStatus::with_exit_code(7);
+    let signal = portable_pty::ExitStatus::with_signal("SIGTERM");
+    let wait_error = std::io::Error::other("wait failed");
+    assert_eq!(pty_exit_reason(Ok(&clean), false), PtyExitReason::Clean);
+    assert_eq!(
+        pty_exit_reason(Ok(&nonzero), false),
+        PtyExitReason::NonzeroExit
+    );
+    assert_eq!(pty_exit_reason(Ok(&signal), false), PtyExitReason::Signal);
+    assert_eq!(
+        pty_exit_reason(Err(&wait_error), false),
+        PtyExitReason::WaitFailed
+    );
+    assert_eq!(pty_exit_reason(Ok(&clean), true), PtyExitReason::Cancelled);
+    assert_eq!(pty_exit_error_type(PtyExitReason::Clean), None);
+    assert_eq!(pty_exit_error_type(PtyExitReason::Cancelled), None);
+    assert_eq!(
+        pty_exit_error_type(PtyExitReason::Signal),
+        Some(ErrorType::ProcessExitNonzero)
+    );
+    assert_eq!(
+        pty_exit_error_type(PtyExitReason::NonzeroExit),
+        Some(ErrorType::ProcessExitNonzero)
+    );
+    assert_eq!(
+        pty_exit_error_type(PtyExitReason::WaitFailed),
+        Some(ErrorType::IoError)
+    );
+}
+
+#[test]
+fn pty_spawn_exit_pair_is_bounded_and_does_not_export_wait_errors() {
+    let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
+    let private_error = std::io::Error::other("private PTY bytes and /private/workspace");
+    tracing::subscriber::with_default(subscriber, || {
+        emit_pty_spawn(Some("codex"), Some("conversation-proof"));
+        emit_pty_exit(
+            Some("codex"),
+            Some("conversation-proof"),
+            Err(&private_error),
+            false,
+        );
+    });
+    export.force_flush();
+
+    assert_eq!(export.event_count("pty.spawn"), 1);
+    assert_eq!(export.event_count("pty.exit"), 1);
+    assert!(export.contains_log_text("wait_failed"));
+    assert!(export.contains_log_text("io_error"));
+    assert!(export.contains_log_text("codex"));
+    assert!(export.contains_log_text("conversation-proof"));
+    assert!(!export.contains_log_text("private PTY bytes"));
+    assert!(!export.contains_log_text("/private/workspace"));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn conformance_wire_real_pty_spawn_stream_and_exit_exclude_private_content() {
+    let testbed = jackin_otlp_testbed::Testbed::start().expect("start OTLP testbed");
+    jackin_diagnostics::init_wire_test_export(
+        &testbed.endpoint(),
+        jackin_diagnostics::ServiceIdentity::CAPSULE,
+    )
+    .expect("initialize wire test export");
+    let (event_tx, mut event_rx) = mpsc::unbounded_channel();
+    let mut command = CommandBuilder::new("/bin/sh");
+    command.arg("-c");
+    command.arg("printf wire-private-pty-output; exit 17");
+    let terminal = SessionTerminal {
+        rows: 24,
+        cols: 80,
+        row_arena: jackin_term::RowArena::default(),
+        default_fg: None,
+        default_bg: None,
+    };
+
+    let (_session, session_id) = Session::spawn(
+        "wire-private-tab-label",
+        Some("codex".to_owned()),
+        None,
+        command,
+        terminal,
+        event_tx,
+    )
+    .expect("spawn real PTY session");
+    let exit_reason = tokio::time::timeout(std::time::Duration::from_secs(2), async {
+        loop {
+            if let Some(SessionEvent::Exited {
+                session_id: exited_id,
+                reason,
+            }) = event_rx.recv().await
+            {
+                assert_eq!(exited_id, session_id);
+                break reason;
+            }
+        }
+    })
+    .await
+    .expect("PTY session exits before deadline");
+    assert_eq!(
+        exit_reason.as_deref(),
+        Some("session process exited with code 17")
+    );
+    jackin_diagnostics::flush_wire_test_export().expect("flush wire test export");
+
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+    let records = loop {
+        let records = testbed
+            .log_records()
+            .into_iter()
+            .filter(|record| matches!(record.event_name.as_str(), "pty.spawn" | "pty.exit"))
+            .collect::<Vec<_>>();
+        if records.len() == 2 {
+            break records;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "PTY spawn and exit wire events did not arrive exactly once"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+    };
+    let wire_text = format!("{records:?}");
+    for expected in ["pty.spawn", "pty.exit", "nonzero_exit", "codex", "17"] {
+        assert!(
+            wire_text.contains(expected),
+            "missing {expected}: {wire_text}"
+        );
+    }
+    let prohibited = [
+        "wire-private-pty-output",
+        "wire-private-tab-label",
+        "printf wire-private-pty-output",
+        "/bin/sh",
+    ];
+    for value in prohibited {
+        assert!(!wire_text.contains(value), "exported {value}");
+    }
+    assert_eq!(
+        testbed.prohibited_value_violations(&prohibited),
+        Vec::<String>::new()
+    );
+    assert_eq!(testbed.legacy_namespace_violations(), Vec::<String>::new());
+    jackin_diagnostics::shutdown_capsule_tracing();
+}
+
+#[test]
+fn terminate_marks_the_live_exit_as_cancelled() {
+    let (input_tx, _input_rx) = mpsc::unbounded_channel();
+    let session = Session::new_for_test(
+        "test".to_owned(),
+        None,
+        None,
+        (24, 80),
+        0,
+        input_tx,
+        Arc::new(Mutex::new(Box::new(NullMasterPty))),
+        Arc::new(Mutex::new(Box::new(NullChildKiller))),
+    );
+    session.terminate();
+    assert!(
+        session
+            .termination_requested
+            .load(std::sync::atomic::Ordering::Acquire)
+    );
 }
 
 // ── diagnostic tail ───────────────────────────────────────────────────────
