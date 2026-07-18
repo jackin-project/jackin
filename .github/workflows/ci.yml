@@ -528,10 +528,6 @@ jobs:
             ${{ env.RUSTUP_HOME }}/update-hashes
           key: rustup-v2-${{ runner.os }}-${{ runner.arch }}-${{ needs.changes.outputs.rustup-contract }}
           restore-keys: rustup-v2-${{ runner.os }}-${{ runner.arch }}-
-      - name: Use the minimal Rust CI profile
-        if: >-
-          steps.toolchain-lookup.outputs.cache-hit != 'true'
-        run: rustup set profile minimal
       - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
         if: >-
           steps.toolchain-lookup.outputs.cache-hit != 'true' ||
@@ -550,6 +546,10 @@ jobs:
             ${{ env.CI_TOOLS_HIT != 'true' &&
                 'cargo-binstall cargo:sccache cargo:cargo-nextest cargo:cargo-deny cargo:cargo-shear cargo:cargo-audit cargo:cargo-dylint cargo:cargo-fuzz cargo:cargo-hack cargo:cargo-hakari cargo:cargo-llvm-cov cargo:cargo-mutants cargo:cargo-zigbuild cargo:dylint-link github:open-telemetry/weaver@0.24.2' || '' }}
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
+      - name: Use the minimal Rust CI profile
+        if: >-
+          steps.toolchain-lookup.outputs.cache-hit != 'true'
+        run: rustup set profile minimal
       - id: cargo-registry-cache
         if: steps.cargo-registry-lookup.outputs.cache-hit != 'true'
         uses: ./.github/actions/cache-cargo-registry
