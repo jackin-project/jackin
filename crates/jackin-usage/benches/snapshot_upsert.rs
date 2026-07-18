@@ -10,7 +10,7 @@ use std::hint::black_box;
 
 use criterion::{Criterion, Throughput};
 use jackin_protocol::control::FocusedUsageView;
-use jackin_usage::telemetry_store::store_usage_snapshots;
+use jackin_usage::usage_snapshot_store::store_usage_snapshots;
 use tempfile::TempDir;
 
 fn views(n: usize) -> Vec<FocusedUsageView> {
@@ -21,7 +21,7 @@ fn views(n: usize) -> Vec<FocusedUsageView> {
 
 fn bench_upsert(c: &mut Criterion) {
     let tmp = TempDir::new().unwrap_or_else(|e| panic!("{e}"));
-    let db = tmp.path().join("telemetry.db");
+    let db = tmp.path().join("snapshots.db");
     let n = 32usize;
     let batch = views(n);
 

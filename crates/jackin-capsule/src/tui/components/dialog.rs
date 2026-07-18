@@ -182,7 +182,7 @@ pub enum Dialog {
     /// container-name segment of the bottom branch/PR context bar.
     /// Surfaces role key, focused-agent runtime, full container ID,
     /// and workspace path with shared copy-to-clipboard affordances.
-    /// Enter copies the shared default row (Run ID when available) and
+    /// Enter copies the shared default row (Invocation ID when available) and
     /// clicks copy whichever copyable value was hit. The dialog stays
     /// open so copied-row feedback can render. Esc / q / a click
     /// outside the box dismisses. `focused_agent` is the slug of
@@ -615,13 +615,6 @@ impl Dialog {
                         .map_or(DialogAction::Redraw, |pr| {
                             DialogAction::OpenHostUrl(pr.url.clone())
                         }),
-                    Self::ContainerInfo { diagnostics, .. } => diagnostics
-                        .run_log_href
-                        .as_deref()
-                        .and_then(file_url_path)
-                        .map_or(DialogAction::Redraw, |path| {
-                            DialogAction::RevealHostPath(path.to_owned())
-                        }),
                     _ => DialogAction::Redraw,
                 },
                 b"c" | b"C" => {
@@ -636,15 +629,7 @@ impl Dialog {
                             DialogAction::OpenHostUrl(url.to_owned())
                         })
                 }
-                b"r" | b"R" => {
-                    if let Self::ContainerInfo { diagnostics, .. } = self
-                        && let Some(path) =
-                            diagnostics.run_log_href.as_deref().and_then(file_url_path)
-                    {
-                        return DialogAction::RevealHostPath(path.to_owned());
-                    }
-                    DialogAction::Redraw
-                }
+                b"r" | b"R" => DialogAction::Redraw,
                 _ => DialogAction::Redraw,
             };
         }
@@ -961,7 +946,7 @@ impl Dialog {
         if matches!(self, Self::SpawnFailure(_)) {
             return DialogAction::Consume;
         }
-        // ContainerInfo: any copyable row (Container ID, Run ID, Diagnostics
+        // ContainerInfo: any copyable row (Container ID or Invocation ID)
         // log) copies via the shared hit-test. The clicked row's value goes to
         // the clipboard and that row shows the copied check affordance.
         if matches!(self, Self::ContainerInfo { .. }) {

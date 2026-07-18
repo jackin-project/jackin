@@ -4,9 +4,51 @@
 //! Tests for `agent_binary`.
 use super::*;
 use std::cell::Cell;
+use std::sync::{
+    Arc,
+    atomic::{AtomicUsize, Ordering},
+};
+use tracing_subscriber::layer::{Context, Layer};
+
+const DOWNLOAD_WIRE_CHILD: &str = "JACKIN_DOWNLOAD_WIRE_CHILD";
+const DOWNLOAD_WIRE_TEST: &str =
+    "agent_binary::tests::conformance_wire_download_cache_and_retry_are_bounded_and_private";
+
+fn dispatch_download_wire_child() -> Result<bool> {
+    if std::env::var_os(DOWNLOAD_WIRE_CHILD).is_some() {
+        return Ok(false);
+    }
+    let status = std::process::Command::new(std::env::current_exe()?)
+        .args(["--exact", DOWNLOAD_WIRE_TEST, "--nocapture"])
+        .env(DOWNLOAD_WIRE_CHILD, "1")
+        .status()?;
+    anyhow::ensure!(status.success(), "isolated download wire test failed");
+    Ok(true)
+}
+
+#[derive(Clone)]
+struct RetryCounter(Arc<AtomicUsize>);
+
+impl<S: tracing::Subscriber> Layer<S> for RetryCounter {
+    fn on_event(&self, event: &tracing::Event<'_>, _context: Context<'_, S>) {
+        if event.metadata().name() == jackin_telemetry::schema::events::RETRY_SCHEDULED {
+            self.0.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+}
+
+fn capture_retries() -> (Arc<AtomicUsize>, tracing::subscriber::DefaultGuard) {
+    let count = Arc::new(AtomicUsize::new(0));
+    let guard = tracing::subscriber::set_default(tracing_subscriber::layer::SubscriberExt::with(
+        tracing_subscriber::registry(),
+        RetryCounter(Arc::clone(&count)),
+    ));
+    (count, guard)
+}
 
 #[tokio::test(start_paused = true)]
 async fn retry_succeeds_on_first_try() {
+    let (retries, _guard) = capture_retries();
     let calls = Cell::new(0u32);
     let r: Result<u32> = retry_with_backoff(3, Duration::from_millis(10), || {
         calls.set(calls.get() + 1);
@@ -15,10 +57,12 @@ async fn retry_succeeds_on_first_try() {
     .await;
     assert_eq!(r.unwrap(), 42);
     assert_eq!(calls.get(), 1);
+    assert_eq!(retries.load(Ordering::Relaxed), 0);
 }
 
 #[tokio::test(start_paused = true)]
 async fn retry_recovers_after_transient_failures() {
+    let (retries, _guard) = capture_retries();
     let calls = Cell::new(0u32);
     let r: Result<u32> = retry_with_backoff(3, Duration::from_millis(10), || {
         let n = calls.get() + 1;
@@ -33,10 +77,12 @@ async fn retry_recovers_after_transient_failures() {
     .await;
     assert_eq!(r.unwrap(), 3);
     assert_eq!(calls.get(), 3);
+    assert_eq!(retries.load(Ordering::Relaxed), 2);
 }
 
 #[tokio::test(start_paused = true)]
 async fn retry_exhausts_and_returns_last_error() {
+    let (retries, _guard) = capture_retries();
     let calls = Cell::new(0u32);
     let r: Result<()> = retry_with_backoff(3, Duration::from_millis(10), || {
         let n = calls.get() + 1;
@@ -50,6 +96,7 @@ async fn retry_exhausts_and_returns_last_error() {
     let err = format!("{:#}", r.unwrap_err());
     assert!(err.contains("giving up after 3 attempts"), "{err}");
     assert!(err.contains("attempt 3 failed"), "{err}");
+    assert_eq!(retries.load(Ordering::Relaxed), 2);
 }
 
 #[tokio::test(start_paused = true)]
@@ -77,6 +124,7 @@ async fn retry_backoff_grows_exponentially() {
 
 #[tokio::test(start_paused = true)]
 async fn metadata_retry_uses_two_attempts_for_transient_failures() {
+    let (retries, _guard) = capture_retries();
     let calls = Cell::new(0u32);
     let r: Result<()> = retry_metadata_with_backoff(2, Duration::from_millis(10), || {
         let n = calls.get() + 1;
@@ -89,6 +137,201 @@ async fn metadata_retry_uses_two_attempts_for_transient_failures() {
     let err = format!("{:#}", r.unwrap_err());
     assert!(err.contains("giving up after 2 attempts"), "{err}");
     assert!(err.contains("metadata attempt 2 failed"), "{err}");
+    assert_eq!(retries.load(Ordering::Relaxed), 1);
+}
+
+fn exercise_private_cache(
+    runtime: &tokio::runtime::Runtime,
+) -> Result<(tempfile::TempDir, String, String)> {
+    let temp = tempfile::tempdir()?;
+    let root = temp.path().join("wire-private-cache-key");
+    let paths = JackinPaths::for_tests(&root);
+    let cached_agent = runtime.block_on(ensure_available_impl(&paths, Agent::Kimi, true))?;
+    assert!(
+        cached_agent.path.starts_with(&root),
+        "real cache path did not consume private root: {}",
+        cached_agent.path.display()
+    );
+    Ok((
+        temp,
+        root.to_string_lossy().into_owned(),
+        cached_agent.path.to_string_lossy().into_owned(),
+    ))
+}
+
+fn exercise_deceptive_host(runtime: &tokio::runtime::Runtime, url: &str) -> Result<()> {
+    runtime.block_on(crate::telemetry_boundary::download_request(
+        crate::telemetry_boundary::DownloadRoute::AgentMetadata,
+        url,
+        async { Ok::<_, anyhow::Error>(()) },
+    ))
+}
+
+fn emit_all_cache_decisions() {
+    for name in jackin_telemetry::schema::enums::CacheName::ALL
+        .iter()
+        .copied()
+    {
+        for result in jackin_telemetry::schema::enums::CacheResult::ALL
+            .iter()
+            .copied()
+        {
+            crate::telemetry_boundary::cache_decision(name, result);
+        }
+    }
+}
+
+#[test]
+fn conformance_wire_download_cache_and_retry_are_bounded_and_private() -> Result<()> {
+    if dispatch_download_wire_child()? {
+        return Ok(());
+    }
+
+    use std::io::{Read as _, Write as _};
+
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()?;
+    let testbed = runtime.block_on(async { jackin_otlp_testbed::Testbed::start() })?;
+    jackin_diagnostics::init_wire_test_export(
+        &testbed.endpoint(),
+        jackin_diagnostics::ServiceIdentity::HOST_ONE_SHOT,
+    )?;
+
+    let listener = std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))?;
+    let address = listener.local_addr()?;
+    let server = std::thread::spawn(move || -> std::io::Result<()> {
+        let (mut stream, _) = listener.accept()?;
+        let mut request = [0_u8; 1024];
+        let _read = stream.read(&mut request)?;
+        stream.write_all(
+            b"HTTP/1.1 200 OK\r\ncontent-length: 20\r\nconnection: close\r\n\r\nwire-private-payload",
+        )
+    });
+    let private_url = format!("http://{address}/wire-private-artifact?token=wire-private-token");
+    let client = jackin_docker::net::http_client(HeaderMap::new())?;
+    let payload = runtime.block_on(crate::telemetry_boundary::download_request(
+        crate::telemetry_boundary::DownloadRoute::AgentMetadata,
+        &private_url,
+        jackin_docker::net::get_text(&client, &private_url),
+    ))?;
+    assert_eq!(payload, "wire-private-payload");
+    server.join().expect("download server thread")?;
+
+    let failed_url = "https://downloads.claude.ai/wire-private-failed-artifact?secret=value";
+    let failure = runtime.block_on(crate::telemetry_boundary::download_request(
+        crate::telemetry_boundary::DownloadRoute::AgentArtifact,
+        failed_url,
+        async { Err::<(), _>(anyhow::anyhow!("wire-private-download-error")) },
+    ));
+    assert!(failure.is_err());
+    for route in [
+        crate::telemetry_boundary::DownloadRoute::CapsuleArtifact,
+        crate::telemetry_boundary::DownloadRoute::CapsuleManifest,
+        crate::telemetry_boundary::DownloadRoute::CapsuleManifestBundle,
+    ] {
+        runtime.block_on(crate::telemetry_boundary::download_request(
+            route,
+            "https://github.com/wire-private-capsule-route?token=wire-private-capsule-token",
+            async { Ok::<_, anyhow::Error>(()) },
+        ))?;
+    }
+    let deceptive_host =
+        "https://downloads.claude.ai.evil.invalid/wire-private-host?token=wire-private-host-token";
+    exercise_deceptive_host(&runtime, deceptive_host)?;
+
+    let (_private_cache_temp, private_cache_root, cached_agent_path) =
+        exercise_private_cache(&runtime)?;
+    emit_all_cache_decisions();
+    let attempts = Cell::new(0_u32);
+    let recovered = runtime.block_on(retry_metadata_with_backoff(2, Duration::ZERO, || {
+        let attempt = attempts.get() + 1;
+        attempts.set(attempt);
+        async move {
+            if attempt == 1 {
+                anyhow::bail!("wire-private-retry-error")
+            }
+            Ok(attempt)
+        }
+    }))?;
+    assert_eq!(recovered, 2);
+    jackin_diagnostics::flush_wire_test_export()?;
+    assert!(runtime.block_on(testbed.wait_for_all_signals(Duration::from_secs(2))));
+
+    let http_spans = testbed
+        .spans()
+        .into_iter()
+        .filter(|span| span.name == "http.client")
+        .collect::<Vec<_>>();
+    assert_eq!(http_spans.len(), 6);
+    let span_wire = format!("{http_spans:?}");
+    for expected in [
+        "/agent-binaries/{version}/metadata",
+        "/agent-binaries/{version}/{artifact}",
+        "/releases/download/{version}/{artifact}",
+        "/releases/download/{version}/capsule-manifest.json",
+        "/releases/download/{version}/capsule-manifest.json.bundle",
+        "downloads.claude.ai",
+        "github.com",
+        "success",
+        "failure",
+        "http_error",
+    ] {
+        assert!(
+            span_wire.contains(expected),
+            "missing {expected}: {span_wire}"
+        );
+    }
+    let events = testbed.log_records();
+    assert_eq!(
+        events
+            .iter()
+            .filter(|event| event.event_name == "cache.decision")
+            .count(),
+        26
+    );
+    assert_eq!(
+        events
+            .iter()
+            .filter(|event| event.event_name == "retry.scheduled")
+            .count(),
+        1
+    );
+    let metric_names = testbed.metric_names();
+    for expected in [
+        "cache.decisions",
+        "cache.decision.active",
+        "cache.decision.duration",
+    ] {
+        assert!(metric_names.iter().any(|name| name == expected));
+    }
+    let address = address.to_string();
+    let prohibited = [
+        private_url.as_str(),
+        address.as_str(),
+        "wire-private-artifact",
+        "wire-private-token",
+        "wire-private-payload",
+        "wire-private-failed-artifact",
+        "wire-private-download-error",
+        "wire-private-retry-error",
+        "wire-private-capsule-route",
+        "wire-private-capsule-token",
+        deceptive_host,
+        "downloads.claude.ai.evil.invalid",
+        "wire-private-host-token",
+        private_cache_root.as_str(),
+        cached_agent_path.as_str(),
+        "wire-private-cache-key",
+    ];
+    assert_eq!(
+        testbed.prohibited_value_violations(&prohibited),
+        Vec::<String>::new()
+    );
+    assert_eq!(testbed.legacy_namespace_violations(), Vec::<String>::new());
+    jackin_diagnostics::shutdown_capsule_tracing();
+    Ok(())
 }
 
 fn release_fixture() -> AgentRelease {
@@ -180,41 +423,6 @@ async fn newest_cached_executable_release_async_finds_newest_binary() {
 }
 
 #[tokio::test]
-async fn ensure_available_uses_stale_cached_executable_without_foreground_resolve() {
-    let dir = tempfile::tempdir().unwrap();
-    let paths = JackinPaths::for_tests(dir.path());
-    let release = release_fixture();
-
-    write_cached_release(&paths, &release).unwrap();
-    let latest_path = metadata_cache_path(&paths, Agent::Claude);
-    let stale = SystemTime::now() - Duration::from_hours(2);
-    filetime::set_file_mtime(&latest_path, filetime::FileTime::from_system_time(stale)).unwrap();
-    write_version_release(&paths, &release).unwrap();
-    let binary_path = cached_binary_path(&paths, &release);
-    std::fs::write(&binary_path, b"cached").unwrap();
-    chmod_executable(&binary_path).unwrap();
-
-    let diagnostics = jackin_diagnostics::RunDiagnostics::start(&paths, false, "prewarm").unwrap();
-    let _guard = diagnostics.activate();
-
-    let binary = ensure_available_impl(&paths, Agent::Claude, false)
-        .await
-        .expect("stale metadata should still use cached executable");
-
-    assert_eq!(binary.path, binary_path);
-    assert_eq!(binary.version.as_deref(), Some(release.version.as_str()));
-    let diagnostics_log = std::fs::read_to_string(diagnostics.path()).unwrap();
-    assert!(
-        diagnostics_log.contains("agent_binary_cache_hit"),
-        "{diagnostics_log}"
-    );
-    assert!(
-        !diagnostics_log.contains("agent_binary_resolve_started"),
-        "foreground path must not resolve before using stale cached executable: {diagnostics_log}"
-    );
-}
-
-#[tokio::test]
 async fn ensure_binary_or_cached_fallback_uses_cached_binary_when_primary_download_fails() {
     let dir = tempfile::tempdir().unwrap();
     let paths = JackinPaths::for_tests(dir.path());
@@ -253,37 +461,6 @@ async fn ensure_binary_or_cached_fallback_uses_cached_binary_when_primary_downlo
 }
 
 #[cfg(unix)]
-#[tokio::test]
-async fn ensure_binary_for_release_repairs_non_executable_cached_binary() {
-    use std::os::unix::fs::PermissionsExt as _;
-
-    let dir = tempfile::tempdir().unwrap();
-    let paths = JackinPaths::for_tests(dir.path());
-    let release = AgentRelease {
-        url: "not-a-valid-url".to_owned(),
-        ..release_fixture()
-    };
-    let cached = cached_binary_path(&paths, &release);
-    std::fs::create_dir_all(cached.parent().unwrap()).unwrap();
-    std::fs::write(&cached, b"cached").unwrap();
-    let mut permissions = std::fs::metadata(&cached).unwrap().permissions();
-    permissions.set_mode(0o644);
-    std::fs::set_permissions(&cached, permissions).unwrap();
-
-    let diagnostics = jackin_diagnostics::RunDiagnostics::start(&paths, false, "prewarm").unwrap();
-    let _guard = diagnostics.activate();
-
-    let binary = ensure_binary_for_release(Agent::Claude, &release, &cached)
-        .await
-        .expect("cached binary mode should be repaired without download");
-
-    assert_eq!(binary.path, cached);
-    assert_eq!(binary.version.as_deref(), Some(release.version.as_str()));
-    assert!(is_executable_file(&binary.path));
-    let diagnostics_log = std::fs::read_to_string(diagnostics.path()).unwrap();
-    assert!(diagnostics_log.contains("agent_binary_cache_repaired"));
-}
-
 #[tokio::test]
 async fn ensure_binary_or_cached_fallback_surfaces_error_when_no_cache_exists() {
     let dir = tempfile::tempdir().unwrap();

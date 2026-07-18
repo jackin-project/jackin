@@ -10,18 +10,14 @@
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ContainerInfoDiagnostics {
     pub host_version: String,
-    pub run_id: String,
-    pub run_log_display: String,
-    pub run_log_href: Option<String>,
+    pub invocation_id: String,
 }
 
 impl Default for ContainerInfoDiagnostics {
     fn default() -> Self {
         Self {
             host_version: "unknown".to_owned(),
-            run_id: String::new(),
-            run_log_display: "(not set)".to_owned(),
-            run_log_href: None,
+            invocation_id: String::new(),
         }
     }
 }

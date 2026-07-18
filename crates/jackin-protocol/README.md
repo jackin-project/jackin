@@ -13,6 +13,7 @@ Primary entry: [`ClientFrame`](src/attach.rs) (attach-protocol client frames). R
 - `ServerFrame` — capsule→host attach frames
 - `ClipboardImageError` — typed clipboard image failure signal (wire payload remains a human-readable message; `from_message` classifies free-form host text)
 - `ClientMsg` / `ServerMsg` — control-channel JSON frames
+- `TelemetryContext` — validated W3C trace context propagated across host/Capsule control frames
 - `host_terminal` — the single OSC 10/11 default-color handshake and input-preservation adapter used by both attach clients
 
 `#![deny(missing_docs)]` is on; public surface is rustdoc-complete.

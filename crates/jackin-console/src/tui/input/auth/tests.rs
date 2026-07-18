@@ -17,6 +17,19 @@ use jackin_core::{
 };
 use jackin_env::{OpCache, OpRunner};
 
+#[test]
+fn missing_auth_return_path_exports_bodyless_instrumentation_fault() {
+    let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
+    tracing::subscriber::with_default(subscriber, record_missing_return_path);
+
+    export.force_flush();
+    assert_eq!(export.event_count("error.typed"), 1);
+    assert!(export.contains_log_text("telemetry_instrumentation_fault"));
+    for private in ["credential", "modal", "function", "path"] {
+        assert!(!export.contains_log_text(private));
+    }
+}
+
 fn key(code: KeyCode) -> KeyEvent {
     KeyEvent {
         code,

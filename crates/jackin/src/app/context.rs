@@ -383,9 +383,7 @@ async fn ad_hoc_hardline_candidates(
 
     for entry in index.instances {
         let state_dir = paths.data_dir.join(&entry.container_base);
-        let Some(manifest) =
-            instance::InstanceManifest::read_or_log(&state_dir, "ad_hoc_hardline_candidates")
-        else {
+        let Some(manifest) = instance::InstanceManifest::read_optional_lossy(&state_dir) else {
             continue;
         };
         if !ad_hoc_manifest_matches_cwd(&manifest, &canonical_cwd, &cwd_fingerprint) {

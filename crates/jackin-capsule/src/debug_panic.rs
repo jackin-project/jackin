@@ -16,7 +16,6 @@ pub(crate) fn panic_if_requested_from_env() {
         return;
     }
 
-    crate::clog!("{ENV_FORCE_PANIC}=1 requested; forcing capsule diagnostics panic");
     panic!("{ENV_FORCE_PANIC}=1 forced capsule diagnostics panic");
 }
 

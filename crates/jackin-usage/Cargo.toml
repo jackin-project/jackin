@@ -22,7 +22,8 @@ default = []
 [dependencies]
 jackin-core = { workspace = true }
 jackin-protocol = { workspace = true }
-jackin-diagnostics = { workspace = true, features = ["otlp"] }
+jackin-diagnostics = { workspace = true }
+jackin-telemetry = { workspace = true }
 base64 = { workspace = true }
 chrono = { workspace = true, features = ["clock"] }
 fs4 = { workspace = true }
@@ -31,15 +32,20 @@ reqwest = { workspace = true, features = ["blocking", "json", "rustls"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 tokio = { workspace = true, features = ["rt", "sync", "macros", "time", "net"] }
+tower = { workspace = true }
 tracing = { workspace = true }
 turso = { workspace = true }
 url = { workspace = true }
 
 
 [dev-dependencies]
+anyhow = { workspace = true }
 criterion = { workspace = true, features = ["html_reports"] }
+jackin-diagnostics = { workspace = true, features = ["test-support"] }
+jackin-otlp-testbed = { workspace = true }
 tempfile = { workspace = true }
-tracing-subscriber = { workspace = true, features = ["env-filter", "fmt"] }
+tokio = { workspace = true, features = ["rt-multi-thread"] }
+tracing = { workspace = true }
 
 [[bench]]
 name = "materialize_accounts"

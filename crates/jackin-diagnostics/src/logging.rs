@@ -30,7 +30,6 @@ pub enum TelemetrySink {
     OtlpSpans,
     OtlpLogs,
     Console,
-    DiagnosticsFile,
 }
 
 pub fn set_debug_mode(enabled: bool) {
@@ -67,7 +66,6 @@ pub fn sink_level(sink: TelemetrySink, debug: bool) -> TelemetryLevel {
         TelemetrySink::OtlpSpans => "JACKIN_TELEMETRY_OTLP_SPANS_LEVEL",
         TelemetrySink::OtlpLogs => "JACKIN_TELEMETRY_OTLP_LOGS_LEVEL",
         TelemetrySink::Console => "JACKIN_TELEMETRY_CONSOLE_LEVEL",
-        TelemetrySink::DiagnosticsFile => "JACKIN_TELEMETRY_FILE_LEVEL",
     };
     std::env::var(env_key)
         .ok()
@@ -138,23 +136,6 @@ pub(crate) fn debug_capture_enabled(category: &str, legacy_debug: bool) -> bool 
         .ok()
         .or_else(config_telemetry_categories);
     level >= TelemetryLevel::Debug && telemetry_category_enabled(category, categories.as_deref())
-}
-
-#[cfg(test)]
-pub(crate) fn debug_capture_enabled_with_env(
-    level_env: Option<&str>,
-    categories_env: Option<&str>,
-    category: &str,
-    legacy_debug: bool,
-) -> bool {
-    let level = level_env
-        .and_then(parse_telemetry_level)
-        .unwrap_or(if legacy_debug {
-            TelemetryLevel::Debug
-        } else {
-            TelemetryLevel::Info
-        });
-    level >= TelemetryLevel::Debug && telemetry_category_enabled(category, categories_env)
 }
 
 fn telemetry_category_enabled(category: &str, categories_env: Option<&str>) -> bool {
@@ -247,13 +228,12 @@ pub fn emit_debug_line(category: &str, message: &str) {
 
 /// Emit a compact operator-visible line.
 ///
-/// Always mirrored into the active diagnostics run when one exists. For the
-/// terminal: printed to stderr immediately on a plain CLI; when a rich surface
+/// Emitted as governed telemetry when an invocation is active. For the terminal,
+/// it is printed to stderr immediately on a plain CLI; when a rich surface
 /// owns the screen it is *deferred* into the debug buffer and flushed to stderr
 /// at teardown ([`end_debug_buffering`]) rather than dropped — so an operator
 /// notice (e.g. "OTLP export failing") still reaches the operator and any parent
-/// process wrapping the command, without ever spewing over the live TUI. This
-/// makes failure visibility independent of the (optional) run file.
+/// process wrapping the command without ever spewing over the live TUI.
 pub fn emit_compact_line(kind: &str, line: &str) {
     if let Some(run) = crate::run::active_run() {
         run.compact(kind, line);
@@ -261,10 +241,9 @@ pub fn emit_compact_line(kind: &str, line: &str) {
     emit_operator_notice(line);
 }
 
-/// The terminal half of [`emit_compact_line`] with no run-file write: stderr on
-/// a plain CLI, deferred to teardown under a rich surface. Use this from inside
-/// the tracing layer (where emitting a `tracing` event would re-enter the
-/// subscriber) — the caller writes the run file directly.
+/// The terminal-only half of [`emit_compact_line`]: stderr on a plain CLI,
+/// deferred to teardown under a rich surface. Use this from inside the tracing
+/// layer, where emitting a `tracing` event would re-enter the subscriber.
 pub fn emit_operator_notice(line: &str) {
     if crate::terminal::rich_terminal_owned() {
         buffer_pending_notice(line);

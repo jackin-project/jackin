@@ -54,14 +54,34 @@ fn selected_refs_wire_shape_is_stable() {
         cursor: 0,
     };
     let req = jackin_protocol::CredRequest {
+        ctx: jackin_protocol::TelemetryContext::v1(),
         refs: state.selected_refs(),
     };
     assert_eq!(
         serde_json::to_value(&req).unwrap(),
         serde_json::json!({
+            "ctx": { "v": 1 },
             "refs": [{ "name": "GH_TOKEN", "kind": "op", "source": "op://vault/item/field" }]
         })
     );
+}
+
+#[test]
+fn exec_command_uses_control_request_codec() {
+    let framed = frame(&exec_control_request(
+        "gh".to_owned(),
+        vec!["auth".to_owned(), "status".to_owned()],
+        jackin_protocol::TelemetryContext::v1(),
+    ));
+    let declared = u32::from_be_bytes(framed[..4].try_into().unwrap()) as usize;
+    assert_eq!(declared, framed.len() - 4);
+    let decoded: ControlRequest = serde_json::from_slice(&framed[4..]).unwrap();
+    assert_eq!(decoded.ctx.v, 1);
+    assert!(matches!(
+        decoded.msg,
+        ClientMsg::ExecCommand { command, args }
+            if command == "gh" && args == ["auth", "status"]
+    ));
 }
 
 #[tokio::test]

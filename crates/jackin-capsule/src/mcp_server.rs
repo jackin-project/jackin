@@ -21,7 +21,7 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader};
 
 const PROTOCOL_VERSION: &str = "2024-11-05";
 const SERVER_NAME: &str = "jackin-exec";
@@ -208,42 +208,60 @@ async fn handle_tool_call(params: &Value) -> Value {
 
 /// Run the MCP stdio server. Reads JSON-RPC from stdin, writes to stdout.
 pub async fn run() -> Result<()> {
-    let stdin = tokio::io::stdin();
-    let mut stdout = tokio::io::stdout();
+    run_with_io(tokio::io::stdin(), tokio::io::stdout()).await
+}
+
+async fn run_with_io<R, W>(stdin: R, mut stdout: W) -> Result<()>
+where
+    R: AsyncRead + Unpin,
+    W: AsyncWrite + Unpin,
+{
+    let open =
+        jackin_telemetry::stream::phase(jackin_telemetry::schema::enums::StreamOperation::Open);
     let mut reader = BufReader::new(stdin);
     let mut line = String::new();
+    jackin_telemetry::stream::complete_success(open);
+    let close = jackin_telemetry::stream::close_on_drop();
 
-    loop {
-        line.clear();
-        let n = reader.read_line(&mut line).await?;
-        if n == 0 {
-            // EOF — client closed the connection.
-            break;
+    let result = async {
+        loop {
+            line.clear();
+            let n = reader.read_line(&mut line).await?;
+            if n == 0 {
+                // EOF — client closed the connection.
+                break;
+            }
+
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+
+            let response = match serde_json::from_str::<JsonRpcRequest>(trimmed) {
+                Err(e) => Some(JsonRpcResponse::err(
+                    Value::Null,
+                    -32700,
+                    format!("parse error: {e}"),
+                )),
+                Ok(req) => dispatch(req).await,
+            };
+
+            if let Some(resp) = response {
+                let mut out = serde_json::to_string(&resp)?;
+                out.push('\n');
+                stdout.write_all(out.as_bytes()).await?;
+                stdout.flush().await?;
+            }
         }
-
-        let trimmed = line.trim();
-        if trimmed.is_empty() {
-            continue;
-        }
-
-        let response = match serde_json::from_str::<JsonRpcRequest>(trimmed) {
-            Err(e) => Some(JsonRpcResponse::err(
-                Value::Null,
-                -32700,
-                format!("parse error: {e}"),
-            )),
-            Ok(req) => dispatch(req).await,
-        };
-
-        if let Some(resp) = response {
-            let mut out = serde_json::to_string(&resp)?;
-            out.push('\n');
-            stdout.write_all(out.as_bytes()).await?;
-            stdout.flush().await?;
-        }
+        Ok(())
     }
+    .await;
 
-    Ok(())
+    match &result {
+        Ok(()) => close.complete_success(),
+        Err(_) => close.complete_error(jackin_telemetry::schema::enums::ErrorType::IoError),
+    }
+    result
 }
 
 /// Returns `None` for JSON-RPC notifications (no response required by spec).
@@ -284,3 +302,6 @@ async fn dispatch(req: JsonRpcRequest) -> Option<JsonRpcResponse> {
         )),
     }
 }
+
+#[cfg(test)]
+mod tests;

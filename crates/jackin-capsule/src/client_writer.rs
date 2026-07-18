@@ -27,10 +27,7 @@ const SYNC_END: &[u8] = b"\x1b[?2026l";
 #[derive(Debug, Default)]
 pub(crate) struct ClientWriter {
     tx: Option<mpsc::UnboundedSender<Vec<u8>>>,
-    /// Latched true on the first failed send after `attach`: once the
-    /// receiver drops mid-attach every subsequent send fails too, and one
-    /// log line beats one per frame.
-    dead_logged: bool,
+    completion_tx: Option<mpsc::UnboundedSender<crate::attach_protocol::AttachResponseCompletion>>,
     /// Sequences waiting for the next frame boundary.
     out_of_band: Vec<Vec<u8>>,
 }
@@ -41,23 +38,29 @@ impl ClientWriter {
     /// addressed to a terminal that no longer exists.
     pub(crate) fn attach(&mut self, tx: mpsc::UnboundedSender<Vec<u8>>) {
         self.tx = Some(tx);
-        self.dead_logged = false;
+        self.completion_tx = None;
         self.out_of_band.clear();
+    }
+
+    pub(crate) fn attach_with_completions(
+        &mut self,
+        tx: mpsc::UnboundedSender<Vec<u8>>,
+        completion_tx: mpsc::UnboundedSender<crate::attach_protocol::AttachResponseCompletion>,
+    ) {
+        self.attach(tx);
+        self.completion_tx = Some(completion_tx);
     }
 
     /// Drop the sender, returning it so detach paths can send their final
     /// `Shutdown` on a writer-free channel.
     pub(crate) fn take(&mut self) -> Option<mpsc::UnboundedSender<Vec<u8>>> {
         self.out_of_band.clear();
+        self.completion_tx = None;
         self.tx.take()
     }
 
     pub(crate) fn is_attached(&self) -> bool {
         self.tx.is_some()
-    }
-
-    pub(crate) fn mark_dead_logged(&mut self) {
-        self.dead_logged = true;
     }
 
     pub(crate) fn has_out_of_band(&self) -> bool {
@@ -116,13 +119,33 @@ impl ClientWriter {
         self.send_encoded(encode_server(frame));
     }
 
+    pub(crate) fn send_attach_response(
+        &mut self,
+        response: jackin_protocol::attach::AttachControlResponse,
+        completion: crate::attach_protocol::AttachResponseCompletion,
+    ) {
+        self.flush_out_of_band();
+        let bytes = encode_server(ServerFrame::AttachControlResponse(response));
+        let Some(tx) = &self.tx else {
+            completion.complete_delivery_failure();
+            return;
+        };
+        let Some(completion_tx) = &self.completion_tx else {
+            completion.complete_delivery_failure();
+            return;
+        };
+        if tx.send(bytes).is_err() {
+            completion.complete_delivery_failure();
+            return;
+        }
+        if let Err(error) = completion_tx.send(completion) {
+            error.0.complete_delivery_failure();
+        }
+    }
+
     fn send_encoded(&mut self, bytes: Vec<u8>) {
-        if let Some(tx) = &self.tx
-            && tx.send(bytes).is_err()
-            && !self.dead_logged
-        {
-            self.dead_logged = true;
-            crate::clog!("client write: receiver dropped; output discarded (this attach is dead)");
+        if let Some(tx) = &self.tx {
+            drop(tx.send(bytes));
         }
     }
 
@@ -135,44 +158,11 @@ impl ClientWriter {
             metrics.cursor_moves as u64,
             metrics.painted_cells as u64,
         );
-        // Per-frame text row demoted to TRACE (metrics replace the firehose).
-        crate::ctrace_payload!(
-            "send: bytes={} cursor_moves={} sgr_resets={} osc8_opens={} osc8_closes={} max_row_addressed={} max_col_addressed={} full_screen_erases={} painted_cells={} full_frame_repaint={}",
-            metrics.bytes,
-            metrics.cursor_moves,
-            metrics.sgr_resets,
-            metrics.osc8_opens,
-            metrics.osc8_closes,
-            metrics.max_row_addressed,
-            metrics.max_col_addressed,
-            metrics.full_screen_erases,
-            metrics.painted_cells,
-            metrics.full_frame_repaint,
-        );
-        // Verbatim dump of only the smallest emissions (chrome / out-of-band
-        // only). Capped tight so a steady-state run can't balloon the log.
-        if bytes.len() <= 1200 {
-            crate::ctrace_payload!("send-bytes: {}", escape_for_log(bytes));
-        }
     }
 }
 
-/// Render a frame's bytes as a single readable line: ESC as `\e`, other
-/// control bytes as `\xNN`, printable ASCII verbatim. Used only behind the
-/// debug flag to dump small frames for triage.
-fn escape_for_log(bytes: &[u8]) -> String {
-    let mut out = String::with_capacity(bytes.len() * 2);
-    for &b in bytes {
-        match b {
-            0x1b => out.push_str("\\e"),
-            b'\n' => out.push_str("\\n"),
-            b'\r' => out.push_str("\\r"),
-            0x20..=0x7e => out.push(b as char),
-            _ => out.push_str(&format!("\\x{b:02x}")),
-        }
-    }
-    out
-}
+#[cfg(test)]
+mod tests;
 
 /// Emitted-byte counters used to catch render regressions now that Ratatui's
 /// diff is no longer forced into a full repaint every frame.

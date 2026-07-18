@@ -35,6 +35,8 @@ pub struct FakeDockerClient {
         reason = "test record tuple mirrors the API signature; factoring adds indirection without clarity"
     )]
     pub created_networks: std::cell::RefCell<Vec<(String, HashMap<String, String>, bool)>>,
+    /// Optional test-only observation hook invoked for every Docker operation.
+    pub operation_hook: Option<fn(&str)>,
 }
 
 impl Default for FakeDockerClient {
@@ -53,6 +55,7 @@ impl Default for FakeDockerClient {
             fail_with: Vec::new(),
             created_containers: std::cell::RefCell::new(Vec::new()),
             created_networks: std::cell::RefCell::new(Vec::new()),
+            operation_hook: None,
         }
     }
 }
@@ -71,6 +74,9 @@ impl FakeDockerClient {
 
     fn record(&self, entry: &str) {
         self.recorded.borrow_mut().push(entry.to_owned());
+        if let Some(hook) = self.operation_hook {
+            hook(entry);
+        }
     }
 
     fn ignore_if_missing(result: anyhow::Result<()>) -> anyhow::Result<()> {

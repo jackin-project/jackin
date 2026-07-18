@@ -33,6 +33,8 @@ The workspace's `cargo xtask` automation — CI lanes, lint gates, docs checks, 
 | [`test_layout.rs`](src/test_layout.rs) · [`test_layout/`](src/test_layout) | test-layout gate | [`tests.rs`](src/test_layout/tests.rs) |
 | [`schema.rs`](src/schema.rs) · [`schema/`](src/schema) | schema check | [`tests.rs`](src/schema/tests.rs) |
 | [`docs.rs`](src/docs.rs) · [`docs/`](src/docs) | docs repo-links / brand / specs / roadmap / research | [`tests.rs`](src/docs/tests.rs), brand/specs unit tests |
+| [`telemetry_registry.rs`](src/telemetry_registry.rs) · [`telemetry_registry/`](src/telemetry_registry) | closed-registry Weaver validation and namespace/privacy gates | [`tests.rs`](src/telemetry_registry/tests.rs) |
+| [`telemetry_bench.rs`](src/telemetry_bench.rs) · [`telemetry_bench/`](src/telemetry_bench) | telemetry performance capture and 5% comparison gate | [`tests.rs`](src/telemetry_bench/tests.rs) |
 | [`pr.rs`](src/pr.rs) · [`pr/`](src/pr) | PR tooling | [`tests.rs`](src/pr/tests.rs) |
 | [`profile_matrix.rs`](src/profile_matrix.rs) | feature-profile matrix | — |
 | [`pty_fixture.rs`](src/pty_fixture.rs) · [`pty_fixture/`](src/pty_fixture) | PTY fixture extraction | [`tests.rs`](src/pty_fixture/tests.rs) |

@@ -2,7 +2,7 @@
 title: "daemon"
 ---
 
-`jackin daemon` manages the per-user host daemon foundation. This production surface ships lifecycle, install files, a private Unix control socket, protocol/build skew checks, redacted logs, status reporting, and the first one-way attention adapter. It does not enable live auth sync, host bridge, keep-awake migration, or Desktop Agent Hub adapters.
+`jackin daemon` manages the per-user host daemon foundation. This production surface ships lifecycle, install files, a private Unix control socket, protocol/build skew checks, status reporting with typed telemetry health, and the first one-way attention adapter. It does not enable live auth sync, host bridge, keep-awake migration, or Desktop Agent Hub adapters.
 
 ## Commands
 
@@ -12,8 +12,7 @@ title: "daemon"
 | `jackin daemon start` | Start `jackin daemon serve` in the background for the current user. |
 | `jackin daemon stop` | Ask the running daemon to shut down cleanly. |
 | `jackin daemon restart` | Stop, then start the daemon. |
-| `jackin daemon status` | Print daemon PID, protocol version, build id, socket path, log path, enabled adapter list, and coredump policy. |
-| `jackin daemon logs` | Print the daemon log file with shared secret redaction applied. |
+| `jackin daemon status` | Print daemon PID, protocol version, build id, socket path, enabled adapter list, coredump policy, and per-signal telemetry export health. |
 | `jackin daemon install` | Write the per-user launchd or systemd user unit file. It does not load or enable the service. |
 | `jackin daemon uninstall` | Remove the launchd/systemd user unit files. |
 
@@ -29,7 +28,7 @@ Notifications are muted by default. Start the daemon with `JACKIN_ATTENTION=1` t
 JACKIN_ATTENTION=1 jackin daemon serve
 ```
 
-macOS uses Notification Center through `osascript`; Linux uses `notify-send`; unsupported hosts fall back to diagnostics-log events only. Notification titles and bodies use scrubbed labels and state names, not command output or secret values.
+macOS uses Notification Center through `osascript`; Linux uses `notify-send`; unsupported hosts do not display a notification. Notification titles and bodies use scrubbed labels and state names, not command output or secret values.
 
 ## Install
 

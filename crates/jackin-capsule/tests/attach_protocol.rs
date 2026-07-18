@@ -55,6 +55,7 @@ fn hello_first_byte_never_collides_with_control_channel() {
         env: Vec::new(),
         terminal: ClientTerminal::default(),
         focus_session: None,
+        context: None,
     })
     .expect("encode Hello");
     assert_ne!(bytes[0], 0x00);
@@ -143,6 +144,7 @@ fn hello_env_count_over_cap_is_rejected_by_encoder() {
         env,
         terminal: ClientTerminal::default(),
         focus_session: None,
+        context: None,
     })
     .expect_err("over-cap env must bail");
     assert!(

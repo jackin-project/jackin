@@ -11,6 +11,7 @@ use jackin_core::JackinPaths;
 use jackin_core::RoleSelector;
 use jackin_docker::ShellRunner;
 use jackin_docker::docker_client::{BollardDockerClient, DockerApi};
+use jackin_telemetry::spawn::JoinSetExt as _;
 
 /// `jackin prewarm` — fill jackin-owned runtime caches before launch.
 #[derive(Debug, Args, PartialEq, Eq)]
@@ -306,7 +307,7 @@ async fn prewarm_role_repos(
     let mut tasks = tokio::task::JoinSet::new();
     for (index, target) in targets.into_iter().enumerate() {
         let paths = paths.clone();
-        tasks.spawn(async move {
+        tasks.spawn_joined_on(async move {
             let mut runner = ShellRunner { debug };
             let selector = target.selector;
             let result = jackin_runtime::runtime::register_agent_repo(
@@ -479,7 +480,7 @@ async fn prewarm_images(
     for (index, target) in targets.into_iter().enumerate() {
         let paths = paths.clone();
         let role_branch = args.role_branch.clone();
-        tasks.spawn(async move {
+        tasks.spawn_joined_on(async move {
             let PrewarmImageTarget {
                 selector,
                 role_git,
@@ -658,7 +659,7 @@ async fn prewarm_agents(
     let mut tasks = tokio::task::JoinSet::new();
     for agent in agents.iter().copied() {
         let paths = paths.clone();
-        tasks.spawn(async move {
+        tasks.spawn_joined_on(async move {
             let result = jackin_image::agent_binary::ensure_available(&paths, agent)
                 .await
                 .map(|binary| AgentPrewarmRow {

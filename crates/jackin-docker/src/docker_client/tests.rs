@@ -11,6 +11,190 @@ use super::*;
 // build-time error.
 const _: fn() -> Result<Docker, bollard::errors::Error> = Docker::connect_with_ssl_defaults;
 
+fn content_length(headers: &str) -> anyhow::Result<usize> {
+    headers
+        .lines()
+        .find(|line| {
+            line.split_once(':')
+                .is_some_and(|(name, _)| name.eq_ignore_ascii_case("content-length"))
+        })
+        .and_then(|line| line.split_once(':'))
+        .map(|(_, value)| value.trim().parse::<usize>())
+        .transpose()?
+        .ok_or_else(|| anyhow::anyhow!("Docker request omitted content-length"))
+}
+
+fn capture_docker_create_request(
+    listener: std::net::TcpListener,
+) -> std::thread::JoinHandle<anyhow::Result<Vec<u8>>> {
+    std::thread::spawn(move || {
+        use std::io::{Read as _, Write as _};
+
+        let (mut stream, _) = listener.accept()?;
+        stream.set_read_timeout(Some(std::time::Duration::from_secs(2)))?;
+        let mut request = Vec::new();
+        let mut chunk = [0_u8; 4096];
+        let (header_end, content_length) = loop {
+            let read = stream.read(&mut chunk)?;
+            anyhow::ensure!(read > 0, "Docker request ended before headers");
+            request.extend_from_slice(&chunk[..read]);
+            if let Some(header_end) = request.windows(4).position(|window| window == b"\r\n\r\n") {
+                let headers = std::str::from_utf8(&request[..header_end])?;
+                break (header_end + 4, content_length(headers)?);
+            }
+        };
+        while request.len() < header_end + content_length {
+            let read = stream.read(&mut chunk)?;
+            anyhow::ensure!(read > 0, "Docker request body ended early");
+            request.extend_from_slice(&chunk[..read]);
+        }
+        let response = br#"{"Id":"wire-created-container","Warnings":[]}"#;
+        write!(
+            stream,
+            "HTTP/1.1 201 Created\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n",
+            response.len()
+        )?;
+        stream.write_all(response)?;
+        Ok(request)
+    })
+}
+
+async fn exercise_private_container_create() -> anyhow::Result<Vec<String>> {
+    let listener = std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))?;
+    let address = listener.local_addr()?;
+    let request = capture_docker_create_request(listener);
+    let inner = Docker::connect_with_http(
+        &format!("http://{address}"),
+        2,
+        bollard::API_DEFAULT_VERSION,
+    )?;
+    let client = BollardDockerClient { inner };
+    let private = vec![
+        "wire-private-container-name".to_owned(),
+        "registry.invalid/wire-private-image@sha256:deadbeef".to_owned(),
+        "wire-private-label-key".to_owned(),
+        "wire-private-label-value".to_owned(),
+        "WIRE_PRIVATE_ENV=wire-private-env-value".to_owned(),
+        "/wire-private-host-bind:/wire-private-container-bind:ro".to_owned(),
+        "wire-private-network".to_owned(),
+        "/wire-private-workdir".to_owned(),
+        "wire-private-hostname".to_owned(),
+        "/wire-private-entrypoint".to_owned(),
+    ];
+    client
+        .create_container(
+            &private[0],
+            ContainerSpec {
+                image: private[1].clone(),
+                hostname: Some(private[8].clone()),
+                env: vec![private[4].clone()],
+                labels: [(private[2].clone(), private[3].clone())]
+                    .into_iter()
+                    .collect(),
+                network: private[6].clone(),
+                binds: vec![private[5].clone()],
+                entrypoint: Some(vec![private[9].clone()]),
+                privileged: false,
+                workdir: Some(private[7].clone()),
+            },
+        )
+        .await?;
+    let request = request
+        .join()
+        .map_err(|_| anyhow::anyhow!("Docker mock thread panicked"))??;
+    let request = String::from_utf8(request)?;
+    for value in &private {
+        anyhow::ensure!(request.contains(value), "Docker request omitted {value}");
+    }
+    anyhow::ensure!(
+        request.starts_with("POST /containers/create?name="),
+        "unexpected Docker create route: {request}"
+    );
+    Ok(private)
+}
+
+#[tokio::test]
+async fn docker_response_failure_stays_inside_http_owner_without_payload() {
+    let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
+    let _subscriber = tracing::subscriber::set_default(subscriber);
+    let result: anyhow::Result<()> = docker_http(EXEC_START, async {
+        anyhow::bail!("private-container private-command private-output")
+    })
+    .await;
+    assert!(result.is_err());
+
+    export.force_flush();
+    assert_eq!(export.finished_spans().len(), 1);
+    assert_eq!(export.error_span_count(), 1);
+    assert!(export.contains_span_text("/exec/{id}/start"));
+    assert!(export.contains_span_text("http_error"));
+    for prohibited in ["private-container", "private-command", "private-output"] {
+        assert!(!export.contains_span_text(prohibited));
+        assert!(!export.contains_log_text(prohibited));
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn conformance_wire_docker_http_exports_bounded_private_shapes() -> anyhow::Result<()> {
+    let testbed = jackin_otlp_testbed::Testbed::start()?;
+    jackin_diagnostics::init_wire_test_export(
+        &testbed.endpoint(),
+        jackin_diagnostics::ServiceIdentity::HOST_ONE_SHOT,
+    )?;
+
+    docker_http(CONTAINER_LIST, async { Ok::<_, anyhow::Error>(()) }).await?;
+    let private_create_values = exercise_private_container_create().await?;
+    let failure: anyhow::Result<()> = docker_http(EXEC_START, async {
+        anyhow::bail!("private-container private-command private-output")
+    })
+    .await;
+    assert!(failure.is_err());
+    jackin_diagnostics::flush_wire_test_export()?;
+
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+    let spans = loop {
+        let spans = testbed
+            .spans()
+            .into_iter()
+            .filter(|span| span.name == "http.client")
+            .collect::<Vec<_>>();
+        if spans.len() == 3 {
+            break spans;
+        }
+        anyhow::ensure!(
+            std::time::Instant::now() < deadline,
+            "Docker HTTP wire spans did not arrive"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+    };
+    let wire_text = format!("{spans:?}");
+    for expected in [
+        "/containers/json",
+        "/containers/create",
+        "/exec/{id}/start",
+        "success",
+        "error",
+        "http_error",
+    ] {
+        assert!(
+            wire_text.contains(expected),
+            "missing {expected}: {wire_text}"
+        );
+    }
+    for prohibited in ["private-container", "private-command", "private-output"] {
+        assert!(!wire_text.contains(prohibited), "exported {prohibited}");
+    }
+    let mut prohibited = vec!["private-container", "private-command", "private-output"];
+    prohibited.extend(private_create_values.iter().map(String::as_str));
+    assert_eq!(
+        testbed.prohibited_value_violations(&prohibited),
+        Vec::<String>::new()
+    );
+    assert_eq!(testbed.legacy_namespace_violations(), Vec::<String>::new());
+    jackin_diagnostics::shutdown_capsule_tracing();
+    Ok(())
+}
+
 #[test]
 fn choose_connection_env_only_returns_defaults() {
     assert_eq!(choose_connection(true, None), ConnectionChoice::Defaults);
@@ -358,5 +542,40 @@ fn container_state_short_label() {
             *expected,
             "short_label mismatch for {state:?}"
         );
+    }
+}
+
+#[test]
+fn docker_http_routes_are_static_bounded_templates() {
+    let routes = [
+        PING,
+        CONTAINER_INSPECT,
+        CONTAINER_REMOVE,
+        CONTAINER_LIST,
+        CONTAINER_CREATE,
+        CONTAINER_START,
+        VOLUME_REMOVE,
+        NETWORK_CREATE,
+        NETWORK_REMOVE,
+        NETWORK_LIST,
+        NETWORK_INSPECT,
+        IMAGE_LIST,
+        IMAGE_REMOVE,
+        IMAGE_INSPECT,
+        IMAGE_PULL,
+        EXEC_CREATE,
+        EXEC_START,
+        EXEC_INSPECT,
+    ];
+    for route in routes {
+        assert!(matches!(route.method, "GET" | "POST" | "DELETE"));
+        assert!(route.template.starts_with('/'));
+        assert!(!route.template.contains('?'));
+        assert!(!route.template.contains("private"));
+        for segment in route.template.split('/') {
+            if segment.starts_with('{') {
+                assert!(matches!(segment, "{id}" | "{name}"));
+            }
+        }
     }
 }

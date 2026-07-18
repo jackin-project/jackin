@@ -3,8 +3,8 @@
 
 //! Formatting, CLI, and JSON helpers shared by every usage provider.
 //!
-//! Extracted from `usage.rs` as Phase 2 of the completed codebase-health track
-//! (Workstream C, file-size ratchet). Lives in a sibling module so the
+//! Extracted from `usage.rs` for the file-size ratchet. Lives in a sibling
+//! module so the
 //! provider-specific sections in `usage.rs` only carry their own logic,
 //! not the shared display/parsing utilities every provider depends on.
 //!
@@ -19,6 +19,8 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use chrono::{DateTime, Local, TimeZone, Utc};
+
+pub(super) const PROCESS_OUTPUT_MAX: usize = 1024 * 1024;
 
 pub(super) fn env_value(name: &str) -> Option<String> {
     std::env::var(name)
@@ -252,42 +254,67 @@ pub(super) fn run_cli_with_timeout_full(
     args: &[&str],
     timeout: Duration,
 ) -> Result<CliOutput, String> {
-    let mut child = Command::new(command)
+    let operation = crate::process_telemetry::ChildOperation::begin(command);
+    let Ok(mut child) = Command::new(command)
         .args(args)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .map_err(|err| format!("{command} failed to start: {err}"))?;
-    let stdout = child
-        .stdout
-        .take()
-        .ok_or_else(|| format!("{command} stdout unavailable"))?;
-    let stderr = child
-        .stderr
-        .take()
-        .ok_or_else(|| format!("{command} stderr unavailable"))?;
-    let stdout_reader = thread::spawn(move || read_process_pipe(stdout));
-    let stderr_reader = thread::spawn(move || read_process_pipe(stderr));
+    else {
+        operation.spawn_failed();
+        return Err("usage command failed to start".to_owned());
+    };
+    let Some(stdout) = child.stdout.take() else {
+        drop(child.kill());
+        drop(child.wait());
+        operation.io_failed();
+        return Err("usage command output unavailable".to_owned());
+    };
+    let Some(stderr) = child.stderr.take() else {
+        drop(child.kill());
+        drop(child.wait());
+        operation.io_failed();
+        return Err("usage command output unavailable".to_owned());
+    };
+    let stdout_reader =
+        jackin_telemetry::spawn::thread_stream("usage.stdout", move || read_process_pipe(stdout));
+    let stderr_reader =
+        jackin_telemetry::spawn::thread_stream("usage.stderr", move || read_process_pipe(stderr));
     let started = Instant::now();
     loop {
         match child.try_wait() {
             Ok(Some(status)) => {
-                return collect_cli_output(command, Some(status), stdout_reader, stderr_reader);
+                let output =
+                    collect_cli_output(command, Some(status), stdout_reader, stderr_reader);
+                match &output {
+                    Ok(output) => operation.complete_status(output.exit_code, output.success),
+                    Err(_) => operation.io_failed(),
+                }
+                return output;
             }
             Ok(None) if started.elapsed() >= timeout => {
                 drop(child.kill());
                 drop(child.wait());
-                return Err(format!("{command} timed out after {}s", timeout.as_secs()));
+                drop(stdout_reader.join());
+                drop(stderr_reader.join());
+                operation.timed_out();
+                return Err("usage command timed out".to_owned());
             }
             Ok(None) => thread::sleep(Duration::from_millis(50)),
             Err(err) if err.raw_os_error() == Some(nix::errno::Errno::ECHILD as i32) => {
-                return collect_cli_output(command, None, stdout_reader, stderr_reader);
+                drop(stdout_reader.join());
+                drop(stderr_reader.join());
+                operation.io_failed();
+                return Err("usage command status unavailable".to_owned());
             }
-            Err(err) => {
+            Err(_) => {
                 drop(child.kill());
                 drop(child.wait());
-                return Err(format!("{command} status failed: {err}"));
+                drop(stdout_reader.join());
+                drop(stderr_reader.join());
+                operation.io_failed();
+                return Err("usage command status failed".to_owned());
             }
         }
     }
@@ -315,9 +342,23 @@ pub(super) fn collect_cli_output(
 
 pub(super) fn read_process_pipe(mut pipe: impl Read) -> Result<String, String> {
     let mut bytes = Vec::new();
-    pipe.read_to_end(&mut bytes)
-        .map_err(|err| format!("process output read failed: {err}"))?;
-    String::from_utf8(bytes).map_err(|err| format!("process output was not UTF-8: {err}"))
+    let mut chunk = [0_u8; 8192];
+    let mut exceeded = false;
+    loop {
+        let count = pipe
+            .read(&mut chunk)
+            .map_err(|_| "process output read failed".to_owned())?;
+        if count == 0 {
+            break;
+        }
+        let remaining = PROCESS_OUTPUT_MAX.saturating_sub(bytes.len());
+        bytes.extend_from_slice(&chunk[..count.min(remaining)]);
+        exceeded |= count > remaining;
+    }
+    if exceeded {
+        return Err("process output exceeded limit".to_owned());
+    }
+    String::from_utf8(bytes).map_err(|_| "process output was not UTF-8".to_owned())
 }
 pub(super) fn dollar_amounts(text: &str) -> Vec<f64> {
     let mut values = Vec::new();

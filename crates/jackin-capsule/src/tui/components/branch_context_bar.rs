@@ -344,7 +344,7 @@ pub(crate) fn debug_run_id_label() -> Option<String> {
     if !crate::logging::debug_enabled() {
         return None;
     }
-    std::env::var("JACKIN_RUN_ID")
+    std::env::var("JACKIN_INVOCATION_ID")
         .ok()
         .filter(|id| !id.is_empty())
 }

@@ -86,11 +86,7 @@ pub fn select_host_attach_transport(
             "socket path is {path_len} bytes, at/over the {MAX_UNIX_SOCKET_PATH_LEN}-byte \
              sun_path limit; using attach-proxy (shorten the jackin state dir)"
         );
-        tracing::warn!(
-            otel.name = "attach:socket_path_over_sun_len",
-            path_len,
-            "{reason}"
-        );
+        let _warning = jackin_telemetry::record_recovered_degradation();
         return HostAttachTransportPlan::AttachProxy {
             socket_path,
             direct_error: Some(reason),
@@ -104,7 +100,10 @@ pub fn select_host_attach_transport(
         };
     }
 
-    match std::os::unix::net::UnixStream::connect(&socket_path) {
+    match jackin_diagnostics::operation::connection_attempt_sync(
+        jackin_telemetry::schema::enums::ConnectionPeerType::CapsuleAttach,
+        || std::os::unix::net::UnixStream::connect(&socket_path),
+    ) {
         Ok(_) => HostAttachTransportPlan::DirectSocket { socket_path },
         Err(err) => HostAttachTransportPlan::AttachProxy {
             socket_path,
@@ -147,15 +146,10 @@ pub(super) async fn wait_for_capsule_daemon(
         },
     );
     if wait_result.is_err() {
-        let span = jackin_diagnostics::operation_span("launch.prepare", &[]);
-        span.in_scope(|| {
-            jackin_diagnostics::operation_error(
-                "launch.prepare",
-                "docker_wait_failed",
-                "container readiness wait failed",
-                &[],
-            );
-        });
+        let _error = jackin_telemetry::record_error(
+            jackin_telemetry::schema::enums::ErrorType::LaunchFailed,
+        );
+        jackin_diagnostics::emit_operator_notice("container readiness wait failed");
     }
     wait_result
 }
@@ -196,7 +190,12 @@ async fn wait_for_capsule_daemon_ready(
 
 fn capsule_daemon_socket_connects(paths: &JackinPaths, container_name: &str) -> bool {
     let socket_path = super::snapshot::socket_path(paths, container_name);
-    socket_path.exists() && std::os::unix::net::UnixStream::connect(socket_path).is_ok()
+    socket_path.exists()
+        && jackin_diagnostics::operation::connection_attempt_sync(
+            jackin_telemetry::schema::enums::ConnectionPeerType::CapsuleAttach,
+            || std::os::unix::net::UnixStream::connect(socket_path),
+        )
+        .is_ok()
 }
 
 #[cfg(test)]
@@ -313,16 +312,11 @@ fn inspect_unavailable_message(container_name: &str, reason: &str) -> String {
 }
 
 fn set_role_terminal_title(paths: &JackinPaths, container_name: &str) {
-    let title = match InstanceManifest::read(&paths.data_dir.join(container_name)) {
-        Ok(m) => m.role_display_name,
-        Err(e) => {
-            jackin_diagnostics::debug_log!(
-                "attach",
-                "set_role_terminal_title: manifest read failed for {container_name}: {e:#}; \
-                 using container name as title",
-            );
-            container_name.to_owned()
-        }
+    let title = if let Ok(manifest) = InstanceManifest::read(&paths.data_dir.join(container_name)) {
+        manifest.role_display_name
+    } else {
+        let _warning = jackin_telemetry::record_recovered_degradation();
+        container_name.to_owned()
     };
     jackin_diagnostics::set_terminal_title(&title);
 }
@@ -430,7 +424,7 @@ pub(super) async fn reconnect_or_create_session_with_focus(
         && let Some(run) = jackin_diagnostics::active_run()
     {
         run.compact(
-            jackin_diagnostics::otel_events::SESSION_DETACH,
+            jackin_telemetry::schema::events::CAPSULE_SESSION_DETACH,
             "operator detached from capsule session",
         );
     }
@@ -639,7 +633,7 @@ pub async fn spawn_shell_session(
         && let Some(run) = jackin_diagnostics::active_run()
     {
         run.compact(
-            jackin_diagnostics::otel_events::SESSION_DETACH,
+            jackin_telemetry::schema::events::CAPSULE_SESSION_DETACH,
             "operator detached from shell session",
         );
     }
@@ -770,7 +764,7 @@ pub async fn spawn_agent_session(
         && let Some(run) = jackin_diagnostics::active_run()
     {
         run.compact(
-            jackin_diagnostics::otel_events::SESSION_DETACH,
+            jackin_telemetry::schema::events::CAPSULE_SESSION_DETACH,
             "operator detached from agent session",
         );
     }
@@ -899,11 +893,8 @@ pub(crate) async fn hardline_docker_agent_with_focus(
     // on it: `finalize_reconnected_foreground_session` re-inspects the container
     // and reads exit-action.json, so it handles both a clean exit and a genuine
     // failure. Only a clean exit reaches here in practice; log and proceed.
-    if let Err(err) = attach_outcome {
-        jackin_diagnostics::debug_log!(
-            "hardline",
-            "attach for {container_name} ended with ({err}); proceeding to finalize"
-        );
+    if attach_outcome.is_err() {
+        let _warning = jackin_telemetry::record_recovered_degradation();
     }
 
     finalize_reconnected_foreground_session(paths, container_name, docker, runner).await
@@ -1026,9 +1017,7 @@ async fn finalize_reconnected_resources(
     } else {
         InstanceStatus::CleanExited
     };
-    if let Some(mut manifest) =
-        InstanceManifest::read_or_log(&state_dir, "finalize_reconnected_resources")
-    {
+    if let Some(mut manifest) = InstanceManifest::read_optional_lossy(&state_dir) {
         super::launch::write_instance_status(paths, &state_dir, &mut manifest, status)?;
     }
     super::cleanup::eject_role(paths, container_name, docker).await

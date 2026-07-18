@@ -332,7 +332,7 @@ fn read_host_gh_token(host_home: &Path) -> anyhow::Result<HostGhResolution> {
     let mut cli_failure: Option<HostMissingReason> = None;
 
     if host_home_is_real(host_home) {
-        match jackin_process::exec_sync(&jackin_process::ExecRequest::new(
+        match crate::process_telemetry::exec_sync(&jackin_process::ExecRequest::new(
             "gh",
             ["auth", "token", "--hostname", "github.com"],
         )) {
@@ -350,38 +350,15 @@ fn read_host_gh_token(host_home: &Path) -> anyhow::Result<HostGhResolution> {
                     }));
                 }
                 cli_failure = Some(HostMissingReason::GhCliEmpty);
-                jackin_diagnostics::debug_log!(
-                    "github_auth",
-                    "gh auth token returned empty stdout; falling back to hosts.yml parse"
-                );
             }
-            Ok(output) => {
-                let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-                jackin_diagnostics::debug_log!(
-                    "github_auth",
-                    "gh auth token exited non-zero ({:?}); stderr={stderr}",
-                    output.code,
-                );
+            Ok(_) => {
                 cli_failure = Some(HostMissingReason::GhCliFailed {
-                    stderr: stderr.trim().to_owned(),
+                    stderr: "gh authentication command failed".to_owned(),
                 });
             }
-            Err(e)
-                if e.chain().any(|cause| {
-                    cause
-                        .downcast_ref::<std::io::Error>()
-                        .is_some_and(|io| io.kind() == std::io::ErrorKind::NotFound)
-                }) =>
-            {
-                jackin_diagnostics::debug_log!("github_auth", "gh not on PATH: {e}");
-            }
-            Err(e) => {
-                jackin_diagnostics::debug_log!("github_auth", "gh auth token spawn failed: {e}");
-                // Treat any non-NotFound spawn error as a CLI failure
-                // signal too — the operator's gh is in a broken state
-                // and the launch notice should say so.
+            Err(_) => {
                 cli_failure = Some(HostMissingReason::GhCliFailed {
-                    stderr: e.to_string(),
+                    stderr: "gh authentication command could not start".to_owned(),
                 });
             }
         }
@@ -396,11 +373,6 @@ fn read_host_gh_token(host_home: &Path) -> anyhow::Result<HostGhResolution> {
         parsed.source = GithubTokenSource::HostsFile;
         return Ok(HostGhResolution::Resolved(parsed));
     }
-    jackin_diagnostics::debug_log!(
-        "github_auth",
-        "hosts.yml at {} did not yield a github.com oauth_token",
-        hosts_path.display()
-    );
     // CLI failure (when known) is the more actionable signal than
     // "file malformed" — surface it instead.
     Ok(HostGhResolution::Missing(
@@ -436,13 +408,7 @@ fn parse_gh_hosts_yml(text: &str) -> Option<HostGhAuth> {
 
     let parsed: HostsFile = match serde_yaml_ng::from_str(text) {
         Ok(p) => p,
-        Err(e) => {
-            jackin_diagnostics::debug_log!(
-                "github_auth",
-                "hosts.yml YAML parse failed: {e}; will fall through to HostsFileMalformed"
-            );
-            return None;
-        }
+        Err(_) => return None,
     };
     let entry = parsed.github_com?;
     let token = entry.oauth_token.filter(|s| !s.trim().is_empty())?;
@@ -815,9 +781,9 @@ fn copy_kimi_credentials_tree(src: &Path, dst: &Path) -> anyhow::Result<()> {
         if ft.is_symlink() {
             // Route via the TUI-safe channel: the rich loading cockpit owns
             // the terminal while this runs (credentials stage). A bare
-            // `eprintln!` would corrupt the cockpit. `emit_compact_line`
-            // lands in the diagnostics run jsonl and only prints to stderr
-            // when no rich surface is active.
+            // `eprintln!` would corrupt the cockpit. `emit_compact_line` emits
+            // governed telemetry when an invocation is active and defers the
+            // operator notice until the rich surface tears down.
             jackin_diagnostics::emit_compact_line(
                 "kimi-auth",
                 &format!(
@@ -1087,11 +1053,6 @@ fn copy_host_claude_json(host_path: &Path, dest_path: &Path) -> anyhow::Result<(
         Ok(content) => content,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => "{}".to_owned(),
         Err(e) => {
-            jackin_diagnostics::debug_log!(
-                "auth",
-                "failed to read Claude account metadata at {} while forwarding credentials: {e}",
-                host_path.display()
-            );
             return Err(anyhow::Error::new(e).context(format!(
                 "reading Claude account metadata at {}",
                 host_path.display()
@@ -1209,7 +1170,7 @@ const CLAUDE_KEYCHAIN_SERVICE_BASE: &str = "Claude Code-credentials";
 /// Returns `None` on lookup failure or an empty value.
 #[cfg(target_os = "macos")]
 fn read_claude_keychain(service: &str) -> Option<String> {
-    let output = jackin_process::exec_sync(&jackin_process::ExecRequest::new(
+    let output = crate::process_telemetry::exec_sync(&jackin_process::ExecRequest::new(
         "security",
         ["find-generic-password", "-s", service, "-w"],
     ))

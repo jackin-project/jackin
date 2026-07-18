@@ -104,7 +104,6 @@ pub(super) async fn handle_prune(
                 prune_instances_result,
                 runtime::prune_images(&docker).await.context("prune images"),
                 runtime::prune_roles(paths).context("prune roles"),
-                runtime::prune_diagnostics(paths).context("prune diagnostics"),
                 runtime::prune_cache(paths).context("prune cache"),
             ];
             let errors: Vec<anyhow::Error> = results.into_iter().filter_map(Result::err).collect();

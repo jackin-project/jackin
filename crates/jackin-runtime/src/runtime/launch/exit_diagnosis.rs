@@ -4,8 +4,6 @@
 //! Exit diagnosis helpers extracted from launch coordinator for premature exits,
 //! attach failures, and outcome inspection.
 
-use std::path::Path;
-
 use jackin_core::CommandRunner;
 use jackin_diagnostics;
 use jackin_docker::docker_client::DockerApi;
@@ -35,10 +33,9 @@ pub(crate) async fn diagnose_premature_exit(
     runner: &mut impl CommandRunner,
     container_name: &str,
     phase: ExitPhase,
-    capsule_log_path: Option<&str>,
 ) -> Option<anyhow::Error> {
     let state = docker.inspect_container_state(container_name).await;
-    diagnose_with_state(runner, container_name, &state, phase, capsule_log_path).await
+    diagnose_with_state(runner, container_name, &state, phase).await
 }
 
 /// Same diagnostic logic as `diagnose_premature_exit` but with the
@@ -50,7 +47,6 @@ pub(crate) async fn diagnose_with_state(
     container_name: &str,
     state: &ContainerState,
     phase: ExitPhase,
-    capsule_log_path: Option<&str>,
 ) -> Option<anyhow::Error> {
     match state {
         // Default to letting the `docker exec` attempt proceed when state is
@@ -114,61 +110,23 @@ pub(crate) async fn diagnose_with_state(
                 format!(
                     "container {container_name} {phase_label} ({reason}); last 40 log lines:\n{text}"
                 )
-            } else if let Some(mux_tail) = capsule_log_path
-                .map(Path::new)
-                .and_then(|path| read_text_tail(path, 40).ok().flatten())
-            {
-                // `docker logs` is empty when the capsule daemon routes its
-                // diagnostics to multiplexer.log rather than stderr. Surface
-                // that file's tail so a pre-attach daemon crash is reported
-                // with its real error instead of an opaque "no log output".
-                format!(
-                    "container {container_name} {phase_label} ({reason}); docker logs empty — last 40 multiplexer.log lines:\n{mux_tail}"
-                )
             } else {
                 format!(
                     "container {container_name} {phase_label} ({reason}) and produced no log output"
                 )
             };
-            // Emit a structured container exit event with the crash evidence so
-            // the run JSONL is self-contained (Defect 41).
+            // Emit only bounded typed exit state. Raw Docker output remains on the
+            // explicit operator error surface and never becomes telemetry.
             if let Some(run) = jackin_diagnostics::active_run() {
-                run.container_exited(
-                    container_name,
-                    (*exit_code).into(),
-                    *oom_killed,
-                    capsule_log_path.unwrap_or("(path unknown)"),
-                    logs.as_deref(),
-                );
+                run.container_exited((*exit_code).into(), *oom_killed);
             }
             Some(anyhow::anyhow!(body))
         }
     }
 }
 
-pub(crate) fn read_text_tail(path: &Path, max_lines: usize) -> anyhow::Result<Option<String>> {
-    let lines = crate::runtime::logs::read_tail(path, max_lines)?;
-    if lines.is_empty() {
-        Ok(None)
-    } else {
-        Ok(Some(lines.join("\n")))
-    }
-}
-
-pub(crate) fn attach_failure_error(
-    container_name: &str,
-    err: &anyhow::Error,
-    capsule_log_path: &Path,
-    capsule_log_str: &str,
-) -> anyhow::Error {
-    let evidence = match read_text_tail(capsule_log_path, 40) {
-        Ok(Some(tail)) => format!("last 40 capsule log lines:\n{tail}"),
-        Ok(None) => format!("capsule log {capsule_log_str} had no output"),
-        Err(error) => format!("failed to read capsule log {capsule_log_str}: {error:#}"),
-    };
-    anyhow::anyhow!(
-        "capsule attach failed for {container_name}: {err}\ncapsule log: {capsule_log_str}\n{evidence}"
-    )
+pub(crate) fn attach_failure_error(container_name: &str, err: &anyhow::Error) -> anyhow::Error {
+    anyhow::anyhow!("capsule attach failed for {container_name}: {err}")
 }
 
 /// Query a container's post-attach state for use by `finalize_foreground_session`.
@@ -202,10 +160,7 @@ pub(crate) async fn inspect_attach_outcome(
         | ContainerState::Created
         | ContainerState::Removing => AttachOutcome::still_running(),
         ContainerState::Dead => {
-            jackin_diagnostics::debug_log!(
-                "isolation",
-                "inspect_attach_outcome: container {container} status=dead; treating as still_running to preserve records for inspection",
-            );
+            let _warning = jackin_telemetry::record_recovered_degradation();
             AttachOutcome::still_running()
         }
         ContainerState::Stopped {
@@ -213,10 +168,7 @@ pub(crate) async fn inspect_attach_outcome(
         } => AttachOutcome::oom_killed(),
         ContainerState::Stopped { exit_code, .. } => AttachOutcome::stopped(exit_code),
         ContainerState::NotFound | ContainerState::InspectUnavailable(_) => {
-            jackin_diagnostics::debug_log!(
-                "isolation",
-                "inspect_attach_outcome: docker inspect failed for {container}; treating as still_running (conservative — finalize_clean_exit's auto-cleanup never fires)",
-            );
+            let _warning = jackin_telemetry::record_recovered_degradation();
             AttachOutcome::still_running()
         }
     })

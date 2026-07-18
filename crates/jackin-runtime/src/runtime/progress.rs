@@ -37,12 +37,10 @@ impl LaunchHostTerminal for HostTerminal {
 
     fn emit_compact_line(&self, kind: &str, line: &str) {
         jackin_diagnostics::emit_compact_line(kind, line);
-        tracing::info!(kind, "{line}");
     }
 
     fn emit_debug_line(&self, category: &str, line: &str) {
         jackin_diagnostics::emit_debug_line(category, line);
-        tracing::debug!(category, "{line}");
     }
 
     fn set_pointer_shape(&self, pointer: bool) {

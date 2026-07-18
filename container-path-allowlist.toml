@@ -4,7 +4,7 @@
 
 [[file]]
 path = "crates/jackin-core/src/container_paths.rs"
-literals = 39
+literals = 38
 note = "the chokepoint module itself defines the canonical constants"
 
 [[file]]
@@ -20,11 +20,6 @@ note = "Dockerfile template bodies embed shell path strings; values must stay by
 path = "/etc/hostname"
 file = "crates/jackin-capsule/src/container_context.rs"
 reason = "reads the container's kernel hostname path (host-visible /etc inside the capsule PID namespace)"
-
-[[forbidden-roots]]
-path = "/etc/hostname"
-file = "crates/jackin-capsule/src/container_context.rs"
-reason = "second Path::new site for the same host hostname file"
 
 [[forbidden-roots]]
 path = "/etc/sudoers.d/agent"

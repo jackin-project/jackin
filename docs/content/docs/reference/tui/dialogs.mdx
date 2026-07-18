@@ -95,7 +95,7 @@ This applies to all dialog surfaces: the host console confirm dialog, the launch
 
 `DialogScroll::handle_mouse` treats `ScrollLeft`/`ScrollRight` as horizontal **and** `Shift`+`ScrollUp`/`ScrollDown` as horizontal, because some terminals map a horizontal trackpad swipe onto a shifted vertical wheel rather than emitting native horizontal-wheel events.
 
-`ContainerInfoState` (the shared "Debug info" dialog) is the reference implementation: long values (run-id and diagnostics-log paths) scroll horizontally instead of clipping, and its OSC 8 hyperlink overlay + click-to-copy hit-test follow the content under both scroll axes. Surfaces that rebuild their dialog state every frame (the capsule and the launch cockpit) persist the `DialogScroll` outside the rebuilt state — on the capsule's `Dialog` enum variant, on the cockpit's `LaunchView` — and thread it into the rebuilt `ContainerInfoState`.
+`ContainerInfoState` (the shared "Debug info" dialog) is the reference implementation: long identity values scroll horizontally instead of clipping, and its click-to-copy hit-test follows the content under both scroll axes. Surfaces that rebuild their dialog state every frame (the Capsule and launch cockpit) persist the `DialogScroll` outside the rebuilt state — on the Capsule's `Dialog` enum variant and the cockpit's `LaunchView` — and thread it into the rebuilt `ContainerInfoState`.
 
 ### Debug info dialog contract
 
@@ -103,17 +103,16 @@ This applies to all dialog surfaces: the host console confirm dialog, the launch
 
 The canonical row order is:
 
-1. `Run ID` — copyable, always the top row whenever available.
+1. `Invocation ID` — copyable, always the top row whenever available.
 2. `Container ID` — copyable.
 3. `jackin version`.
 4. `jackin-capsule`.
 5. `Role`.
 6. `Agent`.
 7. `Target`.
-8. `Diagnostics log` — copyable and an OSC 8 `file://` hyperlink, present only when a local diagnostics file exists.
-9. `Telemetry` — backend-only note, present when a run id exists but no local diagnostics file exists.
+8. `Telemetry` — optional, non-copyable sanitized delivery summary on the launch surface.
 
-`Run ID` is the bare run id value, never a `.jsonl` path. `Diagnostics log` is the full JSONL path and is omitted when the active sink is backend-only. `Telemetry` is non-copyable explanatory text for that backend-only mode. Enter copies the first copyable row in the canonical order, so it copies `Run ID` whenever that row exists, and the dialog stays open so copied-row feedback can render. Mouse click copies the copyable value under the pointer; hover feedback applies only to copyable value cells and their copy affordance. Hints advertise `↵ copy value`, `Esc dismiss`, click copy, and only the scroll axes that actually overflow.
+`Invocation ID` is the opaque correlation value for backend searches. No local telemetry or diagnostics-file path row exists. Enter copies the first copyable row in canonical order, so it copies `Invocation ID` whenever that row exists, and the dialog stays open so copied-row feedback can render. Mouse click copies the copyable value under the pointer; hover feedback applies only to copyable value cells and their copy affordance.
 
 Debug info is status-preserving only for reserved bottom chrome: if the underlying surface had a footer/status row before the dialog opened, that chrome remains visible and is still rendered by its normal owner. The dialog is centered in the content area that excludes reserved status/footer rows, not the full terminal area. Inside that content area, Debug info owns the modal body and clears the background to the terminal default background before rendering the panel, so pane/list/card content, focused borders, scrollbars, and animated body content behind it are hidden rather than dimmed or left readable.
 
@@ -252,7 +251,7 @@ The **shared renderer** (TermRock `Viewport` via the console `scroll_block` adap
 
 Any dialog or info panel that displays a long value (file path, container ID, URL, error message) must not silently truncate it with no way for the operator to see the full content. Three acceptable approaches, in priority order:
 
-1. **OSC 8 hyperlink** (preferred for file system paths and URLs). Render the path as a terminal hyperlink via `]8;;file:///full/path\visible text]8;;\`. The operator clicks to open the file. The visible text can be abbreviated; the href carries the full path. The failure popup's "run diagnostics" and "docker output" rows must use this approach, and its `R` key reveal action must use the same row values instead of re-deriving paths.
+1. **OSC 8 hyperlink** (preferred for file system paths and URLs). Render the path as a terminal hyperlink via `]8;;file:///full/path\visible text]8;;\`. The operator clicks to open the file. The visible text can be abbreviated; the href carries the full path. Telemetry correlation values are copy targets rather than file hyperlinks because jackin❯ creates no local telemetry artifacts.
 
 2. **Word-wrap onto multiple lines**. If the value is a long string (not a path), wrap it within the dialog width. `ErrorPopup` owns the row wrapping, height estimate, scroll offset, and value-cell rectangles so render, OSC 8 overlays, and copy/reveal hit-testing stay aligned.
 
@@ -284,9 +283,7 @@ Copy feedback is the exception because copy does not navigate or otherwise chang
 
 The "Debug info" dialog has one product facade and one neutral renderer. <RepoFile path="crates/jackin-tui/src/operator_info.rs">jackin❯ operator info</RepoFile> owns `DebugInfo`, row order, labels, diagnostics policy, clipboard/open effects, and final OSC emission. TermRock `DetailTable` and `Panel` own rendering, scrolling, copy/link capabilities, hover, copied affordances, and typed hit regions. Console, launch, and Capsule only supply the facts available at their lifecycle stage.
 
-**The model accumulates as facts become known.** Each surface fills only the fields it knows and calls `DebugInfo::into_state`; absent fields are omitted. The console knows only the run (jackin❯ version, Run ID, diagnostics log path when one exists). The launch cockpit additionally knows the container id, role, agent, and target. The capsule additionally knows its own binary version. The row set therefore grows as the operator moves console → launch → capsule, but ordering and styling never change. Canonical row order: Run ID, Container ID, jackin❯ version, jackin-capsule, Role, Agent, Target, Diagnostics log, Telemetry. If `Run ID` is present, it is always the first visible row — not merely the first debug-only row or first copy target — and the default Enter-copy target.
-
-**Run ID is always the bare run id**, never the log file path. The diagnostics log path is a separate row, copyable and `file://`-hyperlinked. Conflating the two (showing the path in the Run ID row) is a bug.
+**The model accumulates as facts become known.** Each surface fills only the fields it knows and calls `DebugInfo::into_state`; absent fields are omitted. The console knows the jackin❯ version and invocation ID. The launch cockpit additionally knows the container id, role, agent, target, and optional sanitized telemetry delivery summary. The capsule additionally knows its own binary version. Canonical row order: Invocation ID, Container ID, jackin❯ version, jackin-capsule, Role, Agent, Target, Telemetry. If `Invocation ID` is present, it is always the first visible row and the default Enter-copy target.
 
 **Version rows must match the CLI exactly.** The `jackin` row is the `jackin --version` string and the `jackin-capsule` row is the `jackin-capsule --version` string. Because those values come from build-time env vars (`JACKIN_VERSION`, `JACKIN_CAPSULE_VERSION`) that are only in scope in the binary crates, the model takes them as data — pass the exact CLI string, never the bare crate version.
 

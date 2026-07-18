@@ -1,7 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -21,18 +20,29 @@ impl LaunchDiagnostics for TestDiagnostics {
     fn run_id(&self) -> &'static str {
         "test-run"
     }
-    fn path(&self) -> &Path {
-        Path::new("/tmp")
-    }
-    fn persists(&self) -> bool {
-        true
-    }
-    fn command_output_path(&self, name: &str) -> PathBuf {
-        PathBuf::from("/tmp").join(name)
-    }
     fn compact(&self, _kind: &str, _message: &str) {}
     fn error(&self, _kind: &str, _message: &str, _error_type: Option<&str>) {}
     fn stage(&self, _kind: &str, _stage: LaunchStage, _message: &str, _detail: Option<&str>) {}
+}
+
+#[derive(Default)]
+struct RecordingDiagnostics {
+    stage: std::sync::Mutex<Option<(String, String, Option<String>)>>,
+}
+
+impl LaunchDiagnostics for RecordingDiagnostics {
+    fn run_id(&self) -> &'static str {
+        "test-run"
+    }
+    fn compact(&self, _kind: &str, _message: &str) {}
+    fn error(&self, _kind: &str, _message: &str, _error_type: Option<&str>) {}
+    fn stage(&self, kind: &str, _stage: LaunchStage, message: &str, detail: Option<&str>) {
+        *self.stage.lock().unwrap() = Some((
+            kind.to_owned(),
+            message.to_owned(),
+            detail.map(str::to_owned),
+        ));
+    }
 }
 
 fn test_progress() -> LaunchProgress {
@@ -42,7 +52,13 @@ fn test_progress() -> LaunchProgress {
 fn test_diagnostics() -> Arc<RunDiagnostics> {
     let tmp = tempfile::tempdir().unwrap();
     let paths = jackin_core::JackinPaths::for_tests(tmp.path());
-    RunDiagnostics::start(&paths, false, "load").unwrap()
+    RunDiagnostics::start(
+        &paths,
+        false,
+        "load",
+        jackin_diagnostics::ServiceIdentity::HOST_INTERACTIVE,
+    )
+    .unwrap()
 }
 
 fn dummy_failure() -> LaunchFailure {
@@ -52,8 +68,6 @@ fn dummy_failure() -> LaunchFailure {
         detail: None,
         next_step: None,
         stage: LaunchStage::Network,
-        diagnostics_path: None,
-        command_output_path: None,
     }
 }
 
@@ -149,11 +163,10 @@ async fn stage_failed_does_not_block_on_test_renderer() {
 }
 #[tokio::test]
 async fn stage_failed_writes_full_detail_to_diagnostics() {
-    let tmp = tempfile::tempdir().unwrap();
-    let paths = jackin_core::JackinPaths::for_tests(tmp.path());
-    let run = RunDiagnostics::start(&paths, false, "load").unwrap();
-    let diagnostics: Arc<RunDiagnostics> = Arc::clone(&run);
-    let mut progress = LaunchProgress::for_test(diagnostics);
+    let diagnostics = Arc::new(RecordingDiagnostics::default());
+    let progress_diagnostics = Arc::clone(&diagnostics);
+    let progress_diagnostics: Arc<dyn LaunchDiagnostics> = progress_diagnostics;
+    let mut progress = LaunchProgress::for_test(progress_diagnostics);
 
     progress
             .stage_failed(LaunchFailure {
@@ -164,24 +177,17 @@ async fn stage_failed_writes_full_detail_to_diagnostics() {
                 ),
                 next_step: None,
                 stage: LaunchStage::DerivedImage,
-                diagnostics_path: None,
-                command_output_path: None,
             })
             .await;
 
-    let body = std::fs::read_to_string(run.path()).unwrap();
-    // Schema v2 may label the event as `event.name` rather than `kind`.
-    assert!(
-        body.contains("stage_failed") || body.contains("launch_failed"),
-        "expected failure diagnostic: {body}"
-    );
-    assert!(
-        body.contains("preparing kimi binary"),
-        "expected summary in diagnostics: {body}"
-    );
-    assert!(
-        body.contains("Connection timed out after 30001 milliseconds"),
-        "expected full detail in diagnostics: {body}"
+    let recorded = diagnostics.stage.lock().unwrap().clone().unwrap();
+    assert_eq!(recorded.0, "stage_failed");
+    assert_eq!(recorded.1, "preparing kimi binary");
+    assert_eq!(
+        recorded.2.as_deref(),
+        Some(
+            "preparing kimi binary: resolving latest kimi binary: https://code.kimi.com/kimi-code/latest failed: curl: (28) Connection timed out after 30001 milliseconds"
+        )
     );
 }
 #[tokio::test]

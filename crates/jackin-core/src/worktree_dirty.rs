@@ -115,8 +115,8 @@ pub async fn unpushed_commit_count(worktree_path: &str, runner: &mut impl Comman
 /// Assess whether `worktree_path` is safe to auto-clean.
 ///
 /// `log` receives diagnostic lines describing each fail-closed decision; the
-/// caller routes them to its own debug channel (host `debug_log!`, Capsule
-/// `cdebug!`). The full per-branch policy lives in the host's finalize docs.
+/// caller decides whether they belong in operator output or a registered
+/// privacy-safe signal. The full per-branch policy lives in the host's finalize docs.
 ///
 /// # Errors
 /// Never returns `Err` today (every git failure is mapped to a fail-closed

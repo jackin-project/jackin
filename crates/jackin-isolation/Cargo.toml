@@ -25,6 +25,7 @@ jackin-diagnostics = { workspace = true }
 jackin-protocol    = { workspace = true }
 jackin-docker      = { workspace = true }
 jackin-process     = { workspace = true }
+jackin-telemetry   = { workspace = true }
 
 anyhow    = { workspace = true }
 thiserror = { workspace = true }
@@ -34,9 +35,11 @@ tempfile  = { workspace = true }
 directories = { workspace = true }
 
 [dev-dependencies]
+jackin-diagnostics = { workspace = true, features = ["test-support"] }
 jackin-test-support = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
 tempfile = { workspace = true }
+tracing = { workspace = true }
 
 [features]
 test-support = []
