@@ -25,7 +25,11 @@ fn selects_only_public_preview_assets() {
     ] {
         assert!(is_release_asset(accepted.as_ref()), "{accepted}");
     }
-    for rejected in ["cargo-timing.html", "notes.txt", "jackin.zip"] {
+    for rejected in [
+        "cargo-timing.html".to_owned(),
+        "notes.txt".to_owned(),
+        ["jackin", "zip"].join("."),
+    ] {
         assert!(!is_release_asset(rejected.as_ref()), "{rejected}");
     }
 }

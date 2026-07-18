@@ -24,7 +24,7 @@ mod procfs {
         use super::PathBuf;
 
         #[derive(Debug, Clone)]
-        pub(crate) struct Process;
+        pub(crate) enum Process {}
 
         #[derive(Debug, Clone)]
         pub(crate) struct Stat {
@@ -37,27 +37,21 @@ mod procfs {
             pub(crate) stime: u64,
         }
 
-        // Keep method receivers identical to procfs' Linux API so shared call
-        // sites compile unchanged on platforms where the shim returns no data.
-        #[expect(
-            clippy::unused_self,
-            reason = "the non-Linux shim mirrors procfs Process methods"
-        )]
         impl Process {
             pub(crate) fn new(_pid: i32) -> Result<Self, ()> {
                 Err(())
             }
 
             pub(crate) fn stat(&self) -> Result<Stat, ()> {
-                Err(())
+                match *self {}
             }
 
             pub(crate) fn exe(&self) -> Result<PathBuf, ()> {
-                Err(())
+                match *self {}
             }
 
             pub(crate) fn cmdline(&self) -> Result<Vec<String>, ()> {
-                Err(())
+                match *self {}
             }
         }
 

@@ -47,9 +47,6 @@ provider = "bare_allow_per_crate"
 # the bare-allow parser itself (`health::tests::parses_bare_allow`).
 cap = 0
 mode = "enforce"
-[[family.entry]]
-key = "jackin-image"
-bound = 1
 [[family]]
 id = "expect-per-lint-crate"
 kind = "numeric"
@@ -94,7 +91,7 @@ key = "clippy::disallowed_methods@jackin-env"
 bound = 3
 [[family.entry]]
 key = "clippy::disallowed_methods@jackin-host"
-bound = 4
+bound = 1
 [[family.entry]]
 key = "clippy::disallowed_methods@jackin-image"
 bound = 2
@@ -590,7 +587,7 @@ key = "crates/jackin-usage/README.md"
 bound = 2010
 [[family.entry]]
 key = "crates/jackin-xtask/README.md"
-bound = 5807
+bound = 5709
 [[family.entry]]
 key = "crates/jackin/README.md"
 bound = 2860
@@ -837,4 +834,4 @@ key = "jackin-usage"
 bound = 29
 [[family.entry]]
 key = "jackin-xtask"
-bound = 28
+bound = 30

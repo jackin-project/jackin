@@ -293,10 +293,6 @@ on error errMsg number errNum
 end try"#
     );
 
-    #[expect(
-        clippy::disallowed_methods,
-        reason = "host clipboard probes run in the foreground host attach client, not in Capsule render code"
-    )]
     let request = jackin_process::ExecRequest::new("/usr/bin/osascript", ["-e", &script])
         .envs([("JACKIN_CLIPBOARD_IMAGE_OUT", path.as_os_str())]);
     let output = crate::process_telemetry::exec_sync(&request)?;
@@ -330,10 +326,6 @@ on error errMsg number errNum
   error errMsg number errNum
 end try"
     );
-    #[expect(
-        clippy::disallowed_methods,
-        reason = "host clipboard probes run in the foreground host attach client, not in Capsule render code"
-    )]
     let request = jackin_process::ExecRequest::new("/usr/bin/osascript", ["-e", &script]);
     let output = crate::process_telemetry::exec_sync(&request)?;
     if !output.success {
@@ -355,10 +347,6 @@ fn read_macos_clipboard_text_path_image() -> Result<Option<ClipboardImage>> {
 on error errMsg number errNum
   error errMsg number errNum
 end try";
-    #[expect(
-        clippy::disallowed_methods,
-        reason = "host clipboard probes run in the foreground host attach client, not in Capsule render code"
-    )]
     let request = jackin_process::ExecRequest::new("/usr/bin/osascript", ["-e", script]);
     let output = crate::process_telemetry::exec_sync(&request)?;
     if !output.success || output.stdout.len() > MAX_CLIPBOARD_TEXT_PATH_BYTES {
