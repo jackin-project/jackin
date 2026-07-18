@@ -38,8 +38,20 @@ fn assert_soak_export(
 ) {
     let spans = testbed.spans();
     let mut counts = BTreeMap::new();
+    let mut cycle_counts = BTreeMap::new();
+    let mut connection_counts = BTreeMap::new();
     for span in &spans {
         *counts.entry(span.name.as_str()).or_insert(0_usize) += 1;
+        if span.name == "background.cycle" {
+            *cycle_counts
+                .entry(string_attribute(&span.attributes, "background.cycle.name"))
+                .or_insert(0_usize) += 1;
+        }
+        if span.name == "connection.attempt" {
+            *connection_counts
+                .entry(string_attribute(&span.attributes, "connection.peer.type"))
+                .or_insert(0_usize) += 1;
+        }
         assert!(span.end_time_unix_nano >= span.start_time_unix_nano);
         assert!(
             span.end_time_unix_nano - span.start_time_unix_nano
@@ -51,12 +63,20 @@ fn assert_soak_export(
     for (name, expected) in [
         ("ui.action", ITERATIONS),
         ("background.cycle", ITERATIONS / CYCLE_INTERVAL),
-        ("connection.attempt", ITERATIONS / CYCLE_INTERVAL),
         ("prewarm.schedule", ITERATIONS / JOB_INTERVAL),
         ("prewarm.attempt", ITERATIONS / JOB_INTERVAL),
     ] {
-        assert_eq!(counts.get(name), Some(&expected));
+        assert_eq!(
+            counts.get(name),
+            Some(&expected),
+            "span counts: {counts:?}; cycle counts: {cycle_counts:?}; connection counts: {connection_counts:?}"
+        );
     }
+    assert_eq!(
+        connection_counts.get(&Some("provider")),
+        Some(&(ITERATIONS / CYCLE_INTERVAL))
+    );
+    assert_eq!(connection_counts.get(&Some("parallax")), Some(&1));
     let producers = spans
         .iter()
         .filter(|span| span.name == "prewarm.schedule")
