@@ -74,7 +74,7 @@ runs:
     - name: Collect deployed docs URLs
       shell: bash
       run: |
-        lychee --dump "${{ inputs.sitemap-url }}" > lychee/deployed-pages.txt
+        MISE_CONFIG_FILE=docs/mise.toml mise exec -- lychee --dump "${{ inputs.sitemap-url }}" > lychee/deployed-pages.txt
 
     - name: Check deployed docs links
       shell: bash
@@ -104,7 +104,7 @@ runs:
             args+=(--include "^${site_origin_re}(/|$)|^file://")
           fi
 
-          lychee \
+          MISE_CONFIG_FILE=docs/mise.toml mise exec -- lychee \
             "${args[@]}"
         }
 

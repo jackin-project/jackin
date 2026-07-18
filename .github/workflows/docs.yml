@@ -253,7 +253,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
-          lychee \
+          MISE_CONFIG_FILE=docs/mise.toml mise exec -- lychee \
             --config docs/lychee.toml \
             --cache=false \
             --root-dir "${{ github.workspace }}" \

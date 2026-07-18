@@ -9,7 +9,7 @@ set -euo pipefail
 : "${JACKIN_REPO_BLOB_URL:?JACKIN_REPO_BLOB_URL is required}"
 : "${JACKIN_REPO_EDIT_URL:?JACKIN_REPO_EDIT_URL is required}"
 
-lychee \
+MISE_CONFIG_FILE=docs/mise.toml mise exec -- lychee \
   --config docs/lychee.toml \
   --include-fragments \
   --remap "${DOCS_SITE_URL}/(.*) file://${GITHUB_WORKSPACE}/docs/.output/public/\$1" \
