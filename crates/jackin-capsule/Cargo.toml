@@ -39,9 +39,10 @@ jackin-core = { workspace = true }
 jackin-tui = { workspace = true }
 # OTLP export for the in-container session, runtime-gated on the endpoint the
 # host injects. Pulls the opentelemetry stack into the capsule image.
-jackin-diagnostics = { workspace = true, features = ["otlp"] }
+jackin-diagnostics = { workspace = true }
 jackin-process = { workspace = true }
 jackin-protocol = { workspace = true }
+jackin-telemetry = { workspace = true }
 jackin-usage = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
@@ -65,6 +66,7 @@ dhat = { workspace = true, optional = true }
 # the capsule's owned-grid model. The custom cell widget approach is used instead.
 # Atomic first-seed of agent home dirs (D6): copy to sibling temp then rename.
 tempfile = { workspace = true }
+uuid = { workspace = true }
 [build-dependencies]
 jackin-build-meta = { workspace = true }
 
@@ -79,10 +81,16 @@ harness = false
 [dev-dependencies]
 criterion = { workspace = true, features = ["html_reports"] }
 jackin-diagnostics = { workspace = true, features = ["test-support"] }
+jackin-otlp-testbed = { workspace = true }
 tempfile = { workspace = true }
 insta = { workspace = true, features = ["filters"] }
-tokio = { workspace = true, features = ["test-util"] }
+tokio = { workspace = true, features = ["rt-multi-thread", "test-util"] }
 tracing = { workspace = true }
+tracing-opentelemetry = { workspace = true }
+tracing-subscriber = { workspace = true }
+opentelemetry = { workspace = true }
+opentelemetry_sdk = { workspace = true, features = ["testing", "trace"] }
+opentelemetry-proto = { workspace = true }
 
 [lints]
 workspace = true

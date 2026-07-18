@@ -24,9 +24,8 @@
 //!
 //! Roadmap: `docs/src/content/docs/reference/roadmap/workspace-claude-token-setup.mdx`
 
-use std::process::Command;
-
 const CLAUDE_DEFAULT_BIN: &str = "claude";
+const CLAUDE_PROBE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
 
 /// Result of probing `<binary> --version` on the host.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -53,39 +52,24 @@ pub(crate) fn probe_claude_cli() -> anyhow::Result<ClaudeProbe> {
 
 /// Test-injectable variant. Production callers use [`probe_claude_cli`].
 pub(crate) fn probe_with_binary(binary: &str) -> anyhow::Result<ClaudeProbe> {
-    let mut command = Command::new(binary);
-    command.arg("--version");
-    #[expect(
-        clippy::disallowed_methods,
-        reason = "Claude CLI probe is wrapped by spawn_blocking on launch paths"
-    )]
-    let out = command.output().map_err(|e| {
-        anyhow::anyhow!(
-            "failed to spawn Claude CLI {binary:?}: {e} \
-                 (install with `npm i -g @anthropic-ai/claude-code` or see \
-                 https://docs.anthropic.com/en/docs/claude-code)"
-        )
-    })?;
+    let request =
+        jackin_process::ExecRequest::new(binary, ["--version"]).timeout(CLAUDE_PROBE_TIMEOUT);
+    let out = crate::process_telemetry::exec_sync_as(
+        &request,
+        jackin_telemetry::schema::enums::ProcessExecutableName::Claude,
+    )
+    .map_err(|_| anyhow::anyhow!("Claude CLI could not start; install Claude Code and retry"))?;
 
-    if !out.status.success() {
-        let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
-        let code = out
-            .status
-            .code()
-            .map_or_else(|| "signal".to_owned(), |c| c.to_string());
-        anyhow::bail!(
-            "`{binary} --version` exited with {code} (stderr: {})",
-            stderr.trim()
-        );
+    if out.timed_out {
+        anyhow::bail!("Claude CLI version probe timed out");
+    }
+    if !out.success {
+        anyhow::bail!("Claude CLI version probe failed");
     }
 
     let stdout = String::from_utf8_lossy(&out.stdout);
-    let version = parse_version_line(&stdout).ok_or_else(|| {
-        anyhow::anyhow!(
-            "could not parse Claude CLI version from output: {:?}",
-            stdout.trim()
-        )
-    })?;
+    let version = parse_version_line(&stdout)
+        .ok_or_else(|| anyhow::anyhow!("Claude CLI returned an invalid version"))?;
 
     Ok(ClaudeProbe {
         binary: binary.to_owned(),
@@ -203,35 +187,50 @@ pub(crate) fn capture_setup_token_with_binary(
         })
         .map_err(|e| anyhow::anyhow!("failed to allocate pty: {e}"))?;
 
+    let spawn_operation = crate::process_telemetry::ChildOperation::begin(
+        jackin_telemetry::schema::enums::ProcessExecutableName::Claude,
+    );
     let cmd = CommandBuilder::new(binary);
-    let mut child = pair
-        .slave
-        .spawn_command({
-            let mut c = cmd;
-            c.arg("setup-token");
-            c
-        })
-        .map_err(|e| {
-            anyhow::anyhow!(
+    let mut child = match pair.slave.spawn_command({
+        let mut c = cmd;
+        c.arg("setup-token");
+        c
+    }) {
+        Ok(child) => child,
+        Err(e) => {
+            spawn_operation.spawn_failed();
+            return Err(anyhow::anyhow!(
                 "failed to spawn Claude CLI {binary:?} setup-token: {e} \
              (install with `npm i -g @anthropic-ai/claude-code` or see \
              https://docs.anthropic.com/en/docs/claude-code)"
-            )
-        })?;
+            ));
+        }
+    };
 
     // Drop the slave handle on the parent side so the child becomes
     // the only owner — its EOF on exit closes the master side and
     // wakes our reader.
     drop(pair.slave);
 
-    let mut reader = pair
-        .master
-        .try_clone_reader()
-        .map_err(|e| anyhow::anyhow!("failed to clone pty reader: {e}"))?;
-    let mut master_writer = pair
-        .master
-        .take_writer()
-        .map_err(|e| anyhow::anyhow!("failed to take pty writer: {e}"))?;
+    let mut reader = match pair.master.try_clone_reader() {
+        Ok(reader) => reader,
+        Err(e) => {
+            drop(child.kill());
+            drop(child.wait());
+            spawn_operation.io_failed();
+            return Err(anyhow::anyhow!("failed to clone pty reader: {e}"));
+        }
+    };
+    let mut master_writer = match pair.master.take_writer() {
+        Ok(writer) => writer,
+        Err(e) => {
+            drop(child.kill());
+            drop(child.wait());
+            spawn_operation.io_failed();
+            return Err(anyhow::anyhow!("failed to take pty writer: {e}"));
+        }
+    };
+    spawn_operation.succeeded();
 
     // Put the operator's terminal into raw mode so single
     // keystrokes (`c` to copy the OAuth URL, the OAuth code paste,
@@ -251,7 +250,7 @@ pub(crate) fn capture_setup_token_with_binary(
     // `std::io::stdin()` (not `lock()`) so the global stdin lock
     // is not held across calls — a later jackin step that wants
     // to read stdin can do so without deadlocking on this thread.
-    std::thread::spawn(move || {
+    jackin_telemetry::spawn::thread_stream("claude.stdin", move || {
         let mut byte = [0u8; 1];
         loop {
             match std::io::stdin().read(&mut byte) {
@@ -293,9 +292,13 @@ pub(crate) fn capture_setup_token_with_binary(
             }
             Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}
             Err(e) => {
+                let read_operation = crate::process_telemetry::ChildOperation::begin(
+                    jackin_telemetry::schema::enums::ProcessExecutableName::Claude,
+                );
                 drop(stderr.flush());
                 drop(child.kill());
                 drop(child.wait());
+                read_operation.io_failed();
                 anyhow::bail!(
                     "PTY read failed while capturing `{binary} setup-token` output: {e} \
                      (any captured token must be considered compromised; re-run setup)"
@@ -310,9 +313,19 @@ pub(crate) fn capture_setup_token_with_binary(
     }
     drop(stderr.flush());
 
-    let status = child
-        .wait()
-        .map_err(|e| anyhow::anyhow!("failed to wait on `claude setup-token`: {e}"))?;
+    let close_operation = crate::process_telemetry::ChildOperation::begin(
+        jackin_telemetry::schema::enums::ProcessExecutableName::Claude,
+    );
+    let status = match child.wait() {
+        Ok(status) => status,
+        Err(e) => {
+            close_operation.io_failed();
+            return Err(anyhow::anyhow!(
+                "failed to wait on `claude setup-token`: {e}"
+            ));
+        }
+    };
+    close_operation.complete_portable_status(&status);
     if !status.success() {
         anyhow::bail!(
             "`{binary} setup-token` exited with non-zero status (operator may have \

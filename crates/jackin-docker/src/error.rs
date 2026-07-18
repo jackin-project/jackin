@@ -13,20 +13,6 @@ pub enum DockerError {
         args: String,
         stderr: String,
     },
-    #[error("command failed: {program} {args} (captured output in diagnostics run {run_id})")]
-    CommandFailedDebugRun {
-        program: String,
-        args: String,
-        run_id: String,
-    },
-    #[error(
-        "command failed: {program} {args} (output suppressed; rerun with --debug to capture it in diagnostics run {run_id})"
-    )]
-    CommandFailedSuppressed {
-        program: String,
-        args: String,
-        run_id: String,
-    },
     #[error("command failed: {program} {args} (stderr: {stderr}; captured output suppressed)")]
     CommandFailedStderrSummary {
         program: String,

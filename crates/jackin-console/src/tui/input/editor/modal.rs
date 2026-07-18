@@ -268,7 +268,6 @@ pub fn apply_text_input_to_pending(
             editor.commit_last_mount_dst_input(value);
         }
         TextInputTarget::Role => {
-            jackin_diagnostics::debug_log!("role", "role loader input committed: raw={value:?}");
             open_role_input_error(
                 editor,
                 crate::tui::components::error_popup::role_input_misroute_error_message(),

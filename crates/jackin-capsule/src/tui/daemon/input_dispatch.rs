@@ -1,7 +1,3 @@
-#![expect(
-    clippy::too_many_lines,
-    reason = "documented residual allow; prefer expect when site is lint-true"
-)]
 //! TUI input dispatch methods for the daemon-owned `Multiplexer`.
 
 use std::sync::Arc;
@@ -13,6 +9,7 @@ use crate::tui::update::action_frame_plan;
 use crate::tui::update::prefix_full_redraw_reason;
 use crate::tui::view::encode_osc52_clipboard_write;
 use jackin_protocol::attach::ServerFrame;
+use jackin_telemetry::ResultTelemetryExt as _;
 
 use super::{
     Action, ConfirmedActionRoute, Dialog, DialogAction, FullRedrawReason, InputDispatchContext,
@@ -57,19 +54,6 @@ impl Multiplexer {
     /// and route the result here, so adding a new variant means
     /// updating one match arm instead of two.
     pub(super) fn apply_dialog_action(&mut self, action: DialogAction) {
-        // Compact breadcrumb (always logged) for the load-bearing
-        // dispatch arms — Dismiss, Command, SpawnAgent, RenameTab. The
-        // Redraw / Consume arms fire on every arrow key inside a dialog
-        // and would swamp the production log; they go through the
-        // debug-only `cdebug!` surface so a `--debug` trace shows
-        // dialog dispatch landing for arrow keys while quiet runs stay
-        // tidy.
-        match &action {
-            DialogAction::Redraw | DialogAction::Consume => {
-                crate::cdebug!("action: dialog={action:?}");
-            }
-            _ => crate::clog!("action: dialog={action:?}"),
-        }
         let frame_plan = dialog_action_frame_plan(&action);
         match action {
             DialogAction::Dismiss => {
@@ -93,19 +77,15 @@ impl Multiplexer {
                 // finishes (or fails closed).
                 self.dialog_pop_one();
                 if let Some(reply_tx) = self.control.pending_exec_reply.take() {
-                    tokio::spawn(async move {
-                        drop(reply_tx.send(run_exec_selected(command, args, selected).await));
-                    });
+                    reply_tx.spawn(async move { run_exec_selected(command, args, selected).await });
                 }
             }
             DialogAction::ExecCancel => {
                 self.dialog_pop_one();
                 if let Some(reply_tx) = self.control.pending_exec_reply.take() {
-                    drop(
-                        reply_tx.send(jackin_protocol::control::ServerMsg::ExecDenied {
-                            reason: "operator cancelled credential selection".to_owned(),
-                        }),
-                    );
+                    reply_tx.send(jackin_protocol::control::ServerMsg::ExecDenied {
+                        reason: "operator cancelled credential selection".to_owned(),
+                    });
                 }
             }
             DialogAction::ExitDirty(row) => {
@@ -178,12 +158,10 @@ impl Multiplexer {
                 self.dialog_clear();
                 // Token resolved here from the env key captured for the picked
                 // provider — never a fixed provider's key.
-                let env_overrides =
-                    jackin_protocol::Provider::from_label(&provider_label).map_or_else(
+                let env_overrides = jackin_protocol::Provider::from_label(&provider_label)
+                    .map_or_else(
                         || {
-                            crate::clog!(
-                                "spawn: unknown provider label {provider_label:?}; no env redirect applied"
-                            );
+                            let _warning = jackin_telemetry::record_recovered_degradation();
                             Vec::new()
                         },
                         |provider| {
@@ -280,10 +258,6 @@ impl Multiplexer {
             }
         }
         self.invalidate(frame_plan.reason());
-        // Per-keypress selection trace — firehose, gated at telemetry debug.
-        if let Some(Dialog::ExitDirty { selected, .. }) = self.dialog_top() {
-            crate::cdebug!("exit-dirty: selected={selected}");
-        }
     }
 
     pub(super) fn send_bytes_to_focused_pane(&mut self, bytes: &[u8]) -> bool {
@@ -343,15 +317,16 @@ impl Multiplexer {
         &mut self,
         command: String,
         args: Vec<String>,
-        reply_tx: tokio::sync::oneshot::Sender<jackin_protocol::control::ServerMsg>,
+        reply_tx: tokio::sync::oneshot::Sender<crate::attach_protocol::ControlResponse>,
+        operation: Option<jackin_telemetry::operation::OperationGuard>,
     ) {
         // Supersede any picker already in flight: deny its deferred reply (so
         // that client gets an answer instead of a closed socket) and drop its
         // now-stale dialog so confirm/cancel can't act on it.
         if let Some(prev) = self.control.pending_exec_reply.take() {
-            drop(prev.send(jackin_protocol::control::ServerMsg::ExecDenied {
+            prev.send(jackin_protocol::control::ServerMsg::ExecDenied {
                 reason: "superseded by a newer jackin-exec request".to_owned(),
-            }));
+            });
             if matches!(self.dialog_top(), Some(Dialog::ExecPicker(_))) {
                 self.dialog_pop_one();
             }
@@ -361,7 +336,7 @@ impl Multiplexer {
             args,
             &self.launch_env.launch_config.exec_bindings,
         );
-        self.control.pending_exec_reply = Some(reply_tx);
+        self.control.pending_exec_reply = Some(super::PendingExecReply::new(reply_tx, operation));
         self.dialog_push(Dialog::ExecPicker(state));
         self.invalidate(FullRedrawReason::DialogChange);
     }
@@ -456,9 +431,9 @@ impl Multiplexer {
                 self.invalidate_for(&Action::JumpTab(idx));
             }
             Action::SplitFocused(direction) => {
-                if let Err(err) = self.split_focused(direction) {
-                    crate::clog!("split ({direction:?}) failed: {err:?}");
-                }
+                drop(self.split_focused(direction).record_telemetry_error(
+                    jackin_telemetry::schema::enums::ErrorType::LaunchFailed,
+                ));
                 self.invalidate_for(&Action::SplitFocused(direction));
             }
             Action::MoveFocus(dir) => {
@@ -553,12 +528,6 @@ impl Multiplexer {
                     return;
                 }
                 if self.forward_mouse_to_focused_pane_with_kind(col, row, button, true) {
-                    crate::cdebug!(
-                        "wheel dispatch: forwarded-to-pty row={} col={} button={}",
-                        row,
-                        col,
-                        button
-                    );
                     return;
                 }
                 let delta = if (button & 1) == 0 { 3 } else { -3 };
@@ -568,71 +537,25 @@ impl Multiplexer {
                 let Some(session) = self.session_supervisor.sessions.get_mut(focused) else {
                     return;
                 };
-                let debug_enabled = crate::logging::debug_enabled();
-                let (filled, vt_filled, inline_filled) = if debug_enabled {
-                    let (vt_filled, inline_filled) = session.scrollback_counts();
-                    (
-                        vt_filled.saturating_add(inline_filled),
-                        vt_filled,
-                        inline_filled,
-                    )
-                } else {
-                    (session.scrollback_filled(), 0, 0)
-                };
-                if let Some(fallback_reason) = pane_wheel_cursor_fallback_reason(
+                let filled = session.scrollback_filled();
+                if pane_wheel_cursor_fallback_reason(
                     session.mouse_enabled(),
                     session.alternate_screen(),
-                ) && let Some(buf) = encode_wheel_cursor_fallback(
-                    session.mouse_enabled(),
-                    session.application_cursor(),
-                    button,
-                ) {
-                    crate::cdebug!(
-                        "wheel dispatch: cursor-fallback session={} agent={:?} row={} col={} button={} scrollback_filled={} reason={} bytes={:02x?}",
-                        focused,
-                        session.agent,
-                        row,
-                        col,
+                )
+                .is_some()
+                    && let Some(buf) = encode_wheel_cursor_fallback(
+                        session.mouse_enabled(),
+                        session.application_cursor(),
                         button,
-                        filled,
-                        fallback_reason,
-                        buf
-                    );
+                    )
+                {
                     session.send_input(&buf);
                     return;
                 }
                 if filled == 0 {
-                    crate::cdebug!(
-                        "wheel dispatch: no-scrollback session={} agent={:?} row={} col={} button={} alt_screen={} mouse_enabled={} vt_scrollback={} inline_scrollback={}",
-                        focused,
-                        session.agent,
-                        row,
-                        col,
-                        button,
-                        session.alternate_screen(),
-                        session.mouse_enabled(),
-                        vt_filled,
-                        inline_filled
-                    );
                     return;
                 }
-                crate::cdebug!(
-                    "wheel dispatch: jackin-scrollback session={} row={} col={} button={} delta={} before={} filled={}",
-                    focused,
-                    row,
-                    col,
-                    button,
-                    delta,
-                    session.scrollback_offset(),
-                    filled
-                );
                 let moved = session.scroll_by(delta);
-                crate::cdebug!(
-                    "wheel dispatch: jackin-scrollback session={} after={} moved={}",
-                    focused,
-                    session.scrollback_offset(),
-                    moved
-                );
                 // Every wheel step that moved the offset repaints body and
                 // footer together — including the offset→0 return to live
                 // (D2).
@@ -847,11 +770,20 @@ impl Multiplexer {
     pub(super) fn set_tab_bar_focused(&mut self, focused: bool) {
         if self.render.tab_bar_focused != focused {
             self.render.tab_bar_focused = focused;
+            self.sync_widget_focus();
             self.invalidate(FullRedrawReason::StatusChange);
         }
     }
 
     pub(super) fn handle_input(&mut self, event: InputEvent) {
+        if matches!(
+            &event,
+            InputEvent::MousePress { .. } | InputEvent::MouseRelease { .. }
+        ) {
+            let _counter_result =
+                jackin_telemetry::counter(&jackin_telemetry::metric::TERMINAL_INPUT_MOUSE)
+                    .add(1, &[]);
+        }
         if let Some(action) = mouse_chrome_update_action(&event) {
             self.apply_action(action);
         }
@@ -924,11 +856,6 @@ impl Multiplexer {
     }
 
     pub(super) fn handle_prefix_command(&mut self, cmd: PrefixCommand) {
-        // Action breadcrumb: every prefix-key chord lands here, so one
-        // line per dispatch is enough to reconstruct what the operator
-        // pressed when triaging a bug report. The Debug formatter
-        // includes any payload (`JumpTab(i)`, `MoveFocus(dir)`).
-        crate::clog!("action: prefix={cmd:?}");
         if let Some(action) = prefix_command_action(&cmd) {
             self.apply_action(action);
         }

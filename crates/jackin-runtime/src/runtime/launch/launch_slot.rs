@@ -33,7 +33,7 @@ pub(crate) async fn claim_container_name(
     let mut last_unlink_err: Option<std::io::Error> = None;
     let mut occupied_attempts = 0u32;
 
-    for attempt in 0..CLAIM_MAX_ATTEMPTS {
+    for _ in 0..CLAIM_MAX_ATTEMPTS {
         let name = crate::instance::new_container_name(workspace_name, selector);
 
         let slot_free = match docker.inspect_container_state(&name).await {
@@ -57,15 +57,12 @@ pub(crate) async fn claim_container_name(
             | ContainerState::Dead => false,
             ContainerState::NotFound => true,
             ContainerState::InspectUnavailable(reason) => {
-                let span = jackin_diagnostics::operation_span("launch.prepare", &[]);
-                span.in_scope(|| {
-                    jackin_diagnostics::operation_error(
-                        "launch.prepare",
-                        "docker_inspect_failed",
-                        "container name availability inspection failed",
-                        &[],
-                    );
-                });
+                let _error = jackin_telemetry::record_error(
+                    jackin_telemetry::schema::enums::ErrorType::LaunchFailed,
+                );
+                jackin_diagnostics::emit_operator_notice(
+                    "container name availability inspection failed",
+                );
                 anyhow::bail!(
                     "{}",
                     docker_unavailable_msg(&format!("claim container name `{name}`"), &reason,)
@@ -77,10 +74,7 @@ pub(crate) async fn claim_container_name(
             match try_acquire_name_lock(&paths.data_dir, &name) {
                 Ok(lock_file) => return Ok((name, lock_file)),
                 Err(NameLockError { lock, unlink }) => {
-                    jackin_diagnostics::debug_log!(
-                        "runtime",
-                        "claim_container_name: lock contention on {name} (attempt {attempt}): {lock}",
-                    );
+                    let _warning = jackin_telemetry::record_retry_scheduled();
                     if let Some(unlink_err) = unlink {
                         last_unlink_err = Some(unlink_err);
                     }
@@ -166,13 +160,7 @@ fn try_acquire_name_lock(
     if let Err(lock) = FileExt::try_lock(&lock_file) {
         let lock = std::io::Error::from(lock);
         drop(lock_file);
-        let unlink = std::fs::remove_file(&lock_path).err().inspect(|err| {
-            jackin_diagnostics::debug_log!(
-                "runtime",
-                "try_acquire_name_lock: failed to unlink {} after lock contention: {err}",
-                lock_path.display(),
-            );
-        });
+        let unlink = std::fs::remove_file(&lock_path).err();
         return Err(NameLockError { lock, unlink });
     }
     Ok(lock_file)
@@ -233,37 +221,40 @@ pub(crate) fn resolve_github_env_map(
         let mut handles = Vec::with_capacity(declarations.len());
         for (key, value) in declarations {
             let host_env_fn = &host_env_fn;
-            handles.push(scope.spawn(move || {
-                let timing_name = format!("github_env:{key}");
-                let value_kind = github_env_value_kind(value);
-                jackin_diagnostics::active_timing_started(
-                    jackin_diagnostics::DiagnosticStage::Credentials,
-                    &timing_name,
-                    Some(value_kind),
-                );
-                let result =
-                    jackin_env::resolve_env_value("[github.env]", key, value, runner, |name| {
-                        host_env_fn(name)
-                    });
-                match result {
-                    Ok(value) => {
-                        jackin_diagnostics::active_timing_done(
-                            jackin_diagnostics::DiagnosticStage::Credentials,
-                            &timing_name,
-                            Some(value_kind),
-                        );
-                        (key.clone(), Ok(value))
+            handles.push(jackin_telemetry::spawn::thread_scoped_joined(
+                scope,
+                move || {
+                    let timing_name = format!("github_env:{key}");
+                    let value_kind = github_env_value_kind(value);
+                    jackin_diagnostics::active_timing_started(
+                        jackin_diagnostics::DiagnosticStage::Credentials,
+                        &timing_name,
+                        Some(value_kind),
+                    );
+                    let result =
+                        jackin_env::resolve_env_value("[github.env]", key, value, runner, |name| {
+                            host_env_fn(name)
+                        });
+                    match result {
+                        Ok(value) => {
+                            jackin_diagnostics::active_timing_done(
+                                jackin_diagnostics::DiagnosticStage::Credentials,
+                                &timing_name,
+                                Some(value_kind),
+                            );
+                            (key.clone(), Ok(value))
+                        }
+                        Err(error) => {
+                            jackin_diagnostics::active_timing_done(
+                                jackin_diagnostics::DiagnosticStage::Credentials,
+                                &timing_name,
+                                Some("error"),
+                            );
+                            (key.clone(), Err(error))
+                        }
                     }
-                    Err(error) => {
-                        jackin_diagnostics::active_timing_done(
-                            jackin_diagnostics::DiagnosticStage::Credentials,
-                            &timing_name,
-                            Some("error"),
-                        );
-                        (key.clone(), Err(error))
-                    }
-                }
-            }));
+                },
+            ));
         }
         for handle in handles {
             match handle

@@ -45,6 +45,9 @@ ignore_patterns = [
 ]
 
 words = [
+  "jank",
+  "parentbased",
+  "updowncounter",
   "andrewpatterson",
   "watchlists",
   "bigmodel",
@@ -52,6 +55,7 @@ words = [
   "codexbar",
   "extrausers",
   "gecos",
+  "genai",
   "getgrgid",
   "getpwnam",
   "getpwuid",
@@ -114,6 +118,7 @@ words = [
   "ycombinator",
   "ansible",
   "callgraph",
+  "cicd",
   "ctx's",
   "leanctx",
   "qdrant",
@@ -840,6 +845,7 @@ words = [
   "toplevel",
   "tprintln",
   "traceparent",
+  "tracestate",
   "trackpad",
   "trackpads",
   "Tradeoff",

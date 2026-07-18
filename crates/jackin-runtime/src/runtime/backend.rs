@@ -217,7 +217,7 @@ pub fn backend_for_manifest(manifest: Option<&InstanceManifest>) -> InstanceBack
 
 pub fn backend_for_state(paths: &JackinPaths, container_name: &str) -> InstanceBackend {
     let state_dir = paths.data_dir.join(container_name);
-    let manifest = InstanceManifest::read_or_log(&state_dir, "backend_for_state");
+    let manifest = InstanceManifest::read_optional_lossy(&state_dir);
     backend_for_manifest(manifest.as_ref())
 }
 

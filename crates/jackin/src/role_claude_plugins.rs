@@ -54,7 +54,7 @@ impl GitHubRawMarketplaceResolver {
 impl MarketplaceResolver for GitHubRawMarketplaceResolver {
     fn resolve(&self, source: &str) -> anyhow::Result<String> {
         let url = Self::raw_url(source)?;
-        std::thread::spawn(move || fetch_marketplace_manifest(&url))
+        jackin_telemetry::spawn::thread_joined(move || fetch_marketplace_manifest(&url))
             .join()
             .map_err(|_| anyhow::anyhow!("fetching Claude marketplace manifest panicked"))?
     }

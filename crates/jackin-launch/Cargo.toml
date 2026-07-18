@@ -17,6 +17,7 @@ jackin-brand = { workspace = true }
 jackin-core = { workspace = true }
 jackin-tui = { workspace = true }
 jackin-diagnostics = { workspace = true }
+jackin-telemetry = { workspace = true }
 owo-colors = { workspace = true }
 ratatui = { workspace = true }
 termrock = { workspace = true }

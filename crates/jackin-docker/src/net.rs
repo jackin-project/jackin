@@ -18,7 +18,7 @@ use std::time::Duration;
 use crate::DockerError;
 use anyhow::{Context, Result};
 use fast_down::{
-    Event, Proxy,
+    Proxy,
     fast_puller::{FastDownPuller, FastDownPullerOptions, build_client},
     file::MmapFilePusher,
     http::Prefetch,
@@ -128,12 +128,6 @@ pub async fn download_parallel(url: &str, dest: &Path) -> Result<()> {
             detail: format!("{err:?}"),
         })
     })?;
-    jackin_diagnostics::debug_log!(
-        "download",
-        "{url}: size={}, parallel={}",
-        info.size,
-        info.fast_download
-    );
     if !info.fast_download {
         return Err(DockerError::RangeUnsupported {
             url: url.to_owned(),
@@ -187,20 +181,10 @@ pub async fn download_parallel(url: &str, dest: &Path) -> Result<()> {
     // deadline. A persistently-failing chunk retries forever (every bounded
     // range is classified recoverable), so both the drain and the join can hang
     // indefinitely; the timeout + abort is the only ceiling. Per-chunk errors
-    // are recoverable and high-frequency, so they go on the gated `debug_log!`
-    // tier, not the always-on diagnostics log.
+    // are recoverable and high-frequency, so they are intentionally not emitted
+    // as telemetry. The bounded download operation records only its final outcome.
     let drive = async {
-        while let Ok(event) = result.event_chain.recv().await {
-            match event {
-                Event::PullError(id, err) => {
-                    jackin_diagnostics::debug_log!("download", "worker {id} pull error: {err:?}");
-                }
-                Event::PushError(_, _, err) | Event::FlushError(err) => {
-                    jackin_diagnostics::debug_log!("download", "write error: {err}");
-                }
-                _ => {}
-            }
-        }
+        while result.event_chain.recv().await.is_ok() {}
         result.join().await.map_err(|e| {
             anyhow::Error::from(DockerError::DownloadTaskPanicked {
                 url: url.to_owned(),

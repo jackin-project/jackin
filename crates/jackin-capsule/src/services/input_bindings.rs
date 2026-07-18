@@ -23,31 +23,38 @@ pub fn resolve_input_bindings() -> InputBindings {
 /// Prefix mode is opt-in: returns `Some(byte)` when `JACKIN_PREFIX`
 /// is set to a parseable key, `None` otherwise.
 fn resolve_prefix_binding() -> Option<u8> {
-    let s = std::env::var("JACKIN_PREFIX").ok()?;
+    let raw = std::env::var("JACKIN_PREFIX").ok();
+    prefix_binding(raw.as_deref())
+}
+
+fn prefix_binding(raw: Option<&str>) -> Option<u8> {
+    let s = raw?;
     if s.eq_ignore_ascii_case("none") {
         return None;
     }
-    if let Some(byte) = parse_key_binding(&s) {
-        Some(byte)
-    } else {
-        crate::clog!("invalid JACKIN_PREFIX={s:?}; prefix mode disabled");
-        None
-    }
+    parse_key_binding(s)
 }
 
 /// Palette key defaults to `Ctrl+\` (`0x1C`). Set
 /// `JACKIN_PALETTE_KEY=none` to disable the direct-palette shortcut.
 fn resolve_palette_binding() -> Option<u8> {
-    match std::env::var("JACKIN_PALETTE_KEY") {
-        Err(_) => Some(0x1C),
-        Ok(s) if s.eq_ignore_ascii_case("none") => None,
-        Ok(s) => {
-            if let Some(byte) = parse_key_binding(&s) {
+    let raw = std::env::var("JACKIN_PALETTE_KEY").ok();
+    palette_binding(raw.as_deref())
+}
+
+fn palette_binding(raw: Option<&str>) -> Option<u8> {
+    match raw {
+        None => Some(0x1C),
+        Some(s) if s.eq_ignore_ascii_case("none") => None,
+        Some(s) => {
+            if let Some(byte) = parse_key_binding(s) {
                 Some(byte)
             } else {
-                crate::clog!("invalid JACKIN_PALETTE_KEY={s:?}; using default Ctrl+\\");
                 Some(0x1C)
             }
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

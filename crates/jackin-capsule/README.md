@@ -36,7 +36,7 @@ Not responsible for: protocol encoding (`jackin-protocol`), host-side launch orc
 | [`clipboard.rs`](src/clipboard.rs) · [`clipboard/`](src/clipboard) | clipboard image staging + idle expiry | [`tests.rs`](src/clipboard/tests.rs) |
 | [`runtime_setup.rs`](src/runtime_setup.rs) · [`runtime_setup/`](src/runtime_setup) | in-container git/auth/MCP setup | [`tests.rs`](src/runtime_setup/tests.rs) |
 | [`config.rs`](src/config.rs) | `CapsuleConfig` load/validate | — |
-| [`container_context.rs`](src/container_context.rs) · [`container_context/`](src/container_context) | container identity metadata | [`tests.rs`](src/container_context/tests.rs) |
+| [`container_context.rs`](src/container_context.rs) | container identity metadata and co-located tests | — |
 | [`agent_status.rs`](src/agent_status.rs) · [`agent_status/`](src/agent_status) | capsule-facing status hooks | nested |
 | [`pid1.rs`](src/pid1.rs) · [`pid1/`](src/pid1) | reaper + signal forward | [`tests.rs`](src/pid1/tests.rs) |
 | [`exec.rs`](src/exec.rs) · [`exec/`](src/exec) | `jackin-exec` / capsule exec | [`tests.rs`](src/exec/tests.rs) |
@@ -52,7 +52,7 @@ Not responsible for: protocol encoding (`jackin-protocol`), host-side launch orc
 | [`services.rs`](src/services.rs) · [`services/`](src/services) | side-effect adapters | — |
 | [`util.rs`](src/util.rs) · [`util/`](src/util) | shared bounded helpers | [`tests.rs`](src/util/tests.rs) |
 | [`wordlist.rs`](src/wordlist.rs) · [`wordlist/`](src/wordlist) | tab codenames | [`tests.rs`](src/wordlist/tests.rs) |
-| [`alloc_telemetry.rs`](src/alloc_telemetry.rs) · [`alloc_telemetry/`](src/alloc_telemetry) | opt-in heap telemetry | [`tests.rs`](src/alloc_telemetry/tests.rs) |
+| [`alloc_telemetry.rs`](src/alloc_telemetry.rs) | opt-in heap profiler guard | [`render_allocation.rs`](tests/render_allocation.rs) |
 | [`debug_panic.rs`](src/debug_panic.rs) · [`debug_panic/`](src/debug_panic) | force-panic debug hook | [`tests.rs`](src/debug_panic/tests.rs) |
 
 ## Public API

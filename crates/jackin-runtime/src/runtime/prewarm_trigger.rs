@@ -109,57 +109,42 @@ pub fn spawn_background_image_prewarm(
     #[cfg(not(test))]
     {
         let paths = paths.clone();
-        tokio::spawn(async move {
-            if let Some(run) = jackin_diagnostics::active_run() {
-                run.stage(
-                    "background_image_prewarm_started",
-                    jackin_diagnostics::DiagnosticStage::DerivedImage,
-                    "refreshing stale workspace images in background",
-                    Some(&targets.len().to_string()),
-                );
-            }
-            for target in targets {
-                let result = super::image::prewarm_role_images(
-                    &paths,
-                    &target.selector,
-                    &target.role_git,
-                    None,
-                    &target.agents,
-                    debug,
-                )
-                .await;
-                if let Some(run) = jackin_diagnostics::active_run() {
-                    match result {
-                        #[expect(clippy::excessive_nesting, reason = "restored after allow→expect")]
-                        Ok(rows) => {
-                            let built = rows
-                                .iter()
-                                .filter(|row| {
-                                    matches!(row.status, super::image::ImagePrewarmStatus::Built)
-                                })
-                                .count();
-                            run.stage(
-                                "background_image_prewarm_done",
-                                jackin_diagnostics::DiagnosticStage::DerivedImage,
-                                "background workspace image refresh complete",
-                                Some(&format!(
-                                    "{}:built={}/{}",
-                                    target.selector.key(),
-                                    built,
-                                    rows.len()
-                                )),
-                            );
-                        }
-                        Err(error) => run.stage(
-                            "background_image_prewarm_failed",
-                            jackin_diagnostics::DiagnosticStage::DerivedImage,
-                            "background workspace image refresh failed",
-                            Some(&format!("{}: {error:#}", target.selector.key())),
-                        ),
-                    }
+        jackin_telemetry::spawn::spawn_prewarm_job_attempts(
+            jackin_telemetry::schema::enums::JobType::ImagePrewarm,
+            move |attempts| async move {
+                let mut failed = false;
+                for target in targets {
+                    let result = attempts
+                        .run(
+                            super::image::prewarm_role_images(
+                                &paths,
+                                &target.selector,
+                                &target.role_git,
+                                None,
+                                &target.agents,
+                                debug,
+                            ),
+                            classify_image_prewarm_attempt,
+                        )
+                        .await;
+                    failed |= result.is_err();
                 }
-            }
-        });
+                failed
+            },
+        );
+    }
+}
+
+#[cfg(not(test))]
+fn classify_image_prewarm_attempt<T, E>(
+    result: &Result<T, E>,
+) -> jackin_telemetry::spawn::DetachedCompletion {
+    if result.is_ok() {
+        jackin_telemetry::spawn::DetachedCompletion::success()
+    } else {
+        jackin_telemetry::spawn::DetachedCompletion::failure(
+            jackin_telemetry::schema::enums::ErrorType::LaunchFailed,
+        )
     }
 }
 
@@ -184,58 +169,49 @@ pub fn spawn_background_sidecar_prewarm(paths: &JackinPaths, debug: bool) {
     #[cfg(not(test))]
     {
         let paths = paths.clone();
-        tokio::spawn(async move {
-            if let Some(run) = jackin_diagnostics::active_run() {
-                run.stage(
-                    "background_sidecar_prewarm_started",
-                    jackin_diagnostics::DiagnosticStage::Sidecar,
-                    "checking for kept DinD sidecar prewarm",
-                    None,
-                );
-            }
-            let result = background_sidecar_prewarm_once(&paths, debug).await;
-            if let Some(run) = jackin_diagnostics::active_run() {
-                match result {
-                    Ok(detail) => run.stage(
-                        "background_sidecar_prewarm_done",
-                        jackin_diagnostics::DiagnosticStage::Sidecar,
-                        "background sidecar prewarm complete",
-                        Some(&detail),
-                    ),
-                    Err(error) => run.stage(
-                        "background_sidecar_prewarm_failed",
-                        jackin_diagnostics::DiagnosticStage::Sidecar,
-                        "background sidecar prewarm failed",
-                        Some(&format!("{error:#}")),
-                    ),
-                }
-            }
-        });
+        jackin_telemetry::spawn::spawn_prewarm_job(
+            jackin_telemetry::schema::enums::JobType::SidecarPrewarm,
+            async move { background_sidecar_prewarm_once(&paths, debug).await },
+            classify_sidecar_prewarm_attempt,
+        );
+    }
+}
+
+#[derive(Debug)]
+enum SidecarPrewarmOutcome {
+    Completed,
+    Skipped,
+}
+
+fn classify_sidecar_prewarm_attempt(
+    result: &anyhow::Result<SidecarPrewarmOutcome>,
+) -> jackin_telemetry::spawn::DetachedCompletion {
+    match result {
+        Ok(SidecarPrewarmOutcome::Completed) => {
+            jackin_telemetry::spawn::DetachedCompletion::success()
+        }
+        Ok(SidecarPrewarmOutcome::Skipped) => jackin_telemetry::spawn::DetachedCompletion::skip(),
+        Err(_) => jackin_telemetry::spawn::DetachedCompletion::failure(
+            jackin_telemetry::schema::enums::ErrorType::LaunchFailed,
+        ),
     }
 }
 
 #[cfg(not(test))]
 async fn background_sidecar_prewarm_once(
     paths: &JackinPaths,
-    debug: bool,
-) -> anyhow::Result<String> {
+    _debug: bool,
+) -> anyhow::Result<SidecarPrewarmOutcome> {
     let Some(_lock) = super::launch::try_lock_prewarmed_dind(paths) else {
-        return Ok("skip:locked".to_owned());
+        return Ok(SidecarPrewarmOutcome::Skipped);
     };
     let docker = BollardDockerClient::connect()?;
     if super::launch::prewarmed_dind_state_is_live(paths, &docker).await {
-        return Ok("skip:state-live".to_owned());
+        return Ok(SidecarPrewarmOutcome::Skipped);
     }
     let warmed = super::launch::prewarm_dind_sidecar_container(&docker, true).await?;
     super::launch::write_prewarmed_dind_state(paths, &warmed)?;
-    if debug {
-        Ok(format!(
-            "prewarmed:{};ready_ms={}",
-            warmed.dind, warmed.ready_ms
-        ))
-    } else {
-        Ok(format!("prewarmed;ready_ms={}", warmed.ready_ms))
-    }
+    Ok(SidecarPrewarmOutcome::Completed)
 }
 
 #[cfg(test)]

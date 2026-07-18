@@ -14,7 +14,7 @@ use crate::tui::{
 };
 
 use super::{
-    CursorVisibilityState, FullRedrawReason, Multiplexer, Rect, append_osc_window_title,
+    CursorVisibilityState, Multiplexer, Rect, append_osc_window_title,
     compose_outer_terminal_title, cursor_visible_for_state, session_display_title,
 };
 
@@ -65,10 +65,9 @@ impl Multiplexer {
             return Vec::new();
         }
         let generation = self.render.frame_generation;
-        let reason = self.render.last_invalidate_reason.take();
+        self.render.last_invalidate_reason.take();
         let wipe = self.render.wipe_pending.take();
         let started = Instant::now();
-        let alloc_before = crate::alloc_telemetry::snapshot();
         if wipe.is_some() {
             // Terminal::clear() emits the screen erase and resets Ratatui's
             // previous buffer so FirstAttach/Resize get a real baseline reset.
@@ -79,30 +78,10 @@ impl Multiplexer {
             // itself errored — effectively impossible with SocketBackend.
             // Skip the frame; the generation stays ahead so the next loop
             // pass retries.
-            crate::clog!("compose_pending_frame: ratatui draw failed; skipping frame");
             return Vec::new();
         };
         self.render.rendered_generation = generation;
         jackin_diagnostics::record_render(started.elapsed().as_micros() as u64, 0);
-        crate::ctrace_payload!(
-            "render: reason={} wipe={} generation={} bytes={} duration_us={} term={}x{} dialog_open={}",
-            reason.map_or("none", FullRedrawReason::as_str),
-            wipe.is_some(),
-            generation,
-            output.len(),
-            started.elapsed().as_micros(),
-            self.render.term_cols,
-            self.render.term_rows,
-            self.dialog_open(),
-        );
-        if let Some(delta) = crate::alloc_telemetry::delta_since(alloc_before) {
-            crate::cdebug!(
-                "render_alloc: scope=frame alloc_blocks={} alloc_bytes={} bytes={}",
-                delta.blocks,
-                delta.bytes,
-                output.len(),
-            );
-        }
         self.frame_with_title(output)
     }
 
@@ -161,41 +140,6 @@ impl Multiplexer {
         let usage_status_label = self.focused_usage_snapshot().status_bar_label;
         let tabs = &self.session_supervisor.tabs;
         let panes = self.visible_panes();
-        // Frame-geometry trace: the status bar owns rows 0..STATUS_BAR_ROWS, so
-        // every pane's outer rect must start at or below that. A pane whose
-        // `outer.row` is smaller means its top border is being drawn over the
-        // status bar — the resize-residue class. Logged per frame at the
-        // firehose tier so a soak run pins the exact offending frame.
-        // Skip the per-pane trace loop entirely unless the firehose is on; the
-        // individual `cdebug!`s self-gate, but the loop and its arg setup would
-        // otherwise run every frame on the compose hot path.
-        if crate::logging::debug_enabled() {
-            let status_rows = crate::tui::components::status_bar::STATUS_BAR_ROWS;
-            crate::ctrace_payload!(
-                "frame-geom: term={}x{} content_rows={} status_rows={} panes={}",
-                term_cols,
-                term_rows,
-                self.render.content_rows,
-                status_rows,
-                panes.len(),
-            );
-            for pane in &panes {
-                crate::cdebug!(
-                    "frame-pane: id={} outer=row{},col{},rows{},cols{} inner_row={} {}",
-                    pane.id,
-                    pane.outer.row,
-                    pane.outer.col,
-                    pane.outer.rows,
-                    pane.outer.cols,
-                    pane.inner.row,
-                    if pane.outer.row < status_rows {
-                        "VIOLATION-ABOVE-STATUS"
-                    } else {
-                        "ok"
-                    },
-                );
-            }
-        }
         let focused_id = self.active_focused_id();
         // P5: tab-bar focus is part of the one shared focus-ring model, not a
         // parallel signal. When the operator has moved focus to the tab bar the
@@ -354,66 +298,9 @@ impl Multiplexer {
                 })
             })
             .collect();
-        if crate::logging::debug_enabled() {
-            for pane in &panes {
-                let Some(session) = self.session_supervisor.sessions.get(pane.id) else {
-                    continue;
-                };
-                let actual_filled = session.scrollback_filled();
-                let reported = pane_scrollbars
-                    .iter()
-                    .find(|(id, _, _)| *id == pane.id)
-                    .map_or((0, 0), |(_, offset, filled)| (*offset, *filled));
-                let thumb = termrock::scroll::tail_vertical_thumb(
-                    pane.outer.rows.saturating_sub(2),
-                    reported.1,
-                    reported.0,
-                )
-                .map(|thumb| (thumb.start, thumb.len));
-                let (grid_rows, grid_cols) = session.shadow_grid.size();
-                let (cursor_row, cursor_col) = session.shadow_grid.cursor_position();
-                let visible_start =
-                    actual_filled.saturating_sub(session.scrollback_offset().min(actual_filled));
-                let cursor_visible = cursor_visible_for_state(CursorVisibilityState {
-                    dialog_open,
-                    focused_pane_available: focused_id == Some(pane.id),
-                    focused_session_received_output: session.received_output,
-                    scrollback_active: session.scrollback_offset() != 0,
-                    agent_cursor_hidden: session.shadow_grid.hide_cursor(),
-                });
-                crate::cdebug!(
-                    "pane scroll frame: id={} focused={} agent={:?} label={} alt_screen={} mouse_enabled={} content_rows={} scrollback_actual={} scrollback_reported={} offset={} reported_offset={} viewport={}x{} screen={}x{} visible_start={} thumb={:?} cursor={}x{} cursor_visible={}",
-                    pane.id,
-                    focused_id == Some(pane.id),
-                    session.agent,
-                    session.label,
-                    session.shadow_grid.alternate_screen(),
-                    session.mouse_enabled(),
-                    actual_filled.saturating_add(usize::from(grid_rows)),
-                    actual_filled,
-                    reported.1,
-                    session.scrollback_offset(),
-                    reported.0,
-                    pane.inner.rows,
-                    pane.inner.cols,
-                    grid_rows,
-                    grid_cols,
-                    visible_start,
-                    thumb,
-                    cursor_row,
-                    cursor_col,
-                    cursor_visible,
-                );
-            }
-        }
-        crate::cdebug!(
-            "render: ratatui-frame panes={} pane_screens={}",
-            panes.len(),
-            pane_screens.len(),
-        );
         let debug_run_id_owned: Option<String> = if crate::logging::debug_enabled() {
             let diag = crate::container_context::resolve_container_diagnostics();
-            (!diag.run_id.is_empty()).then_some(diag.run_id)
+            (!diag.invocation_id.is_empty()).then_some(diag.invocation_id)
         } else {
             None
         };
@@ -503,12 +390,17 @@ impl Multiplexer {
             height: term_rows,
         };
         // Shared product drive_frame — CapsuleView is the View adapter.
+        let render_started = Instant::now();
         let result = jackin_tui::runtime::drive_frame(
             &mut self.render.ratatui_terminal,
             &crate::tui::runtime::CapsuleView,
             &frame_model,
             area,
             |_| {},
+        );
+        jackin_telemetry::ui::record_render(
+            jackin_telemetry::schema::enums::ScreenId::Capsule,
+            render_started.elapsed().as_secs_f64(),
         );
 
         // Keep tab/menu click regions in sync with the columns the widget
@@ -518,22 +410,20 @@ impl Multiplexer {
             .status_bar
             .set_click_regions_from_plan(&status_plan);
 
-        match result {
-            Ok(_) => {
-                let mut output = Vec::new();
-                self.render
-                    .ratatui_terminal
-                    .backend_mut()
-                    .drain_output_into(&mut output);
-                drop(pane_screens);
-                let focused_pane_rect = panes.iter().find(|p| p.focused).map(|p| p.inner);
-                self.append_client_state_reconciliation(&mut output, focused_id, focused_pane_rect);
-                Some(output)
-            }
-            Err(e) => {
-                crate::clog!("compose_ratatui_frame: draw failed: {e}; skipping frame");
-                None
-            }
+        if result.is_ok() {
+            let mut output = Vec::new();
+            self.render
+                .ratatui_terminal
+                .backend_mut()
+                .drain_output_into(&mut output);
+            drop(pane_screens);
+            let focused_pane_rect = panes.iter().find(|p| p.focused).map(|p| p.inner);
+            self.append_client_state_reconciliation(&mut output, focused_id, focused_pane_rect);
+            Some(output)
+        } else {
+            let _error =
+                jackin_telemetry::record_error(jackin_telemetry::schema::enums::ErrorType::IoError);
+            None
         }
     }
 

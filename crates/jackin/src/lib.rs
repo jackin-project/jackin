@@ -26,7 +26,9 @@ pub mod console;
 pub mod terminal_ownership;
 
 pub mod error;
+mod lifecycle;
 pub(crate) mod preflight;
+mod process_telemetry;
 pub mod prompt;
 pub mod role_authoring;
 mod role_claude_plugins;
@@ -34,6 +36,12 @@ pub mod warp;
 pub mod workspace;
 
 pub use app::run;
+
+#[doc(hidden)]
+pub use lifecycle::{
+    BinaryKind, InvocationTelemetry, LifecyclePolicy, ProductLifecycle, ResultClassification,
+    classify_error, classify_parse_error, lifecycle_policy, record_parse_outcome,
+};
 
 #[doc(hidden)]
 pub fn install_default_tls_provider() {

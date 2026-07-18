@@ -76,10 +76,11 @@ where
 {
     let (tx, rx) = tokio::sync::oneshot::channel();
     let run = move || drop(tx.send(worker()));
-    if let Ok(handle) = tokio::runtime::Handle::try_current() {
-        handle.spawn_blocking(run);
+    let name = name.into();
+    if tokio::runtime::Handle::try_current().is_ok() {
+        drop(jackin_telemetry::spawn::joined_blocking(run));
     } else {
-        drop(std::thread::Builder::new().name(name.into()).spawn(run));
+        drop(jackin_telemetry::spawn::thread_joined_named(name, run));
     }
     BlockingSubscription(rx)
 }
@@ -94,21 +95,21 @@ where
 {
     let (tx, rx) = tokio::sync::oneshot::channel();
     let run = async move { drop(tx.send(future.await)) };
-    if let Ok(handle) = tokio::runtime::Handle::try_current() {
-        handle.spawn(run);
+    let name = name.into();
+    if tokio::runtime::Handle::try_current().is_ok() {
+        drop(jackin_telemetry::spawn::spawn_joined(run));
     } else {
-        drop(
-            std::thread::Builder::new()
-                .name(name.into())
-                .spawn(move || {
-                    if let Ok(runtime) = tokio::runtime::Builder::new_current_thread()
-                        .enable_all()
-                        .build()
-                    {
-                        runtime.block_on(run);
-                    }
-                }),
-        );
+        drop(jackin_telemetry::spawn::thread_joined_named(
+            name,
+            move || {
+                if let Ok(runtime) = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                {
+                    runtime.block_on(run);
+                }
+            },
+        ));
     }
     BlockingSubscription(rx)
 }

@@ -284,29 +284,6 @@ pub(crate) async fn resolve_current_restore_candidate_timed(
     }
 }
 
-#[cfg(test)]
-pub(crate) async fn resolve_unselected_current_restore_candidate_timed(
-    paths: &JackinPaths,
-    workspace_name: Option<&str>,
-    workspace_label: &str,
-    workdir: &str,
-    role_key: &str,
-    docker: &impl DockerApi,
-) -> anyhow::Result<Option<RestoreResolution>> {
-    Ok(
-        resolve_unselected_current_restore_candidate_with_agent_timed(
-            paths,
-            workspace_name,
-            workspace_label,
-            workdir,
-            role_key,
-            docker,
-        )
-        .await?
-        .map(|candidate| candidate.resolution),
-    )
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct UnselectedCurrentRestoreResolution {
     pub resolution: RestoreResolution,

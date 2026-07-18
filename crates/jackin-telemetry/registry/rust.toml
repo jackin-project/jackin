@@ -1,0 +1,155 @@
+registry_schema_version = "1.45.0"
+registry_schema_url = "https://jackin.tailrocks.com/telemetry/schemas/1.45.0"
+dependency_schema_version = "1.43.0"
+dependency_schema_url = "https://opentelemetry.io/schemas/1.43.0"
+dependency_registry_path = "crates/jackin-telemetry/vendor/semconv-1.43.0"
+dependency_registry_revision = "89aae438b3b3b0a8dd33003c9d70592baf7dbd0d"
+dependency_registry_checksum = "471d9364f9c4098f7a2785572593ff187b738cac1254de3aab6e7f847cfe94c8"
+rust_crate_version = "=0.32.1"
+rust_crate_checksum = "c913ac17a6c451661ee255f4625d143e51647ae78ebd969b75e41c4442f4fe47"
+rust_crate_schema_url = "https://opentelemetry.io/schemas/1.42.0"
+root_standard_reexports = ["APP_JANK_FRAME_COUNT", "APP_JANK_PERIOD", "APP_JANK_THRESHOLD"]
+standard_event_groups = []
+skip_attribute_enums = []
+
+# Public facade identifiers whose concise API names intentionally differ from
+# the exact wire-name-derived schema constants.
+[facade_name_overrides]
+"ui.screen.dwell" = "UI_DWELL"
+"terminal.io.bytes" = "TERMINAL_BYTES"
+
+[adoption]
+upstream_available = "reexport"
+upstream_absent = "local_pin_with_schema_version"
+wire_name_change = "forbidden"
+schema_version_change = "required"
+
+[standard_upstream]
+APP_CRASH_ID = "app.crash.id"
+APP_BUILD_ID = "app.build_id"
+APP_JANK_FRAME_COUNT = "app.jank.frame_count"
+APP_JANK_PERIOD = "app.jank.period"
+APP_JANK_THRESHOLD = "app.jank.threshold"
+APP_SCREEN_ID = "app.screen.id"
+APP_SCREEN_NAME = "app.screen.name"
+APP_WIDGET_ID = "app.widget.id"
+APP_WIDGET_NAME = "app.widget.name"
+CODE_FILE_PATH = "code.file.path"
+CODE_FUNCTION_NAME = "code.function.name"
+CODE_LINE_NUMBER = "code.line.number"
+CONTAINER_ID = "container.id"
+CPU_MODE = "cpu.mode"
+DB_OPERATION_NAME = "db.operation.name"
+DB_SYSTEM_NAME = "db.system.name"
+ERROR_TYPE = "error.type"
+EXCEPTION_MESSAGE = "exception.message"
+EXCEPTION_STACKTRACE = "exception.stacktrace"
+EXCEPTION_TYPE = "exception.type"
+HTTP_REQUEST_METHOD = "http.request.method"
+NETWORK_TRANSPORT = "network.transport"
+NETWORK_TYPE = "network.type"
+OS_TYPE = "os.type"
+OS_NAME = "os.name"
+OS_VERSION = "os.version"
+PROCESS_COMMAND = "process.command"
+PROCESS_EXECUTABLE_NAME = "process.executable.name"
+PROCESS_EXIT_CODE = "process.exit.code"
+PROCESS_PID = "process.pid"
+PROCESS_RUNTIME_NAME = "process.runtime.name"
+PROCESS_RUNTIME_VERSION = "process.runtime.version"
+RPC_METHOD = "rpc.method"
+RPC_SYSTEM_NAME = "rpc.system.name"
+SERVER_ADDRESS = "server.address"
+SERVICE_INSTANCE_ID = "service.instance.id"
+SERVICE_NAME = "service.name"
+SERVICE_NAMESPACE = "service.namespace"
+SERVICE_VERSION = "service.version"
+SESSION_ID = "session.id"
+SESSION_PREVIOUS_ID = "session.previous_id"
+URL_TEMPLATE = "url.template"
+
+# Development-status fields absent from the pinned Rust crate belong here.
+# Every entry must map CONSTANT_NAME = "wire.name" and is emitted as a local
+# constant carrying the exact registry schema version above.
+[standard_local]
+GEN_AI_AGENT_NAME = "gen_ai.agent.name"
+GEN_AI_CONVERSATION_ID = "gen_ai.conversation.id"
+GEN_AI_PROVIDER_NAME = "gen_ai.provider.name"
+GEN_AI_OPERATION_NAME = "gen_ai.operation.name"
+GEN_AI_TOKEN_TYPE = "gen_ai.token.type"
+
+[[standard_enum]]
+rust_type = "AgentName"
+attribute = "gen_ai.agent.name"
+values = ["claude", "codex", "amp", "kimi", "opencode", "grok"]
+
+[[standard_enum]]
+rust_type = "ProviderName"
+attribute = "gen_ai.provider.name"
+values = ["anthropic", "openai", "amp", "xai", "zai", "minimax", "kimi"]
+
+[[standard_enum]]
+rust_type = "DbOperationName"
+attribute = "db.operation.name"
+values = ["connect", "begin", "commit", "rollback", "select", "insert", "upsert", "update", "delete"]
+
+[[standard_enum]]
+rust_type = "ScreenId"
+attribute = "app.screen.id"
+values = ["workspace.list", "workspace.editor", "settings", "workspace.create", "launch.progress", "capsule"]
+
+[[standard_enum]]
+rust_type = "ErrorType"
+attribute = "error.type"
+values = [
+  "docker_daemon_unreachable", "docker_version_too_old", "out_of_disk_space",
+  "role_manifest_invalid", "role_manifest_version_unsupported", "role_source_not_trusted",
+  "workspace_not_found", "workspace_config_version_unsupported", "container_name_conflict",
+  "dind_health_check_failed", "dind_port_conflict", "gh_auth_failed", "op_not_signed_in",
+  "capsule_download_failed", "worktree_conflict", "unsupported_otlp_protocol",
+  "timeout", "connection_refused", "rpc_error", "panic",
+  "process_exit_nonzero", "process_spawn_error", "http_error", "db_error", "io_error",
+  "firewall_apply_failed", "config_error", "trust_error", "launch_failed",
+  "launch_stage_failed", "deadline_exceeded", "dependency_cancelled",
+  "telemetry_instrumentation_fault", "recovered_degradation",
+  "credential_unavailable",
+]
+
+[[scoped_enum]]
+rust_type = "GlobalConfigSchemaVersionFrom"
+values = ["legacy", "v1alpha1", "v1alpha2", "v1alpha3", "v1alpha4", "v1alpha5", "v1alpha6", "v1alpha7", "v1alpha8", "v1alpha9"]
+
+[[scoped_enum]]
+rust_type = "GlobalConfigSchemaVersionTo"
+values = ["v1alpha1", "v1alpha2", "v1alpha3", "v1alpha4", "v1alpha5", "v1alpha6", "v1alpha7", "v1alpha8", "v1alpha9"]
+
+[[scoped_enum]]
+rust_type = "WorkspaceConfigSchemaVersionFrom"
+values = ["legacy", "v1alpha1", "v1alpha2", "v1alpha3", "v1alpha4", "v1alpha5", "v1alpha6", "v1alpha7", "v1alpha8"]
+
+[[scoped_enum]]
+rust_type = "WorkspaceConfigSchemaVersionTo"
+values = ["v1alpha1", "v1alpha2", "v1alpha3", "v1alpha4", "v1alpha5", "v1alpha6", "v1alpha7", "v1alpha8"]
+
+[rust_type_overrides]
+"outcome" = "OutcomeValue"
+"ui.transition.reason" = "TransitionReason"
+"ui.transition.from_screen.id" = "ScreenId"
+
+# Fixed seconds buckets for every governed duration histogram. Keeping the
+# boundaries in registry metadata makes the SDK view and generated definitions
+# share one source of truth.
+[metric_boundaries]
+"cli.duration" = [0.001, 0.005, 0.010, 0.025, 0.050, 0.100, 0.250, 0.500, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0]
+"ui.screen.dwell" = [0.001, 0.005, 0.010, 0.025, 0.050, 0.100, 0.250, 0.500, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0]
+"ui.focus.duration" = [0.001, 0.005, 0.010, 0.025, 0.050, 0.100, 0.250, 0.500, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0]
+"ui.render.duration" = [0.001, 0.005, 0.010, 0.025, 0.050, 0.100, 0.250, 0.500, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0]
+"launch.stage.duration" = [0.001, 0.005, 0.010, 0.025, 0.050, 0.100, 0.250, 0.500, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0]
+"cache.decision.duration" = [0.001, 0.005, 0.010, 0.025, 0.050, 0.100, 0.250, 0.500, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0]
+"prewarm.duration" = [0.001, 0.005, 0.010, 0.025, 0.050, 0.100, 0.250, 0.500, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0]
+"background.cycle.duration" = [0.001, 0.005, 0.010, 0.025, 0.050, 0.100, 0.250, 0.500, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0]
+"connection.duration" = [0.001, 0.005, 0.010, 0.025, 0.050, 0.100, 0.250, 0.500, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0]
+"db.client.operation.duration" = [0.001, 0.005, 0.010, 0.025, 0.050, 0.100, 0.250, 0.500, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0]
+"rpc.duration" = [0.001, 0.005, 0.010, 0.025, 0.050, 0.100, 0.250, 0.500, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0]
+"terminal.render.duration" = [0.001, 0.005, 0.010, 0.025, 0.050, 0.100, 0.250, 0.500, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0]
+"gen_ai.client.token.usage" = [1.0, 4.0, 16.0, 64.0, 256.0, 1024.0, 4096.0, 16384.0, 65536.0, 262144.0]

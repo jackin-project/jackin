@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Build-log line sink port (D2 in the completed codebase-health track).
+//! Build-log line sink port.
 //!
 //! Defined in the domain layer so infrastructure adapters (`jackin-docker`)
 //! can call `push_line` without depending on the presentation layer.

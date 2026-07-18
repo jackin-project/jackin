@@ -7,7 +7,6 @@
   "pages": [
     "index",
     "(agent-orchestrator-research)",
-    "(codebase-health)",
     "(reactive-daemon-program)",
     "(agent-runtimes-authentication)",
     "(isolation-security)",

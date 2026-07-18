@@ -24,8 +24,8 @@ jackin-config      = { workspace = true }
 jackin-manifest    = { workspace = true }
 jackin-diagnostics = { workspace = true }
 jackin-process     = { workspace = true }
+jackin-telemetry   = { workspace = true }
 
-tracing      = { workspace = true }
 anyhow       = { workspace = true }
 thiserror    = { workspace = true }
 serde        = { workspace = true, features = ["derive"] }
@@ -41,6 +41,10 @@ tempfile     = { workspace = true }
 
 [features]
 test-support = []
+
+[dev-dependencies]
+jackin-diagnostics = { workspace = true, features = ["test-support"] }
+tracing = { workspace = true }
 
 [lints]
 workspace = true

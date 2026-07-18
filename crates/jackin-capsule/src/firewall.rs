@@ -113,9 +113,6 @@ pub fn apply() -> Result<()> {
 
     if entries.is_empty() {
         // network=allowlist with no hosts is fail-closed (no egress), not open.
-        crate::clog!(
-            "firewall: JACKIN_ALLOWED_HOSTS is empty; DROP-only policy (no IPv4/IPv6 egress)"
-        );
         return Ok(());
     }
 
@@ -125,7 +122,7 @@ pub fn apply() -> Result<()> {
     iptables(&["-A", "OUTPUT", "-p", "tcp", "--dport", "53", "-j", "ACCEPT"])?;
 
     // Resolve every entry to its IPv4 destinations, deduped. Non-IPv4 entries
-    // and unresolvable hosts are skipped loudly: one bad/IPv6 member would abort
+    // and unresolvable hosts are skipped with a governed warning: one bad/IPv6 member would abort
     // the whole `ipset restore` batch, and a silently-dropped host reads as a
     // mysterious connectivity failure later.
     let mut members: BTreeSet<String> = BTreeSet::new();
@@ -135,10 +132,7 @@ pub fn apply() -> Result<()> {
                 if enforceable_ipv4(&net) {
                     members.insert(net);
                 } else {
-                    crate::clog!(
-                        "firewall: WARNING: allowlist entry {net:?} is not an enforceable \
-                         IPv4 address/CIDR; skipping (IPv6 egress is not filtered)"
-                    );
+                    let _warning = jackin_telemetry::record_recovered_degradation();
                 }
             }
             Entry::Domain(domain) => {
@@ -148,10 +142,7 @@ pub fn apply() -> Result<()> {
                     .map(|ip| ip.to_string())
                     .collect();
                 if v4.is_empty() {
-                    crate::clog!(
-                        "firewall: WARNING: {domain} resolved to no IPv4 address; \
-                         not allowlisted (host will be unreachable)"
-                    );
+                    let _warning = jackin_telemetry::record_recovered_degradation();
                 }
                 members.extend(v4);
             }
@@ -172,10 +163,6 @@ pub fn apply() -> Result<()> {
         "ACCEPT",
     ])?;
 
-    crate::clog!(
-        "firewall: OUTPUT allowlist active: {} IPv4 entries; IPv6 egress denied",
-        members.len()
-    );
     Ok(())
 }
 
@@ -226,24 +213,24 @@ fn install_ipset(members: &BTreeSet<String>) -> Result<()> {
     let request = ExecRequest::new("ipset", ["restore", "-exist"])
         .stdin_mode(StdioMode::Capture)
         .stdout_mode(StdioMode::Inherit);
-    let mut child = jackin_process::spawn_sync(&request).context("spawning ipset restore")?;
+    let (operation, mut child) = crate::process_telemetry::spawn_sync(&request)
+        .context("spawning firewall restore process")?;
     let Some(mut stdin) = child.stdin.take() else {
-        bail!("ipset restore stdin was not piped");
+        operation.complete_io_failure();
+        bail!("firewall restore stdin was unavailable");
     };
-    stdin
-        .write_all(stream.as_bytes())
-        .context("writing ipset restore stream")?;
+    if stdin.write_all(stream.as_bytes()).is_err() {
+        operation.complete_io_failure();
+        bail!("writing firewall restore policy failed");
+    }
     drop(stdin);
-    let output = child
-        .wait_with_output()
-        .context("waiting for ipset restore")?;
+    let Ok(output) = child.wait_with_output() else {
+        operation.complete_io_failure();
+        bail!("waiting for firewall restore process failed");
+    };
+    operation.complete_status(output.status, &[0]);
     if !output.status.success() {
-        // Name the rejected member rather than reducing it to an exit code.
-        bail!(
-            "ipset restore failed ({}): {}",
-            output.status,
-            String::from_utf8_lossy(&output.stderr).trim()
-        );
+        bail!("firewall restore process exited unsuccessfully");
     }
     Ok(())
 }
@@ -287,23 +274,16 @@ fn ensure_tool(tool: &str) -> Result<()> {
     let request = ExecRequest::new(tool, ["--version"])
         .stdout_mode(StdioMode::Null)
         .stderr_mode(StdioMode::Null);
-    match jackin_process::exec_sync(&request) {
+    match crate::process_telemetry::exec_sync(&request) {
         Ok(_) => Ok(()),
-        Err(e)
-            if e.chain().any(|cause| {
-                cause
-                    .downcast_ref::<std::io::Error>()
-                    .is_some_and(|error| error.kind() == std::io::ErrorKind::NotFound)
-            }) =>
-        {
+        Err(_) => {
             bail!(
-                "`{tool}` is not installed in this container image, but the `allowlist` network tier \
+                "a required firewall tool is unavailable in this container image, but the `allowlist` network tier \
                  requires `iptables` and `ipset`. Rebuild the role image on a construct image that \
                  installs them (jackin❯ construct >= 0.17-trixie), or use a profile whose network \
                  tier does not enforce an egress allowlist."
             )
         }
-        Err(e) => Err(e).context(format!("checking for `{tool}`")),
     }
 }
 

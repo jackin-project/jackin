@@ -68,11 +68,9 @@ fn try_man(content: &[u8]) -> anyhow::Result<bool> {
     tmp.write_all(content)
         .context("failed to write man temp file")?;
 
-    match std::process::Command::new("man").arg(tmp.path()).status() {
-        Ok(_) => Ok(true),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(false),
-        Err(e) => Err(e).context("man failed unexpectedly"),
-    }
+    let mut request = inherited_request("man", &[]);
+    request.args.push(tmp.path().into());
+    Ok(crate::process_telemetry::exec_sync_optional(&request)?.is_some())
 }
 
 /// Write `content` to a `.txt` temp file and display via `less -R` or `more`.
@@ -89,13 +87,18 @@ fn try_pager(content: &[u8]) -> anyhow::Result<bool> {
 
     let pagers: &[(&str, &[&str])] = &[("less", &["-R"]), ("more", &[])];
     for (pager, args) in pagers {
-        let mut cmd = std::process::Command::new(pager);
-        cmd.args(*args).arg(tmp.path());
-        match cmd.status() {
-            Ok(_) => return Ok(true),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-            Err(e) => return Err(e).context(format!("{pager} failed unexpectedly")),
+        let mut request = inherited_request(pager, args);
+        request.args.push(tmp.path().into());
+        if crate::process_telemetry::exec_sync_optional(&request)?.is_some() {
+            return Ok(true);
         }
     }
     Ok(false)
+}
+
+fn inherited_request(program: &str, args: &[&str]) -> jackin_process::ExecRequest {
+    jackin_process::ExecRequest::new(program, args.iter().copied())
+        .stdin_mode(jackin_process::StdioMode::Inherit)
+        .stdout_mode(jackin_process::StdioMode::Inherit)
+        .stderr_mode(jackin_process::StdioMode::Inherit)
 }

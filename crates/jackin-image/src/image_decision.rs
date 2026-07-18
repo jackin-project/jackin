@@ -177,54 +177,44 @@ pub fn recipe_label_mismatch(
     None
 }
 
-pub fn emit_image_decision(image: &str, reason: ImageInvalidationReason) {
-    jackin_diagnostics::debug_log!(
-        "image",
-        "derived image {image} requires build: {}",
-        reason.as_str()
+pub fn emit_image_decision(_image: &str, _reason: ImageInvalidationReason) {
+    crate::telemetry_boundary::cache_decision(
+        jackin_telemetry::schema::enums::CacheName::DerivedImage,
+        jackin_telemetry::schema::enums::CacheResult::Miss,
     );
     if let Some(run) = jackin_diagnostics::active_run() {
         run.stage(
             "image_cache_miss",
             jackin_diagnostics::DiagnosticStage::DerivedImage,
-            &format!("derived image {image} requires build"),
-            Some(reason.as_str()),
+            "derived image requires build",
+            None,
         );
     }
 }
 
-pub fn emit_image_reuse(image: &str) {
+pub fn emit_image_reuse(_image: &str) {
+    crate::telemetry_boundary::cache_decision(
+        jackin_telemetry::schema::enums::CacheName::DerivedImage,
+        jackin_telemetry::schema::enums::CacheResult::Reuse,
+    );
     if let Some(run) = jackin_diagnostics::active_run() {
-        let detail = serde_json::json!({
-            "reason": "recipe_hash_match",
-            "skipped": [
-                "prepare_runtime_binaries",
-                "create_derived_build_context",
-                "resolve_github_token",
-                "docker_build",
-                "selected_agent_version_probe",
-                "published_image_pull",
-                "agent_version_check"
-            ],
-        })
-        .to_string();
         run.stage(
             "image_cache_hit",
             jackin_diagnostics::DiagnosticStage::DerivedImage,
-            &format!("reusing derived image {image}"),
-            Some(&detail),
+            "reusing derived image",
+            None,
         );
     }
 }
 
-pub fn emit_image_refresh_background(image: &str, reason: ImageInvalidationReason) {
+pub fn emit_image_refresh_background(image: &str, _reason: ImageInvalidationReason) {
     emit_image_reuse(image);
     if let Some(run) = jackin_diagnostics::active_run() {
         run.stage(
             "image_refresh_background",
             jackin_diagnostics::DiagnosticStage::DerivedImage,
-            &format!("reusing derived image {image}; background refresh pending"),
-            Some(reason.as_str()),
+            "reusing derived image; background refresh pending",
+            None,
         );
     }
 }

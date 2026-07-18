@@ -14,7 +14,8 @@ use jackin_capsule::protocol::attach::{
     ClientFrame, ClientTerminal, ServerFrame, encode_client, encode_server, read_client_frame,
     read_server_frame,
 };
-use jackin_capsule::protocol::control::{ClientMsg, ServerMsg, frame};
+use jackin_capsule::protocol::control::{ClientMsg, ControlRequest, ServerMsg, frame};
+use jackin_protocol::TelemetryContext;
 use std::path::PathBuf;
 use tempfile::tempdir;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -49,6 +50,7 @@ async fn attach_hello_roundtrips_over_socket() {
                 env: Vec::new(),
                 terminal: ClientTerminal::default(),
                 focus_session: None,
+                context: None,
             }
         );
         // Server replies with Welcome + a fake Output payload.
@@ -70,6 +72,7 @@ async fn attach_hello_roundtrips_over_socket() {
         env: Vec::new(),
         terminal: ClientTerminal::default(),
         focus_session: None,
+        context: None,
     })
     .expect("encode Hello");
     client.write_all(&hello).await.unwrap();
@@ -112,15 +115,22 @@ async fn control_channel_status_roundtrip() {
         let len = u32::from_be_bytes([first[0], rest[0], rest[1], rest[2]]) as usize;
         let mut body = vec![0u8; len];
         stream.read_exact(&mut body).await.unwrap();
-        let req: ClientMsg = serde_json::from_slice(&body).unwrap();
-        assert!(matches!(req, ClientMsg::Status));
+        let req: ControlRequest = serde_json::from_slice(&body).unwrap();
+        assert_eq!(req.ctx.v, 1);
+        assert!(matches!(req.msg, ClientMsg::Status));
         // Reply with an empty session list.
         let reply = ServerMsg::SessionList { sessions: vec![] };
         stream.write_all(&frame(&reply)).await.unwrap();
     });
 
     let mut client = UnixStream::connect(&sock).await.unwrap();
-    client.write_all(&frame(&ClientMsg::Status)).await.unwrap();
+    client
+        .write_all(&frame(&ControlRequest {
+            ctx: TelemetryContext::v1(),
+            msg: ClientMsg::Status,
+        }))
+        .await
+        .unwrap();
 
     let mut len_buf = [0u8; 4];
     client.read_exact(&mut len_buf).await.unwrap();
@@ -172,6 +182,7 @@ async fn second_attach_takes_over_first() {
             env: Vec::new(),
             terminal: ClientTerminal::default(),
             focus_session: None,
+            context: None,
         })
         .expect("encode Hello")
     };

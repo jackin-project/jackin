@@ -30,7 +30,6 @@ use super::auth_error::{
 use super::build_workspace_mount_strings;
 use super::diagnose_with_state;
 use super::exit_diagnosis::{ExitPhase, diagnose_premature_exit};
-use super::restore::capsule_multiplexer_log_path;
 use crate::runtime::progress::launch_output;
 
 pub(crate) struct LaunchContext<'a> {
@@ -104,6 +103,42 @@ pub(crate) struct SiblingAuthPrewarm<'a> {
     pub(crate) role_key: &'a str,
 }
 
+fn emit_isolation_decision(
+    workspace: &crate::isolation::materialize::MaterializedWorkspace,
+    grants: &crate::runtime::docker_profile::EffectiveGrants,
+) {
+    use jackin_telemetry::schema::enums::{DindMode, NetworkMode, WorkspaceIsolationMode};
+
+    let workspace = match workspace
+        .mounts
+        .first()
+        .map_or(jackin_core::MountIsolation::Shared, |mount| mount.isolation)
+    {
+        jackin_core::MountIsolation::Shared => WorkspaceIsolationMode::Shared,
+        jackin_core::MountIsolation::Worktree => WorkspaceIsolationMode::Worktree,
+        jackin_core::MountIsolation::Clone => WorkspaceIsolationMode::Clone,
+    };
+    let network = match grants.network {
+        crate::runtime::docker_profile::NetworkGrant::None => NetworkMode::None,
+        crate::runtime::docker_profile::NetworkGrant::Allowlist => NetworkMode::Allowlist,
+        crate::runtime::docker_profile::NetworkGrant::Open => NetworkMode::Open,
+    };
+    let dind = match grants.dind {
+        crate::runtime::docker_profile::DindGrant::None => DindMode::None,
+        crate::runtime::docker_profile::DindGrant::Rootless => DindMode::Rootless,
+        crate::runtime::docker_profile::DindGrant::Privileged => DindMode::Privileged,
+    };
+    jackin_diagnostics::operation::isolation_decision(workspace, network, dind);
+}
+
+fn emit_post_run_failure(is_firewall: bool) {
+    if is_firewall {
+        jackin_diagnostics::operation::isolation_firewall_failed(
+            jackin_telemetry::schema::enums::NetworkMode::Allowlist,
+        );
+    }
+}
+
 pub(crate) fn spawn_sibling_auth_prewarm(
     paths: &JackinPaths,
     container_name: &str,
@@ -170,7 +205,7 @@ pub(crate) fn spawn_sibling_auth_prewarm(
         );
     }
 
-    Some(tokio::task::spawn_blocking(move || {
+    Some(jackin_telemetry::spawn::joined_blocking(move || {
         let resolve_mode = |a: jackin_core::Agent| {
             let ws = jackin_core::WorkspaceName::parse(&workspace_name).ok();
             jackin_config::resolve_mode(&config, a, ws.as_ref(), &role_key)
@@ -280,6 +315,8 @@ pub(crate) async fn launch_role_runtime(
     let dind_enabled = crate::runtime::docker_profile::dind_enabled(grants);
     let network_disabled = crate::runtime::docker_profile::network_disabled(grants);
 
+    emit_isolation_decision(workspace, grants);
+
     let cgroup_version = crate::runtime::docker_profile::probe_cgroup_version();
     if let Some(warning) =
         crate::runtime::docker_profile::validate_cgroup_for_profile(*profile, cgroup_version)
@@ -306,7 +343,7 @@ pub(crate) async fn launch_role_runtime(
             ),
         );
     }
-    // AppArmor only feeds the `--debug` telemetry + session contract, so skip the
+    // AppArmor only feeds local `--debug` output + session contract, so skip the
     // `docker info` round-trip on the common non-debug launch. On a probe error,
     // report layer `unknown` rather than letting a failed round-trip masquerade
     // as a genuine `available=no` in the audit surface.
@@ -321,7 +358,11 @@ pub(crate) async fn launch_role_runtime(
         {
             Ok(info) => crate::runtime::docker_profile::parse_apparmor_from_docker_info(&info),
             Err(err) => {
-                jackin_diagnostics::debug_log!("launch", "apparmor probe failed: {err:#}");
+                let _warning = jackin_telemetry::record_recovered_degradation();
+                jackin_diagnostics::emit_debug_line(
+                    "launch",
+                    &format!("apparmor probe failed: {err:#}"),
+                );
                 (false, "unknown")
             }
         }
@@ -432,66 +473,87 @@ pub(crate) async fn launch_role_runtime(
     }
     let resource_flags = crate::runtime::docker_profile::resource_flags(grants);
     run_args.extend(resource_flags.iter().map(String::as_str));
-    // WP3: per-decision launch telemetry. One line per applied control so a
+    // WP3: per-decision local launch diagnostics. One line per applied control so a
     // `--debug` run shows exactly what was enforced. The session contract
     // (emitted below, once credential state is known) is the human-readable
     // summary of the same data.
-    let yes_no = |enabled: bool| if enabled { "yes" } else { "no" };
-    jackin_diagnostics::debug_log!(
-        "launch",
-        "profile_selected profile={profile} source={profile_source}",
-    );
-    jackin_diagnostics::debug_log!(
-        "launch",
-        "cap_drop_all={} cap_add={}",
-        yes_no(crate::runtime::docker_profile::drops_all_caps(*profile)),
-        if grants.capabilities_add.is_empty() {
-            "-".to_owned()
-        } else {
-            grants.capabilities_add.join(",")
-        },
-    );
-    jackin_diagnostics::debug_log!(
-        "launch",
-        "no_new_privileges enforced={}",
-        yes_no(grants.no_new_privileges),
-    );
-    jackin_diagnostics::debug_log!("launch", "seccomp profile=docker-default");
-    jackin_diagnostics::debug_log!(
-        "launch",
-        "apparmor available={} profile=docker-default layer={apparmor_layer}",
-        yes_no(apparmor_available),
-    );
-    jackin_diagnostics::debug_log!(
-        "launch",
-        "read_only_root enforced={} tmpfs={}",
-        yes_no(!grants.system_writes),
-        if grants.system_writes {
-            "-".to_owned()
-        } else {
-            crate::runtime::docker_profile::tmpfs_paths(*profile).join(",")
-        },
-    );
-    jackin_diagnostics::debug_log!("launch", "cgroup_version v={cgroup_version}");
-    for (kind, value) in [
-        ("memory", grants.memory_bytes.map(|b| b.to_string())),
-        ("cpus", grants.cpus.map(|c| c.to_string())),
-        ("pids", grants.pids.map(|p| p.to_string())),
-    ] {
-        if let Some(value) = value {
-            jackin_diagnostics::debug_log!("launch", "resource_limit kind={kind} value={value}");
+    if *debug {
+        let yes_no = |enabled: bool| if enabled { "yes" } else { "no" };
+        jackin_diagnostics::emit_debug_line(
+            "launch",
+            &format!("profile_selected profile={profile} source={profile_source}"),
+        );
+        jackin_diagnostics::emit_debug_line(
+            "launch",
+            &format!(
+                "cap_drop_all={} cap_add={}",
+                yes_no(crate::runtime::docker_profile::drops_all_caps(*profile)),
+                if grants.capabilities_add.is_empty() {
+                    "-".to_owned()
+                } else {
+                    grants.capabilities_add.join(",")
+                },
+            ),
+        );
+        jackin_diagnostics::emit_debug_line(
+            "launch",
+            &format!(
+                "no_new_privileges enforced={}",
+                yes_no(grants.no_new_privileges),
+            ),
+        );
+        jackin_diagnostics::emit_debug_line("launch", "seccomp profile=docker-default");
+        jackin_diagnostics::emit_debug_line(
+            "launch",
+            &format!(
+                "apparmor available={} profile=docker-default layer={apparmor_layer}",
+                yes_no(apparmor_available),
+            ),
+        );
+        jackin_diagnostics::emit_debug_line(
+            "launch",
+            &format!(
+                "read_only_root enforced={} tmpfs={}",
+                yes_no(!grants.system_writes),
+                if grants.system_writes {
+                    "-".to_owned()
+                } else {
+                    crate::runtime::docker_profile::tmpfs_paths(*profile).join(",")
+                },
+            ),
+        );
+        jackin_diagnostics::emit_debug_line(
+            "launch",
+            &format!("cgroup_version v={cgroup_version}"),
+        );
+        for (kind, value) in [
+            ("memory", grants.memory_bytes.map(|b| b.to_string())),
+            ("cpus", grants.cpus.map(|c| c.to_string())),
+            ("pids", grants.pids.map(|p| p.to_string())),
+        ] {
+            if let Some(value) = value {
+                jackin_diagnostics::emit_debug_line(
+                    "launch",
+                    &format!("resource_limit kind={kind} value={value}"),
+                );
+            }
         }
+        jackin_diagnostics::emit_debug_line(
+            "launch",
+            &format!("dind enabled={dind_enabled} mode={}", grants.dind),
+        );
+        // Host Docker socket is never mounted into a role container (hard rule);
+        // guarded by `role_container_never_mounts_host_docker_socket` in tests.
+        jackin_diagnostics::emit_debug_line("launch", "host_socket_check passed=yes");
+        jackin_diagnostics::emit_debug_line(
+            "launch",
+            &format!(
+                "network mode={} enforcement={}",
+                crate::runtime::docker_profile::network_grant_label(grants.network),
+                crate::runtime::docker_profile::network_enforcement_label(grants),
+            ),
+        );
     }
-    jackin_diagnostics::debug_log!("launch", "dind enabled={dind_enabled} mode={}", grants.dind);
-    // Host Docker socket is never mounted into a role container (hard rule);
-    // guarded by `role_container_never_mounts_host_docker_socket` in tests.
-    jackin_diagnostics::debug_log!("launch", "host_socket_check passed=yes");
-    jackin_diagnostics::debug_log!(
-        "launch",
-        "network mode={} enforcement={}",
-        crate::runtime::docker_profile::network_grant_label(grants.network),
-        crate::runtime::docker_profile::network_enforcement_label(grants),
-    );
 
     // Run the container as the host operator's UID (group 0). Matching the host
     // UID makes host-owned bind mounts transparently read/write, and the
@@ -653,12 +715,34 @@ pub(crate) async fn launch_role_runtime(
     env_strings.extend(crate::runtime::docker_profile::readonly_home_env(grants));
     // Computed once here so the WP1 allowlist (below) can include the OTLP
     // endpoint host; reused for OTLP propagation after env_strings is flushed.
-    let container_otlp = jackin_diagnostics::container_otlp();
+    let capsule_otlp_safe = std::env::var("JACKIN_CAPSULE_OTLP_SAFE").as_deref() == Ok("1");
+    let capsule_otlp_headers = std::env::var("JACKIN_CAPSULE_OTLP_HEADERS")
+        .ok()
+        .filter(|value| !value.trim().is_empty());
+    let capsule_export = capsule_export_coverage(
+        CapsuleNetwork::classify(network_disabled),
+        CapsuleEndpoint::classify(
+            jackin_diagnostics::otlp_endpoint_configured(),
+            capsule_otlp_safe,
+        ),
+        CapsuleAuth::classify(
+            jackin_diagnostics::otlp_auth_configured(),
+            capsule_otlp_headers.is_some(),
+        ),
+    );
+    env_strings.push(format!(
+        "{}={}",
+        jackin_diagnostics::CapsuleExportCoverage::ENV_NAME,
+        capsule_export.as_str()
+    ));
+    let container_otlp = (capsule_export == jackin_diagnostics::CapsuleExportCoverage::Enabled)
+        .then(jackin_diagnostics::container_otlp)
+        .flatten();
     // WP1: egress allowlist enforcement. Inject the assembled allowlist and the
     // truthful enforcement label so the `firewall-apply` exec (after the
     // container starts) installs an iptables OUTPUT allowlist. The OTLP host is
-    // always included (Decision 9) so telemetry keeps flowing. Only the
-    // allowlist tier installs a firewall; open/none get none.
+    // included only when the endpoint is explicitly classified Capsule-safe.
+    // Only the allowlist tier installs a firewall; open/none get none.
     if grants.network == crate::runtime::docker_profile::NetworkGrant::Allowlist {
         let github_hosts = if gh_token.is_some() {
             crate::runtime::docker_profile::github_allowlist_hosts(
@@ -669,7 +753,7 @@ pub(crate) async fn launch_role_runtime(
         } else {
             Vec::new()
         };
-        let otlp_host = container_otlp.as_ref().map(|_| "host.docker.internal");
+        let otlp_host = capsule_otlp_allowlist_host(container_otlp.as_ref());
         let allowlist = crate::runtime::docker_profile::allowlist_hosts(
             agent.slug(),
             grants,
@@ -688,7 +772,7 @@ pub(crate) async fn launch_role_runtime(
         ));
     }
     // WP3: render the session contract under `--debug` only (its sole consumer
-    // is the debug_log below). Coarse `agent_auth_mode` reflects whether the
+    // is the local debug sink below). Coarse `agent_auth_mode` reflects whether the
     // selected agent's auth was provisioned; richer posture is owned by WP7.
     if *debug {
         let agent_auth_mode = match agent.slug() {
@@ -714,7 +798,10 @@ pub(crate) async fn launch_role_runtime(
             },
             gh_token.is_some(),
         );
-        jackin_diagnostics::debug_log!("launch", "session_contract\n{session_contract}");
+        jackin_diagnostics::emit_debug_line(
+            "launch",
+            &format!("session_contract\n{session_contract}"),
+        );
     }
     push_env_if_present(
         &mut env_strings,
@@ -741,19 +828,17 @@ pub(crate) async fn launch_role_runtime(
         run_args.push(env_str);
     }
 
-    // OTLP cross-process propagation: hand the container the launch trace
-    // context (W3C traceparent) and a container-reachable endpoint, so the
+    // OTLP cross-process propagation: for an explicitly Capsule-safe endpoint,
+    // hand the container the launch trace context and reachable endpoint, so the
     // capsule's telemetry links back to this launch trace and shares the run.
     // host.docker.internal must be wired to the host gateway for the rewritten
     // loopback endpoint to resolve on Linux engines. `container_otlp` is
     // computed once above (for the WP1 allowlist) and reused here.
-    let mut otlp_propagation: Vec<String> = Vec::new();
-    if let Some(otlp) = &container_otlp {
-        otlp_propagation.push(format!("OTEL_EXPORTER_OTLP_ENDPOINT={}", otlp.endpoint));
-        if let Some(traceparent) = jackin_diagnostics::current_traceparent() {
-            otlp_propagation.push(format!("TRACEPARENT={traceparent}"));
-        }
-    }
+    let otlp_propagation = capsule_otlp_propagation(
+        container_otlp.as_ref(),
+        capsule_otlp_headers.as_deref(),
+        jackin_telemetry::propagation::current_traceparent().as_deref(),
+    );
     for env_str in &otlp_propagation {
         run_args.push("-e");
         run_args.push(env_str);
@@ -837,40 +922,41 @@ pub(crate) async fn launch_role_runtime(
         "prepare_socket_dir",
         Some(container_name),
     );
-    let prepare_socket_dir_result = tokio::task::spawn_blocking(move || -> std::io::Result<()> {
-        std::fs::create_dir_all(&socket_dir_for_mkdir)?;
-        std::fs::create_dir_all(&usage_shared_dir_for_mkdir)?;
-        std::fs::write(
-            socket_dir_for_mkdir.join(jackin_protocol::CAPSULE_CONFIG_FILENAME),
-            capsule_config_contents_for_write,
-        )?;
-        if let Some((passwd_line, group_line)) = extrausers_entries_for_write {
-            if let Some(parent) = extrausers_passwd_for_write.parent() {
-                std::fs::create_dir_all(parent)?;
+    let prepare_socket_dir_result =
+        jackin_telemetry::spawn::joined_blocking(move || -> std::io::Result<()> {
+            std::fs::create_dir_all(&socket_dir_for_mkdir)?;
+            std::fs::create_dir_all(&usage_shared_dir_for_mkdir)?;
+            std::fs::write(
+                socket_dir_for_mkdir.join(jackin_protocol::CAPSULE_CONFIG_FILENAME),
+                capsule_config_contents_for_write,
+            )?;
+            if let Some((passwd_line, group_line)) = extrausers_entries_for_write {
+                if let Some(parent) = extrausers_passwd_for_write.parent() {
+                    std::fs::create_dir_all(parent)?;
+                }
+                super::write_if_changed_atomic(
+                    &extrausers_passwd_for_write,
+                    &extrausers_tmp,
+                    passwd_line.as_bytes(),
+                )?;
+                super::write_if_changed_atomic(
+                    &extrausers_group_for_write,
+                    &extrausers_group_tmp,
+                    group_line.as_bytes(),
+                )?;
             }
-            super::write_if_changed_atomic(
-                &extrausers_passwd_for_write,
-                &extrausers_tmp,
-                passwd_line.as_bytes(),
-            )?;
-            super::write_if_changed_atomic(
-                &extrausers_group_for_write,
-                &extrausers_group_tmp,
-                group_line.as_bytes(),
-            )?;
-        }
-        Ok(())
-    })
-    .await
-    .context("socket dir mkdir worker join")
-    .and_then(|result| {
-        result.with_context(|| {
-            format!(
-                "creating host-side socket dir {} for container {container_name}",
-                socket_dir.display(),
-            )
+            Ok(())
         })
-    });
+        .await
+        .context("socket dir mkdir worker join")
+        .and_then(|result| {
+            result.with_context(|| {
+                format!(
+                    "creating host-side socket dir {} for container {container_name}",
+                    socket_dir.display(),
+                )
+            })
+        });
     jackin_diagnostics::active_timing_done(
         jackin_diagnostics::DiagnosticStage::Capsule,
         "prepare_socket_dir",
@@ -941,10 +1027,14 @@ pub(crate) async fn launch_role_runtime(
     for mount in &extrausers_mounts {
         run_args.extend_from_slice(&["-v", mount.as_str()]);
     }
-    jackin_diagnostics::debug_log!(
-        "launch",
-        "prepared host socket dir {socket_dir_str} (owned by host UID, default umask) and Capsule config for bind-mount at /jackin/run",
-    );
+    if *debug {
+        jackin_diagnostics::emit_debug_line(
+            "launch",
+            &format!(
+                "prepared host socket dir {socket_dir_str} (owned by host UID, default umask) and Capsule config for bind-mount at /jackin/run"
+            ),
+        );
+    }
     run_args.push(image);
     // Pass the initial agent as the container command argument. The
     // daemon uses it only to choose the first tab; per-session
@@ -971,15 +1061,10 @@ pub(crate) async fn launch_role_runtime(
         },
     );
     if run_role_result.is_err() {
-        let span = jackin_diagnostics::operation_span("launch.prepare", &[]);
-        span.in_scope(|| {
-            jackin_diagnostics::operation_error(
-                "launch.prepare",
-                "docker_run_failed",
-                "role container start failed",
-                &[],
-            );
-        });
+        let _error = jackin_telemetry::record_error(
+            jackin_telemetry::schema::enums::ErrorType::LaunchFailed,
+        );
+        jackin_diagnostics::emit_operator_notice("role container start failed");
     }
     run_role_result?;
 
@@ -992,7 +1077,7 @@ pub(crate) async fn launch_role_runtime(
     //   - WP-SUDO sudo-provision (sudo-granted profiles only — compat / explicit
     //     `sudo = true`): writes /etc/sudoers.d/agent. The base image bakes no
     //     sudoers, so non-sudo profiles have nothing to provision and skip it.
-    let mut post_run_steps: Vec<(String, [&str; 6], String)> = Vec::new();
+    let mut post_run_steps: Vec<(String, [&str; 6], String, bool)> = Vec::new();
     if let Some(argv) =
         crate::runtime::docker_profile::firewall_post_run_argv(grants, container_name)
     {
@@ -1000,6 +1085,7 @@ pub(crate) async fn launch_role_runtime(
             format!("firewall_apply profile={profile}"),
             argv,
             format!("egress allowlist install failed for `{profile}` profile; container torn down (fail-closed). The agent was not started without the firewall the profile promises."),
+            true,
         ));
     }
     if grants.sudo {
@@ -1007,16 +1093,22 @@ pub(crate) async fn launch_role_runtime(
             format!("sudo_provision profile={profile}"),
             crate::runtime::docker_profile::sudo_provision_post_run_argv(container_name),
             format!("sudo provisioning failed for `{profile}` profile; container torn down (fail-closed)."),
+            false,
         ));
     }
-    for (label, argv, failure_context) in post_run_steps {
+    for (label, argv, failure_context, is_firewall) in post_run_steps {
         let result = runner.run("docker", &argv, None, &docker_run_opts).await;
-        jackin_diagnostics::debug_log!(
-            "launch",
-            "{label} exit={}",
-            if result.is_ok() { "0" } else { "nonzero" },
-        );
+        if *debug {
+            jackin_diagnostics::emit_debug_line(
+                "launch",
+                &format!(
+                    "{label} exit={}",
+                    if result.is_ok() { "0" } else { "nonzero" },
+                ),
+            );
+        }
         if let Err(err) = result {
+            emit_post_run_failure(is_firewall);
             if let Err(remove_err) = docker.remove_container(container_name).await {
                 jackin_diagnostics::emit_compact_line(
                     "warning",
@@ -1040,14 +1132,6 @@ pub(crate) async fn launch_role_runtime(
     )
     .await;
 
-    // Emit a structured container_started event so the run JSONL points at
-    // the capsule log regardless of whether the session succeeds (Defect 41).
-    let capsule_log_path = capsule_multiplexer_log_path(paths, container_name);
-    let capsule_log_str = capsule_log_path.display().to_string();
-    if let Some(run) = jackin_diagnostics::active_run() {
-        run.container_started(container_name, &capsule_log_str);
-    }
-
     // Pre-session safety check: if jackin-capsule exited immediately
     // (missing binary, bad image), surface the container logs rather than
     // failing with a cryptic docker exec error.
@@ -1056,14 +1140,8 @@ pub(crate) async fn launch_role_runtime(
         "pre_attach_exit_check",
         Some(container_name),
     );
-    if let Some(err) = diagnose_premature_exit(
-        docker,
-        runner,
-        container_name,
-        ExitPhase::PreAttach,
-        Some(&capsule_log_str),
-    )
-    .await
+    if let Some(err) =
+        diagnose_premature_exit(docker, runner, container_name, ExitPhase::PreAttach).await
     {
         jackin_diagnostics::active_timing_done(
             jackin_diagnostics::DiagnosticStage::Capsule,
@@ -1082,9 +1160,9 @@ pub(crate) async fn launch_role_runtime(
     // The shared reconnect helper first waits for `/jackin/run/jackin.sock`
     // to answer `status`; jackin-capsule detects PID != 1 and then runs in
     // client mode, connecting to that daemon socket inside the container.
+    steps.stage_done(crate::runtime::progress::LaunchStage::Capsule, "ready");
+    steps.opening_hardline();
     if let Some(progress) = steps.progress_mut() {
-        progress.stage_done(crate::runtime::progress::LaunchStage::Capsule, "ready");
-        progress.opening_hardline();
         progress.settle_stage_visual().await;
     }
     // Tear down the loading cockpit before the interactive attach: the
@@ -1148,14 +1226,8 @@ pub(crate) async fn launch_role_runtime(
         // the capsule attach protocol uses that path to report failed final
         // sessions while the daemon still shuts down as init with exit 0.
         let inspect = docker.inspect_container_state(container_name).await;
-        if let Some(diag) = diagnose_with_state(
-            runner,
-            container_name,
-            &inspect,
-            ExitPhase::PostAttach,
-            Some(&capsule_log_str),
-        )
-        .await
+        if let Some(diag) =
+            diagnose_with_state(runner, container_name, &inspect, ExitPhase::PostAttach).await
         {
             return Err(diag);
         }
@@ -1166,23 +1238,24 @@ pub(crate) async fn launch_role_runtime(
         // so fall through to a successful return — the pipeline then runs
         // finalize, which reads exit-action.json and executes the choice. The
         // attach detail is kept only as a diagnostic breadcrumb.
-        let attach_detail =
-            attach_failure_error(container_name, &err, &capsule_log_path, &capsule_log_str);
-        jackin_diagnostics::debug_log!(
-            "session",
-            "clean container exit for {container_name}; proceeding to finalize \
-             (attach shutdown detail: {attach_detail})"
-        );
+        let attach_detail = attach_failure_error(container_name, &err);
+        if *debug {
+            jackin_diagnostics::emit_debug_line(
+                "session",
+                &format!(
+                    "clean container exit for {container_name}; proceeding to finalize \
+                     (attach shutdown detail: {attach_detail})"
+                ),
+            );
+        }
         if let Some(run) = jackin_diagnostics::active_run() {
             run.compact(
-                jackin_diagnostics::otel_events::CLEAN_SHUTDOWN,
+                jackin_telemetry::schema::events::CAPSULE_SESSION_CLEAN_SHUTDOWN,
                 &format!("container {container_name} exited cleanly after session"),
             );
         }
     }
-    if let Some(progress) = steps.progress_mut() {
-        progress.stage_done(crate::runtime::progress::LaunchStage::Hardline, "open");
-    }
+    steps.stage_done(crate::runtime::progress::LaunchStage::Hardline, "open");
     if matches!(
         sidecar_prewarm_replenish,
         SidecarPrewarmReplenish::AfterAttach
@@ -1212,24 +1285,8 @@ pub(crate) fn host_runtime_passthrough_env(
         .collect()
 }
 
-pub(crate) fn debug_runtime_envs_for(
-    debug: bool,
-    diagnostics_path: Option<&std::path::Path>,
-) -> Vec<String> {
-    if !debug {
-        return Vec::new();
-    }
-    let mut envs = Vec::new();
-    if let Some(path) = diagnostics_path {
-        envs.push(format!("JACKIN_RUN_DIAGNOSTICS_PATH={}", path.display()));
-    }
-    envs
-}
-
-pub(crate) fn debug_runtime_envs(debug: bool) -> Vec<String> {
-    let diagnostics_path = jackin_diagnostics::active_run()
-        .and_then(|run| run.persists().then(|| run.path().to_path_buf()));
-    debug_runtime_envs_for(debug, diagnostics_path.as_deref())
+pub(crate) fn debug_runtime_envs(_debug: bool) -> Vec<String> {
+    Vec::new()
 }
 
 pub(crate) fn telemetry_runtime_envs_for(level: jackin_diagnostics::TelemetryLevel) -> Vec<String> {
@@ -1245,13 +1302,107 @@ pub(crate) fn telemetry_runtime_envs(debug: bool) -> Vec<String> {
     telemetry_runtime_envs_for(jackin_diagnostics::telemetry_level(debug))
 }
 
-#[cfg(test)]
-pub(crate) fn run_runtime_envs_for(run_id: Option<&str>) -> Vec<String> {
-    run_id.map_or_else(Vec::new, |run_id| vec![format!("JACKIN_RUN_ID={run_id}")])
+pub(crate) fn run_runtime_envs() -> Vec<String> {
+    jackin_telemetry::identity::current_invocation().map_or_else(Vec::new, |invocation| {
+        vec![format!("JACKIN_INVOCATION_ID={invocation}")]
+    })
 }
 
-pub(crate) fn run_runtime_envs() -> Vec<String> {
-    jackin_diagnostics::active_run().map_or_else(Vec::new, |run| {
-        vec![format!("JACKIN_RUN_ID={}", run.run_id())]
-    })
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum CapsuleNetwork {
+    Disabled,
+    Enabled,
+}
+
+impl CapsuleNetwork {
+    const fn classify(disabled: bool) -> Self {
+        if disabled {
+            Self::Disabled
+        } else {
+            Self::Enabled
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum CapsuleEndpoint {
+    Missing,
+    Unclassified,
+    Safe,
+}
+
+impl CapsuleEndpoint {
+    const fn classify(configured: bool, safe: bool) -> Self {
+        if !configured {
+            Self::Missing
+        } else if safe {
+            Self::Safe
+        } else {
+            Self::Unclassified
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum CapsuleAuth {
+    HostOnly,
+    Complete,
+}
+
+impl CapsuleAuth {
+    const fn classify(host_configured: bool, capsule_configured: bool) -> Self {
+        if host_configured && !capsule_configured {
+            Self::HostOnly
+        } else {
+            Self::Complete
+        }
+    }
+}
+
+pub(crate) const fn capsule_export_coverage(
+    network: CapsuleNetwork,
+    endpoint: CapsuleEndpoint,
+    auth: CapsuleAuth,
+) -> jackin_diagnostics::CapsuleExportCoverage {
+    use jackin_diagnostics::CapsuleExportCoverage;
+
+    if matches!(network, CapsuleNetwork::Disabled) {
+        CapsuleExportCoverage::DisabledNetworkNone
+    } else if matches!(endpoint, CapsuleEndpoint::Missing) {
+        CapsuleExportCoverage::DisabledNoEndpoint
+    } else if matches!(endpoint, CapsuleEndpoint::Unclassified) {
+        CapsuleExportCoverage::DisabledUnclassifiedEndpoint
+    } else if matches!(auth, CapsuleAuth::HostOnly) {
+        CapsuleExportCoverage::DisabledUnclassifiedAuth
+    } else {
+        CapsuleExportCoverage::Enabled
+    }
+}
+
+pub(crate) fn capsule_otlp_propagation(
+    endpoint: Option<&jackin_diagnostics::ContainerOtlp>,
+    capsule_safe_headers: Option<&str>,
+    traceparent: Option<&str>,
+) -> Vec<String> {
+    let Some(endpoint) = endpoint else {
+        return Vec::new();
+    };
+    let mut env = vec![format!("OTEL_EXPORTER_OTLP_ENDPOINT={}", endpoint.endpoint)];
+    if let Some(headers) = capsule_safe_headers {
+        env.push(format!("OTEL_EXPORTER_OTLP_HEADERS={headers}"));
+    }
+    if let Some(traceparent) = traceparent {
+        env.push(format!("TRACEPARENT={traceparent}"));
+    }
+    env
+}
+
+pub(crate) const fn capsule_otlp_allowlist_host(
+    endpoint: Option<&jackin_diagnostics::ContainerOtlp>,
+) -> Option<&'static str> {
+    if endpoint.is_some() {
+        Some("host.docker.internal")
+    } else {
+        None
+    }
 }

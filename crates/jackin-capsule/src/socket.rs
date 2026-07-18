@@ -35,7 +35,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::{Semaphore, mpsc};
 
-use crate::protocol::control::{ClientMsg, ServerMsg, frame};
+use crate::protocol::control::{ServerMsg, frame};
 
 type ClientPermit = tokio::sync::OwnedSemaphorePermit;
 type ListenerReceiver = mpsc::UnboundedReceiver<(UnixStream, ClientPermit)>;
@@ -86,13 +86,26 @@ fn start_listener_at_with_limiter(path: &Path) -> Result<ListenerWithLimiter> {
     start_listener_at_inner(path)
 }
 
-#[expect(
-    clippy::excessive_nesting,
-    reason = "Unix-socket listener setup: per-step (unlink stale, bind, set- \
-              perms, nonblocking) nested `match` over `Result` outcomes. The \
-              nesting is the per-step error-propagation protocol."
-)]
 fn start_listener_at_inner(path: &Path) -> Result<ListenerWithLimiter> {
+    let operation =
+        jackin_telemetry::stream::phase(jackin_telemetry::schema::enums::StreamOperation::Open);
+    let result = start_listener_at_inner_uninstrumented(path);
+    if result.is_err() {
+        let _error_event =
+            jackin_telemetry::record_error(jackin_telemetry::schema::enums::ErrorType::IoError);
+    }
+    if result.is_ok() {
+        jackin_telemetry::stream::complete_success(operation);
+    } else {
+        jackin_telemetry::stream::complete_error(
+            operation,
+            jackin_telemetry::schema::enums::ErrorType::IoError,
+        );
+    }
+    result
+}
+
+fn start_listener_at_inner_uninstrumented(path: &Path) -> Result<ListenerWithLimiter> {
     match std::fs::remove_file(path) {
         Ok(()) => {}
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
@@ -124,16 +137,9 @@ fn start_listener_at_inner(path: &Path) -> Result<ListenerWithLimiter> {
     let limiter = Arc::new(Semaphore::new(MAX_CONCURRENT_CLIENTS));
     let limiter_for_task = Arc::clone(&limiter);
 
-    tokio::spawn(async move {
+    jackin_telemetry::spawn::spawn_stream("capsule.socket.accept", async move {
         let limiter = limiter_for_task;
         let mut consecutive_failures = 0u32;
-        // `true` while the semaphore is fully acquired. Used to log
-        // the saturation transition exactly once instead of once per
-        // dropped over-cap connection — a flood attacker (the exact
-        // threat the cap defends against) would otherwise drown the
-        // compact log tier in repeated drop lines, masking other
-        // lifecycle events.
-        let mut at_cap_logged = false;
         loop {
             match listener.accept().await {
                 Ok((stream, _)) => {
@@ -144,25 +150,7 @@ fn start_listener_at_inner(path: &Path) -> Result<ListenerWithLimiter> {
                     // peers cannot starve the legitimate operator's
                     // attach. Once a task finishes, its OwnedSemaphorePermit
                     // drops and a fresh accept proceeds.
-                    let permit = if let Ok(p) = Arc::clone(&limiter).try_acquire_owned() {
-                        if at_cap_logged {
-                            crate::clog!(
-                                "socket: capacity recovered below cap {MAX_CONCURRENT_CLIENTS}"
-                            );
-                            at_cap_logged = false;
-                        }
-                        p
-                    } else {
-                        if at_cap_logged {
-                            crate::cdebug!(
-                                "socket: dropping over-cap connection (cap={MAX_CONCURRENT_CLIENTS})"
-                            );
-                        } else {
-                            crate::clog!(
-                                "socket: at concurrent-client cap {MAX_CONCURRENT_CLIENTS}; over-cap connections will be dropped silently until capacity recovers"
-                            );
-                            at_cap_logged = true;
-                        }
+                    let Ok(permit) = Arc::clone(&limiter).try_acquire_owned() else {
                         drop(stream);
                         continue;
                     };
@@ -171,21 +159,29 @@ fn start_listener_at_inner(path: &Path) -> Result<ListenerWithLimiter> {
                         // Stop accepting so we don't burn cycles
                         // accepting connections that are immediately
                         // dropped on the floor.
-                        crate::clog!("socket: client queue closed; listener stopping");
-                        return;
-                    }
-                }
-                Err(e) => {
-                    consecutive_failures = consecutive_failures.saturating_add(1);
-                    crate::clog!(
-                        "socket accept error ({consecutive_failures}/{ACCEPT_FAILURE_BAIL}): {e}"
-                    );
-                    if consecutive_failures >= ACCEPT_FAILURE_BAIL {
-                        crate::clog!(
-                            "socket: giving up after {ACCEPT_FAILURE_BAIL} consecutive accept failures"
+                        jackin_telemetry::stream::complete_success(
+                            jackin_telemetry::stream::phase(
+                                jackin_telemetry::schema::enums::StreamOperation::Close,
+                            ),
                         );
                         return;
                     }
+                }
+                Err(_error) => {
+                    consecutive_failures = consecutive_failures.saturating_add(1);
+                    let _error_event = jackin_telemetry::record_error(
+                        jackin_telemetry::schema::enums::ErrorType::IoError,
+                    );
+                    if consecutive_failures >= ACCEPT_FAILURE_BAIL {
+                        jackin_telemetry::stream::complete_error(
+                            jackin_telemetry::stream::phase(
+                                jackin_telemetry::schema::enums::StreamOperation::Close,
+                            ),
+                            jackin_telemetry::schema::enums::ErrorType::IoError,
+                        );
+                        return;
+                    }
+                    let _retry_event = jackin_telemetry::record_retry_scheduled();
                     // Exponential backoff capped at 5 s so an EMFILE
                     // storm doesn't spin the runtime. The 5 s `.min()`
                     // is the load-bearing cap; the shift cap at 16 is
@@ -194,11 +190,6 @@ fn start_listener_at_inner(path: &Path) -> Result<ListenerWithLimiter> {
                     // ladder and tripping the `1u64 << N` UB shift.
                     let shift = consecutive_failures.saturating_sub(1).min(16);
                     let backoff_ms = 50u64.saturating_mul(1u64 << shift).min(5_000);
-                    // Backoff timing is mechanical detail — the
-                    // accept-error clog above already names the
-                    // failure. Keep this on the debug tier so the
-                    // 1-line-per-failure compact-log invariant holds.
-                    crate::cdebug!("socket: backing off {backoff_ms}ms before next accept");
                     tokio::time::sleep(Duration::from_millis(backoff_ms)).await;
                 }
             }
@@ -221,7 +212,10 @@ const CONTROL_READ_TIMEOUT: Duration = Duration::from_secs(10);
 /// callers can clog the underlying cause; a silently-collapsed None
 /// would let the host's `jackin status` block on `read_exact` for a
 /// reply that never comes.
-pub async fn read_control_msg(stream: &mut UnixStream, first_byte: u8) -> Result<ClientMsg> {
+pub async fn read_control_msg(
+    stream: &mut UnixStream,
+    first_byte: u8,
+) -> Result<jackin_protocol::control::ControlRequest> {
     let mut rest = [0u8; 3];
     tokio::time::timeout(CONTROL_READ_TIMEOUT, stream.read_exact(&mut rest))
         .await
@@ -272,11 +266,10 @@ async fn read_payload_lazy(
     Ok(buf)
 }
 
-pub async fn write_control_reply(mut stream: UnixStream, reply: &ServerMsg) {
+pub async fn write_control_reply(mut stream: UnixStream, reply: &ServerMsg) -> Result<()> {
     match tokio::time::timeout(Duration::from_secs(2), stream.write_all(&frame(reply))).await {
-        Ok(Ok(())) => {}
-        Ok(Err(e)) => crate::clog!("control reply write failed: {e}"),
-        Err(_) => crate::clog!("control reply write timed out after 2 s"),
+        Ok(result) => result.context("control reply write failed"),
+        Err(_) => anyhow::bail!("control reply write timed out after 2 s"),
     }
 }
 

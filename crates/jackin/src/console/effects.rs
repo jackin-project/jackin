@@ -20,6 +20,50 @@ use jackin_console::tui::components::error_popup;
 use jackin_console::tui::components::status_popup;
 use jackin_console::tui::state::update::{ManagerBackgroundEvent, ManagerMessage, update_manager};
 
+#[cfg(test)]
+mod tests;
+
+fn instance_refresh_attrs() -> [jackin_telemetry::Attr<'static>; 1] {
+    [jackin_telemetry::Attr {
+        key: jackin_telemetry::schema::attrs::BACKGROUND_CYCLE_NAME,
+        value: jackin_telemetry::Value::Str(
+            jackin_telemetry::schema::enums::BackgroundCycleName::InstanceRefresh.as_str(),
+        ),
+    }]
+}
+
+fn record_skipped_instance_refresh() {
+    let attrs = [
+        instance_refresh_attrs()[0],
+        jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::OUTCOME,
+            value: jackin_telemetry::Value::Str(
+                jackin_telemetry::schema::enums::OutcomeValue::Skip.as_str(),
+            ),
+        },
+    ];
+    let _metric =
+        jackin_telemetry::counter(&jackin_telemetry::metric::BACKGROUND_CYCLES).add(1, &attrs);
+}
+
+fn run_instance_refresh_cycle<T, E>(work: impl FnOnce() -> Result<T, E>) -> Result<T, E> {
+    let cycle = jackin_telemetry::autonomous_cycle_operation(
+        jackin_telemetry::schema::enums::BackgroundCycleName::InstanceRefresh,
+    )
+    .ok();
+    let result = work();
+    if let Some(cycle) = cycle {
+        match &result {
+            Ok(_) => cycle.complete(jackin_telemetry::schema::enums::OutcomeValue::Success, None),
+            Err(_) => cycle.complete(
+                jackin_telemetry::schema::enums::OutcomeValue::Failure,
+                Some(jackin_telemetry::schema::enums::ErrorType::IoError),
+            ),
+        }
+    }
+    result
+}
+
 pub(crate) fn op_cli_available() -> bool {
     jackin_console::tui::op_picker::cli_available()
 }
@@ -47,11 +91,12 @@ pub(crate) fn execute_manager_effect(
         }
         ManagerEffect::Console(ConsoleEffect::RequestInstanceRefresh) => {
             let Some(generation) = state.next_instance_refresh_generation_if_due() else {
+                record_skipped_instance_refresh();
                 return false;
             };
             let paths = paths.clone();
             let rx = spawn_blocking_subscription(move || {
-                let result = load_instance_refresh_snapshot(&paths);
+                let result = run_instance_refresh_cycle(|| load_instance_refresh_snapshot(&paths));
                 (generation, result)
             });
             state.begin_instance_refresh(rx);
@@ -245,12 +290,6 @@ pub(crate) fn apply_role_load_completion(
             let ManagerStage::Editor(editor) = &mut state.stage else {
                 return;
             };
-            jackin_diagnostics::debug_log!(
-                "role",
-                "role loader failed for key={key:?} raw={raw:?}: {e:?}",
-                key = load.key,
-                raw = load.raw
-            );
             let err_text = e.to_string();
             if let Some(panic_message) = err_text.strip_prefix("role loader panicked: ") {
                 crate::console::adapter::state::open_role_input_error(
@@ -285,25 +324,11 @@ fn apply_role_source_persist_result(
                 let ManagerStage::Editor(editor) = &mut state.stage else {
                     return;
                 };
-                jackin_diagnostics::debug_log!(
-                    "role",
-                    "role repo registration completed for key={key:?} git={git:?}",
-                    git = source.git.as_str()
-                );
                 if source.trusted {
-                    jackin_diagnostics::debug_log!(
-                        "role",
-                        "role source is trusted; adding key={key:?} directly to the workspace"
-                    );
                     crate::console::adapter::state::add_role_to_workspace_editor(
                         editor, config, &key,
                     );
                 } else {
-                    jackin_diagnostics::debug_log!(
-                        "role",
-                        "role source registered untrusted; opening trust confirm for key={key:?} git={git:?}",
-                        git = source.git.as_str()
-                    );
                     crate::console::adapter::state::open_role_trust_confirm(editor, key, source);
                 }
             }
@@ -311,10 +336,6 @@ fn apply_role_source_persist_result(
                 let ManagerStage::Editor(editor) = &mut state.stage else {
                     return;
                 };
-                jackin_diagnostics::debug_log!(
-                    "role",
-                    "role loader failed for key={key:?} raw={raw:?}: {e:?}"
-                );
                 open_role_resolution_error(
                     editor,
                     &raw,
@@ -355,12 +376,6 @@ pub(crate) fn apply_role_load_completion_for_tests(
     match result {
         Ok(()) => {
             if let Err(e) = execute_role_source_persist(config, paths, &load.key, &load.source) {
-                jackin_diagnostics::debug_log!(
-                    "role",
-                    "role loader failed for key={key:?} raw={raw:?}: {e:?}",
-                    key = load.key,
-                    raw = load.raw
-                );
                 open_role_resolution_error(
                     editor,
                     &load.raw,
@@ -369,28 +384,11 @@ pub(crate) fn apply_role_load_completion_for_tests(
                 );
                 return;
             }
-            jackin_diagnostics::debug_log!(
-                "role",
-                "role repo registration completed for key={key:?} git={git:?}",
-                key = load.key,
-                git = load.source.git.as_str()
-            );
             if load.source.trusted {
-                jackin_diagnostics::debug_log!(
-                    "role",
-                    "role source is trusted; adding key={key:?} directly to the workspace",
-                    key = load.key
-                );
                 crate::console::adapter::state::add_role_to_workspace_editor(
                     editor, config, &load.key,
                 );
             } else {
-                jackin_diagnostics::debug_log!(
-                    "role",
-                    "role source registered untrusted; opening trust confirm for key={key:?} git={git:?}",
-                    key = load.key,
-                    git = load.source.git.as_str()
-                );
                 crate::console::adapter::state::open_role_trust_confirm(
                     editor,
                     load.key,
@@ -399,12 +397,6 @@ pub(crate) fn apply_role_load_completion_for_tests(
             }
         }
         Err(e) => {
-            jackin_diagnostics::debug_log!(
-                "role",
-                "role loader failed for key={key:?} raw={raw:?}: {e:?}",
-                key = load.key,
-                raw = load.raw
-            );
             let err_text = e.to_string();
             if let Some(panic_message) = err_text.strip_prefix("role loader panicked: ") {
                 crate::console::adapter::state::open_role_input_error(
@@ -431,7 +423,6 @@ pub(crate) async fn apply_role_input_with_runner_for_tests(
     runner: &mut impl jackin_docker::CommandRunner,
 ) {
     let raw = value.trim();
-    jackin_diagnostics::debug_log!("role", "resolving role loader input: raw={raw:?}");
     let resolved = match crate::console::resolve_role_input_source(config, raw) {
         Ok(resolved) => resolved,
         Err(error) => {
@@ -444,12 +435,6 @@ pub(crate) async fn apply_role_input_with_runner_for_tests(
         }
     };
 
-    jackin_diagnostics::debug_log!(
-        "role",
-        "registering role repo for key={key:?} git={git:?}",
-        key = resolved.key,
-        git = resolved.source.git.as_str()
-    );
     let result = crate::console::services::role_load::register_with_runner(
         paths,
         &resolved.selector,
@@ -532,11 +517,6 @@ fn execute_role_registration_start(
     selector: jackin_core::RoleSelector,
     source: jackin_config::RoleSource,
 ) {
-    jackin_diagnostics::debug_log!(
-        "role",
-        "registering role repo for key={key:?} git={git:?}",
-        git = source.git.as_str()
-    );
     let rx = crate::console::services::role_load::start_role_registration(
         paths.clone(),
         selector,
@@ -923,13 +903,11 @@ pub(crate) fn open_role_resolution_error(
     source_url: Option<&String>,
     err: &anyhow::Error,
 ) {
+    let _error =
+        jackin_telemetry::record_error(jackin_telemetry::schema::enums::ErrorType::ConfigError);
     use jackin_console::tui::components::error_popup::{
         configured_role_load_error_message, repository_role_load_error_message,
     };
-    jackin_diagnostics::debug_log!(
-        "role",
-        "showing role-load error popup for raw={raw:?}: {err:?}"
-    );
     let message = source_url.map_or_else(
         || configured_role_load_error_message(raw),
         |source_url| {
@@ -945,10 +923,7 @@ fn friendly_role_resolution_error(err: &anyhow::Error) -> String {
         role_repository_remote_mismatch_message, role_repository_unavailable_message,
     };
 
-    if let Some(repo_err) = err
-        .chain()
-        .find_map(|cause| cause.downcast_ref::<jackin_runtime::runtime::RepoError>())
-    {
+    if let Some(repo_err) = find_repo_error(err) {
         return match repo_err {
             jackin_runtime::runtime::RepoError::CloneFailed(_) => {
                 role_repository_unavailable_message().into()
@@ -962,6 +937,27 @@ fn friendly_role_resolution_error(err: &anyhow::Error) -> String {
         };
     }
     generic_role_repository_error_message().into()
+}
+
+fn find_repo_error(err: &anyhow::Error) -> Option<&jackin_runtime::runtime::RepoError> {
+    for cause in err.chain() {
+        if let Some(repo_error) = cause.downcast_ref::<jackin_runtime::runtime::RepoError>() {
+            return Some(repo_error);
+        }
+        let Some(carrier) = cause.downcast_ref::<jackin_telemetry::TelemetryError>() else {
+            continue;
+        };
+        let Some(inner) = carrier.downcast_ref::<anyhow::Error>() else {
+            continue;
+        };
+        if let Some(repo_error) = inner
+            .chain()
+            .find_map(|source| source.downcast_ref::<jackin_runtime::runtime::RepoError>())
+        {
+            return Some(repo_error);
+        }
+    }
+    None
 }
 
 fn humanize_invalid_role_repo(err: &jackin_manifest::repo::RoleRepoValidationError) -> String {

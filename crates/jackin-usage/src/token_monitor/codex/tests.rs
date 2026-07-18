@@ -48,3 +48,75 @@ fn parse_raw_usage_handles_alternate_field_names() {
     assert_eq!(out, 20);
     assert_eq!(cached, 10);
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn conformance_wire_codex_model_is_consumed_without_export() {
+    let model = "gpt-4o-wire-private-model";
+    let line = serde_json::json!({
+        "type": "event_msg",
+        "payload": {
+            "type": "token_count",
+            "model_name": model,
+            "info": {
+                "total_token_usage": {
+                    "input_tokens": 120,
+                    "output_tokens": 45,
+                    "cached_input_tokens": 20
+                }
+            }
+        }
+    })
+    .to_string();
+    let mut acc = Acc::default();
+    apply_line(&line, &mut acc);
+    assert_eq!(acc.model.as_deref(), Some(model));
+    assert!(
+        crate::token_monitor::pricing::estimate_cost_usd(model, 120, 45, 20, 0).is_some(),
+        "parsed model was not consumed by local pricing"
+    );
+
+    let testbed = jackin_otlp_testbed::Testbed::start().expect("start OTLP testbed");
+    jackin_diagnostics::init_wire_test_export(
+        &testbed.endpoint(),
+        jackin_diagnostics::ServiceIdentity::CAPSULE,
+    )
+    .expect("initialize wire test export");
+    let current = crate::token_monitor::TokenTotals {
+        input_tokens: 120,
+        output_tokens: 45,
+        cache_read_tokens: 20,
+        model: acc.model,
+        ..crate::token_monitor::TokenTotals::default()
+    };
+    crate::token_monitor::record_token_usage(
+        jackin_core::Agent::Codex,
+        &crate::token_monitor::TokenTotals::default(),
+        &current,
+    );
+    let operation =
+        jackin_telemetry::root_operation(&jackin_telemetry::operation::TELEMETRY_VALIDATE, &[])
+            .expect("start validation operation");
+    jackin_telemetry::emit_event(
+        &jackin_telemetry::event::TELEMETRY_VALIDATE,
+        jackin_telemetry::FieldSet::default(),
+    )
+    .expect("emit validation event");
+    operation.complete(jackin_telemetry::schema::enums::OutcomeValue::Success, None);
+    jackin_diagnostics::flush_wire_test_export().expect("flush wire test export");
+    assert!(
+        testbed
+            .wait_for_all_signals(std::time::Duration::from_secs(2))
+            .await
+    );
+    assert!(
+        testbed
+            .metric_names()
+            .iter()
+            .any(|name| name == "gen_ai.client.token.usage")
+    );
+    assert_eq!(
+        testbed.prohibited_value_violations(&[model]),
+        Vec::<String>::new()
+    );
+    jackin_diagnostics::shutdown_capsule_tracing();
+}

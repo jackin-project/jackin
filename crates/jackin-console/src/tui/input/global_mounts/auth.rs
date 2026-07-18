@@ -18,6 +18,12 @@ use crate::tui::update::{
     auth_source_folder_picker_plan, create_op_picker_plan, inline_picker_plan, source_picker_plan,
 };
 
+fn record_missing_auth_return_path() {
+    let _recorded = jackin_telemetry::record_error(
+        jackin_telemetry::schema::enums::ErrorType::TelemetryInstrumentationFault,
+    );
+}
+
 pub(super) fn handle_auth_key(state: &mut ManagerState<'_>, key: KeyEvent) {
     let ManagerStage::Settings(settings) = &state.stage else {
         return;
@@ -442,11 +448,7 @@ pub fn apply_plain_text_to_settings_auth_form(
         target, mut state, ..
     }) = auth.pop_parent_modal()
     else {
-        jackin_diagnostics::debug_log!(
-            "auth",
-            "apply_plain_text_to_settings_auth_form: modal parent auth form missing — \
-             minted plain token dropped"
-        );
+        record_missing_auth_return_path();
         return;
     };
     state.set_literal(value.to_owned());
@@ -469,10 +471,7 @@ pub(crate) fn apply_source_folder_to_settings_auth_form(
         ..
     }) = auth.pop_parent_modal()
     else {
-        jackin_diagnostics::debug_log!(
-            "auth",
-            "apply_source_folder_to_settings_auth_form: modal_parents missing — path dropped"
-        );
+        record_missing_auth_return_path();
         return;
     };
     state.set_source_folder(path);
@@ -523,11 +522,7 @@ fn apply_op_picker_to_settings_auth_form_with_validator(
         // global token with no form to return to would otherwise vanish
         // silently. Should be unreachable (the `g`/`G` trigger always
         // stashes), so a hit here means a broken stash invariant.
-        jackin_diagnostics::debug_log!(
-            "auth",
-            "apply_op_picker_to_settings_auth_form: modal parent auth form missing — \
-             minted op ref dropped"
-        );
+        record_missing_auth_return_path();
         return;
     };
     match validate(&op_ref) {
@@ -574,11 +569,7 @@ pub fn apply_op_picker_to_settings_auth_form_committed(
         ..
     }) = auth.pop_parent_modal()
     else {
-        jackin_diagnostics::debug_log!(
-            "auth",
-            "apply_op_picker_to_settings_auth_form_committed: modal_parents missing \
-             — async OpRef commit dropped"
-        );
+        record_missing_auth_return_path();
         return;
     };
     // The read already succeeded; set the ref directly without re-reading.
@@ -612,3 +603,6 @@ fn clear_settings_auth_kind(
     };
     auth.clear_auth_kind(*kind, &mut env.pending.env);
 }
+
+#[cfg(test)]
+mod tests;

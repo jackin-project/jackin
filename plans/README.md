@@ -24,6 +24,8 @@ Individually verified codebase-health plans removed on 2026-07-15:
 
 Shared TUI extraction plans **001–009** and their follow-through roadmap item were removed after the standalone TermRock repository, canonical-API migration, neutral-duplication cleanup, immutable latest-reviewed dependency, donor retirement, and ownership/test-boundary audit shipped. Durable boundaries live in the TUI reference documentation.
 
+Application observability plans **001–016** and their roadmap item were removed after the complete direct-OTLP implementation, exact legacy-site and artifact-removal audits, real-receiver conformance, privacy/cardinality/volume/soak/performance proof, canonical documentation cutover, and green PR #793 checks (2026-07-18). Durable behavior lives in the application observability reference and run-telemetry guide.
+
 Completed routine code-health implementation archive: [codebase-health](codebase-health/).
 
 Hard external pin only (no plan file): **iai-callgrind** — project CI has no valgrind; re-evaluate when a valgrind-capable runner exists.

@@ -2,11 +2,11 @@
 title: "Console Resource Panel (machine + per-agent live usage)"
 ---
 
-**Status**: Open — observability substrate exists (debug-only host process RSS/CPU sampling, OTLP process-metric export), but the operator-visible `jackin console` resource panel is entirely unimplemented (Phase 2, [Agent Orchestration Program](/reference/research/agent-orchestration/program-research/))
+**Status**: Open — an OTLP process-metric substrate exists, but the operator-visible `jackin console` resource panel is entirely unimplemented (Phase 2, [Agent Orchestration Program](/reference/research/agent-orchestration/program-research/))
 
 ## Shipped baseline
 
-jackin❯ already samples resource data in two narrow, non-operator-facing ways. The capsule daemon has a debug-only RSS/CPU sampler for its own host process (<RepoFile path="crates/jackin-capsule/src/daemon/resource_metrics.rs" />), gated behind `JACKIN_TELEMETRY_LEVEL=debug` and logged via `cdebug!` — it is not surfaced to the operator. Separately, the OTLP exporter in <RepoFile path="crates/jackin-diagnostics/src/observability.rs" /> emits `process.cpu.utilization` and `process.memory.usage` metrics sampled via `sysinfo`, for whoever is scraping the configured OTLP endpoint — again, not rendered in the console. Neither of these is a per-agent or machine-summary view, and no `DockerApi` stats endpoint, console panel module, or panel keybinding exists anywhere in the tree today.
+jackin❯ already exports narrow process-local resource data that is not operator-facing. The Capsule daemon sampler in <RepoFile path="crates/jackin-capsule/src/daemon/resource_metrics.rs" /> records registered `process.cpu.time` and `process.uptime` metrics. The shared observability composition root in <RepoFile path="crates/jackin-diagnostics/src/observability.rs" /> records standard process CPU utilization and memory usage for the configured OTLP endpoint. Neither path is a per-agent or machine-summary view, and no `DockerApi` stats endpoint, console panel module, or panel keybinding exists anywhere in the tree today.
 
 ## Remaining work
 

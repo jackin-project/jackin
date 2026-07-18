@@ -16,6 +16,7 @@ mod error;
 pub use error::{InstanceError, SyncSourceValidationError};
 pub mod manifest;
 pub mod naming;
+mod process_telemetry;
 pub use manifest::{
     AppleContainerResources, BackendResources, DockerResources, InstanceIndex, InstanceIndexEntry,
     InstanceManifest, InstanceQuery, InstanceStatus, NewInstanceManifest, SessionRecord,
@@ -121,7 +122,7 @@ pub enum HostMissingReason {
 }
 
 // `Debug` is implemented manually to redact the token in `Synced` /
-// `TokenMode` so the value never lands in a `tracing::debug!`,
+// `TokenMode` so the value never lands in diagnostic telemetry,
 // `eprintln!("{state:?}")`, or panic backtrace.
 impl std::fmt::Debug for GithubProvisionOutcome {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -273,6 +274,76 @@ struct AgentAuthProvision {
     outcome: AuthProvisionOutcome,
 }
 
+fn emit_agent_auth_provision(
+    agent: jackin_core::Agent,
+    mode: AuthForwardMode,
+    result: Result<AuthProvisionOutcome, jackin_telemetry::schema::enums::ErrorType>,
+) {
+    use jackin_telemetry::{Attr, FieldSet, Value, event, schema};
+
+    let auth_mode = match mode {
+        AuthForwardMode::Sync => schema::enums::AuthMode::Sync,
+        AuthForwardMode::ApiKey => schema::enums::AuthMode::ApiKey,
+        AuthForwardMode::OAuthToken => schema::enums::AuthMode::OauthToken,
+        AuthForwardMode::Ignore => schema::enums::AuthMode::Ignore,
+    };
+    let configured_source = match mode {
+        AuthForwardMode::Sync => schema::enums::CredentialSourceType::AgentHome,
+        AuthForwardMode::ApiKey | AuthForwardMode::OAuthToken => {
+            schema::enums::CredentialSourceType::Environment
+        }
+        AuthForwardMode::Ignore => schema::enums::CredentialSourceType::None,
+    };
+    let (source, outcome, error_type) = match result {
+        Ok(AuthProvisionOutcome::Synced | AuthProvisionOutcome::TokenMode) => (
+            configured_source,
+            schema::enums::OutcomeValue::Success,
+            None,
+        ),
+        Ok(AuthProvisionOutcome::Skipped) => (
+            schema::enums::CredentialSourceType::None,
+            schema::enums::OutcomeValue::Skip,
+            None,
+        ),
+        Ok(AuthProvisionOutcome::HostMissing) => (
+            schema::enums::CredentialSourceType::None,
+            schema::enums::OutcomeValue::Failure,
+            Some(schema::enums::ErrorType::CredentialUnavailable),
+        ),
+        Err(error_type) => (
+            configured_source,
+            schema::enums::OutcomeValue::Error,
+            Some(error_type),
+        ),
+    };
+    let mut attrs = vec![
+        Attr {
+            key: schema::attrs::GEN_AI_AGENT_NAME,
+            value: Value::Str(agent.slug()),
+        },
+        Attr {
+            key: schema::attrs::AUTH_MODE,
+            value: Value::Str(auth_mode.as_str()),
+        },
+        Attr {
+            key: schema::attrs::CREDENTIAL_SOURCE_TYPE,
+            value: Value::Str(source.as_str()),
+        },
+        Attr {
+            key: schema::attrs::OUTCOME,
+            value: Value::Str(outcome.as_str()),
+        },
+    ];
+    if let Some(error_type) = error_type {
+        attrs.push(Attr {
+            key: schema::attrs::std_attrs::ERROR_TYPE,
+            value: Value::Str(error_type.as_str()),
+        });
+    }
+    let _telemetry_result =
+        jackin_telemetry::emit_event(&event::AUTH_PROVISION, FieldSet::new(&attrs, None));
+}
+
 #[derive(Debug, Clone)]
 pub struct RoleState {
     pub root: PathBuf,
@@ -377,7 +448,7 @@ impl RoleState {
 /// `config::resolve_github_mode` and the merged `[github.env]` map.
 ///
 /// `Debug` is implemented manually to redact `token` so the value
-/// cannot leak through `tracing::debug!`, panic messages, or
+/// cannot leak through diagnostic telemetry, panic messages, or
 /// `eprintln!("{ctx:?}")`.
 #[derive(Clone, Default)]
 pub struct GithubAuthContext {
@@ -417,7 +488,6 @@ impl RoleState {
     ///
     /// `resolvers.sync_source_dirs` returns an optional override source
     /// directory for each agent's auth sync, overriding `host_home`.
-    #[tracing::instrument(skip_all, fields(container = container_name, agent = agent.slug()))]
     pub fn prepare(
         paths: &JackinPaths,
         container_name: &str,
@@ -445,7 +515,6 @@ impl RoleState {
     /// need only a subset (such as tests) can pass a narrower slice. The
     /// foreground launch path passes the full `manifest.supported_agents()` set;
     /// [`Self::prepare`] is a convenience wrapper that does the same.
-    #[tracing::instrument(skip_all, fields(container = container_name, agent = agent.slug()))]
     #[expect(
         clippy::too_many_arguments,
         reason = "Per-agent prepare carries every per-agent + per-container input \
@@ -495,28 +564,26 @@ impl RoleState {
         let home_path = home_dir.clone();
 
         let (gh_provision_outcome, auth_provisions) = std::thread::scope(|scope| {
-            let handles: Vec<(jackin_core::Agent, _)> = supported_auth
-                .iter()
-                .map(|(supported, mode, sync_src)| {
-                    let root = root_path.clone();
-                    let home_dir = home_path.clone();
-                    let host_home = host_home_path.clone();
-                    let sync_src = sync_src.clone();
-                    let supported = *supported;
-                    let mode = *mode;
-                    let handle = scope.spawn(move || {
-                        Self::provision_agent_auth_slot(
-                            &root,
-                            &home_dir,
-                            &host_home,
-                            supported,
-                            mode,
-                            sync_src.as_deref(),
-                        )
-                    });
-                    (supported, handle)
-                })
-                .collect();
+            let mut handles = Vec::with_capacity(supported_auth.len());
+            for (supported, mode, sync_src) in &supported_auth {
+                let root = root_path.clone();
+                let home_dir = home_path.clone();
+                let host_home = host_home_path.clone();
+                let sync_src = sync_src.clone();
+                let supported = *supported;
+                let mode = *mode;
+                let handle = jackin_telemetry::spawn::thread_scoped_joined(scope, move || {
+                    Self::provision_agent_auth_slot(
+                        &root,
+                        &home_dir,
+                        &host_home,
+                        supported,
+                        mode,
+                        sync_src.as_deref(),
+                    )
+                });
+                handles.push((supported, mode, handle));
+            }
 
             let gh_provision_outcome =
                 if github_ignore_can_skip_state_prepare(&github_context, &hosts_yml)? {
@@ -532,35 +599,10 @@ impl RoleState {
                     );
                     GithubProvisionOutcome::Skipped
                 } else {
-                    let gh_handle = scope.spawn({
+                    let gh_handle = jackin_telemetry::spawn::thread_scoped_joined(scope, {
                         let hosts_yml = hosts_yml.clone();
                         let host_home = host_home_path.clone();
-                        move || {
-                            jackin_diagnostics::active_timing_started(
-                                jackin_diagnostics::DiagnosticStage::Credentials,
-                                "role_state_prepare:github_auth",
-                                Some(&github_context.mode.to_string()),
-                            );
-                            if let Some(parent) = hosts_yml.parent() {
-                                std::fs::create_dir_all(parent).with_context(|| {
-                                    format!(
-                                        "failed to create GitHub role-state directory at {}",
-                                        parent.display()
-                                    )
-                                })?;
-                            }
-                            let result = Self::provision_github_auth(
-                                &hosts_yml,
-                                &github_context,
-                                &host_home,
-                            );
-                            jackin_diagnostics::active_timing_done(
-                                jackin_diagnostics::DiagnosticStage::Credentials,
-                                "role_state_prepare:github_auth",
-                                Some(if result.is_ok() { "prepared" } else { "error" }),
-                            );
-                            result
-                        }
+                        move || Self::provision_github_slot(&hosts_yml, &github_context, &host_home)
                     });
                     gh_handle
                         .join()
@@ -568,12 +610,32 @@ impl RoleState {
                 };
 
             let mut auth_provisions = Vec::with_capacity(handles.len());
-            for (agent, handle) in handles {
-                auth_provisions.push(handle.join().map_err(|_| {
-                    InstanceError::AuthProvisionTaskPanicked {
-                        agent: agent.slug().to_owned(),
+            for (agent, mode, handle) in handles {
+                match handle.join() {
+                    Ok(Ok(provision)) => {
+                        emit_agent_auth_provision(agent, mode, Ok(provision.outcome));
+                        auth_provisions.push(provision);
                     }
-                })??);
+                    Ok(Err(error)) => {
+                        emit_agent_auth_provision(
+                            agent,
+                            mode,
+                            Err(jackin_telemetry::schema::enums::ErrorType::IoError),
+                        );
+                        return Err(error);
+                    }
+                    Err(_) => {
+                        emit_agent_auth_provision(
+                            agent,
+                            mode,
+                            Err(jackin_telemetry::schema::enums::ErrorType::Panic),
+                        );
+                        return Err(InstanceError::AuthProvisionTaskPanicked {
+                            agent: agent.slug().to_owned(),
+                        }
+                        .into());
+                    }
+                }
             }
 
             anyhow::Ok((gh_provision_outcome, auth_provisions))
@@ -617,6 +679,33 @@ impl RoleState {
         ))
     }
 
+    fn provision_github_slot(
+        hosts_yml: &Path,
+        github: &GithubAuthContext,
+        host_home: &Path,
+    ) -> anyhow::Result<GithubProvisionOutcome> {
+        jackin_diagnostics::active_timing_started(
+            jackin_diagnostics::DiagnosticStage::Credentials,
+            "role_state_prepare:github_auth",
+            Some(&github.mode.to_string()),
+        );
+        if let Some(parent) = hosts_yml.parent() {
+            std::fs::create_dir_all(parent).with_context(|| {
+                format!(
+                    "failed to create GitHub role-state directory at {}",
+                    parent.display()
+                )
+            })?;
+        }
+        let result = Self::provision_github_auth(hosts_yml, github, host_home);
+        jackin_diagnostics::active_timing_done(
+            jackin_diagnostics::DiagnosticStage::Credentials,
+            "role_state_prepare:github_auth",
+            Some(if result.is_ok() { "prepared" } else { "error" }),
+        );
+        result
+    }
+
     /// Background-prewarm auth state for non-selected agents only.
     ///
     /// This intentionally skips the GitHub-auth axis and returns no launch
@@ -624,7 +713,6 @@ impl RoleState {
     /// GitHub context needed for the current `docker run`. Background sibling
     /// prep may create/update only jackin-owned per-agent state under the
     /// instance data dir so opening a later sibling runtime has less work.
-    #[tracing::instrument(skip_all, fields(container = container_name))]
     pub fn prewarm_auth_for_agents(
         paths: &JackinPaths,
         container_name: &str,
@@ -668,7 +756,7 @@ impl RoleState {
                     let sync_src = sync_src.clone();
                     let supported = *supported;
                     let mode = *mode;
-                    scope.spawn(move || {
+                    let handle = jackin_telemetry::spawn::thread_scoped_joined(scope, move || {
                         Self::provision_agent_auth_slot(
                             &root,
                             &home_dir,
@@ -677,17 +765,35 @@ impl RoleState {
                             mode,
                             sync_src.as_deref(),
                         )
-                    })
+                    });
+                    (supported, mode, handle)
                 })
                 .collect::<Vec<_>>();
 
             let mut prepared = Vec::with_capacity(handles.len());
-            for handle in handles {
-                prepared.push(
-                    handle
-                        .join()
-                        .map_err(|_| InstanceError::BackgroundAuthTaskPanicked)??,
-                );
+            for (agent, mode, handle) in handles {
+                match handle.join() {
+                    Ok(Ok(provision)) => {
+                        emit_agent_auth_provision(agent, mode, Ok(provision.outcome));
+                        prepared.push(provision);
+                    }
+                    Ok(Err(error)) => {
+                        emit_agent_auth_provision(
+                            agent,
+                            mode,
+                            Err(jackin_telemetry::schema::enums::ErrorType::IoError),
+                        );
+                        return Err(error);
+                    }
+                    Err(_) => {
+                        emit_agent_auth_provision(
+                            agent,
+                            mode,
+                            Err(jackin_telemetry::schema::enums::ErrorType::Panic),
+                        );
+                        return Err(InstanceError::BackgroundAuthTaskPanicked.into());
+                    }
+                }
             }
             anyhow::Ok(prepared)
         })?;
@@ -709,18 +815,23 @@ impl RoleState {
             &timing_name,
             Some(&mode.to_string()),
         );
-        if mode == AuthForwardMode::Ignore && agent_ignore_can_skip_state_prepare(root, supported)?
-        {
+        let ignore_can_skip = if mode == AuthForwardMode::Ignore {
+            agent_ignore_can_skip_state_prepare(root, supported)?
+        } else {
+            false
+        };
+        if ignore_can_skip {
             jackin_diagnostics::active_timing_done(
                 jackin_diagnostics::DiagnosticStage::Credentials,
                 &timing_name,
                 Some("skipped_no_state"),
             );
-            return Ok(AgentAuthProvision {
+            let provision = AgentAuthProvision {
                 agent: supported,
                 slot: skipped_ignore_auth_slot(root, supported),
                 outcome: AuthProvisionOutcome::Skipped,
-            });
+            };
+            return Ok(provision);
         }
         let provision_result: anyhow::Result<(ProvisionedAuthSlot, AuthProvisionOutcome)> =
             match supported {
