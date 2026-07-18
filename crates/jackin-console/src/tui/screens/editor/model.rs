@@ -11,7 +11,7 @@ use std::collections::BTreeSet;
 use std::marker::PhantomData;
 
 use jackin_config::WorkspaceConfig;
-use termrock::interaction::FocusOwner;
+use jackin_tui::runtime::SurfaceFocus;
 
 mod state_impl;
 
@@ -262,7 +262,7 @@ pub struct EditorState<
     pub mode: EditorMode,
     pub active_tab: EditorTab,
     /// W3C ARIA Tabs: focus is either on the tab list or exactly one content block.
-    pub focus_owner: FocusOwner<EditorFocusTarget>,
+    pub focus_owner: SurfaceFocus<EditorFocusTarget>,
     pub hover_target: Option<EditorHoverTarget>,
     pub active_field: FieldFocus,
     pub original: WorkspaceConfig,

@@ -45,12 +45,6 @@ pub fn load_split_config(
     let legacy_workspaces = std::mem::take(&mut config.workspaces);
     if !legacy_workspaces.is_empty() {
         migrate_legacy_workspaces(paths, &config, &legacy_workspaces, &legacy_op_accounts)?;
-        // Silent automatic upgrade — record in the run diagnostics log only.
-        jackin_core::debug_log!(
-            "config",
-            "migrated saved workspaces into {}",
-            paths.workspaces_dir.display()
-        );
     }
 
     config.workspaces = load_workspace_files(&paths.workspaces_dir)?;
@@ -260,41 +254,52 @@ pub fn config_needs_split_migration(raw: &str) -> crate::ConfigResult<bool> {
     Ok(version == migrations::SchemaVersion::Legacy && has_legacy_workspaces)
 }
 
+fn load_config_contents(paths: &JackinPaths) -> crate::ConfigResult<Option<String>> {
+    match std::fs::read_to_string(&paths.config_file) {
+        Ok(raw) if config_needs_split_migration(&raw)? => Ok(Some(raw)),
+        Ok(_) => {
+            migrations::migrate_config_file_if_needed(&paths.config_file)?;
+            std::fs::read_to_string(&paths.config_file)
+                .with_context(|| {
+                    format!("re-reading {} after migration", paths.config_file.display())
+                })
+                .map(Some)
+                .map_err(Into::into)
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(anyhow::Error::new(error)
+            .context(format!("reading {}", paths.config_file.display()))
+            .into()),
+    }
+}
+
 impl AppConfig {
     /// Load `config.toml` (migrate as needed), split workspaces, sync builtins, validate.
     pub fn load_or_init(paths: &JackinPaths) -> crate::ConfigResult<Self> {
-        paths.ensure_base_dirs()?;
-
-        let contents_opt = match std::fs::read_to_string(&paths.config_file) {
-            Ok(raw) => {
-                if config_needs_split_migration(&raw)? {
-                    Some(raw)
-                } else {
-                    migrations::migrate_config_file_if_needed(&paths.config_file)?;
-                    Some(
-                        std::fs::read_to_string(&paths.config_file).with_context(|| {
-                            format!("re-reading {} after migration", paths.config_file.display())
-                        })?,
-                    )
-                }
-            }
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
-            Err(e) => {
-                return Err(anyhow::Error::new(e)
-                    .context(format!("reading {}", paths.config_file.display()))
-                    .into());
-            }
-        };
-
-        let mut config = load_split_config(paths, contents_opt)?;
+        let loaded = (|| {
+            paths.ensure_base_dirs()?;
+            let contents_opt = load_config_contents(paths)?;
+            load_split_config(paths, contents_opt)
+        })();
+        let mut config = crate::telemetry::finish_operation(
+            jackin_telemetry::schema::enums::ConfigScope::Global,
+            jackin_telemetry::schema::enums::ConfigOperation::Load,
+            loaded,
+        )?;
 
         // Pre-sync validation: gives the operator a reserved-name error
         // rather than save()'s "rejecting candidate config" wrapper.
         // ConfigEditor::save runs the same check via validate_candidate;
         // this call covers the path where save() is never invoked because
         // builtins did not drift.
-        validate_reserved_env_names(&config)?;
-        config.validate_auth_modes()?;
+        crate::telemetry::finish_operation(
+            jackin_telemetry::schema::enums::ConfigScope::Global,
+            jackin_telemetry::schema::enums::ConfigOperation::Validate,
+            (|| {
+                validate_reserved_env_names(&config)?;
+                config.validate_auth_modes()
+            })(),
+        )?;
 
         let builtins_changed = config.sync_builtin_agents();
 
@@ -304,8 +309,14 @@ impl AppConfig {
             // file and preserves operator comments rather than going through
             // the lossy serde rewrite.
             if !paths.config_file.exists() {
-                let contents = toml::to_string_pretty(&config)?;
-                atomic_write(&paths.config_file, &contents)?;
+                crate::telemetry::finish_operation(
+                    jackin_telemetry::schema::enums::ConfigScope::Global,
+                    jackin_telemetry::schema::enums::ConfigOperation::Save,
+                    (|| {
+                        let contents = toml::to_string_pretty(&config)?;
+                        atomic_write(&paths.config_file, &contents)
+                    })(),
+                )?;
             }
             let mut editor = ConfigEditor::open(paths)?;
             for &(name, git) in super::roles::BUILTIN_ROLES {
@@ -316,7 +327,11 @@ impl AppConfig {
             config = editor.save()?;
         }
 
-        config.validate_workspaces()?;
+        crate::telemetry::finish_operation(
+            jackin_telemetry::schema::enums::ConfigScope::Workspace,
+            jackin_telemetry::schema::enums::ConfigOperation::Validate,
+            config.validate_workspaces(),
+        )?;
         Ok(config)
     }
 }

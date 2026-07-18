@@ -217,6 +217,7 @@ fn handle_trust_cmd(
             let was_trusted = config.roles.get(&class.key()).is_some_and(|a| a.trusted);
             if was_trusted {
                 println!("{} is already trusted.", class.key());
+                emit_trust_decision("granted", "external", "skip", None);
             } else {
                 let mut editor = jackin_config::ConfigEditor::open(paths)?;
                 if let Some(source) = config.roles.get(&class.key()) {
@@ -224,6 +225,7 @@ fn handle_trust_cmd(
                 }
                 editor.set_agent_trust(&class.key(), true);
                 editor.save()?;
+                emit_trust_decision("granted", "external", "success", None);
                 println!("Trusted {}.", class.key());
             }
             Ok(())
@@ -231,6 +233,7 @@ fn handle_trust_cmd(
         cli::TrustCommand::Revoke { selector } => {
             let class = RoleSelector::parse(&selector)?;
             if AppConfig::is_builtin_agent(&class.key()) {
+                emit_trust_decision("rejected", "builtin", "failure", Some("trust_error"));
                 anyhow::bail!("{} is a built-in role and is always trusted.", class.key());
             }
             let was_trusted = config.roles.get(&class.key()).is_some_and(|a| a.trusted);
@@ -238,8 +241,10 @@ fn handle_trust_cmd(
                 let mut editor = jackin_config::ConfigEditor::open(paths)?;
                 editor.set_agent_trust(&class.key(), false);
                 editor.save()?;
+                emit_trust_decision("revoked", "external", "success", None);
                 println!("Revoked trust for {}.", class.key());
             } else {
+                emit_trust_decision("revoked", "external", "skip", None);
                 println!("{} is not currently trusted.", class.key());
             }
             Ok(())
@@ -261,6 +266,38 @@ fn handle_trust_cmd(
             Ok(())
         }
     }
+}
+
+fn emit_trust_decision(
+    decision: &'static str,
+    source: &'static str,
+    outcome: &'static str,
+    error_type: Option<&'static str>,
+) {
+    let mut attrs = vec![
+        jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::TRUST_DECISION,
+            value: jackin_telemetry::Value::Str(decision),
+        },
+        jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::TRUST_SOURCE_TYPE,
+            value: jackin_telemetry::Value::Str(source),
+        },
+        jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::OUTCOME,
+            value: jackin_telemetry::Value::Str(outcome),
+        },
+    ];
+    if let Some(error_type) = error_type {
+        attrs.push(jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::std_attrs::ERROR_TYPE,
+            value: jackin_telemetry::Value::Str(error_type),
+        });
+    }
+    let _result = jackin_telemetry::emit_event(
+        &jackin_telemetry::event::TRUST_DECISION,
+        jackin_telemetry::FieldSet::new(&attrs, None),
+    );
 }
 
 fn handle_auth_cmd(

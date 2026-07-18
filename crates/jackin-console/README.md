@@ -10,7 +10,7 @@ Canonical host-console product surface. Owns reusable console state, update/inpu
 
 ## Architecture tier and allowed dependencies
 
-**L3 presentation.** Allowed workspace dependencies include `jackin-config`, `jackin-console-oppicker`, `jackin-core`, `jackin-diagnostics`, `jackin-env`, `jackin-protocol`, and TermRock. Must NOT depend on `jackin-runtime`, `jackin-launch-tui`, or `jackin-capsule` directly — console reaches runtime through effects-as-data, not direct calls.
+**L3 presentation.** Dependencies include `jackin-config`, `jackin-oppicker`, `jackin-core`, `jackin-diagnostics`, `jackin-env`, `jackin-protocol`, `jackin-tui`, and TermRock. Must NOT depend on `jackin-runtime`, `jackin-launch`, or `jackin-capsule` — console reaches runtime through effects-as-data.
 
 ## Structure
 
@@ -23,14 +23,14 @@ Canonical host-console product surface. Owns reusable console state, update/inpu
 | [`mount_info.rs`](src/mount_info.rs) · [`mount_info/`](src/mount_info) | mount info | [`tests.rs`](src/mount_info/tests.rs) |
 | [`mount_info_cache.rs`](src/mount_info_cache.rs) | mount-info cache | — |
 | [`mount_diff.rs`](src/mount_diff.rs) | mount diff | — |
-| [`tui.rs`](src/tui.rs) · [`tui/`](src/tui) | chrome/input using TermRock and shared operator-info UI | — |
-| [`tui/state.rs`](src/tui/state.rs) · [`tui/state/`](src/tui/state) | console manager state + bindings | — |
+| [`tui.rs`](src/tui.rs) · [`tui/`](src/tui) | chrome/input using TermRock and shared operator-info UI | [`input/`](src/tui/input) |
+| [`tui/state.rs`](src/tui/state.rs) · [`tui/state/`](src/tui/state) | console manager state + bindings | [`tests.rs`](src/tui/state/tests.rs) |
 | [`tui/state/manager.rs`](src/tui/state/manager.rs) · [`tui/state/manager/`](src/tui/state/manager) | concrete manager stage state | [`tests.rs`](src/tui/state/manager/tests.rs) |
 | [`tui/screens/form_model.rs`](src/tui/screens/form_model.rs) | shared form `FieldRow` / `FormSection` view models | — |
 
 ## Public API
 
-Console state machine + view models consumed by the `jackin` binary's console entry point. Picker model/planning is split into `jackin-console-oppicker`; this crate owns only the side-effect adapters.
+Console state machine + view models consumed by the `jackin` binary's console entry point. Picker model/planning is split into `jackin-oppicker`; this crate owns only the side-effect adapters.
 
 ## How to verify
 

@@ -34,7 +34,7 @@ fn palette() -> Dialog {
 fn spawn_failure_popup_uses_error_popup_hints_and_dismiss_keys() {
     let mut dialog = Dialog::SpawnFailure(SpawnFailureState::new("Spawn failed", "shell: cap hit"));
     assert_eq!(
-        dialog.footer_hint_spans(None, termrock::layout::ScrollAxes::none()),
+        dialog.footer_hint_spans(None, termrock::scroll::ScrollAxes::none()),
         vec![
             termrock::widgets::HintSpan::Key("↵/Esc"),
             termrock::widgets::HintSpan::Text("dismiss"),
@@ -434,7 +434,7 @@ fn container_info_fixture() -> Dialog {
         diagnostics: ContainerInfoDiagnostics::default(),
         copied_row: None,
         hovered_row: None,
-        scroll: termrock::layout::DialogBodyScroll::new(),
+        scroll: termrock::scroll::DialogScroll::new(),
     }
 }
 
@@ -446,17 +446,11 @@ fn container_info_with_diagnostics_fixture() -> Dialog {
         workdir: "/workspace/jackin".to_owned(),
         diagnostics: ContainerInfoDiagnostics {
             host_version: "0.6.0-test".to_owned(),
-            run_id: "jk-run-b93735".to_owned(),
-            run_log_display: "/Users/operator/.jackin/data/diagnostics/runs/jk-run-b93735.jsonl"
-                .to_owned(),
-            run_log_href: Some(
-                "file:///Users/operator/.jackin/data/diagnostics/runs/jk-run-b93735.jsonl"
-                    .to_owned(),
-            ),
+            invocation_id: "jk-inv-b93735".to_owned(),
         },
         copied_row: None,
         hovered_row: None,
-        scroll: termrock::layout::DialogBodyScroll::new(),
+        scroll: termrock::scroll::DialogScroll::new(),
     }
 }
 
@@ -515,7 +509,7 @@ fn pull_request_fixture() -> PullRequestInfo {
 }
 
 #[test]
-fn container_info_state_keeps_run_id_bare_and_log_path_separate() {
+fn container_info_state_shows_invocation_identity_without_local_artifacts() {
     let d = container_info_with_diagnostics_fixture();
     let state = d
         .container_info_state_with_debug(true)
@@ -524,41 +518,20 @@ fn container_info_state_keeps_run_id_bare_and_log_path_separate() {
     assert_eq!(
         rows.first()
             .map(crate::tui::components::container_info_surface::ContainerInfoRow::value),
-        Some("jk-run-b93735"),
-        "Run ID must stay the first Debug info row even when capsule knows container/session facts"
+        Some("jk-inv-b93735"),
+        "invocation identity must be the first Debug info row"
     );
 
-    let run_row = rows
+    let invocation_row = rows
         .iter()
-        .find(|row| row.value() == "jk-run-b93735")
-        .expect("bare run id row present");
-    assert!(run_row.is_copyable());
-    assert!(
-        !run_row.value().contains(".jsonl"),
-        "Run ID row must not contain diagnostics path"
-    );
-
-    let log_row = rows
-        .iter()
-        .find(|row| row.value().contains("jk-run-b93735.jsonl"))
-        .expect("diagnostics log row present");
-    assert!(log_row.is_copyable());
-    assert_eq!(
-        log_row.href(),
-        Some("file:///Users/operator/.jackin/data/diagnostics/runs/jk-run-b93735.jsonl")
-    );
-    let reveal_row = rows
-        .iter()
-        .find(|row| row.href().is_some() && !row.is_copyable())
-        .expect("diagnostics reveal row present");
-    assert_eq!(
-        reveal_row.href(),
-        Some("file:///Users/operator/.jackin/data/diagnostics/runs/jk-run-b93735.jsonl")
-    );
+        .find(|row| row.value() == "jk-inv-b93735")
+        .expect("invocation identity row present");
+    assert!(invocation_row.is_copyable());
+    assert!(rows.iter().all(|row| row.href().is_none()));
 }
 
 #[test]
-fn container_info_state_backend_only_shows_telemetry_without_reveal() {
+fn container_info_state_without_invocation_omits_identity_row() {
     let d = Dialog::ContainerInfo {
         container_name: "jk-abc123-thearchitect".to_owned(),
         role: "the-architect".to_owned(),
@@ -566,13 +539,11 @@ fn container_info_state_backend_only_shows_telemetry_without_reveal() {
         workdir: "/workspace/jackin".to_owned(),
         diagnostics: ContainerInfoDiagnostics {
             host_version: "0.6.0-test".to_owned(),
-            run_id: "jk-run-b93735".to_owned(),
-            run_log_display: "(backend only - no local file)".to_owned(),
-            run_log_href: None,
+            invocation_id: String::new(),
         },
         copied_row: None,
         hovered_row: None,
-        scroll: termrock::layout::DialogBodyScroll::new(),
+        scroll: termrock::scroll::DialogScroll::new(),
     };
     let state = d
         .container_info_state_with_debug(true)
@@ -580,16 +551,9 @@ fn container_info_state_backend_only_shows_telemetry_without_reveal() {
     let rows = state.rows();
 
     assert!(
-        rows.iter().any(
-            |row| row.label() == "Telemetry" && row.value() == "(backend only - no local file)"
-        ),
-        "backend-only runs should show a telemetry row"
-    );
-    assert!(
-        rows.iter().all(|row| row.label() != "Diagnostics log"
-            && row.label() != "Reveal diagnostics"
-            && row.href().is_none()),
-        "backend-only runs must not expose a fabricated diagnostics path"
+        rows.iter()
+            .all(|row| row.label() != "Invocation ID" && row.href().is_none()),
+        "missing invocation identity must not fabricate a row or local artifact"
     );
 }
 
@@ -666,12 +630,8 @@ fn container_info_visible_debug_rows_map_to_shared_hit_targets() {
         height,
     };
     let cases = [
-        ("jk-run-b93735", "jk-run-b93735"),
+        ("jk-inv-b93735", "jk-inv-b93735"),
         ("jk-abc123-thearchitect", "jk-abc123-thearchitect"),
-        (
-            "/Users/operator",
-            "/Users/operator/.jackin/data/diagnostics/runs/jk-run-b93735.jsonl",
-        ),
     ];
 
     for (visible_text, expected_payload) in cases {
@@ -693,31 +653,15 @@ fn container_info_visible_debug_rows_map_to_shared_hit_targets() {
 }
 
 #[test]
-fn container_info_r_reveals_host_diagnostics_log_path() {
+fn container_info_r_does_not_reveal_local_telemetry_artifacts() {
     let mut d = container_info_with_diagnostics_fixture();
-    match d.handle_key(b"r", None) {
-        DialogAction::RevealHostPath(path) => {
-            assert_eq!(
-                path,
-                "/Users/operator/.jackin/data/diagnostics/runs/jk-run-b93735.jsonl"
-            );
-        }
-        other => panic!("R must request host diagnostics reveal, got {other:?}"),
-    }
+    assert_eq!(d.handle_key(b"r", None), DialogAction::Redraw);
 }
 
 #[test]
-fn container_info_o_reveals_host_diagnostics_log_path() {
+fn container_info_o_does_not_reveal_local_telemetry_artifacts() {
     let mut d = container_info_with_diagnostics_fixture();
-    match d.handle_key(b"o", None) {
-        DialogAction::RevealHostPath(path) => {
-            assert_eq!(
-                path,
-                "/Users/operator/.jackin/data/diagnostics/runs/jk-run-b93735.jsonl"
-            );
-        }
-        other => panic!("O must request host diagnostics reveal, got {other:?}"),
-    }
+    assert_eq!(d.handle_key(b"o", None), DialogAction::Redraw);
 }
 
 #[test]
@@ -725,15 +669,7 @@ fn container_info_o_does_not_open_github_context_url() {
     let pr = pull_request_fixture();
     let view = github_view_for_fixture(&pr);
     let mut d = container_info_with_diagnostics_fixture();
-    match d.handle_key(b"o", Some(&view)) {
-        DialogAction::RevealHostPath(path) => {
-            assert_eq!(
-                path,
-                "/Users/operator/.jackin/data/diagnostics/runs/jk-run-b93735.jsonl"
-            );
-        }
-        other => panic!("ContainerInfo O must stay diagnostics reveal, got {other:?}"),
-    }
+    assert_eq!(d.handle_key(b"o", Some(&view)), DialogAction::Redraw);
 }
 
 #[test]
@@ -822,7 +758,7 @@ fn container_info_clear_copy_feedback_hides_badge() {
         diagnostics: ContainerInfoDiagnostics::default(),
         copied_row: Some(0),
         hovered_row: None,
-        scroll: termrock::layout::DialogBodyScroll::new(),
+        scroll: termrock::scroll::DialogScroll::new(),
     };
     assert!(d.clear_copy_feedback());
     let Dialog::ContainerInfo { copied_row, .. } = d else {
@@ -846,7 +782,7 @@ fn github_context_enter_copies_pr_url_and_shows_feedback() {
     let view = github_view_for_fixture(&pr);
     let mut d = Dialog::GitHubContext {
         copied: false,
-        scroll: termrock::layout::DialogBodyScroll::new(),
+        scroll: termrock::scroll::DialogScroll::new(),
     };
 
     match d.handle_key(b"\r", Some(&view)) {
@@ -864,7 +800,7 @@ fn github_context_o_opens_pr_url() {
     let view = github_view_for_fixture(&pr);
     let mut d = Dialog::GitHubContext {
         copied: false,
-        scroll: termrock::layout::DialogBodyScroll::new(),
+        scroll: termrock::scroll::DialogScroll::new(),
     };
 
     match d.handle_key(b"o", Some(&view)) {
@@ -886,7 +822,7 @@ fn github_context_c_opens_ci_url_when_available() {
     let view = github_view_for_fixture(&pr);
     let mut d = Dialog::GitHubContext {
         copied: false,
-        scroll: termrock::layout::DialogBodyScroll::new(),
+        scroll: termrock::scroll::DialogScroll::new(),
     };
 
     match d.handle_key(b"c", Some(&view)) {
@@ -906,7 +842,7 @@ fn github_context_url_click_copies_pr_url() {
     let view = github_view_for_fixture(&pr);
     let mut d = Dialog::GitHubContext {
         copied: false,
-        scroll: termrock::layout::DialogBodyScroll::new(),
+        scroll: termrock::scroll::DialogScroll::new(),
     };
     let (row, col, _, _) = d.box_rect(40, 120);
 
@@ -931,7 +867,7 @@ fn github_context_open_rows_click_open_urls() {
     let view = github_view_for_fixture(&pr);
     let mut d = Dialog::GitHubContext {
         copied: false,
-        scroll: termrock::layout::DialogBodyScroll::new(),
+        scroll: termrock::scroll::DialogScroll::new(),
     };
     let (row, col, _, _) = d.box_rect(40, 120);
 
@@ -961,7 +897,7 @@ fn github_context_unavailable_ci_row_is_not_clickable() {
     let view = github_view_for_fixture(&pr);
     let mut d = Dialog::GitHubContext {
         copied: false,
-        scroll: termrock::layout::DialogBodyScroll::new(),
+        scroll: termrock::scroll::DialogScroll::new(),
     };
     let (row, col, _, _) = d.box_rect(40, 120);
 
@@ -986,7 +922,7 @@ fn github_context_uses_shared_focused_info_dialog() {
     let pr = pull_request_fixture();
     let d = Dialog::GitHubContext {
         copied: false,
-        scroll: termrock::layout::DialogBodyScroll::new(),
+        scroll: termrock::scroll::DialogScroll::new(),
     };
 
     let view = github_view_for_fixture(&pr);
@@ -2039,10 +1975,6 @@ fn usage_dialog_renders_inside_narrow_terminal() {
     assert!(!rendered.contains("████"), "{rendered}");
     assert!(rendered.contains("Session  37% left"), "{rendered}");
     assert!(!rendered.contains("Focused :"), "{rendered}");
-    assert!(
-        rendered.contains("┃") || rendered.contains("·"),
-        "{rendered}"
-    );
 }
 
 #[test]
@@ -2293,9 +2225,11 @@ fn github_context_clamp_body_scroll_reduces_overscroll() {
     let view = github_view_for_fixture(&pr);
     let mut d = Dialog::GitHubContext {
         copied: false,
-        scroll: termrock::layout::DialogBodyScroll {
-            scroll_x: u16::MAX,
-            scroll_y: u16::MAX,
+        scroll: {
+            let mut __scroll = termrock::scroll::DialogScroll::default();
+            __scroll.scroll_x = u16::MAX;
+            __scroll.scroll_y = u16::MAX;
+            __scroll
         },
     };
 

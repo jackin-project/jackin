@@ -73,29 +73,32 @@ impl ShellRunner {
             cmd.envs(extra_env.iter().map(|(k, v)| (k.as_str(), v.as_str())));
         }
     }
-
-    fn log_command(&self, program: &str, args: &[&str], cwd: Option<&Path>) {
-        if self.debug {
-            let redacted = redact_env_args(args);
-            let cmd = format!("{} {}", program, redacted.join(" "));
-            if let Some(dir) = cwd {
-                jackin_diagnostics::emit_debug_line(
-                    "cmd",
-                    &format!("cd {} && {cmd}", dir.display()),
-                );
-            } else {
-                jackin_diagnostics::emit_debug_line("cmd", &cmd);
-            }
-        }
-    }
 }
 
 fn should_null_stdin(opts: &RunOptions) -> bool {
     opts.null_stdin || (!opts.interactive && jackin_diagnostics::rich_terminal_owned())
 }
 
-fn record_subprocess_done(program: &str, started: Instant, status: ExitStatus) {
-    jackin_diagnostics::operation_record_exit_code(status.code());
+#[derive(Debug, thiserror::Error)]
+enum ProcessBoundaryError {
+    #[error("process spawn failed")]
+    Spawn,
+    #[error("process I/O failed")]
+    Io,
+}
+
+fn record_subprocess_done(
+    operation: &jackin_telemetry::OperationGuard,
+    program: &str,
+    started: Instant,
+    status: ExitStatus,
+) {
+    if let Some(code) = status.code() {
+        let _attribute_result = operation.set_attr(jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::std_attrs::PROCESS_EXIT_CODE,
+            value: jackin_telemetry::Value::I64(i64::from(code)),
+        });
+    }
     jackin_diagnostics::active_subprocess_done(
         program,
         started.elapsed().as_millis() as u64,
@@ -232,15 +235,40 @@ enum CaptureMode {
     Secret,
 }
 
+fn captured_command_error(
+    program: &str,
+    args: &[&str],
+    stderr: &[u8],
+    mode: CaptureMode,
+) -> anyhow::Error {
+    if mode == CaptureMode::Secret {
+        return cmd_failed(program, args).into();
+    }
+    let stderr = String::from_utf8_lossy(stderr).trim().to_owned();
+    if stderr.is_empty() {
+        cmd_failed(program, args).into()
+    } else {
+        DockerError::CommandFailedWithStderr {
+            program: program.to_owned(),
+            args: args.join(" "),
+            stderr,
+        }
+        .into()
+    }
+}
+
 async fn await_child_with_timeout(
     child: &mut tokio::process::Child,
     program: &str,
     timeout: Option<std::time::Duration>,
 ) -> anyhow::Result<ExitStatus> {
     match timeout {
-        None => Ok(child.wait().await?),
+        None => child
+            .wait()
+            .await
+            .map_err(|_| ProcessBoundaryError::Io.into()),
         Some(dur) => match tokio::time::timeout(dur, child.wait()).await {
-            Ok(status) => Ok(status?),
+            Ok(status) => status.map_err(|_| ProcessBoundaryError::Io.into()),
             Err(_elapsed) => {
                 drop(child.kill().await);
                 drop(child.wait().await);
@@ -254,21 +282,78 @@ async fn await_child_with_timeout(
     }
 }
 
-fn enter_process_execute(program: &str, args: &[&str]) -> jackin_diagnostics::OperationGuard {
-    let redacted = redact_env_args(args).join(" ");
-    jackin_diagnostics::enter_operation(
-        jackin_diagnostics::otel_events::PROCESS_EXECUTE,
-        &[
-            (
-                jackin_diagnostics::otel_keys::PROCESS_COMMAND,
-                program.to_owned(),
-            ),
-            (
-                jackin_diagnostics::otel_keys::PROCESS_ARGS_REDACTED,
-                redacted,
-            ),
-        ],
+fn enter_process_execute(program: &str) -> jackin_telemetry::OperationGuard {
+    let executable = jackin_telemetry::process::classify_executable(Path::new(program)).as_str();
+    jackin_telemetry::operation_or_disabled(
+        &jackin_telemetry::operation::PROCESS_COMMAND,
+        &[jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::std_attrs::PROCESS_EXECUTABLE_NAME,
+            value: jackin_telemetry::Value::Str(executable),
+        }],
     )
+}
+
+fn process_execute_completion<T>(
+    result: &anyhow::Result<T>,
+) -> (
+    jackin_telemetry::schema::enums::OutcomeValue,
+    Option<jackin_telemetry::schema::enums::ErrorType>,
+) {
+    match result {
+        Ok(_) => (jackin_telemetry::schema::enums::OutcomeValue::Success, None),
+        Err(error)
+            if matches!(
+                error.downcast_ref::<DockerError>(),
+                Some(DockerError::CommandTimeout { .. })
+            ) =>
+        {
+            (
+                jackin_telemetry::schema::enums::OutcomeValue::Timeout,
+                Some(jackin_telemetry::schema::enums::ErrorType::Timeout),
+            )
+        }
+        Err(error)
+            if matches!(
+                error.downcast_ref::<DockerError>(),
+                Some(
+                    DockerError::CommandFailed { .. }
+                        | DockerError::CommandFailedWithStderr { .. }
+                        | DockerError::CommandFailedStderrSummary { .. }
+                        | DockerError::CommandFailedCapturedSuppressed { .. }
+                        | DockerError::CommandFailedSeeStderr { .. }
+                        | DockerError::DockerBuildFailed
+                )
+            ) =>
+        {
+            (
+                jackin_telemetry::schema::enums::OutcomeValue::Failure,
+                Some(jackin_telemetry::schema::enums::ErrorType::ProcessExitNonzero),
+            )
+        }
+        Err(error)
+            if matches!(
+                error.downcast_ref::<ProcessBoundaryError>(),
+                Some(ProcessBoundaryError::Io)
+            ) =>
+        {
+            (
+                jackin_telemetry::schema::enums::OutcomeValue::Failure,
+                Some(jackin_telemetry::schema::enums::ErrorType::IoError),
+            )
+        }
+        Err(_) => (
+            jackin_telemetry::schema::enums::OutcomeValue::Failure,
+            Some(jackin_telemetry::schema::enums::ErrorType::ProcessSpawnError),
+        ),
+    }
+}
+
+fn complete_process_execute<T>(
+    operation: jackin_telemetry::OperationGuard,
+    result: &anyhow::Result<T>,
+) {
+    let (outcome, error_type) = process_execute_completion(result);
+    operation.complete(outcome, error_type);
 }
 
 impl CommandRunner for ShellRunner {
@@ -279,74 +364,72 @@ impl CommandRunner for ShellRunner {
         cwd: Option<&Path>,
         opts: &RunOptions,
     ) -> anyhow::Result<()> {
-        let op_guard = enter_process_execute(program, args);
-        self.log_command(program, args, cwd);
+        let op_guard = enter_process_execute(program);
+        let result = async {
+            // `interactive` must own the real terminal, so the arms below resolve it
+            // before any capture arm — meaning interactive + capture silently drops
+            // the capture. Catch that illegal combination in tests/debug builds.
+            debug_assert!(
+                !(opts.interactive && (opts.capture_stdout || opts.capture_stderr)),
+                "RunOptions::interactive is mutually exclusive with capture_stdout/stderr"
+            );
 
-        // `interactive` must own the real terminal, so the arms below resolve it
-        // before any capture arm — meaning interactive + capture silently drops
-        // the capture. Catch that illegal combination in tests/debug builds.
-        debug_assert!(
-            !(opts.interactive && (opts.capture_stdout || opts.capture_stderr)),
-            "RunOptions::interactive is mutually exclusive with capture_stdout/stderr"
-        );
-
-        if opts.interactive {
-            // Interactive commands (the `docker exec -it` multiplexer / shell
-            // client) must inherit the real terminal. The --debug and
-            // rich-surface arms below would otherwise capture this output,
-            // denying the client its TTY and blocking forever on the
-            // long-lived session — so inherit stdio directly and never capture.
-            let mut cmd = Self::build_command(program, args, cwd);
-            Self::apply_run_opts(&mut cmd, opts);
-            let started = Instant::now();
-            let mut child = cmd.spawn()?;
-            let status = await_child_with_timeout(&mut child, program, opts.timeout).await?;
-            record_subprocess_done(program, started, status);
-            if !status.success() {
-                op_guard.complete(jackin_diagnostics::Outcome::Failure, None);
-                return Err(cmd_failed(program, args).into());
+            if opts.interactive {
+                // Interactive commands (the `docker exec -it` multiplexer / shell
+                // client) must inherit the real terminal. The --debug and
+                // rich-surface arms below would otherwise capture this output,
+                // denying the client its TTY and blocking forever on the
+                // long-lived session — so inherit stdio directly and never capture.
+                let mut cmd = Self::build_command(program, args, cwd);
+                Self::apply_run_opts(&mut cmd, opts);
+                let started = Instant::now();
+                let mut child = cmd.spawn().map_err(|_| ProcessBoundaryError::Spawn)?;
+                let status = await_child_with_timeout(&mut child, program, opts.timeout).await?;
+                record_subprocess_done(&op_guard, program, started, status);
+                if !status.success() {
+                    return Err(cmd_failed(program, args).into());
+                }
+            } else if opts.quiet {
+                let mut cmd = Self::build_command(program, args, cwd);
+                Self::apply_run_opts(&mut cmd, opts);
+                let started = Instant::now();
+                cmd.stdout(std::process::Stdio::null())
+                    .stderr(std::process::Stdio::null());
+                let mut child = cmd.spawn().map_err(|_| ProcessBoundaryError::Spawn)?;
+                let status = await_child_with_timeout(&mut child, program, opts.timeout).await?;
+                record_subprocess_done(&op_guard, program, started, status);
+                if !status.success() {
+                    return Err(cmd_failed(program, args).into());
+                }
+            } else if opts.capture_stderr || opts.capture_stdout {
+                Box::pin(self.run_captured(&op_guard, program, args, cwd, opts)).await?;
+            } else if self.debug || jackin_diagnostics::rich_terminal_owned() {
+                // This arm would otherwise inherit the terminal and stream raw
+                // command output straight to the screen — which floods a rich TUI
+                // and a --debug run. Capture both streams instead so raw output
+                // never corrupts the screen or enters telemetry.
+                let captured = RunOptions {
+                    capture_stdout: true,
+                    capture_stderr: true,
+                    ..opts.clone()
+                };
+                Box::pin(self.run_captured(&op_guard, program, args, cwd, &captured)).await?;
+            } else {
+                let mut cmd = Self::build_command(program, args, cwd);
+                Self::apply_run_opts(&mut cmd, opts);
+                let started = Instant::now();
+                let mut child = cmd.spawn().map_err(|_| ProcessBoundaryError::Spawn)?;
+                let status = await_child_with_timeout(&mut child, program, opts.timeout).await?;
+                record_subprocess_done(&op_guard, program, started, status);
+                if !status.success() {
+                    return Err(cmd_failed(program, args).into());
+                }
             }
-        } else if opts.quiet {
-            let mut cmd = Self::build_command(program, args, cwd);
-            Self::apply_run_opts(&mut cmd, opts);
-            let started = Instant::now();
-            cmd.stdout(std::process::Stdio::null())
-                .stderr(std::process::Stdio::null());
-            let mut child = cmd.spawn()?;
-            let status = await_child_with_timeout(&mut child, program, opts.timeout).await?;
-            record_subprocess_done(program, started, status);
-            if !status.success() {
-                op_guard.complete(jackin_diagnostics::Outcome::Failure, None);
-                return Err(cmd_failed(program, args).into());
-            }
-        } else if opts.capture_stderr || opts.capture_stdout {
-            Box::pin(self.run_captured(program, args, cwd, opts)).await?;
-        } else if self.debug || jackin_diagnostics::rich_terminal_owned() {
-            // This arm would otherwise inherit the terminal and stream raw
-            // command output straight to the screen — which floods a rich TUI
-            // and a --debug run. Capture both streams instead so the output
-            // lands in the diagnostics file (under --debug) and never on the
-            // screen.
-            let captured = RunOptions {
-                capture_stdout: true,
-                capture_stderr: true,
-                ..opts.clone()
-            };
-            Box::pin(self.run_captured(program, args, cwd, &captured)).await?;
-        } else {
-            let mut cmd = Self::build_command(program, args, cwd);
-            Self::apply_run_opts(&mut cmd, opts);
-            let started = Instant::now();
-            let mut child = cmd.spawn()?;
-            let status = await_child_with_timeout(&mut child, program, opts.timeout).await?;
-            record_subprocess_done(program, started, status);
-            if !status.success() {
-                op_guard.complete(jackin_diagnostics::Outcome::Failure, None);
-                return Err(cmd_failed(program, args).into());
-            }
+            Ok(())
         }
-        op_guard.complete(jackin_diagnostics::Outcome::Success, None);
-        Ok(())
+        .await;
+        complete_process_execute(op_guard, &result);
+        result
     }
 
     async fn capture(
@@ -377,12 +460,12 @@ impl ShellRunner {
     )]
     async fn run_captured(
         &self,
+        op_guard: &jackin_telemetry::OperationGuard,
         program: &str,
         args: &[&str],
         cwd: Option<&Path>,
         opts: &RunOptions,
     ) -> anyhow::Result<()> {
-        let op_guard = enter_process_execute(program, args);
         let mut cmd = Self::build_command(program, args, cwd);
         Self::apply_run_opts(&mut cmd, opts);
         if opts.capture_stdout {
@@ -392,29 +475,15 @@ impl ShellRunner {
             cmd.stderr(std::process::Stdio::piped());
         }
         let started = Instant::now();
-        let mut child = match cmd.spawn() {
-            Ok(child) => child,
-            Err(error) => {
-                jackin_diagnostics::operation_error(
-                    jackin_diagnostics::otel_events::PROCESS_EXECUTE,
-                    "process_spawn_error",
-                    &format!("failed to spawn {program}: {error}"),
-                    &[],
-                );
-                op_guard.complete(
-                    jackin_diagnostics::Outcome::Failure,
-                    Some("process_spawn_error"),
-                );
-                return Err(error.into());
-            }
+        let Ok(mut child) = cmd.spawn() else {
+            return Err(ProcessBoundaryError::Spawn.into());
         };
         let stdout_pipe = child.stdout.take();
         let stderr_pipe = child.stderr.take();
-        // Never stream child output to the terminal while a debug run is
-        // capturing (it belongs in the diagnostics file, not the screen) or
-        // while a rich full-screen TUI owns the terminal (it would corrupt
-        // the frame). In both cases the output is captured and, under
-        // --debug, written to the run's JSONL by `log_captured_output`.
+        // Never stream child output while debug handling or a rich full-screen
+        // TUI owns the terminal because it would corrupt the frame. Captured
+        // output is deliberately not emitted as telemetry:
+        // command output and arguments may contain user or provider data.
         let stream = opts.stream_captured_output
             && !self.debug
             && !jackin_diagnostics::rich_terminal_owned();
@@ -463,36 +532,10 @@ impl ShellRunner {
         } else {
             tokio::join!(child.wait(), read_stdout, read_stderr)
         };
-        let stdout_buf = stdout_result?;
-        let stderr_buf = stderr_result?;
-        let status = status?;
-        record_subprocess_done(program, started, status);
-        self.log_captured_output(program, args, &stdout_buf, &stderr_buf);
-        let command = format!("{} {}", program, redact_env_args(args).join(" "));
-        if opts.tee_to_build_log
-            && let Some(run) = jackin_diagnostics::active_run()
-        {
-            let wrote = run.write_command_output(
-                "docker-build",
-                &command,
-                cwd,
-                status,
-                &stdout_buf,
-                &stderr_buf,
-            );
-            if wrote.is_none() {
-                // Sidecar open failed (disk/perm/dir-gone). Land a compact
-                // entry in the run jsonl so the failure is at least visible
-                // to anyone reading the run afterwards.
-                // `launch_failure_cli_error` itself only consults the
-                // on-disk sidecar path, so without an artifact file the CLI
-                // surface will still fall back to the bare error.
-                run.compact(
-                    "docker-build",
-                    "failed to write docker-build diagnostics sidecar",
-                );
-            }
-        }
+        stdout_result.map_err(|_| ProcessBoundaryError::Io)?;
+        let stderr_buf = stderr_result.map_err(|_| ProcessBoundaryError::Io)?;
+        let status = status.map_err(|_| ProcessBoundaryError::Io)?;
+        record_subprocess_done(op_guard, program, started, status);
         if !status.success() {
             if opts.tee_to_build_log {
                 return Err(DockerError::DockerBuildFailed.into());
@@ -501,22 +544,6 @@ impl ShellRunner {
                 return Err(cmd_failed(program, args).into());
             }
             if !stream {
-                if let Some(run) = jackin_diagnostics::active_run().filter(|_| self.debug) {
-                    return Err(DockerError::CommandFailedDebugRun {
-                        program: program.to_owned(),
-                        args: args.join(" "),
-                        run_id: run.run_id().to_owned(),
-                    }
-                    .into());
-                }
-                if let Some(run) = jackin_diagnostics::active_run() {
-                    return Err(DockerError::CommandFailedSuppressed {
-                        program: program.to_owned(),
-                        args: args.join(" "),
-                        run_id: run.run_id().to_owned(),
-                    }
-                    .into());
-                }
                 if let Some(stderr) = summarize_stderr(&stderr_buf) {
                     return Err(DockerError::CommandFailedStderrSummary {
                         program: program.to_owned(),
@@ -531,30 +558,13 @@ impl ShellRunner {
                 }
                 .into());
             }
-            op_guard.complete(jackin_diagnostics::Outcome::Failure, None);
             return Err(DockerError::CommandFailedSeeStderr {
                 program: program.to_owned(),
                 args: args.join(" "),
             }
             .into());
         }
-        op_guard.complete(jackin_diagnostics::Outcome::Success, None);
         Ok(())
-    }
-
-    fn log_captured_output(&self, program: &str, args: &[&str], stdout: &[u8], stderr: &[u8]) {
-        if !self.debug {
-            return;
-        }
-        let command = format!("{} {}", program, redact_env_args(args).join(" "));
-        for line in String::from_utf8_lossy(stdout).lines() {
-            let line = jackin_diagnostics::scrub_secrets(line);
-            jackin_diagnostics::active_debug("cmd.stdout", &format!("{command}: {line}"));
-        }
-        for line in String::from_utf8_lossy(stderr).lines() {
-            let line = jackin_diagnostics::scrub_secrets(line);
-            jackin_diagnostics::active_debug("cmd.stderr", &format!("{command}: {line}"));
-        }
     }
 
     async fn do_capture(
@@ -564,47 +574,30 @@ impl ShellRunner {
         cwd: Option<&Path>,
         mode: CaptureMode,
     ) -> anyhow::Result<String> {
-        self.log_command(program, args, cwd);
-        let mut command = Self::build_command(program, args, cwd);
-        command
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped());
-        if jackin_diagnostics::rich_terminal_owned() {
-            command.stdin(std::process::Stdio::null());
-        }
-        let started = Instant::now();
-        let output = command.output().await?;
-        record_subprocess_done(program, started, output.status);
-        if !output.status.success() {
-            match mode {
-                CaptureMode::Secret => {
-                    return Err(cmd_failed(program, args).into());
-                }
-                CaptureMode::Normal => {
-                    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_owned();
-                    if stderr.is_empty() {
-                        return Err(cmd_failed(program, args).into());
-                    }
-                    return Err(DockerError::CommandFailedWithStderr {
-                        program: program.to_owned(),
-                        args: args.join(" "),
-                        stderr,
-                    }
-                    .into());
-                }
+        let operation = enter_process_execute(program);
+        let result = async {
+            let mut command = Self::build_command(program, args, cwd);
+            command
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped());
+            if jackin_diagnostics::rich_terminal_owned() {
+                command.stdin(std::process::Stdio::null());
             }
-        }
-        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_owned();
-        if self.debug && !stdout.is_empty() {
-            match mode {
-                CaptureMode::Normal => {
-                    let first_line = stdout.lines().next().unwrap_or("");
-                    jackin_diagnostics::emit_debug_line("cmd", &format!("-> {first_line}"));
-                }
-                CaptureMode::Secret => {}
+            let started = Instant::now();
+            let child = command.spawn().map_err(|_| ProcessBoundaryError::Spawn)?;
+            let output = child
+                .wait_with_output()
+                .await
+                .map_err(|_| ProcessBoundaryError::Io)?;
+            record_subprocess_done(&operation, program, started, output.status);
+            if !output.status.success() {
+                return Err(captured_command_error(program, args, &output.stderr, mode));
             }
+            Ok(String::from_utf8_lossy(&output.stdout).trim().to_owned())
         }
-        Ok(stdout)
+        .await;
+        complete_process_execute(operation, &result);
+        result
     }
 }
 

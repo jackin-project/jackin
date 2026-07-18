@@ -23,7 +23,7 @@ impl Dialog {
             diagnostics,
             copied_row: None,
             hovered_row: None,
-            scroll: termrock::layout::DialogBodyScroll::new(),
+            scroll: termrock::scroll::DialogScroll::new(),
         }
     }
 
@@ -33,8 +33,8 @@ impl Dialog {
     /// source of rows/order/labels/copy-affordances shared with the host
     /// console and launch cockpit. Returns `None` for other dialog variants.
     ///
-    /// Run id / diagnostics-log rows are included only under `--debug`, matching
-    /// the host. Versions are the exact `jackin --version` / `jackin-capsule
+    /// The invocation-id row is included only under `--debug`, matching the
+    /// host. Versions are the exact `jackin --version` / `jackin-capsule
     /// --version` strings.
     pub(crate) fn container_info_state(
         &self,
@@ -65,16 +65,7 @@ impl Dialog {
             .or(focused_agent.as_deref())
             .unwrap_or("(shell)")
             .to_owned();
-        let debug = debug_enabled && !diagnostics.run_id.is_empty();
-        // Pass the absolute path so the `file://` href the model builds is
-        // valid; `run_log_href` already carries it (`file://<abs>`).
-        let log_path = debug.then_some(()).and_then(|()| {
-            diagnostics
-                .run_log_href
-                .as_deref()
-                .and_then(|href| href.strip_prefix("file://"))
-                .map(str::to_owned)
-        });
+        let debug = debug_enabled && !diagnostics.invocation_id.is_empty();
         let mut state = crate::tui::components::container_info_surface::DebugInfo {
             jackin_version: Some(diagnostics.host_version.clone()),
             capsule_version: Some(env!("JACKIN_CAPSULE_VERSION").to_owned()),
@@ -82,26 +73,9 @@ impl Dialog {
             role: (!role.is_empty()).then(|| role.clone()),
             agent: Some(agent_label),
             target: (!workdir.is_empty()).then(|| workdir.clone()),
-            run_id: debug.then(|| diagnostics.run_id.clone()),
-            diagnostics_log_path: log_path,
+            run_id: debug.then(|| diagnostics.invocation_id.clone()),
         }
         .into_state();
-        if debug && let Some(href) = diagnostics.run_log_href.as_deref() {
-            state.push_row(
-                crate::tui::components::container_info_surface::ContainerInfoRow::new(
-                    "Reveal diagnostics",
-                    diagnostics.run_log_display.clone(),
-                )
-                .hyperlink(href.to_owned()),
-            );
-        } else if debug && !diagnostics.run_id.is_empty() {
-            state.push_row(
-                crate::tui::components::container_info_surface::ContainerInfoRow::new(
-                    "Telemetry",
-                    diagnostics.run_log_display.clone(),
-                ),
-            );
-        }
         if let Some(row) = *copied_row {
             state.mark_copied(row);
         }

@@ -14,17 +14,18 @@ use std::io::{Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use super::host_colors::query_host_terminal_colors;
 use anyhow::{Context, Result, bail};
 use directories::UserDirs;
 use jackin_core::JackinPaths;
 use jackin_core::container_paths;
 use jackin_protocol::attach::{
-    ClientFrame, ClientTerminal, ClipboardImage, ClipboardImageChunk, ClipboardImageEnd,
-    ClipboardImageStart, FileExportChunk, FileExportEnd, FileExportStart,
-    MAX_CLIPBOARD_IMAGE_BYTES, MAX_CLIPBOARD_IMAGE_CHUNK_BYTES, MAX_CLIPBOARD_IMAGE_ERROR_BYTES,
-    MAX_HOST_NOTICE_BYTES, ServerFrame, SpawnRequest, encode_client, read_server_frame,
+    AttachControlOperation, AttachControlRequest, AttachControlResult, ClientFrame, ClientTerminal,
+    ClipboardImage, ClipboardImageChunk, ClipboardImageEnd, ClipboardImageStart, FileExportChunk,
+    FileExportEnd, FileExportStart, MAX_CLIPBOARD_IMAGE_CHUNK_BYTES,
+    MAX_CLIPBOARD_IMAGE_ERROR_BYTES, MAX_CONTEXTUAL_CLIPBOARD_IMAGE_BYTES, MAX_HOST_NOTICE_BYTES,
+    ServerFrame, SpawnRequest, encode_client, read_server_frame,
 };
+use jackin_protocol::host_terminal::query_host_terminal_colors;
 use sha2::{Digest, Sha256};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::UnixStream;
@@ -55,6 +56,25 @@ const RESET_CLEAR_HOME: &[u8] = b"\x1b[0m\x1b[2J\x1b[H";
 const CLIENT_OWNED_MODE_STATE: &[u8] =
     b"\x1b[?7l\x1b[?9l\x1b[?1000l\x1b[?1002l\x1b[?1005l\x1b[?1015l\x1b[?1007l\x1b[?1003h\x1b[?1006h\x1b[?1004h";
 const HOST_FILE_EXPORT_DESTINATION_CATEGORY: &str = "host-downloads-jackin-instance";
+
+fn record_io_error() {
+    let _error =
+        jackin_telemetry::record_error(jackin_telemetry::schema::enums::ErrorType::IoError);
+}
+
+fn record_recovered_degradation() {
+    let _warning = jackin_telemetry::record_recovered_degradation();
+}
+
+fn remove_export_file(path: impl AsRef<Path>) {
+    if let Err(error) = fs::remove_file(path)
+        && error.kind() != std::io::ErrorKind::NotFound
+    {
+        record_io_error();
+    }
+}
+const RPC_ERROR: jackin_telemetry::schema::enums::ErrorType =
+    jackin_telemetry::schema::enums::ErrorType::RpcError;
 
 fn log_clipboard_image_paste_trigger() {
     jackin_diagnostics::emit_compact_line(
@@ -102,51 +122,45 @@ pub(super) async fn run_host_attach_session(
         env: env_overrides.to_vec(),
         terminal: ClientTerminal::from_env(),
         export_subdir: sanitize_export_path_component(container_name, "instance"),
-        diagnostics_run_dir: paths.data_dir.join("diagnostics/runs"),
     };
 
     match select_host_attach_transport(paths, container_name) {
         HostAttachTransportPlan::DirectSocket { socket_path } => {
-            jackin_diagnostics::debug_log!(
-                "attach",
-                "host attach using direct socket {}",
-                socket_path.display()
-            );
-            let stream = UnixStream::connect(&socket_path)
-                .await
-                .with_context(|| format!("connecting to {}", socket_path.display()))?;
+            let stream = jackin_diagnostics::operation::connection_attempt(
+                jackin_telemetry::schema::enums::ConnectionPeerType::CapsuleAttach,
+                UnixStream::connect(&socket_path),
+            )
+            .await
+            .with_context(|| format!("connecting to {}", socket_path.display()))?;
             let (reader, writer) = stream.into_split();
             run_terminal_attach(reader, writer, request).await
         }
-        HostAttachTransportPlan::AttachProxy {
-            socket_path,
-            direct_error,
-        } => {
-            jackin_diagnostics::debug_log!(
-                "attach",
-                "host attach using attach-proxy for {} (direct_error={:?})",
-                socket_path.display(),
-                direct_error
-            );
+        HostAttachTransportPlan::AttachProxy { .. } => {
             let process_request =
                 jackin_process::ExecRequest::new("docker", attach_proxy_exec_args(container_name))
                     .stdin_mode(jackin_process::StdioMode::Capture)
                     .stdout_mode(jackin_process::StdioMode::Capture)
                     .stderr_mode(jackin_process::StdioMode::Inherit);
-            let mut child = jackin_process::spawn_async(&process_request)
-                .context("starting docker attach-proxy")?;
-            let stdout = child
-                .stdout
-                .take()
-                .context("attach-proxy stdout was not piped")?;
-            let stdin = child
-                .stdin
-                .take()
-                .context("attach-proxy stdin was not piped")?;
+            let (operation, mut child) = crate::process_telemetry::spawn_async(&process_request)
+                .context("starting Docker attach proxy")?;
+            let Some(stdout) = child.stdout.take() else {
+                drop(child.kill().await);
+                operation.complete_failure(jackin_telemetry::schema::enums::ErrorType::IoError);
+                bail!("Docker attach proxy stdout was unavailable");
+            };
+            let Some(stdin) = child.stdin.take() else {
+                drop(child.kill().await);
+                operation.complete_failure(jackin_telemetry::schema::enums::ErrorType::IoError);
+                bail!("Docker attach proxy stdin was unavailable");
+            };
             let attach_result = run_terminal_attach(stdout, stdin, request).await;
-            let status = child.wait().await.context("waiting for attach-proxy")?;
+            let Ok(status) = child.wait().await else {
+                operation.complete_failure(jackin_telemetry::schema::enums::ErrorType::IoError);
+                bail!("waiting for Docker attach proxy failed");
+            };
+            operation.complete_status(status);
             if attach_result.is_ok() && !status.success() {
-                bail!("attach-proxy exited with {status}");
+                bail!("Docker attach proxy exited unsuccessfully");
             }
             attach_result
         }
@@ -160,7 +174,6 @@ struct HostAttachRequest {
     env: Vec<(String, String)>,
     terminal: ClientTerminal,
     export_subdir: String,
-    diagnostics_run_dir: PathBuf,
 }
 
 async fn run_terminal_attach<R, W>(
@@ -175,6 +188,7 @@ where
     let (rows, cols) = terminal_size();
     let mut stdout = std::io::stdout();
     let _cleanup = enter_host_attach_terminal(&mut stdout)?;
+    let _session = jackin_telemetry::identity::SessionGuard::begin_attachment()?;
     let mut stdin = tokio::io::stdin();
     let host_colors =
         query_host_terminal_colors(request.terminal.term.as_deref(), &mut stdin, &mut stdout).await;
@@ -206,12 +220,6 @@ where
               the protocol phases."
 )]
 #[expect(
-    clippy::cognitive_complexity,
-    reason = "Same justification as the too_many_lines allow: attach protocol \
-              async loop branching tracks the request/response routing arms, \
-              not algorithmic complexity."
-)]
-#[expect(
     clippy::too_many_arguments,
     reason = "Attach-protocol call site propagates the four server/terminal stream \
               handles plus geometry, request payload, initial input, and the winch \
@@ -235,6 +243,29 @@ where
     I: AsyncRead + Unpin,
     O: Write,
 {
+    let attrs = [
+        jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::std_attrs::RPC_SYSTEM_NAME,
+            value: jackin_telemetry::Value::Str("jackin"),
+        },
+        jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::std_attrs::RPC_METHOD,
+            value: jackin_telemetry::Value::Str("jackin.capsule.Attach/Handshake"),
+        },
+    ];
+    let mut handshake_operation =
+        jackin_telemetry::operation(&jackin_telemetry::operation::RPC_CLIENT, &attrs).ok();
+    let mut stream_open =
+        jackin_telemetry::stream::phase(jackin_telemetry::schema::enums::StreamOperation::Open);
+    let mut stream_close = None;
+    let mut context = jackin_protocol::TelemetryContext::v1();
+    if let Some(operation) = handshake_operation.as_ref() {
+        operation
+            .span()
+            .in_scope(|| jackin_telemetry::propagation::inject(&mut context));
+    } else {
+        jackin_telemetry::propagation::inject(&mut context);
+    }
     let hello = encode_client(ClientFrame::Hello {
         rows,
         cols,
@@ -242,29 +273,55 @@ where
         spawn: request.spawn_request,
         terminal: request.terminal,
         focus_session: request.focus_session,
+        context: Some(Box::new(context)),
     })
-    .context("encoding attach Hello frame")?;
-    server_writer
+    .context("encoding attach Hello frame");
+    let hello = match hello {
+        Ok(hello) => hello,
+        Err(error) => {
+            if let Some(operation) = handshake_operation {
+                operation.complete(
+                    jackin_telemetry::schema::enums::OutcomeValue::Failure,
+                    Some(RPC_ERROR),
+                );
+            }
+            jackin_telemetry::stream::complete_error(stream_open, RPC_ERROR);
+            return Err(error);
+        }
+    };
+    let hello_result = server_writer
         .write_all(&hello)
         .await
-        .context("sending attach Hello frame")?;
-    if !initial_input.is_empty() {
-        let msg = encode_client(ClientFrame::Input(initial_input))
-            .context("encoding pre-attach Input frame")?;
-        server_writer
-            .write_all(&msg)
-            .await
-            .context("attach socket write failed (pre-attach input)")?;
+        .context("sending attach Hello frame");
+    if let Err(error) = hello_result {
+        if let Some(operation) = handshake_operation {
+            operation.complete(
+                jackin_telemetry::schema::enums::OutcomeValue::Failure,
+                Some(RPC_ERROR),
+            );
+        }
+        jackin_telemetry::stream::complete_error(stream_open, RPC_ERROR);
+        return Err(error);
     }
-
     let mut stdin_buf = [0u8; 4096];
     let mut tag_buf = [0u8; 1];
     let mut file_exports = HostFileExports::new(request.export_subdir.clone());
+    let mut attach_operations = HashMap::new();
+    let mut detach_request = None;
     let mut export_cleanup_tick = tokio::time::interval(HOST_FILE_EXPORT_CLEANUP_TICK);
     export_cleanup_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
 
-    loop {
-        tokio::select! {
+    let result: Result<()> = async {
+        if !initial_input.is_empty() {
+            let msg = encode_client(ClientFrame::Input(initial_input))
+                .context("encoding pre-attach Input frame")?;
+            server_writer
+                .write_all(&msg)
+                .await
+                .context("attach socket write failed (pre-attach input)")?;
+        }
+        loop {
+            tokio::select! {
             result = server_reader.read_exact(&mut tag_buf) => {
                 if let Err(e) = result {
                     break Err(anyhow::anyhow!("attach socket closed unexpectedly: {e}"));
@@ -299,51 +356,27 @@ where
                         let message = match open_host_url(&url) {
                             Ok(()) => "Opening URL in host browser".to_owned(),
                             Err(err) => {
-                                let redacted = jackin_core::redact_url_for_log(&url);
-                                jackin_diagnostics::debug_log!(
-                                    "attach",
-                                    "host open URL failed for {redacted:?}: {err:#}"
-                                );
+                                record_io_error();
                                 format!("Host open URL failed: {err:#}")
                             }
                         };
-                        if let Err(err) = send_host_notice(&mut server_writer, &message).await {
-                            jackin_diagnostics::debug_log!(
-                                "attach",
-                                "host open URL notice failed: {err:#}"
-                            );
+                        if let Err(_error) = send_host_notice(&mut server_writer, &message).await {
+                            record_io_error();
                         }
                     }
-                    ServerFrame::HostRevealPath(path) => {
-                        let message = match reveal_allowed_host_path(
-                            Path::new(&path),
-                            &request.diagnostics_run_dir,
-                        ) {
-                            Ok(()) => "Revealing diagnostics file on host".to_owned(),
-                            Err(err) => {
-                                jackin_diagnostics::debug_log!(
-                                    "attach",
-                                    "host reveal path rejected for category={} basename={:?}: {err:#}",
-                                    host_reveal_path_category(Path::new(&path), &request.diagnostics_run_dir),
-                                    host_file_basename(Path::new(&path))
-                                );
-                                format!("Host reveal rejected: {err:#}")
-                            }
-                        };
-                        if let Err(err) = send_host_notice(&mut server_writer, &message).await {
-                            jackin_diagnostics::debug_log!(
-                                "attach",
-                                "host reveal path notice failed: {err:#}"
-                            );
+                    ServerFrame::HostRevealPath(_) => {
+                        let message = "Local telemetry files are not supported";
+                        if let Err(_error) = send_host_notice(&mut server_writer, message).await {
+                            record_io_error();
                         }
                     }
                     ServerFrame::HostStageImageFromClipboardPath => {
                         write_clipboard_image_request_result(
                             &mut server_writer,
+                            &mut attach_operations,
                             read_host_clipboard_text_path_image().await,
                             "host clipboard text is not an absolute readable image path or file:// image URL",
                             "host clipboard image path probe failed",
-                            "host clipboard image path response failed",
                         )
                         .await;
                     }
@@ -353,27 +386,21 @@ where
                     | ServerFrame::HostStageImageFromClipboard => {
                         write_clipboard_image_request_result(
                             &mut server_writer,
+                            &mut attach_operations,
                             read_host_clipboard_image().await,
                             "host clipboard does not contain a readable image",
                             "host clipboard image probe failed",
-                            "host clipboard image response failed",
                         )
                         .await;
                     }
                     ServerFrame::FileExportStart(start) => {
                         if let Err(err) = file_exports.start(start) {
-                            jackin_diagnostics::debug_log!(
-                                "attach",
-                                "host file export start failed: {err:#}"
-                            );
+                            record_io_error();
                             let message = format!("File export rejected: {err:#}");
-                            if let Err(notice_err) =
+                            if let Err(_notice_error) =
                                 send_host_notice(&mut server_writer, &message).await
                             {
-                                jackin_diagnostics::debug_log!(
-                                    "attach",
-                                    "host file export start notice failed: {notice_err:#}"
-                                );
+                                record_io_error();
                             }
                         }
                     }
@@ -381,18 +408,12 @@ where
                         let transfer_id = chunk.transfer_id;
                         if let Err(err) = file_exports.chunk(chunk) {
                             file_exports.abort(transfer_id);
-                            jackin_diagnostics::debug_log!(
-                                "attach",
-                                "host file export chunk failed: {err:#}"
-                            );
+                            record_io_error();
                             let message = format!("File export rejected: {err:#}");
-                            if let Err(notice_err) =
+                            if let Err(_notice_error) =
                                 send_host_notice(&mut server_writer, &message).await
                             {
-                                jackin_diagnostics::debug_log!(
-                                    "attach",
-                                    "host file export chunk notice failed: {notice_err:#}"
-                                );
+                                record_io_error();
                             }
                         }
                     }
@@ -400,31 +421,86 @@ where
                         let message = match file_exports.end(end) {
                             Ok(export) => file_export_success_notice(&export),
                             Err(err) => {
-                                jackin_diagnostics::debug_log!(
-                                    "attach",
-                                    "host file export end failed: {err:#}"
-                                );
+                                record_io_error();
                                 format!("File export rejected: {err:#}")
                             }
                         };
-                        if let Err(err) = send_host_notice(&mut server_writer, &message).await {
-                            jackin_diagnostics::debug_log!(
-                                "attach",
-                                "host file export end notice failed: {err:#}"
-                            );
+                        if let Err(_error) = send_host_notice(&mut server_writer, &message).await {
+                            record_io_error();
                         }
                     }
-                    ServerFrame::Welcome { .. } | ServerFrame::SessionList(_) => {}
+                    ServerFrame::Welcome { .. } => {
+                        if let Some(operation) = handshake_operation.take() {
+                            operation.complete(
+                                jackin_telemetry::schema::enums::OutcomeValue::Success,
+                                None,
+                            );
+                        }
+                        jackin_telemetry::stream::complete_success(stream_open.take());
+                        stream_close = Some(jackin_telemetry::stream::close_on_drop());
+                    }
+                    ServerFrame::SessionList(_) => {}
+                    ServerFrame::AttachControlResponse(response) => {
+                        if let Some(operation) = attach_operations.remove(&response.request_id) {
+                            let succeeded = response.result == AttachControlResult::Success;
+                            operation.complete(
+                                if succeeded {
+                                    jackin_telemetry::schema::enums::OutcomeValue::Success
+                                } else {
+                                    jackin_telemetry::schema::enums::OutcomeValue::Failure
+                                },
+                                (!succeeded).then_some(RPC_ERROR),
+                            );
+                        }
+                        if detach_request == Some(response.request_id) {
+                            break Ok(());
+                        }
+                    }
                 }
             }
 
-            result = terminal_input.read(&mut stdin_buf) => {
+            result = terminal_input.read(&mut stdin_buf), if detach_request.is_none() => {
                 let n = match result {
-                    Ok(0) => break Ok(()),
+                    Ok(0) => {
+                        let (request_id, context) = begin_attach_control(
+                            &mut attach_operations,
+                            "jackin.capsule.Attach/Detach",
+                        );
+                        write_attach_control(
+                            &mut server_writer,
+                            &mut attach_operations,
+                            request_id,
+                            &context,
+                            AttachControlOperation::Detach,
+                        )
+                        .await?;
+                        detach_request = Some(request_id);
+                        continue;
+                    }
                     Err(e) => break Err(anyhow::anyhow!("stdin read failed: {e}")),
                     Ok(n) => n,
                 };
                 let input = &stdin_buf[..n];
+                if matches!(input, b"\x1b[I" | b"\x1b[O") {
+                    let (request_id, context) = begin_attach_control(
+                        &mut attach_operations,
+                        "jackin.capsule.Attach/Focus",
+                    );
+                    let operation = if input == b"\x1b[I" {
+                        AttachControlOperation::FocusIn
+                    } else {
+                        AttachControlOperation::FocusOut
+                    };
+                    write_attach_control(
+                        &mut server_writer,
+                        &mut attach_operations,
+                        request_id,
+                        &context,
+                        operation,
+                    )
+                    .await?;
+                    continue;
+                }
                 // The two image sources are mutually exclusive by construction:
                 // Ctrl+V is the lone trigger byte (no surrounding bytes), while the
                 // pasted-path probe matches a bracketed paste. Branch on the trigger
@@ -437,23 +513,14 @@ where
                         log_clipboard_image_paste_trigger();
                         match read_image_for_paste_trigger(input).await {
                             Ok(Some(image)) => {
-                                jackin_diagnostics::debug_log!(
-                                    "attach",
-                                    "host clipboard image paste: format={:?} bytes={}",
-                                    image.format,
-                                    image.bytes.len()
-                                );
                                 Some((image, &[][..], &[][..]))
                             }
                             Ok(None) => {
                                 log_clipboard_image_no_image_forwarded();
                                 None
                             }
-                            Err(err) => {
-                                jackin_diagnostics::debug_log!(
-                                    "attach",
-                                    "host clipboard image paste probe failed: {err:#}"
-                                );
+                            Err(_error) => {
+                                record_recovered_degradation();
                                 log_clipboard_image_no_image_forwarded();
                                 None
                             }
@@ -465,21 +532,12 @@ where
                         // substituted downstream). Everything else forwards as text.
                         match read_image_from_pasted_path(input).await {
                             Ok(Some((image, prefix, suffix))) => {
-                                jackin_diagnostics::debug_log!(
-                                    "attach",
-                                    "host pasted-path image: format={:?} bytes={}",
-                                    image.format,
-                                    image.bytes.len()
-                                );
                                 log_clipboard_image_pasted_path_staged();
                                 Some((image, prefix, suffix))
                             }
                             Ok(None) => None,
-                            Err(err) => {
-                                jackin_diagnostics::debug_log!(
-                                    "attach",
-                                    "host pasted-path image probe failed: {err:#}"
-                                );
+                            Err(_error) => {
+                                record_recovered_degradation();
                                 None
                             }
                         }
@@ -490,17 +548,19 @@ where
                     if !prefix.is_empty() {
                         write_input_frame(&mut server_writer, prefix, "paste prefix").await?;
                     }
-                    match write_clipboard_image_frames(&mut server_writer, image).await {
+                    match write_clipboard_image_frames(
+                        &mut server_writer,
+                        &mut attach_operations,
+                        image,
+                    )
+                    .await
+                    {
                         Ok(()) => {
                             if !suffix.is_empty() {
                                 write_input_frame(&mut server_writer, suffix, "paste suffix").await?;
                             }
                         }
-                        Err(err) => {
-                            jackin_diagnostics::debug_log!(
-                                "attach",
-                                "host clipboard image frame rejected; forwarding original input: {err:#}"
-                            );
+                        Err(_error) => {
                             // The prefix already went out, so forward the remainder of
                             // the read verbatim (markers + body + suffix) to reconstruct
                             // the original input exactly — no double-send.
@@ -530,16 +590,37 @@ where
                         "File export interrupted: cleaned up {cleaned} temporary host file{}",
                         if cleaned == 1 { "" } else { "s" }
                     );
-                    if let Err(err) = send_host_notice(&mut server_writer, &message).await {
-                        jackin_diagnostics::debug_log!(
-                            "attach",
-                            "host file export cleanup notice failed: {err:#}"
-                        );
+                    if let Err(_error) = send_host_notice(&mut server_writer, &message).await {
+                        record_io_error();
                     }
                 }
             }
+            }
         }
     }
+    .await;
+    for (_, operation) in attach_operations {
+        operation.complete(
+            jackin_telemetry::schema::enums::OutcomeValue::Failure,
+            Some(RPC_ERROR),
+        );
+    }
+    if let Some(operation) = handshake_operation {
+        operation.complete(
+            jackin_telemetry::schema::enums::OutcomeValue::Failure,
+            Some(RPC_ERROR),
+        );
+    }
+    if stream_open.is_some() {
+        jackin_telemetry::stream::complete_error(stream_open, RPC_ERROR);
+    }
+    if let Some(close) = stream_close {
+        match &result {
+            Ok(()) => close.complete_success(),
+            Err(_) => close.complete_error(RPC_ERROR),
+        }
+    }
+    result
 }
 
 struct HostFileExports {
@@ -606,18 +687,6 @@ impl HostFileExports {
             .write(true)
             .open(&temp_path)
             .context("creating temporary host export file")?;
-        jackin_diagnostics::debug_log!(
-            "attach",
-            "host file export start transfer_id={} source_category={} basename={:?} bytes={} destination_category={} destination_basename={:?} reveal_after_export={} open_after_export={}",
-            start.transfer_id,
-            export_source_path_category(&start.source_path),
-            file_name,
-            start.size,
-            HOST_FILE_EXPORT_DESTINATION_CATEGORY,
-            host_file_basename(&final_path),
-            start.reveal_after_export,
-            start.open_after_export
-        );
         self.active.insert(
             start.transfer_id,
             ActiveHostFileExport {
@@ -687,7 +756,7 @@ impl HostFileExports {
             );
         };
         if active.written != active.expected_size {
-            drop(fs::remove_file(&active.temp_path));
+            remove_export_file(&active.temp_path);
             bail!(
                 "file export transfer {} ended after {} bytes, expected {}",
                 end.transfer_id,
@@ -706,31 +775,11 @@ impl HostFileExports {
         drop(active.file);
         let actual: [u8; 32] = active.hasher.finalize().into();
         if actual != end.sha256 {
-            drop(fs::remove_file(&active.temp_path));
-            jackin_diagnostics::debug_log!(
-                "attach",
-                "host file export digest mismatch transfer_id={} source_category={} bytes={} expected_sha256={} actual_sha256={} destination_category={}",
-                end.transfer_id,
-                export_source_path_category(&active.source_path),
-                active.written,
-                hex::encode(end.sha256),
-                hex::encode(actual),
-                HOST_FILE_EXPORT_DESTINATION_CATEGORY
-            );
+            remove_export_file(&active.temp_path);
             bail!("file export transfer {} SHA-256 mismatch", end.transfer_id);
         }
         fs::rename(&active.temp_path, &active.final_path)
             .context("moving temporary host export into final destination")?;
-        jackin_diagnostics::debug_log!(
-            "attach",
-            "host file export committed transfer_id={} source_category={} bytes={} sha256={} destination_category={} destination_basename={:?}",
-            end.transfer_id,
-            export_source_path_category(&active.source_path),
-            active.written,
-            hex::encode(actual),
-            HOST_FILE_EXPORT_DESTINATION_CATEGORY,
-            host_file_basename(&active.final_path)
-        );
         jackin_diagnostics::emit_compact_line(
             "host_file_export",
             &host_file_export_compact_line(
@@ -749,16 +798,7 @@ impl HostFileExports {
 
     fn abort(&mut self, transfer_id: u64) {
         if let Some(active) = self.active.remove(&transfer_id) {
-            jackin_diagnostics::debug_log!(
-                "attach",
-                "host file export abort transfer_id={} source_category={} bytes_written={} destination_category={} destination_basename={:?}",
-                transfer_id,
-                export_source_path_category(&active.source_path),
-                active.written,
-                HOST_FILE_EXPORT_DESTINATION_CATEGORY,
-                host_file_basename(&active.final_path)
-            );
-            drop(fs::remove_file(active.temp_path));
+            remove_export_file(active.temp_path);
         }
     }
 
@@ -788,7 +828,7 @@ impl HostFileExports {
 impl Drop for HostFileExports {
     fn drop(&mut self) {
         for (_, active) in self.active.drain() {
-            drop(fs::remove_file(active.temp_path));
+            remove_export_file(active.temp_path);
         }
     }
 }
@@ -829,6 +869,7 @@ fn host_file_export_compact_line(
     )
 }
 
+#[cfg(test)]
 fn host_file_basename(path: &Path) -> String {
     path.file_name()
         .and_then(|name| name.to_str())
@@ -851,101 +892,182 @@ where
     Ok(())
 }
 
-async fn write_clipboard_image_frames<W>(writer: &mut W, image: ClipboardImage) -> Result<()>
+fn begin_attach_control(
+    operations: &mut HashMap<u64, jackin_telemetry::operation::OperationGuard>,
+    method: &'static str,
+) -> (u64, jackin_protocol::TelemetryContext) {
+    static NEXT_REQUEST_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+    let request_id = NEXT_REQUEST_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let attrs = [
+        jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::std_attrs::RPC_SYSTEM_NAME,
+            value: jackin_telemetry::Value::Str("jackin"),
+        },
+        jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::std_attrs::RPC_METHOD,
+            value: jackin_telemetry::Value::Str(method),
+        },
+    ];
+    let operation =
+        jackin_telemetry::operation(&jackin_telemetry::operation::RPC_CLIENT, &attrs).ok();
+    let mut context = jackin_protocol::TelemetryContext::v1();
+    if let Some(operation) = operation.as_ref() {
+        operation
+            .span()
+            .in_scope(|| jackin_telemetry::propagation::inject(&mut context));
+    } else {
+        jackin_telemetry::propagation::inject(&mut context);
+    }
+    if let Some(operation) = operation {
+        operations.insert(request_id, operation);
+    }
+    (request_id, context)
+}
+
+async fn write_attach_control<W>(
+    writer: &mut W,
+    operations: &mut HashMap<u64, jackin_telemetry::operation::OperationGuard>,
+    request_id: u64,
+    context: &jackin_protocol::TelemetryContext,
+    operation: AttachControlOperation,
+) -> Result<()>
 where
     W: AsyncWrite + Unpin,
 {
-    if image.bytes.len() <= MAX_CLIPBOARD_IMAGE_BYTES {
-        let msg = encode_client(ClientFrame::ClipboardImage(image))
-            .context("encoding ClipboardImage frame")?;
-        writer
-            .write_all(&msg)
-            .await
-            .context("attach socket write failed (clipboard image)")?;
-        return Ok(());
+    let result: Result<()> = async {
+        let frame = encode_client(ClientFrame::AttachControl(AttachControlRequest {
+            request_id,
+            context: context.clone(),
+            operation,
+        }))?;
+        writer.write_all(&frame).await?;
+        Ok(())
+    }
+    .await;
+    if result.is_err()
+        && let Some(operation) = operations.remove(&request_id)
+    {
+        operation.complete(
+            jackin_telemetry::schema::enums::OutcomeValue::Failure,
+            Some(RPC_ERROR),
+        );
+    }
+    result.context("attach control socket write failed")
+}
+
+async fn write_clipboard_image_frames<W>(
+    writer: &mut W,
+    operations: &mut HashMap<u64, jackin_telemetry::operation::OperationGuard>,
+    image: ClipboardImage,
+) -> Result<()>
+where
+    W: AsyncWrite + Unpin,
+{
+    let (request_id, context) =
+        begin_attach_control(operations, "jackin.capsule.Attach/ClipboardImageTransfer");
+    if image.bytes.len() <= MAX_CONTEXTUAL_CLIPBOARD_IMAGE_BYTES {
+        return write_attach_control(
+            writer,
+            operations,
+            request_id,
+            &context,
+            AttachControlOperation::ClipboardImage(image),
+        )
+        .await;
     }
 
     let transfer_id = next_host_transfer_id();
     let size = u64::try_from(image.bytes.len()).context("clipboard image length overflow")?;
-    let start = encode_client(ClientFrame::ClipboardImageStart(ClipboardImageStart {
-        transfer_id,
-        format: image.format.clone(),
-        size,
-    }))
-    .context("encoding ClipboardImageStart frame")?;
-    writer
-        .write_all(&start)
-        .await
-        .context("attach socket write failed (clipboard image start)")?;
+    write_attach_control(
+        writer,
+        operations,
+        request_id,
+        &context,
+        AttachControlOperation::ClipboardImageStart(ClipboardImageStart {
+            transfer_id,
+            format: image.format.clone(),
+            size,
+        }),
+    )
+    .await?;
 
     let mut hasher = Sha256::new();
     let mut offset = 0u64;
     for chunk in image.bytes.chunks(MAX_CLIPBOARD_IMAGE_CHUNK_BYTES) {
         hasher.update(chunk);
-        let msg = encode_client(ClientFrame::ClipboardImageChunk(ClipboardImageChunk {
-            transfer_id,
-            offset,
-            bytes: chunk.to_vec(),
-        }))
-        .context("encoding ClipboardImageChunk frame")?;
-        writer
-            .write_all(&msg)
-            .await
-            .context("attach socket write failed (clipboard image chunk)")?;
+        write_attach_control(
+            writer,
+            operations,
+            request_id,
+            &context,
+            AttachControlOperation::ClipboardImageChunk(ClipboardImageChunk {
+                transfer_id,
+                offset,
+                bytes: chunk.to_vec(),
+            }),
+        )
+        .await?;
         offset = offset
             .checked_add(u64::try_from(chunk.len()).context("clipboard image chunk overflow")?)
             .ok_or_else(|| anyhow::anyhow!("clipboard image offset overflow"))?;
     }
 
     let sha256 = hasher.finalize().into();
-    let end = encode_client(ClientFrame::ClipboardImageEnd(ClipboardImageEnd {
-        transfer_id,
-        sha256,
-    }))
-    .context("encoding ClipboardImageEnd frame")?;
-    writer
-        .write_all(&end)
-        .await
-        .context("attach socket write failed (clipboard image end)")?;
-    Ok(())
+    write_attach_control(
+        writer,
+        operations,
+        request_id,
+        &context,
+        AttachControlOperation::ClipboardImageEnd(ClipboardImageEnd {
+            transfer_id,
+            sha256,
+        }),
+    )
+    .await
 }
 
-async fn send_clipboard_image_error<W>(writer: &mut W, message: &str) -> Result<()>
+async fn send_clipboard_image_error<W>(
+    writer: &mut W,
+    operations: &mut HashMap<u64, jackin_telemetry::operation::OperationGuard>,
+    message: &str,
+) -> Result<()>
 where
     W: AsyncWrite + Unpin,
 {
     let message = bounded_attach_message(message, MAX_CLIPBOARD_IMAGE_ERROR_BYTES);
-    let msg = encode_client(ClientFrame::ClipboardImageError(
-        jackin_protocol::attach::ClipboardImageError::from_message(message),
-    ))
-    .context("encoding ClipboardImageError frame")?;
-    writer
-        .write_all(&msg)
-        .await
-        .context("attach socket write failed (clipboard image error)")?;
-    Ok(())
+    let (request_id, context) =
+        begin_attach_control(operations, "jackin.capsule.Attach/ClipboardImageTransfer");
+    write_attach_control(
+        writer,
+        operations,
+        request_id,
+        &context,
+        AttachControlOperation::ClipboardImageError(
+            jackin_protocol::attach::ClipboardImageError::from_message(message),
+        ),
+    )
+    .await
 }
 
 async fn write_clipboard_image_request_result<W>(
     writer: &mut W,
+    operations: &mut HashMap<u64, jackin_telemetry::operation::OperationGuard>,
     image: Result<Option<ClipboardImage>>,
     empty_message: &str,
     probe_log_message: &str,
-    response_log_message: &str,
 ) where
     W: AsyncWrite + Unpin,
 {
     let result = match image {
-        Ok(Some(image)) => write_clipboard_image_frames(writer, image).await,
-        Ok(None) => send_clipboard_image_error(writer, empty_message).await,
+        Ok(Some(image)) => write_clipboard_image_frames(writer, operations, image).await,
+        Ok(None) => send_clipboard_image_error(writer, operations, empty_message).await,
         Err(err) => {
-            jackin_diagnostics::debug_log!("attach", "{probe_log_message}: {err:#}");
-            send_clipboard_image_error(writer, &format!("{probe_log_message}: {err:#}")).await
+            record_recovered_degradation();
+            send_clipboard_image_error(writer, operations, &format!("{probe_log_message}: {err:#}"))
+                .await
         }
     };
-    if let Err(err) = result {
-        jackin_diagnostics::debug_log!("attach", "{response_log_message}: {err:#}");
-    }
+    drop(result);
 }
 
 async fn send_host_notice<W>(writer: &mut W, message: &str) -> Result<()>
@@ -1052,8 +1174,7 @@ fn terminal_size() -> (u16, u16) {
 
 /// Run a post-export desktop action (`open`/`reveal`) and build the user
 /// notice. `success_verb` is the past-tense word for the OK message ("opened",
-/// "revealed"); `fail_verb` is the bare action word reused in both the debug
-/// log and the failure notice ("open", "reveal").
+/// "revealed"); `fail_verb` is the bare action word used in the failure notice.
 fn export_action_notice(
     export: &CompletedHostFileExport,
     action: impl FnOnce(&Path) -> Result<()>,
@@ -1066,12 +1187,8 @@ fn export_action_notice(
             export.final_path.display(),
             export.bytes
         ),
-        Err(err) => {
-            jackin_diagnostics::debug_log!(
-                "attach",
-                "host file export {fail_verb} failed for destination_basename={:?}: {err:#}",
-                host_file_basename(&export.final_path)
-            );
+        Err(_error) => {
+            record_io_error();
             format!(
                 "File exported; {fail_verb} failed: {} ({} bytes)",
                 export.final_path.display(),
@@ -1093,37 +1210,6 @@ fn file_export_success_notice(export: &CompletedHostFileExport) -> String {
         );
     }
     export_action_notice(export, reveal_host_file, "revealed", "reveal")
-}
-
-fn validate_allowed_host_reveal_path(path: &Path, diagnostics_run_dir: &Path) -> Result<PathBuf> {
-    let target = fs::canonicalize(path).context("resolving host reveal path")?;
-    let diagnostics_run_dir =
-        fs::canonicalize(diagnostics_run_dir).context("resolving diagnostics run directory")?;
-    if !target.starts_with(&diagnostics_run_dir) {
-        bail!("path is outside jackin diagnostics run directory");
-    }
-    if target.extension().and_then(|ext| ext.to_str()) != Some("jsonl") {
-        bail!("path is not a diagnostics JSONL file");
-    }
-    Ok(target)
-}
-
-fn reveal_allowed_host_path(path: &Path, diagnostics_run_dir: &Path) -> Result<()> {
-    let target = validate_allowed_host_reveal_path(path, diagnostics_run_dir)?;
-    reveal_host_file(&target)
-}
-
-fn host_reveal_path_category(path: &Path, diagnostics_run_dir: &Path) -> &'static str {
-    if path.starts_with(diagnostics_run_dir) {
-        return "jackin-diagnostics";
-    }
-    if path.starts_with(std::env::temp_dir()) {
-        return "host-temp";
-    }
-    if path.is_absolute() {
-        return "host-absolute";
-    }
-    "host-relative"
 }
 
 fn outer_terminal_reset_sequence() -> Vec<u8> {
@@ -1164,16 +1250,17 @@ struct RawModeGuard {
 impl Drop for RawModeGuard {
     fn drop(&mut self) {
         let mut stdout = std::io::stdout().lock();
-        if let Err(err) = stdout
+        if stdout
             .write_all(&outer_terminal_reset_sequence())
             .and_then(|()| stdout.flush())
+            .is_err()
         {
-            tracing::warn!("host attach: failed to write terminal reset on detach: {err}");
+            let _error =
+                jackin_telemetry::record_error(jackin_telemetry::schema::enums::ErrorType::IoError);
         }
-        if self.raw_mode
-            && let Err(err) = crossterm::terminal::disable_raw_mode()
-        {
-            tracing::warn!("host attach: failed to disable raw mode on detach: {err}");
+        if self.raw_mode && crossterm::terminal::disable_raw_mode().is_err() {
+            let _error =
+                jackin_telemetry::record_error(jackin_telemetry::schema::enums::ErrorType::IoError);
         }
     }
 }

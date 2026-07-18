@@ -57,12 +57,8 @@ impl WorkdirContext {
         let git_metadata = workdir.join(".git");
         let has_git_metadata = match git_metadata.try_exists() {
             Ok(present) => present,
-            Err(e) => {
-                crate::clog!(
-                    "workdir-context: .git try_exists at {} failed: {e} (errno={:?}); treating as not-a-git-repo",
-                    git_metadata.display(),
-                    e.raw_os_error()
-                );
+            Err(_error) => {
+                record_recovered_degradation();
                 false
             }
         };
@@ -108,39 +104,30 @@ pub(crate) fn command_in_path(name: &str) -> bool {
     let request = jackin_process::ExecRequest::new(name, ["--version"])
         .stdout_mode(jackin_process::StdioMode::Null)
         .stderr_mode(jackin_process::StdioMode::Null);
-    let mut child = match jackin_process::spawn_sync(&request) {
-        Ok(child) => child,
-        Err(e) => {
-            crate::clog!(
-                "command_in_path[{name}]: spawn failed: {e}; treating as unavailable for the daemon lifetime"
-            );
-            return false;
-        }
+    let Ok((operation, mut child)) = crate::process_telemetry::spawn_sync(&request) else {
+        return false;
     };
-    let label = format!("command_in_path[{name}]");
-    match wait_child_with_timeout(&mut child, &label, GIT_CONTEXT_COMMAND_TIMEOUT) {
-        WaitOutcome::Exited(status) if status.success() => true,
+    match wait_child_with_timeout(&mut child, GIT_CONTEXT_COMMAND_TIMEOUT) {
+        WaitOutcome::Exited(status) if status.success() => {
+            operation.complete_status(status, &[0]);
+            true
+        }
         WaitOutcome::Exited(status) => {
-            crate::cdebug!(
-                "command_in_path[{name}]: --version exited non-zero ({:?}); treating as unavailable",
-                status.code()
-            );
+            operation.complete_status(status, &[0]);
             false
         }
         WaitOutcome::Reaped => {
-            crate::clog!(
-                "command_in_path[{name}]: child was reaped before status collection; treating as available"
-            );
+            operation.complete_reaped();
             true
         }
-        WaitOutcome::Failed(e) => {
-            crate::clog!(
-                "command_in_path[{name}]: try_wait failed: {e} (errno={:?}); treating as unavailable for the daemon lifetime",
-                e.raw_os_error()
-            );
+        WaitOutcome::Failed => {
+            operation.complete_io_failure();
             false
         }
-        WaitOutcome::TimedOut => false,
+        WaitOutcome::TimedOut => {
+            operation.complete_timeout();
+            false
+        }
     }
 }
 
@@ -187,17 +174,14 @@ pub(crate) fn start_git_context_watcher(
     event_tx: mpsc::UnboundedSender<SessionEvent>,
 ) {
     let Some(git_dir) = git_dir_for_watch(&workdir) else {
-        crate::cdebug!(
-            "git-context-watch: no git metadata dir for {}; relying on periodic poll",
-            workdir.display()
-        );
         return;
     };
-    let builder = std::thread::Builder::new().name("git-context-watch".to_owned());
-    if let Err(err) = builder.spawn(move || watch_git_head_changes(git_dir, event_tx)) {
-        crate::clog!(
-            "git-context-watch: failed to spawn watcher thread: {err}; relying on periodic poll"
-        );
+    if let Err(_error) =
+        jackin_telemetry::spawn::thread_stream_named("git-context-watch".to_owned(), move || {
+            watch_git_head_changes(git_dir, event_tx);
+        })
+    {
+        record_recovered_degradation();
     }
 }
 
@@ -225,31 +209,38 @@ fn git_dir_for_watch(workdir: &Path) -> Option<PathBuf> {
 
 #[cfg(target_os = "linux")]
 fn watch_git_head_changes(git_dir: PathBuf, event_tx: mpsc::UnboundedSender<SessionEvent>) {
+    let open =
+        jackin_telemetry::stream::phase(jackin_telemetry::schema::enums::StreamOperation::Open);
     let instance = match Inotify::init(InitFlags::IN_CLOEXEC) {
         Ok(instance) => instance,
-        Err(err) => {
-            crate::clog!(
-                "git-context-watch: inotify init failed for {}: {err}; relying on periodic poll",
-                git_dir.display()
+        Err(_error) => {
+            record_io_error();
+            jackin_telemetry::stream::complete_error(
+                open,
+                jackin_telemetry::schema::enums::ErrorType::IoError,
             );
             return;
         }
     };
-    if let Err(err) = instance.add_watch(git_dir.as_path(), GIT_CONTEXT_WATCH_MASK) {
-        crate::clog!(
-            "git-context-watch: add_watch failed for {}: {err}; relying on periodic poll",
-            git_dir.display()
+    if let Err(_error) = instance.add_watch(git_dir.as_path(), GIT_CONTEXT_WATCH_MASK) {
+        record_io_error();
+        jackin_telemetry::stream::complete_error(
+            open,
+            jackin_telemetry::schema::enums::ErrorType::IoError,
         );
         return;
     }
-    crate::cdebug!("git-context-watch: watching {}", git_dir.display());
+    jackin_telemetry::stream::complete_success(open);
     loop {
         let events = match instance.read_events() {
             Ok(events) => events,
-            Err(err) => {
-                crate::clog!(
-                    "git-context-watch: read_events failed for {}: {err}; relying on periodic poll",
-                    git_dir.display()
+            Err(_error) => {
+                record_io_error();
+                jackin_telemetry::stream::complete_error(
+                    jackin_telemetry::stream::phase(
+                        jackin_telemetry::schema::enums::StreamOperation::Close,
+                    ),
+                    jackin_telemetry::schema::enums::ErrorType::IoError,
                 );
                 return;
             }
@@ -266,6 +257,9 @@ fn watch_git_head_changes(git_dir: PathBuf, event_tx: mpsc::UnboundedSender<Sess
                 .send(SessionEvent::GitBranchContextRefreshRequested)
                 .is_err()
         {
+            jackin_telemetry::stream::complete_success(jackin_telemetry::stream::phase(
+                jackin_telemetry::schema::enums::StreamOperation::Close,
+            ));
             return;
         }
     }
@@ -325,8 +319,7 @@ fn git_context_from_subprocess(workdir: &Path) -> GitContext {
 pub(crate) fn read_context_from_git_metadata(workdir: &Path) -> Option<GitContext> {
     let metadata = git_metadata_dirs(workdir)?;
     let head_path = metadata.git_dir.join("HEAD");
-    let head =
-        crate::util::read_text_bounded(".git/HEAD", &head_path, GIT_METADATA_FILE_MAX_BYTES)?;
+    let head = crate::util::read_text_bounded(&head_path, GIT_METADATA_FILE_MAX_BYTES)?;
     let trimmed = head.trim();
     if let Some(ref_name) = trimmed.strip_prefix("ref: ") {
         let oid = read_git_ref_oid(
@@ -345,7 +338,6 @@ pub(crate) fn read_context_from_git_metadata(workdir: &Path) -> Option<GitContex
     Some(if let Some(head) = Oid::parse(trimmed) {
         GitContext::Detached { head }
     } else {
-        cdebug_malformed_git_file(".git/HEAD", &head_path, trimmed);
         GitContext::Absent
     })
 }
@@ -363,11 +355,8 @@ fn git_metadata_dirs(workdir: &Path) -> Option<GitMetadataDirs> {
             common_git_dir: None,
         });
     }
-    let git_file = crate::util::read_text_bounded(".git", &git_path, GIT_METADATA_FILE_MAX_BYTES)?;
-    let Some(suffix) = git_file.trim().strip_prefix("gitdir:") else {
-        cdebug_malformed_git_file(".git", &git_path, &git_file);
-        return None;
-    };
+    let git_file = crate::util::read_text_bounded(&git_path, GIT_METADATA_FILE_MAX_BYTES)?;
+    let suffix = git_file.trim().strip_prefix("gitdir:")?;
     let git_dir = PathBuf::from(suffix.trim());
     let git_dir = if git_dir.is_absolute() {
         git_dir
@@ -382,8 +371,7 @@ fn git_metadata_dirs(workdir: &Path) -> Option<GitMetadataDirs> {
 }
 
 fn common_git_dir(git_dir: &Path, max_bytes: u64) -> Option<PathBuf> {
-    let raw =
-        crate::util::read_text_bounded(".git/commondir", &git_dir.join("commondir"), max_bytes)?;
+    let raw = crate::util::read_text_bounded(&git_dir.join("commondir"), max_bytes)?;
     let path = PathBuf::from(raw.trim());
     Some(if path.is_absolute() {
         path
@@ -417,7 +405,7 @@ pub(crate) fn read_git_ref_oid(
 }
 
 fn read_loose_git_ref_oid(path: &Path) -> Option<Oid> {
-    let raw = crate::util::read_text_bounded("git ref", path, GIT_LOOSE_REF_MAX_BYTES)?;
+    let raw = crate::util::read_text_bounded(path, GIT_LOOSE_REF_MAX_BYTES)?;
     let trimmed = raw.trim();
     if trimmed.starts_with("ref: ") {
         // Legitimate symref content (`git symbolic-ref refs/heads/foo
@@ -432,7 +420,6 @@ fn read_loose_git_ref_oid(path: &Path) -> Option<Oid> {
         // a hash format jackin❯ doesn't recognise. Distinguish from
         // the file-missing case (logged by `read_text_bounded` itself)
         // so triage can localise.
-        cdebug_malformed_git_file("git ref", path, trimmed);
         return None;
     };
     Some(oid)
@@ -442,12 +429,8 @@ pub(crate) fn read_packed_git_ref_oid(path: &Path, ref_name: &str) -> Option<Oid
     let metadata = match std::fs::metadata(path) {
         Ok(m) => m,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return None,
-        Err(e) => {
-            crate::cdebug!(
-                "packed-refs: stat {} failed: {e} (errno={:?})",
-                path.display(),
-                e.raw_os_error(),
-            );
+        Err(_error) => {
+            record_recovered_degradation();
             return None;
         }
     };
@@ -456,7 +439,7 @@ pub(crate) fn read_packed_git_ref_oid(path: &Path, ref_name: &str) -> Option<Oid
         // silently miss same-length rewrites. Parse fresh every call
         // on this workdir; log once per path so an operator on an
         // exotic filesystem sees why the cache is not engaging without
-        // a per-poll firehose.
+        // a per-poll telemetry firehose.
         log_mtime_unavailable_once(path);
         return parse_packed_refs_for_ref(path, &metadata, ref_name);
     };
@@ -477,12 +460,6 @@ pub(crate) fn read_packed_git_ref_oid(path: &Path, ref_name: &str) -> Option<Oid
         // A truncated read can only produce a partial ref map; caching
         // it would poison every future lookup with a wrong "absent"
         // answer until the file's (len, mtime) signature changes.
-        crate::clog!(
-            "packed-refs: refusing to cache truncated read for {} (file_len={}, cap={} bytes)",
-            path.display(),
-            metadata.len(),
-            PACKED_REFS_MAX_BYTES
-        );
         return oid;
     }
     insert_packed_refs_cache_entry(path, PackedRefsCacheEntry { signature, refs });
@@ -500,7 +477,7 @@ fn load_packed_refs(
     metadata: &std::fs::Metadata,
 ) -> Option<(HashMap<String, Oid>, bool)> {
     let truncated = metadata.len() > PACKED_REFS_MAX_BYTES;
-    let raw = crate::util::read_text_bounded("packed-refs", path, PACKED_REFS_MAX_BYTES)?;
+    let raw = crate::util::read_text_bounded(path, PACKED_REFS_MAX_BYTES)?;
     Some((parse_packed_git_refs(&raw, truncated), truncated))
 }
 
@@ -537,10 +514,7 @@ fn log_mtime_unavailable_once(path: &Path) {
         guard.insert(path.to_path_buf())
     };
     if new_entry {
-        crate::clog!(
-            "packed-refs: modified() unavailable for {}; bypassing cache for this path",
-            path.display()
-        );
+        record_recovered_degradation();
     }
 }
 
@@ -552,7 +526,7 @@ pub(crate) fn with_packed_refs_cache<R>(
     f: impl FnOnce(&mut HashMap<PathBuf, PackedRefsCacheEntry>) -> R,
 ) -> R {
     let mut guard = PACKED_REFS_CACHE.lock().unwrap_or_else(|poisoned| {
-        crate::clog!("packed-refs: cache mutex was poisoned, recovering inner map");
+        record_recovered_degradation();
         poisoned.into_inner()
     });
     f(&mut guard)
@@ -620,17 +594,17 @@ const GIT_LOOSE_REF_MAX_BYTES: u64 = 64 * 1024;
 static PACKED_REFS_CACHE: LazyLock<Mutex<HashMap<PathBuf, PackedRefsCacheEntry>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
-/// Paths whose mtime is unavailable have had a cache-bypass `clog!`
-/// emitted at least once. Prevents a poll-rate firehose on exotic
-/// filesystems while still surfacing the bypass once for triage.
+/// Paths whose mtime is unavailable have emitted one governed recovery.
+/// Prevents a poll-rate firehose on exotic filesystems.
 static PACKED_REFS_MTIME_UNAVAILABLE_LOGGED: LazyLock<Mutex<HashSet<PathBuf>>> =
     LazyLock::new(|| Mutex::new(HashSet::new()));
 
-fn cdebug_malformed_git_file(label: &str, path: &Path, raw: &str) {
-    crate::cdebug!(
-        "{label}: {} content unexpected (len={}, first 64: {:?})",
-        path.display(),
-        raw.len(),
-        raw.chars().take(64).collect::<String>(),
-    );
+fn record_recovered_degradation() {
+    let _warning = jackin_telemetry::record_recovered_degradation();
+}
+
+#[cfg(target_os = "linux")]
+fn record_io_error() {
+    let _error =
+        jackin_telemetry::record_error(jackin_telemetry::schema::enums::ErrorType::IoError);
 }

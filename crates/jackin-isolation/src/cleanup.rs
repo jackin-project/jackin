@@ -15,7 +15,6 @@
 
 use crate::state::{IsolationRecord, remove_record};
 use jackin_core::CommandRunner;
-use jackin_diagnostics::debug_log;
 use std::path::Path;
 
 /// Force-delete an isolated worktree and its scratch branch, then remove
@@ -42,78 +41,47 @@ pub async fn force_cleanup_isolated(
     }
 
     let host_repo_exists = Path::new(&record.original_src).exists();
-    debug_log!(
-        "isolation",
-        "force_cleanup_isolated: container={c} mount={d} branch={b} worktree={w} host_repo_exists={exists}",
-        c = record.container_name,
-        d = record.mount_dst,
-        b = record.scratch_branch,
-        w = record.worktree_path,
-        exists = host_repo_exists,
-    );
 
     if host_repo_exists {
-        debug_log!(
-            "isolation",
-            "git -C {src} worktree remove --force {wt}",
-            src = record.original_src,
-            wt = record.worktree_path,
+        drop(
+            runner
+                .run(
+                    "git",
+                    &[
+                        "-C",
+                        &record.original_src,
+                        "worktree",
+                        "remove",
+                        "--force",
+                        &record.worktree_path,
+                    ],
+                    None,
+                    &jackin_core::RunOptions {
+                        quiet: true,
+                        ..Default::default()
+                    },
+                )
+                .await,
         );
-        let wt_remove_result = runner
-            .run(
-                "git",
-                &[
-                    "-C",
-                    &record.original_src,
-                    "worktree",
-                    "remove",
-                    "--force",
-                    &record.worktree_path,
-                ],
-                None,
-                &jackin_core::RunOptions {
-                    quiet: true,
-                    ..Default::default()
-                },
-            )
-            .await;
-        if let Err(e) = &wt_remove_result {
-            debug_log!(
-                "isolation",
-                "git worktree remove returned error for {wt}: {e} (verifying via wt.exists())",
-                wt = record.worktree_path,
-            );
-        }
-        debug_log!(
-            "isolation",
-            "git -C {src} branch -D {branch}",
-            src = record.original_src,
-            branch = record.scratch_branch,
+        drop(
+            runner
+                .run(
+                    "git",
+                    &[
+                        "-C",
+                        &record.original_src,
+                        "branch",
+                        "-D",
+                        &record.scratch_branch,
+                    ],
+                    None,
+                    &jackin_core::RunOptions {
+                        quiet: true,
+                        ..Default::default()
+                    },
+                )
+                .await,
         );
-        let branch_delete_result = runner
-            .run(
-                "git",
-                &[
-                    "-C",
-                    &record.original_src,
-                    "branch",
-                    "-D",
-                    &record.scratch_branch,
-                ],
-                None,
-                &jackin_core::RunOptions {
-                    quiet: true,
-                    ..Default::default()
-                },
-            )
-            .await;
-        if let Err(e) = &branch_delete_result {
-            debug_log!(
-                "isolation",
-                "git branch -D returned error for {branch}: {e} (verifying via branch_still_present())",
-                branch = record.scratch_branch,
-            );
-        }
 
         // Verify the branch is actually gone. If `branch -D` errored
         // because the branch was already deleted, the verification
@@ -131,11 +99,6 @@ pub async fn force_cleanup_isolated(
             .into());
         }
     } else {
-        debug_log!(
-            "isolation",
-            "skipping git cleanup: host repo {src} no longer exists",
-            src = record.original_src,
-        );
         eprintln!(
             "[jackin] warning: host repo `{src}` no longer exists; \
              cannot run git cleanup for `{dst}`. The orphan admin entry under \
@@ -150,20 +113,15 @@ pub async fn force_cleanup_isolated(
     // anything. Surface fs errors loudly — a failed rm-rf with the
     // worktree still present means cleanup didn't really happen.
     let wt = Path::new(&record.worktree_path);
-    if wt.exists() {
-        debug_log!(
-            "isolation",
-            "fallback rm -rf {wt} (git did not remove it)",
-            wt = record.worktree_path,
-        );
-        if let Err(e) = std::fs::remove_dir_all(wt) {
-            return Err(crate::IsolationError::WorktreeRemove {
-                path: record.worktree_path.clone(),
-                state_dir: container_state_dir.to_path_buf(),
-                source: e,
-            }
-            .into());
+    if wt.exists()
+        && let Err(e) = std::fs::remove_dir_all(wt)
+    {
+        return Err(crate::IsolationError::WorktreeRemove {
+            path: record.worktree_path.clone(),
+            state_dir: container_state_dir.to_path_buf(),
+            source: e,
         }
+        .into());
     }
 
     // Final guard: if the worktree path still exists at this point
@@ -181,13 +139,6 @@ pub async fn force_cleanup_isolated(
 }
 
 fn force_cleanup_clone(record: &IsolationRecord, container_state_dir: &Path) -> anyhow::Result<()> {
-    debug_log!(
-        "isolation",
-        "force_cleanup_clone: container={c} mount={d} clone={w}",
-        c = record.container_name,
-        d = record.mount_dst,
-        w = record.worktree_path,
-    );
     let clone_path = Path::new(&record.worktree_path);
     if clone_path.exists() {
         std::fs::remove_dir_all(clone_path).map_err(|e| crate::IsolationError::CloneRemove {
@@ -238,12 +189,6 @@ pub async fn purge_isolated_for_container(
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<()> {
     let records = crate::state::read_records(container_state_dir)?;
-    debug_log!(
-        "isolation",
-        "purge_isolated_for_container: {n} record(s) under {dir}",
-        n = records.len(),
-        dir = container_state_dir.display(),
-    );
     let mut failed: Vec<String> = Vec::new();
     for rec in records {
         if let Err(e) = force_cleanup_isolated(&rec, container_state_dir, runner).await {

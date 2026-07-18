@@ -29,11 +29,11 @@ const GROK_BASE_FALLBACK: &str = "https://storage.googleapis.com/grok-build-publ
 
 static GITHUB_AUTH_TOKEN: OnceCell<Option<String>> = OnceCell::const_new();
 
-fn record_agent_binary_failure(error_type: &'static str, body: &'static str) {
-    let span = jackin_diagnostics::operation_span("launch.prepare", &[]);
-    span.in_scope(|| {
-        jackin_diagnostics::operation_error("launch.prepare", error_type, body, &[]);
-    });
+fn record_agent_binary_failure(body: &'static str) {
+    let _error = jackin_telemetry::record_error(
+        jackin_telemetry::schema::enums::ErrorType::CapsuleDownloadFailed,
+    );
+    jackin_diagnostics::emit_operator_notice(body);
 }
 
 #[derive(Debug, Clone)]
@@ -93,6 +93,10 @@ async fn ensure_available_impl(
         install_test_stub(paths, agent).context("installing in-process agent binary test stub")?;
     }
     if is_executable_file_async(&stub_path).await {
+        crate::telemetry_boundary::cache_decision(
+            jackin_telemetry::schema::enums::CacheName::AgentBinary,
+            jackin_telemetry::schema::enums::CacheResult::Hit,
+        );
         record(
             "agent_binary_cache_hit",
             &format!("{} test stub at {}", agent.slug(), stub_path.display()),
@@ -104,10 +108,14 @@ async fn ensure_available_impl(
         });
     }
 
-    // Metadata cache hit (TTL: 1hr): skip the network resolve. Absence of the
-    // preceding `agent_binary_resolve_started` record is what marks this path
-    // in the diagnostics run.
+    // Metadata cache hit (TTL: 1hr): skip the network resolve. The governed
+    // cache-decision event below records this path without exposing the cache
+    // location.
     if let Some(cached_release) = read_cached_release_async(paths, agent).await {
+        crate::telemetry_boundary::cache_decision(
+            jackin_telemetry::schema::enums::CacheName::AgentBinary,
+            jackin_telemetry::schema::enums::CacheResult::Hit,
+        );
         let cached = cached_binary_path(paths, &cached_release);
         return ensure_binary_or_cached_fallback(
             paths,
@@ -123,6 +131,10 @@ async fn ensure_available_impl(
     if let Some((_, fallback_release, fallback_path)) =
         newest_cached_executable_release_async(paths, agent).await
     {
+        crate::telemetry_boundary::cache_decision(
+            jackin_telemetry::schema::enums::CacheName::AgentBinary,
+            jackin_telemetry::schema::enums::CacheResult::Stale,
+        );
         spawn_release_metadata_refresh(paths.clone(), agent);
         return ensure_binary_for_release(agent, &fallback_release, &fallback_path).await;
     }
@@ -148,10 +160,7 @@ async fn ensure_available_impl(
                 "agent_binary_failed",
                 &format!("{} resolve failed: {error:#}", agent.slug()),
             );
-            record_agent_binary_failure(
-                "agent_binary_resolve_failed",
-                "agent binary release resolution failed",
-            );
+            record_agent_binary_failure("agent binary release resolution failed");
             return Err(error).with_context(|| format!("resolving latest {} binary", agent.slug()));
         }
     };
@@ -177,35 +186,43 @@ fn spawn_release_metadata_refresh(paths: JackinPaths, agent: Agent) {
         drop((paths, agent));
     }
     #[cfg(not(test))]
-    tokio::spawn(async move {
-        record(
-            "agent_binary_resolve_started",
-            &format!("{} latest release background", agent.slug()),
-        );
-        match resolve_latest_release(agent).await {
-            Ok(release) => {
-                record(
-                    "agent_binary_resolved",
-                    &format!(
-                        "{} {} from {} background",
-                        agent.slug(),
-                        release.version,
-                        release.url
-                    ),
-                );
-                persist_release_cache_async(&paths, &release).await;
+    jackin_telemetry::spawn::spawn_prewarm_job(
+        jackin_telemetry::schema::enums::JobType::ImagePrewarm,
+        async move {
+            record(
+                "agent_binary_resolve_started",
+                &format!("{} latest release background", agent.slug()),
+            );
+            match resolve_latest_release(agent).await {
+                Ok(release) => {
+                    record(
+                        "agent_binary_resolved",
+                        &format!(
+                            "{} {} from {} background",
+                            agent.slug(),
+                            release.version,
+                            release.url
+                        ),
+                    );
+                    persist_release_cache_async(&paths, &release).await;
+                    jackin_telemetry::spawn::DetachedCompletion::success()
+                }
+                Err(error) => {
+                    record(
+                        "warning",
+                        &format!(
+                            "{} background latest version lookup failed: {error:#}",
+                            agent.slug()
+                        ),
+                    );
+                    jackin_telemetry::spawn::DetachedCompletion::failure(
+                        jackin_telemetry::schema::enums::ErrorType::HttpError,
+                    )
+                }
             }
-            Err(error) => {
-                record(
-                    "warning",
-                    &format!(
-                        "{} background latest version lookup failed: {error:#}",
-                        agent.slug()
-                    ),
-                );
-            }
-        }
-    });
+        },
+        |completion| *completion,
+    );
 }
 
 /// Build `release` into `cached`; on failure, fall back to the newest cached
@@ -260,6 +277,10 @@ async fn ensure_binary_for_release(
     cached: &Path,
 ) -> Result<AgentBinary> {
     if is_executable_file_async(cached).await {
+        crate::telemetry_boundary::cache_decision(
+            jackin_telemetry::schema::enums::CacheName::AgentBinary,
+            jackin_telemetry::schema::enums::CacheResult::Hit,
+        );
         record(
             "agent_binary_cache_hit",
             &format!(
@@ -276,6 +297,10 @@ async fn ensure_binary_for_release(
         });
     }
     if repair_cached_binary_mode_async(cached).await? {
+        crate::telemetry_boundary::cache_decision(
+            jackin_telemetry::schema::enums::CacheName::AgentBinary,
+            jackin_telemetry::schema::enums::CacheResult::Reuse,
+        );
         record(
             "agent_binary_cache_repaired",
             &format!(
@@ -291,6 +316,10 @@ async fn ensure_binary_for_release(
             version: Some(release.version.clone()),
         });
     }
+    crate::telemetry_boundary::cache_decision(
+        jackin_telemetry::schema::enums::CacheName::AgentBinary,
+        jackin_telemetry::schema::enums::CacheResult::Miss,
+    );
     record(
         "agent_binary_download_started",
         &format!(
@@ -316,15 +345,7 @@ async fn ensure_binary_for_release(
                 "agent_binary_failed",
                 &format!("{} download failed: {error:#}", agent.slug()),
             );
-            let error_type = if error
-                .chain()
-                .any(|cause| cause.to_string().contains("checksum mismatch"))
-            {
-                "agent_binary_checksum_mismatch"
-            } else {
-                "agent_binary_download_failed"
-            };
-            record_agent_binary_failure(error_type, "agent binary download failed");
+            record_agent_binary_failure("agent binary download failed");
         })?;
     record(
         "agent_binary_ready",
@@ -542,7 +563,12 @@ async fn resolve_opencode() -> Result<AgentRelease> {
 
 async fn fetch_text(url: &str) -> Result<String> {
     record("agent_binary_http_get", url);
-    jackin_docker::net::fetch_text(url).await
+    crate::telemetry_boundary::download_request(
+        crate::telemetry_boundary::DownloadRoute::AgentMetadata,
+        url,
+        jackin_docker::net::fetch_text(url),
+    )
+    .await
 }
 
 /// Returns true when `error` is a TCP connect-phase timeout. Unlike a slow
@@ -575,34 +601,22 @@ async fn github_auth_token() -> Option<String> {
 }
 
 async fn github_auth_token_uncached() -> Option<String> {
-    // Degrade to unauthenticated (60 req/hr) on any failure, but log which one:
-    // `gh` missing is expected on CI, while present-but-erroring (not logged in)
-    // is the case an operator hitting a rate-limit 403 needs to see in --debug.
-    match tokio::process::Command::new("gh")
-        .args(["auth", "token", "--hostname", "github.com"])
-        .output()
-        .await
+    // Degrade to unauthenticated (60 req/hr) on any failure. Do not emit the
+    // subprocess error or stderr: either may contain host or account data.
+    let request =
+        jackin_process::ExecRequest::new("gh", ["auth", "token", "--hostname", "github.com"])
+            .timeout(Duration::from_secs(15));
+    match crate::process_telemetry::exec_async(
+        &request,
+        jackin_telemetry::schema::enums::ProcessExecutableName::Gh,
+    )
+    .await
     {
-        Ok(output) if output.status.success() => {
+        Ok(output) if output.success => {
             let token = String::from_utf8(output.stdout).ok()?.trim().to_owned();
             (!token.is_empty()).then_some(token)
         }
-        Ok(output) => {
-            jackin_diagnostics::debug_log!(
-                "agent_binary",
-                "gh auth token exited {}: {} — proceeding unauthenticated",
-                output.status,
-                String::from_utf8_lossy(&output.stderr).trim()
-            );
-            None
-        }
-        Err(e) => {
-            jackin_diagnostics::debug_log!(
-                "agent_binary",
-                "gh auth token not runnable ({e}) — proceeding unauthenticated"
-            );
-            None
-        }
+        Ok(_) | Err(_) => None,
     }
 }
 
@@ -622,7 +636,13 @@ async fn github_latest_asset(repo: &str, asset_name: &str) -> Result<GithubRelea
         let u = api_url.clone();
         async move {
             record("agent_binary_http_get", &u);
-            jackin_docker::net::get_text(&c, &u).await
+            let telemetry_url = u.clone();
+            crate::telemetry_boundary::download_request(
+                crate::telemetry_boundary::DownloadRoute::AgentMetadata,
+                &telemetry_url,
+                jackin_docker::net::get_text(&c, &u),
+            )
+            .await
         }
     })
     .await
@@ -653,6 +673,7 @@ where
     for attempt in 0..max_attempts {
         if attempt > 0 {
             let delay = initial_delay * (1 << (attempt - 1));
+            let _retry = jackin_telemetry::record_retry_scheduled();
             record(
                 "retry_backoff",
                 &format!("attempt {attempt}/{max_attempts}, waiting {delay:?}"),
@@ -687,6 +708,7 @@ where
     for attempt in 0..max_attempts {
         if attempt > 0 {
             let delay = initial_delay * (1 << (attempt - 1));
+            let _retry = jackin_telemetry::record_retry_scheduled();
             record(
                 "retry_backoff",
                 &format!("attempt {attempt}/{max_attempts}, waiting {delay:?}"),
@@ -739,7 +761,15 @@ async fn download_and_cache_inner(
     retry_with_backoff(3, Duration::from_millis(500), || {
         let url = release.url.clone();
         let tmp_download = tmp_download.to_owned();
-        async move { jackin_docker::net::download_parallel(&url, &tmp_download).await }
+        async move {
+            let telemetry_url = url.clone();
+            crate::telemetry_boundary::download_request(
+                crate::telemetry_boundary::DownloadRoute::AgentArtifact,
+                &telemetry_url,
+                jackin_docker::net::download_parallel(&url, &tmp_download),
+            )
+            .await
+        }
     })
     .await
     .with_context(|| format!("downloading {}", release.url))?;
@@ -755,10 +785,11 @@ async fn download_and_cache_inner(
     // does on non-Windows) to verify we got a runnable binary for that version.
     if let Some(expected) = release.checksum.as_deref() {
         let tmp_for_hash = tmp_download.to_owned();
-        let actual = tokio::task::spawn_blocking(move || hash_file_sha256(&tmp_for_hash))
-            .await
-            .context("hash worker join")?
-            .with_context(|| format!("hashing {}", tmp_download.display()))?;
+        let actual =
+            jackin_telemetry::spawn::joined_blocking(move || hash_file_sha256(&tmp_for_hash))
+                .await
+                .context("hash worker join")?
+                .with_context(|| format!("hashing {}", tmp_download.display()))?;
         if !actual.eq_ignore_ascii_case(expected) {
             return Err(ImageError::msg(format!(
                 "{} checksum mismatch for {}\n  expected {}\n  actual   {}",
@@ -783,15 +814,17 @@ async fn download_and_cache_inner(
         let archive = tmp_download.to_owned();
         let member = member.clone();
         let output = tmp_binary.to_owned();
-        tokio::task::spawn_blocking(move || extract_tar_gz_member(&archive, &member, &output))
-            .await
-            .context("archive extraction worker join")??;
+        jackin_telemetry::spawn::joined_blocking(move || {
+            extract_tar_gz_member(&archive, &member, &output)
+        })
+        .await
+        .context("archive extraction worker join")??;
         drop(tokio::fs::remove_file(tmp_download).await);
     } else {
         tokio::fs::rename(tmp_download, tmp_binary).await?;
     }
     let binary_for_chmod = tmp_binary.to_owned();
-    tokio::task::spawn_blocking(move || chmod_executable(&binary_for_chmod))
+    jackin_telemetry::spawn::joined_blocking(move || chmod_executable(&binary_for_chmod))
         .await
         .context("chmod worker join")??;
 
@@ -805,27 +838,19 @@ async fn download_and_cache_inner(
     // machines we cannot natively exec them; Grok remains the one prefetched
     // install block that keeps a Docker-build `grok --version` smoke check.
     if release.checksum.is_none() && cfg!(target_os = "linux") {
-        let status = tokio::process::Command::new(tmp_binary)
-            .arg("--version")
-            .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status()
-            .await
-            .with_context(|| {
-                format!(
-                    "spawning {} --version smoke test for downloaded binary",
-                    release.agent.slug()
-                )
-            })?;
-        if !status.success() {
-            return Err(ImageError::msg(format!(
-                "{} {} failed --version smoke test after download (status: {:?})",
-                release.agent.slug(),
-                release.version,
-                status
-            ))
-            .into());
+        let request = jackin_process::ExecRequest::new(tmp_binary, ["--version"])
+            .stdin_mode(jackin_process::StdioMode::Null)
+            .stdout_mode(jackin_process::StdioMode::Null)
+            .stderr_mode(jackin_process::StdioMode::Null)
+            .timeout(Duration::from_secs(15));
+        let output = crate::process_telemetry::exec_async(
+            &request,
+            crate::process_telemetry::agent_executable(release.agent),
+        )
+        .await
+        .context("running downloaded agent verification process")?;
+        if !output.success {
+            return Err(ImageError::msg("downloaded agent verification failed").into());
         }
     }
 
@@ -834,10 +859,9 @@ async fn download_and_cache_inner(
 }
 
 fn record(kind: &str, message: &str) {
+    let _ = message;
     if let Some(run) = jackin_diagnostics::active_run() {
-        run.compact(kind, message);
-    } else {
-        jackin_diagnostics::debug_log!("agent_binary", "{kind}: {message}");
+        run.compact(kind, kind);
     }
 }
 
@@ -903,20 +927,9 @@ fn read_cached_release_at(
 
 async fn read_cached_release_async(paths: &JackinPaths, agent: Agent) -> Option<AgentRelease> {
     let paths = paths.clone();
-    match tokio::task::spawn_blocking(move || read_cached_release(&paths, agent)).await {
-        Ok(release) => release,
-        Err(error) => {
-            // A join error here means the worker was cancelled or panicked; the
-            // read itself is panic-free today, so report it rather than letting a
-            // future panicking read masquerade as a cache miss.
-            jackin_diagnostics::debug_log!(
-                "agent_binary",
-                "cache read worker failed for {}: {error:#}",
-                agent.slug()
-            );
-            None
-        }
-    }
+    jackin_telemetry::spawn::joined_blocking(move || read_cached_release(&paths, agent))
+        .await
+        .unwrap_or_default()
 }
 
 pub fn newest_cached_executable_release(
@@ -951,18 +964,11 @@ async fn newest_cached_executable_release_async(
     agent: Agent,
 ) -> Option<(SystemTime, AgentRelease, PathBuf)> {
     let paths = paths.clone();
-    match tokio::task::spawn_blocking(move || newest_cached_executable_release(&paths, agent)).await
-    {
-        Ok(found) => found,
-        Err(error) => {
-            jackin_diagnostics::debug_log!(
-                "agent_binary",
-                "cache scan worker failed for {}: {error:#}",
-                agent.slug()
-            );
-            None
-        }
-    }
+    jackin_telemetry::spawn::joined_blocking(move || {
+        newest_cached_executable_release(&paths, agent)
+    })
+    .await
+    .unwrap_or_default()
 }
 
 fn write_cached_release(paths: &JackinPaths, release: &AgentRelease) -> Result<()> {
@@ -990,46 +996,26 @@ fn write_version_release(paths: &JackinPaths, release: &AgentRelease) -> Result<
 async fn persist_release_cache_async(paths: &JackinPaths, release: &AgentRelease) {
     let paths = paths.clone();
     let release = release.clone();
-    let slug = release.agent.slug();
-    let result = tokio::task::spawn_blocking(move || {
+    let result = jackin_telemetry::spawn::joined_blocking(move || {
         (
             write_cached_release(&paths, &release),
             write_version_release(&paths, &release),
         )
     })
     .await;
-    match result {
-        Ok((cached, version)) => {
-            if let Err(e) = cached {
-                jackin_diagnostics::debug_log!(
-                    "agent_binary",
-                    "caching {slug} release metadata failed: {e:#}"
-                );
-            }
-            if let Err(e) = version {
-                jackin_diagnostics::debug_log!(
-                    "agent_binary",
-                    "writing {slug} version sidecar failed: {e:#}"
-                );
-            }
-        }
-        Err(e) => jackin_diagnostics::debug_log!(
-            "agent_binary",
-            "cache metadata worker failed for {slug}: {e:#}"
-        ),
-    }
+    drop(result);
 }
 
 async fn is_executable_file_async(path: &Path) -> bool {
     let path = path.to_owned();
-    tokio::task::spawn_blocking(move || is_executable_file(&path))
+    jackin_telemetry::spawn::joined_blocking(move || is_executable_file(&path))
         .await
         .unwrap_or(false)
 }
 
 async fn repair_cached_binary_mode_async(path: &Path) -> Result<bool> {
     let path = path.to_owned();
-    tokio::task::spawn_blocking(move || repair_executable_file(&path))
+    jackin_telemetry::spawn::joined_blocking(move || repair_executable_file(&path))
         .await
         .context("cache chmod worker join")?
 }

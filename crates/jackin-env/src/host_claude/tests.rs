@@ -117,3 +117,24 @@ fn drain_pty_buffer_processes_complete_lines_only() {
     // The incomplete tail stays in the buffer.
     assert_eq!(buf, b"incomplete");
 }
+
+#[cfg(unix)]
+#[test]
+fn setup_token_pty_spawn_failure_omits_custom_path() {
+    let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
+    let _subscriber = tracing::subscriber::set_default(subscriber);
+
+    let spawn_error = capture_setup_token_with_binary("/claude-pty-secret/missing").unwrap_err();
+    assert!(
+        spawn_error
+            .to_string()
+            .contains("failed to spawn Claude CLI")
+    );
+
+    export.force_flush();
+    assert_eq!(export.finished_spans().len(), 1);
+    assert_eq!(export.error_span_count(), 1);
+    assert!(export.contains_span_text("claude"));
+    assert!(export.contains_span_text("process_spawn_error"));
+    assert!(!export.contains_span_text("/claude-pty-secret/missing"));
+}

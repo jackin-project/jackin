@@ -1,2 +1,2 @@
-- Shared logging tier is rooted here (`clog!`/`cdebug!`, re-exported via `jackin-diagnostics`) so both binaries share one tier — do not introduce a parallel logging path.
+- Capsule and usage telemetry emits through the shared `jackin-telemetry` governed facade and direct providers in `jackin-diagnostics`; do not introduce generic macros, raw OpenTelemetry construction, local telemetry files, or another sink.
 - Borrow, don't clone, usage views: account materialization serializes from borrowed views/iterators, not full clones.

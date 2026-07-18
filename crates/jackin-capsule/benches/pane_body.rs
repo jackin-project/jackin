@@ -204,5 +204,22 @@ fn bench_socket_backend_output(c: &mut Criterion) {
     run_bench(c);
 }
 
-criterion_group!(benches, bench_pane_body, bench_socket_backend_output);
+fn bench_pty_byte_pump(c: &mut Criterion) {
+    let payload = vec![b'x'; 4096];
+    c.bench_function("pty_byte_pump_4k_with_telemetry", |b| {
+        b.iter(|| {
+            let mut grid = DamageGrid::new(50, 200, 1000);
+            grid.process(black_box(&payload));
+            jackin_diagnostics::metrics::incr_terminal_bytes_received(payload.len() as u64);
+            black_box(grid.cursor_position());
+        });
+    });
+}
+
+criterion_group!(
+    benches,
+    bench_pane_body,
+    bench_socket_backend_output,
+    bench_pty_byte_pump
+);
 criterion_main!(benches);

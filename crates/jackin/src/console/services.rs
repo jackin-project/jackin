@@ -369,6 +369,7 @@ pub(super) mod instances {
         let mut sessions = HashMap::new();
         let mut session_errors = HashSet::new();
         let mut snapshot_targets: Vec<String> = Vec::new();
+        let mut recovered_failure = false;
 
         for entry in &instances {
             if is_live_instance_status(entry.status) {
@@ -378,12 +379,8 @@ pub(super) mod instances {
                         sessions.insert(entry.container_base.clone(), manifest.sessions);
                     }
                     Ok(_) => {}
-                    Err(e) => {
-                        jackin_diagnostics::debug_log!(
-                            "console",
-                            "manifest read failed for {}: {e:#}",
-                            entry.container_base
-                        );
+                    Err(_) => {
+                        recovered_failure = true;
                         session_errors.insert(entry.container_base.clone());
                     }
                 }
@@ -405,13 +402,14 @@ pub(super) mod instances {
                 Ok((None, transport)) => {
                     exec_fallback_seen |= transport == SnapshotTransport::DockerExecFallback;
                 }
-                Err(e) => {
-                    jackin_diagnostics::debug_log!(
-                        "console",
-                        "snapshot fetch failed for {container}: {e:#}"
-                    );
+                Err(_) => {
+                    recovered_failure = true;
                 }
             }
+        }
+
+        if recovered_failure {
+            let _event = jackin_telemetry::record_recovered_degradation();
         }
 
         Ok(ManagerInstanceRefreshSnapshot {
@@ -436,14 +434,9 @@ pub(super) mod instances {
         );
         // Instance refresh is launched through spawn_blocking_subscription;
         // keep the docker listing on the shared process transport.
-        let output = jackin_process::exec_sync(&request)
-            .context("starting docker ps for live instance reconciliation")?;
-        anyhow::ensure!(
-            output.success,
-            "docker ps exited with status {:?}: {}",
-            output.code,
-            String::from_utf8_lossy(&output.stderr).trim()
-        );
+        let output = crate::process_telemetry::exec_sync(&request)
+            .context("starting live instance reconciliation")?;
+        anyhow::ensure!(output.success, "live instance reconciliation failed");
         Ok(String::from_utf8_lossy(&output.stdout)
             .lines()
             .map(str::trim)
@@ -513,10 +506,9 @@ pub(super) mod instances {
             }
 
             let state_dir = paths.data_dir.join(container);
-            let Some(manifest) = jackin_runtime::instance::InstanceManifest::read_or_log(
-                &state_dir,
-                "overlay_running_instances",
-            ) else {
+            let Some(manifest) =
+                jackin_runtime::instance::InstanceManifest::read_optional_lossy(&state_dir)
+            else {
                 continue;
             };
             if !known.insert(container.clone()) {
@@ -552,7 +544,7 @@ pub(super) mod instances {
                     .iter()
                     .map(|container| {
                         let container = container.clone();
-                        s.spawn(move || {
+                        jackin_telemetry::spawn::thread_scoped_joined(s, move || {
                             let result =
                                 jackin_runtime::runtime::snapshot::fetch_snapshot_with_transport(
                                     paths, &container,
@@ -618,17 +610,27 @@ pub(super) mod role_load {
         runner: &mut impl jackin_docker::CommandRunner,
         debug: bool,
     ) -> anyhow::Result<()> {
-        std::panic::AssertUnwindSafe(async {
+        use jackin_telemetry::ResultTelemetryExt as _;
+
+        let result = std::panic::AssertUnwindSafe(async {
             jackin_runtime::runtime::register_agent_repo(paths, selector, git_url, runner, debug)
                 .await?;
             Ok::<_, anyhow::Error>(())
         })
         .catch_unwind()
-        .await
-        .unwrap_or_else(|payload| {
-            let panic_message = panic_payload_message(payload.as_ref());
-            Err(anyhow::anyhow!("role loader panicked: {panic_message}"))
-        })
+        .await;
+
+        match result {
+            Ok(result) => Ok(result
+                .record_telemetry_error(jackin_telemetry::schema::enums::ErrorType::IoError)?),
+            Err(payload) => {
+                let _event = jackin_telemetry::record_error(
+                    jackin_telemetry::schema::enums::ErrorType::Panic,
+                );
+                let panic_message = panic_payload_message(payload.as_ref());
+                Err(anyhow::anyhow!("role loader panicked: {panic_message}"))
+            }
+        }
     }
 
     fn panic_payload_message(payload: &(dyn std::any::Any + Send)) -> String {

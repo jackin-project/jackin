@@ -443,7 +443,7 @@ The "shared-kernel" line is important. It avoids using microVM language for a ba
 
 ## Telemetry Surface
 
-Backend operations should emit `debug_log!("orbstack", …)` (the existing macro in <RepoFile path="crates/jackin/src/console/tui.rs">crates/jackin/src/console/tui.rs</RepoFile>) so the firehose under `JACKIN_DEBUG=1` reconstructs the full machine lifecycle. Minimum required lines:
+Backend operations should emit `debug_log!("orbstack", …)` (the existing macro in <RepoFile path="crates/jackin/src/console/adapter.rs">crates/jackin/src/console/adapter.rs</RepoFile>) so the firehose under `JACKIN_DEBUG=1` reconstructs the full machine lifecycle. Minimum required lines:
 
 - `orbstack version=<orb --version> isolated_supported=<yes|no>` (probed at launch)
 - `machine_create name=<name> distro=<distro> isolated=<yes|no> shares=<count>`

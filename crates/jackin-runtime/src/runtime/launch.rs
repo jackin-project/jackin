@@ -72,7 +72,6 @@ pub(crate) use jackin_docker::docker_client::DockerApi;
 pub(crate) use std::path::Path;
 
 #[cfg(test)]
-pub(crate) use launch_pipeline::emit_auth_provision_launch_plan;
 #[cfg(test)]
 pub(crate) use launch_pipeline::load_role_with;
 #[cfg(test)]
@@ -205,7 +204,7 @@ pub(crate) use mounts::{
 pub(crate) use capsule_setup::{capsule_config, exec_binding_names, prepare_socket_dir};
 
 #[cfg(test)]
-pub(crate) use exit_diagnosis::{ExitPhase, diagnose_premature_exit, read_text_tail};
+pub(crate) use exit_diagnosis::{ExitPhase, diagnose_premature_exit};
 pub(crate) use exit_diagnosis::{
     attach_failure_error, diagnose_with_state, inspect_attach_outcome,
 };
@@ -233,14 +232,12 @@ pub use load_cleanup::LoadCleanup;
 pub(crate) use load_cleanup::write_if_changed_atomic;
 
 mod restore_resolve;
+#[cfg(test)]
+pub(crate) use restore_resolve::resolve_restore_candidate;
 pub(crate) use restore_resolve::{
     EarlyCurrentRestoreScan, RestoreResolution, UnselectedCurrentRestoreResolution,
     resolve_current_restore_candidate_timed, resolve_restore_candidate_reusing_early,
     resolve_unselected_current_restore_candidate_with_agent_timed,
-};
-#[cfg(test)]
-pub(crate) use restore_resolve::{
-    resolve_restore_candidate, resolve_unselected_current_restore_candidate_timed,
 };
 
 mod launch_runtime;
@@ -253,8 +250,7 @@ mod launch_runtime;
 )]
 pub(crate) use launch_runtime::{
     LaunchContext, SelectedImageRefresh, SiblingAuthPrewarm, SiblingPrewarm,
-    SidecarPrewarmReplenish, debug_runtime_envs, host_runtime_passthrough_env, launch_role_runtime,
-    spawn_sibling_auth_prewarm,
+    SidecarPrewarmReplenish, host_runtime_passthrough_env, launch_role_runtime,
 };
 
 /// Present the stale-instance decision. "Start fresh" is always the

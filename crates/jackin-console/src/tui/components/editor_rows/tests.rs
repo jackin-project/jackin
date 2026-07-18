@@ -3,7 +3,7 @@
 
 //! Tests for `editor_rows`.
 use super::*;
-use jackin_core::tui_theme::{ACTION_ACCENT, PHOSPHOR_GREEN};
+use jackin_tui::tokens::ACTION_ACCENT;
 use ratatui::style::{Color, Modifier};
 
 #[test]
@@ -11,7 +11,15 @@ fn selected_action_row_uses_high_contrast_list_fill() {
     let style = action_row_style(true);
 
     assert_eq!(style.fg, Some(Color::Black));
-    assert_eq!(style.bg, Some(PHOSPHOR_GREEN));
+    assert_eq!(
+        style.bg,
+        Some(
+            termrock::Theme::default()
+                .style(termrock::style::Role::Accent)
+                .fg
+                .unwrap_or_default()
+        )
+    );
     assert!(style.add_modifier.contains(Modifier::BOLD));
 }
 

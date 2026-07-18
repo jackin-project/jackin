@@ -40,27 +40,27 @@ const fn mouse_at(kind: MouseEventKind, column: u16, row: u16) -> MouseEvent {
 fn diagnostics_screen_maps_confirm_overlays_to_list() {
     assert_eq!(
         diagnostics_screen_for_stage(ConsoleScreenStage::List),
-        jackin_diagnostics::Screen::List
+        jackin_telemetry::schema::enums::ScreenId::WorkspaceList
     );
     assert_eq!(
         diagnostics_screen_for_stage(ConsoleScreenStage::ConfirmDelete),
-        jackin_diagnostics::Screen::List
+        jackin_telemetry::schema::enums::ScreenId::WorkspaceList
     );
     assert_eq!(
         diagnostics_screen_for_stage(ConsoleScreenStage::ConfirmInstancePurge),
-        jackin_diagnostics::Screen::List
+        jackin_telemetry::schema::enums::ScreenId::WorkspaceList
     );
     assert_eq!(
         diagnostics_screen_for_stage(ConsoleScreenStage::Editor),
-        jackin_diagnostics::Screen::Editor
+        jackin_telemetry::schema::enums::ScreenId::WorkspaceEditor
     );
     assert_eq!(
         diagnostics_screen_for_stage(ConsoleScreenStage::Settings),
-        jackin_diagnostics::Screen::Settings
+        jackin_telemetry::schema::enums::ScreenId::Settings
     );
     assert_eq!(
         diagnostics_screen_for_stage(ConsoleScreenStage::CreatePrelude),
-        jackin_diagnostics::Screen::Create
+        jackin_telemetry::schema::enums::ScreenId::WorkspaceCreate
     );
 }
 
@@ -168,19 +168,19 @@ fn quit_intercept_ignores_letter_input_and_allows_ctrl_q_everywhere() {
 #[test]
 fn quit_confirm_plan_routes_confirm_outcomes() {
     assert_eq!(
-        quit_confirm_plan(jackin_core::ModalOutcome::Commit(true)),
+        quit_confirm_plan(jackin_tui::ModalOutcome::Commit(true)),
         QuitConfirmPlan::Exit
     );
     assert_eq!(
-        quit_confirm_plan(jackin_core::ModalOutcome::Commit(false)),
+        quit_confirm_plan(jackin_tui::ModalOutcome::Commit(false)),
         QuitConfirmPlan::Dismiss
     );
     assert_eq!(
-        quit_confirm_plan(jackin_core::ModalOutcome::Cancel),
+        quit_confirm_plan(jackin_tui::ModalOutcome::Cancel),
         QuitConfirmPlan::Dismiss
     );
     assert_eq!(
-        quit_confirm_plan(jackin_core::ModalOutcome::Continue),
+        quit_confirm_plan(jackin_tui::ModalOutcome::Continue),
         QuitConfirmPlan::Continue
     );
 }
@@ -278,14 +278,13 @@ fn token_generate_status_message_names_target_scope() {
 }
 
 #[test]
-fn debug_run_id_label_prefers_active_run_then_env() {
+fn debug_invocation_id_label_uses_only_the_active_invocation() {
     assert_eq!(
-        debug_run_id_label(Some("run-active"), Some("run-env")),
-        "run-active"
+        debug_invocation_id_label(Some("invocation-active")),
+        "invocation-active"
     );
-    assert_eq!(debug_run_id_label(None, Some("run-env")), "run-env");
-    assert_eq!(debug_run_id_label(Some(""), Some("run-env")), "run-env");
-    assert_eq!(debug_run_id_label(None, None), "");
+    assert_eq!(debug_invocation_id_label(Some("")), "");
+    assert_eq!(debug_invocation_id_label(None), "");
 }
 
 #[test]

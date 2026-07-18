@@ -4,8 +4,6 @@ use std::sync::OnceLock;
 use regex::Regex;
 
 const REDACTED: &str = "<redacted>";
-const TRUNCATED_PREFIX: &str = "(truncated to last ";
-
 pub fn redact_text(input: &str) -> Cow<'_, str> {
     let mut current: Cow<'_, str> = Cow::Borrowed(input);
     for regex in redaction_patterns() {
@@ -26,11 +24,16 @@ fn cap_text(input: &str, max_bytes: usize) -> String {
         return input.to_owned();
     }
 
-    let mut start = input.len() - max_bytes;
+    let prefix = format!("(truncated to {max_bytes} bytes)\n");
+    let retained = max_bytes.saturating_sub(prefix.len());
+    if retained == 0 {
+        return prefix.chars().take(max_bytes).collect();
+    }
+    let mut start = input.len() - retained;
     while !input.is_char_boundary(start) {
         start += 1;
     }
-    format!("{TRUNCATED_PREFIX}{max_bytes} bytes)\n{}", &input[start..])
+    format!("{prefix}{}", &input[start..])
 }
 
 fn redaction_patterns() -> &'static [Regex] {

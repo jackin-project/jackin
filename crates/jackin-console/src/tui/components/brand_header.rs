@@ -21,14 +21,29 @@ impl Widget for BrandHeader<'_> {
 
 fn brand_header_line(label: &str) -> Line<'static> {
     let block = Style::default()
-        .bg(jackin_core::tui_theme::BRAND_BLOCK)
+        .bg(jackin_tui::tokens::BRAND_BLOCK)
         .add_modifier(Modifier::BOLD);
     Line::from(vec![
-        Span::styled(" jackin", block.fg(jackin_core::tui_theme::INK)),
-        Span::styled("❯", block.fg(jackin_core::tui_theme::WHITE)),
+        Span::styled(" jackin", block.fg(jackin_tui::tokens::INK)),
+        Span::styled(
+            "❯",
+            block.fg(termrock::Theme::default()
+                .style(termrock::style::Role::Text)
+                .fg
+                .unwrap_or_default()),
+        ),
         Span::styled(" ", block),
-        Span::styled(" · ", Style::default().fg(termrock::style::PHOSPHOR_DARK)),
-        Span::styled(label.to_owned(), jackin_core::tui_theme::DIM),
+        Span::styled(
+            " · ",
+            Style::default().fg(termrock::Theme::default()
+                .style(termrock::style::Role::ScrollTrack)
+                .fg
+                .unwrap_or_default()),
+        ),
+        Span::styled(
+            label.to_owned(),
+            termrock::Theme::default().style(termrock::style::Role::TextMuted),
+        ),
     ])
 }
 

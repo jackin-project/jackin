@@ -1,0 +1,17 @@
+# SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+# SPDX-License-Identifier: Apache-2.0
+
+[package]
+name = "jackin-brand"
+version = "0.6.0-dev"
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+owo-colors = { workspace = true, features = ["supports-colors"] }
+
+[lints]
+workspace = true

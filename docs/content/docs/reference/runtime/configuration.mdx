@@ -345,9 +345,9 @@ level = "debug"              # "info" (default), "debug", or "trace"
 categories = ["docker", "launch"]
 ```
 
-`level` controls host/capsule OTLP verbosity and debug-category diagnostics
-capture. `categories` is an optional allowlist for debug-category records before
-they enter JSONL or OTLP; omit it to allow every debug category. Environment
+`level` controls host/capsule OTLP verbosity. `categories` is an optional
+allowlist for governed debug-category records before OTLP export; omit it to
+allow every debug category. Environment
 variables win over config: `JACKIN_TELEMETRY_LEVEL` overrides `level`, and
 `JACKIN_TELEMETRY_CATEGORIES` overrides `categories`.
 

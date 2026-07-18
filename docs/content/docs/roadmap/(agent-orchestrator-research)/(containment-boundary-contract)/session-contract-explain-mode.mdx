@@ -6,7 +6,7 @@ title: "Session Contract and Explain Mode"
 
 ## Shipped facts
 
-`format_session_contract` in <RepoFile path="crates/jackin-runtime/src/runtime/docker_profile.rs">crates/jackin-runtime/src/runtime/docker_profile.rs</RepoFile> renders a human-readable table (Docker security profile, apparmor/seccomp, capabilities, root filesystem, DinD status, network mode/enforcement, cgroup, resource limits, agent/GitHub credential forwarding, residual risk) for the active grants — but it is only emitted through `jackin_diagnostics::debug_log!` at launch when `--debug` is passed (see <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs">crates/jackin-runtime/src/runtime/launch.rs</RepoFile>), not through a stand-alone command.
+`format_session_contract` in <RepoFile path="crates/jackin-runtime/src/runtime/docker_profile.rs">crates/jackin-runtime/src/runtime/docker_profile.rs</RepoFile> renders a human-readable table (Docker security profile, apparmor/seccomp, capabilities, root filesystem, DinD status, network mode/enforcement, cgroup, resource limits, agent/GitHub credential forwarding, residual risk) for the active grants, but no stand-alone command exposes that explanation today.
 
 `print_session_contract` in <RepoFile path="crates/jackin-runtime/src/runtime/apple_container.rs">crates/jackin-runtime/src/runtime/apple_container.rs</RepoFile> prints an Apple Container-specific contract (isolation model, mounts, network, residual risk) unconditionally at attach time. It is backend-specific, text-only, and not gated behind an explain-style preview.
 

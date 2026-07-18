@@ -112,7 +112,7 @@ pub fn open_create_op_picker_for_generate(
 pub fn handle_token_generate_pick(
     editor: &mut EditorState<'_>,
     target: crate::tui::state::AuthFormTarget,
-    outcome: jackin_console_oppicker::ModalOutcome<crate::tui::op_picker::OpPickerSelection>,
+    outcome: jackin_oppicker::ModalOutcome<crate::tui::op_picker::OpPickerSelection>,
 ) {
     use crate::tui::op_picker::OpPickerSelection;
     use jackin_env::{EditExistingTarget, TokenSetupArgs};
@@ -268,7 +268,6 @@ pub fn apply_text_input_to_pending(
             editor.commit_last_mount_dst_input(value);
         }
         TextInputTarget::Role => {
-            jackin_diagnostics::debug_log!("role", "role loader input committed: raw={value:?}");
             open_role_input_error(
                 editor,
                 crate::tui::components::error_popup::role_input_misroute_error_message(),

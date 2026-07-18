@@ -24,6 +24,7 @@ use jackin_protocol::attach::{
     ClipboardImageStart, FILE_EXPORT_DIGEST_BYTES, MAX_CLIPBOARD_IMAGE_TRANSFER_BYTES,
     MAX_CLIPBOARD_IMAGE_TRANSFER_BYTES_U64,
 };
+use jackin_telemetry::ResultTelemetryExt as _;
 use sha2::{Digest, Sha256};
 
 pub(crate) const CLIPBOARD_RUN_DIR: &str = container_paths::CLIPBOARD_DIR;
@@ -34,9 +35,10 @@ pub(crate) fn stage_clipboard_image(image: &ClipboardImage) -> Result<PathBuf> {
 }
 
 pub(crate) fn cleanup_clipboard_run_dir() {
-    if let Err(err) = cleanup_clipboard_run_dir_at(Path::new(CLIPBOARD_RUN_DIR)) {
-        crate::clog!("clipboard-image: cleanup failed: {err:#}");
-    }
+    drop(
+        cleanup_clipboard_run_dir_at(Path::new(CLIPBOARD_RUN_DIR))
+            .record_telemetry_error(jackin_telemetry::schema::enums::ErrorType::IoError),
+    );
 }
 
 #[derive(Debug)]
@@ -176,13 +178,18 @@ impl ClipboardImageTransfers {
         Ok(image)
     }
 
+    #[cfg(test)]
     pub(crate) fn abort_idle_older_than(&mut self, max_idle: Duration) -> usize {
-        let now = self.clock.now();
-        let cutoff = now.checked_sub(max_idle).unwrap_or(now);
-        self.abort_idle_before(cutoff)
+        self.abort_idle_ids_older_than(max_idle).len()
     }
 
-    fn abort_idle_before(&mut self, cutoff: Instant) -> usize {
+    pub(crate) fn abort_idle_ids_older_than(&mut self, max_idle: Duration) -> Vec<u64> {
+        let now = self.clock.now();
+        let cutoff = now.checked_sub(max_idle).unwrap_or(now);
+        self.abort_idle_ids_before(cutoff)
+    }
+
+    fn abort_idle_ids_before(&mut self, cutoff: Instant) -> Vec<u64> {
         let stale_ids: Vec<u64> = self
             .active
             .iter()
@@ -190,19 +197,13 @@ impl ClipboardImageTransfers {
                 (active.last_activity <= cutoff).then_some(*transfer_id)
             })
             .collect();
-        let count = stale_ids.len();
-        for transfer_id in stale_ids {
-            if let Some(active) = self.active.remove(&transfer_id) {
-                crate::cdebug!(
-                    "clipboard-image: abort stale transfer id={} format={:?} buffered={} expected={}",
-                    transfer_id,
-                    active.format,
-                    active.bytes.len(),
-                    active.expected_size
-                );
-            }
+        for transfer_id in &stale_ids {
+            self.active.remove(transfer_id);
         }
-        count
+        if !stale_ids.is_empty() {
+            let _warning = jackin_telemetry::record_recovered_degradation();
+        }
+        stale_ids
     }
 }
 
@@ -266,10 +267,7 @@ fn cleanup_clipboard_run_dir_at(root: &Path) -> Result<usize> {
             remove_file(&path).with_context(|| format!("removing {}", path.display()))?;
             removed += 1;
         } else {
-            crate::clog!(
-                "clipboard-image: leaving non-file staged entry during cleanup: {}",
-                path.display()
-            );
+            let _warning = jackin_telemetry::record_recovered_degradation();
         }
     }
     Ok(removed)

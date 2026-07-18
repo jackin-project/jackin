@@ -164,25 +164,20 @@ Every crate is verified by `cargo nextest run -p <crate>`. Exceptions worth nami
 
 ## Recording capsule render-conformance fixtures
 
-Capsule echo-back harness ([crates/jackin-capsule/src/daemon/tests.rs](crates/jackin-capsule/src/daemon/tests.rs)) replays PTY byte streams through multiplexer, asserts emitted frames reproduce pane model on virtual client terminal. Synthetic streams live in harness; real-agent fixtures are recorded from a trace-level `--debug` run:
+Capsule echo-back harness ([crates/jackin-capsule/src/daemon/tests.rs](crates/jackin-capsule/src/daemon/tests.rs)) replays reviewed PTY byte streams through the multiplexer and asserts that emitted frames reproduce the pane model on a virtual client terminal. Synthetic streams live in the harness. Real-agent fixture capture is an explicit test workflow, never a telemetry side effect:
 
-1. Run session with `JACKIN_TELEMETRY_LEVEL=trace` (e.g. `JACKIN_TELEMETRY_LEVEL=trace cargo run --bin jackin -- console --debug`), exercise agent. Note run id CLI prints.
-2. Extract one session's PTY stream from run log into binary fixture:
+1. Set `JACKIN_PTY_FIXTURE_CAPTURE` to an operator-selected temporary capture path and run the specific capture scenario.
+2. Review the temporary capture for secrets and unstable content.
+3. Copy the reviewed bytes into the fixture tree with `cargo xtask pty-fixture <capture.bin> crates/jackin-capsule/tests/fixtures/pty/<fixture.bin>`.
+4. Reference the fixture with `include_bytes!` and add the scenario to the fixture README.
 
-   ```sh
-   cargo xtask pty-fixture ~/.jackin/data/diagnostics/runs/<run-id>.jsonl <session-label> \
-     crates/jackin-capsule/tests/fixtures/pty/<agent>-<scenario>.bin
-   ```
-
-   Session label = pane label in capsule tab (e.g. `Codex`). When the run JSONL contains only the `capsule_log` pointer, the extractor follows that path to the raw in-container `multiplexer.log`; passing `multiplexer.log` directly also works.
-   The trace payload lines are written to local files only when OTLP export is inactive. If `OTEL_EXPORTER_OTLP_ENDPOINT` is set in your shell, the backend is the sink and raw payloads are not mirrored to `multiplexer.log`; unset it for local fixture extraction. `JACKIN_DIAGNOSTICS_FILE=1` can force the host JSONL file, but it does not mirror raw capsule payloads while capsule OTLP is active.
-3. Reference fixture from harness scenario with `include_bytes!`.
+Without the capture variable, production and test sessions do not write PTY streams. OTLP telemetry never contains PTY bytes.
 
 ## Walking the operator through local validation
 
-Every `jackin <subcommand>` invocation in manual validation MUST include `--debug`. Includes `cargo run --bin jackin -- <subcommand> --debug` from checkout.
+Every `jackin <subcommand>` invocation in manual validation MUST include `--debug`. This includes `cargo run --bin jackin -- <subcommand> --debug` from a checkout. Debug mode controls operator troubleshooting output; it does not create a telemetry or diagnostics file.
 
-`--debug` captures every external command (`docker`, `git`, `id`, etc.) with output plus `[jackin debug ...]` instrumentation into `~/.jackin/data/diagnostics/runs/<run-id>.jsonl` only when OTLP export is inactive. If `OTEL_EXPORTER_OTLP_ENDPOINT` is set in the shell, the backend is the sink and no file is written; unset it for JSONL-based triage or set `JACKIN_DIAGNOSTICS_FILE=1` to write both. CLI prints the run id either way: in OTLP-only mode, ask for the run id and query the backend for `parallax.run.id=<run-id>` instead of looking for a file.
+When validating observability, start the dev-only OTLP testbed or another trusted gRPC backend, set `OTEL_EXPORTER_OTLP_ENDPOINT`, and run `jackin diagnostics validate` first. Use `cli.invocation.id` and `session.id` to inspect the run in the backend. With no endpoint, telemetry remains disabled and no local fallback artifact is written.
 
 Smoke tests: suggest `jackin console` first, prefer `the-architect` role over `agent-smith`. Standard smoke command:
 
@@ -198,7 +193,7 @@ cargo run --bin jackin -- load the-architect . --debug
 
 No `--no-intro` on debug smoke — debug mode already suppresses intro; `--debug --no-intro` = redundant.
 
-Unexpected behavior from clean (non-debug) run → first ask operator to rerun with `--debug`, share run id; agent reads JSONL before proposing fixes.
+Unexpected behavior from a clean run → first ask the operator to rerun with `--debug` and share the visible failure details. When OTLP is configured, use the invocation id to inspect governed backend telemetry before proposing fixes.
 
 Does not apply to:
 

@@ -24,6 +24,9 @@ pub fn load_optional() -> Option<CapsuleConfig> {
         Ok(contents) => contents,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return None,
         Err(error) => {
+            let _error = jackin_telemetry::record_error(
+                jackin_telemetry::schema::enums::ErrorType::ConfigError,
+            );
             crate::output::stderr_line(format_args!(
                 "[jackin-capsule] ignoring unreadable {}: {error:#}",
                 jackin_protocol::CAPSULE_CONFIG_PATH
@@ -34,6 +37,9 @@ pub fn load_optional() -> Option<CapsuleConfig> {
     let config = match toml::from_str::<CapsuleConfig>(&contents) {
         Ok(config) => config,
         Err(error) => {
+            let _error = jackin_telemetry::record_error(
+                jackin_telemetry::schema::enums::ErrorType::ConfigError,
+            );
             crate::output::stderr_line(format_args!(
                 "[jackin-capsule] ignoring invalid {}: {error:#}",
                 jackin_protocol::CAPSULE_CONFIG_PATH
@@ -42,6 +48,8 @@ pub fn load_optional() -> Option<CapsuleConfig> {
         }
     };
     if let Err(error) = validate(&config) {
+        let _error =
+            jackin_telemetry::record_error(jackin_telemetry::schema::enums::ErrorType::ConfigError);
         crate::output::stderr_line(format_args!(
             "[jackin-capsule] ignoring invalid {}: {error:#}",
             jackin_protocol::CAPSULE_CONFIG_PATH
@@ -55,5 +63,23 @@ fn validate(config: &CapsuleConfig) -> Result<()> {
     if config.workdir.trim().is_empty() {
         anyhow::bail!("{} workdir is empty", jackin_protocol::CAPSULE_CONFIG_PATH);
     }
+    for agent in &config.agents {
+        let mode = config.auth_mode_for_agent(agent).ok_or_else(|| {
+            anyhow::anyhow!("missing bounded auth mode for configured agent {agent}")
+        })?;
+        if !matches!(mode, "sync" | "api_key" | "oauth_token" | "ignore") {
+            anyhow::bail!("invalid bounded auth mode for configured agent {agent}");
+        }
+    }
+    if config
+        .auth_modes
+        .keys()
+        .any(|agent| !config.agents.contains(agent))
+    {
+        anyhow::bail!("auth mode names an agent outside the configured allowlist");
+    }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests;

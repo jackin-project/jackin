@@ -633,8 +633,8 @@ pub fn network_enforcement_label(grants: &EffectiveGrants) -> &'static str {
 
 /// Format a human-readable session contract table for the active grants.
 ///
-/// Emitted via `crate::debug_log!` at launch; surfaced to the operator in
-/// `--debug` mode as a factual summary of what the container can do.
+/// Surfaced to the operator in `--debug` mode as a factual summary of what the
+/// container can do; it is operator output, not exported telemetry.
 // Eight contract dimensions are one flat argument list by design; bundling them
 // into a struct would just move the same fields without aiding any caller.
 #[expect(

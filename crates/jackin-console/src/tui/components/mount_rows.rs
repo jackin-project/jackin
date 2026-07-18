@@ -9,8 +9,6 @@ use ratatui::{
     text::{Line, Span},
 };
 
-use jackin_core::tui_theme::{PHOSPHOR_DIM, WHITE};
-
 /// "Mode" header is 4 chars; pad row values so the Type column stays aligned.
 pub const MOUNT_MODE_COL_WIDTH: usize = 4;
 
@@ -26,7 +24,10 @@ pub fn render_mount_header(path_w: usize) -> Line<'static> {
             "  {path:<path_w$}  {mode_col}  {iso_col}  Type",
             path = "Destination"
         ),
-        Style::default().fg(WHITE),
+        Style::default().fg(termrock::Theme::default()
+            .style(termrock::style::Role::Text)
+            .fg
+            .unwrap_or_default()),
     ))
 }
 
@@ -38,25 +39,28 @@ pub fn render_mount_lines(rows: &[MountDisplayRow], path_w: usize) -> Vec<Line<'
             Span::raw(format!("  {:<path_w$}  ", row.destination)),
             Span::styled(
                 format!("{:<MOUNT_MODE_COL_WIDTH$}", row.mode),
-                jackin_core::tui_theme::DIM,
+                termrock::Theme::default().style(termrock::style::Role::TextMuted),
             ),
             Span::raw("  "),
             Span::styled(
                 format!("{:<MOUNT_ISOLATION_COL_WIDTH$}", row.isolation),
-                jackin_core::tui_theme::DIM,
+                termrock::Theme::default().style(termrock::style::Role::TextMuted),
             ),
             Span::raw("  "),
             Span::styled(
                 row.kind.clone(),
                 Style::default()
-                    .fg(PHOSPHOR_DIM)
+                    .fg(termrock::Theme::default()
+                        .style(termrock::style::Role::TextMuted)
+                        .fg
+                        .unwrap_or_default())
                     .add_modifier(Modifier::ITALIC),
             ),
         ]));
         if let Some(host_source) = &row.host_source {
             lines.push(Line::from(Span::styled(
                 format!("  {host_source:<path_w$}"),
-                jackin_core::tui_theme::DIM,
+                termrock::Theme::default().style(termrock::style::Role::TextMuted),
             )));
         }
     }
@@ -67,7 +71,10 @@ pub fn render_mount_lines(rows: &[MountDisplayRow], path_w: usize) -> Vec<Line<'
 pub fn render_global_mount_header(path_w: usize) -> Line<'static> {
     Line::from(Span::styled(
         format!("  {path:<path_w$}  Mode", path = "Destination"),
-        Style::default().fg(WHITE),
+        Style::default().fg(termrock::Theme::default()
+            .style(termrock::style::Role::Text)
+            .fg
+            .unwrap_or_default()),
     ))
 }
 
@@ -77,12 +84,15 @@ pub fn render_global_mount_lines(rows: &[MountDisplayRow], path_w: usize) -> Vec
     for row in rows {
         lines.push(Line::from(vec![
             Span::raw(format!("  {:<path_w$}  ", row.destination)),
-            Span::styled(row.mode.to_owned(), jackin_core::tui_theme::DIM),
+            Span::styled(
+                row.mode.to_owned(),
+                termrock::Theme::default().style(termrock::style::Role::TextMuted),
+            ),
         ]));
         if let Some(host_source) = &row.host_source {
             lines.push(Line::from(Span::styled(
                 format!("  {host_source:<path_w$}"),
-                jackin_core::tui_theme::DIM,
+                termrock::Theme::default().style(termrock::style::Role::TextMuted),
             )));
         }
     }

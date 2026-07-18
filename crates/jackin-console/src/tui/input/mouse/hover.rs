@@ -144,7 +144,7 @@ pub fn update_row_hover(state: &mut ManagerState<'_>, mouse: MouseEvent, term_si
         ManagerStage::Settings(settings) => {
             if let Some(target) = settings_trust_hover_target_at_position(
                 settings.active_tab,
-                settings.mounts.modal.is_some(),
+                settings.mounts.modals.is_open(),
                 settings.content_area(term_size),
                 mouse.column,
                 mouse.row,

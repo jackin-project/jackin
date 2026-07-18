@@ -234,7 +234,7 @@ impl super::LaunchRolePromptManagerState<TestPromptRole> for TestLaunchPromptMan
         picker: crate::tui::components::role_picker::RolePickerState<TestPromptRole>,
     ) {
         self.role_picker_keys = picker.roles.iter().map(|role| role.0).collect();
-        self.role_picker_selected = picker.list_state.selected;
+        self.role_picker_selected = picker.list_state.selected().copied();
         self.role_picker_confirm_label = picker.confirm_label;
     }
 }
@@ -1131,23 +1131,23 @@ fn create_prelude_mount_dst_choice_plan_routes_choice_outcomes() {
     use crate::tui::components::mount_dst_choice::MountDstChoice;
 
     assert_eq!(
-        create_prelude_mount_dst_choice_plan(jackin_core::ModalOutcome::Commit(
+        create_prelude_mount_dst_choice_plan(jackin_tui::ModalOutcome::Commit(
             MountDstChoice::SamePath
         )),
         CreatePreludeMountDstChoicePlan::CommitSamePath
     );
     assert_eq!(
-        create_prelude_mount_dst_choice_plan(jackin_core::ModalOutcome::Commit(
+        create_prelude_mount_dst_choice_plan(jackin_tui::ModalOutcome::Commit(
             MountDstChoice::Edit
         )),
         CreatePreludeMountDstChoicePlan::OpenEditInput
     );
     assert_eq!(
-        create_prelude_mount_dst_choice_plan(jackin_core::ModalOutcome::Cancel),
+        create_prelude_mount_dst_choice_plan(jackin_tui::ModalOutcome::Cancel),
         CreatePreludeMountDstChoicePlan::ReopenFileBrowserAtLastCwd
     );
     assert_eq!(
-        create_prelude_mount_dst_choice_plan(jackin_core::ModalOutcome::Continue),
+        create_prelude_mount_dst_choice_plan(jackin_tui::ModalOutcome::Continue),
         CreatePreludeMountDstChoicePlan::Continue
     );
 }
@@ -1155,17 +1155,17 @@ fn create_prelude_mount_dst_choice_plan_routes_choice_outcomes() {
 #[test]
 fn create_prelude_text_input_dst_plan_routes_input_outcomes() {
     assert_eq!(
-        create_prelude_text_input_dst_plan(jackin_core::ModalOutcome::Commit(
+        create_prelude_text_input_dst_plan(jackin_tui::ModalOutcome::Commit(
             "/workspace".to_owned()
         )),
         CreatePreludeTextInputDstPlan::Commit("/workspace".to_owned())
     );
     assert_eq!(
-        create_prelude_text_input_dst_plan::<String>(jackin_core::ModalOutcome::Cancel),
+        create_prelude_text_input_dst_plan::<String>(jackin_tui::ModalOutcome::Cancel),
         CreatePreludeTextInputDstPlan::ReopenMountDstChoice
     );
     assert_eq!(
-        create_prelude_text_input_dst_plan::<String>(jackin_core::ModalOutcome::Continue),
+        create_prelude_text_input_dst_plan::<String>(jackin_tui::ModalOutcome::Continue),
         CreatePreludeTextInputDstPlan::Continue
     );
 }
@@ -1173,17 +1173,17 @@ fn create_prelude_text_input_dst_plan_routes_input_outcomes() {
 #[test]
 fn create_prelude_text_input_name_plan_routes_input_outcomes() {
     assert_eq!(
-        create_prelude_text_input_name_plan(jackin_core::ModalOutcome::Commit(
+        create_prelude_text_input_name_plan(jackin_tui::ModalOutcome::Commit(
             "workspace".to_owned()
         )),
         CreatePreludeTextInputNamePlan::Commit("workspace".to_owned())
     );
     assert_eq!(
-        create_prelude_text_input_name_plan::<String>(jackin_core::ModalOutcome::Cancel),
+        create_prelude_text_input_name_plan::<String>(jackin_tui::ModalOutcome::Cancel),
         CreatePreludeTextInputNamePlan::ReopenWorkdirPick
     );
     assert_eq!(
-        create_prelude_text_input_name_plan::<String>(jackin_core::ModalOutcome::Continue),
+        create_prelude_text_input_name_plan::<String>(jackin_tui::ModalOutcome::Continue),
         CreatePreludeTextInputNamePlan::Continue
     );
 }
@@ -1191,19 +1191,19 @@ fn create_prelude_text_input_name_plan_routes_input_outcomes() {
 #[test]
 fn create_prelude_workdir_pick_plan_routes_input_outcomes() {
     assert_eq!(
-        create_prelude_workdir_pick_plan(jackin_core::ModalOutcome::Commit("src".to_owned()), true),
+        create_prelude_workdir_pick_plan(jackin_tui::ModalOutcome::Commit("src".to_owned()), true),
         CreatePreludeWorkdirPickPlan::Commit("src".to_owned())
     );
     assert_eq!(
-        create_prelude_workdir_pick_plan::<String>(jackin_core::ModalOutcome::Cancel, true),
+        create_prelude_workdir_pick_plan::<String>(jackin_tui::ModalOutcome::Cancel, true),
         CreatePreludeWorkdirPickPlan::ReopenTextInputDst
     );
     assert_eq!(
-        create_prelude_workdir_pick_plan::<String>(jackin_core::ModalOutcome::Cancel, false),
+        create_prelude_workdir_pick_plan::<String>(jackin_tui::ModalOutcome::Cancel, false),
         CreatePreludeWorkdirPickPlan::ReopenMountDstChoice
     );
     assert_eq!(
-        create_prelude_workdir_pick_plan::<String>(jackin_core::ModalOutcome::Continue, true),
+        create_prelude_workdir_pick_plan::<String>(jackin_tui::ModalOutcome::Continue, true),
         CreatePreludeWorkdirPickPlan::Continue
     );
 }
@@ -1227,7 +1227,7 @@ impl ModalConfirmSaveState for TestConfirmSave {
 impl ModalConfirmSaveFooterState for TestConfirmSave {
     fn footer_mode(&self) -> ModalFooterMode {
         ModalFooterMode::ConfirmSave {
-            scroll_axes: termrock::layout::ScrollAxes::none(),
+            scroll_axes: termrock::scroll::ScrollAxes::none(),
         }
     }
 }

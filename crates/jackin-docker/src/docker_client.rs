@@ -10,7 +10,7 @@
 //! Not responsible for: subprocess-level `docker` CLI invocations
 //! (`shell_runner.rs`), or the launch pipeline orchestration.
 
-use std::{collections::HashMap, ffi::OsStr, process::Command, sync::OnceLock};
+use std::{collections::HashMap, ffi::OsStr, future::Future, sync::OnceLock};
 
 use crate::DockerError;
 use anyhow::Context;
@@ -30,6 +30,89 @@ use futures_util::StreamExt;
 pub use jackin_core::{
     ContainerRow, ContainerSpec, ContainerState, DockerApi, NetworkRow, RemoveImageOutcome,
 };
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct DockerRoute {
+    method: &'static str,
+    template: &'static str,
+}
+
+impl DockerRoute {
+    const fn new(method: &'static str, template: &'static str) -> Self {
+        Self { method, template }
+    }
+}
+
+const PING: DockerRoute = DockerRoute::new("GET", "/_ping");
+const CONTAINER_INSPECT: DockerRoute = DockerRoute::new("GET", "/containers/{id}/json");
+const CONTAINER_REMOVE: DockerRoute = DockerRoute::new("DELETE", "/containers/{id}");
+const CONTAINER_LIST: DockerRoute = DockerRoute::new("GET", "/containers/json");
+const CONTAINER_CREATE: DockerRoute = DockerRoute::new("POST", "/containers/create");
+const CONTAINER_START: DockerRoute = DockerRoute::new("POST", "/containers/{id}/start");
+const VOLUME_REMOVE: DockerRoute = DockerRoute::new("DELETE", "/volumes/{name}");
+const NETWORK_CREATE: DockerRoute = DockerRoute::new("POST", "/networks/create");
+const NETWORK_REMOVE: DockerRoute = DockerRoute::new("DELETE", "/networks/{id}");
+const NETWORK_LIST: DockerRoute = DockerRoute::new("GET", "/networks");
+const NETWORK_INSPECT: DockerRoute = DockerRoute::new("GET", "/networks/{id}");
+const IMAGE_LIST: DockerRoute = DockerRoute::new("GET", "/images/json");
+const IMAGE_REMOVE: DockerRoute = DockerRoute::new("DELETE", "/images/{name}");
+const IMAGE_INSPECT: DockerRoute = DockerRoute::new("GET", "/images/{name}/json");
+const IMAGE_PULL: DockerRoute = DockerRoute::new("POST", "/images/create");
+const EXEC_CREATE: DockerRoute = DockerRoute::new("POST", "/containers/{id}/exec");
+const EXEC_START: DockerRoute = DockerRoute::new("POST", "/exec/{id}/start");
+const EXEC_INSPECT: DockerRoute = DockerRoute::new("GET", "/exec/{id}/json");
+
+fn begin_docker_http(route: DockerRoute) -> jackin_telemetry::OperationGuard {
+    let attrs = [
+        jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::std_attrs::HTTP_REQUEST_METHOD,
+            value: jackin_telemetry::Value::Str(route.method),
+        },
+        jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::std_attrs::URL_TEMPLATE,
+            value: jackin_telemetry::Value::Str(route.template),
+        },
+    ];
+    jackin_telemetry::operation_or_disabled(&jackin_telemetry::operation::HTTP_CLIENT, &attrs)
+}
+
+async fn docker_http<T>(
+    route: DockerRoute,
+    future: impl Future<Output = anyhow::Result<T>>,
+) -> anyhow::Result<T> {
+    let operation = begin_docker_http(route);
+    let result = future.await;
+    operation.complete(
+        if result.is_ok() {
+            jackin_telemetry::schema::enums::OutcomeValue::Success
+        } else {
+            jackin_telemetry::schema::enums::OutcomeValue::Error
+        },
+        result
+            .as_ref()
+            .err()
+            .map(|_| jackin_telemetry::schema::enums::ErrorType::HttpError),
+    );
+    result
+}
+
+async fn consume_exec_start(container: &str, start: StartExecResults) -> anyhow::Result<String> {
+    let StartExecResults::Attached { mut output, .. } = start else {
+        return Err(DockerError::ExecDetached {
+            container: container.to_owned(),
+        }
+        .into());
+    };
+    let mut output_buf = String::new();
+    while let Some(chunk) = output.next().await {
+        if let LogOutput::StdOut { message } | LogOutput::StdErr { message } =
+            chunk.with_context(|| format!("reading exec output from {container}"))?
+        {
+            output_buf.push_str(&String::from_utf8_lossy(&message));
+        }
+    }
+    Ok(output_buf)
+}
 
 #[derive(Debug)]
 pub struct BollardDockerClient {
@@ -108,10 +191,6 @@ impl DockerContextEndpoint {
     fn connection_choice(self) -> ConnectionChoice {
         let host = self.host.as_str();
         if host.is_empty() {
-            jackin_diagnostics::debug_log!(
-                "docker",
-                "context endpoint host empty; using bollard defaults"
-            );
             return ConnectionChoice::Defaults;
         }
 
@@ -179,11 +258,8 @@ fn connect_to_cli_docker_context() -> anyhow::Result<Docker> {
         ConnectionChoice::Defaults => {
             Docker::connect_with_defaults().context("connect to Docker daemon via bollard defaults")
         }
-        ConnectionChoice::Host(host) => {
-            jackin_diagnostics::debug_log!("docker", "connect context host {host}");
-            Docker::connect_with_host(&host)
-                .with_context(|| format!("connect to Docker host {host}"))
-        }
+        ConnectionChoice::Host(host) => Docker::connect_with_host(&host)
+            .with_context(|| format!("connect to Docker host {host}")),
         ConnectionChoice::Unsupported { reason, host } => {
             Err(DockerError::Message(ConnectionChoice::unsupported_message(&reason, &host)).into())
         }
@@ -222,7 +298,6 @@ fn docker_host_env_is_set_from(value: Option<&OsStr>) -> bool {
 fn cached_context_endpoint() -> Option<DockerContextEndpoint> {
     static CACHE: OnceLock<DockerContextEndpoint> = OnceLock::new();
     if let Some(cached) = CACHE.get() {
-        jackin_diagnostics::debug_log!("docker", "context endpoint cache hit host={}", cached.host);
         return Some(cached.clone());
     }
     let endpoint = active_docker_context_endpoint()?;
@@ -231,34 +306,22 @@ fn cached_context_endpoint() -> Option<DockerContextEndpoint> {
 }
 
 fn active_docker_context_endpoint() -> Option<DockerContextEndpoint> {
-    let mut cmd = Command::new("docker");
-    cmd.args(["context", "inspect", "--format", "{{json .}}"]);
+    let mut request = jackin_process::ExecRequest::new(
+        "docker",
+        ["context", "inspect", "--format", "{{json .}}"],
+    );
     // Pin `DOCKER_CONTEXT` so resolution survives any future Docker CLI drift,
     // even though `docker context inspect` already honors it today.
     if let Some(ctx) = std::env::var("DOCKER_CONTEXT")
         .ok()
         .filter(|v| !v.is_empty())
     {
-        cmd.arg(ctx);
+        request.args.push(ctx.into());
     }
-    #[expect(
-        clippy::disallowed_methods,
-        reason = "Docker context inspection runs before launch render/runtime work begins"
-    )]
-    let output = match cmd.output() {
-        Ok(output) => output,
-        Err(err) => {
-            jackin_diagnostics::debug_log!("docker", "context inspect spawn failed: {err}");
-            return None;
-        }
+    let Ok(output) = crate::process_telemetry::exec_sync(&request) else {
+        return None;
     };
-    if !output.status.success() {
-        jackin_diagnostics::debug_log!(
-            "docker",
-            "context inspect exit={:?} stderr={}",
-            output.status.code(),
-            String::from_utf8_lossy(&output.stderr).trim()
-        );
+    if !output.success {
         return None;
     }
     parse_docker_context_endpoint(&output.stdout)
@@ -267,23 +330,9 @@ fn active_docker_context_endpoint() -> Option<DockerContextEndpoint> {
 fn parse_docker_context_endpoint(stdout: &[u8]) -> Option<DockerContextEndpoint> {
     let context: DockerContextInspect = match serde_json::from_slice(stdout) {
         Ok(context) => context,
-        Err(err) => {
-            jackin_diagnostics::debug_log!(
-                "docker",
-                "context inspect json parse failed: {err} stdout={}",
-                String::from_utf8_lossy(stdout).trim()
-            );
-            return None;
-        }
+        Err(_) => return None,
     };
-    let Some(endpoint) = context.endpoints.docker else {
-        jackin_diagnostics::debug_log!(
-            "docker",
-            "context inspect missing Endpoints.docker stdout={}",
-            String::from_utf8_lossy(stdout).trim()
-        );
-        return None;
-    };
+    let endpoint = context.endpoints.docker?;
     let has_tls_material = context
         .tls_material
         .get("docker")
@@ -328,16 +377,40 @@ fn build_label_filter(label_filters: &[&str]) -> Option<HashMap<String, Vec<Stri
 
 impl DockerApi for BollardDockerClient {
     async fn ping(&self) -> anyhow::Result<()> {
-        self.inner
-            .ping()
-            .await
-            .map(|_| ())
-            .context("pinging Docker daemon")
+        let connection_attrs = [jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::CONNECTION_PEER_TYPE,
+            value: jackin_telemetry::Value::Str(
+                jackin_telemetry::schema::enums::ConnectionPeerType::Docker.as_str(),
+            ),
+        }];
+        let connection = jackin_telemetry::operation_or_disabled(
+            &jackin_telemetry::operation::CONNECTION_ATTEMPT,
+            &connection_attrs,
+        );
+        let result = docker_http(PING, async {
+            self.inner
+                .ping()
+                .await
+                .map(|_| ())
+                .context("pinging Docker daemon")
+        })
+        .await;
+        connection.complete(
+            if result.is_ok() {
+                jackin_telemetry::schema::enums::OutcomeValue::Success
+            } else {
+                jackin_telemetry::schema::enums::OutcomeValue::Error
+            },
+            result
+                .as_ref()
+                .err()
+                .map(|_| jackin_telemetry::schema::enums::ErrorType::DockerDaemonUnreachable),
+        );
+        result
     }
 
     async fn inspect_container_state(&self, name: &str) -> ContainerState {
-        jackin_diagnostics::debug_log!("docker", "inspect container {name}");
-        jackin_diagnostics::incr_docker_inspect();
+        let operation = begin_docker_http(CONTAINER_INSPECT);
         let result = self
             .inner
             .inspect_container(name, None::<InspectContainerOptions>)
@@ -348,6 +421,10 @@ impl DockerApi for BollardDockerClient {
             Err(e) => ContainerState::InspectUnavailable(e.to_string()),
             Ok(info) => {
                 let Some(state) = info.state else {
+                    operation.complete(
+                        jackin_telemetry::schema::enums::OutcomeValue::Failure,
+                        Some(jackin_telemetry::schema::enums::ErrorType::HttpError),
+                    );
                     return ContainerState::InspectUnavailable("no state field".to_owned());
                 };
                 match state.status {
@@ -374,31 +451,37 @@ impl DockerApi for BollardDockerClient {
                 }
             }
         };
-        jackin_diagnostics::debug_log!(
-            "docker",
-            "inspect container {name} -> {}",
-            state.inspect_label()
+        let failed = matches!(state, ContainerState::InspectUnavailable(_));
+        operation.complete(
+            if failed {
+                jackin_telemetry::schema::enums::OutcomeValue::Failure
+            } else {
+                jackin_telemetry::schema::enums::OutcomeValue::Success
+            },
+            failed.then_some(jackin_telemetry::schema::enums::ErrorType::HttpError),
         );
         state
     }
 
     async fn remove_container(&self, name: &str) -> anyhow::Result<()> {
-        jackin_diagnostics::debug_log!("docker", "rm -f {name}");
-        match self
-            .inner
-            .remove_container(
-                name,
-                Some(RemoveContainerOptions {
-                    force: true,
-                    ..Default::default()
-                }),
-            )
-            .await
-        {
-            Ok(()) => Ok(()),
-            Err(e) if is_http_status(&e, 404) => Ok(()),
-            Err(e) => Err(anyhow::Error::from(e).context(format!("removing container {name}"))),
-        }
+        docker_http(CONTAINER_REMOVE, async {
+            match self
+                .inner
+                .remove_container(
+                    name,
+                    Some(RemoveContainerOptions {
+                        force: true,
+                        ..Default::default()
+                    }),
+                )
+                .await
+            {
+                Ok(()) => Ok(()),
+                Err(e) if is_http_status(&e, 404) => Ok(()),
+                Err(e) => Err(anyhow::Error::from(e).context(format!("removing container {name}"))),
+            }
+        })
+        .await
     }
 
     async fn list_containers(
@@ -406,86 +489,90 @@ impl DockerApi for BollardDockerClient {
         label_filters: &[&str],
         all: bool,
     ) -> anyhow::Result<Vec<ContainerRow>> {
-        jackin_diagnostics::debug_log!(
-            "docker",
-            "ps{} --filter label=...",
-            if all { " -a" } else { "" }
-        );
-        let filters = build_label_filter(label_filters);
-        let summaries = self
-            .inner
-            .list_containers(Some(ListContainersOptions {
-                all,
-                filters,
-                ..Default::default()
-            }))
-            .await
-            .context("listing containers")?;
+        docker_http(CONTAINER_LIST, async {
+            let filters = build_label_filter(label_filters);
+            let summaries = self
+                .inner
+                .list_containers(Some(ListContainersOptions {
+                    all,
+                    filters,
+                    ..Default::default()
+                }))
+                .await
+                .context("listing containers")?;
 
-        Ok(summaries
-            .into_iter()
-            .map(|s| {
-                let raw_name = s
-                    .names
-                    .unwrap_or_default()
-                    .into_iter()
-                    .next()
-                    .unwrap_or_default();
-                let name = raw_name.trim_start_matches('/').to_owned();
-                let labels = s.labels.unwrap_or_default();
-                ContainerRow { name, labels }
-            })
-            .collect())
+            Ok(summaries
+                .into_iter()
+                .map(|s| {
+                    let raw_name = s
+                        .names
+                        .unwrap_or_default()
+                        .into_iter()
+                        .next()
+                        .unwrap_or_default();
+                    let name = raw_name.trim_start_matches('/').to_owned();
+                    let labels = s.labels.unwrap_or_default();
+                    ContainerRow { name, labels }
+                })
+                .collect())
+        })
+        .await
     }
 
     async fn create_container(&self, name: &str, spec: ContainerSpec) -> anyhow::Result<()> {
-        jackin_diagnostics::debug_log!("docker", "create container {name} image={}", spec.image);
-        self.inner
-            .create_container(
-                Some(CreateContainerOptions {
-                    name: Some(name.to_owned()),
-                    ..Default::default()
-                }),
-                ContainerCreateBody {
-                    image: Some(spec.image),
-                    hostname: spec.hostname,
-                    env: Some(spec.env),
-                    labels: Some(spec.labels),
-                    host_config: Some(HostConfig {
-                        network_mode: Some(spec.network),
-                        binds: Some(spec.binds),
-                        privileged: Some(spec.privileged),
+        docker_http(CONTAINER_CREATE, async {
+            self.inner
+                .create_container(
+                    Some(CreateContainerOptions {
+                        name: Some(name.to_owned()),
                         ..Default::default()
                     }),
-                    entrypoint: spec.entrypoint,
-                    working_dir: spec.workdir,
-                    ..Default::default()
-                },
-            )
-            .await
-            .with_context(|| format!("creating container {name}"))?;
-        Ok(())
+                    ContainerCreateBody {
+                        image: Some(spec.image),
+                        hostname: spec.hostname,
+                        env: Some(spec.env),
+                        labels: Some(spec.labels),
+                        host_config: Some(HostConfig {
+                            network_mode: Some(spec.network),
+                            binds: Some(spec.binds),
+                            privileged: Some(spec.privileged),
+                            ..Default::default()
+                        }),
+                        entrypoint: spec.entrypoint,
+                        working_dir: spec.workdir,
+                        ..Default::default()
+                    },
+                )
+                .await
+                .with_context(|| format!("creating container {name}"))?;
+            Ok(())
+        })
+        .await
     }
 
     async fn start_container(&self, name: &str) -> anyhow::Result<()> {
-        jackin_diagnostics::debug_log!("docker", "start container {name}");
-        self.inner
-            .start_container(name, None::<StartContainerOptions>)
-            .await
-            .with_context(|| format!("starting container {name}"))
+        docker_http(CONTAINER_START, async {
+            self.inner
+                .start_container(name, None::<StartContainerOptions>)
+                .await
+                .with_context(|| format!("starting container {name}"))
+        })
+        .await
     }
 
     async fn remove_volume(&self, name: &str) -> anyhow::Result<()> {
-        jackin_diagnostics::debug_log!("docker", "volume rm {name}");
-        match self
-            .inner
-            .remove_volume(name, None::<RemoveVolumeOptions>)
-            .await
-        {
-            Ok(()) => Ok(()),
-            Err(e) if is_http_status(&e, 404) => Ok(()),
-            Err(e) => Err(anyhow::Error::from(e).context(format!("removing volume {name}"))),
-        }
+        docker_http(VOLUME_REMOVE, async {
+            match self
+                .inner
+                .remove_volume(name, None::<RemoveVolumeOptions>)
+                .await
+            {
+                Ok(()) => Ok(()),
+                Err(e) if is_http_status(&e, 404) => Ok(()),
+                Err(e) => Err(anyhow::Error::from(e).context(format!("removing volume {name}"))),
+            }
+        })
+        .await
     }
 
     async fn create_network(
@@ -494,180 +581,177 @@ impl DockerApi for BollardDockerClient {
         labels: HashMap<String, String>,
         internal: bool,
     ) -> anyhow::Result<()> {
-        jackin_diagnostics::debug_log!("docker", "network create {name} internal={internal}");
-        self.inner
-            .create_network(NetworkCreateRequest {
-                name: name.to_owned(),
-                labels: Some(labels),
-                internal: Some(internal),
-                ..Default::default()
-            })
-            .await
-            .with_context(|| format!("creating network {name}"))?;
-        Ok(())
+        docker_http(NETWORK_CREATE, async {
+            self.inner
+                .create_network(NetworkCreateRequest {
+                    name: name.to_owned(),
+                    labels: Some(labels),
+                    internal: Some(internal),
+                    ..Default::default()
+                })
+                .await
+                .with_context(|| format!("creating network {name}"))?;
+            Ok(())
+        })
+        .await
     }
 
     async fn remove_network(&self, name: &str) -> anyhow::Result<()> {
-        jackin_diagnostics::debug_log!("docker", "network rm {name}");
-        match self.inner.remove_network(name).await {
-            Ok(()) => Ok(()),
-            Err(e) if is_http_status(&e, 404) => Ok(()),
-            Err(e) => Err(anyhow::Error::from(e).context(format!("removing network {name}"))),
-        }
+        docker_http(NETWORK_REMOVE, async {
+            match self.inner.remove_network(name).await {
+                Ok(()) => Ok(()),
+                Err(e) if is_http_status(&e, 404) => Ok(()),
+                Err(e) => Err(anyhow::Error::from(e).context(format!("removing network {name}"))),
+            }
+        })
+        .await
     }
 
     async fn list_networks(&self, label_filters: &[&str]) -> anyhow::Result<Vec<NetworkRow>> {
-        jackin_diagnostics::debug_log!("docker", "network ls --filter label=...");
-        let filters = build_label_filter(label_filters);
-        let networks = self
-            .inner
-            .list_networks(Some(ListNetworksOptions { filters }))
-            .await
-            .context("listing networks")?;
+        docker_http(NETWORK_LIST, async {
+            let filters = build_label_filter(label_filters);
+            let networks = self
+                .inner
+                .list_networks(Some(ListNetworksOptions { filters }))
+                .await
+                .context("listing networks")?;
 
-        Ok(networks
-            .into_iter()
-            .filter_map(|n| {
-                let name = n.name?;
-                let labels = n.labels.unwrap_or_default();
-                Some(NetworkRow { name, labels })
-            })
-            .collect())
+            Ok(networks
+                .into_iter()
+                .filter_map(|n| {
+                    let name = n.name?;
+                    let labels = n.labels.unwrap_or_default();
+                    Some(NetworkRow { name, labels })
+                })
+                .collect())
+        })
+        .await
     }
 
     async fn list_image_tags(&self, reference_filter: &str) -> anyhow::Result<Vec<String>> {
-        jackin_diagnostics::debug_log!("docker", "images --filter reference={reference_filter}");
-        let mut filters = HashMap::new();
-        filters.insert("reference".to_owned(), vec![reference_filter.to_owned()]);
-        let images = self
-            .inner
-            .list_images(Some(ListImagesOptions {
-                filters: Some(filters),
-                ..Default::default()
-            }))
-            .await
-            .context("listing images")?;
+        docker_http(IMAGE_LIST, async {
+            let mut filters = HashMap::new();
+            filters.insert("reference".to_owned(), vec![reference_filter.to_owned()]);
+            let images = self
+                .inner
+                .list_images(Some(ListImagesOptions {
+                    filters: Some(filters),
+                    ..Default::default()
+                }))
+                .await
+                .context("listing images")?;
 
-        let tags: Vec<String> = images
-            .into_iter()
-            .flat_map(|i| i.repo_tags)
-            .filter(|t| !t.is_empty())
-            .collect();
-        Ok(tags)
+            let tags: Vec<String> = images
+                .into_iter()
+                .flat_map(|i| i.repo_tags)
+                .filter(|t| !t.is_empty())
+                .collect();
+            Ok(tags)
+        })
+        .await
     }
 
     async fn remove_image(&self, name: &str) -> anyhow::Result<RemoveImageOutcome> {
-        jackin_diagnostics::debug_log!("docker", "rmi {name}");
-        match self
-            .inner
-            .remove_image(
-                name,
-                Some(RemoveImageOptions {
-                    force: false,
-                    noprune: false,
-                    ..Default::default()
-                }),
-                None,
-            )
-            .await
-        {
-            Ok(_) => Ok(RemoveImageOutcome::Removed),
-            Err(e) if is_http_status(&e, 404) => Ok(RemoveImageOutcome::NotFound),
-            Err(ref e) if is_http_status(e, 409) => Ok(RemoveImageOutcome::InUse),
-            Err(e) => {
-                let msg = e.to_string().to_ascii_lowercase();
-                if msg.contains("in use") || msg.contains("cannot be forced") {
-                    Ok(RemoveImageOutcome::InUse)
-                } else {
-                    Err(anyhow::Error::from(e).context(format!("removing image {name}")))
+        docker_http(IMAGE_REMOVE, async {
+            match self
+                .inner
+                .remove_image(
+                    name,
+                    Some(RemoveImageOptions {
+                        force: false,
+                        noprune: false,
+                        ..Default::default()
+                    }),
+                    None,
+                )
+                .await
+            {
+                Ok(_) => Ok(RemoveImageOutcome::Removed),
+                Err(e) if is_http_status(&e, 404) => Ok(RemoveImageOutcome::NotFound),
+                Err(ref e) if is_http_status(e, 409) => Ok(RemoveImageOutcome::InUse),
+                Err(e) => {
+                    let msg = e.to_string().to_ascii_lowercase();
+                    if msg.contains("in use") || msg.contains("cannot be forced") {
+                        Ok(RemoveImageOutcome::InUse)
+                    } else {
+                        Err(anyhow::Error::from(e).context(format!("removing image {name}")))
+                    }
                 }
             }
-        }
+        })
+        .await
     }
 
     async fn inspect_image_labels(&self, image: &str) -> anyhow::Result<HashMap<String, String>> {
-        jackin_diagnostics::debug_log!("docker", "inspect image:{image}");
-        match self.inner.inspect_image(image).await {
-            Err(e) if is_http_status(&e, 404) => Ok(HashMap::new()),
-            Err(e) => Err(anyhow::Error::from(e).context(format!("inspecting image {image}"))),
-            Ok(info) => Ok(info
-                .config
-                .and_then(|c| c.labels)
-                .unwrap_or_default()
-                .into_iter()
-                .filter(|(_, v)| !v.is_empty())
-                .collect()),
-        }
+        docker_http(IMAGE_INSPECT, async {
+            match self.inner.inspect_image(image).await {
+                Err(e) if is_http_status(&e, 404) => Ok(HashMap::new()),
+                Err(e) => Err(anyhow::Error::from(e).context(format!("inspecting image {image}"))),
+                Ok(info) => Ok(info
+                    .config
+                    .and_then(|c| c.labels)
+                    .unwrap_or_default()
+                    .into_iter()
+                    .filter(|(_, v)| !v.is_empty())
+                    .collect()),
+            }
+        })
+        .await
     }
 
     async fn pull_image(&self, image: &str) -> anyhow::Result<()> {
         use bollard::query_parameters::CreateImageOptions;
-        jackin_diagnostics::debug_log!("docker", "pull {image}");
-        let mut stream = self.inner.create_image(
-            Some(CreateImageOptions {
-                from_image: Some(image.to_owned()),
-                ..Default::default()
-            }),
-            None,
-            None,
-        );
-        while let Some(event) = stream.next().await {
-            event.with_context(|| format!("pulling image {image}"))?;
-        }
-        Ok(())
+        docker_http(IMAGE_PULL, async {
+            let mut stream = self.inner.create_image(
+                Some(CreateImageOptions {
+                    from_image: Some(image.to_owned()),
+                    ..Default::default()
+                }),
+                None,
+                None,
+            );
+            while let Some(event) = stream.next().await {
+                event.with_context(|| format!("pulling image {image}"))?;
+            }
+            Ok(())
+        })
+        .await
     }
 
     async fn exec_capture(&self, container: &str, cmd: &[&str]) -> anyhow::Result<String> {
-        let redacted_cmd = cmd
-            .iter()
-            .map(|arg| jackin_diagnostics::redact::redact_text(arg).into_owned())
-            .collect::<Vec<_>>()
-            .join(" ");
-        jackin_diagnostics::debug_log!("docker", "exec {} {}", container, redacted_cmd);
-        let exec = self
-            .inner
-            .create_exec(
-                container,
-                CreateExecOptions {
-                    cmd: Some(cmd.iter().map(ToString::to_string).collect()),
-                    attach_stdout: Some(true),
-                    attach_stderr: Some(true),
-                    ..Default::default()
-                },
-            )
-            .await
-            .with_context(|| format!("creating exec in {container}"))?;
+        let exec = docker_http(EXEC_CREATE, async {
+            self.inner
+                .create_exec(
+                    container,
+                    CreateExecOptions {
+                        cmd: Some(cmd.iter().map(ToString::to_string).collect()),
+                        attach_stdout: Some(true),
+                        attach_stderr: Some(true),
+                        ..Default::default()
+                    },
+                )
+                .await
+                .with_context(|| format!("creating exec in {container}"))
+        })
+        .await?;
 
-        let mut output_buf = String::new();
-        match self
-            .inner
-            .start_exec(&exec.id, None::<StartExecOptions>)
-            .await
-            .with_context(|| format!("starting exec in {container}"))?
-        {
-            StartExecResults::Attached { mut output, .. } => {
-                while let Some(chunk) = output.next().await {
-                    match chunk.with_context(|| format!("reading exec output from {container}"))? {
-                        LogOutput::StdOut { message } | LogOutput::StdErr { message } => {
-                            output_buf.push_str(&String::from_utf8_lossy(&message));
-                        }
-                        _ => {}
-                    }
-                }
-            }
-            StartExecResults::Detached => {
-                return Err(DockerError::ExecDetached {
-                    container: container.to_owned(),
-                }
-                .into());
-            }
-        }
+        let output_buf = docker_http(EXEC_START, async {
+            let start = self
+                .inner
+                .start_exec(&exec.id, None::<StartExecOptions>)
+                .await
+                .with_context(|| format!("starting exec in {container}"))?;
+            consume_exec_start(container, start).await
+        })
+        .await?;
 
-        let inspect = self
-            .inner
-            .inspect_exec(&exec.id)
-            .await
-            .with_context(|| format!("inspecting exec result in {container}"))?;
+        let inspect = docker_http(EXEC_INSPECT, async {
+            self.inner
+                .inspect_exec(&exec.id)
+                .await
+                .with_context(|| format!("inspecting exec result in {container}"))
+        })
+        .await?;
         let exit_code = inspect.exit_code.unwrap_or(-1);
         if exit_code != 0 {
             return Err(DockerError::ExecNonZero {
@@ -682,26 +766,28 @@ impl DockerApi for BollardDockerClient {
     }
 
     async fn inspect_network(&self, name: &str) -> anyhow::Result<Option<NetworkRow>> {
-        jackin_diagnostics::debug_log!("docker", "network inspect {name}");
-        match self
-            .inner
-            .inspect_network(
-                name,
-                None::<bollard::query_parameters::InspectNetworkOptions>,
-            )
-            .await
-        {
-            Ok(n) => {
-                let net_name = n.name.unwrap_or_else(|| name.to_owned());
-                let labels = n.labels.unwrap_or_default();
-                Ok(Some(NetworkRow {
-                    name: net_name,
-                    labels,
-                }))
+        docker_http(NETWORK_INSPECT, async {
+            match self
+                .inner
+                .inspect_network(
+                    name,
+                    None::<bollard::query_parameters::InspectNetworkOptions>,
+                )
+                .await
+            {
+                Ok(n) => {
+                    let net_name = n.name.unwrap_or_else(|| name.to_owned());
+                    let labels = n.labels.unwrap_or_default();
+                    Ok(Some(NetworkRow {
+                        name: net_name,
+                        labels,
+                    }))
+                }
+                Err(e) if is_http_status(&e, 404) => Ok(None),
+                Err(e) => Err(anyhow::Error::from(e).context(format!("inspecting network {name}"))),
             }
-            Err(e) if is_http_status(&e, 404) => Ok(None),
-            Err(e) => Err(anyhow::Error::from(e).context(format!("inspecting network {name}"))),
-        }
+        })
+        .await
     }
 }
 

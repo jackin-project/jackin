@@ -8,12 +8,13 @@
 //! in-container rendering.
 
 use anyhow::{Context, Result};
+use jackin_telemetry::ResultTelemetryExt as _;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::UnixStream;
 
 use crate::protocol::attach::SpawnRequest;
 use crate::protocol::control::{
-    AccountUsageSnapshotView, ClientMsg, ServerMsg, frame as control_frame,
+    AccountUsageSnapshotView, ClientMsg, ControlRequest, ServerMsg, frame as control_frame,
 };
 use crate::socket::SOCKET_PATH;
 
@@ -38,9 +39,11 @@ pub async fn run_client(
 /// exits 0 — a reporter must never break the agent's hook — so all failures are
 /// logged and swallowed.
 pub async fn run_report_event(args: &[String]) -> Result<()> {
-    if let Err(e) = try_report_event(args).await {
-        crate::clog!("report-event: {e:#}");
-    }
+    drop(
+        try_report_event(args)
+            .await
+            .record_telemetry_error(jackin_telemetry::schema::enums::ErrorType::RpcError),
+    );
     Ok(())
 }
 
@@ -59,9 +62,12 @@ where
     R: AsyncRead + Unpin,
     W: AsyncWrite + Unpin,
 {
-    let stream = UnixStream::connect(socket_path)
-        .await
-        .with_context(|| format!("cannot connect to jackin-capsule daemon at {socket_path}"))?;
+    let stream = jackin_diagnostics::operation::connection_attempt(
+        jackin_telemetry::schema::enums::ConnectionPeerType::CapsuleAttach,
+        UnixStream::connect(socket_path),
+    )
+    .await
+    .with_context(|| format!("cannot connect to jackin-capsule daemon at {socket_path}"))?;
     let (mut socket_read, mut socket_write) = stream.into_split();
     let mut input = input;
     let mut output = output;
@@ -111,7 +117,7 @@ async fn try_report_event(args: &[String]) -> Result<()> {
         None
     };
 
-    let mut stream = connect_and_send(&ClientMsg::ReportRuntimeEvent {
+    let (mut stream, operation) = connect_and_send(&ClientMsg::ReportRuntimeEvent {
         session_id,
         source_id,
         runtime,
@@ -119,15 +125,34 @@ async fn try_report_event(args: &[String]) -> Result<()> {
         payload,
     })
     .await?;
-    // Read the bounded Ack so the daemon ingests the event before we exit; the
-    // content is irrelevant.
-    let mut len_buf = [0u8; 4];
-    let _ack = tokio::time::timeout(
-        std::time::Duration::from_secs(2),
-        stream.read_exact(&mut len_buf),
-    )
+    let result = async {
+        let reply = tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            read_control_reply(&mut stream),
+        )
+        .await
+        .context("daemon Ack timed out")??;
+        anyhow::ensure!(
+            matches!(reply, ServerMsg::Ack),
+            "daemon did not acknowledge event"
+        );
+        Ok(())
+    }
     .await;
-    Ok(())
+    if let Some(operation) = operation {
+        operation.complete(
+            if result.is_ok() {
+                jackin_telemetry::schema::enums::OutcomeValue::Success
+            } else {
+                jackin_telemetry::schema::enums::OutcomeValue::Failure
+            },
+            result
+                .as_ref()
+                .err()
+                .map(|_| jackin_telemetry::schema::enums::ErrorType::RpcError),
+        );
+    }
+    result
 }
 
 /// The first arg after `flag` — works for both `--flag value` and a positional
@@ -205,12 +230,31 @@ pub async fn run_status_capture(args: &[String]) -> Result<()> {
         .parse()
         .context("session_id must be a u64")?;
 
-    let mut stream = connect_and_send(&ClientMsg::StatusCapture { session_id }).await?;
-    // The daemon writes the fixture synchronously before replying, so reading the
-    // reply's length prefix is enough to know the capture ran; the small Ack body
-    // is intentionally not drained (the connection closes next).
-    let mut len_buf = [0u8; 4];
-    stream.read_exact(&mut len_buf).await?;
+    let (mut stream, operation) =
+        connect_and_send(&ClientMsg::StatusCapture { session_id }).await?;
+    let read_result = async {
+        let reply = read_control_reply(&mut stream).await?;
+        anyhow::ensure!(
+            matches!(reply, ServerMsg::Ack),
+            "daemon did not acknowledge capture"
+        );
+        Ok(())
+    }
+    .await;
+    if let Some(operation) = operation {
+        operation.complete(
+            if read_result.is_ok() {
+                jackin_telemetry::schema::enums::OutcomeValue::Success
+            } else {
+                jackin_telemetry::schema::enums::OutcomeValue::Failure
+            },
+            read_result
+                .as_ref()
+                .err()
+                .map(|_| jackin_telemetry::schema::enums::ErrorType::RpcError),
+        );
+    }
+    read_result?;
     crate::output::stdout_line(format_args!(
         "capture requested for session {session_id}; \
          see /jackin/state/agent-status/captures/"
@@ -523,31 +567,130 @@ fn normalize_usage_provider_label(value: &str) -> String {
 
 /// Connect to the daemon control socket and send one length-prefixed request,
 /// returning the open stream so the caller can read (or ignore) the reply.
-async fn connect_and_send(request: &ClientMsg) -> Result<UnixStream> {
-    let mut stream = UnixStream::connect(SOCKET_PATH)
-        .await
-        .context("cannot connect to jackin-capsule daemon")?;
-    stream.write_all(&control_frame(request)).await?;
-    Ok(stream)
+async fn connect_and_send(
+    request: &ClientMsg,
+) -> Result<(
+    UnixStream,
+    Option<jackin_telemetry::operation::OperationGuard>,
+)> {
+    let attrs = [
+        jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::std_attrs::RPC_SYSTEM_NAME,
+            value: jackin_telemetry::Value::Str("jackin"),
+        },
+        jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::std_attrs::RPC_METHOD,
+            value: jackin_telemetry::Value::Str(request.rpc_method()),
+        },
+    ];
+    let operation =
+        jackin_telemetry::operation(&jackin_telemetry::operation::RPC_CLIENT, &attrs).ok();
+    let mut stream = match jackin_diagnostics::operation::connection_attempt(
+        jackin_telemetry::schema::enums::ConnectionPeerType::CapsuleControl,
+        UnixStream::connect(SOCKET_PATH),
+    )
+    .await
+    {
+        Ok(stream) => stream,
+        Err(error) => {
+            if let Some(operation) = operation {
+                operation.complete(
+                    jackin_telemetry::schema::enums::OutcomeValue::Failure,
+                    Some(jackin_telemetry::schema::enums::ErrorType::RpcError),
+                );
+            }
+            return Err(error).context("cannot connect to jackin-capsule daemon");
+        }
+    };
+    let mut ctx = jackin_protocol::TelemetryContext::v1();
+    if let Some(operation) = operation.as_ref() {
+        operation
+            .span()
+            .in_scope(|| jackin_telemetry::propagation::inject(&mut ctx));
+    } else {
+        jackin_telemetry::propagation::inject(&mut ctx);
+    }
+    let result = stream
+        .write_all(&control_frame(&ControlRequest {
+            ctx,
+            msg: request.clone(),
+        }))
+        .await;
+    if let Err(error) = result {
+        if let Some(operation) = operation {
+            operation.complete(
+                jackin_telemetry::schema::enums::OutcomeValue::Failure,
+                Some(jackin_telemetry::schema::enums::ErrorType::RpcError),
+            );
+        }
+        return Err(error.into());
+    }
+    Ok((stream, operation))
 }
 
 async fn request_control(request: &ClientMsg) -> Result<ServerMsg> {
-    let mut stream = connect_and_send(request).await?;
+    let (mut stream, operation) = connect_and_send(request).await?;
+    let result = read_control_reply(&mut stream).await.and_then(|reply| {
+        anyhow::ensure!(
+            control_response_matches(request, &reply),
+            "daemon replied with {} for {} request",
+            reply.kind(),
+            request.rpc_method()
+        );
+        Ok(reply)
+    });
+    if let Some(operation) = operation {
+        operation.complete(
+            if result.is_ok() {
+                jackin_telemetry::schema::enums::OutcomeValue::Success
+            } else {
+                jackin_telemetry::schema::enums::OutcomeValue::Failure
+            },
+            result
+                .as_ref()
+                .err()
+                .map(|_| jackin_telemetry::schema::enums::ErrorType::RpcError),
+        );
+    }
+    result
+}
 
+fn control_response_matches(request: &ClientMsg, response: &ServerMsg) -> bool {
+    matches!(
+        (request, response),
+        (
+            ClientMsg::TelemetryHealth,
+            ServerMsg::TelemetryHealth { .. }
+        ) | (ClientMsg::Status, ServerMsg::SessionList { .. })
+            | (ClientMsg::Snapshot, ServerMsg::Snapshot { .. })
+            | (ClientMsg::Agents, ServerMsg::AgentRegistry { .. })
+            | (
+                ClientMsg::ReportRuntimeEvent { .. } | ClientMsg::StatusCapture { .. },
+                ServerMsg::Ack,
+            )
+            | (ClientMsg::UsageFocused, ServerMsg::UsageFocused { .. })
+            | (
+                ClientMsg::UsageRefreshFocused,
+                ServerMsg::UsageFocused { .. }
+            )
+            | (ClientMsg::UsageAccountList, ServerMsg::UsageAccounts { .. })
+            | (ClientMsg::ExecCommand { .. }, ServerMsg::ExecResult { .. })
+            | (ClientMsg::ExecCommand { .. }, ServerMsg::ExecDenied { .. })
+            | (ClientMsg::TokenUsage { .. }, ServerMsg::TokenUsage { .. })
+    )
+}
+
+async fn read_control_reply(stream: &mut UnixStream) -> Result<ServerMsg> {
     let mut len_buf = [0u8; 4];
     stream.read_exact(&mut len_buf).await?;
     let len = u32::from_be_bytes(len_buf) as usize;
-    // Mirror the daemon-side cap in `socket::read_control_msg`. A
-    // buggy or wedged daemon (or a peer that won the socket race
-    // inside the container) could otherwise send `0xFFFFFFFF` and
-    // force a 4 GiB allocation attempt in the client.
+    // Mirror the daemon-side cap in `socket::read_control_msg`.
     const MAX_CONTROL_REPLY: usize = 4 * 1024 * 1024;
     if len > MAX_CONTROL_REPLY {
         anyhow::bail!("daemon control reply length {len} exceeds limit {MAX_CONTROL_REPLY}");
     }
     let mut body = vec![0u8; len];
     stream.read_exact(&mut body).await?;
-
     Ok(serde_json::from_slice(&body)?)
 }
 

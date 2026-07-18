@@ -6,7 +6,6 @@
     "pr-verification",
     "clipboard-image-bridge",
     "jackin-join-and-debug-bundle",
-    "asciinema-session-recording",
-    "shared-tui-extraction"
+    "asciinema-session-recording"
   ]
 }

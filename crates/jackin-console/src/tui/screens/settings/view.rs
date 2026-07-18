@@ -215,7 +215,7 @@ pub fn render_general_tab<
 ) {
     let focused = !state.tab_bar_focused() && state.error_popup.is_none();
     let lines = general_state_lines(&state.general, focused);
-    termrock::scroll::render_scrollable_block_at(frame, area, lines, 0, 0, focused, None);
+    crate::tui::scroll_block::render_scrollable_block_at(frame, area, lines, 0, 0, focused, None);
 }
 
 pub fn render_mounts_tab<
@@ -237,14 +237,14 @@ pub fn render_mounts_tab<
     >,
     area: Rect,
 ) {
-    let focused = state.content_focused(SettingsTab::Mounts) && state.mounts.modal.is_none();
+    let focused = state.content_focused(SettingsTab::Mounts) && !state.mounts.modals.is_open();
     let selected = if focused {
         Some(state.mounts.selected)
     } else {
         None
     };
     let lines = global_mount_state_lines(&state.mounts, selected, true);
-    termrock::scroll::render_scrollable_block_at(
+    crate::tui::scroll_block::render_scrollable_block_at(
         frame,
         area,
         lines,
@@ -274,9 +274,9 @@ pub fn render_env_tab<
     >,
     area: Rect,
 ) {
-    let focused = state.content_focused(SettingsTab::Environments) && state.env.modal.is_none();
+    let focused = state.content_focused(SettingsTab::Environments) && !state.env.modals.is_open();
     let lines = env_state_lines(&state.env, focused, area.width);
-    termrock::scroll::render_scrollable_block_at(
+    crate::tui::scroll_block::render_scrollable_block_at(
         frame,
         area,
         lines,
@@ -310,9 +310,9 @@ pub fn render_auth_tab<
         .auth
         .selected_kind
         .map(|kind| crate::tui::components::auth_panel::auth_panel_title(kind.label()));
-    let focused = state.content_focused(SettingsTab::Auth) && state.auth.modal.is_none();
+    let focused = state.content_focused(SettingsTab::Auth) && !state.auth.modals.is_open();
     let lines = auth_state_lines(&state.auth, &state.env, focused);
-    termrock::scroll::render_scrollable_block_at(
+    crate::tui::scroll_block::render_scrollable_block_at(
         frame,
         area,
         lines,
@@ -344,7 +344,7 @@ pub fn render_trust_tab<
 ) {
     let lines = settings_trust_lines_for_state(state);
     let focused = settings_trust_focused(state);
-    termrock::scroll::render_scrollable_block_at(
+    crate::tui::scroll_block::render_scrollable_block_at(
         frame,
         area,
         lines,
@@ -474,7 +474,7 @@ fn trust_scroll_axes<MountModal, EnvModal, AuthModal, ErrorPopup, PendingToken, 
         PendingOpCommit,
     >,
     body_area: Rect,
-) -> termrock::layout::ScrollAxes {
+) -> termrock::scroll::ScrollAxes {
     let content = crate::tui::screens::settings::update::trust_content_width(&state.trust);
     crate::tui::list_geometry::horizontal_scroll_axes(
         !state.trust.pending.is_empty(),
@@ -500,7 +500,7 @@ fn global_mount_scroll_axes<
         PendingOpCommit,
     >,
     body_area: Rect,
-) -> termrock::layout::ScrollAxes {
+) -> termrock::scroll::ScrollAxes {
     let content_width =
         crate::tui::mount_display::settings_global_config_mounts_content_width_with_cache(
             &state.mounts.pending,
@@ -634,7 +634,8 @@ pub fn settings_env_lines_for_state<
     >,
     area_width: u16,
 ) -> Vec<Line<'static>> {
-    let show_cursor = state.content_focused(SettingsTab::Environments) && state.env.modal.is_none();
+    let show_cursor =
+        state.content_focused(SettingsTab::Environments) && !state.env.modals.is_open();
     env_state_lines(&state.env, show_cursor, area_width)
 }
 
@@ -680,9 +681,9 @@ fn settings_trust_focused<
     >,
 ) -> bool {
     state.content_focused(SettingsTab::Trust)
-        && state.auth.modal.is_none()
-        && state.env.modal.is_none()
-        && state.mounts.modal.is_none()
+        && !state.auth.modals.is_open()
+        && !state.env.modals.is_open()
+        && !state.mounts.modals.is_open()
 }
 
 #[must_use]
@@ -758,25 +759,40 @@ pub fn trust_lines(
 ) -> Vec<Line<'static>> {
     let mut lines = vec![Line::from(Span::styled(
         "  Role                         Trust      Git",
-        Style::default().fg(jackin_core::tui_theme::WHITE),
+        Style::default().fg(termrock::Theme::default()
+            .style(termrock::style::Role::Text)
+            .fg
+            .unwrap_or_default()),
     ))];
     if rows.is_empty() {
         lines.push(Line::from(Span::styled(
             "  (none)",
-            Style::default().fg(jackin_core::tui_theme::PHOSPHOR_DIM),
+            Style::default().fg(termrock::Theme::default()
+                .style(termrock::style::Role::TextMuted)
+                .fg
+                .unwrap_or_default()),
         )));
     }
     for (i, row) in rows.iter().enumerate() {
         let selected = show_cursor && (selected_row == i);
         let mut style = if selected {
             Style::default()
-                .fg(termrock::style::PHOSPHOR_GREEN)
+                .fg(termrock::Theme::default()
+                    .style(termrock::style::Role::Accent)
+                    .fg
+                    .unwrap_or_default())
                 .add_modifier(Modifier::BOLD)
         } else {
-            Style::default().fg(termrock::style::PHOSPHOR_GREEN)
+            Style::default().fg(termrock::Theme::default()
+                .style(termrock::style::Role::Accent)
+                .fg
+                .unwrap_or_default())
         };
         if !selected && hovered_row == Some(i) {
-            style = style.bg(jackin_core::tui_theme::TAB_BG_INACTIVE_HOVER);
+            style = style.bg(termrock::Theme::default()
+                .style(termrock::style::Role::TabInactiveHovered)
+                .bg
+                .unwrap_or_default());
         }
         let prefix = if selected { "\u{25b8} " } else { "  " };
         let trust = if row.trusted { "trusted" } else { "untrusted" };
@@ -958,13 +974,22 @@ pub fn global_mount_lines(
         let prefix = if is_selected { "\u{25b8} " } else { "  " };
         let base_style = if is_selected {
             Style::default()
-                .fg(termrock::style::PHOSPHOR_GREEN)
+                .fg(termrock::Theme::default()
+                    .style(termrock::style::Role::Accent)
+                    .fg
+                    .unwrap_or_default())
                 .add_modifier(Modifier::BOLD)
         } else {
-            Style::default().fg(termrock::style::PHOSPHOR_GREEN)
+            Style::default().fg(termrock::Theme::default()
+                .style(termrock::style::Role::Accent)
+                .fg
+                .unwrap_or_default())
         };
         let dim_style = Style::default()
-            .fg(jackin_core::tui_theme::PHOSPHOR_DIM)
+            .fg(termrock::Theme::default()
+                .style(termrock::style::Role::TextMuted)
+                .fg
+                .unwrap_or_default())
             .add_modifier(Modifier::ITALIC);
         lines.push(Line::from(vec![
             Span::styled(
@@ -973,7 +998,10 @@ pub fn global_mount_lines(
             ),
             Span::styled(
                 format!("{:<MOUNT_MODE_COL_WIDTH$}", row.mode),
-                Style::default().fg(jackin_core::tui_theme::PHOSPHOR_DIM),
+                Style::default().fg(termrock::Theme::default()
+                    .style(termrock::style::Role::TextMuted)
+                    .fg
+                    .unwrap_or_default()),
             ),
             Span::raw("  "),
             Span::styled(row.kind.clone(), dim_style),
@@ -981,7 +1009,10 @@ pub fn global_mount_lines(
         if let Some(host_source) = &row.host_source {
             lines.push(Line::from(Span::styled(
                 format!("  {host_source:<path_w$}"),
-                Style::default().fg(jackin_core::tui_theme::PHOSPHOR_DIM),
+                Style::default().fg(termrock::Theme::default()
+                    .style(termrock::style::Role::TextMuted)
+                    .fg
+                    .unwrap_or_default()),
             )));
         }
     }
@@ -1082,13 +1113,13 @@ pub fn settings_screen_footer_for_state(
             .map(|modal| modal.auth_footer_items(settings_auth_can_generate_token(&state.auth))),
         env_modal_items: state
             .env
-            .modal
-            .as_ref()
+            .modals
+            .current()
             .map(SettingsModal::env_footer_items),
         mounts_modal_items: state
             .mounts
-            .modal
-            .as_ref()
+            .modals
+            .current()
             .map(SettingsModal::mounts_footer_items),
         screen_items: settings_footer_items(state, op_available, body_area),
     })

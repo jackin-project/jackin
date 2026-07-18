@@ -8,6 +8,17 @@
 //! Sibling layout follows the worklist split: workspace / editor /
 //! settings / modals / common.
 
+use std::borrow::Cow;
+
+use termrock::widgets::HintSpan;
+
+fn key_span(glyph: impl Into<Cow<'static, str>>) -> HintSpan<'static> {
+    match glyph.into() {
+        Cow::Borrowed(glyph) => HintSpan::Key(glyph),
+        Cow::Owned(glyph) => HintSpan::DynKey(glyph),
+    }
+}
+
 mod common;
 mod editor;
 mod modals;

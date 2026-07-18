@@ -24,6 +24,12 @@ use crate::protocol::attach::{
 use crate::socket::SOCKET_PATH;
 use crate::tui::terminal::{enter_attach_terminal, terminal_size};
 
+fn telemetry_context() -> Option<Box<jackin_protocol::TelemetryContext>> {
+    let mut context = jackin_protocol::TelemetryContext::v1();
+    jackin_telemetry::propagation::inject(&mut context);
+    Some(Box::new(context))
+}
+
 /// Connect to the running daemon and run the interactive attach client.
 ///
 /// `spawn_request` is set by `docker exec ... jackin-capsule new`;
@@ -44,7 +50,7 @@ pub async fn run_client(
     // Query before connecting: once the Hello lands, every stdin byte
     // forwards to the daemon as pane input, so a reply arriving later would
     // land in the focused agent's PTY as keystrokes.
-    let host_colors = crate::tui::host_colors::query_host_terminal_colors(
+    let host_colors = jackin_protocol::host_terminal::query_host_terminal_colors(
         terminal.term.as_deref(),
         &mut tokio_stdin,
         &mut stdout,
@@ -53,9 +59,7 @@ pub async fn run_client(
     terminal.default_fg = host_colors.fg;
     terminal.default_bg = host_colors.bg;
 
-    let mut stream = UnixStream::connect(SOCKET_PATH)
-        .await
-        .context("cannot connect to jackin-capsule daemon — is it running?")?;
+    let mut stream = connect_attach_socket().await?;
 
     let hello = encode_client(ClientFrame::Hello {
         rows,
@@ -64,6 +68,7 @@ pub async fn run_client(
         spawn: spawn_request,
         terminal,
         focus_session,
+        context: telemetry_context(),
     })
     .context("encoding attach Hello frame")?;
     stream
@@ -129,38 +134,17 @@ pub async fn run_client(
                             break Err(anyhow::anyhow!("stdout flush failed after Bell: {e}"));
                         }
                     }
-                    ServerFrame::HostOpenUrl(url) => {
-                        let redacted = crate::tui::url_text::redact_url_for_log(&url);
-                        crate::cdebug!(
-                            "attach-client: ignoring host-open-url frame in in-container client: {redacted:?}"
-                        );
-                    }
-                    ServerFrame::HostRevealPath(_) => {
-                        crate::cdebug!(
-                            "attach-client: ignoring host-reveal-path frame in in-container client"
-                        );
-                    }
-                    ServerFrame::HostStageImageFromClipboardPath => {
-                        crate::cdebug!(
-                            "attach-client: ignoring host-stage-image-path frame in in-container client"
-                        );
-                    }
-                    ServerFrame::HostPasteImageFromClipboard => {
-                        crate::cdebug!(
-                            "attach-client: ignoring host-paste-image frame in in-container client"
-                        );
-                    }
-                    ServerFrame::HostStageImageFromClipboard => {
-                        crate::cdebug!(
-                            "attach-client: ignoring host-stage-image frame in in-container client"
-                        );
-                    }
-                    ServerFrame::FileExportStart(_)
+                    ServerFrame::HostOpenUrl(_)
+                    | ServerFrame::HostRevealPath(_)
+                    | ServerFrame::HostStageImageFromClipboardPath
+                    | ServerFrame::HostPasteImageFromClipboard
+                    | ServerFrame::HostStageImageFromClipboard
+                    | ServerFrame::FileExportStart(_)
                     | ServerFrame::FileExportChunk(_)
-                    | ServerFrame::FileExportEnd(_) => {
-                        crate::cdebug!("attach-client: ignoring host file-export frame");
-                    }
-                    ServerFrame::Welcome { .. } | ServerFrame::SessionList(_) => {}
+                    | ServerFrame::FileExportEnd(_) => {}
+                    ServerFrame::Welcome { .. }
+                    | ServerFrame::SessionList(_)
+                    | ServerFrame::AttachControlResponse(_) => {}
                 }
             }
 
@@ -191,4 +175,13 @@ pub async fn run_client(
             }
         }
     }
+}
+
+async fn connect_attach_socket() -> Result<UnixStream> {
+    jackin_diagnostics::operation::connection_attempt(
+        jackin_telemetry::schema::enums::ConnectionPeerType::CapsuleAttach,
+        UnixStream::connect(SOCKET_PATH),
+    )
+    .await
+    .context("cannot connect to jackin-capsule daemon — is it running?")
 }

@@ -79,9 +79,9 @@ impl CommandRunner for GitRunner {
         if let Some(dir) = cwd {
             request = request.cwd(dir);
         }
-        let result = jackin_process::exec_sync(&request)?;
+        let result = crate::process_telemetry::exec_sync(&request)?;
         if !result.success {
-            anyhow::bail!("{program} exited with code {:?}", result.code);
+            anyhow::bail!("Git command exited unsuccessfully");
         }
         Ok(())
     }
@@ -96,12 +96,9 @@ impl CommandRunner for GitRunner {
         if let Some(dir) = cwd {
             request = request.cwd(dir);
         }
-        let output = jackin_process::exec_sync(&request)?;
+        let output = crate::process_telemetry::exec_sync(&request)?;
         if !output.success {
-            anyhow::bail!(
-                "{program} {args:?} failed: {}",
-                String::from_utf8_lossy(&output.stderr).trim()
-            );
+            anyhow::bail!("Git command exited unsuccessfully");
         }
         Ok(String::from_utf8_lossy(&output.stdout).into_owned())
     }

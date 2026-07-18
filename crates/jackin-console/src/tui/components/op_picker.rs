@@ -1,6 +1,6 @@
 //! Rendering facade for the shared 1Password picker modal.
 
-use jackin_console_oppicker::TextInputState as OppickerTextInputState;
+use jackin_oppicker::TextInputState as OppickerTextInputState;
 use ratatui::text::Line;
 
 pub use crate::tui::op_picker::model::*;

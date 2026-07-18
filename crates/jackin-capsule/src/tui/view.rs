@@ -9,8 +9,8 @@ use crate::tui::components::dialog_widgets::{DialogRatatuiSnapshot, render_dialo
 use crate::tui::components::pane::PaneBodyWidget;
 use crate::tui::layout::{self, Tab};
 use crate::tui::model::{HoverTarget, VisiblePane};
+use jackin_tui::runtime::SurfaceFocus;
 use ratatui::{Frame, layout::Rect as RatatuiRect, style::Modifier};
-use termrock::interaction::FocusOwner;
 
 pub(crate) const fn hovered_tab(target: Option<HoverTarget>) -> Option<usize> {
     match target {
@@ -51,7 +51,7 @@ pub(crate) struct CapsuleRatatuiFrame<'a> {
     pub(crate) term_rows: u16,
     pub(crate) panes: &'a [VisiblePane],
     pub(crate) pane_titles: &'a [(u64, String)],
-    pub(crate) focus_owner: FocusOwner<u64>,
+    pub(crate) focus_owner: SurfaceFocus<u64>,
     pub(crate) zoomed: bool,
     pub(crate) dialog_open: bool,
     pub(crate) dialog_snapshot: Option<&'a DialogFrameSnapshot>,
@@ -109,12 +109,15 @@ fn apply_pane_scrollbar(frame: &mut Frame<'_>, pane: &VisiblePane, offset: usize
     let top_offset = termrock::scroll::TailScroll::new(offset)
         .to_top_offset(content_len, interior_rows)
         .min(usize::from(u16::MAX)) as u16;
-    termrock::scroll::render_vertical_scrollbar_in_area(
-        frame,
+    let theme = termrock::Theme::default();
+    termrock::scroll::render_scrollbar(
+        frame.buffer_mut(),
         track,
-        content_len,
-        interior_rows,
-        top_offset,
+        termrock::scroll::ScrollbarSpec::new(
+            termrock::scroll::ScrollAxis::Vertical,
+            termrock::scroll::ScrollbarGeometry::new(content_len, interior_rows, top_offset),
+        ),
+        &theme,
     );
 }
 
@@ -180,7 +183,7 @@ pub(crate) fn render_capsule_ratatui_frame(frame: &mut Frame<'_>, view: CapsuleR
             prefix_mode: view.prefix_mode,
             hovered_tab: view.hovered_tab,
             menu_hovered: view.menu_hovered,
-            // the tab underline reads the one shared FocusOwner, the same
+            // The tab underline reads the one shared focus ring, the same
             // signal that drives pane-border focus and cursor visibility.
             focused: view.focus_owner.is_tab_bar(),
         },
@@ -334,8 +337,12 @@ fn render_link_hover_notice(frame: &mut Frame<'_>, view: &CapsuleRatatuiFrame<'_
 
 fn render_notice_toast(frame: &mut Frame<'_>, area: RatatuiRect, message: &str) {
     let theme = termrock::Theme::default();
+    // Full TermRock toast contract: severity border role, bottom-left anchor
+    // under the status strip, and theme-derived text — no product local chrome.
     frame.render_widget(
-        termrock::widgets::Toast::new(&theme, message, termrock::widgets::Severity::Success),
+        termrock::widgets::Toast::new(&theme, message, termrock::widgets::Severity::Success)
+            .anchor(termrock::widgets::Anchor::BottomLeft)
+            .margins(1, 0),
         area,
     );
 }
@@ -363,8 +370,14 @@ fn apply_tab_codename_tooltip(
         tooltip_row,
         &pill,
         Style::default()
-            .bg(jackin_core::tui_theme::TAB_BG_INACTIVE)
-            .fg(termrock::style::PHOSPHOR_GREEN)
+            .bg(termrock::Theme::default()
+                .style(termrock::style::Role::TabInactive)
+                .bg
+                .unwrap_or_default())
+            .fg(termrock::Theme::default()
+                .style(termrock::style::Role::Accent)
+                .fg
+                .unwrap_or_default())
             .add_modifier(Modifier::BOLD),
     );
 }

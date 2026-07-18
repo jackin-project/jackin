@@ -36,7 +36,7 @@ routing. The phased plan below is the review strategy, not a reduced scope.
   `JACKIN_DAEMON_SOCKET=/jackin/daemon.sock` when available.
 - The daemon draft also proves the minimal container-to-host notification path
   over JSON Lines through `jackin-notify`.
-- <RepoFile path="crates/jackin/src/console/tui.rs">crates/jackin/src/console/tui.rs</RepoFile> is the current TUI workspace
+- <RepoFile path="crates/jackin/src/console/adapter.rs">crates/jackin/src/console/adapter.rs</RepoFile> is the current TUI workspace
   manager model. It exposes the same concepts the desktop app needs: workspace
   list, General / Mounts / Roles / Secrets / Auth tabs, dirty-save flow, modal
   pickers, and per-workspace summaries.

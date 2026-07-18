@@ -1,0 +1,545 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
+use std::{
+    collections::HashMap,
+    sync::{Mutex, OnceLock},
+};
+
+use opentelemetry::{
+    KeyValue,
+    metrics::{
+        Counter as OtelCounter, Gauge as OtelGauge, Histogram as OtelHistogram, Meter,
+        ObservableCounter, UpDownCounter as OtelUpDownCounter,
+    },
+};
+
+use crate::{
+    event::{Attr, Rejection, Value},
+    health, limits, schema, validation,
+};
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum InstrumentKind {
+    Counter,
+    Gauge,
+    UpDownCounter,
+    Histogram,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct InstrumentDef {
+    pub(crate) name: &'static str,
+    pub(crate) description: &'static str,
+    pub(crate) unit: &'static str,
+    pub(crate) kind: InstrumentKind,
+    pub(crate) boundaries: &'static [f64],
+    pub(crate) attributes: &'static [schema::AttributeRequirement],
+}
+
+impl InstrumentDef {
+    const fn generated(metadata: &'static schema::MetricMetadata) -> Self {
+        let kind = match metadata.instrument {
+            schema::MetricInstrument::Counter => InstrumentKind::Counter,
+            schema::MetricInstrument::Gauge => InstrumentKind::Gauge,
+            schema::MetricInstrument::UpDownCounter => InstrumentKind::UpDownCounter,
+            schema::MetricInstrument::Histogram => InstrumentKind::Histogram,
+        };
+        Self {
+            name: metadata.name,
+            description: metadata.description,
+            unit: metadata.unit,
+            kind,
+            boundaries: metadata.boundaries,
+            attributes: metadata.attributes,
+        }
+    }
+
+    #[must_use]
+    pub const fn name(&self) -> &'static str {
+        self.name
+    }
+
+    #[must_use]
+    pub const fn description(&self) -> &'static str {
+        self.description
+    }
+
+    #[must_use]
+    pub const fn unit(&self) -> &'static str {
+        self.unit
+    }
+
+    #[must_use]
+    pub const fn boundaries(&self) -> &'static [f64] {
+        self.boundaries
+    }
+
+    #[must_use]
+    pub const fn dimensions(&self) -> &'static [schema::AttributeRequirement] {
+        self.attributes
+    }
+}
+
+include!("metric_defs.rs");
+
+#[derive(Debug)]
+struct InstalledInstruments {
+    counters: HashMap<&'static str, OtelCounter<u64>>,
+    gauges: HashMap<&'static str, OtelGauge<f64>>,
+    histograms: HashMap<&'static str, OtelHistogram<f64>>,
+    up_down_counters: HashMap<&'static str, OtelUpDownCounter<i64>>,
+    _health: ObservableCounter<u64>,
+}
+
+static INSTRUMENTS: OnceLock<InstalledInstruments> = OnceLock::new();
+static METER_RESERVED: Mutex<bool> = Mutex::new(false);
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+enum DimensionValue {
+    Str(String),
+    Bool(bool),
+    I64(i64),
+    U64(u64),
+    F64(u64),
+    StrArray(Vec<String>),
+}
+
+type SeriesIdentity = Vec<(&'static str, DimensionValue)>;
+type SeriesByInstrument = HashMap<&'static str, Vec<SeriesIdentity>>;
+static SERIES: OnceLock<Mutex<SeriesByInstrument>> = OnceLock::new();
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MeterInstallError;
+
+impl std::fmt::Display for MeterInstallError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("telemetry facade meter is already installed or reserved")
+    }
+}
+
+impl std::error::Error for MeterInstallError {}
+
+#[must_use = "the reservation must be committed after the subscriber is installed"]
+#[derive(Debug)]
+pub struct MeterReservation {
+    instruments: Option<InstalledInstruments>,
+}
+
+impl MeterReservation {
+    pub fn commit(mut self) -> Result<(), MeterInstallError> {
+        let instruments = self.instruments.take().ok_or(MeterInstallError)?;
+        let result = INSTRUMENTS.set(instruments).map_err(|_| MeterInstallError);
+        *METER_RESERVED
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = false;
+        result
+    }
+}
+
+impl Drop for MeterReservation {
+    fn drop(&mut self) {
+        if self.instruments.is_some() {
+            *METER_RESERVED
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner) = false;
+        }
+    }
+}
+
+pub fn reserve_meter(meter: &Meter) -> Result<MeterReservation, MeterInstallError> {
+    let mut reserved = METER_RESERVED
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if INSTRUMENTS.get().is_some() || *reserved {
+        return Err(MeterInstallError);
+    }
+    *reserved = true;
+    Ok(MeterReservation {
+        instruments: Some(build_instruments(meter)),
+    })
+}
+
+pub fn install(meter: &Meter) -> Result<(), MeterInstallError> {
+    reserve_meter(meter)?.commit()
+}
+
+fn build_instruments(meter: &Meter) -> InstalledInstruments {
+    let mut counters = HashMap::new();
+    let mut gauges = HashMap::new();
+    let mut histograms = HashMap::new();
+    let mut up_down_counters = HashMap::new();
+    for definition in ALL {
+        match definition.kind {
+            InstrumentKind::Counter if definition.name != TELEMETRY_REJECTIONS.name => {
+                counters.insert(
+                    definition.name,
+                    meter
+                        .u64_counter(definition.name)
+                        .with_unit(definition.unit)
+                        .with_description(definition.description)
+                        .build(),
+                );
+            }
+            InstrumentKind::Histogram => {
+                histograms.insert(
+                    definition.name,
+                    meter
+                        .f64_histogram(definition.name)
+                        .with_unit(definition.unit)
+                        .with_description(definition.description)
+                        .build(),
+                );
+            }
+            InstrumentKind::Gauge => {
+                gauges.insert(
+                    definition.name,
+                    meter
+                        .f64_gauge(definition.name)
+                        .with_unit(definition.unit)
+                        .with_description(definition.description)
+                        .build(),
+                );
+            }
+            InstrumentKind::UpDownCounter if definition.name != PROCESS_MEMORY_USAGE.name => {
+                up_down_counters.insert(
+                    definition.name,
+                    meter
+                        .i64_up_down_counter(definition.name)
+                        .with_unit(definition.unit)
+                        .with_description(definition.description)
+                        .build(),
+                );
+            }
+            InstrumentKind::Counter | InstrumentKind::UpDownCounter => {}
+        }
+    }
+    let dimensions = health_dimensions();
+    let health = meter
+        .u64_observable_counter(TELEMETRY_REJECTIONS.name)
+        .with_unit(TELEMETRY_REJECTIONS.unit)
+        .with_description(TELEMETRY_REJECTIONS.description)
+        .with_callback(move |observer| {
+            for (signal, reason, attrs) in &dimensions {
+                observer.observe(health::count(*signal, *reason), attrs);
+            }
+        })
+        .build();
+    InstalledInstruments {
+        counters,
+        gauges,
+        histograms,
+        up_down_counters,
+        _health: health,
+    }
+}
+
+fn health_dimensions() -> Vec<(health::Signal, Rejection, [KeyValue; 2])> {
+    let reasons = [
+        Rejection::UnknownName,
+        Rejection::UnknownAttribute,
+        Rejection::InvalidValue,
+        Rejection::Privacy,
+        Rejection::Cardinality,
+        Rejection::SizeLimit,
+    ];
+    health::Signal::ALL
+        .into_iter()
+        .flat_map(|signal| {
+            reasons.into_iter().map(move |reason| {
+                (
+                    signal,
+                    reason,
+                    [
+                        KeyValue::new(schema::attrs::TELEMETRY_SIGNAL, signal.as_str()),
+                        KeyValue::new(
+                            schema::attrs::TELEMETRY_REJECTION_REASON,
+                            rejection_name(reason),
+                        ),
+                    ],
+                )
+            })
+        })
+        .collect()
+}
+
+const fn rejection_name(reason: Rejection) -> &'static str {
+    match reason {
+        Rejection::UnknownName => "unknown_name",
+        Rejection::UnknownAttribute => "unknown_attribute",
+        Rejection::InvalidValue => "invalid_value",
+        Rejection::Privacy => "privacy",
+        Rejection::Cardinality => "cardinality",
+        Rejection::SizeLimit => "size_limit",
+    }
+}
+
+fn key_values(attrs: &[Attr<'_>]) -> Result<Vec<KeyValue>, Rejection> {
+    if attrs.len() > limits::MAX_METRIC_ATTRIBUTES {
+        return Err(Rejection::SizeLimit);
+    }
+    attrs
+        .iter()
+        .map(|attr| {
+            let value = match attr.value {
+                Value::Str(v) => opentelemetry::Value::String(v.to_owned().into()),
+                Value::Bool(v) => opentelemetry::Value::Bool(v),
+                Value::I64(v) => opentelemetry::Value::I64(v),
+                Value::U64(v) => opentelemetry::Value::I64(i64::try_from(v).unwrap_or(i64::MAX)),
+                Value::F64(v) => opentelemetry::Value::F64(v),
+                Value::StrArray(v) => opentelemetry::Value::Array(opentelemetry::Array::String(
+                    v.iter().map(|s| (*s).to_owned().into()).collect(),
+                )),
+            };
+            Ok(KeyValue::new(attr.key, value))
+        })
+        .collect()
+}
+
+fn validate_instrument(
+    def: &'static InstrumentDef,
+    expected: InstrumentKind,
+) -> Result<(), Rejection> {
+    let canonical = schema::metrics::definition(def.name);
+    if def.kind != expected
+        || !canonical.is_some_and(|metadata| {
+            metadata.name == def.name
+                && metadata.description == def.description
+                && metadata.unit == def.unit
+                && metadata.attributes == def.attributes
+        })
+    {
+        return Err(Rejection::UnknownName);
+    }
+    limits::validate_name(def.name)
+}
+
+fn validate_attributes(def: &InstrumentDef, attrs: &[Attr<'_>]) -> Result<(), Rejection> {
+    if attrs.iter().any(|attr| {
+        matches!(
+            attr.key,
+            schema::attrs::CLI_INVOCATION_ID
+                | schema::attrs::std_attrs::SESSION_ID
+                | schema::attrs::JOB_ID
+                | schema::attrs::UI_SCREEN_VISIT_ID
+                | schema::attrs::std_attrs::GEN_AI_CONVERSATION_ID
+        )
+    }) {
+        health::reject(health::Signal::Metric, Rejection::Cardinality);
+        return Err(Rejection::Cardinality);
+    }
+    validation::attributes(def.attributes, attrs, limits::MAX_METRIC_ATTRIBUTES)
+        .inspect_err(|reason| health::reject(health::Signal::Metric, *reason))
+}
+
+fn accept_series(name: &'static str, attrs: &[Attr<'_>]) -> bool {
+    let order = series_order(attrs);
+    let mut all = SERIES
+        .get_or_init(|| Mutex::new(HashMap::new()))
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if accept_series_in(&mut all, name, attrs, &order[..attrs.len()]) {
+        return true;
+    }
+    health::reject(health::Signal::Metric, Rejection::Cardinality);
+    false
+}
+
+fn accept_series_in(
+    all: &mut SeriesByInstrument,
+    name: &'static str,
+    attrs: &[Attr<'_>],
+    order: &[usize],
+) -> bool {
+    let stream = all.entry(name).or_default();
+    if stream
+        .iter()
+        .any(|identity| series_matches(identity, attrs, order))
+    {
+        return true;
+    }
+    if stream.len() >= limits::MAX_CARDINALITY {
+        return false;
+    }
+    stream.push(series_identity_with_order(attrs, order));
+    true
+}
+
+fn series_order(attrs: &[Attr<'_>]) -> [usize; limits::MAX_METRIC_ATTRIBUTES] {
+    let mut order = [0usize; limits::MAX_METRIC_ATTRIBUTES];
+    for (index, slot) in order[..attrs.len()].iter_mut().enumerate() {
+        *slot = index;
+    }
+    order[..attrs.len()].sort_unstable_by_key(|index| attrs[*index].key);
+    order
+}
+
+fn series_matches(identity: &SeriesIdentity, attrs: &[Attr<'_>], order: &[usize]) -> bool {
+    identity.len() == order.len()
+        && identity.iter().zip(order).all(|((key, stored), index)| {
+            let attr = attrs[*index];
+            *key == attr.key && dimension_matches(stored, attr.value)
+        })
+}
+
+fn dimension_matches(stored: &DimensionValue, value: Value<'_>) -> bool {
+    match (stored, value) {
+        (DimensionValue::Str(stored), Value::Str(value)) => stored == value,
+        (DimensionValue::Bool(stored), Value::Bool(value)) => *stored == value,
+        (DimensionValue::I64(stored), Value::I64(value)) => *stored == value,
+        (DimensionValue::U64(stored), Value::U64(value)) => *stored == value,
+        (DimensionValue::F64(stored), Value::F64(value)) => *stored == value.to_bits(),
+        (DimensionValue::StrArray(stored), Value::StrArray(values)) => {
+            stored.len() == values.len()
+                && stored.iter().zip(values).all(|(left, right)| left == right)
+        }
+        _ => false,
+    }
+}
+
+#[cfg(test)]
+fn series_identity(attrs: &[Attr<'_>]) -> SeriesIdentity {
+    let order = series_order(attrs);
+    series_identity_with_order(attrs, &order[..attrs.len()])
+}
+
+fn series_identity_with_order(attrs: &[Attr<'_>], order: &[usize]) -> SeriesIdentity {
+    order
+        .iter()
+        .map(|index| {
+            let attr = attrs[*index];
+            let value = match attr.value {
+                Value::Str(value) => DimensionValue::Str(value.to_owned()),
+                Value::Bool(value) => DimensionValue::Bool(value),
+                Value::I64(value) => DimensionValue::I64(value),
+                Value::U64(value) => DimensionValue::U64(value),
+                Value::F64(value) => DimensionValue::F64(value.to_bits()),
+                Value::StrArray(values) => DimensionValue::StrArray(
+                    values.iter().map(|value| (*value).to_owned()).collect(),
+                ),
+            };
+            (attr.key, value)
+        })
+        .collect()
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct Counter(&'static InstrumentDef);
+#[derive(Clone, Copy, Debug)]
+pub struct Gauge(&'static InstrumentDef);
+#[derive(Clone, Copy, Debug)]
+pub struct Histogram(&'static InstrumentDef);
+#[derive(Clone, Copy, Debug)]
+pub struct UpDownCounter(&'static InstrumentDef);
+
+#[must_use]
+pub const fn counter(def: &'static InstrumentDef) -> Counter {
+    Counter(def)
+}
+#[must_use]
+pub const fn gauge(def: &'static InstrumentDef) -> Gauge {
+    Gauge(def)
+}
+#[must_use]
+pub const fn histogram(def: &'static InstrumentDef) -> Histogram {
+    Histogram(def)
+}
+#[must_use]
+pub const fn up_down_counter(def: &'static InstrumentDef) -> UpDownCounter {
+    UpDownCounter(def)
+}
+
+impl Counter {
+    pub fn add(self, value: u64, attrs: &[Attr<'_>]) -> Result<(), Rejection> {
+        reject_identity_dimensions(attrs)?;
+        let Some(instruments) = INSTRUMENTS.get() else {
+            return Ok(());
+        };
+        validate_instrument(self.0, InstrumentKind::Counter)
+            .inspect_err(|reason| health::reject(health::Signal::Metric, *reason))?;
+        validate_attributes(self.0, attrs)?;
+        if !accept_series(self.0.name, attrs) {
+            return Err(Rejection::Cardinality);
+        }
+        let kv = key_values(attrs)
+            .inspect_err(|reason| health::reject(health::Signal::Metric, *reason))?;
+        instruments.counters[&self.0.name].add(value, &kv);
+        Ok(())
+    }
+}
+impl Histogram {
+    pub fn record(self, value: f64, attrs: &[Attr<'_>]) -> Result<(), Rejection> {
+        reject_identity_dimensions(attrs)?;
+        let Some(instruments) = INSTRUMENTS.get() else {
+            return Ok(());
+        };
+        validate_instrument(self.0, InstrumentKind::Histogram)
+            .inspect_err(|reason| health::reject(health::Signal::Metric, *reason))?;
+        validate_attributes(self.0, attrs)?;
+        if !accept_series(self.0.name, attrs) {
+            return Err(Rejection::Cardinality);
+        }
+        let kv = key_values(attrs)
+            .inspect_err(|reason| health::reject(health::Signal::Metric, *reason))?;
+        instruments.histograms[&self.0.name].record(value, &kv);
+        Ok(())
+    }
+}
+
+impl Gauge {
+    pub fn record(self, value: f64, attrs: &[Attr<'_>]) -> Result<(), Rejection> {
+        reject_identity_dimensions(attrs)?;
+        let Some(instruments) = INSTRUMENTS.get() else {
+            return Ok(());
+        };
+        validate_instrument(self.0, InstrumentKind::Gauge)
+            .inspect_err(|reason| health::reject(health::Signal::Metric, *reason))?;
+        validate_attributes(self.0, attrs)?;
+        if !accept_series(self.0.name, attrs) {
+            return Err(Rejection::Cardinality);
+        }
+        let kv = key_values(attrs)
+            .inspect_err(|reason| health::reject(health::Signal::Metric, *reason))?;
+        instruments.gauges[&self.0.name].record(value, &kv);
+        Ok(())
+    }
+}
+
+impl UpDownCounter {
+    pub fn add(self, value: i64, attrs: &[Attr<'_>]) -> Result<(), Rejection> {
+        reject_identity_dimensions(attrs)?;
+        let Some(instruments) = INSTRUMENTS.get() else {
+            return Ok(());
+        };
+        validate_instrument(self.0, InstrumentKind::UpDownCounter)
+            .inspect_err(|reason| health::reject(health::Signal::Metric, *reason))?;
+        validate_attributes(self.0, attrs)?;
+        if !accept_series(self.0.name, attrs) {
+            return Err(Rejection::Cardinality);
+        }
+        let kv = key_values(attrs)
+            .inspect_err(|reason| health::reject(health::Signal::Metric, *reason))?;
+        instruments.up_down_counters[&self.0.name].add(value, &kv);
+        Ok(())
+    }
+}
+
+fn reject_identity_dimensions(attrs: &[Attr<'_>]) -> Result<(), Rejection> {
+    if attrs.iter().any(|attr| {
+        matches!(
+            attr.key,
+            schema::attrs::CLI_INVOCATION_ID
+                | schema::attrs::std_attrs::SESSION_ID
+                | schema::attrs::JOB_ID
+                | schema::attrs::UI_SCREEN_VISIT_ID
+                | schema::attrs::std_attrs::GEN_AI_CONVERSATION_ID
+        )
+    }) {
+        health::reject(health::Signal::Metric, Rejection::Cardinality);
+        Err(Rejection::Cardinality)
+    } else {
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests;

@@ -32,6 +32,7 @@ Merges the former `config/` and `workspace/` concerns into one crate to dissolve
 | [`migrations.rs`](src/migrations.rs) · [`migrations/`](src/migrations) | versioned migrations | [`tests.rs`](src/migrations/tests.rs) |
 | [`versions.rs`](src/versions.rs) | version constants | — |
 | [`validation.rs`](src/validation.rs) | validation | — |
+| [`telemetry.rs`](src/telemetry.rs) · [`telemetry/`](src/telemetry) | bounded config telemetry ownership | [`tests.rs`](src/telemetry/tests.rs) |
 | [`editor.rs`](src/editor.rs) · [`editor/`](src/editor) | editor config | [`tests.rs`](src/editor/tests.rs) |
 | [`test_support.rs`](src/test_support.rs) | deterministic config builders | — |
 
@@ -45,4 +46,3 @@ Resolved config/workspace types and the resolution + migration entry points cons
 cargo nextest run -p jackin-config
 cargo clippy -p jackin-config --all-targets -- -D warnings
 ```
-
