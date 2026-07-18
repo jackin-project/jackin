@@ -8,10 +8,28 @@ import test from "node:test";
 import {
   exportPrepared,
   latestArtifact,
+  preparedToolsComplete,
   splitRepository,
   validateContracts,
   waitForArtifact,
 } from "../src/index.js";
+
+const REQUIRED_TOOLS = [
+  "sccache",
+  "cargo-nextest",
+  "cargo-deny",
+  "cargo-shear",
+  "cargo-audit",
+  "cargo-dylint",
+  "cargo-fuzz",
+  "cargo-hack",
+  "cargo-hakari",
+  "cargo-llvm-cov",
+  "cargo-mutants",
+  "cargo-zigbuild",
+  "dylint-link",
+  "weaver",
+];
 
 test("splits an exact owner/repository pair", () => {
   assert.deepEqual(splitRepository("jackin-project/jackin"), {
@@ -77,6 +95,20 @@ test("returns an artifact as soon as it appears", async () => {
   );
   assert.equal(artifact.id, 7);
   assert.equal(calls, 2);
+});
+
+test("rejects an incomplete prepared Cargo tool bundle", async () => {
+  const root = await fs.mkdtemp(path.join(process.cwd(), ".test-prepared-tools-"));
+  try {
+    await fs.writeFile(path.join(root, "cargo-fuzz"), "tool");
+    assert.equal(await preparedToolsComplete(root), false);
+    await Promise.all(
+      REQUIRED_TOOLS.map((tool) => fs.writeFile(path.join(root, tool), "tool")),
+    );
+    assert.equal(await preparedToolsComplete(root), true);
+  } finally {
+    await fs.rm(root, { recursive: true, force: true });
+  }
 });
 
 test("exports separate cache-backed xtask and tool directories", async () => {

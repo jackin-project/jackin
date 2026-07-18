@@ -10,6 +10,32 @@ import { fileURLToPath } from "node:url";
 
 const WAIT_MILLISECONDS = 2_000;
 const DEADLINE_MILLISECONDS = 55_000;
+const REQUIRED_TOOLS = [
+  "sccache",
+  "cargo-nextest",
+  "cargo-deny",
+  "cargo-shear",
+  "cargo-audit",
+  "cargo-dylint",
+  "cargo-fuzz",
+  "cargo-hack",
+  "cargo-hakari",
+  "cargo-llvm-cov",
+  "cargo-mutants",
+  "cargo-zigbuild",
+  "dylint-link",
+  "weaver",
+];
+
+async function preparedToolsComplete(destination) {
+  try {
+    const entries = new Set(await fs.readdir(destination));
+    return REQUIRED_TOOLS.every((tool) => entries.has(tool));
+  } catch (error) {
+    if (error.code === "ENOENT") return false;
+    throw error;
+  }
+}
 
 function splitRepository(repository) {
   const [owner, repo, extra] = repository.split("/");
@@ -117,6 +143,10 @@ async function run() {
     return { tools_hit: tools, xtask_hit: xtask };
   };
 
+  if (toolsHit && !(await preparedToolsComplete(toolsDestination))) {
+    core.warning("ignoring incomplete prepared Cargo tools cache");
+    toolsHit = false;
+  }
   core.setOutput("tools-hit", "false");
   core.setOutput("xtask-hit", "false");
   if (toolsHit) core.setOutput("tools-hit", "true");
@@ -139,8 +169,11 @@ async function run() {
         tools,
         toolsDestination,
       );
-      toolsHit = true;
-      core.setOutput("tools-hit", "true");
+      toolsHit = await preparedToolsComplete(toolsDestination);
+      if (!toolsHit && !allowMiss) {
+        throw new Error(`prepared CI tools artifact is incomplete: ${toolsArtifact}`);
+      }
+      core.setOutput("tools-hit", toolsHit ? "true" : "false");
     }
   }
 
@@ -241,6 +274,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
 export {
   exportPrepared,
   latestArtifact,
+  preparedToolsComplete,
   splitRepository,
   validateContracts,
   waitForArtifact,
