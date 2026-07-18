@@ -195,7 +195,14 @@ jobs:
           cache-all-crates: "true"
           cache-workspace-crates: "true"
           env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTFLAGS RUSTDOC RUSTUP"
-      - run: cargo bench --workspace --locked -- --quick 2>&1 | tee bench-output.txt
+      - name: Compile all benchmarks and run telemetry baselines
+        run: |
+          set -o pipefail
+          cargo bench --workspace --locked --no-run 2>&1 | tee bench-output.txt
+          cargo bench -p jackin-telemetry --bench disabled_fast_path --locked -- --quick 2>&1 | tee -a bench-output.txt
+          cargo bench -p jackin-runtime --bench launch_pipeline --locked -- --quick 2>&1 | tee -a bench-output.txt
+          cargo bench -p jackin --bench console_frame --locked -- --quick 2>&1 | tee -a bench-output.txt
+          cargo bench -p jackin-capsule --bench pane_body --locked -- --quick 2>&1 | tee -a bench-output.txt
       - name: Accelerated telemetry lifecycle soak
         run: cargo nextest run --profile soak -p jackin-telemetry -p jackin-diagnostics --all-features --locked --run-ignored ignored-only
       - name: Enforce telemetry performance baseline
