@@ -4,7 +4,7 @@
 //! Settings + mount + secret + auth-form hint-span builders for the
 //! settings screen's per-row contextual footer.
 
-use termrock::layout::ScrollAxes;
+use termrock::scroll::ScrollAxes;
 use termrock::{keymap::glyph, widgets::HintSpan};
 
 use super::common::append_open_in_github;
@@ -12,7 +12,7 @@ use crate::tui::keymap::{
     SETTINGS_ENV_TAB_KEYMAP, SETTINGS_GENERAL_TOGGLE_KEYMAP, SETTINGS_GLOBAL_MOUNTS_TAB_KEYMAP,
     SETTINGS_TRUST_TOGGLE_KEYMAP, SettingsEnvTabAction, SettingsGlobalMountsTabAction,
 };
-use termrock::layout::scroll_hint_spans;
+use termrock::scroll::scroll_hint_spans;
 
 #[must_use]
 pub fn settings_general_row_footer_items() -> Vec<HintSpan<'static>> {
@@ -97,7 +97,7 @@ pub fn settings_contextual_row_footer_items(
 pub fn add_row_footer_items(label: &'static str) -> Vec<HintSpan<'static>> {
     vec![
         // UNREGISTERABLE(multi-key-display-group): combined Enter/A display; Enter and A are separate chords.
-        HintSpan::Key("↵/A"),
+        super::key_span("↵/A"),
         HintSpan::Text(label),
     ]
 }
@@ -106,7 +106,7 @@ pub fn append_generate_token_footer_item(items: &mut Vec<HintSpan<'static>>) {
     items.extend([
         HintSpan::GroupSep,
         // UNREGISTERABLE(auth-form-no-keymap): G triggers token generation inline; no AUTH_FORM_KEYMAP.
-        HintSpan::Key("G"),
+        super::key_span("G"),
         HintSpan::Text("generate"),
     ]);
 }
@@ -115,23 +115,23 @@ pub fn append_generate_token_footer_item(items: &mut Vec<HintSpan<'static>>) {
 pub fn mount_destination_footer_items() -> Vec<HintSpan<'static>> {
     vec![
         // UNREGISTERABLE(mount-destination-no-keymap): M handled inline; no MOUNT_DESTINATION_KEYMAP.
-        HintSpan::Key("M"),
+        super::key_span("M"),
         HintSpan::Text("mount"),
         HintSpan::GroupSep,
         // UNREGISTERABLE(mount-destination-no-keymap): E handled inline.
-        HintSpan::Key("E"),
+        super::key_span("E"),
         HintSpan::Text("edit"),
         HintSpan::GroupSep,
         // UNREGISTERABLE(multi-key-display-group): combined left/right display.
-        HintSpan::Key(glyph::LEFT_RIGHT),
+        super::key_span(glyph::LEFT_RIGHT),
         HintSpan::Text("move"),
         HintSpan::GroupSep,
         // UNREGISTERABLE(mount-destination-no-keymap): Enter confirms inline.
-        HintSpan::Key("↵"),
+        super::key_span("↵"),
         HintSpan::Text("select"),
         HintSpan::GroupSep,
         // UNREGISTERABLE(multi-key-display-group): combined C/Esc cancel display.
-        HintSpan::Key("C/Esc"),
+        super::key_span("C/Esc"),
         HintSpan::Text("cancel"),
     ]
 }
@@ -140,15 +140,15 @@ pub fn mount_destination_footer_items() -> Vec<HintSpan<'static>> {
 pub fn segmented_choice_footer_items() -> Vec<HintSpan<'static>> {
     vec![
         // UNREGISTERABLE(multi-key-display-group)
-        HintSpan::Key(glyph::LEFT_RIGHT),
+        super::key_span(glyph::LEFT_RIGHT),
         HintSpan::Text("move"),
         HintSpan::GroupSep,
         // UNREGISTERABLE(segmented-choice-no-keymap): Enter handled inline; no SEGMENTED_CHOICE_KEYMAP.
-        HintSpan::Key("↵"),
+        super::key_span("↵"),
         HintSpan::Text("select"),
         HintSpan::GroupSep,
         // UNREGISTERABLE(segmented-choice-no-keymap): Esc handled inline.
-        HintSpan::Key("Esc"),
+        super::key_span("Esc"),
         HintSpan::Text("cancel"),
     ]
 }
@@ -157,15 +157,15 @@ pub fn segmented_choice_footer_items() -> Vec<HintSpan<'static>> {
 pub fn pick_list_footer_items(commit_label: &'static str) -> Vec<HintSpan<'static>> {
     vec![
         // UNREGISTERABLE(multi-key-display-group)
-        HintSpan::Key("↑↓"),
+        super::key_span("↑↓"),
         HintSpan::Text("navigate"),
         HintSpan::GroupSep,
         // UNREGISTERABLE(pick-list-no-keymap): Enter handled inline; no PICK_LIST_KEYMAP.
-        HintSpan::Key("↵"),
+        super::key_span("↵"),
         HintSpan::Text(commit_label),
         HintSpan::GroupSep,
         // UNREGISTERABLE(pick-list-no-keymap): Esc handled inline.
-        HintSpan::Key("Esc"),
+        super::key_span("Esc"),
         HintSpan::Text("cancel"),
     ]
 }
@@ -177,18 +177,18 @@ pub fn filtered_picker_footer_items(
 ) -> Vec<HintSpan<'static>> {
     let mut items = vec![
         // UNREGISTERABLE(multi-key-display-group)
-        HintSpan::Key("↑↓"),
+        super::key_span("↑↓"),
         HintSpan::Text("navigate"),
         HintSpan::GroupSep,
         // UNREGISTERABLE(descriptive-label): not a key — describes free-text filter input.
-        HintSpan::Key("type"),
+        super::key_span("type"),
         HintSpan::Text("filter"),
     ];
     if include_refresh {
         items.extend([
             HintSpan::GroupSep,
             // UNREGISTERABLE(filtered-picker-no-keymap): R refresh handled inline; no FILTERED_PICKER_KEYMAP.
-            HintSpan::Key("R"),
+            super::key_span("R"),
             HintSpan::Text("refresh"),
         ]);
     }
@@ -196,18 +196,18 @@ pub fn filtered_picker_footer_items(
         items.extend([
             HintSpan::GroupSep,
             // UNREGISTERABLE(multi-key-display-group)
-            HintSpan::Key(glyph::LEFT_RIGHT),
+            super::key_span(glyph::LEFT_RIGHT),
             HintSpan::Text("collapse/expand section"),
         ]);
     }
     items.extend([
         HintSpan::GroupSep,
         // UNREGISTERABLE(filtered-picker-no-keymap): Enter selects inline.
-        HintSpan::Key("↵"),
+        super::key_span("↵"),
         HintSpan::Text("select"),
         HintSpan::GroupSep,
         // UNREGISTERABLE(filtered-picker-no-keymap): Esc cancels inline.
-        HintSpan::Key("Esc"),
+        super::key_span("Esc"),
         HintSpan::Text("cancel"),
     ]);
     items
@@ -217,15 +217,15 @@ pub fn filtered_picker_footer_items(
 pub fn op_section_footer_items() -> Vec<HintSpan<'static>> {
     vec![
         // UNREGISTERABLE(multi-key-display-group)
-        HintSpan::Key("↑↓"),
+        super::key_span("↑↓"),
         HintSpan::Text("navigate"),
         HintSpan::GroupSep,
         // UNREGISTERABLE(op-section-no-keymap): Enter handled inline; no OP_SECTION_KEYMAP.
-        HintSpan::Key("↵"),
+        super::key_span("↵"),
         HintSpan::Text("select"),
         HintSpan::GroupSep,
         // UNREGISTERABLE(op-section-no-keymap): Esc handled inline.
-        HintSpan::Key("Esc"),
+        super::key_span("Esc"),
         HintSpan::Text("cancel"),
     ]
 }
@@ -237,22 +237,22 @@ pub fn workspace_mount_row_footer_items(
 ) -> Vec<HintSpan<'static>> {
     let mut items = vec![
         // UNREGISTERABLE(workspace-mount-row-no-keymap): D removes mount inline; no WORKSPACE_MOUNT_ROW_KEYMAP.
-        HintSpan::Key("D"),
+        super::key_span("D"),
         HintSpan::Text("remove"),
         HintSpan::Sep,
         // UNREGISTERABLE(workspace-mount-row-no-keymap): A adds mount inline.
-        HintSpan::Key("A"),
+        super::key_span("A"),
         HintSpan::Text("add"),
     ];
     append_open_in_github(&mut items, has_github_url);
     items.extend([
         HintSpan::Sep,
         // UNREGISTERABLE(workspace-mount-row-no-keymap): R toggles read-only inline.
-        HintSpan::Key("R"),
+        super::key_span("R"),
         HintSpan::Text("toggle ro/rw"),
         HintSpan::Sep,
         // UNREGISTERABLE(workspace-mount-row-no-keymap): I cycles isolation inline.
-        HintSpan::Key("I"),
+        super::key_span("I"),
         HintSpan::Text("cycle isolation"),
     ]);
     let scroll_items = scroll_hint_spans(scroll_axes);
@@ -270,34 +270,34 @@ pub fn global_mount_row_footer_items(
 ) -> Vec<HintSpan<'static>> {
     let g = |a| SETTINGS_GLOBAL_MOUNTS_TAB_KEYMAP.glyph_for(a);
     let mut items = vec![
-        HintSpan::Key(g(SettingsGlobalMountsTabAction::Delete)),
+        super::key_span(g(SettingsGlobalMountsTabAction::Delete)),
         HintSpan::Text("remove"),
         HintSpan::Sep,
-        HintSpan::Key(g(SettingsGlobalMountsTabAction::Add)),
+        super::key_span(g(SettingsGlobalMountsTabAction::Add)),
         HintSpan::Text("add"),
     ];
     if has_github_url {
         items.extend([
             HintSpan::Sep,
-            HintSpan::Key(g(SettingsGlobalMountsTabAction::OpenGithub)),
+            super::key_span(g(SettingsGlobalMountsTabAction::OpenGithub)),
             HintSpan::Text("open in GitHub"),
         ]);
     }
     items.extend([
         HintSpan::Sep,
-        HintSpan::Key(g(SettingsGlobalMountsTabAction::ToggleReadonly)),
+        super::key_span(g(SettingsGlobalMountsTabAction::ToggleReadonly)),
         HintSpan::Text("toggle ro/rw"),
         HintSpan::Sep,
-        HintSpan::Key(g(SettingsGlobalMountsTabAction::EditRename)),
+        super::key_span(g(SettingsGlobalMountsTabAction::EditRename)),
         HintSpan::Text("rename"),
         HintSpan::Sep,
-        HintSpan::Key(g(SettingsGlobalMountsTabAction::EditSource)),
+        super::key_span(g(SettingsGlobalMountsTabAction::EditSource)),
         HintSpan::Text("edit source"),
         HintSpan::Sep,
-        HintSpan::Key(g(SettingsGlobalMountsTabAction::EditDest)),
+        super::key_span(g(SettingsGlobalMountsTabAction::EditDest)),
         HintSpan::Text("edit dst"),
         HintSpan::Sep,
-        HintSpan::Key(g(SettingsGlobalMountsTabAction::EditScope)),
+        super::key_span(g(SettingsGlobalMountsTabAction::EditScope)),
         HintSpan::Text("edit scope"),
     ]);
     let scroll_items = scroll_hint_spans(scroll_axes);
@@ -313,9 +313,9 @@ pub fn secret_op_ref_row_footer_items(op_available: bool) -> Vec<HintSpan<'stati
     let g = |a| SETTINGS_ENV_TAB_KEYMAP.glyph_for(a);
     let mut items = if op_available {
         vec![
-            HintSpan::Key(g(SettingsEnvTabAction::Enter)),
+            super::key_span(g(SettingsEnvTabAction::Enter)),
             HintSpan::Sep,
-            HintSpan::Key(g(SettingsEnvTabAction::OpenPicker)),
+            super::key_span(g(SettingsEnvTabAction::OpenPicker)),
             HintSpan::Text("re-pick from 1Password"),
             HintSpan::Sep,
         ]
@@ -323,10 +323,10 @@ pub fn secret_op_ref_row_footer_items(op_available: bool) -> Vec<HintSpan<'stati
         Vec::new()
     };
     items.extend([
-        HintSpan::Key(g(SettingsEnvTabAction::Delete)),
+        super::key_span(g(SettingsEnvTabAction::Delete)),
         HintSpan::Text("delete"),
         HintSpan::Sep,
-        HintSpan::Key(g(SettingsEnvTabAction::Add)),
+        super::key_span(g(SettingsEnvTabAction::Add)),
         HintSpan::Text("add"),
     ]);
     items
@@ -336,22 +336,22 @@ pub fn secret_op_ref_row_footer_items(op_available: bool) -> Vec<HintSpan<'stati
 pub fn secret_plain_row_footer_items(op_available: bool) -> Vec<HintSpan<'static>> {
     let g = |a| SETTINGS_ENV_TAB_KEYMAP.glyph_for(a);
     let mut items = vec![
-        HintSpan::Key(g(SettingsEnvTabAction::Enter)),
+        super::key_span(g(SettingsEnvTabAction::Enter)),
         HintSpan::Text("edit"),
         HintSpan::Sep,
-        HintSpan::Key(g(SettingsEnvTabAction::Delete)),
+        super::key_span(g(SettingsEnvTabAction::Delete)),
         HintSpan::Text("delete"),
         HintSpan::Sep,
-        HintSpan::Key(g(SettingsEnvTabAction::Add)),
+        super::key_span(g(SettingsEnvTabAction::Add)),
         HintSpan::Text("add"),
         HintSpan::Sep,
-        HintSpan::Key(g(SettingsEnvTabAction::ToggleMask)),
+        super::key_span(g(SettingsEnvTabAction::ToggleMask)),
         HintSpan::Text("mask/unmask"),
     ];
     if op_available {
         items.extend([
             HintSpan::Sep,
-            HintSpan::Key(g(SettingsEnvTabAction::OpenPicker)),
+            super::key_span(g(SettingsEnvTabAction::OpenPicker)),
             HintSpan::Text("1Password"),
         ]);
     }
@@ -362,13 +362,13 @@ pub fn secret_plain_row_footer_items(op_available: bool) -> Vec<HintSpan<'static
 pub fn secret_add_row_footer_items(op_available: bool) -> Vec<HintSpan<'static>> {
     let g = |a| SETTINGS_ENV_TAB_KEYMAP.glyph_for(a);
     let mut items = vec![
-        HintSpan::Key(g(SettingsEnvTabAction::Enter)),
+        super::key_span(g(SettingsEnvTabAction::Enter)),
         HintSpan::Text("add"),
     ];
     if op_available {
         items.extend([
             HintSpan::Sep,
-            HintSpan::Key(g(SettingsEnvTabAction::OpenPicker)),
+            super::key_span(g(SettingsEnvTabAction::OpenPicker)),
             HintSpan::Text("1Password"),
         ]);
     }
@@ -378,14 +378,14 @@ pub fn secret_add_row_footer_items(op_available: bool) -> Vec<HintSpan<'static>>
 #[must_use]
 pub fn secret_role_header_footer_items() -> Vec<HintSpan<'static>> {
     vec![
-        HintSpan::Key(SETTINGS_ENV_TAB_KEYMAP.glyph_for(SettingsEnvTabAction::Enter)),
+        super::key_span(SETTINGS_ENV_TAB_KEYMAP.glyph_for(SettingsEnvTabAction::Enter)),
         HintSpan::Text("expand"),
         HintSpan::Sep,
         // UNREGISTERABLE(multi-key-display-group): combined collapse/expand left/right display.
-        HintSpan::Key(glyph::LEFT_RIGHT),
+        super::key_span(glyph::LEFT_RIGHT),
         HintSpan::Text("collapse/expand"),
         HintSpan::Sep,
-        HintSpan::Key(SETTINGS_ENV_TAB_KEYMAP.glyph_for(SettingsEnvTabAction::Add)),
+        super::key_span(SETTINGS_ENV_TAB_KEYMAP.glyph_for(SettingsEnvTabAction::Add)),
         HintSpan::Text("add"),
     ]
 }

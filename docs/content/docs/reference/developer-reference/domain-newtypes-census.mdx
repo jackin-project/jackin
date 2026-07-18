@@ -30,7 +30,7 @@ Boundary decision record for Ownership item 4 (plan 020). Each named concept rec
 
 Executable `public-surface` ratchet (`public_surface_pub_mods`) measures root `pub mod` counts per crate. Growth is shrink-only; API snapshots were intentionally not chosen as the gate.
 
-Env-pilot guard (`cargo xtask lint arch` → `check_curated_pub_mods`) allowlists root `pub mod`s for curated crates (`jackin-env` → `test_support` only). `jackin-core::tui_theme` is an intentional namespace because its Ratatui `Color` adapters share names with the product-owned RGB tokens re-exported at the crate root; keeping the adapters namespaced makes the representation explicit at call sites. Full `jackin-config` / `jackin-core` root narrowing is STOP-deferred (import blast radius); the ratchet bounds the surface until module-cluster slices land.
+Env-pilot guard (`cargo xtask lint arch` → `check_curated_pub_mods`) allowlists root `pub mod`s for curated crates (`jackin-env` → `test_support` only). `jackin-core` now exposes only its justified namespace modules; renderer-neutral product tokens live in `jackin-brand`, and Ratatui adapters live in `jackin-tui`. The ratchet continues to reject accidental public-module growth.
 
 ### Trait-sealing spot audit (`jackin-core` / `jackin-config`)
 

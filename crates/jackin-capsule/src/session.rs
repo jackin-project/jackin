@@ -3,16 +3,16 @@
 
 //! Per-agent PTY session: spawn, resize, write input, read output, and track
 //! session state for the daemon.
-//!
 //! Not responsible for: attach-client I/O, socket framing, or daemon
 //! multiplexing logic (`SessionSupervisor` + the Multiplexer shell own that).
-//!
 //! Key invariant: the session's `DamageGrid` is the single source of truth
 //! for re-rendering on tab/pane switch and client reattach.
 
 mod osc_policy;
+mod pty_exit;
 
 pub use osc_policy::{OscPolicy, osc8_uri_is_safe, parse_osc7};
+use pty_exit::{error_type as pty_exit_error_type, reason as pty_exit_reason};
 
 /// PTY session: one PTY + one `DamageGrid` + state-inference timer.
 ///
@@ -35,10 +35,11 @@ pub use osc_policy::{OscPolicy, osc8_uri_is_safe, parse_osc7};
 /// understands would vanish at the multiplexer boundary.
 use jackin_core::container_paths;
 use std::path::Path;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, MutexGuard};
 
 use anyhow::{Context, Result};
+use jackin_telemetry::ResultTelemetryExt as _;
 use portable_pty::{ChildKiller, CommandBuilder, MasterPty, PtySize, native_pty_system};
 use tokio::sync::mpsc;
 
@@ -124,15 +125,20 @@ pub struct StatusTransition {
 pub struct StatusTick {
     pub transition: Option<StatusTransition>,
     pub stuck: bool,
+    pub flap: bool,
 }
+
+const STATUS_FLAP_WINDOW: std::time::Duration = std::time::Duration::from_secs(30);
+const STATUS_FLAP_THRESHOLD: usize = 3;
 
 #[expect(
     missing_debug_implementations,
-    reason = "Session owns PTY and child-killer trait objects; capsule logs expose session identity and state."
+    reason = "Session owns PTY and child-killer trait objects; debug formatting would expose session identity and state."
 )]
 pub struct Session {
     pub label: String,
     pub agent: Option<String>,
+    pub conversation_id: Option<String>,
     pub provider: Option<SessionProvider>,
     /// Published effective state. Authored solely by evidence arbitration on the
     /// daemon tick (see `agent_status`); kept in sync with `status.effective`.
@@ -142,6 +148,8 @@ pub struct Session {
     pub status: SessionStatus,
     /// Debounce bookkeeping for the inferred working→idle hold.
     pub pending_transition: crate::agent_status::policy::PendingTransition,
+    status_transition_times: std::collections::VecDeque<std::time::Instant>,
+    status_flapping: bool,
     /// Per-source gate state for runtime-event reporters (one per hook/plugin
     /// source addressing this session).
     pub gate_states:
@@ -168,6 +176,7 @@ pub struct Session {
     pub input_tx: mpsc::UnboundedSender<Vec<u8>>,
     pub pty_master: Arc<Mutex<Box<dyn MasterPty + Send>>>,
     child_killer: Arc<Mutex<Box<dyn ChildKiller + Send + Sync>>>,
+    termination_requested: Arc<AtomicBool>,
     pub last_output_at: std::time::Instant,
     /// Last time the operator sent explicit keyboard input to this pane.
     /// Recency evidence only — never authors state (see the agent runtime
@@ -397,7 +406,7 @@ impl Session {
     #[expect(
         clippy::excessive_nesting,
         reason = "Session spawn wires PTY + child handle + agent + env into the \
-                  multiplexer state. The nested `is_err` + `crate::clog!` + state- \
+                  multiplexer state. The nested `is_err` + governed INFO event + state- \
                   update branches are the per-stage error-reporting protocol."
     )]
     #[expect(
@@ -416,9 +425,9 @@ impl Session {
         event_tx: mpsc::UnboundedSender<SessionEvent>,
     ) -> Result<(Self, u64)> {
         let label = label.into();
+        let conversation_id = agent.as_ref().map(|_| uuid::Uuid::new_v4().to_string());
         // Per-tab trace: each pane/agent spawn is its own short trace on the
         // session timeline (shares the resource session.id).
-        jackin_diagnostics::record_capsule_activity(&label, agent.as_deref());
         let rows = terminal.rows;
         let cols = terminal.cols;
         let pty_system = native_pty_system();
@@ -447,6 +456,7 @@ impl Session {
             crate::pid1::register_managed_child(pid);
         }
         let child_killer = Arc::new(Mutex::new(child.clone_killer()));
+        let termination_requested = Arc::new(AtomicBool::new(false));
         drop(slave);
 
         let master: Arc<Mutex<Box<dyn MasterPty + Send>>> = Arc::new(Mutex::new(master));
@@ -458,6 +468,7 @@ impl Session {
         let event_tx_output = event_tx.clone();
         let event_tx_exit = event_tx.clone();
         let event_tx_writer_err = event_tx.clone();
+        emit_pty_spawn(agent.as_deref(), conversation_id.as_deref());
 
         // PTY writer task. take_writer / lock failures emit Exited so the
         // daemon reaps the half-initialised session instead of leaving a
@@ -465,104 +476,71 @@ impl Session {
         // used instead of Handle::current().block_on(rx.recv()) because
         // the latter panics inside spawn_blocking on a current-thread
         // runtime ("Cannot block the current thread from within a runtime").
-        tokio::task::spawn_blocking(move || {
-            let writer = match master_for_write.lock() {
-                Err(_) => {
-                    crate::clog!("session {sid}: PTY master mutex poisoned; aborting writer task");
-                    None
-                }
-                Ok(guard) => match guard.take_writer() {
-                    Ok(w) => Some(w),
-                    Err(e) => {
-                        crate::clog!(
-                            "session {sid}: take_writer failed: {e}; aborting writer task"
-                        );
-                        None
-                    }
-                },
+        jackin_telemetry::spawn::stream_blocking("pty.reader", move || {
+            let writer = match lock_or_record_poison(&master_for_write) {
+                None => None,
+                Some(guard) => guard
+                    .take_writer()
+                    .record_telemetry_error(jackin_telemetry::schema::enums::ErrorType::IoError)
+                    .ok(),
             };
             let Some(mut writer) = writer else {
-                if event_tx_writer_err
-                    .send(SessionEvent::Exited {
-                        session_id: sid,
-                        reason: Some("session PTY writer failed to initialize".to_owned()),
-                    })
-                    .is_err()
-                {
-                    crate::clog!(
-                        "session {sid}: event channel closed — daemon will not reap this half-initialised session"
-                    );
-                }
+                drop(event_tx_writer_err.send(SessionEvent::Exited {
+                    session_id: sid,
+                    reason: Some("session PTY writer failed to initialize".to_owned()),
+                }));
                 return;
             };
             while let Some(data) = input_rx.blocking_recv() {
-                if let Err(e) = std::io::Write::write_all(&mut writer, &data) {
-                    crate::clog!(
-                        "session {sid}: PTY write error: {e} (errno={:?}); aborting writer",
-                        e.raw_os_error()
-                    );
-                    if event_tx_writer_err
-                        .send(SessionEvent::Exited {
-                            session_id: sid,
-                            reason: Some(format!("session PTY write failed: {e}")),
-                        })
-                        .is_err()
-                    {
-                        crate::clog!(
-                            "session {sid}: event channel closed — daemon will not reap this dead writer"
-                        );
-                    }
+                if std::io::Write::write_all(&mut writer, &data)
+                    .record_telemetry_error(jackin_telemetry::schema::enums::ErrorType::IoError)
+                    .is_err()
+                {
+                    drop(event_tx_writer_err.send(SessionEvent::Exited {
+                        session_id: sid,
+                        reason: Some("session PTY write failed".to_owned()),
+                    }));
                     return;
                 }
+                record_terminal_bytes(
+                    jackin_telemetry::schema::enums::StreamDirection::Input,
+                    data.len(),
+                );
             }
         });
 
         let event_tx_reader_err = event_tx.clone();
-        tokio::task::spawn_blocking(move || {
-            let reader = match master_for_read.lock() {
-                Err(_) => {
-                    crate::clog!("session {sid}: PTY master mutex poisoned; aborting reader task");
-                    None
-                }
-                Ok(guard) => match guard.try_clone_reader() {
-                    Ok(r) => Some(r),
-                    Err(e) => {
-                        crate::clog!(
-                            "session {sid}: try_clone_reader failed: {e}; aborting reader task"
-                        );
-                        None
-                    }
-                },
+        jackin_telemetry::spawn::stream_blocking("pty.writer", move || {
+            let reader = match lock_or_record_poison(&master_for_read) {
+                None => None,
+                Some(guard) => guard
+                    .try_clone_reader()
+                    .record_telemetry_error(jackin_telemetry::schema::enums::ErrorType::IoError)
+                    .ok(),
             };
             let Some(mut reader) = reader else {
-                if event_tx_reader_err
-                    .send(SessionEvent::Exited {
-                        session_id: sid,
-                        reason: Some("session PTY reader failed to initialize".to_owned()),
-                    })
-                    .is_err()
-                {
-                    crate::clog!(
-                        "session {sid}: event channel closed — daemon will not reap this half-initialised session"
-                    );
-                }
+                drop(event_tx_reader_err.send(SessionEvent::Exited {
+                    session_id: sid,
+                    reason: Some("session PTY reader failed to initialize".to_owned()),
+                }));
                 return;
             };
             let mut buf = [0u8; 4096];
             loop {
                 match std::io::Read::read(&mut reader, &mut buf) {
-                    Ok(0) => {
-                        crate::clog!("session {sid}: PTY read EOF");
-                        break;
-                    }
-                    Err(e) => {
-                        crate::clog!(
-                            "session {sid}: PTY read error: {e} (errno={:?})",
-                            e.raw_os_error()
-                        );
+                    Ok(0) => break,
+                    Err(error) => {
+                        drop(Err::<(), _>(error).record_telemetry_error(
+                            jackin_telemetry::schema::enums::ErrorType::IoError,
+                        ));
                         break;
                     }
                     Ok(n) => {
+                        record_terminal_bytes(
+                            jackin_telemetry::schema::enums::StreamDirection::Output,
+                            n,
+                        );
+                        capture_pty_fixture_bytes(&buf[..n]);
                         let data = buf[..n].to_vec();
                         if event_tx_output
                             .send(SessionEvent::Output {
@@ -571,9 +549,6 @@ impl Session {
                             })
                             .is_err()
                         {
-                            crate::clog!(
-                                "session {sid}: event channel closed before PTY output drained; reader exiting"
-                            );
                             break;
                         }
                     }
@@ -601,34 +576,38 @@ impl Session {
         // remove the pane immediately; the reader task (still
         // blocked on master) becomes a leak that ends when the
         // multiplexer process itself exits.
-        tokio::task::spawn_blocking(move || {
+        let exit_agent = agent.clone();
+        let exit_conversation_id = conversation_id.clone();
+        let exit_termination_requested = Arc::clone(&termination_requested);
+        jackin_telemetry::spawn::stream_blocking("pty.wait", move || {
             let status = child.wait();
+            emit_pty_exit(
+                exit_agent.as_deref(),
+                exit_conversation_id.as_deref(),
+                status.as_ref(),
+                exit_termination_requested.load(Ordering::Acquire),
+            );
             if let Some(pid) = child_pid {
                 crate::pid1::unregister_managed_child(pid);
                 crate::pid1::reap_zombies();
             }
-            crate::clog!("session {sid}: child reaped: {status:?}");
-            if event_tx_exit
-                .send(SessionEvent::Exited {
-                    session_id: sid,
-                    reason: child_exit_reason(status.as_ref()),
-                })
-                .is_err()
-            {
-                crate::clog!(
-                    "session {sid}: event channel closed — daemon will not see this child exit"
-                );
-            }
+            drop(event_tx_exit.send(SessionEvent::Exited {
+                session_id: sid,
+                reason: child_exit_reason(status.as_ref()),
+            }));
         });
 
         Ok((
             Session {
                 label,
                 agent,
+                conversation_id,
                 provider,
                 state: AgentState::Unknown,
                 status: SessionStatus::new(),
                 pending_transition: crate::agent_status::policy::PendingTransition::default(),
+                status_transition_times: std::collections::VecDeque::new(),
+                status_flapping: false,
                 gate_states: std::collections::HashMap::new(),
                 authority: None,
                 subagents_active: 0,
@@ -639,6 +618,7 @@ impl Session {
                 input_tx,
                 pty_master: master,
                 child_killer,
+                termination_requested,
                 last_output_at: std::time::Instant::now(),
                 last_input_at: std::time::Instant::now(),
                 received_output: false,
@@ -774,32 +754,11 @@ impl Session {
     }
 
     pub fn send_input(&self, data: &[u8]) -> bool {
-        // Debug-only: log every byte chunk forwarded to a PTY. Pairs
-        // with the `rx ClientFrame::Input` line on the receive side so
-        // a `--debug` trace shows the full path from operator keystroke
-        // to slave fd write.
-        crate::ctrace_payload!(
-            "session send_input: agent={:?} label={} bytes={:02x?}",
-            self.agent,
-            self.label,
-            data
-        );
         // SendError fires when the writer task has exited (it owns the
         // receiver). The writer task emits SessionEvent::Exited before
         // dropping, so the daemon will reap this Session on the next
-        // event tick — keystrokes accepted between writer death and
-        // reap are lost, but observability remains: clog records both
-        // halves of the failure chain.
-        match self.input_tx.send(data.to_vec()) {
-            Ok(()) => true,
-            Err(e) => {
-                crate::clog!(
-                    "session send_input: writer task gone ({} bytes dropped): {e}",
-                    data.len()
-                );
-                false
-            }
-        }
+        // event tick. The writer boundary owns the originating failure.
+        self.input_tx.send(data.to_vec()).is_ok()
     }
 
     /// Mark that the operator sent an explicit keyboard payload to this pane.
@@ -878,15 +837,7 @@ impl Session {
                     self.subagents_active = 0;
                 }
             }
-            GateEffect::Ignore => {
-                // An event this build does not map (runtime/version skew renamed
-                // it). The reporter's authority silently goes dark; leave a
-                // Firehose breadcrumb so debug telemetry surfaces the drift.
-                crate::cdebug!(
-                    "agent-status: unmapped runtime event runtime={runtime} event={event} \
-                     source={source_id}"
-                );
-            }
+            GateEffect::Ignore => {}
         }
     }
 
@@ -1058,6 +1009,7 @@ impl Session {
         // confirmation + CPU/OSC-quiet). Only commit through SessionStatus when
         // it permits.
         let mut transition = None;
+        let mut flap = false;
         if debounce(self.state, &candidate, &mut self.pending_transition, now).is_some() {
             let previous = self.state;
             // Clone the winner only on the committing tick — most ticks debounce
@@ -1070,12 +1022,32 @@ impl Session {
                     effective,
                     winner,
                 });
+                flap = self.record_status_transition(now);
             }
         }
         if exiting {
             self.clear_runtime_authority();
         }
-        StatusTick { transition, stuck }
+        StatusTick {
+            transition,
+            stuck,
+            flap,
+        }
+    }
+
+    fn record_status_transition(&mut self, now: std::time::Instant) -> bool {
+        while self
+            .status_transition_times
+            .front()
+            .is_some_and(|at| now.saturating_duration_since(*at) > STATUS_FLAP_WINDOW)
+        {
+            self.status_transition_times.pop_front();
+        }
+        self.status_transition_times.push_back(now);
+        let flapping = self.status_transition_times.len() >= STATUS_FLAP_THRESHOLD;
+        let started = flapping && !self.status_flapping;
+        self.status_flapping = flapping;
+        started
     }
 
     /// True when the session's program has enabled any mouse protocol
@@ -1125,23 +1097,13 @@ impl Session {
             self.received_output = true;
         }
         jackin_diagnostics::incr_terminal_bytes_received(bytes.len() as u64);
-        crate::ctrace_payload!(
-            "session feed_pty bytes: agent={:?} label={} len={} bytes={:02x?}",
-            self.agent,
-            self.label,
-            bytes.len(),
-            bytes
-        );
 
         // Single batch feed — the grid's persistent vte parser handles
         // sequences split across PTY read boundaries internally.
         let was_alternate = self.shadow_grid.alternate_screen();
         let was_scrolled = self.scrollback_offset() != 0;
         let scrollback_before = self.shadow_grid.scrollback_len();
-        let debug_enabled = crate::logging::debug_enabled();
-        let parse_started = debug_enabled.then(std::time::Instant::now);
         self.shadow_grid.process(bytes);
-        let parse_duration_us = parse_started.map(|started| started.elapsed().as_micros());
         let is_alternate = self.shadow_grid.alternate_screen();
         if was_alternate && !is_alternate {
             self.clear_transient_keyboard_modes();
@@ -1176,26 +1138,6 @@ impl Session {
             }
         } else {
             self.scroll_to_live();
-        }
-
-        if debug_enabled {
-            let (grid_rows, grid_cols) = self.shadow_grid.size();
-            let (cursor_row, cursor_col) = self.shadow_grid.cursor_position();
-            crate::cdebug!(
-                "session feed_pty: agent={:?} label={} bytes={} t_parse_us={} alt_screen={} mouse_enabled={} screen={}x{} cursor={}x{} scrollback={} scrollback_offset={}",
-                self.agent,
-                self.label,
-                bytes.len(),
-                parse_duration_us.unwrap_or_default(),
-                is_alternate,
-                self.mouse_enabled(),
-                grid_rows,
-                grid_cols,
-                cursor_row,
-                cursor_col,
-                self.shadow_grid.scrollback_len(),
-                self.scrollback_offset(),
-            );
         }
 
         // PTY output updates recency evidence only. It never authors state
@@ -1311,35 +1253,14 @@ impl Session {
                 PassthroughEvent::UnhandledCsi(ref raw) => {
                     self.handle_unhandled_csi(raw);
                 }
-                // Default-denied CSI (§3.6): never forwarded. Logged so a
-                // `--debug` run shows the exact dropped bytes — the triage
-                // trail for "agent feature X stopped working" and the input
-                // for allowlist additions.
-                PassthroughEvent::DroppedCsi(ref raw) => {
-                    crate::cdebug!(
-                        "dropped unhandled CSI (agent={:?}): {}",
-                        self.agent.as_deref(),
-                        raw.escape_ascii(),
-                    );
-                }
+                PassthroughEvent::DroppedCsi(_) => {}
                 // Device/mode query the emulator answered itself. The reply
                 // goes back to the agent's own PTY stdin — never the outer
                 // terminal — so the agent's capability detection reflects the
                 // grid, not the host. (Root fix for the alt-screen corruption:
                 // the host was answering DA/DSR/DECRQM with its own caps.)
                 PassthroughEvent::Reply(bytes) => {
-                    crate::cdebug!(
-                        "query reply to agent={:?}: {}",
-                        self.agent.as_deref(),
-                        bytes.escape_ascii(),
-                    );
-                    if let Err(e) = self.input_tx.send(bytes) {
-                        crate::clog!(
-                            "session query reply (agent={:?} label={}): writer task gone: {e}",
-                            self.agent,
-                            self.label,
-                        );
-                    }
+                    drop(self.input_tx.send(bytes));
                 }
                 // ScrollbackClear is a grid-internal instruction with no
                 // outer-terminal byte form; the grid already cleared its
@@ -1372,11 +1293,6 @@ impl Session {
         if let Some(level) = parse_modify_other_keys(raw) {
             self.modify_other_keys = (level != 0).then_some(level);
         }
-        crate::cdebug!(
-            "forwarding allowlisted CSI to client (agent={:?}): {}",
-            self.agent.as_deref(),
-            raw.escape_ascii(),
-        );
         self.pending_passthrough.push(raw.to_vec());
     }
 
@@ -1404,13 +1320,13 @@ impl Session {
     }
 
     pub fn terminate(&self) {
-        match self.child_killer.lock() {
-            Ok(mut killer) => {
-                if let Err(e) = killer.kill() {
-                    crate::clog!("session terminate: child kill failed: {e}");
-                }
-            }
-            Err(e) => crate::clog!("session terminate: child killer mutex poisoned: {e}"),
+        self.termination_requested.store(true, Ordering::Release);
+        if let Some(mut killer) = lock_or_record_poison(&self.child_killer) {
+            drop(
+                killer
+                    .kill()
+                    .record_telemetry_error(jackin_telemetry::schema::enums::ErrorType::IoError),
+            );
         }
     }
 
@@ -1428,44 +1344,132 @@ impl Session {
         // Never hand the agent PTY a 0×0 window size (programs expect ≥1) nor the
         // shadow grid a degenerate geometry. `DamageGrid::set_size` clamps too;
         // this keeps TIOCSWINSZ and the model in agreement on the floor.
-        if rows == 0 || cols == 0 {
-            // A clamp here means a layout bug upstream collapsed a pane; log it
-            // so a soak run can pin the offending frame rather than silently
-            // running the agent with a collapsed dimension. Each axis is floored
-            // independently, so `0x80` becomes `1x80`, not `1x1`.
-            crate::cdebug!(
-                "resize-clamp: degenerate geometry {rows}x{cols} floored to {}x{}",
-                rows.max(1),
-                cols.max(1),
-            );
-        }
         let rows = rows.max(1);
         let cols = cols.max(1);
-        // TIOCSWINSZ failure leaves the agent drawing at the old size
-        // while the screen renders at the new geometry — the operator
-        // sees mis-wrapped lines with no explanation. Log so --debug
-        // surfaces the divergence. Lock failure is logged too: a
-        // poisoned PTY mutex means an earlier writer/reader task
-        // panicked while holding it, and the session is effectively
-        // dead even if no Exited event has fired yet.
-        match self.pty_master.lock() {
-            Ok(master) => {
-                if let Err(e) = master.resize(PtySize {
-                    rows,
-                    cols,
-                    pixel_width: 0,
-                    pixel_height: 0,
-                }) {
-                    crate::clog!("session resize: TIOCSWINSZ failed for {rows}x{cols}: {e}");
-                }
-            }
-            Err(e) => crate::clog!("session resize: PTY mutex poisoned: {e}"),
+        if let Some(master) = lock_or_record_poison(&self.pty_master) {
+            drop(
+                master
+                    .resize(PtySize {
+                        rows,
+                        cols,
+                        pixel_width: 0,
+                        pixel_height: 0,
+                    })
+                    .record_telemetry_error(jackin_telemetry::schema::enums::ErrorType::IoError),
+            );
         }
         self.shadow_grid.set_size(rows, cols);
         // Re-clamp through the grid: set_size may have shrunk the filled
         // scrollback the offset was clamped against.
         self.shadow_grid.set_scrollback(self.scrollback_offset());
     }
+}
+
+fn lock_or_record_poison<T>(mutex: &Mutex<T>) -> Option<MutexGuard<'_, T>> {
+    if let Ok(guard) = mutex.lock() {
+        Some(guard)
+    } else {
+        let _event =
+            jackin_telemetry::record_error(jackin_telemetry::schema::enums::ErrorType::Panic);
+        None
+    }
+}
+
+fn capture_pty_fixture_bytes(bytes: &[u8]) {
+    use std::io::Write as _;
+    use std::sync::OnceLock;
+
+    static CAPTURE: OnceLock<Option<Mutex<std::fs::File>>> = OnceLock::new();
+    let capture = CAPTURE.get_or_init(|| {
+        let path = std::env::var_os("JACKIN_PTY_FIXTURE_CAPTURE")?;
+        let file = std::fs::File::create(path).ok()?;
+        Some(Mutex::new(file))
+    });
+    if let Some(capture) = capture
+        && let Ok(mut file) = capture.lock()
+    {
+        drop(file.write_all(bytes));
+        drop(file.flush());
+    }
+}
+
+fn record_terminal_bytes(
+    direction: jackin_telemetry::schema::enums::StreamDirection,
+    bytes: usize,
+) {
+    let attrs = [jackin_telemetry::Attr {
+        key: jackin_telemetry::schema::attrs::STREAM_DIRECTION,
+        value: jackin_telemetry::Value::Str(direction.as_str()),
+    }];
+    let amount = u64::try_from(bytes).unwrap_or(u64::MAX);
+    let _counter_result =
+        jackin_telemetry::counter(&jackin_telemetry::metric::TERMINAL_BYTES).add(amount, &attrs);
+}
+
+fn emit_pty_spawn(agent: Option<&str>, conversation_id: Option<&str>) {
+    use jackin_telemetry::{Attr, FieldSet, Value};
+    let mut attrs = Vec::with_capacity(2);
+    if let Some(agent) = agent {
+        attrs.push(Attr {
+            key: jackin_telemetry::schema::attrs::std_attrs::GEN_AI_AGENT_NAME,
+            value: Value::Str(agent),
+        });
+    }
+    if let Some(conversation_id) = conversation_id {
+        attrs.push(Attr {
+            key: jackin_telemetry::schema::attrs::std_attrs::GEN_AI_CONVERSATION_ID,
+            value: Value::Str(conversation_id),
+        });
+    }
+    let _event_result = jackin_telemetry::emit_event(
+        &jackin_telemetry::event::PTY_SPAWN,
+        FieldSet::new(&attrs, None),
+    );
+}
+
+fn emit_pty_exit(
+    agent: Option<&str>,
+    conversation_id: Option<&str>,
+    status: Result<&portable_pty::ExitStatus, &std::io::Error>,
+    cancelled: bool,
+) {
+    use jackin_telemetry::{Attr, FieldSet, Value};
+    let reason = pty_exit_reason(status, cancelled);
+    let mut attrs = vec![Attr {
+        key: jackin_telemetry::schema::attrs::PTY_EXIT_REASON,
+        value: Value::Str(reason.as_str()),
+    }];
+    if let Some(error_type) = pty_exit_error_type(reason) {
+        attrs.push(Attr {
+            key: jackin_telemetry::schema::attrs::std_attrs::ERROR_TYPE,
+            value: Value::Str(error_type.as_str()),
+        });
+    }
+    if let Some(status) = status.ok()
+        && !status.success()
+        && status.signal().is_none()
+    {
+        attrs.push(Attr {
+            key: jackin_telemetry::schema::attrs::std_attrs::PROCESS_EXIT_CODE,
+            value: Value::I64(i64::from(status.exit_code())),
+        });
+    }
+    if let Some(agent) = agent {
+        attrs.push(Attr {
+            key: jackin_telemetry::schema::attrs::std_attrs::GEN_AI_AGENT_NAME,
+            value: Value::Str(agent),
+        });
+    }
+    if let Some(conversation_id) = conversation_id {
+        attrs.push(Attr {
+            key: jackin_telemetry::schema::attrs::std_attrs::GEN_AI_CONVERSATION_ID,
+            value: Value::Str(conversation_id),
+        });
+    }
+    let _event_result = jackin_telemetry::emit_event(
+        &jackin_telemetry::event::PTY_EXIT,
+        FieldSet::new(&attrs, None),
+    );
 }
 
 fn child_exit_reason(status: Result<&portable_pty::ExitStatus, &std::io::Error>) -> Option<String> {
@@ -1501,10 +1505,13 @@ impl Session {
         Self {
             label,
             agent,
+            conversation_id: None,
             provider,
             state: AgentState::Unknown,
             status: SessionStatus::new(),
             pending_transition: crate::agent_status::policy::PendingTransition::default(),
+            status_transition_times: std::collections::VecDeque::new(),
+            status_flapping: false,
             gate_states: std::collections::HashMap::new(),
             authority: None,
             subagents_active: 0,
@@ -1515,6 +1522,7 @@ impl Session {
             input_tx,
             pty_master,
             child_killer,
+            termination_requested: Arc::new(AtomicBool::new(false)),
             last_output_at: std::time::Instant::now(),
             last_input_at: std::time::Instant::now(),
             received_output: true,
@@ -1613,6 +1621,7 @@ fn grade_for_runtime(runtime: &str) -> crate::agent_status::evidence::AuthorityG
 pub fn build_agent_command(
     agent: &str,
     model: Option<&str>,
+    auth_mode: Option<&str>,
     env_passthrough: &[(String, String)],
     cwd: &Path,
     codename: &str,
@@ -1625,6 +1634,11 @@ pub fn build_agent_command(
         cmd.env(k, v);
     }
     cmd.env("JACKIN_AGENT", agent);
+    if let Some(auth_mode) = auth_mode {
+        cmd.env(jackin_protocol::AUTH_MODE_ENV, auth_mode);
+    } else {
+        cmd.env_remove(jackin_protocol::AUTH_MODE_ENV);
+    }
     cmd.env("JACKIN_AGENT_CODENAME", codename);
     apply_terminal_env(&mut cmd);
     cmd.cwd(cwd);
@@ -1650,7 +1664,7 @@ pub fn build_shell_command(
     cwd: &Path,
     codename: &str,
 ) -> CommandBuilder {
-    let mut cmd = CommandBuilder::new("/bin/zsh");
+    let mut cmd = CommandBuilder::new(shell_executable());
     for (k, v) in env_passthrough {
         cmd.env(k, v);
     }
@@ -1659,6 +1673,16 @@ pub fn build_shell_command(
     apply_terminal_env(&mut cmd);
     cmd.cwd(cwd);
     cmd
+}
+
+#[cfg(not(test))]
+fn shell_executable() -> std::ffi::OsString {
+    "/bin/zsh".into()
+}
+
+#[cfg(test)]
+fn shell_executable() -> std::ffi::OsString {
+    std::env::var_os("JACKIN_TEST_SHELL").unwrap_or_else(|| "/bin/zsh".into())
 }
 
 /// Apply the stable pane terminal environment. The active outer terminal is

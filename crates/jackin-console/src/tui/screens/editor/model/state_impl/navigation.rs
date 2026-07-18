@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 use std::marker::PhantomData;
 
 use jackin_config::WorkspaceConfig;
-use termrock::interaction::FocusOwner;
+use jackin_tui::runtime::SurfaceFocusTarget;
 
 use super::super::{
     EditorErrorPopupModal, EditorFocusTarget, EditorHoverTarget, EditorMode,
@@ -84,7 +84,7 @@ impl<
         Self {
             mode: EditorMode::Edit { name },
             active_tab: EditorTab::General,
-            focus_owner: FocusOwner::TabBar,
+            focus_owner: jackin_tui::runtime::SurfaceFocus::tab_bar(EditorFocusTarget::TabContent),
             hover_target: None,
             active_field: FieldFocus::Row(0),
             original: ws.clone(),
@@ -116,12 +116,15 @@ impl<
     }
 
     #[must_use]
-    pub const fn focus_owner(&self) -> FocusOwner<EditorFocusTarget> {
-        self.focus_owner
+    pub fn focus_owner(&self) -> SurfaceFocusTarget<EditorFocusTarget> {
+        self.focus_owner.focused()
     }
 
-    pub fn set_focus_owner(&mut self, owner: FocusOwner<EditorFocusTarget>) {
-        self.focus_owner = owner;
+    pub fn set_focus_owner(&mut self, owner: SurfaceFocusTarget<EditorFocusTarget>) {
+        match owner {
+            SurfaceFocusTarget::TabBar => self.focus_owner.focus_tab_bar(),
+            SurfaceFocusTarget::Content(content) => self.focus_owner.focus_content(content),
+        }
     }
 
     pub fn apply_auth_kind_plan(
@@ -224,7 +227,7 @@ impl<
     }
 
     #[must_use]
-    pub const fn tab_bar_focused(&self) -> bool {
+    pub fn tab_bar_focused(&self) -> bool {
         self.focus_owner.is_tab_bar()
     }
 
@@ -264,13 +267,15 @@ impl<
     }
 
     pub fn set_tab_bar_focused(&mut self, focused: bool) {
-        self.focus_owner = if focused {
-            FocusOwner::TabBar
+        if focused {
+            self.focus_owner.focus_tab_bar();
         } else if matches!(self.active_tab, EditorTab::Mounts) {
-            FocusOwner::Content(EditorFocusTarget::WorkspaceMounts)
+            self.focus_owner
+                .focus_content(EditorFocusTarget::WorkspaceMounts);
         } else {
-            FocusOwner::Content(EditorFocusTarget::TabContent)
-        };
+            self.focus_owner
+                .focus_content(EditorFocusTarget::TabContent);
+        }
     }
 
     pub fn apply_tab_bar_focus_plan(&mut self, focused: bool) {
@@ -278,34 +283,31 @@ impl<
     }
 
     #[must_use]
-    pub const fn workspace_mounts_scroll_focused(&self) -> bool {
-        matches!(
-            self.focus_owner,
-            FocusOwner::Content(EditorFocusTarget::WorkspaceMounts)
-        )
+    pub fn workspace_mounts_scroll_focused(&self) -> bool {
+        self.focus_owner
+            .is_content(EditorFocusTarget::WorkspaceMounts)
     }
 
     pub fn set_workspace_mounts_scroll_focused(&mut self, focused: bool) {
         if focused {
-            self.focus_owner = FocusOwner::Content(EditorFocusTarget::WorkspaceMounts);
+            self.focus_owner
+                .focus_content(EditorFocusTarget::WorkspaceMounts);
         } else if self.workspace_mounts_scroll_focused() {
-            self.focus_owner = FocusOwner::TabBar;
+            self.focus_owner.focus_tab_bar();
         }
     }
 
     #[must_use]
-    pub const fn tab_content_scroll_focused(&self) -> bool {
-        matches!(
-            self.focus_owner,
-            FocusOwner::Content(EditorFocusTarget::TabContent)
-        )
+    pub fn tab_content_scroll_focused(&self) -> bool {
+        self.focus_owner.is_content(EditorFocusTarget::TabContent)
     }
 
     pub fn set_tab_content_scroll_focused(&mut self, focused: bool) {
         if focused {
-            self.focus_owner = FocusOwner::Content(EditorFocusTarget::TabContent);
+            self.focus_owner
+                .focus_content(EditorFocusTarget::TabContent);
         } else if self.tab_content_scroll_focused() {
-            self.focus_owner = FocusOwner::TabBar;
+            self.focus_owner.focus_tab_bar();
         }
     }
 

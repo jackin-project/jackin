@@ -111,33 +111,41 @@ impl ConfigEditor {
     pub fn save(self) -> crate::ConfigResult<AppConfig> {
         let global_contents = self.doc.to_string();
 
-        let config: AppConfig = match validate_candidate(&global_contents, &self.workspace_docs) {
-            Ok(cfg) => cfg,
-            Err(err) => {
-                return Err(ConfigError::from(err.context(format!(
-                    "rejecting candidate config (would have written to {})",
-                    self.path.display()
-                ))));
-            }
-        };
+        let candidate = validate_candidate(&global_contents, &self.workspace_docs).map_err(|err| {
+            ConfigError::from(err.context(format!(
+                "rejecting candidate config (would have written to {})",
+                self.path.display()
+            )))
+        });
+        let config = crate::telemetry::finish_operation(
+            jackin_telemetry::schema::enums::ConfigScope::Global,
+            jackin_telemetry::schema::enums::ConfigOperation::Validate,
+            candidate,
+        )?;
 
-        atomic_write(&self.path, &global_contents)?;
-        std::fs::create_dir_all(&self.workspaces_dir)?;
-        for name in self.workspace_docs.keys() {
-            validate_workspace_file_stem(name)?;
-        }
-        for (name, doc) in &self.workspace_docs {
-            atomic_write(&self.workspace_file(name), &doc.to_string())?;
-        }
-        for removed in &self.removed_workspaces {
-            let path = self.workspace_file(removed);
-            match std::fs::remove_file(&path) {
-                Ok(()) => {}
-                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-                Err(e) => return Err(e.into()),
-            }
-        }
-        Ok(config)
+        crate::telemetry::finish_operation(
+            jackin_telemetry::schema::enums::ConfigScope::Global,
+            jackin_telemetry::schema::enums::ConfigOperation::Save,
+            (|| {
+                atomic_write(&self.path, &global_contents)?;
+                std::fs::create_dir_all(&self.workspaces_dir)?;
+                for name in self.workspace_docs.keys() {
+                    validate_workspace_file_stem(name)?;
+                }
+                for (name, doc) in &self.workspace_docs {
+                    atomic_write(&self.workspace_file(name), &doc.to_string())?;
+                }
+                for removed in &self.removed_workspaces {
+                    let path = self.workspace_file(removed);
+                    match std::fs::remove_file(&path) {
+                        Ok(()) => {}
+                        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                        Err(e) => return Err(e.into()),
+                    }
+                }
+                Ok(config)
+            })(),
+        )
     }
 
     /// Set an env key at `scope` (plain string, op ref, or extended value).

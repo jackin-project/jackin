@@ -10,6 +10,7 @@ use jackin_core::JackinPaths;
 use jackin_core::RoleSelector;
 use jackin_core::{CommandRunner, WorkspaceName};
 use jackin_docker::docker_client::DockerApi;
+use tracing::Instrument as _;
 
 use super::launch_slot::{claim_container_name, claim_known_container_name};
 use super::trust::inject_workspace_mise_env;
@@ -70,9 +71,7 @@ pub(super) async fn finish_deferred_git_pull(
         "git_pull_on_entry",
         Some(&detail),
     );
-    if let Some(progress) = steps.progress_mut() {
-        progress.stage_done(crate::runtime::progress::LaunchStage::Workspace, detail);
-    }
+    steps.stage_done(crate::runtime::progress::LaunchStage::Workspace, detail);
     Ok(())
 }
 
@@ -132,7 +131,7 @@ fn defer_operator_env<'a>(
 
     let config_clone = config.clone();
     let host_env = opts.host_env.clone();
-    DeferredOperatorEnv::Spawned(tokio::task::spawn_blocking(move || {
+    DeferredOperatorEnv::Spawned(jackin_telemetry::spawn::joined_blocking(move || {
         let needed_agents = credential_agents;
         if let Some(host_env) = host_env {
             let default_runner = jackin_env::OpCli::new();
@@ -216,9 +215,57 @@ async fn await_operator_env(
     }
 }
 
-// Boxed future required: load_role calls itself recursively via
-// RestoreResolution::RebuildRelatedRole — async fn recursion is not allowed.
+// Public launch boundary: exactly one launch operation owns all restore and
+// rebuild recursion performed by `load_role_inner`.
 pub fn load_role<'a>(
+    paths: &'a JackinPaths,
+    config: &'a mut AppConfig,
+    selector: &'a RoleSelector,
+    workspace: &'a jackin_config::ResolvedWorkspace,
+    docker: &'a impl DockerApi,
+    runner: &'a mut impl CommandRunner,
+    opts: &'a super::LoadOptions,
+) -> std::pin::Pin<Box<dyn Future<Output = anyhow::Result<()>> + 'a>> {
+    let target_kind = if config.workspaces.contains_key(workspace.name.as_str()) {
+        jackin_telemetry::schema::enums::LaunchTargetKind::Workspace
+    } else {
+        jackin_telemetry::schema::enums::LaunchTargetKind::Directory
+    };
+    let attrs = [jackin_telemetry::Attr {
+        key: jackin_telemetry::schema::attrs::LAUNCH_TARGET_KIND,
+        value: jackin_telemetry::Value::Str(target_kind.as_str()),
+    }];
+    let operation =
+        jackin_telemetry::operation_or_disabled(&jackin_telemetry::operation::LAUNCH, &attrs);
+    let span = operation.span().clone();
+
+    Box::pin(
+        async move {
+            let result =
+                load_role_inner(paths, config, selector, workspace, docker, runner, opts).await;
+            match &result {
+                Ok(()) => {
+                    operation
+                        .complete(jackin_telemetry::schema::enums::OutcomeValue::Success, None);
+                }
+                Err(error) if jackin_core::LaunchCancelled::is_cancel(error) => operation.complete(
+                    jackin_telemetry::schema::enums::OutcomeValue::Cancellation,
+                    None,
+                ),
+                Err(_) => operation.complete(
+                    jackin_telemetry::schema::enums::OutcomeValue::Failure,
+                    Some(jackin_telemetry::schema::enums::ErrorType::LaunchFailed),
+                ),
+            }
+            result
+        }
+        .instrument(span),
+    )
+}
+
+// Boxed internal future permits related-role rebuild recursion without
+// reopening the public launch telemetry boundary.
+fn load_role_inner<'a>(
     paths: &'a JackinPaths,
     config: &'a mut AppConfig,
     selector: &'a RoleSelector,
@@ -292,18 +339,25 @@ pub async fn resolve_supported_agents_for_console(
     let cached = jackin_manifest::repo::CachedRepo::new(paths, selector);
     if cached.repo_dir.join(".git").is_dir() {
         match jackin_manifest::load_role_manifest(&cached.repo_dir) {
-            Ok(manifest) => return Ok(manifest.supported_agents()),
-            Err(error) => jackin_diagnostics::debug_log!(
-                "console",
-                "cached manifest for {} present but failed to parse ({error:#}); refetching",
-                selector.key()
-            ),
+            Ok(manifest) => {
+                jackin_telemetry::cache::decision(
+                    jackin_telemetry::schema::enums::CacheName::RoleRepository,
+                    jackin_telemetry::schema::enums::CacheResult::Hit,
+                );
+                return Ok(manifest.supported_agents());
+            }
+            Err(_error) => {
+                jackin_telemetry::cache::decision(
+                    jackin_telemetry::schema::enums::CacheName::RoleRepository,
+                    jackin_telemetry::schema::enums::CacheResult::Stale,
+                );
+                let _warning = jackin_telemetry::record_recovered_degradation();
+            }
         }
     } else {
-        jackin_diagnostics::debug_log!(
-            "console",
-            "no cached repo for {}; falling back to git fetch",
-            selector.key()
+        jackin_telemetry::cache::decision(
+            jackin_telemetry::schema::enums::CacheName::RoleRepository,
+            jackin_telemetry::schema::enums::CacheResult::Miss,
         );
     }
     let (_, validated_repo, _repo_lock) = resolve_agent_repo_with(
@@ -318,8 +372,8 @@ pub async fn resolve_supported_agents_for_console(
     Ok(validated_repo.manifest.supported_agents())
 }
 
-/// Instrument the full launch pipeline so every stage appears as a
-/// child span in the diagnostics run log so stage events carry real `span_id` correlation.
+/// Instrument the full launch pipeline so every stage appears as a child span
+/// in the governed trace and its events carry real `span_id` correlation.
 /// Prefix each validation error with its source tag (`config`/`workspace`/
 /// `role`/`merged`) for the operator-facing message.
 pub(super) fn tag_errors<E: std::fmt::Display>(tag: &str, errors: Vec<E>) -> Vec<String> {
@@ -346,10 +400,297 @@ pub(super) fn bail_on_grant_errors(errors: Vec<String>) -> anyhow::Result<()> {
     anyhow::bail!("docker grants validation failed:\n{}", errors.join("\n"))
 }
 
-#[tracing::instrument(
-    skip_all,
-    fields(role = %selector.key())
-)]
+async fn restore_explicit_container(
+    paths: &JackinPaths,
+    container: Option<&String>,
+    docker: &impl DockerApi,
+    runner: &mut impl CommandRunner,
+    steps: &mut super::StepCounter,
+) -> anyhow::Result<bool> {
+    let Some(container) = container else {
+        return Ok(false);
+    };
+    jackin_diagnostics::active_timing_started(
+        jackin_diagnostics::DiagnosticStage::Restore,
+        "explicit_restore_container",
+        Some(container),
+    );
+    let docker_state = docker.inspect_container_state(container).await;
+    jackin_diagnostics::active_timing_done(
+        jackin_diagnostics::DiagnosticStage::Restore,
+        "explicit_restore_container",
+        Some(docker_state.short_label().as_str()),
+    );
+    let start = match docker_state {
+        ContainerState::Running | ContainerState::Paused | ContainerState::Restarting => false,
+        ContainerState::Stopped { .. } | ContainerState::Created => true,
+        ContainerState::InspectUnavailable(reason) => anyhow::bail!(
+            "{}",
+            crate::runtime::attach::docker_unavailable_msg(
+                &format!("inspect explicit restore container `{container}`"),
+                &reason,
+            )
+        ),
+        ContainerState::NotFound | ContainerState::Removing | ContainerState::Dead => {
+            return Ok(false);
+        }
+    };
+    super::emit_launch_plan(
+        if start {
+            super::LaunchPlan::StartStopped
+        } else {
+            super::LaunchPlan::AttachExisting
+        },
+        if start {
+            "explicit_restore_container_startable"
+        } else {
+            "explicit_restore_container_running"
+        },
+        Some(container),
+    );
+    restore_current_role_now(paths, container, docker, runner, steps, start).await?;
+    Ok(true)
+}
+
+fn confirm_sensitive_mounts(
+    workspace: &jackin_config::ResolvedWorkspace,
+    steps: &mut super::StepCounter,
+) -> anyhow::Result<()> {
+    let sensitive = jackin_config::find_sensitive_mounts(&workspace.mounts);
+    if sensitive.is_empty() {
+        return Ok(());
+    }
+    let prompt = super::sensitive_mount_prompt(&sensitive);
+    let Some(progress) = steps.progress_mut() else {
+        anyhow::bail!("sensitive mount confirmation requires the rich launch dialog");
+    };
+    if !progress.confirm_prompt(prompt)? {
+        anyhow::bail!("aborted — sensitive mount paths were not confirmed");
+    }
+    Ok(())
+}
+
+fn ensure_role_trust(
+    config: &mut AppConfig,
+    selector: &RoleSelector,
+    source: &jackin_config::RoleSource,
+    steps: &mut super::StepCounter,
+    confirm: impl FnOnce(&RoleSelector, &jackin_config::RoleSource) -> anyhow::Result<()>,
+) -> anyhow::Result<bool> {
+    if source.trusted {
+        return Ok(false);
+    }
+    let confirmation = if let Some(progress) = steps.progress_mut() {
+        progress.confirm_role_trust(selector.key(), source.git.clone())
+    } else {
+        confirm(selector, source).map(|()| true)
+    };
+    let confirmed = match confirmation {
+        Ok(confirmed) => confirmed,
+        Err(error) => {
+            emit_launch_trust_decision(
+                jackin_telemetry::schema::enums::TrustDecision::Rejected,
+                Some(jackin_telemetry::schema::enums::ErrorType::TrustError),
+            );
+            return Err(error);
+        }
+    };
+    if !confirmed {
+        emit_launch_trust_decision(
+            jackin_telemetry::schema::enums::TrustDecision::Rejected,
+            Some(jackin_telemetry::schema::enums::ErrorType::RoleSourceNotTrusted),
+        );
+        anyhow::bail!(
+            "role source \"{selector}\" not trusted — aborting.\n\
+             To trust it later, run `jackin config trust grant {selector}` or try loading again."
+        );
+    }
+    if let Some(entry) = config.roles.get_mut(&selector.key()) {
+        entry.trusted = true;
+    }
+    Ok(true)
+}
+
+fn emit_launch_trust_decision(
+    decision: jackin_telemetry::schema::enums::TrustDecision,
+    error_type: Option<jackin_telemetry::schema::enums::ErrorType>,
+) {
+    let outcome = match decision {
+        jackin_telemetry::schema::enums::TrustDecision::Granted => {
+            jackin_telemetry::schema::enums::OutcomeValue::Success
+        }
+        jackin_telemetry::schema::enums::TrustDecision::Rejected
+        | jackin_telemetry::schema::enums::TrustDecision::Revoked => {
+            jackin_telemetry::schema::enums::OutcomeValue::Failure
+        }
+    };
+    let mut attrs = vec![
+        jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::TRUST_DECISION,
+            value: jackin_telemetry::Value::Str(decision.as_str()),
+        },
+        jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::TRUST_SOURCE_TYPE,
+            value: jackin_telemetry::Value::Str(
+                jackin_telemetry::schema::enums::TrustSourceType::External.as_str(),
+            ),
+        },
+        jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::OUTCOME,
+            value: jackin_telemetry::Value::Str(outcome.as_str()),
+        },
+    ];
+    if let Some(error_type) = error_type {
+        attrs.push(jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::std_attrs::ERROR_TYPE,
+            value: jackin_telemetry::Value::Str(error_type.as_str()),
+        });
+    }
+    let _event = jackin_telemetry::emit_event(
+        &jackin_telemetry::event::TRUST_DECISION,
+        jackin_telemetry::FieldSet::new(&attrs, None),
+    );
+}
+
+fn select_launch_agent(
+    opts: &super::LoadOptions,
+    workspace: &jackin_config::ResolvedWorkspace,
+    early_restore_agent: Option<jackin_core::Agent>,
+    supported_agents: &[jackin_core::Agent],
+    steps: &mut super::StepCounter,
+    selector: &RoleSelector,
+) -> anyhow::Result<jackin_core::Agent> {
+    if let Some(agent) = opts
+        .agent
+        .or(workspace.default_agent)
+        .or(early_restore_agent)
+    {
+        return Ok(agent);
+    }
+    match supported_agents {
+        [] => anyhow::bail!(
+            "role \"{}\" declares no supported agents in its manifest",
+            selector.key()
+        ),
+        [agent] => Ok(*agent),
+        agents => {
+            let labels = agents.iter().map(|agent| agent.slug().to_owned()).collect();
+            let Some(progress) = steps.progress_mut() else {
+                anyhow::bail!(
+                    "role \"{}\" supports multiple agents ({:?}); load requires the rich launch dialog for agent selection, or pass --agent / set workspace `default_agent`",
+                    selector.key(),
+                    agents.iter().map(|agent| agent.slug()).collect::<Vec<_>>()
+                );
+            };
+            let selection = progress.select_choice("Choose launch agent", labels)?;
+            Ok(agents[selection])
+        }
+    }
+}
+
+fn persist_new_role_trust(
+    paths: &JackinPaths,
+    config: &mut AppConfig,
+    selector: &RoleSelector,
+    restore_source_override: bool,
+    is_new: bool,
+    newly_trusted: bool,
+) -> anyhow::Result<()> {
+    if restore_source_override || (!is_new && !newly_trusted) {
+        return Ok(());
+    }
+    let mut editor = jackin_config::ConfigEditor::open(paths)?;
+    if let Some(role_source) = config.roles.get(&selector.key()) {
+        editor.upsert_agent_source(&selector.key(), role_source);
+    }
+    editor.set_agent_trust(&selector.key(), true);
+    *config = editor.save()?;
+    Ok(())
+}
+
+fn confirm_role_branch(
+    branch: Option<&str>,
+    selector: &RoleSelector,
+    source: &jackin_config::RoleSource,
+    steps: &mut super::StepCounter,
+    confirm: impl FnOnce(&RoleSelector, &jackin_config::RoleSource, &str) -> anyhow::Result<()>,
+) -> anyhow::Result<()> {
+    let Some(branch) = branch else {
+        return Ok(());
+    };
+    let prompt = format!(
+        "Role `{selector}` is being loaded from unmerged branch `{branch}`.\n\
+         Its Dockerfile and scripts may differ from the trusted main branch.\n\
+         Have you reviewed the branch diff and verified it is safe to build?"
+    );
+    let confirmed = if let Some(progress) = steps.progress_mut() {
+        progress.confirm_prompt(prompt)?
+    } else {
+        confirm(selector, source, branch)?;
+        true
+    };
+    if !confirmed {
+        anyhow::bail!(
+            "branch \"{branch}\" not confirmed — aborting.\n\
+             Review the Dockerfile and scripts on that branch before loading it."
+        );
+    }
+    Ok(())
+}
+
+fn initialize_launch_progress(
+    steps: &mut super::StepCounter,
+    selector: &RoleSelector,
+    opts: &super::LoadOptions,
+    workspace: &jackin_config::ResolvedWorkspace,
+    workspace_name: Option<&str>,
+) -> anyhow::Result<()> {
+    if let Some(run) = jackin_diagnostics::active_run() {
+        #[cfg(test)]
+        let mut progress = crate::runtime::progress::LaunchProgress::for_test(run);
+        #[cfg(not(test))]
+        let mut progress = crate::runtime::progress::LaunchProgress::new(
+            run,
+            std::env::var_os("JACKIN_NO_MOTION").is_some(),
+            crate::runtime::progress::host_terminal(),
+            env!("JACKIN_VERSION"),
+        )?;
+        progress.started(crate::runtime::progress::LaunchIdentity {
+            role: selector.name.clone(),
+            agent: opts
+                .agent
+                .or(workspace.default_agent)
+                .map_or_else(|| "resolving".to_owned(), |agent| agent.slug().to_owned()),
+            target_kind: super::launch_target_kind(workspace_name),
+            target_label: super::launch_target_label(workspace_name, workspace),
+            mounts: super::launch_mount_lines(workspace),
+            image: None,
+            container: None,
+        });
+        steps.start_progress(progress);
+    }
+    steps.stage_done(
+        crate::runtime::progress::LaunchStage::Identity,
+        "resolved operator",
+    );
+    Ok(())
+}
+
+fn confirm_cached_repo_removal(steps: &mut super::StepCounter) -> anyhow::Result<bool> {
+    let Some(progress) = steps.progress_mut() else {
+        anyhow::bail!("cached repo recovery prompt requires the rich launch dialog");
+    };
+    progress.confirm_prompt("Remove the cached repo and re-clone from the configured source?")
+}
+
+fn mark_construct_ready(steps: &mut super::StepCounter) {
+    steps.stage_started(
+        crate::runtime::progress::LaunchStage::Construct,
+        "verifying construct",
+    );
+    steps.stage_done(crate::runtime::progress::LaunchStage::Construct, "online");
+}
+
 #[expect(
     clippy::too_many_lines,
     reason = "Top-level launch pipeline that drives run_launch_core with preflight \
@@ -407,48 +748,21 @@ pub(crate) async fn load_role_with(
         .contains_key(workspace.name.as_str())
         .then(|| workspace.name.clone());
 
-    let mut steps = super::StepCounter::new(&selector.name);
-    if let Some(run) = jackin_diagnostics::active_run() {
-        #[cfg(test)]
-        let mut progress = crate::runtime::progress::LaunchProgress::for_test(run);
-        #[cfg(not(test))]
-        let mut progress = crate::runtime::progress::LaunchProgress::new(
-            run,
-            std::env::var_os("JACKIN_NO_MOTION").is_some(),
-            crate::runtime::progress::host_terminal(),
-            env!("JACKIN_VERSION"),
-        )?;
-        progress.started(crate::runtime::progress::LaunchIdentity {
-            role: selector.name.clone(),
-            agent: opts
-                .agent
-                .or(workspace.default_agent)
-                .map_or_else(|| "resolving".to_owned(), |agent| agent.slug().to_owned()),
-            target_kind: super::launch_target_kind(workspace_name.as_deref()),
-            target_label: super::launch_target_label(workspace_name.as_deref(), workspace),
-            mounts: super::launch_mount_lines(workspace),
-            image: None,
-            container: None,
-        });
-        progress.stage_done(
-            crate::runtime::progress::LaunchStage::Identity,
-            "resolved operator",
-        );
-        steps.start_progress(progress);
-    }
+    let telemetry_target_kind = if workspace_name.is_some() {
+        jackin_telemetry::schema::enums::LaunchTargetKind::Workspace
+    } else {
+        jackin_telemetry::schema::enums::LaunchTargetKind::Directory
+    };
+    let mut steps = super::StepCounter::new(&selector.name, telemetry_target_kind);
+    initialize_launch_progress(
+        &mut steps,
+        selector,
+        opts,
+        workspace,
+        workspace_name.as_deref(),
+    )?;
 
-    let sensitive = jackin_config::find_sensitive_mounts(&workspace.mounts);
-    if !sensitive.is_empty() {
-        let prompt = super::sensitive_mount_prompt(&sensitive);
-        let confirmed = if let Some(progress) = steps.progress_mut() {
-            progress.confirm_prompt(prompt)?
-        } else {
-            anyhow::bail!("sensitive mount confirmation requires the rich launch dialog")
-        };
-        if !confirmed {
-            anyhow::bail!("aborted — sensitive mount paths were not confirmed");
-        }
-    }
+    confirm_sensitive_mounts(workspace, &mut steps)?;
 
     let role_key = selector.key();
     let selected_agent_before_role = opts.agent.or(workspace.default_agent);
@@ -465,187 +779,126 @@ pub(crate) async fn load_role_with(
     // session is left intact (a fresh, rebuilt instance is created alongside
     // it), while a stopped/crashed/missing container is reclaimed and recreated
     // from the rebuilt image.
-    let early_restore_container = if opts.restore_container_base.is_none()
-        && opts.role_branch.is_none()
-        && !opts.rebuild
-    {
-        if let Some(agent) = selected_agent_before_role {
-            match super::resolve_current_restore_candidate_timed(
-                paths,
-                workspace_name.as_deref(),
-                workspace.label.as_str(),
-                &workspace.workdir,
-                &role_key,
-                agent,
-                docker,
-            )
-            .await?
-            {
-                Some(super::RestoreResolution::StartCurrentRole(container)) => {
-                    jackin_diagnostics::debug_log!(
-                        "restore",
-                        "starting current stopped instance {container} before role repo, credentials, and image prep"
-                    );
-                    return restore_current_role_now(
-                        paths, &container, docker, runner, &mut steps, true,
-                    )
-                    .await;
+    let early_restore_container =
+        if opts.restore_container_base.is_none() && opts.role_branch.is_none() && !opts.rebuild {
+            if let Some(agent) = selected_agent_before_role {
+                match super::resolve_current_restore_candidate_timed(
+                    paths,
+                    workspace_name.as_deref(),
+                    workspace.label.as_str(),
+                    &workspace.workdir,
+                    &role_key,
+                    agent,
+                    docker,
+                )
+                .await?
+                {
+                    Some(super::RestoreResolution::StartCurrentRole(container)) => {
+                        return restore_current_role_now(
+                            paths, &container, docker, runner, &mut steps, true,
+                        )
+                        .await;
+                    }
+                    Some(super::RestoreResolution::RecreateCurrentRole(container)) => {
+                        early_current_scan = super::EarlyCurrentRestoreScan::Scanned {
+                            agent,
+                            current: Some(super::RestoreResolution::RecreateCurrentRole(
+                                container.clone(),
+                            )),
+                        };
+                        Some(container)
+                    }
+                    Some(other) => {
+                        early_current_scan = super::EarlyCurrentRestoreScan::Scanned {
+                            agent,
+                            current: Some(other),
+                        };
+                        None
+                    }
+                    None => {
+                        early_current_scan = super::EarlyCurrentRestoreScan::Scanned {
+                            agent,
+                            current: None,
+                        };
+                        None
+                    }
                 }
-                Some(super::RestoreResolution::RecreateCurrentRole(container)) => {
-                    early_current_scan = super::EarlyCurrentRestoreScan::Scanned {
+            } else {
+                match super::resolve_unselected_current_restore_candidate_with_agent_timed(
+                    paths,
+                    workspace_name.as_deref(),
+                    workspace.label.as_str(),
+                    &workspace.workdir,
+                    &role_key,
+                    docker,
+                )
+                .await?
+                {
+                    Some(super::UnselectedCurrentRestoreResolution {
+                        resolution: super::RestoreResolution::StartCurrentRole(container),
+                        ..
+                    }) => {
+                        return restore_current_role_now(
+                            paths, &container, docker, runner, &mut steps, true,
+                        )
+                        .await;
+                    }
+                    Some(super::UnselectedCurrentRestoreResolution {
+                        resolution: super::RestoreResolution::RecreateCurrentRole(container),
                         agent,
-                        current: Some(super::RestoreResolution::RecreateCurrentRole(
-                            container.clone(),
-                        )),
-                    };
-                    jackin_diagnostics::debug_log!(
-                        "restore",
-                        "recreating missing current instance {container} after role repo resolution"
-                    );
-                    Some(container)
-                }
-                Some(other) => {
-                    early_current_scan = super::EarlyCurrentRestoreScan::Scanned {
-                        agent,
-                        current: Some(other),
-                    };
-                    None
-                }
-                None => {
-                    early_current_scan = super::EarlyCurrentRestoreScan::Scanned {
-                        agent,
-                        current: None,
-                    };
-                    None
+                    }) => {
+                        early_restore_agent = Some(agent);
+                        early_current_scan = super::EarlyCurrentRestoreScan::Scanned {
+                            agent,
+                            current: Some(super::RestoreResolution::RecreateCurrentRole(
+                                container.clone(),
+                            )),
+                        };
+                        Some(container)
+                    }
+                    Some(super::UnselectedCurrentRestoreResolution { resolution, agent }) => {
+                        early_current_scan = super::EarlyCurrentRestoreScan::Scanned {
+                            agent,
+                            current: Some(resolution),
+                        };
+                        None
+                    }
+                    None => {
+                        // Unselected scan found no single-agent hit. When the role
+                        // also has no is_restore_candidate manifests, stash
+                        // ScannedUnselectedEmpty so a later selected agent skips a
+                        // pure-waste current-role re-inspect (008c residual).
+                        let role_empty = !super::restore::matching_current_role_manifests(
+                            paths,
+                            workspace_name.as_deref(),
+                            workspace.label.as_str(),
+                            &workspace.workdir,
+                            &role_key,
+                        )?
+                        .into_iter()
+                        .any(|m| m.is_restore_candidate());
+                        if role_empty {
+                            early_current_scan =
+                                super::EarlyCurrentRestoreScan::ScannedUnselectedEmpty;
+                        }
+                        None
+                    }
                 }
             }
         } else {
-            match super::resolve_unselected_current_restore_candidate_with_agent_timed(
-                paths,
-                workspace_name.as_deref(),
-                workspace.label.as_str(),
-                &workspace.workdir,
-                &role_key,
-                docker,
-            )
-            .await?
-            {
-                Some(super::UnselectedCurrentRestoreResolution {
-                    resolution: super::RestoreResolution::StartCurrentRole(container),
-                    ..
-                }) => {
-                    jackin_diagnostics::debug_log!(
-                        "restore",
-                        "starting single-agent current instance {container} before role repo, credentials, and image prep"
-                    );
-                    return restore_current_role_now(
-                        paths, &container, docker, runner, &mut steps, true,
-                    )
-                    .await;
-                }
-                Some(super::UnselectedCurrentRestoreResolution {
-                    resolution: super::RestoreResolution::RecreateCurrentRole(container),
-                    agent,
-                }) => {
-                    early_restore_agent = Some(agent);
-                    early_current_scan = super::EarlyCurrentRestoreScan::Scanned {
-                        agent,
-                        current: Some(super::RestoreResolution::RecreateCurrentRole(
-                            container.clone(),
-                        )),
-                    };
-                    jackin_diagnostics::debug_log!(
-                        "restore",
-                        "recreating single-agent missing current instance {container} after role repo resolution"
-                    );
-                    Some(container)
-                }
-                Some(super::UnselectedCurrentRestoreResolution { resolution, agent }) => {
-                    early_current_scan = super::EarlyCurrentRestoreScan::Scanned {
-                        agent,
-                        current: Some(resolution),
-                    };
-                    None
-                }
-                None => {
-                    // Unselected scan found no single-agent hit. When the role
-                    // also has no is_restore_candidate manifests, stash
-                    // ScannedUnselectedEmpty so a later selected agent skips a
-                    // pure-waste current-role re-inspect (008c residual).
-                    let role_empty = !super::restore::matching_current_role_manifests(
-                        paths,
-                        workspace_name.as_deref(),
-                        workspace.label.as_str(),
-                        &workspace.workdir,
-                        &role_key,
-                    )?
-                    .into_iter()
-                    .any(|m| m.is_restore_candidate());
-                    if role_empty {
-                        early_current_scan = super::EarlyCurrentRestoreScan::ScannedUnselectedEmpty;
-                    }
-                    None
-                }
-            }
-        }
-    } else {
-        None
-    };
+            None
+        };
 
-    if let Some(container) = opts.restore_container_base.as_ref() {
-        jackin_diagnostics::active_timing_started(
-            jackin_diagnostics::DiagnosticStage::Restore,
-            "explicit_restore_container",
-            Some(container),
-        );
-        let docker_state = docker.inspect_container_state(container).await;
-        jackin_diagnostics::active_timing_done(
-            jackin_diagnostics::DiagnosticStage::Restore,
-            "explicit_restore_container",
-            Some(docker_state.short_label().as_str()),
-        );
-        match docker_state {
-            ContainerState::Running | ContainerState::Paused | ContainerState::Restarting => {
-                super::emit_launch_plan(
-                    super::LaunchPlan::AttachExisting,
-                    "explicit_restore_container_running",
-                    Some(container),
-                );
-                jackin_diagnostics::debug_log!(
-                    "restore",
-                    "attaching explicit restore container {container} before role repo, credentials, and image prep"
-                );
-                return restore_current_role_now(
-                    paths, container, docker, runner, &mut steps, false,
-                )
-                .await;
-            }
-            ContainerState::Stopped { .. } | ContainerState::Created => {
-                super::emit_launch_plan(
-                    super::LaunchPlan::StartStopped,
-                    "explicit_restore_container_startable",
-                    Some(container),
-                );
-                jackin_diagnostics::debug_log!(
-                    "restore",
-                    "starting explicit restore container {container} before role repo, credentials, and image prep"
-                );
-                return restore_current_role_now(
-                    paths, container, docker, runner, &mut steps, true,
-                )
-                .await;
-            }
-            ContainerState::InspectUnavailable(reason) => {
-                anyhow::bail!(
-                    "{}",
-                    crate::runtime::attach::docker_unavailable_msg(
-                        &format!("inspect explicit restore container `{container}`"),
-                        &reason,
-                    )
-                );
-            }
-            ContainerState::NotFound | ContainerState::Removing | ContainerState::Dead => {}
-        }
+    if restore_explicit_container(
+        paths,
+        opts.restore_container_base.as_ref(),
+        docker,
+        runner,
+        &mut steps,
+    )
+    .await?
+    {
+        return Ok(());
     }
 
     let (source, is_new, restore_source_override) = super::resolve_launch_role_source(
@@ -657,19 +910,13 @@ pub(crate) async fn load_role_with(
     // Step 1: Resolve role identity (clone or update repo)
     steps.next("Resolving role identity").await?;
 
-    let mut confirm_repo_removal = || {
-        if let Some(progress) = steps.progress_mut() {
-            return progress
-                .confirm_prompt("Remove the cached repo and re-clone from the configured source?");
-        }
-        anyhow::bail!("cached repo recovery prompt requires the rich launch dialog")
-    };
+    let mut confirm_repo_removal = || confirm_cached_repo_removal(&mut steps);
     jackin_diagnostics::active_timing_started(
         jackin_diagnostics::DiagnosticStage::Role,
         "repo_refresh",
         Some(selector.key().as_str()),
     );
-    let repo_result = resolve_agent_repo_with(
+    let (cached_repo, validated_repo, repo_lock) = resolve_agent_repo_with(
         paths,
         selector,
         &source.git,
@@ -687,125 +934,69 @@ pub(crate) async fn load_role_with(
             }),
         &mut confirm_repo_removal,
     )
-    .await;
-    let (cached_repo, validated_repo, repo_lock) = match repo_result {
-        Ok(repo) => {
-            jackin_diagnostics::active_timing_done(
-                jackin_diagnostics::DiagnosticStage::Role,
-                "repo_refresh",
-                Some("validated"),
-            );
-            repo
-        }
-        Err(error) => {
-            jackin_diagnostics::active_timing_done(
-                jackin_diagnostics::DiagnosticStage::Role,
-                "repo_refresh",
-                Some("error"),
-            );
-            return Err(error);
-        }
-    };
+    .await
+    .inspect(|_| {
+        jackin_diagnostics::active_timing_done(
+            jackin_diagnostics::DiagnosticStage::Role,
+            "repo_refresh",
+            Some("validated"),
+        );
+    })
+    .inspect_err(|_| {
+        jackin_diagnostics::active_timing_done(
+            jackin_diagnostics::DiagnosticStage::Role,
+            "repo_refresh",
+            Some("error"),
+        );
+    })?;
 
     // Trust gate: prompt the operator before running an untrusted third-party role
-    let newly_trusted = if source.trusted {
-        false
-    } else {
-        let confirmed = if let Some(progress) = steps.progress_mut() {
-            progress.confirm_role_trust(selector.key(), source.git.clone())?
-        } else {
-            confirm_trust_for_test(selector, &source)?;
-            true
-        };
-        if !confirmed {
-            anyhow::bail!(
-                "role source \"{selector}\" not trusted — aborting.\n\
-                 To trust it later, run `jackin config trust grant {selector}` or try loading again."
-            );
-        }
-        // Mutate the in-memory copy so callers downstream see the trust
-        // without a reload; persist via editor below.
-        if let Some(entry) = config.roles.get_mut(&selector.key()) {
-            entry.trusted = true;
-        }
-        true
-    };
+    let newly_trusted = ensure_role_trust(
+        config,
+        selector,
+        &source,
+        &mut steps,
+        confirm_trust_for_test,
+    )?;
 
-    if !restore_source_override && (is_new || newly_trusted) {
-        let mut editor = jackin_config::ConfigEditor::open(paths)?;
-        if let Some(role_source) = config.roles.get(&selector.key()) {
-            editor.upsert_agent_source(&selector.key(), role_source);
-        }
-        editor.set_agent_trust(&selector.key(), true);
-        *config = editor.save()?;
+    persist_new_role_trust(
+        paths,
+        config,
+        selector,
+        restore_source_override,
+        is_new,
+        newly_trusted,
+    )?;
+    if newly_trusted {
+        emit_launch_trust_decision(
+            jackin_telemetry::schema::enums::TrustDecision::Granted,
+            None,
+        );
     }
 
     let agent_display_name = validated_repo.manifest.display_name(&selector.name);
     steps.role_name.clone_from(&agent_display_name);
 
     let supported_agents = validated_repo.manifest.supported_agents();
-    let agent = match opts
-        .agent
-        .or(workspace.default_agent)
-        .or(early_restore_agent)
-    {
-        Some(a) => a,
-        None if supported_agents.len() == 1 => supported_agents[0],
-        None if supported_agents.len() >= 2 => {
-            let labels: Vec<String> = supported_agents
-                .iter()
-                .map(|a| a.slug().to_owned())
-                .collect();
-            if let Some(progress) = steps.progress_mut() {
-                let selection = progress.select_choice("Choose launch agent", labels)?;
-                supported_agents[selection]
-            } else {
-                anyhow::bail!(
-                    "role \"{}\" supports multiple agents ({:?}); load requires the rich launch dialog for agent selection, or pass --agent / set workspace `default_agent`",
-                    selector.key(),
-                    supported_agents
-                        .iter()
-                        .map(|a| a.slug())
-                        .collect::<Vec<_>>()
-                )
-            }
-        }
-        None if supported_agents.is_empty() => anyhow::bail!(
-            "role \"{}\" declares no supported agents in its manifest",
-            selector.key()
-        ),
-        None => anyhow::bail!(
-            "role \"{}\" supports multiple agents ({:?}); pass --agent, set workspace `default_agent`, or use the rich launch dialog",
-            selector.key(),
-            supported_agents
-                .iter()
-                .map(|a| a.slug())
-                .collect::<Vec<_>>()
-        ),
-    };
+    let agent = select_launch_agent(
+        opts,
+        workspace,
+        early_restore_agent,
+        &supported_agents,
+        &mut steps,
+        selector,
+    )?;
     super::validate_agent_supported(selector, &validated_repo.manifest, agent)?;
 
     // Branch trust gate: fires even for already-trusted roles because the
     // operator trusted the default branch, not this unreviewed PR branch.
-    if let Some(branch) = opts.role_branch.as_deref() {
-        let prompt = format!(
-            "Role `{selector}` is being loaded from unmerged branch `{branch}`.\n\
-             Its Dockerfile and scripts may differ from the trusted main branch.\n\
-             Have you reviewed the branch diff and verified it is safe to build?"
-        );
-        let confirmed = if let Some(progress) = steps.progress_mut() {
-            progress.confirm_prompt(prompt)?
-        } else {
-            confirm_branch_for_test(selector, &source, branch)?;
-            true
-        };
-        if !confirmed {
-            anyhow::bail!(
-                "branch \"{branch}\" not confirmed — aborting.\n\
-                 Review the Dockerfile and scripts on that branch before loading it."
-            );
-        }
-    }
+    confirm_role_branch(
+        opts.role_branch.as_deref(),
+        selector,
+        &source,
+        &mut steps,
+        confirm_branch_for_test,
+    )?;
 
     // Pinned role SHA from the stored launch recipe (D7/Tier 3).  Set in the
     // `RecreateCurrentRole` arm below when the manifest has a recorded SHA.
@@ -840,20 +1031,12 @@ pub(crate) async fn load_role_with(
         {
             super::RestoreResolution::StartFresh => None,
             super::RestoreResolution::StartCurrentRole(container) => {
-                jackin_diagnostics::debug_log!(
-                    "restore",
-                    "starting current stopped instance {container} before credentials and image prep"
-                );
                 return restore_current_role_now(
                     paths, &container, docker, runner, &mut steps, true,
                 )
                 .await;
             }
             super::RestoreResolution::RecreateCurrentRole(container) => {
-                jackin_diagnostics::debug_log!(
-                    "restore",
-                    "recreating missing current instance {container} with normal image decision"
-                );
                 // D7: extract pinned recipe so Tier 3 rebuild uses the original
                 // role SHA rather than current HEAD of the cached repo.
                 let container_state = paths.data_dir.join(&container);
@@ -890,7 +1073,7 @@ pub(crate) async fn load_role_with(
                 steps.finish_progress();
                 let selector = RoleSelector::parse(&manifest.role_key)?;
                 let related_opts = super::related_restore_load_options(opts, &manifest)?;
-                let load_result = load_role(
+                let load_result = load_role_inner(
                     paths,
                     config,
                     &selector,
@@ -918,16 +1101,12 @@ pub(crate) async fn load_role_with(
                 // Best-effort: a failed purge leaves stale state the next prune
                 // reaps, but trace it so a delete-then-launch that didn't clean
                 // up is diagnosable rather than silent.
-                if let Err(err) = crate::runtime::cleanup::purge_container_state(
+                if let Err(_error) = crate::runtime::cleanup::purge_container_state(
                     paths, &container, docker, runner,
                 )
                 .await
                 {
-                    jackin_diagnostics::debug_log!(
-                        "instance",
-                        "purge after launch-dialog delete failed for {container}: {err}; \
-                         state will be removed on next prune",
-                    );
+                    let _warning = jackin_telemetry::record_recovered_degradation();
                 }
                 None
             }
@@ -939,59 +1118,54 @@ pub(crate) async fn load_role_with(
     // pulling would advance the role repo past the pinned SHA.
     if restore_container.is_none() && workspace.git_pull_on_entry {
         let sources = super::git_pull_sources(workspace);
-        if let Some(progress) = steps.progress_mut() {
-            if sources.is_empty() {
-                jackin_diagnostics::active_timing_started(
-                    jackin_diagnostics::DiagnosticStage::Workspace,
-                    "git_pull_on_entry",
-                    None,
-                );
-                jackin_diagnostics::active_timing_done(
-                    jackin_diagnostics::DiagnosticStage::Workspace,
-                    "git_pull_on_entry",
-                    Some("skipped_no_git_repos"),
-                );
-                progress.stage_skipped(
-                    crate::runtime::progress::LaunchStage::Workspace,
-                    "no mounted git repositories",
-                );
-            } else {
-                jackin_diagnostics::active_timing_started(
-                    jackin_diagnostics::DiagnosticStage::Workspace,
-                    "git_pull_on_entry",
-                    Some(&format!("{} repo(s)", sources.len())),
-                );
-                progress.stage_started(
-                    crate::runtime::progress::LaunchStage::Workspace,
-                    format!("polling {} workspace repositories", sources.len()),
-                );
+        if sources.is_empty() {
+            jackin_diagnostics::active_timing_started(
+                jackin_diagnostics::DiagnosticStage::Workspace,
+                "git_pull_on_entry",
+                None,
+            );
+            jackin_diagnostics::active_timing_done(
+                jackin_diagnostics::DiagnosticStage::Workspace,
+                "git_pull_on_entry",
+                Some("skipped_no_git_repos"),
+            );
+            steps.stage_skipped(
+                crate::runtime::progress::LaunchStage::Workspace,
+                "no mounted git repositories",
+            );
+        } else {
+            jackin_diagnostics::active_timing_started(
+                jackin_diagnostics::DiagnosticStage::Workspace,
+                "git_pull_on_entry",
+                Some(&format!("{} repo(s)", sources.len())),
+            );
+            steps.stage_started(
+                crate::runtime::progress::LaunchStage::Workspace,
+                format!("polling {} workspace repositories", sources.len()),
+            );
+            if steps.progress_mut().is_some() {
                 let debug = opts.debug;
                 let git_program = git_pull_program(opts);
-                let handle = tokio::task::spawn_blocking(move || {
+                let handle = jackin_telemetry::spawn::joined_blocking(move || {
                     super::pull_git_sources_with_git(sources, debug, &git_program, false)
                 });
                 git_pull_join = Some(DeferredGitPull {
                     handle,
                     print_results: false,
                 });
+            } else {
+                // Run the blocking git pulls on a blocking-pool thread so the
+                // single-threaded executor is never parked on the join.
+                let debug = opts.debug;
+                let git_program = git_pull_program(opts);
+                let handle = jackin_telemetry::spawn::joined_blocking(move || {
+                    super::pull_git_sources_with_git(sources, debug, &git_program, true)
+                });
+                git_pull_join = Some(DeferredGitPull {
+                    handle,
+                    print_results: true,
+                });
             }
-        } else if !sources.is_empty() {
-            jackin_diagnostics::active_timing_started(
-                jackin_diagnostics::DiagnosticStage::Workspace,
-                "git_pull_on_entry",
-                Some(&format!("{} repo(s)", sources.len())),
-            );
-            // Run the blocking git pulls on a blocking-pool thread so the
-            // single-threaded executor is never parked on the join.
-            let debug = opts.debug;
-            let git_program = git_pull_program(opts);
-            let handle = tokio::task::spawn_blocking(move || {
-                super::pull_git_sources_with_git(sources, debug, &git_program, true)
-            });
-            git_pull_join = Some(DeferredGitPull {
-                handle,
-                print_results: true,
-            });
         }
     }
     let restoring = restore_container.is_some();
@@ -1026,11 +1200,11 @@ pub(crate) async fn load_role_with(
             image: Some(image_tag.clone()),
             container: Some(container_name.clone()),
         });
-        progress.stage_done(
-            crate::runtime::progress::LaunchStage::Role,
-            "trusted source",
-        );
     }
+    steps.stage_done(
+        crate::runtime::progress::LaunchStage::Role,
+        "trusted source",
+    );
 
     // Resolve every credential any agent the role can run might read from the
     // container env, plus generic operator vars. The selected agent is one of
@@ -1052,14 +1226,7 @@ pub(crate) async fn load_role_with(
     // background so op:// latency can overlap local image verification and any
     // build work that follows.
     let rebuild = opts.rebuild;
-    if let Some(progress) = steps.progress_mut() {
-        progress.stage_started(
-            crate::runtime::progress::LaunchStage::Construct,
-            "verifying construct",
-        );
-        progress.stage_done(crate::runtime::progress::LaunchStage::Construct, "online");
-    }
-    steps.next("Preparing derived image").await?;
+    mark_construct_ready(&mut steps);
     let repo_lock = Some(repo_lock);
     let image_decision = crate::runtime::image::decide_role_image(
         paths,
@@ -1074,12 +1241,10 @@ pub(crate) async fn load_role_with(
     )
     .await?;
 
-    if let Some(progress) = steps.progress_mut() {
-        progress.stage_started(
-            crate::runtime::progress::LaunchStage::Credentials,
-            "resolving launch credentials",
-        );
-    }
+    steps.stage_started(
+        crate::runtime::progress::LaunchStage::Credentials,
+        "resolving launch credentials",
+    );
 
     // Resolve operator env layers (global / role / workspace /
     // workspace × role) before manifest env. Operator-provided values
@@ -1197,12 +1362,10 @@ pub(crate) async fn load_role_with(
             opts.debug,
         );
     }
-    if let Some(progress) = steps.progress_mut() {
-        progress.stage_done(
-            crate::runtime::progress::LaunchStage::Credentials,
-            "resolved",
-        );
-    }
+    steps.stage_done(
+        crate::runtime::progress::LaunchStage::Credentials,
+        "resolved",
+    );
 
     // D7: capture recipe fields before image_decision is consumed by match below.
     let recipe_role_git_sha = image_decision.role_git_sha();
@@ -1269,23 +1432,15 @@ pub(crate) async fn load_role_with(
                 .unwrap_or(crate::runtime::progress::LaunchStage::Capsule);
             let run = jackin_diagnostics::active_run();
             let final_error = super::launch_failure_cli_error(failed_stage, &error, run.as_deref());
-            if let Some(progress) = steps.progress_mut() {
-                progress
-                    .stage_failed(crate::runtime::progress::LaunchFailure {
-                        title: super::launch_failure_title(failed_stage, &error, run.as_deref()),
-                        summary: super::short_launch_diagnosis(
-                            failed_stage,
-                            &error,
-                            run.as_deref(),
-                        ),
-                        detail: Some(format!("{error:#}")),
-                        next_step: None,
-                        stage: failed_stage,
-                        diagnostics_path: None,
-                        command_output_path: None,
-                    })
-                    .await;
-            }
+            steps
+                .stage_failed(crate::runtime::progress::LaunchFailure {
+                    title: super::launch_failure_title(failed_stage, &error, run.as_deref()),
+                    summary: super::short_launch_diagnosis(failed_stage, &error, run.as_deref()),
+                    detail: Some(format!("{error:#}")),
+                    next_step: None,
+                    stage: failed_stage,
+                })
+                .await;
             // Stop the cockpit render task and release the rich surface before
             // the exit warp writes to the terminal. A pre-attach failure returns
             // before the success path's pre-handoff teardown runs, so without
@@ -1374,7 +1529,7 @@ fn known_agent_credential_env(key: &str) -> bool {
 /// D9: purge per-instance data, the name-claim lock, and the index row inline on
 /// a clean terminal outcome so no manual prune is needed. If the purge itself
 /// fails, fall back to stamping `CleanExited` so the next prune removes the row.
-/// Shared by the clean-exit and `NotFound` arms, which differ only in `context`.
+/// Shared by the clean-exit and `NotFound` arms.
 pub(super) async fn purge_or_mark_clean_exited(
     paths: &JackinPaths,
     container_name: &str,
@@ -1382,16 +1537,11 @@ pub(super) async fn purge_or_mark_clean_exited(
     manifest: &mut InstanceManifest,
     docker: &impl DockerApi,
     runner: &mut impl CommandRunner,
-    context: &str,
 ) -> anyhow::Result<()> {
-    if let Err(err) =
+    if let Err(_error) =
         crate::runtime::cleanup::purge_container_state(paths, container_name, docker, runner).await
     {
-        jackin_diagnostics::debug_log!(
-            "instance",
-            "inline cleanup after {context} failed for {container_name}: {err}; \
-             state will be removed on next prune",
-        );
+        let _warning = jackin_telemetry::record_recovered_degradation();
         super::write_instance_status(paths, state_dir, manifest, InstanceStatus::CleanExited)?;
     }
     Ok(())

@@ -10,7 +10,7 @@
     reason = "integration tests: fail-fast fixtures and host-side blocking helpers"
 )]
 use anyhow::Result;
-use jackin::console::tui::state::AuthRow;
+use jackin::console::adapter::state::AuthRow;
 use jackin_config::AppConfig;
 use jackin_console::tui::auth::AuthKind;
 use jackin_core::{ANTHROPIC_API_KEY_ENV_NAME, JackinPaths};
@@ -62,7 +62,8 @@ fn auth_add_role_override_flow_uses_selected_auth_kind() -> Result<()> {
     assert!(
         match &editor(&state).modal {
             Some(Modal::AuthForm {
-                target: jackin::console::tui::state::AuthFormTarget::WorkspaceRole { role, kind },
+                target:
+                    jackin::console::adapter::state::AuthFormTarget::WorkspaceRole { role, kind },
                 ..
             }) => {
                 assert_eq!(*kind, AuthKind::Claude);

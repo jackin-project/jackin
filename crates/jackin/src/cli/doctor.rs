@@ -65,7 +65,9 @@ pub async fn run(args: &DoctorArgs, paths: &JackinPaths) -> anyhow::Result<()> {
             "{}  one or more checks failed — see hints above",
             "✗".red().bold()
         );
-        println!("  Run with `--debug` if you need a diagnostics run id to share.");
+        println!(
+            "  Run with `--debug` for additional operator output; share the invocation ID when OTLP export is configured."
+        );
         anyhow::bail!("doctor checks failed");
     }
     println!("{}", "✓  all checks passed (or warned)".green());

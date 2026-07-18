@@ -10,7 +10,7 @@ use ratatui::{
     text::{Line, Span},
 };
 
-use jackin_core::tui_theme::{ACTION_ACCENT, DISCLOSURE_ACCENT, PHOSPHOR_GREEN, WHITE};
+use jackin_tui::tokens::{ACTION_ACCENT, DISCLOSURE_ACCENT};
 
 use crate::tui::components::op_breadcrumb::push_op_breadcrumb_spans;
 
@@ -25,7 +25,10 @@ pub const fn cursor_gutter(selected: bool) -> &'static str {
 #[must_use]
 pub fn cursor_span(selected: bool) -> Span<'static> {
     if selected {
-        Span::styled(cursor_gutter(true), jackin_core::tui_theme::BOLD_WHITE)
+        Span::styled(
+            cursor_gutter(true),
+            termrock::Theme::default().style(termrock::style::Role::TextStrong),
+        )
     } else {
         Span::raw(cursor_gutter(false))
     }
@@ -47,15 +50,24 @@ pub fn labeled_field_line(
     emphasis: FieldEmphasis,
 ) -> Line<'static> {
     let label_style = if selected {
-        Style::default().fg(WHITE).add_modifier(Modifier::BOLD)
+        termrock::Theme::default().style(termrock::style::Role::TextStrong)
     } else {
-        Style::default().fg(WHITE)
+        Style::default().fg(termrock::Theme::default()
+            .style(termrock::style::Role::Text)
+            .fg
+            .unwrap_or_default())
     };
     let value_style = match (selected, emphasis) {
         (true, FieldEmphasis::SelectedValue) => Style::default()
-            .fg(PHOSPHOR_GREEN)
+            .fg(termrock::Theme::default()
+                .style(termrock::style::Role::Accent)
+                .fg
+                .unwrap_or_default())
             .add_modifier(Modifier::BOLD),
-        _ => Style::default().fg(PHOSPHOR_GREEN),
+        _ => Style::default().fg(termrock::Theme::default()
+            .style(termrock::style::Role::Accent)
+            .fg
+            .unwrap_or_default()),
     };
     Line::from(vec![
         Span::raw(cursor_gutter(selected).to_owned()),
@@ -168,7 +180,10 @@ pub fn auth_source_display_for_required_env(
 pub fn action_row_style(selected: bool) -> Style {
     if selected {
         Style::default()
-            .bg(PHOSPHOR_GREEN)
+            .bg(termrock::Theme::default()
+                .style(termrock::style::Role::Accent)
+                .fg
+                .unwrap_or_default())
             .fg(Color::Black)
             .add_modifier(Modifier::BOLD)
     } else {
@@ -255,9 +270,15 @@ pub fn auth_line_width(row: &AuthLineRow) -> usize {
 }
 
 fn render_auth_line(selected: bool, row: &AuthLineRow) -> Line<'static> {
-    let bold_white = Style::default().fg(WHITE).add_modifier(Modifier::BOLD);
-    let dim_green = Style::default().fg(jackin_core::tui_theme::PHOSPHOR_DIM);
-    let phosphor = Style::default().fg(PHOSPHOR_GREEN);
+    let bold_white = termrock::Theme::default().style(termrock::style::Role::TextStrong);
+    let dim_green = Style::default().fg(termrock::Theme::default()
+        .style(termrock::style::Role::TextMuted)
+        .fg
+        .unwrap_or_default());
+    let phosphor = Style::default().fg(termrock::Theme::default()
+        .style(termrock::style::Role::Accent)
+        .fg
+        .unwrap_or_default());
 
     match row {
         AuthLineRow::AuthKind { label } => Line::from(vec![
@@ -338,11 +359,14 @@ fn render_source_folder_line(
         Span::raw(prefix),
         Span::styled(
             format!("{label:<label_width$}"),
-            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+            termrock::Theme::default().style(termrock::style::Role::TextStrong),
         ),
         Span::styled(
             value,
-            Style::default().fg(jackin_core::tui_theme::PHOSPHOR_DIM),
+            Style::default().fg(termrock::Theme::default()
+                .style(termrock::style::Role::TextMuted)
+                .fg
+                .unwrap_or_default()),
         ),
     ])
 }
@@ -395,7 +419,7 @@ fn render_auth_source_line(
         Span::raw(prefix),
         Span::styled(
             format!("{label:<label_width$}"),
-            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+            termrock::Theme::default().style(termrock::style::Role::TextStrong),
         ),
     ];
 
@@ -403,20 +427,29 @@ fn render_auth_source_line(
         AuthSourceDisplay::NotRequired => {
             spans.push(Span::styled(
                 "not required",
-                Style::default().fg(jackin_core::tui_theme::PHOSPHOR_DIM),
+                Style::default().fg(termrock::Theme::default()
+                    .style(termrock::style::Role::TextMuted)
+                    .fg
+                    .unwrap_or_default()),
             ));
         }
         AuthSourceDisplay::OpRefPath(path) => {
             spans.push(Span::styled(
                 "[op] ",
-                Style::default().fg(jackin_core::tui_theme::PHOSPHOR_DIM),
+                Style::default().fg(termrock::Theme::default()
+                    .style(termrock::style::Role::TextMuted)
+                    .fg
+                    .unwrap_or_default()),
             ));
             push_op_breadcrumb_spans(&mut spans, path);
         }
         AuthSourceDisplay::MaskedPlain { chars } => {
             spans.push(Span::styled(
                 "\u{25cf}".repeat((*chars).clamp(1, 12)),
-                Style::default().fg(jackin_core::tui_theme::PHOSPHOR_DIM),
+                Style::default().fg(termrock::Theme::default()
+                    .style(termrock::style::Role::TextMuted)
+                    .fg
+                    .unwrap_or_default()),
             ));
         }
         AuthSourceDisplay::Unset {
@@ -425,7 +458,10 @@ fn render_auth_source_line(
         } => {
             spans.push(Span::styled(
                 format!("unset  ({env_name} for {mode_label})"),
-                Style::default().fg(jackin_core::tui_theme::DANGER_RED),
+                Style::default().fg(termrock::Theme::default()
+                    .style(termrock::style::Role::Danger)
+                    .fg
+                    .unwrap_or_default()),
             ));
         }
     }
@@ -482,7 +518,10 @@ pub fn secret_env_lines<'a, S>(
                     spans.push(Span::styled(
                         "  (not in registry)",
                         Style::default()
-                            .fg(jackin_core::tui_theme::PHOSPHOR_DIM)
+                            .fg(termrock::Theme::default()
+                                .style(termrock::style::Role::TextMuted)
+                                .fg
+                                .unwrap_or_default())
                             .add_modifier(Modifier::ITALIC),
                     ));
                 }
@@ -520,11 +559,14 @@ pub fn render_secret_key_line(
     const OP_REF_REPICK_PLACEHOLDER: &str = "<unparseable path \u{2014} re-pick>";
 
     let label_style = if selected {
-        jackin_core::tui_theme::BOLD_WHITE
+        termrock::Theme::default().style(termrock::style::Role::TextStrong)
     } else {
-        Style::default().fg(WHITE)
+        Style::default().fg(termrock::Theme::default()
+            .style(termrock::style::Role::Text)
+            .fg
+            .unwrap_or_default())
     };
-    let dim = jackin_core::tui_theme::DIM;
+    let dim = termrock::Theme::default().style(termrock::style::Role::TextMuted);
     let op_breadcrumb = match value {
         SecretValueDisplay::OpRefPath(path) => {
             crate::tui::op_breadcrumb::parse_path_breadcrumb(path)
@@ -556,13 +598,16 @@ pub fn render_secret_key_line(
     };
 
     let value_style = if masked {
-        jackin_core::tui_theme::DIM
+        termrock::Theme::default().style(termrock::style::Role::TextMuted)
     } else if selected {
         Style::default()
-            .fg(PHOSPHOR_GREEN)
+            .fg(termrock::Theme::default()
+                .style(termrock::style::Role::Accent)
+                .fg
+                .unwrap_or_default())
             .add_modifier(Modifier::BOLD)
     } else {
-        jackin_core::tui_theme::GREEN
+        termrock::Theme::default().style(termrock::style::Role::Accent)
     };
 
     let rendered_value: String = if masked {

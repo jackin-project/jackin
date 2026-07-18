@@ -14,6 +14,64 @@ fn ignoring_resolvers() -> PrepareResolvers<'static> {
     }
 }
 
+#[test]
+fn auth_provision_events_are_bounded_once_and_private() {
+    let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
+
+    tracing::subscriber::with_default(subscriber, || {
+        emit_agent_auth_provision(
+            jackin_core::Agent::Claude,
+            AuthForwardMode::Sync,
+            Ok(AuthProvisionOutcome::Synced),
+        );
+        emit_agent_auth_provision(
+            jackin_core::Agent::Codex,
+            AuthForwardMode::ApiKey,
+            Err(jackin_telemetry::schema::enums::ErrorType::IoError),
+        );
+    });
+    export.force_flush();
+
+    assert_eq!(export.event_count("auth.provision"), 2);
+    assert!(export.contains_log_text("claude"));
+    assert!(export.contains_log_text("sync"));
+    assert!(export.contains_log_text("agent_home"));
+    assert!(export.contains_log_text("codex"));
+    assert!(export.contains_log_text("api_key"));
+    assert!(export.contains_log_text("environment"));
+    assert!(export.contains_log_text("io_error"));
+    assert!(!export.contains_log_text("private-env-value"));
+    assert!(!export.contains_log_text("private-vault-id"));
+    assert!(!export.contains_log_text("private-credential-name"));
+}
+
+#[test]
+fn prepare_for_agents_exports_one_auth_outcome_per_attempt() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let manifest = simple_manifest(&temp);
+    let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
+
+    let prepared = tracing::subscriber::with_default(subscriber, || {
+        RoleState::prepare_for_agents(
+            &paths,
+            "private-container-name",
+            &manifest,
+            &ignoring_resolvers(),
+            &GithubAuthContext::default(),
+            temp.path(),
+            jackin_core::Agent::Claude,
+            &[jackin_core::Agent::Claude],
+        )
+    });
+    export.force_flush();
+
+    prepared.unwrap();
+    assert_eq!(export.event_count("auth.provision"), 1);
+    assert!(!export.contains_log_text("private-container-name"));
+    assert!(!export.contains_log_text(temp.path().to_string_lossy().as_ref()));
+}
+
 fn simple_manifest(temp: &tempfile::TempDir) -> RoleManifest {
     std::fs::write(
         temp.path().join("jackin.role.toml"),
@@ -235,65 +293,10 @@ plugins = []
 }
 
 #[test]
-fn prepare_emits_per_auth_slot_timings() {
-    let temp = tempdir().unwrap();
-    let paths = JackinPaths::for_tests(temp.path());
-
-    std::fs::write(
-        temp.path().join("jackin.role.toml"),
-        r#"version = "v1alpha3"
-dockerfile = "Dockerfile"
-agents = ["claude", "codex"]
-
-[claude]
-plugins = []
-
-[codex]
-"#,
-    )
-    .unwrap();
-    std::fs::write(
-        temp.path().join("Dockerfile"),
-        "FROM projectjackin/construct:0.1-trixie\n",
-    )
-    .unwrap();
-    let manifest = load_role_manifest(temp.path()).unwrap();
-    let run = jackin_diagnostics::RunDiagnostics::start(&paths, true, "load").unwrap();
-    let _active = run.activate();
-
-    RoleState::prepare(
-        &paths,
-        "jk-k7p9m2xq-agentsmith",
-        &manifest,
-        &ignoring_resolvers(),
-        &GithubAuthContext::default(),
-        temp.path(),
-        jackin_core::Agent::Claude,
-    )
-    .unwrap();
-
-    let jsonl = std::fs::read_to_string(run.path()).unwrap();
-    assert!(jsonl.contains("role_state_prepare:github_auth"), "{jsonl}");
-    assert!(jsonl.contains("role_state_prepare:claude_auth"), "{jsonl}");
-    assert!(jsonl.contains("role_state_prepare:codex_auth"), "{jsonl}");
-    assert!(
-        jsonl.contains("\"jackin.stage\":\"credentials\"")
-            || jsonl.contains("\"stage\":\"credentials\""),
-        "{jsonl}"
-    );
-    assert!(
-        !jsonl.contains("oauth_token:"),
-        "timing details must not include credential values: {jsonl}"
-    );
-}
-
-#[test]
 fn github_ignore_prepare_skips_absent_state() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     let manifest = simple_manifest(&temp);
-    let run = jackin_diagnostics::RunDiagnostics::start(&paths, true, "load").unwrap();
-    let _active = run.activate();
 
     RoleState::prepare(
         &paths,
@@ -309,9 +312,6 @@ fn github_ignore_prepare_skips_absent_state() {
     )
     .unwrap();
 
-    let jsonl = std::fs::read_to_string(run.path()).unwrap();
-    assert!(jsonl.contains("role_state_prepare:github_auth"), "{jsonl}");
-    assert!(jsonl.contains("skipped_no_state"), "{jsonl}");
     assert!(
         !paths
             .data_dir

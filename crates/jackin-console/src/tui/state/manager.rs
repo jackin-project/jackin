@@ -9,8 +9,7 @@ use ratatui::layout::Rect;
 
 use crate::tui::runtime::BlockingSubscription;
 use jackin_config::AppConfig;
-use termrock::interaction::FocusOwner;
-use termrock::runtime::{Subscription, SubscriptionPoll};
+use jackin_tui::runtime::{Subscription, SubscriptionPoll};
 
 use crate::tui::message::{MountInfoRefreshSourceFacts, mount_info_refresh_source_plan};
 use crate::tui::model::{
@@ -65,7 +64,7 @@ impl ManagerState<'_> {
         }
     }
 
-    pub const fn reset_list_scroll(&mut self) {
+    pub fn reset_list_scroll(&mut self) {
         self.list_mounts_scroll_x = 0;
         self.list_mounts_scroll_y = 0;
         self.list_global_mounts_scroll_x = 0;
@@ -74,32 +73,34 @@ impl ManagerState<'_> {
         self.list_role_global_mounts_scroll_y = 0;
         self.list_roles_scroll_x = 0;
         self.list_roles_scroll_y = 0;
-        self.list_focus_owner = FocusOwner::TabBar;
+        self.list_focus_owner.focus_tab_bar();
         self.list_names_scroll_x = 0;
         self.list_names_scroll_y = 0;
     }
 
-    pub const fn list_names_focused(&self) -> bool {
+    pub fn list_names_focused(&self) -> bool {
         self.list_focus_owner.is_tab_bar()
     }
 
     pub fn set_list_names_focused(&mut self, focused: bool) {
         if focused {
-            self.list_focus_owner = FocusOwner::TabBar;
+            self.list_focus_owner.focus_tab_bar();
         } else if self.list_names_focused() {
-            self.list_focus_owner = FocusOwner::Content(MountScrollFocus::Workspace);
+            self.list_focus_owner
+                .focus_content(MountScrollFocus::Workspace);
         }
     }
 
-    pub const fn list_scroll_focus(&self) -> Option<MountScrollFocus> {
-        match self.list_focus_owner {
-            FocusOwner::Content(focus) => Some(focus),
-            FocusOwner::TabBar => None,
-        }
+    pub fn list_scroll_focus(&self) -> Option<MountScrollFocus> {
+        self.list_focus_owner.focused_content()
     }
 
     pub fn set_list_scroll_focus(&mut self, focus: Option<MountScrollFocus>) {
-        self.list_focus_owner = focus.map_or(FocusOwner::TabBar, FocusOwner::Content);
+        if let Some(focus) = focus {
+            self.list_focus_owner.focus_content(focus);
+        } else {
+            self.list_focus_owner.focus_tab_bar();
+        }
     }
 
     /// Allocates a fresh empty cache and assumes `op` unavailable —
@@ -155,7 +156,9 @@ impl ManagerState<'_> {
             list_role_global_mounts_scroll_y: 0,
             list_roles_scroll_x: 0,
             list_roles_scroll_y: 0,
-            list_focus_owner: FocusOwner::TabBar,
+            list_focus_owner: jackin_tui::runtime::SurfaceFocus::tab_bar(
+                MountScrollFocus::Workspace,
+            ),
             list_names_scroll_x: 0,
             list_names_scroll_y: 0,
             list_split_pct: DEFAULT_SPLIT_PCT,
@@ -418,11 +421,7 @@ impl ManagerState<'_> {
         let selected = self.selected_row();
         let visual_rows = self.visual_rows_vec();
         workspace_visual_selected_index(&visual_rows, selected).unwrap_or_else(|| {
-            jackin_diagnostics::debug_log!(
-                "console",
-                "visual_selected: {:?} not in visual list, clamping to 0",
-                selected
-            );
+            record_manager_recovery();
             0 // CurrentDirectory is always row 0 and is never removed
         })
     }
@@ -568,10 +567,7 @@ impl ManagerState<'_> {
         self.selected =
             collapsed_workspace_selected_index(&rows, self.selected, selected_row, ws_idx)
                 .unwrap_or_else(|| {
-                    jackin_diagnostics::debug_log!(
-                        "console",
-                        "collapse_workspace: ws_idx={ws_idx} not in selectable rows, clamping to 0"
-                    );
+                    record_manager_recovery();
                     0 // CurrentDirectory is always row 0 and is never removed
                 });
     }
@@ -1166,10 +1162,8 @@ impl ManagerState<'_> {
             crate::tui::screens::settings::model::AuthFormFocus::Save,
             op_ref,
         ) {
-            jackin_diagnostics::debug_log!(
-                "auth",
-                "AUTH005 apply_op_picker_op_ref_committed_for_editor: \
-                 modal parent auth form missing — async OpRef commit dropped"
+            super::record_console_error(
+                jackin_telemetry::schema::enums::ErrorType::TelemetryInstrumentationFault,
             );
         }
     }
@@ -1178,6 +1172,7 @@ impl ManagerState<'_> {
         let ManagerStage::Editor(editor) = &mut self.stage else {
             return;
         };
+        super::record_console_error(jackin_telemetry::schema::enums::ErrorType::IoError);
         editor.open_error_popup(
             crate::tui::components::error_popup::op_read_failed_error_popup_state(error),
         );
@@ -1194,10 +1189,8 @@ impl ManagerState<'_> {
             ..
         }) = settings.auth.pop_parent_modal()
         else {
-            jackin_diagnostics::debug_log!(
-                "auth",
-                "apply_op_picker_op_ref_committed_for_settings: modal_parents missing \
-                 — async OpRef commit dropped"
+            super::record_console_error(
+                jackin_telemetry::schema::enums::ErrorType::TelemetryInstrumentationFault,
             );
             return;
         };
@@ -1214,10 +1207,15 @@ impl ManagerState<'_> {
         let ManagerStage::Settings(settings) = &mut self.stage else {
             return;
         };
+        super::record_console_error(jackin_telemetry::schema::enums::ErrorType::IoError);
         settings.auth.set_error(
             crate::tui::screens::settings::view::settings_auth_op_read_failed_message(error),
         );
     }
+}
+
+fn record_manager_recovery() {
+    let _recorded = jackin_telemetry::record_recovered_degradation();
 }
 
 impl ListShellState for ManagerState<'_> {

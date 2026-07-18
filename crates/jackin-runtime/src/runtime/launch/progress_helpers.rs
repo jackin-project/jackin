@@ -8,15 +8,22 @@ pub(in crate::runtime) struct StepCounter {
     pub(in crate::runtime::launch) role_name: String,
     pub(in crate::runtime::launch) current_stage: Option<crate::runtime::progress::LaunchStage>,
     pub(in crate::runtime::launch) progress: Option<crate::runtime::progress::LaunchProgress>,
+    stage_telemetry: [Option<jackin_telemetry::launch::StageGuard>; 11],
+    target_kind: jackin_telemetry::schema::enums::LaunchTargetKind,
 }
 
 impl StepCounter {
-    pub(in crate::runtime::launch) fn new(role_name: &str) -> Self {
+    pub(in crate::runtime::launch) fn new(
+        role_name: &str,
+        target_kind: jackin_telemetry::schema::enums::LaunchTargetKind,
+    ) -> Self {
         Self {
             current: 0,
             role_name: role_name.to_owned(),
             current_stage: None,
             progress: None,
+            stage_telemetry: std::array::from_fn(|_| None),
+            target_kind,
         }
     }
 
@@ -37,15 +44,15 @@ impl StepCounter {
         if self.is_cancelled() {
             return Err(jackin_core::LaunchCancelled::err());
         }
-        if let (Some(progress), Some(stage)) = (&mut self.progress, self.current_stage) {
-            progress.stage_done(stage, completion_label(stage));
+        if let Some(stage) = self.current_stage {
+            self.stage_done(stage, completion_label(stage));
         }
         self.current += 1;
         jackin_diagnostics::set_terminal_title(&format!("{} \u{2014} {text}", self.role_name));
         let stage = stage_for_step_text(text);
         self.current_stage = Some(stage);
-        if let Some(progress) = &mut self.progress {
-            progress.stage_started(stage, text);
+        self.stage_started(stage, text);
+        if let Some(progress) = &self.progress {
             progress.settle_stage_visual().await;
         }
         Ok(())
@@ -70,6 +77,105 @@ impl StepCounter {
         self.progress.as_mut()
     }
 
+    pub(in crate::runtime::launch) fn stage_started(
+        &mut self,
+        stage: crate::runtime::progress::LaunchStage,
+        detail: impl Into<String>,
+    ) {
+        if self.current_stage == Some(stage) {
+            self.current_stage = None;
+        }
+        let index = stage_index(stage);
+        if let Some(previous) = self.stage_telemetry[index].take() {
+            previous.complete(
+                jackin_telemetry::schema::enums::OutcomeValue::Cancellation,
+                None,
+            );
+        }
+        self.stage_telemetry[index] = Some(jackin_telemetry::launch::StageGuard::start(
+            telemetry_stage(stage),
+            self.target_kind,
+        ));
+        if let Some(progress) = &mut self.progress {
+            progress.stage_started(stage, detail);
+        }
+    }
+
+    pub(in crate::runtime::launch) fn stage_done(
+        &mut self,
+        stage: crate::runtime::progress::LaunchStage,
+        detail: impl Into<String>,
+    ) {
+        self.finish_stage(
+            stage,
+            jackin_telemetry::schema::enums::OutcomeValue::Success,
+            None,
+        );
+        if let Some(progress) = &mut self.progress {
+            progress.stage_done(stage, detail);
+        }
+    }
+
+    pub(in crate::runtime::launch) fn stage_skipped(
+        &mut self,
+        stage: crate::runtime::progress::LaunchStage,
+        reason: impl Into<String>,
+    ) {
+        self.finish_stage(
+            stage,
+            jackin_telemetry::schema::enums::OutcomeValue::Skip,
+            None,
+        );
+        if let Some(progress) = &mut self.progress {
+            progress.stage_skipped(stage, reason);
+        }
+    }
+
+    pub(in crate::runtime::launch) async fn stage_failed(
+        &mut self,
+        failure: crate::runtime::progress::LaunchFailure,
+    ) {
+        self.finish_stage(
+            failure.stage,
+            jackin_telemetry::schema::enums::OutcomeValue::Failure,
+            Some(jackin_telemetry::schema::enums::ErrorType::LaunchStageFailed),
+        );
+        if let Some(progress) = &mut self.progress {
+            progress.stage_failed(failure).await;
+        }
+    }
+
+    pub(in crate::runtime::launch) fn stage_error(
+        &mut self,
+        stage: crate::runtime::progress::LaunchStage,
+    ) {
+        self.finish_stage(
+            stage,
+            jackin_telemetry::schema::enums::OutcomeValue::Failure,
+            Some(jackin_telemetry::schema::enums::ErrorType::LaunchStageFailed),
+        );
+    }
+
+    pub(in crate::runtime::launch) fn opening_hardline(&mut self) {
+        self.stage_started(
+            crate::runtime::progress::LaunchStage::Hardline,
+            "opening hardline",
+        );
+    }
+
+    fn finish_stage(
+        &mut self,
+        stage: crate::runtime::progress::LaunchStage,
+        outcome: jackin_telemetry::schema::enums::OutcomeValue,
+        error_type: Option<jackin_telemetry::schema::enums::ErrorType>,
+    ) {
+        let index = stage_index(stage);
+        let telemetry = self.stage_telemetry[index].take().unwrap_or_else(|| {
+            jackin_telemetry::launch::StageGuard::start(telemetry_stage(stage), self.target_kind)
+        });
+        telemetry.complete(outcome, error_type);
+    }
+
     /// Stop the rich loading surface's render task and clear
     /// `rich_surface_active`. Call this before handing the terminal to an
     /// interactive `docker exec -it` session, otherwise the capsule attach
@@ -79,6 +185,41 @@ impl StepCounter {
             progress.finish();
         }
         self.progress = None;
+    }
+}
+
+const fn stage_index(stage: crate::runtime::progress::LaunchStage) -> usize {
+    match stage {
+        crate::runtime::progress::LaunchStage::Identity => 0,
+        crate::runtime::progress::LaunchStage::Role => 1,
+        crate::runtime::progress::LaunchStage::Credentials => 2,
+        crate::runtime::progress::LaunchStage::Construct => 3,
+        crate::runtime::progress::LaunchStage::AgentBinaries => 4,
+        crate::runtime::progress::LaunchStage::DerivedImage => 5,
+        crate::runtime::progress::LaunchStage::Workspace => 6,
+        crate::runtime::progress::LaunchStage::Network => 7,
+        crate::runtime::progress::LaunchStage::Sidecar => 8,
+        crate::runtime::progress::LaunchStage::Capsule => 9,
+        crate::runtime::progress::LaunchStage::Hardline => 10,
+    }
+}
+
+const fn telemetry_stage(
+    stage: crate::runtime::progress::LaunchStage,
+) -> jackin_telemetry::schema::enums::LaunchStageName {
+    use jackin_telemetry::schema::enums::LaunchStageName as TelemetryStage;
+    match stage {
+        crate::runtime::progress::LaunchStage::Identity => TelemetryStage::Identity,
+        crate::runtime::progress::LaunchStage::Role => TelemetryStage::Role,
+        crate::runtime::progress::LaunchStage::Credentials => TelemetryStage::Credentials,
+        crate::runtime::progress::LaunchStage::Construct => TelemetryStage::Construct,
+        crate::runtime::progress::LaunchStage::AgentBinaries => TelemetryStage::AgentBinaries,
+        crate::runtime::progress::LaunchStage::DerivedImage => TelemetryStage::DerivedImage,
+        crate::runtime::progress::LaunchStage::Workspace => TelemetryStage::Workspace,
+        crate::runtime::progress::LaunchStage::Network => TelemetryStage::Network,
+        crate::runtime::progress::LaunchStage::Sidecar => TelemetryStage::Sidecar,
+        crate::runtime::progress::LaunchStage::Capsule => TelemetryStage::Capsule,
+        crate::runtime::progress::LaunchStage::Hardline => TelemetryStage::Hardline,
     }
 }
 

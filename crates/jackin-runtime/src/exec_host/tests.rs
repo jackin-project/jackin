@@ -23,6 +23,26 @@ fn validate_op_source_rejects_flag_segments() {
     validate_op_source("op://-vault/item").unwrap_err();
 }
 
+#[tokio::test]
+async fn credential_process_exports_typed_spawn_failure_without_program_or_arguments() {
+    let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
+    let _subscriber = tracing::subscriber::set_default(subscriber);
+    let request = jackin_process::ExecRequest::new(
+        "operator-secret-missing-program",
+        ["operator-secret-argument"],
+    );
+    crate::process_telemetry::exec_async(&request)
+        .await
+        .unwrap_err();
+    export.force_flush();
+
+    assert_eq!(export.finished_spans().len(), 1);
+    assert_eq!(export.error_span_count(), 1);
+    assert!(export.contains_span_text("process_spawn_error"));
+    assert!(!export.contains_span_text("operator-secret-missing-program"));
+    assert!(!export.contains_span_text("operator-secret-argument"));
+}
+
 /// Drive `handle_connection` over an in-memory socket pair and return the
 /// decoded JSON reply (`{"values":…}` or `{"error":…}`).
 async fn roundtrip(
@@ -48,7 +68,11 @@ async fn roundtrip_with_auth(
     let server_task =
         tokio::spawn(async move { handle_connection(server, &allowed, caller_auth).await });
 
-    let body = serde_json::to_vec(&serde_json::json!({ "refs": request_refs })).unwrap();
+    let body = serde_json::to_vec(&serde_json::json!({
+        "ctx": { "v": jackin_telemetry::propagation::VERSION },
+        "refs": request_refs,
+    }))
+    .unwrap();
     if client
         .write_all(&(body.len() as u32).to_be_bytes())
         .await
@@ -70,6 +94,256 @@ async fn roundtrip_with_auth(
 
     server_task.await.unwrap().unwrap();
     Some(serde_json::from_slice(&reply).unwrap())
+}
+
+async fn exported_exec_roundtrip(
+    context: jackin_protocol::TelemetryContext,
+) -> (
+    serde_json::Value,
+    Vec<jackin_diagnostics::TestSpanSnapshot>,
+    usize,
+) {
+    #[cfg(target_os = "linux")]
+    let caller_auth = CallerAuth::PeerPid(std::process::id());
+    #[cfg(not(target_os = "linux"))]
+    let caller_auth = CallerAuth::CapsuleDaemon;
+    let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
+    let guard = tracing::subscriber::set_default(subscriber);
+    let (mut client, server) = UnixStream::pair().expect("host socket pair");
+    client
+        .write_all(&frame(&CredRequest {
+            ctx: context,
+            refs: Vec::new(),
+        }))
+        .await
+        .expect("write credential request");
+    handle_connection(server, &[], caller_auth)
+        .await
+        .expect("handle credential request");
+    let mut len = [0_u8; 4];
+    client
+        .read_exact(&mut len)
+        .await
+        .expect("read reply length");
+    let mut body = vec![0_u8; u32::from_be_bytes(len) as usize];
+    client.read_exact(&mut body).await.expect("read reply body");
+    drop(guard);
+    export.force_flush();
+    let reply = serde_json::from_slice(&body).expect("decode credential reply");
+    let spans = export.finished_spans();
+    let errors = export.typed_error_count("error.typed", "rpc_error");
+    (reply, spans, errors)
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn exec_socket_exports_client_parent_server_after_reply_write() {
+    let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
+    let guard = tracing::subscriber::set_default(subscriber);
+    let attrs = [
+        jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::std_attrs::RPC_SYSTEM_NAME,
+            value: jackin_telemetry::Value::Str("jackin"),
+        },
+        jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::std_attrs::RPC_METHOD,
+            value: jackin_telemetry::Value::Str("jackin.host.Credentials/Resolve"),
+        },
+    ];
+    let client_operation =
+        jackin_telemetry::operation(&jackin_telemetry::operation::RPC_CLIENT, &attrs)
+            .expect("client operation");
+    let mut context = jackin_protocol::TelemetryContext::v1();
+    client_operation
+        .span()
+        .in_scope(|| jackin_telemetry::propagation::inject(&mut context));
+    #[cfg(target_os = "linux")]
+    let caller_auth = CallerAuth::PeerPid(std::process::id());
+    #[cfg(not(target_os = "linux"))]
+    let caller_auth = CallerAuth::CapsuleDaemon;
+    let (mut client, server) = UnixStream::pair().expect("host socket pair");
+    client
+        .write_all(&frame(&CredRequest {
+            ctx: context,
+            refs: Vec::new(),
+        }))
+        .await
+        .expect("write credential request");
+    handle_connection(server, &[], caller_auth)
+        .await
+        .expect("handle credential request");
+    let mut len = [0_u8; 4];
+    client
+        .read_exact(&mut len)
+        .await
+        .expect("read reply length");
+    let mut body = vec![0_u8; u32::from_be_bytes(len) as usize];
+    client.read_exact(&mut body).await.expect("read reply body");
+    let reply: CredReply = serde_json::from_slice(&body).expect("decode reply");
+    assert!(matches!(reply, CredReply::Ok { .. }));
+    client_operation.complete(jackin_telemetry::schema::enums::OutcomeValue::Success, None);
+    drop(guard);
+    export.force_flush();
+
+    let spans = export.finished_spans();
+    assert_eq!(spans.len(), 2);
+    let client = spans
+        .iter()
+        .find(|span| span.name == "rpc.client")
+        .expect("client span");
+    let server = spans
+        .iter()
+        .find(|span| span.name == "rpc.server")
+        .expect("server span");
+    assert_eq!(server.trace_id, client.trace_id);
+    assert_eq!(server.parent_span_id, client.span_id);
+    assert!(!client.error && !server.error);
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn exec_socket_propagation_matrix_handles_remote_context_and_bad_ids() {
+    let trace_id = "4bf92f3577b34da6a3ce929d0e0e4736";
+    let parent_id = "00f067aa0ba902b7";
+    let mut sampled = jackin_protocol::TelemetryContext::v1();
+    sampled.traceparent = Some(format!("00-{trace_id}-{parent_id}-01"));
+    let (reply, spans, errors) = exported_exec_roundtrip(sampled).await;
+    assert_eq!(reply["status"], "ok");
+    assert_eq!(errors, 0);
+    assert_eq!(spans.len(), 1);
+    assert_eq!(spans[0].trace_id, trace_id);
+    assert_eq!(spans[0].parent_span_id, parent_id);
+
+    for context in [
+        jackin_protocol::TelemetryContext::v1(),
+        jackin_protocol::TelemetryContext {
+            traceparent: Some("malformed".to_owned()),
+            ..jackin_protocol::TelemetryContext::v1()
+        },
+    ] {
+        let (reply, spans, errors) = exported_exec_roundtrip(context).await;
+        assert_eq!(reply["status"], "ok");
+        assert_eq!(errors, 0);
+        assert_eq!(spans.len(), 1);
+        assert_eq!(spans[0].parent_span_id, "0000000000000000");
+    }
+
+    let mut unsampled = jackin_protocol::TelemetryContext::v1();
+    unsampled.traceparent = Some(format!("00-{trace_id}-{parent_id}-00"));
+    let (reply, spans, errors) = exported_exec_roundtrip(unsampled).await;
+    assert_eq!(reply["status"], "ok");
+    assert!(spans.is_empty());
+    assert_eq!(errors, 0);
+
+    let bad_id = jackin_protocol::TelemetryContext {
+        job_id: Some("not-a-uuid".to_owned()),
+        ..jackin_protocol::TelemetryContext::v1()
+    };
+    let (reply, spans, errors) = exported_exec_roundtrip(bad_id).await;
+    assert_eq!(reply["status"], "error");
+    assert_eq!(spans.len(), 1);
+    assert_eq!(spans[0].name, "rpc.server");
+    assert_eq!(spans[0].parent_span_id, "0000000000000000");
+    assert!(spans[0].error);
+    assert_eq!(errors, 1);
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn exec_socket_marks_server_failure_when_peer_closes_before_reply() {
+    use std::net::Shutdown;
+
+    #[cfg(target_os = "linux")]
+    let caller_auth = CallerAuth::PeerPid(std::process::id());
+    #[cfg(not(target_os = "linux"))]
+    let caller_auth = CallerAuth::CapsuleDaemon;
+    let mut context = jackin_protocol::TelemetryContext::v1();
+    context.traceparent =
+        Some("00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01".to_owned());
+    let (mut client, server) = UnixStream::pair().expect("host socket pair");
+    client
+        .write_all(&frame(&CredRequest {
+            ctx: context,
+            refs: Vec::new(),
+        }))
+        .await
+        .expect("write credential request");
+    client
+        .into_std()
+        .expect("convert client socket")
+        .shutdown(Shutdown::Both)
+        .expect("close client socket");
+    let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
+    let guard = tracing::subscriber::set_default(subscriber);
+    handle_connection(server, &[], caller_auth)
+        .await
+        .expect("reply-write failure is consumed by the RPC owner");
+    drop(guard);
+    export.force_flush();
+    assert_eq!(export.error_span_count(), 1);
+    assert_eq!(export.typed_error_count("error.typed", "rpc_error"), 1);
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn exec_socket_predecode_failures_have_one_typed_rpc_owner() {
+    const MAX_REQ: u32 = 512 * 1024;
+    let cases = [
+        vec![0, 1],
+        (MAX_REQ + 1).to_be_bytes().to_vec(),
+        [10_u32.to_be_bytes().as_slice(), b"{}"].concat(),
+        [1_u32.to_be_bytes().as_slice(), b"{"].concat(),
+    ];
+
+    for wire in cases {
+        #[cfg(target_os = "linux")]
+        let caller_auth = CallerAuth::PeerPid(std::process::id());
+        #[cfg(not(target_os = "linux"))]
+        let caller_auth = CallerAuth::CapsuleDaemon;
+        let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
+        let guard = tracing::subscriber::set_default(subscriber);
+        let (mut client, server) = UnixStream::pair().expect("host socket pair");
+        client
+            .write_all(&wire)
+            .await
+            .expect("write malformed request");
+        client.shutdown().await.expect("close malformed request");
+
+        handle_connection(server, &[], caller_auth)
+            .await
+            .expect("framing failure is consumed by the RPC owner");
+        drop(guard);
+        export.force_flush();
+
+        let spans = export.finished_spans();
+        assert_eq!(spans.len(), 1, "wire={wire:?}");
+        assert_eq!(spans[0].name, "rpc.server");
+        assert_eq!(spans[0].parent_span_id, "0000000000000000");
+        assert!(spans[0].error);
+        assert_eq!(
+            export.typed_error_count("error.typed", "rpc_error"),
+            1,
+            "wire={wire:?}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn unauthorized_credential_payload_is_absent_from_telemetry() {
+    let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(true);
+    let _subscriber = tracing::subscriber::set_default(subscriber);
+    let secret_name = "PRIVATE_TOKEN_NAME";
+    let secret_source = "op://private-vault/private-item/private-field";
+    let reply = roundtrip(
+        Vec::new(),
+        serde_json::json!([{
+            "name": secret_name,
+            "kind": "op",
+            "source": secret_source,
+        }]),
+    )
+    .await;
+    assert!(reply.get("error").is_some());
+    export.force_flush();
+    assert_eq!(export.typed_error_count("error.typed", "rpc_error"), 1);
+    assert!(!export.contains_log_text(secret_name));
+    assert!(!export.contains_log_text(secret_source));
 }
 
 #[tokio::test]
@@ -134,12 +408,29 @@ async fn unapproved_source_is_rejected() {
     )
     .await;
     assert!(reply.get("values").is_none());
-    assert!(
-        reply["error"]
-            .as_str()
-            .unwrap()
-            .contains("not in the approved binding set")
-    );
+    assert_eq!(reply["error"], "credential reference is not approved");
+}
+
+#[tokio::test]
+async fn resolution_failure_reply_does_not_echo_the_credential_source() {
+    let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(true);
+    let _subscriber = tracing::subscriber::set_default(subscriber);
+    let secret_source = "not-an-op-uri/private-vault/private-item/private-field";
+    let allowed = vec![ExecBinding {
+        name: "TOKEN".into(),
+        kind: ExecKind::Op,
+        source: secret_source.into(),
+    }];
+    let reply = roundtrip(
+        allowed,
+        serde_json::json!([{ "name": "TOKEN", "kind": "op", "source": secret_source }]),
+    )
+    .await;
+    assert_eq!(reply["error"], "credential resolution failed");
+    assert!(!reply.to_string().contains(secret_source));
+    export.force_flush();
+    assert_eq!(export.typed_error_count("error.typed", "rpc_error"), 1);
+    assert!(!export.contains_log_text(secret_source));
 }
 
 #[tokio::test]

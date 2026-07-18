@@ -14,10 +14,9 @@ const SUBPANEL_CONTENT_INDENT: usize = 2;
 use super::render_list_body;
 use crate::tui::layout::list::clamp_list_scroll_for_area;
 use crate::tui::layout::list::list_names_content_width;
-use crate::tui::state::{ConfirmTarget, ManagerListRow, ManagerState, Modal, SecretsScopeTag};
+use crate::tui::state::{ManagerListRow, ManagerState};
 use jackin_config::AppConfig;
 use jackin_config::WorkspaceConfig;
-use jackin_core::tui_theme::{PHOSPHOR_GREEN, TAB_BG_INACTIVE_HOVER};
 use ratatui::Terminal;
 use ratatui::backend::TestBackend;
 use ratatui::layout::Rect;
@@ -25,18 +24,6 @@ use termrock::scroll::max_offset;
 
 fn config_with_long_workspace_name() -> AppConfig {
     let mut config = AppConfig::default();
-    config.workspaces.insert(
-        "chainargos-blockchain-nodes".into(),
-        WorkspaceConfig::default(),
-    );
-    config
-}
-
-fn config_with_short_selected_and_long_sibling() -> AppConfig {
-    let mut config = AppConfig::default();
-    config
-        .workspaces
-        .insert("jackin".into(), WorkspaceConfig::default());
     config.workspaces.insert(
         "chainargos-blockchain-nodes".into(),
         WorkspaceConfig::default(),
@@ -106,61 +93,6 @@ fn list_name_render_clamps_scroll_to_rendered_width() {
 }
 
 #[test]
-fn list_name_horizontal_scroll_keeps_selected_prefix_visible() {
-    let config = config_with_long_workspace_name();
-    let tmp = tempfile::tempdir().unwrap();
-    let mut state = ManagerState::from_config(&config, tmp.path());
-    state.selected = 1;
-    state.list_names_scroll_x = 8;
-    state.set_list_names_focused(true);
-
-    let backend = TestBackend::new(70, 24);
-    let mut terminal = Terminal::new(backend).unwrap();
-
-    terminal
-        .draw(|frame| {
-            render_list_body(frame, Rect::new(0, 0, 70, 24), &state, &config, tmp.path());
-        })
-        .unwrap();
-
-    let buffer = terminal.backend().buffer();
-    assert_eq!(buffer[(1, 2)].symbol(), "▸");
-    assert_eq!(buffer[(1, 2)].bg, PHOSPHOR_GREEN);
-    assert_eq!(buffer[(2, 2)].bg, PHOSPHOR_GREEN);
-    assert_eq!(buffer[(3, 2)].bg, PHOSPHOR_GREEN);
-    for x in 1..20 {
-        assert_eq!(buffer[(x, 2)].bg, PHOSPHOR_GREEN, "x={x}");
-    }
-}
-
-#[test]
-fn list_name_horizontal_scroll_keeps_hover_background_full_width() {
-    let config = config_with_long_workspace_name();
-    let tmp = tempfile::tempdir().unwrap();
-    let mut state = ManagerState::from_config(&config, tmp.path());
-    state.selected = 0;
-    state.hover_target = Some(crate::tui::state::ManagerHoverTarget::ListRow(
-        ManagerListRow::SavedWorkspace(0),
-    ));
-    state.list_names_scroll_x = 8;
-    state.set_list_names_focused(true);
-
-    let backend = TestBackend::new(70, 24);
-    let mut terminal = Terminal::new(backend).unwrap();
-
-    terminal
-        .draw(|frame| {
-            render_list_body(frame, Rect::new(0, 0, 70, 24), &state, &config, tmp.path());
-        })
-        .unwrap();
-
-    let buffer = terminal.backend().buffer();
-    for x in 1..20 {
-        assert_eq!(buffer[(x, 2)].bg, TAB_BG_INACTIVE_HOVER, "x={x}");
-    }
-}
-
-#[test]
 fn hovered_fitting_list_name_does_not_make_sidebar_horizontally_scrollable() {
     let config = config_with_sidebar_names_that_fit_wide_pane();
     let tmp = tempfile::tempdir().unwrap();
@@ -169,103 +101,8 @@ fn hovered_fitting_list_name_does_not_make_sidebar_horizontally_scrollable() {
         ManagerListRow::SavedWorkspace(0),
     ));
 
-    let backend = TestBackend::new(120, 24);
-    let mut terminal = Terminal::new(backend).unwrap();
-
-    terminal
-        .draw(|frame| {
-            render_list_body(frame, Rect::new(0, 0, 120, 24), &state, &config, tmp.path());
-        })
-        .unwrap();
-
-    let buffer = terminal.backend().buffer();
-    for x in 1..35 {
-        assert!(
-            !["━", "·"].contains(&buffer[(x, 23)].symbol()),
-            "unexpected horizontal scrollbar at x={x}"
-        );
-    }
-}
-
-#[test]
-fn list_name_horizontal_scroll_keeps_short_selected_background_full_width() {
-    let config = config_with_short_selected_and_long_sibling();
-    let tmp = tempfile::tempdir().unwrap();
-    let mut state = ManagerState::from_config(&config, tmp.path());
-    state.selected = 2;
-    state.list_names_scroll_x = 12;
-    state.set_list_names_focused(true);
-
-    let backend = TestBackend::new(70, 24);
-    let mut terminal = Terminal::new(backend).unwrap();
-
-    terminal
-        .draw(|frame| {
-            render_list_body(frame, Rect::new(0, 0, 70, 24), &state, &config, tmp.path());
-        })
-        .unwrap();
-
-    let buffer = terminal.backend().buffer();
-    assert_eq!(buffer[(1, 3)].symbol(), "▸");
-    for x in 1..20 {
-        assert_eq!(buffer[(x, 3)].bg, PHOSPHOR_GREEN, "x={x}");
-    }
-}
-
-#[test]
-fn focused_list_names_show_selected_cursor() {
-    let config = config_with_long_workspace_name();
-    let tmp = tempfile::tempdir().unwrap();
-    let mut state = ManagerState::from_config(&config, tmp.path());
-    state.selected = 1;
-    state.set_list_names_focused(true);
-
-    let backend = TestBackend::new(70, 24);
-    let mut terminal = Terminal::new(backend).unwrap();
-
-    terminal
-        .draw(|frame| {
-            render_list_body(frame, Rect::new(0, 0, 70, 24), &state, &config, tmp.path());
-        })
-        .unwrap();
-
-    let buffer = terminal.backend().buffer();
-    assert_eq!(buffer[(1, 2)].symbol(), "▸");
-}
-
-#[test]
-fn background_list_names_under_modal_hide_selected_cursor() {
-    let config = config_with_long_workspace_name();
-    let tmp = tempfile::tempdir().unwrap();
-    let mut state = ManagerState::from_config(&config, tmp.path());
-    state.selected = 1;
-    state.set_list_names_focused(true);
-    state.list_modal = Some(Modal::Confirm {
-        target: ConfirmTarget::DeleteEnvVar {
-            scope: SecretsScopeTag::Workspace,
-            key: "TOKEN".into(),
-        },
-        state: crate::tui::components::ConfirmState::new("Delete TOKEN?"),
-    });
-
-    let backend = TestBackend::new(70, 24);
-    let mut terminal = Terminal::new(backend).unwrap();
-
-    terminal
-        .draw(|frame| {
-            render_list_body(frame, Rect::new(0, 0, 70, 24), &state, &config, tmp.path());
-        })
-        .unwrap();
-
-    let buffer = terminal.backend().buffer();
-    assert_ne!(
-        buffer[(1, 2)].symbol(),
-        "▸",
-        "background sidebar must not show the selected cursor while a modal owns focus"
-    );
-    for x in 1..20 {
-        assert_eq!(buffer[(x, 2)].bg, PHOSPHOR_GREEN, "x={x}");
-    }
+    let content_width = list_names_content_width(&state, 54);
+    assert_eq!(max_offset(content_width, 54), 0);
 }
 
 #[test]
@@ -294,10 +131,6 @@ fn list_name_vertical_scroll_follows_selected_new_workspace() {
     assert!(
         dump.contains("+ New workspace"),
         "selected sentinel should be scrolled into view: {dump:?}"
-    );
-    assert!(
-        (1..9).any(|y| buffer[(1, y)].symbol() == "▸"),
-        "selected sentinel should show the cursor in the visible sidebar: {dump:?}"
     );
 }
 
@@ -584,26 +417,23 @@ fn render_agents_subpanel(
     render_config_roles_subpanel(frame, area, ws_config, config, 0, 0, false);
 }
 
-/// Scan the first content row inside a sub-panel block (y = 1, skipping
-/// the top border at y = 0) for the first cell holding a printable
-/// non-space character, skipping the left vertical border. Returns the
-/// offset of that character *from the left border* — i.e. the indent —
-/// so values can be compared against `SUBPANEL_CONTENT_INDENT` directly.
+fn panel_inner(area: Rect) -> Rect {
+    let theme = termrock::Theme::default();
+    termrock::widgets::Panel::new(&theme).inner(area)
+}
+
+/// Scan the first content row inside a sub-panel for its first printable
+/// character. The content rectangle comes from the owning `TermRock` component,
+/// so this product test does not infer geometry from border glyphs.
 fn first_content_indent(terminal: &Terminal<TestBackend>) -> Option<usize> {
     let buf = terminal.backend().buffer();
-    let area = buf.area;
-    // Locate the left border column first so the returned value is the
-    // relative indent, not the absolute column.
-    let border_x = (0..area.width).find(|x| {
-        let sym = buf[(*x, 1)].symbol();
-        sym == "│"
-    })?;
-    for x in (border_x + 1)..area.width {
-        let sym = buf[(x, 1)].symbol();
+    let inner = panel_inner(buf.area);
+    for x in inner.x..inner.right() {
+        let sym = buf[(x, inner.y)].symbol();
         if sym.is_empty() || sym == " " {
             continue;
         }
-        return Some((x - border_x - 1) as usize);
+        return Some((x - inner.x) as usize);
     }
     None
 }
@@ -712,14 +542,10 @@ fn subpanel_content_column_alignment() {
 /// Used to locate the trailing star glyph on a default-role row.
 fn find_symbol_indent(terminal: &Terminal<TestBackend>, y: u16, needle: &str) -> Option<usize> {
     let buf = terminal.backend().buffer();
-    let area = buf.area;
-    let border_x = (0..area.width).find(|x| {
-        let sym = buf[(*x, y)].symbol();
-        sym == "│"
-    })?;
-    for x in (border_x + 1)..area.width {
+    let inner = panel_inner(buf.area);
+    for x in inner.x..inner.right() {
         if buf[(x, y)].symbol() == needle {
-            return Some((x - border_x - 1) as usize);
+            return Some((x - inner.x) as usize);
         }
     }
     None
@@ -730,20 +556,12 @@ fn find_symbol_indent(terminal: &Terminal<TestBackend>, y: u16, needle: &str) ->
 /// a non-default row has no trailing suffix past the name.
 fn last_printable_indent(terminal: &Terminal<TestBackend>, y: u16) -> Option<usize> {
     let buf = terminal.backend().buffer();
-    let area = buf.area;
-    let border_x = (0..area.width).find(|x| {
-        let sym = buf[(*x, y)].symbol();
-        sym == "│"
-    })?;
-    let right_border_x = ((border_x + 1)..area.width).find(|x| {
-        let sym = buf[(*x, y)].symbol();
-        sym == "│"
-    })?;
+    let inner = panel_inner(buf.area);
     let mut last: Option<usize> = None;
-    for x in (border_x + 1)..right_border_x {
+    for x in inner.x..inner.right() {
         let sym = buf[(x, y)].symbol();
         if !sym.is_empty() && sym != " " {
-            last = Some((x - border_x - 1) as usize);
+            last = Some((x - inner.x) as usize);
         }
     }
     last
@@ -779,19 +597,13 @@ fn agents_subpanel_non_default_agent_name_starts_at_col_2() {
 
     // Locate the first printable char on the beta row (y=4).
     let buf = term.backend().buffer();
-    let area = buf.area;
-    let border_x = (0..area.width)
-        .find(|x| {
-            let sym = buf[(*x, 4)].symbol();
-            sym == "│"
-        })
-        .expect("left border on beta row");
-    let name_col = ((border_x + 1)..area.width)
+    let inner = panel_inner(buf.area);
+    let name_col = (inner.x..inner.right())
         .find(|x| {
             let sym = buf[(*x, 4)].symbol();
             !sym.is_empty() && sym != " "
         })
-        .map(|x| (x - border_x - 1) as usize)
+        .map(|x| (x - inner.x) as usize)
         .expect("beta row has content");
     assert_eq!(
         name_col, SUBPANEL_CONTENT_INDENT,
@@ -864,19 +676,13 @@ fn agents_subpanel_default_agent_name_starts_at_col_2_regardless_of_star() {
 
     // Locate the first printable char on the alpha row (y=3).
     let buf = term.backend().buffer();
-    let area = buf.area;
-    let border_x = (0..area.width)
-        .find(|x| {
-            let sym = buf[(*x, 3)].symbol();
-            sym == "│"
-        })
-        .expect("left border on alpha row");
-    let name_col = ((border_x + 1)..area.width)
+    let inner = panel_inner(buf.area);
+    let name_col = (inner.x..inner.right())
         .find(|x| {
             let sym = buf[(*x, 3)].symbol();
             !sym.is_empty() && sym != " "
         })
-        .map(|x| (x - border_x - 1) as usize)
+        .map(|x| (x - inner.x) as usize)
         .expect("alpha row has content");
     assert_eq!(
         name_col, SUBPANEL_CONTENT_INDENT,

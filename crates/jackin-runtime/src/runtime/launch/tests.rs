@@ -8,8 +8,102 @@
 )]
 use super::*;
 use crate::runtime::launch::launch_runtime::{
-    debug_runtime_envs_for, run_runtime_envs, run_runtime_envs_for, telemetry_runtime_envs_for,
+    CapsuleAuth, CapsuleEndpoint, CapsuleNetwork, capsule_export_coverage,
+    capsule_otlp_allowlist_host, capsule_otlp_propagation, debug_runtime_envs,
+    telemetry_runtime_envs_for,
 };
+
+#[test]
+fn capsule_otlp_fails_closed_for_network_endpoint_and_auth() {
+    use jackin_diagnostics::CapsuleExportCoverage;
+
+    assert_eq!(
+        capsule_export_coverage(
+            CapsuleNetwork::Disabled,
+            CapsuleEndpoint::Safe,
+            CapsuleAuth::Complete,
+        ),
+        CapsuleExportCoverage::DisabledNetworkNone
+    );
+    assert_eq!(
+        capsule_export_coverage(
+            CapsuleNetwork::Enabled,
+            CapsuleEndpoint::Missing,
+            CapsuleAuth::Complete,
+        ),
+        CapsuleExportCoverage::DisabledNoEndpoint
+    );
+    assert_eq!(
+        capsule_export_coverage(
+            CapsuleNetwork::Enabled,
+            CapsuleEndpoint::Unclassified,
+            CapsuleAuth::Complete,
+        ),
+        CapsuleExportCoverage::DisabledUnclassifiedEndpoint
+    );
+    assert_eq!(
+        capsule_export_coverage(
+            CapsuleNetwork::Enabled,
+            CapsuleEndpoint::Safe,
+            CapsuleAuth::HostOnly,
+        ),
+        CapsuleExportCoverage::DisabledUnclassifiedAuth
+    );
+    assert_eq!(
+        capsule_export_coverage(
+            CapsuleNetwork::Enabled,
+            CapsuleEndpoint::Safe,
+            CapsuleAuth::Complete,
+        ),
+        CapsuleExportCoverage::Enabled
+    );
+    assert_eq!(
+        capsule_export_coverage(
+            CapsuleNetwork::Enabled,
+            CapsuleEndpoint::Safe,
+            CapsuleAuth::Complete,
+        ),
+        CapsuleExportCoverage::Enabled
+    );
+}
+
+#[test]
+fn disabled_capsule_export_injects_no_telemetry_or_firewall_host() {
+    let env = capsule_otlp_propagation(
+        None,
+        Some("authorization=private-host-header"),
+        Some("00-private-traceparent"),
+    );
+    assert!(env.is_empty());
+    assert_eq!(capsule_otlp_allowlist_host(None), None);
+}
+
+#[test]
+fn enabled_capsule_export_uses_only_explicit_safe_carriers() {
+    let endpoint = jackin_diagnostics::ContainerOtlp {
+        endpoint: "http://host.docker.internal:4317".to_owned(),
+        needs_host_gateway: true,
+    };
+    let env = capsule_otlp_propagation(
+        Some(&endpoint),
+        Some("authorization=capsule-safe"),
+        Some("00-bounded-traceparent"),
+    );
+    assert_eq!(env.len(), 3);
+    assert!(
+        env.iter()
+            .any(|value| value == "OTEL_EXPORTER_OTLP_HEADERS=authorization=capsule-safe")
+    );
+    assert_eq!(
+        capsule_otlp_allowlist_host(Some(&endpoint)),
+        Some("host.docker.internal")
+    );
+    assert!(!env.iter().any(|value| value.contains("CLIENT_KEY")));
+    assert!(
+        !env.iter()
+            .any(|value| value.contains("private-host-header"))
+    );
+}
 use jackin_config::AppConfig;
 use jackin_core::WorkspaceName;
 use jackin_test_support::FakeRunner;
@@ -86,13 +180,17 @@ fn local_role_base_for_test(selector: &RoleSelector, head_sha: Option<&str>) -> 
 }
 
 #[test]
-fn docker_build_failure_cli_error_includes_copyable_artifacts_table() {
+fn docker_build_failure_cli_error_contains_no_local_artifact_paths() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     crate::runtime::test_support::install_all_test_stubs(&paths);
-    let run = jackin_diagnostics::RunDiagnostics::start(&paths, false, "load").unwrap();
-    std::fs::write(run.command_output_path("docker-build"), "docker failed").unwrap();
-
+    let run = jackin_diagnostics::RunDiagnostics::start(
+        &paths,
+        false,
+        "load",
+        jackin_diagnostics::ServiceIdentity::HOST_INTERACTIVE,
+    )
+    .unwrap();
     let error = anyhow::anyhow!("Docker build command failed");
     let rendered = launch_failure_cli_error(
         crate::runtime::progress::LaunchStage::DerivedImage,
@@ -101,18 +199,9 @@ fn docker_build_failure_cli_error_includes_copyable_artifacts_table() {
     )
     .to_string();
 
-    assert!(rendered.starts_with("Docker build command failed\n\n"));
-    assert!(rendered.contains("run id"));
-    assert!(rendered.contains(run.run_id()));
-    assert!(rendered.contains("run diagnostics"));
-    assert!(rendered.contains(&run.path().display().to_string()));
-    assert!(rendered.contains("docker output"));
-    assert!(
-        rendered.contains(
-            &run.command_output_path("docker-build")
-                .display()
-                .to_string()
-        )
+    assert_eq!(
+        rendered,
+        "Docker build command failed: Docker build command failed"
     );
 }
 
@@ -121,7 +210,13 @@ fn derived_image_cli_error_preserves_original_without_docker_output() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     crate::runtime::test_support::install_all_test_stubs(&paths);
-    let run = jackin_diagnostics::RunDiagnostics::start(&paths, false, "load").unwrap();
+    let run = jackin_diagnostics::RunDiagnostics::start(
+        &paths,
+        false,
+        "load",
+        jackin_diagnostics::ServiceIdentity::HOST_INTERACTIVE,
+    )
+    .unwrap();
 
     let error = anyhow::anyhow!("preparing capsule binary failed");
     let rendered = launch_failure_cli_error(
@@ -187,6 +282,12 @@ model = "zai/glm"
     let manifest = jackin_manifest::load_role_manifest(temp.path()).unwrap();
     let selector = RoleSelector::new(Some("chainargos"), "the-architect");
     let config = capsule_config(&selector, "/workspace", &manifest, None, "ask", Vec::new());
+    let auth_modes = super::capsule_setup::capsule_auth_modes(
+        &jackin_config::AppConfig::default(),
+        None,
+        &selector.key(),
+        &manifest,
+    );
 
     assert_eq!(config.role, "chainargos/the-architect");
     assert_eq!(config.workdir, "/workspace");
@@ -199,6 +300,8 @@ model = "zai/glm"
     assert_eq!(config.models.get("kimi").unwrap(), "kimi-k2");
     assert_eq!(config.models.get("opencode").unwrap(), "zai/glm");
     assert!(!config.models.contains_key("amp"));
+    assert_eq!(auth_modes.len(), config.agents.len());
+    assert!(auth_modes.values().all(|mode| mode == "sync"));
 }
 #[tokio::test]
 async fn diagnose_premature_exit_returns_none_when_container_running() {
@@ -214,7 +317,6 @@ async fn diagnose_premature_exit_returns_none_when_container_running() {
         &mut runner,
         "jk-the-architect",
         ExitPhase::PreAttach,
-        None,
     )
     .await;
     assert!(
@@ -243,7 +345,6 @@ async fn diagnose_premature_exit_includes_logs_when_container_already_stopped() 
         &mut runner,
         "jk-the-architect",
         ExitPhase::PreAttach,
-        None,
     )
     .await
     .expect("stopped container must produce a diagnostic error");
@@ -278,7 +379,7 @@ async fn diagnose_premature_exit_flags_oom_kill_distinct_from_normal_exit() {
         ..Default::default()
     };
     let mut runner = FakeRunner::with_capture_queue([String::new()]);
-    let err = diagnose_premature_exit(&docker, &mut runner, "jackin-x", ExitPhase::PreAttach, None)
+    let err = diagnose_premature_exit(&docker, &mut runner, "jackin-x", ExitPhase::PreAttach)
         .await
         .expect("OOM-killed container is a premature exit");
     let msg = err.to_string();
@@ -295,7 +396,7 @@ async fn diagnose_premature_exit_passes_through_when_inspect_returns_notfound() 
     let docker = FakeDockerClient::default(); // empty queue → NotFound
     let mut runner = FakeRunner::default();
     assert!(
-        diagnose_premature_exit(&docker, &mut runner, "jackin-x", ExitPhase::PreAttach, None)
+        diagnose_premature_exit(&docker, &mut runner, "jackin-x", ExitPhase::PreAttach)
             .await
             .is_none(),
         "NotFound must not abort launch before exec attempt"
@@ -323,7 +424,6 @@ async fn diagnose_premature_exit_swallows_post_attach_clean_exit() {
         &mut runner,
         "jk-the-architect",
         ExitPhase::PostAttach,
-        None,
     )
     .await;
     assert!(
@@ -356,7 +456,6 @@ async fn diagnose_premature_exit_surfaces_post_attach_nonzero_exit() {
         &mut runner,
         "jk-the-architect",
         ExitPhase::PostAttach,
-        None,
     )
     .await
     .expect("post-attach non-zero exit must produce a diagnostic error");
@@ -393,7 +492,6 @@ async fn diagnose_premature_exit_surfaces_pre_attach_exit_zero() {
         &mut runner,
         "jk-the-architect",
         ExitPhase::PreAttach,
-        None,
     )
     .await
     .expect("pre-attach exit 0 must still flag a missing Capsule");
@@ -406,21 +504,9 @@ async fn diagnose_premature_exit_surfaces_pre_attach_exit_zero() {
 }
 
 #[tokio::test]
-async fn diagnose_premature_exit_falls_back_to_multiplexer_log_when_docker_logs_empty() {
-    // The capsule daemon routes its startup diagnostics to multiplexer.log
-    // rather than stderr, so a pre-attach PID-1 crash leaves `docker logs`
-    // empty. The diagnostic must fall back to the capsule log tail instead of
-    // reporting an opaque "no log output".
+async fn diagnose_premature_exit_reports_empty_docker_logs() {
     use jackin_docker::docker_client::ContainerState;
     use jackin_test_support::FakeDockerClient;
-
-    let temp = tempdir().unwrap();
-    let mux_log = temp.path().join("multiplexer.log");
-    std::fs::write(
-        &mux_log,
-        "daemon start\nthread 'main' panicked: capsule boom\n",
-    )
-    .unwrap();
 
     let docker = FakeDockerClient {
         inspect_queue: std::cell::RefCell::new(VecDeque::from([ContainerState::Stopped {
@@ -429,29 +515,19 @@ async fn diagnose_premature_exit_falls_back_to_multiplexer_log_when_docker_logs_
         }])),
         ..Default::default()
     };
-    // Empty `docker logs` output → drives the multiplexer.log fallback branch.
     let mut runner = FakeRunner::with_capture_queue([String::new()]);
     let err = diagnose_premature_exit(
         &docker,
         &mut runner,
         "jk-the-architect",
         ExitPhase::PreAttach,
-        Some(mux_log.to_str().unwrap()),
     )
     .await
     .expect("pre-attach exit 1 must produce a diagnostic error");
     let msg = err.to_string();
     assert!(
-        msg.contains("multiplexer.log"),
-        "fallback should name the capsule log: {msg}"
-    );
-    assert!(
-        msg.contains("capsule boom"),
-        "capsule log tail missing from msg: {msg}"
-    );
-    assert!(
-        !msg.contains("no log output"),
-        "must not report 'no log output' when the capsule log has content: {msg}"
+        msg.contains("no log output"),
+        "empty-log detail missing: {msg}"
     );
 }
 
@@ -567,61 +643,6 @@ fn github_config_mount_keeps_existing_ignored_state() {
     );
 }
 
-#[test]
-fn auth_provision_launch_plan_surfaces_per_agent_outcomes() {
-    let temp = tempdir().unwrap();
-    let paths = JackinPaths::for_tests(temp.path());
-    let run = jackin_diagnostics::RunDiagnostics::start(&paths, true, "load").unwrap();
-    let _guard = run.activate();
-    let root = temp.path().join("role-state");
-    let mut auth_outcomes = std::collections::BTreeMap::new();
-    auth_outcomes.insert(
-        jackin_core::Agent::Claude,
-        crate::instance::AuthProvisionOutcome::Synced,
-    );
-    auth_outcomes.insert(
-        jackin_core::Agent::Codex,
-        crate::instance::AuthProvisionOutcome::HostMissing,
-    );
-    auth_outcomes.insert(
-        jackin_core::Agent::Amp,
-        crate::instance::AuthProvisionOutcome::TokenMode,
-    );
-    auth_outcomes.insert(
-        jackin_core::Agent::Grok,
-        crate::instance::AuthProvisionOutcome::Skipped,
-    );
-    let state = RoleState {
-        root: root.clone(),
-        gh_config_dir: root.join(".config/gh"),
-        gh_provision_outcome: crate::instance::GithubProvisionOutcome::Skipped,
-        agent_runtime: crate::instance::AgentRuntimeState {
-            agent: jackin_core::Agent::Claude,
-            model: None,
-        },
-        auth: crate::instance::ProvisionedAuth::default(),
-        auth_outcomes,
-    };
-
-    emit_auth_provision_launch_plan(&state, "jk-auth-demo");
-
-    let jsonl = std::fs::read_to_string(run.path()).unwrap();
-    assert!(
-        (jsonl.contains("\"event.name\":\"launch_plan\"")
-            || jsonl.contains("\"kind\":\"launch_plan\"")),
-        "{jsonl}"
-    );
-    assert!(jsonl.contains("AuthProvision"), "{jsonl}");
-    assert!(jsonl.contains("credential_outcomes"), "{jsonl}");
-    assert!(jsonl.contains("\\\"claude\\\":\\\"synced\\\""), "{jsonl}");
-    assert!(
-        jsonl.contains("\\\"codex\\\":\\\"host_missing\\\""),
-        "{jsonl}"
-    );
-    assert!(jsonl.contains("\\\"amp\\\":\\\"token_mode\\\""), "{jsonl}");
-    assert!(jsonl.contains("\\\"grok\\\":\\\"skipped\\\""), "{jsonl}");
-}
-
 #[tokio::test]
 async fn role_state_prepare_for_agents_skips_sibling_auth_slots() {
     use crate::instance::{PrepareResolvers, RoleState};
@@ -693,73 +714,6 @@ plugins = []
         0,
         "sibling sync-source override must not be resolved"
     );
-}
-
-#[tokio::test]
-async fn sibling_auth_prewarm_records_timing() {
-    let temp = tempdir().unwrap();
-    let paths = JackinPaths::for_tests(temp.path());
-    crate::runtime::test_support::install_all_test_stubs(&paths);
-    let run = jackin_diagnostics::RunDiagnostics::start(&paths, false, "load").unwrap();
-    let active = run.activate();
-    let manifest_temp = tempdir().unwrap();
-    std::fs::write(
-        manifest_temp.path().join("jackin.role.toml"),
-        r#"version = "v1alpha3"
-dockerfile = "Dockerfile"
-agents = ["claude", "codex"]
-
-[claude]
-plugins = []
-
-[codex]
-"#,
-    )
-    .unwrap();
-    std::fs::write(
-        manifest_temp.path().join("Dockerfile"),
-        "FROM projectjackin/construct:0.1-trixie\n",
-    )
-    .unwrap();
-    let manifest = jackin_manifest::load_role_manifest(manifest_temp.path()).unwrap();
-    let config = AppConfig::load_or_init(&paths).unwrap();
-    let prewarm = SiblingAuthPrewarm {
-        manifest: &manifest,
-        config: &config,
-        workspace_name: "workspace",
-        role_key: "agent-smith",
-    };
-
-    let prewarm_handle = spawn_sibling_auth_prewarm(
-        &paths,
-        "jk-agent-smith",
-        &prewarm,
-        jackin_core::Agent::Claude,
-    )
-    .expect("expected sibling auth prewarm task");
-
-    prewarm_handle.await.unwrap();
-    drop(active);
-    let jsonl = std::fs::read_to_string(run.path()).unwrap();
-    assert!(
-        (jsonl.contains("\"event.name\":\"sibling_auth_prewarm_done\"")
-            || jsonl.contains("\"kind\":\"sibling_auth_prewarm_done\"")),
-        "{jsonl}"
-    );
-    assert!(
-        (jsonl.contains("\"event.name\":\"launch_plan\"")
-            || jsonl.contains("\"kind\":\"launch_plan\"")),
-        "{jsonl}"
-    );
-    assert!(jsonl.contains("PrewarmOnly"), "{jsonl}");
-    assert!(jsonl.contains("sibling_auth_prewarm:codex"), "{jsonl}");
-    assert!(
-        (jsonl.contains("\"event.name\":\"timing_done\"")
-            || jsonl.contains("\"event.name\":\"timing.done\"")
-            || jsonl.contains("\"kind\":\"timing_done\"")),
-        "{jsonl}"
-    );
-    assert!(jsonl.contains("sibling_auth_prewarm"), "{jsonl}");
 }
 
 #[tokio::test]
@@ -1583,28 +1537,10 @@ async fn workspace_mise_env_does_not_override_operator_value() {
 }
 
 #[test]
-fn read_text_tail_returns_recent_lines_only() {
-    let temp = tempdir().unwrap();
-    let path = temp.path().join("capsule.log");
-    std::fs::write(&path, "one\ntwo\nthree\nfour\n").unwrap();
-
-    assert_eq!(
-        read_text_tail(&path, 2).unwrap(),
-        Some("three\nfour".to_owned())
-    );
-}
-
-#[test]
-fn attach_failure_error_includes_capsule_log_tail() {
-    let temp = tempdir().unwrap();
-    let path = temp.path().join("capsule.log");
-    std::fs::write(&path, "agent stderr\nfatal: missing token\n").unwrap();
-
+fn attach_failure_error_preserves_command_context() {
     let error = attach_failure_error(
         "jk-test",
         &anyhow::anyhow!("command failed: docker exec ..."),
-        &path,
-        &path.display().to_string(),
     )
     .to_string();
 
@@ -1613,7 +1549,6 @@ fn attach_failure_error_includes_capsule_log_tail() {
         "{error}"
     );
     assert!(error.contains("command failed: docker exec"), "{error}");
-    assert!(error.contains("fatal: missing token"), "{error}");
 }
 
 /// A Codex-authed role state rooted at `root` plus a workspace whose
@@ -1813,6 +1748,30 @@ echo "pulled $2"
     assert!(marker_dir.join("repo-b.started").is_file());
 }
 
+#[test]
+fn git_pull_exports_spawn_failure_without_repo_or_program_paths() {
+    let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
+    let _subscriber = tracing::subscriber::set_default(subscriber);
+    let results = pull_git_sources_with_git(
+        vec!["/operator-secret/repository".to_owned()],
+        false,
+        Path::new("/operator-secret/missing-git"),
+        false,
+    );
+    assert!(matches!(
+        results.as_slice(),
+        [super::git_pull::GitPullResult::SpawnError { .. }]
+    ));
+    export.force_flush();
+
+    assert_eq!(export.finished_spans().len(), 1);
+    assert_eq!(export.error_span_count(), 1);
+    assert!(export.contains_span_text("process_spawn_error"));
+    assert!(!export.contains_span_text("operator-secret"));
+    assert!(!export.contains_span_text("repository"));
+    assert!(!export.contains_span_text("missing-git"));
+}
+
 fn repo_workspace(repo_dir: &Path) -> jackin_config::ResolvedWorkspace {
     jackin_config::ResolvedWorkspace {
         name: String::new(),
@@ -1899,7 +1858,6 @@ fn host_runtime_passthrough_env_keeps_only_explicit_runtime_knobs() {
         ("JACKIN_DHAT_ALLOC_LOG".to_owned(), "1".to_owned()),
         ("JACKIN_CAPSULE_FORCE_PANIC".to_owned(), "true".to_owned()),
         ("TZ".to_owned(), "Asia/Ho_Chi_Minh".to_owned()),
-        ("JACKIN_RUN_ID".to_owned(), "operator-owned".to_owned()),
         ("PATH".to_owned(), "/bin".to_owned()),
     ]);
 
@@ -1915,38 +1873,9 @@ fn host_runtime_passthrough_env_keeps_only_explicit_runtime_knobs() {
 }
 
 #[test]
-fn runtime_envs_split_run_id_from_persisted_diagnostics_path() {
-    let temp = tempdir().unwrap();
-    let paths = JackinPaths::for_tests(temp.path());
-    crate::runtime::test_support::install_all_test_stubs(&paths);
-    let run = jackin_diagnostics::RunDiagnostics::start(&paths, true, "load").unwrap();
-    let _guard = run.activate();
-
-    let run_envs = run_runtime_envs();
+fn debug_runtime_envs_do_not_propagate_file_configuration() {
     let debug_envs = debug_runtime_envs(true);
-
-    assert_eq!(run_envs, vec![format!("JACKIN_RUN_ID={}", run.run_id())]);
-    assert!(!debug_envs.iter().any(|env| env == "JACKIN_DEBUG=1"));
-    assert!(
-        !debug_envs
-            .iter()
-            .any(|env| env.starts_with("JACKIN_RUN_ID="))
-    );
-    assert!(debug_envs.contains(&format!(
-        "JACKIN_RUN_DIAGNOSTICS_PATH={}",
-        run.path().display()
-    )));
-}
-
-#[test]
-fn debug_runtime_envs_omit_all_envs_without_persisted_diagnostics() {
-    let envs = debug_runtime_envs_for(true, None);
-
-    assert!(envs.is_empty());
-    assert_eq!(
-        run_runtime_envs_for(Some("jk-run-backend")),
-        vec!["JACKIN_RUN_ID=jk-run-backend".to_owned()]
-    );
+    assert!(debug_envs.is_empty());
 }
 
 #[test]
@@ -7313,131 +7242,6 @@ async fn missing_matching_instance_recreates_current_role() {
 }
 
 #[tokio::test]
-async fn missing_matching_instance_records_launch_plan_rejections() {
-    let temp = tempdir().unwrap();
-    let paths = JackinPaths::for_tests(temp.path());
-    crate::runtime::test_support::install_all_test_stubs(&paths);
-    let container_name = "jk-k7p9m2xq-workspace-agentsmith";
-    let manifest = workspace_manifest(
-        container_name,
-        "agent-smith",
-        "Agent Smith",
-        jackin_core::Agent::Claude,
-    );
-    manifest
-        .write(&paths.data_dir.join(container_name))
-        .unwrap();
-    let run = jackin_diagnostics::RunDiagnostics::start(&paths, true, "load").unwrap();
-    let _active = run.activate();
-    let docker = jackin_test_support::FakeDockerClient::default();
-
-    let candidate = resolve_workspace_restore(&paths, "agent-smith", &docker)
-        .await
-        .unwrap();
-
-    assert_eq!(
-        candidate,
-        RestoreResolution::RecreateCurrentRole(container_name.to_owned())
-    );
-    let jsonl = std::fs::read_to_string(run.path()).unwrap();
-    assert!(
-        (jsonl.contains("\"event.name\":\"launch_plan_rejected\"")
-            || jsonl.contains("\"kind\":\"launch_plan_rejected\"")),
-        "{jsonl}"
-    );
-    assert!(jsonl.contains("AttachExisting"), "{jsonl}");
-    assert!(jsonl.contains("StartStopped"), "{jsonl}");
-    assert!(jsonl.contains("current_role_container_missing"), "{jsonl}");
-    assert!(
-        !(jsonl.contains("\"event.name\":\"launch_plan\"")
-            || jsonl.contains("\"kind\":\"launch_plan\"")),
-        "restore lookup must not select CreateFromValidImage/BuildAndCreate before image decision: {jsonl}"
-    );
-    assert!(
-        (jsonl.contains("\"event.name\":\"timing.done\"")
-            || jsonl.contains("\"event.name\":\"timing_done\"")
-            || jsonl.contains("\"event.name\":\"timing.done\"")
-            || jsonl.contains("\"kind\":\"timing_done\""))
-            && jsonl.contains("current_restore_candidate")
-            && jsonl.contains("inspect_current_container")
-            && jsonl.contains("create_from_valid_image"),
-        "restore candidate scans should be timed before credentials/build: {jsonl}"
-    );
-}
-
-#[test]
-fn image_materialization_plan_uses_image_decision() {
-    let temp = tempdir().unwrap();
-    let paths = JackinPaths::for_tests(temp.path());
-    let run = jackin_diagnostics::RunDiagnostics::start(&paths, false, "load").unwrap();
-    let active = run.activate();
-
-    emit_image_materialization_plan(true, "recipe_hash_match", false, "jk-new");
-    emit_image_materialization_plan(true, "published_image_stale", false, "jk-refresh");
-    emit_image_materialization_plan(false, "hooks_hash_changed", true, "jk-recreate");
-
-    drop(active);
-    let jsonl = std::fs::read_to_string(run.path()).unwrap();
-    assert!(jsonl.contains("CreateFromValidImage"), "{jsonl}");
-    assert!(
-        jsonl.contains("no_restore_candidate_valid_image"),
-        "{jsonl}"
-    );
-    assert!(
-        jsonl.contains("no_restore_candidate_valid_image:published_image_stale"),
-        "{jsonl}"
-    );
-    assert!(jsonl.contains("BuildAndCreate"), "{jsonl}");
-    assert!(jsonl.contains("hooks_hash_changed"), "{jsonl}");
-}
-
-#[tokio::test]
-async fn current_restore_candidate_lookup_records_timing() {
-    // D13: a running container is not a restore candidate from the launch path.
-    // The resolve fn must still inspect the container and emit a rejected plan.
-    let temp = tempdir().unwrap();
-    let paths = JackinPaths::for_tests(temp.path());
-    crate::runtime::test_support::install_all_test_stubs(&paths);
-    let container_name = "jk-k7p9m2xq-workspace-agentsmith";
-    let manifest = workspace_manifest(
-        container_name,
-        "agent-smith",
-        "Agent Smith",
-        jackin_core::Agent::Claude,
-    );
-    write_indexed_manifest(&paths, &manifest);
-    let run = jackin_diagnostics::RunDiagnostics::start(&paths, false, "load").unwrap();
-    let active = run.activate();
-    let docker = jackin_test_support::FakeDockerClient {
-        inspect_queue: std::cell::RefCell::new(VecDeque::from([ContainerState::Running])),
-        ..Default::default()
-    };
-
-    let resolution = resolve_current_restore_candidate_timed(
-        &paths,
-        Some("workspace"),
-        "workspace",
-        "/workspace",
-        "agent-smith",
-        jackin_core::Agent::Claude,
-        &docker,
-    )
-    .await
-    .unwrap();
-
-    // D13: launch never reconnects to a live instance → resolve returns None
-    assert_eq!(resolution, None);
-    drop(active);
-    let jsonl = std::fs::read_to_string(run.path()).unwrap();
-    assert!(
-        jsonl.contains("current_restore_candidate")
-            && jsonl.contains("inspect_current_container")
-            && jsonl.contains("launch_never_reconnects_to_live_instance"),
-        "running container must emit rejected plan and not attach: {jsonl}"
-    );
-}
-
-#[tokio::test]
 async fn running_matching_instance_is_skipped_by_launch_path() {
     // D13: launch never reconnects to a live instance. Running container →
     // StartFresh (let launch proceed to create a new container).
@@ -7494,274 +7298,6 @@ async fn stopped_matching_instance_starts_current_role() {
     assert_eq!(
         candidate,
         RestoreResolution::StartCurrentRole(container_name.to_owned())
-    );
-}
-
-#[tokio::test]
-async fn single_running_current_role_candidate_is_skipped_before_agent_selection() {
-    // D13: launch never reconnects to a live instance even in the unselected-agent
-    // resolution path. Running container → None (no restore candidate).
-    let temp = tempdir().unwrap();
-    let paths = JackinPaths::for_tests(temp.path());
-    crate::runtime::test_support::install_all_test_stubs(&paths);
-    let container_name = "jk-k7p9m2xq-workspace-agentsmith";
-    let mut manifest = workspace_manifest(
-        container_name,
-        "agent-smith",
-        "Agent Smith",
-        jackin_core::Agent::Codex,
-    );
-    manifest.mark_status(InstanceStatus::RestoreAvailable);
-    write_indexed_manifest(&paths, &manifest);
-    let run = jackin_diagnostics::RunDiagnostics::start(&paths, false, "load").unwrap();
-    let active = run.activate();
-    let docker = jackin_test_support::FakeDockerClient {
-        inspect_queue: std::cell::RefCell::new(VecDeque::from([ContainerState::Running])),
-        ..Default::default()
-    };
-
-    let candidate = resolve_unselected_current_restore_candidate_timed(
-        &paths,
-        Some("workspace"),
-        "workspace",
-        "/workspace",
-        "agent-smith",
-        &docker,
-    )
-    .await
-    .unwrap();
-
-    assert_eq!(candidate, None);
-    drop(active);
-    let jsonl = std::fs::read_to_string(run.path()).unwrap();
-    assert!(
-        jsonl.contains("launch_never_reconnects_to_live_instance"),
-        "{jsonl}"
-    );
-    assert!(
-        jsonl.contains("current_restore_candidate_unselected_agent"),
-        "{jsonl}"
-    );
-}
-
-#[tokio::test]
-async fn single_stopped_current_role_candidate_starts_before_agent_selection() {
-    let temp = tempdir().unwrap();
-    let paths = JackinPaths::for_tests(temp.path());
-    crate::runtime::test_support::install_all_test_stubs(&paths);
-    let container_name = "jk-k7p9m2xq-workspace-agentsmith";
-    let mut manifest = workspace_manifest(
-        container_name,
-        "agent-smith",
-        "Agent Smith",
-        jackin_core::Agent::Codex,
-    );
-    manifest.mark_status(InstanceStatus::RestoreAvailable);
-    write_indexed_manifest(&paths, &manifest);
-    let run = jackin_diagnostics::RunDiagnostics::start(&paths, false, "load").unwrap();
-    let active = run.activate();
-    let docker = jackin_test_support::FakeDockerClient {
-        inspect_queue: std::cell::RefCell::new(VecDeque::from([ContainerState::Stopped {
-            exit_code: 0,
-            oom_killed: false,
-        }])),
-        ..Default::default()
-    };
-
-    let candidate = resolve_unselected_current_restore_candidate_timed(
-        &paths,
-        Some("workspace"),
-        "workspace",
-        "/workspace",
-        "agent-smith",
-        &docker,
-    )
-    .await
-    .unwrap();
-
-    assert_eq!(
-        candidate,
-        Some(RestoreResolution::StartCurrentRole(
-            container_name.to_owned()
-        ))
-    );
-    drop(active);
-    let jsonl = std::fs::read_to_string(run.path()).unwrap();
-    assert!(jsonl.contains("StartStopped"), "{jsonl}");
-    assert!(
-        jsonl.contains("single_current_role_agent_container_startable"),
-        "{jsonl}"
-    );
-    assert!(
-        jsonl.contains("current_restore_candidate_unselected_agent")
-            && jsonl.contains("start_stopped"),
-        "{jsonl}"
-    );
-}
-
-#[tokio::test]
-async fn single_missing_current_role_candidate_recreates_with_recorded_agent() {
-    let temp = tempdir().unwrap();
-    let paths = JackinPaths::for_tests(temp.path());
-    crate::runtime::test_support::install_all_test_stubs(&paths);
-    let container_name = "jk-k7p9m2xq-workspace-agentsmith";
-    let mut manifest = workspace_manifest(
-        container_name,
-        "agent-smith",
-        "Agent Smith",
-        jackin_core::Agent::Codex,
-    );
-    manifest.mark_status(InstanceStatus::RestoreAvailable);
-    write_indexed_manifest(&paths, &manifest);
-    let run = jackin_diagnostics::RunDiagnostics::start(&paths, false, "load").unwrap();
-    let active = run.activate();
-    let docker = jackin_test_support::FakeDockerClient {
-        inspect_queue: std::cell::RefCell::new(VecDeque::from([ContainerState::NotFound])),
-        ..Default::default()
-    };
-
-    let candidate = resolve_unselected_current_restore_candidate_with_agent_timed(
-        &paths,
-        Some("workspace"),
-        "workspace",
-        "/workspace",
-        "agent-smith",
-        &docker,
-    )
-    .await
-    .unwrap()
-    .expect("missing unselected current-role instance should recreate");
-
-    assert_eq!(candidate.agent, jackin_core::Agent::Codex);
-    assert_eq!(
-        candidate.resolution,
-        RestoreResolution::RecreateCurrentRole(container_name.to_owned())
-    );
-    drop(active);
-    let jsonl = std::fs::read_to_string(run.path()).unwrap();
-    assert!(
-        jsonl.contains("single_current_role_agent_container_missing"),
-        "{jsonl}"
-    );
-    assert!(
-        jsonl.contains("current_restore_candidate_unselected_agent")
-            && jsonl.contains("create_from_valid_image"),
-        "{jsonl}"
-    );
-}
-
-#[tokio::test]
-async fn only_viable_current_role_candidate_recreates_missing_one_before_agent_selection() {
-    let temp = tempdir().unwrap();
-    let paths = JackinPaths::for_tests(temp.path());
-    crate::runtime::test_support::install_all_test_stubs(&paths);
-    let mut claude = workspace_manifest(
-        "jk-k7p9m2xq-workspace-agentsmith-claude",
-        "agent-smith",
-        "Agent Smith",
-        jackin_core::Agent::Claude,
-    );
-    claude.mark_status(InstanceStatus::RestoreAvailable);
-    let mut codex = workspace_manifest(
-        "jk-k7p9m2xq-workspace-agentsmith-codex",
-        "agent-smith",
-        "Agent Smith",
-        jackin_core::Agent::Codex,
-    );
-    codex.mark_status(InstanceStatus::RestoreAvailable);
-    write_indexed_manifest(&paths, &claude);
-    write_indexed_manifest(&paths, &codex);
-    let run = jackin_diagnostics::RunDiagnostics::start(&paths, false, "load").unwrap();
-    let _active = run.activate();
-    let docker = jackin_test_support::FakeDockerClient {
-        inspect_queue: std::cell::RefCell::new(VecDeque::from([
-            ContainerState::NotFound,
-            ContainerState::Running,
-        ])),
-        ..Default::default()
-    };
-
-    let candidate = resolve_unselected_current_restore_candidate_timed(
-        &paths,
-        Some("workspace"),
-        "workspace",
-        "/workspace",
-        "agent-smith",
-        &docker,
-    )
-    .await
-    .unwrap();
-
-    // D13: the Running container (codex) is skipped; the NotFound one (claude)
-    // returns as RecreateCurrentRole — the only remaining viable candidate.
-    assert!(matches!(
-        candidate,
-        Some(RestoreResolution::RecreateCurrentRole(_))
-    ));
-    let jsonl = std::fs::read_to_string(run.path()).unwrap();
-    assert!(
-        jsonl.contains("launch_never_reconnects_to_live_instance"),
-        "{jsonl}"
-    );
-    assert!(
-        jsonl.contains("current_restore_candidate_unselected_agent"),
-        "{jsonl}"
-    );
-}
-
-#[tokio::test]
-async fn multiple_running_current_role_agents_all_rejected_by_launch_path() {
-    // D13: when multiple agents are Running, each is rejected individually.
-    // All containers must be inspected; candidate returns None (no restore).
-    let temp = tempdir().unwrap();
-    let paths = JackinPaths::for_tests(temp.path());
-    crate::runtime::test_support::install_all_test_stubs(&paths);
-    let mut claude = workspace_manifest(
-        "jk-k7p9m2xq-workspace-agentsmith-claude",
-        "agent-smith",
-        "Agent Smith",
-        jackin_core::Agent::Claude,
-    );
-    claude.mark_status(InstanceStatus::RestoreAvailable);
-    let mut codex = workspace_manifest(
-        "jk-k7p9m2xq-workspace-agentsmith-codex",
-        "agent-smith",
-        "Agent Smith",
-        jackin_core::Agent::Codex,
-    );
-    codex.mark_status(InstanceStatus::RestoreAvailable);
-    write_indexed_manifest(&paths, &claude);
-    write_indexed_manifest(&paths, &codex);
-    let run = jackin_diagnostics::RunDiagnostics::start(&paths, false, "load").unwrap();
-    let _active = run.activate();
-    let docker = jackin_test_support::FakeDockerClient {
-        inspect_queue: std::cell::RefCell::new(VecDeque::from([
-            ContainerState::Running,
-            ContainerState::Running,
-        ])),
-        ..Default::default()
-    };
-
-    let candidate = resolve_unselected_current_restore_candidate_timed(
-        &paths,
-        Some("workspace"),
-        "workspace",
-        "/workspace",
-        "agent-smith",
-        &docker,
-    )
-    .await
-    .unwrap();
-
-    assert_eq!(candidate, None);
-    assert!(
-        docker.inspect_queue.borrow().is_empty(),
-        "D13: all running candidates must be inspected and rejected"
-    );
-    let jsonl = std::fs::read_to_string(run.path()).unwrap();
-    assert!(
-        jsonl.contains("launch_never_reconnects_to_live_instance"),
-        "{jsonl}"
     );
 }
 

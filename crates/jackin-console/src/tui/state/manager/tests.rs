@@ -20,6 +20,19 @@ use crate::tui::update::{
     apply_list_modal_plan,
 };
 
+#[test]
+fn manager_recovery_export_is_bodyless() {
+    let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
+    tracing::subscriber::with_default(subscriber, super::record_manager_recovery);
+
+    export.force_flush();
+    assert_eq!(export.event_count("operation.warn"), 1);
+    assert!(export.contains_log_text("recovered_degradation"));
+    for private in ["workspace", "selected", "index", "modal", "credential"] {
+        assert!(!export.contains_log_text(private));
+    }
+}
+
 fn fresh_manager() -> ManagerState<'static> {
     let tmp = tempdir().expect("tempdir");
     ManagerState::from_config(&AppConfig::default(), tmp.path())

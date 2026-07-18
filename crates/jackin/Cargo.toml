@@ -28,20 +28,23 @@ name = "build-jackin-capsule"
 path = "src/bin/build_jackin_capsule/main.rs"
 
 [dependencies]
+jackin-brand = { workspace = true }
 anyhow = { workspace = true }
 jackin-config = { workspace = true }
 jackin-core = { workspace = true }
+jackin-tui = { workspace = true }
 jackin-docker = { workspace = true }
 jackin-manifest = { workspace = true }
 jackin-diagnostics = { workspace = true }
 jackin-env = { workspace = true }
 jackin-image = { workspace = true }
 jackin-runtime = { workspace = true }
-jackin-launch-tui = { workspace = true }
+jackin-launch = { workspace = true }
 jackin-console = { workspace = true }
 jackin-protocol = { workspace = true }
 jackin-usage = { workspace = true }
 jackin-process = { workspace = true }
+jackin-telemetry = { workspace = true }
 clap = { workspace = true, features = ["derive", "color", "env"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
@@ -57,6 +60,7 @@ dialoguer = { workspace = true }
 tabled = { workspace = true }
 clap_mangen = { workspace = true }
 tokio = { workspace = true, features = ["rt", "process", "io-util", "sync", "macros", "time", "fs"] }
+tracing = { workspace = true }
 futures-util = { workspace = true }
 fs4 = { workspace = true }
 rustls = { workspace = true, features = ["aws_lc_rs"] }
@@ -68,11 +72,14 @@ jackin-build-meta = { workspace = true }
 [dev-dependencies]
 assert_cmd = { workspace = true }
 jackin-config = { workspace = true, features = ["test-support"] }
+jackin-diagnostics = { workspace = true, features = ["test-support"] }
 jackin-env = { workspace = true, features = ["test-support"] }
 jackin-test-support = { workspace = true }
+jackin-otlp-testbed = { workspace = true }
 criterion = { workspace = true, features = ["html_reports"] }
 predicates = { workspace = true }
 syn = { workspace = true }
+tempfile = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
 
 [[bench]]
@@ -80,18 +87,12 @@ name = "console_frame"
 harness = false
 
 [features]
-# `otlp` is default so installed binaries can export runs to a local OTLP
-# backend (e.g. Parallax) without a rebuild. Runtime-gated: with no standard
-# OTLP endpoint env set, the export layer is never installed and runs behave
-# exactly as before.
-# Opt out: cargo build --no-default-features.
-default = ["otlp"]
+# OTLP is a baseline dependency and remains runtime-gated by standard OTEL
+# environment variables.
+default = []
 # `e2e` compiles real-Docker smoke tests. The default nextest profile excludes
 # them; run the `docker-e2e` nextest profile on a prepared Docker host.
 e2e = []
-# `otlp` enables the OpenTelemetry OTLP span, log, and metric export layer in
-# jackin-diagnostics (runtime-gated on the endpoint env vars above).
-otlp = ["jackin-diagnostics/otlp"]
 # Enables `crate::operator_env::test_support::*` (the shared FakeOpWriter
 # fake used by rotate-cleanup tests). Mirrors the test-support features
 # in jackin-config and jackin-env.

@@ -19,16 +19,11 @@ path = "src/lib.rs"
 
 [dependencies]
 anyhow = { workspace = true }
-base64 = { workspace = true }
-crossterm = { workspace = true }
 directories = { workspace = true }
 hex = { workspace = true }
-owo-colors = { workspace = true, features = ["supports-colors"] }
-ratatui = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 sha2 = { workspace = true }
 thiserror = { workspace = true }
-termrock = { workspace = true, features = ["crossterm"] }
 
 [dev-dependencies]
 serde_json = { workspace = true }

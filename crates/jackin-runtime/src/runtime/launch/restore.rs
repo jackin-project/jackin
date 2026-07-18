@@ -6,7 +6,6 @@ use crate::instance::{InstanceIndex, InstanceManifest, InstanceQuery, InstanceSt
 use crate::runtime::attach::ContainerState;
 use jackin_core::JackinPaths;
 use jackin_docker::docker_client::DockerApi;
-use std::path::PathBuf;
 
 #[cfg(test)]
 mod tests;
@@ -328,9 +327,7 @@ pub(in crate::runtime) fn record_instance_attach_outcome(
     let state_dir = paths.data_dir.join(container_name);
     // Missing manifest is a legitimate no-op; corrupt manifest is
     // logged so the attach-outcome record is not silently dropped.
-    let Some(mut manifest) =
-        InstanceManifest::read_or_log(&state_dir, "record_instance_attach_outcome")
-    else {
+    let Some(mut manifest) = InstanceManifest::read_optional_lossy(&state_dir) else {
         return Ok(());
     };
     write_instance_attach_outcome(paths, &state_dir, &mut manifest, outcome)
@@ -399,18 +396,6 @@ pub(super) fn manifest_host_workdir_fingerprint(
             || crate::instance::manifest::host_path_fingerprint(&workspace.workdir),
             |mount| crate::instance::manifest::host_path_fingerprint(&mount.src),
         )
-}
-
-/// Host path of the capsule's `multiplexer.log` for a given container.
-///
-/// Layout: `<data_dir>/<container_name>/state/multiplexer.log`, matching
-/// the bind-mount declared in `agent_mounts`.
-pub(super) fn capsule_multiplexer_log_path(paths: &JackinPaths, container_name: &str) -> PathBuf {
-    paths
-        .data_dir
-        .join(container_name)
-        .join("state")
-        .join("multiplexer.log")
 }
 
 fn path_covers_workdir(mount_dst: &str, workdir: &str) -> bool {

@@ -3,9 +3,8 @@
 
 //! `Codex` / `OpenAI` usage snapshot.
 //!
-//! Carved out of `usage.rs` during the completed codebase-health Workstream W5
-//! (file-size ratchet). Items in this module are `pub(crate)` so the
-//! coordinator (`usage.rs`) can re-export them.
+//! Carved out of `usage.rs` for the file-size ratchet. Items in this module
+//! are `pub(crate)` so the coordinator (`usage.rs`) can re-export them.
 
 use super::*;
 use serde::Deserialize;
@@ -128,9 +127,7 @@ pub(crate) fn codex_snapshot(
     let (oauth_quota, oauth_error) = split_fetch(credentials.as_ref().map(|credentials| {
         fetch_codex_oauth_usage_refreshing(credentials, &codex_home).map(|mut usage| {
             usage.reset_credits = fetch_codex_oauth_reset_credits(credentials, &codex_home)
-                .inspect_err(|error| {
-                    crate::cdebug!("codex reset-credits fetch failed: {error}");
-                })
+                .record_telemetry_error(jackin_telemetry::schema::enums::ErrorType::HttpError)
                 .ok();
             usage
         })
@@ -718,6 +715,7 @@ pub(crate) fn fetch_codex_rpc_usage(
     gate: &mut ManagedCliLaunchGate,
 ) -> Result<CodexRpcUsage, String> {
     gate.can_launch("Codex app-server", Instant::now())?;
+    let process = crate::process_telemetry::ChildOperation::begin("codex");
     let mut child = match Command::new("codex")
         .args(["-s", "read-only", "-a", "untrusted", "app-server"])
         .stdin(Stdio::piped())
@@ -727,22 +725,23 @@ pub(crate) fn fetch_codex_rpc_usage(
     {
         Ok(child) => child,
         Err(err) => {
+            process.spawn_failed();
             let message = format!("codex app-server failed to start: {err}");
             gate.record_launch_failure(message.clone());
             return Err(message);
         }
     };
 
-    let mut stdin = child
-        .stdin
-        .take()
-        .ok_or_else(|| "codex app-server stdin unavailable".to_owned())?;
-    let stdout = child
-        .stdout
-        .take()
-        .ok_or_else(|| "codex app-server stdout unavailable".to_owned())?;
+    let Some(mut stdin) = child.stdin.take() else {
+        process.fail_managed_io(&mut child);
+        return Err("codex app-server stdin unavailable".to_owned());
+    };
+    let Some(stdout) = child.stdout.take() else {
+        process.fail_managed_io(&mut child);
+        return Err("codex app-server stdout unavailable".to_owned());
+    };
     let (tx, rx) = mpsc::channel();
-    let reader = thread::spawn(move || {
+    let reader = jackin_telemetry::spawn::thread_stream("codex.stdout", move || {
         for line in BufReader::new(stdout).lines().map_while(Result::ok) {
             if tx.send(line).is_err() {
                 break;
@@ -773,11 +772,8 @@ pub(crate) fn fetch_codex_rpc_usage(
             serde_json::json!({}),
             CODEX_RPC_REQUEST_TIMEOUT,
         )?;
-        // The account label is non-essential (rate limits already succeeded), so
-        // an RPC failure here degrades to no label rather than failing the whole
-        // snapshot. Logged at the firehose tier (visible at telemetry debug): an
-        // absent account is usually a legitimate plan shape, not a fault, so this
-        // does not warrant always-on `clog!` noise on every refresh.
+        // The account label is non-essential, so a typed RPC failure degrades to
+        // no label rather than failing rate-limit collection.
         let account_value = codex_rpc_request(
             &mut stdin,
             &rx,
@@ -786,15 +782,6 @@ pub(crate) fn fetch_codex_rpc_usage(
             serde_json::json!({}),
             CODEX_RPC_REQUEST_TIMEOUT,
         )
-        .inspect_err(|error| {
-            crate::cdebug!("codex account/read RPC failed: {error}");
-            jackin_diagnostics::operation_error(
-                "usage.refresh",
-                "usage_rpc_failed",
-                "codex account/read RPC failed",
-                &[],
-            );
-        })
         .ok();
         let limits = serde_json::from_value::<CodexRpcRateLimitsResponse>(limits_value)
             .map_err(|err| format!("Codex app-server rate limit decode failed: {err}"))?;
@@ -806,9 +793,9 @@ pub(crate) fn fetch_codex_rpc_usage(
     })();
 
     drop(stdin);
-    drop(child.kill());
-    drop(child.wait());
-    drop(reader.join());
+    let reaped = crate::process_telemetry::ChildOperation::reap_managed(&mut child);
+    let reader_joined = reader.join().is_ok();
+    process.finish_managed(reaped && reader_joined);
 
     if result.is_ok() {
         gate.record_success();
@@ -826,59 +813,76 @@ pub(crate) fn codex_rpc_request(
     params: serde_json::Value,
     timeout: Duration,
 ) -> Result<serde_json::Value, String> {
-    let payload = serde_json::json!({
-        "id": id,
-        "method": method,
-        "params": params,
-    });
-    write_json_line(
-        stdin,
-        &payload,
-        "Codex app-server request encode failed",
-        "Codex app-server request write failed",
-    )?;
-
+    let operation = crate::process_telemetry::external_rpc_operation(
+        jackin_telemetry::schema::enums::RpcSystemName::CodexAppServer,
+        method,
+    );
     let started = Instant::now();
-    loop {
-        let remaining = timeout
-            .checked_sub(started.elapsed())
-            .unwrap_or_else(|| Duration::from_secs(0));
-        if remaining.is_zero() {
-            return Err(format!("Codex app-server timed out waiting for {method}"));
+    let result = (|| {
+        let payload = serde_json::json!({
+            "id": id,
+            "method": method,
+            "params": params,
+        });
+        write_json_line(
+            stdin,
+            &payload,
+            "Codex app-server request encode failed",
+            "Codex app-server request write failed",
+        )?;
+        loop {
+            let remaining = timeout
+                .checked_sub(started.elapsed())
+                .unwrap_or_else(|| Duration::from_secs(0));
+            if remaining.is_zero() {
+                return Err(format!("Codex app-server timed out waiting for {method}"));
+            }
+            let line = rx
+                .recv_timeout(remaining)
+                .map_err(|_| format!("Codex app-server timed out waiting for {method}"))?;
+            let value: serde_json::Value = serde_json::from_str(&line)
+                .map_err(|err| format!("Codex app-server response decode failed: {err}"))?;
+            if value.get("id").and_then(serde_json::Value::as_i64) != Some(id) {
+                continue;
+            }
+            if let Some(error) = value.get("error") {
+                let message = error
+                    .get("message")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or("unknown error");
+                return Err(format!("Codex app-server {method} failed: {message}"));
+            }
+            return value
+                .get("result")
+                .cloned()
+                .ok_or_else(|| format!("Codex app-server {method} response missing result"));
         }
-        let line = rx
-            .recv_timeout(remaining)
-            .map_err(|_| format!("Codex app-server timed out waiting for {method}"))?;
-        let value: serde_json::Value = serde_json::from_str(&line)
-            .map_err(|err| format!("Codex app-server response decode failed: {err}"))?;
-        if value.get("id").and_then(serde_json::Value::as_i64) != Some(id) {
-            continue;
-        }
-        if let Some(error) = value.get("error") {
-            let message = error
-                .get("message")
-                .and_then(serde_json::Value::as_str)
-                .unwrap_or("unknown error");
-            return Err(format!("Codex app-server {method} failed: {message}"));
-        }
-        return value
-            .get("result")
-            .cloned()
-            .ok_or_else(|| format!("Codex app-server {method} response missing result"));
-    }
+    })();
+    crate::process_telemetry::complete_external_rpc(
+        operation,
+        &result,
+        started.elapsed() >= timeout,
+    );
+    result
 }
 
 pub(crate) fn codex_rpc_notification(stdin: &mut impl Write, method: &str) -> Result<(), String> {
+    let operation = crate::process_telemetry::external_rpc_operation(
+        jackin_telemetry::schema::enums::RpcSystemName::CodexAppServer,
+        method,
+    );
     let payload = serde_json::json!({
         "method": method,
         "params": {},
     });
-    write_json_line(
+    let result = write_json_line(
         stdin,
         &payload,
         "Codex app-server notification encode failed",
         "Codex app-server notification write failed",
-    )
+    );
+    crate::process_telemetry::complete_external_rpc(operation, &result, false);
+    result
 }
 
 pub(crate) fn fetch_codex_oauth_usage(
@@ -893,6 +897,8 @@ pub(crate) fn fetch_codex_oauth_usage(
         ));
     }
     get_json_bearer(
+        jackin_telemetry::schema::enums::ProviderName::Openai,
+        "/backend-api/wham/usage",
         "Codex OAuth usage",
         &resolve_codex_usage_url(codex_home),
         &credentials.access_token,
@@ -922,29 +928,36 @@ pub(crate) fn codex_access_token_from_response(value: &serde_json::Value) -> Opt
 }
 
 pub(crate) fn refresh_codex_access_token(refresh_token: &str) -> Result<String, String> {
-    let client = provider_http_client()?;
-    let response = client
-        .post(CODEX_OAUTH_TOKEN_URL)
-        .header(reqwest::header::CONTENT_TYPE, "application/json")
-        .header(reqwest::header::ACCEPT, "application/json")
-        .json(&codex_refresh_request_body(refresh_token))
-        .send()
-        .map_err(|err| format!("Codex token refresh request failed: {err}"))?;
-    let status = response.status();
-    if !status.is_success() {
-        return Err(format!("Codex token refresh HTTP {status}"));
-    }
-    let value: serde_json::Value = response
-        .json()
-        .map_err(|err| format!("Codex token refresh decode failed: {err}"))?;
-    codex_access_token_from_response(&value)
-        .ok_or_else(|| "Codex token refresh response missing access_token".to_owned())
+    provider_request(
+        jackin_telemetry::schema::enums::ProviderName::Openai,
+        "POST",
+        "/oauth/token",
+        || {
+            let client = provider_http_client()?;
+            let response = client
+                .post(CODEX_OAUTH_TOKEN_URL)
+                .header(reqwest::header::CONTENT_TYPE, "application/json")
+                .header(reqwest::header::ACCEPT, "application/json")
+                .json(&codex_refresh_request_body(refresh_token))
+                .send()
+                .map_err(|err| format!("Codex token refresh request failed: {err}"))?;
+            let status = response.status();
+            if !status.is_success() {
+                return Err(format!("Codex token refresh HTTP {status}"));
+            }
+            let value: serde_json::Value = response
+                .json()
+                .map_err(|err| format!("Codex token refresh decode failed: {err}"))?;
+            codex_access_token_from_response(&value)
+                .ok_or_else(|| "Codex token refresh response missing access_token".to_owned())
+        },
+    )
 }
 
 /// Fetch Codex usage, transparently re-minting the access token once if the
 /// on-disk token is rejected (HTTP 401/403).
 ///
-/// Root cause this addresses: jackin' reads `auth.json` as-is, while the Codex
+/// Root cause this addresses: jackin❯ reads `auth.json` as-is, while the Codex
 /// CLI refreshes that token only on its own launch — so a token that expired
 /// since the last CLI run would 401 here indefinitely. The refresh is used only
 /// for this read-only fetch and deliberately NOT written back to `auth.json`
@@ -994,6 +1007,8 @@ pub(crate) fn fetch_codex_oauth_reset_credits(
         ));
     }
     let credits: CodexResetCredits = get_json_bearer(
+        jackin_telemetry::schema::enums::ProviderName::Openai,
+        "/backend-api/wham/usage/reset_credits",
         "Codex reset credits",
         &resolve_codex_reset_credits_url(codex_home),
         &credentials.access_token,
@@ -1025,18 +1040,10 @@ pub(crate) fn resolve_codex_reset_credits_url(codex_home: &Path) -> String {
 pub(crate) fn resolve_codex_base_url(codex_home: &Path) -> String {
     let config_path = codex_home.join("config.toml");
     let contents = match fs::read_to_string(&config_path) {
-        Ok(contents) => Some(contents),
-        Err(error) => {
-            // A config.toml that exists but is unreadable silently drops the
-            // operator's custom base-URL override back to the public default.
-            if error.kind() != std::io::ErrorKind::NotFound {
-                crate::clog!(
-                    "codex config.toml read failed for {}: {error}",
-                    config_path.display()
-                );
-            }
-            None
-        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+        result => result
+            .record_telemetry_error(jackin_telemetry::schema::enums::ErrorType::IoError)
+            .ok(),
     };
     let base = contents
         .and_then(|contents| parse_chatgpt_base_url(&contents))

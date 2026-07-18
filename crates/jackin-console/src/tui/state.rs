@@ -6,7 +6,7 @@
 //! `ManagerState` is the single central struct that the host console TUI
 //! owns across its entire lifetime. All field types are lower-crate types
 //! (from `jackin-core`, `jackin-config`, `jackin-env`, `jackin-protocol`,
-//! `jackin-tui`, and this crate) so the root binary can depend on this
+//! `TermRock`, and this crate) so the root binary can depend on this
 //! module without creating a circular dependency.
 
 use std::cell::RefCell;
@@ -20,7 +20,7 @@ use crate::tui::runtime::BlockingSubscription;
 use jackin_config::{AppConfig, MountConfig, WorkspaceConfig};
 use jackin_core::EnvValue;
 use jackin_env::OpCache;
-use termrock::interaction::FocusOwner;
+use jackin_tui::runtime::SurfaceFocus;
 
 use crate::tui::auth::AuthKind;
 use crate::tui::components::confirm_save::ConfirmSaveState;
@@ -268,7 +268,7 @@ pub struct ManagerState<'a> {
     pub list_role_global_mounts_scroll_y: u16,
     pub list_roles_scroll_x: u16,
     pub list_roles_scroll_y: u16,
-    pub list_focus_owner: FocusOwner<MountScrollFocus>,
+    pub list_focus_owner: SurfaceFocus<MountScrollFocus>,
     pub list_names_scroll_x: u16,
     pub list_names_scroll_y: u16,
     pub list_split_pct: u16,
@@ -415,7 +415,7 @@ pub fn open_role_trust_confirm(
 
 /// Open an editor action error popup with the given error.
 pub fn open_editor_action_error(editor: &mut EditorState<'_>, err: &dyn std::fmt::Display) {
-    jackin_diagnostics::debug_log!("editor", "failed to apply confirmed editor action: {err}");
+    record_console_error(jackin_telemetry::schema::enums::ErrorType::ConfigError);
     editor.open_error_popup(
         crate::tui::components::error_popup::editor_action_error_popup_state(err),
     );
@@ -423,11 +423,18 @@ pub fn open_editor_action_error(editor: &mut EditorState<'_>, err: &dyn std::fmt
 
 /// Open a role-input error popup with the given message.
 pub fn open_role_input_error(editor: &mut EditorState<'_>, message: &str) {
-    jackin_diagnostics::debug_log!("role", "showing direct role-load error popup: {message}");
+    record_console_error(jackin_telemetry::schema::enums::ErrorType::ConfigError);
     editor.open_error_popup(
         crate::tui::components::error_popup::role_load_error_popup_state(message),
     );
 }
+
+pub(crate) fn record_console_error(error_type: jackin_telemetry::schema::enums::ErrorType) {
+    let _recorded = jackin_telemetry::record_error(error_type);
+}
+
+#[cfg(test)]
+mod tests;
 
 mod manager;
 pub mod update;

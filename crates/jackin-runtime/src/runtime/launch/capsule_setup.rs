@@ -7,6 +7,24 @@ use std::path::Path;
 
 use jackin_protocol;
 
+pub(crate) fn capsule_auth_modes(
+    config: &jackin_config::AppConfig,
+    workspace_name: Option<&jackin_core::WorkspaceName>,
+    role_key: &str,
+    manifest: &jackin_manifest::RoleManifest,
+) -> std::collections::BTreeMap<String, String> {
+    manifest
+        .supported_agents()
+        .into_iter()
+        .map(|agent| {
+            (
+                agent.slug().to_owned(),
+                jackin_config::resolve_mode(config, agent, workspace_name, role_key).to_string(),
+            )
+        })
+        .collect()
+}
+
 /// Comma-join the on-demand credential binding names for the
 /// `JACKIN_EXEC_BINDINGS` env var. Shared by the Docker and apple-container
 /// launch paths so the two cannot format the list differently.
@@ -50,6 +68,7 @@ pub(crate) fn capsule_config(
         workdir: workdir.to_owned(),
         agents,
         models,
+        auth_modes: std::collections::BTreeMap::new(),
         provider_models,
         initial_provider,
         claude_marketplaces: Vec::new(),

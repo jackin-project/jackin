@@ -665,7 +665,7 @@ OrbStack isolated machines are excluded from this comparison — they share OrbS
 
 ## Telemetry Surface
 
-Backend operations should emit `debug_log!("smolvm", …)` (the existing macro in <RepoFile path="crates/jackin/src/console/tui.rs">crates/jackin/src/console/tui.rs</RepoFile>). Minimum required lines:
+Backend operations should emit `debug_log!("smolvm", …)` (the existing macro in <RepoFile path="crates/jackin/src/console/adapter.rs">crates/jackin/src/console/adapter.rs</RepoFile>). Minimum required lines:
 
 - `smolvm version=<smolvm --version> libkrun=<v> libkrunfw=<v>`
 - `entitlement_present hypervisor=<yes|no>` (macOS)

@@ -3,36 +3,34 @@ title: "Visual Design"
 description: "PHOSPHOR color palette, border color semantics, left sidebar conventions, and tab bar specifications."
 ---
 
-## PHOSPHOR Color Palette
+## TermRock theme and product palette
 
 Reusable component styling flows through TermRock's semantic `Theme` and `Role`
-API ([TermRock source](https://github.com/tailrocks/termrock)). jackin❯-specific
-brand, rain, debug, and status tokens live once in `jackin-core`'s
-`host_colors.rs`; its `tui_theme.rs` module adapts them to Ratatui colors for
-every jackin❯ surface. Never define a second surface-local palette.
+API ([TermRock source](https://github.com/tailrocks/termrock)). jackin❯ surfaces
+resolve neutral presentation with `Theme::default().style(Role::…)` so ordinary,
+strong, muted, border, focus, danger, warning, tab, input, link, and scroll
+colors stay on TermRock's default phosphor preset. Product-owned brand/domain
+colors (brand pill, menu chips, status accents) live in `jackin_tui::tokens`.
 
-**All colors come from semantic TermRock roles or named jackin❯ tokens; no
-inline `Color::Rgb(...)` literals outside `tui_theme.rs`.** Reusable component
-semantics belong in TermRock. Product-specific colors belong in
-`jackin-core/src/host_colors.rs` and receive their Ratatui adapter in
-`jackin-core/src/tui_theme.rs`.
+Product-owned tokens only — brand pill, launch rain, debug amber, blocked status,
+menu button states, action/disclosure accents, and light-bar `LINK_BLUE` — live
+as renderer-neutral RGB values in `jackin-brand` and are adapted for Ratatui by
+`jackin_tui::tokens`. Never
+define a second surface-local palette, and never import raw shared phosphor or
+neutral RGB constants for generic TUI painting.
 
-| Constant | Value | Usage |
+| Source | Examples | Usage |
 |---|---|---|
-| `PHOSPHOR_GREEN` | `Rgb(0, 255, 65)` | Active/focused elements, selected text |
-| `PHOSPHOR_DIM` | `Rgb(0, 140, 30)` | Inactive text, scrollbar thumbs |
-| `PHOSPHOR_DARK` | `Rgb(0, 80, 18)` | Separators and dark phosphor details |
-| `BORDER_GRAY` | `Rgb(80, 80, 80)` | Inactive and background container borders |
-| `WHITE` | `Rgb(255, 255, 255)` | Labels, keys, headings |
-| `WARNING_YELLOW` | `Rgb(255, 216, 94)` | Warning notes in confirmation dialogs |
-| `PREVIEW_CARD` | `Rgb(28, 28, 28)` | Lookbook preview canvas background |
-| `CAPSULE_PANE_FOCUSED` | `Rgb(180, 180, 180)` | Capsule pane focused border |
+| TermRock `Role` | `Text`, `TextStrong`, `TextMuted`, `Border`, `BorderFocused`, `Accent`, `Danger`, `Warning`, `Tab*`, `Link*`, `Scroll*` | Shared presentation via `Theme::default().style(role)` |
+| Product tokens | `BRAND_BLOCK`, `DEBUG_AMBER`, `STATUS_BLOCKED_RED`, `MENU_*`, `ACTION_ACCENT`, `DISCLOSURE_ACCENT`, `LINK_BLUE`, rain RGB | Brand chrome and domain/agent states only |
+| TermRock escape hatch | `termrock::style::PHOSPHOR_GREEN`, `PREVIEW_CARD` | When the documented preset color itself is required (rare) |
 
-Every lookbook story preview card and lookbook background must use the `PREVIEW_CARD` token, never an inline `Color::Rgb(28, 28, 28)` literal. The general rule (no inline `Color::Rgb(...)` outside `theme.rs`) already covers this, but `PREVIEW_CARD` is the token to reach for whenever a dark card background is needed.
+**No inline product `Color::Rgb(...)` literals outside `jackin_tui::tokens`.**
+Lookbook preview cards use TermRock's `PREVIEW_CARD` token.
 
 ### Background fills use the terminal default, never forced black
 
-**Modal backdrops and dialog surfaces paint the terminal's *default* background, not a fixed black.** The Ratatui tokens `theme::DIALOG_BACKDROP` and `theme::DIALOG_SURFACE` are `Color::Reset`; the raw-ANSI token `ansi::BG_DARK` is `\x1b[49m` (the default-background SGR). A dialog backdrop or surface must never set `Color::Black`, `Color::Rgb(0, 0, 0)`, or a `48;2;0;0;0m` fill. Forcing pure black makes overlays stand out as a dark rectangle against a themed (non-black) terminal background; emitting the default background lets every overlay match the operator's terminal theme. Occlusion still holds — a `Color::Reset` cell with a space overwrites the chrome behind it, just on the operator's background instead of black. This applies to every surface (console, launch cockpit, capsule) because all three consume the same shared tokens. Black as a **foreground** (e.g. black text on a light status chip) is unaffected by this rule; it governs background fills only.
+**Modal backdrops and dialog surfaces paint the terminal's *default* background, not a fixed black.** The Ratatui tokens `tui_theme::DIALOG_BACKDROP` and `tui_theme::DIALOG_SURFACE` are `Color::Reset`; the raw-ANSI token `ansi::BG_DARK` is `\x1b[49m` (the default-background SGR). A dialog backdrop or surface must never set `Color::Black`, `Color::Rgb(0, 0, 0)`, or a `48;2;0;0;0m` fill. Forcing pure black makes overlays stand out as a dark rectangle against a themed (non-black) terminal background; emitting the default background lets every overlay match the operator's terminal theme. Occlusion still holds — a `Color::Reset` cell with a space overwrites the chrome behind it, just on the operator's background instead of black. This applies to every surface (console, launch cockpit, capsule) because all three consume the same shared tokens. Black as a **foreground** (e.g. black text on a light status chip) is unaffected by this rule; it governs background fills only.
 
 ## Panel Title Spacing
 
@@ -46,7 +44,7 @@ A title passed as `"  Title  "` (extra spaces) or `"Title"` (no spaces) is a des
 
 Panel body content must be inset from the border by exactly 1 cell horizontally. Use TermRock `Panel::inner` and the canonical content padding rather than rendering directly against the border. The inset prevents text from touching the left and right border characters and is a visual requirement across all titled panels.
 
-`render_scrollable_block` applies this inset automatically. Direct callers that render text content into a titled panel via the ratatui `Block` API must call `panel_body_area` to obtain the inset rect and render into that, not into the raw `inner` rect.
+TermRock `Viewport` and `Panel` apply this inset through their chrome. Direct callers that render text content into a titled panel must paint into `Panel::inner(area)` (or the inner rect returned by `render_dialog_shell`), not into the raw outer rect.
 
 ---
 
@@ -63,9 +61,9 @@ Every row that begins with `+` is an add/create action and must render through t
 
 ## Block Border Colors
 
-- **Active interaction container**: `PHOSPHOR_GREEN` border — dialogs, pickers, forms, tab panels, and the currently active list/sidebar use the bright border whenever they own keyboard or scroll interaction.
-- **Passive scroll block, focused and scrollable**: `PHOSPHOR_GREEN` border — both `focused = true` and content overflows in at least one axis.
-- **Passive scroll block, focused but not scrollable**: `BORDER_GRAY` border — `focused = true` is ignored when content fits; no false scroll affordance.
+- **Active interaction container**: `PHOSPHOR_GREEN` border — dialogs, pickers, forms, tab panels, and the currently active list/sidebar use the bright border whenever they own keyboard or scroll interaction. The paint path maps `focused = true` → `PanelEmphasis::Focused` with no overflow gate.
+- **Passive list-detail scroll block that still owns focus**: `PHOSPHOR_GREEN` border — state keeps `focused = true` only while content overflows (see focusability / `focused_block_still_scrollable`). The renderer does not second-guess `focused`.
+- **Passive list-detail block after content fits**: `BORDER_GRAY` border — callers clear focus in pre-render state so `focused` is already false; there is no false scroll affordance.
 - **Unfocused / background container**: `BORDER_GRAY` border regardless of scrollability.
 
 Every container uses plain single-line glyphs (`┌─┐`, `│ │`, `└─┘`). Border
@@ -75,7 +73,7 @@ containers use `Role::Border` (neutral gray). Double-line, heavy, or mixed
 panel borders are a design violation. Scrollbar thumbs may occupy edge cells
 without changing the surrounding panel's border contract.
 
-`render_scrollable_block` enforces the passive-scroll logic internally. Callers only supply `focused: bool` from state; the renderer decides whether to use green. Active interaction containers that are not passive scroll blocks must use the same token rule directly or through their shared component: bright border for the active container, dark border for inactive/background containers.
+TermRock `Viewport` paints border emphasis from `PanelEmphasis`. Console scrollable panels go through `scroll_block::render_scrollable_block_at`, which maps the caller's `focused` flag to `PanelEmphasis::Focused` / `Normal`. Passive list-detail surfaces clear focus state when content no longer overflows so a non-scrollable detail block does not keep a false green affordance. Active interaction containers (forms, dialogs, pickers) keep the bright border whenever they own interaction.
 
 ---
 
@@ -150,7 +148,7 @@ The capsule's ANSI renderer uses two flavors of the color-encoding helpers in [T
 
 ## Copyable values — link style, hover, click-to-copy
 
-Any value the operator can click to copy (a file path, run id, container id, URL) must read as a link and behave identically on every surface, following the W3C native-link convention:
+Any value the operator can click to copy (an invocation ID, container ID, file path, or URL) must read as a link and behave identically on every surface, following the W3C native-link convention:
 
 - **Colour:** `LINK_FG` (cyan) on a dark dialog surface — never blue, never the same as plain or emphasised text. `LINK_BLUE` is reserved for clickable text on the *white* status bar, where cyan lacks contrast; do not use it on dark dialog surfaces.
 - **Underline:** always underlined, with or without an OSC 8 hyperlink. Underline is the resting affordance that marks the value as a link; underlining only the hyperlinked rows is a violation.

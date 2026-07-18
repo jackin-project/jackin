@@ -21,8 +21,36 @@ use std::path::Path;
 use std::time::{Instant, SystemTime};
 
 use jackin_core::Agent;
+use jackin_telemetry::{Attr, ResultTelemetryExt as _, Value, histogram, metric, schema};
 
 use jackin_protocol::control::TokenUsageSummary;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum PollStatus {
+    Changed,
+    Unchanged,
+    Degraded,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ProviderReadDegraded;
+
+impl PollStatus {
+    const fn from_changed(changed: bool) -> Self {
+        if changed {
+            Self::Changed
+        } else {
+            Self::Unchanged
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct PollReport {
+    pub attempted: usize,
+    pub changed: usize,
+    pub degraded: usize,
+}
 
 /// Aggregated token totals for one session.
 #[derive(Debug, Clone, Default)]
@@ -133,9 +161,10 @@ impl TokenSession {
         self.last_polled.elapsed().as_secs() >= self.poll_interval_secs()
     }
 
-    /// Poll for new token data. Returns `true` when totals changed.
-    pub async fn poll(&mut self) -> bool {
+    /// Poll for new token data while preserving adapter degradation.
+    pub(crate) async fn poll(&mut self) -> PollStatus {
         self.last_polled = Instant::now();
+        let previous = self.totals.clone();
         let changed = match self.agent {
             Agent::Claude => claude::poll_session(self),
             Agent::Codex => codex::poll_session(self),
@@ -144,9 +173,9 @@ impl TokenSession {
             Agent::Opencode => opencode::poll_session(self).await,
             Agent::Amp => amp::poll_session(self),
             // No token-spend reader for Grok yet.
-            Agent::Grok => false,
+            Agent::Grok => PollStatus::Unchanged,
         };
-        if changed {
+        if changed == PollStatus::Changed {
             self.silent_polls = 0;
             // Fill cost from the static pricing table when the provider's own
             // stream did not carry a precomputed cost. Key on the wire model when
@@ -162,10 +191,76 @@ impl TokenSession {
                     self.totals.cache_write_tokens,
                 );
             }
-        } else {
+            record_token_usage(self.agent, &previous, &self.totals);
+        } else if changed == PollStatus::Unchanged {
             self.silent_polls = self.silent_polls.saturating_add(1);
         }
         changed
+    }
+}
+
+fn record_token_usage(agent: Agent, previous: &TokenTotals, current: &TokenTotals) {
+    let Some(provider) = provider_name(agent) else {
+        return;
+    };
+    let (input, output) = token_usage_delta(agent, previous, current);
+    record_token_type(provider, schema::enums::GenAiTokenType::Input, input);
+    record_token_type(provider, schema::enums::GenAiTokenType::Output, output);
+}
+
+fn token_usage_delta(agent: Agent, previous: &TokenTotals, current: &TokenTotals) -> (u64, u64) {
+    let uncached_input = current.input_tokens.saturating_sub(previous.input_tokens);
+    let separate_cached_input = match agent {
+        Agent::Claude | Agent::Amp | Agent::Kimi => current
+            .cache_read_tokens
+            .saturating_sub(previous.cache_read_tokens)
+            .saturating_add(
+                current
+                    .cache_write_tokens
+                    .saturating_sub(previous.cache_write_tokens),
+            ),
+        Agent::Codex | Agent::Opencode | Agent::Grok => 0,
+    };
+    let input = uncached_input.saturating_add(separate_cached_input);
+    let output = current.output_tokens.saturating_sub(previous.output_tokens);
+    (input, output)
+}
+
+fn record_token_type(
+    provider: schema::enums::GenAiProviderName,
+    token_type: schema::enums::GenAiTokenType,
+    tokens: u64,
+) {
+    if tokens == 0 {
+        return;
+    }
+    let attrs = [
+        Attr {
+            key: schema::attrs::GEN_AI_PROVIDER_NAME,
+            value: Value::Str(provider.as_str()),
+        },
+        Attr {
+            key: schema::attrs::GEN_AI_OPERATION_NAME,
+            value: Value::Str(schema::enums::GenAiOperationName::Chat.as_str()),
+        },
+        Attr {
+            key: schema::attrs::GEN_AI_TOKEN_TYPE,
+            value: Value::Str(token_type.as_str()),
+        },
+    ];
+    let _metric_result =
+        histogram(&metric::GEN_AI_CLIENT_TOKEN_USAGE).record(tokens as f64, &attrs);
+}
+
+const fn provider_name(agent: Agent) -> Option<schema::enums::GenAiProviderName> {
+    use schema::enums::GenAiProviderName;
+    match agent {
+        Agent::Claude => Some(GenAiProviderName::Anthropic),
+        Agent::Codex => Some(GenAiProviderName::Openai),
+        Agent::Amp => Some(GenAiProviderName::Amp),
+        Agent::Kimi => Some(GenAiProviderName::Kimi),
+        Agent::Grok => Some(GenAiProviderName::Xai),
+        Agent::Opencode => None,
     }
 }
 
@@ -189,19 +284,31 @@ pub fn find_provider_files(
     base_dirs: &[&str],
     ext: &str,
     max_depth: usize,
-) -> Vec<std::path::PathBuf> {
+) -> Result<Vec<std::path::PathBuf>, ProviderReadDegraded> {
     let mut paths = Vec::new();
     let mut stack: Vec<(std::path::PathBuf, usize)> = base_dirs
         .iter()
         .map(|b| (Path::new(b).to_owned(), 0))
         .collect();
     while let Some((dir, depth)) = stack.pop() {
-        let Ok(entries) = std::fs::read_dir(&dir) else {
-            continue;
+        let entries = match std::fs::read_dir(&dir) {
+            Ok(entries) => entries,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(_) => {
+                let _error = jackin_telemetry::record_error(schema::enums::ErrorType::IoError);
+                return Err(ProviderReadDegraded);
+            }
         };
-        for entry in entries.flatten() {
+        for entry in entries {
+            let entry = entry
+                .record_telemetry_error(schema::enums::ErrorType::IoError)
+                .map_err(|_| ProviderReadDegraded)?;
             let p = entry.path();
-            if p.is_dir() {
+            let file_type = entry
+                .file_type()
+                .record_telemetry_error(schema::enums::ErrorType::IoError)
+                .map_err(|_| ProviderReadDegraded)?;
+            if file_type.is_dir() {
                 if depth < max_depth {
                     stack.push((p, depth + 1));
                 }
@@ -210,7 +317,7 @@ pub fn find_provider_files(
             }
         }
     }
-    paths
+    Ok(paths)
 }
 
 /// Read a file in full for a recompute pass. Token logs are re-read whole each
@@ -234,28 +341,22 @@ pub fn read_file_text(path: &Path) -> std::io::Result<Option<String>> {
 /// each file's text into a `SpendAcc` via `fold`. This is the outer shape every
 /// adapter shares; only `fold` (the per-file parse) differs.
 ///
-/// Returns `None` — meaning "do not change the session totals" — in both the
-/// no-file-contributed case and on a real read failure (which is logged with
-/// `label` + path). Both collapse to the same caller action: keep the prior
-/// totals rather than SET a partial recompute that could regress a monotonic
-/// counter. `Some(acc)` is a complete pass the caller commits.
+/// An empty successful pass returns `Ok(None)`. A real read failure returns
+/// `Err(ProviderReadDegraded)`, allowing the caller to preserve prior totals
+/// while reporting the degraded provider probe.
 pub fn recompute_spend(
     files: &[std::path::PathBuf],
-    label: &str,
     mut fold: impl FnMut(&str, &mut SpendAcc),
-) -> Option<SpendAcc> {
+) -> Result<Option<SpendAcc>, ProviderReadDegraded> {
     let mut acc = SpendAcc::default();
     for path in files {
-        match read_file_text(path) {
+        match read_file_text(path).record_telemetry_error(schema::enums::ErrorType::IoError) {
             Ok(Some(text)) => fold(&text, &mut acc),
             Ok(None) => {}
-            Err(e) => {
-                crate::cdebug!("token monitor: {label} read {path:?} failed: {e}");
-                return None;
-            }
+            Err(_) => return Err(ProviderReadDegraded),
         }
     }
-    acc.seen.then_some(acc)
+    Ok(acc.seen.then_some(acc))
 }
 
 /// The token monitor manages per-session polling.
@@ -302,23 +403,36 @@ impl TokenMonitor {
         }
     }
 
-    /// Poll all sessions that are due. Returns session IDs whose totals changed.
-    pub async fn poll_due_sessions(&mut self) -> Vec<u64> {
+    /// Count work due under the same back-off predicate used by polling.
+    pub fn due_session_count(&self) -> usize {
+        self.sessions
+            .values()
+            .filter(|session| session.poll_due())
+            .count()
+    }
+
+    /// Poll all due sessions and retain whether any adapter degraded.
+    pub async fn poll_due_sessions(&mut self) -> PollReport {
         let due: Vec<u64> = self
             .sessions
             .iter()
             .filter(|(_, session)| session.poll_due())
             .map(|(id, _)| *id)
             .collect();
-        let mut changed = Vec::new();
+        let mut report = PollReport {
+            attempted: due.len(),
+            ..PollReport::default()
+        };
         for id in due {
-            if let Some(session) = self.sessions.get_mut(&id)
-                && session.poll().await
-            {
-                changed.push(id);
+            if let Some(session) = self.sessions.get_mut(&id) {
+                match session.poll().await {
+                    PollStatus::Changed => report.changed += 1,
+                    PollStatus::Degraded => report.degraded += 1,
+                    PollStatus::Unchanged => {}
+                }
             }
         }
-        changed
+        report
     }
 
     /// Get current totals for a session.

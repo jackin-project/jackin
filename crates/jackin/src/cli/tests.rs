@@ -4,6 +4,170 @@
 //! Tests for `cli`.
 use super::*;
 
+#[test]
+fn telemetry_command_vocabulary_exactly_matches_live_cli_tree() {
+    use clap::CommandFactory as _;
+    use std::collections::BTreeSet;
+
+    fn collect(command: &clap::Command, prefix: Option<&str>, names: &mut BTreeSet<String>) {
+        for subcommand in command.get_subcommands() {
+            let name = match prefix {
+                Some(prefix) => format!("{prefix}.{}", subcommand.get_name()),
+                None => subcommand.get_name().to_owned(),
+            };
+            names.insert(name.clone());
+            collect(subcommand, Some(&name), names);
+        }
+    }
+
+    let mut live = BTreeSet::new();
+    collect(&Cli::command(), None, &mut live);
+    let governed = jackin_telemetry::schema::enums::CliCommandName::ALL
+        .iter()
+        .map(|name| name.as_str().to_owned())
+        .collect::<BTreeSet<_>>();
+    assert_eq!(governed, live);
+}
+
+#[test]
+fn telemetry_command_mapper_covers_every_nested_leaf() {
+    use jackin_telemetry::schema::enums::CliCommandName as Name;
+
+    let cases: &[(&[&str], Name)] = &[
+        (&["prune", "roles"], Name::PruneRoles),
+        (&["prune", "cache"], Name::PruneCache),
+        (&["prune", "images"], Name::PruneImages),
+        (&["prune", "instances"], Name::PruneInstances),
+        (&["prune", "system"], Name::PruneSystem),
+        (&["role", "validate"], Name::RoleValidate),
+        (&["role", "migrate"], Name::RoleMigrate),
+        (&["role", "create", "sample"], Name::RoleCreate),
+        (&["role", "construct-version"], Name::RoleConstructVersion),
+        (&["role", "published-image"], Name::RolePublishedImage),
+        (
+            &["role", "published-image-repository"],
+            Name::RolePublishedImageRepository,
+        ),
+        (
+            &["role", "publish-labels", "--role-git-sha", "abc"],
+            Name::RolePublishLabels,
+        ),
+        (
+            &[
+                "workspace",
+                "create",
+                "sample",
+                "--workdir",
+                "/w",
+                "--mount",
+                "/w",
+            ],
+            Name::WorkspaceCreate,
+        ),
+        (&["workspace", "list"], Name::WorkspaceList),
+        (&["workspace", "show", "sample"], Name::WorkspaceShow),
+        (&["workspace", "edit", "sample"], Name::WorkspaceEdit),
+        (&["workspace", "prune", "sample"], Name::WorkspacePrune),
+        (&["workspace", "remove", "sample"], Name::WorkspaceRemove),
+        (
+            &["workspace", "env", "set", "sample", "KEY", "value"],
+            Name::WorkspaceEnvSet,
+        ),
+        (
+            &["workspace", "env", "unset", "sample", "KEY"],
+            Name::WorkspaceEnvUnset,
+        ),
+        (
+            &["workspace", "env", "list", "sample"],
+            Name::WorkspaceEnvList,
+        ),
+        (
+            &["workspace", "claude-token", "setup", "sample", "--plain"],
+            Name::WorkspaceClaudeTokenSetup,
+        ),
+        (
+            &["workspace", "claude-token", "rotate", "sample"],
+            Name::WorkspaceClaudeTokenRotate,
+        ),
+        (
+            &["workspace", "claude-token", "revoke", "sample"],
+            Name::WorkspaceClaudeTokenRevoke,
+        ),
+        (
+            &["workspace", "claude-token", "doctor", "sample"],
+            Name::WorkspaceClaudeTokenDoctor,
+        ),
+        (
+            &[
+                "config", "mount", "add", "cache", "--src", "/a", "--dst", "/b",
+            ],
+            Name::ConfigMountAdd,
+        ),
+        (
+            &["config", "mount", "remove", "cache"],
+            Name::ConfigMountRemove,
+        ),
+        (&["config", "mount", "list"], Name::ConfigMountList),
+        (
+            &["config", "trust", "grant", "sample"],
+            Name::ConfigTrustGrant,
+        ),
+        (
+            &["config", "trust", "revoke", "sample"],
+            Name::ConfigTrustRevoke,
+        ),
+        (&["config", "trust", "list"], Name::ConfigTrustList),
+        (&["config", "auth", "set", "sync"], Name::ConfigAuthSet),
+        (&["config", "auth", "show"], Name::ConfigAuthShow),
+        (
+            &["config", "env", "set", "KEY", "value"],
+            Name::ConfigEnvSet,
+        ),
+        (&["config", "env", "unset", "KEY"], Name::ConfigEnvUnset),
+        (&["config", "env", "list"], Name::ConfigEnvList),
+        (
+            &["config", "git", "coauthor-trailer", "enable"],
+            Name::ConfigGitCoauthorTrailerEnable,
+        ),
+        (
+            &["config", "git", "coauthor-trailer", "disable"],
+            Name::ConfigGitCoauthorTrailerDisable,
+        ),
+        (
+            &["config", "git", "dco", "enable"],
+            Name::ConfigGitDcoEnable,
+        ),
+        (
+            &["config", "git", "dco", "disable"],
+            Name::ConfigGitDcoDisable,
+        ),
+        #[cfg(unix)]
+        (&["daemon", "serve"], Name::DaemonServe),
+        #[cfg(unix)]
+        (&["daemon", "install"], Name::DaemonInstall),
+        #[cfg(unix)]
+        (&["daemon", "uninstall"], Name::DaemonUninstall),
+        #[cfg(unix)]
+        (&["daemon", "start"], Name::DaemonStart),
+        #[cfg(unix)]
+        (&["daemon", "stop"], Name::DaemonStop),
+        #[cfg(unix)]
+        (&["daemon", "restart"], Name::DaemonRestart),
+        #[cfg(unix)]
+        (&["daemon", "status"], Name::DaemonStatus),
+        (&["diagnostics", "validate"], Name::DiagnosticsValidate),
+        (&["usage", "target", "accounts"], Name::UsageAccounts),
+        (&["usage", "target", "verify"], Name::UsageVerify),
+    ];
+
+    for (args, expected) in cases {
+        let parsed = Cli::try_parse_from(std::iter::once("jackin").chain(args.iter().copied()))
+            .unwrap_or_else(|error| panic!("failed to parse {args:?}: {error}"));
+        let command = parsed.command.as_ref().expect("nested command");
+        assert_eq!(command_name(command), *expected, "{args:?}");
+    }
+}
+
 /// Strip ANSI escape sequences for clean test assertions.
 fn strip_ansi(s: &str) -> String {
     let mut result = String::with_capacity(s.len());
@@ -66,6 +230,56 @@ fn root_help_shows_all_commands() {
         "usage",
     ] {
         assert!(help.contains(cmd), "missing command: {cmd}");
+    }
+}
+
+#[test]
+fn removed_local_artifact_commands_stay_out_of_help() {
+    let root = help_text(&["jackin", "--help"]);
+    assert!(
+        !root.contains("\n  logs"),
+        "root help revived `logs`: {root}"
+    );
+
+    let diagnostics = help_text(&["jackin", "diagnostics", "--help"]);
+    assert!(diagnostics.contains("\n  validate"));
+    for removed in ["summary", "compare", "follow", "reveal", "bundle"] {
+        assert!(
+            !diagnostics.contains(&format!("\n  {removed}")),
+            "diagnostics help revived `{removed}`: {diagnostics}"
+        );
+    }
+
+    #[cfg(unix)]
+    {
+        let daemon = help_text(&["jackin", "daemon", "--help"]);
+        assert!(
+            !daemon.contains("\n  logs"),
+            "daemon help revived `logs`: {daemon}"
+        );
+    }
+}
+
+#[test]
+fn removed_local_artifact_commands_stay_rejected_by_parser() {
+    let mut removed = vec![
+        vec!["jackin", "logs"],
+        vec!["jackin", "diagnostics", "summary"],
+        vec!["jackin", "diagnostics", "compare"],
+        vec!["jackin", "diagnostics", "follow"],
+        vec!["jackin", "diagnostics", "reveal"],
+        vec!["jackin", "diagnostics", "bundle"],
+    ];
+    #[cfg(unix)]
+    removed.push(vec!["jackin", "daemon", "logs"]);
+
+    for args in removed {
+        let error = Cli::try_parse_from(&args).expect_err("removed command must not parse");
+        assert_eq!(
+            error.kind(),
+            clap::error::ErrorKind::InvalidSubcommand,
+            "unexpected parser result for {args:?}: {error}"
+        );
     }
 }
 
@@ -362,30 +576,6 @@ fn parses_prewarm_image_all_workspaces() {
 }
 
 #[test]
-fn parses_diagnostics_compare_labels() {
-    let cli = Cli::try_parse_from([
-        "jackin",
-        "diagnostics",
-        "compare",
-        "jk-run-cold",
-        "jk-run-warm",
-        "--label",
-        "cold-before",
-        "--label",
-        "warm-after",
-        "--format",
-        "json",
-    ])
-    .unwrap();
-    assert!(matches!(
-        cli.command,
-        Some(Command::Diagnostics(DiagnosticsCommand::Compare(ref args)))
-            if args.labels == ["cold-before", "warm-after"]
-                && args.format == diagnostics::DiagnosticsCompareFormat::Json
-    ));
-}
-
-#[test]
 fn rejects_prewarm_image_workspace_with_role() {
     let err = Cli::try_parse_from([
         "jackin",
@@ -431,8 +621,8 @@ fn rejects_prewarm_image_workspace_with_role_git_override() {
 
 // ── prewarm clap invariant regression tests ─────────────────────────
 //
-// These pin the relationships the codebase-health refactor dropped when the
-// prewarm flags moved into the flattened `PrewarmFlags` struct. Each test maps
+// These pin the relationships the prewarm refactor dropped when the prewarm
+// flags moved into the flattened `PrewarmFlags` struct. Each test maps
 // to one `#[arg]` constraint restored in `prewarm.rs`. Compare against the
 // pre-refactor baseline in `origin/main:crates/jackin/src/cli/prewarm.rs`.
 

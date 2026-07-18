@@ -10,12 +10,12 @@
 use jackin_core::container_paths;
 use std::collections::{BTreeMap, HashMap};
 use std::fs;
+use std::future::Future;
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, mpsc};
-use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use base64::Engine as _;
@@ -23,6 +23,7 @@ use jackin_protocol::control::{
     AccountUsageSnapshotView, FocusedAccountHeader, FocusedUsageView, Money, QuotaBucketView,
     StatusSlot, UsageConfidence, UsageProviderTab, UsageSeverity, UsageSnapshotStatus, UsageSource,
 };
+use jackin_telemetry::ResultTelemetryExt as _;
 use serde::Serialize;
 
 mod format;
@@ -121,8 +122,8 @@ pub(crate) use self::refresh::{
     MATERIALIZED_TMP_COUNTER, MaterializedUsageAccounts, RefreshLockOutcome,
     acquire_account_refresh_lock, acquire_account_refresh_lock_in, atomic_write_usage_json,
     collect_usage_refresh_results, collect_usage_refresh_results_with_timeout,
-    log_persist_transition, ordered_refresh_targets, parse_retry_after_seconds,
-    read_shared_usage_snapshot, refresh_interval_for_key, shared_usage_cooldown_active,
+    ordered_refresh_targets, parse_retry_after_seconds, read_shared_usage_snapshot,
+    record_persist_transition, refresh_interval_for_key, shared_usage_cooldown_active,
     shared_usage_cooldown_dir, shared_usage_cooldown_marker_path, shared_usage_file_path,
     shared_usage_lock_dir, shared_usage_rate_limit_cooldown_active, shared_usage_snapshot_path,
     shared_usage_snapshots_dir, usage_backoff_delay, usage_error_is_rate_limited,
@@ -179,7 +180,7 @@ pub(crate) const AMP_HANDOFF_SECRETS_PATH: &str = container_paths::AMP_SECRETS;
 pub(crate) const KIMI_HANDOFF_HOME: &str = container_paths::KIMI_CODE_DIR;
 pub(crate) const GROK_HANDOFF_AUTH_PATH: &str = container_paths::GROK_AUTH;
 pub(crate) const CLAUDE_HANDOFF_CREDENTIALS_PATH: &str = container_paths::CLAUDE_CREDENTIALS;
-pub const TELEMETRY_STORE_PATH: &str = container_paths::TELEMETRY_STORE;
+pub const USAGE_SNAPSHOT_STORE_PATH: &str = container_paths::USAGE_SNAPSHOT_STORE;
 
 #[derive(Debug, Clone)]
 pub struct UsageCache {
@@ -187,15 +188,11 @@ pub struct UsageCache {
     codex_rpc_gate: ManagedCliLaunchGate,
     grok_rpc_gate: ManagedCliLaunchGate,
     refresh_schedule: UsageRefreshSchedule,
-    telemetry_store_path: PathBuf,
+    usage_snapshot_store_path: PathBuf,
     /// Destination for accounts.json materialization. Production uses
     /// [`MATERIALIZED_USAGE_ACCOUNTS_PATH`]; benches/tests inject a temp path
     /// via [`UsageCache::set_accounts_materialize_path`].
     accounts_materialize_path: PathBuf,
-    /// Latched on persistence failure so a persistent fault (e.g. read-only
-    /// `/jackin/state`, disk-full, DB corruption) logs once on transition via
-    /// always-on `clog!` rather than every 5-minute refresh — and is never
-    /// invisible the way the firehose-only `cdebug!` would be in production.
     telemetry_persist_failed: bool,
     accounts_materialize_failed: bool,
 }
@@ -323,12 +320,12 @@ impl UsageCache {
     /// because `jackin-capsule`'s `daemon/tests.rs` uses it from a separate
     /// crate and Rust's `cfg(test)` does not propagate across crates.
     #[doc(hidden)]
-    pub fn set_telemetry_store_path(&mut self, path: PathBuf) {
-        self.telemetry_store_path = path;
+    pub fn set_usage_snapshot_store_path(&mut self, path: PathBuf) {
+        self.usage_snapshot_store_path = path;
     }
 
     /// Test-only helper: seed a snapshot into the cache. Kept `pub` for the
-    /// same cross-crate reason as `set_telemetry_store_path`.
+    /// same cross-crate reason as `set_usage_snapshot_store_path`.
     #[doc(hidden)]
     pub fn insert_snapshot_for_test(
         &mut self,
@@ -420,14 +417,6 @@ impl UsageCache {
         Some(view)
     }
 
-    #[tracing::instrument(
-        skip_all,
-        fields(
-            otel.name = "usage:refresh_accounts",
-            active = active_targets.len(),
-            focused = focused.is_some(),
-        )
-    )]
     pub fn refresh_active_account_snapshots(
         &mut self,
         active_targets: &[UsageRefreshTarget],
@@ -454,14 +443,24 @@ impl UsageCache {
             // account-scoped so a different account's data on the same provider
             // surface is never read in (Class III-C). Keyed in memory by provider
             // (per-container), one account per agent.
-            if let std::collections::hash_map::Entry::Vacant(e) =
+            if let std::collections::hash_map::Entry::Vacant(entry) =
                 self.snapshots.entry(target.cache_key())
-                && let Some(view) =
-                    read_shared_usage_snapshot(&snapshots_dir, &target.shared_account_key())
             {
-                e.insert(CachedUsage {
-                    view: stale_shared_view(view, now_epoch()),
-                });
+                match read_shared_usage_snapshot(&snapshots_dir, &target.shared_account_key()) {
+                    Some(view) => {
+                        jackin_telemetry::cache::decision(
+                            jackin_telemetry::schema::enums::CacheName::UsageSnapshot,
+                            jackin_telemetry::schema::enums::CacheResult::Stale,
+                        );
+                        entry.insert(CachedUsage {
+                            view: stale_shared_view(view, now_epoch()),
+                        });
+                    }
+                    None => jackin_telemetry::cache::decision(
+                        jackin_telemetry::schema::enums::CacheName::UsageSnapshot,
+                        jackin_telemetry::schema::enums::CacheResult::Miss,
+                    ),
+                }
             }
             if self.refresh_schedule.should_refresh(&target, now) {
                 due_targets.push(target);
@@ -544,22 +543,16 @@ impl UsageCache {
             stored_views.push(view);
         }
         if !stored_views.is_empty() {
-            let result = crate::telemetry_store::store_usage_snapshots(
-                &self.telemetry_store_path,
+            let result = crate::usage_snapshot_store::store_usage_snapshots(
+                &self.usage_snapshot_store_path,
                 &stored_views,
             );
-            self.telemetry_persist_failed = log_persist_transition(
-                "usage telemetry store write",
-                self.telemetry_persist_failed,
-                result,
-            );
+            self.telemetry_persist_failed =
+                record_persist_transition(self.telemetry_persist_failed, result);
         }
         let materialize = self.materialize_accounts(now_epoch());
-        self.accounts_materialize_failed = log_persist_transition(
-            "usage accounts materialization",
-            self.accounts_materialize_failed,
-            materialize,
-        );
+        self.accounts_materialize_failed =
+            record_persist_transition(self.accounts_materialize_failed, materialize);
         // Release the per-account refresh locks only now — after the shared
         // snapshot has been written — so a waiting instance that next wins the
         // lock sees fresh shared data rather than re-fetching (Class III-D).
@@ -589,7 +582,7 @@ impl Default for UsageCache {
             codex_rpc_gate: ManagedCliLaunchGate::default(),
             grok_rpc_gate: ManagedCliLaunchGate::default(),
             refresh_schedule: UsageRefreshSchedule::default(),
-            telemetry_store_path: PathBuf::from(TELEMETRY_STORE_PATH),
+            usage_snapshot_store_path: PathBuf::from(USAGE_SNAPSHOT_STORE_PATH),
             accounts_materialize_path: PathBuf::from(MATERIALIZED_USAGE_ACCOUNTS_PATH),
             telemetry_persist_failed: false,
             accounts_materialize_failed: false,
@@ -999,35 +992,19 @@ pub(crate) fn first_credential<T>(
     first_credential_with_path(paths, load).map(|(_, value)| value)
 }
 
-/// Read and parse a JSON credential/config file, distinguishing "absent"
-/// (expected — `None`, no log) from "present but broken" (a real error the
-/// operator must see — logged via the always-on `clog!`, then `None`). The
-/// `.ok()?` idiom these loaders previously used collapsed both cases, so a
-/// corrupt or permission-denied token file looked identical to a logged-out
-/// provider and surfaced no diagnostic.
+/// Read and parse a JSON credential/config file, distinguishing expected
+/// absence from a present-but-broken typed telemetry error.
 pub(crate) fn read_json_file(path: &Path) -> Option<serde_json::Value> {
     let text = match fs::read_to_string(path) {
         Ok(text) => text,
-        Err(error) => {
-            if error.kind() != std::io::ErrorKind::NotFound {
-                crate::clog!(
-                    "usage credential read failed for {}: {error}",
-                    path.display()
-                );
-            }
-            return None;
-        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return None,
+        result => result
+            .record_telemetry_error(jackin_telemetry::schema::enums::ErrorType::IoError)
+            .ok()?,
     };
-    match serde_json::from_str(&text) {
-        Ok(value) => Some(value),
-        Err(error) => {
-            crate::clog!(
-                "usage credential parse failed for {}: {error}",
-                path.display()
-            );
-            None
-        }
-    }
+    serde_json::from_str(&text)
+        .record_telemetry_error(jackin_telemetry::schema::enums::ErrorType::ConfigError)
+        .ok()
 }
 
 /// Resolve a provider credential (with the winning path, for the `Auth:`
@@ -1215,6 +1192,87 @@ pub(crate) fn write_json_line(
 pub(crate) const CODEX_OAUTH_TOKEN_URL: &str = "https://auth.openai.com/oauth/token";
 pub(crate) const CODEX_OAUTH_CLIENT_ID: &str = "app_EMoamEEZ73f0CkXaXp7hrann";
 
+#[derive(Clone)]
+struct ProviderConnectionLayer {
+    dispatcher: tracing::Dispatch,
+}
+
+impl ProviderConnectionLayer {
+    fn capture() -> Self {
+        Self {
+            dispatcher: tracing::dispatcher::get_default(Clone::clone),
+        }
+    }
+}
+
+impl<S> tower::Layer<S> for ProviderConnectionLayer {
+    type Service = ProviderConnectionService<S>;
+
+    fn layer(&self, inner: S) -> Self::Service {
+        ProviderConnectionService {
+            inner,
+            dispatcher: self.dispatcher.clone(),
+        }
+    }
+}
+
+#[derive(Clone)]
+struct ProviderConnectionService<S> {
+    inner: S,
+    dispatcher: tracing::Dispatch,
+}
+
+impl<S, Request> tower::Service<Request> for ProviderConnectionService<S>
+where
+    S: tower::Service<Request> + Send,
+    S::Future: Send + 'static,
+    S::Response: 'static,
+    S::Error: 'static,
+{
+    type Response = S::Response;
+    type Error = S::Error;
+    type Future = std::pin::Pin<
+        Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send + 'static>,
+    >;
+
+    fn poll_ready(
+        &mut self,
+        context: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        self.inner.poll_ready(context)
+    }
+
+    fn call(&mut self, request: Request) -> Self::Future {
+        let operation = tracing::dispatcher::with_default(&self.dispatcher, || {
+            jackin_telemetry::operation_or_disabled(
+                &jackin_telemetry::operation::CONNECTION_ATTEMPT,
+                &[jackin_telemetry::Attr {
+                    key: jackin_telemetry::schema::attrs::CONNECTION_PEER_TYPE,
+                    value: jackin_telemetry::Value::Str(
+                        jackin_telemetry::schema::enums::ConnectionPeerType::Provider.as_str(),
+                    ),
+                }],
+            )
+        });
+        let future = self.inner.call(request);
+        Box::pin(async move {
+            let result = future.await;
+            operation.complete(
+                if result.is_ok() {
+                    jackin_telemetry::schema::enums::OutcomeValue::Success
+                } else {
+                    jackin_telemetry::schema::enums::OutcomeValue::Error
+                },
+                result
+                    .as_ref()
+                    .err()
+                    .map(|_| jackin_telemetry::schema::enums::ErrorType::IoError),
+            );
+            result
+        })
+    }
+}
+
 pub(crate) fn parse_chatgpt_base_url(contents: &str) -> Option<String> {
     for raw_line in contents.lines() {
         let line = raw_line.split('#').next().unwrap_or_default().trim();
@@ -1241,8 +1299,46 @@ pub(crate) fn provider_http_client() -> Result<reqwest::blocking::Client, String
     reqwest::blocking::Client::builder()
         .timeout(PROVIDER_HTTP_TIMEOUT)
         .connect_timeout(PROVIDER_HTTP_TIMEOUT)
+        .connector_layer(ProviderConnectionLayer::capture())
         .build()
         .map_err(|err| format!("provider HTTP client unavailable: {err}"))
+}
+
+pub(crate) fn provider_request<T>(
+    provider: jackin_telemetry::schema::enums::ProviderName,
+    method: &'static str,
+    template: &'static str,
+    request: impl FnOnce() -> Result<T, String>,
+) -> Result<T, String> {
+    let attrs = [
+        jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::std_attrs::GEN_AI_PROVIDER_NAME,
+            value: jackin_telemetry::Value::Str(provider.as_str()),
+        },
+        jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::std_attrs::HTTP_REQUEST_METHOD,
+            value: jackin_telemetry::Value::Str(method),
+        },
+        jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::std_attrs::URL_TEMPLATE,
+            value: jackin_telemetry::Value::Str(template),
+        },
+    ];
+    let operation =
+        jackin_telemetry::operation_or_disabled(&jackin_telemetry::operation::HTTP_CLIENT, &attrs);
+    let result = request();
+    operation.complete(
+        if result.is_ok() {
+            jackin_telemetry::schema::enums::OutcomeValue::Success
+        } else {
+            jackin_telemetry::schema::enums::OutcomeValue::Failure
+        },
+        result
+            .as_ref()
+            .err()
+            .map(|_| jackin_telemetry::schema::enums::ErrorType::HttpError),
+    );
+    result
 }
 
 /// Shared GET → bearer-auth → JSON skeleton for provider quota endpoints. The
@@ -1251,29 +1347,33 @@ pub(crate) fn provider_http_client() -> Result<reqwest::blocking::Client, String
 /// request headers beyond the always-sent `Accept: application/json`. Per-
 /// provider response validation stays at the call site.
 pub(crate) fn get_json_bearer<T: serde::de::DeserializeOwned>(
+    provider: jackin_telemetry::schema::enums::ProviderName,
+    template: &'static str,
     label: &str,
     url: &str,
     token: &str,
     extra_headers: &[(reqwest::header::HeaderName, &str)],
 ) -> Result<T, String> {
-    let client = provider_http_client()?;
-    let mut request = client
-        .get(url)
-        .bearer_auth(token)
-        .header(reqwest::header::ACCEPT, "application/json");
-    for (name, value) in extra_headers {
-        request = request.header(name.clone(), *value);
-    }
-    let response = request
-        .send()
-        .map_err(|err| format!("{label} request failed: {err}"))?;
-    let status = response.status();
-    if !status.is_success() {
-        return Err(format!("{label} HTTP {status}"));
-    }
-    response
-        .json::<T>()
-        .map_err(|err| format!("{label} decode failed: {err}"))
+    provider_request(provider, "GET", template, || {
+        let client = provider_http_client()?;
+        let mut request = client
+            .get(url)
+            .bearer_auth(token)
+            .header(reqwest::header::ACCEPT, "application/json");
+        for (name, value) in extra_headers {
+            request = request.header(name.clone(), *value);
+        }
+        let response = request
+            .send()
+            .map_err(|err| format!("{label} request failed: {err}"))?;
+        let status = response.status();
+        if !status.is_success() {
+            return Err(format!("{label} HTTP {status}"));
+        }
+        response
+            .json::<T>()
+            .map_err(|err| format!("{label} decode failed: {err}"))
+    })
 }
 
 pub(crate) fn epoch_seconds_from_maybe_ms(value: i64) -> i64 {

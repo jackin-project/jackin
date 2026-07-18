@@ -160,9 +160,8 @@ jobs:
       - run: cargo build --release --locked
       - run: cargo nextest run --workspace --locked
 
-  # Advisory measured lane for criterion benches (plan 014). Compile failure
-  # fails the job; numbers are recorded as artifacts only — no threshold
-  # comparison until the plan 017 ratchet engine lands.
+  # Measured Criterion lane for plan 014. Workload medians are normalized by a
+  # same-run calibration benchmark before the reviewed 5% threshold is applied.
   bench-run:
     name: Criterion bench run (advisory)
     runs-on: ubuntu-latest
@@ -186,7 +185,7 @@ jobs:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
           cache_save: ${{ github.ref == 'refs/heads/main' }}
-          install_args: "rust"
+          install_args: "rust cargo:cargo-nextest"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
@@ -196,13 +195,25 @@ jobs:
           cache-all-crates: "true"
           cache-workspace-crates: "true"
           env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTFLAGS RUSTDOC RUSTUP"
-      - run: cargo bench --workspace --locked -- --quick 2>&1 | tee bench-output.txt
+      - name: Compile all benchmarks and run telemetry baselines
+        run: |
+          set -o pipefail
+          cargo bench --workspace --locked --no-run 2>&1 | tee bench-output.txt
+          cargo bench -p jackin-telemetry --bench disabled_fast_path --locked -- --quick 2>&1 | tee -a bench-output.txt
+          cargo bench -p jackin-runtime --bench launch_pipeline --locked -- --quick 2>&1 | tee -a bench-output.txt
+          cargo bench -p jackin --bench console_frame --locked -- --quick 2>&1 | tee -a bench-output.txt
+          cargo bench -p jackin-capsule --bench pane_body --locked -- --quick 2>&1 | tee -a bench-output.txt
+      - name: Accelerated telemetry lifecycle soak
+        run: cargo nextest run --profile soak -p jackin-telemetry -p jackin-diagnostics --all-features --locked --run-ignored ignored-only
+      - name: Enforce telemetry performance baseline
+        run: cargo xtask telemetry-bench --capture
       - name: Upload bench results
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: criterion-results-${{ github.run_id }}
           path: |
             bench-output.txt
+            target/telemetry-bench-current.json
             target/criterion/**/estimates.json
           if-no-files-found: warn
 

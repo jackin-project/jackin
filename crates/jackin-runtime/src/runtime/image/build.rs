@@ -18,7 +18,7 @@ use jackin_image::derived_image::{
 use jackin_image::image_decision::ImageInvalidationReason;
 use jackin_image::image_recipe::{recipe_labels, supported_set_uses_cache_bust};
 use jackin_image::version_check;
-use jackin_launch_tui::build_log::DiagnosticsBuildLogSink;
+use jackin_launch::build_log::DiagnosticsBuildLogSink;
 use jackin_manifest::repo::CachedRepo;
 
 use crate::runtime::naming::{
@@ -31,10 +31,9 @@ use super::{
     PreparedRuntimeBinaries, docker_build_env, dockerfile_body_requests_github_token_secret,
     dockerfile_body_requests_role_git_sha_arg, dockerfile_requests_github_token_secret,
     dockerfile_requests_role_git_sha_arg, emit_build_context_snapshot, emit_compact_image_warning,
-    emit_docker_build_step_diagnostics, emit_image_build_source,
-    emit_non_containerd_image_store_note, local_image_buildx_args, local_image_output_arg,
-    local_role_base_labels_match, record_built_agent_version, resolve_github_token,
-    role_git_sha_for_recipe, should_stream_build_output,
+    emit_image_build_source, emit_non_containerd_image_store_note, local_image_buildx_args,
+    local_image_output_arg, local_role_base_labels_match, record_built_agent_version,
+    resolve_github_token, role_git_sha_for_recipe, should_stream_build_output,
 };
 
 pub(crate) fn should_mint_fresh_cache_bust(
@@ -126,7 +125,6 @@ pub(crate) async fn ensure_local_role_base(
                 )
             })
     {
-        jackin_diagnostics::debug_log!("image", "reusing local role base {base_name}");
         return Ok(base_name);
     }
 
@@ -257,7 +255,6 @@ pub(crate) async fn ensure_local_role_base(
             Some("error")
         },
     );
-    emit_docker_build_step_diagnostics();
     build_result?;
     Ok(base_name)
 }
@@ -613,7 +610,6 @@ pub(crate) async fn build_agent_image(
             Some("error")
         },
     );
-    emit_docker_build_step_diagnostics();
     build_result?;
 
     record_built_agent_version(paths, &image, agent, &runtime_binaries, debug, runner).await;

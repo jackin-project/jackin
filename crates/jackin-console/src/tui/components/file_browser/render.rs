@@ -13,7 +13,6 @@ use ratatui::{
 
 use super::git_prompt::render_git_prompt;
 use super::state::FileBrowserState;
-use super::{PHOSPHOR_GREEN, WHITE};
 use termrock::widgets::{List, ListRow, ListState, Panel, PanelEmphasis, RowRole};
 
 /// Vertical-layout constraints used by `render` and by the geometry-only
@@ -63,7 +62,7 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &FileBrowserState) {
         frame.render_widget(
             Paragraph::new(Span::styled(
                 format!("\u{2717} {reason}"),
-                jackin_core::tui_theme::DANGER,
+                termrock::Theme::default().style(termrock::style::Role::Danger),
             ))
             .alignment(Alignment::Center),
             chunks[0],
@@ -87,7 +86,7 @@ fn render_listing(frame: &mut Frame<'_>, area: Rect, state: &FileBrowserState) {
         " {} ",
         jackin_core::shorten_home(&state.cwd.display().to_string())
     );
-    // File browser is normally the active modal (PHOSPHOR_GREEN border). When a
+    // File browser is normally the active modal (termrock::Theme::default().style(termrock::style::Role::Accent).fg.unwrap_or_default() border). When a
     // child dialog (Git repo prompt) is stacked on top, the file browser becomes
     // a background modal and must use the inactive border so exactly one bright
     // border is visible (Defect 9 — one-bright-border rule).
@@ -105,11 +104,17 @@ fn render_listing(frame: &mut Frame<'_>, area: Rect, state: &FileBrowserState) {
     let selected = state
         .pending_git_prompt
         .is_none()
-        .then_some(state.list_state.selected)
+        .then_some(state.list_state.selected().copied())
         .flatten();
-    let base_style = Style::default().fg(WHITE);
+    let base_style = Style::default().fg(termrock::Theme::default()
+        .style(termrock::style::Role::Text)
+        .fg
+        .unwrap_or_default());
     let git_suffix_style = Style::default()
-        .fg(PHOSPHOR_GREEN)
+        .fg(termrock::Theme::default()
+            .style(termrock::style::Role::Accent)
+            .fg
+            .unwrap_or_default())
         .add_modifier(Modifier::BOLD);
 
     let rows: Vec<ListRow<'_, usize>> = state

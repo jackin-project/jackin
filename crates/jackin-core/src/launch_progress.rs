@@ -3,11 +3,11 @@
 
 //! Non-UI launch cockpit value types: stages, identity, failure, restore
 //! dialog data, and port traits. Shared by the orchestration layer
-//! (`jackin-runtime`) and the presentation layer (`jackin-launch-tui`) with no
-//! dependency on `ratatui` or `jackin-tui`.
+//! (`jackin-runtime`) and the presentation layer (`jackin-launch`) with no
+//! dependency on Ratatui or a presentation crate.
 
 use std::future::Future;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 // --- Stage types ---
 
@@ -147,10 +147,6 @@ pub struct LaunchFailure {
     pub next_step: Option<String>,
     /// Stage where the failure occurred.
     pub stage: LaunchStage,
-    /// Path to the diagnostics bundle when written.
-    pub diagnostics_path: Option<PathBuf>,
-    /// Path to captured command output when written.
-    pub command_output_path: Option<PathBuf>,
 }
 
 /// Kind of launch target shown in identity copy.
@@ -176,12 +172,8 @@ impl LaunchTargetKind {
 /// Clipboard targets offered on the failure surface.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FailureCopyTarget {
-    /// Copy the diagnostics run id.
+    /// Copy the invocation correlation id.
     RunId,
-    /// Copy the diagnostics directory path.
-    DiagnosticsPath,
-    /// Copy the command-output file path.
-    CommandOutputPath,
 }
 
 // --- Prompt context ---
@@ -286,16 +278,10 @@ impl LaunchCancelled {
 
 // --- Port traits ---
 
-/// Diagnostics sink for a single launch run (paths, compact log, stage events).
+/// Launch progress and correlation port for one invocation.
 pub trait LaunchDiagnostics: Send + Sync {
-    /// Stable run identifier for this launch.
+    /// Stable invocation identifier for this launch.
     fn run_id(&self) -> &str;
-    /// Root diagnostics directory for this run.
-    fn path(&self) -> &Path;
-    /// Whether diagnostics are being persisted to disk.
-    fn persists(&self) -> bool;
-    /// Path for a named command-output capture file.
-    fn command_output_path(&self, name: &str) -> PathBuf;
     /// Emit a compact always-on log line.
     fn compact(&self, kind: &str, message: &str);
     /// Emit an error line with optional structured error type.
@@ -328,8 +314,8 @@ pub trait LaunchHostTerminal: Send + Sync {
 
 /// Port for launch-phase terminal side-effects (deploy banner, failure
 /// lines, warp outro animations). Lives in core so `jackin-runtime` can
-/// call without depending on `jackin-tui`. Implemented by an adapter in
-/// `jackin-launch-tui` and injected via static accessor (mirrors
+/// call without depending on a presentation crate. Implemented by an adapter in
+/// `jackin-launch` and injected via static accessor (mirrors
 /// [`LaunchHostTerminal`] / `host_terminal`).
 pub trait LaunchOutputSink: Send + Sync {
     /// Animated "deploying" banner for `role_name`.

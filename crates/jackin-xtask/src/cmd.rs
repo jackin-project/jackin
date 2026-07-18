@@ -18,7 +18,12 @@ pub(crate) fn run(cmd: &mut Command) -> Result<()> {
     if result.success {
         Ok(())
     } else {
-        Err(anyhow!("{display} failed with code {:?}", result.code))
+        let stderr = String::from_utf8_lossy(&result.stderr);
+        Err(anyhow!(
+            "{display} failed with code {:?}\n{}",
+            result.code,
+            stderr.trim()
+        ))
     }
 }
 

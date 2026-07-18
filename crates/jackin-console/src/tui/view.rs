@@ -557,7 +557,7 @@ fn prepare_visible_modal(area: Rect, state: &mut crate::tui::state::ManagerState
                 }
             }
             (ConsoleManagerStage::Settings(settings), StageModalArea::Settings(area)) => {
-                if let Some(modal) = &mut settings.mounts.modal {
+                if let Some(modal) = settings.mounts.modals.current_mut() {
                     modal.prepare_for_render(area);
                 }
             }
@@ -677,8 +677,8 @@ pub fn render(
                 };
                 match settings_modal_render_plan(
                     settings.error_popup.is_some(),
-                    settings.mounts.modal.is_some(),
-                    settings.env.modal.is_some(),
+                    settings.mounts.modals.is_open(),
+                    settings.env.modals.is_open(),
                     settings.auth.modal_ref().is_some(),
                 ) {
                     SettingsModalRenderPlan::ErrorPopup => {
@@ -691,12 +691,12 @@ pub fn render(
                         }
                     }
                     SettingsModalRenderPlan::Mounts => {
-                        if let Some(modal) = &settings.mounts.modal {
+                        if let Some(modal) = settings.mounts.modals.current() {
                             render_global_mount_modal(frame, modal);
                         }
                     }
                     SettingsModalRenderPlan::Environments => {
-                        if let Some(modal) = &settings.env.modal {
+                        if let Some(modal) = settings.env.modals.current() {
                             render_settings_env_modal(frame, modal);
                         }
                     }

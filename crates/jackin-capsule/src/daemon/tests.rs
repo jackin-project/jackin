@@ -4,6 +4,469 @@
 //! Unit tests for `jackin-capsule` daemon: input dispatch, session management,
 //! tab lifecycle, git context, status-bar rendering, and PTY session behavior.
 use super::*;
+
+#[test]
+fn provider_probe_noop_tick_exports_no_span() {
+    let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
+    let guard = tracing::subscriber::set_default(subscriber);
+    record_skipped_provider_probe();
+    drop(guard);
+    export.force_flush();
+    assert!(export.finished_spans().is_empty());
+}
+
+#[test]
+fn quiet_agent_status_pass_exports_no_span() {
+    let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
+    let (session, _session_rx) = test_session_with_agent(24, 80, Some("codex".to_owned()));
+    tracing::subscriber::with_default(subscriber, || {
+        record_agent_status_tick(
+            &session,
+            crate::session::StatusTick {
+                transition: None,
+                stuck: false,
+                flap: false,
+            },
+        );
+    });
+    export.force_flush();
+    assert!(export.finished_spans().is_empty());
+    assert!(
+        !export.contains_span_text(jackin_telemetry::schema::attrs::JOB_ID),
+        "metric-only cycle ticks must never acquire job identity"
+    );
+}
+
+#[test]
+fn substantive_agent_status_pass_exports_one_autonomous_root() {
+    let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
+    let (session, _session_rx) = test_session_with_agent(24, 80, Some("codex".to_owned()));
+    tracing::subscriber::with_default(subscriber, || {
+        record_agent_status_tick(
+            &session,
+            crate::session::StatusTick {
+                transition: Some(crate::session::StatusTransition {
+                    previous: crate::protocol::AgentState::Unknown,
+                    effective: crate::protocol::AgentState::Working,
+                    winner: crate::agent_status::evidence::EvidenceWinner::Unknown,
+                }),
+                stuck: false,
+                flap: false,
+            },
+        );
+    });
+    export.force_flush();
+
+    let spans = export.finished_spans();
+    assert_eq!(spans.len(), 1);
+    assert_eq!(
+        spans[0].name,
+        jackin_telemetry::schema::spans::BACKGROUND_CYCLE
+    );
+    assert_eq!(spans[0].parent_span_id, "0000000000000000");
+    assert!(export.contains_span_text("agent_status"));
+    assert!(
+        !export.contains_span_text(jackin_telemetry::schema::attrs::JOB_ID),
+        "substantive cycles must not carry job.id"
+    );
+    assert_eq!(
+        export.event_count(jackin_telemetry::schema::events::AGENT_STATE_CHANGED),
+        1
+    );
+    assert_eq!(
+        export.traced_event_count(jackin_telemetry::schema::events::AGENT_STATE_CHANGED),
+        1
+    );
+}
+
+#[test]
+fn watchdog_demotion_without_transition_is_still_substantive() {
+    let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
+    let (session, _session_rx) = test_session_with_agent(24, 80, Some("codex".to_owned()));
+    tracing::subscriber::with_default(subscriber, || {
+        record_agent_status_tick(
+            &session,
+            crate::session::StatusTick {
+                transition: None,
+                stuck: true,
+                flap: false,
+            },
+        );
+    });
+    export.force_flush();
+    assert_eq!(export.finished_spans().len(), 1);
+    assert_eq!(
+        export.event_count(jackin_telemetry::schema::events::AGENT_STATE_CHANGED),
+        0
+    );
+}
+
+fn serialized_control_spans(
+    context: jackin_protocol::TelemetryContext,
+) -> (bool, Vec<jackin_diagnostics::TestSpanSnapshot>) {
+    let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
+    let guard = tracing::subscriber::set_default(subscriber);
+    let wire = serde_json::to_vec(&jackin_protocol::control::ControlRequest {
+        ctx: context,
+        msg: ClientMsg::Status,
+    })
+    .unwrap();
+    let decoded: jackin_protocol::control::ControlRequest = serde_json::from_slice(&wire).unwrap();
+    let operation = control_server_operation(&decoded.ctx, &decoded.msg);
+    let accepted = operation.is_some();
+    if let Some(Some(operation)) = operation {
+        operation.complete(jackin_telemetry::schema::enums::OutcomeValue::Success, None);
+    }
+    drop(guard);
+    export.force_flush();
+    (accepted, export.finished_spans())
+}
+
+#[test]
+fn conformance_serialized_control_propagation_matrix_preserves_parentage_and_rejection() {
+    let trace_id = "4bf92f3577b34da6a3ce929d0e0e4736";
+    let parent_id = "00f067aa0ba902b7";
+    let mut sampled = jackin_protocol::TelemetryContext::v1();
+    sampled.traceparent = Some(format!("00-{trace_id}-{parent_id}-01"));
+    let (accepted, spans) = serialized_control_spans(sampled);
+    assert!(accepted);
+    assert_eq!(spans.len(), 1);
+    assert_eq!(spans[0].trace_id, trace_id);
+    assert_eq!(spans[0].parent_span_id, parent_id);
+    assert!(spans[0].sampled);
+
+    for context in [
+        jackin_protocol::TelemetryContext::v1(),
+        jackin_protocol::TelemetryContext {
+            traceparent: Some("malformed".to_owned()),
+            ..jackin_protocol::TelemetryContext::v1()
+        },
+    ] {
+        let (accepted, spans) = serialized_control_spans(context);
+        assert!(accepted);
+        assert_eq!(spans.len(), 1);
+        assert_eq!(spans[0].parent_span_id, "0000000000000000");
+    }
+
+    let mut unsampled = jackin_protocol::TelemetryContext::v1();
+    unsampled.traceparent = Some(format!("00-{trace_id}-{parent_id}-00"));
+    let (accepted, spans) = serialized_control_spans(unsampled);
+    assert!(accepted);
+    assert!(
+        spans.is_empty(),
+        "unsampled remote parent must suppress export"
+    );
+
+    let bad_id = jackin_protocol::TelemetryContext {
+        invocation_id: Some("not-a-uuid".to_owned()),
+        ..jackin_protocol::TelemetryContext::v1()
+    };
+    let (accepted, spans) = serialized_control_spans(bad_id);
+    assert!(!accepted);
+    assert!(spans.is_empty());
+
+    let mut mux = single_pane_tab_mux();
+    let (mut session, _session_rx) = test_session_with_agent(24, 80, Some("codex".to_owned()));
+    session.provider = Some(crate::session::SessionProvider {
+        label: "OpenAI".to_owned(),
+        env_overrides: Vec::new(),
+    });
+    mux.session_supervisor.sessions.insert(1, session);
+    mux.session_supervisor.tabs[0] = Tab::new_single("Codex", 1, "test");
+    let wire = serde_json::to_vec(&jackin_protocol::control::ControlRequest {
+        ctx: jackin_protocol::TelemetryContext {
+            invocation_id: Some("not-a-uuid".to_owned()),
+            ..jackin_protocol::TelemetryContext::v1()
+        },
+        msg: ClientMsg::UsageRefreshFocused,
+    })
+    .unwrap();
+    let decoded: jackin_protocol::control::ControlRequest = serde_json::from_slice(&wire).unwrap();
+    if control_server_operation(&decoded.ctx, &decoded.msg).is_some() {
+        control_reply_for_request(&mut mux, decoded.msg);
+    }
+    assert!(
+        mux.usage.pending_usage_refresh.is_none(),
+        "rejected correlation must not queue the provider refresh side effect"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn conformance_wire_real_capsule_control_status_preserves_parent_and_delivery() {
+    let testbed = jackin_otlp_testbed::Testbed::start().expect("start OTLP testbed");
+    jackin_diagnostics::init_wire_test_export(
+        &testbed.endpoint(),
+        jackin_diagnostics::ServiceIdentity::CAPSULE,
+    )
+    .expect("initialize wire test export");
+    let trace_id = "4bf92f3577b34da6a3ce929d0e0e4736";
+    let parent_id = "00f067aa0ba902b7";
+    let request = jackin_protocol::control::ControlRequest {
+        ctx: jackin_protocol::TelemetryContext {
+            traceparent: Some(format!("00-{trace_id}-{parent_id}-01")),
+            ..jackin_protocol::TelemetryContext::v1()
+        },
+        msg: ClientMsg::Status,
+    };
+    let wire = serde_json::to_vec(&request).expect("serialize control request");
+    let decoded: jackin_protocol::control::ControlRequest =
+        serde_json::from_slice(&wire).expect("decode control request");
+    let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
+    let mut mux = single_pane_tab_mux();
+
+    handle_control_request(
+        &mut mux,
+        ControlRequest {
+            ctx: decoded.ctx,
+            msg: decoded.msg,
+            reply_tx,
+        },
+    );
+    let response = reply_rx.await.expect("receive control response");
+    assert!(matches!(response.msg, ServerMsg::SessionList { .. }));
+    response.complete(&Ok(()));
+    jackin_diagnostics::flush_wire_test_export().expect("flush wire test export");
+
+    let deadline = Instant::now() + Duration::from_secs(2);
+    let spans = loop {
+        let spans = testbed
+            .spans()
+            .into_iter()
+            .filter(|span| span.name == "rpc.server")
+            .collect::<Vec<_>>();
+        if spans.len() == 1 {
+            break spans;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "Capsule control wire span did not arrive exactly once"
+        );
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    };
+    assert_eq!(spans[0].trace_id, hex::decode(trace_id).unwrap());
+    assert_eq!(spans[0].parent_span_id, hex::decode(parent_id).unwrap());
+    let wire_text = format!("{spans:?}");
+    for expected in ["jackin", "status", "success"] {
+        assert!(
+            wire_text.contains(expected),
+            "missing {expected}: {wire_text}"
+        );
+    }
+    assert_eq!(testbed.legacy_namespace_violations(), Vec::<String>::new());
+    jackin_diagnostics::shutdown_capsule_tracing();
+}
+
+#[test]
+fn conformance_exec_command_rpc_spans_exclude_command_and_args() {
+    let command_secret = "PRIVATE_EXECUTABLE_PAYLOAD";
+    let argument_secret = "PRIVATE_ARGUMENT_PAYLOAD";
+    let request = jackin_protocol::control::ControlRequest {
+        ctx: jackin_protocol::TelemetryContext::v1(),
+        msg: ClientMsg::ExecCommand {
+            command: command_secret.to_owned(),
+            args: vec![argument_secret.to_owned()],
+        },
+    };
+    let wire = serde_json::to_vec(&request).unwrap();
+    let decoded: jackin_protocol::control::ControlRequest = serde_json::from_slice(&wire).unwrap();
+    let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
+    let guard = tracing::subscriber::set_default(subscriber);
+    if let Some(Some(server)) = control_server_operation(&decoded.ctx, &decoded.msg) {
+        server.complete(jackin_telemetry::schema::enums::OutcomeValue::Success, None);
+    }
+    let attrs = [
+        jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::std_attrs::RPC_SYSTEM_NAME,
+            value: jackin_telemetry::Value::Str("jackin"),
+        },
+        jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::std_attrs::RPC_METHOD,
+            value: jackin_telemetry::Value::Str(decoded.msg.rpc_method()),
+        },
+    ];
+    if let Ok(client) =
+        jackin_telemetry::operation(&jackin_telemetry::operation::RPC_CLIENT, &attrs)
+    {
+        client.complete(jackin_telemetry::schema::enums::OutcomeValue::Success, None);
+    }
+    drop(guard);
+    export.force_flush();
+    assert!(!export.contains_span_text(command_secret));
+    assert!(!export.contains_span_text(argument_secret));
+}
+
+#[test]
+fn conformance_invalid_attach_control_has_no_detach_side_effect() {
+    let mut mux = test_mux(24, 80);
+    let (out_tx, mut out_rx) = mpsc::unbounded_channel();
+    let (completion_tx, mut completion_rx) = mpsc::unbounded_channel();
+    mux.client_registry
+        .client
+        .attach_with_completions(out_tx, completion_tx);
+    let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
+    tracing::subscriber::with_default(subscriber, || {
+        handle_client_frame(
+            &mut mux,
+            ClientFrame::AttachControl(jackin_protocol::attach::AttachControlRequest {
+                request_id: 77,
+                context: jackin_protocol::TelemetryContext {
+                    invocation_id: Some("not-a-uuid".to_owned()),
+                    ..jackin_protocol::TelemetryContext::v1()
+                },
+                operation: jackin_protocol::attach::AttachControlOperation::Detach,
+            }),
+        );
+        completion_rx
+            .try_recv()
+            .expect("rejection must retain its RPC owner through delivery")
+            .complete(&Ok(()));
+    });
+    export.force_flush();
+    assert!(!mux.client_registry.detach_requested);
+    let encoded = out_rx
+        .try_recv()
+        .expect("rejection response must be queued");
+    let response = jackin_protocol::attach::decode_server(encoded[0], encoded[5..].to_vec())
+        .expect("response must decode");
+    assert_eq!(
+        response,
+        ServerFrame::AttachControlResponse(jackin_protocol::attach::AttachControlResponse {
+            request_id: 77,
+            result: jackin_protocol::attach::AttachControlResult::InvalidCorrelation,
+        })
+    );
+    let spans = export.finished_spans();
+    assert_eq!(spans.len(), 1);
+    assert_eq!(spans[0].name, "rpc.server");
+    assert!(spans[0].error);
+    assert_eq!(export.typed_error_count("error.typed", "rpc_error"), 1);
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn conformance_invalid_attach_handshake_has_one_typed_write_owner() {
+    let (mut client, mut server) = UnixStream::pair().expect("attach socket pair");
+    let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
+    let guard = tracing::subscriber::set_default(subscriber);
+    reject_invalid_attach_handshake(&mut server).await;
+    let mut tag = [0_u8; 1];
+    client.read_exact(&mut tag).await.expect("shutdown tag");
+    let response = read_server_frame(&mut client, tag[0])
+        .await
+        .expect("read shutdown")
+        .expect("shutdown frame");
+    drop(guard);
+    export.force_flush();
+
+    assert!(matches!(
+        response,
+        ServerFrame::Shutdown { reason: Some(reason) } if reason == "invalid correlation"
+    ));
+    let spans = export.finished_spans();
+    assert_eq!(spans.len(), 1);
+    assert_eq!(spans[0].name, "rpc.server");
+    assert!(spans[0].error);
+    assert_eq!(export.typed_error_count("error.typed", "rpc_error"), 1);
+}
+
+#[test]
+fn conformance_clipboard_continuations_validate_correlation_and_start_identity() {
+    use jackin_protocol::attach::{
+        AttachControlOperation, AttachControlRequest, ClipboardImageChunk, ClipboardImageEnd,
+        ClipboardImageFormat, ClipboardImageStart,
+    };
+
+    let mut mux = test_mux(24, 80);
+    let (out_tx, mut out_rx) = mpsc::unbounded_channel();
+    let (completion_tx, _completion_rx) = mpsc::unbounded_channel();
+    mux.client_registry
+        .client
+        .attach_with_completions(out_tx, completion_tx);
+    let start_context = jackin_protocol::TelemetryContext::v1();
+    handle_client_frame(
+        &mut mux,
+        ClientFrame::AttachControl(AttachControlRequest {
+            request_id: 91,
+            context: start_context.clone(),
+            operation: AttachControlOperation::ClipboardImageStart(ClipboardImageStart {
+                transfer_id: 7,
+                format: ClipboardImageFormat::Png,
+                size: 3,
+            }),
+        }),
+    );
+    assert!(mux.clipboard.attach_control_operations.contains_key(&7));
+
+    handle_client_frame(
+        &mut mux,
+        ClientFrame::AttachControl(AttachControlRequest {
+            request_id: 91,
+            context: jackin_protocol::TelemetryContext {
+                invocation_id: Some("not-a-uuid".to_owned()),
+                ..jackin_protocol::TelemetryContext::v1()
+            },
+            operation: AttachControlOperation::ClipboardImageChunk(ClipboardImageChunk {
+                transfer_id: 7,
+                offset: 0,
+                bytes: vec![1, 2, 3],
+            }),
+        }),
+    );
+    assert!(mux.clipboard.attach_control_operations.contains_key(&7));
+
+    handle_client_frame(
+        &mut mux,
+        ClientFrame::AttachControl(AttachControlRequest {
+            request_id: 92,
+            context: start_context.clone(),
+            operation: AttachControlOperation::ClipboardImageEnd(ClipboardImageEnd {
+                transfer_id: 7,
+                sha256: [0; jackin_protocol::attach::FILE_EXPORT_DIGEST_BYTES],
+            }),
+        }),
+    );
+    assert!(
+        mux.clipboard.attach_control_operations.contains_key(&7),
+        "a continuation with a different request identity must not consume the transfer"
+    );
+
+    handle_client_frame(
+        &mut mux,
+        ClientFrame::AttachControl(AttachControlRequest {
+            request_id: 91,
+            context: start_context,
+            operation: AttachControlOperation::ClipboardImageChunk(ClipboardImageChunk {
+                transfer_id: 7,
+                offset: 0,
+                bytes: vec![1, 2, 3],
+            }),
+        }),
+    );
+    assert!(
+        mux.clipboard.attach_control_operations.contains_key(&7),
+        "the rejected chunk must not advance the transfer offset"
+    );
+
+    let responses = std::iter::from_fn(|| out_rx.try_recv().ok())
+        .filter_map(|encoded| {
+            jackin_protocol::attach::decode_server(encoded[0], encoded[5..].to_vec()).ok()
+        })
+        .collect::<Vec<_>>();
+    assert!(responses.iter().any(|response| matches!(
+        response,
+        ServerFrame::AttachControlResponse(response)
+            if response.request_id == 91
+                && response.result
+                    == jackin_protocol::attach::AttachControlResult::InvalidCorrelation
+    )));
+    assert!(responses.iter().any(|response| matches!(
+        response,
+        ServerFrame::AttachControlResponse(response)
+            if response.request_id == 92
+                && response.result == jackin_protocol::attach::AttachControlResult::Rejected
+    )));
+}
+use crate::tui::socket_backend::SgrMetadata;
+use jackin_term::DamageGrid;
 use std::io;
 use std::sync::{Arc, Mutex};
 
@@ -12,6 +475,65 @@ use crate::protocol::attach::read_server_frame;
 use crate::tui::components::dialog::PullRequestStatus;
 use portable_pty::{ChildKiller, MasterPty, PtySize};
 use tokio::io::AsyncReadExt;
+
+fn sgr_regions_for_inner(bytes: &[u8], inner: Rect) -> Vec<(ratatui::layout::Rect, SgrMetadata)> {
+    let mut grid = DamageGrid::new(2, 10, 100);
+    grid.process(bytes);
+    let view = grid.scrollback_view(0, 2);
+    let panes = vec![VisiblePane {
+        id: 1,
+        outer: inner,
+        inner,
+        focused: false,
+    }];
+    let pane_screens = vec![(1u64, crate::tui::view::PaneScreen::View(view))];
+    compositor::pane_sgr_regions(&panes, &pane_screens)
+}
+
+fn sgr_regions_for(bytes: &[u8]) -> Vec<(ratatui::layout::Rect, SgrMetadata)> {
+    sgr_regions_for_inner(bytes, Rect::new(2, 3, 5, 10))
+}
+
+#[test]
+fn pane_sgr_regions_coalesces_one_styled_run_and_skips_default() {
+    let regions = sgr_regions_for(b"\x1b[4:3mab\x1b[24mcd");
+    assert_eq!(regions.len(), 1, "got {regions:?}");
+    let (rect, metadata) = regions[0];
+    assert_eq!((rect.x, rect.y, rect.width, rect.height), (3, 2, 2, 1));
+    assert_eq!(metadata.underline_style, jackin_term::UnderlineStyle::Curly);
+}
+
+#[test]
+fn pane_sgr_regions_splits_adjacent_differing_runs() {
+    let regions = sgr_regions_for(b"\x1b[4:3mab\x1b[4:2mcd");
+    assert_eq!(regions.len(), 2, "got {regions:?}");
+    assert_eq!((regions[0].0.x, regions[0].0.width), (3, 2));
+    assert_eq!(
+        regions[0].1.underline_style,
+        jackin_term::UnderlineStyle::Curly
+    );
+    assert_eq!((regions[1].0.x, regions[1].0.width), (5, 2));
+    assert_eq!(
+        regions[1].1.underline_style,
+        jackin_term::UnderlineStyle::Double
+    );
+}
+
+#[test]
+fn pane_sgr_regions_empty_when_nothing_styled() {
+    assert!(sgr_regions_for(b"plain text").is_empty());
+}
+
+#[test]
+fn pane_sgr_regions_clamps_run_to_inner_width() {
+    let regions = sgr_regions_for_inner(b"\x1b[4:3mabcdef", Rect::new(0, 0, 5, 4));
+    assert_eq!(regions.len(), 1, "got {regions:?}");
+    assert_eq!(regions[0].0.width, 4, "run must clamp to inner cols");
+    assert_eq!(
+        regions[0].1.underline_style,
+        jackin_term::UnderlineStyle::Curly
+    );
+}
 
 #[derive(Debug)]
 struct NullChildKiller;
@@ -192,6 +714,7 @@ fn test_mux(rows: u16, cols: u16) -> Multiplexer {
             workdir: "/workspace".to_owned(),
             agents: Vec::new(),
             models: BTreeMap::new(),
+            auth_modes: BTreeMap::new(),
             provider_models: BTreeMap::new(),
             initial_provider: None,
             claude_marketplaces: Vec::new(),
@@ -205,18 +728,107 @@ fn test_mux(rows: u16, cols: u16) -> Multiplexer {
 }
 
 #[test]
+fn conformance_wire_generated_codename_reaches_child_without_export() -> Result<()> {
+    const CHILD: &str = "JACKIN_CODENAME_PRIVACY_WIRE_CHILD";
+    if std::env::var_os(CHILD).is_none() {
+        let status = Command::new(std::env::current_exe()?)
+            .args([
+                "--exact",
+                "daemon::tests::conformance_wire_generated_codename_reaches_child_without_export",
+                "--nocapture",
+            ])
+            .env(CHILD, "1")
+            .env("JACKIN_TEST_SHELL", "sh")
+            .status()?;
+        anyhow::ensure!(status.success(), "isolated codename privacy test failed");
+        return Ok(());
+    }
+
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()?;
+    let testbed = runtime.block_on(async { jackin_otlp_testbed::Testbed::start() })?;
+    let runtime_guard = runtime.enter();
+    jackin_diagnostics::init_wire_test_export(
+        &testbed.endpoint(),
+        jackin_diagnostics::ServiceIdentity::CAPSULE,
+    )?;
+    let workdir = tempfile::tempdir()?;
+    let mut mux = test_mux(24, 80);
+    mux.launch_env.workdir = workdir.path().to_path_buf();
+    let session_id = mux.spawn_session(None, &[], None)?;
+    let codename = mux.session_supervisor.tabs[0].codename.clone();
+    anyhow::ensure!(
+        mux.session_supervisor.codename_live.contains(&codename)
+            && mux.session_supervisor.agent_history[0].codename == codename,
+        "generated codename did not reach tab/history state"
+    );
+    anyhow::ensure!(
+        mux.session_supervisor.sessions.get(session_id).is_some_and(
+            |session| session.send_input(b"printf '%s' \"$JACKIN_AGENT_CODENAME\"; exit\n")
+        ),
+        "failed to query child codename environment"
+    );
+    let child_reported_codename = runtime.block_on(async {
+        tokio::time::timeout(Duration::from_secs(2), async {
+            loop {
+                if let Some(SessionEvent::Output { data, .. }) = mux.control.event_rx.recv().await
+                    && String::from_utf8_lossy(&data).contains(&codename)
+                {
+                    break true;
+                }
+            }
+        })
+        .await
+        .unwrap_or(false)
+    });
+    anyhow::ensure!(
+        child_reported_codename,
+        "spawned shell did not receive generated codename"
+    );
+    let operation =
+        jackin_telemetry::root_operation(&jackin_telemetry::operation::TELEMETRY_VALIDATE, &[])
+            .map_err(|reason| anyhow::anyhow!("validation operation rejected: {reason:?}"))?;
+    jackin_telemetry::emit_event(
+        &jackin_telemetry::event::TELEMETRY_VALIDATE,
+        jackin_telemetry::FieldSet::default(),
+    )
+    .map_err(|reason| anyhow::anyhow!("validation event rejected: {reason:?}"))?;
+    jackin_telemetry::counter(&jackin_telemetry::metric::TELEMETRY_VALIDATE)
+        .add(1, &[])
+        .map_err(|reason| anyhow::anyhow!("validation metric rejected: {reason:?}"))?;
+    operation.complete(jackin_telemetry::schema::enums::OutcomeValue::Success, None);
+    jackin_diagnostics::flush_wire_test_export()?;
+    drop(runtime_guard);
+    anyhow::ensure!(
+        runtime.block_on(testbed.wait_for_all_signals(Duration::from_secs(2))),
+        "codename route did not export all three signals"
+    );
+    anyhow::ensure!(
+        testbed.prohibited_value_violations(&[&codename]).is_empty(),
+        "generated codename escaped to OTLP"
+    );
+    jackin_diagnostics::shutdown_capsule_tracing();
+    Ok(())
+}
+
+#[test]
 fn begin_exec_picker_supersedes_pending_reply_and_dialog() {
     let mut mux = test_mux(40, 20);
     let (tx1, mut rx1) = tokio::sync::oneshot::channel();
-    mux.begin_exec_picker("cmd1".to_owned(), vec![], tx1);
+    mux.begin_exec_picker("cmd1".to_owned(), vec![], tx1, None);
 
     // A second jackin-exec request arrives while the first picker is pending.
     let (tx2, _rx2) = tokio::sync::oneshot::channel();
-    mux.begin_exec_picker("cmd2".to_owned(), vec![], tx2);
+    mux.begin_exec_picker("cmd2".to_owned(), vec![], tx2, None);
 
     // The prior client must get a structured denial, not a hung/closed socket.
     match rx1.try_recv() {
-        Ok(ServerMsg::ExecDenied { reason }) => {
+        Ok(ControlResponse {
+            msg: ServerMsg::ExecDenied { reason },
+            ..
+        }) => {
             assert!(reason.contains("superseded"), "unexpected reason: {reason}");
         }
         other => panic!("expected ExecDenied for the superseded request, got {other:?}"),
@@ -322,6 +934,34 @@ fn control_reply_for_request_shapes_usage_variants() {
 
     let accounts = control_reply_for_request(&mut mux, ClientMsg::UsageAccountList);
     assert!(matches!(accounts, ServerMsg::UsageAccounts { .. }));
+}
+
+#[test]
+fn control_reply_exposes_typed_telemetry_health() {
+    let mut mux = single_pane_tab_mux();
+    let reply = control_reply_for_request(&mut mux, ClientMsg::TelemetryHealth);
+    let ServerMsg::TelemetryHealth { report } = reply else {
+        panic!("expected telemetry health");
+    };
+    assert_eq!(report.fingerprint.service_name, "jackin-capsule");
+    assert_eq!(report.fingerprint.app_mode, "capsule");
+    assert_eq!(report.fingerprint.compression, "gzip");
+    assert_eq!(report.fingerprint.sampler, "parentbased_always_on");
+    assert_eq!(report.config_failure, None);
+    assert!(report.health.active_signals <= 3);
+    assert_eq!(
+        report.health.capsule_export,
+        jackin_protocol::control::CapsuleExportCoverage::NotApplicable
+    );
+    assert_eq!(
+        report.health.flush,
+        jackin_protocol::control::TelemetryFlushStatus::Pending
+    );
+    assert!(!report.health.shutdown_timed_out);
+    let json = serde_json::to_string(&report).unwrap().to_ascii_lowercase();
+    assert!(!json.contains("authorization"));
+    assert!(!json.contains("header"));
+    assert!(!json.contains("certificate"));
 }
 
 #[test]
@@ -633,49 +1273,6 @@ fn oid(nibble: char) -> Oid {
     Oid::parse(&nibble.to_string().repeat(40)).expect("40 hex chars is a valid Oid")
 }
 
-#[test]
-fn clipboard_image_error_reason_uses_stable_compact_codes() {
-    let cases = [
-        (
-            anyhow::anyhow!("clipboard image transfer is empty"),
-            "empty",
-        ),
-        (
-            anyhow::anyhow!("clipboard image transfer 67108865 bytes exceeds cap 67108864"),
-            "oversize",
-        ),
-        (
-            anyhow::anyhow!("clipboard image magic bytes do not match Png"),
-            "signature-mismatch",
-        ),
-        (
-            anyhow::anyhow!("clipboard image transfer 7 SHA-256 mismatch"),
-            "digest-mismatch",
-        ),
-        (
-            anyhow::anyhow!("clipboard image transfer 7 offset 4 did not match expected 8"),
-            "offset-mismatch",
-        ),
-        (
-            anyhow::anyhow!("clipboard image transfer 7 has no active start"),
-            "missing-transfer",
-        ),
-        (
-            anyhow::anyhow!("Error: Can't open display: (null)"),
-            "backend-unavailable",
-        ),
-        (
-            anyhow::anyhow!("writing /jackin/run/clipboard/clipboard-1.png"),
-            "staging-io",
-        ),
-        (anyhow::anyhow!("unexpected payload"), "invalid-payload"),
-    ];
-
-    for (err, expected) in cases {
-        assert_eq!(clipboard_image_error_reason(&err), expected);
-    }
-}
-
 fn branch(name: &str) -> BranchName {
     BranchName::parse(name).expect("test branch names must parse")
 }
@@ -863,36 +1460,6 @@ fn test_pane_session(
     agent: Option<&str>,
 ) -> (Session, mpsc::UnboundedReceiver<Vec<u8>>) {
     test_session_with_agent(rows, cols, agent.map(str::to_owned))
-}
-
-fn assert_focused_scroll_chrome(frame: &[u8], context: &str) {
-    let rendered = String::from_utf8_lossy(frame);
-    let thumb_fg = format!(
-        "{}{}",
-        crate::tui::ansi::RESET,
-        crate::tui::ansi::rgb_fg(jackin_core::PHOSPHOR_GREEN)
-    );
-    assert!(
-        rendered.contains(&thumb_fg),
-        "focused {context} should use the shared scrollbar thumb color"
-    );
-    assert!(
-        rendered.contains(termrock::scroll::ScrollbarStyle::Line.vertical_thumb()),
-        "focused {context} should draw the shared scrollbar thumb"
-    );
-    assert!(
-        rendered.contains(termrock::scroll::SCROLLBAR_TRACK),
-        "focused {context} should draw the shared scrollbar track"
-    );
-}
-
-fn assert_no_scroll_thumb(frame: &[u8], context: &str) {
-    let rendered = String::from_utf8_lossy(frame);
-    assert!(
-        !rendered.contains(termrock::scroll::ScrollbarStyle::Line.vertical_thumb())
-            && !rendered.contains('█'),
-        "{context} should not draw fake scrollback chrome"
-    );
 }
 
 fn assert_frame_stays_within_geometry(frame: &[u8], rows: u16, cols: u16, context: &str) {
@@ -1518,7 +2085,7 @@ fn command_palette_labels_single_pane_close_as_close_tab() {
 }
 
 #[test]
-fn dialog_backdrop_preserves_status_bar_and_hides_pane_chrome() {
+fn dialog_backdrop_preserves_product_status_brand() {
     fn mux_with_two_sessions() -> Multiplexer {
         let mut mux = split_tab_mux();
         let (session_one, _) = test_session(24, 80);
@@ -1528,7 +2095,7 @@ fn dialog_backdrop_preserves_status_bar_and_hides_pane_chrome() {
         mux
     }
 
-    fn assert_backdrop_opaque(mut mux: Multiplexer, context: &str) {
+    fn assert_brand_preserved(mut mux: Multiplexer, context: &str) {
         let frame =
             String::from_utf8_lossy(&compose_after(&mut mux, FullRedrawReason::DialogChange))
                 .to_string();
@@ -1541,29 +2108,22 @@ fn dialog_backdrop_preserves_status_bar_and_hides_pane_chrome() {
             frame.contains("jackin") && frame.contains("48;2;0;255;65"),
             "{context} should preserve the top status brand (green block) while a dialog is open: {frame:?}"
         );
-        assert!(
-            !frame.contains(&format!(
-                "{}┌",
-                crate::tui::ansi::rgb_fg(jackin_core::BORDER_GRAY)
-            )),
-            "{context} should hide inactive pane borders behind the dialog: {frame:?}"
-        );
     }
 
     let mut menu_mux = mux_with_two_sessions();
     menu_mux.open_command_palette();
-    assert_backdrop_opaque(menu_mux, "menu dialog");
+    assert_brand_preserved(menu_mux, "menu dialog");
 
     let mut container_mux = mux_with_two_sessions();
     container_mux.open_container_info_dialog();
-    assert_backdrop_opaque(container_mux, "container info dialog");
+    assert_brand_preserved(container_mux, "container info dialog");
 
     let mut github_mux = mux_with_two_sessions();
     github_mux.pr_watch.pull_request_context_branch = Some(branch("feat/capsule-pr-context-bar"));
     github_mux.pr_watch.pull_request_context = Some(Arc::new(pull_request_fixture(436)));
     github_mux.launch_env.workdir_context.gh_available = false;
     github_mux.open_github_context_dialog(Instant::now());
-    assert_backdrop_opaque(github_mux, "GitHub context dialog");
+    assert_brand_preserved(github_mux, "GitHub context dialog");
 }
 
 #[test]
@@ -3100,31 +3660,6 @@ fn mode_reconciliation_resets_agent_modes_on_focus_swap() {
 }
 
 #[test]
-fn pane_scrollbar_renders_shared_component_glyphs_only() {
-    let mut mux = single_pane_tab_mux();
-    let (mut session, _rx) = test_session(20, 78);
-    for i in 0..40 {
-        session.feed_pty(format!("line {i}\r\n").as_bytes());
-    }
-    mux.session_supervisor.sessions.insert(1, session);
-
-    let frame = compose_after(&mut mux, FullRedrawReason::FirstAttach);
-    let rendered = String::from_utf8_lossy(&frame);
-    assert!(
-        rendered.contains(termrock::scroll::ScrollbarStyle::Line.vertical_thumb()),
-        "pane scrollbar must use the shared Line thumb"
-    );
-    assert!(
-        rendered.contains(termrock::scroll::SCROLLBAR_TRACK),
-        "pane scrollbar must paint the shared track"
-    );
-    assert!(
-        !rendered.contains('█'),
-        "hand-painted block thumb is a D14 regression"
-    );
-}
-
-#[test]
 fn scrollbar_click_jumps_scrollback() {
     let mut mux = single_pane_tab_mux();
     let (mut session, _rx) = test_session(20, 78);
@@ -3211,38 +3746,6 @@ fn diff_frames_repaint_in_place_without_screen_erase() {
 }
 
 #[test]
-fn retained_scrollback_draws_scrollbar_at_live_tail() {
-    for (agent, pane_kind) in pane_kind_cases() {
-        let mut mux = single_pane_tab_mux();
-        let (mut session, _input_rx) = test_pane_session(20, 78, agent);
-        for i in 0..40 {
-            session.feed_pty(format!("line {i}\r\n").as_bytes());
-        }
-        assert_eq!(session.scrollback_offset(), 0);
-        assert!(
-            session.scrollback_filled() > 0,
-            "{pane_kind} setup should retain scrollback"
-        );
-        mux.session_supervisor.sessions.insert(1, session);
-
-        let frame = compose_after(&mut mux, FullRedrawReason::FirstAttach);
-
-        assert_focused_scroll_chrome(
-            &frame,
-            &format!("{pane_kind} pane with retained scrollback at live tail"),
-        );
-        assert_eq!(
-            mux.session_supervisor
-                .sessions
-                .get(1)
-                .unwrap()
-                .scrollback_offset(),
-            0
-        );
-    }
-}
-
-#[test]
 fn wheel_noops_for_focused_normal_screen_pane_without_scrollback() {
     for (agent, pane_kind) in pane_kind_cases() {
         let mut mux = single_pane_tab_mux_with_size(55, 200);
@@ -3309,10 +3812,6 @@ fn wheel_scrolls_top_anchored_inline_history_for_all_panes() {
                 .unwrap()
                 .scrollback_offset(),
             3
-        );
-        assert_focused_scroll_chrome(
-            &frame,
-            &format!("normal-screen {pane_kind} pane with inline history"),
         );
         assert!(
             String::from_utf8_lossy(&frame).contains("history"),
@@ -3414,10 +3913,6 @@ fn wheel_scrolls_normal_screen_history_preserved_before_clear_for_all_panes() {
                 .scrollback_offset(),
             3
         );
-        assert_focused_scroll_chrome(
-            &frame,
-            &format!("normal-screen {pane_kind} pane with clear-preserved history"),
-        );
         assert!(
             String::from_utf8_lossy(&frame).contains("release"),
             "normal-screen {pane_kind} wheel should render rows preserved before clear"
@@ -3458,10 +3953,6 @@ fn wheel_scrolls_csi_scroll_up_inline_history_for_all_panes() {
                 .unwrap()
                 .scrollback_offset(),
             2
-        );
-        assert_focused_scroll_chrome(
-            &frame,
-            &format!("normal-screen {pane_kind} pane with CSI S inline history"),
         );
         assert!(
             String::from_utf8_lossy(&frame).contains("top"),
@@ -3567,75 +4058,6 @@ fn wheel_cursor_fallback_respects_application_cursor_mode() {
 }
 
 #[test]
-fn alt_screen_overflow_does_not_draw_scrollbar_without_retained_scrollback() {
-    let mut mux = single_pane_tab_mux();
-    let (mut session, _input_rx) = test_session(8, 20);
-    session.feed_pty(b"\x1b[?1049h");
-    for i in 0..20 {
-        session.feed_pty(format!("line {i}\r\n").as_bytes());
-    }
-    assert_eq!(session.scrollback_filled(), 0);
-    mux.session_supervisor.sessions.insert(1, session);
-
-    let frame = compose_after(&mut mux, FullRedrawReason::FirstAttach);
-    assert_no_scroll_thumb(&frame, "alt-screen pane without retained scrollback");
-}
-
-#[test]
-fn normal_screen_panes_do_not_draw_scrollbar_when_grid_is_full_without_scrollback() {
-    for (agent, pane_kind) in pane_kind_cases() {
-        let mut mux = single_pane_tab_mux();
-        let (mut session, _input_rx) = test_pane_session(8, 20, agent);
-        for row in 0..8 {
-            session.feed_pty(format!("\x1b[{};1Hrow {row}", row + 1).as_bytes());
-        }
-        mux.session_supervisor.sessions.insert(1, session);
-
-        let frame = compose_after(&mut mux, FullRedrawReason::FirstAttach);
-        assert_no_scroll_thumb(
-            &frame,
-            &format!("normal-screen {pane_kind} pane with full grid but no scrollback"),
-        );
-    }
-}
-
-#[test]
-fn normal_screen_panes_do_not_draw_scrollbar_when_content_spans_viewport_without_scrollback() {
-    for (agent, pane_kind) in pane_kind_cases() {
-        let mut mux = single_pane_tab_mux();
-        let (mut session, _input_rx) = test_pane_session(8, 20, agent);
-        session.feed_pty(b"\x1b[1;1Htop transcript\x1b[8;1Hbottom status");
-        assert_eq!(session.scrollback_filled(), 0);
-        mux.session_supervisor.sessions.insert(1, session);
-
-        let frame = compose_after(&mut mux, FullRedrawReason::FirstAttach);
-        assert_no_scroll_thumb(
-            &frame,
-            &format!(
-                "normal-screen {pane_kind} pane with viewport-spanning content but no scrollback"
-            ),
-        );
-    }
-}
-
-#[test]
-fn normal_screen_panes_do_not_keep_scrollbar_when_cursor_moves_without_scrollback() {
-    for (agent, pane_kind) in pane_kind_cases() {
-        let mut mux = single_pane_tab_mux_with_size(55, 200);
-        let (mut session, _input_rx) = test_pane_session(51, 198, agent);
-        session.feed_pty(b"\x1b[1;1Hrelease notes\x1b[51;1Hstatus line\x1b[48;3Hx");
-        assert_eq!(session.scrollback_filled(), 0);
-        mux.session_supervisor.sessions.insert(1, session);
-
-        let frame = compose_after(&mut mux, FullRedrawReason::FirstAttach);
-        assert_no_scroll_thumb(
-            &frame,
-            &format!("normal-screen {pane_kind} transcript pane after cursor moved up"),
-        );
-    }
-}
-
-#[test]
 fn alt_screen_exit_resets_keyboard_modes_for_shell_prompt() {
     let (mut session, _input_rx) = test_session(8, 20);
     session.feed_pty(b"\x1b[?1049h\x1b[>1u\x1b[>4;2m");
@@ -3690,14 +4112,17 @@ fn pointer_shape_updates_only_when_shape_changes() {
 #[tokio::test]
 async fn drain_and_exit_delivers_shutdown_before_closing_attach_socket() {
     let mut mux = test_mux(24, 80);
-    let (daemon_stream, mut client_stream) = tokio::net::UnixStream::pair().unwrap();
+    let (daemon_stream, mut client_stream) = UnixStream::pair().unwrap();
     let (out_tx, out_rx) = mpsc::unbounded_channel();
+    let (_completion_tx, completion_rx) = mpsc::unbounded_channel();
     let (cmd_tx, _cmd_rx) = mpsc::unbounded_channel();
     mux.client_registry.client.attach(out_tx);
-    mux.client_registry.attached_task = Some(tokio::spawn(handle_attach_client(
+    mux.client_registry.attached_task = Some(tokio::spawn(handle_attach_client_with_handshake(
         daemon_stream,
         out_rx,
+        completion_rx,
         cmd_tx,
+        None,
     )));
 
     let read_shutdown = async {
@@ -4061,7 +4486,7 @@ fn container_info_copy_feedback_expires() {
         diagnostics: crate::tui::components::dialog::ContainerInfoDiagnostics::default(),
         copied_row: Some(0),
         hovered_row: None,
-        scroll: termrock::layout::DialogBodyScroll::new(),
+        scroll: termrock::scroll::DialogScroll::new(),
     });
     let now = Instant::now();
     mux.clipboard.dialog_copy_feedback_deadline = Some(now);
@@ -4088,7 +4513,7 @@ fn container_info_id_click_copies_and_renders_feedback() {
         diagnostics: crate::tui::components::dialog::ContainerInfoDiagnostics::default(),
         copied_row: None,
         hovered_row: None,
-        scroll: termrock::layout::DialogBodyScroll::new(),
+        scroll: termrock::scroll::DialogScroll::new(),
     });
     let (tx, mut rx) = mpsc::unbounded_channel();
     mux.client_registry.client.attach(tx);
@@ -4164,10 +4589,8 @@ fn gh_lookup_output_rejects_statusless_stderr_only_failure() {
     let err = command_output_or_lookup_error("gh", None, b"", b"HTTP 401: Bad credentials\n")
         .expect_err("stderr-only statusless gh output is a transient failure");
 
-    assert!(
-        err.to_string().contains("HTTP 401"),
-        "stderr detail should survive for logs: {err}"
-    );
+    assert_eq!(err, crate::pr_context::LookupError::Io);
+    assert!(!err.to_string().contains("HTTP 401"));
 }
 
 // Action-boundary dispatch tests: drive apply_action directly without
@@ -4314,6 +4737,176 @@ fn tab_bar_focus_mode_arrows_switch_tabs_then_esc_returns_to_agent() {
 
     mux.handle_input(InputEvent::Data(b"\x1b".to_vec())); // Esc → back to agent
     assert!(!mux.render.tab_bar_focused);
+}
+
+#[test]
+fn capsule_widget_focus_lifecycle_is_exported_without_runtime_identity() {
+    let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(true);
+    tracing::subscriber::with_default(subscriber, || {
+        let mut mux = test_mux(40, 80);
+        assert_eq!(mux.widget_focus.current_widget(), Some("capsule.pane"));
+        mux.synthesise_focus_swap(Some(41), Some(42));
+
+        mux.set_tab_bar_focused(true);
+        assert_eq!(mux.widget_focus.current_widget(), Some("capsule.tab"));
+
+        mux.open_command_palette();
+        assert_eq!(
+            mux.widget_focus.current_widget(),
+            Some("capsule.command_palette")
+        );
+
+        mux.dialog_clear();
+        assert_eq!(mux.widget_focus.current_widget(), Some("capsule.tab"));
+        mux.set_tab_bar_focused(false);
+        assert_eq!(mux.widget_focus.current_widget(), Some("capsule.pane"));
+        mux.widget_focus.unfocus().unwrap();
+    });
+    export.force_flush();
+
+    assert_eq!(export.event_count("ui.widget.focused"), 6);
+    assert_eq!(export.event_count("ui.widget.unfocused"), 6);
+    let spans = export.finished_spans();
+    assert!(
+        spans
+            .iter()
+            .all(|span| span.name != jackin_telemetry::schema::spans::UI_ACTION),
+        "focus lifecycle must not create pane-action spans: {spans:?}"
+    );
+    for widget in ["capsule.pane", "capsule.tab", "capsule.command_palette"] {
+        assert!(export.contains_log_text(widget));
+    }
+    assert!(!export.contains_log_text("test-role"));
+    assert!(!export.contains_log_text("/workspace"));
+}
+
+#[test]
+fn conformance_wire_capsule_mouse_dispatch_counts_once_without_coordinates() -> Result<()> {
+    const CHILD: &str = "JACKIN_CAPSULE_MOUSE_WIRE_CHILD";
+    if std::env::var_os(CHILD).is_none() {
+        let status = Command::new(std::env::current_exe()?)
+            .args([
+                "--exact",
+                "daemon::tests::conformance_wire_capsule_mouse_dispatch_counts_once_without_coordinates",
+                "--nocapture",
+            ])
+            .env(CHILD, "1")
+            .status()?;
+        anyhow::ensure!(status.success(), "isolated Capsule mouse test failed");
+        return Ok(());
+    }
+
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()?;
+    let testbed = runtime.block_on(async { jackin_otlp_testbed::Testbed::start() })?;
+    let runtime_guard = runtime.enter();
+    jackin_diagnostics::init_wire_test_export(
+        &testbed.endpoint(),
+        jackin_diagnostics::ServiceIdentity::CAPSULE,
+    )?;
+    let mut mux = test_mux(40, 80);
+    mux.handle_input(InputEvent::MousePress {
+        col: 73,
+        row: 37,
+        button: 0,
+    });
+    mux.handle_input(InputEvent::MouseRelease {
+        col: 73,
+        row: 37,
+        button: 0,
+    });
+    let (session, _session_rx) = test_session_with_agent(24, 80, Some("codex".to_owned()));
+    record_agent_status_tick(
+        &session,
+        crate::session::StatusTick {
+            transition: Some(crate::session::StatusTransition {
+                previous: crate::protocol::AgentState::Idle,
+                effective: crate::protocol::AgentState::Working,
+                winner: crate::agent_status::evidence::EvidenceWinner::Unknown,
+            }),
+            stuck: false,
+            flap: true,
+        },
+    );
+    jackin_telemetry::emit_event(
+        &jackin_telemetry::event::TELEMETRY_VALIDATE,
+        jackin_telemetry::FieldSet::default(),
+    )
+    .map_err(|reason| anyhow::anyhow!("validation event rejected: {reason:?}"))?;
+    jackin_diagnostics::flush_wire_test_export()?;
+    drop(runtime_guard);
+    anyhow::ensure!(
+        runtime.block_on(testbed.wait_for_all_signals(Duration::from_secs(2))),
+        "Capsule mouse metric did not reach all three-signal receiver"
+    );
+
+    let mouse_count = testbed
+        .metrics()
+        .into_iter()
+        .flat_map(|request| request.resource_metrics)
+        .flat_map(|resource| resource.scope_metrics)
+        .flat_map(|scope| scope.metrics)
+        .filter(|metric| metric.name == "terminal.input.mouse")
+        .filter_map(|metric| metric.data)
+        .filter_map(|data| match data {
+            opentelemetry_proto::tonic::metrics::v1::metric::Data::Sum(sum) => Some(sum),
+            _ => None,
+        })
+        .flat_map(|sum| sum.data_points)
+        .filter_map(|point| point.value)
+        .map(|value| match value {
+            opentelemetry_proto::tonic::metrics::v1::number_data_point::Value::AsInt(value) => {
+                value as f64
+            }
+            opentelemetry_proto::tonic::metrics::v1::number_data_point::Value::AsDouble(value) => {
+                value
+            }
+        })
+        .sum::<f64>();
+    anyhow::ensure!(
+        (mouse_count - 2.0).abs() < f64::EPSILON,
+        "expected two mouse events, got {mouse_count}"
+    );
+    let flap_count = testbed
+        .metrics()
+        .into_iter()
+        .flat_map(|request| request.resource_metrics)
+        .flat_map(|resource| resource.scope_metrics)
+        .flat_map(|scope| scope.metrics)
+        .filter(|metric| metric.name == "agent.state.flaps")
+        .filter_map(|metric| metric.data)
+        .filter_map(|data| match data {
+            opentelemetry_proto::tonic::metrics::v1::metric::Data::Sum(sum) => Some(sum),
+            _ => None,
+        })
+        .flat_map(|sum| sum.data_points)
+        .filter_map(|point| point.value)
+        .map(|value| match value {
+            opentelemetry_proto::tonic::metrics::v1::number_data_point::Value::AsInt(value) => {
+                value as f64
+            }
+            opentelemetry_proto::tonic::metrics::v1::number_data_point::Value::AsDouble(value) => {
+                value
+            }
+        })
+        .sum::<f64>();
+    anyhow::ensure!(
+        (flap_count - 1.0).abs() < f64::EPSILON,
+        "expected one flap episode, got {flap_count}"
+    );
+    for key in testbed.metric_dimension_keys() {
+        anyhow::ensure!(
+            !matches!(
+                key.as_str(),
+                "row" | "column" | "mouse.row" | "mouse.column" | "ui.pointer.x" | "ui.pointer.y"
+            ),
+            "raw pointer coordinate key escaped to OTLP: {key}"
+        );
+    }
+    jackin_diagnostics::shutdown_capsule_tracing();
+    Ok(())
 }
 
 #[test]
@@ -6989,7 +7582,7 @@ fn reattach_updates_capabilities_without_resetting_model_palette() {
 // CLI/TUI output captured outside the unit test process.
 
 use crate::tui::model::{CursorVisibilityState, cursor_visible_for_state};
-use jackin_term::{Cell, DamageGrid};
+use jackin_term::Cell;
 
 /// The outer terminal: a second `DamageGrid` sized to the attach client.
 /// `apply` is `process()`; the capsule's own `?2026` brackets and mode

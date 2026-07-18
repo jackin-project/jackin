@@ -25,7 +25,6 @@ use crate::tui::components::editor_rows::{
 use crate::tui::components::op_breadcrumb::push_op_breadcrumb_spans;
 use crate::tui::components::source_picker::SourcePickerState;
 use crate::tui::screens::settings::model::AuthFormFocus;
-use jackin_core::tui_theme::{PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
 
 // Structural exception: auth panels are multi-field credential forms with
 // breadcrumb, source, input, and action rows, so they cannot use the flat picker
@@ -376,7 +375,8 @@ pub fn render_form<V: AuthCredential>(
         frame,
         area,
         Some("Edit auth"),
-        termrock::layout::DialogBorder::Default,
+        termrock::widgets::PanelEmphasis::Focused,
+        &termrock::Theme::default(),
     );
 
     for (idx, row) in build_form_lines(form, focus).into_iter().enumerate() {
@@ -446,7 +446,10 @@ fn build_form_lines<V: AuthCredential>(form: &AuthForm<V>, focus: AuthFormFocus)
             label_style(),
         ),
         Span::raw(" "),
-        Span::styled(mode_text.to_owned(), jackin_core::tui_theme::GREEN),
+        Span::styled(
+            mode_text.to_owned(),
+            termrock::Theme::default().style(termrock::style::Role::Accent),
+        ),
     ])));
 
     if form.shows_source_folder() {
@@ -477,9 +480,12 @@ fn build_form_lines<V: AuthCredential>(form: &AuthForm<V>, focus: AuthFormFocus)
 
 fn source_folder_line<V: AuthCredential>(form: &AuthForm<V>, selected: bool) -> Line<'static> {
     let label_style = if selected {
-        jackin_core::tui_theme::BOLD_WHITE
+        termrock::Theme::default().style(termrock::style::Role::TextStrong)
     } else {
-        Style::default().fg(WHITE)
+        Style::default().fg(termrock::Theme::default()
+            .style(termrock::style::Role::Text)
+            .fg
+            .unwrap_or_default())
     };
     Line::from(vec![
         cursor_span(selected),
@@ -488,7 +494,10 @@ fn source_folder_line<V: AuthCredential>(form: &AuthForm<V>, selected: bool) -> 
             label_style,
         ),
         Span::raw(" "),
-        Span::styled(source_folder_text(form), jackin_core::tui_theme::GREEN),
+        Span::styled(
+            source_folder_text(form),
+            termrock::Theme::default().style(termrock::style::Role::Accent),
+        ),
     ])
 }
 
@@ -512,9 +521,12 @@ fn credential_env_line<R: AuthCredentialRef>(
     selected: bool,
 ) -> Line<'static> {
     let label_style = if selected {
-        jackin_core::tui_theme::BOLD_WHITE
+        termrock::Theme::default().style(termrock::style::Role::TextStrong)
     } else {
-        Style::default().fg(WHITE)
+        Style::default().fg(termrock::Theme::default()
+            .style(termrock::style::Role::Text)
+            .fg
+            .unwrap_or_default())
     };
     let mut spans = vec![
         cursor_span(selected),
@@ -528,7 +540,7 @@ fn credential_env_line<R: AuthCredentialRef>(
         CredentialInput::None => {
             spans.push(Span::styled(
                 "required".to_owned(),
-                jackin_core::tui_theme::DANGER,
+                termrock::Theme::default().style(termrock::style::Role::Danger),
             ));
         }
         CredentialInput::Literal(value) => {
@@ -538,9 +550,9 @@ fn credential_env_line<R: AuthCredentialRef>(
                 "●".repeat(value.chars().count().clamp(1, 12))
             };
             let style = if value.is_empty() {
-                jackin_core::tui_theme::DANGER
+                termrock::Theme::default().style(termrock::style::Role::Danger)
             } else {
-                jackin_core::tui_theme::GREEN
+                termrock::Theme::default().style(termrock::style::Role::Accent)
             };
             spans.push(Span::styled(masked, style));
         }
@@ -554,11 +566,17 @@ fn credential_env_line<R: AuthCredentialRef>(
 fn action_buttons_line(can_save: bool, focus: AuthFormFocus) -> Line<'static> {
     let save_style = if can_save {
         Style::default()
-            .fg(PHOSPHOR_GREEN)
+            .fg(termrock::Theme::default()
+                .style(termrock::style::Role::Accent)
+                .fg
+                .unwrap_or_default())
             .add_modifier(Modifier::BOLD)
     } else {
         Style::default()
-            .fg(PHOSPHOR_DIM)
+            .fg(termrock::Theme::default()
+                .style(termrock::style::Role::TextMuted)
+                .fg
+                .unwrap_or_default())
             .add_modifier(Modifier::DIM)
     };
     Line::from(vec![
@@ -571,7 +589,7 @@ fn action_buttons_line(can_save: bool, focus: AuthFormFocus) -> Line<'static> {
             "  Cancel  ".to_owned(),
             selected_button_style(
                 focus == AuthFormFocus::Cancel,
-                jackin_core::tui_theme::BOLD_WHITE,
+                termrock::Theme::default().style(termrock::style::Role::TextStrong),
             ),
         ),
         Span::raw("    "),
@@ -579,19 +597,24 @@ fn action_buttons_line(can_save: bool, focus: AuthFormFocus) -> Line<'static> {
             "  Reset  ".to_owned(),
             selected_button_style(
                 focus == AuthFormFocus::Reset,
-                jackin_core::tui_theme::BOLD_WHITE,
+                termrock::Theme::default().style(termrock::style::Role::TextStrong),
             ),
         ),
     ])
 }
 
 fn label_style() -> Style {
-    jackin_core::tui_theme::BOLD_WHITE
+    termrock::Theme::default().style(termrock::style::Role::TextStrong)
 }
 
-const fn selected_button_style(selected: bool, style: Style) -> Style {
+fn selected_button_style(selected: bool, style: Style) -> Style {
     if selected {
-        style.bg(WHITE).fg(Color::Black)
+        style
+            .bg(termrock::Theme::default()
+                .style(termrock::style::Role::Text)
+                .fg
+                .unwrap_or_default())
+            .fg(Color::Black)
     } else {
         style
     }

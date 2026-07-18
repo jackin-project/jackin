@@ -63,7 +63,8 @@ pub fn try_scroll_file_browser_modal(
         }
         ManagerStage::Settings(settings) => {
             let area = modal_rects::modal_rect_for_mode(term_size, ModalRectMode::FileBrowser);
-            if let Some(SettingsModal::MountFileBrowser { state }) = settings.mounts.modal.as_mut()
+            if let Some(SettingsModal::MountFileBrowser { state }) =
+                settings.mounts.modals.current_mut()
             {
                 return scroll_file_browser_state_at(state, area, mouse, delta);
             }
@@ -126,10 +127,10 @@ pub fn try_scroll_picker_modal(
             scroll_modal_selection(prelude.modal.as_mut(), delta)
         }
         ManagerStage::Settings(settings) => {
-            if let Some(modal) = settings.mounts.modal.as_mut() {
+            if let Some(modal) = settings.mounts.modals.current_mut() {
                 return scroll_global_mount_modal_selection(modal, mouse, term_size, delta);
             }
-            if let Some(modal) = settings.env.modal.as_mut() {
+            if let Some(modal) = settings.env.modals.current_mut() {
                 return scroll_settings_env_modal_selection(modal, mouse, term_size, delta);
             }
             if let Some(modal) = settings.auth.modal_mut() {

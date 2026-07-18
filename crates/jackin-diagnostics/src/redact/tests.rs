@@ -50,6 +50,7 @@ fn redacts_before_capping() {
     let capped = redact_and_cap(&input, 64);
 
     assert!(!capped.contains("ghp_"));
-    assert!(capped.starts_with("(truncated to last 64 bytes)\n"));
+    assert!(capped.starts_with("(truncated to 64 bytes)\n"));
     assert!(capped.ends_with("tail"));
+    assert!(capped.len() <= 64);
 }

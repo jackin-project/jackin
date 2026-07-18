@@ -54,10 +54,9 @@ fn cleanup_timing(name: &'static str) -> CleanupTiming {
     CleanupTiming { name }
 }
 
-fn cleanup_failure(message: impl AsRef<str>) {
-    if let Some(run) = jackin_diagnostics::active_run() {
-        run.compact("cleanup", message.as_ref());
-    }
+fn cleanup_failure(_message: impl AsRef<str>) {
+    let _error =
+        jackin_telemetry::record_error(jackin_telemetry::schema::enums::ErrorType::IoError);
 }
 
 pub async fn purge_class_data(
@@ -213,15 +212,8 @@ pub(crate) fn docker_resources_for_state(
     container_name: &str,
 ) -> DockerResources {
     let state_dir = paths.data_dir.join(container_name);
-    let manifest = InstanceManifest::read_optional(&state_dir).unwrap_or_else(|err| {
-        // A corrupt manifest falls back to name-derived resources, which can miss
-        // a renamed volume/network and silently leak it. Always-on (not the
-        // debug firehose) because the outcome is an operator-actionable resource
-        // leak, matching the degraded-path warns in runtime/image.rs.
-        tracing::warn!(
-            "reading manifest for {container_name} failed ({err}); deriving docker \
-             resources from the container name (a renamed volume/network may leak)"
-        );
+    let manifest = InstanceManifest::read_optional(&state_dir).unwrap_or_else(|_| {
+        let _warning = jackin_telemetry::record_recovered_degradation();
         None
     });
     manifest.map_or_else(
@@ -527,9 +519,7 @@ fn apple_container_instance_names(paths: &JackinPaths) -> anyhow::Result<Vec<Str
             continue;
         }
         let name = entry.file_name().to_string_lossy().to_string();
-        let Some(manifest) =
-            InstanceManifest::read_or_log(&entry.path(), "apple_container_instance_names")
-        else {
+        let Some(manifest) = InstanceManifest::read_optional_lossy(&entry.path()) else {
             continue;
         };
         if matches!(
@@ -583,10 +573,6 @@ pub fn prune_cache(paths: &JackinPaths) -> anyhow::Result<()> {
         "removing rebuildable shared cache",
         "shared cache",
     )
-}
-
-pub fn prune_diagnostics(paths: &JackinPaths) -> anyhow::Result<()> {
-    jackin_diagnostics::prune_all_runs(paths)
 }
 
 pub fn prune_jackin_home(paths: &JackinPaths) {
@@ -724,9 +710,7 @@ pub async fn prune_instances(
             ContainerState::NotFound
         ) {
             let state_dir = paths.data_dir.join(&container_base);
-            if let Some(mut manifest) =
-                InstanceManifest::read_or_log(&state_dir, "prune reconcile stale-active")
-            {
+            if let Some(mut manifest) = InstanceManifest::read_optional_lossy(&state_dir) {
                 manifest.mark_status(InstanceStatus::Crashed);
                 if let Err(err) = manifest.write(&state_dir) {
                     eprintln!(
@@ -832,9 +816,9 @@ fn reap_orphaned_name_locks(paths: &JackinPaths) {
     for entry in entries.flatten() {
         let name = entry.file_name();
         let name = name.to_string_lossy();
-        let Some(base) = name.strip_suffix(".lock") else {
+        if !name.ends_with(".lock") {
             continue;
-        };
+        }
         // Check whether a live process holds the lock.
         let lock_path = paths.data_dir.join(name.as_ref());
         #[expect(
@@ -848,18 +832,10 @@ fn reap_orphaned_name_locks(paths: &JackinPaths) {
             // Lock acquired → no live holder → orphaned.
             drop(file); // Release before removing
             match std::fs::remove_file(&lock_path) {
-                Ok(()) => {
-                    jackin_diagnostics::debug_log!(
-                        "runtime",
-                        "reap_orphaned_name_locks: removed orphaned lock for {base}",
-                    );
-                }
+                Ok(()) => {}
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-                Err(error) => {
-                    eprintln!(
-                        "jackin: warning: could not remove orphaned lock {}: {error}",
-                        lock_path.display()
-                    );
+                Err(_) => {
+                    let _warning = jackin_telemetry::record_recovered_degradation();
                 }
             }
         }
