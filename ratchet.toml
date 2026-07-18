@@ -420,9 +420,6 @@ bound = 4
 key = "dead_code@jackin-env"
 bound = 3
 [[family.entry]]
-key = "dead_code@jackin-lints"
-bound = 1
-[[family.entry]]
 key = "dead_code@jackin-runtime"
 bound = 3
 [[family.entry]]
