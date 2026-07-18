@@ -7,7 +7,6 @@ Plans hold **unfinished** multi-step work. Fully shipped plan bodies are removed
 | Path | Scope | Status |
 |------|--------|--------|
 | [agent-status/](agent-status/) | Product detection (live goldens, pack rewrite, live authority, remote packs) | Deferred / open residuals |
-| [unified-otel-observability/](unified-otel-observability/) | Full implementation of the [Unified OpenTelemetry observability](../docs/content/docs/roadmap/unified-otel-observability.mdx) roadmap item — 16 ordered plans including requirement-matched completion audit and retirement | Open / in progress |
 | [codebase-health/](codebase-health/) | Deep advisor gap-audit of the codebase-health enforcement roadmap (2026-07-14, commit 846038946): 27 unfinished plans, telemetry/OTLP first (001–009), then lints/CI/ownership/testing/perf/docs | Open / in progress |
 
 ## Removed (shipped)
@@ -24,6 +23,8 @@ Individually verified codebase-health plans removed on 2026-07-15:
 - **025** — deterministic-time seam and first boundary conversions
 
 Shared TUI extraction plans **001–009** and their follow-through roadmap item were removed after the standalone TermRock repository, canonical-API migration, neutral-duplication cleanup, immutable latest-reviewed dependency, donor retirement, and ownership/test-boundary audit shipped. Durable boundaries live in the TUI reference documentation.
+
+Application observability plans **001–016** and their roadmap item were removed after the complete direct-OTLP implementation, exact legacy-site and artifact-removal audits, real-receiver conformance, privacy/cardinality/volume/soak/performance proof, canonical documentation cutover, and green PR #793 checks (2026-07-18). Durable behavior lives in the application observability reference and run-telemetry guide.
 
 Completed routine code-health implementation archive: [codebase-health](codebase-health/).
 
