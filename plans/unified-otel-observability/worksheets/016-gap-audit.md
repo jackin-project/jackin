@@ -27,6 +27,33 @@ Post-row evidence supersedes Plan 008's launch residual: `conformance_wire_publi
 
 Post-row evidence supersedes Plan 009's integrated host-console residual: `conformance_wire_console_reducer_preserves_ui_causality` drives the production manager reducer through workspace-open and mouse-equivalent tab-select messages, then the production adapter owns screen transition, widget focus/unfocus, dwell/focus metrics, and one render beneath each semantic action over live OTLP without the private display label. The production coordinate hit-test and keyboard/mouse semantic equivalence remain separately proven by the named Plan 014 cases. Fresh integrated gates remain required.
 
+## Completion evidence — 2026-07-18
+
+The independent audit re-read the original roadmap at `fa8194882`, all sixteen plans, this residual matrix, and the acceptance map. The following current evidence closes the remaining shared rows; remote checks must still be green on the retirement commit itself.
+
+| Requirement group | Direct current evidence |
+|---|---|
+| Schema, architecture, and governed APIs (001–004) | `cargo xtask telemetry-registry`, `cargo xtask lint --strict`, and the full workspace suite pass. The registry drift, namespace, event, metric, span, privacy, limit, processor-bypass, allocation, and bridge tests named above execute in those gates. |
+| Async ownership, propagation, and lifecycle roots (005–007) | The strict source-policy census passes; the full workspace and ten-run conformance matrix pass; the acceptance map names the joined/detached/cycle/stream, serialized W3C, one-shot, session, shutdown, and no-lifetime-span cases. |
+| Product execution, UI, Capsule, agent, and job surfaces (008–010) | The full workspace and ten-run conformance matrix pass, including the public launch controller, real console reducer, Capsule control/daemon sockets, PTY, subprocess, Docker/provider HTTP, database, cache, agent-state, prewarm, and privacy cases described above. |
+| Legacy migration and artifact cutover (011, 013) | `011-site-census.md` accounts for all 501 historical generic macro sites and all 25 scoped diagnostic stderr sites; the generated ownership census and strict policy pass; production prohibited-macro count is zero. The independently verified artifact-removal inventory remains closed at `d466eab2b`. |
+| Diagnostics and verification (012, 014) | `014-acceptance-map.md` maps every roadmap criterion to current named tests. The real OTLP testbed passes 5/5; the conformance matrix passes ten consecutive runs (400/400); scheduled live soak passes; disabled allocation and benchmark compilation pass; the calibrated same-run Criterion comparator passes; export-volume and suite-time ratchets pass. |
+| Documentation (015) | Canonical `/guides/run-telemetry/` and `/reference/runtime/diagnostics/` pages state direct OTLP, backend-owned history, bounded in-memory current-run state, and no local telemetry files. RepoFile, roadmap, research, docs-only CI, and production docs-build gates pass. GitHub's fresh-network link check passes; a local fresh scan's only failures were unrelated external connection failures. All inbound prose links now use canonical shipped docs. |
+| Integrated repository gate | `cargo xtask ci --fast` passes. The full workspace nextest executed by the gate passes, as do strict lint, registry, architecture, docs, supply-chain, and ratchet checks; the remote full CI lane owns the feature-powerset gate. |
+
+### Original out-of-scope expected absence
+
+Current production-tree searches over `crates/`, `.github/`, and workspace manifests prove:
+
+- no OpenTelemetry Collector, gateway, relay, telemetry agent, or telemetry sidecar implementation or configuration;
+- no telemetry backend, dashboard, alert, saved-query, or backend-neutral viewer API;
+- no disk-backed telemetry queue, spool, JSONL fallback, audit trail, or crash/debug-bundle telemetry sink;
+- no production profile exporter (the existing opt-in DHAT allocation tooling and developer build helper remain outside product telemetry);
+- no Parallax service implementation or configuration changes;
+- `opentelemetry-otlp` remains confined to `jackin-diagnostics`, with default features disabled and only traces, logs, metrics, gRPC-tonic, gzip, project TLS, and experimental retry enabled.
+
+These searches are expected-absence evidence, not a waiver for future additions; the architecture and registry gates continue to enforce the shipped boundary.
+
 ## Rejected audit noise
 
 - Executor instructions in operator-authored plan files are intentional workflow data, not a product security vulnerability.
