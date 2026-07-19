@@ -8,6 +8,12 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+    inputs:
+      lanes:
+        description: "Which runner(s) to run on. Default velnor; use both for parity runs."
+        type: choice
+        options: [velnor, github, both]
+        default: velnor
   schedule:
     - cron: '17 4 * * *'
 
@@ -30,8 +36,13 @@ jobs:
   # The cron path verifies live deployed-site links; it has nothing to
   # validate against the source tree at schedule time.
   changes:
+    name: changes (${{ matrix.config.lane }})
     if: github.event_name != 'schedule'
-    runs-on: ubuntu-26.04
+    strategy:
+      fail-fast: false
+      matrix:
+        config: ${{ fromJSON((github.event_name == 'workflow_dispatch' && inputs.lanes == 'both') && '[{"lane":"Velnor","runner":["self-hosted","velnor-target-mvp"],"writer":true},{"lane":"GitHub","runner":"ubuntu-26.04","writer":false}]' || (github.event_name == 'workflow_dispatch' && inputs.lanes == 'github') && '[{"lane":"GitHub","runner":"ubuntu-26.04","writer":true}]' || '[{"lane":"Velnor","runner":["self-hosted","velnor-target-mvp"],"writer":true}]') }}
+    runs-on: ${{ matrix.config.runner }}
     timeout-minutes: 5
     outputs:
       docs: ${{ steps.dispatch.outputs.docs || steps.filter.outputs.docs }}
@@ -171,7 +182,7 @@ jobs:
         uses: ./.github/actions/download-ci-xtask
         with:
           token: ${{ github.token }}
-          lane: GitHub
+          lane: ${{ matrix.config.lane }}
           xtask-contract: ${{ steps.docs-xtask-contract.outputs.docs-xtask }}
           fallback-xtask-contract: ${{ hashFiles('Cargo.lock', 'Cargo.toml', 'rust-toolchain.toml', '.cargo/**', 'crates/*/Cargo.toml', 'crates/jackin-xtask/src/**', 'crates/jackin-process/src/**') }}
           include-tools: "false"
@@ -198,9 +209,14 @@ jobs:
   # non-schedule event so source renames cannot bypass the docs link
   # contract documented in docs/AGENTS.md.
   repo-link-check:
+    name: repo link check (${{ matrix.config.lane }})
     if: github.event_name != 'schedule' && needs.changes.outputs.result-reuse != 'true'
     needs: changes
-    runs-on: ubuntu-26.04
+    strategy:
+      fail-fast: false
+      matrix:
+        config: ${{ fromJSON((github.event_name == 'workflow_dispatch' && inputs.lanes == 'both') && '[{"lane":"Velnor","runner":["self-hosted","velnor-target-mvp"],"writer":true},{"lane":"GitHub","runner":"ubuntu-26.04","writer":false}]' || (github.event_name == 'workflow_dispatch' && inputs.lanes == 'github') && '[{"lane":"GitHub","runner":"ubuntu-26.04","writer":true}]' || '[{"lane":"Velnor","runner":["self-hosted","velnor-target-mvp"],"writer":true}]') }}
+    runs-on: ${{ matrix.config.runner }}
     timeout-minutes: 15
     steps:
       - name: Checkout repository
@@ -211,7 +227,7 @@ jobs:
         with:
           version: "2026.7.7"
           cache_key_prefix: "mise-v2"
-          cache_save: ${{ github.ref == 'refs/heads/main' }}
+          cache_save: ${{ github.ref == 'refs/heads/main' && matrix.config.writer }}
           working_directory: docs
           install_args: "bun lychee"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
@@ -219,7 +235,7 @@ jobs:
       - uses: ./.github/actions/download-ci-xtask
         with:
           token: ${{ github.token }}
-          lane: GitHub
+          lane: ${{ matrix.config.lane }}
           xtask-contract: ${{ needs.changes.outputs.docs-xtask-contract }}
           fallback-xtask-contract: ${{ hashFiles('Cargo.lock', 'Cargo.toml', 'rust-toolchain.toml', '.cargo/**', 'crates/*/Cargo.toml', 'crates/jackin-xtask/src/**', 'crates/jackin-process/src/**') }}
           include-tools: "false"
@@ -265,13 +281,18 @@ jobs:
           "$CI_XTASK" research check
 
   docs-link-check:
+    name: docs link check (${{ matrix.config.lane }})
     needs: changes
     if: >-
       needs.changes.outputs.docs == 'true' &&
       (needs.changes.outputs.result-reuse != 'true' ||
        (github.ref == 'refs/heads/main' &&
         needs.changes.outputs.deployment-reuse != 'true'))
-    runs-on: ubuntu-26.04
+    strategy:
+      fail-fast: false
+      matrix:
+        config: ${{ fromJSON((github.event_name == 'workflow_dispatch' && inputs.lanes == 'both') && '[{"lane":"Velnor","runner":["self-hosted","velnor-target-mvp"],"writer":true},{"lane":"GitHub","runner":"ubuntu-26.04","writer":false}]' || (github.event_name == 'workflow_dispatch' && inputs.lanes == 'github') && '[{"lane":"GitHub","runner":"ubuntu-26.04","writer":true}]' || '[{"lane":"Velnor","runner":["self-hosted","velnor-target-mvp"],"writer":true}]') }}
+    runs-on: ${{ matrix.config.runner }}
     timeout-minutes: 20
     steps:
       - name: Checkout repository
@@ -280,7 +301,7 @@ jobs:
       - uses: ./.github/actions/download-ci-xtask
         with:
           token: ${{ github.token }}
-          lane: GitHub
+          lane: ${{ matrix.config.lane }}
           xtask-contract: ${{ needs.changes.outputs.docs-xtask-contract }}
           fallback-xtask-contract: ${{ hashFiles('Cargo.lock', 'Cargo.toml', 'rust-toolchain.toml', '.cargo/**', 'crates/*/Cargo.toml', 'crates/jackin-xtask/src/**', 'crates/jackin-process/src/**') }}
           include-tools: "false"
@@ -353,7 +374,7 @@ jobs:
         with:
           version: "2026.7.7"
           cache_key_prefix: "mise-v2"
-          cache_save: ${{ github.ref == 'refs/heads/main' }}
+          cache_save: ${{ github.ref == 'refs/heads/main' && matrix.config.writer }}
           working_directory: docs
           install_args: ${{ steps.built-site.outputs.hit == 'true' && 'lychee' || 'bun node lychee' }}
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
@@ -367,8 +388,8 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: ~/.bun/install/cache
-          key: bun-${{ runner.os }}-${{ hashFiles('docs/bun.lock') }}
-          restore-keys: bun-${{ runner.os }}-
+          key: bun-${{ matrix.config.lane }}-${{ runner.os }}-${{ hashFiles('docs/bun.lock') }}
+          restore-keys: bun-${{ matrix.config.lane }}-${{ runner.os }}-
 
       - name: Install dependencies
         if: >-
@@ -393,8 +414,8 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: .lycheecache
-          key: lychee-v1-${{ runner.os }}-${{ hashFiles('docs/lychee.toml', 'crates/jackin-xtask/src/docs/site_links.rs') }}
-          restore-keys: lychee-v1-${{ runner.os }}-
+          key: lychee-v1-${{ matrix.config.lane }}-${{ runner.os }}-${{ hashFiles('docs/lychee.toml', 'crates/jackin-xtask/src/docs/site_links.rs') }}
+          restore-keys: lychee-v1-${{ matrix.config.lane }}-${{ runner.os }}-
 
       - name: Restore durable lychee responses
         id: durable_lychee_cache
@@ -416,6 +437,7 @@ jobs:
 
       - name: Publish durable lychee responses
         if: >-
+          matrix.config.writer &&
           steps.durable_lychee_cache.outputs.artifact_hit != 'true' &&
           (steps.lychee_cache.outputs.cache-hit == 'true' ||
            steps.site_links.outcome == 'success') &&
@@ -439,6 +461,7 @@ jobs:
 
       - name: Publish repository-wide successful link result
         if: >-
+          matrix.config.writer &&
           steps.link-result.outputs.refresh == 'true' &&
           (github.ref == 'refs/heads/main' ||
            github.event_name == 'workflow_dispatch' ||
@@ -453,6 +476,7 @@ jobs:
 
       - name: Publish input-identical built site
         if: >-
+          matrix.config.writer &&
           steps.built-site.outcome != 'skipped' &&
           steps.built-site.outputs.exact != 'true' &&
           (github.ref == 'refs/heads/main' ||
@@ -468,6 +492,7 @@ jobs:
 
       - name: Upload artifact
         if: >-
+          matrix.config.writer &&
           needs.changes.outputs.deployment-reuse != 'true' &&
           (github.event_name == 'push' ||
            (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'))
@@ -476,12 +501,17 @@ jobs:
           path: docs/.output/public
 
   prepare-codebook:
+    name: prepare codebook (${{ matrix.config.lane }})
     needs: changes
     if: >-
       github.event_name != 'schedule' &&
       needs.changes.outputs.result-reuse != 'true' &&
       (needs.changes.outputs.docs == 'true' || needs.changes.outputs.source == 'true')
-    runs-on: ubuntu-26.04
+    strategy:
+      fail-fast: false
+      matrix:
+        config: ${{ fromJSON((github.event_name == 'workflow_dispatch' && inputs.lanes == 'both') && '[{"lane":"Velnor","runner":["self-hosted","velnor-target-mvp"],"writer":true},{"lane":"GitHub","runner":"ubuntu-26.04","writer":false}]' || (github.event_name == 'workflow_dispatch' && inputs.lanes == 'github') && '[{"lane":"GitHub","runner":"ubuntu-26.04","writer":true}]' || '[{"lane":"Velnor","runner":["self-hosted","velnor-target-mvp"],"writer":true}]') }}
+    runs-on: ${{ matrix.config.runner }}
     timeout-minutes: 10
     steps:
       - name: Checkout repository
@@ -527,7 +557,7 @@ jobs:
         with:
           version: "2026.7.7"
           cache_key_prefix: "mise-v2"
-          cache_save: ${{ github.ref == 'refs/heads/main' }}
+          cache_save: ${{ github.ref == 'refs/heads/main' && matrix.config.writer }}
           install_args: "cargo-binstall cargo:codebook-lsp"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
 
@@ -543,6 +573,7 @@ jobs:
 
       - name: Publish resolved Codebook binary
         if: >-
+          matrix.config.writer &&
           steps.codebook-artifact.outputs.hit != 'true' &&
           (github.ref == 'refs/heads/main' ||
            (github.event_name == 'pull_request' &&
@@ -555,12 +586,17 @@ jobs:
           retention-days: 7
 
   spell-check-docs:
+    name: spell check docs (${{ matrix.config.lane }})
     needs: [changes, prepare-codebook]
     if: >-
       github.event_name != 'schedule' &&
       needs.changes.outputs.result-reuse != 'true' &&
       needs.changes.outputs.docs == 'true'
-    runs-on: ubuntu-26.04
+    strategy:
+      fail-fast: false
+      matrix:
+        config: ${{ fromJSON((github.event_name == 'workflow_dispatch' && inputs.lanes == 'both') && '[{"lane":"Velnor","runner":["self-hosted","velnor-target-mvp"],"writer":true},{"lane":"GitHub","runner":"ubuntu-26.04","writer":false}]' || (github.event_name == 'workflow_dispatch' && inputs.lanes == 'github') && '[{"lane":"GitHub","runner":"ubuntu-26.04","writer":true}]' || '[{"lane":"Velnor","runner":["self-hosted","velnor-target-mvp"],"writer":true}]') }}
+    runs-on: ${{ matrix.config.runner }}
     timeout-minutes: 10
     steps:
       - name: Checkout repository
@@ -600,12 +636,17 @@ jobs:
           .ci-codebook/codebook-lsp --root . lint --unique "${spell_files[@]}"
 
   spell-check-source:
+    name: spell check source (${{ matrix.config.lane }})
     needs: [changes, prepare-codebook]
     if: >-
       github.event_name != 'schedule' &&
       needs.changes.outputs.result-reuse != 'true' &&
       needs.changes.outputs.source == 'true'
-    runs-on: ubuntu-26.04
+    strategy:
+      fail-fast: false
+      matrix:
+        config: ${{ fromJSON((github.event_name == 'workflow_dispatch' && inputs.lanes == 'both') && '[{"lane":"Velnor","runner":["self-hosted","velnor-target-mvp"],"writer":true},{"lane":"GitHub","runner":"ubuntu-26.04","writer":false}]' || (github.event_name == 'workflow_dispatch' && inputs.lanes == 'github') && '[{"lane":"GitHub","runner":"ubuntu-26.04","writer":true}]' || '[{"lane":"Velnor","runner":["self-hosted","velnor-target-mvp"],"writer":true}]') }}
+    runs-on: ${{ matrix.config.runner }}
     timeout-minutes: 10
     steps:
       - name: Checkout repository
@@ -638,6 +679,7 @@ jobs:
           .ci-codebook/codebook-lsp --root . lint --unique "${spell_files[@]}"
 
   deploy:
+    name: deploy (${{ matrix.config.lane }})
     # docs-link-check covers full-site lychee + docs build; repo-link-check
     # covers <RepoFile /> path validity. Both must pass before publishing.
     #
@@ -654,7 +696,11 @@ jobs:
       needs.docs-link-check.result == 'success' &&
       (needs.repo-link-check.result == 'success' ||
        needs.repo-link-check.result == 'skipped')
-    runs-on: ubuntu-26.04
+    strategy:
+      fail-fast: false
+      matrix:
+        config: ${{ fromJSON((github.event_name == 'workflow_dispatch' && inputs.lanes == 'both') && '[{"lane":"Velnor","runner":["self-hosted","velnor-target-mvp"],"writer":true},{"lane":"GitHub","runner":"ubuntu-26.04","writer":false}]' || (github.event_name == 'workflow_dispatch' && inputs.lanes == 'github') && '[{"lane":"GitHub","runner":"ubuntu-26.04","writer":true}]' || '[{"lane":"Velnor","runner":["self-hosted","velnor-target-mvp"],"writer":true}]') }}
+    runs-on: ${{ matrix.config.runner }}
     timeout-minutes: 35
     outputs:
       page-url: ${{ steps.deploy1.outputs.page_url || steps.deploy2.outputs.page_url || steps.deploy3.outputs.page_url }}
@@ -671,11 +717,12 @@ jobs:
 
       - name: Deploy to GitHub Pages
         id: deploy1
+        if: matrix.config.writer
         continue-on-error: true
         uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5
 
       - name: Back off before Pages deploy retry 2
-        if: steps.deploy1.outcome == 'failure'
+        if: matrix.config.writer && steps.deploy1.outcome == 'failure'
         shell: bash
         run: |
           echo "::notice::GitHub Pages deployment failed on attempt 1; retrying after 30 seconds"
@@ -683,12 +730,12 @@ jobs:
 
       - name: Deploy to GitHub Pages (retry 2)
         id: deploy2
-        if: steps.deploy1.outcome == 'failure'
+        if: matrix.config.writer && steps.deploy1.outcome == 'failure'
         continue-on-error: true
         uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5
 
       - name: Back off before Pages deploy retry 3
-        if: steps.deploy1.outcome == 'failure' && steps.deploy2.outcome == 'failure'
+        if: matrix.config.writer && steps.deploy1.outcome == 'failure' && steps.deploy2.outcome == 'failure'
         shell: bash
         run: |
           echo "::notice::GitHub Pages deployment failed on attempt 2; retrying after 60 seconds"
@@ -696,18 +743,19 @@ jobs:
 
       - name: Deploy to GitHub Pages (retry 3)
         id: deploy3
-        if: steps.deploy1.outcome == 'failure' && steps.deploy2.outcome == 'failure'
+        if: matrix.config.writer && steps.deploy1.outcome == 'failure' && steps.deploy2.outcome == 'failure'
         continue-on-error: true
         uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5
 
       - name: Require Pages deployment success
-        if: steps.deploy1.outcome != 'success' && steps.deploy2.outcome != 'success' && steps.deploy3.outcome != 'success'
+        if: matrix.config.writer && steps.deploy1.outcome != 'success' && steps.deploy2.outcome != 'success' && steps.deploy3.outcome != 'success'
         shell: bash
         run: |
           echo "::error::GitHub Pages deployment failed after 3 attempts"
           exit 1
 
   verify-deployed:
+    name: verify deployed (${{ matrix.config.lane }})
     needs: [changes, deploy]
     if: >-
       always() &&
@@ -715,7 +763,11 @@ jobs:
       needs.deploy.result == 'success' &&
       (github.event_name == 'push' ||
        (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'))
-    runs-on: ubuntu-26.04
+    strategy:
+      fail-fast: false
+      matrix:
+        config: ${{ fromJSON((github.event_name == 'workflow_dispatch' && inputs.lanes == 'both') && '[{"lane":"Velnor","runner":["self-hosted","velnor-target-mvp"],"writer":true},{"lane":"GitHub","runner":"ubuntu-26.04","writer":false}]' || (github.event_name == 'workflow_dispatch' && inputs.lanes == 'github') && '[{"lane":"GitHub","runner":"ubuntu-26.04","writer":true}]' || '[{"lane":"Velnor","runner":["self-hosted","velnor-target-mvp"],"writer":true}]') }}
+    runs-on: ${{ matrix.config.runner }}
     timeout-minutes: 10
     permissions:
       contents: read
@@ -723,36 +775,31 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
-      # Build a sitemap URL that is robust against future
-      # actions/deploy-pages versions changing whether `page_url`
-      # carries a trailing slash. The current contract has one, but
-      # normalising explicitly costs nothing and removes the implicit
-      # dependency.
-      - name: Resolve sitemap URL
-        id: sitemap
-        shell: bash
-        env:
-          PAGE_URL: ${{ needs.deploy.outputs.page-url }}
-        run: |
-          set -euo pipefail
-          echo "url=${PAGE_URL%/}/sitemap.xml" >> "$GITHUB_OUTPUT"
-
       - name: Verify deployed docs links
         uses: ./.github/actions/check-deployed-docs
         with:
-          sitemap-url: ${{ steps.sitemap.outputs.url }}
+          # Use the canonical site URL instead of a matrix job output. In a
+          # `both` run the non-writer deploy arm intentionally has no Pages
+          # output, and GitHub does not define which matrix arm owns a job
+          # output when multiple arms complete.
+          sitemap-url: ${{ env.DOCS_SITE_URL }}/sitemap.xml
           edit-url: ${{ env.JACKIN_REPO_EDIT_URL }}
           blob-url: ${{ env.JACKIN_REPO_BLOB_URL }}
           github-token: ${{ github.token }}
           external-links: "false"
 
   check-deployed:
+    name: check deployed (${{ matrix.config.lane }})
     # Schedule verifies the live deployed site against the main-branch source.
     # Non-main workflow_dispatch runs validate the branch's source/build/link
     # surface only; remapping the deployed main site against a feature checkout
     # produces false missing-file failures after source moves.
     if: github.event_name == 'schedule'
-    runs-on: ubuntu-26.04
+    strategy:
+      fail-fast: false
+      matrix:
+        config: ${{ fromJSON((github.event_name == 'workflow_dispatch' && inputs.lanes == 'both') && '[{"lane":"Velnor","runner":["self-hosted","velnor-target-mvp"],"writer":true},{"lane":"GitHub","runner":"ubuntu-26.04","writer":false}]' || (github.event_name == 'workflow_dispatch' && inputs.lanes == 'github') && '[{"lane":"GitHub","runner":"ubuntu-26.04","writer":true}]' || '[{"lane":"Velnor","runner":["self-hosted","velnor-target-mvp"],"writer":true}]') }}
+    runs-on: ${{ matrix.config.runner }}
     timeout-minutes: 10
     permissions:
       contents: read
@@ -771,9 +818,14 @@ jobs:
   # Skip on schedule because schedule runs only `check-deployed` and a
   # one-job aggregator on schedule has no value.
   docs-required:
+    name: docs required (${{ matrix.config.lane }})
     if: always() && github.event_name != 'schedule'
     needs: [changes, repo-link-check, docs-link-check, prepare-codebook, spell-check-docs, spell-check-source, deploy, verify-deployed, check-deployed]
-    runs-on: ubuntu-26.04
+    strategy:
+      fail-fast: false
+      matrix:
+        config: ${{ fromJSON((github.event_name == 'workflow_dispatch' && inputs.lanes == 'both') && '[{"lane":"Velnor","runner":["self-hosted","velnor-target-mvp"],"writer":true},{"lane":"GitHub","runner":"ubuntu-26.04","writer":false}]' || (github.event_name == 'workflow_dispatch' && inputs.lanes == 'github') && '[{"lane":"GitHub","runner":"ubuntu-26.04","writer":true}]' || '[{"lane":"Velnor","runner":["self-hosted","velnor-target-mvp"],"writer":true}]') }}
+    runs-on: ${{ matrix.config.runner }}
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -785,7 +837,7 @@ jobs:
         if: always()
         with:
           token: ${{ github.token }}
-          lane: GitHub
+          lane: ${{ matrix.config.lane }}
           xtask-contract: ${{ needs.changes.outputs.docs-xtask-contract }}
           fallback-xtask-contract: ${{ hashFiles('Cargo.lock', 'Cargo.toml', 'rust-toolchain.toml', '.cargo/**', 'crates/*/Cargo.toml', 'crates/jackin-xtask/src/**', 'crates/jackin-process/src/**') }}
           include-tools: "false"
@@ -807,6 +859,7 @@ jobs:
         run: printf '%s\n' "source-sha=${GITHUB_SHA}" > docs-result.txt
       - name: Publish input-identical successful Docs result
         if: >-
+          matrix.config.writer &&
           needs.changes.outputs.result-reuse != 'true' &&
           (github.ref == 'refs/heads/main' ||
            github.event_name == 'workflow_dispatch' ||
