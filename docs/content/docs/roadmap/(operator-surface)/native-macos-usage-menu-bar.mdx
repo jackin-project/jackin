@@ -1,0 +1,269 @@
+---
+title: "Native macOS agent-usage menu bar"
+---
+
+**Status**: Open — design proposal (implementation plan; no product code yet)
+
+**References (external, clean-room)**:
+
+- [CodexBar](https://github.com/steipete/codexbar) — **visual / menu-bar UX only**: status item(s), popover provider tiles, usage bars, reset countdowns, merge-icons mode, no Dock icon, provider switcher. Do **not** port Swift provider probes or copy their code; jackin❯ already owns probe logic in Rust.
+- [TableRock native macOS path](https://github.com/tailrocks/tablerock/blob/main/docs/architecture/native-macos-path.md) — **architecture**: SwiftUI/AppKit display shell over a Rust domain core via **synchronous UniFFI**; Swift never owns business truth; direct Developer ID distribution.
+
+## Problem
+
+Operators already see **account quota / spend windows** for the focused agent inside Capsule (status-bar headline + usage dialog), but only while attached to a jackin❯ session. There is no always-on **host** surface that shows remaining limits for the agents jackin❯ actually supports, independent of a running Capsule.
+
+CodexBar proves demand for a menu-bar usage product. Shipping a second, pure-Swift probe stack would diverge from jackin❯ truth (`jackin-usage` + `jackin-protocol` views) and double maintenance. TableRock already decided the right split for tailrocks native apps: **Rust core + Swift display**.
+
+## Goal
+
+Ship a **macOS-native menu bar app** that:
+
+1. Shows available usage / quotas / reset windows for **only the agents and provider surfaces jackin❯ supports**.
+2. Uses **Rust for all probing, caching, severity, and view shaping**.
+3. Uses **Swift (SwiftUI + AppKit as needed) for display and OS integration only** — menu bar, popover, Settings, Keychain/file panel affordances.
+4. Matches **CodexBar-class menu-bar UX** (layout density, bars, countdowns, multi-provider status items) while staying on jackin❯ brand chrome where it does not fight system menu-bar norms.
+5. Reuses / extracts the code paths that already power Capsule usage, rather than inventing a parallel provider matrix.
+
+## Agent and provider scope (hard boundary)
+
+### Agents (`jackin_core::Agent::ALL`)
+
+Only these agent runtimes — same set as Capsule provisioning:
+
+| Agent | Slug | Notes |
+|---|---|---|
+| Claude Code | `claude` | Anthropic OAuth / CLI usage surfaces |
+| Codex | `codex` | OpenAI OAuth / RPC usage surfaces |
+| Amp | `amp` | Amp free / API usage surfaces |
+| Kimi | `kimi` | Kimi Code usage surfaces |
+| OpenCode | `opencode` | OpenCode usage surface |
+| Grok Build | `grok` | xAI Grok billing surfaces |
+
+**Out of product scope:** Cursor, Gemini, Copilot, JetBrains AI, and the rest of CodexBar’s provider zoo. If jackin❯ later adds an `Agent` variant, the menu bar gains that agent through the same Rust enum — not a one-off Swift provider.
+
+### Usage surfaces (`jackin_usage::UsageSurface`)
+
+Provider *accounts* the Rust probes already model (agent × routed provider), including alternative LLM routes jackin❯ supports today:
+
+- Claude, Codex, Amp, Grok, OpenCode, Kimi
+- **Z.AI / GLM** and **MiniMax** when those are the active provider for a supported agent (same as Capsule usage tabs)
+
+Do not grow surfaces beyond what `UsageSurface` and `resolve_surface` already encode unless Capsule usage grows first.
+
+## Current way jackin❯ checks agent usage (as-is)
+
+Capsule-side, fully shipped operator surface: [Capsule usage overlay](/reference/capsule/) and [status bar usage headline](/reference/tui/chrome/).
+
+| Layer | Crate / path | Role |
+|---|---|---|
+| Domain views | `jackin-protocol` (`FocusedUsageView`, `QuotaBucketView`, `StatusSlot`, `Money`, tabs, confidence, snapshot status) | Stable wire/UI contract: buckets, spend money, reset epochs, status-bar headline string, honest `unavailable` / `refreshing` states |
+| Probes + cache | `jackin-usage` (`usage/*`, `usage/refresh.rs`, `usage/view.rs`, snapshot store) | Provider-specific fetch (OAuth/CLI/API/RPC), refresh cooldown, parallel probe timeout, view decoration, `status_bar_label` construction |
+| Token / spend monitors | `jackin-usage` (`token_monitor/*`) | In-session token/cost accounting (orthogonal to account *quota* windows; keep separate in the menu bar v1) |
+| Consumer | `jackin-capsule` multiplexer + usage dialog widgets | Pulls cached views, paints TUI dialog + status bar slot |
+
+Facts to preserve in the host app:
+
+- **Presentation never invents numbers** — only renders `FocusedUsageView` / account snapshots.
+- **Honest states** — `refreshing`, stale cache, `unavailable`, last_error, confidence.
+- **Money is `Money { amount_minor, currency, exponent }`** — never bare floats.
+- **Headline composition** already lives in Rust (`status_bar_label` / `status_bar_headline_for_surface`); Swift must not re-derive “Session % · Weekly % · spend” from raw buckets unless the protocol exposes a dedicated compact bar DTO that remains Rust-owned.
+
+### Gap vs a host menu bar
+
+| Capsule today | Host menu bar needs |
+|---|---|
+| Probes run **inside the role container** with forwarded credentials | Probes run **on the host** against host agent homes / keychain / env |
+| One **focused** agent session | **All** configured jackin agents/providers at a glance |
+| TUI dialog + white status bar | `NSStatusItem` + popover (CodexBar-shaped) |
+| Coupled to Capsule lifecycle | Independent app process (optional later: talk to jackin daemon) |
+
+## Architecture decision (TableRock-aligned)
+
+```text
+SwiftUI menu bar app (display only)
+  NSStatusItem / MenuBarExtra, popover tiles, Settings, accessibility
+           |
+           v
+@MainActor presentation store
+  immutable snapshots only; format dates/sizes for a11y labels
+           |
+           v
+thin UniFFI Swift adapter  (generated + small wrapper)
+           |
+           v
+jackin-usage-ffi  (staticlib → XCFramework)
+  coarse synchronous commands + bounded event/snapshot poll
+           |
+           v
+jackin-usage-host (+ jackin-protocol views)
+  provider probes, cache, severity, headline strings
+  no Capsule, no TUI, no Docker
+```
+
+### Swift may own
+
+- Menu bar placement, multi-item vs merge-icons layout (CodexBar interaction model as UX reference).
+- Popover layout, progress bars as pure visualization of Rust bucket % / money.
+- Settings UI for enable/disable per agent/provider surface, refresh interval floors (values stored as prefs; **policy defaults from Rust**).
+- Signing, notarization, sandbox/hardened-runtime entitlements, Sparkle/Homebrew distribution plumbing.
+- Keychain *capability* adapters only if Rust requests a platform secret read through a narrow trait — never independent OAuth clients per provider in Swift.
+
+### Swift must not own
+
+- HTTP/RPC probe logic, OAuth refresh, CLI PTY scrapes, cookie jars as authority.
+- Cache TTL / cooldown / rate-limit backoff.
+- Which windows exist, which is Session vs Weekly vs Spend.
+- Any second copy of provider matrices that can drift from Capsule.
+
+### UniFFI facade (proposed, coarse, synchronous)
+
+Mirror TableRock’s “one facade, poll events” pattern — not one callback per cell:
+
+```text
+open_runtime(config) -> RuntimeId
+list_surfaces() -> Vec<SurfaceDescriptor>   // from Agent::ALL + UsageSurface
+set_enabled(surface_id, bool) -> ()
+refresh(RefreshScope) -> OperationId        // one | all | due
+next_events(cursor, max) -> EventBatch      // snapshot_updated | probe_failed | …
+snapshot(surface_id) -> FocusedUsageViewDto // or full multi-account overview
+shutdown(deadline) -> ()
+```
+
+IDs, DTOs, and errors are Rust-owned stable contracts (likely serde-compatible mirrors of `FocusedUsageView` already in `jackin-protocol`). Swift decodes off-main, publishes one immutable UI model on `MainActor`.
+
+### Process model (v1)
+
+- **In-process Rust runtime inside the app** (TableRock style). No requirement on jackin daemon for v1.
+- Later optional: read Capsule-published snapshots via host.sock / daemon for *live session* focus — **out of v1** so the menu bar works even with zero containers.
+
+## Visual design (CodexBar as closest reference)
+
+Adopt interaction and density patterns; do not clone brand assets.
+
+| Pattern | CodexBar reference | jackin❯ choice |
+|---|---|---|
+| No Dock icon, menu-bar only | Yes | Yes (LSUI `MenuBarExtra` / AppKit status item) |
+| Per-provider status item **or** merge mode | Yes | Yes — default merge with switcher; optional per-agent items |
+| Popover tiles: plan, bars, reset countdown | Yes | Yes — bind to Rust buckets + `resets_at` |
+| Severity / incident badges | Yes | Map from `UsageSeverity` / snapshot status only |
+| Provider zoo (60+) | Yes | **No** — `Agent::ALL` + existing `UsageSurface` only |
+| Probe implementation in Swift | Yes | **No** — Rust only |
+
+Brand: use jackin❯ phosphor green sparingly in the popover header (pill / wordmark), not as a non-system status-item background that violates menu-bar norms. Canonical brand: [Brand identity](/reference/brand-identity/).
+
+## Detailed implementation plan
+
+### Phase 0 — freeze contracts (this item)
+
+1. Accept scope: agents + usage surfaces above; CodexBar visual only; TableRock UniFFI split.
+2. Inventory public probe entry points in `jackin-usage` (`*_snapshot`, refresh targets, cache keys) and mark what assumes container paths vs host homes.
+3. Define host credential roots (Claude, Codex, Amp, Grok, Kimi, OpenCode homes, env/1Password already used by launch auth) for host-side probes.
+4. Write acceptance fixtures: recorded JSON responses (existing usage tests) must round-trip through the host facade to the same `FocusedUsageView` fields Capsule uses.
+
+**Exit:** ADR or short design note linked here; no Swift yet.
+
+### Phase 1 — host-runnable usage library
+
+1. Factor a **Capsule-free** library surface (crate or feature gate), e.g. `jackin-usage` host API or `jackin-usage-host`, depending only on `jackin-core` / `jackin-protocol` / diagnostics — **no** `jackin-capsule`, TUI, Docker.
+2. Ensure every `UsageSurface` probe runs on host paths (reuse modules under `crates/jackin-usage/src/usage/{claude,codex,amp,grok,kimi,minimax,zai}.rs` and OpenCode path).
+3. Keep refresh orchestration (`usage/refresh.rs`): parallel probes, timeouts, rate-limit classification.
+4. CLI debug harness (optional `jackin usage snapshot --agent claude`) for operators and CI without the app.
+
+**Exit:** `cargo nextest -p jackin-usage` (and host crate) green; host snapshot CLI matches Capsule view shape on fixtures.
+
+### Phase 2 — UniFFI bridge + packaging
+
+1. Add `jackin-usage-ffi` (UniFFI) following TableRock’s `tablerock-ffi` / `native/` layout: `staticlib`, generated Swift, XCFramework script.
+2. Prove Swift 6 strict concurrency without blanket `@unchecked Sendable`.
+3. Prove panic containment, typed errors, bounded snapshot size, leak freedom.
+4. CI: generate bindings check + link smoke on macOS runners.
+
+**Exit:** TableRock-equivalent bridge gate (documented checklist in this item or a linked ADR).
+
+### Phase 3 — menu bar shell (display only)
+
+1. SwiftPM/Xcode app target: LSUIElement, `MenuBarExtra` / `NSStatusItem`.
+2. Presentation store polls `next_events` / `snapshot` on a background queue; UI updates on `MainActor`.
+3. CodexBar-shaped UI:
+   - Compact bar text from Rust `status_bar_label` (or compact DTO).
+   - Popover: account header, bucket bars, reset countdown, last updated, error/stale honesty.
+   - Settings: enable surfaces, refresh interval (clamped by Rust min), launch at login.
+4. Accessibility: standard controls, VoiceOver labels from Rust strings where semantic.
+
+**Exit:** manual QA checklist against Claude + Codex accounts; empty/unavailable states never show fake %.
+
+### Phase 4 — full jackin agent matrix
+
+1. Enable all six agents + Z.AI/MiniMax surfaces with the same credentials operators already use for jackin launch.
+2. Multi-account overview (cache map → `AccountUsageSnapshotView` list already shaped in `usage/view.rs`).
+3. Severity coloring rules shared with Capsule where defined.
+4. Golden tests: fixture → DTO → golden bar/popover strings (Rust); Swift snapshot tests only for layout chrome.
+
+**Exit:** parity table agent × surface × auth mode filled; no surface without a Capsule counterpart.
+
+### Phase 5 — distribution
+
+1. Developer ID sign, hardened runtime, notarize, staple (TableRock path).
+2. Homebrew cask (jackin tap or same distribution policy as jackin CLI).
+3. Update story (Sparkle or cask-only — decide in Phase 0; prefer one).
+4. Privacy copy: reuses local sessions/keys; no passwords stored; no telemetry beyond existing jackin policy.
+
+**Exit:** installable build; uninstall leaves no root daemon.
+
+## Relationship to other roadmap tracks
+
+| Track | Relationship |
+|---|---|
+| Capsule usage overlay (shipped) | **Source of truth** for view model and probes; menu bar is a new consumer |
+| [Auth health and operator visibility](/roadmap/auth-health-and-visibility/) | Complementary; health probes may later share host credential checks |
+| [jackin❯ daemon](/roadmap/jackin-daemon/) | Optional later: push live Capsule focus / attention; **not** a v1 dependency |
+| [Host Affordance Bridge](/roadmap/clipboard-image-bridge/) | Different problem (attach/clipboard); no shared UI |
+| Agent runtime status (`jackin-agent-status`) | Tab colors / idle-blocked-done; **out of v1** unless explicitly pulled in as a second row of “session state” |
+| Token monitors in `jackin-usage` | Session spend accounting; keep secondary to **account quota** windows in v1 |
+
+## Out of scope (v1)
+
+- Providers jackin❯ does not launch (Cursor, Gemini, Copilot, …).
+- Reimplementing probes in Swift “because CodexBar did”.
+- WebView UI, Electron, or pure-Swift rewrite of `jackin-usage`.
+- Windows / Linux menu bar (macOS primary platform).
+- Full Desktop Agent Hub / multi-window IDE.
+- Replacing Capsule TUI usage dialog (both stay; shared Rust).
+
+## Risks and mitigations
+
+| Risk | Mitigation |
+|---|---|
+| Host path auth differs from in-container forwarded files | Explicit host root matrix + golden tests; document required CLI logins |
+| UniFFI async limitations | Synchronous facade + Rust-owned Tokio (TableRock) |
+| Drift from Capsule UI strings | Single Rust formatters; Swift only layouts |
+| Scope creep to CodexBar provider count | Hard enum gate on `Agent` / `UsageSurface` |
+| Clean-room violation of CodexBar | Visual QA notes only; no code copy; license-aware dependency policy |
+
+## Acceptance criteria (product)
+
+1. Menu bar shows honest usage for each enabled jackin agent/provider surface without an open Capsule.
+2. Numbers, reset times, and severity match Capsule for the same account within probe freshness.
+3. Disabling a surface in Settings removes it from bar and refresh set.
+4. Offline / missing credentials → `unavailable` with reason, never invented quotas.
+5. Architecture review: no provider HTTP in Swift; UniFFI surface reviewed against TableRock rules.
+
+## Implementation checklist (engineering)
+
+- [ ] Phase 0 design acceptance + host credential inventory
+- [ ] Phase 1 host library / CLI snapshot
+- [ ] Phase 2 UniFFI + XCFramework + CI smoke
+- [ ] Phase 3 menu bar shell (CodexBar-shaped, display only)
+- [ ] Phase 4 full `Agent::ALL` + Z.AI/MiniMax surfaces
+- [ ] Phase 5 notarized distribution + cask
+- [ ] Docs: operator install guide; retire durable bits from this page when shipped
+
+## Related work
+
+- Capsule reference — usage overlay and status-bar headline ([Capsule](/reference/capsule/), [TUI chrome](/reference/tui/chrome/))
+- `jackin-usage` crate README — ownership boundaries for probes and snapshot store
+- `jackin-protocol` control types — `FocusedUsageView`, `QuotaBucketView`, `Money`, `StatusSlot`
+- [Auth health and operator visibility](/roadmap/auth-health-and-visibility/)
+- [jackin❯ daemon](/roadmap/jackin-daemon/)
+- External: [CodexBar](https://github.com/steipete/codexbar), [TableRock native macOS path](https://github.com/tailrocks/tablerock/blob/main/docs/architecture/native-macos-path.md)
