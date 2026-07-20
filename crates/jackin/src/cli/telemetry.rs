@@ -54,6 +54,8 @@ pub const fn command_name(command: &Command) -> CliCommandName {
         Command::Usage(args) => match args.scope {
             UsageScope::Accounts(_) => CliCommandName::UsageAccounts,
             UsageScope::Verify => CliCommandName::UsageVerify,
+            // Host menu-bar probe path; registry leaf deferred to follow-up.
+            UsageScope::Snapshot(_) => CliCommandName::Usage,
         },
         Command::Help { .. } => CliCommandName::Help,
     }

@@ -1,0 +1,76 @@
+---
+title: "macOS agent-usage menu bar"
+description: "Install and use the jackin❯ host menu-bar app for account quotas without an open Capsule."
+---
+
+The **jackin❯ usage** menu bar app shows remaining account quotas, spend windows, and reset countdowns for every jackin❯-supported agent surface — **without** requiring a running Capsule session.
+
+## What it shows
+
+Only agents jackin❯ provisions (`claude`, `codex`, `amp`, `kimi`, `opencode`, `grok`) plus existing routed usage surfaces (**Z.AI / GLM**, **MiniMax**). It never grows a CodexBar-style provider zoo (no Cursor, Gemini, Copilot, …).
+
+Numbers come from the same Rust stack Capsule uses (`jackin-usage` + `jackin-protocol` views). Swift is display-only.
+
+## Install
+
+### Local developer build
+
+```bash
+cargo build -p jackin-usage-ffi --release
+./scripts/generate-usage-swift-bindings.sh
+./scripts/build-usage-menu-bar-app.sh
+open native/dist/JackinUsageMenuBar.app
+```
+
+The app is an **LSUIElement** process (no Dock icon). Uninstall: quit the app and delete the `.app` bundle. No root daemon is installed.
+
+### Notarized distribution (operator)
+
+Requires a Developer ID Application identity and notarytool profile:
+
+```bash
+export DEVELOPER_ID_APPLICATION='Developer ID Application: Your Name (TEAMID)'
+export NOTARY_PROFILE=jackin-notary
+./scripts/build-usage-menu-bar-app.sh
+./scripts/sign-notarize-usage-menu-bar.sh
+```
+
+Homebrew cask packaging follows the same tap policy as the jackin CLI once notarized artifacts are published.
+
+## Credentials (host)
+
+Probes read the **same host logins** operators already use for jackin launch (home agent dirs and env keys first; container handoff paths only as last resort). See [ADR-011](/reference/adrs/adr-011-native-macos-usage-menu-bar/).
+
+| Surface | Typical host roots |
+|---|---|
+| Claude | `~/.claude/.credentials.json`, `ANTHROPIC_*` |
+| Codex | `~/.codex/auth.json` |
+| Amp / Grok / Kimi / OpenCode | respective home secrets |
+| Z.AI / MiniMax | `ZAI_API_KEY` / `MINIMAX_*` env |
+
+No passwords are stored by the menu bar app. It reuses local sessions/keys already present for jackin❯.
+
+## Debug CLI (no UI)
+
+```bash
+jackin usage host snapshot --agent claude
+jackin usage host snapshot --agent codex --format json
+jackin usage host snapshot --agent claude --no-refresh
+```
+
+This drives `HostUsageRuntime` — the same view fields Capsule renders (`status_bar_label`, buckets, Money, honest `unavailable` / `refreshing`).
+
+## Settings
+
+- Enable/disable surfaces (disabled surfaces leave the bar and refresh set).
+- Refresh is owned by Rust (cooldown + floor ≥ 60s).
+
+## Privacy
+
+- Local process; probes use your host credentials and provider APIs the same way Capsule does.
+- No second OAuth client matrix in Swift.
+- Telemetry follows existing jackin❯ policy when the host binary enables it; the menu bar does not invent a parallel sink.
+
+## Architecture
+
+[ADR-011: Native macOS agent-usage menu bar](/reference/adrs/adr-011-native-macos-usage-menu-bar/) · roadmap living plan: [Native macOS agent-usage menu bar](/roadmap/native-macos-usage-menu-bar/).

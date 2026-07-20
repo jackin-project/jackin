@@ -1,0 +1,79 @@
+---
+title: "ADR-011: Native macOS agent-usage menu bar (Rust truth, Swift shell)"
+description: "Host menu-bar usage app reuses jackin-usage probes via UniFFI; Swift is display-only; Agent::ALL + existing UsageSurface only."
+---
+
+**Status**: Accepted
+
+The macOS agent-usage menu bar is a **host process** that shows account quota / spend windows for jackin❯-supported agents without requiring an open Capsule session. **Rust owns all probing, cache, cooldown, severity, and view shaping** (`jackin-usage` + `jackin-protocol` contracts). **Swift owns only display and OS integration** (menu bar, popover, Settings, a11y, signing). The UniFFI facade is TableRock-shaped: synchronous coarse commands over a staticlib → XCFramework, with Swift polling immutable snapshots.
+
+## Why this is recorded
+
+CodexBar proves demand for a menu-bar usage product, but a pure-Swift probe stack would diverge from Capsule truth and double maintenance. TableRock already established the correct split for tailrocks native apps. This ADR freezes that split for jackin❯ and the hard agent/surface scope so contributors do not reintroduce provider sprawl or second probe matrices.
+
+## Agent and surface scope (hard)
+
+Only `jackin_core::Agent::ALL`: `claude`, `codex`, `amp`, `kimi`, `opencode`, `grok`.
+
+Usage surfaces: existing `jackin_usage` surfaces — Claude, Codex, Amp, Grok, OpenCode, Kimi, plus **Z.AI / GLM** and **MiniMax** when modeled for routed providers. Never Cursor, Gemini, Copilot, or CodexBar’s provider zoo.
+
+## Host credential roots (Phase 0 inventory)
+
+Probes already prefer **host homes first**, container handoff paths last. Menu-bar process runs with a normal operator `HOME`.
+
+| Surface | Host credential roots | Env / other | Container handoff (last resort) |
+|---|---|---|---|
+| Claude | `$CLAUDE_CONFIG_DIR` / `~/.claude/.credentials.json`, `~/.claude.json` | `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN` | `/jackin/claude/credentials.json` |
+| Codex | `$CODEX_HOME/auth.json` / `~/.codex/auth.json` | — | `/jackin/codex/auth.json` |
+| Amp | Amp secrets under home / handoff secrets | Amp API key loaders | `/jackin/amp/secrets.json` |
+| Grok | `~/.grok` auth + binary under `~/.grok/bin` | — | `/jackin/grok/auth.json` |
+| Kimi | `~/.kimi-code`, `~/.kimi` local tokens | `KIMI_AUTH_TOKEN`, `KIMI_CODE_API_KEY` | `/jackin/kimi-code` |
+| OpenCode | OpenCode home paths used by existing probe | — | — |
+| Z.AI / GLM | — | `ZAI_API_KEY` / `Z_AI_API_KEY` (+ provider_keys map) | — |
+| MiniMax | — | `MINIMAX_CODING_API_KEY` / `MINIMAX_API_KEY` | — |
+
+Shared host coordination dirs (already used by Capsule cross-instance refresh):
+
+- `~/.jackin/data/daemon/usage-cooldowns` (`JACKIN_USAGE_COOLDOWN_DIR`)
+- `~/.jackin/data/daemon/usage-snapshots` (`JACKIN_USAGE_SNAPSHOTS_DIR`)
+- `~/.jackin/data/daemon/usage-locks` (`JACKIN_USAGE_LOCK_DIR`)
+
+Menu-bar durable store (host-only, not container paths):
+
+- `~/.jackin/data/usage-menu-bar/snapshots.db`
+- `~/.jackin/data/usage-menu-bar/accounts.json`
+- Preferences: enable set + refresh floor under app Support / UserDefaults (policy defaults from Rust)
+
+## Public probe entry points (`jackin-usage`)
+
+| Entry | Role |
+|---|---|
+| `usage::{claude,codex,amp,grok,kimi,minimax,zai}_snapshot` (+ OpenCode) | Provider probes (crate-internal; host runtime calls via refresh) |
+| `UsageCache::refresh_active_account_snapshots` | Parallel probes, locks, cooldown, shared snapshot write |
+| `UsageCache::focused_snapshot` / `focused_status_bar_label` | Cached views + honest `refreshing` / `unavailable` |
+| `UsageCache::request_account_refresh` | Force-due one surface |
+| `usage::host::HostUsageRuntime` | Capsule-free host orchestration for menu bar + CLI |
+| `run_claude_usage_diagnostic` | Existing Claude diagnostic helper |
+
+Presentation never invents percentages: only render `FocusedUsageView` / bucket fields; `unavailable` / `refreshing` / `stale` stay honest.
+
+## Architecture
+
+```text
+Swift LSUIElement menu bar (display only)
+  → @MainActor presentation from immutable DTOs
+  → UniFFI jackin-usage-ffi (staticlib / XCFramework)
+  → HostUsageRuntime + jackin-usage probes (Rust)
+```
+
+Swift must not own HTTP/RPC/OAuth/CLI scrapes or a second provider matrix.
+
+## Distribution
+
+Developer ID + hardened runtime + notarize/staple (TableRock path). Homebrew cask or documented install. Uninstall leaves no root daemon. v1 does **not** require jackin daemon.
+
+## Consequences
+
+- Capsule TUI usage dialog remains; both consumers share Rust views.
+- New agents land via `Agent` / `UsageSurface` growth in Rust, then appear in the menu bar automatically through `HostUsageRuntime` surface lists.
+- Notarization secrets may be operator-gated residual; host library + UniFFI + app shell ship without them.
