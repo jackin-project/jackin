@@ -33,6 +33,8 @@ public final class PresentationStore: ObservableObject {
     @Published public private(set) var surfaces: [SurfaceRow] = []
     @Published public private(set) var lastError: String?
     @Published public private(set) var isOpen: Bool = false
+    /// Refresh floor in seconds (owned by Rust; mirrored for Settings).
+    @Published public private(set) var refreshFloorSecs: UInt64 = 300
 
     private let bridge = UsageMenuBarBridge.create()
     private var eventCursor: UInt64 = 0
@@ -57,7 +59,9 @@ public final class PresentationStore: ObservableObject {
             )
             isOpen = true
             lastError = nil
-            refreshAll()
+            self.refreshFloorSecs = try bridge.refreshFloorSecs()
+            // First load forces network so the bar is not stuck on "refreshing".
+            refreshAll(force: true)
             startPolling()
         } catch {
             lastError = String(describing: error)
@@ -79,26 +83,39 @@ public final class PresentationStore: ObservableObject {
     public func setEnabled(surfaceId: String, enabled: Bool) {
         do {
             try bridge.setEnabled(surfaceId: surfaceId, enabled: enabled)
-            refreshAll()
+            refreshAll(force: true)
         } catch {
             lastError = String(describing: error)
         }
     }
 
-    public func refreshAll() {
+    public func setRefreshFloorSecs(_ secs: UInt64) {
         do {
-            try bridge.refresh(surfaceId: nil)
+            try bridge.setRefreshFloorSecs(secs: secs)
+            refreshFloorSecs = try bridge.refreshFloorSecs()
+        } catch {
+            lastError = String(describing: error)
+        }
+    }
+
+    /// Manual Refresh button — bypasses floor.
+    public func refreshAll() {
+        refreshAll(force: true)
+    }
+
+    public func refreshAll(force: Bool) {
+        do {
+            try bridge.refresh(surfaceId: nil, force: force)
             applySnapshots()
         } catch {
             lastError = String(describing: error)
-            // Still project cached/honest states.
             applySnapshots()
         }
     }
 
     public func refresh(surfaceId: String) {
         do {
-            try bridge.refresh(surfaceId: surfaceId)
+            try bridge.refresh(surfaceId: surfaceId, force: true)
             applySnapshots()
         } catch {
             lastError = String(describing: error)
@@ -117,17 +134,30 @@ public final class PresentationStore: ObservableObject {
 
     private func pollOnce() {
         guard isOpen else { return }
+        // Always-on: ask Rust to refresh when the floor allows (force: false).
+        // Rust no-ops inside the floor so this is poll-safe every 5s.
+        do {
+            if try bridge.refreshDue() {
+                try bridge.refresh(surfaceId: nil, force: false)
+            }
+        } catch {
+            lastError = String(describing: error)
+        }
         do {
             let batch = try bridge.nextEvents(cursor: eventCursor, max: 64)
             if batch.resyncRequired {
-                eventCursor = 0
-            } else {
+                // Cursor behind retained log — reset and re-project snapshots.
                 eventCursor = batch.nextCursor
+                applySnapshots()
+                return
             }
+            eventCursor = batch.nextCursor
             if !batch.events.isEmpty {
                 applySnapshots()
+            } else {
+                // Still refresh bar labels (relative "updated" text) cheaply.
+                applySnapshots()
             }
-            // Periodic soft refresh of due targets is owned by Rust when refresh() is called.
         } catch {
             lastError = String(describing: error)
         }

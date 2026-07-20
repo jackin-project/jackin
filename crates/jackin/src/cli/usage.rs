@@ -138,7 +138,7 @@ fn run_host_snapshot(
 
     if !scope.no_refresh {
         runtime
-            .refresh(Some(surface.id()))
+            .refresh(Some(surface.id()), true)
             .map_err(|err| anyhow::anyhow!(err))?;
     }
     let view = runtime

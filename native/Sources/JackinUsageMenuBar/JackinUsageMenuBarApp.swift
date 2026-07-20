@@ -179,6 +179,7 @@ struct BucketBar: View {
 
 struct SettingsView: View {
     @ObservedObject var store: PresentationStore
+    @State private var floorMinutes: Double = 5
 
     var body: some View {
         Form {
@@ -191,6 +192,27 @@ struct SettingsView: View {
                     .accessibilityLabel("\(surface.label) enabled")
                 }
             }
+            Section("Refresh") {
+                // Policy floor lives in Rust (clamped ≥ 60s); UI only projects minutes.
+                Slider(
+                    value: $floorMinutes,
+                    in: 1...30,
+                    step: 1
+                ) {
+                    Text("Minimum interval")
+                } minimumValueLabel: {
+                    Text("1m")
+                } maximumValueLabel: {
+                    Text("30m")
+                }
+                .onChange(of: floorMinutes) { _, newValue in
+                    store.setRefreshFloorSecs(UInt64(newValue) * 60)
+                }
+                Text("Probe at most every \(Int(floorMinutes)) minutes (Rust floor).")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .accessibilityLabel("Refresh floor \(Int(floorMinutes)) minutes")
+            }
             Section("About") {
                 Text("Account quotas from host credentials via jackin-usage (Rust).")
                     .font(.caption)
@@ -200,11 +222,12 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 420, height: 360)
+        .frame(width: 420, height: 400)
         .onAppear {
             if !store.isOpen {
                 store.openDefault()
             }
+            floorMinutes = Double(max(store.refreshFloorSecs, 60)) / 60.0
         }
     }
 }

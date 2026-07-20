@@ -230,6 +230,49 @@ fn credential_matrix_lists_all_host_surfaces() {
 }
 
 #[test]
+fn refresh_floor_skips_non_forced_calls() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let mut runtime = HostUsageRuntime::new();
+    runtime
+        .open(HostRuntimeConfig {
+            data_dir: dir.path().to_path_buf(),
+            refresh_floor_secs: 60,
+            enabled_surface_ids: vec!["codex".to_owned()],
+        })
+        .expect("open");
+    assert!(runtime.refresh_due());
+    // force first refresh stamps last_refresh (may network or unavailable).
+    runtime.refresh(Some("codex"), true).expect("force refresh");
+    assert!(!runtime.refresh_due());
+    // Non-forced call within floor must be a silent no-op.
+    runtime.refresh(None, false).expect("floor skip");
+    // Floor mutator clamps and is readable.
+    runtime.set_refresh_floor_secs(30).expect("set floor");
+    assert_eq!(runtime.refresh_floor_secs(), 60);
+    runtime.set_refresh_floor_secs(120).expect("set floor");
+    assert_eq!(runtime.refresh_floor_secs(), 120);
+}
+
+#[test]
+fn next_events_resync_flag_not_error() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let mut runtime = open_runtime(dir.path());
+    // Cursor far behind empty-ish log after open: if we drop events by flooding
+    // past MAX_EVENT_LOG, resync becomes true.
+    for _ in 0..5_000 {
+        runtime
+            .set_enabled("amp", false)
+            .expect("toggle");
+        runtime.set_enabled("amp", true).expect("toggle");
+    }
+    let batch = runtime.next_events(0, 10).expect("events");
+    // Either resync (cursor 0 behind first retained) or events — never Err.
+    if batch.resync_required {
+        assert!(batch.events.is_empty());
+    }
+}
+
+#[test]
 fn host_paths_under_data_dir() {
     let root = PathBuf::from("/tmp/jackin-data");
     assert_eq!(

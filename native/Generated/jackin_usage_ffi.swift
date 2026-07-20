@@ -616,6 +616,10 @@ public protocol UsageMenuBarBridgeProtocol: AnyObject, Sendable {
     
     /**
      * Poll events after `cursor` (exclusive).
+     *
+     * Always returns `Ok` for a valid open runtime. When the client cursor is
+     * behind the retained log, `resync_required` is true on the batch (do not
+     * turn that into an error — presentation must reset the cursor).
      */
     func nextEvents(cursor: UInt64, max: UInt32) throws  -> UsageEventBatchDto
     
@@ -631,8 +635,16 @@ public protocol UsageMenuBarBridgeProtocol: AnyObject, Sendable {
     
     /**
      * Refresh one surface (`surface_id`) or all enabled (`None`).
+     *
+     * When `force` is false, respects the runtime refresh floor (poll-safe).
+     * When `force` is true, bypasses the floor (manual Refresh).
      */
-    func refresh(surfaceId: String?) throws 
+    func refresh(surfaceId: String?, force: Bool) throws 
+    
+    /**
+     * Whether a non-forced refresh would probe the network.
+     */
+    func refreshDue() throws  -> Bool
     
     /**
      * Refresh floor seconds (clamped policy).
@@ -643,6 +655,11 @@ public protocol UsageMenuBarBridgeProtocol: AnyObject, Sendable {
      * Enable or disable a surface for bar + refresh.
      */
     func setEnabled(surfaceId: String, enabled: Bool) throws 
+    
+    /**
+     * Set refresh floor seconds (clamped ≥ 60 in Rust).
+     */
+    func setRefreshFloorSecs(secs: UInt64) throws 
     
     /**
      * Shutdown; idempotent.
@@ -753,6 +770,10 @@ open func mergedStatusBarLabel()throws  -> String  {
     
     /**
      * Poll events after `cursor` (exclusive).
+     *
+     * Always returns `Ok` for a valid open runtime. When the client cursor is
+     * behind the retained log, `resync_required` is true on the batch (do not
+     * turn that into an error — presentation must reset the cursor).
      */
 open func nextEvents(cursor: UInt64, max: UInt32)throws  -> UsageEventBatchDto  {
     return try  FfiConverterTypeUsageEventBatchDto_lift(try rustCallWithError(FfiConverterTypeUsageBridgeError_lift) {
@@ -790,14 +811,30 @@ open func panicProbe()throws   {try rustCallWithError(FfiConverterTypeUsageBridg
     
     /**
      * Refresh one surface (`surface_id`) or all enabled (`None`).
+     *
+     * When `force` is false, respects the runtime refresh floor (poll-safe).
+     * When `force` is true, bypasses the floor (manual Refresh).
      */
-open func refresh(surfaceId: String?)throws   {try rustCallWithError(FfiConverterTypeUsageBridgeError_lift) {
+open func refresh(surfaceId: String?, force: Bool)throws   {try rustCallWithError(FfiConverterTypeUsageBridgeError_lift) {
         uniffiCallStatus in
     uniffi_jackin_usage_ffi_fn_method_usagemenubarbridge_refresh(
             self.uniffiCloneHandle(),
-        FfiConverterOptionString.lower(surfaceId),uniffiCallStatus
+        FfiConverterOptionString.lower(surfaceId),
+        FfiConverterBool.lower(force),uniffiCallStatus
     )
 }
+}
+    
+    /**
+     * Whether a non-forced refresh would probe the network.
+     */
+open func refreshDue()throws  -> Bool  {
+    return try  FfiConverterBool.lift(try rustCallWithError(FfiConverterTypeUsageBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_jackin_usage_ffi_fn_method_usagemenubarbridge_refresh_due(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
 }
     
     /**
@@ -821,6 +858,18 @@ open func setEnabled(surfaceId: String, enabled: Bool)throws   {try rustCallWith
             self.uniffiCloneHandle(),
         FfiConverterString.lower(surfaceId),
         FfiConverterBool.lower(enabled),uniffiCallStatus
+    )
+}
+}
+    
+    /**
+     * Set refresh floor seconds (clamped ≥ 60 in Rust).
+     */
+open func setRefreshFloorSecs(secs: UInt64)throws   {try rustCallWithError(FfiConverterTypeUsageBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_jackin_usage_ffi_fn_method_usagemenubarbridge_set_refresh_floor_secs(
+            self.uniffiCloneHandle(),
+        FfiConverterUInt64.lower(secs),uniffiCallStatus
     )
 }
 }
@@ -1781,7 +1830,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_jackin_usage_ffi_checksum_method_usagemenubarbridge_merged_status_bar_label() != 46622) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_jackin_usage_ffi_checksum_method_usagemenubarbridge_next_events() != 21220) {
+    if (uniffi_jackin_usage_ffi_checksum_method_usagemenubarbridge_next_events() != 65354) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_jackin_usage_ffi_checksum_method_usagemenubarbridge_open_runtime() != 47176) {
@@ -1790,13 +1839,19 @@ private let initializationResult: InitializationResult = {
     if (uniffi_jackin_usage_ffi_checksum_method_usagemenubarbridge_panic_probe() != 5364) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_jackin_usage_ffi_checksum_method_usagemenubarbridge_refresh() != 61343) {
+    if (uniffi_jackin_usage_ffi_checksum_method_usagemenubarbridge_refresh() != 32155) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_jackin_usage_ffi_checksum_method_usagemenubarbridge_refresh_due() != 31521) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_jackin_usage_ffi_checksum_method_usagemenubarbridge_refresh_floor_secs() != 21503) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_jackin_usage_ffi_checksum_method_usagemenubarbridge_set_enabled() != 59390) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_jackin_usage_ffi_checksum_method_usagemenubarbridge_set_refresh_floor_secs() != 6201) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_jackin_usage_ffi_checksum_method_usagemenubarbridge_shutdown() != 32908) {

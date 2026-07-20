@@ -9,7 +9,7 @@
 
 use std::collections::{BTreeMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use jackin_core::Agent;
 use jackin_protocol::control::FocusedUsageView;
@@ -227,6 +227,8 @@ pub struct HostUsageRuntime {
     events: VecDeque<HostUsageEvent>,
     next_seq: u64,
     refresh_floor_secs: u64,
+    /// Last time a network-bearing refresh completed (floor gate).
+    last_refresh: Option<Instant>,
     open: bool,
 }
 
@@ -241,6 +243,7 @@ impl HostUsageRuntime {
             events: VecDeque::new(),
             next_seq: 0,
             refresh_floor_secs: 300,
+            last_refresh: None,
             open: false,
         }
     }
@@ -256,6 +259,7 @@ impl HostUsageRuntime {
         self.cache.set_usage_snapshot_store_path(snapshot_path);
         self.cache.set_accounts_materialize_path(accounts_path);
         self.refresh_floor_secs = config.refresh_floor_secs.max(60);
+        self.last_refresh = None;
         self.enabled.clear();
         if config.enabled_surface_ids.is_empty() {
             for surface in HostSurfaceId::ALL {
@@ -349,9 +353,21 @@ impl HostUsageRuntime {
         Ok(())
     }
 
-    /// Force-refresh due targets among enabled surfaces (blocking probes).
-    pub fn refresh(&mut self, surface_id: Option<&str>) -> Result<(), String> {
+    /// Refresh enabled surfaces (blocking probes when due).
+    ///
+    /// When `force` is false, a call within [`Self::refresh_floor_secs`] of the
+    /// last network refresh is a no-op (poll-safe). When `force` is true (manual
+    /// Refresh / Settings), the floor is bypassed and targets are marked due.
+    pub fn refresh(&mut self, surface_id: Option<&str>, force: bool) -> Result<(), String> {
         self.require_open()?;
+        if !force
+            && let Some(last) = self.last_refresh
+        {
+            let floor = Duration::from_secs(self.refresh_floor_secs);
+            if last.elapsed() < floor {
+                return Ok(());
+            }
+        }
         let now = Instant::now();
         let targets = self.refresh_targets(surface_id)?;
         for target in &targets {
@@ -363,6 +379,7 @@ impl HostUsageRuntime {
             &self.provider_keys,
             now,
         );
+        self.last_refresh = Some(now);
         for target in &targets {
             let surface = surface_for_target(target);
             let view = self.cache.focused_snapshot(
@@ -384,6 +401,28 @@ impl HostUsageRuntime {
             self.push_event(kind, surface.map(HostSurfaceId::id), view.last_error.clone());
         }
         Ok(())
+    }
+
+    /// Update the refresh floor (seconds). Clamped to ≥ 60.
+    pub fn set_refresh_floor_secs(&mut self, secs: u64) -> Result<(), String> {
+        self.require_open()?;
+        let clamped = secs.max(60);
+        self.refresh_floor_secs = clamped;
+        self.push_event(
+            "config_changed",
+            None,
+            Some(format!("refresh_floor_secs={clamped}")),
+        );
+        Ok(())
+    }
+
+    /// Whether a non-forced refresh would hit the network (floor elapsed or never).
+    #[must_use]
+    pub fn refresh_due(&self) -> bool {
+        match self.last_refresh {
+            None => true,
+            Some(last) => last.elapsed() >= Duration::from_secs(self.refresh_floor_secs),
+        }
     }
 
     /// Cached snapshot for one surface (honest refreshing/unavailable).
@@ -481,6 +520,7 @@ impl HostUsageRuntime {
     /// Shutdown; idempotent.
     pub fn shutdown(&mut self) {
         self.open = false;
+        self.last_refresh = None;
         self.events.clear();
     }
 

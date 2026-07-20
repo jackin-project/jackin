@@ -62,12 +62,37 @@ impl UsageMenuBarBridge {
     }
 
     /// Refresh one surface (`surface_id`) or all enabled (`None`).
-    pub fn refresh(&self, surface_id: Option<String>) -> Result<(), UsageBridgeError> {
+    ///
+    /// When `force` is false, respects the runtime refresh floor (poll-safe).
+    /// When `force` is true, bypasses the floor (manual Refresh).
+    pub fn refresh(
+        &self,
+        surface_id: Option<String>,
+        force: bool,
+    ) -> Result<(), UsageBridgeError> {
         catch_entry(|| {
             let mut guard = self.lock()?;
             guard
-                .refresh(surface_id.as_deref())
+                .refresh(surface_id.as_deref(), force)
                 .map_err(map_runtime_err)
+        })
+    }
+
+    /// Set refresh floor seconds (clamped ≥ 60 in Rust).
+    pub fn set_refresh_floor_secs(&self, secs: u64) -> Result<(), UsageBridgeError> {
+        catch_entry(|| {
+            let mut guard = self.lock()?;
+            guard
+                .set_refresh_floor_secs(secs)
+                .map_err(map_runtime_err)
+        })
+    }
+
+    /// Whether a non-forced refresh would probe the network.
+    pub fn refresh_due(&self) -> Result<bool, UsageBridgeError> {
+        catch_entry(|| {
+            let guard = self.lock()?;
+            Ok(guard.refresh_due())
         })
     }
 
@@ -104,6 +129,10 @@ impl UsageMenuBarBridge {
     }
 
     /// Poll events after `cursor` (exclusive).
+    ///
+    /// Always returns `Ok` for a valid open runtime. When the client cursor is
+    /// behind the retained log, `resync_required` is true on the batch (do not
+    /// turn that into an error — presentation must reset the cursor).
     pub fn next_events(
         &self,
         cursor: u64,
@@ -112,9 +141,6 @@ impl UsageMenuBarBridge {
         catch_entry(|| {
             let mut guard = self.lock()?;
             let batch = guard.next_events(cursor, max).map_err(map_runtime_err)?;
-            if batch.resync_required {
-                return Err(UsageBridgeError::ResyncRequired);
-            }
             Ok(event_batch_dto(batch))
         })
     }
