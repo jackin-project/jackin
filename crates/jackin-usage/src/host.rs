@@ -581,36 +581,37 @@ fn surface_for_target(target: &UsageRefreshTarget) -> Option<HostSurfaceId> {
 /// Credential-root inventory for docs and debug (no secrets read).
 #[must_use]
 pub fn host_credential_root_matrix() -> Vec<HostCredentialRootRow> {
+    use jackin_core::container_paths;
     vec![
         HostCredentialRootRow {
             surface: "claude",
             host_paths: "~/.claude/.credentials.json, ~/.claude.json, $CLAUDE_CONFIG_DIR",
             env_vars: "ANTHROPIC_API_KEY, ANTHROPIC_AUTH_TOKEN",
-            container_handoff: "/jackin/claude/credentials.json",
+            container_handoff: container_paths::CLAUDE_CREDENTIALS,
         },
         HostCredentialRootRow {
             surface: "codex",
             host_paths: "$CODEX_HOME/auth.json, ~/.codex/auth.json",
             env_vars: "",
-            container_handoff: "/jackin/codex/auth.json",
+            container_handoff: container_paths::CODEX_AUTH,
         },
         HostCredentialRootRow {
             surface: "amp",
             host_paths: "Amp home secrets loaders",
             env_vars: "",
-            container_handoff: "/jackin/amp/secrets.json",
+            container_handoff: container_paths::AMP_SECRETS,
         },
         HostCredentialRootRow {
             surface: "grok",
             host_paths: "~/.grok (auth + bin)",
             env_vars: "",
-            container_handoff: "/jackin/grok/auth.json",
+            container_handoff: container_paths::GROK_AUTH,
         },
         HostCredentialRootRow {
             surface: "kimi",
             host_paths: "~/.kimi-code, ~/.kimi",
             env_vars: "KIMI_AUTH_TOKEN, KIMI_CODE_API_KEY, kimi_auth_token",
-            container_handoff: "/jackin/kimi-code",
+            container_handoff: container_paths::KIMI_CODE_DIR,
         },
         HostCredentialRootRow {
             surface: "opencode",

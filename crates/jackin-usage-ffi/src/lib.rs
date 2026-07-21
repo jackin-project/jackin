@@ -1,10 +1,13 @@
-// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
-// SPDX-License-Identifier: Apache-2.0
-
-//! Synchronous `UniFFI` facade over [`jackin_usage::host::HostUsageRuntime`].
+//! jackin-usage-ffi: synchronous UniFFI facade for the macOS usage menu bar.
+//!
+//! **Architecture Invariant:** T4.
+//! Entry point: [`UsageMenuBarBridge`] — coarse host runtime ops for Swift.
 //!
 //! Swift never owns probes, OAuth, or provider matrices. Every entry point is
 //! synchronous; panics are contained at the facade boundary.
+
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
 
 uniffi::setup_scaffolding!();
 
