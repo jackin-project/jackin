@@ -32,11 +32,13 @@ Probes already prefer **host homes first**, container handoff paths last. Menu-b
 | Z.AI / GLM | — | `ZAI_API_KEY` / `Z_AI_API_KEY` (+ provider_keys map) | — |
 | MiniMax | — | `MINIMAX_CODING_API_KEY` / `MINIMAX_API_KEY` | — |
 
-Shared host coordination dirs (already used by Capsule cross-instance refresh):
+Shared host coordination root (one tree for host processes and every container):
 
-- `~/.jackin/data/daemon/usage-cooldowns` (`JACKIN_USAGE_COOLDOWN_DIR`)
-- `~/.jackin/data/daemon/usage-snapshots` (`JACKIN_USAGE_SNAPSHOTS_DIR`)
-- `~/.jackin/data/daemon/usage-locks` (`JACKIN_USAGE_LOCK_DIR`)
+Host processes and containers coordinate through **`~/.jackin/data/usage-shared/{snapshots,cooldowns,locks}`** (containers bind-mount the same root at `/jackin/usage-shared` and set `JACKIN_USAGE_{SNAPSHOTS,COOLDOWN,LOCK}_DIR`). At most one prober per account host-wide; every surface reads the same per-account snapshot. Env vars override the defaults for tests only.
+
+- `~/.jackin/data/usage-shared/cooldowns` (`JACKIN_USAGE_COOLDOWN_DIR`)
+- `~/.jackin/data/usage-shared/snapshots` (`JACKIN_USAGE_SNAPSHOTS_DIR`)
+- `~/.jackin/data/usage-shared/locks` (`JACKIN_USAGE_LOCK_DIR`)
 
 Menu-bar durable store (host-only, not container paths):
 

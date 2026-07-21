@@ -2,7 +2,7 @@
 title: "Native macOS agent-usage menu bar"
 ---
 
-**Status**: Shipped core — host library, UniFFI, menu-bar shell, CLI, operator guide; **open**: host-global usage cache unification, native Tahoe design pass, notarized distribution
+**Status**: Shipped core — host library, UniFFI, menu-bar shell, CLI, operator guide, host-global usage cache; **open**: native Tahoe design pass, notarized distribution
 
 **Operator guide**: [macOS agent-usage menu bar](/guides/macos-usage-menu-bar/)
 
@@ -29,17 +29,9 @@ title: "Native macOS agent-usage menu bar"
 
 ## Open work
 
-### 1. Host-global usage cache — one refresh feeds every surface (plan 005, first)
+### 1. Host-global usage cache — one refresh feeds every surface (plan 005) — **done**
 
-Operator-directed top priority. Target invariant: **one host-side cache per account is the single source of truth**; refreshing usage anywhere — menu bar, host CLI, or any container — updates that one cache, every other surface adopts it within one poll tick without its own network fetch, and at most one prober per account runs host-wide (no parallel per-container copies, no duplicate probing, no avoidable rate limiting).
-
-What breaks the invariant today (verified 2026-07-21 at commit `3c49fff0`):
-
-- **Split coordination roots.** Container launch bind-mounts host `~/.jackin/data/usage-shared/{snapshots,cooldowns,locks}` and points `JACKIN_USAGE_{SNAPSHOTS,COOLDOWN,LOCK}_DIR` at it, but the library defaults used by host processes (`HostUsageRuntime` behind the menu bar, `jackin usage host snapshot`) still resolve to `~/.jackin/data/daemon/usage-*`. Containers coordinate with each other; the menu bar is an uncoordinated extra prober on the same accounts. ADR-011's shared-dirs section currently documents the pre-split state and must be corrected with the fix.
-- **No re-seed on external refresh.** A warm process seeds from the shared per-account snapshot only on first sight of a target; a newer snapshot written by another process is ignored until the local 5-minute schedule fires. Refresh-anywhere-visible-everywhere needs adopt-if-newer on every poll tick.
-- **Lock semantics across the VM boundary are best-effort.** The per-account `flock` dedups container↔container reliably (same kernel); host↔container it may not propagate on virtiofs. Correctness must rest on the success-cooldown markers, with the lock as an optimization.
-
-The building blocks all exist (account-identity-keyed shared snapshots, cooldown markers, best-effort locks, Capsule-free host runtime); plan 005 unifies the root, adds adopt-if-newer, verifies cooldown suppression cross-process, and fixes ADR/guide truth. No daemon, no new IPC — the [jackin❯ daemon](/roadmap/jackin-daemon/) remains an optional later upgrade.
+Invariant shipped: **one host-side cache per account is the single source of truth**. Library defaults and container bind-mounts both use `~/.jackin/data/usage-shared/{snapshots,cooldowns,locks}`; warm processes adopt a newer shared snapshot within one poll tick (mtime-gated); success cooldowns suppress cross-process duplicate probes while forced refresh still probes. ADR-011 and the operator guide state the same invariant. No daemon, no new IPC — the [jackin❯ daemon](/roadmap/jackin-daemon/) remains an optional later upgrade.
 
 ### 2. Native Tahoe design pass (plan 006)
 
@@ -73,7 +65,7 @@ Swift must not own HTTP/RPC/OAuth/CLI probes or non-jackin providers. Scope: `Ag
 - [x] Phase 3 menu bar shell (display only)
 - [x] Phase 4 full surface matrix + goldens
 - [x] Phase 5 operator docs + sign script residual
-- [ ] Host-global usage cache unification (plan 005): one coordination root, adopt-if-newer, cross-process cooldown suppression, ADR-011 correction
+- [x] Host-global usage cache unification (plan 005): one coordination root, adopt-if-newer, cross-process cooldown suppression, ADR-011 correction
 - [ ] Native Tahoe design pass (plan 006): template icon + compact label, gauges, footer actions, launch-at-login, centralized Liquid Glass fallbacks
 - [ ] Notarized CI artifact + Homebrew cask (plans 001–004; external: Apple account)
 

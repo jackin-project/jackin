@@ -192,22 +192,45 @@ pub(crate) fn refresh_interval_for_key(key: &str) -> Duration {
     min + Duration::from_secs(offset)
 }
 
+/// Host-global success/rate-limit cooldown markers under
+/// `~/.jackin/data/usage-shared/cooldowns` (containers: `/jackin/usage-shared/cooldowns`
+/// via bind mount). One root host-wide; env override is for tests only.
 pub(crate) fn shared_usage_cooldown_dir() -> PathBuf {
     env_dir_or_home(
         "JACKIN_USAGE_COOLDOWN_DIR",
-        ".jackin/data/daemon/usage-cooldowns",
+        ".jackin/data/usage-shared/cooldowns",
     )
 }
 
+/// Host-global per-account usage snapshots under
+/// `~/.jackin/data/usage-shared/snapshots` (containers: `/jackin/usage-shared/snapshots`
+/// via bind mount). One root host-wide; env override is for tests only.
 pub(crate) fn shared_usage_snapshots_dir() -> PathBuf {
     env_dir_or_home(
         "JACKIN_USAGE_SNAPSHOTS_DIR",
-        ".jackin/data/daemon/usage-snapshots",
+        ".jackin/data/usage-shared/snapshots",
     )
 }
 
+/// Host-global per-account refresh locks under
+/// `~/.jackin/data/usage-shared/locks` (containers: `/jackin/usage-shared/locks`
+/// via bind mount). Best-effort optimization; cooldowns are the guarantee.
+/// Env override is for tests only.
 pub(crate) fn shared_usage_lock_dir() -> PathBuf {
-    env_dir_or_home("JACKIN_USAGE_LOCK_DIR", ".jackin/data/daemon/usage-locks")
+    env_dir_or_home(
+        "JACKIN_USAGE_LOCK_DIR",
+        ".jackin/data/usage-shared/locks",
+    )
+}
+
+/// mtime of the account's shared snapshot file, if present.
+pub(crate) fn shared_usage_snapshot_mtime(
+    snapshots_dir: &Path,
+    key: &str,
+) -> Option<SystemTime> {
+    fs::metadata(shared_usage_snapshot_path(snapshots_dir, key))
+        .ok()
+        .and_then(|meta| meta.modified().ok())
 }
 
 /// Outcome of trying to take the cross-container per-account refresh lock.

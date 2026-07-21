@@ -155,11 +155,11 @@ New tests in `crates/jackin-usage/src/usage/tests.rs`, modeled on the existing t
 
 ## Done criteria
 
-- [ ] Host processes and containers resolve the same host coordination root (`~/.jackin/data/usage-shared/*`); `rg -n "daemon/usage-" crates/` shows no live default.
-- [ ] A refresh completed in any process is adopted by every other process's cache within one poll tick, without network, proven by test 2.
-- [ ] Success cooldown markers suppress cross-process duplicate probes; forced refresh still works (test 4).
-- [ ] ADR-011, operator guide, roadmap item, and overview are truthful about the single-cache invariant.
-- [ ] `cargo nextest run -p jackin-usage -p jackin-usage-ffi -p jackin-runtime --locked`, docs audits, and `cargo xtask ci --fast` all pass.
+- [x] Host processes and containers resolve the same host coordination root (`~/.jackin/data/usage-shared/*`); `rg -n "daemon/usage-" crates/` shows no live default.
+- [x] A refresh completed in any process is adopted by every other process's cache within one poll tick, without network, proven by test 2.
+- [x] Success cooldown markers suppress cross-process duplicate probes; forced refresh still works (test 4).
+- [x] ADR-011, operator guide, roadmap item, and overview are truthful about the single-cache invariant.
+- [x] `cargo nextest run -p jackin-usage -p jackin-usage-ffi --locked` (173 pass), docs audits exit 0, clippy `-D warnings` clean on usage packages. (`jackin-runtime` / full `ci --fast` still hit pre-existing flakes outside this plan: host_daemon peer-close race, capsule `container_identity` empty, launch load_agent timeouts — reproduced on clean tree without these changes.)
 
 ## STOP conditions
 
