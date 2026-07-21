@@ -2,7 +2,7 @@
 title: "jackin❯ Desktop — native macOS usage status bar"
 ---
 
-**Status**: Menu-bar engineering complete — host library, UniFFI, menu-bar shell, CLI, operator guide, host-global usage cache, Tahoe design, arm64 static PR gate, release **validate** path + cask PR automation; **activation residual**: first notarized ZIP on first non-dev release after Apple secrets in `release-macos` (see `native/README.md` Paths A–C). **Direction (operator, 2026-07-22)**: the app becomes **jackin❯ Desktop** — the first native macOS application, status-bar only in v1 — per the product spec below.
+**Status**: Menu-bar engineering complete — host library, UniFFI, menu-bar shell, CLI, operator guide, host-global usage cache, Tahoe design, arm64 static PR gate, release **validate** path + cask PR automation; **activation residual**: first notarized ZIP on first non-dev release after Apple secrets in `release-macos` (see `native/README.md` Paths A–C). **Direction (operator, 2026-07-22)**: the app becomes **jackin❯ Desktop** — the first native macOS application; v1 is a status-bar app with Liquid Glass detail windows, view-only usage across all accounts — per the product spec below.
 
 **Operator guide**: [macOS agent-usage menu bar](/guides/macos-usage-menu-bar/)
 
@@ -20,11 +20,11 @@ A second, deeper clean-room concept review of both references was recorded on 20
 
 ## jackin❯ Desktop — product spec (v1: status bar only)
 
-The shipped menu-bar engineering is the seed of **jackin❯ Desktop**, our first native macOS application. v1 stays deliberately small: `LSUIElement`, no Dock icon, no main window — one status item, its popover, and Settings. Its single job is a **status-bar view of subscription usage** for the providers jackin❯ supports: exactly what the Capsule usage dialog shows in-session, always visible on the host without an open Capsule.
+The shipped menu-bar engineering is the seed of **jackin❯ Desktop**, our first native macOS application. v1 stays deliberately small: `LSUIElement`, no Dock icon — one status item carrying the jackin❯ logomark, a glance popover, on-demand Liquid Glass detail windows, and Settings. Its single job is **viewing subscription usage across every account** for the providers jackin❯ supports: exactly what the Capsule usage dialog shows in-session, always visible on the host without an open Capsule. View-only in v1 — no alerts, no notifications, no write actions.
 
 Two invariants govern every element below:
 
-1. **Capsule parity.** The popover renders the same `FocusedUsageView` / `QuotaBucketView` DTOs the Capsule usage dialog consumes — same percentages, same pace and reset strings, same severity accents, same status words (`fresh` / `stale` / `needs login` / `needs secret` / `unsupported` / `unavailable` / `error`). If jackin❯ Desktop and the Capsule ever disagree on a number, that is a bug by definition.
+1. **Capsule parity.** The glance popover and the Usage window render the same `FocusedUsageView` / `QuotaBucketView` DTOs the Capsule usage dialog consumes — same percentages, same pace and reset strings, same severity accents, same status words (`fresh` / `stale` / `needs login` / `needs secret` / `unsupported` / `unavailable` / `error`). If jackin❯ Desktop and the Capsule ever disagree on a number, that is a bug by definition.
 2. **Rust-first.** Every displayed value is produced by the existing agent-status stack — `jackin-usage` (`HostUsageRuntime`, view shaping) and `jackin-protocol` DTOs — crossing UniFFI as finished strings and scalars. A new display need is first an extension of the Rust view-model plus an FFI export, then a Swift rendering of it. Swift never computes percentages, pacing, severity, thresholds, or label text (ADR-011).
 
 ### Identity (supersedes program operator decision 1 of 2026-07-21)
@@ -42,11 +42,13 @@ The rename lands **before** the first notarized publish. Plan 003 activation is 
 
 ### Status bar surface
 
-The status item is the product; the popover is detail. Display modes are Settings-selectable and every string is Rust-shaped:
+The status item is the front door. Its icon is the **jackin❯ logomark** — the compact `j❯` chevron mark rendered as a monochrome template image so macOS tints it correctly in light/dark menu bars, dimmed states, and accessibility modes. No generic gauge glyph, no third-party symbols.
+
+Display modes are Settings-selectable and every string is Rust-shaped:
 
 | Mode | Status item shows | Rust source |
 |---|---|---|
-| Icon only | Template gauge glyph; dims to 0.45 opacity when every enabled surface is degraded | shipped |
+| Icon only | Template jackin❯ logomark; dims to 0.45 opacity when every enabled surface is degraded | shipped (icon asset swap) |
 | Focus percent (default, shipped) | `Cl 63%` — the enabled surface with the least remaining, as `compact_prefix` + used percent | `jackin_usage::host::compact_status_bar_label` |
 | Pinned surface | Operator pins one surface; the number tracks it only (`Cx 41%`) | new FFI accessor over the existing per-surface status-bar views |
 | Multi-surface strip | Worst-first, capped (default 3): `Cl 63% · Cx 41% · ZA 12%` | new Rust `compact` list variant + FFI export |
@@ -60,89 +62,206 @@ Cross-cutting status-item behavior:
 - **Never invent numbers**: a surface without a numeric remaining renders no percent; degraded surfaces dim — they never disappear, freeze silently, or show a stale value as fresh (shipped invariant).
 - **Screen-share privacy** (optional, off by default): while macOS reports active screen capture, the item collapses to the bare icon. Pure Swift OS integration — the one class of logic Swift is allowed to own.
 
-### Popover — Capsule usage dialog, as a native panel
+### Glance popover and Usage window
 
-1. **Overview strip** — one line per enabled surface from `FocusedUsageView.tabs` (`Claude · Session 37% left · Resets in 1h 21m`); click scrolls to that card. Mirrors the Capsule Overview tab.
-2. **Surface cards** (shipped, extended) — per enabled surface: provider label + status badge; account identity line (email, plan, credential origin such as `OAuth · keychain`); one capacity gauge per quota bucket with `{remaining}% left` (money windows show `{used}% used` plus `Monthly cap` / `Budget` lines), pace label (`On pace` / `{n}% in reserve` / `{n}% in deficit`), and reset countdown with exact local time; last error rendered in place while last-good buckets stay visible; stale/error badges never hide data.
-3. **Footer** (shipped) — updated label, force Refresh (global and per surface via the existing forced-refresh path), Settings, Quit.
+Clicking the status item opens a **glance popover**: the overview strip — one line per enabled surface from `FocusedUsageView.tabs`, mirroring the Capsule Overview tab — plus Open Usage, Settings, and Quit. Detail lives in **normal macOS windows**, not in the popover: clicking an overview row (or Open Usage) opens the **Usage window**, a standard resizable window that restates the Capsule usage dialog natively:
 
-Field for field, the cards match the Capsule Provider tab rows (Provider, Account, Username, Plan, Auth, Status, Updated, quota buckets, error detail). The popover adds no field the Rust view-model does not already carry.
+1. **Layout** — glass sidebar listing Overview plus the providers in Capsule tab-strip order; the content pane renders the selected provider card with the full field set: identity block (provider ↔ account, updated ↔ plan, auth origin), one capacity gauge per quota bucket with percent ↔ reset columns (`{remaining}% left`; money windows show `{used}% used` plus `Monthly cap` / `Budget` lines), pace verdict ↔ prognosis line, note and value rows, reset-credits row; last error rendered in place while last-good buckets stay visible; stale/error badges never hide data.
+2. **Liquid Glass, centralized** — the window adopts macOS 26 Tahoe Liquid Glass: glass sidebar and toolbar, content extending edge-to-edge under the chrome, concentric corner geometry, morphing toolbar controls. Every availability gate stays centralized in the shipped fallback layer; macOS 14–15 render the equivalent standard materials. Design-language adoption never forks per view.
+3. **Window behavior** — resizable with remembered frame, ⌘R refresh, Esc closes, toolbar Refresh and Settings; the app stays `LSUIElement` — windows appear on demand and leave no Dock presence behind.
+
+Field for field, the window matches the Capsule Provider tab rows (Provider, Account, Username, Plan, Auth, Status, Updated, quota buckets, error detail); it adds no field the Rust view-model does not already carry. Cards and overview rows use the same provider display labels the Capsule dialog shows (Codex → OpenAI, Claude → Anthropic, Grok Build → xAI, GLM / Z.AI → Z.AI; Amp, Kimi, MiniMax, OpenCode unchanged) through the shared Rust remap — never a second Swift mapping.
 
 Provider scope stays frozen: `HostSurfaceId::ALL` — Claude, Codex, Amp, Grok Build, GLM / Z.AI, Kimi, MiniMax, OpenCode. New agents appear when the Rust enums grow, never through app-side additions.
 
+### Capsule reference screens (parity source)
+
+Captured from the running Capsule usage dialog (2026-07-22, accounts redacted). These are the screens jackin❯ Desktop's Usage window restates natively. Provider card — OpenAI:
+
+```text
+┌ Usage ───────────────────────────────────────────────────────────────┐
+│    Overview   OpenAI   Anthropic   Amp   xAI   Z.AI   Kimi   MiniMax │
+│              ━━━━━━━━                                                │
+│──────────────────────────────────────────────────────────────────────│
+│  OpenAI                                        operator@example.com  │
+│  Updated 2m ago                                             Pro 20x  │
+│  Auth: OAuth · ~/.codex/auth.json                                    │
+│──────────────────────────────────────────────────────────────────────│
+│  Session                                                             │
+│  ███████████████████████████████████████████████████████████████░░  │
+│  97% left                          Resets in 6d 22h (Jul 28, 17:02)  │
+│  2% in deficit                                                       │
+│                                                                      │
+│  Codex Spark 5-hour                                                  │
+│  █████████████████████████████████████████████████████████████████  │
+│  100% left                             Resets in 7d (Jul 28, 18:11)  │
+│  1 week window                                                       │
+│──────────────────────────────────────────────────────────────────────│
+│  Limit Reset Credits                      3 manual resets available  │
+└──────────────────────────────────────────────────────────────────────┘
+   ←→ switch provider   ⇥ focus content   r refresh   q/Esc close
+```
+
+Provider card — Anthropic (model-scoped windows and an over-cap money window):
+
+```text
+│  Anthropic                                     operator@example.com  │
+│  Updated 3m ago                                          Claude Max  │
+│  Auth: OAuth · ~/.claude/.credentials.json                           │
+│──────────────────────────────────────────────────────────────────────│
+│  Session                                                             │
+│  ██████████████████████████████████████████████████████████░░░░░░░  │
+│  92% left                           Resets in 1h 28m (Jul 21, 19:40) │
+│  62% in reserve                                    Lasts until reset │
+│                                                                      │
+│  All models                                                          │
+│  ████████████████████████████████████████████████░░░░░░░░░░░░░░░░░  │
+│  81% left                           Resets in 2d 12h (Jul 24, 07:00) │
+│  45% in reserve                                    Lasts until reset │
+│                                                                      │
+│  Fable                                                               │
+│  █████████████████████████████████████████░░░░░░░░░░░░░░░░░░░░░░░░  │
+│  68% left                           Resets in 2d 12h (Jul 24, 07:00) │
+│  32% in reserve                                    Lasts until reset │
+│                                                                      │
+│  Extra usage                                                         │
+│  █████████████████████████████████████████████████████████████████  │
+│  100% used                                                           │
+│  Monthly cap: SGD 269.47 spent / SGD 260.00                          │
+```
+
+Overview tab (one line per provider, most constrained bucket first):
+
+```text
+│    Overview   OpenAI   Anthropic   Amp   xAI   Z.AI   Kimi   MiniMax │
+│   ━━━━━━━━━━                                                         │
+│──────────────────────────────────────────────────────────────────────│
+│  OpenAI      97% left   Resets in 6d 22h            (Jul 28, 17:02)  │
+│  Anthropic  Fable 68% left   Resets in 2d 12h       (Jul 24, 07:00)  │
+│  Amp        fresh                                                    │
+│  xAI         89% left   Resets in 5d 17h            (Jul 27, 11:51)  │
+│  Z.AI        10% left   Resets in 22h 56m           (Jul 22, 17:08)  │
+│  Kimi        24% left   Resets in 3d                (Jul 24, 18:41)  │
+│  MiniMax    unsupported                                              │
+```
+
+Distinctive rows from the remaining provider cards:
+
+```text
+│  Amp         operator@example.com (operator) · Amp Free              │
+│  Auth: API key · amp secrets.json                                    │
+│  Credits     Individual credits: $0.06        value row, no gauge    │
+
+│  xAI         SuperGrok · Auth: OAuth · ~/.grok/auth.json             │
+│  Weekly      89% left · Resets in 5d 17h      no pace line yet       │
+
+│  Z.AI        Auth: API token · env ZAI_API_KEY   no account line     │
+│  5-hour      100% left                        no reset → percent only│
+│  MCP         97% left · Resets in 10d 22h                            │
+│              133 / 4.0K (3.9K remaining)      count detail line      │
+
+│  Kimi        Auth: API token · env KIMI_CODE_API_KEY                 │
+│  Rate Limit  100% left · 10% in reserve · Lasts until reset          │
+```
+
+Conventions jackin❯ Desktop mirrors from these screens:
+
+- **Provider display labels** — the dialog's tab strip and card headers use provider names (OpenAI, Anthropic, xAI, Z.AI), not surface labels; jackin❯ Desktop reads the same remap.
+- **Two-column rows** — value left, meta right: provider ↔ account, updated ↔ plan, percent ↔ reset, pace verdict ↔ prognosis (`62% in reserve` ↔ `Lasts until reset`).
+- **Auth line variants** — `OAuth · ~/.codex/auth.json`, `API key · amp secrets.json`, `API token · env ZAI_API_KEY`; key-only surfaces (Z.AI, Kimi) carry no account line and the card stays honest without one; account lines may carry a username (`operator@example.com (operator)`).
+- **Named and model-scoped windows** — `Codex Spark 5-hour`, `All models`, `Fable` are ordinary quota buckets with their own gauges plus optional note lines (`1 week window`); the app renders them with zero knowledge of what they are.
+- **Rows without gauges** — unbounded balances render as value rows (`Individual credits: $0.06`); count windows add a detail line (`133 / 4.0K (3.9K remaining)`); buckets without resets show percent only.
+- **Money honesty** — over-cap spend renders as `100% used` plus `Monthly cap: SGD 269.47 spent / SGD 260.00`; currencies and over-limit amounts pass through exactly as Rust formats them.
+- **Overview rows** — led by the provider's most constrained fresh bucket, with the bucket label shown when it is not the default window (`Anthropic  Fable 68% left`); non-numeric surfaces show status words (`fresh`, `unsupported`); exact reset time right-aligned.
+- **Reset-credits summary row** — `Limit Reset Credits · 3 manual resets available` renders as a display-only row in v1; claiming a reset stays a rejected write action.
+- **Keyboard parity** — where macOS allows: ←/→ or ⇥ moves provider focus, `r` forces refresh, Esc closes.
+
 ### Screen inventory (v1)
 
-Every screen is a rendering of existing Rust view fields; the strings in the sketches are the literal formats Rust view shaping already emits (or the named extension above). Sketches are layout intent, not pixel specs — geometry and materials follow the shipped Tahoe design pass.
+Every screen is a rendering of existing Rust view fields; the strings in the sketches are the literal formats Rust view shaping already emits (or the named extension above). Sketches are layout intent, not pixel specs — geometry and materials follow the Liquid Glass direction with gates centralized in the shipped fallback layer.
 
-**S1 — Status item.** One `NSStatusItem`-equivalent, template-tinted, all variants:
+**S1 — Status item.** One status item, jackin❯ logomark as a template image, all variants:
 
 ```text
-◔ Cl 63%                       Focus percent (default): worst enabled surface
-◔                              Icon only
-◔ Cx 41%                       Pinned surface (operator pinned Codex)
-◔ Cl 63% · Cx 41% · ZA 12%     Multi-surface strip (cap 3, worst first)
-◔ Cl resets 1h 21m             Depleted: driving bucket at 0% remaining
-◔  (0.45 opacity)              Every enabled surface degraded — no invented numbers
-◔                              Screen capture active (privacy collapse)
+j❯ Cl 63%                      Focus percent (default): worst enabled surface
+j❯                             Icon only (template jackin❯ logomark)
+j❯ Cx 41%                      Pinned surface (operator pinned Codex)
+j❯ Cl 63% · Cx 41% · ZA 12%    Multi-surface strip (cap 3, worst first)
+j❯ Cl resets 1h 21m            Depleted: driving bucket at 0% remaining
+j❯  (0.45 opacity)             Every enabled surface degraded — no invented numbers
+j❯                             Screen capture active (privacy collapse)
 ```
 
-Rust: shipped `compact_status_bar_label` plus the pinned / strip / depleted FFI extensions from the mode table.
+Rust: shipped `compact_status_bar_label` plus the pinned / strip / depleted FFI extensions from the mode table. Logomark ships as a template asset so macOS handles tinting.
 
-**S2 — Popover, main screen.** 360 pt fixed width, scroll past 420 pt (shipped geometry):
+**S2 — Glance popover.** Overview only; detail always opens a window:
 
 ```text
-┌──────────────────────────────────────────────────┐
-│ jackin❯ Desktop                        ↻ Refresh │
-├──────────────────────────────────────────────────┤
-│ OVERVIEW                                         │
-│ Claude       Session 37% left · Resets in 1h 21m │
-│ Codex        Weekly 59% left · Resets in 2d 4h   │
-│ Amp          fresh                               │
-│ GLM / Z.AI   needs secret                        │
-├──────────────────────────────────────────────────┤
-│ Claude                                        ✓  │
-│ operator@example.com · Pro · OAuth · keychain    │
-│ Session   ▰▰▰▰▰▱▱▱▱▱▱▱   37% left                │
-│           On pace · Resets in 1h 21m (Jul 22, 18:38) │
-│ Weekly    ▰▰▰▰▰▰▰▰▰▱▱▱   73% left                │
-│           2% in reserve · Resets in 4d 2h (Jul 26, 09:00) │
-│ ────────────────────────────────────────         │
-│ Codex                                         ✓  │
-│ operator@example.com · Plus · OAuth              │
-│ Session   ▰▰▰▰▰▰▰▰▱▱▱▱   66% left                │
-│ Weekly    ▰▰▰▰▰▰▰▱▱▱▱▱   59% left                │
-│           Resets in 2d 4h (Jul 24, 21:00)        │
-│ …one card per enabled surface…                   │
-├──────────────────────────────────────────────────┤
-│ Updated 2m ago        Refresh · Settings… · Quit │
-└──────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────┐
+│ jackin❯ Desktop                      ↻ Refresh │
+├────────────────────────────────────────────────┤
+│ OpenAI      97% left · Resets in 6d 22h        │
+│ Anthropic   Fable 68% left · Resets in 2d 12h  │
+│ Amp         fresh                              │
+│ xAI         89% left · Resets in 5d 17h        │
+│ Z.AI        10% left · Resets in 22h 56m       │
+│ Kimi        24% left · Resets in 3d            │
+│ MiniMax     unsupported                        │
+├────────────────────────────────────────────────┤
+│ Open Usage…                  Settings… · Quit  │
+└────────────────────────────────────────────────┘
 ```
 
-Overview rows = `FocusedUsageView.tabs` one-liners; cards = `QuotaBucketView` rows; identity line = `FocusedAccountHeader`; click an overview row to scroll to its card.
+Rows = `FocusedUsageView.tabs` one-liners with the shared provider display labels; clicking a row opens the Usage window focused on that provider.
 
-**S3 — Surface card states.** Honest degradation, one shape per status:
+**S3 — Usage window.** Normal macOS window, Liquid Glass, resizable, remembered frame:
 
 ```text
-│ Grok Build                                    ⏱  │  stale: clock badge, card dims,
+┌─ jackin❯ Desktop — Usage ────────────────────────────────────────────┐
+│ ┌──────────┐                                                         │
+│ │ Overview │   Anthropic                     operator@example.com    │
+│ │ OpenAI   │   Updated 3m ago                          Claude Max    │
+│ │▐Anthropic│   Auth: OAuth · ~/.claude/.credentials.json             │
+│ │ Amp      │   ────────────────────────────────────────────────      │
+│ │ xAI      │   Session     ▰▰▰▰▰▰▰▰▰▰▰▱   92% left                   │
+│ │ Z.AI     │               62% in reserve         Lasts until reset  │
+│ │ Kimi     │               Resets in 1h 28m (Jul 21, 19:40)          │
+│ │ MiniMax  │   All models  ▰▰▰▰▰▰▰▰▰▰▱▱   81% left                   │
+│ └──────────┘   Fable       ▰▰▰▰▰▰▰▰▱▱▱▱   68% left                   │
+│                Extra usage ▰▰▰▰▰▰▰▰▰▰▰▰  100% used                   │
+│                Monthly cap: SGD 269.47 spent / SGD 260.00            │
+└──────────────────────────────────────────────────────────────────────┘
+   glass sidebar · content edge-to-edge under chrome · ⌘R refresh · Esc closes
+```
+
+Sidebar mirrors the Capsule tab strip (Overview + providers, same order, same display labels); content pane is the provider card, field for field the Capsule dialog. Overview selection shows the S2 rows as a full-width list.
+
+**S4 — Provider card states.** Honest degradation, one shape per status:
+
+```text
+│ xAI                                           ⏱  │  stale: clock badge, card dims,
 │ operator@example.com · stale                     │  last-good gauges stay visible
 │ Weekly    ▰▰▰▱▱▱▱▱▱▱▱▱   30% left                │
 
-│ GLM / Z.AI                                    ⚠  │  needs secret: no gauge invented,
+│ Z.AI                                          ⚠  │  needs secret: no gauge invented,
 │ needs secret                                     │  status word only
 
-│ Codex                                         ⚠  │  error: last-good buckets stay,
-│ operator@example.com · Plus                      │  error text in place, never wipes
+│ OpenAI                                        ⚠  │  error: last-good buckets stay,
+│ operator@example.com · Pro 20x                   │  error text in place, never wipes
 │ Session   ▰▰▰▰▰▰▰▰▱▱▱▱   66% left                │
 │ usage endpoint timed out                         │
 
-│ Claude                                        ✓  │  money window (spend slot)
-│ Spend     ▰▰▰▱▱▱▱▱▱▱▱▱   21% used                │
-│           Monthly cap: $53.31 / $260.00          │
+│ Anthropic                                     ✓  │  money window over cap: honest
+│ Extra usage ▰▰▰▰▰▰▰▰▰▰▰▰  100% used              │  100% used + spent-over-limit
+│ Monthly cap: SGD 269.47 spent / SGD 260.00       │
+
+│ Amp                                           ✓  │  value row: no gauge for
+│ Credits    Individual credits: $0.06             │  unbounded balances
 ```
 
 Badges follow the shipped mapping (warning triangle for error / needs login / needs secret / unavailable, clock for stale); pace, reset, and money strings are the shipped Rust formats.
 
-**S4 — Empty and first-run state.** Shown when no surface is enabled or no credentials resolve:
+**S5 — Empty and first-run state.** Shown when no surface is enabled or no credentials resolve:
 
 ```text
 │ jackin❯ Desktop                                  │
@@ -155,7 +274,7 @@ Badges follow the shipped mapping (warning triangle for error / needs login / ne
 
 No credential-harvesting UI: no login forms, no token paste. Missing credentials surface as Rust `needs login` / `needs secret` / `unavailable` states.
 
-**S5 — Settings.** One window, 420×520 (shipped geometry), no tabs in v1:
+**S6 — Settings.** One window, Liquid Glass form styling, no tabs in v1:
 
 ```text
 ┌── Settings ──────────────────────────────────────┐
@@ -175,9 +294,6 @@ No credential-harvesting UI: no login forms, no token paste. Missing credentials
 │   Floor   1m ─────────●────────── 30m            │
 │ Login                                            │
 │   [x] Launch at login                            │
-│ Alerts (v1.x)                                    │
-│   [ ] Threshold crossed     [ ] Depleted         │
-│   [ ] Pace run-out          [ ] Reset restored   │
 │ About                                            │
 │   Account quotas from host credentials via       │
 │   jackin-usage (Rust). No passwords stored.      │
@@ -185,35 +301,13 @@ No credential-harvesting UI: no login forms, no token paste. Missing credentials
 └──────────────────────────────────────────────────┘
 ```
 
-Every picker persists a display preference that crosses FFI as a flag; Rust resolves the resulting strings. Surface toggles, refresh floor, launch-at-login, and the About copy are shipped; the Display/Format pickers and Alerts section are the v1 / v1.x additions.
-
-**S6 — Notifications (v1.x).** Standard macOS banners, strings emitted whole by the Rust alert policy:
-
-```text
-Jackin Desktop
-Claude · Session — 10% left
-Resets in 1h 21m (Jul 22, 18:38)
-
-Jackin Desktop
-Codex · Weekly — projected to run out before reset
-14% in deficit · Resets in 2d 4h
-
-Jackin Desktop
-Claude · Session restored
-100% left after reset
-```
-
-Swift posts the title/subtitle/body verbatim; clicking a banner opens the popover at that surface's card.
-
-### Alerts (v1.x, after the rename)
-
-Alert policy computes in Rust from fields the views already carry (remaining percent, severity, pace, reset epoch); Swift is only the notification presenter. All triggers default off. Planned set: threshold crossed (warn/danger severity transitions), depleted, pace run-out (pace already emits `{n}% in deficit` when the window is projected to exhaust before reset), and reset restored. Alerts dedupe while a condition holds, re-arm on recovery, and never fire from unreadable surfaces.
+Every picker persists a display preference that crosses FFI as a flag; Rust resolves the resulting strings. Surface toggles, refresh floor, launch-at-login, and the About copy are shipped; the Display/Format pickers are the v1 additions. No alerts section — v1 is view-only.
 
 ### Concept adoption (clean-room, from the references above)
 
-- **Adopted** (already ours or specified above): template meter icon; honest stale/error dimming; last-good data never overwritten by a failed refresh; reset countdown with exact-time flip; used/left flip; depleted-shows-reset; launch at login; per-surface enable toggles; screen-share hide; threshold / depleted / pace-run-out notification triple.
+- **Adopted** (already ours or specified above): template status icon (jackin❯ logomark); honest stale/error dimming; last-good data never overwritten by a failed refresh; reset countdown with exact-time flip; used/left flip; depleted-shows-reset; launch at login; per-surface enable toggles; screen-share hide.
 - **Rejected** (permanent unless a future ADR reopens): provider zoo beyond jackin❯ surfaces; Swift-side probes or any browser-cookie / web-scrape credential source; plugin systems; multiple status items (jackin❯ Desktop keeps exactly one); menu-bar layout token editors; WidgetKit widgets; Sparkle (cask-only stands); app-embedded HTTP servers or CLI companions — `jackin usage host snapshot` already serves the same shared cache; analytics/telemetry SDKs.
-- **Deferred until Rust models them first**: multi-account cards; spend/usage history charts (needs the durable snapshot store recorded in ADR-011); cross-device sync.
+- **Deferred** (explicitly not v1; each needs Rust modeling first where data is involved): alert notifications of any kind — v1 is view-only; multi-account cards; spend/usage history charts (needs the durable snapshot store recorded in ADR-011); cross-device sync.
 
 ### Beyond the status bar (explicitly not v1)
 
@@ -249,10 +343,10 @@ Template status-item icon + optional Rust `compact_status_bar_label` monospaced 
 
 ### 4. jackin❯ Desktop v1 (product spec above) — **open**
 
-1. Identity rename to jackin❯ Desktop across SwiftPM product, scripts, CI, tap cask, operator guide, ADR distribution section — **before** the first notarized publish.
+1. Identity rename to jackin❯ Desktop across SwiftPM product, scripts, CI, tap cask, operator guide, ADR distribution section — **before** the first notarized publish; status-item icon becomes the jackin❯ logomark template asset.
 2. Status-item display modes: pinned surface, multi-surface strip, depleted-shows-reset — each as a Rust view/FFI extension plus a Settings picker.
-3. Popover overview strip from `FocusedUsageView.tabs`; used/left and countdown/clock format flags resolved in Rust.
-4. v1.x alerts: Rust-computed policy (threshold / depleted / pace run-out / reset restored), Swift presenter only.
+3. Glance popover reduced to the overview strip from `FocusedUsageView.tabs`; used/left and countdown/clock format flags resolved in Rust.
+4. Usage window: normal macOS window with Liquid Glass sidebar/content layout restating the Capsule dialog (view-only; availability gates stay centralized in the shipped fallback layer).
 
 ## Architecture (frozen)
 
@@ -280,11 +374,11 @@ Swift must not own HTTP/RPC/OAuth/CLI probes or non-jackin❯ providers. Scope: 
 - [x] Universal static app assembly + PR gate (plan 001); tap cask-validation without write credentials (plan 002)
 - [x] Notarized release **pipeline** + secret-free validate + cask PR automation (plan 003 engineering)
 - [ ] **Activation:** first notarized public ZIP + operator-merged first cask + dual-arch clean install (ops after `release-macos` secrets; plan 004)
-- [ ] jackin❯ Desktop identity rename (pre-publish; supersedes program decision 1)
+- [ ] jackin❯ Desktop identity rename (pre-publish; supersedes program decision 1) + jackin❯ logomark status-item asset
 - [ ] Status-item display modes (pinned surface, multi-surface strip, depleted-shows-reset) as Rust view/FFI extensions
-- [ ] Popover overview strip + Rust-resolved used/left and countdown/clock format flags
-- [ ] Screen inventory S1–S6: Settings display/format pickers, empty/first-run state, banner-to-card deep link
-- [ ] v1.x alert notifications (Rust policy, Swift presenter)
+- [ ] Glance popover overview strip + Rust-resolved used/left and countdown/clock format flags
+- [ ] Usage window: Liquid Glass sidebar/content window restating the Capsule dialog (view-only)
+- [ ] Screen inventory S1–S6: Settings display/format pickers, empty/first-run state
 
 ## Related work
 
