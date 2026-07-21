@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Assemble one universal, statically linked JackinUsageMenuBar.app from the
-# static XCFramework path. No dylib / framework / XCFramework is embedded.
+# Assemble one arm64 (Apple Silicon) statically linked JackinUsageMenuBar.app
+# from the static XCFramework path. No dylib / framework / XCFramework is embedded.
 # Requires: JACKIN_APP_VERSION, JACKIN_APP_BUILD (numeric). Ad-hoc signs after assembly.
+# Intel/x86_64 is out of scope for now (operator decision 2026-07-22).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -27,7 +28,7 @@ fi
 
 cd "$ROOT"
 
-echo "==> XCFramework (static universal)"
+echo "==> XCFramework (static arm64)"
 bash "$ROOT/scripts/build-usage-xcframework.sh"
 if [[ ! -d "$XCFRAMEWORK" ]]; then
   echo "error: missing $XCFRAMEWORK" >&2
@@ -36,52 +37,42 @@ fi
 
 cd "$ROOT/native"
 
-build_slice() {
-  local arch="$1"
-  local out_dir="$2"
-  echo "==> swift build ($arch)"
-  # SwiftPM resolves the binaryTarget XCFramework; link is static — no dylib in product.
-  swift build -c release --product JackinUsageMenuBar --arch "$arch" \
-    -Xswiftc -target -Xswiftc "${arch}-apple-macosx14.0"
-  local bin
-  bin="$(swift build -c release --show-bin-path --arch "$arch")/JackinUsageMenuBar"
-  if [[ ! -f "$bin" ]]; then
-    # Fallback path when --arch does not change show-bin-path layout.
-    bin="$(swift build -c release --show-bin-path)/JackinUsageMenuBar"
-  fi
-  if [[ ! -f "$bin" ]]; then
-    echo "error: missing Swift product for $arch" >&2
-    exit 1
-  fi
-  mkdir -p "$out_dir"
-  cp "$bin" "$out_dir/JackinUsageMenuBar"
-  # Confirm slice architecture.
-  local got
-  got="$(lipo -archs "$out_dir/JackinUsageMenuBar")"
-  if ! echo "$got" | grep -qw "$arch"; then
-    echo "error: expected $arch in $out_dir/JackinUsageMenuBar, got: $got" >&2
-    exit 1
-  fi
-}
+ARCH=arm64
+echo "==> swift build ($ARCH)"
+# SwiftPM resolves the binaryTarget XCFramework; link is static — no dylib in product.
+swift build -c release --product JackinUsageMenuBar --arch "$ARCH" \
+  -Xswiftc -target -Xswiftc "${ARCH}-apple-macosx14.0"
+bin="$(swift build -c release --show-bin-path --arch "$ARCH")/JackinUsageMenuBar"
+if [[ ! -f "$bin" ]]; then
+  bin="$(swift build -c release --show-bin-path)/JackinUsageMenuBar"
+fi
+if [[ ! -f "$bin" ]]; then
+  echo "error: missing Swift product for $ARCH" >&2
+  exit 1
+fi
 
-SLICE_ROOT="$ROOT/native/.build/universal-slices"
-rm -rf "$SLICE_ROOT"
-build_slice arm64 "$SLICE_ROOT/arm64"
-build_slice x86_64 "$SLICE_ROOT/x86_64"
+got="$(lipo -archs "$bin")"
+if ! echo "$got" | grep -qw "$ARCH"; then
+  echo "error: expected $ARCH in $bin, got: $got" >&2
+  exit 1
+fi
+if echo "$got" | grep -qw x86_64; then
+  echo "error: unexpected x86_64 slice in arm64-only build: $got" >&2
+  exit 1
+fi
 
 rm -rf "$DIST"
 mkdir -p "$DIST/Contents/MacOS"
-echo "==> lipo universal executable"
-lipo -create \
-  "$SLICE_ROOT/arm64/JackinUsageMenuBar" \
-  "$SLICE_ROOT/x86_64/JackinUsageMenuBar" \
-  -output "$DIST/Contents/MacOS/JackinUsageMenuBar"
+cp "$bin" "$DIST/Contents/MacOS/JackinUsageMenuBar"
 chmod +x "$DIST/Contents/MacOS/JackinUsageMenuBar"
 
 ARCHS="$(lipo -archs "$DIST/Contents/MacOS/JackinUsageMenuBar")"
-echo "  universal archs: $ARCHS"
+echo "  executable archs: $ARCHS"
 echo "$ARCHS" | grep -qw arm64
-echo "$ARCHS" | grep -qw x86_64
+if echo "$ARCHS" | grep -qw x86_64; then
+  echo "error: final app must be arm64-only (got $ARCHS)" >&2
+  exit 1
+fi
 
 # Plist before any signing.
 cat >"$DIST/Contents/Info.plist" <<PLIST
@@ -126,5 +117,5 @@ echo "==> ad-hoc codesign (local/PR shape)"
 codesign --force --sign - --timestamp=none "$DIST"
 
 echo "==> app ready: $DIST"
-echo "Universal static: no embedded libjackin_usage_ffi.dylib"
+echo "Apple Silicon (arm64) static: no embedded libjackin_usage_ffi.dylib"
 echo "Run with: open $DIST"

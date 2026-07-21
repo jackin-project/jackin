@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build a universal static XCFramework for jackin-usage-ffi (macOS arm64 + x86_64).
+# Build a static XCFramework for jackin-usage-ffi (macOS arm64 / Apple Silicon only).
 # Clang module name is exactly jackin_usage_ffiFFI (matches generated UniFFI Swift).
 # Assembles the XCFramework directory by hand so Command Line Tools hosts work;
 # layout matches xcodebuild -create-xcframework -library output.
@@ -14,21 +14,16 @@ MODULE_NAME="jackin_usage_ffiFFI"
 
 cd "$ROOT"
 
-echo "==> building staticlibs for apple-darwin targets (macOS 14 floor)"
-rustup target add aarch64-apple-darwin x86_64-apple-darwin >/dev/null
+echo "==> building staticlib for aarch64-apple-darwin (macOS 14 floor)"
+rustup target add aarch64-apple-darwin >/dev/null
 export MACOSX_DEPLOYMENT_TARGET=14.0
 cargo build -p jackin-usage-ffi --release --target aarch64-apple-darwin
-cargo build -p jackin-usage-ffi --release --target x86_64-apple-darwin
 
 ARM_LIB="$ROOT/target/aarch64-apple-darwin/release/libjackin_usage_ffi.a"
-X86_LIB="$ROOT/target/x86_64-apple-darwin/release/libjackin_usage_ffi.a"
-
-for lib in "$ARM_LIB" "$X86_LIB"; do
-  if [[ ! -f "$lib" ]]; then
-    echo "error: missing $lib" >&2
-    exit 1
-  fi
-done
+if [[ ! -f "$ARM_LIB" ]]; then
+  echo "error: missing $ARM_LIB" >&2
+  exit 1
+fi
 
 echo "==> generating Swift bindings"
 cargo build -p jackin-usage-ffi --release
@@ -70,9 +65,8 @@ EOF
   }
 }
 
-echo "==> assembling static XCFramework (${MODULE_NAME})"
+echo "==> assembling static XCFramework (${MODULE_NAME}, arm64 only)"
 install_slice arm64 "$ARM_LIB"
-install_slice x86_64 "$X86_LIB"
 
 cat >"$XCFRAMEWORK/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
@@ -95,20 +89,6 @@ cat >"$XCFRAMEWORK/Info.plist" <<'PLIST'
       <key>SupportedPlatform</key>
       <string>macos</string>
     </dict>
-    <dict>
-      <key>LibraryIdentifier</key>
-      <string>macos-x86_64</string>
-      <key>LibraryPath</key>
-      <string>libjackin_usage_ffi.a</string>
-      <key>HeadersPath</key>
-      <string>Headers</string>
-      <key>SupportedArchitectures</key>
-      <array>
-        <string>x86_64</string>
-      </array>
-      <key>SupportedPlatform</key>
-      <string>macos</string>
-    </dict>
   </array>
   <key>CFBundlePackageType</key>
   <string>XFWK</string>
@@ -126,8 +106,8 @@ LIBS=()
 while IFS= read -r -d '' lib; do
   LIBS+=("$lib")
 done < <(find "$XCFRAMEWORK" -type f -name 'libjackin_usage_ffi.a' -print0)
-if [[ ${#LIBS[@]} -lt 2 ]]; then
-  echo "error: expected arm64 and x86_64 static libraries inside XCFramework, found ${#LIBS[@]}" >&2
+if [[ ${#LIBS[@]} -ne 1 ]]; then
+  echo "error: expected exactly one arm64 static library inside XCFramework, found ${#LIBS[@]}" >&2
   exit 1
 fi
 

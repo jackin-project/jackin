@@ -41,22 +41,23 @@ lsui="$(/usr/libexec/PlistBuddy -c 'Print :LSUIElement' "$PLIST")"
 
 ARCHS="$(lipo -archs "$BIN")"
 echo "$ARCHS" | grep -qw arm64 || fail "missing arm64 (got $ARCHS)"
-echo "$ARCHS" | grep -qw x86_64 || fail "missing x86_64 (got $ARCHS)"
+# Apple Silicon only for now (operator decision 2026-07-22); reject Intel slices.
+if echo "$ARCHS" | grep -qw x86_64; then
+  fail "x86_64 not in scope (got $ARCHS); arm64-only expected"
+fi
 
 # Per-slice min OS when vtool reports it (normalized 14.0; never newer than plist floor).
 if command -v vtool >/dev/null 2>&1; then
-  for arch in arm64 x86_64; do
-    info="$(vtool -arch "$arch" -show-build "$BIN" 2>/dev/null || true)"
-    if echo "$info" | grep -qi 'minos'; then
-      minos="$(echo "$info" | awk 'tolower($1) ~ /minos/ {print $NF; exit}')"
-      if [[ -n "$minos" && "$minos" != "14.0" && "$minos" != "14.0.0" ]]; then
-        # Allow older floors; reject newer than 14.0.
-        if awk -v m="$minos" 'BEGIN { split(m,a,"."); v=a[1]+a[2]/100; exit !(v>14.0) }'; then
-          fail "slice $arch minos $minos newer than 14.0"
-        fi
+  info="$(vtool -arch arm64 -show-build "$BIN" 2>/dev/null || true)"
+  if echo "$info" | grep -qi 'minos'; then
+    minos="$(echo "$info" | awk 'tolower($1) ~ /minos/ {print $NF; exit}')"
+    if [[ -n "$minos" && "$minos" != "14.0" && "$minos" != "14.0.0" ]]; then
+      # Allow older floors; reject newer than 14.0.
+      if awk -v m="$minos" 'BEGIN { split(m,a,"."); v=a[1]+a[2]/100; exit !(v>14.0) }'; then
+        fail "slice arm64 minos $minos newer than 14.0"
       fi
     fi
-  done
+  fi
 fi
 
 if find "$APP" -type f \( -name '*.dylib' -o -name '*.a' \) | grep -q .; then

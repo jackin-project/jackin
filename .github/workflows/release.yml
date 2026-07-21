@@ -370,7 +370,7 @@ jobs:
           sccache-stats-artifact-name: sccache-stats-release-capsule-${{ matrix.target.triple }}-${{ matrix.config.lane }}
           sccache-stats-heading: sccache release capsule ${{ matrix.target.triple }} (${{ matrix.config.lane }})
 
-  # Secret-free (validate) or credentialed (publish) universal menu-bar app.
+  # Secret-free (validate) or credentialed (publish) arm64 menu-bar app.
   # GitHub-hosted macOS only — never Velnor (Apple credential boundary).
   build-usage-menu-bar:
     if: needs.check-version.outputs.published != 'true'
@@ -435,7 +435,7 @@ jobs:
           xcodebuild -version
           swift --version
 
-      - name: Assemble universal static app
+      - name: Assemble arm64 static app
         env:
           JACKIN_APP_VERSION: ${{ env.VERSION }}
           JACKIN_APP_BUILD: ${{ env.APP_BUILD }}
@@ -521,10 +521,10 @@ jobs:
           export APP_STORE_CONNECT_API_KEY_PATH="$P8_PATH"
           export APP_STORE_CONNECT_KEY_ID="$ASC_KEY_ID"
           export APP_STORE_CONNECT_ISSUER_ID="$ASC_ISSUER_ID"
-          OUT_ZIP="${RUNNER_TEMP}/jackin-usage-menu-bar-${VERSION}-universal-apple-darwin.zip"
+          OUT_ZIP="${RUNNER_TEMP}/jackin-usage-menu-bar-${VERSION}-aarch64-apple-darwin.zip"
           ./scripts/sign-notarize-usage-menu-bar.sh native/dist/JackinUsageMenuBar.app "$OUT_ZIP"
           mkdir -p dist-app
-          cp "$OUT_ZIP" "dist-app/jackin-usage-menu-bar-${VERSION}-universal-apple-darwin.zip"
+          cp "$OUT_ZIP" "dist-app/jackin-usage-menu-bar-${VERSION}-aarch64-apple-darwin.zip"
           # Credentials must be gone before supply-chain tooling.
           cleanup
           trap - EXIT
@@ -534,7 +534,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p dist-app
-          OUT="dist-app/jackin-usage-menu-bar-${VERSION}-universal-apple-darwin.zip"
+          OUT="dist-app/jackin-usage-menu-bar-${VERSION}-aarch64-apple-darwin.zip"
           (
             cd native/dist
             ditto -c -k --keepParent JackinUsageMenuBar.app "$GITHUB_WORKSPACE/$OUT"
@@ -546,7 +546,7 @@ jobs:
         working-directory: dist-app
         run: |
           set -euo pipefail
-          ARCHIVE="jackin-usage-menu-bar-${VERSION}-universal-apple-darwin.zip"
+          ARCHIVE="jackin-usage-menu-bar-${VERSION}-aarch64-apple-darwin.zip"
           shasum -a 256 "$ARCHIVE" | awk '{print $1}' > "${ARCHIVE}.sha256"
           cosign sign-blob --bundle "${ARCHIVE}.bundle" --yes "$ARCHIVE"
           syft scan "$ARCHIVE" -o cyclonedx-json > "${ARCHIVE}.sbom.json"
@@ -562,14 +562,14 @@ jobs:
           create-storage-record: "true"
           push-to-registry: "false"
           show-summary: "true"
-          subject-path: dist-app/jackin-usage-menu-bar-${{ env.VERSION }}-universal-apple-darwin.zip
+          subject-path: dist-app/jackin-usage-menu-bar-${{ env.VERSION }}-aarch64-apple-darwin.zip
 
       - name: SHA output
         id: sha
         if: env.MODE == 'publish'
         run: |
           set -euo pipefail
-          echo "app_sha256=$(cat "dist-app/jackin-usage-menu-bar-${VERSION}-universal-apple-darwin.zip.sha256")" >> "$GITHUB_OUTPUT"
+          echo "app_sha256=$(cat "dist-app/jackin-usage-menu-bar-${VERSION}-aarch64-apple-darwin.zip.sha256")" >> "$GITHUB_OUTPUT"
 
       - name: Upload menu-bar artifacts
         if: env.MODE == 'publish'
@@ -637,8 +637,8 @@ jobs:
             echo "x86_linux=$(read_sha "jackin-${VERSION}-x86_64-unknown-linux-gnu.tar.gz")"
             echo "capsule_arm64_linux=$(read_sha "jackin-capsule-${VERSION}-aarch64-unknown-linux-gnu.tar.gz")"
             echo "capsule_x86_linux=$(read_sha "jackin-capsule-${VERSION}-x86_64-unknown-linux-gnu.tar.gz")"
-            if [ -f "artifacts/jackin-usage-menu-bar-${VERSION}-universal-apple-darwin.zip.sha256" ]; then
-              echo "app_sha256=$(read_sha "jackin-usage-menu-bar-${VERSION}-universal-apple-darwin.zip")"
+            if [ -f "artifacts/jackin-usage-menu-bar-${VERSION}-aarch64-apple-darwin.zip.sha256" ]; then
+              echo "app_sha256=$(read_sha "jackin-usage-menu-bar-${VERSION}-aarch64-apple-darwin.zip")"
             else
               echo "app_sha256="
             fi
@@ -681,11 +681,11 @@ jobs:
           if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "Release $tag exists — uploading only missing assets (no --clobber)"
             # Fail closed on conflicting bytes for the menu-bar ZIP if present.
-            if [ -f "artifacts/jackin-usage-menu-bar-${VERSION}-universal-apple-darwin.zip" ]; then
+            if [ -f "artifacts/jackin-usage-menu-bar-${VERSION}-aarch64-apple-darwin.zip" ]; then
               existing="$(gh release download "$tag" --repo "$GITHUB_REPOSITORY" \
-                --pattern "jackin-usage-menu-bar-${VERSION}-universal-apple-darwin.zip" \
+                --pattern "jackin-usage-menu-bar-${VERSION}-aarch64-apple-darwin.zip" \
                 --dir /tmp/existing-release 2>/dev/null && shasum -a 256 /tmp/existing-release/*.zip | awk '{print $1}' || true)"
-              new="$(shasum -a 256 "artifacts/jackin-usage-menu-bar-${VERSION}-universal-apple-darwin.zip" | awk '{print $1}')"
+              new="$(shasum -a 256 "artifacts/jackin-usage-menu-bar-${VERSION}-aarch64-apple-darwin.zip" | awk '{print $1}')"
               if [ -n "$existing" ] && [ "$existing" != "$new" ]; then
                 echo "::error::conflicting menu-bar ZIP for $tag — refuse clobber; bump version"
                 exit 1
@@ -805,7 +805,7 @@ jobs:
             version "${VERSION}"
             sha256 "${APP_SHA256}"
 
-            url "https://github.com/jackin-project/jackin/releases/download/v${VERSION}/jackin-usage-menu-bar-${VERSION}-universal-apple-darwin.zip"
+            url "https://github.com/jackin-project/jackin/releases/download/v${VERSION}/jackin-usage-menu-bar-${VERSION}-aarch64-apple-darwin.zip"
             name "jackin usage"
             desc "Native macOS menu bar for jackin agent usage quotas"
             homepage "https://github.com/jackin-project/jackin"
@@ -859,7 +859,7 @@ jobs:
             printf -- '- Release: https://github.com/jackin-project/jackin/releases/tag/v%s\n' "$VERSION"
             printf -- '- Formula + matching jackin-capsule Linux resources.\n'
             if [[ "$HAS_CASK" == "true" ]]; then
-              printf -- '- Cask jackin-usage-menu-bar (universal notarized ZIP).\n'
+              printf -- '- Cask jackin-usage-menu-bar (arm64 notarized ZIP).\n'
               printf -- '- First/structural cask: do not auto-merge — operator approval required after cask-validation checks.\n'
             fi
           } > "$body_file"

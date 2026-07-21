@@ -38,10 +38,10 @@ cat >"$bin/gh" <<'EOF'
 #!/usr/bin/env bash
 if [[ "$*" == *"release view"* && "$*" == *"--json assets"* ]]; then
   cat <<'NAMES'
-jackin-usage-menu-bar-1.2.3-universal-apple-darwin.zip
-jackin-usage-menu-bar-1.2.3-universal-apple-darwin.zip.sha256
-jackin-usage-menu-bar-1.2.3-universal-apple-darwin.zip.bundle
-jackin-usage-menu-bar-1.2.3-universal-apple-darwin.zip.sbom.json
+jackin-usage-menu-bar-1.2.3-aarch64-apple-darwin.zip
+jackin-usage-menu-bar-1.2.3-aarch64-apple-darwin.zip.sha256
+jackin-usage-menu-bar-1.2.3-aarch64-apple-darwin.zip.bundle
+jackin-usage-menu-bar-1.2.3-aarch64-apple-darwin.zip.sbom.json
 NAMES
   exit 0
 fi
@@ -61,7 +61,7 @@ if [[ "$url" == *Casks/jackin-usage-menu-bar.rb* ]]; then
   cat <<'CASK'
   version "1.2.3"
   sha256 "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-  url "https://github.com/jackin-project/jackin/releases/download/v1.2.3/jackin-usage-menu-bar-1.2.3-universal-apple-darwin.zip"
+  url "https://github.com/jackin-project/jackin/releases/download/v1.2.3/jackin-usage-menu-bar-1.2.3-aarch64-apple-darwin.zip"
 CASK
   exit 0
 fi
@@ -83,7 +83,7 @@ echo "ok: complete state + idempotent"
 cat >"$bin/gh" <<'EOF'
 #!/usr/bin/env bash
 if [[ "$*" == *"release view"* && "$*" == *"--json assets"* ]]; then
-  echo 'jackin-usage-menu-bar-9.9.9-universal-apple-darwin.zip'
+  echo 'jackin-usage-menu-bar-9.9.9-aarch64-apple-darwin.zip'
   exit 0
 fi
 if [[ "$*" == *"release view"* ]]; then

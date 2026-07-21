@@ -15,7 +15,7 @@
 
 ## Why this matters
 
-Workflow code can be syntactically green while Apple rejects notarization, Gatekeeper rejects the downloaded ZIP, Homebrew installs the wrong bundle, or reruns duplicate publication. The roadmap should be retired only after the public bytes, cask, clean install, both architectures, and recovery behavior are proven. This preserves roadmap truth and turns durable behavior over to the operator guide and ADR.
+Workflow code can be syntactically green while Apple rejects notarization, Gatekeeper rejects the downloaded ZIP, Homebrew installs the wrong bundle, or reruns duplicate publication. The roadmap should be retired only after the public bytes, cask, clean install, arm64 (Apple Silicon), and recovery behavior are proven. This preserves roadmap truth and turns durable behavior over to the operator guide and ADR.
 
 ## Current state
 
@@ -27,8 +27,8 @@ Workflow code can be syntactically green while Apple rejects notarization, Gatek
 
 | Purpose | Command | Expected on success |
 |---|---|---|
-| Download | `gh release download v<VERSION> --repo jackin-project/jackin --pattern 'jackin-usage-menu-bar-<VERSION>-universal-apple-darwin.zip*' --dir <clean-dir>` | ZIP and sidecars downloaded |
-| Supply chain | `cargo xtask release-verify <clean-dir>/jackin-usage-menu-bar-<VERSION>-universal-apple-darwin.zip` | all checks pass |
+| Download | `gh release download v<VERSION> --repo jackin-project/jackin --pattern 'jackin-usage-menu-bar-<VERSION>-aarch64-apple-darwin.zip*' --dir <clean-dir>` | ZIP and sidecars downloaded |
+| Supply chain | `cargo xtask release-verify <clean-dir>/jackin-usage-menu-bar-<VERSION>-aarch64-apple-darwin.zip` | all checks pass |
 | Cask | `brew install --cask jackin-project/tap/jackin-usage-menu-bar` | installs public release app |
 | Docs | `cargo xtask roadmap audit && cargo xtask docs repo-links && cargo xtask research check` | exit 0 |
 | Docs site | from `docs/`: `bun run build && bunx tsc --noEmit && bun test` | all pass |
@@ -43,7 +43,7 @@ Workflow code can be syntactically green while Apple rejects notarization, Gatek
 
 ### Step 1: Verify public release bytes after upload
 
-From a clean directory, download the ZIP and sidecars from the stable GitHub Release. Run `cargo xtask release-verify`; extract and run the shared release-mode app verifier; independently require Developer ID fingerprint/Team ID, secure timestamp, hardened runtime, no forbidden entitlements, accepted staple, Gatekeeper `Notarized Developer ID`, both architectures, macOS 14 floor, exact bundle/version metadata, static linkage, and no packaged FFI framework/library.
+From a clean directory, download the ZIP and sidecars from the stable GitHub Release. Run `cargo xtask release-verify`; extract and run the shared release-mode app verifier; independently require Developer ID fingerprint/Team ID, secure timestamp, hardened runtime, no forbidden entitlements, accepted staple, Gatekeeper `Notarized Developer ID`, arm64 (Apple Silicon), macOS 14 floor, exact bundle/version metadata, static linkage, and no packaged FFI framework/library.
 
 Record links to the release, successful workflow run, attestation, and notary diagnostic artifact in a sanitized `production-proof.txt` uploaded as a short-retention artifact by the evidence run and summarized in the closure PR. The file must contain exact release/tag/SHA, runner architecture and macOS version, asset ID/digest, cask commit, each command's exit status, and public run URLs; redact usernames, home paths, signing subject details beyond approved Team ID/fingerprint, and every credential/provider response. Do not put transient run links in long-lived operator docs.
 

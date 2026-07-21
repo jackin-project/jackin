@@ -49,7 +49,7 @@ The tap has formula validation conventions but no `Casks/` directory, no cask pr
 
 ### Step 1: Extend tap policy to casks
 
-Update `AGENTS.md` so immutable URL/SHA coupling, staged fetch validation, credential scanning, and review rules explicitly cover both `Formula/*.rb` and `Casks/*.rb`. Add native-app rules: a cask may reference only an immutable tagged release asset; the cask SHA must equal the release sidecar; Developer ID signature, notarization staple, bundle ID, universal slices, and minimum OS are verified after fetch; structural cask changes require human review; only mechanical version/SHA bumps may later use auto-merge.
+Update `AGENTS.md` so immutable URL/SHA coupling, staged fetch validation, credential scanning, and review rules explicitly cover both `Formula/*.rb` and `Casks/*.rb`. Add native-app rules: a cask may reference only an immutable tagged release asset; the cask SHA must equal the release sidecar; Developer ID signature, notarization staple, bundle ID, arm64 slice, and minimum OS are verified after fetch; structural cask changes require human review; only mechanical version/SHA bumps may later use auto-merge.
 
 **Verify**: review the staged shell loops with filenames containing spaces safely handled; the credential scan produces no output.
 
@@ -73,7 +73,7 @@ Document the exact check name that Plan 003 must require before merge. If the re
 
 - [x] Tap policy applies immutable URL/SHA and staged verification rules to casks.
 - [x] A path-routed GitHub-hosted macOS workflow can fetch, inspect, install, launch, and uninstall the future cask without any write/Apple secret.
-- [x] The workflow independently checks release sidecar, cask SHA, Developer ID/notarization, universal slices, plist identity, and macOS floor.
+- [x] The workflow independently checks release sidecar, cask SHA, Developer ID/notarization, arm64 slice, plist identity, and macOS floor.
 - [x] No placeholder cask, fake URL, fake checksum, tap token, or auto-merge is introduced.
 - [x] Required-check ownership/configuration is documented for Plan 003, and the tap PR URL/merge SHA is reported to the jackin❯ program owner for index reconciliation.
 

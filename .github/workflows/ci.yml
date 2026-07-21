@@ -1120,7 +1120,7 @@ jobs:
           fi
           cargo audit "${args[@]}"
 
-  # Secret-free universal static menu-bar assembly (Plan 001). No Apple/tap secrets.
+  # Secret-free arm64 static menu-bar assembly (Plan 001). No Apple/tap secrets.
   native-usage-menu-bar:
     name: Native usage menu bar
     if: needs.changes.outputs.native == 'true' && needs.changes.outputs.result-reuse != 'true'
@@ -1170,7 +1170,7 @@ jobs:
           set -euo pipefail
           ./scripts/generate-usage-swift-bindings.sh
           git diff --exit-code -- native/Generated native/Sources/JackinUsageBridge/jackin_usage_ffi.swift
-      - name: Build universal static app
+      - name: Build arm64 static app
         run: ./scripts/build-usage-menu-bar-app.sh
       - name: Verify app + ZIP round-trip
         run: |

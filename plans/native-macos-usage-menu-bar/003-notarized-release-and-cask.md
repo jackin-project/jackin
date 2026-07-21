@@ -64,7 +64,7 @@ In CI, install tools before credentials exist. Decode PKCS#12 and `.p8` under `$
 
 ### Step 3: Attach supply-chain evidence to final bytes
 
-Add one semantic `build-usage-menu-bar` release job that uses Plan 001's assembly path, performs Step 2, cleans credentials, then generates SHA-256, Cosign bundle, CycloneDX SBOM, and GitHub build provenance for `jackin-usage-menu-bar-${VERSION}-universal-apple-darwin.zip`. Generalize the shared action's descriptions/input docs from tar.gz to archive; do not duplicate its implementation. Fail if the SBOM is empty or does not meaningfully identify the app/archive.
+Add one semantic `build-usage-menu-bar` release job that uses Plan 001's assembly path, performs Step 2, cleans credentials, then generates SHA-256, Cosign bundle, CycloneDX SBOM, and GitHub build provenance for `jackin-usage-menu-bar-${VERSION}-aarch64-apple-darwin.zip`. Generalize the shared action's descriptions/input docs from tar.gz to archive; do not duplicate its implementation. Fail if the SBOM is empty or does not meaningfully identify the app/archive.
 
 Update `release-verify` help/tests/docs to make ZIP support explicit while preserving all current archive behavior.
 

@@ -166,4 +166,4 @@ Extend `ArchitectureTests.swift`: forbid `URLSession`/`Process`/keychain APIs in
 
 ## Maintenance notes
 
-Future surface additions (new agents in Rust) must appear in the UI with zero Swift changes — the card list is driven by `listSurfaces()`; reviewers should reject PRs adding per-provider Swift branches. The CodexBar-style ideas deliberately deferred: multi-account cards, per-provider status items / merge-icons layout editor, notifications on threshold crossings, WidgetKit — each needs its own Rust view support first. When Plan 001's static XCFramework path lands, re-run this plan's build fixtures on both architectures.
+Future surface additions (new agents in Rust) must appear in the UI with zero Swift changes — the card list is driven by `listSurfaces()`; reviewers should reject PRs adding per-provider Swift branches. The CodexBar-style ideas deliberately deferred: multi-account cards, per-provider status items / merge-icons layout editor, notifications on threshold crossings, WidgetKit — each needs its own Rust view support first. When Plan 001's static XCFramework path lands, re-run this plan's build fixtures on arm64.

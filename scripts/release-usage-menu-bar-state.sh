@@ -29,7 +29,7 @@ if [[ -z "$VERSION" ]]; then
   exit 2
 fi
 
-ASSET="jackin-usage-menu-bar-${VERSION}-universal-apple-darwin.zip"
+ASSET="jackin-usage-menu-bar-${VERSION}-aarch64-apple-darwin.zip"
 
 release_exists=false
 app_file_assets_complete=false

@@ -52,7 +52,7 @@ if find "$APP" -type f \( -name '*.dylib' -o -name '*.a' \) | grep -q .; then
   fail "app still embeds dylib/static archive — refuse to sign"
 fi
 
-# Sign the app bundle only (static universal executable; no nested frameworks).
+# Sign the app bundle only (static arm64 executable; no nested frameworks).
 echo "==> codesign (hardened runtime, secure timestamp, no --deep)"
 codesign --force --options runtime --timestamp --sign "$IDENTITY" "$APP"
 codesign --verify --deep --strict --verbose=2 "$APP"
@@ -123,7 +123,7 @@ JACKIN_APP_VERSION="$VERSION" JACKIN_APP_BUILD="$BUILD" RELEASE_MODE=1 \
   bash "$ROOT/scripts/verify-usage-menu-bar-app.sh" "$APP"
 
 if [[ -z "$OUT_ZIP" ]]; then
-  OUT_ZIP="$ROOT/native/dist/jackin-usage-menu-bar-${VERSION}-universal-apple-darwin.zip"
+  OUT_ZIP="$ROOT/native/dist/jackin-usage-menu-bar-${VERSION}-aarch64-apple-darwin.zip"
 fi
 rm -f "$OUT_ZIP"
 echo "==> final post-staple ZIP: $OUT_ZIP"
