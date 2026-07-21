@@ -177,7 +177,7 @@ public final class PresentationStore: ObservableObject {
         do {
             let batch = try bridge.nextEvents(cursor: eventCursor, max: 64)
             if batch.resyncRequired {
-                // Cursor behind retained log — reset and re-project snapshots.
+                // Event cursor behind retained log — reset and re-project snapshots.
                 eventCursor = batch.nextCursor
                 applySnapshots()
                 return
