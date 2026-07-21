@@ -12,7 +12,7 @@ cache, severity, and `status_bar_label`. CodexBar is a visual reference only
 | `../crates/jackin-usage-ffi` | Synchronous UniFFI facade |
 | `Generated/` | UniFFI C header + module map (regenerate) |
 | `Sources/JackinUsageBridge` | Generated Swift + `PresentationStore` |
-| `Sources/JackinUsageMenuBar` | LSUIElement `MenuBarExtra` app |
+| `Sources/JackinUsageMenuBar` | `LSUIElement` `MenuBarExtra` app |
 | `../scripts/generate-usage-swift-bindings.sh` | Bindings |
 | `../scripts/build-usage-xcframework.sh` | XCFramework |
 | `../scripts/build-usage-menu-bar-app.sh` | Local `.app` |

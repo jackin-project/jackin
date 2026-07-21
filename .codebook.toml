@@ -46,6 +46,7 @@ ignore_patterns = [
 
 words = [
   "staticlib",
+  "LSUI",
   "LSUIElement",
   "notarytool",
   "UniFFI",

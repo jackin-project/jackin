@@ -60,7 +60,7 @@ Presentation never invents percentages: only render `FocusedUsageView` / bucket 
 ## Architecture
 
 ```text
-Swift LSUIElement menu bar (display only)
+Swift `LSUIElement` menu bar (display only)
   → @MainActor presentation from immutable DTOs
   → UniFFI jackin-usage-ffi (staticlib / XCFramework)
   → HostUsageRuntime + jackin-usage probes (Rust)
