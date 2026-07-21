@@ -5,6 +5,19 @@ import AppKit
 import JackinUsageBridge
 import SwiftUI
 
+struct OpenUsageButton: View {
+    @ObservedObject var store: PresentationStore
+    @Environment(\.openWindow) private var openWindow
+
+    var body: some View {
+        Button("Open Usage…") {
+            store.selectUsageSurface(nil)
+            openWindow(id: "usage")
+        }
+        .accessibilityLabel("Open Usage window")
+    }
+}
+
 struct PopoverRoot: View {
     @ObservedObject var store: PresentationStore
 
@@ -63,6 +76,8 @@ struct PopoverRoot: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                 Spacer(minLength: 4)
+                OpenUsageButton(store: store)
+                    .controlSize(.small)
                 Button("Refresh") {
                     store.refreshAll()
                 }

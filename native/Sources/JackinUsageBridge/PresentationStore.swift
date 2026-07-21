@@ -57,7 +57,10 @@ public final class PresentationStore: ObservableObject {
         public var statusBarLabel: String
         public var status: String
         public var accountLabel: String
+        public var username: String?
         public var planLabel: String?
+        public var credentialOrigin: String?
+        public var estimateCaption: String?
         public var buckets: [BucketRow]
         public var updatedLabel: String
         public var lastError: String?
@@ -67,10 +70,24 @@ public final class PresentationStore: ObservableObject {
         public var id: String { label }
         public let label: String
         public let usedLabel: String?
+        public let limitLabel: String?
         public let remainingPercent: UInt8?
         public let resetLabel: String?
+        public let paceLabel: String?
+        public let statusSlot: String?
         public let severity: String
         public let status: String
+    }
+
+    public struct OverviewRow: Identifiable, Sendable, Equatable {
+        public var id: String { surfaceId }
+        public let surfaceId: String
+        public let displayLabel: String
+        public let headline: String
+        public let resetLabel: String?
+        public let exactReset: String?
+        public let statusWord: String
+        public let severity: String
     }
 
     @Published public private(set) var mergedBarLabel: String = "jackin❯ usage"
@@ -81,6 +98,9 @@ public final class PresentationStore: ObservableObject {
     /// Footer / window next-refresh string from Rust.
     @Published public private(set) var nextRefreshLabel: String = ""
     @Published public private(set) var surfaces: [SurfaceRow] = []
+    @Published public private(set) var overviewRows: [OverviewRow] = []
+    /// Sidebar / detail selection: `nil` = Overview, else surface id.
+    @Published public var usageSelection: String?
     @Published public private(set) var lastError: String?
     @Published public private(set) var isOpen: Bool = false
     /// Refresh floor in seconds (owned by Rust; mirrored for Settings).
@@ -364,7 +384,10 @@ public final class PresentationStore: ObservableObject {
                             statusBarLabel: "",
                             status: "disabled",
                             accountLabel: "",
+                            username: nil,
                             planLabel: nil,
+                            credentialOrigin: nil,
+                            estimateCaption: nil,
                             buckets: [],
                             updatedLabel: "",
                             lastError: nil
@@ -381,13 +404,19 @@ public final class PresentationStore: ObservableObject {
                             statusBarLabel: view.statusBarLabel,
                             status: view.status,
                             accountLabel: view.accountLabel,
+                            username: view.username,
                             planLabel: view.planLabel,
+                            credentialOrigin: view.credentialOrigin,
+                            estimateCaption: view.estimateCaption,
                             buckets: view.buckets.map { bucket in
                                 BucketRow(
                                     label: bucket.label,
                                     usedLabel: bucket.usedLabel,
+                                    limitLabel: bucket.limitLabel,
                                     remainingPercent: bucket.remainingPercent,
                                     resetLabel: bucket.resetLabel,
+                                    paceLabel: bucket.paceLabel,
+                                    statusSlot: bucket.statusSlot,
                                     severity: bucket.severity,
                                     status: bucket.status
                                 )
@@ -405,7 +434,10 @@ public final class PresentationStore: ObservableObject {
                             statusBarLabel: "unavailable",
                             status: "unavailable",
                             accountLabel: "",
+                            username: nil,
                             planLabel: nil,
+                            credentialOrigin: nil,
+                            estimateCaption: nil,
                             buckets: [],
                             updatedLabel: "",
                             lastError: nil
@@ -414,11 +446,27 @@ public final class PresentationStore: ObservableObject {
                 }
             }
             surfaces = rows
+            overviewRows = try bridge.overviewRows().map { row in
+                OverviewRow(
+                    surfaceId: row.surfaceId,
+                    displayLabel: row.displayLabel,
+                    headline: row.headline,
+                    resetLabel: row.resetLabel,
+                    exactReset: row.exactReset,
+                    statusWord: row.statusWord,
+                    severity: row.severity
+                )
+            }
             applyStatusItemText()
             lastError = nil
         } catch {
             lastError = String(describing: error)
         }
+    }
+
+    /// Open the Usage window on Overview or a specific surface.
+    public func selectUsageSurface(_ surfaceId: String?) {
+        usageSelection = surfaceId
     }
 
     private func applyStatusItemText() {

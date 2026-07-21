@@ -74,6 +74,16 @@ jackin usage host snapshot --agent claude --no-refresh
 
 This drives `HostUsageRuntime` — the same view fields Capsule renders (`status_bar_label`, buckets, Money, honest `unavailable` / `refreshing`).
 
+## Usage window
+
+From the glance popover choose **Open Usage…** (or select a surface once Plan 011 lands the overview strip). A normal resizable window opens:
+
+- **Sidebar** — Overview plus every enabled provider (Capsule tab order) with a severity accent.
+- **Detail** — Overview list or a full provider card (account, plan, auth origin, quota gauges, pace/reset/money strings, estimate caption when Rust marks local estimates).
+- **⌘R** refreshes; **Esc** closes; **Settings…** opens Settings. The app stays a status-item process (`LSUIElement` — no Dock icon).
+
+All numbers and labels are the same Rust views the Capsule usage dialog uses.
+
 ## Menu bar appearance
 
 - Template jackin❯ logomark plus optional monospaced text from Rust. Settings **Display** mode:

@@ -5,6 +5,7 @@
 // may contain `#available(macOS 26`. Fallbacks use system materials so Reduce
 // Transparency is honored automatically.
 
+import AppKit
 import SwiftUI
 
 enum GlassFallbacks {
@@ -35,6 +36,26 @@ enum GlassFallbacks {
             Capsule().fill(tint.opacity(0.18))
         } else {
             Capsule().fill(tint.opacity(0.15))
+        }
+    }
+
+    /// Usage-window sidebar chrome (glass on 26, system sidebar material earlier).
+    @ViewBuilder
+    static func sidebarBackground() -> some View {
+        if #available(macOS 26, *) {
+            Rectangle().fill(.clear).glassEffect(in: .rect)
+        } else {
+            Rectangle().fill(.ultraThinMaterial)
+        }
+    }
+
+    /// Usage-window detail pane background.
+    @ViewBuilder
+    static func windowContentBackground() -> some View {
+        if #available(macOS 26, *) {
+            Rectangle().fill(.clear)
+        } else {
+            Rectangle().fill(Color(nsColor: .windowBackgroundColor))
         }
     }
 }

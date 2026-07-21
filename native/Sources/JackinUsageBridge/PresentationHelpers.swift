@@ -23,3 +23,20 @@ public func statusBadgeSymbol(_ status: String) -> String? {
         return nil
     }
 }
+
+/// Bucket presentation shape from Rust fields only (no invented gauges).
+public enum BucketRowShape: Equatable, Sendable {
+    case gauge
+    case valueOnly
+    case empty
+}
+
+public func bucketRowShape(remainingPercent: UInt8?, usedLabel: String?) -> BucketRowShape {
+    if remainingPercent != nil {
+        return .gauge
+    }
+    if let used = usedLabel, !used.isEmpty {
+        return .valueOnly
+    }
+    return .empty
+}

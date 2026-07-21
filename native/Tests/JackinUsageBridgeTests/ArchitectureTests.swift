@@ -170,6 +170,29 @@ final class ArchitectureTests: XCTestCase {
         }
     }
 
+    func testBucketRowShapeSelection() {
+        XCTAssertEqual(bucketRowShape(remainingPercent: 40, usedLabel: "60% used"), .gauge)
+        XCTAssertEqual(bucketRowShape(remainingPercent: nil, usedLabel: "$0.06"), .valueOnly)
+        XCTAssertEqual(bucketRowShape(remainingPercent: nil, usedLabel: nil), .empty)
+        XCTAssertEqual(bucketRowShape(remainingPercent: nil, usedLabel: ""), .empty)
+    }
+
+    func testDesktopSourcesHaveNoHardcodedProviderDisplayNames() throws {
+        let desktop = sourcesRoot.appendingPathComponent("JackinDesktop")
+        let enumerator = FileManager.default.enumerator(at: desktop, includingPropertiesForKeys: nil)
+        let banned = ["\"OpenAI\"", "\"Anthropic\"", "\"xAI\"", "\"Z.AI\""]
+        while let url = enumerator?.nextObject() as? URL {
+            guard url.pathExtension == "swift" else { continue }
+            let text = try String(contentsOf: url, encoding: .utf8)
+            for token in banned {
+                XCTAssertFalse(
+                    text.contains(token),
+                    "\(url.lastPathComponent) must not hardcode provider display name \(token)"
+                )
+            }
+        }
+    }
+
     func testStatusItemTextSelectionModes() {
         XCTAssertEqual(
             statusItemTextSelection(

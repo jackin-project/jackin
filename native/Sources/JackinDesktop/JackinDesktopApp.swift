@@ -29,6 +29,11 @@ struct JackinDesktopApp: App {
         }
         .menuBarExtraStyle(.window)
 
+        Window("jackin❯ Desktop — Usage", id: "usage") {
+            UsageWindowRoot(store: store)
+        }
+        .defaultSize(width: 900, height: 600)
+
         Settings {
             SettingsView(store: store)
         }
