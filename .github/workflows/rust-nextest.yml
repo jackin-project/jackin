@@ -263,10 +263,10 @@ jobs:
           --locked
           --offline
           --profile ci
-      - name: Run crate doctests
+      - name: Verify crate documentation examples
         if: steps.crate-result.outputs.hit != 'true'
         run: >-
-          "$CI_XTASK" ci-doctest
+          "$CI_XTASK" ci-doc-examples
           --package "${{ matrix.package }}"
       - name: Check crate default features
         if: steps.crate-result.outputs.hit != 'true'

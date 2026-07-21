@@ -48,13 +48,10 @@ In PR checkouts, run `jackin-dev pr sync <PR_NUMBER>` and source
 `eval "$(cargo run --bin build-jackin-capsule -- --export)"` before the
 Docker-backed smoke command.
 
-Never `cargo test` for normal Rust tests — always `cargo nextest run`.
-The one sanctioned `cargo test` invocation is doctests, which nextest does
-not run:
-
-```sh
-cargo test --doc --workspace --locked
-```
+All Rust tests run through `cargo nextest run`. Public documentation examples
+must have nextest-discoverable regression tests. `cargo xtask ci-doc-examples
+--package <crate>` rejects runnable rustdoc fences so examples cannot silently
+create a second test surface outside nextest.
 
 ## CI performance contract
 
@@ -96,7 +93,8 @@ must be bumped whenever the
 per-crate commands or acceptance criteria change; cache transport, artifact
 lookup, and reporting changes keep the identifier and reuse prior proofs. Each
 selected cache miss owns one job and one
-target-cache namespace, including default/all-feature checks, clippy, nextest, doctests,
+target-cache namespace, including default/all-feature checks, clippy, nextest,
+documentation-example validation,
 applicable powerset/benchmark/fuzz checks, and conditional Docker E2E.
 When changed construct inputs require a fresh image, the `jackin` crate job
 builds that image in its own Docker daemon before its E2E smoke test. There is
@@ -161,7 +159,11 @@ fields. The shared problem matcher is registered by CI for human/GitHub output.
 Changed `.snap` files are enumerated in CI against the PR merge-base with `origin/main` (step summary + job log). Reviewers must acknowledge each listed snapshot; hand-edited snapshots that merely match buggy output are rejected in review. Pending files (`*.pending-snap`) still fail CI. Prefer `cargo insta review` / `cargo insta accept` over hand-editing `.snap` bodies.
 
 
-Every crate is verified by `cargo nextest run -p <crate>`. Exceptions worth naming: `jackin` E2E tests need `--features e2e --profile docker-e2e`; crate-owned doctests use `cargo test --doc -p <crate> --locked`. The machine-checkable per-member map is also emitted by `cargo xtask health --format json` under `verification_map`.
+Every crate is verified by `cargo nextest run -p <crate>`. The `jackin` E2E
+tests additionally need `--features e2e --profile docker-e2e`. Documentation
+examples are mirrored into ordinary tests and checked with `cargo xtask
+ci-doc-examples --package <crate>`. The machine-checkable per-member map is
+also emitted by `cargo xtask health --format json` under `verification_map`.
 
 ## Recording capsule render-conformance fixtures
 

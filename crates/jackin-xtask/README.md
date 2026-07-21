@@ -19,6 +19,7 @@ Workspace automation for CI, lints, docs, releases, schemas, and PRs. Merge-read
 | [`main.rs`](src/main.rs) | `cargo xtask` dispatcher | — |
 | [`ci.rs`](src/ci.rs) · [`ci/`](src/ci) | CI orchestration | [`tests.rs`](src/ci/tests.rs) |
 | [`ci_audit.rs`](src/ci_audit.rs) · [`ci_cargo_audit.rs`](src/ci_cargo_audit.rs) · [`ci_target.rs`](src/ci_target.rs) | workflow audit, advisory-cache selection, and target transport | sibling `tests.rs` files |
+| [`ci_doc_examples.rs`](src/ci_doc_examples.rs) · [`ci_doc_examples/`](src/ci_doc_examples) | nextest-only documentation-example gate | [`tests.rs`](src/ci_doc_examples/tests.rs) |
 | [`lint.rs`](src/lint.rs) · [`lint/`](src/lint) | file-size lint gate (adapter; budgets also in `ratchet.toml`) | [`tests.rs`](src/lint/tests.rs) |
 | [`ratchet.rs`](src/ratchet.rs) · [`ratchet/`](src/ratchet) | unified shrink-only ratchet engine (`lint ratchet`) | [`tests.rs`](src/ratchet/tests.rs) |
 | [`agent_files.rs`](src/agent_files.rs) · [`agent_files/`](src/agent_files) | agent-file symlink gate (`--format human\|json\|github`) | [`tests.rs`](src/agent_files/tests.rs) |
