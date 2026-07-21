@@ -58,4 +58,18 @@ enum GlassFallbacks {
             Rectangle().fill(Color(nsColor: .windowBackgroundColor))
         }
     }
+
+    /// Detached floating-panel surface for the glance popover (chrome only).
+    @ViewBuilder
+    static func panelSurfaceBackground() -> some View {
+        if #available(macOS 26, *) {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(.clear)
+                .glassEffect(in: .rect(cornerRadius: 14))
+        } else {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(.ultraThinMaterial)
+                .shadow(color: .black.opacity(0.12), radius: 12, y: 4)
+        }
+    }
 }

@@ -74,9 +74,13 @@ jackin usage host snapshot --agent claude --no-refresh
 
 This drives `HostUsageRuntime` — the same view fields Capsule renders (`status_bar_label`, buckets, Money, honest `unavailable` / `refreshing`).
 
+## Glance popover
+
+Click the status item for a **glance** strip: one row per enabled surface (Rust overview strings — e.g. `OpenAI  97% left · Resets in 6d 22h`). Click a row to open the Usage window on that provider. Footer actions: **Open Usage…**, **Refresh** (⌘R), **Settings…** (⌘,), **Quit** (⌘Q), plus an updated / next-refresh caption. When no surfaces are enabled, the first-run note points you at Settings — there is no credential-harvesting UI.
+
 ## Usage window
 
-From the glance popover choose **Open Usage…** (or select a surface once Plan 011 lands the overview strip). A normal resizable window opens:
+From the glance popover choose **Open Usage…** or click a surface row. A normal resizable window opens:
 
 - **Sidebar** — Overview plus every enabled provider (Capsule tab order) with a severity accent.
 - **Detail** — Overview list or a full provider card (account, plan, auth origin, quota gauges, pace/reset/money strings, estimate caption when Rust marks local estimates).

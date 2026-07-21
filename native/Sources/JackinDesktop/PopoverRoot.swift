@@ -5,21 +5,10 @@ import AppKit
 import JackinUsageBridge
 import SwiftUI
 
-struct OpenUsageButton: View {
-    @ObservedObject var store: PresentationStore
-    @Environment(\.openWindow) private var openWindow
-
-    var body: some View {
-        Button("Open Usage…") {
-            store.selectUsageSurface(nil)
-            openWindow(id: "usage")
-        }
-        .accessibilityLabel("Open Usage window")
-    }
-}
-
 struct PopoverRoot: View {
     @ObservedObject var store: PresentationStore
+    @Environment(\.openWindow) private var openWindow
+    @Environment(\.openSettings) private var openSettings
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -32,19 +21,18 @@ struct PopoverRoot: View {
                     .padding(.bottom, 6)
                     .accessibilityLabel("Error \(err)")
             }
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 10) {
-                    ForEach(store.surfaces.filter(\.enabled)) { surface in
-                        SurfaceCard(surface: surface)
-                    }
-                }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
+            if store.overviewRows.isEmpty {
+                emptyState
+            } else {
+                overviewStrip
             }
-            .frame(maxHeight: 420)
-            footer
+            footerMenu
+            footerStatus
         }
         .frame(width: 360)
+        .background {
+            GlassFallbacks.panelSurfaceBackground()
+        }
         .onAppear {
             if !store.isOpen {
                 store.openDefault()
@@ -53,46 +41,142 @@ struct PopoverRoot: View {
     }
 
     private var header: some View {
-        HStack {
-            Text("jackin❯ Desktop")
-                .font(.headline)
-                .accessibilityLabel("jackin Desktop")
-            Spacer()
-            Button("Refresh") {
+        Text("jackin❯ Desktop")
+            .font(.headline)
+            .accessibilityLabel("jackin Desktop")
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var overviewStrip: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(store.overviewRows) { row in
+                Button {
+                    store.selectUsageSurface(row.surfaceId)
+                    openWindow(id: "usage")
+                } label: {
+                    HStack(spacing: 8) {
+                        Circle()
+                            .fill(severityTint(row.severity))
+                            .frame(width: 7, height: 7)
+                        Text(row.displayLabel)
+                            .font(.body.weight(.medium))
+                            .lineLimit(1)
+                        Spacer(minLength: 8)
+                        trailingBody(for: row)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel(rowAccessibility(row))
+            }
+        }
+        .padding(.bottom, 4)
+    }
+
+    @ViewBuilder
+    private func trailingBody(for row: PresentationStore.OverviewRow) -> some View {
+        switch overviewGlanceBody(
+            headline: row.headline,
+            resetLabel: row.resetLabel,
+            statusWord: row.statusWord
+        ) {
+        case .numeric(let headline, let reset):
+            HStack(spacing: 4) {
+                Text(headline)
+                    .font(.caption)
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+                if let reset {
+                    Text("·")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                    Text(reset)
+                        .font(.caption)
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+        case .statusWord(let word):
+            Text(word)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private func rowAccessibility(_ row: PresentationStore.OverviewRow) -> String {
+        switch overviewGlanceBody(
+            headline: row.headline,
+            resetLabel: row.resetLabel,
+            statusWord: row.statusWord
+        ) {
+        case .numeric(let headline, let reset):
+            if let reset {
+                return "\(row.displayLabel), \(headline), \(reset)"
+            }
+            return "\(row.displayLabel), \(headline)"
+        case .statusWord(let word):
+            return "\(row.displayLabel), \(word)"
+        }
+    }
+
+    private var emptyState: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("No usage surfaces enabled.")
+                .font(.body.weight(.medium))
+            Text(
+                "jackin❯ Desktop reads the credentials your agent CLIs already store — sign in with an agent, then enable its surface in Settings."
+            )
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+            SettingsLink {
+                Text("Open Settings…")
+            }
+            .controlSize(.small)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+    }
+
+    private var footerMenu: some View {
+        VStack(spacing: 0) {
+            Divider()
+            menuRow(title: "Open Usage…", systemImage: "rectangle.split.2x1", shortcut: nil) {
+                store.selectUsageSurface(nil)
+                openWindow(id: "usage")
+            }
+            menuRow(title: "Refresh", systemImage: "arrow.clockwise", shortcut: "⌘R") {
                 store.refreshAll()
             }
             .keyboardShortcut("r", modifiers: [.command])
+            SettingsLink {
+                menuRowLabel(title: "Settings…", systemImage: "gearshape", shortcut: "⌘,")
+            }
+            .keyboardShortcut(",", modifiers: [.command])
+            .buttonStyle(.plain)
+            menuRow(title: "Quit", systemImage: "power", shortcut: "⌘Q") {
+                NSApplication.shared.terminate(nil)
+            }
+            .keyboardShortcut("q", modifiers: [.command])
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
     }
 
-    private var footer: some View {
+    private var footerStatus: some View {
         VStack(spacing: 0) {
             Divider()
-            HStack(spacing: 12) {
-                Text(footerUpdatedLabel)
+            HStack {
+                Text(footerStatusLine)
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                 Spacer(minLength: 4)
-                OpenUsageButton(store: store)
-                    .controlSize(.small)
-                Button("Refresh") {
-                    store.refreshAll()
-                }
-                .keyboardShortcut("r", modifiers: [.command])
-                .controlSize(.small)
-                SettingsLink {
-                    Text("Settings…")
-                }
-                .keyboardShortcut(",", modifiers: [.command])
-                .controlSize(.small)
-                Button("Quit") {
-                    NSApplication.shared.terminate(nil)
-                }
-                .keyboardShortcut("q", modifiers: [.command])
-                .controlSize(.small)
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
@@ -102,12 +186,53 @@ struct PopoverRoot: View {
         }
     }
 
-    private var footerUpdatedLabel: String {
-        store.surfaces
+    private var footerStatusLine: String {
+        let updated = store.surfaces
             .filter(\.enabled)
             .compactMap { row in
                 row.updatedLabel.isEmpty ? nil : row.updatedLabel
             }
-            .first ?? "Rust owns probes · Swift display only"
+            .first
+        let next = store.nextRefreshLabel
+        switch (updated, next.isEmpty) {
+        case (let u?, false):
+            return "\(u) · \(next)"
+        case (let u?, true):
+            return u
+        case (nil, false):
+            return next
+        case (nil, true):
+            return ""
+        }
+    }
+
+    private func menuRow(
+        title: String,
+        systemImage: String,
+        shortcut: String?,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            menuRowLabel(title: title, systemImage: systemImage, shortcut: shortcut)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func menuRowLabel(title: String, systemImage: String, shortcut: String?) -> some View {
+        HStack {
+            Label(title, systemImage: systemImage)
+                .labelStyle(.titleAndIcon)
+            Spacer()
+            if let shortcut {
+                Text(shortcut)
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+                    .monospacedDigit()
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 7)
+        .contentShape(Rectangle())
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }

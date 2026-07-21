@@ -177,6 +177,33 @@ final class ArchitectureTests: XCTestCase {
         XCTAssertEqual(bucketRowShape(remainingPercent: nil, usedLabel: ""), .empty)
     }
 
+    func testOverviewGlanceBodySelection() {
+        XCTAssertEqual(
+            overviewGlanceBody(headline: "97% left", resetLabel: "Resets in 2h", statusWord: "fresh"),
+            .numeric(headline: "97% left", reset: "Resets in 2h")
+        )
+        XCTAssertEqual(
+            overviewGlanceBody(headline: "97% left", resetLabel: nil, statusWord: "fresh"),
+            .numeric(headline: "97% left", reset: nil)
+        )
+        XCTAssertEqual(
+            overviewGlanceBody(headline: "", resetLabel: nil, statusWord: "unsupported"),
+            .statusWord("unsupported")
+        )
+    }
+
+    func testPopoverHasNoGaugeAndSurfaceCardGone() throws {
+        let desktop = sourcesRoot.appendingPathComponent("JackinDesktop")
+        XCTAssertFalse(
+            FileManager.default.fileExists(atPath: desktop.appendingPathComponent("SurfaceCard.swift").path),
+            "SurfaceCard.swift must be deleted after glance popover rewrite"
+        )
+        let popover = desktop.appendingPathComponent("PopoverRoot.swift")
+        let text = try String(contentsOf: popover, encoding: .utf8)
+        XCTAssertFalse(text.contains("Gauge("), "popover must not render capacity gauges")
+        XCTAssertFalse(text.contains("SurfaceCard"), "popover must not reference SurfaceCard")
+    }
+
     func testDesktopSourcesHaveNoHardcodedProviderDisplayNames() throws {
         let desktop = sourcesRoot.appendingPathComponent("JackinDesktop")
         let enumerator = FileManager.default.enumerator(at: desktop, includingPropertiesForKeys: nil)

@@ -40,3 +40,18 @@ public func bucketRowShape(remainingPercent: UInt8?, usedLabel: String?) -> Buck
     }
     return .empty
 }
+
+/// Pure row body selection from Rust overview fields (layout only).
+public enum OverviewGlanceBody: Equatable, Sendable {
+    case numeric(headline: String, reset: String?)
+    case statusWord(String)
+}
+
+public func overviewGlanceBody(headline: String, resetLabel: String?, statusWord: String)
+    -> OverviewGlanceBody
+{
+    if !headline.isEmpty {
+        return .numeric(headline: headline, reset: resetLabel)
+    }
+    return .statusWord(statusWord)
+}
