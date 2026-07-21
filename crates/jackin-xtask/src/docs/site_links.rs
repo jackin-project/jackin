@@ -20,6 +20,7 @@ fn command(site_url: &str, workspace: &Path, blob_url: &str, edit_url: &str) -> 
     let public = workspace.join("docs/.output/public");
     let mut command = Command::new("lychee");
     command
+        .env("MISE_CONFIG_FILE", workspace.join("docs/mise.toml"))
         .arg("--config")
         .arg("docs/lychee.toml")
         .arg("--include-fragments")
