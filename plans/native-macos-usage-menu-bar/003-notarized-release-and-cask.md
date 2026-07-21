@@ -119,7 +119,7 @@ Do not mark the roadmap complete or delete its page in this plan. Before landing
 
 - **BLOCKED** (plan STOP: credentials listed in program README are not provisioned).
 - **Named operator input:** place secrets in GitHub environment **`release-macos`**: `DEVELOPER_ID_APPLICATION_P12_BASE64`, `DEVELOPER_ID_APPLICATION_P12_PASSWORD`, `APP_STORE_CONNECT_API_KEY_P8`, `APP_STORE_CONNECT_KEY_ID`, `APP_STORE_CONNECT_ISSUER_ID`; set repo variables `JACKIN_DEVELOPER_ID_TEAM_ID`, `JACKIN_DEVELOPER_ID_CERT_SHA256` (or use `scripts/bootstrap-release-macos-secrets.sh`). Then on **main** with a non-`*-dev` version: `gh workflow run release.yml -f mode=publish`.
-- Observed without secrets: validate run 29826329509 success; offline `scripts/test-release-usage-menu-bar-state.sh` ALL FIXTURES PASS.
+- Observed without secrets: validate runs [29826329509](https://github.com/jackin-project/jackin/actions/runs/29826329509) and [29833722203](https://github.com/jackin-project/jackin/actions/runs/29833722203) (**success** on `126620f6`, including offline fixtures + build-usage-menu-bar); offline `scripts/test-release-usage-menu-bar-state.sh` ALL FIXTURES PASS. PR #816 mergeable, checks green.
 
 ## STOP conditions
 
