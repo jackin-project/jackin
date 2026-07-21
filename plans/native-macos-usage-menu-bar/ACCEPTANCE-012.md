@@ -40,6 +40,11 @@ Desktop and Capsule share one truth path: `jackin-usage` view shaping → protoc
 | Menu-row footer / next-refresh | pass | `nextRefreshLabel` + updated caption |
 | Architecture guards | pass | no Swift usage-string composition on display surfaces; Settings may use `% left`/`% used` as **format-picker chrome only** (allowlisted in `ArchitectureTests`); glass only in `GlassFallbacks`. Local host is CLT-only (`import XCTest` unavailable) — static scan of the test body + display sources re-verified after 009/012; CI `native-usage-menu-bar` job runs `swift test -c release` on full Xcode |
 
+## Roadmap prose honesty (plan 012 Step 3)
+
+- Open work §4 rewritten from **open** unshipped bullets to **done** shipped phrasing (identity, modes, popover, Usage window); activation residual remains only in Open work §3 + checklist Activation item.
+- Item `**Status**` line and overview index state v1 UI complete with ops residual only.
+
 ## Residual (named only)
 
 1. **Plan 003 activation** — `mode=publish` blocked on Apple secrets in GitHub environment `release-macos`.

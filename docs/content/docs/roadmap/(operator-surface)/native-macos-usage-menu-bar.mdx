@@ -365,12 +365,12 @@ Template status-item icon + optional Rust `compact_status_bar_label` monospaced 
 3. **Activation residual (ops, not open architecture work):** load secrets via <RepoFile path="scripts/bootstrap-release-macos-secrets.sh" />, cut first non-dev version, `mode=publish`, merge first cask after validation, then clean-install proof (004). Paths A–C in `native/README.md`.
 4. Optional later: Sparkle (cask-only is acceptable).
 
-### 4. jackin❯ Desktop v1 (product spec above) — **open**
+### 4. jackin❯ Desktop v1 (product spec above) — **done** (UI; activation residual stays in §3)
 
-1. Identity rename to jackin❯ Desktop across SwiftPM product, scripts, CI, tap cask, operator guide, ADR distribution section — **before** the first notarized publish; status-item icon becomes the jackin❯ logomark template asset.
-2. Status-item display modes: pinned surface, multi-surface strip, depleted-shows-reset — each as a Rust view/FFI extension plus a Settings picker.
-3. Glance popover reduced to the overview strip from `FocusedUsageView.tabs`; used/left and countdown/clock format flags resolved in Rust.
-4. Usage window: normal macOS window with Liquid Glass sidebar/content layout restating the Capsule dialog (view-only; availability gates stay centralized in the shipped fallback layer).
+1. ~~Identity rename to jackin❯ Desktop across SwiftPM product, scripts, CI, tap cask, operator guide, ADR distribution section; status-item icon is the jackin❯ logomark template asset.~~ **done** (plan 007) — must land before first notarized publish (003 still blocked on secrets).
+2. ~~Status-item display modes: pinned surface, multi-surface strip, depleted-shows-reset — Rust view/FFI + Settings pickers.~~ **done** (plans 008–009).
+3. ~~Glance popover overview strip; used/left and countdown/clock format flags resolved in Rust.~~ **done** (plans 008–009, 011).
+4. ~~Usage window: Liquid Glass sidebar/content restating the Capsule dialog (view-only; glass gates in `GlassFallbacks.swift`).~~ **done** (plans 008, 010–011). Parity record: `plans/native-macos-usage-menu-bar/ACCEPTANCE-012.md`.
 
 ## Architecture (frozen)
 
