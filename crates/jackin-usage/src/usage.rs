@@ -241,7 +241,7 @@ pub(crate) struct UsageRefreshSchedule {
     pub(crate) rate_limit_failures: HashMap<String, u32>,
     pub(crate) in_flight: bool,
     /// Cache keys marked by [`Self::mark_due`] / force-refresh; consume once to
-    /// bypass success cooldowns while still honoring hard rate-limit backoffs.
+    /// bypass success cooldowns while still honoring hard rate-limit backoff.
     pub(crate) force_refresh: std::collections::HashSet<String>,
 }
 

@@ -86,6 +86,10 @@ Mark Plans 001–004 DONE, then follow the root `plans/README.md` convention: af
 - [ ] Roadmap page and sidebar entry are removed; overview has one Completed canonical-doc bullet; no stale inbound link remains.
 - [ ] Full docs and roadmap audits pass.
 
+## Execution status (honest)
+
+- **BLOCKED** — depends on plan 003 shipping a real notarized release ZIP + operator-approved first cask merge. No public notarized menu-bar asset or stable cask exists yet.
+
 ## STOP conditions
 
 - Any public checksum, signature identity, notarization/staple, architecture, version, or cask value disagrees.

@@ -115,6 +115,11 @@ Do not mark the roadmap complete or delete its page in this plan. Before landing
 - [ ] Operator/contributor/release-verification/ADR docs are truthful; roadmap remains open only for the explicitly named first-cask/public-proof/no-write-rerun residuals.
 - [ ] All targeted tests, actionlint, shellcheck, docs gates, branch workflow dispatch, and `cargo xtask ci` pass.
 
+## Execution status (honest)
+
+- **BLOCKED** — Plans 001 and 002 are DONE, but program README operator decisions 1–8 are not recorded with real values, and Apple/tap credentials are not provisioned (Developer ID PKCS#12, notarytool `.p8`, Team ID, fingerprint, protected GitHub environment, tap writer auth).
+- Named operator input: complete the decision list in `plans/native-macos-usage-menu-bar/README.md` and place secrets in the approved GitHub release environment only (never in git). Do not start credentialed publication until then.
+
 ## STOP conditions
 
 - Any operator decision or credential listed in the program README is missing, expired, or ambiguous.

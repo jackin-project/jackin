@@ -39,7 +39,7 @@ Template status-item icon + optional Rust `compact_status_bar_label` monospaced 
 
 ### 3. Distribution residual (plans 001–004)
 
-1. One universal static app assembly path, PR-gated (plan 001); tap cask validation without write credentials (plan 002).
+1. ~~One universal static app assembly path, PR-gated (plan 001); tap cask validation without write credentials (plan 002).~~ **done** — PR CI `native-usage-menu-bar` + `ci-required`; homebrew-tap#417 merge `e091a86f`.
 2. **Notarize/staple in CI** blocked without Developer ID + notarytool secrets — local path: <RepoFile path="scripts/sign-notarize-usage-menu-bar.sh" /> (plan 003).
 3. **Homebrew cask** publish to `jackin-project/homebrew-tap` once a notarized artifact exists (plans 003–004).
 4. Optional: Sparkle auto-update (cask-only is acceptable).
@@ -55,7 +55,7 @@ SwiftUI menu bar (display only)
        ↕ bind-mounted into every container at /jackin/usage-shared (same files, same accounts)
 ```
 
-Swift must not own HTTP/RPC/OAuth/CLI probes or non-jackin providers. Scope: `Agent::ALL` + existing usage surfaces only (Claude, Codex, Amp, Grok, Kimi, OpenCode, plus Z.AI/GLM and MiniMax) — never CodexBar's provider zoo. Exactly one prober per account host-wide; every consumer (menu bar, Capsule TUI, CLI) renders the same shared per-account snapshot.
+Swift must not own HTTP/RPC/OAuth/CLI probes or non-jackin❯ providers. Scope: `Agent::ALL` + existing usage surfaces only (Claude, Codex, Amp, Grok, Kimi, OpenCode, plus Z.AI/GLM and MiniMax) — never CodexBar's provider zoo. Exactly one probe per account host-wide; every consumer (menu bar, Capsule TUI, CLI) renders the same shared per-account snapshot.
 
 ## Implementation checklist
 
@@ -67,7 +67,8 @@ Swift must not own HTTP/RPC/OAuth/CLI probes or non-jackin providers. Scope: `Ag
 - [x] Phase 5 operator docs + sign script residual
 - [x] Host-global usage cache unification (plan 005): one coordination root, adopt-if-newer, cross-process cooldown suppression, ADR-011 correction
 - [x] Native Tahoe design pass (plan 006): template icon + compact label, gauges, footer actions, launch-at-login, centralized Liquid Glass fallbacks
-- [ ] Notarized CI artifact + Homebrew cask (plans 001–004; external: Apple account)
+- [x] Universal static app assembly + PR gate (plan 001); tap cask-validation without write credentials (plan 002)
+- [ ] Notarized CI artifact + first Homebrew cask (plans 003–004; external: Apple account + operator decisions)
 
 ## Related work
 

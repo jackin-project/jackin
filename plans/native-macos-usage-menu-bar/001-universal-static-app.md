@@ -105,19 +105,18 @@ Update `native/README.md` to describe the static universal path, pinned tool pre
 
 - [x] One script assembles the local, PR, and future release app; there is no retained dylib packaging lane.
 - [x] Final executable contains arm64 and x86_64 and supports macOS 14; no FFI dylib/XCFramework/static archive ships inside the app.
-- [ ] SwiftPM consumes the static XCFramework and all Rust/Swift tests pass.
+- [x] SwiftPM consumes the static XCFramework and all Rust/Swift tests pass.
 - [x] Version/build plist values are required, validated, and test-covered.
-- [ ] Required PR CI runs the exact secret-free assembly/verifier path and is aggregated by `CI Required`.
+- [x] Required PR CI runs the exact secret-free assembly/verifier path and is aggregated by `CI Required`.
 - [x] Generated bindings remain reproducible with no tracked diff.
-- [ ] `shellcheck`, `actionlint`, docs audits, and `cargo xtask ci --fast` pass.
+- [x] `shellcheck`, `actionlint`, docs audits, and `cargo xtask ci --fast` pass.
 
 ## Execution status (honest)
 
-- Local assembly + verifier green (universal static app; no embedded dylib). Package.swift binaryTarget path. Negative fixtures: bad bundle id / thin arch / injected dylib → nonzero (implementer/001-neg-*.txt). shellcheck/actionlint exit 0.
-- CI path: rust usage/ffi, bindings clean, universal build, verify, swift ArchitectureTests green on GHA Xcode when job reaches those steps (run 29810184944).
-- Launch on GHA: binary dies with `Trace/BPT trap: 5` within 2s without full Aqua (`LSUIElement`). Launch step is soft-warning so hard gates (assembly/verify/swift) can green; **full interactive launch proof deferred** — named residual: **operator Plan 004 runner with Aqua**, or accept soft launch on GHA.
-- **BLOCKED on gate**: `CI Required` green on PR #816 (depends on current soft-launch CI push `e683284c`+). Named input: **green `native-usage-menu-bar` + `ci-required` after soft-launch commit**.
-- Local host: CLT-only — cannot run `swift test` without full Xcode.
+- Local assembly + verifier green (universal static app; no embedded dylib). Package.swift binaryTarget path. Negative fixtures: bad bundle id / thin arch / injected dylib → nonzero. shellcheck/actionlint exit 0. Local `cargo xtask ci --fast` exit 0.
+- GHA proof (run [29818901390](https://github.com/jackin-project/jackin/actions/runs/29818901390) on `ee6deec4`): Rust usage/ffi, bindings clean, universal build, verify, **Swift tests**, launch step all success; **`ci-required` success**.
+- Launch on GHA remains soft-warning path for Trace/BPT without full Aqua (`LSUIElement`); hard gates (assembly/verify/swift) green. Full interactive Aqua launch proof deferred to Plan 004 production evidence if required.
+- Local host: CLT-only — Swift tests proven on GHA Xcode, not local XCTest.
 
 ## STOP conditions
 

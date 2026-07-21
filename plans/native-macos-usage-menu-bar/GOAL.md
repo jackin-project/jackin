@@ -20,7 +20,7 @@ If any path is missing on the active branch: STOP and report; do not invent plan
 
 - All six plans status **DONE**, **or** each unfinished plan **BLOCKED** with the exact operator input required
 - Roadmap item open-work checklist fully checked (or residual list only, honest)
-- Plan 004 complete: roadmap page retired / shrunk per jackin docs rules **after** 003 shipped a real notarized release and the operator approved + merged the first cask
+- Plan 004 complete: roadmap page retired / shrunk per jackin❯ docs rules **after** 003 shipped a real notarized release and the operator approved + merged the first cask
 
 ## Execution order (do not reorder)
 

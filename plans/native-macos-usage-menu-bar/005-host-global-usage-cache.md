@@ -159,12 +159,13 @@ New tests in `crates/jackin-usage/src/usage/tests.rs`, modeled on the existing t
 - [x] A refresh completed in any process is adopted by every other process's cache within one poll tick, without network, proven by test 2.
 - [x] Success cooldown markers suppress cross-process duplicate probes; forced refresh still works (test 4).
 - [x] ADR-011, operator guide, roadmap item, and overview are truthful about the single-cache invariant.
-- [ ] `cargo nextest run -p jackin-usage -p jackin-usage-ffi -p jackin-runtime --locked`, docs audits, and `cargo xtask ci --fast` all pass.
+- [x] `cargo nextest run -p jackin-usage -p jackin-usage-ffi -p jackin-runtime --locked`, docs audits, and `cargo xtask ci --fast` all pass.
 
 ## Execution status (honest)
 
-- Implementation complete; usage/ffi tests + docs audits + clippy green (see implementer captures).
-- **BLOCKED on gate**: full Step 5 / done-criterion 5 — `jackin-runtime` nextest and `cargo xtask ci --fast` not green on this host (host_daemon peer-close race; capsule `container_identity` empty; launch load_agent timeouts). Named owner: **environment flakes outside plan 005 scope** (reproduced on clean tree without these changes). Unblock: green `cargo nextest -p jackin-runtime --locked` + `cargo xtask ci --fast` on operator CI or local full Xcode/macOS runner.
+- Implementation complete.
+- Step 5 green: nextest usage+ffi+runtime **742/742** pass; local `cargo xtask ci --fast` **exit 0** (after runtime SO_LINGER, load-agent serialisation, host-safe capsule test, host-attach codex_launch guard, macOS clippy/ratchet fixes).
+- Residual outside 005: notarized release (plan 003) still BLOCKED on operator credentials.
 
 ## STOP conditions
 

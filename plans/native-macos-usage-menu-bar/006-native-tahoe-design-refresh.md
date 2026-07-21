@@ -147,14 +147,14 @@ Extend `ArchitectureTests.swift`: forbid `URLSession`/`Process`/keychain APIs in
 - [x] Popover: capacity gauges, reset countdowns, error/stale badges that never hide last-good data, Refresh/Settings/Quit with shortcuts.
 - [x] All `#available(macOS 26, *)` gates live in `GlassFallbacks.swift`; app builds and renders on macOS 14+ and adopts glass on 26.
 - [x] Launch-at-login via `SMAppService` with `.status` as source of truth.
-- [ ] `ArchitectureTests` enforce no-probe + centralized-gates invariants; all Rust/Swift tests pass.
-- [ ] Docs (native README + operator guide) updated; docs audits and `cargo xtask ci --fast` pass.
+- [x] `ArchitectureTests` enforce no-probe + centralized-gates invariants; all Rust/Swift tests pass.
+- [x] Docs (native README + operator guide) updated; docs audits and `cargo xtask ci --fast` pass.
 
 ## Execution status (honest)
 
-- Implementation + docs audits + Rust nextest for usage/ffi green; `swift build -c release` green; `#available` only in `GlassFallbacks.swift`.
-- **BLOCKED on gate**: `cd native && swift test -c release` — host is Command Line Tools only (`xcode-select` → `/Library/Developer/CommandLineTools`; no XCTest module). Named input: **full Xcode 26.x on executor host**, or green GitHub `native-usage-menu-bar` job that runs `swift test`.
-- **BLOCKED on gate**: `cargo xtask ci --fast` exit 0 (same env flakes as plan 005).
+- Implementation + docs + Rust nextest for usage/ffi green; local `swift build -c release` green; `#available` only in `GlassFallbacks.swift`.
+- Swift tests proven on GHA `native-usage-menu-bar` (run 29818901390, Swift tests step success). Local host remains CLT-only (no XCTest).
+- Local `cargo xtask ci --fast` exit 0.
 
 ## STOP conditions
 

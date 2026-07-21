@@ -34,7 +34,7 @@ Probes already prefer **host homes first**, container handoff paths last. Menu-b
 
 Shared host coordination root (one tree for host processes and every container):
 
-Host processes and containers coordinate through **`~/.jackin/data/usage-shared/{snapshots,cooldowns,locks}`** (containers bind-mount the same root at `/jackin/usage-shared` and set `JACKIN_USAGE_{SNAPSHOTS,COOLDOWN,LOCK}_DIR`). At most one prober per account host-wide; every surface reads the same per-account snapshot. Env vars override the defaults for tests only.
+Host processes and containers coordinate through **`~/.jackin/data/usage-shared/{snapshots,cooldowns,locks}`** (containers bind-mount the same root at `/jackin/usage-shared` and set `JACKIN_USAGE_{SNAPSHOTS,COOLDOWN,LOCK}_DIR`). At most one probe per account host-wide; every surface reads the same per-account snapshot. Env vars override the defaults for tests only.
 
 - `~/.jackin/data/usage-shared/cooldowns` (`JACKIN_USAGE_COOLDOWN_DIR`)
 - `~/.jackin/data/usage-shared/snapshots` (`JACKIN_USAGE_SNAPSHOTS_DIR`)
@@ -72,7 +72,7 @@ Swift must not own HTTP/RPC/OAuth/CLI scrapes or a second provider matrix.
 
 ## Distribution
 
-Developer ID + hardened runtime + notarize/staple (TableRock path). Homebrew cask or documented install. Uninstall leaves no root daemon. v1 does **not** require jackin daemon.
+Developer ID + hardened runtime + notarize/staple (TableRock path). Homebrew cask or documented install. Uninstall leaves no root daemon. v1 does **not** require the jackin❯ daemon.
 
 ## Consequences
 
