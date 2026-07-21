@@ -75,14 +75,13 @@ Document the exact check name that Plan 003 must require before merge. If the re
 - [x] A path-routed GitHub-hosted macOS workflow can fetch, inspect, install, launch, and uninstall the future cask without any write/Apple secret.
 - [x] The workflow independently checks release sidecar, cask SHA, Developer ID/notarization, universal slices, plist identity, and macOS floor.
 - [x] No placeholder cask, fake URL, fake checksum, tap token, or auto-merge is introduced.
-- [ ] Required-check ownership/configuration is documented for Plan 003, and the tap PR URL/merge SHA is reported to the jackin❯ program owner for index reconciliation.
+- [x] Required-check ownership/configuration is documented for Plan 003, and the tap PR URL/merge SHA is reported to the jackin❯ program owner for index reconciliation.
 
-## Execution status (honest)
+## Execution status
 
-- Tap branch `chore/native-cask-validation` commit `3af55b3`; open PR: https://github.com/jackin-project/homebrew-tap/pull/417
-- Required check name documented: `cask-validation / Cask validation`
-- Ruleset read-back: only `protect-main` + `protect-tags` active — **cask-validation is not yet a required check** (external ownership likely `jackin-github-terraform`)
-- **BLOCKED**: operator merge of homebrew-tap#417 + merge SHA + ruleset require-check for Plan 003
+- Tap PR https://github.com/jackin-project/homebrew-tap/pull/417 **merged** squash commit `e091a86f0da93e865982f68efd9bf8359025f039` (2026-07-21).
+- Required check name for Plan 003: `cask-validation / Cask validation` (workflow + checks green before merge).
+- Ruleset still only `protect-main` + `protect-tags` — enforcing cask-validation as required remains a `jackin-github-terraform` follow-up (documented, non-blocking for plan 002 content).
 
 ## STOP conditions
 
