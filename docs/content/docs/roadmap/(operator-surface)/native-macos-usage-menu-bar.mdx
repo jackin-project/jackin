@@ -70,6 +70,141 @@ Field for field, the cards match the Capsule Provider tab rows (Provider, Accoun
 
 Provider scope stays frozen: `HostSurfaceId::ALL` — Claude, Codex, Amp, Grok Build, GLM / Z.AI, Kimi, MiniMax, OpenCode. New agents appear when the Rust enums grow, never through app-side additions.
 
+### Screen inventory (v1)
+
+Every screen is a rendering of existing Rust view fields; the strings in the sketches are the literal formats Rust view shaping already emits (or the named extension above). Sketches are layout intent, not pixel specs — geometry and materials follow the shipped Tahoe design pass.
+
+**S1 — Status item.** One `NSStatusItem`-equivalent, template-tinted, all variants:
+
+```text
+◔ Cl 63%                       Focus percent (default): worst enabled surface
+◔                              Icon only
+◔ Cx 41%                       Pinned surface (operator pinned Codex)
+◔ Cl 63% · Cx 41% · ZA 12%     Multi-surface strip (cap 3, worst first)
+◔ Cl resets 1h 21m             Depleted: driving bucket at 0% remaining
+◔  (0.45 opacity)              Every enabled surface degraded — no invented numbers
+◔                              Screen capture active (privacy collapse)
+```
+
+Rust: shipped `compact_status_bar_label` plus the pinned / strip / depleted FFI extensions from the mode table.
+
+**S2 — Popover, main screen.** 360 pt fixed width, scroll past 420 pt (shipped geometry):
+
+```text
+┌──────────────────────────────────────────────────┐
+│ jackin❯ Desktop                        ↻ Refresh │
+├──────────────────────────────────────────────────┤
+│ OVERVIEW                                         │
+│ Claude       Session 37% left · Resets in 1h 21m │
+│ Codex        Weekly 59% left · Resets in 2d 4h   │
+│ Amp          fresh                               │
+│ GLM / Z.AI   needs secret                        │
+├──────────────────────────────────────────────────┤
+│ Claude                                        ✓  │
+│ operator@example.com · Pro · OAuth · keychain    │
+│ Session   ▰▰▰▰▰▱▱▱▱▱▱▱   37% left                │
+│           On pace · Resets in 1h 21m (Jul 22, 18:38) │
+│ Weekly    ▰▰▰▰▰▰▰▰▰▱▱▱   73% left                │
+│           2% in reserve · Resets in 4d 2h (Jul 26, 09:00) │
+│ ────────────────────────────────────────         │
+│ Codex                                         ✓  │
+│ operator@example.com · Plus · OAuth              │
+│ Session   ▰▰▰▰▰▰▰▰▱▱▱▱   66% left                │
+│ Weekly    ▰▰▰▰▰▰▰▱▱▱▱▱   59% left                │
+│           Resets in 2d 4h (Jul 24, 21:00)        │
+│ …one card per enabled surface…                   │
+├──────────────────────────────────────────────────┤
+│ Updated 2m ago        Refresh · Settings… · Quit │
+└──────────────────────────────────────────────────┘
+```
+
+Overview rows = `FocusedUsageView.tabs` one-liners; cards = `QuotaBucketView` rows; identity line = `FocusedAccountHeader`; click an overview row to scroll to its card.
+
+**S3 — Surface card states.** Honest degradation, one shape per status:
+
+```text
+│ Grok Build                                    ⏱  │  stale: clock badge, card dims,
+│ operator@example.com · stale                     │  last-good gauges stay visible
+│ Weekly    ▰▰▰▱▱▱▱▱▱▱▱▱   30% left                │
+
+│ GLM / Z.AI                                    ⚠  │  needs secret: no gauge invented,
+│ needs secret                                     │  status word only
+
+│ Codex                                         ⚠  │  error: last-good buckets stay,
+│ operator@example.com · Plus                      │  error text in place, never wipes
+│ Session   ▰▰▰▰▰▰▰▰▱▱▱▱   66% left                │
+│ usage endpoint timed out                         │
+
+│ Claude                                        ✓  │  money window (spend slot)
+│ Spend     ▰▰▰▱▱▱▱▱▱▱▱▱   21% used                │
+│           Monthly cap: $53.31 / $260.00          │
+```
+
+Badges follow the shipped mapping (warning triangle for error / needs login / needs secret / unavailable, clock for stale); pace, reset, and money strings are the shipped Rust formats.
+
+**S4 — Empty and first-run state.** Shown when no surface is enabled or no credentials resolve:
+
+```text
+│ jackin❯ Desktop                                  │
+│ No usage surfaces enabled.                       │
+│ jackin❯ Desktop reads the credentials your agent │
+│ CLIs already store — sign in with an agent, then │
+│ enable its surface in Settings.                  │
+│                                 Open Settings…   │
+```
+
+No credential-harvesting UI: no login forms, no token paste. Missing credentials surface as Rust `needs login` / `needs secret` / `unavailable` states.
+
+**S5 — Settings.** One window, 420×520 (shipped geometry), no tabs in v1:
+
+```text
+┌── Settings ──────────────────────────────────────┐
+│ Menu bar                                         │
+│   Display   (•) Focus percent                    │
+│             ( ) Icon only                        │
+│             ( ) Pinned surface      [Claude ▾]   │
+│             ( ) Strip · up to [3 ▾] surfaces     │
+│   [x] Show reset when depleted                   │
+│   Format    (•) % left      ( ) % used           │
+│             (•) Countdown   ( ) Exact time       │
+│   [ ] Hide values while screen sharing           │
+│ Surfaces                                         │
+│   [x] Claude   [x] Codex     [x] Amp   [x] Grok Build │
+│   [x] GLM / Z.AI  [x] Kimi   [x] MiniMax  [x] OpenCode │
+│ Refresh                                          │
+│   Floor   1m ─────────●────────── 30m            │
+│ Login                                            │
+│   [x] Launch at login                            │
+│ Alerts (v1.x)                                    │
+│   [ ] Threshold crossed     [ ] Depleted         │
+│   [ ] Pace run-out          [ ] Reset restored   │
+│ About                                            │
+│   Account quotas from host credentials via       │
+│   jackin-usage (Rust). No passwords stored.      │
+│   No Capsule required.                           │
+└──────────────────────────────────────────────────┘
+```
+
+Every picker persists a display preference that crosses FFI as a flag; Rust resolves the resulting strings. Surface toggles, refresh floor, launch-at-login, and the About copy are shipped; the Display/Format pickers and Alerts section are the v1 / v1.x additions.
+
+**S6 — Notifications (v1.x).** Standard macOS banners, strings emitted whole by the Rust alert policy:
+
+```text
+Jackin Desktop
+Claude · Session — 10% left
+Resets in 1h 21m (Jul 22, 18:38)
+
+Jackin Desktop
+Codex · Weekly — projected to run out before reset
+14% in deficit · Resets in 2d 4h
+
+Jackin Desktop
+Claude · Session restored
+100% left after reset
+```
+
+Swift posts the title/subtitle/body verbatim; clicking a banner opens the popover at that surface's card.
+
 ### Alerts (v1.x, after the rename)
 
 Alert policy computes in Rust from fields the views already carry (remaining percent, severity, pace, reset epoch); Swift is only the notification presenter. All triggers default off. Planned set: threshold crossed (warn/danger severity transitions), depleted, pace run-out (pace already emits `{n}% in deficit` when the window is projected to exhaust before reset), and reset restored. Alerts dedupe while a condition holds, re-arm on recovery, and never fire from unreadable surfaces.
@@ -148,6 +283,7 @@ Swift must not own HTTP/RPC/OAuth/CLI probes or non-jackin❯ providers. Scope: 
 - [ ] jackin❯ Desktop identity rename (pre-publish; supersedes program decision 1)
 - [ ] Status-item display modes (pinned surface, multi-surface strip, depleted-shows-reset) as Rust view/FFI extensions
 - [ ] Popover overview strip + Rust-resolved used/left and countdown/clock format flags
+- [ ] Screen inventory S1–S6: Settings display/format pickers, empty/first-run state, banner-to-card deep link
 - [ ] v1.x alert notifications (Rust policy, Swift presenter)
 
 ## Related work
