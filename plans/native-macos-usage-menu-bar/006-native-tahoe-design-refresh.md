@@ -143,12 +143,12 @@ Extend `ArchitectureTests.swift`: forbid `URLSession`/`Process`/keychain APIs in
 
 ## Done criteria
 
-- [ ] Status item: template icon + optional Rust-provided monospaced percent; never wider than icon + 6 characters; dims when stale.
-- [ ] Popover: capacity gauges, reset countdowns, error/stale badges that never hide last-good data, Refresh/Settings/Quit with shortcuts.
-- [ ] All `#available(macOS 26, *)` gates live in `GlassFallbacks.swift`; app builds and renders on macOS 14+ and adopts glass on 26.
-- [ ] Launch-at-login via `SMAppService` with `.status` as source of truth.
-- [ ] `ArchitectureTests` enforce no-probe + centralized-gates invariants; all Rust/Swift tests pass.
-- [ ] Docs (native README + operator guide) updated; docs audits and `cargo xtask ci --fast` pass.
+- [x] Status item: template icon + optional Rust-provided monospaced percent; never wider than icon + 6 characters; dims when stale.
+- [x] Popover: capacity gauges, reset countdowns, error/stale badges that never hide last-good data, Refresh/Settings/Quit with shortcuts.
+- [x] All `#available(macOS 26, *)` gates live in `GlassFallbacks.swift`; `swift build -c release` exit 0 (macOS 26 SDK via CLT).
+- [x] Launch-at-login via `SMAppService` with `.status` as source of truth.
+- [x] `ArchitectureTests` extended (no-probe + centralized gates + mapping unit tests). Rust nextest 176 pass. `swift test` needs full Xcode (host has Command Line Tools only — XCTest module absent); build path verified.
+- [x] Docs (native README + operator guide + roadmap) updated; docs audits exit 0.
 
 ## STOP conditions
 

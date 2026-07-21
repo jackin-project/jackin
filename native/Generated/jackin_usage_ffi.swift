@@ -605,6 +605,11 @@ fileprivate struct FfiConverterString: FfiConverter {
 public protocol UsageMenuBarBridgeProtocol: AnyObject, Sendable {
     
     /**
+     * Short status-item label (worst enabled surface by used percent).
+     */
+    func compactStatusBarLabel() throws  -> String
+    
+    /**
      * List all host surfaces with enable flags.
      */
     func listSurfaces() throws  -> [SurfaceDescriptorDto]
@@ -743,6 +748,18 @@ public static func create() -> UsageMenuBarBridge  {
 }
     
 
+    
+    /**
+     * Short status-item label (worst enabled surface by used percent).
+     */
+open func compactStatusBarLabel()throws  -> String  {
+    return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeUsageBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_jackin_usage_ffi_fn_method_usagemenubarbridge_compact_status_bar_label(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
     
     /**
      * List all host surfaces with enable flags.
@@ -1823,6 +1840,9 @@ private let initializationResult: InitializationResult = {
     let scaffolding_contract_version = ffi_jackin_usage_ffi_uniffi_contract_version()
     if bindings_contract_version != scaffolding_contract_version {
         return InitializationResult.contractVersionMismatch
+    }
+    if (uniffi_jackin_usage_ffi_checksum_method_usagemenubarbridge_compact_status_bar_label() != 11624) {
+        return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_jackin_usage_ffi_checksum_method_usagemenubarbridge_list_surfaces() != 14496) {
         return InitializationResult.apiChecksumMismatch

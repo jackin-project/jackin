@@ -5,26 +5,17 @@ import XCTest
 
 /// Static architecture checks: Swift tree must not grow provider probe logic.
 final class ArchitectureTests: XCTestCase {
-    func testSwiftSourcesHaveNoProviderProbeImports() throws {
-        let root = URL(fileURLWithPath: #filePath)
+    private var sourcesRoot: URL {
+        URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent() // Tests/JackinUsageBridgeTests
             .deletingLastPathComponent() // Tests
             .deletingLastPathComponent() // native
-        let sources = root.appendingPathComponent("Sources")
-        let prohibited = [
-            "URLSession",
-            "OAuth",
-            "http://",
-            "https://api.",
-            "Anthropic",
-            "OpenAI",
-            "Cursor",
-            "Gemini",
-            "Copilot",
-        ]
-        // Allowed: UniFFI-generated + presentation only.
+            .appendingPathComponent("Sources")
+    }
+
+    private func handwrittenSwiftFiles() throws -> [URL] {
         let enumerator = FileManager.default.enumerator(
-            at: sources,
+            at: sourcesRoot,
             includingPropertiesForKeys: nil
         )
         var files: [URL] = []
@@ -34,24 +25,68 @@ final class ArchitectureTests: XCTestCase {
             }
         }
         XCTAssertFalse(files.isEmpty, "expected Swift sources under native/Sources")
-        for file in files {
+        return files
+    }
+
+    func testSwiftSourcesHaveNoProviderProbeImports() throws {
+        let prohibitedTokens = ["URLSession", "Process(", "SecItem", "Cursor", "Gemini", "Copilot"]
+        for file in try handwrittenSwiftFiles() {
             let text = try String(contentsOf: file, encoding: .utf8)
-            for token in prohibited {
-                // PresentationStore may mention architecture in comments; ban call sites.
-                if token.hasPrefix("http") {
-                    XCTAssertFalse(
-                        text.contains("URL(string: \"\(token)") || text.contains("URLSession"),
-                        "\(file.lastPathComponent) must not perform HTTP probes"
-                    )
-                } else if token == "URLSession" {
-                    XCTAssertFalse(text.contains("URLSession"), "no URLSession in \(file.lastPathComponent)")
-                } else if ["Cursor", "Gemini", "Copilot"].contains(token) {
-                    XCTAssertFalse(
-                        text.contains(token),
-                        "no non-jackin provider \(token) in \(file.lastPathComponent)"
-                    )
-                }
+            for token in prohibitedTokens {
+                XCTAssertFalse(
+                    text.contains(token),
+                    "\(file.lastPathComponent) must not contain probe/API token \(token)"
+                )
+            }
+            XCTAssertFalse(
+                text.contains("URL(string: \"http"),
+                "\(file.lastPathComponent) must not perform HTTP probes"
+            )
+            XCTAssertFalse(
+                text.contains("URL(string: \"https://api."),
+                "\(file.lastPathComponent) must not perform HTTPS API probes"
+            )
+        }
+    }
+
+    func testMacOS26AvailabilityOnlyInGlassFallbacks() throws {
+        for file in try handwrittenSwiftFiles() {
+            let text = try String(contentsOf: file, encoding: .utf8)
+            let hasGate = text.contains("#available(macOS 26")
+            if file.lastPathComponent == "GlassFallbacks.swift" {
+                XCTAssertTrue(hasGate, "GlassFallbacks.swift must own macOS 26 gates")
+            } else {
+                XCTAssertFalse(
+                    hasGate,
+                    "\(file.lastPathComponent) must not contain #available(macOS 26 — use GlassFallbacks"
+                )
             }
         }
+    }
+
+    func testNoSwiftPercentArithmeticOnDisplayStrings() throws {
+        // Heuristic: handwritten UI must not invent percentages via string interpolation
+        // of computed used/remaining math into Text(...). Remaining percent rendering
+        // uses Gauge(value:) with Rust-provided remaining only.
+        let pattern = #"Text\([^)]*\\([^)]*%"#
+        let regex = try NSRegularExpression(pattern: pattern)
+        for file in try handwrittenSwiftFiles() {
+            let text = try String(contentsOf: file, encoding: .utf8)
+            let range = NSRange(text.startIndex..., in: text)
+            let hits = regex.numberOfMatches(in: text, range: range)
+            XCTAssertEqual(
+                hits,
+                0,
+                "\(file.lastPathComponent) must not interpolate computed % into Text("
+            )
+        }
+    }
+
+    func testSeverityAndStatusBadgeMappings() {
+        XCTAssertEqual(severityTint("danger"), .red)
+        XCTAssertEqual(severityTint("warn"), .orange)
+        XCTAssertEqual(statusBadgeSymbol("error"), "exclamationmark.triangle")
+        XCTAssertEqual(statusBadgeSymbol("stale"), "clock")
+        XCTAssertNil(statusBadgeSymbol("fresh"))
     }
 }

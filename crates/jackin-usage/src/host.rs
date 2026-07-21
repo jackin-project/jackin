@@ -84,6 +84,21 @@ impl HostSurfaceId {
         }
     }
 
+    /// Two-character menu-bar prefix for the compact status item (HIG width).
+    #[must_use]
+    pub const fn compact_prefix(self) -> &'static str {
+        match self {
+            Self::Claude => "Cl",
+            Self::Codex => "Cx",
+            Self::Amp => "Am",
+            Self::Grok => "Gr",
+            Self::Zai => "ZA",
+            Self::Kimi => "Ki",
+            Self::Minimax => "MM",
+            Self::OpenCode => "OC",
+        }
+    }
+
     /// Agent slug for `UsageRefreshTarget` (Z.AI/MiniMax route via a dummy agent
     /// + provider label — `resolve_surface` keys on the provider first).
     #[must_use]
@@ -473,6 +488,45 @@ impl HostUsageRuntime {
         } else {
             Ok(parts.join(" · "))
         }
+    }
+
+    /// Short status-item label: enabled surface with the **highest used** percent
+    /// (lowest `remaining_percent` across its buckets), e.g. `Cl 63%`.
+    ///
+    /// Never invents percentages — only uses Rust-provided `remaining_percent`.
+    /// Empty when no enabled surface has a numeric remaining value (all
+    /// unavailable / disabled / still refreshing without last-good data).
+    /// Ties keep the earlier surface in [`HostSurfaceId::ALL`] order.
+    pub fn compact_status_bar_label(&mut self) -> Result<String, String> {
+        self.require_open()?;
+        let mut best: Option<(u8, HostSurfaceId)> = None;
+        for surface in HostSurfaceId::ALL.iter().copied() {
+            if !self.enabled.contains(surface.id()) {
+                continue;
+            }
+            let view = self
+                .cache
+                .focused_snapshot(Some(surface.agent_slug()), surface.provider_label());
+            let Some(remaining) = view
+                .buckets
+                .iter()
+                .filter_map(|bucket| bucket.remaining_percent)
+                .min()
+            else {
+                continue;
+            };
+            match best {
+                Some((best_remaining, _)) if remaining >= best_remaining => {}
+                _ => best = Some((remaining, surface)),
+            }
+        }
+        Ok(match best {
+            Some((remaining, surface)) => {
+                let used = 100u8.saturating_sub(remaining);
+                format!("{} {used}%", surface.compact_prefix())
+            }
+            None => String::new(),
+        })
     }
 
     /// Poll events after `cursor` (exclusive), up to `max`.

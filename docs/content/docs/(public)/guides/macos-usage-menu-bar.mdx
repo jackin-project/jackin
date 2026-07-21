@@ -60,9 +60,16 @@ jackin usage host snapshot --agent claude --no-refresh
 
 This drives `HostUsageRuntime` — the same view fields Capsule renders (`status_bar_label`, buckets, Money, honest `unavailable` / `refreshing`).
 
+## Menu bar appearance
+
+- Template gauge icon plus an optional short monospaced percent for the busiest enabled account (for example `Cl 63%`). Toggle **Show percent in menu bar** in Settings (default on).
+- The icon dims when every enabled surface is stale or unavailable — numbers stay honest and never invent a percent.
+
 ## Settings
 
 - Enable/disable surfaces (disabled surfaces leave the bar and refresh set).
+- **Show percent in menu bar** — icon-only vs icon + short percent.
+- **Launch at login** — optional; off by default. Uses macOS Login Items (`SMAppService`); if macOS requires approval, open System Settings → General → Login Items.
 - Refresh is owned by Rust (cooldown + floor ≥ 60s).
 
 ## Privacy

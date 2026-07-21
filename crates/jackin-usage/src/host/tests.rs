@@ -168,6 +168,97 @@ fn merged_bar_skips_disabled_surfaces() {
     assert!(!merged.contains("Claude:"));
 }
 
+fn inject_remaining(runtime: &mut HostUsageRuntime, surface_id: &str, remaining: u8) {
+    let mut view = FocusedUsageView::unavailable("seed", 1);
+    view.status = UsageSnapshotStatus::Fresh;
+    view.source = UsageSource::ProviderApi;
+    view.confidence = UsageConfidence::Authoritative;
+    view.status_bar_label = format!("{remaining}% left");
+    view.buckets = vec![QuotaBucketView {
+        label: "Session".to_owned(),
+        used_label: Some(format!("{}% used", 100u8.saturating_sub(remaining))),
+        limit_label: Some("100%".to_owned()),
+        remaining_percent: Some(remaining),
+        reset_label: None,
+        resets_at: None,
+        status_slot: Some(StatusSlot::Session),
+        pace_label: None,
+        status: UsageSnapshotStatus::Fresh,
+        used_money: None,
+        limit_money: None,
+        severity: UsageSeverity::Normal,
+    }];
+    runtime
+        .inject_snapshot(surface_id, view)
+        .expect("inject");
+}
+
+#[test]
+fn compact_status_bar_label_picks_highest_used_percent() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let mut runtime = open_runtime(dir.path());
+    // Only claude + codex enabled.
+    for surface in HostSurfaceId::ALL {
+        let on = matches!(*surface, HostSurfaceId::Claude | HostSurfaceId::Codex);
+        runtime
+            .set_enabled(surface.id(), on)
+            .expect("enable set");
+    }
+    inject_remaining(&mut runtime, "claude", 50); // 50% used
+    inject_remaining(&mut runtime, "codex", 18); // 82% used — worst
+    assert_eq!(
+        runtime.compact_status_bar_label().expect("compact"),
+        "Cx 82%"
+    );
+}
+
+#[test]
+fn compact_status_bar_label_tie_keeps_all_order() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let mut runtime = open_runtime(dir.path());
+    for surface in HostSurfaceId::ALL {
+        let on = matches!(*surface, HostSurfaceId::Claude | HostSurfaceId::Codex);
+        runtime
+            .set_enabled(surface.id(), on)
+            .expect("enable set");
+    }
+    inject_remaining(&mut runtime, "claude", 40);
+    inject_remaining(&mut runtime, "codex", 40);
+    // Claude precedes Codex in HostSurfaceId::ALL.
+    assert_eq!(
+        runtime.compact_status_bar_label().expect("compact"),
+        "Cl 60%"
+    );
+}
+
+#[test]
+fn compact_status_bar_label_empty_when_unavailable_or_disabled() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let mut runtime = open_runtime(dir.path());
+    // All enabled but no numeric remaining (unavailable inject has empty buckets).
+    let unavailable = FocusedUsageView::unavailable("missing", 1);
+    runtime
+        .inject_snapshot("claude", unavailable)
+        .expect("inject");
+    assert_eq!(
+        runtime.compact_status_bar_label().expect("compact"),
+        "",
+        "unavailable without remaining_percent must not invent %"
+    );
+
+    inject_remaining(&mut runtime, "codex", 10);
+    for surface in HostSurfaceId::ALL {
+        runtime
+            .set_enabled(surface.id(), false)
+            .expect("disable");
+    }
+    assert_eq!(
+        runtime.compact_status_bar_label().expect("compact"),
+        "",
+        "all-disabled must yield empty compact label"
+    );
+}
+
 #[test]
 fn money_bucket_preserved_in_host_snapshot() {
     let dir = tempfile::tempdir().expect("tempdir");

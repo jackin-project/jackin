@@ -117,6 +117,14 @@ impl UsageMenuBarBridge {
         })
     }
 
+    /// Short status-item label (worst enabled surface by used percent).
+    pub fn compact_status_bar_label(&self) -> Result<String, UsageBridgeError> {
+        catch_entry(|| {
+            let mut guard = self.lock()?;
+            guard.compact_status_bar_label().map_err(map_runtime_err)
+        })
+    }
+
     /// Poll events after `cursor` (exclusive).
     ///
     /// Always returns `Ok` for a valid open runtime. When the client cursor is

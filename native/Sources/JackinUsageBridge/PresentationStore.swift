@@ -30,17 +30,48 @@ public final class PresentationStore: ObservableObject {
     }
 
     @Published public private(set) var mergedBarLabel: String = "jackin❯ usage"
+    /// Rust-owned short status-item label (e.g. `Cl 63%`); empty when no %.
+    @Published public private(set) var compactBarLabel: String = ""
     @Published public private(set) var surfaces: [SurfaceRow] = []
     @Published public private(set) var lastError: String?
     @Published public private(set) var isOpen: Bool = false
     /// Refresh floor in seconds (owned by Rust; mirrored for Settings).
     @Published public private(set) var refreshFloorSecs: UInt64 = 300
+    /// Display preference: show monospaced percent next to the template icon.
+    @Published public var showPercentInMenuBar: Bool {
+        didSet {
+            UserDefaults.standard.set(showPercentInMenuBar, forKey: Self.showPercentKey)
+        }
+    }
+
+    private static let showPercentKey = "jackin.usageMenuBar.showPercent"
 
     private let bridge = UsageMenuBarBridge.create()
     private var eventCursor: UInt64 = 0
     private var pollTask: Task<Void, Never>?
 
-    public init() {}
+    public init() {
+        // Default ON when key is absent.
+        if UserDefaults.standard.object(forKey: Self.showPercentKey) == nil {
+            self.showPercentInMenuBar = true
+        } else {
+            self.showPercentInMenuBar = UserDefaults.standard.bool(forKey: Self.showPercentKey)
+        }
+    }
+
+    /// True when every enabled surface is stale/unavailable/error (dims status item).
+    public var allEnabledSurfacesDegraded: Bool {
+        let enabled = surfaces.filter(\.enabled)
+        guard !enabled.isEmpty else { return true }
+        return enabled.allSatisfy { row in
+            switch row.status {
+            case "fresh", "refreshing":
+                return false
+            default:
+                return true
+            }
+        }
+    }
 
     public func openDefault() {
         let home = FileManager.default.homeDirectoryForCurrentUser
@@ -166,6 +197,7 @@ public final class PresentationStore: ObservableObject {
     private func applySnapshots() {
         do {
             mergedBarLabel = try bridge.mergedStatusBarLabel()
+            compactBarLabel = try bridge.compactStatusBarLabel()
             let listed = try bridge.listSurfaces()
             var rows: [SurfaceRow] = []
             for surface in listed {
