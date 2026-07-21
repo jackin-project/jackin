@@ -176,6 +176,25 @@ Conventions jackin❯ Desktop mirrors from these screens:
 - **Reset-credits summary row** — `Limit Reset Credits · 3 manual resets available` renders as a display-only row in v1; claiming a reset stays a rejected write action.
 - **Keyboard parity** — where macOS allows: ←/→ or ⇥ moves provider focus, `r` forces refresh, Esc closes.
 
+### Native design reference (screenshot review, 2026-07-22)
+
+Operator-supplied screenshots of reference panels (an OpenUsage 0.7.6 dashboard and two CodexBar provider panels, dark appearance) set the bar for the native feel. Together with the Capsule reference screens above they form the **v1 design contract**: the Capsule captures fix *what* is shown — fields, strings, ordering, conventions — and the native panels fix *how it feels* — materials, spacing, controls. A jackin❯ Desktop screen is done when it reads like the native references while matching the Capsule strings exactly. Visual conventions jackin❯ Desktop adopts — clean-room, look-and-feel only:
+
+- **Detached floating panel** — the glance popover reads as its own rounded surface over the desktop: large continuous-corner radius, elevated material, soft shadow, no popover arrow.
+- **Inset grouped cards** — metric groups sit in inset rounded cards on the panel background (the macOS grouped-form idiom); separation comes from grouping and spacing, not hairline rules.
+- **Provider section headers** — provider glyph + bold provider name + muted plan badge (`Claude  Max 20x`) sit above their card, not inside it. Maps directly to our provider label + plan label fields.
+- **Metric row anatomy** — label above a thin full-width capacity bar; caption line below with value left (`89% left`) and meta right (`Resets in 52m`) in secondary color. Same two-column convention as the Capsule dialog; the native bar is thin with a muted track. One deliberate divergence: our fills tint by Rust severity (accent / amber / red), not a single accent color.
+- **Honest empty rows** — missing data renders an em dash plus `No data` over an empty track — never a fabricated zero. Identical to our never-invent-numbers invariant.
+- **Pinned footer** — small muted version + next-refresh countdown on the left, one consolidated menu pill on the right. Adopting this adds one Rust view field: a next-refresh-due label derived from the shared cache cooldown/floor, exported over FFI like every other string.
+- **Typography and rhythm** — system font; bold section titles, regular values, muted secondary meta; generous vertical spacing. The native surfaces breathe — no replication of the TUI's dense grid.
+- **Identity block confirmed native** — bold provider name left / account right, muted `Updated just now` left / plan badge right (`Pro 20x`, `SuperGrok`) — the reference panels use exactly our Capsule two-column identity convention, so it transfers to native unchanged.
+- **Pace two-column confirmed native** — `7% in reserve` left, `Lasts until reset` right under the bar — again exactly the Capsule convention.
+- **Menu-style footer actions** — icon + label rows with right-aligned key equivalents (`Refresh ⌘R`, `Settings… ⌘,`, `Quit ⌘Q`) instead of button clusters. The glance popover footer adopts this.
+- **Provider switching** — one reference uses a glyph-tile grid with the selected provider as a filled accent tile and a thin per-provider status underline. Our Usage window sidebar is the equivalent switcher; it adopts the at-a-glance part as a severity accent (worst-bucket severity per surface, Rust-supplied) on each sidebar row.
+- **Estimate honesty caption** — a muted `Estimated from token usage · not a subscription bill` style caption under money figures. We render the same honesty from existing Rust source/confidence fields (`local estimate`, `provider`, `cache`) as a caption under money rows.
+
+Recorded but deferred with their features (each needs Rust modeling first): aggregate-spend donut card with Today / Yesterday / 30 Days segmented capsule and ranked legend; usage-trend sparklines and spend-history bar charts with top-model captions; per-card external quick links (Usage Dashboard / Status Page) and provider incident lines; account-switcher pills (multi-account); reset-credit expiry lists (`5d 4h · 10d 1h · 21d 22h`); drill-in subpages (Plan Usage / Cost); Buy Credits and any other write action; collapsible secondary-metrics section; segmented capacity-bar track marks (needs window-period metadata from Rust).
+
 ### Screen inventory (v1)
 
 Every screen is a rendering of existing Rust view fields; the strings in the sketches are the literal formats Rust view shaping already emits (or the named extension above). Sketches are layout intent, not pixel specs — geometry and materials follow the Liquid Glass direction with gates centralized in the shipped fallback layer.
@@ -198,7 +217,7 @@ Rust: shipped `compact_status_bar_label` plus the pinned / strip / depleted FFI 
 
 ```text
 ┌────────────────────────────────────────────────┐
-│ jackin❯ Desktop                      ↻ Refresh │
+│ jackin❯ Desktop                                │
 ├────────────────────────────────────────────────┤
 │ OpenAI      97% left · Resets in 6d 22h        │
 │ Anthropic   Fable 68% left · Resets in 2d 12h  │
@@ -208,11 +227,16 @@ Rust: shipped `compact_status_bar_label` plus the pinned / strip / depleted FFI 
 │ Kimi        24% left · Resets in 3d            │
 │ MiniMax     unsupported                        │
 ├────────────────────────────────────────────────┤
-│ Open Usage…                  Settings… · Quit  │
+│ ▤ Open Usage…                                  │
+│ ↻ Refresh                                  ⌘R  │
+│ ⚙ Settings…                                ⌘,  │
+│ ⏻ Quit                                     ⌘Q  │
+├────────────────────────────────────────────────┤
+│ Updated 2m ago · Next update in 4m             │
 └────────────────────────────────────────────────┘
 ```
 
-Rows = `FocusedUsageView.tabs` one-liners with the shared provider display labels; clicking a row opens the Usage window focused on that provider.
+Rows = `FocusedUsageView.tabs` one-liners with the shared provider display labels; clicking a row opens the Usage window focused on that provider. Footer actions are menu rows with key equivalents (design reference); the `Next update in 4m` countdown is the new Rust next-refresh-due label.
 
 **S3 — Usage window.** Normal macOS window, Liquid Glass, resizable, remembered frame:
 
@@ -378,6 +402,7 @@ Swift must not own HTTP/RPC/OAuth/CLI probes or non-jackin❯ providers. Scope: 
 - [ ] Status-item display modes (pinned surface, multi-surface strip, depleted-shows-reset) as Rust view/FFI extensions
 - [ ] Glance popover overview strip + Rust-resolved used/left and countdown/clock format flags
 - [ ] Usage window: Liquid Glass sidebar/content window restating the Capsule dialog (view-only)
+- [ ] Native design pass per the v1 design contract (floating panel, inset cards, menu-row footer, sidebar severity accents, next-refresh-due FFI label, estimate captions)
 - [ ] Screen inventory S1–S6: Settings display/format pickers, empty/first-run state
 
 ## Related work
