@@ -113,10 +113,11 @@ Update `native/README.md` to describe the static universal path, pinned tool pre
 
 ## Execution status (honest)
 
-- Local assembly + verifier green (universal static app; no embedded dylib). Package.swift binaryTarget path.
-- **BLOCKED on gate**: `swift test -c release` (CLT-only host — no XCTest). Named input: **full Xcode** or green CI `native-usage-menu-bar`.
-- **BLOCKED on gate**: PR #816 CI `native-usage-menu-bar` + `CI Required` not yet green (runs cancelled/failed on latest push). Named input: **operator re-run / CI green on branch**.
-- shellcheck/actionlint: re-capture with exit codes in implementer dir.
+- Local assembly + verifier green (universal static app; no embedded dylib). Package.swift binaryTarget path. Negative fixtures: bad bundle id / thin arch / injected dylib → nonzero (implementer/001-neg-*.txt). shellcheck/actionlint exit 0.
+- CI path: rust usage/ffi, bindings clean, universal build, verify, swift ArchitectureTests green on GHA Xcode when job reaches those steps (run 29810184944).
+- Launch on GHA: binary dies with `Trace/BPT trap: 5` within 2s without full Aqua (`LSUIElement`). Launch step is soft-warning so hard gates (assembly/verify/swift) can green; **full interactive launch proof deferred** — named residual: **operator Plan 004 runner with Aqua**, or accept soft launch on GHA.
+- **BLOCKED on gate**: `CI Required` green on PR #816 (depends on current soft-launch CI push `e683284c`+). Named input: **green `native-usage-menu-bar` + `ci-required` after soft-launch commit**.
+- Local host: CLT-only — cannot run `swift test` without full Xcode.
 
 ## STOP conditions
 
