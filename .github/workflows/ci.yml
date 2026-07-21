@@ -1175,9 +1175,9 @@ jobs:
       - name: Verify app + ZIP round-trip
         run: |
           set -euo pipefail
-          ./scripts/verify-usage-menu-bar-app.sh native/dist/JackinUsageMenuBar.app
-          zip -qry /tmp/jackin-usage-menu-bar-ci.zip native/dist/JackinUsageMenuBar.app
-          ./scripts/verify-usage-menu-bar-app.sh native/dist/JackinUsageMenuBar.app /tmp/jackin-usage-menu-bar-ci.zip
+          ./scripts/verify-usage-menu-bar-app.sh native/dist/JackinDesktop.app
+          zip -qry /tmp/jackin-desktop-ci.zip native/dist/JackinDesktop.app
+          ./scripts/verify-usage-menu-bar-app.sh native/dist/JackinDesktop.app /tmp/jackin-desktop-ci.zip
       - name: Swift tests
         run: |
           set -euo pipefail
@@ -1191,10 +1191,10 @@ jobs:
           # GitHub-hosted macOS may still Trace/BPT-trap without a full Aqua
           # session — static assembly + verify + swift test remain hard gates;
           # launch is best-effort with explicit warning (Plan 004 runner decision).
-          APP_BIN=native/dist/JackinUsageMenuBar.app/Contents/MacOS/JackinUsageMenuBar
-          xattr -cr native/dist/JackinUsageMenuBar.app || true
+          APP_BIN=native/dist/JackinDesktop.app/Contents/MacOS/JackinDesktop
+          xattr -cr native/dist/JackinDesktop.app || true
           set +e
-          "$APP_BIN" >/tmp/jackin-usage-menu-bar-launch.log 2>&1 &
+          "$APP_BIN" >/tmp/jackin-desktop-launch.log 2>&1 &
           PID=$!
           alive=0
           for _ in $(seq 1 30); do
@@ -1214,7 +1214,7 @@ jobs:
             fi
           fi
           echo "::warning::GHA macOS could not keep LSUIElement app alive without Aqua (see log; often Trace/BPT trap: 5). Assembly, verify, and swift test already passed — full interactive launch is a Plan 004 operator decision."
-          cat /tmp/jackin-usage-menu-bar-launch.log || true
+          cat /tmp/jackin-desktop-launch.log || true
           kill "$PID" 2>/dev/null || true
           wait "$PID" 2>/dev/null || true
           exit 0

@@ -41,9 +41,9 @@ struct PopoverRoot: View {
 
     private var header: some View {
         HStack {
-            Text("jackin❯ usage")
+            Text("jackin❯ Desktop")
                 .font(.headline)
-                .accessibilityLabel("jackin usage")
+                .accessibilityLabel("jackin Desktop")
             Spacer()
             Button("Refresh") {
                 store.refreshAll()

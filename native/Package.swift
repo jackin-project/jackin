@@ -4,13 +4,13 @@ import PackageDescription
 // Static XCFramework produced by scripts/build-usage-xcframework.sh.
 // Binary target name must match UniFFI's jackin_usage_ffiFFI module.
 let package = Package(
-    name: "JackinUsageMenuBar",
+    name: "JackinDesktop",
     platforms: [
         .macOS(.v14),
     ],
     products: [
         .library(name: "JackinUsageBridge", targets: ["JackinUsageBridge"]),
-        .executable(name: "JackinUsageMenuBar", targets: ["JackinUsageMenuBar"]),
+        .executable(name: "JackinDesktop", targets: ["JackinDesktop"]),
     ],
     targets: [
         .binaryTarget(
@@ -23,9 +23,10 @@ let package = Package(
             path: "Sources/JackinUsageBridge"
         ),
         .executableTarget(
-            name: "JackinUsageMenuBar",
+            name: "JackinDesktop",
             dependencies: ["JackinUsageBridge"],
-            path: "Sources/JackinUsageMenuBar"
+            path: "Sources/JackinDesktop",
+            resources: [.copy("Resources/JackinMark.pdf")]
         ),
         .testTarget(
             name: "JackinUsageBridgeTests",

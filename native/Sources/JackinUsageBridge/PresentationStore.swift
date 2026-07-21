@@ -44,7 +44,7 @@ public final class PresentationStore: ObservableObject {
         }
     }
 
-    private static let showPercentKey = "jackin.usageMenuBar.showPercent"
+    private static let showPercentKey = "jackin.desktop.showPercent"
 
     private let bridge = UsageMenuBarBridge.create()
     private var eventCursor: UInt64 = 0

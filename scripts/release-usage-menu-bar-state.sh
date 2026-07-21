@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Compute independent publication states for jackin-usage-menu-bar release assets.
+# Compute independent publication states for jackin-desktop release assets.
 # Usage:
 #   release-usage-menu-bar-state.sh <version> [--repo owner/name]
 # Prints KEY=value lines suitable for GITHUB_OUTPUT.
@@ -8,7 +8,7 @@
 #   release_exists
 #   app_file_assets_complete   # ZIP + .sha256 + .bundle + .sbom.json
 #   formula_complete           # Formula/jackin.rb version matches (best-effort remote)
-#   cask_complete              # Casks/jackin-usage-menu-bar.rb version+url+sha present on tap main
+#   cask_complete              # Casks/jackin-desktop.rb version+url+sha present on tap main
 #   complete                   # release + app assets + cask (formula may lag independently)
 set -euo pipefail
 
@@ -29,7 +29,7 @@ if [[ -z "$VERSION" ]]; then
   exit 2
 fi
 
-ASSET="jackin-usage-menu-bar-${VERSION}-aarch64-apple-darwin.zip"
+ASSET="jackin-desktop-${VERSION}-aarch64-apple-darwin.zip"
 
 release_exists=false
 app_file_assets_complete=false
@@ -68,7 +68,7 @@ fi
 
 # Cask presence on tap main.
 if cask_body="$(curl -fsSL --max-time 30 \
-  "https://raw.githubusercontent.com/${TAP_REPO}/main/Casks/jackin-usage-menu-bar.rb" 2>/dev/null)"; then
+  "https://raw.githubusercontent.com/${TAP_REPO}/main/Casks/jackin-desktop.rb" 2>/dev/null)"; then
   cask_version="$(printf '%s\n' "$cask_body" | sed -n 's/^[[:space:]]*version "\(.*\)"/\1/p' | head -1)"
   cask_url="$(printf '%s\n' "$cask_body" | sed -n 's/^[[:space:]]*url "\(.*\)"/\1/p' | head -1)"
   cask_sha="$(printf '%s\n' "$cask_body" | sed -n 's/^[[:space:]]*sha256 "\(.*\)"/\1/p' | head -1)"

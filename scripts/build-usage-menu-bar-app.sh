@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Assemble one arm64 (Apple Silicon) statically linked JackinUsageMenuBar.app
+# Assemble one arm64 (Apple Silicon) statically linked JackinDesktop.app
 # from the static XCFramework path. No dylib / framework / XCFramework is embedded.
 # Requires: JACKIN_APP_VERSION, JACKIN_APP_BUILD (numeric). Ad-hoc signs after assembly.
 # Intel/x86_64 is out of scope for now (operator decision 2026-07-22).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-DIST="$ROOT/native/dist/JackinUsageMenuBar.app"
+DIST="$ROOT/native/dist/JackinDesktop.app"
 XCFRAMEWORK="$ROOT/target/xcframework/JackinUsageFFI.xcframework"
 
 if [[ -z "${JACKIN_APP_VERSION:-}" ]]; then
@@ -40,11 +40,13 @@ cd "$ROOT/native"
 ARCH=arm64
 echo "==> swift build ($ARCH)"
 # SwiftPM resolves the binaryTarget XCFramework; link is static — no dylib in product.
-swift build -c release --product JackinUsageMenuBar --arch "$ARCH" \
+swift build -c release --product JackinDesktop --arch "$ARCH" \
   -Xswiftc -target -Xswiftc "${ARCH}-apple-macosx14.0"
-bin="$(swift build -c release --show-bin-path --arch "$ARCH")/JackinUsageMenuBar"
+BIN_DIR="$(swift build -c release --show-bin-path --arch "$ARCH")"
+bin="$BIN_DIR/JackinDesktop"
 if [[ ! -f "$bin" ]]; then
-  bin="$(swift build -c release --show-bin-path)/JackinUsageMenuBar"
+  BIN_DIR="$(swift build -c release --show-bin-path)"
+  bin="$BIN_DIR/JackinDesktop"
 fi
 if [[ ! -f "$bin" ]]; then
   echo "error: missing Swift product for $ARCH" >&2
@@ -62,11 +64,32 @@ if echo "$got" | grep -qw x86_64; then
 fi
 
 rm -rf "$DIST"
-mkdir -p "$DIST/Contents/MacOS"
-cp "$bin" "$DIST/Contents/MacOS/JackinUsageMenuBar"
-chmod +x "$DIST/Contents/MacOS/JackinUsageMenuBar"
+mkdir -p "$DIST/Contents/MacOS" "$DIST/Contents/Resources"
+cp "$bin" "$DIST/Contents/MacOS/JackinDesktop"
+chmod +x "$DIST/Contents/MacOS/JackinDesktop"
 
-ARCHS="$(lipo -archs "$DIST/Contents/MacOS/JackinUsageMenuBar")"
+# SwiftPM resource bundle for Bundle.module (logomark template image).
+RESOURCE_BUNDLE=""
+for candidate in \
+  "$BIN_DIR/JackinDesktop_JackinDesktop.bundle" \
+  "$BIN_DIR/JackinDesktop.bundle"; do
+  if [[ -d "$candidate" ]]; then
+    RESOURCE_BUNDLE="$candidate"
+    break
+  fi
+done
+if [[ -z "$RESOURCE_BUNDLE" ]]; then
+  # Fall back to a shallow search under the bin dir.
+  RESOURCE_BUNDLE="$(find "$BIN_DIR" -maxdepth 2 -type d -name 'JackinDesktop_JackinDesktop.bundle' 2>/dev/null | head -1 || true)"
+fi
+if [[ -z "$RESOURCE_BUNDLE" || ! -d "$RESOURCE_BUNDLE" ]]; then
+  echo "error: missing SwiftPM resource bundle JackinDesktop_JackinDesktop.bundle under $BIN_DIR" >&2
+  ls -la "$BIN_DIR" >&2 || true
+  exit 1
+fi
+cp -R "$RESOURCE_BUNDLE" "$DIST/Contents/Resources/"
+
+ARCHS="$(lipo -archs "$DIST/Contents/MacOS/JackinDesktop")"
 echo "  executable archs: $ARCHS"
 echo "$ARCHS" | grep -qw arm64
 if echo "$ARCHS" | grep -qw x86_64; then
@@ -81,11 +104,11 @@ cat >"$DIST/Contents/Info.plist" <<PLIST
 <plist version="1.0">
 <dict>
   <key>CFBundleExecutable</key>
-  <string>JackinUsageMenuBar</string>
+  <string>JackinDesktop</string>
   <key>CFBundleIdentifier</key>
-  <string>com.jackin-project.usage-menu-bar</string>
+  <string>com.jackin-project.desktop</string>
   <key>CFBundleName</key>
-  <string>jackin usage</string>
+  <string>Jackin Desktop</string>
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>
@@ -107,9 +130,9 @@ if find "$DIST" -type f \( -name '*.dylib' -o -name '*.a' -o -name '*.framework'
   exit 1
 fi
 # Only dependency lines (tab-indented); ignore the absolute path in the header.
-if otool -L "$DIST/Contents/MacOS/JackinUsageMenuBar" | grep -E $'^\t' | grep -E 'libjackin_usage_ffi|/Users/|/home/|target/'; then
+if otool -L "$DIST/Contents/MacOS/JackinDesktop" | grep -E $'^\t' | grep -E 'libjackin_usage_ffi|/Users/|/home/|target/'; then
   echo "error: executable still links absolute or FFI dylib path:" >&2
-  otool -L "$DIST/Contents/MacOS/JackinUsageMenuBar" >&2
+  otool -L "$DIST/Contents/MacOS/JackinDesktop" >&2
   exit 1
 fi
 

@@ -61,17 +61,17 @@ fn sibling_suffix_preserves_archive_extension() {
 fn sibling_suffix_works_for_zip_release_archives() {
     assert_eq!(
         sibling_with_suffix(
-            Path::new("jackin-usage-menu-bar-1.0.0-aarch64-apple-darwin.zip"),
+            Path::new("jackin-desktop-1.0.0-aarch64-apple-darwin.zip"),
             "sha256"
         ),
-        PathBuf::from("jackin-usage-menu-bar-1.0.0-aarch64-apple-darwin.zip.sha256")
+        PathBuf::from("jackin-desktop-1.0.0-aarch64-apple-darwin.zip.sha256")
     );
     assert_eq!(
         sibling_with_suffix(
-            Path::new("jackin-usage-menu-bar-1.0.0-aarch64-apple-darwin.zip"),
+            Path::new("jackin-desktop-1.0.0-aarch64-apple-darwin.zip"),
             "sbom.json"
         ),
-        PathBuf::from("jackin-usage-menu-bar-1.0.0-aarch64-apple-darwin.zip.sbom.json")
+        PathBuf::from("jackin-desktop-1.0.0-aarch64-apple-darwin.zip.sbom.json")
     );
 }
 

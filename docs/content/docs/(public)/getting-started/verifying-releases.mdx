@@ -45,7 +45,7 @@ From a checkout of this repository, download an archive and its sidecars, then r
 ```sh
 cargo xtask release-verify <file>.tar.gz
 # or, for the usage menu-bar app:
-cargo xtask release-verify jackin-usage-menu-bar-<VERSION>-aarch64-apple-darwin.zip
+cargo xtask release-verify jackin-desktop-<VERSION>-aarch64-apple-darwin.zip
 ```
 
 The gate checks the archive against the sibling `.sha256` sidecar, verifies the `.bundle` with the same cosign identity and issuer policy shown below, verifies the GitHub artifact attestation for `jackin-project/jackin`, and parses the `.sbom.json` sidecar. Extension-agnostic: any archive path with those three siblings works.

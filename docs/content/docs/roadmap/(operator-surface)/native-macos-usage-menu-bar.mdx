@@ -8,7 +8,7 @@ title: "jackin❯ Desktop — native macOS usage status bar"
 
 **Architecture**: [ADR-011](/reference/adrs/adr-011-native-macos-usage-menu-bar/)
 
-**Implementation plans**: `plans/native-macos-usage-menu-bar/` (005 cache unification → 006 design refresh → 001–004 distribution)
+**Implementation plans**: `plans/native-macos-usage-menu-bar/` (005 cache unification → 006 design refresh → 001–002 distribution engineering → 007–012 jackin❯ Desktop v1 → 003–004 notarized activation residual)
 
 **References (external, clean-room — concepts only, never code or provider lists)**:
 
@@ -27,18 +27,18 @@ Two invariants govern every element below:
 1. **Capsule parity.** The glance popover and the Usage window render the same `FocusedUsageView` / `QuotaBucketView` DTOs the Capsule usage dialog consumes — same percentages, same pace and reset strings, same severity accents, same status words (`fresh` / `stale` / `needs login` / `needs secret` / `unsupported` / `unavailable` / `error`). If jackin❯ Desktop and the Capsule ever disagree on a number, that is a bug by definition.
 2. **Rust-first.** Every displayed value is produced by the existing agent-status stack — `jackin-usage` (`HostUsageRuntime`, view shaping) and `jackin-protocol` DTOs — crossing UniFFI as finished strings and scalars. A new display need is first an extension of the Rust view-model plus an FFI export, then a Swift rendering of it. Swift never computes percentages, pacing, severity, thresholds, or label text (ADR-011).
 
-### Identity (supersedes program operator decision 1 of 2026-07-21)
+### Identity (completed; supersedes program operator decision 1 of 2026-07-21)
 
-| Field | Was | Becomes |
-|---|---|---|
-| Product name (prose, marketing, docs) | jackin❯ usage menu bar | **jackin❯ Desktop** |
-| macOS app label (`CFBundleName`, Finder) | `jackin usage` | `Jackin Desktop` |
-| App bundle / executable | `JackinUsageMenuBar.app` / `JackinUsageMenuBar` | `JackinDesktop.app` / `JackinDesktop` |
-| Bundle identifier | `com.jackin-project.usage-menu-bar` | `com.jackin-project.desktop` |
-| Homebrew cask token | `jackin-usage-menu-bar` | `jackin-desktop` |
-| Release asset | `jackin-usage-menu-bar-<VERSION>-aarch64-apple-darwin.zip` | `jackin-desktop-<VERSION>-aarch64-apple-darwin.zip` |
+| Field | Value |
+|---|---|
+| Product name (prose, marketing, docs) | **jackin❯ Desktop** |
+| macOS app label (`CFBundleName`, Finder) | `Jackin Desktop` |
+| App bundle / executable | `JackinDesktop.app` / `JackinDesktop` |
+| Bundle identifier | `com.jackin-project.desktop` |
+| Homebrew cask token | `jackin-desktop` |
+| Release asset | `jackin-desktop-<VERSION>-aarch64-apple-darwin.zip` |
 
-The rename lands **before** the first notarized publish. Plan 003 activation is still blocked on Apple secrets, so no published ZIP, cask, or installed user carries the old identity — renaming now is a pure pre-release change (SwiftPM product, build/sign/verify scripts, CI workflows, tap cask, operator guide, ADR distribution section in one PR). Waiting until after activation would burn a version and ship a dead-name cask.
+Pre-release rename shipped (plan 007) before any notarized publish. Plan 003 activation remains blocked on Apple secrets — no published ZIP, cask, or installed user ever carried the old identity.
 
 ### Status bar surface
 
@@ -398,7 +398,7 @@ Swift must not own HTTP/RPC/OAuth/CLI probes or non-jackin❯ providers. Scope: 
 - [x] Universal static app assembly + PR gate (plan 001); tap cask-validation without write credentials (plan 002)
 - [x] Notarized release **pipeline** + secret-free validate + cask PR automation (plan 003 engineering)
 - [ ] **Activation:** first notarized public ZIP + operator-merged first cask + dual-arch clean install (ops after `release-macos` secrets; plan 004)
-- [ ] jackin❯ Desktop identity rename (pre-publish; supersedes program decision 1) + jackin❯ logomark status-item asset
+- [x] jackin❯ Desktop identity rename (pre-publish; supersedes program decision 1) + jackin❯ logomark status-item asset
 - [ ] Status-item display modes (pinned surface, multi-surface strip, depleted-shows-reset) as Rust view/FFI extensions
 - [ ] Glance popover overview strip + Rust-resolved used/left and countdown/clock format flags
 - [ ] Usage window: Liquid Glass sidebar/content window restating the Capsule dialog (view-only)

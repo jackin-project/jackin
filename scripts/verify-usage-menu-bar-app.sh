@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Fail-closed validation for JackinUsageMenuBar.app (PR ad-hoc or release mode).
+# Fail-closed validation for JackinDesktop.app (PR ad-hoc or release mode).
 # Env: JACKIN_APP_VERSION, JACKIN_APP_BUILD (required). Optional ZIP path as $2.
 # RELEASE_MODE=1 enables Gatekeeper/stapler expectations (Developer ID + notarized).
 set -euo pipefail
@@ -9,7 +9,7 @@ ZIP="${2:-}"
 RELEASE_MODE="${RELEASE_MODE:-0}"
 
 if [[ -z "$APP" || ! -d "$APP" ]]; then
-  echo "usage: $0 <JackinUsageMenuBar.app> [archive.zip]" >&2
+  echo "usage: $0 <JackinDesktop.app> [archive.zip]" >&2
   exit 2
 fi
 if [[ -z "${JACKIN_APP_VERSION:-}" || -z "${JACKIN_APP_BUILD:-}" ]]; then
@@ -17,19 +17,23 @@ if [[ -z "${JACKIN_APP_VERSION:-}" || -z "${JACKIN_APP_BUILD:-}" ]]; then
   exit 1
 fi
 
-BIN="$APP/Contents/MacOS/JackinUsageMenuBar"
+BIN="$APP/Contents/MacOS/JackinDesktop"
 PLIST="$APP/Contents/Info.plist"
+RESOURCE_BUNDLE="$APP/Contents/Resources/JackinDesktop_JackinDesktop.bundle"
 
 fail() { echo "error: $*" >&2; exit 1; }
 
 [[ -f "$BIN" ]] || fail "missing executable $BIN"
 [[ -f "$PLIST" ]] || fail "missing $PLIST"
+[[ -d "$RESOURCE_BUNDLE" ]] || fail "missing SwiftPM resource bundle $RESOURCE_BUNDLE"
 
 # Exact plist fields.
 bid="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$PLIST")"
-[[ "$bid" == "com.jackin-project.usage-menu-bar" ]] || fail "bundle id $bid"
+[[ "$bid" == "com.jackin-project.desktop" ]] || fail "bundle id $bid"
 exe="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$PLIST")"
-[[ "$exe" == "JackinUsageMenuBar" ]] || fail "executable name $exe"
+[[ "$exe" == "JackinDesktop" ]] || fail "executable name $exe"
+name="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleName' "$PLIST")"
+[[ "$name" == "Jackin Desktop" ]] || fail "bundle name $name"
 ver="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$PLIST")"
 [[ "$ver" == "$JACKIN_APP_VERSION" ]] || fail "version $ver != $JACKIN_APP_VERSION"
 build="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$PLIST")"
@@ -82,9 +86,9 @@ if [[ -n "$ZIP" ]]; then
   tmp="$(mktemp -d)"
   trap 'rm -rf "$tmp"' EXIT
   unzip -q "$ZIP" -d "$tmp"
-  count="$(find "$tmp" -name 'JackinUsageMenuBar.app' -type d | wc -l | tr -d ' ')"
-  [[ "$count" == "1" ]] || fail "archive must contain exactly one JackinUsageMenuBar.app (found $count)"
-  nested="$(find "$tmp" -name 'JackinUsageMenuBar.app' -type d | head -1)"
+  count="$(find "$tmp" -name 'JackinDesktop.app' -type d | wc -l | tr -d ' ')"
+  [[ "$count" == "1" ]] || fail "archive must contain exactly one JackinDesktop.app (found $count)"
+  nested="$(find "$tmp" -name 'JackinDesktop.app' -type d | head -1)"
   # Recurse without zip.
   JACKIN_APP_VERSION="$JACKIN_APP_VERSION" JACKIN_APP_BUILD="$JACKIN_APP_BUILD" \
     RELEASE_MODE="$RELEASE_MODE" \

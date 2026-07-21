@@ -1,9 +1,9 @@
 ---
 title: "macOS agent-usage menu bar"
-description: "Install and use the jackin❯ host menu-bar app for account quotas without an open Capsule."
+description: "Install and use jackin❯ Desktop for host account quotas without an open Capsule."
 ---
 
-The **jackin❯ usage** menu bar app shows remaining account quotas, spend windows, and reset countdowns for every jackin❯-supported agent surface — **without** requiring a running Capsule session.
+**jackin❯ Desktop** shows remaining account quotas, spend windows, and reset countdowns for every jackin❯-supported agent surface — **without** requiring a running Capsule session.
 
 ## What it shows
 
@@ -18,21 +18,21 @@ Numbers come from the same Rust stack Capsule uses (`jackin-usage` + `jackin-pro
 Once a notarized release ships:
 
 ```bash
-brew install --cask jackin-project/tap/jackin-usage-menu-bar
+brew install --cask jackin-project/tap/jackin-desktop
 ```
 
-That installs `JackinUsageMenuBar.app` from the immutable GitHub Release ZIP. Floor: **macOS 14 (Sonoma)+**. Uninstall: `brew uninstall --cask jackin-usage-menu-bar` (removes the app; no root daemon or LaunchDaemon).
+That installs `JackinDesktop.app` from the immutable GitHub Release ZIP. Floor: **macOS 14 (Sonoma)+**. Uninstall: `brew uninstall --cask jackin-desktop` (removes the app; no root daemon or LaunchDaemon).
 
 ### Direct download
 
-Download `jackin-usage-menu-bar-<VERSION>-aarch64-apple-darwin.zip` plus `.sha256` / `.bundle` / `.sbom.json` from the [GitHub Releases](https://github.com/jackin-project/jackin/releases) page, verify with `cargo xtask release-verify <zip>`, then open the app. See [Verifying releases](/getting-started/verifying-releases/).
+Download `jackin-desktop-<VERSION>-aarch64-apple-darwin.zip` plus `.sha256` / `.bundle` / `.sbom.json` from the [GitHub Releases](https://github.com/jackin-project/jackin/releases) page, verify with `cargo xtask release-verify <zip>`, then open the app. See [Verifying releases](/getting-started/verifying-releases/).
 
 ### Local developer build
 
 ```bash
 JACKIN_APP_VERSION=0.6.0 JACKIN_APP_BUILD=1 ./scripts/build-usage-menu-bar-app.sh
-JACKIN_APP_VERSION=0.6.0 JACKIN_APP_BUILD=1 ./scripts/verify-usage-menu-bar-app.sh native/dist/JackinUsageMenuBar.app
-open native/dist/JackinUsageMenuBar.app
+JACKIN_APP_VERSION=0.6.0 JACKIN_APP_BUILD=1 ./scripts/verify-usage-menu-bar-app.sh native/dist/JackinDesktop.app
+open native/dist/JackinDesktop.app
 ```
 
 The app is an **`LSUIElement`** process (no Dock icon). Uninstall: quit the app and delete the `.app` bundle. No root daemon is installed.
@@ -76,7 +76,7 @@ This drives `HostUsageRuntime` — the same view fields Capsule renders (`status
 
 ## Menu bar appearance
 
-- Template gauge icon plus an optional short monospaced percent for the busiest enabled account (for example `Cl 63%`). Toggle **Show percent in menu bar** in Settings (default on).
+- Template jackin❯ logomark plus an optional short monospaced percent for the busiest enabled account (for example `Cl 63%`). Toggle **Show percent in menu bar** in Settings (default on).
 - The icon dims when every enabled surface is stale or unavailable — numbers stay honest and never invent a percent.
 
 ## Settings

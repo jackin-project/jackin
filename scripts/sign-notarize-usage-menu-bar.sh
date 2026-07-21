@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Developer ID sign + notarize + staple for an already-complete static
-# JackinUsageMenuBar.app, then write the post-staple release ZIP.
+# JackinDesktop.app, then write the post-staple release ZIP.
 #
 # Local (keychain profile):
 #   DEVELOPER_ID_APPLICATION='Developer ID Application: … (TEAMID)' \
@@ -21,7 +21,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-APP="${1:-$ROOT/native/dist/JackinUsageMenuBar.app}"
+APP="${1:-$ROOT/native/dist/JackinDesktop.app}"
 IDENTITY="${DEVELOPER_ID_APPLICATION:-}"
 PROFILE="${NOTARY_PROFILE:-}"
 VERSION="${JACKIN_APP_VERSION:-}"
@@ -81,7 +81,7 @@ if printf '%s' "$ents" | grep -q 'get-task-allow'; then
 fi
 
 mkdir -p "$NOTARY_LOG_DIR"
-SUBMIT_ZIP="$NOTARY_LOG_DIR/submit-JackinUsageMenuBar.zip"
+SUBMIT_ZIP="$NOTARY_LOG_DIR/submit-JackinDesktop.zip"
 rm -f "$SUBMIT_ZIP"
 echo "==> submission zip (disposable)"
 ditto -c -k --keepParent "$APP" "$SUBMIT_ZIP"
@@ -123,11 +123,11 @@ JACKIN_APP_VERSION="$VERSION" JACKIN_APP_BUILD="$BUILD" RELEASE_MODE=1 \
   bash "$ROOT/scripts/verify-usage-menu-bar-app.sh" "$APP"
 
 if [[ -z "$OUT_ZIP" ]]; then
-  OUT_ZIP="$ROOT/native/dist/jackin-usage-menu-bar-${VERSION}-aarch64-apple-darwin.zip"
+  OUT_ZIP="$ROOT/native/dist/jackin-desktop-${VERSION}-aarch64-apple-darwin.zip"
 fi
 rm -f "$OUT_ZIP"
 echo "==> final post-staple ZIP: $OUT_ZIP"
-# ZIP contains exactly JackinUsageMenuBar.app at top level.
+# ZIP contains exactly JackinDesktop.app at top level.
 (
   cd "$(dirname "$APP")"
   ditto -c -k --keepParent "$(basename "$APP")" "$OUT_ZIP"
