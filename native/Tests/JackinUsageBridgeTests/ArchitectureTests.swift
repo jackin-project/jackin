@@ -143,13 +143,30 @@ final class ArchitectureTests: XCTestCase {
             }
         }
         XCTAssertFalse(files.isEmpty, "expected JackinDesktop sources")
-        let banned = ["% left", "% used", "resets ", "String(format:"]
+        // Usage-string tokens: ban on display surfaces only. SettingsView may use
+        // "% left"/"% used" as preference *chrome* (format picker labels) — those
+        // are not composed usage numbers; Rust still owns every gauge/status string.
+        let usageStringTokens = ["% left", "% used", "resets "]
+        // Always ban format composition everywhere under JackinDesktop.
+        let alwaysBanned = ["String(format:"]
+        // Preference chrome only (S6 format pickers); never render usage data.
+        let preferenceChromeFiles: Set<String> = ["SettingsView.swift"]
         for file in files {
             let text = try String(contentsOf: file, encoding: .utf8)
-            for token in banned {
+            let name = file.lastPathComponent
+            for token in alwaysBanned {
                 XCTAssertFalse(
                     text.contains(token),
-                    "\(file.lastPathComponent) must not compose display string \(token) — use Rust FFI"
+                    "\(name) must not compose display string \(token) — use Rust FFI"
+                )
+            }
+            if preferenceChromeFiles.contains(name) {
+                continue
+            }
+            for token in usageStringTokens {
+                XCTAssertFalse(
+                    text.contains(token),
+                    "\(name) must not compose display string \(token) — use Rust FFI"
                 )
             }
         }

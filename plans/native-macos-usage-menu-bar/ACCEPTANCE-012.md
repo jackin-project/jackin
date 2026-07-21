@@ -38,7 +38,7 @@ Desktop and Capsule share one truth path: `jackin-usage` view shaping → protoc
 | S6 Settings pickers | pass | display modes + format prefs; depleted checkbox omitted (unconditional Rust depleted branch — recorded in 009) |
 | Floating panel / glass | pass-with-note | `MenuBarExtra(.window)` system chrome may retain arrow/corners; inner panel uses glass helper |
 | Menu-row footer / next-refresh | pass | `nextRefreshLabel` + updated caption |
-| Architecture guards | pass | no Swift % composition; glass only in `GlassFallbacks` |
+| Architecture guards | pass | no Swift usage-string composition on display surfaces; Settings may use `% left`/`% used` as **format-picker chrome only** (allowlisted in `ArchitectureTests`); glass only in `GlassFallbacks`. Local host is CLT-only (`import XCTest` unavailable) — static scan of the test body + display sources re-verified after 009/012; CI `native-usage-menu-bar` job runs `swift test -c release` on full Xcode |
 
 ## Residual (named only)
 
