@@ -375,7 +375,8 @@ jobs:
   build-usage-menu-bar:
     if: needs.check-version.outputs.published != 'true'
     needs: [check-version]
-    runs-on: macos-14
+    # macos-latest: Swift 6 tools (Package.swift tools-version 6.0), same as CI native job.
+    runs-on: macos-latest
     timeout-minutes: 90
     environment: ${{ needs.check-version.outputs.mode == 'publish' && 'release-macos' || '' }}
     permissions:
@@ -387,6 +388,7 @@ jobs:
       APP_BUILD: ${{ needs.check-version.outputs.app_build }}
       MODE: ${{ needs.check-version.outputs.mode }}
       CARGO_TERM_COLOR: always
+      MACOSX_DEPLOYMENT_TARGET: "14.0"
     outputs:
       app_sha256: ${{ steps.sha.outputs.app_sha256 }}
     steps:
@@ -419,15 +421,18 @@ jobs:
           cargo install uniffi --version 0.32.0 --features cli --locked --force
           uniffi-bindgen --version
 
-      - name: Select Xcode (macOS 26 SDK preferred)
+      - name: Select newest Xcode (Swift 6 + prefer macOS 26 SDK)
         run: |
           set -euo pipefail
-          if [ -d /Applications/Xcode_26.0.app ]; then
+          # Prefer Xcode 26.x for Tahoe SDK; else default Xcode.app on macos-latest.
+          if [ -d /Applications/Xcode_26.1.app ]; then
+            sudo xcode-select -s /Applications/Xcode_26.1.app
+          elif [ -d /Applications/Xcode_26.0.app ]; then
             sudo xcode-select -s /Applications/Xcode_26.0.app
           elif [ -d /Applications/Xcode.app ]; then
             sudo xcode-select -s /Applications/Xcode.app
           fi
-          xcodebuild -version || true
+          xcodebuild -version
           swift --version
 
       - name: Assemble universal static app
