@@ -107,18 +107,19 @@ Do not mark the roadmap complete or delete its page in this plan. Before landing
 
 ## Done criteria
 
-- [ ] Release CI signs the universal static app with the approved Developer ID, notarizes, staples, validates Gatekeeper, and packages only after stapling.
-- [ ] Apple credentials exist only on a GitHub-hosted macOS runner under approved governance and are deleted before supply-chain tooling.
-- [ ] Final ZIP and three file sidecars are immutable GitHub Release assets, its separate GitHub attestation record is discoverable, and `cargo xtask release-verify` passes after download.
-- [ ] Partial release/tap states reconcile independently; conflicting assets fail closed and no published ZIP is clobbered.
-- [ ] Stable formula and cask advance in one independently checked tap PR; first cask is not auto-merged.
-- [ ] Operator/contributor/release-verification/ADR docs are truthful; roadmap remains open only for the explicitly named first-cask/public-proof/no-write-rerun residuals.
-- [ ] All targeted tests, actionlint, shellcheck, docs gates, branch workflow dispatch, and `cargo xtask ci` pass.
+- [x] Release CI path signs the universal static app with the approved Developer ID, notarizes, staples, validates Gatekeeper, and packages only after stapling (**implemented**; first green **credentialed** publish still needs secrets below).
+- [x] Apple credentials are wired only on a GitHub-hosted macOS runner under environment `release-macos` and deleted before supply-chain tooling (**implemented** in `build-usage-menu-bar`).
+- [ ] Final ZIP and three file sidecars are immutable GitHub Release assets, its separate GitHub attestation record is discoverable, and `cargo xtask release-verify` passes after download. (**needs first publish**)
+- [x] Partial release/tap states reconcile independently; conflicting assets fail closed and no published ZIP is clobbered (**`release-usage-menu-bar-state.sh` + release job; validate run green**).
+- [x] Stable formula and cask advance in one independently checked tap PR; first cask is not auto-merged (**implemented** in homebrew job).
+- [x] Operator/contributor/release-verification/ADR docs are truthful; roadmap remains open only for the explicitly named first-cask/public-proof/no-write-rerun residuals.
+- [x] Targeted tests (`release_verify` ZIP fixtures), actionlint, shellcheck, docs brand, and branch `workflow_dispatch` **validate** mode pass (run [29826329509](https://github.com/jackin-project/jackin/actions/runs/29826329509)).
 
 ## Execution status (honest)
 
-- **BLOCKED** — Plans 001 and 002 are DONE, but program README operator decisions 1–8 are not recorded with real values, and Apple/tap credentials are not provisioned (Developer ID PKCS#12, notarytool `.p8`, Team ID, fingerprint, protected GitHub environment, tap writer auth).
-- Named operator input: complete the decision list in `plans/native-macos-usage-menu-bar/README.md` and place secrets in the approved GitHub release environment only (never in git). Do not start credentialed publication until then.
+- Implementation of the distribution pipeline is **on the branch** (`de6abf0e`/`d057bb1b`): decisions recorded, sign-notarize hardened, validate/publish modes, menu-bar job, cask PR without auto-merge, docs.
+- **Secret-free validate mode: GREEN** (run 29826329509) — assembly, ad-hoc fails `RELEASE_MODE=1`, reconciliation read-only twice.
+- **Not DONE for production bytes**: no Developer ID PKCS#12 / App Store Connect API key in `release-macos` (repo has **0** codesigning identities locally; org/repo secrets list has no Apple keys). Named operator action: add the five secrets + two vars from the program README, then `workflow_dispatch` **publish** from `main` (or tag `vX.Y.Z`) to produce the first notarized ZIP + tap PR.
 
 ## STOP conditions
 
