@@ -3063,16 +3063,14 @@ fn usage_cli_owner_exports_outcomes_without_process_material() {
     let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
     let _subscriber = tracing::subscriber::set_default(subscriber);
 
-    run_cli_with_timeout_full(
-        &command,
-        &["-c", "printf usage-secret-output"],
-        Duration::from_secs(1),
-    )
-    .unwrap();
+    // Success/error paths must outlive heavy parallel nextest load; 1s races
+    // under full `ci --fast` when the host is saturated (poll loop is 50ms).
+    let settle = Duration::from_secs(10);
+    run_cli_with_timeout_full(&command, &["-c", "printf usage-secret-output"], settle).unwrap();
     run_cli_with_timeout_full(
         &command,
         &["-c", "printf usage-secret-stderr >&2; exit 17"],
-        Duration::from_secs(1),
+        settle,
     )
     .unwrap();
     let _timeout =
@@ -3081,7 +3079,7 @@ fn usage_cli_owner_exports_outcomes_without_process_material() {
     let _spawn = run_cli_with_timeout_full(
         "/usage-secret/missing/claude",
         &["usage-secret-argument"],
-        Duration::from_secs(1),
+        settle,
     )
     .unwrap_err();
 
