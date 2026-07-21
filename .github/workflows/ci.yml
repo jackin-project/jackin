@@ -1149,12 +1149,20 @@ jobs:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
           cache_save: ${{ github.ref == 'refs/heads/main' }}
-          install_args: rust@${{ needs.changes.outputs.rust-version }} cargo:cargo-nextest cargo:uniffi
+          # Install rust + nextest only here. uniffi CLI needs --features cli and is
+          # installed in a dedicated step so a mise cargo-tool failure does not
+          # cascade into rustup install aborts on macOS runners.
+          install_args: rust@${{ needs.changes.outputs.rust-version }} cargo:cargo-nextest
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
         with:
           contract-key: ${{ needs.changes.outputs.registry-contract }}
+      - name: Install uniffi-bindgen (pinned)
+        run: |
+          set -euo pipefail
+          cargo install uniffi --version 0.32.0 --features cli --locked --force
+          uniffi-bindgen --version
       - name: Rust usage + FFI tests
         run: cargo nextest run -p jackin-usage -p jackin-usage-ffi --locked
       - name: Regenerated bindings must be clean
