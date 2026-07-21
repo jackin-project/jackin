@@ -5,7 +5,7 @@ import AppKit
 import JackinUsageBridge
 import SwiftUI
 
-/// Template status-item content: jackin❯ logomark + optional Rust compact percent.
+/// Template status-item content: jackin❯ logomark + optional Rust-owned text.
 struct StatusItemLabel: View {
     @ObservedObject var store: PresentationStore
 
@@ -13,8 +13,8 @@ struct StatusItemLabel: View {
         HStack(spacing: 4) {
             logomark
                 .opacity(store.allEnabledSurfacesDegraded ? 0.45 : 1.0)
-            if store.showPercentInMenuBar, !store.compactBarLabel.isEmpty {
-                Text(store.compactBarLabel)
+            if !store.statusItemText.isEmpty {
+                Text(store.statusItemText)
                     .font(.system(size: 12, weight: .medium, design: .default))
                     .monospacedDigit()
                     .opacity(store.allEnabledSurfacesDegraded ? 0.45 : 1.0)
@@ -42,8 +42,8 @@ struct StatusItemLabel: View {
     }
 
     private var accessibilityText: String {
-        if store.showPercentInMenuBar, !store.compactBarLabel.isEmpty {
-            return "jackin Desktop \(store.compactBarLabel)"
+        if !store.statusItemText.isEmpty {
+            return "jackin Desktop \(store.statusItemText)"
         }
         return "jackin Desktop"
     }

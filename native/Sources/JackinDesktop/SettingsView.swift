@@ -14,8 +14,50 @@ struct SettingsView: View {
     var body: some View {
         Form {
             Section("Menu bar") {
-                Toggle("Show percent in menu bar", isOn: $store.showPercentInMenuBar)
-                    .accessibilityLabel("Show percent in menu bar")
+                Picker("Display", selection: $store.displayMode) {
+                    Text("Focus percent").tag(StatusItemDisplayMode.focusPercent)
+                    Text("Icon only").tag(StatusItemDisplayMode.iconOnly)
+                    Text("Pinned surface").tag(StatusItemDisplayMode.pinnedSurface)
+                    Text("Multi-surface strip").tag(StatusItemDisplayMode.strip)
+                }
+                .pickerStyle(.radioGroup)
+                .accessibilityLabel("Status item display mode")
+
+                if store.displayMode == .pinnedSurface {
+                    Picker("Pinned surface", selection: $store.pinnedSurfaceId) {
+                        Text("—").tag("")
+                        ForEach(store.surfaces) { surface in
+                            Text(surface.label).tag(surface.id)
+                        }
+                    }
+                    .accessibilityLabel("Pinned surface for status item")
+                }
+
+                if store.displayMode == .strip {
+                    Picker("Strip cap", selection: $store.stripMax) {
+                        ForEach(1...8, id: \.self) { n in
+                            Text("\(n)").tag(n)
+                        }
+                    }
+                    .accessibilityLabel("Multi-surface strip maximum")
+                }
+
+                Picker("Percent style", selection: $store.percentStyle) {
+                    Text("% left").tag("left")
+                    Text("% used").tag("used")
+                }
+                .pickerStyle(.radioGroup)
+                .accessibilityLabel("Percent format")
+
+                Picker("Reset style", selection: $store.resetStyle) {
+                    Text("Countdown").tag("countdown")
+                    Text("Exact time").tag("exact_clock")
+                }
+                .pickerStyle(.radioGroup)
+                .accessibilityLabel("Reset time format")
+
+                Toggle("Hide values while screen sharing", isOn: $store.hideWhileScreenSharing)
+                    .accessibilityLabel("Hide values while screen sharing")
             }
             Section("Login") {
                 Toggle("Launch at login", isOn: $launchAtLogin)
@@ -71,7 +113,7 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 420, height: 520)
+        .frame(width: 420, height: 640)
         .onAppear {
             if !store.isOpen {
                 store.openDefault()

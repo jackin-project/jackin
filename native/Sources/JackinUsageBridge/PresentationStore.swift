@@ -1,7 +1,51 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+import CoreGraphics
 import Foundation
+
+/// Status-item display mode (Settings-selectable; Rust supplies every string).
+public enum StatusItemDisplayMode: String, CaseIterable, Sendable {
+    case iconOnly
+    case focusPercent
+    case pinnedSurface
+    case strip
+}
+
+/// Pure mode → which Rust accessor to call (unit-testable; no bridge).
+public enum StatusItemTextSelection: Equatable, Sendable {
+    case empty
+    case focus
+    case pinned(surfaceId: String)
+    case strip(max: UInt32)
+}
+
+/// Select the status-item text source from prefs. Empty when icon-only or
+/// screen-share collapse is active; pinned without an id falls back to empty.
+public func statusItemTextSelection(
+    mode: StatusItemDisplayMode,
+    pinnedSurfaceId: String?,
+    stripMax: Int,
+    hideForScreenShare: Bool
+) -> StatusItemTextSelection {
+    if hideForScreenShare {
+        return .empty
+    }
+    switch mode {
+    case .iconOnly:
+        return .empty
+    case .focusPercent:
+        return .focus
+    case .pinnedSurface:
+        guard let id = pinnedSurfaceId, !id.isEmpty else {
+            return .empty
+        }
+        return .pinned(surfaceId: id)
+    case .strip:
+        let cap = UInt32(max(1, min(8, stripMax)))
+        return .strip(max: cap)
+    }
+}
 
 /// Thin presentation store: polls Rust UniFFI snapshots; no provider probes.
 @MainActor
@@ -30,33 +74,108 @@ public final class PresentationStore: ObservableObject {
     }
 
     @Published public private(set) var mergedBarLabel: String = "jackin❯ usage"
-    /// Rust-owned short status-item label (e.g. `Cl 63%`); empty when no %.
+    /// Rust-owned short status-item label for focus mode (e.g. `Cl 63%`).
     @Published public private(set) var compactBarLabel: String = ""
+    /// Mode-selected status-item text (empty = icon only).
+    @Published public private(set) var statusItemText: String = ""
+    /// Footer / window next-refresh string from Rust.
+    @Published public private(set) var nextRefreshLabel: String = ""
     @Published public private(set) var surfaces: [SurfaceRow] = []
     @Published public private(set) var lastError: String?
     @Published public private(set) var isOpen: Bool = false
     /// Refresh floor in seconds (owned by Rust; mirrored for Settings).
     @Published public private(set) var refreshFloorSecs: UInt64 = 300
-    /// Display preference: show monospaced percent next to the template icon.
-    @Published public var showPercentInMenuBar: Bool {
+
+    @Published public var displayMode: StatusItemDisplayMode {
         didSet {
-            UserDefaults.standard.set(showPercentInMenuBar, forKey: Self.showPercentKey)
+            UserDefaults.standard.set(displayMode.rawValue, forKey: Self.displayModeKey)
+            applyStatusItemText()
         }
     }
 
-    private static let showPercentKey = "jackin.desktop.showPercent"
+    @Published public var pinnedSurfaceId: String {
+        didSet {
+            UserDefaults.standard.set(pinnedSurfaceId, forKey: Self.pinnedSurfaceKey)
+            applyStatusItemText()
+        }
+    }
+
+    @Published public var stripMax: Int {
+        didSet {
+            let clamped = max(1, min(8, stripMax))
+            if clamped != stripMax {
+                stripMax = clamped
+                return
+            }
+            UserDefaults.standard.set(stripMax, forKey: Self.stripMaxKey)
+            applyStatusItemText()
+        }
+    }
+
+    /// Rust `percent_style`: `left` | `used`.
+    @Published public var percentStyle: String {
+        didSet {
+            UserDefaults.standard.set(percentStyle, forKey: Self.percentStyleKey)
+            pushFormatPrefs()
+            if isOpen {
+                applySnapshots()
+            }
+        }
+    }
+
+    /// Rust `reset_style`: `countdown` | `exact_clock`.
+    @Published public var resetStyle: String {
+        didSet {
+            UserDefaults.standard.set(resetStyle, forKey: Self.resetStyleKey)
+            pushFormatPrefs()
+            if isOpen {
+                applySnapshots()
+            }
+        }
+    }
+
+    @Published public var hideWhileScreenSharing: Bool {
+        didSet {
+            UserDefaults.standard.set(hideWhileScreenSharing, forKey: Self.hideScreenShareKey)
+            applyStatusItemText()
+        }
+    }
+
+    private static let displayModeKey = "jackin.desktop.displayMode"
+    private static let pinnedSurfaceKey = "jackin.desktop.pinnedSurfaceId"
+    private static let stripMaxKey = "jackin.desktop.stripMax"
+    private static let percentStyleKey = "jackin.desktop.percentStyle"
+    private static let resetStyleKey = "jackin.desktop.resetStyle"
+    private static let hideScreenShareKey = "jackin.desktop.hideWhileScreenSharing"
 
     private let bridge = UsageMenuBarBridge.create()
     private var eventCursor: UInt64 = 0
     private var pollTask: Task<Void, Never>?
+    private var screenShareActive: Bool = false
 
     public init() {
-        // Default ON when key is absent.
-        if UserDefaults.standard.object(forKey: Self.showPercentKey) == nil {
-            self.showPercentInMenuBar = true
+        let defaults = UserDefaults.standard
+        if let raw = defaults.string(forKey: Self.displayModeKey),
+           let mode = StatusItemDisplayMode(rawValue: raw)
+        {
+            self.displayMode = mode
+        } else if defaults.object(forKey: "jackin.desktop.showPercent") != nil {
+            // Pre-release migration: old boolean → mode (no long-term shim).
+            self.displayMode = defaults.bool(forKey: "jackin.desktop.showPercent")
+                ? .focusPercent
+                : .iconOnly
+            defaults.removeObject(forKey: "jackin.desktop.showPercent")
         } else {
-            self.showPercentInMenuBar = UserDefaults.standard.bool(forKey: Self.showPercentKey)
+            self.displayMode = .focusPercent
         }
+        self.pinnedSurfaceId = defaults.string(forKey: Self.pinnedSurfaceKey) ?? ""
+        let strip = defaults.object(forKey: Self.stripMaxKey) as? Int ?? 3
+        self.stripMax = max(1, min(8, strip))
+        let percent = defaults.string(forKey: Self.percentStyleKey) ?? "left"
+        self.percentStyle = (percent == "used") ? "used" : "left"
+        let reset = defaults.string(forKey: Self.resetStyleKey) ?? "countdown"
+        self.resetStyle = (reset == "exact_clock") ? "exact_clock" : "countdown"
+        self.hideWhileScreenSharing = defaults.bool(forKey: Self.hideScreenShareKey)
     }
 
     /// True when every enabled surface is stale/unavailable/error (dims status item).
@@ -91,6 +210,7 @@ public final class PresentationStore: ObservableObject {
             isOpen = true
             lastError = nil
             self.refreshFloorSecs = try bridge.refreshFloorSecs()
+            pushFormatPrefs()
             // First load forces network so the bar is not stuck on "refreshing".
             refreshAll(force: true)
             startPolling()
@@ -153,6 +273,20 @@ public final class PresentationStore: ObservableObject {
         }
     }
 
+    private func pushFormatPrefs() {
+        guard isOpen else { return }
+        do {
+            try bridge.setFormatPrefs(
+                prefs: UsageFormatPrefsDto(
+                    percentStyle: percentStyle,
+                    resetStyle: resetStyle
+                )
+            )
+        } catch {
+            lastError = String(describing: error)
+        }
+    }
+
     private func startPolling() {
         pollTask?.cancel()
         pollTask = Task { [weak self] in
@@ -165,6 +299,11 @@ public final class PresentationStore: ObservableObject {
 
     private func pollOnce() {
         guard isOpen else { return }
+        if hideWhileScreenSharing {
+            screenShareActive = Self.isScreenCurrentlyShared()
+        } else {
+            screenShareActive = false
+        }
         // Always-on: ask Rust to refresh when the floor allows (force: false).
         // Rust no-ops inside the floor so this is poll-safe every 5s.
         do {
@@ -194,10 +333,25 @@ public final class PresentationStore: ObservableObject {
         }
     }
 
+    /// Poll CGSession for active screen share (privacy collapse). AppKit-free.
+    public static func isScreenCurrentlyShared() -> Bool {
+        guard let dict = CGSessionCopyCurrentDictionary() as? [String: Any] else {
+            return false
+        }
+        if let shared = dict["CGSSessionScreenIsShared"] as? Bool {
+            return shared
+        }
+        if let shared = dict["CGSSessionScreenIsShared"] as? NSNumber {
+            return shared.boolValue
+        }
+        return false
+    }
+
     private func applySnapshots() {
         do {
             mergedBarLabel = try bridge.mergedStatusBarLabel()
             compactBarLabel = try bridge.compactStatusBarLabel()
+            nextRefreshLabel = try bridge.nextRefreshLabel()
             let listed = try bridge.listSurfaces()
             var rows: [SurfaceRow] = []
             for surface in listed {
@@ -260,9 +414,38 @@ public final class PresentationStore: ObservableObject {
                 }
             }
             surfaces = rows
+            applyStatusItemText()
             lastError = nil
         } catch {
             lastError = String(describing: error)
+        }
+    }
+
+    private func applyStatusItemText() {
+        let selection = statusItemTextSelection(
+            mode: displayMode,
+            pinnedSurfaceId: pinnedSurfaceId.isEmpty ? nil : pinnedSurfaceId,
+            stripMax: stripMax,
+            hideForScreenShare: hideWhileScreenSharing && screenShareActive
+        )
+        guard isOpen else {
+            statusItemText = ""
+            return
+        }
+        do {
+            switch selection {
+            case .empty:
+                statusItemText = ""
+            case .focus:
+                statusItemText = try bridge.compactStatusBarLabel()
+            case .pinned(let surfaceId):
+                statusItemText = try bridge.compactStatusBarLabelFor(surfaceId: surfaceId) ?? ""
+            case .strip(let max):
+                statusItemText = try bridge.compactStatusBarStrip(max: max)
+            }
+        } catch {
+            lastError = String(describing: error)
+            statusItemText = ""
         }
     }
 }

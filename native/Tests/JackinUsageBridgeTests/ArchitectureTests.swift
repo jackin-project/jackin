@@ -132,4 +132,98 @@ final class ArchitectureTests: XCTestCase {
             "Package.swift must not dynamically link libjackin_usage_ffi"
         )
     }
+
+    func testDesktopSourcesDoNotComposePercentOrResetLiterals() throws {
+        let desktop = sourcesRoot.appendingPathComponent("JackinDesktop")
+        let enumerator = FileManager.default.enumerator(at: desktop, includingPropertiesForKeys: nil)
+        var files: [URL] = []
+        while let url = enumerator?.nextObject() as? URL {
+            if url.pathExtension == "swift" {
+                files.append(url)
+            }
+        }
+        XCTAssertFalse(files.isEmpty, "expected JackinDesktop sources")
+        let banned = ["% left", "% used", "resets ", "String(format:"]
+        for file in files {
+            let text = try String(contentsOf: file, encoding: .utf8)
+            for token in banned {
+                XCTAssertFalse(
+                    text.contains(token),
+                    "\(file.lastPathComponent) must not compose display string \(token) — use Rust FFI"
+                )
+            }
+        }
+    }
+
+    func testScreenShareProbeLivesOnlyInPresentationStore() throws {
+        for file in try handwrittenSwiftFiles() {
+            let text = try String(contentsOf: file, encoding: .utf8)
+            let has = text.contains("CGSessionCopyCurrentDictionary")
+            if file.lastPathComponent == "PresentationStore.swift" {
+                XCTAssertTrue(has, "PresentationStore must own screen-share detection")
+            } else {
+                XCTAssertFalse(
+                    has,
+                    "\(file.lastPathComponent) must not call CGSessionCopyCurrentDictionary"
+                )
+            }
+        }
+    }
+
+    func testStatusItemTextSelectionModes() {
+        XCTAssertEqual(
+            statusItemTextSelection(
+                mode: .iconOnly,
+                pinnedSurfaceId: nil,
+                stripMax: 3,
+                hideForScreenShare: false
+            ),
+            .empty
+        )
+        XCTAssertEqual(
+            statusItemTextSelection(
+                mode: .focusPercent,
+                pinnedSurfaceId: nil,
+                stripMax: 3,
+                hideForScreenShare: false
+            ),
+            .focus
+        )
+        XCTAssertEqual(
+            statusItemTextSelection(
+                mode: .pinnedSurface,
+                pinnedSurfaceId: "codex",
+                stripMax: 3,
+                hideForScreenShare: false
+            ),
+            .pinned(surfaceId: "codex")
+        )
+        XCTAssertEqual(
+            statusItemTextSelection(
+                mode: .pinnedSurface,
+                pinnedSurfaceId: nil,
+                stripMax: 3,
+                hideForScreenShare: false
+            ),
+            .empty
+        )
+        XCTAssertEqual(
+            statusItemTextSelection(
+                mode: .strip,
+                pinnedSurfaceId: nil,
+                stripMax: 3,
+                hideForScreenShare: false
+            ),
+            .strip(max: 3)
+        )
+        XCTAssertEqual(
+            statusItemTextSelection(
+                mode: .focusPercent,
+                pinnedSurfaceId: nil,
+                stripMax: 3,
+                hideForScreenShare: true
+            ),
+            .empty
+        )
+    }
 }
