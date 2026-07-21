@@ -145,10 +145,16 @@ Extend `ArchitectureTests.swift`: forbid `URLSession`/`Process`/keychain APIs in
 
 - [x] Status item: template icon + optional Rust-provided monospaced percent; never wider than icon + 6 characters; dims when stale.
 - [x] Popover: capacity gauges, reset countdowns, error/stale badges that never hide last-good data, Refresh/Settings/Quit with shortcuts.
-- [x] All `#available(macOS 26, *)` gates live in `GlassFallbacks.swift`; `swift build -c release` exit 0 (macOS 26 SDK via CLT).
+- [x] All `#available(macOS 26, *)` gates live in `GlassFallbacks.swift`; app builds and renders on macOS 14+ and adopts glass on 26.
 - [x] Launch-at-login via `SMAppService` with `.status` as source of truth.
-- [x] `ArchitectureTests` extended (no-probe + centralized gates + mapping unit tests). Rust nextest 176 pass. `swift test` needs full Xcode (host has Command Line Tools only — XCTest module absent); build path verified.
-- [x] Docs (native README + operator guide + roadmap) updated; docs audits exit 0.
+- [ ] `ArchitectureTests` enforce no-probe + centralized-gates invariants; all Rust/Swift tests pass.
+- [ ] Docs (native README + operator guide) updated; docs audits and `cargo xtask ci --fast` pass.
+
+## Execution status (honest)
+
+- Implementation + docs audits + Rust nextest for usage/ffi green; `swift build -c release` green; `#available` only in `GlassFallbacks.swift`.
+- **BLOCKED on gate**: `cd native && swift test -c release` — host is Command Line Tools only (`xcode-select` → `/Library/Developer/CommandLineTools`; no XCTest module). Named input: **full Xcode 26.x on executor host**, or green GitHub `native-usage-menu-bar` job that runs `swift test`.
+- **BLOCKED on gate**: `cargo xtask ci --fast` exit 0 (same env flakes as plan 005).
 
 ## STOP conditions
 

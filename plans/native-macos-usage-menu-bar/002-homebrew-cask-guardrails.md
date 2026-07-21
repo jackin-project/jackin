@@ -71,11 +71,18 @@ Document the exact check name that Plan 003 must require before merge. If the re
 
 ## Done criteria
 
-- [ ] Tap policy applies immutable URL/SHA and staged verification rules to casks.
-- [ ] A path-routed GitHub-hosted macOS workflow can fetch, inspect, install, launch, and uninstall the future cask without any write/Apple secret.
-- [ ] The workflow independently checks release sidecar, cask SHA, Developer ID/notarization, universal slices, plist identity, and macOS floor.
-- [ ] No placeholder cask, fake URL, fake checksum, tap token, or auto-merge is introduced.
+- [x] Tap policy applies immutable URL/SHA and staged verification rules to casks.
+- [x] A path-routed GitHub-hosted macOS workflow can fetch, inspect, install, launch, and uninstall the future cask without any write/Apple secret.
+- [x] The workflow independently checks release sidecar, cask SHA, Developer ID/notarization, universal slices, plist identity, and macOS floor.
+- [x] No placeholder cask, fake URL, fake checksum, tap token, or auto-merge is introduced.
 - [ ] Required-check ownership/configuration is documented for Plan 003, and the tap PR URL/merge SHA is reported to the jackin❯ program owner for index reconciliation.
+
+## Execution status (honest)
+
+- Tap branch `chore/native-cask-validation` commit `3af55b3`; open PR: https://github.com/jackin-project/homebrew-tap/pull/417
+- Required check name documented: `cask-validation / Cask validation`
+- Ruleset read-back: only `protect-main` + `protect-tags` active — **cask-validation is not yet a required check** (external ownership likely `jackin-github-terraform`)
+- **BLOCKED**: operator merge of homebrew-tap#417 + merge SHA + ruleset require-check for Plan 003
 
 ## STOP conditions
 

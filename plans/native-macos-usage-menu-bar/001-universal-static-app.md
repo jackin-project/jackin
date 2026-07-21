@@ -105,11 +105,18 @@ Update `native/README.md` to describe the static universal path, pinned tool pre
 
 - [x] One script assembles the local, PR, and future release app; there is no retained dylib packaging lane.
 - [x] Final executable contains arm64 and x86_64 and supports macOS 14; no FFI dylib/XCFramework/static archive ships inside the app.
-- [x] SwiftPM consumes the static XCFramework; Rust usage/FFI tests pass. Swift XCTest needs full Xcode (CLT-only hosts build the app path only).
-- [x] Version/build plist values are required, validated, and covered by `verify-usage-menu-bar-app.sh`.
-- [x] Required PR CI job `native-usage-menu-bar` runs the secret-free assembly/verifier path and is aggregated by `ci-required`.
-- [x] Bindings generation fails closed without pinned `uniffi-bindgen`; CI fails on tracked binding diffs.
-- [x] `shellcheck`, `actionlint`, verifier negative fixtures pass.
+- [ ] SwiftPM consumes the static XCFramework and all Rust/Swift tests pass.
+- [x] Version/build plist values are required, validated, and test-covered.
+- [ ] Required PR CI runs the exact secret-free assembly/verifier path and is aggregated by `CI Required`.
+- [x] Generated bindings remain reproducible with no tracked diff.
+- [ ] `shellcheck`, `actionlint`, docs audits, and `cargo xtask ci --fast` pass.
+
+## Execution status (honest)
+
+- Local assembly + verifier green (universal static app; no embedded dylib). Package.swift binaryTarget path.
+- **BLOCKED on gate**: `swift test -c release` (CLT-only host — no XCTest). Named input: **full Xcode** or green CI `native-usage-menu-bar`.
+- **BLOCKED on gate**: PR #816 CI `native-usage-menu-bar` + `CI Required` not yet green (runs cancelled/failed on latest push). Named input: **operator re-run / CI green on branch**.
+- shellcheck/actionlint: re-capture with exit codes in implementer dir.
 
 ## STOP conditions
 
