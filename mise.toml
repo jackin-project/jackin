@@ -16,6 +16,8 @@ cargo-binstall = "1.21.0"
 "cargo:cargo-mutants" = "27.1.0"
 "cargo:cargo-nextest" = "0.9.140"
 "cargo:cargo-shear" = "1.13.0"
+# Provides `uniffi-bindgen`; pin matches jackin-usage-ffi UniFFI (needs cli feature).
+"cargo:uniffi" = { version = "0.32.0", default-features = true, features = "cli" }
 "cargo:cargo-zigbuild" = "0.23.0"
 "cargo:codebook-lsp" = { version = "0.3.41", default-features = false }
 "cargo:sccache" = "0.16.0"

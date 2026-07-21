@@ -215,6 +215,18 @@ backend = "cargo:dylint-link"
 version = "0.16.0"
 backend = "cargo:sccache"
 
+[[tools."cargo:uniffi"]]
+version = "0.32.0"
+backend = "cargo:uniffi"
+
+[[tools."cargo:uniffi"]]
+version = "0.32.0"
+backend = "cargo:uniffi"
+
+[tools."cargo:uniffi".options]
+default-features = "true"
+features = "cli"
+
 [[tools.cosign]]
 version = "3.1.1"
 backend = "aqua:sigstore/cosign"

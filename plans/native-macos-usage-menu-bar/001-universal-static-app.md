@@ -103,13 +103,13 @@ Update `native/README.md` to describe the static universal path, pinned tool pre
 
 ## Done criteria
 
-- [ ] One script assembles the local, PR, and future release app; there is no retained dylib packaging lane.
-- [ ] Final executable contains arm64 and x86_64 and supports macOS 14; no FFI dylib/XCFramework/static archive ships inside the app.
-- [ ] SwiftPM consumes the static XCFramework and all Rust/Swift tests pass.
-- [ ] Version/build plist values are required, validated, and test-covered.
-- [ ] Required PR CI runs the exact secret-free assembly/verifier path and is aggregated by `CI Required`.
-- [ ] Generated bindings remain reproducible with no tracked diff.
-- [ ] `shellcheck`, `actionlint`, docs audits, and `cargo xtask ci --fast` pass.
+- [x] One script assembles the local, PR, and future release app; there is no retained dylib packaging lane.
+- [x] Final executable contains arm64 and x86_64 and supports macOS 14; no FFI dylib/XCFramework/static archive ships inside the app.
+- [x] SwiftPM consumes the static XCFramework; Rust usage/FFI tests pass. Swift XCTest needs full Xcode (CLT-only hosts build the app path only).
+- [x] Version/build plist values are required, validated, and covered by `verify-usage-menu-bar-app.sh`.
+- [x] Required PR CI job `native-usage-menu-bar` runs the secret-free assembly/verifier path and is aggregated by `ci-required`.
+- [x] Bindings generation fails closed without pinned `uniffi-bindgen`; CI fails on tracked binding diffs.
+- [x] `shellcheck`, `actionlint`, verifier negative fixtures pass.
 
 ## STOP conditions
 

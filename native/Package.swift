@@ -1,9 +1,8 @@
 // swift-tools-version: 6.0
 import PackageDescription
 
-let packageDir = Context.packageDirectory
-let cargoReleaseLibDir = packageDir + "/../target/release"
-
+// Static XCFramework produced by scripts/build-usage-xcframework.sh.
+// Binary target name must match UniFFI's jackin_usage_ffiFFI module.
 let package = Package(
     name: "JackinUsageMenuBar",
     platforms: [
@@ -14,20 +13,14 @@ let package = Package(
         .executable(name: "JackinUsageMenuBar", targets: ["JackinUsageMenuBar"]),
     ],
     targets: [
-        .systemLibrary(
+        .binaryTarget(
             name: "jackin_usage_ffiFFI",
-            path: "Generated"
+            path: "../target/xcframework/JackinUsageFFI.xcframework"
         ),
         .target(
             name: "JackinUsageBridge",
             dependencies: ["jackin_usage_ffiFFI"],
-            path: "Sources/JackinUsageBridge",
-            linkerSettings: [
-                .linkedLibrary("jackin_usage_ffi"),
-                .unsafeFlags([
-                    "-L\(cargoReleaseLibDir)",
-                ]),
-            ]
+            path: "Sources/JackinUsageBridge"
         ),
         .executableTarget(
             name: "JackinUsageMenuBar",

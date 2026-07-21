@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Generate UniFFI Swift bindings from the built jackin_usage_ffi library.
+# Requires pinned uniffi-bindgen on PATH (mise.toml: cargo:uniffi-bindgen).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -17,13 +18,22 @@ if [[ ! -f "$LIB" ]]; then
   exit 1
 fi
 
+if ! command -v uniffi-bindgen >/dev/null 2>&1; then
+  cat >&2 <<'EOF'
+error: uniffi-bindgen not on PATH.
+
+Install the workspace-pinned tool via mise (see mise.toml):
+  mise install
+  mise exec -- uniffi-bindgen --version
+
+Do not cargo-install ad-hoc; CI and local builds must use the same pin.
+EOF
+  exit 1
+fi
+
 mkdir -p "$OUT_DIR"
 
 echo "==> generating Swift bindings into $OUT_DIR"
-if ! command -v uniffi-bindgen >/dev/null 2>&1; then
-  echo "==> installing uniffi-bindgen 0.32.0"
-  cargo install uniffi-bindgen --version 0.32.0 --locked
-fi
 uniffi-bindgen generate --library "$LIB" --language swift --out-dir "$OUT_DIR"
 
 SOURCES_SWIFT="$ROOT/native/Sources/JackinUsageBridge"

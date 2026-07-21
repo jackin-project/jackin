@@ -89,4 +89,27 @@ final class ArchitectureTests: XCTestCase {
         XCTAssertEqual(statusBadgeSymbol("stale"), "clock")
         XCTAssertNil(statusBadgeSymbol("fresh"))
     }
+
+    func testPackageSwiftUsesBinaryTargetNotHostDylib() throws {
+        let package = sourcesRoot
+            .deletingLastPathComponent()
+            .appendingPathComponent("Package.swift")
+        let text = try String(contentsOf: package, encoding: .utf8)
+        XCTAssertTrue(
+            text.contains(".binaryTarget("),
+            "Package.swift must consume the static XCFramework via binaryTarget"
+        )
+        XCTAssertTrue(
+            text.contains("jackin_usage_ffiFFI"),
+            "binary target name must match UniFFI module jackin_usage_ffiFFI"
+        )
+        XCTAssertFalse(
+            text.contains("target/release"),
+            "Package.swift must not link host target/release dylib path"
+        )
+        XCTAssertFalse(
+            text.contains("linkedLibrary(\"jackin_usage_ffi\")"),
+            "Package.swift must not dynamically link libjackin_usage_ffi"
+        )
+    }
 }
