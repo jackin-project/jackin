@@ -5,6 +5,11 @@ use tempfile::tempdir;
 
 use super::{ToolchainConfig, mise_toolchain_at, valid_toolchain};
 
+fn executable(path: &std::path::Path, exit_code: u8) {
+    fs::write(path, format!("#!/bin/sh\nexit {exit_code}\n")).unwrap();
+    fs::set_permissions(path, fs::Permissions::from_mode(0o755)).unwrap();
+}
+
 #[test]
 fn toolchain_requires_both_rustc_and_cargo() {
     let config = ToolchainConfig {
@@ -16,14 +21,15 @@ fn toolchain_requires_both_rustc_and_cargo() {
     let bin = temp.path().join("bin");
     fs::create_dir_all(&bin).unwrap();
     let rustc = bin.join("rustc");
-    fs::write(&rustc, b"rustc").unwrap();
-    fs::set_permissions(&rustc, fs::Permissions::from_mode(0o755)).unwrap();
+    executable(&rustc, 0);
     assert!(!valid_toolchain(temp.path(), &config));
 
     let cargo = bin.join("cargo");
-    fs::write(&cargo, b"cargo").unwrap();
-    fs::set_permissions(&cargo, fs::Permissions::from_mode(0o755)).unwrap();
+    executable(&cargo, 0);
     assert!(valid_toolchain(temp.path(), &config));
+
+    executable(&cargo, 1);
+    assert!(!valid_toolchain(temp.path(), &config));
 }
 
 #[test]
@@ -38,8 +44,7 @@ fn mise_storage_uses_the_exact_pinned_version() {
     fs::create_dir_all(&bin).unwrap();
     for binary in ["rustc", "cargo"] {
         let path = bin.join(binary);
-        fs::write(&path, binary).unwrap();
-        fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
+        executable(&path, 0);
     }
 
     assert_eq!(

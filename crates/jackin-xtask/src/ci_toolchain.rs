@@ -3,7 +3,7 @@ use std::fs;
 use std::io::{self, Write};
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 use anyhow::{Context, Result, bail};
 use clap::{Args, Subcommand};
@@ -85,6 +85,7 @@ fn activate(version: &str, repair: bool) -> Result<()> {
     if !repair {
         bail!("prepared Rust toolchain {version} is unavailable; the warmup job must repair it");
     }
+    remove_incomplete_rustup_toolchains(version, &config)?;
     let mut install = Command::new("rustup");
     install.args(["toolchain", "install", version, "--profile", "minimal"]);
     if !config.components.is_empty() {
@@ -125,6 +126,12 @@ fn pinned_config() -> Result<ToolchainConfig> {
 }
 
 fn find_rustup_toolchain(version: &str, config: &ToolchainConfig) -> Result<Option<String>> {
+    let mut candidates = rustup_toolchain_candidates(version)?;
+    candidates.retain(|(_, path)| valid_toolchain(path, config));
+    Ok(candidates.pop().map(|(name, _)| name))
+}
+
+fn rustup_toolchain_candidates(version: &str) -> Result<Vec<(String, PathBuf)>> {
     let rustup_home = env::var_os("RUSTUP_HOME").map_or_else(
         || {
             env::var_os("HOME")
@@ -134,10 +141,10 @@ fn find_rustup_toolchain(version: &str, config: &ToolchainConfig) -> Result<Opti
         |path| Some(PathBuf::from(path)),
     );
     let Some(root) = rustup_home.map(|home| home.join("toolchains")) else {
-        return Ok(None);
+        return Ok(Vec::new());
     };
     if !root.is_dir() {
-        return Ok(None);
+        return Ok(Vec::new());
     }
     let suffix = format!("-{}", host_triple()?);
     let prefix = version.to_owned();
@@ -145,14 +152,24 @@ fn find_rustup_toolchain(version: &str, config: &ToolchainConfig) -> Result<Opti
         .into_iter()
         .filter_map(|entry| {
             let name = entry.file_name().into_string().ok()?;
-            (name.starts_with(&prefix)
-                && name.ends_with(&suffix)
-                && valid_toolchain(&entry.path(), config))
-            .then_some(name)
+            (name.starts_with(&prefix) && name.ends_with(&suffix)).then(|| (name, entry.path()))
         })
         .collect::<Vec<_>>();
-    candidates.sort_unstable();
-    Ok(candidates.pop())
+    candidates.sort_unstable_by(|left, right| left.0.cmp(&right.0));
+    Ok(candidates)
+}
+
+fn remove_incomplete_rustup_toolchains(version: &str, config: &ToolchainConfig) -> Result<()> {
+    for (name, path) in rustup_toolchain_candidates(version)? {
+        if valid_toolchain(&path, config) {
+            continue;
+        }
+        let mut uninstall = Command::new("rustup");
+        uninstall.args(["toolchain", "uninstall", &name]);
+        cmd::run_streaming(&mut uninstall)
+            .with_context(|| format!("removing incomplete Rust toolchain {name}"))?;
+    }
+    Ok(())
 }
 
 fn valid_toolchain(path: &Path, config: &ToolchainConfig) -> bool {
@@ -172,7 +189,15 @@ fn valid_toolchain(path: &Path, config: &ToolchainConfig) -> bool {
         let Ok(metadata) = fs::metadata(path.join("bin").join(binary)) else {
             return false;
         };
-        metadata.is_file() && metadata.permissions().mode() & 0o111 != 0
+        metadata.is_file()
+            && metadata.permissions().mode() & 0o111 != 0
+            && Command::new(path.join("bin").join(binary))
+                .arg("--version")
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status()
+                .is_ok_and(|status| status.success())
     }) && config
         .targets
         .iter()
