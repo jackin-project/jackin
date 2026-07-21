@@ -217,17 +217,11 @@ pub(crate) fn shared_usage_snapshots_dir() -> PathBuf {
 /// via bind mount). Best-effort optimization; cooldowns are the guarantee.
 /// Env override is for tests only.
 pub(crate) fn shared_usage_lock_dir() -> PathBuf {
-    env_dir_or_home(
-        "JACKIN_USAGE_LOCK_DIR",
-        ".jackin/data/usage-shared/locks",
-    )
+    env_dir_or_home("JACKIN_USAGE_LOCK_DIR", ".jackin/data/usage-shared/locks")
 }
 
 /// mtime of the account's shared snapshot file, if present.
-pub(crate) fn shared_usage_snapshot_mtime(
-    snapshots_dir: &Path,
-    key: &str,
-) -> Option<SystemTime> {
+pub(crate) fn shared_usage_snapshot_mtime(snapshots_dir: &Path, key: &str) -> Option<SystemTime> {
     fs::metadata(shared_usage_snapshot_path(snapshots_dir, key))
         .ok()
         .and_then(|meta| meta.modified().ok())

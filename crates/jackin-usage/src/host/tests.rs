@@ -188,9 +188,7 @@ fn inject_remaining(runtime: &mut HostUsageRuntime, surface_id: &str, remaining:
         limit_money: None,
         severity: UsageSeverity::Normal,
     }];
-    runtime
-        .inject_snapshot(surface_id, view)
-        .expect("inject");
+    runtime.inject_snapshot(surface_id, view).expect("inject");
 }
 
 #[test]
@@ -200,9 +198,7 @@ fn compact_status_bar_label_picks_highest_used_percent() {
     // Only claude + codex enabled.
     for surface in HostSurfaceId::ALL {
         let on = matches!(*surface, HostSurfaceId::Claude | HostSurfaceId::Codex);
-        runtime
-            .set_enabled(surface.id(), on)
-            .expect("enable set");
+        runtime.set_enabled(surface.id(), on).expect("enable set");
     }
     inject_remaining(&mut runtime, "claude", 50); // 50% used
     inject_remaining(&mut runtime, "codex", 18); // 82% used — worst
@@ -218,9 +214,7 @@ fn compact_status_bar_label_tie_keeps_all_order() {
     let mut runtime = open_runtime(dir.path());
     for surface in HostSurfaceId::ALL {
         let on = matches!(*surface, HostSurfaceId::Claude | HostSurfaceId::Codex);
-        runtime
-            .set_enabled(surface.id(), on)
-            .expect("enable set");
+        runtime.set_enabled(surface.id(), on).expect("enable set");
     }
     inject_remaining(&mut runtime, "claude", 40);
     inject_remaining(&mut runtime, "codex", 40);
@@ -248,9 +242,7 @@ fn compact_status_bar_label_empty_when_unavailable_or_disabled() {
 
     inject_remaining(&mut runtime, "codex", 10);
     for surface in HostSurfaceId::ALL {
-        runtime
-            .set_enabled(surface.id(), false)
-            .expect("disable");
+        runtime.set_enabled(surface.id(), false).expect("disable");
     }
     assert_eq!(
         runtime.compact_status_bar_label().expect("compact"),

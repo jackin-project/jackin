@@ -1161,10 +1161,9 @@ fn adopt_shared_snapshots_reseeds_when_shared_is_newer() {
     write_shared_usage_snapshot(snapshots_dir.path(), &account_key, &newer);
 
     let mut cache_b = UsageCache::default();
-    cache_b.snapshots.insert(
-        cache_key.clone(),
-        CachedUsage { view: older },
-    );
+    cache_b
+        .snapshots
+        .insert(cache_key.clone(), CachedUsage { view: older });
     cache_b.adopt_shared_snapshots(std::slice::from_ref(&target), snapshots_dir.path());
 
     let adopted = cache_b

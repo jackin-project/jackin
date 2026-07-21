@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+import JackinUsageBridge
+import SwiftUI
 import XCTest
 
 /// Static architecture checks: Swift tree must not grow provider probe logic.
@@ -83,8 +85,8 @@ final class ArchitectureTests: XCTestCase {
     }
 
     func testSeverityAndStatusBadgeMappings() {
-        XCTAssertEqual(severityTint("danger"), .red)
-        XCTAssertEqual(severityTint("warn"), .orange)
+        XCTAssertEqual(severityTint("danger"), Color.red)
+        XCTAssertEqual(severityTint("warn"), Color.orange)
         XCTAssertEqual(statusBadgeSymbol("error"), "exclamationmark.triangle")
         XCTAssertEqual(statusBadgeSymbol("stale"), "clock")
         XCTAssertNil(statusBadgeSymbol("fresh"))

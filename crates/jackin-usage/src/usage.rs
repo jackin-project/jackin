@@ -127,9 +127,9 @@ pub(crate) use self::refresh::{
     shared_usage_cooldown_dir, shared_usage_cooldown_marker_path, shared_usage_file_path,
     shared_usage_lock_dir, shared_usage_rate_limit_cooldown_active, shared_usage_snapshot_mtime,
     shared_usage_snapshot_path, shared_usage_snapshots_dir, usage_backoff_delay,
-    usage_error_is_rate_limited,
-    usage_error_is_unauthorized, usage_rate_limit_delay, write_materialized_usage_accounts,
-    write_shared_usage_cooldown_marker, write_shared_usage_snapshot,
+    usage_error_is_rate_limited, usage_error_is_unauthorized, usage_rate_limit_delay,
+    write_materialized_usage_accounts, write_shared_usage_cooldown_marker,
+    write_shared_usage_snapshot,
 };
 #[expect(
     unused_imports,
@@ -589,8 +589,7 @@ impl UsageCache {
             };
             #[cfg(test)]
             {
-                self.shared_snapshot_json_reads =
-                    self.shared_snapshot_json_reads.saturating_add(1);
+                self.shared_snapshot_json_reads = self.shared_snapshot_json_reads.saturating_add(1);
             }
             self.shared_snapshot_mtimes
                 .insert(account_key.clone(), mtime);
@@ -598,12 +597,7 @@ impl UsageCache {
         }
     }
 
-    fn insert_adopted_shared_view(
-        &mut self,
-        cache_key: String,
-        view: FocusedUsageView,
-        now: i64,
-    ) {
+    fn insert_adopted_shared_view(&mut self, cache_key: String, view: FocusedUsageView, now: i64) {
         match self.snapshots.entry(cache_key) {
             std::collections::hash_map::Entry::Vacant(entry) => {
                 jackin_telemetry::cache::decision(
