@@ -43,7 +43,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # Version policy compares the complete pull-request base range.
-          fetch-depth: 0
+          fetch-depth: 0 # required by pull-request version-range policy
       - name: Classify version-check inputs
         id: version-inputs
         uses: dorny/paths-filter@7b450fff21473bca461d4b92ce414b9d0420d706 # v4.0.2

@@ -60,7 +60,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # Result-reuse classification compares earlier source commits.
-          fetch-depth: 0
+          fetch-depth: 0 # required by result-reuse source comparison
 
       - name: Resolve Docs xtask contract
         id: docs-xtask-contract
@@ -779,7 +779,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # README freshness compares the pull request with its base branch.
-          fetch-depth: 0
+          fetch-depth: 0 # required by pull-request README comparison
       - uses: ./.github/actions/download-ci-xtask
         with:
           token: ${{ github.token }}
