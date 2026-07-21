@@ -107,19 +107,19 @@ Do not mark the roadmap complete or delete its page in this plan. Before landing
 
 ## Done criteria
 
-- [x] Release CI path signs the universal static app with the approved Developer ID, notarizes, staples, validates Gatekeeper, and packages only after stapling (**implemented**; first green **credentialed** publish still needs secrets below).
-- [x] Apple credentials are wired only on a GitHub-hosted macOS runner under environment `release-macos` and deleted before supply-chain tooling (**implemented** in `build-usage-menu-bar`).
-- [ ] Final ZIP and three file sidecars are immutable GitHub Release assets, its separate GitHub attestation record is discoverable, and `cargo xtask release-verify` passes after download. (**needs first publish**)
-- [x] Partial release/tap states reconcile independently; conflicting assets fail closed and no published ZIP is clobbered (**`release-usage-menu-bar-state.sh` + release job; validate run green**).
-- [x] Stable formula and cask advance in one independently checked tap PR; first cask is not auto-merged (**implemented** in homebrew job).
-- [x] Operator/contributor/release-verification/ADR docs are truthful; roadmap remains open only for the explicitly named first-cask/public-proof/no-write-rerun residuals.
-- [x] Targeted tests (`release_verify` ZIP fixtures), actionlint, shellcheck, docs brand, and branch `workflow_dispatch` **validate** mode pass (run [29826329509](https://github.com/jackin-project/jackin/actions/runs/29826329509)).
+- [ ] Release CI signs the universal static app with the approved Developer ID, notarizes, staples, validates Gatekeeper, and packages only after stapling. (workflow implemented; first credentialed publish not observed)
+- [ ] Apple credentials exist only on a GitHub-hosted macOS runner under approved governance and are deleted before supply-chain tooling. (workflow wired to env `release-macos`; secrets **not** provisioned — zero Apple keys in repo/org)
+- [ ] Final ZIP and three file sidecars are immutable GitHub Release assets, its separate GitHub attestation record is discoverable, and `cargo xtask release-verify` passes after download.
+- [x] Partial release/tap states reconcile independently; conflicting assets fail closed and no published ZIP is clobbered (fixtures + validate run [29826329509](https://github.com/jackin-project/jackin/actions/runs/29826329509)).
+- [ ] Stable formula and cask advance in one independently checked tap PR; first cask is not auto-merged. (job implemented; no published cask PR yet)
+- [x] Operator/contributor/release-verification/ADR docs describe the pipeline; roadmap residual names first-cask/public-proof.
+- [x] Secret-free `workflow_dispatch` **validate** mode, `release_verify` ZIP tests, offline state fixtures, actionlint pass.
 
 ## Execution status (honest)
 
-- **Engineering DONE** for everything software can own without Apple CA material: decisions recorded; sign-notarize hardened; validate/publish modes; menu-bar job; cask PR without auto-merge; offline reconciliation fixtures; docs; bootstrap script `scripts/bootstrap-release-macos-secrets.sh`.
-- **Secret-free validate mode: GREEN** (run 29826329509) — assembly, ad-hoc fails `RELEASE_MODE=1`, reconciliation read-only twice.
-- **Production bytes (ops activation, not architecture residual):** load secrets via bootstrap (Path A), cut non-dev version, `mode=publish`. No inventable substitute for Developer ID + notarytool `Accepted`.
+- **BLOCKED** (plan STOP: credentials listed in program README are not provisioned).
+- **Named operator input:** place secrets in GitHub environment **`release-macos`**: `DEVELOPER_ID_APPLICATION_P12_BASE64`, `DEVELOPER_ID_APPLICATION_P12_PASSWORD`, `APP_STORE_CONNECT_API_KEY_P8`, `APP_STORE_CONNECT_KEY_ID`, `APP_STORE_CONNECT_ISSUER_ID`; set repo variables `JACKIN_DEVELOPER_ID_TEAM_ID`, `JACKIN_DEVELOPER_ID_CERT_SHA256` (or use `scripts/bootstrap-release-macos-secrets.sh`). Then on **main** with a non-`*-dev` version: `gh workflow run release.yml -f mode=publish`.
+- Observed without secrets: validate run 29826329509 success; offline `scripts/test-release-usage-menu-bar-state.sh` ALL FIXTURES PASS.
 
 ## STOP conditions
 

@@ -88,8 +88,8 @@ Mark Plans 001–004 DONE, then follow the root `plans/README.md` convention: af
 
 ## Execution status (honest)
 
-- **Activation playbook ready** — evidence steps unchanged (download, `release-verify`, brew install/launch/uninstall both arches, no-write rerun, roadmap retirement).
-- Runs only after Path A/B first publish (see `native/README.md`). Until then residual is org Apple credentials + first non-dev tag, not missing design.
+- **BLOCKED** — plan dependency: “Run only after Plan 003 is merged, a real stable release exists, Plan 003's first cask PR passes independent checks, and the operator explicitly approves and merges that cask.”
+- **Named operator input:** complete plan 003 publish (Apple secrets + non-dev tag) and merge the first `jackin-usage-menu-bar` cask PR after `cask-validation`. Then re-run this plan’s evidence table.
 
 ## STOP conditions
 

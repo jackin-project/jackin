@@ -725,6 +725,7 @@ jobs:
           CAPSULE_ARM64_SHA256: ${{ needs.release.outputs.capsule_arm64_linux }}
           CAPSULE_X86_SHA256: ${{ needs.release.outputs.capsule_x86_linux }}
         run: |
+          # shellcheck disable=SC2016
           cat > homebrew-tap/Formula/jackin.rb <<EOF
           class Jackin < Formula
             desc "CLI for orchestrating autonomous AI coding agents in isolated sandboxed environments — reproducible, scoped, and fully under your control"
@@ -791,6 +792,7 @@ jobs:
           VERSION: ${{ needs.check-version.outputs.version }}
           APP_SHA256: ${{ needs.release.outputs.app_sha256 }}
         run: |
+          # shellcheck disable=SC2016
           set -euo pipefail
           if [[ -z "${APP_SHA256:-}" ]]; then
             echo "has_cask=false" >> "$GITHUB_OUTPUT"
@@ -803,7 +805,7 @@ jobs:
             version "${VERSION}"
             sha256 "${APP_SHA256}"
 
-            url "https://github.com/jackin-project/jackin/releases/download/v#{version}/jackin-usage-menu-bar-#{version}-universal-apple-darwin.zip"
+            url "https://github.com/jackin-project/jackin/releases/download/v${VERSION}/jackin-usage-menu-bar-${VERSION}-universal-apple-darwin.zip"
             name "jackin usage"
             desc "Native macOS menu bar for jackin agent usage quotas"
             homepage "https://github.com/jackin-project/jackin"
@@ -857,8 +859,8 @@ jobs:
             printf -- '- Release: https://github.com/jackin-project/jackin/releases/tag/v%s\n' "$VERSION"
             printf -- '- Formula + matching jackin-capsule Linux resources.\n'
             if [[ "$HAS_CASK" == "true" ]]; then
-              printf -- '- Cask `jackin-usage-menu-bar` (universal notarized ZIP).\n'
-              printf -- '- **First/structural cask: do not auto-merge** — operator approval required after cask-validation checks.\n'
+              printf -- '- Cask jackin-usage-menu-bar (universal notarized ZIP).\n'
+              printf -- '- First/structural cask: do not auto-merge — operator approval required after cask-validation checks.\n'
             fi
           } > "$body_file"
           existing_pr=$(gh pr list --head "$branch" --base main --json url --jq '.[0].url' || true)
