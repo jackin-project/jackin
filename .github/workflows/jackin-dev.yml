@@ -153,7 +153,7 @@ jobs:
     timeout-minutes: 5
     outputs:
       version: ${{ steps.version.outputs.version }}
-      runner-configs: ${{ (github.event_name == 'workflow_dispatch' && inputs.lanes == 'github') && '[{"lane":"GitHub","runner":"\"ubuntu-26.04\"","runner_os":"Linux","runner_arch":"X64"}]' || (github.event_name != 'workflow_dispatch' || inputs.lanes == 'velnor') && '[{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","runner_os":"Linux","runner_arch":"X64"}]' || '[{"lane":"GitHub","runner":"\"ubuntu-26.04\"","runner_os":"Linux","runner_arch":"X64"},{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","runner_os":"Linux","runner_arch":"X64"}]' }}
+      runner-configs: ${{ (github.event_name == 'workflow_dispatch' && inputs.lanes == 'both') && '[{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","runner_os":"Linux","runner_arch":"X64","writer":true},{"lane":"GitHub","runner":"\"ubuntu-26.04\"","runner_os":"Linux","runner_arch":"X64","writer":false}]' || (github.event_name == 'workflow_dispatch' && inputs.lanes == 'github') && '[{"lane":"GitHub","runner":"\"ubuntu-26.04\"","runner_os":"Linux","runner_arch":"X64","writer":true}]' || '[{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","runner_os":"Linux","runner_arch":"X64","writer":true}]' }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - id: version
@@ -296,7 +296,7 @@ jobs:
             cp -a "${target_dir}/cargo-timings/." target/cargo-timings/
           fi
       - name: Upload cargo timings
-        if: always()
+        if: always() && matrix.config.writer
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: cargo-timings-jackin-dev-${{ matrix.config.lane }}-${{ matrix.target.target }}
@@ -316,10 +316,12 @@ jobs:
           sha256sum "$archive" | awk '{print $1}' > "$archive.sha256"
           echo "archive=$archive" >> "$GITHUB_ENV"
       - name: Sign, SBOM, and attest archive
+        if: matrix.config.writer
         uses: ./.github/actions/sign-and-attest-archive
         with:
           archive: ${{ env.archive }}
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - if: matrix.config.writer
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: jackin-dev-${{ matrix.config.lane }}-${{ matrix.target.target }}
           path: |
@@ -331,7 +333,6 @@ jobs:
   publish:
     if: >-
       github.ref == 'refs/heads/main' &&
-      (github.event_name != 'workflow_dispatch' || inputs.lanes != 'velnor') &&
       needs.assert-version.outputs.published != 'true'
     needs: [version, assert-version, build]
     runs-on: ubuntu-26.04
@@ -344,7 +345,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          pattern: jackin-dev-GitHub-*
+          pattern: jackin-dev-*
           path: artifacts
           merge-multiple: true
       - name: Publish jackin-dev release

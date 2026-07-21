@@ -112,12 +112,18 @@ jobs:
       LOCAL_REGISTRY_IMAGE: projectjackin/construct
       MISE_DATA_DIR: ${{ matrix.config.mise_data_dir }}
       RUSTC_WRAPPER: sccache
+      RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
       SCCACHE_BASEDIRS: ${{ github.workspace }}
       SCCACHE_GHA_ENABLED: "false"
       SCCACHE_CACHE_SIZE: 20G
       RUSTUP_HOME: ${{ github.workspace }}/.ci-rustup
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: rui314/setup-mold@9c9c13bf4c3f1adef0cc596abc155580bcb04444 # v1.1.0
+      - uses: mozilla-actions/sccache-action@1583d6b38d7be47f593cb472781bbb21cab4321e # v0.0.10
+        with:
+          version: v0.16.0
+          disable_annotations: "false"
       - uses: ./.github/actions/download-ci-xtask
         with:
           token: ${{ github.token }}

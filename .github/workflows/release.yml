@@ -99,7 +99,7 @@ jobs:
     needs: [check-version]
     uses: ./.github/workflows/rust-nextest.yml
     with:
-      runner-configs-json: ${{ (github.event_name == 'workflow_dispatch' && inputs.lanes == 'github') && '[{"lane":"GitHub","runner":"\"ubuntu-26.04\"","mise_data_dir":"/home/runner/.local/share/mise"}]' || (github.event_name != 'workflow_dispatch' || inputs.lanes == 'velnor') && '[{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","mise_data_dir":"/opt/mise"}]' || '[{"lane":"GitHub","runner":"\"ubuntu-26.04\"","mise_data_dir":"/home/runner/.local/share/mise"},{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","mise_data_dir":"/opt/mise"}]' }}
+      runner-configs-json: ${{ (github.event_name == 'workflow_dispatch' && inputs.lanes == 'both') && '[{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","mise_data_dir":"/opt/mise"},{"lane":"GitHub","runner":"\"ubuntu-26.04\"","mise_data_dir":"/home/runner/.local/share/mise"}]' || (github.event_name == 'workflow_dispatch' && inputs.lanes == 'github') && '[{"lane":"GitHub","runner":"\"ubuntu-26.04\"","mise_data_dir":"/home/runner/.local/share/mise"}]' || '[{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","mise_data_dir":"/opt/mise"}]' }}
       all-features: false
     secrets: inherit
 
@@ -110,7 +110,7 @@ jobs:
       fail-fast: false
       max-parallel: 1
       matrix:
-        config: ${{ fromJSON((github.event_name == 'workflow_dispatch' && inputs.lanes == 'github') && '[{"lane":"GitHub","runner":"\"ubuntu-26.04\"","mise_data_dir":"/home/runner/.local/share/mise"}]' || (github.event_name != 'workflow_dispatch' || inputs.lanes == 'velnor') && '[{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","mise_data_dir":"/opt/mise"}]' || '[{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","mise_data_dir":"/opt/mise"},{"lane":"GitHub","runner":"\"ubuntu-26.04\"","mise_data_dir":"/home/runner/.local/share/mise"}]') }}
+        config: ${{ fromJSON((github.event_name == 'workflow_dispatch' && inputs.lanes == 'both') && '[{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","mise_data_dir":"/opt/mise","writer":true},{"lane":"GitHub","runner":"\"ubuntu-26.04\"","mise_data_dir":"/home/runner/.local/share/mise","writer":false}]' || (github.event_name == 'workflow_dispatch' && inputs.lanes == 'github') && '[{"lane":"GitHub","runner":"\"ubuntu-26.04\"","mise_data_dir":"/home/runner/.local/share/mise","writer":true}]' || '[{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","mise_data_dir":"/opt/mise","writer":true}]') }}
     runs-on: ${{ fromJSON(matrix.config.runner) }}
     timeout-minutes: 60
     concurrency:
@@ -194,16 +194,18 @@ jobs:
           --version "$VERSION"
           --archive-version "$VERSION"
       - name: Attest complete jackin archive set
+        if: matrix.config.writer
         uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
           subject-path: dist/*.tar.gz
       - name: Upload complete jackin archive set
+        if: matrix.config.writer
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-${{ matrix.config.lane }}-jackin
           path: dist/*.tar.gz*
       - name: Upload jackin cargo timings
-        if: always()
+        if: always() && matrix.config.writer
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: cargo-timings-release-jackin-${{ matrix.config.lane }}
@@ -238,7 +240,7 @@ jobs:
       fail-fast: false
       max-parallel: 1
       matrix:
-        config: ${{ fromJSON((github.event_name == 'workflow_dispatch' && inputs.lanes == 'github') && '[{"lane":"GitHub","runner":"\"ubuntu-26.04\"","mise_data_dir":"/home/runner/.local/share/mise"}]' || (github.event_name != 'workflow_dispatch' || inputs.lanes == 'velnor') && '[{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","mise_data_dir":"/opt/mise"}]' || '[{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","mise_data_dir":"/opt/mise"},{"lane":"GitHub","runner":"\"ubuntu-26.04\"","mise_data_dir":"/home/runner/.local/share/mise"}]') }}
+        config: ${{ fromJSON((github.event_name == 'workflow_dispatch' && inputs.lanes == 'both') && '[{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","mise_data_dir":"/opt/mise","writer":true},{"lane":"GitHub","runner":"\"ubuntu-26.04\"","mise_data_dir":"/home/runner/.local/share/mise","writer":false}]' || (github.event_name == 'workflow_dispatch' && inputs.lanes == 'github') && '[{"lane":"GitHub","runner":"\"ubuntu-26.04\"","mise_data_dir":"/home/runner/.local/share/mise","writer":true}]' || '[{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","mise_data_dir":"/opt/mise","writer":true}]') }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - name: Restore input-identical capsule release
@@ -296,16 +298,18 @@ jobs:
           --version "$VERSION"
           --archive-version "$VERSION"
       - name: Attest complete capsule archive set
+        if: matrix.config.writer
         uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
           subject-path: dist/*.tar.gz
       - name: Upload complete capsule archive set
+        if: matrix.config.writer
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-${{ matrix.config.lane }}-jackin-capsule
           path: dist/*.tar.gz*
       - name: Upload capsule cargo timings
-        if: always()
+        if: always() && matrix.config.writer
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: cargo-timings-release-capsule-${{ matrix.config.lane }}
@@ -315,7 +319,6 @@ jobs:
 
   release:
     if: >-
-      (github.event_name != 'workflow_dispatch' || inputs.lanes != 'velnor') &&
       needs.check-version.outputs.published != 'true'
     needs: [check-version, test, build, build-jackin-capsule]
     runs-on: ubuntu-26.04
@@ -337,7 +340,7 @@ jobs:
 
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          pattern: release-GitHub-*
+          pattern: release-*
           path: artifacts
           merge-multiple: true
 

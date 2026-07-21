@@ -47,7 +47,7 @@ jobs:
       construct_image: ${{ steps.dispatch.outputs.construct_image || steps.filter.outputs.construct_image }}
       registry-contract: ${{ steps.construct-result.outputs.registry-contract }}
       rustup-contract: ${{ steps.construct-result.outputs.rustup-contract }}
-      build-configs: ${{ (github.event_name == 'workflow_dispatch' && inputs.lanes == 'github') && '[{"lane":"GitHub","runner":"\"ubuntu-26.04\"","runner_os":"Linux","runner_arch":"X64","platform":"amd64"},{"lane":"GitHub","runner":"\"ubuntu-26.04-arm\"","runner_os":"Linux","runner_arch":"ARM64","platform":"arm64"}]' || (github.event_name != 'workflow_dispatch' || inputs.lanes == 'velnor') && '[{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","runner_os":"Linux","runner_arch":"X64","platform":"amd64"}]' || '[{"lane":"GitHub","runner":"\"ubuntu-26.04\"","runner_os":"Linux","runner_arch":"X64","platform":"amd64"},{"lane":"GitHub","runner":"\"ubuntu-26.04-arm\"","runner_os":"Linux","runner_arch":"ARM64","platform":"arm64"},{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","runner_os":"Linux","runner_arch":"X64","platform":"amd64"}]' }}
+      build-configs: ${{ (github.event_name == 'workflow_dispatch' && inputs.lanes == 'both') && '[{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","runner_os":"Linux","runner_arch":"X64","platform":"amd64","writer":true},{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","runner_os":"Linux","runner_arch":"X64","platform":"arm64","writer":true},{"lane":"GitHub","runner":"\"ubuntu-26.04\"","runner_os":"Linux","runner_arch":"X64","platform":"amd64","writer":false},{"lane":"GitHub","runner":"\"ubuntu-26.04-arm\"","runner_os":"Linux","runner_arch":"ARM64","platform":"arm64","writer":false}]' || (github.event_name == 'workflow_dispatch' && inputs.lanes == 'github') && '[{"lane":"GitHub","runner":"\"ubuntu-26.04\"","runner_os":"Linux","runner_arch":"X64","platform":"amd64","writer":true},{"lane":"GitHub","runner":"\"ubuntu-26.04-arm\"","runner_os":"Linux","runner_arch":"ARM64","platform":"arm64","writer":true}]' || '[{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","runner_os":"Linux","runner_arch":"X64","platform":"amd64","writer":true},{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","runner_os":"Linux","runner_arch":"X64","platform":"arm64","writer":true}]' }}
       lane-configs: ${{ (github.event_name == 'workflow_dispatch' && inputs.lanes == 'github') && '[{"lane":"GitHub","runner":"\"ubuntu-26.04\"","runner_os":"Linux","runner_arch":"X64"}]' || (github.event_name != 'workflow_dispatch' || inputs.lanes == 'velnor') && '[{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","runner_os":"Linux","runner_arch":"X64"}]' || '[{"lane":"GitHub","runner":"\"ubuntu-26.04\"","runner_os":"Linux","runner_arch":"X64"},{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","runner_os":"Linux","runner_arch":"X64"}]' }}
       # Single source of truth for "should this run produce / publish
       # registry artifacts" — true on push-to-main and on
@@ -281,7 +281,7 @@ jobs:
         run: mise run construct-init-buildx
 
       - name: Build ${{ matrix.config.platform }} without push
-        if: matrix.config.lane != 'GitHub' || needs.changes.outputs.is_publish != 'true' || needs.changes.outputs.construct_image != 'true'
+        if: matrix.config.writer != true || needs.changes.outputs.is_publish != 'true' || needs.changes.outputs.construct_image != 'true'
         env:
           # Both runner lanes restore the same durable cache written by main.
           # Persistent BuildKit state on Velnor remains a transparent local
@@ -290,24 +290,24 @@ jobs:
         run: mise run construct-build-platform ${{ matrix.config.platform }}
 
       - name: Push ${{ matrix.config.platform }} image by digest
-        if: matrix.config.lane == 'GitHub' && needs.changes.outputs.is_publish == 'true' && needs.changes.outputs.construct_image == 'true'
+        if: matrix.config.writer && needs.changes.outputs.is_publish == 'true' && needs.changes.outputs.construct_image == 'true'
         env:
           CACHE_FROM: type=registry,ref=${{ env.REGISTRY_IMAGE }}:buildcache-${{ matrix.config.platform }}
           CACHE_TO: type=registry,ref=${{ env.REGISTRY_IMAGE }}:buildcache-${{ matrix.config.platform }},mode=max
         run: mise run construct-push-platform ${{ matrix.config.platform }}
 
       - name: Upload ${{ matrix.config.platform }} digest
-        if: matrix.config.lane == 'GitHub' && needs.changes.outputs.is_publish == 'true' && needs.changes.outputs.construct_image == 'true'
+        if: matrix.config.writer && needs.changes.outputs.is_publish == 'true' && needs.changes.outputs.construct_image == 'true'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: construct-digest-GitHub-${{ matrix.config.platform }}
+          name: construct-digest-${{ matrix.config.lane }}-${{ matrix.config.platform }}
           path: ${{ env.DIGEST_DIR }}/${{ matrix.config.platform }}.digest
           if-no-files-found: error
           retention-days: 1
 
   publish-manifest:
     name: publish manifest
-    if: (github.event_name != 'workflow_dispatch' || inputs.lanes != 'velnor') && needs.changes.outputs.is_publish == 'true' && needs.changes.outputs.construct_image == 'true'
+    if: needs.changes.outputs.is_publish == 'true' && needs.changes.outputs.construct_image == 'true'
     needs: [changes, build]
     runs-on: ubuntu-26.04
     timeout-minutes: 60
@@ -358,7 +358,7 @@ jobs:
       - name: Download platform digests
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          pattern: construct-digest-GitHub-*
+          pattern: construct-digest-*
           path: ${{ env.DIGEST_DIR }}
           merge-multiple: true
 
