@@ -1,8 +1,8 @@
 ---
-title: "Native macOS agent-usage menu bar"
+title: "jackin❯ Desktop — native macOS usage status bar"
 ---
 
-**Status**: Engineering complete — host library, UniFFI, menu-bar shell, CLI, operator guide, host-global usage cache, Tahoe design, arm64 static PR gate, release **validate** path + cask PR automation; **activation residual**: first notarized ZIP on first non-dev release after Apple secrets in `release-macos` (see `native/README.md` Paths A–C)
+**Status**: Menu-bar engineering complete — host library, UniFFI, menu-bar shell, CLI, operator guide, host-global usage cache, Tahoe design, arm64 static PR gate, release **validate** path + cask PR automation; **activation residual**: first notarized ZIP on first non-dev release after Apple secrets in `release-macos` (see `native/README.md` Paths A–C). **Direction (operator, 2026-07-22)**: the app becomes **jackin❯ Desktop** — the first native macOS application, status-bar only in v1 — per the product spec below.
 
 **Operator guide**: [macOS agent-usage menu bar](/guides/macos-usage-menu-bar/)
 
@@ -15,6 +15,74 @@ title: "Native macOS agent-usage menu bar"
 - [CodexBar](https://github.com/steipete/codexbar) — status-item and popover UX conventions: template meter icon, per-window bars with reset countdowns, honest stale/error dimming, quota-threshold semantics
 - [OpenUsage](https://github.com/robinebers/openusage) — native app architecture conventions: stale-while-revalidate snapshot cache, error-never-overwrites-last-good triad, centralized Liquid Glass availability fallbacks, one normalized engine feeding several read surfaces
 - [TableRock native macOS path](https://github.com/tailrocks/tablerock/blob/main/docs/architecture/native-macos-path.md) — UniFFI architecture reference
+
+A second, deeper clean-room concept review of both references was recorded on 2026-07-22 and drives the adopt/adapt/reject matrix in the product spec below.
+
+## jackin❯ Desktop — product spec (v1: status bar only)
+
+The shipped menu-bar engineering is the seed of **jackin❯ Desktop**, our first native macOS application. v1 stays deliberately small: `LSUIElement`, no Dock icon, no main window — one status item, its popover, and Settings. Its single job is a **status-bar view of subscription usage** for the providers jackin❯ supports: exactly what the Capsule usage dialog shows in-session, always visible on the host without an open Capsule.
+
+Two invariants govern every element below:
+
+1. **Capsule parity.** The popover renders the same `FocusedUsageView` / `QuotaBucketView` DTOs the Capsule usage dialog consumes — same percentages, same pace and reset strings, same severity accents, same status words (`fresh` / `stale` / `needs login` / `needs secret` / `unsupported` / `unavailable` / `error`). If jackin❯ Desktop and the Capsule ever disagree on a number, that is a bug by definition.
+2. **Rust-first.** Every displayed value is produced by the existing agent-status stack — `jackin-usage` (`HostUsageRuntime`, view shaping) and `jackin-protocol` DTOs — crossing UniFFI as finished strings and scalars. A new display need is first an extension of the Rust view-model plus an FFI export, then a Swift rendering of it. Swift never computes percentages, pacing, severity, thresholds, or label text (ADR-011).
+
+### Identity (supersedes program operator decision 1 of 2026-07-21)
+
+| Field | Was | Becomes |
+|---|---|---|
+| Product name (prose, marketing, docs) | jackin❯ usage menu bar | **jackin❯ Desktop** |
+| macOS app label (`CFBundleName`, Finder) | `jackin usage` | `Jackin Desktop` |
+| App bundle / executable | `JackinUsageMenuBar.app` / `JackinUsageMenuBar` | `JackinDesktop.app` / `JackinDesktop` |
+| Bundle identifier | `com.jackin-project.usage-menu-bar` | `com.jackin-project.desktop` |
+| Homebrew cask token | `jackin-usage-menu-bar` | `jackin-desktop` |
+| Release asset | `jackin-usage-menu-bar-<VERSION>-aarch64-apple-darwin.zip` | `jackin-desktop-<VERSION>-aarch64-apple-darwin.zip` |
+
+The rename lands **before** the first notarized publish. Plan 003 activation is still blocked on Apple secrets, so no published ZIP, cask, or installed user carries the old identity — renaming now is a pure pre-release change (SwiftPM product, build/sign/verify scripts, CI workflows, tap cask, operator guide, ADR distribution section in one PR). Waiting until after activation would burn a version and ship a dead-name cask.
+
+### Status bar surface
+
+The status item is the product; the popover is detail. Display modes are Settings-selectable and every string is Rust-shaped:
+
+| Mode | Status item shows | Rust source |
+|---|---|---|
+| Icon only | Template gauge glyph; dims to 0.45 opacity when every enabled surface is degraded | shipped |
+| Focus percent (default, shipped) | `Cl 63%` — the enabled surface with the least remaining, as `compact_prefix` + used percent | `jackin_usage::host::compact_status_bar_label` |
+| Pinned surface | Operator pins one surface; the number tracks it only (`Cx 41%`) | new FFI accessor over the existing per-surface status-bar views |
+| Multi-surface strip | Worst-first, capped (default 3): `Cl 63% · Cx 41% · ZA 12%` | new Rust `compact` list variant + FFI export |
+
+Compact prefixes are the shipped `HostSurfaceId` set: `Cl` Claude, `Cx` Codex, `Am` Amp, `Gr` Grok Build, `ZA` GLM / Z.AI, `Ki` Kimi, `MM` MiniMax, `OC` OpenCode.
+
+Cross-cutting status-item behavior:
+
+- **Depleted shows reset, not a dead number**: when the driving bucket hits 0% remaining the item swaps to Rust-provided reset text (`Cl resets 1h 21m`). New Rust format branch, no Swift arithmetic.
+- **Used ↔ left** and **countdown ↔ exact clock** flips: global format flags resolved inside Rust view shaping (one flag set can later feed Capsule and CLI identically); Swift only persists the preference and passes it across FFI.
+- **Never invent numbers**: a surface without a numeric remaining renders no percent; degraded surfaces dim — they never disappear, freeze silently, or show a stale value as fresh (shipped invariant).
+- **Screen-share privacy** (optional, off by default): while macOS reports active screen capture, the item collapses to the bare icon. Pure Swift OS integration — the one class of logic Swift is allowed to own.
+
+### Popover — Capsule usage dialog, as a native panel
+
+1. **Overview strip** — one line per enabled surface from `FocusedUsageView.tabs` (`Claude · Session 37% left · Resets in 1h 21m`); click scrolls to that card. Mirrors the Capsule Overview tab.
+2. **Surface cards** (shipped, extended) — per enabled surface: provider label + status badge; account identity line (email, plan, credential origin such as `OAuth · keychain`); one capacity gauge per quota bucket with `{remaining}% left` (money windows show `{used}% used` plus `Monthly cap` / `Budget` lines), pace label (`On pace` / `{n}% in reserve` / `{n}% in deficit`), and reset countdown with exact local time; last error rendered in place while last-good buckets stay visible; stale/error badges never hide data.
+3. **Footer** (shipped) — updated label, force Refresh (global and per surface via the existing forced-refresh path), Settings, Quit.
+
+Field for field, the cards match the Capsule Provider tab rows (Provider, Account, Username, Plan, Auth, Status, Updated, quota buckets, error detail). The popover adds no field the Rust view-model does not already carry.
+
+Provider scope stays frozen: `HostSurfaceId::ALL` — Claude, Codex, Amp, Grok Build, GLM / Z.AI, Kimi, MiniMax, OpenCode. New agents appear when the Rust enums grow, never through app-side additions.
+
+### Alerts (v1.x, after the rename)
+
+Alert policy computes in Rust from fields the views already carry (remaining percent, severity, pace, reset epoch); Swift is only the notification presenter. All triggers default off. Planned set: threshold crossed (warn/danger severity transitions), depleted, pace run-out (pace already emits `{n}% in deficit` when the window is projected to exhaust before reset), and reset restored. Alerts dedupe while a condition holds, re-arm on recovery, and never fire from unreadable surfaces.
+
+### Concept adoption (clean-room, from the references above)
+
+- **Adopted** (already ours or specified above): template meter icon; honest stale/error dimming; last-good data never overwritten by a failed refresh; reset countdown with exact-time flip; used/left flip; depleted-shows-reset; launch at login; per-surface enable toggles; screen-share hide; threshold / depleted / pace-run-out notification triple.
+- **Rejected** (permanent unless a future ADR reopens): provider zoo beyond jackin❯ surfaces; Swift-side probes or any browser-cookie / web-scrape credential source; plugin systems; multiple status items (jackin❯ Desktop keeps exactly one); menu-bar layout token editors; WidgetKit widgets; Sparkle (cask-only stands); app-embedded HTTP servers or CLI companions — `jackin usage host snapshot` already serves the same shared cache; analytics/telemetry SDKs.
+- **Deferred until Rust models them first**: multi-account cards; spend/usage history charts (needs the durable snapshot store recorded in ADR-011); cross-device sync.
+
+### Beyond the status bar (explicitly not v1)
+
+jackin❯ Desktop is the umbrella for future host-native surfaces — candidates include live focus push via the [jackin❯ daemon](/roadmap/jackin-daemon/) and [agent attention prompts](/roadmap/agent-attention-prompts/). Each future surface lands as its own roadmap item; v1 ships the usage status bar and nothing else.
 
 ## Shipped
 
@@ -44,6 +112,13 @@ Template status-item icon + optional Rust `compact_status_bar_label` monospaced 
 3. **Activation residual (ops, not open architecture work):** load secrets via <RepoFile path="scripts/bootstrap-release-macos-secrets.sh" />, cut first non-dev version, `mode=publish`, merge first cask after validation, then clean-install proof (004). Paths A–C in `native/README.md`.
 4. Optional later: Sparkle (cask-only is acceptable).
 
+### 4. jackin❯ Desktop v1 (product spec above) — **open**
+
+1. Identity rename to jackin❯ Desktop across SwiftPM product, scripts, CI, tap cask, operator guide, ADR distribution section — **before** the first notarized publish.
+2. Status-item display modes: pinned surface, multi-surface strip, depleted-shows-reset — each as a Rust view/FFI extension plus a Settings picker.
+3. Popover overview strip from `FocusedUsageView.tabs`; used/left and countdown/clock format flags resolved in Rust.
+4. v1.x alerts: Rust-computed policy (threshold / depleted / pace run-out / reset restored), Swift presenter only.
+
 ## Architecture (frozen)
 
 ```text
@@ -70,6 +145,10 @@ Swift must not own HTTP/RPC/OAuth/CLI probes or non-jackin❯ providers. Scope: 
 - [x] Universal static app assembly + PR gate (plan 001); tap cask-validation without write credentials (plan 002)
 - [x] Notarized release **pipeline** + secret-free validate + cask PR automation (plan 003 engineering)
 - [ ] **Activation:** first notarized public ZIP + operator-merged first cask + dual-arch clean install (ops after `release-macos` secrets; plan 004)
+- [ ] jackin❯ Desktop identity rename (pre-publish; supersedes program decision 1)
+- [ ] Status-item display modes (pinned surface, multi-surface strip, depleted-shows-reset) as Rust view/FFI extensions
+- [ ] Popover overview strip + Rust-resolved used/left and countdown/clock format flags
+- [ ] v1.x alert notifications (Rust policy, Swift presenter)
 
 ## Related work
 
