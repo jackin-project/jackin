@@ -26,7 +26,7 @@ const _: fn() -> FakeRunner = fake_runner_usage_marker;
 
 /// Install the test stub for `jackin-capsule` so integration tests skip the download.
 ///
-/// `cargo test` of the lib uses `cfg!(test)` for the same purpose;
+/// The library unit-test build uses `cfg!(test)` for the same purpose;
 /// integration tests need to call this explicitly because `cfg(test)`
 /// only affects the lib when compiled for the lib's own test target.
 pub fn install_capsule_binary_stub(paths: &JackinPaths) {

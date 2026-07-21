@@ -66,7 +66,7 @@ jobs:
               ;;
           esac
 
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ steps.source.outputs.sha }}
           # Preview result reuse compares the prior published source commit.
@@ -280,7 +280,7 @@ jobs:
       matrix:
         config: ${{ fromJSON((github.event_name == 'workflow_dispatch' && inputs.lanes == 'github') && '[{"lane":"GitHub","runner":"\"ubuntu-26.04\"","mise_data_dir":"/home/runner/.local/share/mise"}]' || (github.event_name != 'workflow_dispatch' || inputs.lanes == 'velnor') && '[{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","mise_data_dir":"/opt/mise"}]' || '[{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","mise_data_dir":"/opt/mise"},{"lane":"GitHub","runner":"\"ubuntu-26.04\"","mise_data_dir":"/home/runner/.local/share/mise"}]') }}
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.source-changed.outputs.sha }}
       - name: Restore input-identical jackin archive set
@@ -392,7 +392,7 @@ jobs:
       matrix:
         config: ${{ fromJSON((github.event_name == 'workflow_dispatch' && inputs.lanes == 'github') && '[{"lane":"GitHub","runner":"\"ubuntu-26.04\"","mise_data_dir":"/home/runner/.local/share/mise"}]' || (github.event_name != 'workflow_dispatch' || inputs.lanes == 'velnor') && '[{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","mise_data_dir":"/opt/mise"}]' || '[{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","mise_data_dir":"/opt/mise"},{"lane":"GitHub","runner":"\"ubuntu-26.04\"","mise_data_dir":"/home/runner/.local/share/mise"}]') }}
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.source-changed.outputs.sha }}
       - name: Restore input-identical capsule archive set
@@ -518,7 +518,7 @@ jobs:
       contents: write
       id-token: write
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.source-changed.outputs.sha }}
           # Publishing verifies source ancestry before updating the formula.
@@ -596,7 +596,7 @@ jobs:
           --sha "$SHA"
           --assets artifacts
 
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: jackin-project/homebrew-tap
           ref: main

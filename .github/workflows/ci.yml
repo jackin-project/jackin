@@ -57,7 +57,7 @@ jobs:
       policy-result-name: ${{ steps.policy-result.outputs.name }}
       runner-configs: ${{ (github.event_name == 'workflow_dispatch' && inputs.lanes == 'both') && '[{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","runner_os":"Linux","runner_arch":"X64","mise_data_dir":"/opt/mise","cache_writer":true,"artifact_writer":true},{"lane":"GitHub","runner":"\"ubuntu-26.04\"","runner_os":"Linux","runner_arch":"X64","mise_data_dir":"/home/runner/.local/share/mise","cache_writer":false,"artifact_writer":false}]' || (github.event_name == 'workflow_dispatch' && inputs.lanes == 'github') && '[{"lane":"GitHub","runner":"\"ubuntu-26.04\"","runner_os":"Linux","runner_arch":"X64","mise_data_dir":"/home/runner/.local/share/mise","cache_writer":true,"artifact_writer":true}]' || '[{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","runner_os":"Linux","runner_arch":"X64","mise_data_dir":"/opt/mise","cache_writer":true,"artifact_writer":true}]' }}
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # Result-reuse classification compares earlier source commits.
           fetch-depth: 0
@@ -433,7 +433,7 @@ jobs:
     timeout-minutes: 60
     name: actionlint (${{ matrix.config.lane }})
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
         with:
           version: "2026.7.7"
@@ -460,7 +460,7 @@ jobs:
       CARGO_TERM_COLOR: always
       RUSTUP_HOME: ${{ github.workspace }}/.ci-rustup
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/download-ci-xtask
         with:
           token: ${{ github.token }}
@@ -505,9 +505,9 @@ jobs:
       SCCACHE_GHA_ENABLED: "false"
       SCCACHE_CACHE_SIZE: 20G
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: rui314/setup-mold@9c9c13bf4c3f1adef0cc596abc155580bcb04444 # v1.1.0
-      - uses: mozilla-actions/sccache-action@1583d6b38d7be47f593cb472781bbb21cab4321e # v0.0.10
+      - uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
         with:
           version: v0.16.0
           disable_annotations: "false"
@@ -658,7 +658,7 @@ jobs:
       reused-packages: ${{ steps.select.outputs.reused-packages }}
       target-results: ${{ steps.select.outputs.target-results }}
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/download-ci-xtask
         with:
           token: ${{ github.token }}
@@ -695,7 +695,7 @@ jobs:
     timeout-minutes: 60
     name: schema-check (${{ matrix.config.lane }})
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/download-ci-xtask
         with:
           token: ${{ github.token }}
@@ -719,7 +719,7 @@ jobs:
     timeout-minutes: 60
     name: file-size ratchet gate (${{ matrix.config.lane }})
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/download-ci-xtask
         with:
           token: ${{ github.token }}
@@ -776,7 +776,7 @@ jobs:
     name: README freshness (advisory) (${{ matrix.config.lane }})
     continue-on-error: true
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # README freshness compares the pull request with its base branch.
           fetch-depth: 0
@@ -818,7 +818,7 @@ jobs:
       CARGO_TERM_COLOR: always
       RUSTUP_HOME: ${{ github.workspace }}/.ci-rustup
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/download-ci-xtask
         with:
           token: ${{ github.token }}
@@ -889,9 +889,9 @@ jobs:
       SCCACHE_GHA_ENABLED: "false"
       SCCACHE_CACHE_SIZE: 20G
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: rui314/setup-mold@9c9c13bf4c3f1adef0cc596abc155580bcb04444 # v1.1.0
-      - uses: mozilla-actions/sccache-action@1583d6b38d7be47f593cb472781bbb21cab4321e # v0.0.10
+      - uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
         with:
           version: v0.16.0
           disable_annotations: "false"
@@ -926,7 +926,7 @@ jobs:
       CARGO_TERM_COLOR: always
       RUSTUP_HOME: ${{ github.workspace }}/.ci-rustup
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/download-ci-xtask
         with:
           token: ${{ github.token }}
@@ -981,7 +981,7 @@ jobs:
     runs-on: ubuntu-26.04
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/aggregate-needs
         with:
           needs-json: ${{ toJSON(needs) }}

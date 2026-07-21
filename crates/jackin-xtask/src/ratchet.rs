@@ -751,7 +751,7 @@ fn measure_export_volume_measured(root: &Path) -> Result<BTreeMap<String, usize>
     }
     let text = fs::read_to_string(&artifact).with_context(|| {
         format!(
-            "reading measured volume at {} — run `cargo test -p jackin-diagnostics --all-features conformance_export_volume` first",
+            "reading measured volume at {} — run `cargo nextest run -p jackin-diagnostics --all-features -E 'test(conformance_export_volume)'` first",
             artifact.display()
         )
     })?;
