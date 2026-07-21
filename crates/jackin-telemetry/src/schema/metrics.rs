@@ -386,6 +386,7 @@ pub const CLI_DURATION_DEF: super::MetricMetadata = super::MetricMetadata {
                 "prune.system",
                 "usage.accounts",
                 "usage.verify",
+                "usage.snapshot",
             ],
         },
         super::AttributeRequirement {
@@ -499,6 +500,7 @@ pub const CLI_FAILURES_DEF: super::MetricMetadata = super::MetricMetadata {
                 "prune.system",
                 "usage.accounts",
                 "usage.verify",
+                "usage.snapshot",
             ],
         },
         super::AttributeRequirement {
@@ -612,6 +614,7 @@ pub const CLI_INVOCATIONS_DEF: super::MetricMetadata = super::MetricMetadata {
                 "prune.system",
                 "usage.accounts",
                 "usage.verify",
+                "usage.snapshot",
             ],
         },
         super::AttributeRequirement {

@@ -12,8 +12,8 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use jackin_core::Agent;
-use jackin_protocol::control::FocusedUsageView;
 use jackin_protocol::Provider;
+use jackin_protocol::control::FocusedUsageView;
 
 use crate::usage::{UsageCache, UsageRefreshTarget};
 
@@ -311,8 +311,8 @@ impl HostUsageRuntime {
     /// Enable or disable a surface for bar + refresh set.
     pub fn set_enabled(&mut self, surface_id: &str, enabled: bool) -> Result<(), String> {
         self.require_open()?;
-        let surface =
-            HostSurfaceId::from_id(surface_id).ok_or_else(|| format!("unknown surface: {surface_id}"))?;
+        let surface = HostSurfaceId::from_id(surface_id)
+            .ok_or_else(|| format!("unknown surface: {surface_id}"))?;
         if enabled {
             self.enabled.insert(surface.id().to_owned());
         } else {
@@ -342,14 +342,15 @@ impl HostUsageRuntime {
         view: FocusedUsageView,
     ) -> Result<(), String> {
         self.require_open()?;
-        let surface =
-            HostSurfaceId::from_id(surface_id).ok_or_else(|| format!("unknown surface: {surface_id}"))?;
-        self.cache.insert_snapshot_for_test(
-            surface.agent_slug(),
-            surface.provider_label(),
-            view,
+        let surface = HostSurfaceId::from_id(surface_id)
+            .ok_or_else(|| format!("unknown surface: {surface_id}"))?;
+        self.cache
+            .insert_snapshot_for_test(surface.agent_slug(), surface.provider_label(), view);
+        self.push_event(
+            "snapshot_updated",
+            Some(surface.id()),
+            Some("injected".to_owned()),
         );
-        self.push_event("snapshot_updated", Some(surface.id()), Some("injected".to_owned()));
         Ok(())
     }
 
@@ -360,9 +361,7 @@ impl HostUsageRuntime {
     /// Refresh / Settings), the floor is bypassed and targets are marked due.
     pub fn refresh(&mut self, surface_id: Option<&str>, force: bool) -> Result<(), String> {
         self.require_open()?;
-        if !force
-            && let Some(last) = self.last_refresh
-        {
+        if !force && let Some(last) = self.last_refresh {
             let floor = Duration::from_secs(self.refresh_floor_secs);
             if last.elapsed() < floor {
                 return Ok(());
@@ -373,19 +372,14 @@ impl HostUsageRuntime {
         for target in &targets {
             self.cache.request_account_refresh(target, now);
         }
-        self.cache.refresh_active_account_snapshots(
-            &targets,
-            None,
-            &self.provider_keys,
-            now,
-        );
+        self.cache
+            .refresh_active_account_snapshots(&targets, None, &self.provider_keys, now);
         self.last_refresh = Some(now);
         for target in &targets {
             let surface = surface_for_target(target);
-            let view = self.cache.focused_snapshot(
-                Some(&target.agent),
-                target.provider.as_deref(),
-            );
+            let view = self
+                .cache
+                .focused_snapshot(Some(&target.agent), target.provider.as_deref());
             let kind = if view.last_error.is_some()
                 && matches!(
                     view.status,
@@ -398,7 +392,11 @@ impl HostUsageRuntime {
             } else {
                 "snapshot_updated"
             };
-            self.push_event(kind, surface.map(HostSurfaceId::id), view.last_error.clone());
+            self.push_event(
+                kind,
+                surface.map(HostSurfaceId::id),
+                view.last_error.clone(),
+            );
         }
         Ok(())
     }
@@ -428,8 +426,8 @@ impl HostUsageRuntime {
     /// Cached snapshot for one surface (honest refreshing/unavailable).
     pub fn snapshot(&mut self, surface_id: &str) -> Result<FocusedUsageView, String> {
         self.require_open()?;
-        let surface =
-            HostSurfaceId::from_id(surface_id).ok_or_else(|| format!("unknown surface: {surface_id}"))?;
+        let surface = HostSurfaceId::from_id(surface_id)
+            .ok_or_else(|| format!("unknown surface: {surface_id}"))?;
         if !self.enabled.contains(surface.id()) {
             return Err(format!("surface disabled: {surface_id}"));
         }
@@ -441,8 +439,8 @@ impl HostUsageRuntime {
     /// Compact bar label for one enabled surface, if known.
     pub fn status_bar_label(&mut self, surface_id: &str) -> Result<Option<String>, String> {
         self.require_open()?;
-        let surface =
-            HostSurfaceId::from_id(surface_id).ok_or_else(|| format!("unknown surface: {surface_id}"))?;
+        let surface = HostSurfaceId::from_id(surface_id)
+            .ok_or_else(|| format!("unknown surface: {surface_id}"))?;
         if !self.enabled.contains(surface.id()) {
             return Ok(None);
         }
@@ -532,10 +530,7 @@ impl HostUsageRuntime {
         }
     }
 
-    fn refresh_targets(
-        &self,
-        surface_id: Option<&str>,
-    ) -> Result<Vec<UsageRefreshTarget>, String> {
+    fn refresh_targets(&self, surface_id: Option<&str>) -> Result<Vec<UsageRefreshTarget>, String> {
         if let Some(id) = surface_id {
             let surface =
                 HostSurfaceId::from_id(id).ok_or_else(|| format!("unknown surface: {id}"))?;
@@ -552,12 +547,7 @@ impl HostUsageRuntime {
             .collect())
     }
 
-    fn push_event(
-        &mut self,
-        kind: &str,
-        surface_id: Option<&str>,
-        detail: Option<String>,
-    ) {
+    fn push_event(&mut self, kind: &str, surface_id: Option<&str>, detail: Option<String>) {
         self.next_seq = self.next_seq.saturating_add(1);
         self.events.push_back(HostUsageEvent {
             sequence: self.next_seq,
@@ -657,5 +647,4 @@ pub struct HostCredentialRootRow {
 }
 
 #[cfg(test)]
-#[path = "host/tests.rs"]
 mod tests;

@@ -90,6 +90,7 @@ pub const APP_SHUTDOWN_DEF: super::SpanMetadata = super::SpanMetadata {
                 "prune.system",
                 "usage.accounts",
                 "usage.verify",
+                "usage.snapshot",
             ],
         },
         super::AttributeRequirement {
@@ -219,6 +220,7 @@ pub const APP_STARTUP_DEF: super::SpanMetadata = super::SpanMetadata {
                 "prune.system",
                 "usage.accounts",
                 "usage.verify",
+                "usage.snapshot",
             ],
         },
         super::AttributeRequirement {
@@ -401,6 +403,7 @@ pub const CLI_COMMAND_DEF: super::SpanMetadata = super::SpanMetadata {
                 "prune.system",
                 "usage.accounts",
                 "usage.verify",
+                "usage.snapshot",
             ],
         },
         super::AttributeRequirement {

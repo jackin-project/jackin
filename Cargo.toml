@@ -92,7 +92,6 @@ jackin-term = { version = "0.6.0-dev", path = "crates/jackin-term" }
 jackin-tui = { version = "0.6.0-dev", path = "crates/jackin-tui" }
 jackin-test-support = { version = "0.6.0-dev", path = "crates/jackin-test-support" }
 jackin-usage = { version = "0.6.0-dev", path = "crates/jackin-usage" }
-jackin-usage-ffi = { version = "0.6.0-dev", path = "crates/jackin-usage-ffi" }
 nix = "0.31"
 opentelemetry_sdk = "0.32"
 opentelemetry-semantic-conventions = { version = "=0.32.1", default-features = false }

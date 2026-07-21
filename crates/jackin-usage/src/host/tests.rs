@@ -198,7 +198,10 @@ fn money_bucket_preserved_in_host_snapshot() {
         bucket.used_money.as_ref().map(|m| m.amount_minor),
         Some(7800)
     );
-    assert_eq!(bucket.used_money.as_ref().map(|m| m.currency.as_str()), Some("SGD"));
+    assert_eq!(
+        bucket.used_money.as_ref().map(|m| m.currency.as_str()),
+        Some("SGD")
+    );
     assert_eq!(bucket.severity, UsageSeverity::Warn);
 }
 
@@ -260,9 +263,7 @@ fn next_events_resync_flag_not_error() {
     // Cursor far behind empty-ish log after open: if we drop events by flooding
     // past MAX_EVENT_LOG, resync becomes true.
     for _ in 0..5_000 {
-        runtime
-            .set_enabled("amp", false)
-            .expect("toggle");
+        runtime.set_enabled("amp", false).expect("toggle");
         runtime.set_enabled("amp", true).expect("toggle");
     }
     let batch = runtime.next_events(0, 10).expect("events");

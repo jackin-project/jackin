@@ -211,7 +211,9 @@ async fn run_cache(args: &UsageArgs, paths: &JackinPaths) -> Result<()> {
             )
         }
         UsageScope::Snapshot(_) => {
-            anyhow::bail!("`jackin usage cache snapshot` is invalid; use `jackin usage host snapshot`")
+            anyhow::bail!(
+                "`jackin usage cache snapshot` is invalid; use `jackin usage host snapshot`"
+            )
         }
     }
 }

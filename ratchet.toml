@@ -249,6 +249,9 @@ bound = 4
 key = "clippy::panic@jackin-usage"
 bound = 3
 [[family.entry]]
+key = "clippy::panic@jackin-usage-ffi"
+bound = 1
+[[family.entry]]
 key = "clippy::print_stderr@jackin"
 bound = 4
 [[family.entry]]
@@ -587,7 +590,10 @@ key = "crates/jackin-tui/README.md"
 bound = 1812
 [[family.entry]]
 key = "crates/jackin-usage/README.md"
-bound = 2010
+bound = 2368
+[[family.entry]]
+key = "crates/jackin-usage-ffi/README.md"
+bound = 511
 [[family.entry]]
 key = "crates/jackin-xtask/README.md"
 bound = 5807
@@ -715,7 +721,7 @@ key = "jackin-test-support"
 bound = 4
 [[family.entry]]
 key = "jackin-usage"
-bound = 7
+bound = 8
 
 
 # Plan 027: suite wall-time from nextest junit. The provider reports zero when
@@ -786,7 +792,7 @@ mode = "enforce"
 cap = 20
 [[family.entry]]
 key = "jackin"
-bound = 27
+bound = 28
 [[family.entry]]
 key = "jackin-agent-status"
 bound = 26

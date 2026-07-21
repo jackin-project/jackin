@@ -200,14 +200,10 @@ fn confidence_label(confidence: UsageConfidence) -> &'static str {
 }
 
 /// Build open config for the host runtime.
-pub(crate) fn to_host_config(
-    config: OpenConfig,
-) -> jackin_usage::host::HostRuntimeConfig {
+pub(crate) fn to_host_config(config: OpenConfig) -> jackin_usage::host::HostRuntimeConfig {
     jackin_usage::host::HostRuntimeConfig {
         data_dir: std::path::PathBuf::from(config.data_dir),
         refresh_floor_secs: config.refresh_floor_secs,
         enabled_surface_ids: config.enabled_surface_ids,
     }
 }
-
-
