@@ -2,7 +2,7 @@
 title: "jackin❯ Desktop — native macOS usage status bar"
 ---
 
-**Status**: Menu-bar engineering complete — host library, UniFFI, menu-bar shell, CLI, operator guide, host-global usage cache, Tahoe design, arm64 static PR gate, release **validate** path + cask PR automation; **activation residual**: first notarized ZIP on first non-dev release after Apple secrets in `release-macos` (see `native/README.md` Paths A–C). **Direction (operator, 2026-07-22)**: the app becomes **jackin❯ Desktop** — the first native macOS application; v1 is a status-bar app with Liquid Glass detail windows, view-only usage across all accounts — per the product spec below.
+**Status**: **jackin❯ Desktop v1 UI complete** (identity, logomark, status-item modes, glance popover, Usage window, Settings format pickers, Capsule-parity Rust strings via UniFFI). Host-global cache, Tahoe design, arm64 static PR gate, release **validate** + cask PR automation ship. **Only open residual is activation ops**: first notarized ZIP after Apple secrets in `release-macos` → operator-merged first cask → plan 004 production proof (see `native/README.md` Paths A–C).
 
 **Operator guide**: [macOS agent-usage menu bar](/guides/macos-usage-menu-bar/)
 
@@ -402,8 +402,8 @@ Swift must not own HTTP/RPC/OAuth/CLI probes or non-jackin❯ providers. Scope: 
 - [x] Status-item display modes (pinned surface, multi-surface strip, depleted-shows-reset) as Rust view/FFI extensions
 - [x] Glance popover overview strip + Rust-resolved used/left and countdown/clock format flags
 - [x] Usage window: Liquid Glass sidebar/content window restating the Capsule dialog (view-only)
-- [ ] Native design pass per the v1 design contract (floating panel, inset cards, menu-row footer, sidebar severity accents, next-refresh-due FFI label, estimate captions)
-- [ ] Screen inventory S1–S6: Settings display/format pickers, empty/first-run state
+- [x] Native design pass per the v1 design contract (floating panel, inset cards, menu-row footer, sidebar severity accents, next-refresh-due FFI label, estimate captions)
+- [x] Screen inventory S1–S6: Settings display/format pickers, empty/first-run state
 
 ## Related work
 

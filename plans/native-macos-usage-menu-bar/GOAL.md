@@ -2,16 +2,16 @@
 
 Execute the program end-to-end until all twelve plans are **DONE** (or explicitly **BLOCKED**/**STOPPED** on a named operator input), the roadmap item's checklist is honest, and the only open residual is one backed by a named STOP/BLOCKED condition. You are an executor with zero prior context: everything you need is in the files below. Do not improvise beyond them.
 
-## Program state at planning time (2026-07-22, commit `be6fb79e`)
+## Program state (updated at plan 012 acceptance)
 
 Do **not** re-execute DONE plans; their status rows in the program README carry re-verification evidence. Re-open one only if its drift check fails while you are touching its surfaces.
 
 | Plans | State |
 |---|---|
-| 005, 006, 001, 002 | **DONE** (cache unification, Tahoe design, arm64 static PR gate, tap cask validation) |
+| 005, 006, 001, 002, 007–012 | **DONE** (cache, Tahoe design, arm64 static PR gate, tap validation, jackin❯ Desktop v1 UI track) |
 | 003 | Engineering **DONE**, `mode=validate` green; **activation BLOCKED** on Apple secrets in GitHub environment `release-macos` (ops, operator input) |
 | 004 | **BLOCKED** on 003 shipping a real notarized release + operator-merged first cask |
-| 007–012 | **TODO** — the active **jackin❯ Desktop v1** track (identity rename, Rust view/FFI extensions, status-item modes, Usage window, glance popover, parity acceptance) |
+| Acceptance evidence | `plans/native-macos-usage-menu-bar/ACCEPTANCE-012.md` |
 
 ## Source of truth (read all before any change, this order)
 
