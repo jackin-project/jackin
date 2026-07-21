@@ -163,9 +163,8 @@ New tests in `crates/jackin-usage/src/usage/tests.rs`, modeled on the existing t
 
 ## Execution status (honest)
 
-- Implementation complete.
-- Step 5 green: nextest usage+ffi+runtime **742/742** pass; local `cargo xtask ci --fast` **exit 0** (after runtime SO_LINGER, load-agent serialisation, host-safe capsule test, host-attach codex_launch guard, macOS clippy/ratchet fixes).
-- Residual outside 005: notarized release (plan 003) still BLOCKED on operator credentials.
+- Implementation complete; live defaults `usage-shared/*`; `adopt_shared_snapshots` present.
+- Re-verified 2026-07-21: nextest usage+ffi+runtime **742/742**; docs repo-links/roadmap/research **0**; clippy usage packages **0**; `cargo xtask ci --fast` **exit 0**.
 
 ## STOP conditions
 
