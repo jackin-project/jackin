@@ -1179,17 +1179,33 @@ jobs:
       - name: Launch app without credentials (alive then quit)
         run: |
           set -euo pipefail
-          open native/dist/JackinUsageMenuBar.app
-          for _ in $(seq 1 20); do
-            if pgrep -f 'JackinUsageMenuBar.app/Contents/MacOS/JackinUsageMenuBar' >/dev/null; then
+          # GHA macOS runners often lack a full Aqua session for `open`+LSUIElement;
+          # exec the binary directly and prove it stays alive (no provider credentials).
+          APP_BIN=native/dist/JackinUsageMenuBar.app/Contents/MacOS/JackinUsageMenuBar
+          xattr -cr native/dist/JackinUsageMenuBar.app || true
+          "$APP_BIN" >/tmp/jackin-usage-menu-bar-launch.log 2>&1 &
+          PID=$!
+          alive=0
+          for _ in $(seq 1 30); do
+            if kill -0 "$PID" 2>/dev/null; then
+              alive=1
               break
             fi
-            sleep 0.5
+            sleep 0.2
           done
-          pgrep -f 'JackinUsageMenuBar.app/Contents/MacOS/JackinUsageMenuBar' >/dev/null
+          if [ "$alive" != "1" ]; then
+            echo "::error::menu bar binary exited immediately"
+            cat /tmp/jackin-usage-menu-bar-launch.log || true
+            exit 1
+          fi
           sleep 2
-          pgrep -f 'JackinUsageMenuBar.app/Contents/MacOS/JackinUsageMenuBar' >/dev/null
-          pkill -f 'JackinUsageMenuBar.app/Contents/MacOS/JackinUsageMenuBar' || true
+          if ! kill -0 "$PID" 2>/dev/null; then
+            echo "::error::menu bar binary died within 2s"
+            cat /tmp/jackin-usage-menu-bar-launch.log || true
+            exit 1
+          fi
+          kill "$PID" 2>/dev/null || true
+          wait "$PID" 2>/dev/null || true
 
   # Single stable check name for branch-protection required-status,
   # regardless of which gated jobs skipped under it.
