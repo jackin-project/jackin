@@ -21,6 +21,13 @@ struct StatusItemLabel: View {
             }
         }
         .accessibilityLabel(accessibilityText)
+        // WHY: status item must open HostUsageRuntime on cold launch/login without
+        // requiring popover/Settings/Usage first — otherwise focus-percent stays empty.
+        .onAppear {
+            if !store.isOpen {
+                store.openDefault()
+            }
+        }
     }
 
     @ViewBuilder

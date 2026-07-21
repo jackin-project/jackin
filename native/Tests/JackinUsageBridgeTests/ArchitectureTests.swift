@@ -221,6 +221,22 @@ final class ArchitectureTests: XCTestCase {
         XCTAssertFalse(text.contains("SurfaceCard"), "popover must not reference SurfaceCard")
     }
 
+    /// Cold launch: status item must open the host runtime without a menu click.
+    func testStatusItemLabelOpensRuntimeOnAppear() throws {
+        let status = sourcesRoot
+            .appendingPathComponent("JackinDesktop")
+            .appendingPathComponent("StatusItemLabel.swift")
+        let text = try String(contentsOf: status, encoding: .utf8)
+        XCTAssertTrue(
+            text.contains("openDefault"),
+            "StatusItemLabel must call openDefault so focus-percent works on cold launch"
+        )
+        XCTAssertTrue(
+            text.contains("onAppear"),
+            "StatusItemLabel must open runtime on appear, not only after popover open"
+        )
+    }
+
     func testDesktopSourcesHaveNoHardcodedProviderDisplayNames() throws {
         let desktop = sourcesRoot.appendingPathComponent("JackinDesktop")
         let enumerator = FileManager.default.enumerator(at: desktop, includingPropertiesForKeys: nil)

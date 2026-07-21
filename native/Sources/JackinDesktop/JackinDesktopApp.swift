@@ -18,6 +18,11 @@ struct JackinDesktopApp: App {
             Color.clear
                 .frame(width: 1, height: 1)
                 .accessibilityHidden(true)
+                .onAppear {
+                    if !store.isOpen {
+                        store.openDefault()
+                    }
+                }
         }
         .windowResizability(.contentSize)
         .defaultSize(width: 1, height: 1)

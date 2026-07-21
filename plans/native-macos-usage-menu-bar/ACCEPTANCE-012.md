@@ -29,7 +29,7 @@ Desktop and Capsule share one truth path: `jackin-usage` view shaping → protoc
 
 | Screen | Result | Notes |
 |---|---|---|
-| S1 status item modes | pass | focus / icon / pinned / strip; depleted via Rust; dim 0.45 |
+| S1 status item modes | pass | focus / icon / pinned / strip; depleted via Rust; dim 0.45; **cold launch** opens `HostUsageRuntime` from `StatusItemLabel`/`keepalive` `onAppear` (no menu click required) |
 | S1 privacy collapse | pass | `CGSessionCopyCurrentDictionary` gated by prefs |
 | S2 glance popover | pass | overview strip + menu footer; detail cards removed |
 | S3 Usage window | pass | `NavigationSplitView`, Open Usage…, severity sidebar |
