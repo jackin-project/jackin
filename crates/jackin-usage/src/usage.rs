@@ -156,13 +156,17 @@ pub(crate) use self::zai::{
 };
 
 use format::{
-    CliOutput, codex_account_from_value, codex_limit_label, compact_count, compact_duration_label,
-    dollar_amounts, env_value, expiry_label, first_number_key, first_string_key,
-    format_amount_with_unit, format_cents, format_currency, home_path, humanize_plan_label,
-    humanize_words_with, json_number, local_timestamp_label, oauth_origin, parse_iso_epoch,
-    percent_before_used, quota_pace_label, remaining_from_fraction, reset_label,
-    run_cli_with_timeout, run_cli_with_timeout_full, titlecase_ascii, used_percent_from_fraction,
-    used_percent_label, window_minutes_label,
+    CliOutput, codex_account_from_value, codex_limit_label, compact_count, dollar_amounts,
+    env_value, expiry_label, first_number_key, first_string_key, format_amount_with_unit,
+    format_cents, format_currency, home_path, humanize_plan_label, humanize_words_with,
+    json_number, local_timestamp_label, oauth_origin, parse_iso_epoch, percent_before_used,
+    quota_pace_label, remaining_from_fraction, reset_label, run_cli_with_timeout,
+    run_cli_with_timeout_full, titlecase_ascii, used_percent_from_fraction, used_percent_label,
+    window_minutes_label,
+};
+// Crate-visible re-exports for host overview/compact presentation (plan 008).
+pub(crate) use format::{
+    compact_duration_label, exact_reset_parenthetical, percent_headline, reset_label_with_prefs,
 };
 
 pub(crate) const PROVIDER_HTTP_TIMEOUT: Duration = Duration::from_secs(10);
@@ -820,6 +824,34 @@ pub fn resolved_usage_provider_label(
     let surface = resolve_surface(agent, focused_provider);
     (surface != UsageSurface::Unsupported).then_some(surface.label())
 }
+
+/// Shared provider display remap for Capsule tabs and jackin❯ Desktop overview.
+///
+/// Single mapping so Desktop never grows a second Swift-side provider rename.
+#[must_use]
+pub fn provider_display_label(label: &str) -> &str {
+    match label {
+        "Codex" | "OpenAI / Codex" => "OpenAI",
+        "Claude" | "Anthropic / Claude" => "Anthropic",
+        "Grok Build" | "xAI / Grok" => "xAI",
+        "GLM / Z.AI" => "Z.AI",
+        other => other,
+    }
+}
+
+/// Honesty caption when numbers are estimated / local-log derived.
+#[must_use]
+pub fn estimate_caption(view: &FocusedUsageView) -> Option<String> {
+    if matches!(view.confidence, UsageConfidence::Estimated)
+        || matches!(view.source, UsageSource::LocalLogs)
+    {
+        Some("Estimated from token usage · not a subscription bill".to_owned())
+    } else {
+        None
+    }
+}
+
+pub use self::format::{PercentStyle, ResetStyle, UsageFormatPrefs};
 
 pub fn usage_status_storage_label(status: UsageSnapshotStatus) -> &'static str {
     match status {

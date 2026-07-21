@@ -2,6 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use crate::usage::{
+    PercentStyle, ResetStyle, UsageFormatPrefs, estimate_caption, provider_display_label,
+};
 use jackin_protocol::control::{
     FocusedAccountHeader, FocusedUsageView, Money, QuotaBucketView, StatusSlot, UsageConfidence,
     UsageSeverity, UsageSnapshotStatus, UsageSource,
@@ -367,4 +370,211 @@ fn host_paths_under_data_dir() {
         host_accounts_path(&root),
         PathBuf::from("/tmp/jackin-data/usage-menu-bar/accounts.json")
     );
+}
+
+#[test]
+fn compact_status_bar_label_for_pinned_known_and_disabled() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let mut runtime = open_runtime(dir.path());
+    inject_remaining(&mut runtime, "claude", 37); // 63% used
+    assert_eq!(
+        runtime
+            .compact_status_bar_label_for("claude")
+            .expect("pinned"),
+        Some("Cl 63%".to_owned())
+    );
+    runtime.set_enabled("claude", false).expect("disable");
+    assert_eq!(
+        runtime
+            .compact_status_bar_label_for("claude")
+            .expect("disabled"),
+        None
+    );
+    assert_eq!(
+        runtime
+            .compact_status_bar_label_for("codex")
+            .expect("no data"),
+        None
+    );
+}
+
+#[test]
+fn compact_status_bar_strip_worst_first_cap_and_separator() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let mut runtime = open_runtime(dir.path());
+    for surface in HostSurfaceId::ALL {
+        let on = matches!(
+            *surface,
+            HostSurfaceId::Claude | HostSurfaceId::Codex | HostSurfaceId::Zai
+        );
+        runtime.set_enabled(surface.id(), on).expect("enable set");
+    }
+    inject_remaining(&mut runtime, "claude", 37); // 63% used — worst remaining
+    inject_remaining(&mut runtime, "codex", 59); // 41% used
+    inject_remaining(&mut runtime, "zai", 88); // 12% used
+    assert_eq!(
+        runtime.compact_status_bar_strip(3).expect("strip"),
+        "Cl 63% · Cx 41% · ZA 12%"
+    );
+    assert_eq!(runtime.compact_status_bar_strip(1).expect("cap1"), "Cl 63%");
+}
+
+#[test]
+fn compact_depleted_with_and_without_resets_at() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let mut runtime = open_runtime(dir.path());
+    for surface in HostSurfaceId::ALL {
+        runtime
+            .set_enabled(surface.id(), *surface == HostSurfaceId::Claude)
+            .expect("enable set");
+    }
+    // Depleted without resets_at → honest 100%.
+    inject_remaining(&mut runtime, "claude", 0);
+    assert_eq!(
+        runtime
+            .compact_status_bar_label()
+            .expect("depleted no reset"),
+        "Cl 100%"
+    );
+
+    // Depleted with resets_at in the future → "Cl resets …".
+    let mut view = FocusedUsageView::unavailable("seed", 1);
+    view.status = UsageSnapshotStatus::Fresh;
+    view.source = UsageSource::ProviderApi;
+    view.confidence = UsageConfidence::Authoritative;
+    let future = chrono::Utc::now().timestamp() + 4_860; // 1h 21m
+    view.buckets = vec![QuotaBucketView {
+        label: "Session".to_owned(),
+        used_label: Some("100% used".to_owned()),
+        limit_label: Some("100%".to_owned()),
+        remaining_percent: Some(0),
+        reset_label: None,
+        resets_at: Some(future),
+        status_slot: Some(StatusSlot::Session),
+        pace_label: None,
+        status: UsageSnapshotStatus::Fresh,
+        used_money: None,
+        limit_money: None,
+        severity: UsageSeverity::Danger,
+    }];
+    runtime.inject_snapshot("claude", view).expect("inject");
+    let label = runtime.compact_status_bar_label().expect("depleted");
+    assert!(
+        label.starts_with("Cl resets "),
+        "expected depleted countdown form, got {label}"
+    );
+}
+
+#[test]
+fn next_refresh_label_due_and_countdown() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let mut runtime = open_runtime(dir.path());
+    assert_eq!(runtime.next_refresh_label(), "Next update due");
+    runtime.set_refresh_floor_secs(300).expect("floor");
+    // Force a refresh mark without network by simulating last_refresh via
+    // a non-forced path: inject is not a refresh. Use set_refresh after open:
+    // calling refresh with force on empty targets still stamps last_refresh.
+    runtime.refresh(None, true).expect("refresh stamp");
+    let label = runtime.next_refresh_label();
+    assert!(
+        label.starts_with("Next update in ") || label == "Next update due",
+        "got {label}"
+    );
+}
+
+#[test]
+fn overview_rows_numeric_and_status_word() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let mut runtime = open_runtime(dir.path());
+    for surface in HostSurfaceId::ALL {
+        let on = matches!(*surface, HostSurfaceId::Claude | HostSurfaceId::Codex);
+        runtime.set_enabled(surface.id(), on).expect("enable set");
+    }
+    inject_remaining(&mut runtime, "claude", 97);
+    let mut named = FocusedUsageView::unavailable("seed", 1);
+    named.status = UsageSnapshotStatus::Fresh;
+    named.source = UsageSource::ProviderApi;
+    named.confidence = UsageConfidence::Authoritative;
+    named.account.provider_label = "OpenAI / Codex".to_owned();
+    named.buckets = vec![QuotaBucketView {
+        label: "Fable".to_owned(),
+        used_label: Some("32% used".to_owned()),
+        limit_label: Some("100%".to_owned()),
+        remaining_percent: Some(68),
+        reset_label: None,
+        resets_at: Some(chrono::Utc::now().timestamp() + 86_400 * 2),
+        status_slot: None,
+        pace_label: None,
+        status: UsageSnapshotStatus::Fresh,
+        used_money: None,
+        limit_money: None,
+        severity: UsageSeverity::Warn,
+    }];
+    runtime.inject_snapshot("codex", named).expect("inject");
+
+    let rows = runtime.overview_rows().expect("rows");
+    assert_eq!(rows.len(), 2);
+    let claude = rows.iter().find(|r| r.surface_id == "claude").expect("cl");
+    assert_eq!(claude.headline, "97% left");
+    assert_eq!(claude.status_word, "fresh");
+    let codex = rows.iter().find(|r| r.surface_id == "codex").expect("cx");
+    assert_eq!(codex.display_label, "OpenAI");
+    assert_eq!(codex.headline, "Fable 68% left");
+    assert_eq!(codex.severity, "warn");
+    assert!(codex.reset_label.is_some());
+    assert!(codex.exact_reset.is_some());
+
+    // Prefs flip left → used on the same remaining data.
+    runtime
+        .set_format_prefs(UsageFormatPrefs {
+            percent_style: PercentStyle::Used,
+            reset_style: ResetStyle::ExactClock,
+        })
+        .expect("prefs");
+    let rows = runtime.overview_rows().expect("rows2");
+    let claude = rows.iter().find(|r| r.surface_id == "claude").expect("cl");
+    assert_eq!(claude.headline, "3% used");
+    let codex = rows.iter().find(|r| r.surface_id == "codex").expect("cx");
+    let reset = codex.reset_label.as_deref().expect("reset");
+    assert!(
+        reset.starts_with("Resets ") && !reset.contains(" in "),
+        "exact-clock form expected, got {reset}"
+    );
+}
+
+#[test]
+fn provider_display_label_cases() {
+    assert_eq!(provider_display_label("Codex"), "OpenAI");
+    assert_eq!(provider_display_label("OpenAI / Codex"), "OpenAI");
+    assert_eq!(provider_display_label("Claude"), "Anthropic");
+    assert_eq!(provider_display_label("Anthropic / Claude"), "Anthropic");
+    assert_eq!(provider_display_label("Grok Build"), "xAI");
+    assert_eq!(provider_display_label("xAI / Grok"), "xAI");
+    assert_eq!(provider_display_label("GLM / Z.AI"), "Z.AI");
+    assert_eq!(provider_display_label("Amp"), "Amp");
+}
+
+#[test]
+fn estimate_caption_variants() {
+    let mut view = FocusedUsageView::unavailable("x", 1);
+    view.confidence = UsageConfidence::Authoritative;
+    view.source = UsageSource::ProviderApi;
+    assert_eq!(estimate_caption(&view), None);
+
+    view.confidence = UsageConfidence::Estimated;
+    assert_eq!(
+        estimate_caption(&view).as_deref(),
+        Some("Estimated from token usage · not a subscription bill")
+    );
+
+    view.confidence = UsageConfidence::Authoritative;
+    view.source = UsageSource::LocalLogs;
+    assert_eq!(
+        estimate_caption(&view).as_deref(),
+        Some("Estimated from token usage · not a subscription bill")
+    );
+
+    view.source = UsageSource::Cli;
+    view.confidence = UsageConfidence::PresenceOnly;
+    assert_eq!(estimate_caption(&view), None);
 }

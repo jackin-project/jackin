@@ -12,6 +12,19 @@ cargo nextest run -p jackin-usage-ffi
 cargo clippy -p jackin-usage-ffi --all-targets -- -D warnings
 ```
 
+## UniFFI surface (additive desktop v1)
+
+| Method / type | Role |
+|---|---|
+| `set_format_prefs` | Presentation prefs (`left`/`used`, `countdown`/`exact_clock`) |
+| `compact_status_bar_label_for` | Pinned surface compact label |
+| `compact_status_bar_strip` | Worst-first multi-surface strip |
+| `overview_rows` → `OverviewRowDto` | Popover + Usage-window overview |
+| `next_refresh_label` | Next refresh countdown / due |
+| `UsageViewDto.estimate_caption` | Honesty caption when estimated |
+
+Existing methods (`snapshot`, `compact_status_bar_label`, …) are unchanged.
+
 ## Swift bindings
 
 ```sh

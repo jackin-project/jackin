@@ -10,6 +10,8 @@ use jackin_protocol::control::{
 };
 use jackin_usage::host::HostUsageRuntime;
 
+use crate::dto::UsageFormatPrefsDto;
+
 fn open_bridge(dir: &std::path::Path) -> Arc<UsageMenuBarBridge> {
     let bridge = UsageMenuBarBridge::create();
     bridge
@@ -79,6 +81,7 @@ fn fixture_snapshot_round_trip_via_bridge() {
     assert_eq!(dto.buckets[0].remaining_percent, Some(37));
     assert_eq!(dto.buckets[0].resets_at, Some(99));
     assert_eq!(dto.status, "fresh");
+    assert_eq!(dto.estimate_caption, None);
     let merged = bridge.merged_status_bar_label().expect("merged");
     assert!(merged.contains("63%"));
     let surfaces = bridge.list_surfaces().expect("list");
@@ -95,6 +98,121 @@ fn fixture_snapshot_round_trip_via_bridge() {
     ));
     // silence unused import warning if any
     let _ = HostUsageRuntime::new();
+}
+
+#[test]
+fn overview_rows_and_format_prefs_round_trip() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let bridge = open_bridge(dir.path());
+    {
+        let mut guard = bridge.inner.lock().expect("lock");
+        let view = FocusedUsageView {
+            focused_agent: Some("claude".to_owned()),
+            focused_provider: Some("Claude".to_owned()),
+            account: FocusedAccountHeader {
+                provider_label: "Anthropic / Claude".to_owned(),
+                account_label: "a@b.c".to_owned(),
+                username: None,
+                plan_label: None,
+                credential_origin: None,
+            },
+            buckets: vec![QuotaBucketView {
+                label: "Session".to_owned(),
+                used_label: Some("3% used".to_owned()),
+                limit_label: Some("100%".to_owned()),
+                remaining_percent: Some(97),
+                reset_label: None,
+                resets_at: Some(1_900_000_000),
+                status_slot: Some(StatusSlot::Session),
+                pace_label: None,
+                status: UsageSnapshotStatus::Fresh,
+                used_money: None,
+                limit_money: None,
+                severity: UsageSeverity::Normal,
+            }],
+            status: UsageSnapshotStatus::Fresh,
+            source: UsageSource::ProviderApi,
+            confidence: UsageConfidence::Authoritative,
+            fetched_at_epoch: 1,
+            updated_label: "just now".to_owned(),
+            status_bar_label: "ok".to_owned(),
+            tabs: Vec::new(),
+            last_error: None,
+        };
+        guard.inject_snapshot("claude", view).expect("inject");
+    }
+    {
+        let mut guard = bridge.inner.lock().expect("lock");
+        let view = FocusedUsageView {
+            focused_agent: Some("codex".to_owned()),
+            focused_provider: Some("Codex".to_owned()),
+            account: FocusedAccountHeader {
+                provider_label: "OpenAI / Codex".to_owned(),
+                account_label: "c@d.e".to_owned(),
+                username: None,
+                plan_label: None,
+                credential_origin: None,
+            },
+            buckets: vec![QuotaBucketView {
+                label: "Session".to_owned(),
+                used_label: Some("41% used".to_owned()),
+                limit_label: Some("100%".to_owned()),
+                remaining_percent: Some(59),
+                reset_label: None,
+                resets_at: None,
+                status_slot: Some(StatusSlot::Session),
+                pace_label: None,
+                status: UsageSnapshotStatus::Fresh,
+                used_money: None,
+                limit_money: None,
+                severity: UsageSeverity::Normal,
+            }],
+            status: UsageSnapshotStatus::Fresh,
+            source: UsageSource::ProviderApi,
+            confidence: UsageConfidence::Authoritative,
+            fetched_at_epoch: 1,
+            updated_label: "just now".to_owned(),
+            status_bar_label: "ok".to_owned(),
+            tabs: Vec::new(),
+            last_error: None,
+        };
+        guard.inject_snapshot("codex", view).expect("inject");
+    }
+
+    let rows = bridge.overview_rows().expect("rows");
+    assert!(
+        rows.iter()
+            .any(|r| r.surface_id == "claude" && r.headline == "97% left")
+    );
+    assert!(rows.iter().any(|r| r.display_label == "Anthropic"));
+
+    bridge
+        .set_format_prefs(UsageFormatPrefsDto {
+            percent_style: "used".to_owned(),
+            reset_style: "exact_clock".to_owned(),
+        })
+        .expect("prefs");
+    let rows = bridge.overview_rows().expect("rows2");
+    let claude = rows.iter().find(|r| r.surface_id == "claude").expect("cl");
+    assert_eq!(claude.headline, "3% used");
+
+    assert_eq!(
+        bridge
+            .compact_status_bar_label_for("claude".to_owned())
+            .expect("pinned")
+            .as_deref(),
+        Some("Cl 3%")
+    );
+    let strip = bridge.compact_status_bar_strip(2).expect("strip");
+    assert!(
+        strip.contains(" · ") || strip.starts_with("Cl ") || strip.starts_with("Cx "),
+        "strip={strip}"
+    );
+    let next = bridge.next_refresh_label().expect("next");
+    assert!(
+        next == "Next update due" || next.starts_with("Next update in "),
+        "next={next}"
+    );
 }
 
 #[test]

@@ -8,8 +8,9 @@ use std::sync::{Arc, Mutex};
 use jackin_usage::host::HostUsageRuntime;
 
 use crate::dto::{
-    OpenConfig, SurfaceDescriptorDto, UsageEventBatchDto, UsageViewDto, event_batch_dto,
-    map_open_err, map_runtime_err, surface_dto, to_host_config, view_dto,
+    OpenConfig, OverviewRowDto, SurfaceDescriptorDto, UsageEventBatchDto, UsageFormatPrefsDto,
+    UsageViewDto, event_batch_dto, map_open_err, map_runtime_err, overview_row_dto,
+    parse_format_prefs, surface_dto, to_host_config, view_dto,
 };
 use crate::error::{UsageBridgeError, catch_entry};
 
@@ -122,6 +123,57 @@ impl UsageMenuBarBridge {
         catch_entry(|| {
             let mut guard = self.lock()?;
             guard.compact_status_bar_label().map_err(map_runtime_err)
+        })
+    }
+
+    /// Presentation-time format prefs (`left`/`used`, `countdown`/`exact_clock`).
+    pub fn set_format_prefs(&self, prefs: UsageFormatPrefsDto) -> Result<(), UsageBridgeError> {
+        catch_entry(|| {
+            let parsed = parse_format_prefs(prefs).map_err(map_runtime_err)?;
+            let mut guard = self.lock()?;
+            guard.set_format_prefs(parsed).map_err(map_runtime_err)
+        })
+    }
+
+    /// Pinned-surface compact status-item label.
+    pub fn compact_status_bar_label_for(
+        &self,
+        surface_id: String,
+    ) -> Result<Option<String>, UsageBridgeError> {
+        catch_entry(|| {
+            let mut guard = self.lock()?;
+            guard
+                .compact_status_bar_label_for(&surface_id)
+                .map_err(map_runtime_err)
+        })
+    }
+
+    /// Worst-first multi-surface compact strip (joined with ` · `).
+    pub fn compact_status_bar_strip(&self, max: u32) -> Result<String, UsageBridgeError> {
+        catch_entry(|| {
+            let mut guard = self.lock()?;
+            guard.compact_status_bar_strip(max).map_err(map_runtime_err)
+        })
+    }
+
+    /// Overview rows for every enabled surface (popover + Usage window).
+    pub fn overview_rows(&self) -> Result<Vec<OverviewRowDto>, UsageBridgeError> {
+        catch_entry(|| {
+            let mut guard = self.lock()?;
+            Ok(guard
+                .overview_rows()
+                .map_err(map_runtime_err)?
+                .into_iter()
+                .map(overview_row_dto)
+                .collect())
+        })
+    }
+
+    /// Next network refresh label (`Next update in …` / `Next update due`).
+    pub fn next_refresh_label(&self) -> Result<String, UsageBridgeError> {
+        catch_entry(|| {
+            let guard = self.lock()?;
+            Ok(guard.next_refresh_label())
         })
     }
 

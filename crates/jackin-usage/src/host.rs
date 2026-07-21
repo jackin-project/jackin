@@ -13,9 +13,13 @@ use std::time::{Duration, Instant};
 
 use jackin_core::Agent;
 use jackin_protocol::Provider;
-use jackin_protocol::control::FocusedUsageView;
+use jackin_protocol::control::{FocusedUsageView, UsageSeverity};
 
-use crate::usage::{UsageCache, UsageRefreshTarget};
+use crate::usage::{
+    UsageCache, UsageFormatPrefs, UsageRefreshTarget, compact_duration_label, estimate_caption,
+    exact_reset_parenthetical, percent_headline, provider_display_label, reset_label_with_prefs,
+    usage_status_storage_label,
+};
 
 /// Relative data-dir subtree for menu-bar durable state.
 pub const HOST_USAGE_STATE_REL: &str = "usage-menu-bar";
@@ -233,6 +237,32 @@ pub fn host_accounts_path(data_dir: &Path) -> PathBuf {
 const MAX_EVENT_LOG: usize = 4_096;
 const MAX_EVENT_BATCH: u32 = 256;
 
+/// One enabled-surface overview row for jackin❯ Desktop (popover + Usage window).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HostOverviewRow {
+    /// Machine surface id (`claude`, `codex`, …).
+    pub surface_id: String,
+    /// Remapped display label (`OpenAI`, `Anthropic`, …).
+    pub display_label: String,
+    /// Percent headline or empty when only a status word applies.
+    pub headline: String,
+    /// Countdown-form reset line when known.
+    pub reset_label: Option<String>,
+    /// Exact clock parenthetical when `resets_at` is known, e.g. `(Jul 28, 17:02)`.
+    pub exact_reset: Option<String>,
+    /// Storage status word (`fresh`, `stale`, `needs_login`, …).
+    pub status_word: String,
+    /// Worst bucket severity: `normal` | `warn` | `danger`.
+    pub severity: String,
+}
+
+/// Driving bucket for compact/overview labels: min remaining + its reset epoch.
+#[derive(Debug, Clone, Copy)]
+struct DrivingBucket {
+    remaining: u8,
+    resets_at: Option<i64>,
+}
+
 /// Capsule-free host usage runtime.
 #[derive(Debug)]
 pub struct HostUsageRuntime {
@@ -244,6 +274,8 @@ pub struct HostUsageRuntime {
     refresh_floor_secs: u64,
     /// Last time a network-bearing refresh completed (floor gate).
     last_refresh: Option<Instant>,
+    /// Presentation-time format prefs (not persisted).
+    format_prefs: UsageFormatPrefs,
     open: bool,
 }
 
@@ -259,6 +291,7 @@ impl HostUsageRuntime {
             next_seq: 0,
             refresh_floor_secs: 300,
             last_refresh: None,
+            format_prefs: UsageFormatPrefs::default(),
             open: false,
         }
     }
@@ -490,6 +523,19 @@ impl HostUsageRuntime {
         }
     }
 
+    /// Presentation-time format prefs (defaults match shipped Capsule strings).
+    pub fn set_format_prefs(&mut self, prefs: UsageFormatPrefs) -> Result<(), String> {
+        self.require_open()?;
+        self.format_prefs = prefs;
+        Ok(())
+    }
+
+    /// Current presentation-time format prefs.
+    #[must_use]
+    pub fn format_prefs(&self) -> UsageFormatPrefs {
+        self.format_prefs
+    }
+
     /// Short status-item label: enabled surface with the **highest used** percent
     /// (lowest `remaining_percent` across its buckets), e.g. `Cl 63%`.
     ///
@@ -497,9 +543,110 @@ impl HostUsageRuntime {
     /// Empty when no enabled surface has a numeric remaining value (all
     /// unavailable / disabled / still refreshing without last-good data).
     /// Ties keep the earlier surface in [`HostSurfaceId::ALL`] order.
+    /// Depleted (`remaining == 0`) with `resets_at` renders `Cl resets 1h 21m`.
     pub fn compact_status_bar_label(&mut self) -> Result<String, String> {
         self.require_open()?;
-        let mut best: Option<(u8, HostSurfaceId)> = None;
+        let mut best: Option<(u8, HostSurfaceId, Option<i64>)> = None;
+        for surface in HostSurfaceId::ALL.iter().copied() {
+            if !self.enabled.contains(surface.id()) {
+                continue;
+            }
+            let Some(drive) = self.driving_bucket_for(surface) else {
+                continue;
+            };
+            match best {
+                Some((best_remaining, _, _)) if drive.remaining >= best_remaining => {}
+                _ => best = Some((drive.remaining, surface, drive.resets_at)),
+            }
+        }
+        Ok(match best {
+            Some((remaining, surface, resets_at)) => {
+                Self::format_compact_entry(surface, remaining, resets_at)
+            }
+            None => String::new(),
+        })
+    }
+
+    /// Pinned-surface compact label (`Cx 41%` / depleted form). `None` when
+    /// disabled or no numeric remaining.
+    pub fn compact_status_bar_label_for(
+        &mut self,
+        surface_id: &str,
+    ) -> Result<Option<String>, String> {
+        self.require_open()?;
+        let surface = HostSurfaceId::from_id(surface_id)
+            .ok_or_else(|| format!("unknown surface: {surface_id}"))?;
+        if !self.enabled.contains(surface.id()) {
+            return Ok(None);
+        }
+        let Some(drive) = self.driving_bucket_for(surface) else {
+            return Ok(None);
+        };
+        Ok(Some(Self::format_compact_entry(
+            surface,
+            drive.remaining,
+            drive.resets_at,
+        )))
+    }
+
+    /// Worst-first multi-surface strip, capped, joined with ` · `.
+    pub fn compact_status_bar_strip(&mut self, max: u32) -> Result<String, String> {
+        self.require_open()?;
+        let cap = max.clamp(1, 8) as usize;
+        let mut rows: Vec<(u8, HostSurfaceId, Option<i64>)> = Vec::new();
+        for surface in HostSurfaceId::ALL.iter().copied() {
+            if !self.enabled.contains(surface.id()) {
+                continue;
+            }
+            if let Some(drive) = self.driving_bucket_for(surface) {
+                rows.push((drive.remaining, surface, drive.resets_at));
+            }
+        }
+        // Ascending remaining (worst first); ties keep ALL order (stable sort).
+        rows.sort_by_key(|(remaining, surface, _)| {
+            (
+                *remaining,
+                HostSurfaceId::ALL
+                    .iter()
+                    .position(|s| *s == *surface)
+                    .unwrap_or(usize::MAX),
+            )
+        });
+        let parts: Vec<String> = rows
+            .into_iter()
+            .take(cap)
+            .map(|(remaining, surface, resets_at)| {
+                Self::format_compact_entry(surface, remaining, resets_at)
+            })
+            .collect();
+        Ok(parts.join(" · "))
+    }
+
+    /// Next network refresh relative to the floor (`Next update in …` / due).
+    #[must_use]
+    pub fn next_refresh_label(&self) -> String {
+        match self.last_refresh {
+            None => "Next update due".to_owned(),
+            Some(last) => {
+                let floor = Duration::from_secs(self.refresh_floor_secs);
+                let elapsed = last.elapsed();
+                if elapsed >= floor {
+                    "Next update due".to_owned()
+                } else {
+                    let remain = floor.saturating_sub(elapsed);
+                    let secs = i64::try_from(remain.as_secs()).unwrap_or(i64::MAX);
+                    format!("Next update in {}", compact_duration_label(secs.max(0)))
+                }
+            }
+        }
+    }
+
+    /// Overview rows for every **enabled** surface in `ALL` order.
+    pub fn overview_rows(&mut self) -> Result<Vec<HostOverviewRow>, String> {
+        self.require_open()?;
+        let prefs = self.format_prefs;
+        let now = chrono::Utc::now().timestamp();
+        let mut rows = Vec::new();
         for surface in HostSurfaceId::ALL.iter().copied() {
             if !self.enabled.contains(surface.id()) {
                 continue;
@@ -507,26 +654,77 @@ impl HostUsageRuntime {
             let view = self
                 .cache
                 .focused_snapshot(Some(surface.agent_slug()), surface.provider_label());
-            let Some(remaining) = view
-                .buckets
-                .iter()
-                .filter_map(|bucket| bucket.remaining_percent)
-                .min()
-            else {
-                continue;
+            let status_word = usage_status_storage_label(view.status).to_owned();
+            let severity = worst_severity_label(&view);
+            // Prefer remapping the account provider_label when present (OpenAI / Codex).
+            let display_label = if view.account.provider_label.is_empty() {
+                provider_display_label(surface.label()).to_owned()
+            } else {
+                provider_display_label(&view.account.provider_label).to_owned()
             };
-            match best {
-                Some((best_remaining, _)) if remaining >= best_remaining => {}
-                _ => best = Some((remaining, surface)),
+
+            let mut headline = String::new();
+            let mut reset_label = None;
+            let mut exact_reset = None;
+            if let Some(drive) = driving_bucket_from_view(&view) {
+                // Optional model-scoped bucket name prefix (Fable, Sonnet, …).
+                if let Some(prefix) = drive_label_prefix(&view, drive.remaining) {
+                    headline.push_str(prefix);
+                    headline.push(' ');
+                }
+                headline.push_str(&percent_headline(drive.remaining, prefs));
+                if let Some(at) = drive.resets_at {
+                    reset_label = Some(reset_label_with_prefs(at, now, prefs));
+                    exact_reset = Some(exact_reset_parenthetical(at));
+                }
             }
+
+            rows.push(HostOverviewRow {
+                surface_id: surface.id().to_owned(),
+                display_label,
+                headline,
+                reset_label,
+                exact_reset,
+                status_word,
+                severity,
+            });
         }
-        Ok(match best {
-            Some((remaining, surface)) => {
-                let used = 100u8.saturating_sub(remaining);
-                format!("{} {used}%", surface.compact_prefix())
+        Ok(rows)
+    }
+
+    /// Estimate honesty caption for one surface snapshot (presentation-time).
+    pub fn estimate_caption_for(&mut self, surface_id: &str) -> Result<Option<String>, String> {
+        let view = self.snapshot(surface_id)?;
+        Ok(estimate_caption(&view))
+    }
+
+    fn driving_bucket_for(&mut self, surface: HostSurfaceId) -> Option<DrivingBucket> {
+        let view = self
+            .cache
+            .focused_snapshot(Some(surface.agent_slug()), surface.provider_label());
+        driving_bucket_from_view(&view)
+    }
+
+    fn format_compact_entry(
+        surface: HostSurfaceId,
+        remaining: u8,
+        resets_at: Option<i64>,
+    ) -> String {
+        if remaining == 0 {
+            if let Some(at) = resets_at {
+                let now = chrono::Utc::now().timestamp();
+                let secs = at.saturating_sub(now).max(0);
+                return format!(
+                    "{} resets {}",
+                    surface.compact_prefix(),
+                    compact_duration_label(secs)
+                );
             }
-            None => String::new(),
-        })
+            // Honest depleted without a countdown.
+            return format!("{} 100%", surface.compact_prefix());
+        }
+        let used = 100u8.saturating_sub(remaining);
+        format!("{} {used}%", surface.compact_prefix())
     }
 
     /// Poll events after `cursor` (exclusive), up to `max`.
@@ -630,6 +828,52 @@ fn surface_for_target(target: &UsageRefreshTarget) -> Option<HostSurfaceId> {
         }
     }
     HostSurfaceId::from_id(&target.agent)
+}
+
+/// Min-`remaining_percent` bucket (same selection as the legacy compact label).
+fn driving_bucket_from_view(view: &FocusedUsageView) -> Option<DrivingBucket> {
+    let mut best: Option<(u8, Option<i64>)> = None;
+    for bucket in &view.buckets {
+        let Some(remaining) = bucket.remaining_percent else {
+            continue;
+        };
+        match best {
+            Some((best_remaining, _)) if remaining >= best_remaining => {}
+            _ => best = Some((remaining, bucket.resets_at)),
+        }
+    }
+    best.map(|(remaining, resets_at)| DrivingBucket {
+        remaining,
+        resets_at,
+    })
+}
+
+/// Model-scoped bucket label when the driving bucket has no status slot.
+fn drive_label_prefix(view: &FocusedUsageView, remaining: u8) -> Option<&str> {
+    view.buckets
+        .iter()
+        .find(|bucket| bucket.remaining_percent == Some(remaining) && bucket.status_slot.is_none())
+        .map(|bucket| bucket.label.as_str())
+        .filter(|label| !label.is_empty())
+}
+
+fn worst_severity_label(view: &FocusedUsageView) -> String {
+    let mut worst = UsageSeverity::Normal;
+    for bucket in &view.buckets {
+        match bucket.severity {
+            UsageSeverity::Danger => worst = UsageSeverity::Danger,
+            UsageSeverity::Warn if worst != UsageSeverity::Danger => {
+                worst = UsageSeverity::Warn;
+            }
+            _ => {}
+        }
+    }
+    match worst {
+        UsageSeverity::Normal => "normal",
+        UsageSeverity::Warn => "warn",
+        UsageSeverity::Danger => "danger",
+    }
+    .to_owned()
 }
 
 /// Credential-root inventory for docs and debug (no secrets read).

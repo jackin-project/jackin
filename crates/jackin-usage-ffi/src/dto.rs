@@ -6,7 +6,8 @@
 use jackin_protocol::control::{
     FocusedUsageView, Money, QuotaBucketView, UsageConfidence, UsageSnapshotStatus, UsageSource,
 };
-use jackin_usage::host::{HostEventBatch, HostSurfaceDescriptor, HostUsageEvent};
+use jackin_usage::host::{HostEventBatch, HostOverviewRow, HostSurfaceDescriptor, HostUsageEvent};
+use jackin_usage::usage::{PercentStyle, ResetStyle, UsageFormatPrefs, estimate_caption};
 
 /// Open configuration from Swift (paths only — no credentials).
 #[derive(Debug, Clone, uniffi::Record)]
@@ -72,6 +73,29 @@ pub struct UsageViewDto {
     pub updated_label: String,
     pub status_bar_label: String,
     pub last_error: Option<String>,
+    /// Honesty caption when estimated / local-log derived; `None` for authoritative.
+    pub estimate_caption: Option<String>,
+}
+
+/// Presentation-time format prefs (string enums).
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct UsageFormatPrefsDto {
+    /// `left` | `used`
+    pub percent_style: String,
+    /// `countdown` | `exact_clock`
+    pub reset_style: String,
+}
+
+/// Overview row for glance popover / Usage-window sidebar.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct OverviewRowDto {
+    pub surface_id: String,
+    pub display_label: String,
+    pub headline: String,
+    pub reset_label: Option<String>,
+    pub exact_reset: Option<String>,
+    pub status_word: String,
+    pub severity: String,
 }
 
 /// One host event.
@@ -131,6 +155,7 @@ fn event_dto(event: HostUsageEvent) -> UsageEventDto {
 }
 
 pub(crate) fn view_dto(view: FocusedUsageView) -> UsageViewDto {
+    let caption = estimate_caption(&view);
     UsageViewDto {
         focused_agent: view.focused_agent,
         focused_provider: view.focused_provider,
@@ -147,7 +172,37 @@ pub(crate) fn view_dto(view: FocusedUsageView) -> UsageViewDto {
         updated_label: view.updated_label,
         status_bar_label: view.status_bar_label,
         last_error: view.last_error,
+        estimate_caption: caption,
     }
+}
+
+pub(crate) fn overview_row_dto(row: HostOverviewRow) -> OverviewRowDto {
+    OverviewRowDto {
+        surface_id: row.surface_id,
+        display_label: row.display_label,
+        headline: row.headline,
+        reset_label: row.reset_label,
+        exact_reset: row.exact_reset,
+        status_word: row.status_word,
+        severity: row.severity,
+    }
+}
+
+pub(crate) fn parse_format_prefs(dto: UsageFormatPrefsDto) -> Result<UsageFormatPrefs, String> {
+    let percent_style = match dto.percent_style.as_str() {
+        "left" => PercentStyle::Left,
+        "used" => PercentStyle::Used,
+        other => return Err(format!("unknown percent_style: {other}")),
+    };
+    let reset_style = match dto.reset_style.as_str() {
+        "countdown" => ResetStyle::Countdown,
+        "exact_clock" => ResetStyle::ExactClock,
+        other => return Err(format!("unknown reset_style: {other}")),
+    };
+    Ok(UsageFormatPrefs {
+        percent_style,
+        reset_style,
+    })
 }
 
 fn bucket_dto(bucket: QuotaBucketView) -> QuotaBucketDto {

@@ -79,15 +79,68 @@ pub(super) fn parse_iso_epoch(value: &str) -> Option<i64> {
         .map(|date| date.with_timezone(&Utc).timestamp())
 }
 
+/// Percent display preference for presentation-time labels (not persisted).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PercentStyle {
+    /// Remaining percent with a `left` suffix where full phrases are used.
+    #[default]
+    Left,
+    /// Used percent with a `used` suffix where full phrases are used.
+    Used,
+}
+
+/// Reset-time display preference for presentation-time labels (not persisted).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ResetStyle {
+    /// `Resets in {countdown} ({local clock})` — shipped default.
+    #[default]
+    Countdown,
+    /// `Resets {local clock}` — clock-led form.
+    ExactClock,
+}
+
+/// Presentation-time format prefs. Defaults are byte-identical to shipped labels.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct UsageFormatPrefs {
+    /// How percent-bearing quota headlines render.
+    pub percent_style: PercentStyle,
+    /// How reset lines render.
+    pub reset_style: ResetStyle,
+}
+
 pub(super) fn reset_label(reset_at: i64, now: i64) -> String {
+    reset_label_with_prefs(reset_at, now, UsageFormatPrefs::default())
+}
+
+/// Reset label shaped by presentation prefs (Countdown is the shipped form).
+pub(crate) fn reset_label_with_prefs(reset_at: i64, now: i64, prefs: UsageFormatPrefs) -> String {
     if reset_at <= now {
         return "Resets now".to_owned();
     }
-    format!(
-        "Resets in {} ({})",
-        compact_duration_label(reset_at.saturating_sub(now).max(0)),
-        local_timestamp_label(reset_at)
-    )
+    match prefs.reset_style {
+        ResetStyle::Countdown => format!(
+            "Resets in {} ({})",
+            compact_duration_label(reset_at.saturating_sub(now).max(0)),
+            local_timestamp_label(reset_at)
+        ),
+        ResetStyle::ExactClock => format!("Resets {}", local_timestamp_label(reset_at)),
+    }
+}
+
+/// Exact-clock fragment for overview rows, e.g. `(Jul 28, 17:02)`.
+pub(crate) fn exact_reset_parenthetical(reset_at: i64) -> String {
+    format!("({})", local_timestamp_label(reset_at))
+}
+
+/// Compact percent headline from remaining: default `97% left`, or `3% used`.
+pub(crate) fn percent_headline(remaining: u8, prefs: UsageFormatPrefs) -> String {
+    match prefs.percent_style {
+        PercentStyle::Left => format!("{remaining}% left"),
+        PercentStyle::Used => {
+            let used = 100u8.saturating_sub(remaining);
+            format!("{used}% used")
+        }
+    }
 }
 
 pub(super) fn expiry_label(expires_at: i64, now: i64) -> String {
@@ -101,7 +154,7 @@ pub(super) fn expiry_label(expires_at: i64, now: i64) -> String {
     )
 }
 
-pub(super) fn local_timestamp_label(epoch: i64) -> String {
+pub(crate) fn local_timestamp_label(epoch: i64) -> String {
     Local.timestamp_opt(epoch, 0).single().map_or_else(
         || "local time unavailable".to_owned(),
         |timestamp| timestamp.format("%b %-d, %H:%M").to_string(),
@@ -137,7 +190,7 @@ pub(super) fn quota_pace_label(
     }
 }
 
-pub(super) fn compact_duration_label(seconds: i64) -> String {
+pub(crate) fn compact_duration_label(seconds: i64) -> String {
     let days = seconds / 86_400;
     let hours = (seconds % 86_400) / 3_600;
     let minutes = (seconds % 3_600) / 60;

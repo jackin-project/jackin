@@ -37,8 +37,22 @@ UniFFI lives in sibling crate `jackin-usage-ffi`.
 ## Public API
 
 Token-monitor and usage-accounting types consumed by `jackin-capsule`.
-`host::HostUsageRuntime` for the menu bar and host CLI. Avoid cloning full usage
-views during account materialization — serialize from borrowed views/iterators.
+`host::HostUsageRuntime` for jackin❯ Desktop and the host CLI.
+
+Host display extensions (plan 008; presentation-time only, not persisted):
+
+| API | Role |
+|---|---|
+| `usage::provider_display_label` | Shared Capsule/Desktop provider remap (`Codex`→`OpenAI`, …) |
+| `usage::estimate_caption` | Honesty caption for estimated / local-log views |
+| `usage::{UsageFormatPrefs,PercentStyle,ResetStyle}` | left/used + countdown/exact-clock prefs |
+| `HostUsageRuntime::set_format_prefs` | Apply presentation prefs |
+| `HostUsageRuntime::compact_status_bar_label_for` | Pinned compact status-item label |
+| `HostUsageRuntime::compact_status_bar_strip` | Worst-first multi-surface strip |
+| `HostUsageRuntime::overview_rows` | Overview rows for popover + Usage window |
+| `HostUsageRuntime::next_refresh_label` | `Next update in …` / `Next update due` |
+
+Avoid cloning full usage views during account materialization — serialize from borrowed views/iterators.
 
 ## How to verify
 

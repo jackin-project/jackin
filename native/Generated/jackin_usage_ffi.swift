@@ -610,6 +610,16 @@ public protocol UsageMenuBarBridgeProtocol: AnyObject, Sendable {
     func compactStatusBarLabel() throws  -> String
     
     /**
+     * Pinned-surface compact status-item label.
+     */
+    func compactStatusBarLabelFor(surfaceId: String) throws  -> String?
+    
+    /**
+     * Worst-first multi-surface compact strip (joined with ` · `).
+     */
+    func compactStatusBarStrip(max: UInt32) throws  -> String
+    
+    /**
      * List all host surfaces with enable flags.
      */
     func listSurfaces() throws  -> [SurfaceDescriptorDto]
@@ -629,9 +639,19 @@ public protocol UsageMenuBarBridgeProtocol: AnyObject, Sendable {
     func nextEvents(cursor: UInt64, max: UInt32) throws  -> UsageEventBatchDto
     
     /**
+     * Next network refresh label (`Next update in …` / `Next update due`).
+     */
+    func nextRefreshLabel() throws  -> String
+    
+    /**
      * Open the host runtime (paths + enable set). Idempotent replace.
      */
     func openRuntime(config: OpenConfig) throws 
+    
+    /**
+     * Overview rows for every enabled surface (popover + Usage window).
+     */
+    func overviewRows() throws  -> [OverviewRowDto]
     
     /**
      * Intentional panic probe for containment tests (never call from product UI).
@@ -660,6 +680,11 @@ public protocol UsageMenuBarBridgeProtocol: AnyObject, Sendable {
      * Enable or disable a surface for bar + refresh.
      */
     func setEnabled(surfaceId: String, enabled: Bool) throws 
+    
+    /**
+     * Presentation-time format prefs (`left`/`used`, `countdown`/`exact_clock`).
+     */
+    func setFormatPrefs(prefs: UsageFormatPrefsDto) throws 
     
     /**
      * Set refresh floor seconds (clamped ≥ 60 in Rust).
@@ -762,6 +787,32 @@ open func compactStatusBarLabel()throws  -> String  {
 }
     
     /**
+     * Pinned-surface compact status-item label.
+     */
+open func compactStatusBarLabelFor(surfaceId: String)throws  -> String?  {
+    return try  FfiConverterOptionString.lift(try rustCallWithError(FfiConverterTypeUsageBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_jackin_usage_ffi_fn_method_usagemenubarbridge_compact_status_bar_label_for(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(surfaceId),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Worst-first multi-surface compact strip (joined with ` · `).
+     */
+open func compactStatusBarStrip(max: UInt32)throws  -> String  {
+    return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeUsageBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_jackin_usage_ffi_fn_method_usagemenubarbridge_compact_status_bar_strip(
+            self.uniffiCloneHandle(),
+        FfiConverterUInt32.lower(max),uniffiCallStatus
+    )
+})
+}
+    
+    /**
      * List all host surfaces with enable flags.
      */
 open func listSurfaces()throws  -> [SurfaceDescriptorDto]  {
@@ -804,6 +855,18 @@ open func nextEvents(cursor: UInt64, max: UInt32)throws  -> UsageEventBatchDto  
 }
     
     /**
+     * Next network refresh label (`Next update in …` / `Next update due`).
+     */
+open func nextRefreshLabel()throws  -> String  {
+    return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeUsageBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_jackin_usage_ffi_fn_method_usagemenubarbridge_next_refresh_label(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+    /**
      * Open the host runtime (paths + enable set). Idempotent replace.
      */
 open func openRuntime(config: OpenConfig)throws   {try rustCallWithError(FfiConverterTypeUsageBridgeError_lift) {
@@ -813,6 +876,18 @@ open func openRuntime(config: OpenConfig)throws   {try rustCallWithError(FfiConv
         FfiConverterTypeOpenConfig_lower(config),uniffiCallStatus
     )
 }
+}
+    
+    /**
+     * Overview rows for every enabled surface (popover + Usage window).
+     */
+open func overviewRows()throws  -> [OverviewRowDto]  {
+    return try  FfiConverterSequenceTypeOverviewRowDto.lift(try rustCallWithError(FfiConverterTypeUsageBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_jackin_usage_ffi_fn_method_usagemenubarbridge_overview_rows(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
 }
     
     /**
@@ -875,6 +950,18 @@ open func setEnabled(surfaceId: String, enabled: Bool)throws   {try rustCallWith
             self.uniffiCloneHandle(),
         FfiConverterString.lower(surfaceId),
         FfiConverterBool.lower(enabled),uniffiCallStatus
+    )
+}
+}
+    
+    /**
+     * Presentation-time format prefs (`left`/`used`, `countdown`/`exact_clock`).
+     */
+open func setFormatPrefs(prefs: UsageFormatPrefsDto)throws   {try rustCallWithError(FfiConverterTypeUsageBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_jackin_usage_ffi_fn_method_usagemenubarbridge_set_format_prefs(
+            self.uniffiCloneHandle(),
+        FfiConverterTypeUsageFormatPrefsDto_lower(prefs),uniffiCallStatus
     )
 }
 }
@@ -1113,6 +1200,83 @@ public func FfiConverterTypeOpenConfig_lift(_ buf: RustBuffer) throws -> OpenCon
 #endif
 public func FfiConverterTypeOpenConfig_lower(_ value: OpenConfig) -> RustBuffer {
     return FfiConverterTypeOpenConfig.lower(value)
+}
+
+
+/**
+ * Overview row for glance popover / Usage-window sidebar.
+ */
+public struct OverviewRowDto: Equatable, Hashable {
+    public var surfaceId: String
+    public var displayLabel: String
+    public var headline: String
+    public var resetLabel: String?
+    public var exactReset: String?
+    public var statusWord: String
+    public var severity: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(surfaceId: String, displayLabel: String, headline: String, resetLabel: String?, exactReset: String?, statusWord: String, severity: String) {
+        self.surfaceId = surfaceId
+        self.displayLabel = displayLabel
+        self.headline = headline
+        self.resetLabel = resetLabel
+        self.exactReset = exactReset
+        self.statusWord = statusWord
+        self.severity = severity
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension OverviewRowDto: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeOverviewRowDto: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> OverviewRowDto {
+        return
+            try OverviewRowDto(
+                surfaceId: FfiConverterString.read(from: &buf), 
+                displayLabel: FfiConverterString.read(from: &buf), 
+                headline: FfiConverterString.read(from: &buf), 
+                resetLabel: FfiConverterOptionString.read(from: &buf), 
+                exactReset: FfiConverterOptionString.read(from: &buf), 
+                statusWord: FfiConverterString.read(from: &buf), 
+                severity: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: OverviewRowDto, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.surfaceId, into: &buf)
+        FfiConverterString.write(value.displayLabel, into: &buf)
+        FfiConverterString.write(value.headline, into: &buf)
+        FfiConverterOptionString.write(value.resetLabel, into: &buf)
+        FfiConverterOptionString.write(value.exactReset, into: &buf)
+        FfiConverterString.write(value.statusWord, into: &buf)
+        FfiConverterString.write(value.severity, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeOverviewRowDto_lift(_ buf: RustBuffer) throws -> OverviewRowDto {
+    return try FfiConverterTypeOverviewRowDto.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeOverviewRowDto_lower(_ value: OverviewRowDto) -> RustBuffer {
+    return FfiConverterTypeOverviewRowDto.lower(value)
 }
 
 
@@ -1409,6 +1573,75 @@ public func FfiConverterTypeUsageEventDto_lower(_ value: UsageEventDto) -> RustB
 
 
 /**
+ * Presentation-time format prefs (string enums).
+ */
+public struct UsageFormatPrefsDto: Equatable, Hashable {
+    /**
+     * `left` | `used`
+     */
+    public var percentStyle: String
+    /**
+     * `countdown` | `exact_clock`
+     */
+    public var resetStyle: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * `left` | `used`
+         */percentStyle: String, 
+        /**
+         * `countdown` | `exact_clock`
+         */resetStyle: String) {
+        self.percentStyle = percentStyle
+        self.resetStyle = resetStyle
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension UsageFormatPrefsDto: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeUsageFormatPrefsDto: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> UsageFormatPrefsDto {
+        return
+            try UsageFormatPrefsDto(
+                percentStyle: FfiConverterString.read(from: &buf), 
+                resetStyle: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: UsageFormatPrefsDto, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.percentStyle, into: &buf)
+        FfiConverterString.write(value.resetStyle, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeUsageFormatPrefsDto_lift(_ buf: RustBuffer) throws -> UsageFormatPrefsDto {
+    return try FfiConverterTypeUsageFormatPrefsDto.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeUsageFormatPrefsDto_lower(_ value: UsageFormatPrefsDto) -> RustBuffer {
+    return FfiConverterTypeUsageFormatPrefsDto.lower(value)
+}
+
+
+/**
  * Full focused usage view for one surface.
  */
 public struct UsageViewDto: Equatable, Hashable {
@@ -1427,10 +1660,17 @@ public struct UsageViewDto: Equatable, Hashable {
     public var updatedLabel: String
     public var statusBarLabel: String
     public var lastError: String?
+    /**
+     * Honesty caption when estimated / local-log derived; `None` for authoritative.
+     */
+    public var estimateCaption: String?
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(focusedAgent: String?, focusedProvider: String?, providerLabel: String, accountLabel: String, username: String?, planLabel: String?, credentialOrigin: String?, buckets: [QuotaBucketDto], status: String, source: String, confidence: String, fetchedAtEpoch: Int64, updatedLabel: String, statusBarLabel: String, lastError: String?) {
+    public init(focusedAgent: String?, focusedProvider: String?, providerLabel: String, accountLabel: String, username: String?, planLabel: String?, credentialOrigin: String?, buckets: [QuotaBucketDto], status: String, source: String, confidence: String, fetchedAtEpoch: Int64, updatedLabel: String, statusBarLabel: String, lastError: String?, 
+        /**
+         * Honesty caption when estimated / local-log derived; `None` for authoritative.
+         */estimateCaption: String?) {
         self.focusedAgent = focusedAgent
         self.focusedProvider = focusedProvider
         self.providerLabel = providerLabel
@@ -1446,6 +1686,7 @@ public struct UsageViewDto: Equatable, Hashable {
         self.updatedLabel = updatedLabel
         self.statusBarLabel = statusBarLabel
         self.lastError = lastError
+        self.estimateCaption = estimateCaption
     }
 
     
@@ -1478,7 +1719,8 @@ public struct FfiConverterTypeUsageViewDto: FfiConverterRustBuffer {
                 fetchedAtEpoch: FfiConverterInt64.read(from: &buf), 
                 updatedLabel: FfiConverterString.read(from: &buf), 
                 statusBarLabel: FfiConverterString.read(from: &buf), 
-                lastError: FfiConverterOptionString.read(from: &buf)
+                lastError: FfiConverterOptionString.read(from: &buf), 
+                estimateCaption: FfiConverterOptionString.read(from: &buf)
         )
     }
 
@@ -1498,6 +1740,7 @@ public struct FfiConverterTypeUsageViewDto: FfiConverterRustBuffer {
         FfiConverterString.write(value.updatedLabel, into: &buf)
         FfiConverterString.write(value.statusBarLabel, into: &buf)
         FfiConverterOptionString.write(value.lastError, into: &buf)
+        FfiConverterOptionString.write(value.estimateCaption, into: &buf)
     }
 }
 
@@ -1754,6 +1997,31 @@ fileprivate struct FfiConverterSequenceString: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypeOverviewRowDto: FfiConverterRustBuffer {
+    typealias SwiftType = [OverviewRowDto]
+
+    public static func write(_ value: [OverviewRowDto], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeOverviewRowDto.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [OverviewRowDto] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [OverviewRowDto]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeOverviewRowDto.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeQuotaBucketDto: FfiConverterRustBuffer {
     typealias SwiftType = [QuotaBucketDto]
 
@@ -1844,6 +2112,12 @@ private let initializationResult: InitializationResult = {
     if (uniffi_jackin_usage_ffi_checksum_method_usagemenubarbridge_compact_status_bar_label() != 11624) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_jackin_usage_ffi_checksum_method_usagemenubarbridge_compact_status_bar_label_for() != 27154) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_jackin_usage_ffi_checksum_method_usagemenubarbridge_compact_status_bar_strip() != 29560) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_jackin_usage_ffi_checksum_method_usagemenubarbridge_list_surfaces() != 14496) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -1853,7 +2127,13 @@ private let initializationResult: InitializationResult = {
     if (uniffi_jackin_usage_ffi_checksum_method_usagemenubarbridge_next_events() != 65354) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_jackin_usage_ffi_checksum_method_usagemenubarbridge_next_refresh_label() != 53364) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_jackin_usage_ffi_checksum_method_usagemenubarbridge_open_runtime() != 47176) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_jackin_usage_ffi_checksum_method_usagemenubarbridge_overview_rows() != 59208) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_jackin_usage_ffi_checksum_method_usagemenubarbridge_panic_probe() != 5364) {
@@ -1869,6 +2149,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_jackin_usage_ffi_checksum_method_usagemenubarbridge_set_enabled() != 59390) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_jackin_usage_ffi_checksum_method_usagemenubarbridge_set_format_prefs() != 53990) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_jackin_usage_ffi_checksum_method_usagemenubarbridge_set_refresh_floor_secs() != 6201) {

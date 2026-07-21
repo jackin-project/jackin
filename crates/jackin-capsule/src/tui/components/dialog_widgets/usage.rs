@@ -76,13 +76,8 @@ pub(crate) fn usage_tab_strip_labels(
 }
 
 pub(crate) fn usage_provider_display_label(label: &str) -> &str {
-    match label {
-        "Codex" | "OpenAI / Codex" => "OpenAI",
-        "Claude" | "Anthropic / Claude" => "Anthropic",
-        "Grok Build" | "xAI / Grok" => "xAI",
-        "GLM / Z.AI" => "Z.AI",
-        other => other,
-    }
+    // Lifted to jackin-usage so Desktop + Capsule share one remap (plan 008).
+    jackin_usage::usage::provider_display_label(label)
 }
 
 pub(crate) fn usage_tab_strip_width(tabs: &[(String, bool)]) -> usize {
