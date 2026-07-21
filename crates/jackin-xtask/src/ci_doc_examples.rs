@@ -84,10 +84,9 @@ fn collect_rust_files(directory: &Path, files: &mut Vec<PathBuf>) -> Result<()> 
     if !directory.exists() {
         return Ok(());
     }
-    for entry in fs::read_dir(directory)
+    for entry in crate::fs_util::read_dir_sorted(directory)
         .with_context(|| format!("read source directory {}", directory.display()))?
     {
-        let entry = entry.with_context(|| format!("read entry under {}", directory.display()))?;
         let path = entry.path();
         let file_type = entry
             .file_type()
