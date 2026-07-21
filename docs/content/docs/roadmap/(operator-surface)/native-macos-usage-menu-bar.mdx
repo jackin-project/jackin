@@ -2,15 +2,18 @@
 title: "Native macOS agent-usage menu bar"
 ---
 
-**Status**: Shipped core — host library, UniFFI, menu-bar shell, CLI, operator guide; **residual**: Apple Developer ID notarization secrets in CI + Homebrew cask publish
+**Status**: Shipped core — host library, UniFFI, menu-bar shell, CLI, operator guide; **open**: host-global usage cache unification, native Tahoe design pass, notarized distribution
 
 **Operator guide**: [macOS agent-usage menu bar](/guides/macos-usage-menu-bar/)
 
 **Architecture**: [ADR-011](/reference/adrs/adr-011-native-macos-usage-menu-bar/)
 
-**References (external, clean-room)**:
+**Implementation plans**: `plans/native-macos-usage-menu-bar/` (005 cache unification → 006 design refresh → 001–004 distribution)
 
-- [CodexBar](https://github.com/steipete/codexbar) — visual / menu-bar UX only (not code)
+**References (external, clean-room — concepts only, never code or provider lists)**:
+
+- [CodexBar](https://github.com/steipete/codexbar) — status-item and popover UX conventions: template meter icon, per-window bars with reset countdowns, honest stale/error dimming, quota-threshold semantics
+- [OpenUsage](https://github.com/robinebers/openusage) — native app architecture conventions: stale-while-revalidate snapshot cache, error-never-overwrites-last-good triad, centralized Liquid Glass availability fallbacks, one normalized engine feeding several read surfaces
 - [TableRock native macOS path](https://github.com/tailrocks/tablerock/blob/main/docs/architecture/native-macos-path.md) — UniFFI architecture reference
 
 ## Shipped
@@ -24,11 +27,30 @@ title: "Native macOS agent-usage menu bar"
 | 4 | Full `HostSurfaceId::ALL` (Agent::ALL + Z.AI + MiniMax); Rust goldens for view fields / no invented % |
 | 5 | Operator guide + sign/notarize script path; privacy copy; roadmap hygiene |
 
-## Residual (distribution)
+## Open work
 
-1. **Notarize/staple in CI** blocked without Developer ID + notarytool secrets — local path: `scripts/sign-notarize-usage-menu-bar.sh`
-2. **Homebrew cask** publish to `jackin-project/homebrew-tap` once notarized artifact exists
-3. Optional: Sparkle auto-update (cask-only is acceptable)
+### 1. Host-global usage cache — one refresh feeds every surface (plan 005, first)
+
+Operator-directed top priority. Target invariant: **one host-side cache per account is the single source of truth**; refreshing usage anywhere — menu bar, host CLI, or any container — updates that one cache, every other surface adopts it within one poll tick without its own network fetch, and at most one prober per account runs host-wide (no parallel per-container copies, no duplicate probing, no avoidable rate limiting).
+
+What breaks the invariant today (verified 2026-07-21 at commit `3c49fff0`):
+
+- **Split coordination roots.** Container launch bind-mounts host `~/.jackin/data/usage-shared/{snapshots,cooldowns,locks}` and points `JACKIN_USAGE_{SNAPSHOTS,COOLDOWN,LOCK}_DIR` at it, but the library defaults used by host processes (`HostUsageRuntime` behind the menu bar, `jackin usage host snapshot`) still resolve to `~/.jackin/data/daemon/usage-*`. Containers coordinate with each other; the menu bar is an uncoordinated extra prober on the same accounts. ADR-011's shared-dirs section currently documents the pre-split state and must be corrected with the fix.
+- **No re-seed on external refresh.** A warm process seeds from the shared per-account snapshot only on first sight of a target; a newer snapshot written by another process is ignored until the local 5-minute schedule fires. Refresh-anywhere-visible-everywhere needs adopt-if-newer on every poll tick.
+- **Lock semantics across the VM boundary are best-effort.** The per-account `flock` dedups container↔container reliably (same kernel); host↔container it may not propagate on virtiofs. Correctness must rest on the success-cooldown markers, with the lock as an optimization.
+
+The building blocks all exist (account-identity-keyed shared snapshots, cooldown markers, best-effort locks, Capsule-free host runtime); plan 005 unifies the root, adds adopt-if-newer, verifies cooldown suppression cross-process, and fixes ADR/guide truth. No daemon, no new IPC — the [jackin❯ daemon](/roadmap/jackin-daemon/) remains an optional later upgrade.
+
+### 2. Native Tahoe design pass (plan 006)
+
+Make the shell a first-class modern macOS citizen while staying display-only: template status-item icon + optional Rust-provided monospaced percent (HIG width discipline, replacing today's 48-char text label), capacity `Gauge` buckets with severity tints, reset countdowns, error/stale badges that never hide last-good data, Refresh/Settings/Quit affordances, launch-at-login via `SMAppService`, and Liquid Glass via the macOS 26 SDK with all `#available(macOS 26)` gates centralized in one fallbacks file — deployment floor stays macOS 14. Display parity rule: the menu bar renders exactly the same Rust view fields the Capsule usage overlay renders (same providers, same labels, same honest `unavailable`/`refreshing`/`stale`), never a parallel Swift interpretation.
+
+### 3. Distribution residual (plans 001–004)
+
+1. One universal static app assembly path, PR-gated (plan 001); tap cask validation without write credentials (plan 002).
+2. **Notarize/staple in CI** blocked without Developer ID + notarytool secrets — local path: <RepoFile path="scripts/sign-notarize-usage-menu-bar.sh" /> (plan 003).
+3. **Homebrew cask** publish to `jackin-project/homebrew-tap` once a notarized artifact exists (plans 003–004).
+4. Optional: Sparkle auto-update (cask-only is acceptable).
 
 ## Architecture (frozen)
 
@@ -37,9 +59,11 @@ SwiftUI menu bar (display only)
   → PresentationStore polls UniFFI snapshots on MainActor
   → jackin-usage-ffi (staticlib / XCFramework)
   → HostUsageRuntime + jackin-usage probes
+       ↕ one host-global cache: ~/.jackin/data/usage-shared/{snapshots,cooldowns,locks}
+       ↕ bind-mounted into every container at /jackin/usage-shared (same files, same accounts)
 ```
 
-Swift must not own HTTP/RPC/OAuth/CLI probes or non-jackin providers. Scope: `Agent::ALL` + existing usage surfaces only.
+Swift must not own HTTP/RPC/OAuth/CLI probes or non-jackin providers. Scope: `Agent::ALL` + existing usage surfaces only (Claude, Codex, Amp, Grok, Kimi, OpenCode, plus Z.AI/GLM and MiniMax) — never CodexBar's provider zoo. Exactly one prober per account host-wide; every consumer (menu bar, Capsule TUI, CLI) renders the same shared per-account snapshot.
 
 ## Implementation checklist
 
@@ -49,7 +73,9 @@ Swift must not own HTTP/RPC/OAuth/CLI probes or non-jackin providers. Scope: `Ag
 - [x] Phase 3 menu bar shell (display only)
 - [x] Phase 4 full surface matrix + goldens
 - [x] Phase 5 operator docs + sign script residual
-- [ ] Notarized CI artifact + Homebrew cask (external: Apple account)
+- [ ] Host-global usage cache unification (plan 005): one coordination root, adopt-if-newer, cross-process cooldown suppression, ADR-011 correction
+- [ ] Native Tahoe design pass (plan 006): template icon + compact label, gauges, footer actions, launch-at-login, centralized Liquid Glass fallbacks
+- [ ] Notarized CI artifact + Homebrew cask (plans 001–004; external: Apple account)
 
 ## Related work
 
