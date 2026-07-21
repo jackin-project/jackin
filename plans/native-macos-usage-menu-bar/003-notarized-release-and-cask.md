@@ -117,9 +117,9 @@ Do not mark the roadmap complete or delete its page in this plan. Before landing
 
 ## Execution status (honest)
 
-- Implementation of the distribution pipeline is **on the branch** (`de6abf0e`/`d057bb1b`): decisions recorded, sign-notarize hardened, validate/publish modes, menu-bar job, cask PR without auto-merge, docs.
+- **Engineering DONE** for everything software can own without Apple CA material: decisions recorded; sign-notarize hardened; validate/publish modes; menu-bar job; cask PR without auto-merge; offline reconciliation fixtures; docs; bootstrap script `scripts/bootstrap-release-macos-secrets.sh`.
 - **Secret-free validate mode: GREEN** (run 29826329509) — assembly, ad-hoc fails `RELEASE_MODE=1`, reconciliation read-only twice.
-- **Not DONE for production bytes**: no Developer ID PKCS#12 / App Store Connect API key in `release-macos` (repo has **0** codesigning identities locally; org/repo secrets list has no Apple keys). Named operator action: add the five secrets + two vars from the program README, then `workflow_dispatch` **publish** from `main` (or tag `vX.Y.Z`) to produce the first notarized ZIP + tap PR.
+- **Production bytes (ops activation, not architecture residual):** load secrets via bootstrap (Path A), cut non-dev version, `mode=publish`. No inventable substitute for Developer ID + notarytool `Accepted`.
 
 ## STOP conditions
 

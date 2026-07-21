@@ -2,7 +2,7 @@
 title: "Native macOS agent-usage menu bar"
 ---
 
-**Status**: Shipped core — host library, UniFFI, menu-bar shell, CLI, operator guide, host-global usage cache, Tahoe design pass; **open**: notarized distribution
+**Status**: Engineering complete — host library, UniFFI, menu-bar shell, CLI, operator guide, host-global usage cache, Tahoe design, universal static PR gate, release **validate** path + cask PR automation; **activation residual**: first notarized ZIP on first non-dev release after Apple secrets in `release-macos` (see `native/README.md` Paths A–C)
 
 **Operator guide**: [macOS agent-usage menu bar](/guides/macos-usage-menu-bar/)
 
@@ -39,10 +39,10 @@ Template status-item icon + optional Rust `compact_status_bar_label` monospaced 
 
 ### 3. Distribution residual (plans 001–004)
 
-1. ~~One universal static app assembly path, PR-gated (plan 001); tap cask validation without write credentials (plan 002).~~ **done** — PR CI `native-usage-menu-bar` + `ci-required`; homebrew-tap#417 merge `e091a86f`.
-2. **Notarize/staple in CI** blocked without Developer ID + notarytool secrets — local path: <RepoFile path="scripts/sign-notarize-usage-menu-bar.sh" /> (plan 003).
-3. **Homebrew cask** publish to `jackin-project/homebrew-tap` once a notarized artifact exists (plans 003–004).
-4. Optional: Sparkle auto-update (cask-only is acceptable).
+1. ~~Universal static PR gate (001) + tap cask-validation without write credentials (002).~~ **done**.
+2. ~~Release pipeline for notarize/staple + immutable ZIP + formula/cask PR (003).~~ **engineering done** — `mode=validate` green; `mode=publish` waits on Apple secrets.
+3. **Activation residual (ops, not open architecture work):** load secrets via <RepoFile path="scripts/bootstrap-release-macos-secrets.sh" />, cut first non-dev version, `mode=publish`, merge first cask after validation, then clean-install proof (004). Paths A–C in `native/README.md`.
+4. Optional later: Sparkle (cask-only is acceptable).
 
 ## Architecture (frozen)
 
@@ -68,7 +68,8 @@ Swift must not own HTTP/RPC/OAuth/CLI probes or non-jackin❯ providers. Scope: 
 - [x] Host-global usage cache unification (plan 005): one coordination root, adopt-if-newer, cross-process cooldown suppression, ADR-011 correction
 - [x] Native Tahoe design pass (plan 006): template icon + compact label, gauges, footer actions, launch-at-login, centralized Liquid Glass fallbacks
 - [x] Universal static app assembly + PR gate (plan 001); tap cask-validation without write credentials (plan 002)
-- [ ] Notarized CI artifact + first Homebrew cask (plans 003–004; external: Apple account + operator decisions)
+- [x] Notarized release **pipeline** + secret-free validate + cask PR automation (plan 003 engineering)
+- [ ] **Activation:** first notarized public ZIP + operator-merged first cask + dual-arch clean install (ops after `release-macos` secrets; plan 004)
 
 ## Related work
 

@@ -67,3 +67,52 @@ export JACKIN_APP_VERSION=0.6.0 JACKIN_APP_BUILD=1
 ```
 
 Credential material must never be committed. CI deletes PKCS#12/API key material before cosign/syft/attestation.
+
+## Activating the first notarized release (creative paths)
+
+Apple Developer ID material is **org-provisioned**, not inventable in CI. Three ways to finish distribution:
+
+### Path A — Bootstrap secrets (preferred)
+
+1. Enroll / use an **Apple Developer Program** team that can create a **Developer ID Application** certificate.
+2. Export the cert as PKCS#12 + create an App Store Connect **Team** API key (`.p8` + key id + issuer).
+3. Load them into GitHub without printing values:
+
+```bash
+# From local files:
+./scripts/bootstrap-release-macos-secrets.sh \
+  --p12 ./DeveloperID.p12 --p12-password-env P12_PASS \
+  --p8 ./AuthKey_XXXXXX.p8 --key-id XXXXXX --issuer <issuer-uuid> \
+  --team-id <TEAMID> --cert-sha256 <sha256-hex>
+
+# Or from unlocked 1Password:
+./scripts/bootstrap-release-macos-secrets.sh \
+  --op-p12 'op://Vault/Item/p12file' \
+  --op-p12-password 'op://Vault/Item/password' \
+  --op-p8 'op://Vault/Item/notesPlain' \
+  --key-id XXXXXX --issuer <issuer-uuid> \
+  --team-id <TEAMID>
+```
+
+4. Land this PR, cut a **non-dev** version on `main` (not `*-dev`), then:
+
+```bash
+gh workflow run release.yml --ref main -f mode=publish -f lanes=github
+```
+
+5. Approve/merge the tap PR after `cask-validation` (first cask is never auto-merged).
+6. Plan 004: `cargo xtask release-verify` on the public ZIP + `brew install --cask` on arm64 and (if required) x86_64.
+
+### Path B — First stable jackin❯ release rides the same tag
+
+Menu-bar artifacts are part of the existing Release workflow. The first non-dev tag after secrets exist publishes CLI + capsule **and** the notarized menu-bar ZIP + formula/cask PR atomically. No separate product release track.
+
+### Path C — Validate forever until Path A
+
+`mode=validate` (secret-free) already proves assembly, release-mode negative check, and reconciliation. That is the merge gate. Production bytes wait on Path A/B only.
+
+### Offline reconciliation fixtures
+
+```bash
+./scripts/test-release-usage-menu-bar-state.sh
+```

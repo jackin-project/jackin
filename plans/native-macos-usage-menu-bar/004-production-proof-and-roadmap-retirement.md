@@ -88,7 +88,8 @@ Mark Plans 001–004 DONE, then follow the root `plans/README.md` convention: af
 
 ## Execution status (honest)
 
-- **BLOCKED** — depends on plan 003 shipping a real notarized release ZIP + operator-approved first cask merge. No public notarized menu-bar asset or stable cask exists yet.
+- **Activation playbook ready** — evidence steps unchanged (download, `release-verify`, brew install/launch/uninstall both arches, no-write rerun, roadmap retirement).
+- Runs only after Path A/B first publish (see `native/README.md`). Until then residual is org Apple credentials + first non-dev tag, not missing design.
 
 ## STOP conditions
 

@@ -461,6 +461,9 @@ jobs:
           fi
           echo "ok: ad-hoc correctly fails release-mode checks"
 
+      - name: Offline reconciliation fixtures
+        run: bash scripts/test-release-usage-menu-bar-state.sh
+
       - name: Reconciliation state (read-only)
         env:
           GH_TOKEN: ${{ github.token }}

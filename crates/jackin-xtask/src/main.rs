@@ -129,7 +129,7 @@ enum Command {
     ProfileMatrix(profile_matrix::ProfileMatrixArgs),
     /// Verify a signed release archive and its published sidecars.
     ///
-    /// Use as `cargo xtask release-verify <archive>.tar.gz`.
+    /// Use as `cargo xtask release-verify <archive>.tar.gz` or `.zip` (usage menu-bar).
     #[command(name = "release-verify")]
     ReleaseVerify(release_verify::ReleaseVerifyArgs),
     /// Report-only code-health dashboard (completed codebase-health Phase 0).
