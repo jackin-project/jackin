@@ -47,9 +47,6 @@ provider = "bare_allow_per_crate"
 # the bare-allow parser itself (`health::tests::parses_bare_allow`).
 cap = 0
 mode = "enforce"
-[[family.entry]]
-key = "jackin-image"
-bound = 1
 [[family]]
 id = "expect-per-lint-crate"
 kind = "numeric"
@@ -94,7 +91,7 @@ key = "clippy::disallowed_methods@jackin-env"
 bound = 3
 [[family.entry]]
 key = "clippy::disallowed_methods@jackin-host"
-bound = 4
+bound = 1
 [[family.entry]]
 key = "clippy::disallowed_methods@jackin-image"
 bound = 2
@@ -392,6 +389,12 @@ bound = 2
 [[family.entry]]
 key = "clippy::unnecessary_wraps@jackin-runtime"
 bound = 1
+[[family.entry]]
+key = "clippy::unused_async@jackin-image"
+bound = 1
+[[family.entry]]
+key = "clippy::unused_self@jackin-agent-status"
+bound = 3
 [[family.entry]]
 key = "clippy::unwrap_used@jackin"
 bound = 12
