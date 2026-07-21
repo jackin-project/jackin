@@ -34,6 +34,11 @@ pub enum PathsError {
 /// All host-side directories that jackin❯ reads or writes.
 #[derive(Debug, Clone)]
 pub struct JackinPaths {
+    /// Whether this layout was explicitly constructed for a hermetic test.
+    ///
+    /// Runtime transport selection uses this marker instead of relying on
+    /// `cfg(test)`, which is false for libraries linked into integration tests.
+    pub test_layout: bool,
     /// Operator home directory (`$HOME`).
     pub home_dir: PathBuf,
     /// jackin data home (`~/.jackin` or `JACKIN_HOME_DIR`).
@@ -78,6 +83,7 @@ impl JackinPaths {
         let jackin_home =
             jackin_home_override.map_or_else(|| home_dir.join(".jackin"), PathBuf::from);
         Self {
+            test_layout: false,
             config_file: config_dir.join("config.toml"),
             workspaces_dir: config_dir.join("workspaces"),
             roles_dir: jackin_home.join("roles"),
@@ -95,6 +101,7 @@ impl JackinPaths {
         let config_dir = root.join("config");
         let jackin_home = home_dir.join(".jackin");
         Self {
+            test_layout: true,
             config_file: config_dir.join("config.toml"),
             workspaces_dir: config_dir.join("workspaces"),
             roles_dir: jackin_home.join("roles"),

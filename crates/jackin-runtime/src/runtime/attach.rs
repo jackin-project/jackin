@@ -372,7 +372,7 @@ pub(super) async fn reconnect_or_create_session_with_focus(
 ) -> anyhow::Result<()> {
     set_role_terminal_title(paths, container_name);
     wait_for_capsule_daemon(paths, container_name, docker).await?;
-    if super::host_attach::host_attach_enabled() {
+    if super::host_attach::host_attach_enabled(paths) {
         let outcome = super::host_attach::run_host_attach_session(
             paths,
             container_name,
@@ -577,7 +577,7 @@ pub async fn spawn_shell_session(
 
     set_role_terminal_title(paths, container_name);
     jackin_host::caffeinate::reconcile(paths, docker, runner).await;
-    if super::host_attach::host_attach_enabled() {
+    if super::host_attach::host_attach_enabled(paths) {
         let result = super::host_attach::run_host_attach_session(
             paths,
             container_name,
@@ -679,7 +679,7 @@ pub async fn spawn_agent_session(
     // Each transport encodes them only on the path that consumes it.
     set_role_terminal_title(paths, container_name);
     jackin_host::caffeinate::reconcile(paths, docker, runner).await;
-    if super::host_attach::host_attach_enabled() {
+    if super::host_attach::host_attach_enabled(paths) {
         let mut session_env_overrides: Vec<(String, String)> =
             git_policy_env_pairs(git_coauthor_trailer, git_dco)
                 .into_iter()

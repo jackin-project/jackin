@@ -98,7 +98,13 @@ fn log_clipboard_image_pasted_path_staged() {
 }
 
 #[must_use]
-pub fn host_attach_enabled() -> bool {
+pub fn host_attach_enabled(paths: &JackinPaths) -> bool {
+    // Integration-test binaries link this crate without `cfg(test)`. The
+    // explicit path context keeps an operator's JACKIN_HOST_ATTACH setting
+    // from routing injected fakes into the real host transport.
+    if paths.test_layout {
+        return false;
+    }
     #[cfg(test)]
     {
         false

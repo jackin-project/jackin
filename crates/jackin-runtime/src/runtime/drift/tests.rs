@@ -33,6 +33,7 @@ fn record_for(workspace: &str, container: &str, dst: &str, src: &str) -> Isolati
 
 fn paths_for(data: &std::path::Path) -> JackinPaths {
     JackinPaths {
+        test_layout: true,
         home_dir: data.into(),
         jackin_home: data.into(),
         config_dir: data.into(),
