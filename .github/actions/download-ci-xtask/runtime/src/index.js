@@ -9,7 +9,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const WAIT_MILLISECONDS = 2_000;
-const DEADLINE_MILLISECONDS = 55_000;
+const DEADLINE_MILLISECONDS = 120_000;
 const REQUIRED_TOOLS = [
   "sccache",
   "cargo-nextest",
@@ -80,7 +80,13 @@ async function waitForArtifact(
     const artifact = await find();
     if (artifact) return artifact;
     if (!announced) {
-      core.notice(`waiting up to 55 seconds for prepared CI artifact: ${name}`);
+      const remainingSeconds = Math.max(
+        0,
+        Math.ceil((deadline - Date.now()) / 1_000),
+      );
+      core.notice(
+        `waiting up to ${remainingSeconds} seconds for prepared CI artifact: ${name}`,
+      );
       announced = true;
     }
     await new Promise((resolve) => setTimeout(resolve, waitMilliseconds));
