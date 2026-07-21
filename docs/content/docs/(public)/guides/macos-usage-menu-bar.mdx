@@ -13,29 +13,43 @@ Numbers come from the same Rust stack Capsule uses (`jackin-usage` + `jackin-pro
 
 ## Install
 
+### Homebrew cask (stable)
+
+Once a notarized release ships:
+
+```bash
+brew install --cask jackin-project/tap/jackin-usage-menu-bar
+```
+
+That installs `JackinUsageMenuBar.app` from the immutable GitHub Release ZIP. Floor: **macOS 14 (Sonoma)+**. Uninstall: `brew uninstall --cask jackin-usage-menu-bar` (removes the app; no root daemon or LaunchDaemon).
+
+### Direct download
+
+Download `jackin-usage-menu-bar-<VERSION>-universal-apple-darwin.zip` plus `.sha256` / `.bundle` / `.sbom.json` from the [GitHub Releases](https://github.com/jackin-project/jackin/releases) page, verify with `cargo xtask release-verify <zip>`, then open the app. See [Verifying releases](/getting-started/verifying-releases/).
+
 ### Local developer build
 
 ```bash
-cargo build -p jackin-usage-ffi --release
-./scripts/generate-usage-swift-bindings.sh
-./scripts/build-usage-menu-bar-app.sh
+JACKIN_APP_VERSION=0.6.0 JACKIN_APP_BUILD=1 ./scripts/build-usage-menu-bar-app.sh
+JACKIN_APP_VERSION=0.6.0 JACKIN_APP_BUILD=1 ./scripts/verify-usage-menu-bar-app.sh native/dist/JackinUsageMenuBar.app
 open native/dist/JackinUsageMenuBar.app
 ```
 
 The app is an **`LSUIElement`** process (no Dock icon). Uninstall: quit the app and delete the `.app` bundle. No root daemon is installed.
 
-### Notarized distribution (operator)
+### Local notarization rehearsal (operators)
 
-Requires a Developer ID Application identity and notarytool profile:
+Requires a Developer ID Application identity and notarytool credentials (keychain profile or App Store Connect API key):
 
 ```bash
 export DEVELOPER_ID_APPLICATION='Developer ID Application: Your Name (TEAMID)'
 export NOTARY_PROFILE=jackin-notary
+export JACKIN_APP_VERSION=0.6.0 JACKIN_APP_BUILD=1
 ./scripts/build-usage-menu-bar-app.sh
 ./scripts/sign-notarize-usage-menu-bar.sh
 ```
 
-Homebrew cask packaging follows the same tap policy as the `jackin` CLI once notarized artifacts are published.
+CI publishes the stapled ZIP from the **`release-macos`** environment on tag/`publish` mode (secret names only: see `native/README.md`).
 
 ## Credentials (host)
 

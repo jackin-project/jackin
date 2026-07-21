@@ -12,14 +12,14 @@ The verification tools described below are for operators who want to audit a dow
 
 ## What is published per release
 
-Each release includes the following assets for every binary archive:
+Each release includes the following assets for every binary archive (CLI/capsule `.tar.gz` and the macOS usage menu-bar `.zip` use the same sidecar layout):
 
 | Asset | Purpose |
 |---|---|
-| `<name>.tar.gz` | The binary archive |
-| `<name>.tar.gz.sha256` | SHA256 digest of the archive |
-| `<name>.tar.gz.bundle` | Cosign keyless signature bundle |
-| `<name>.tar.gz.sbom.json` | CycloneDX SBOM (software bill of materials) |
+| `<name>.tar.gz` or `<name>.zip` | The binary / app archive |
+| `<name>.…sha256` | SHA256 digest of the archive (suffix `.tar.gz.sha256` or `.zip.sha256`) |
+| `<name>.…bundle` | Cosign keyless signature bundle |
+| `<name>.…sbom.json` | CycloneDX SBOM (software bill of materials) |
 
 The capsule binary additionally has a signed manifest:
 
@@ -44,9 +44,11 @@ From a checkout of this repository, download an archive and its sidecars, then r
 
 ```sh
 cargo xtask release-verify <file>.tar.gz
+# or, for the usage menu-bar app:
+cargo xtask release-verify jackin-usage-menu-bar-<VERSION>-universal-apple-darwin.zip
 ```
 
-The gate checks the archive against `<file>.tar.gz.sha256`, verifies `<file>.tar.gz.bundle` with the same cosign identity and issuer policy shown below, verifies the GitHub artifact attestation for `jackin-project/jackin`, and parses `<file>.tar.gz.sbom.json`.
+The gate checks the archive against the sibling `.sha256` sidecar, verifies the `.bundle` with the same cosign identity and issuer policy shown below, verifies the GitHub artifact attestation for `jackin-project/jackin`, and parses the `.sbom.json` sidecar. Extension-agnostic: any archive path with those three siblings works.
 
 For example:
 
