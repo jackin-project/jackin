@@ -8,6 +8,7 @@ Plans hold **unfinished** multi-step work. Fully shipped plan bodies are removed
 |------|--------|--------|
 | [agent-status/](agent-status/) | Product detection (live goldens, pack rewrite, live authority, remote packs) | Deferred / open residuals |
 | [codebase-health/](codebase-health/) | Deep advisor gap-audit of the codebase-health enforcement roadmap (2026-07-14, commit 846038946): 27 unfinished plans, telemetry/OTLP first (001–009), then lints/CI/ownership/testing/perf/docs | Open / in progress |
+| [native-macos-usage-menu-bar/](native-macos-usage-menu-bar/) | Finish the shipped menu-bar app with a universal static package, Developer ID notarized release asset, supply-chain evidence, and Homebrew cask | Open — operator policy and Apple credentials gate publication |
 
 ## Removed (shipped)
 
