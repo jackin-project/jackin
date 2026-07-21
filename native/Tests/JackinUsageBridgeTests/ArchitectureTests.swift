@@ -31,15 +31,32 @@ final class ArchitectureTests: XCTestCase {
     }
 
     func testSwiftSourcesHaveNoProviderProbeImports() throws {
-        let prohibitedTokens = ["URLSession", "Process(", "SecItem", "Cursor", "Gemini", "Copilot"]
+        // Probe/API machinery tokens (substring match).
+        let machinery = ["URLSession", "Process(", "SecItem"]
+        // Non-jackin providers: whole-token only so `eventCursor` / comments about
+        // cursors are not false positives for the Cursor product.
+        let providers = ["Gemini", "Copilot"]
+        let cursorAsProvider = try NSRegularExpression(pattern: #"\bCursor\b"#)
         for file in try handwrittenSwiftFiles() {
             let text = try String(contentsOf: file, encoding: .utf8)
-            for token in prohibitedTokens {
+            let full = NSRange(text.startIndex..., in: text)
+            for token in machinery {
                 XCTAssertFalse(
                     text.contains(token),
                     "\(file.lastPathComponent) must not contain probe/API token \(token)"
                 )
             }
+            for token in providers {
+                XCTAssertFalse(
+                    text.contains(token),
+                    "\(file.lastPathComponent) must not contain non-jackin provider \(token)"
+                )
+            }
+            XCTAssertEqual(
+                cursorAsProvider.numberOfMatches(in: text, range: full),
+                0,
+                "\(file.lastPathComponent) must not mention Cursor provider"
+            )
             XCTAssertFalse(
                 text.contains("URL(string: \"http"),
                 "\(file.lastPathComponent) must not perform HTTP probes"
@@ -67,11 +84,12 @@ final class ArchitectureTests: XCTestCase {
     }
 
     func testNoSwiftPercentArithmeticOnDisplayStrings() throws {
-        // Heuristic: handwritten UI must not invent percentages via string interpolation
-        // of computed used/remaining math into Text(...). Remaining percent rendering
-        // uses Gauge(value:) with Rust-provided remaining only.
-        let pattern = #"Text\([^)]*\\([^)]*%"#
-        let regex = try NSRegularExpression(pattern: pattern)
+        // Heuristic: handwritten UI must not invent percentages via string
+        // interpolation of computed used/remaining math into Text(...).
+        // Gauge uses Rust-provided remaining only; forbid Text("…\(…)%…").
+        let regex = try NSRegularExpression(
+            pattern: #"Text\s*\(\s*"[^"]*\\\([^)]*\)[^"]*%"#
+        )
         for file in try handwrittenSwiftFiles() {
             let text = try String(contentsOf: file, encoding: .utf8)
             let range = NSRange(text.startIndex..., in: text)
