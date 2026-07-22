@@ -5,17 +5,17 @@ import AppKit
 import JackinUsageBridge
 import SwiftUI
 
-/// Glance popover — CodexBar-inspired panel (clean-room layout).
+/// Glance popover — CodexBar-style agent list + detail (clean-room).
 ///
-/// Glyph tile grid for Overview + providers (selected tile filled accent;
-/// severity underline on degraded surfaces). Detail pane shows Capsule-parity
-/// fields for the selection. Menu-style footer with key equivalents.
-/// All numbers/strings are Rust-owned; no provider probes in Swift.
+/// **Top:** Overview + every host surface tile (Claude, Codex, Amp, …) whether
+/// enabled or not. **Below:** detailization for the selected agent (identity,
+/// quota bars, money, pace). Menu footer with key equivalents.
+/// All numbers/strings are Rust-owned.
 struct PopoverRoot: View {
     @ObservedObject var store: PresentationStore
     @Environment(\.openWindow) private var openWindow
 
-    /// `nil` = Overview tile; otherwise surface id.
+    /// `nil` = Overview; otherwise surface id from `listSurfaces`.
     @State private var selectedSurfaceId: String?
 
     private let tileColumns = [
@@ -32,24 +32,36 @@ struct PopoverRoot: View {
                     .font(.caption)
                     .foregroundStyle(.red)
                     .padding(.horizontal, 14)
-                    .padding(.top, 12)
+                    .padding(.top, 10)
             }
 
+            // Fixed agent strip (CodexBar): always visible above detail.
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Agents")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 14)
+                    .padding(.top, 12)
+                providerTileGrid
+                    .padding(.horizontal, 10)
+            }
+
+            Divider().opacity(0.35)
+                .padding(.top, 10)
+
             ScrollView {
-                VStack(alignment: .leading, spacing: 14) {
-                    if enabledSurfaces.isEmpty {
+                Group {
+                    if store.surfaces.isEmpty {
                         emptyState
                     } else {
-                        providerTileGrid
-                        Divider().opacity(0.35)
                         detailPane
                     }
                 }
-                .padding(.horizontal, 12)
+                .padding(.horizontal, 14)
                 .padding(.top, 12)
-                .padding(.bottom, 6)
+                .padding(.bottom, 8)
             }
-            .frame(maxHeight: 520)
+            .frame(maxHeight: 480)
 
             menuFooter
         }
@@ -64,48 +76,62 @@ struct PopoverRoot: View {
             if !store.isOpen {
                 store.openDefault()
             }
-            // Prefer first overview row / enabled surface for a useful first paint.
-            if selectedSurfaceId == nil,
-               let first = store.overviewRows.first?.surfaceId
-                ?? enabledSurfaces.first?.id
-            {
-                selectedSurfaceId = first
-            }
+            ensureSelection()
+        }
+        .onChange(of: store.surfaces) { _, _ in
+            ensureSelection()
         }
     }
 
-    private var enabledSurfaces: [PresentationStore.SurfaceRow] {
-        store.surfaces.filter(\.enabled)
+    /// Every surface from Rust `listSurfaces` (full agent catalog).
+    private var allAgents: [PresentationStore.SurfaceRow] {
+        store.surfaces
     }
 
     private var selectedSurface: PresentationStore.SurfaceRow? {
         guard let id = selectedSurfaceId else { return nil }
-        return enabledSurfaces.first(where: { $0.id == id })
+        return allAgents.first(where: { $0.id == id })
     }
 
-    // MARK: - Provider tile grid (CodexBar switcher)
+    private func ensureSelection() {
+        if let id = selectedSurfaceId, allAgents.contains(where: { $0.id == id }) {
+            return
+        }
+        // Prefer first agent that has live buckets; else first agent; else Overview.
+        if let withData = allAgents.first(where: { $0.enabled && !$0.buckets.isEmpty }) {
+            selectedSurfaceId = withData.id
+        } else if let first = allAgents.first {
+            selectedSurfaceId = first.id
+        } else {
+            selectedSurfaceId = nil
+        }
+    }
+
+    // MARK: - Agent tile grid
 
     private var providerTileGrid: some View {
         LazyVGrid(columns: tileColumns, spacing: 8) {
             tileButton(
                 id: nil,
                 title: "Overview",
-                glyph: "▦",
+                glyph: "",
                 severity: "ok",
+                enabled: true,
                 systemImage: "square.grid.2x2"
             )
-            ForEach(enabledSurfaces) { surface in
+            ForEach(allAgents) { surface in
                 tileButton(
                     id: surface.id,
-                    title: shortTitle(surface.label),
+                    title: shortTitle(label: surface.label, id: surface.id),
                     glyph: statusItemGlyph(compactLabel: surface.label, surfaceId: surface.id),
                     severity: worstSeverity(surface),
-                    systemImage: nil
+                    enabled: surface.enabled,
+                    systemImage: tileSystemImage(surfaceId: surface.id)
                 )
             }
         }
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("Providers")
+        .accessibilityLabel("Agents")
     }
 
     private func tileButton(
@@ -113,6 +139,7 @@ struct PopoverRoot: View {
         title: String,
         glyph: String,
         severity: String,
+        enabled: Bool,
         systemImage: String?
     ) -> some View {
         let selected = selectedSurfaceId == id
@@ -122,48 +149,85 @@ struct PopoverRoot: View {
             VStack(spacing: 4) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(selected ? Color.accentColor : Color.primary.opacity(0.06))
+                        .fill(selected ? Color.accentColor : Color.primary.opacity(enabled ? 0.06 : 0.03))
                         .frame(height: 36)
                     if let systemImage {
                         Image(systemName: systemImage)
                             .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(selected ? Color.white : Color.primary.opacity(0.75))
+                            .foregroundStyle(
+                                selected
+                                    ? Color.white
+                                    : Color.primary.opacity(enabled ? 0.8 : 0.35)
+                            )
                     } else {
                         Text(glyph)
                             .font(.system(size: 12, weight: .bold, design: .rounded))
-                            .foregroundStyle(selected ? Color.white : Color.primary.opacity(0.85))
+                            .foregroundStyle(
+                                selected
+                                    ? Color.white
+                                    : Color.primary.opacity(enabled ? 0.85 : 0.35)
+                            )
                     }
                 }
                 Text(title)
                     .font(.system(size: 10, weight: selected ? .semibold : .regular))
-                    .foregroundStyle(selected ? Color.accentColor : Color.secondary)
+                    .foregroundStyle(
+                        selected
+                            ? Color.accentColor
+                            : Color.secondary.opacity(enabled ? 1 : 0.5)
+                    )
                     .lineLimit(1)
-                    .minimumScaleFactor(0.8)
-                // Severity underline (CodexBar Amp red / Grok green style).
+                    .minimumScaleFactor(0.75)
+                // Severity underline (Amp red / Grok green) when not selected.
                 Capsule()
-                    .fill(selected ? Color.clear : underlineTint(severity))
+                    .fill(selected || !enabled ? Color.clear : underlineTint(severity))
                     .frame(width: 22, height: 2)
             }
             .frame(maxWidth: .infinity)
             .contentShape(Rectangle())
+            .opacity(enabled || selected ? 1 : 0.85)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(title)
+        .accessibilityLabel(enabled ? title : "\(title), disabled")
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
-    private func shortTitle(_ label: String) -> String {
-        // Keep tile captions compact (Codex / Claude / z.ai).
-        if label.count <= 8 { return label }
-        return String(label.prefix(7))
+    private func shortTitle(label: String, id: String) -> String {
+        switch id {
+        case "grok": return "Grok"
+        case "zai": return "z.ai"
+        case "minimax": return "MiniMax"
+        case "opencode": return "OpenCode"
+        default:
+            return label.count <= 8 ? label : String(label.prefix(7))
+        }
     }
 
-    // MARK: - Detail pane
+    /// SF Symbol for known surface ids (layout only — not a provider zoo).
+    private func tileSystemImage(surfaceId: String) -> String? {
+        switch surfaceId {
+        case "claude": return "sparkles"
+        case "codex": return "circle.hexagongrid.fill"
+        case "amp": return "waveform"
+        case "grok": return "circle.dashed"
+        case "zai": return "z.square.fill"
+        case "kimi": return "k.circle"
+        case "minimax": return "waveform.path"
+        case "opencode": return "chevron.left.forwardslash.chevron.right"
+        default: return nil
+        }
+    }
+
+    // MARK: - Detail (selected agent)
 
     @ViewBuilder
     private var detailPane: some View {
         if let surface = selectedSurface {
-            providerDetail(surface)
+            if surface.enabled {
+                providerDetail(surface)
+            } else {
+                disabledDetail(surface)
+            }
         } else {
             overviewDetail
         }
@@ -173,6 +237,10 @@ struct PopoverRoot: View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Overview")
                 .font(.title3.weight(.semibold))
+            Text("All enabled agents")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
             ForEach(store.overviewRows) { row in
                 Button {
                     selectedSurfaceId = row.surfaceId
@@ -187,13 +255,14 @@ struct PopoverRoot: View {
                         Spacer(minLength: 6)
                         trailingOverview(row)
                     }
-                    .padding(.vertical, 4)
+                    .padding(.vertical, 5)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
             }
+
             if store.overviewRows.isEmpty {
-                Text("No fresh usage rows yet.")
+                Text("No fresh usage rows yet — select an agent or Refresh.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -225,8 +294,26 @@ struct PopoverRoot: View {
         }
     }
 
+    private func disabledDetail(_ surface: PresentationStore.SurfaceRow) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            identityHeader(surface)
+            Text("This agent is disabled in Settings. Enable it to refresh quotas and show bars.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Toggle(
+                "Enable \(surface.label)",
+                isOn: Binding(
+                    get: { surface.enabled },
+                    set: { store.setEnabled(surfaceId: surface.id, enabled: $0) }
+                )
+            )
+            .toggleStyle(.switch)
+            .controlSize(.small)
+        }
+    }
+
     private func providerDetail(_ surface: PresentationStore.SurfaceRow) -> some View {
-        // CodexBar Amp-style detail: identity header, stacked metric sections, menu below.
         VStack(alignment: .leading, spacing: 0) {
             identityHeader(surface)
                 .padding(.bottom, 10)
@@ -234,14 +321,16 @@ struct PopoverRoot: View {
             Divider().opacity(0.3)
 
             VStack(alignment: .leading, spacing: 14) {
-                ForEach(surface.buckets) { bucket in
-                    metricBlock(bucket)
-                    Divider().opacity(0.2)
-                }
-
                 if surface.buckets.isEmpty {
                     emptyMetric()
-                    Divider().opacity(0.2)
+                    Text("No quota data yet. Try Refresh after signing in with this agent.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(surface.buckets) { bucket in
+                        metricBlock(bucket)
+                        Divider().opacity(0.2)
+                    }
                 }
 
                 moneyGrid(surface)
@@ -276,7 +365,6 @@ struct PopoverRoot: View {
         }
     }
 
-    /// CodexBar two-column identity: name/account · updated/plan (no multi-account pills in v1).
     private func identityHeader(_ surface: PresentationStore.SurfaceRow) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(alignment: .firstTextBaseline) {
@@ -324,7 +412,6 @@ struct PopoverRoot: View {
                 if let remaining = bucket.remainingPercent {
                     remainingBar(remaining: remaining, severity: bucket.severity)
                 }
-                // Primary row: used/left · reset (CodexBar Weekly captions).
                 HStack(alignment: .firstTextBaseline) {
                     Text(bucket.usedLabel ?? "—")
                         .font(.caption)
@@ -338,13 +425,10 @@ struct PopoverRoot: View {
                             .foregroundStyle(.secondary)
                     }
                 }
-                // Secondary pace row: "7% in reserve" · "Lasts until reset" when Rust
-                // joins them with a middle dot / bullet (layout split only).
                 if let pace = bucket.paceLabel, !pace.isEmpty {
                     paceRow(pace)
                 }
             case .valueOnly:
-                // Credits-style: description under title (limit/statusSlot), value captions.
                 if let desc = bucket.limitLabel ?? bucket.statusSlot, !desc.isEmpty {
                     Text(desc)
                         .font(.caption)
@@ -407,7 +491,6 @@ struct PopoverRoot: View {
         }
     }
 
-    /// CodexBar two-column pace line. Splits on common Rust joiners only.
     @ViewBuilder
     private func paceRow(_ pace: String) -> some View {
         let parts = splitPace(pace)
@@ -435,8 +518,10 @@ struct PopoverRoot: View {
         for sep in [" · ", " • ", " | ", " — "] {
             let bits = pace.components(separatedBy: sep)
             if bits.count >= 2 {
-                return [bits[0].trimmingCharacters(in: .whitespaces),
-                        bits.dropFirst().joined(separator: sep).trimmingCharacters(in: .whitespaces)]
+                return [
+                    bits[0].trimmingCharacters(in: .whitespaces),
+                    bits.dropFirst().joined(separator: sep).trimmingCharacters(in: .whitespaces),
+                ]
             }
         }
         return [pace]
@@ -444,7 +529,6 @@ struct PopoverRoot: View {
 
     private func remainingBar(remaining: UInt8, severity: String) -> some View {
         let frac = Double(remaining) / 100.0
-        // Soft tick marks (CodexBar segmented look) — layout only, not new metrics.
         return GeometryReader { geo in
             ZStack(alignment: .leading) {
                 Capsule()
@@ -472,7 +556,6 @@ struct PopoverRoot: View {
         switch severity {
         case "danger": return .red
         case "warn": return .orange
-        // CodexBar Grok-style healthy green fill.
         default: return Color(red: 0.35, green: 0.72, blue: 0.55)
         }
     }
@@ -491,10 +574,10 @@ struct PopoverRoot: View {
         return surface.buckets
             .map(\.severity)
             .min(by: { (ranks[$0] ?? 9) < (ranks[$1] ?? 9) })
-            ?? "ok"
+            ?? (surface.enabled ? "ok" : "info")
     }
 
-    // MARK: - Menu footer (CodexBar)
+    // MARK: - Menu footer
 
     private var menuFooter: some View {
         VStack(spacing: 0) {
@@ -531,10 +614,10 @@ struct PopoverRoot: View {
 
     private var emptyState: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("No usage surfaces enabled.")
+            Text("No agents available.")
                 .font(.body.weight(.medium))
             Text(
-                "jackin❯ Desktop reads the credentials your agent CLIs already store — sign in with an agent, then enable its surface in Settings."
+                "jackin❯ Desktop lists every supported agent surface. Sign in with an agent CLI, then Refresh."
             )
             .font(.caption)
             .foregroundStyle(.secondary)
