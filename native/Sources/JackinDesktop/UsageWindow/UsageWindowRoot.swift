@@ -46,7 +46,7 @@ struct UsageWindowRoot: View {
                 if let id = store.usageSelection,
                    let surface = store.surfaces.first(where: { $0.id == id && $0.enabled })
                 {
-                    ProviderCardView(surface: surface)
+                    ProviderCardView(surface: surface, percentStyle: store.percentStyle)
                 } else {
                     OverviewListView(store: store) { surfaceId in
                         store.selectUsageSurface(surfaceId)

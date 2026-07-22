@@ -53,6 +53,30 @@ struct StatusItemChipHarness {
                 percentStyle: "used"
             ) == ["0%", "21%"]
         )
+        check(
+            "primary left label",
+            bucketPrimaryPercentLabel(
+                remainingPercent: 81,
+                usedLabel: "19% used",
+                percentStyle: "left"
+            ) == "81% left"
+        )
+        check(
+            "primary used label",
+            bucketPrimaryPercentLabel(
+                remainingPercent: 81,
+                usedLabel: "19% used",
+                percentStyle: "used"
+            ) == "19% used"
+        )
+        check(
+            "primary money fallback",
+            bucketPrimaryPercentLabel(
+                remainingPercent: nil,
+                usedLabel: "SGD 78 of 260",
+                percentStyle: "left"
+            ) == "SGD 78 of 260"
+        )
 
         // Production-shaped multi-provider strip (Claude dual + Codex + hidden empty/disabled).
         let surfaces = [

@@ -154,6 +154,31 @@ public func statusItemPercentToken(
     return s
 }
 
+/// OpenUsage primary metric line under a capacity bar (`81% left` / `19% used`).
+///
+/// Prefers Rust `remaining_percent` + Settings style; falls back to `usedLabel`
+/// when no numeric remaining (money / unbounded rows).
+public func bucketPrimaryPercentLabel(
+    remainingPercent: UInt8?,
+    usedLabel: String?,
+    percentStyle: String = "left"
+) -> String {
+    if let remaining = remainingPercent {
+        let token = statusItemPercentToken(
+            remainingPercent: remaining,
+            percentStyle: percentStyle
+        )
+        if statusItemShowsUsedPercent(percentStyle: percentStyle) {
+            return "\(token) used"
+        }
+        return "\(token) left"
+    }
+    if let used = usedLabel, !used.isEmpty {
+        return used
+    }
+    return "—"
+}
+
 /// Glyph for the menu-bar strip from Rust compact label (`Cl 37%` → `Cl`).
 public func statusItemGlyph(compactLabel: String, surfaceId: String) -> String {
     let letters = compactLabel.filter(\.isLetter)

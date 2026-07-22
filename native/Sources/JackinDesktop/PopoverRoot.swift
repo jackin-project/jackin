@@ -112,7 +112,8 @@ struct PopoverRoot: View {
                     glyph: statusItemGlyph(compactLabel: surface.label, surfaceId: surface.id),
                     severity: worstSeverity(surface),
                     enabled: surface.enabled,
-                    systemImage: agentSystemImage(surface.id)
+                    systemImage: agentSystemImage(surface.id),
+                    remainingBadge: tileRemainingBadge(surface)
                 )
             }
         }
@@ -126,7 +127,8 @@ struct PopoverRoot: View {
         glyph: String,
         severity: String,
         enabled: Bool,
-        systemImage: String?
+        systemImage: String?,
+        remainingBadge: String? = nil
     ) -> some View {
         let selected = selectedSurfaceId == id
         return Button {
@@ -158,16 +160,43 @@ struct PopoverRoot: View {
                     )
                     .lineLimit(1)
                     .minimumScaleFactor(0.75)
-                Capsule()
-                    .fill(selected || !enabled ? Color.clear : underlineTint(severity))
-                    .frame(width: 22, height: 2)
+                // CodexBar-style at-a-glance remaining under the tile.
+                if let remainingBadge, enabled {
+                    Text(remainingBadge)
+                        .font(.system(size: 9, weight: .semibold, design: .rounded))
+                        .monospacedDigit()
+                        .foregroundStyle(
+                            selected ? Color.accentColor.opacity(0.9) : underlineTint(severity)
+                        )
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                } else {
+                    Capsule()
+                        .fill(selected || !enabled ? Color.clear : underlineTint(severity))
+                        .frame(width: 22, height: 2)
+                }
             }
             .frame(maxWidth: .infinity)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(enabled ? title : "\(title), disabled")
+        .accessibilityLabel(
+            enabled
+                ? (remainingBadge.map { "\(title) \($0)" } ?? title)
+                : "\(title), disabled"
+        )
         .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+
+    /// Driving remaining token for agent tiles (OpenUsage menu-bar style).
+    private func tileRemainingBadge(_ surface: PresentationStore.SurfaceRow) -> String? {
+        guard surface.enabled else { return nil }
+        let remainings = surface.buckets.compactMap(\.remainingPercent)
+        guard let minRem = remainings.min() else { return nil }
+        return statusItemPercentToken(
+            remainingPercent: minRem,
+            percentStyle: store.percentStyle
+        )
     }
 
     // MARK: - Overview stack (all agents detailed)
@@ -303,11 +332,18 @@ struct PopoverRoot: View {
                 if let remaining = bucket.remainingPercent {
                     remainingBar(remaining: remaining, severity: bucket.severity)
                 }
+                // OpenUsage: primary "% left" / "% used" left, reset right.
                 HStack(alignment: .firstTextBaseline) {
-                    Text(bucket.usedLabel ?? "—")
-                        .font(.caption)
-                        .monospacedDigit()
-                        .foregroundStyle(.secondary)
+                    Text(
+                        bucketPrimaryPercentLabel(
+                            remainingPercent: bucket.remainingPercent,
+                            usedLabel: bucket.usedLabel,
+                            percentStyle: store.percentStyle
+                        )
+                    )
+                    .font(.caption.weight(.semibold))
+                    .monospacedDigit()
+                    .foregroundStyle(.primary)
                     Spacer(minLength: 8)
                     if let reset = bucket.resetLabel, !reset.isEmpty {
                         Text(reset)

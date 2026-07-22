@@ -141,6 +141,30 @@ final class ArchitectureTests: XCTestCase {
             ),
             ["63%", "21%"]
         )
+        XCTAssertEqual(
+            bucketPrimaryPercentLabel(
+                remainingPercent: 81,
+                usedLabel: "19% used",
+                percentStyle: "left"
+            ),
+            "81% left"
+        )
+        XCTAssertEqual(
+            bucketPrimaryPercentLabel(
+                remainingPercent: 81,
+                usedLabel: "19% used",
+                percentStyle: "used"
+            ),
+            "19% used"
+        )
+        XCTAssertEqual(
+            bucketPrimaryPercentLabel(
+                remainingPercent: nil,
+                usedLabel: "SGD 78 of 260",
+                percentStyle: "left"
+            ),
+            "SGD 78 of 260"
+        )
         let money = MoneyDto(amountMinor: 6559, currency: "USD", exponent: 2)
         XCTAssertEqual(formatMoneyDto(money), "$65.59")
     }

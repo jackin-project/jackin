@@ -7,6 +7,8 @@ import SwiftUI
 /// Full Capsule-parity provider card (S4). All strings are Rust-owned.
 struct ProviderCardView: View {
     let surface: PresentationStore.SurfaceRow
+    /// Settings percent style (`left` / `used`) — matches menu-bar chips.
+    var percentStyle: String = "left"
 
     var body: some View {
         ScrollView {
@@ -112,14 +114,20 @@ struct ProviderCardView: View {
                     }
                     .frame(height: 4)
                     .accessibilityLabel(
-                        "\(bucket.label) \(statusItemPercentToken(remainingPercent: remaining)) remaining"
+                        "\(bucket.label) \(bucketPrimaryPercentLabel(remainingPercent: remaining, usedLabel: bucket.usedLabel, percentStyle: percentStyle))"
                     )
                 }
+                // OpenUsage primary: "81% left" · reset countdown.
                 HStack {
-                    Text(bucket.usedLabel ?? "—")
-                        .font(.caption)
-                        .monospacedDigit()
-                        .foregroundStyle(.secondary)
+                    Text(
+                        bucketPrimaryPercentLabel(
+                            remainingPercent: bucket.remainingPercent,
+                            usedLabel: bucket.usedLabel,
+                            percentStyle: percentStyle
+                        )
+                    )
+                    .font(.caption.weight(.semibold))
+                    .monospacedDigit()
                     Spacer()
                     if let reset = bucket.resetLabel {
                         Text(reset)
