@@ -35,6 +35,6 @@ jobs:
           version: "2026.7.7"
           install_args: python uv pipx:reuse
           cache_save: ${{ github.ref == 'refs/heads/main' }}
-          github_token: ${{ secrets.GH_READONLY_TOKEN }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
       - name: REUSE Compliance Check
         run: reuse lint

@@ -36,35 +36,21 @@ jobs:
   # The cron path verifies live deployed-site links; it has nothing to
   # validate against the source tree at schedule time.
   changes:
-    name: changes (${{ matrix.config.lane }})
     if: github.event_name != 'schedule'
-    strategy:
-      fail-fast: false
-      matrix:
-        config: ${{ fromJSON((github.event_name == 'workflow_dispatch' && inputs.lanes == 'both') && '[{"lane":"Velnor","runner":["self-hosted","velnor-target-mvp"],"writer":true},{"lane":"GitHub","runner":"ubuntu-26.04","writer":false}]' || (github.event_name == 'workflow_dispatch' && inputs.lanes == 'github') && '[{"lane":"GitHub","runner":"ubuntu-26.04","writer":true}]' || '[{"lane":"Velnor","runner":["self-hosted","velnor-target-mvp"],"writer":true}]') }}
-    runs-on: ${{ matrix.config.runner }}
+    runs-on: ${{ (github.event_name == 'workflow_dispatch' && inputs.lanes == 'github') && 'ubuntu-26.04' || fromJSON('["self-hosted","velnor-target-mvp"]') }}
     timeout-minutes: 5
     outputs:
       docs: ${{ steps.dispatch.outputs.docs || steps.filter.outputs.docs }}
       source: ${{ steps.dispatch.outputs.source || steps.filter.outputs.source }}
       result-reuse: ${{ steps.docs-result.outputs.hit }}
       result-name: ${{ steps.docs-result.outputs.name }}
-      docs-xtask-contract: ${{ steps.docs-xtask-contract.outputs.docs-xtask }}
+      docs-xtask-contract: ${{ steps.contracts.outputs.docs-xtask }}
       deployment-reuse: ${{ steps.deployed.outputs.reuse }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
-          # Docs result reuse compares earlier semantic source commits.
-          fetch-depth: 0 # required by docs result-reuse comparison
-
-      - name: Resolve Docs xtask contract
-        id: docs-xtask-contract
-        uses: actions/github-script@373c709c69115d41ff229c7e5df9f8788daa9553 # v9.0.0
-        env:
-          CONTRACT: ${{ hashFiles('.cargo/**', 'Cargo.lock', 'Cargo.toml', 'rust-toolchain.toml', 'crates/*/Cargo.toml', 'crates/jackin-xtask/src/arch.rs', 'crates/jackin-xtask/src/cmd.rs', 'crates/jackin-xtask/src/docs.rs', 'crates/jackin-xtask/src/docs/**', 'crates/jackin-xtask/src/fs_util.rs', 'crates/jackin-xtask/src/main.rs', 'crates/jackin-xtask/src/report.rs') }}
-        with:
-          script: core.setOutput('docs-xtask', process.env.CONTRACT)
+          fetch-depth: 0
 
       - name: Force docs=true on workflow_dispatch
         id: dispatch
@@ -75,6 +61,10 @@ jobs:
             echo "docs=true"
             echo "source=true"
           } >> "$GITHUB_OUTPUT"
+
+      - name: Resolve Docs xtask contract
+        id: contracts
+        run: echo "docs-xtask=$(scripts/ci/docs-xtask-contract.sh)" >> "$GITHUB_OUTPUT"
 
       - name: Classify changed paths
         id: filter
@@ -98,8 +88,8 @@ jobs:
               - '.github/**/*.yml'
               - '.github/workflows/docs.yml'
               - '.github/actions/check-deployed-docs/**'
-              - 'crates/jackin-xtask/src/docs/contract.rs'
-              - 'crates/jackin-xtask/src/docs/site_links.rs'
+              - 'scripts/ci/docs-xtask-contract.sh'
+              - 'scripts/ci/docs-site-contract.sh'
               - 'scripts/ci/codebook-contract.sh'
               - 'docs/**'
             source:
@@ -108,6 +98,8 @@ jobs:
               - 'docker/**/*.sh'
               - 'docker/**/*.toml'
               - '.github/workflows/docs.yml'
+              - 'scripts/ci/docs-xtask-contract.sh'
+              - 'scripts/ci/docs-site-contract.sh'
               - 'scripts/ci/codebook-contract.sh'
 
       - name: Find input-identical successful Docs result
@@ -150,6 +142,8 @@ jobs:
                   'docs/**' \
                   'mise.lock' \
                   'mise.toml' \
+                  'scripts/ci/docs-xtask-contract.sh' \
+                  'scripts/ci/docs-site-contract.sh' \
                   'scripts/ci/codebook-contract.sh'
               )
             } | sha256sum | cut -d ' ' -f 1
@@ -174,32 +168,44 @@ jobs:
             echo "name=$name"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Restore prepared CI xtask
-        if: >-
-          github.ref == 'refs/heads/main' &&
-          (github.event_name == 'push' ||
-           github.event_name == 'workflow_dispatch')
-        uses: ./.github/actions/download-ci-xtask
-        with:
-          token: ${{ github.token }}
-          lane: ${{ matrix.config.lane }}
-          xtask-contract: ${{ steps.docs-xtask-contract.outputs.docs-xtask }}
-          fallback-xtask-contract: ${{ hashFiles('Cargo.lock', 'Cargo.toml', 'rust-toolchain.toml', '.cargo/**', 'crates/*/Cargo.toml', 'crates/jackin-xtask/src/**', 'crates/jackin-process/src/**') }}
-          include-tools: "false"
-
       - name: Find semantically identical successful Pages deployment
         id: deployed
         if: >-
-          github.ref == 'refs/heads/main' &&
-          (github.event_name == 'push' ||
-           github.event_name == 'workflow_dispatch')
+          github.event_name == 'push' ||
+          github.event_name == 'workflow_dispatch'
         env:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
-        run: >-
-          "$CI_XTASK" github docs-deployment-reuse
-          --repository "$REPOSITORY"
-          --github-output
+        run: |
+          set -euo pipefail
+          reuse=false
+          deployments=$(
+            gh api "repos/${REPOSITORY}/deployments?environment=github-pages&per_page=10" \
+              --jq '.[] | [.id, .sha] | @tsv'
+          )
+          while IFS=$'\t' read -r deployment_id source_sha; do
+            if [ -z "$deployment_id" ] || [ -z "$source_sha" ]; then
+              continue
+            fi
+            state=$(
+              gh api "repos/${REPOSITORY}/deployments/${deployment_id}/statuses?per_page=1" \
+                --jq '.[0].state // empty'
+            )
+            if [ "$state" != success ]; then
+              continue
+            fi
+            if ! git cat-file -e "$source_sha^{commit}" 2>/dev/null && \
+               ! git fetch --no-tags --depth=1 origin "$source_sha"; then
+              break
+            fi
+            if [ "$(scripts/ci/docs-site-contract.sh "$source_sha")" = \
+                 "$(scripts/ci/docs-site-contract.sh)" ]; then
+              echo "::notice::reusing semantically identical successful Pages deployment"
+              reuse=true
+            fi
+            break
+          done <<< "$deployments"
+          echo "reuse=$reuse" >> "$GITHUB_OUTPUT"
 
   # The docs site links to repository files via the <RepoFile path="…" />
   # component, which renders a `blob/main` URL that lychee remaps to the
@@ -209,35 +215,30 @@ jobs:
   # non-schedule event so source renames cannot bypass the docs link
   # contract documented in docs/AGENTS.md.
   repo-link-check:
-    name: repo link check (${{ matrix.config.lane }})
     if: github.event_name != 'schedule' && needs.changes.outputs.result-reuse != 'true'
     needs: changes
-    strategy:
-      fail-fast: false
-      matrix:
-        config: ${{ fromJSON((github.event_name == 'workflow_dispatch' && inputs.lanes == 'both') && '[{"lane":"Velnor","runner":["self-hosted","velnor-target-mvp"],"writer":true},{"lane":"GitHub","runner":"ubuntu-26.04","writer":false}]' || (github.event_name == 'workflow_dispatch' && inputs.lanes == 'github') && '[{"lane":"GitHub","runner":"ubuntu-26.04","writer":true}]' || '[{"lane":"Velnor","runner":["self-hosted","velnor-target-mvp"],"writer":true}]') }}
-    runs-on: ${{ matrix.config.runner }}
+    runs-on: ${{ (github.event_name == 'workflow_dispatch' && inputs.lanes == 'github') && 'ubuntu-26.04' || fromJSON('["self-hosted","velnor-target-mvp"]') }}
     timeout-minutes: 15
+    env:
+      DOCS_XTASK: ${{ github.workspace }}/.ci-tools/GitHub/jackin-xtask
     steps:
       - name: Checkout repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Setup mise
         uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4
         with:
           version: "2026.7.7"
           cache_key_prefix: "mise-v2"
-          cache_save: ${{ github.ref == 'refs/heads/main' && matrix.config.writer }}
+          cache_save: ${{ github.ref == 'refs/heads/main' }}
           working_directory: docs
           install_args: "bun lychee"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
 
       - uses: ./.github/actions/download-ci-xtask
         with:
-          token: ${{ github.token }}
-          lane: ${{ matrix.config.lane }}
+          lane: GitHub
           xtask-contract: ${{ needs.changes.outputs.docs-xtask-contract }}
-          fallback-xtask-contract: ${{ hashFiles('Cargo.lock', 'Cargo.toml', 'rust-toolchain.toml', '.cargo/**', 'crates/*/Cargo.toml', 'crates/jackin-xtask/src/**', 'crates/jackin-process/src/**') }}
           include-tools: "false"
 
       # Plan 049 residual: generate crate README → Fumadocs pages so repo-link
@@ -250,7 +251,7 @@ jobs:
         run: echo "::add-matcher::.github/problem-matchers/xtask.json"
       - name: Check source repository links
         run: |
-          "$CI_XTASK" docs repo-links
+          "$DOCS_XTASK" docs repo-links
 
       # README links are not part of the generated docs site. Check them live
       # without cache so a malformed or removed destination fails this PR.
@@ -266,54 +267,63 @@ jobs:
 
       - name: Check brand prose
         run: |
-          "$CI_XTASK" docs brand
+          "$DOCS_XTASK" docs brand
 
       - name: Check behavioral-spec test citations
         run: |
-          env -u CI "$CI_XTASK" docs specs
+          env -u CI "$DOCS_XTASK" docs specs
 
       - name: Check roadmap sidebar completeness
         run: |
-          "$CI_XTASK" roadmap audit
+          "$DOCS_XTASK" roadmap audit
 
       - name: Check research sidebar completeness
         run: |
-          "$CI_XTASK" research check
+          "$DOCS_XTASK" research check
 
   docs-link-check:
-    name: docs link check (${{ matrix.config.lane }})
     needs: changes
     if: >-
       needs.changes.outputs.docs == 'true' &&
       (needs.changes.outputs.result-reuse != 'true' ||
        (github.ref == 'refs/heads/main' &&
         needs.changes.outputs.deployment-reuse != 'true'))
-    strategy:
-      fail-fast: false
-      matrix:
-        config: ${{ fromJSON((github.event_name == 'workflow_dispatch' && inputs.lanes == 'both') && '[{"lane":"Velnor","runner":["self-hosted","velnor-target-mvp"],"writer":true},{"lane":"GitHub","runner":"ubuntu-26.04","writer":false}]' || (github.event_name == 'workflow_dispatch' && inputs.lanes == 'github') && '[{"lane":"GitHub","runner":"ubuntu-26.04","writer":true}]' || '[{"lane":"Velnor","runner":["self-hosted","velnor-target-mvp"],"writer":true}]') }}
-    runs-on: ${{ matrix.config.runner }}
+    runs-on: ${{ (github.event_name == 'workflow_dispatch' && inputs.lanes == 'github') && 'ubuntu-26.04' || fromJSON('["self-hosted","velnor-target-mvp"]') }}
     timeout-minutes: 20
     steps:
       - name: Checkout repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - uses: ./.github/actions/download-ci-xtask
-        with:
-          token: ${{ github.token }}
-          lane: ${{ matrix.config.lane }}
-          xtask-contract: ${{ needs.changes.outputs.docs-xtask-contract }}
-          fallback-xtask-contract: ${{ hashFiles('Cargo.lock', 'Cargo.toml', 'rust-toolchain.toml', '.cargo/**', 'crates/*/Cargo.toml', 'crates/jackin-xtask/src/**', 'crates/jackin-process/src/**') }}
-          include-tools: "false"
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Find repository-wide successful link result
         id: link-result
         env:
-          BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before || 'main' }}
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
           REPOSITORY_ID: ${{ github.event.repository.id }}
-        run: "$CI_XTASK docs ci-link-result"
+        run: |
+          set -euo pipefail
+          name="docs-links-v2-${RUNNER_OS}-$(scripts/ci/docs-link-contract.sh)"
+          artifact=$(
+            gh api "repos/${REPOSITORY}/actions/artifacts?name=${name}&per_page=10" \
+              | jq -c --argjson repository_id "$REPOSITORY_ID" \
+                '[.artifacts[] | select(.expired == false and .workflow_run.head_repository_id == $repository_id)] | sort_by(.created_at) | last // {}'
+          )
+          artifact_id=$(jq -r '.id // empty' <<< "$artifact")
+          created_at=$(jq -r '.created_at // empty' <<< "$artifact")
+          verified=false
+          refresh=true
+          if [ -n "$artifact_id" ]; then
+            created_epoch=$(date -u -d "$created_at" +%s)
+            if [ $(( $(date -u +%s) - created_epoch )) -lt 259200 ]; then
+              verified=true
+              refresh=false
+            fi
+          fi
+          {
+            echo "name=$name"
+            echo "refresh=$refresh"
+            echo "verified=$verified"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Restore input-identical built site
         id: built-site
@@ -327,7 +337,7 @@ jobs:
           REPOSITORY: ${{ github.repository }}
         run: |
           set -euo pipefail
-          name="docs-site-v3-${RUNNER_OS}-$("$CI_XTASK" docs contract site)"
+          name="docs-site-v3-${RUNNER_OS}-$(scripts/ci/docs-site-contract.sh)"
           artifact_id=
           exact=false
           if ! artifact_id=$(
@@ -374,7 +384,7 @@ jobs:
         with:
           version: "2026.7.7"
           cache_key_prefix: "mise-v2"
-          cache_save: ${{ github.ref == 'refs/heads/main' && matrix.config.writer }}
+          cache_save: ${{ github.ref == 'refs/heads/main' }}
           working_directory: docs
           install_args: ${{ steps.built-site.outputs.hit == 'true' && 'lychee' || 'bun node lychee' }}
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
@@ -388,8 +398,8 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: ~/.bun/install/cache
-          key: bun-${{ matrix.config.lane }}-${{ runner.os }}-${{ hashFiles('docs/bun.lock') }}
-          restore-keys: bun-${{ matrix.config.lane }}-${{ runner.os }}-
+          key: bun-${{ runner.os }}-${{ hashFiles('docs/bun.lock') }}
+          restore-keys: bun-${{ runner.os }}-
 
       - name: Install dependencies
         if: >-
@@ -410,48 +420,19 @@ jobs:
         run: bun run build
 
       - name: Cache lychee responses
-        id: lychee_cache
+        if: steps.link-result.outputs.verified != 'true'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: .lycheecache
-          key: lychee-v1-${{ matrix.config.lane }}-${{ runner.os }}-${{ hashFiles('docs/lychee.toml', 'crates/jackin-xtask/src/docs/site_links.rs') }}
-          restore-keys: lychee-v1-${{ matrix.config.lane }}-${{ runner.os }}-
-
-      - name: Restore durable lychee responses
-        id: durable_lychee_cache
-        env:
-          ACTIONS_CACHE_HIT: ${{ steps.lychee_cache.outputs.cache-hit }}
-          GH_TOKEN: ${{ github.token }}
-          REPOSITORY: ${{ github.repository }}
-          REPOSITORY_ID: ${{ github.event.repository.id }}
-        run: >-
-          "$CI_XTASK" docs ci-lychee-cache
+          key: lychee-v1-${{ runner.os }}-${{ hashFiles('docs/lychee.toml', 'scripts/ci/docs-link-check.sh') }}
+          restore-keys: lychee-v1-${{ runner.os }}-
 
       - name: Check built site links
-        id: site_links
         if: steps.link-result.outputs.verified != 'true'
         env:
           GITHUB_TOKEN: ${{ github.token }}
-        run: >-
-          "$CI_XTASK" docs site-links
-
-      - name: Publish durable lychee responses
-        if: >-
-          matrix.config.writer &&
-          steps.durable_lychee_cache.outputs.artifact_hit != 'true' &&
-          (steps.lychee_cache.outputs.cache-hit == 'true' ||
-           steps.site_links.outcome == 'success') &&
-          (github.ref == 'refs/heads/main' ||
-           github.event_name == 'workflow_dispatch' ||
-           (github.event_name == 'pull_request' &&
-            github.event.pull_request.head.repo.full_name == github.repository))
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: ${{ steps.durable_lychee_cache.outputs.name }}
-          path: .lycheecache
-          compression-level: 0
-          include-hidden-files: true
-          retention-days: 90
+        run: |
+          scripts/ci/docs-link-check.sh
 
       - name: Stage repository-wide successful link result
         if: steps.link-result.outputs.refresh == 'true'
@@ -461,7 +442,6 @@ jobs:
 
       - name: Publish repository-wide successful link result
         if: >-
-          matrix.config.writer &&
           steps.link-result.outputs.refresh == 'true' &&
           (github.ref == 'refs/heads/main' ||
            github.event_name == 'workflow_dispatch' ||
@@ -476,7 +456,6 @@ jobs:
 
       - name: Publish input-identical built site
         if: >-
-          matrix.config.writer &&
           steps.built-site.outcome != 'skipped' &&
           steps.built-site.outputs.exact != 'true' &&
           (github.ref == 'refs/heads/main' ||
@@ -492,7 +471,6 @@ jobs:
 
       - name: Upload artifact
         if: >-
-          matrix.config.writer &&
           needs.changes.outputs.deployment-reuse != 'true' &&
           (github.event_name == 'push' ||
            (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'))
@@ -501,21 +479,16 @@ jobs:
           path: docs/.output/public
 
   prepare-codebook:
-    name: prepare codebook (${{ matrix.config.lane }})
     needs: changes
     if: >-
       github.event_name != 'schedule' &&
       needs.changes.outputs.result-reuse != 'true' &&
       (needs.changes.outputs.docs == 'true' || needs.changes.outputs.source == 'true')
-    strategy:
-      fail-fast: false
-      matrix:
-        config: ${{ fromJSON((github.event_name == 'workflow_dispatch' && inputs.lanes == 'both') && '[{"lane":"Velnor","runner":["self-hosted","velnor-target-mvp"],"writer":true},{"lane":"GitHub","runner":"ubuntu-26.04","writer":false}]' || (github.event_name == 'workflow_dispatch' && inputs.lanes == 'github') && '[{"lane":"GitHub","runner":"ubuntu-26.04","writer":true}]' || '[{"lane":"Velnor","runner":["self-hosted","velnor-target-mvp"],"writer":true}]') }}
-    runs-on: ${{ matrix.config.runner }}
+    runs-on: ${{ (github.event_name == 'workflow_dispatch' && inputs.lanes == 'github') && 'ubuntu-26.04' || fromJSON('["self-hosted","velnor-target-mvp"]') }}
     timeout-minutes: 10
     steps:
       - name: Checkout repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Restore resolved Codebook binary
         id: codebook-artifact
@@ -557,7 +530,7 @@ jobs:
         with:
           version: "2026.7.7"
           cache_key_prefix: "mise-v2"
-          cache_save: ${{ github.ref == 'refs/heads/main' && matrix.config.writer }}
+          cache_save: ${{ github.ref == 'refs/heads/main' }}
           install_args: "cargo-binstall cargo:codebook-lsp"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
 
@@ -573,7 +546,6 @@ jobs:
 
       - name: Publish resolved Codebook binary
         if: >-
-          matrix.config.writer &&
           steps.codebook-artifact.outputs.hit != 'true' &&
           (github.ref == 'refs/heads/main' ||
            (github.event_name == 'pull_request' &&
@@ -586,21 +558,16 @@ jobs:
           retention-days: 7
 
   spell-check-docs:
-    name: spell check docs (${{ matrix.config.lane }})
     needs: [changes, prepare-codebook]
     if: >-
       github.event_name != 'schedule' &&
       needs.changes.outputs.result-reuse != 'true' &&
       needs.changes.outputs.docs == 'true'
-    strategy:
-      fail-fast: false
-      matrix:
-        config: ${{ fromJSON((github.event_name == 'workflow_dispatch' && inputs.lanes == 'both') && '[{"lane":"Velnor","runner":["self-hosted","velnor-target-mvp"],"writer":true},{"lane":"GitHub","runner":"ubuntu-26.04","writer":false}]' || (github.event_name == 'workflow_dispatch' && inputs.lanes == 'github') && '[{"lane":"GitHub","runner":"ubuntu-26.04","writer":true}]' || '[{"lane":"Velnor","runner":["self-hosted","velnor-target-mvp"],"writer":true}]') }}
-    runs-on: ${{ matrix.config.runner }}
+    runs-on: ${{ (github.event_name == 'workflow_dispatch' && inputs.lanes == 'github') && 'ubuntu-26.04' || fromJSON('["self-hosted","velnor-target-mvp"]') }}
     timeout-minutes: 10
     steps:
       - name: Checkout repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Download prepared Codebook binary
         uses: ./.github/actions/download-codebook
@@ -636,21 +603,16 @@ jobs:
           .ci-codebook/codebook-lsp --root . lint --unique "${spell_files[@]}"
 
   spell-check-source:
-    name: spell check source (${{ matrix.config.lane }})
     needs: [changes, prepare-codebook]
     if: >-
       github.event_name != 'schedule' &&
       needs.changes.outputs.result-reuse != 'true' &&
       needs.changes.outputs.source == 'true'
-    strategy:
-      fail-fast: false
-      matrix:
-        config: ${{ fromJSON((github.event_name == 'workflow_dispatch' && inputs.lanes == 'both') && '[{"lane":"Velnor","runner":["self-hosted","velnor-target-mvp"],"writer":true},{"lane":"GitHub","runner":"ubuntu-26.04","writer":false}]' || (github.event_name == 'workflow_dispatch' && inputs.lanes == 'github') && '[{"lane":"GitHub","runner":"ubuntu-26.04","writer":true}]' || '[{"lane":"Velnor","runner":["self-hosted","velnor-target-mvp"],"writer":true}]') }}
-    runs-on: ${{ matrix.config.runner }}
+    runs-on: ${{ (github.event_name == 'workflow_dispatch' && inputs.lanes == 'github') && 'ubuntu-26.04' || fromJSON('["self-hosted","velnor-target-mvp"]') }}
     timeout-minutes: 10
     steps:
       - name: Checkout repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Download prepared Codebook binary
         uses: ./.github/actions/download-codebook
@@ -679,7 +641,6 @@ jobs:
           .ci-codebook/codebook-lsp --root . lint --unique "${spell_files[@]}"
 
   deploy:
-    name: deploy (${{ matrix.config.lane }})
     # docs-link-check covers full-site lychee + docs build; repo-link-check
     # covers <RepoFile /> path validity. Both must pass before publishing.
     #
@@ -696,11 +657,7 @@ jobs:
       needs.docs-link-check.result == 'success' &&
       (needs.repo-link-check.result == 'success' ||
        needs.repo-link-check.result == 'skipped')
-    strategy:
-      fail-fast: false
-      matrix:
-        config: ${{ fromJSON((github.event_name == 'workflow_dispatch' && inputs.lanes == 'both') && '[{"lane":"Velnor","runner":["self-hosted","velnor-target-mvp"],"writer":true},{"lane":"GitHub","runner":"ubuntu-26.04","writer":false}]' || (github.event_name == 'workflow_dispatch' && inputs.lanes == 'github') && '[{"lane":"GitHub","runner":"ubuntu-26.04","writer":true}]' || '[{"lane":"Velnor","runner":["self-hosted","velnor-target-mvp"],"writer":true}]') }}
-    runs-on: ${{ matrix.config.runner }}
+    runs-on: ${{ (github.event_name == 'workflow_dispatch' && inputs.lanes == 'github') && 'ubuntu-26.04' || fromJSON('["self-hosted","velnor-target-mvp"]') }}
     timeout-minutes: 35
     outputs:
       page-url: ${{ steps.deploy1.outputs.page_url || steps.deploy2.outputs.page_url || steps.deploy3.outputs.page_url }}
@@ -713,16 +670,15 @@ jobs:
       url: ${{ steps.deploy1.outputs.page_url || steps.deploy2.outputs.page_url || steps.deploy3.outputs.page_url }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Deploy to GitHub Pages
         id: deploy1
-        if: matrix.config.writer
         continue-on-error: true
         uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5
 
       - name: Back off before Pages deploy retry 2
-        if: matrix.config.writer && steps.deploy1.outcome == 'failure'
+        if: steps.deploy1.outcome == 'failure'
         shell: bash
         run: |
           echo "::notice::GitHub Pages deployment failed on attempt 1; retrying after 30 seconds"
@@ -730,12 +686,12 @@ jobs:
 
       - name: Deploy to GitHub Pages (retry 2)
         id: deploy2
-        if: matrix.config.writer && steps.deploy1.outcome == 'failure'
+        if: steps.deploy1.outcome == 'failure'
         continue-on-error: true
         uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5
 
       - name: Back off before Pages deploy retry 3
-        if: matrix.config.writer && steps.deploy1.outcome == 'failure' && steps.deploy2.outcome == 'failure'
+        if: steps.deploy1.outcome == 'failure' && steps.deploy2.outcome == 'failure'
         shell: bash
         run: |
           echo "::notice::GitHub Pages deployment failed on attempt 2; retrying after 60 seconds"
@@ -743,19 +699,18 @@ jobs:
 
       - name: Deploy to GitHub Pages (retry 3)
         id: deploy3
-        if: matrix.config.writer && steps.deploy1.outcome == 'failure' && steps.deploy2.outcome == 'failure'
+        if: steps.deploy1.outcome == 'failure' && steps.deploy2.outcome == 'failure'
         continue-on-error: true
         uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5
 
       - name: Require Pages deployment success
-        if: matrix.config.writer && steps.deploy1.outcome != 'success' && steps.deploy2.outcome != 'success' && steps.deploy3.outcome != 'success'
+        if: steps.deploy1.outcome != 'success' && steps.deploy2.outcome != 'success' && steps.deploy3.outcome != 'success'
         shell: bash
         run: |
           echo "::error::GitHub Pages deployment failed after 3 attempts"
           exit 1
 
   verify-deployed:
-    name: verify deployed (${{ matrix.config.lane }})
     needs: [changes, deploy]
     if: >-
       always() &&
@@ -763,49 +718,50 @@ jobs:
       needs.deploy.result == 'success' &&
       (github.event_name == 'push' ||
        (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'))
-    strategy:
-      fail-fast: false
-      matrix:
-        config: ${{ fromJSON((github.event_name == 'workflow_dispatch' && inputs.lanes == 'both') && '[{"lane":"Velnor","runner":["self-hosted","velnor-target-mvp"],"writer":true},{"lane":"GitHub","runner":"ubuntu-26.04","writer":false}]' || (github.event_name == 'workflow_dispatch' && inputs.lanes == 'github') && '[{"lane":"GitHub","runner":"ubuntu-26.04","writer":true}]' || '[{"lane":"Velnor","runner":["self-hosted","velnor-target-mvp"],"writer":true}]') }}
-    runs-on: ${{ matrix.config.runner }}
+    runs-on: ${{ (github.event_name == 'workflow_dispatch' && inputs.lanes == 'github') && 'ubuntu-26.04' || fromJSON('["self-hosted","velnor-target-mvp"]') }}
     timeout-minutes: 10
     permissions:
       contents: read
     steps:
       - name: Checkout repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      # Build a sitemap URL that is robust against future
+      # actions/deploy-pages versions changing whether `page_url`
+      # carries a trailing slash. The current contract has one, but
+      # normalising explicitly costs nothing and removes the implicit
+      # dependency.
+      - name: Resolve sitemap URL
+        id: sitemap
+        shell: bash
+        env:
+          PAGE_URL: ${{ needs.deploy.outputs.page-url }}
+        run: |
+          set -euo pipefail
+          echo "url=${PAGE_URL%/}/sitemap.xml" >> "$GITHUB_OUTPUT"
 
       - name: Verify deployed docs links
         uses: ./.github/actions/check-deployed-docs
         with:
-          # Use the canonical site URL instead of a matrix job output. In a
-          # `both` run the non-writer deploy arm intentionally has no Pages
-          # output, and GitHub does not define which matrix arm owns a job
-          # output when multiple arms complete.
-          sitemap-url: ${{ env.DOCS_SITE_URL }}/sitemap.xml
+          sitemap-url: ${{ steps.sitemap.outputs.url }}
           edit-url: ${{ env.JACKIN_REPO_EDIT_URL }}
           blob-url: ${{ env.JACKIN_REPO_BLOB_URL }}
           github-token: ${{ github.token }}
           external-links: "false"
 
   check-deployed:
-    name: check deployed (${{ matrix.config.lane }})
     # Schedule verifies the live deployed site against the main-branch source.
     # Non-main workflow_dispatch runs validate the branch's source/build/link
     # surface only; remapping the deployed main site against a feature checkout
     # produces false missing-file failures after source moves.
     if: github.event_name == 'schedule'
-    strategy:
-      fail-fast: false
-      matrix:
-        config: ${{ fromJSON((github.event_name == 'workflow_dispatch' && inputs.lanes == 'both') && '[{"lane":"Velnor","runner":["self-hosted","velnor-target-mvp"],"writer":true},{"lane":"GitHub","runner":"ubuntu-26.04","writer":false}]' || (github.event_name == 'workflow_dispatch' && inputs.lanes == 'github') && '[{"lane":"GitHub","runner":"ubuntu-26.04","writer":true}]' || '[{"lane":"Velnor","runner":["self-hosted","velnor-target-mvp"],"writer":true}]') }}
-    runs-on: ${{ matrix.config.runner }}
+    runs-on: ${{ (github.event_name == 'workflow_dispatch' && inputs.lanes == 'github') && 'ubuntu-26.04' || fromJSON('["self-hosted","velnor-target-mvp"]') }}
     timeout-minutes: 10
     permissions:
       contents: read
     steps:
       - name: Checkout repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Verify deployed docs links
         uses: ./.github/actions/check-deployed-docs
@@ -818,37 +774,23 @@ jobs:
   # Skip on schedule because schedule runs only `check-deployed` and a
   # one-job aggregator on schedule has no value.
   docs-required:
-    name: docs required (${{ matrix.config.lane }})
     if: always() && github.event_name != 'schedule'
     needs: [changes, repo-link-check, docs-link-check, prepare-codebook, spell-check-docs, spell-check-source, deploy, verify-deployed, check-deployed]
-    strategy:
-      fail-fast: false
-      matrix:
-        config: ${{ fromJSON((github.event_name == 'workflow_dispatch' && inputs.lanes == 'both') && '[{"lane":"Velnor","runner":["self-hosted","velnor-target-mvp"],"writer":true},{"lane":"GitHub","runner":"ubuntu-26.04","writer":false}]' || (github.event_name == 'workflow_dispatch' && inputs.lanes == 'github') && '[{"lane":"GitHub","runner":"ubuntu-26.04","writer":true}]' || '[{"lane":"Velnor","runner":["self-hosted","velnor-target-mvp"],"writer":true}]') }}
-    runs-on: ${{ matrix.config.runner }}
+    runs-on: ${{ (github.event_name == 'workflow_dispatch' && inputs.lanes == 'github') && 'ubuntu-26.04' || fromJSON('["self-hosted","velnor-target-mvp"]') }}
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: ./.github/actions/aggregate-needs
         with:
           needs-json: ${{ toJSON(needs) }}
           workflow-label: docs
-      - uses: ./.github/actions/download-ci-xtask
-        if: always()
-        with:
-          token: ${{ github.token }}
-          lane: ${{ matrix.config.lane }}
-          xtask-contract: ${{ needs.changes.outputs.docs-xtask-contract }}
-          fallback-xtask-contract: ${{ hashFiles('Cargo.lock', 'Cargo.toml', 'rust-toolchain.toml', '.cargo/**', 'crates/*/Cargo.toml', 'crates/jackin-xtask/src/**', 'crates/jackin-process/src/**') }}
-          include-tools: "false"
       - name: Audit every Docs job's performance
         if: always()
         env:
+          EXPECT_CLEAN: ${{ needs.changes.outputs.result-reuse == 'true' }}
           GH_TOKEN: ${{ github.token }}
-        run: >-
-          "$CI_XTASK" ci-audit
-          --expect-clean "${{ needs.changes.outputs.result-reuse == 'true' }}"
-          --workflow-label Docs
+          WORKFLOW_LABEL: Docs
+        run: scripts/ci/audit-workflow-performance.sh
       - name: Stage input-identical successful Docs result
         if: >-
           needs.changes.outputs.result-reuse != 'true' &&
@@ -859,7 +801,6 @@ jobs:
         run: printf '%s\n' "source-sha=${GITHUB_SHA}" > docs-result.txt
       - name: Publish input-identical successful Docs result
         if: >-
-          matrix.config.writer &&
           needs.changes.outputs.result-reuse != 'true' &&
           (github.ref == 'refs/heads/main' ||
            github.event_name == 'workflow_dispatch' ||
