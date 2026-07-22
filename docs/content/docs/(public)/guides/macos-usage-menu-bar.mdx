@@ -101,12 +101,12 @@ All numbers and labels are the same Rust views the Capsule usage dialog uses.
 
 ## Menu bar appearance
 
-OpenUsage-inspired status strip (clean-room look-and-feel): template jackin❯ logomark, then compact **mini capacity bars** tinted by severity next to monospaced Rust labels. Empty metrics stay hidden. Settings **Display** mode:
+CodexBar-style **per-provider** menu-bar strip (clean-room): one chip per enabled agent with data — provider glyph + stacked short percents (session/weekly remainings from Rust). Empty providers stay hidden. Settings **Display** mode:
 
-  - **Focus percent** (default) — worst enabled account as one chip (`Cl 63%` + mini bar)
+  - **Per-provider strip** (default) — up to N agents (default 6) in catalog order
+  - **Worst provider only** — single chip for the lowest remaining account
+  - **Pinned provider** — one surface’s chip only
   - **Icon only** — logomark alone
-  - **Pinned surface** — one surface’s chip only
-  - **Multi-surface strip** — worst-first chips, capped (default 3), e.g. three mini bars + labels
 - **Format** flips (Rust-resolved, app-wide): **% left** / **% used**, **Countdown** / **Exact time**. Depleted accounts can show `Cl resets 1h 21m` when a reset time is known.
 - **Hide values while screen sharing** collapses the item to the icon while a share/recording is active (off by default).
 - The icon dims when every enabled surface is stale or unavailable — numbers stay honest and never invent a percent.

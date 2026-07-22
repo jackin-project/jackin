@@ -56,37 +56,60 @@ public func overviewGlanceBody(headline: String, resetLabel: String?, statusWord
     return .statusWord(statusWord)
 }
 
-/// One menu-bar chip (OpenUsage-style strip segment).
+/// One menu-bar chip — **per-provider** usage preview (CodexBar-style).
 ///
-/// Strings are Rust-owned compact labels / remaining tokens. Swift only lays out
-/// glyph + stacked short percents (OpenUsage menu-bar density).
+/// Each enabled agent with data gets a chip: glyph + up to two short percent
+/// lines (e.g. session/weekly). Strings from Rust remaining / compact labels.
 public struct StatusItemChip: Identifiable, Equatable, Sendable {
     public var id: String { surfaceId }
     public let surfaceId: String
     /// 1–2 letter glyph for the strip (from Rust compact label / surface id).
     public let glyph: String
+    /// Optional SF Symbol name for known surface ids (layout only).
+    public let systemImage: String?
     /// Up to two short percent lines for stacked display (e.g. `100%`, `79%`).
     public let percentLines: [String]
     /// Full Rust compact label for accessibility / fallback (`Cl 63%`).
     public let compactLabel: String
     /// Driving-bucket remaining for primary mini-indicator.
     public let remainingPercent: UInt8?
+    /// Per-line remainings for mini bars under stacked percents.
+    public let remainingPerLine: [UInt8]
     public let severity: String
 
     public init(
         surfaceId: String,
         glyph: String,
+        systemImage: String? = nil,
         percentLines: [String],
         compactLabel: String,
         remainingPercent: UInt8?,
+        remainingPerLine: [UInt8] = [],
         severity: String
     ) {
         self.surfaceId = surfaceId
         self.glyph = glyph
+        self.systemImage = systemImage
         self.percentLines = percentLines
         self.compactLabel = compactLabel
         self.remainingPercent = remainingPercent
+        self.remainingPerLine = remainingPerLine
         self.severity = severity
+    }
+}
+
+/// SF Symbol for a known host surface id (status-item / tile layout only).
+public func statusItemSystemImage(surfaceId: String) -> String? {
+    switch surfaceId {
+    case "claude": return "sparkles"
+    case "codex": return "circle.hexagongrid.fill"
+    case "amp": return "waveform"
+    case "grok": return "circle.dashed"
+    case "zai": return "z.square.fill"
+    case "kimi": return "k.circle"
+    case "minimax": return "waveform.path"
+    case "opencode": return "chevron.left.forwardslash.chevron.right"
+    default: return nil
     }
 }
 

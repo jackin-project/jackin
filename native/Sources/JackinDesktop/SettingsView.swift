@@ -15,31 +15,31 @@ struct SettingsView: View {
         Form {
             Section("Menu bar") {
                 Picker("Display", selection: $store.displayMode) {
-                    Text("Focus percent").tag(StatusItemDisplayMode.focusPercent)
+                    Text("Per-provider strip (CodexBar-style)").tag(StatusItemDisplayMode.strip)
+                    Text("Worst provider only").tag(StatusItemDisplayMode.focusPercent)
+                    Text("Pinned provider").tag(StatusItemDisplayMode.pinnedSurface)
                     Text("Icon only").tag(StatusItemDisplayMode.iconOnly)
-                    Text("Pinned surface").tag(StatusItemDisplayMode.pinnedSurface)
-                    Text("Multi-surface strip").tag(StatusItemDisplayMode.strip)
                 }
                 .pickerStyle(.radioGroup)
                 .accessibilityLabel("Status item display mode")
 
                 if store.displayMode == .pinnedSurface {
-                    Picker("Pinned surface", selection: $store.pinnedSurfaceId) {
+                    Picker("Pinned provider", selection: $store.pinnedSurfaceId) {
                         Text("—").tag("")
                         ForEach(store.surfaces) { surface in
                             Text(surface.label).tag(surface.id)
                         }
                     }
-                    .accessibilityLabel("Pinned surface for status item")
+                    .accessibilityLabel("Pinned provider for status item")
                 }
 
                 if store.displayMode == .strip {
-                    Picker("Strip cap", selection: $store.stripMax) {
+                    Picker("Providers in menu bar", selection: $store.stripMax) {
                         ForEach(1...8, id: \.self) { n in
                             Text("\(n)").tag(n)
                         }
                     }
-                    .accessibilityLabel("Multi-surface strip maximum")
+                    .accessibilityLabel("Maximum providers shown in menu bar strip")
                 }
 
                 Picker("Percent style", selection: $store.percentStyle) {
