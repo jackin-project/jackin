@@ -35,6 +35,27 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  matrix-setup:
+    name: Select runner lane
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      configs: ${{ steps.set.outputs.configs }}
+    steps:
+      - id: set
+        env:
+          LANES: ${{ github.event_name == 'workflow_dispatch' && inputs.lanes || 'velnor' }}
+        run: |
+          github_writer='{"lane":"GitHub","runner":"\"ubuntu-24.04\"","runner_os":"Linux","runner_arch":"X64","cache_writer":true}'
+          velnor_writer='{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","runner_os":"Linux","runner_arch":"X64","cache_writer":true}'
+          velnor_reader='{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","runner_os":"Linux","runner_arch":"X64","cache_writer":false}'
+          case "$LANES" in
+            velnor) configs="[$velnor_writer]" ;;
+            both)   configs="[$github_writer,$velnor_reader]" ;;
+            *)      configs="[$github_writer]" ;;
+          esac
+          echo "configs=$configs" >> "$GITHUB_OUTPUT"
+
   changes:
     runs-on: ubuntu-26.04
     timeout-minutes: 5
@@ -960,6 +981,13 @@ jobs:
           key: cargo-audit-${{ runner.os }}-${{ needs.changes.outputs.audit-contract }}
           restore-keys: |
             cargo-audit-${{ runner.os }}-
+      - uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
+        with:
+          version: "2026.7.7"
+          cache_key_prefix: "mise-v2"
+          cache_save: ${{ github.ref == 'refs/heads/main' }}
+          install_args: rust@${{ needs.changes.outputs.rust-version }}
+          github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - name: Use the prepared current Rust toolchain
         run: >-
           "$CI_XTASK" ci-toolchain prepare

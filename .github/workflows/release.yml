@@ -30,6 +30,39 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  matrix-setup:
+    name: Select runner lane
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      configs: ${{ steps.set.outputs.configs }}
+      has_github: ${{ steps.set.outputs.has_github }}
+    steps:
+      - id: set
+        env:
+          LANES: ${{ github.event_name == 'workflow_dispatch' && inputs.lanes || 'velnor' }}
+        run: |
+          github='{"lane":"GitHub","runner":"\"ubuntu-24.04\"","runner_os":"Linux","runner_arch":"X64"}'
+          velnor='{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","runner_os":"Linux","runner_arch":"X64"}'
+          case "$LANES" in
+            velnor)
+              configs="[$velnor]"
+              has_github=false
+              ;;
+            both)
+              configs="[$github,$velnor]"
+              has_github=true
+              ;;
+            *)
+              configs="[$github]"
+              has_github=true
+              ;;
+          esac
+          {
+            echo "configs=$configs"
+            echo "has_github=$has_github"
+          } >> "$GITHUB_OUTPUT"
+
   check-version:
     runs-on: ubuntu-26.04
     timeout-minutes: 5
@@ -104,6 +137,180 @@ jobs:
     secrets: inherit
 
   build:
+    if: >-
+      needs.check-version.outputs.published != 'true' &&
+      needs.check-version.outputs.mode == 'publish'
+    needs: [check-version, matrix-setup]
+    strategy:
+      fail-fast: false
+      matrix:
+        config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
+        target:
+          - triple: x86_64-apple-darwin
+            zigbuild_target: x86_64-apple-darwin
+          - triple: aarch64-apple-darwin
+            zigbuild_target: aarch64-apple-darwin
+          - triple: x86_64-unknown-linux-gnu
+            zigbuild_target: x86_64-unknown-linux-gnu.2.17
+          - triple: aarch64-unknown-linux-gnu
+            zigbuild_target: aarch64-unknown-linux-gnu.2.17
+    runs-on: ${{ fromJSON(matrix.config.runner) }}
+    timeout-minutes: 60
+    name: build jackin ${{ matrix.target.triple }} (${{ matrix.config.lane }})
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    env:
+      CARGO_INCREMENTAL: "0"
+      CARGO_TERM_COLOR: always
+      RUSTC_WRAPPER: sccache
+      SCCACHE_BASEDIRS: ${{ github.workspace }}
+      SCCACHE_GHA_ENABLED: "off"
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Cache Rust toolchain
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.rustup/toolchains
+            ~/.rustup/update-hashes
+          key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}
+          restore-keys: |
+            rustup-${{ runner.os }}-${{ runner.arch }}-
+      - uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
+        env:
+          # sccache install: blank wrapper in case binstall source-falls-back
+          # to cargo, which would probe rustc through a missing sccache.
+          RUSTC_WRAPPER: ""
+        with:
+          version: "2026.7.7"
+          cache_key_prefix: "mise-v2"
+          cache_save: ${{ github.ref == 'refs/heads/main' }}
+          install_args: "cargo-binstall rust zig cargo:cargo-zigbuild cosign syft cargo:sccache"
+          github_token: ${{ secrets.GH_READONLY_TOKEN }}
+      - id: cargo-registry-cache
+        uses: ./.github/actions/cache-cargo-registry
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          shared-key: release-archive-jackin-${{ matrix.target.triple }}-workspace-v2
+          cache-all-crates: "true"
+          cache-workspace-crates: "true"
+          env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTC_WRAPPER RUSTFLAGS RUSTDOC RUSTUP"
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+          # No branch in the cache key: GitHub isolates branch caches, so every
+          # PR/branch/release reads the default branch's warm cache via fallback.
+          # Only main saves, preserving limited cache quota for reusable entries.
+      - run: rustup target add ${{ matrix.target.triple }}
+      - name: Cache macOS SDK
+        if: contains(matrix.target.triple, 'apple')
+        id: sdk-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: /tmp/macos-sdk
+          key: macos-sdk-26.1
+      - name: Download macOS SDK
+        if: contains(matrix.target.triple, 'apple') && steps.sdk-cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p /tmp/macos-sdk
+          curl -fsSL "https://github.com/joseluisq/macosx-sdks/releases/download/26.1/MacOSX26.1.sdk.tar.xz" \
+            | tar -xJ -C /tmp/macos-sdk
+      - name: Set macOS SDKROOT
+        if: contains(matrix.target.triple, 'apple')
+        run: |
+          echo "SDKROOT=/tmp/macos-sdk/MacOSX26.1.sdk" >> "$GITHUB_ENV"
+          echo "MACOSX_DEPLOYMENT_TARGET=12.0" >> "$GITHUB_ENV"
+      - name: Build signed archive
+        uses: ./.github/actions/build-release-archive
+        with:
+          package: jackin
+          target: ${{ matrix.target.triple }}
+          zigbuild-target: ${{ matrix.target.zigbuild_target }}
+          version: ${{ needs.check-version.outputs.version }}
+          archive-basename: jackin-${{ needs.check-version.outputs.version }}-${{ matrix.target.triple }}
+          artifact-name: release-${{ matrix.config.lane }}-jackin-${{ matrix.target.triple }}
+          timings-artifact-name: cargo-timings-release-jackin-${{ matrix.target.triple }}-${{ matrix.config.lane }}
+          sccache-stats-artifact-name: sccache-stats-release-jackin-${{ matrix.target.triple }}-${{ matrix.config.lane }}
+          sccache-stats-heading: sccache release jackin ${{ matrix.target.triple }} (${{ matrix.config.lane }})
+
+  build-jackin-capsule:
+    if: >-
+      needs.check-version.outputs.published != 'true' &&
+      needs.check-version.outputs.mode == 'publish'
+    needs: [check-version, matrix-setup]
+    runs-on: ${{ fromJSON(matrix.config.runner) }}
+    timeout-minutes: 60
+    name: build jackin-capsule ${{ matrix.target.triple }} (${{ matrix.config.lane }})
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    env:
+      CARGO_INCREMENTAL: "0"
+      CARGO_TERM_COLOR: always
+      RUSTC_WRAPPER: sccache
+      SCCACHE_BASEDIRS: ${{ github.workspace }}
+      SCCACHE_GHA_ENABLED: "off"
+    strategy:
+      fail-fast: false
+      matrix:
+        config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
+        target:
+          - triple: aarch64-unknown-linux-gnu
+            zigbuild_target: aarch64-unknown-linux-gnu.2.17
+          - triple: x86_64-unknown-linux-gnu
+            zigbuild_target: x86_64-unknown-linux-gnu.2.17
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Cache Rust toolchain
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.rustup/toolchains
+            ~/.rustup/update-hashes
+          key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}
+          restore-keys: |
+            rustup-${{ runner.os }}-${{ runner.arch }}-
+      - uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
+        env:
+          # sccache install: blank wrapper in case binstall source-falls-back
+          # to cargo, which would probe rustc through a missing sccache.
+          RUSTC_WRAPPER: ""
+        with:
+          version: "2026.7.7"
+          cache_key_prefix: "mise-v2"
+          cache_save: ${{ github.ref == 'refs/heads/main' }}
+          install_args: "cargo-binstall rust zig cargo:cargo-zigbuild cosign syft cargo:sccache"
+          github_token: ${{ secrets.GH_READONLY_TOKEN }}
+      - id: cargo-registry-cache
+        uses: ./.github/actions/cache-cargo-registry
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          shared-key: release-archive-capsule-${{ matrix.target.triple }}-workspace-v2
+          cache-all-crates: "true"
+          cache-workspace-crates: "true"
+          env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTC_WRAPPER RUSTFLAGS RUSTDOC RUSTUP"
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+          # No branch in the cache key: GitHub isolates branch caches, so every
+          # PR/branch/release reads the default branch's warm cache via fallback.
+          # Only main saves, preserving limited cache quota for reusable entries.
+      - run: rustup target add ${{ matrix.target.triple }}
+      - name: Build signed capsule archive
+        uses: ./.github/actions/build-release-archive
+        with:
+          package: jackin-capsule
+          target: ${{ matrix.target.triple }}
+          zigbuild-target: ${{ matrix.target.zigbuild_target }}
+          version: ${{ needs.check-version.outputs.version }}
+          archive-basename: jackin-capsule-${{ needs.check-version.outputs.version }}-${{ matrix.target.triple }}
+          artifact-name: release-${{ matrix.config.lane }}-jackin-capsule-${{ matrix.target.triple }}
+          timings-artifact-name: cargo-timings-release-capsule-${{ matrix.target.triple }}-${{ matrix.config.lane }}
+          sccache-stats-artifact-name: sccache-stats-release-capsule-${{ matrix.target.triple }}-${{ matrix.config.lane }}
+          sccache-stats-heading: sccache release capsule ${{ matrix.target.triple }} (${{ matrix.config.lane }})
+
+  # Secret-free (validate) or credentialed (publish) arm64 menu-bar app.
+  # GitHub-hosted macOS only — never Velnor (Apple credential boundary).
+  build-usage-menu-bar:
     if: needs.check-version.outputs.published != 'true'
     needs: [check-version]
     strategy:

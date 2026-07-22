@@ -36,6 +36,47 @@ env:
   # treats BUILDX_BUILDER as the default-builder selection.
 
 jobs:
+  matrix-setup:
+    name: Select runner lane
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      build_configs: ${{ steps.set.outputs.build_configs }}
+      lane_configs: ${{ steps.set.outputs.lane_configs }}
+      has_github: ${{ steps.set.outputs.has_github }}
+    steps:
+      - id: set
+        env:
+          LANES: ${{ github.event_name == 'workflow_dispatch' && inputs.lanes || 'velnor' }}
+        run: |
+          github='{"lane":"GitHub","runner":"\"ubuntu-24.04\"","runner_os":"Linux","runner_arch":"X64"}'
+          velnor='{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","runner_os":"Linux","runner_arch":"X64"}'
+          github_amd64='{"lane":"GitHub","runner":"\"ubuntu-24.04\"","runner_os":"Linux","runner_arch":"X64","platform":"amd64"}'
+          github_arm64='{"lane":"GitHub","runner":"\"ubuntu-24.04-arm\"","runner_os":"Linux","runner_arch":"ARM64","platform":"arm64"}'
+          velnor_amd64='{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","runner_os":"Linux","runner_arch":"X64","platform":"amd64"}'
+          case "$LANES" in
+            velnor)
+              build_configs="[$velnor_amd64]"
+              lane_configs="[$velnor]"
+              has_github=false
+              ;;
+            both)
+              build_configs="[$github_amd64,$github_arm64,$velnor_amd64]"
+              lane_configs="[$github,$velnor]"
+              has_github=true
+              ;;
+            *)
+              build_configs="[$github_amd64,$github_arm64]"
+              lane_configs="[$github]"
+              has_github=true
+              ;;
+          esac
+          {
+            echo "build_configs=$build_configs"
+            echo "lane_configs=$lane_configs"
+            echo "has_github=$has_github"
+          } >> "$GITHUB_OUTPUT"
+
   changes:
     runs-on: ubuntu-26.04
     timeout-minutes: 5
@@ -238,6 +279,7 @@ jobs:
         uses: ./.github/actions/cache-cargo-registry
         with:
           contract-key: ${{ needs.changes.outputs.registry-contract }}
+
       - name: Prefetch Cargo dependencies
         shell: bash
         run: |
@@ -344,6 +386,7 @@ jobs:
         uses: ./.github/actions/cache-cargo-registry
         with:
           contract-key: ${{ needs.changes.outputs.registry-contract }}
+
       - name: Prefetch Cargo dependencies
         shell: bash
         run: |
@@ -419,6 +462,7 @@ jobs:
         uses: ./.github/actions/cache-cargo-registry
         with:
           contract-key: ${{ needs.changes.outputs.registry-contract }}
+
       - name: Prefetch Cargo dependencies
         shell: bash
         run: |

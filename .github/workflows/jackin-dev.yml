@@ -146,6 +146,39 @@ jobs:
             exit 1
           fi
 
+  matrix-setup:
+    name: Select runner lane
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      configs: ${{ steps.set.outputs.configs }}
+      has_github: ${{ steps.set.outputs.has_github }}
+    steps:
+      - id: set
+        env:
+          LANES: ${{ github.event_name == 'workflow_dispatch' && inputs.lanes || 'velnor' }}
+        run: |
+          github='{"lane":"GitHub","runner":"\"ubuntu-24.04\"","runner_os":"Linux","runner_arch":"X64"}'
+          velnor='{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","runner_os":"Linux","runner_arch":"X64"}'
+          case "$LANES" in
+            velnor)
+              configs="[$velnor]"
+              has_github=false
+              ;;
+            both)
+              configs="[$github,$velnor]"
+              has_github=true
+              ;;
+            *)
+              configs="[$github]"
+              has_github=true
+              ;;
+          esac
+          {
+            echo "configs=$configs"
+            echo "has_github=$has_github"
+          } >> "$GITHUB_OUTPUT"
+
   version:
     runs-on: ubuntu-26.04
     timeout-minutes: 5

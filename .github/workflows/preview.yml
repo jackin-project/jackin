@@ -26,6 +26,45 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  matrix-setup:
+    name: Select runner lane
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      configs: ${{ steps.config.outputs.configs }}
+      has_github: ${{ steps.config.outputs.has_github }}
+    steps:
+      - name: Build runner config
+        id: config
+        env:
+          LANES: ${{ github.event_name == 'workflow_dispatch' && inputs.lanes || 'velnor' }}
+        run: |
+          set -euo pipefail
+          github='{"lane":"GitHub","runner":"\"ubuntu-24.04\"","runner_os":"Linux","runner_arch":"X64"}'
+          velnor='{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","runner_os":"Linux","runner_arch":"X64"}'
+
+          case "$LANES" in
+            github)
+              configs=$(jq -cn --argjson github "$github" '[$github]')
+              has_github=true
+              ;;
+            velnor)
+              configs=$(jq -cn --argjson velnor "$velnor" '[$velnor]')
+              has_github=false
+              ;;
+            both)
+              configs=$(jq -cn --argjson github "$github" --argjson velnor "$velnor" '[$github, $velnor]')
+              has_github=true
+              ;;
+            *)
+              echo "::error::Unsupported lanes value: $LANES"
+              exit 1
+              ;;
+          esac
+
+          echo "configs=$configs" >> "$GITHUB_OUTPUT"
+          echo "has_github=$has_github" >> "$GITHUB_OUTPUT"
+
   source-changed:
     if: >-
       github.event_name == 'workflow_dispatch' ||
