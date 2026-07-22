@@ -12,6 +12,7 @@ let package = Package(
         .library(name: "JackinUsageBridge", targets: ["JackinUsageBridge"]),
         .executable(name: "JackinDesktop", targets: ["JackinDesktop"]),
         .executable(name: "StatusItemChipHarness", targets: ["StatusItemChipHarness"]),
+        .executable(name: "DesktopArchitectureLint", targets: ["DesktopArchitectureLint"]),
     ],
     targets: [
         .binaryTarget(
@@ -34,6 +35,12 @@ let package = Package(
             name: "StatusItemChipHarness",
             dependencies: ["JackinUsageBridge"],
             path: "Tools/StatusItemChipHarness"
+        ),
+        // Mirrors ArchitectureTests usage-string token ban without XCTest (CLT-safe).
+        .executableTarget(
+            name: "DesktopArchitectureLint",
+            dependencies: [],
+            path: "Tools/DesktopArchitectureLint"
         ),
         .testTarget(
             name: "JackinUsageBridgeTests",

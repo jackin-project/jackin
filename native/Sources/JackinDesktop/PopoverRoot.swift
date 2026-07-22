@@ -376,7 +376,7 @@ struct PopoverRoot: View {
                 if let remaining = bucket.remainingPercent {
                     remainingBar(remaining: remaining, severity: bucket.severity)
                 }
-                // OpenUsage: primary "% left" / "% used" left, reset right.
+                // OpenUsage: primary remaining/used percent line (Rust helpers), reset right.
                 HStack(alignment: .firstTextBaseline) {
                     Text(
                         bucketPrimaryPercentLabel(

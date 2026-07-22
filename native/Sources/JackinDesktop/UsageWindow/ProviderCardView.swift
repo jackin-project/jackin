@@ -173,7 +173,7 @@ struct ProviderCardView: View {
                         "\(bucket.label) \(bucketPrimaryPercentLabel(remainingPercent: remaining, usedLabel: bucket.usedLabel, percentStyle: percentStyle))"
                     )
                 }
-                // OpenUsage primary: "81% left" · reset countdown.
+                // OpenUsage primary remaining/used line · Rust reset countdown.
                 HStack {
                     Text(
                         bucketPrimaryPercentLabel(
