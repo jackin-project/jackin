@@ -26,6 +26,9 @@ cosign = "3.1.2"
 hyperfine = "1.20.0"
 shellcheck = "0.11.0"
 node = "24.18.0"
+python = "3.14"
+uv = "0.11.29"
+"pipx:reuse" = { version = "6.2.0", extras = "charset-normalizer", depends = ["python"] }
 syft = "1.46.0"
 zig = "0.16.0"
 # rust is read from `rust-toolchain.toml` via the `idiomatic_version_file`
