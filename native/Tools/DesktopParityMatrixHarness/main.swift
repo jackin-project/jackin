@@ -282,6 +282,7 @@ struct DesktopParityMatrixHarness {
             statusItem.contains("miniRemainingBar")
                 && statusItem.contains("statusItemRemainingFraction")
                 && statusItem.contains("remainingPerLine")
+                && statusItem.contains("statusItemLineShowsMiniBar")
         )
         check(
             "Popover agent tile grid",

@@ -157,9 +157,10 @@ private struct StatusItemChipView: View {
                 .monospacedDigit()
                 .foregroundStyle(severityTint(severity))
                 .lineLimit(1)
-            // CodexBar dual meter: always paint when Rust has a remaining for the line
-            // (empty fill when depleted; percent tokens and countdown lines both meter).
-            if remainingIndex < chip.remainingPerLine.count {
+            // Mini bars only for pure percent tokens — countdown / "—" skip (helper policy).
+            if remainingIndex < chip.remainingPerLine.count,
+               statusItemLineShowsMiniBar(line)
+            {
                 miniRemainingBar(
                     remaining: chip.remainingPerLine[remainingIndex],
                     severity: severity,

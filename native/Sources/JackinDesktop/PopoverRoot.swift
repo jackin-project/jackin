@@ -197,7 +197,9 @@ struct PopoverRoot: View {
                                 )
                                 .lineLimit(1)
                                 .minimumScaleFactor(0.65)
-                            if index < remainingBarPercents.count {
+                            if index < remainingBarPercents.count,
+                               statusItemLineShowsMiniBar(line)
+                            {
                                 tileMiniBar(
                                     remaining: remainingBarPercents[index],
                                     severity: severity,
