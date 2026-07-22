@@ -91,6 +91,9 @@ jobs:
   packages:
     strategy:
       fail-fast: false
+      # Cap concurrent package jobs so multi-slot Velnor hosts do not pin
+      # VELNOR_JOB_PEAK_BYTES for every package at once (capacity backpressure).
+      max-parallel: 4
       matrix:
         config: ${{ fromJSON(inputs.runner-configs-json) }}
         package: ${{ fromJSON(inputs.packages-json) }}
