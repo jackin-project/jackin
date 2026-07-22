@@ -43,11 +43,14 @@ struct SettingsView: View {
                 }
 
                 Picker("Percent style", selection: $store.percentStyle) {
-                    Text("% left").tag("left")
+                    Text("% left (remaining)").tag("left")
                     Text("% used").tag("used")
                 }
                 .pickerStyle(.radioGroup)
-                .accessibilityLabel("Percent format")
+                .accessibilityLabel("Percent format: remaining left or used")
+                Text("Menu bar chips and compact labels use this style together.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
 
                 Picker("Reset style", selection: $store.resetStyle) {
                     Text("Countdown").tag("countdown")

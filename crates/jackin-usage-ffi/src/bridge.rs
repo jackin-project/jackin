@@ -118,7 +118,7 @@ impl UsageMenuBarBridge {
         })
     }
 
-    /// Short status-item label (worst enabled surface by used percent).
+    /// Short status-item label (worst enabled surface; remaining % by default).
     pub fn compact_status_bar_label(&self) -> Result<String, UsageBridgeError> {
         catch_entry(|| {
             let mut guard = self.lock()?;

@@ -536,8 +536,10 @@ impl HostUsageRuntime {
         self.format_prefs
     }
 
-    /// Short status-item label: enabled surface with the **highest used** percent
-    /// (lowest `remaining_percent` across its buckets), e.g. `Cl 63%`.
+    /// Short status-item label: enabled surface with the **least remaining**
+    /// (lowest `remaining_percent` across its buckets). Default
+    /// [`PercentStyle::Left`] shows remaining (e.g. `Cl 37%`);
+    /// [`PercentStyle::Used`] shows used percent (e.g. `Cl 63%`).
     ///
     /// Never invents percentages — only uses Rust-provided `remaining_percent`.
     /// Empty when no enabled surface has a numeric remaining value (all
@@ -559,16 +561,17 @@ impl HostUsageRuntime {
                 _ => best = Some((drive.remaining, surface, drive.resets_at)),
             }
         }
+        let prefs = self.format_prefs;
         Ok(match best {
             Some((remaining, surface, resets_at)) => {
-                Self::format_compact_entry(surface, remaining, resets_at)
+                Self::format_compact_entry(surface, remaining, resets_at, prefs)
             }
             None => String::new(),
         })
     }
 
-    /// Pinned-surface compact label (`Cx 41%` / depleted form). `None` when
-    /// disabled or no numeric remaining.
+    /// Pinned-surface compact label (e.g. `Cx 59%` remaining / depleted form).
+    /// `None` when disabled or no numeric remaining.
     pub fn compact_status_bar_label_for(
         &mut self,
         surface_id: &str,
@@ -586,6 +589,7 @@ impl HostUsageRuntime {
             surface,
             drive.remaining,
             drive.resets_at,
+            self.format_prefs,
         )))
     }
 
@@ -593,6 +597,7 @@ impl HostUsageRuntime {
     pub fn compact_status_bar_strip(&mut self, max: u32) -> Result<String, String> {
         self.require_open()?;
         let cap = max.clamp(1, 8) as usize;
+        let prefs = self.format_prefs;
         let mut rows: Vec<(u8, HostSurfaceId, Option<i64>)> = Vec::new();
         for surface in HostSurfaceId::ALL.iter().copied() {
             if !self.enabled.contains(surface.id()) {
@@ -616,7 +621,7 @@ impl HostUsageRuntime {
             .into_iter()
             .take(cap)
             .map(|(remaining, surface, resets_at)| {
-                Self::format_compact_entry(surface, remaining, resets_at)
+                Self::format_compact_entry(surface, remaining, resets_at, prefs)
             })
             .collect();
         Ok(parts.join(" · "))
@@ -705,10 +710,17 @@ impl HostUsageRuntime {
         driving_bucket_from_view(&view)
     }
 
+    /// Compact status token: prefix + percent matching format prefs.
+    ///
+    /// Default [`PercentStyle::Left`] uses **remaining** (OpenUsage/CodexBar
+    /// dual-bucket stack semantics). [`PercentStyle::Used`] flips to used %.
+    /// Depleted with `resets_at` keeps the countdown form; depleted without
+    /// reset is `Cl 0%` (remaining) or `Cl 100%` (used).
     fn format_compact_entry(
         surface: HostSurfaceId,
         remaining: u8,
         resets_at: Option<i64>,
+        prefs: UsageFormatPrefs,
     ) -> String {
         if remaining == 0 {
             if let Some(at) = resets_at {
@@ -720,11 +732,20 @@ impl HostUsageRuntime {
                     compact_duration_label(secs)
                 );
             }
-            // Honest depleted without a countdown.
-            return format!("{} 100%", surface.compact_prefix());
+            return match prefs.percent_style {
+                crate::usage::PercentStyle::Left => {
+                    format!("{} 0%", surface.compact_prefix())
+                }
+                crate::usage::PercentStyle::Used => {
+                    format!("{} 100%", surface.compact_prefix())
+                }
+            };
         }
-        let used = 100u8.saturating_sub(remaining);
-        format!("{} {used}%", surface.compact_prefix())
+        let pct = match prefs.percent_style {
+            crate::usage::PercentStyle::Left => remaining,
+            crate::usage::PercentStyle::Used => 100u8.saturating_sub(remaining),
+        };
+        format!("{} {pct}%", surface.compact_prefix())
     }
 
     /// Poll events after `cursor` (exclusive), up to `max`.

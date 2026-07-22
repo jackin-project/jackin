@@ -69,7 +69,7 @@ public struct StatusItemChip: Identifiable, Equatable, Sendable {
     public let systemImage: String?
     /// Up to two short percent lines for stacked display (e.g. `100%`, `79%`).
     public let percentLines: [String]
-    /// Full Rust compact label for accessibility / fallback (`Cl 63%`).
+    /// Full Rust compact label for accessibility / fallback (`Cl 37%` remaining).
     public let compactLabel: String
     /// Driving-bucket remaining for primary mini-indicator.
     public let remainingPercent: UInt8?
@@ -125,14 +125,36 @@ public func statusItemUsedFraction(remainingPercent: UInt8) -> Double {
     Double(100 - Int(remainingPercent)) / 100.0
 }
 
-/// Short OpenUsage-style percent token from Rust remaining (e.g. `79%`).
-public func statusItemPercentToken(remainingPercent: UInt8) -> String {
-    var s = String(remainingPercent)
+/// Whether Settings percent style is used-% (`used`) vs remaining-% (`left`).
+public func statusItemShowsUsedPercent(percentStyle: String) -> Bool {
+    percentStyle == "used"
+}
+
+/// Display percent integer from Rust remaining + Settings style (`left`/`used`).
+public func statusItemDisplayPercent(
+    remainingPercent: UInt8,
+    percentStyle: String = "left"
+) -> UInt8 {
+    if statusItemShowsUsedPercent(percentStyle: percentStyle) {
+        return UInt8(100 - Int(remainingPercent))
+    }
+    return remainingPercent
+}
+
+/// Short OpenUsage-style percent token from Rust remaining (default remaining %, e.g. `79%`).
+public func statusItemPercentToken(
+    remainingPercent: UInt8,
+    percentStyle: String = "left"
+) -> String {
+    var s = String(statusItemDisplayPercent(
+        remainingPercent: remainingPercent,
+        percentStyle: percentStyle
+    ))
     s.append("%")
     return s
 }
 
-/// Glyph for the menu-bar strip from Rust compact label (`Cl 63%` → `Cl`).
+/// Glyph for the menu-bar strip from Rust compact label (`Cl 37%` → `Cl`).
 public func statusItemGlyph(compactLabel: String, surfaceId: String) -> String {
     let letters = compactLabel.filter(\.isLetter)
     if letters.count >= 2 {
@@ -149,8 +171,19 @@ public func statusItemGlyph(compactLabel: String, surfaceId: String) -> String {
 }
 
 /// Up to two short percent lines from numeric remaining values (OpenUsage stack).
-public func statusItemPercentLines(remainings: [UInt8], maxLines: Int = 2) -> [String] {
-    Array(remainings.prefix(max(0, maxLines)).map(statusItemPercentToken(remainingPercent:)))
+///
+/// `percentStyle` matches Rust format prefs (`left` remaining / `used` used) so
+/// chip lines stay consistent with compact labels and a11y.
+public func statusItemPercentLines(
+    remainings: [UInt8],
+    maxLines: Int = 2,
+    percentStyle: String = "left"
+) -> [String] {
+    Array(
+        remainings.prefix(max(0, maxLines)).map {
+            statusItemPercentToken(remainingPercent: $0, percentStyle: percentStyle)
+        }
+    )
 }
 
 /// Pure snapshot used to build status-item chips without UniFFI/AppKit.
@@ -216,10 +249,13 @@ public struct StatusItemSurfaceSnapshot: Sendable, Equatable {
 /// - Catalog order when `preferWorstFirst` is false.
 /// - Lowest remaining first when true (focus mode).
 /// - Hides surfaces without preview data; never invents percents.
+/// - `percentStyle` (`left`/`used`) shapes stacked percent lines to match
+///   Rust compact labels (OpenUsage remaining default).
 public func buildStatusItemChips(
     surfaces: [StatusItemSurfaceSnapshot],
     maxCount: Int,
-    preferWorstFirst: Bool
+    preferWorstFirst: Bool,
+    percentStyle: String = "left"
 ) -> [StatusItemChip] {
     let cap = max(1, min(8, maxCount))
     var candidates = surfaces.filter(\.hasPreviewData)
@@ -238,7 +274,11 @@ public func buildStatusItemChips(
             ? surface.compactLabel
             : (!surface.statusBarLabel.isEmpty ? surface.statusBarLabel : surface.label)
         let remainings = Array(surface.remainings.prefix(2))
-        let lines = statusItemPercentLines(remainings: remainings, maxLines: 2)
+        let lines = statusItemPercentLines(
+            remainings: remainings,
+            maxLines: 2,
+            percentStyle: percentStyle
+        )
         chips.append(
             StatusItemChip(
                 surfaceId: surface.surfaceId,
@@ -256,10 +296,21 @@ public func buildStatusItemChips(
 }
 
 /// Accessibility / VoiceOver string for a multi-provider strip.
+///
+/// Prefer stacked percent lines when present so dual-bucket chips speak both
+/// session and weekly values (OpenUsage/CodexBar parity), not only the driving compact.
 public func statusItemAccessibilityLabel(chips: [StatusItemChip]) -> String {
     if chips.isEmpty { return "jackin Desktop" }
-    let parts = chips.map(\.compactLabel).joined(separator: ", ")
-    return "jackin Desktop \(parts)"
+    let parts = chips.map { chip -> String in
+        if chip.percentLines.count >= 2 {
+            return "\(chip.glyph) \(chip.percentLines.joined(separator: " and "))"
+        }
+        if let line = chip.percentLines.first, !line.isEmpty {
+            return "\(chip.glyph) \(line)"
+        }
+        return chip.compactLabel
+    }
+    return "jackin Desktop \(parts.joined(separator: ", "))"
 }
 
 /// Format Rust `MoneyDto` for display (no `String(format:)`).

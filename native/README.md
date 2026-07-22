@@ -51,6 +51,14 @@ Build/verify/run each print a clear banner with the **absolute** app path (`DESK
 
 Swift tests (full Xcode): after the XCFramework exists, `cd native && swift test -c release`.
 
+Status-item chip harness (no XCTest — remaining% / dual-bucket / multi-provider parity):
+
+```bash
+cd native && swift run -c release StatusItemChipHarness
+```
+
+Default status-item display is **per-provider strip** with **remaining %** (`% left`). Settings → Percent style can flip compact + chip lines to **% used**.
+
 | Operator entry | Rust implementation |
 |---|---|
 | `mise run desktop` | build + verify + run (local smoke) |

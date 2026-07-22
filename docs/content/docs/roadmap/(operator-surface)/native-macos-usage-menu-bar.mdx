@@ -49,9 +49,10 @@ Display modes are Settings-selectable and every string is Rust-shaped:
 | Mode | Status item shows | Rust source |
 |---|---|---|
 | Icon only | Template jackin❯ logomark; dims to 0.45 opacity when every enabled surface is degraded | shipped (icon asset swap) |
-| Focus percent (default, shipped) | `Cl 63%` — the enabled surface with the least remaining, as `compact_prefix` + used percent | `jackin_usage::host::compact_status_bar_label` |
-| Pinned surface | Operator pins one surface; the number tracks it only (`Cx 41%`) | new FFI accessor over the existing per-surface status-bar views |
-| Multi-surface strip | Worst-first, capped (default 3): `Cl 63% · Cx 41% · ZA 12%` | new Rust `compact` list variant + FFI export |
+| Focus percent | `Cl 37%` — the enabled surface with the least remaining, as `compact_prefix` + **remaining** percent (Settings can flip to used: `Cl 63%`) | `jackin_usage::host::compact_status_bar_label` |
+| Per-provider strip (default) | CodexBar-style chips: one glyph + stacked session/weekly remaining lines per enabled provider with data | Swift `buildStatusItemChips` over Rust remainings + compact labels |
+| Pinned surface | Operator pins one surface; the number tracks it only (`Cx 59%` remaining) | FFI `compact_status_bar_label_for` |
+| Multi-surface text strip | Worst-first, capped (default 3): `Cl 37% · Cx 59% · ZA 88%` (remaining) | Rust `compact_status_bar_strip` |
 
 Compact prefixes are the shipped `HostSurfaceId` set: `Cl` Claude, `Cx` Codex, `Am` Amp, `Gr` Grok Build, `ZA` GLM / Z.AI, `Ki` Kimi, `MM` MiniMax, `OC` OpenCode.
 
@@ -202,10 +203,11 @@ Every screen is a rendering of existing Rust view fields; the strings in the ske
 **S1 — Status item.** One status item, jackin❯ logomark as a template image, all variants:
 
 ```text
-j❯ Cl 63%                      Focus percent (default): worst enabled surface
+j❯ Cl 37%                      Focus percent: worst remaining (Settings → used: Cl 63%)
+j❯ [Cl 100%/79%] [Cx 84%]      Per-provider strip (default): stacked remaining lines
 j❯                             Icon only (template jackin❯ logomark)
-j❯ Cx 41%                      Pinned surface (operator pinned Codex)
-j❯ Cl 63% · Cx 41% · ZA 12%    Multi-surface strip (cap 3, worst first)
+j❯ Cx 59%                      Pinned surface (operator pinned Codex, remaining %)
+j❯ Cl 37% · Cx 59% · ZA 88%    Multi-surface text strip (cap 3, worst remaining first)
 j❯ Cl resets 1h 21m            Depleted: driving bucket at 0% remaining
 j❯  (0.45 opacity)             Every enabled surface degraded — no invented numbers
 j❯                             Screen capture active (privacy collapse)

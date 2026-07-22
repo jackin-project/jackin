@@ -11,6 +11,7 @@ let package = Package(
     products: [
         .library(name: "JackinUsageBridge", targets: ["JackinUsageBridge"]),
         .executable(name: "JackinDesktop", targets: ["JackinDesktop"]),
+        .executable(name: "StatusItemChipHarness", targets: ["StatusItemChipHarness"]),
     ],
     targets: [
         .binaryTarget(
@@ -27,6 +28,12 @@ let package = Package(
             dependencies: ["JackinUsageBridge"],
             path: "Sources/JackinDesktop",
             resources: [.copy("Resources/JackinMark.pdf")]
+        ),
+        // Pure chip builder checks without XCTest (CodexBar/OpenUsage remaining% parity).
+        .executableTarget(
+            name: "StatusItemChipHarness",
+            dependencies: ["JackinUsageBridge"],
+            path: "Tools/StatusItemChipHarness"
         ),
         .testTarget(
             name: "JackinUsageBridgeTests",

@@ -94,7 +94,7 @@ public final class PresentationStore: ObservableObject {
     }
 
     @Published public private(set) var mergedBarLabel: String = "jackin❯ usage"
-    /// Rust-owned short status-item label for focus mode (e.g. `Cl 63%`).
+    /// Rust-owned short status-item label for focus mode (e.g. `Cl 37%` remaining).
     @Published public private(set) var compactBarLabel: String = ""
     /// Mode-selected status-item text (empty = icon only). Accessibility + fallback.
     @Published public private(set) var statusItemText: String = ""
@@ -548,7 +548,8 @@ public final class PresentationStore: ObservableObject {
         return buildStatusItemChips(
             surfaces: snaps,
             maxCount: maxCount,
-            preferWorstFirst: preferWorstFirst
+            preferWorstFirst: preferWorstFirst,
+            percentStyle: percentStyle
         )
     }
 
@@ -596,7 +597,8 @@ public final class PresentationStore: ObservableObject {
         return buildStatusItemChips(
             surfaces: [snap],
             maxCount: 1,
-            preferWorstFirst: false
+            preferWorstFirst: false,
+            percentStyle: percentStyle
         ).first
             ?? StatusItemChip(
                 surfaceId: row.id,

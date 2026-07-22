@@ -246,7 +246,7 @@ fn inject_dual_remaining(
 }
 
 #[test]
-fn compact_status_bar_label_picks_highest_used_percent() {
+fn compact_status_bar_label_picks_lowest_remaining_percent() {
     let dir = tempfile::tempdir().expect("tempdir");
     let mut runtime = open_runtime(dir.path());
     // Only claude + codex enabled.
@@ -254,10 +254,22 @@ fn compact_status_bar_label_picks_highest_used_percent() {
         let on = matches!(*surface, HostSurfaceId::Claude | HostSurfaceId::Codex);
         runtime.set_enabled(surface.id(), on).expect("enable set");
     }
-    inject_remaining(&mut runtime, "claude", 50); // 50% used
-    inject_remaining(&mut runtime, "codex", 18); // 82% used — worst
+    inject_remaining(&mut runtime, "claude", 50); // 50% left
+    inject_remaining(&mut runtime, "codex", 18); // 18% left — worst
     assert_eq!(
         runtime.compact_status_bar_label().expect("compact"),
+        "Cx 18%"
+    );
+
+    // PercentStyle::Used flips the same driving remaining to used %.
+    runtime
+        .set_format_prefs(UsageFormatPrefs {
+            percent_style: PercentStyle::Used,
+            reset_style: ResetStyle::Countdown,
+        })
+        .expect("prefs");
+    assert_eq!(
+        runtime.compact_status_bar_label().expect("compact used"),
         "Cx 82%"
     );
 }
@@ -272,10 +284,10 @@ fn compact_status_bar_label_tie_keeps_all_order() {
     }
     inject_remaining(&mut runtime, "claude", 40);
     inject_remaining(&mut runtime, "codex", 40);
-    // Claude precedes Codex in HostSurfaceId::ALL.
+    // Claude precedes Codex in HostSurfaceId::ALL; default Left = remaining.
     assert_eq!(
         runtime.compact_status_bar_label().expect("compact"),
-        "Cl 60%"
+        "Cl 40%"
     );
 }
 
@@ -427,12 +439,12 @@ fn host_paths_under_data_dir() {
 fn compact_status_bar_label_for_pinned_known_and_disabled() {
     let dir = tempfile::tempdir().expect("tempdir");
     let mut runtime = open_runtime(dir.path());
-    inject_remaining(&mut runtime, "claude", 37); // 63% used
+    inject_remaining(&mut runtime, "claude", 37); // 37% left (default Left)
     assert_eq!(
         runtime
             .compact_status_bar_label_for("claude")
             .expect("pinned"),
-        Some("Cl 63%".to_owned())
+        Some("Cl 37%".to_owned())
     );
     runtime.set_enabled("claude", false).expect("disable");
     assert_eq!(
@@ -460,14 +472,15 @@ fn compact_status_bar_strip_worst_first_cap_and_separator() {
         );
         runtime.set_enabled(surface.id(), on).expect("enable set");
     }
-    inject_remaining(&mut runtime, "claude", 37); // 63% used — worst remaining
-    inject_remaining(&mut runtime, "codex", 59); // 41% used
-    inject_remaining(&mut runtime, "zai", 88); // 12% used
+    inject_remaining(&mut runtime, "claude", 37); // 37% left — worst remaining
+    inject_remaining(&mut runtime, "codex", 59); // 59% left
+    inject_remaining(&mut runtime, "zai", 88); // 88% left
+    // Worst-first by remaining: Claude, Codex, Z.AI.
     assert_eq!(
         runtime.compact_status_bar_strip(3).expect("strip"),
-        "Cl 63% · Cx 41% · ZA 12%"
+        "Cl 37% · Cx 59% · ZA 88%"
     );
-    assert_eq!(runtime.compact_status_bar_strip(1).expect("cap1"), "Cl 63%");
+    assert_eq!(runtime.compact_status_bar_strip(1).expect("cap1"), "Cl 37%");
 }
 
 /// Multi-provider strip: every enabled surface with numeric data contributes a token.
@@ -547,14 +560,30 @@ fn compact_depleted_with_and_without_resets_at() {
             .set_enabled(surface.id(), *surface == HostSurfaceId::Claude)
             .expect("enable set");
     }
-    // Depleted without resets_at → honest 100%.
+    // Depleted without resets_at → remaining 0% (default Left).
     inject_remaining(&mut runtime, "claude", 0);
     assert_eq!(
         runtime
             .compact_status_bar_label()
             .expect("depleted no reset"),
+        "Cl 0%"
+    );
+    runtime
+        .set_format_prefs(UsageFormatPrefs {
+            percent_style: PercentStyle::Used,
+            reset_style: ResetStyle::Countdown,
+        })
+        .expect("prefs");
+    assert_eq!(
+        runtime
+            .compact_status_bar_label()
+            .expect("depleted used style"),
         "Cl 100%"
     );
+    // Restore Left for the countdown branch below.
+    runtime
+        .set_format_prefs(UsageFormatPrefs::default())
+        .expect("prefs left");
 
     // Depleted with resets_at in the future → "Cl resets …".
     let mut view = FocusedUsageView::unavailable("seed", 1);

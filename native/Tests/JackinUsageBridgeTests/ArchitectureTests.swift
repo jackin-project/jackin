@@ -124,25 +124,41 @@ final class ArchitectureTests: XCTestCase {
         XCTAssertEqual(statusItemUsedFraction(remainingPercent: 100), 0.0, accuracy: 0.001)
         XCTAssertEqual(statusItemUsedFraction(remainingPercent: 0), 1.0, accuracy: 0.001)
         XCTAssertEqual(statusItemPercentToken(remainingPercent: 79), "79%")
-        XCTAssertEqual(statusItemGlyph(compactLabel: "Cl 63%", surfaceId: "claude"), "Cl")
+        XCTAssertEqual(
+            statusItemPercentToken(remainingPercent: 37, percentStyle: "used"),
+            "63%"
+        )
+        XCTAssertEqual(statusItemGlyph(compactLabel: "Cl 37%", surfaceId: "claude"), "Cl")
         XCTAssertEqual(
             statusItemPercentLines(remainings: [100, 79, 12], maxLines: 2),
             ["100%", "79%"]
+        )
+        XCTAssertEqual(
+            statusItemPercentLines(
+                remainings: [37, 79],
+                maxLines: 2,
+                percentStyle: "used"
+            ),
+            ["63%", "21%"]
         )
         let money = MoneyDto(amountMinor: 6559, currency: "USD", exponent: 2)
         XCTAssertEqual(formatMoneyDto(money), "$65.59")
     }
 
     /// Multi-provider strip: one chip per surface with dual-bucket remainings (CodexBar parity).
+    ///
+    /// Compact labels use **remaining** (OpenUsage/CodexBar default) and must
+    /// match stacked percent lines / a11y (no used% vs remaining% mix).
     func testBuildStatusItemChipsMultiProviderDualBucket() {
         let surfaces = [
             StatusItemSurfaceSnapshot(
                 surfaceId: "claude",
                 label: "Claude",
                 enabled: true,
-                statusBarLabel: "Claude Session: 0% used",
+                statusBarLabel: "Session 100% · Weekly 79%",
                 status: "fresh",
-                compactLabel: "Cl 100%",
+                // Driving remaining = min(100, 79) = 79 → compact Cl 79%.
+                compactLabel: "Cl 79%",
                 remainings: [100, 79],
                 severities: ["ok", "ok"]
             ),
@@ -150,7 +166,7 @@ final class ArchitectureTests: XCTestCase {
                 surfaceId: "codex",
                 label: "Codex",
                 enabled: true,
-                statusBarLabel: "Codex Session: 16% used",
+                statusBarLabel: "Session 84%",
                 status: "fresh",
                 compactLabel: "Cx 84%",
                 remainings: [84],
@@ -180,27 +196,48 @@ final class ArchitectureTests: XCTestCase {
         let chips = buildStatusItemChips(
             surfaces: surfaces,
             maxCount: 6,
-            preferWorstFirst: false
+            preferWorstFirst: false,
+            percentStyle: "left"
         )
         // Amp empty/unavailable and disabled Grok hidden; Claude + Codex only.
         XCTAssertEqual(chips.map(\.surfaceId), ["claude", "codex"])
         XCTAssertEqual(chips[0].percentLines, ["100%", "79%"])
         XCTAssertEqual(chips[0].remainingPerLine, [100, 79])
+        XCTAssertEqual(chips[0].remainingPercent, 79)
         XCTAssertEqual(chips[1].percentLines, ["84%"])
         XCTAssertEqual(chips[1].systemImage, "circle.hexagongrid.fill")
-        XCTAssertFalse(chips[0].compactLabel.isEmpty)
+        XCTAssertEqual(chips[0].compactLabel, "Cl 79%")
+        // Dual-bucket a11y speaks both stacked remaining lines.
         XCTAssertEqual(
             statusItemAccessibilityLabel(chips: chips),
-            "jackin Desktop Cl 100%, Cx 84%"
+            "jackin Desktop Cl 100% and 79%, Cx 84%"
         )
+        // Production invariant: compact driving digit matches min remaining line.
+        XCTAssertTrue(
+            chips[0].compactLabel.contains("79%"),
+            "compact must use driving remaining, not used%"
+        )
+        XCTAssertTrue(chips[0].percentLines.contains("79%"))
 
         let worstFirst = buildStatusItemChips(
             surfaces: surfaces,
             maxCount: 1,
-            preferWorstFirst: true
+            preferWorstFirst: true,
+            percentStyle: "left"
         )
-        // Codex 84% remaining is worse than Claude 79% min… Claude min remaining is 79, Codex 84 → Claude is worse (lower remaining).
+        // Claude min remaining 79 < Codex 84 → Claude worst.
         XCTAssertEqual(worstFirst.map(\.surfaceId), ["claude"])
+
+        // Used style flips stacked lines only; remainings stay Rust-owned.
+        let usedChips = buildStatusItemChips(
+            surfaces: surfaces,
+            maxCount: 2,
+            preferWorstFirst: false,
+            percentStyle: "used"
+        )
+        XCTAssertEqual(usedChips[0].percentLines, ["0%", "21%"])
+        XCTAssertEqual(usedChips[1].percentLines, ["16%"])
+        XCTAssertEqual(usedChips[0].remainingPerLine, [100, 79])
     }
 
     func testBuildStatusItemChipsRespectsCapAndHidesEmpty() {

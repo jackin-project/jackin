@@ -605,7 +605,7 @@ fileprivate struct FfiConverterString: FfiConverter {
 public protocol UsageMenuBarBridgeProtocol: AnyObject, Sendable {
     
     /**
-     * Short status-item label (worst enabled surface by used percent).
+     * Short status-item label (worst enabled surface; remaining % by default).
      */
     func compactStatusBarLabel() throws  -> String
     
@@ -775,7 +775,7 @@ public static func create() -> UsageMenuBarBridge  {
 
     
     /**
-     * Short status-item label (worst enabled surface by used percent).
+     * Short status-item label (worst enabled surface; remaining % by default).
      */
 open func compactStatusBarLabel()throws  -> String  {
     return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeUsageBridgeError_lift) {
@@ -2109,7 +2109,7 @@ private let initializationResult: InitializationResult = {
     if bindings_contract_version != scaffolding_contract_version {
         return InitializationResult.contractVersionMismatch
     }
-    if (uniffi_jackin_usage_ffi_checksum_method_usagemenubarbridge_compact_status_bar_label() != 11624) {
+    if (uniffi_jackin_usage_ffi_checksum_method_usagemenubarbridge_compact_status_bar_label() != 57867) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_jackin_usage_ffi_checksum_method_usagemenubarbridge_compact_status_bar_label_for() != 27154) {
