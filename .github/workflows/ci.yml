@@ -497,9 +497,9 @@ jobs:
           path: |
             ${{ env.RUSTUP_HOME }}/toolchains
             ${{ env.RUSTUP_HOME }}/update-hashes
-          key: rustup-v2-${{ runner.os }}-${{ runner.arch }}-${{ needs.changes.outputs.rustup-contract }}
+          key: rustup-v3-${{ runner.os }}-${{ runner.arch }}-${{ needs.changes.outputs.rustup-contract }}
           restore-keys: |
-            rustup-v2-${{ runner.os }}-${{ runner.arch }}-
+            rustup-v3-${{ runner.os }}-${{ runner.arch }}-
       - name: Use the prepared current Rust toolchain
         run: >-
           "$CI_XTASK" ci-toolchain prepare
@@ -559,8 +559,7 @@ jobs:
           path: |
             ${{ env.RUSTUP_HOME }}/toolchains
             ${{ env.RUSTUP_HOME }}/update-hashes
-          key: rustup-v2-${{ runner.os }}-${{ runner.arch }}-${{ needs.changes.outputs.rustup-contract }}
-          restore-keys: rustup-v2-${{ runner.os }}-${{ runner.arch }}-
+          key: rustup-v3-${{ runner.os }}-${{ runner.arch }}-${{ needs.changes.outputs.rustup-contract }}
       - uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
         if: >-
           steps.toolchain-lookup.outputs.cache-hit != 'true' ||
@@ -636,7 +635,7 @@ jobs:
           path: |
             ${{ env.RUSTUP_HOME }}/toolchains
             ${{ env.RUSTUP_HOME }}/update-hashes
-          key: rustup-v2-${{ runner.os }}-${{ runner.arch }}-${{ needs.changes.outputs.rustup-contract }}
+          key: rustup-v3-${{ runner.os }}-${{ runner.arch }}-${{ needs.changes.outputs.rustup-contract }}
       - name: Cache newly prepared Cargo tools
         if: steps.prepared-artifacts.outputs.tools-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -767,7 +766,7 @@ jobs:
           path: |
             ~/.rustup/toolchains
             ~/.rustup/update-hashes
-          key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ needs.changes.outputs.rustup-contract }}
+          key: rustup-v3-${{ runner.os }}-${{ runner.arch }}-${{ needs.changes.outputs.rustup-contract }}
           restore-keys: |
             rustup-${{ runner.os }}-${{ runner.arch }}-
       - uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
@@ -867,9 +866,9 @@ jobs:
           path: |
             ${{ env.RUSTUP_HOME }}/toolchains
             ${{ env.RUSTUP_HOME }}/update-hashes
-          key: rustup-v2-${{ runner.os }}-${{ runner.arch }}-${{ needs.changes.outputs.rustup-contract }}
+          key: rustup-v3-${{ runner.os }}-${{ runner.arch }}-${{ needs.changes.outputs.rustup-contract }}
           restore-keys: |
-            rustup-v2-${{ runner.os }}-${{ runner.arch }}-
+            rustup-v3-${{ runner.os }}-${{ runner.arch }}-
       - name: Use the prepared current Rust toolchain
         run: >-
           "$CI_XTASK" ci-toolchain prepare
@@ -977,9 +976,9 @@ jobs:
           path: |
             ${{ env.RUSTUP_HOME }}/toolchains
             ${{ env.RUSTUP_HOME }}/update-hashes
-          key: rustup-v2-${{ runner.os }}-${{ runner.arch }}-${{ needs.changes.outputs.rustup-contract }}
+          key: rustup-v3-${{ runner.os }}-${{ runner.arch }}-${{ needs.changes.outputs.rustup-contract }}
           restore-keys: |
-            rustup-v2-${{ runner.os }}-${{ runner.arch }}-
+            rustup-v3-${{ runner.os }}-${{ runner.arch }}-
       - name: Cache audit indexes
         id: audit-cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -1051,9 +1050,9 @@ jobs:
           path: |
             ${{ env.RUSTUP_HOME }}/toolchains
             ${{ env.RUSTUP_HOME }}/update-hashes
-          key: rustup-v2-${{ runner.os }}-${{ runner.arch }}-${{ needs.changes.outputs.rustup-contract }}
+          key: rustup-v3-${{ runner.os }}-${{ runner.arch }}-${{ needs.changes.outputs.rustup-contract }}
           restore-keys: |
-            rustup-v2-${{ runner.os }}-${{ runner.arch }}-
+            rustup-v3-${{ runner.os }}-${{ runner.arch }}-
       - name: Use the prepared current Rust toolchain
         run: >-
           "$CI_XTASK" ci-toolchain prepare
