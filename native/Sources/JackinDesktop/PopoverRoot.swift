@@ -158,15 +158,6 @@ struct PopoverRoot: View {
         return String(label.prefix(7))
     }
 
-    private func underlineTint(_ severity: String) -> Color {
-        switch severity {
-        case "danger": return .red
-        case "warn": return .orange
-        case "ok": return .green.opacity(0.0) // healthy: no underline noise
-        default: return .clear
-        }
-    }
-
     // MARK: - Detail pane
 
     @ViewBuilder
@@ -333,6 +324,7 @@ struct PopoverRoot: View {
                 if let remaining = bucket.remainingPercent {
                     remainingBar(remaining: remaining, severity: bucket.severity)
                 }
+                // Primary row: used/left · reset (CodexBar Weekly captions).
                 HStack(alignment: .firstTextBaseline) {
                     Text(bucket.usedLabel ?? "—")
                         .font(.caption)
@@ -346,11 +338,10 @@ struct PopoverRoot: View {
                             .foregroundStyle(.secondary)
                     }
                 }
+                // Secondary pace row: "7% in reserve" · "Lasts until reset" when Rust
+                // joins them with a middle dot / bullet (layout split only).
                 if let pace = bucket.paceLabel, !pace.isEmpty {
-                    Text(pace)
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
-                        .fixedSize(horizontal: false, vertical: true)
+                    paceRow(pace)
                 }
             case .valueOnly:
                 // Credits-style: description under title (limit/statusSlot), value captions.
@@ -416,6 +407,41 @@ struct PopoverRoot: View {
         }
     }
 
+    /// CodexBar two-column pace line. Splits on common Rust joiners only.
+    @ViewBuilder
+    private func paceRow(_ pace: String) -> some View {
+        let parts = splitPace(pace)
+        if parts.count >= 2 {
+            HStack(alignment: .firstTextBaseline) {
+                Text(parts[0])
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                    .monospacedDigit()
+                Spacer(minLength: 8)
+                Text(parts[1])
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                    .multilineTextAlignment(.trailing)
+            }
+        } else {
+            Text(pace)
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private func splitPace(_ pace: String) -> [String] {
+        for sep in [" · ", " • ", " | ", " — "] {
+            let bits = pace.components(separatedBy: sep)
+            if bits.count >= 2 {
+                return [bits[0].trimmingCharacters(in: .whitespaces),
+                        bits.dropFirst().joined(separator: sep).trimmingCharacters(in: .whitespaces)]
+            }
+        }
+        return [pace]
+    }
+
     private func remainingBar(remaining: UInt8, severity: String) -> some View {
         let frac = Double(remaining) / 100.0
         // Soft tick marks (CodexBar segmented look) — layout only, not new metrics.
@@ -446,8 +472,17 @@ struct PopoverRoot: View {
         switch severity {
         case "danger": return .red
         case "warn": return .orange
-        // CodexBar teal for codex-ish healthy fill; accent otherwise.
-        default: return Color(red: 0.40, green: 0.72, blue: 0.78)
+        // CodexBar Grok-style healthy green fill.
+        default: return Color(red: 0.35, green: 0.72, blue: 0.55)
+        }
+    }
+
+    private func underlineTint(_ severity: String) -> Color {
+        switch severity {
+        case "danger": return .red
+        case "warn": return .orange
+        case "ok": return Color(red: 0.35, green: 0.72, blue: 0.55).opacity(0.9)
+        default: return .clear
         }
     }
 
