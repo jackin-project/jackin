@@ -47,8 +47,9 @@ Requires a Developer ID Application identity and notarytool credentials (keychai
 ```bash
 export DEVELOPER_ID_APPLICATION='Developer ID Application: Your Name (TEAMID)'
 export NOTARY_PROFILE=jackin-notary
+export JACKIN_APP_VERSION=0.6.0 JACKIN_APP_BUILD=1
 mise run desktop-build -- 0.6.0 1
-./scripts/sign-notarize-usage-menu-bar.sh
+mise run desktop-sign-notarize
 ```
 
 CI publishes the stapled ZIP from the **`release-macos`** environment on tag/`publish` mode (secret names only: see `native/README.md`).

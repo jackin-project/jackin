@@ -104,3 +104,30 @@ usage = '''
 arg "<app>" help="Path to JackinDesktop.app" default="native/dist/JackinDesktop.app"
 '''
 run = 'cargo xtask desktop verify "$usage_app"'
+
+[tasks.desktop-sign-notarize]
+description = "Developer ID sign + notarize + staple JackinDesktop.app (requires Apple credentials)"
+usage = '''
+arg "[app]" help="Path to JackinDesktop.app" default="native/dist/JackinDesktop.app"
+arg "[out_zip]" help="Final post-staple ZIP path"
+'''
+run = '''
+if [ -n "${usage_out_zip:-}" ]; then
+  cargo xtask desktop sign-notarize "$usage_app" "$usage_out_zip"
+else
+  cargo xtask desktop sign-notarize "$usage_app"
+fi
+'''
+
+[tasks.desktop-release-state]
+description = "Print independent Desktop release/cask state KEY=value lines"
+usage = '''
+arg "<version>" help="Release version without leading v"
+arg "--repo" help="GitHub owner/name" default="jackin-project/jackin"
+arg "--tap" help="Homebrew tap owner/name" default="jackin-project/homebrew-tap"
+'''
+run = 'cargo xtask desktop release-state "$usage_version" --repo "$usage_repo" --tap "$usage_tap"'
+
+[tasks.desktop-bootstrap-secrets]
+description = "Bootstrap release-macos Apple secrets into GitHub (never prints secret values)"
+run = "cargo xtask desktop bootstrap-secrets"

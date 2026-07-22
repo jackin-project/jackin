@@ -60,7 +60,7 @@ If any numbered-plan path above is missing on the active branch: STOP and report
 5. **Swift is display-only** (ADR-011): no HTTP/OAuth/probes, no percentage arithmetic, no label composition, no provider mapping in Swift. Every displayed string crosses UniFFI finished. A missing string is a Rust-first change following plan 008's step pattern (Rust fn + FFI export + golden + regenerated bindings) — never a Swift workaround.
 6. **Provider scope frozen**: `HostSurfaceId::ALL` (Claude, Codex, Amp, Grok Build, GLM / Z.AI, Kimi, MiniMax, OpenCode). No additions, no daemon dependency, no new IPC, no alerts/notifications/write actions — v1 is view-only.
 7. **Capsule parity is the bug oracle**: if jackin❯ Desktop and the Capsule usage dialog disagree on any number or string, that is a bug by definition — fix on the Rust side or STOP; never "improve" a string in Swift.
-8. Never hand-edit generated bindings (`native/Sources/JackinUsageBridge/jackin_usage_ffi.swift`, `native/Generated/`); regenerate via `cargo build -p jackin-usage-ffi --release && ./scripts/generate-usage-swift-bindings.sh` and require a deterministic diff.
+8. Never hand-edit generated bindings (`native/Sources/JackinUsageBridge/jackin_usage_ffi.swift`, `native/Generated/`); regenerate via `cargo xtask desktop bindings` (or `mise run desktop-bindings`) and require a deterministic diff.
 9. After finishing a plan:
    - Update its status row in `plans/native-macos-usage-menu-bar/README.md`
    - Tick the matching roadmap-item checklist entries (same PR as the behavior — docs gate)
@@ -80,7 +80,7 @@ If any numbered-plan path above is missing on the active branch: STOP and report
 
 - `cargo nextest run -p jackin-usage -p jackin-usage-ffi --locked` (plus `-p jackin-capsule -p jackin-protocol` and any other crate the plan touches)
 - `cargo clippy -p <touched crates> --all-targets -- -D warnings`
-- macOS: `cd native && swift build -c release && swift test -c release`; app fixture via `JACKIN_APP_VERSION=0.6.0 JACKIN_APP_BUILD=1 ./scripts/build-usage-menu-bar-app.sh` + the matching verify script
+- macOS: `cd native && swift build -c release && swift test -c release`; app fixture via `mise run desktop-build -- 0.6.0 1` + `mise run desktop-verify` (Rust: `cargo xtask desktop build|verify`)
 - Glass gate: `rg -n "#available\(macOS 26" native/Sources | grep -v GlassFallbacks.swift` → no matches
 - Docs: `cargo xtask docs repo-links && cargo xtask roadmap audit && cargo xtask research check`; `cd docs && bun run build` when MDX changed
 - Workflow changes (plan 007, 003): `actionlint` + a green `gh workflow run release.yml --ref <branch> -f mode=validate` dispatch before merge

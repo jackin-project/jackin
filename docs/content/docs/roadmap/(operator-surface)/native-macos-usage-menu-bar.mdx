@@ -362,7 +362,7 @@ Template status-item icon + optional Rust `compact_status_bar_label` monospaced 
 
 1. ~~Universal static PR gate (001) + tap cask-validation without write credentials (002).~~ **done**.
 2. ~~Release pipeline for notarize/staple + immutable ZIP + formula/cask PR (003).~~ **engineering done** — `mode=validate` green; `mode=publish` waits on Apple secrets.
-3. **Activation residual (ops, not open architecture work):** load secrets via <RepoFile path="scripts/bootstrap-release-macos-secrets.sh" />, cut first non-dev version, `mode=publish`, merge first cask after validation, then clean-install proof (004). Paths A–C in `native/README.md`.
+3. **Activation residual (ops, not open architecture work):** load secrets via `cargo xtask desktop bootstrap-secrets` (or `mise run desktop-bootstrap-secrets`), cut first non-dev version, `mode=publish`, merge first cask after validation, then clean-install proof (004). Paths A–C in `native/README.md`.
 4. Optional later: Sparkle (cask-only is acceptable).
 
 ### 4. jackin❯ Desktop v1 (product spec above) — **done** (UI; activation residual stays in §3)

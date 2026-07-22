@@ -4,8 +4,8 @@ Built on HEAD of `docs/native-macos-usage-menu-bar` after plans 007–011.
 
 ## Bundle
 
-- `JACKIN_APP_VERSION=0.6.0 JACKIN_APP_BUILD=1 ./scripts/build-usage-menu-bar-app.sh` → OK
-- `./scripts/verify-usage-menu-bar-app.sh native/dist/JackinDesktop.app` → OK
+- `mise run desktop-build -- 0.6.0 1` / `cargo xtask desktop build --version 0.6.0 --build 1` → OK
+- `mise run desktop-verify` / `cargo xtask desktop verify native/dist/JackinDesktop.app` → OK
 - Plist: `com.jackin-project.desktop`, `Jackin Desktop`, `JackinDesktop`, `LSUIElement=true`
 - `cargo nextest run -p jackin-usage -p jackin-usage-ffi -p jackin-capsule --locked` → all pass
 

@@ -1,13 +1,17 @@
 //! jackin❯ Desktop (native macOS usage menu bar) assembly and verification.
 //!
 //! Canonical local/CI path — Rust owns orchestration; mise tasks thin-wrap
-//! these subcommands. Shell scripts under `scripts/` only re-exec here.
+//! these subcommands. No shell scripts.
 //!
 //! ```sh
 //! cargo xtask desktop build --version 0.6.0 --build 1
 //! cargo xtask desktop verify native/dist/JackinDesktop.app
 //! # or: mise run desktop-build -- 0.6.0 1
 //! ```
+
+mod bootstrap;
+mod release_state;
+mod sign_notarize;
 
 use std::env;
 use std::fs;
@@ -29,7 +33,7 @@ const STATIC_LIB: &str = "libjackin_usage_ffi.a";
 const HOST_TARGET: &str = "aarch64-apple-darwin";
 const ARCH: &str = "arm64";
 
-fn progress(msg: impl AsRef<str>) {
+pub(super) fn progress(msg: impl AsRef<str>) {
     #[expect(
         clippy::print_stderr,
         reason = "jackin-xtask desktop CLI progress is user-facing"
@@ -49,6 +53,12 @@ pub(crate) enum DesktopCommand {
     Build(BuildArgs),
     /// Fail-closed validation for a `JackinDesktop.app` (and optional ZIP).
     Verify(VerifyArgs),
+    /// Developer ID sign + notarize + staple + final release ZIP.
+    SignNotarize(sign_notarize::SignNotarizeArgs),
+    /// Independent publication state (`KEY=value` lines for `GITHUB_OUTPUT`).
+    ReleaseState(release_state::ReleaseStateArgs),
+    /// Bootstrap GitHub env `release-macos` Apple secrets (never prints values).
+    BootstrapSecrets(Box<bootstrap::BootstrapSecretsArgs>),
 }
 
 #[derive(Args)]
@@ -99,10 +109,13 @@ pub(crate) fn run(command: DesktopCommand) -> Result<()> {
                 resolve_version_build_for_verify(&args.app, args.version, args.build)?;
             verify_app(&args.app, args.zip.as_deref(), &version, &build, release)
         }
+        DesktopCommand::SignNotarize(args) => sign_notarize::run(args),
+        DesktopCommand::ReleaseState(args) => release_state::run(args),
+        DesktopCommand::BootstrapSecrets(args) => bootstrap::run(*args),
     }
 }
 
-fn resolve_version_build(
+pub(super) fn resolve_version_build(
     version: Option<String>,
     build: Option<String>,
 ) -> Result<(String, String)> {
@@ -170,7 +183,7 @@ fn env_truthy(key: &str) -> bool {
     )
 }
 
-fn require_macos(action: &str) -> Result<()> {
+pub(super) fn require_macos(action: &str) -> Result<()> {
     if cfg!(target_os = "macos") {
         Ok(())
     } else {
@@ -433,7 +446,7 @@ fn build_app(root: &Path, version: &str, build: &str) -> Result<()> {
     Ok(())
 }
 
-fn verify_app(
+pub(super) fn verify_app(
     app: &Path,
     zip: Option<&Path>,
     version: &str,
@@ -600,7 +613,7 @@ fn minos_newer_than_14(minos: &str) -> bool {
     major > 14 || (major == 14 && minor > 0)
 }
 
-fn assert_no_embedded_libs(app: &Path) -> Result<()> {
+pub(super) fn assert_no_embedded_libs(app: &Path) -> Result<()> {
     for path in walk_files(app)? {
         let ext = path.extension().and_then(|s| s.to_str()).unwrap_or("");
         if ext.eq_ignore_ascii_case("dylib") || ext.eq_ignore_ascii_case("a") {
@@ -727,7 +740,7 @@ const XCFRAMEWORK_INFO_PLIST: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 </plist>
 "#;
 
-fn which(program: &str) -> Result<PathBuf> {
+pub(super) fn which(program: &str) -> Result<PathBuf> {
     let mut cmd = cmd::command("which");
     cmd.arg(program);
     let out = cmd::output_string(&mut cmd).with_context(|| format!("looking up {program}"))?;
@@ -738,7 +751,7 @@ fn which(program: &str) -> Result<PathBuf> {
     Ok(PathBuf::from(path))
 }
 
-fn tempfile_dir(prefix: &str) -> Result<PathBuf> {
+pub(super) fn tempfile_dir(prefix: &str) -> Result<PathBuf> {
     let base = env::temp_dir().join(format!("{prefix}-{}", std::process::id()));
     if base.exists() {
         fs::remove_dir_all(&base)?;

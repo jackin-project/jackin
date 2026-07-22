@@ -166,7 +166,7 @@ jobs:
           fi
 
           # Independent states: formula alone is not enough when menu-bar assets exist.
-          state="$(bash scripts/release-usage-menu-bar-state.sh "$VERSION" --repo "$GITHUB_REPOSITORY" || true)"
+          state="$(cargo xtask desktop release-state "$VERSION" --repo "$GITHUB_REPOSITORY" || true)"
           echo "$state"
           cask_complete=$(printf '%s\n' "$state" | sed -n 's/^cask_complete=//p')
           app_complete=$(printf '%s\n' "$state" | sed -n 's/^app_file_assets_complete=//p')
@@ -461,16 +461,16 @@ jobs:
           echo "ok: ad-hoc correctly fails release-mode checks"
 
       - name: Offline reconciliation fixtures
-        run: bash scripts/test-release-usage-menu-bar-state.sh
+        run: cargo nextest run -p jackin-xtask --locked -E 'test(desktop::release_state)'
 
       - name: Reconciliation state (read-only)
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          bash scripts/release-usage-menu-bar-state.sh "$VERSION" --repo "$GITHUB_REPOSITORY" | tee state.env
+          cargo xtask desktop release-state "$VERSION" --repo "$GITHUB_REPOSITORY" | tee state.env
           # Second run is identical (no writes).
-          bash scripts/release-usage-menu-bar-state.sh "$VERSION" --repo "$GITHUB_REPOSITORY" | tee state2.env
+          cargo xtask desktop release-state "$VERSION" --repo "$GITHUB_REPOSITORY" | tee state2.env
           diff -u state.env state2.env
 
       - name: Import Developer ID + notarize (publish only)
@@ -521,7 +521,8 @@ jobs:
           export APP_STORE_CONNECT_KEY_ID="$ASC_KEY_ID"
           export APP_STORE_CONNECT_ISSUER_ID="$ASC_ISSUER_ID"
           OUT_ZIP="${RUNNER_TEMP}/jackin-desktop-${VERSION}-aarch64-apple-darwin.zip"
-          ./scripts/sign-notarize-usage-menu-bar.sh native/dist/JackinDesktop.app "$OUT_ZIP"
+          cargo xtask desktop sign-notarize native/dist/JackinDesktop.app "$OUT_ZIP" \
+            --version "${JACKIN_APP_VERSION}" --build "${JACKIN_APP_BUILD}"
           mkdir -p dist-app
           cp "$OUT_ZIP" "dist-app/jackin-desktop-${VERSION}-aarch64-apple-darwin.zip"
           # Credentials must be gone before supply-chain tooling.

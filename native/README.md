@@ -13,11 +13,8 @@ reference only (clean-room).
 | `../crates/jackin-usage-ffi` | Synchronous UniFFI facade |
 | `Generated/` | UniFFI C header + module map (regenerate) |
 | `Sources/JackinUsageBridge` | Generated Swift + `PresentationStore` + pure display helpers |
-| `Sources/JackinDesktop/` | Split UI: `StatusItemLabel`, `PopoverRoot`, `SurfaceCard`, `SettingsView`, `GlassFallbacks`, logomark resource |
-| `cargo xtask desktop …` / `mise run desktop-*` | Canonical build, verify, XCFramework, bindings (Rust) |
-| `../scripts/*-usage-*.sh` | Thin wrappers re-executing `cargo xtask desktop …` (compat only) |
-| `../scripts/sign-notarize-usage-menu-bar.sh` | Developer ID sign + notarize + staple + final ZIP |
-| `../scripts/release-usage-menu-bar-state.sh` | Independent release/cask state for reconciliation |
+| `Sources/JackinDesktop/` | Split UI: `StatusItemLabel`, `PopoverRoot`, Settings, Usage window, glass, logomark |
+| `cargo xtask desktop …` / `mise run desktop-*` | Canonical build, verify, XCFramework, bindings, sign/notarize, release-state, secrets bootstrap |
 
 ## SDK requirement
 
@@ -28,17 +25,18 @@ Deployment target stays **macOS 14+**. **Release builds must use the macOS 26 SD
 One path builds the local, PR, and release app:
 
 1. **Pinned tools** via `mise.toml` (`cargo:uniffi` provides `uniffi-bindgen`; `mise install`).
-2. **Static XCFramework** — `scripts/build-usage-xcframework.sh` builds arm64 Rust staticlib and assembles `target/xcframework/JackinUsageFFI.xcframework` with Clang module `jackin_usage_ffiFFI`.
+2. **Static XCFramework** — `cargo xtask desktop xcframework` (or as part of build) produces `target/xcframework/JackinUsageFFI.xcframework` with Clang module `jackin_usage_ffiFFI`.
 3. **SwiftPM** — `native/Package.swift` consumes that XCFramework as a `binaryTarget` (no host `target/release` dylib path).
-4. **App** — `JACKIN_APP_VERSION=… JACKIN_APP_BUILD=… ./scripts/build-usage-menu-bar-app.sh` produces a **arm64 (Apple Silicon)** `JackinDesktop.app` with no embedded dylib/framework/XCFramework, then ad-hoc signs.
-5. **Verify** — `./scripts/verify-usage-menu-bar-app.sh native/dist/JackinDesktop.app` (optional ZIP arg for round-trip). `RELEASE_MODE=1` requires Developer ID + notarization/staple/Gatekeeper.
+4. **App** — `mise run desktop-build -- <version> <build>` produces a **arm64 (Apple Silicon)** `JackinDesktop.app` with no embedded dylib/framework/XCFramework, then ad-hoc signs.
+5. **Verify** — `mise run desktop-verify` (optional ZIP via `cargo xtask desktop verify <app> <zip>`). `--release` requires Developer ID + notarization/staple/Gatekeeper.
 
 ```bash
 mise install
 mise run desktop-build -- 0.6.0 1
-# equivalent: cargo xtask desktop build --version 0.6.0 --build 1
 mise run desktop-verify
-# equivalent: cargo xtask desktop verify native/dist/JackinDesktop.app
+# equivalent:
+#   cargo xtask desktop build --version 0.6.0 --build 1
+#   cargo xtask desktop verify native/dist/JackinDesktop.app
 open native/dist/JackinDesktop.app
 ```
 
@@ -50,15 +48,16 @@ Swift tests (full Xcode): after the XCFramework exists, `cd native && swift test
 | `mise run desktop-verify` | `cargo xtask desktop verify` |
 | `mise run desktop-xcframework` | `cargo xtask desktop xcframework` |
 | `mise run desktop-bindings` | `cargo xtask desktop bindings` |
-
-Legacy `scripts/build-usage-menu-bar-app.sh` / `verify-usage-menu-bar-app.sh` thin-wrap the same xtask commands (do not add new logic there).
+| `mise run desktop-sign-notarize` | `cargo xtask desktop sign-notarize` |
+| `mise run desktop-release-state -- <ver>` | `cargo xtask desktop release-state` |
+| `mise run desktop-bootstrap-secrets -- …` | `cargo xtask desktop bootstrap-secrets` |
 
 ## CI / release contracts (secret **names** only)
 
 | Surface | Detail |
 |---|---|
 | PR gate | CI job `Native usage menu bar` — assembly, verify, Swift tests, soft launch |
-| Validate release | `workflow_dispatch` **Release** with `mode=validate` — secret-free fixture `0.0.0`/`1`, ad-hoc must fail `RELEASE_MODE=1`, reconciliation read-only |
+| Validate release | `workflow_dispatch` **Release** with `mode=validate` — secret-free fixture `0.0.0`/`1`, ad-hoc must fail `--release`, reconciliation read-only |
 | Publish release | `mode=publish` or tag `vX.Y.Z` on main — environment **`release-macos`**, GitHub-hosted macOS only |
 | Secrets (env `release-macos`) | `DEVELOPER_ID_APPLICATION_P12_BASE64`, `DEVELOPER_ID_APPLICATION_P12_PASSWORD`, `APP_STORE_CONNECT_API_KEY_P8`, `APP_STORE_CONNECT_KEY_ID`, `APP_STORE_CONNECT_ISSUER_ID` |
 | Variables (repo) | `JACKIN_DEVELOPER_ID_TEAM_ID`, `JACKIN_DEVELOPER_ID_CERT_SHA256` |
@@ -70,8 +69,9 @@ Legacy `scripts/build-usage-menu-bar-app.sh` / `verify-usage-menu-bar-app.sh` th
 ```bash
 export DEVELOPER_ID_APPLICATION='Developer ID Application: Your Name (TEAMID)'
 export NOTARY_PROFILE=jackin-notary   # or set APP_STORE_CONNECT_* path/key/issuer
+export JACKIN_APP_VERSION=0.6.0 JACKIN_APP_BUILD=1
 mise run desktop-build -- 0.6.0 1
-./scripts/sign-notarize-usage-menu-bar.sh
+mise run desktop-sign-notarize
 # final ZIP: native/dist/jackin-desktop-0.6.0-aarch64-apple-darwin.zip
 ```
 
@@ -89,13 +89,13 @@ Apple Developer ID material is **org-provisioned**, not inventable in CI. Three 
 
 ```bash
 # From local files:
-./scripts/bootstrap-release-macos-secrets.sh \
+cargo xtask desktop bootstrap-secrets \
   --p12 ./DeveloperID.p12 --p12-password-env P12_PASS \
   --p8 ./AuthKey_XXXXXX.p8 --key-id XXXXXX --issuer <issuer-uuid> \
   --team-id <TEAMID> --cert-sha256 <sha256-hex>
 
 # Or from unlocked 1Password:
-./scripts/bootstrap-release-macos-secrets.sh \
+cargo xtask desktop bootstrap-secrets \
   --op-p12 'op://Vault/Item/p12file' \
   --op-p12-password 'op://Vault/Item/password' \
   --op-p8 'op://Vault/Item/notesPlain' \
@@ -123,5 +123,5 @@ Menu-bar artifacts are part of the existing Release workflow. The first non-dev 
 ### Offline reconciliation fixtures
 
 ```bash
-./scripts/test-release-usage-menu-bar-state.sh
+cargo nextest run -p jackin-xtask --locked desktop::release_state
 ```

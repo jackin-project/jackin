@@ -28,11 +28,13 @@ Existing methods (`snapshot`, `compact_status_bar_label`, …) are unchanged.
 ## Swift bindings
 
 ```sh
-./scripts/generate-usage-swift-bindings.sh
+cargo xtask desktop bindings
+# or: mise run desktop-bindings
 ```
 
 ## XCFramework
 
 ```sh
-./scripts/build-usage-xcframework.sh
+cargo xtask desktop xcframework
+# or: mise run desktop-xcframework
 ```
