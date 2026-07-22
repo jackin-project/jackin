@@ -1000,6 +1000,90 @@ jobs:
         run: >-
           "$CI_XTASK" ci-cargo-audit
 
+  build-validator:
+    needs: [changes, cargo-registry-warmup]
+    if: >-
+      always() && !failure() && !cancelled() &&
+      (needs.changes.outputs.rust == 'true' ||
+       github.event_name == 'schedule' ||
+       github.event_name == 'workflow_dispatch')
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        config: ${{ fromJSON(needs.changes.outputs.runner-configs) }}
+    runs-on: ${{ fromJSON(matrix.config.runner) }}
+    timeout-minutes: 60
+    name: cargo build validator (${{ matrix.config.lane }})
+    env:
+      CARGO_INCREMENTAL: "0"
+      CARGO_TERM_COLOR: always
+      MISE_DATA_DIR: ${{ matrix.config.mise_data_dir }}
+      RUSTC_WRAPPER: sccache
+      RUSTUP_HOME: ${{ github.workspace }}/.ci-rustup
+      SCCACHE_BASEDIRS: ${{ github.workspace }}
+      SCCACHE_GHA_ENABLED: "false"
+      SCCACHE_CACHE_SIZE: 20G
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: rui314/setup-mold@9c9c13bf4c3f1adef0cc596abc155580bcb04444 # v1.1.0
+      - uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
+        with:
+          version: v0.16.0
+          disable_annotations: "false"
+      - uses: ./.github/actions/download-ci-xtask
+        with:
+          token: ${{ github.token }}
+          lane: ${{ matrix.config.lane }}
+          tools-contract: ${{ needs.changes.outputs.ci-tools-contract }}
+          xtask-contract: ${{ needs.changes.outputs.ci-xtask-contract }}
+      - name: Cache Rust toolchain
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ${{ env.RUSTUP_HOME }}/toolchains
+            ${{ env.RUSTUP_HOME }}/update-hashes
+          key: rustup-v2-${{ runner.os }}-${{ runner.arch }}-${{ needs.changes.outputs.rustup-contract }}
+          restore-keys: |
+            rustup-v2-${{ runner.os }}-${{ runner.arch }}-
+      - name: Use the prepared current Rust toolchain
+        run: >-
+          "$CI_XTASK" ci-toolchain prepare
+          --version "${{ needs.changes.outputs.rust-version }}"
+      - uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
+        env:
+          RUSTC_WRAPPER: ""
+        with:
+          version: "2026.7.7"
+          cache_key_prefix: "mise-v2"
+          cache_save: ${{ github.ref == 'refs/heads/main' }}
+          install_args: "zig"
+          github_token: ${{ secrets.GH_READONLY_TOKEN }}
+      - id: cargo-registry-cache
+        uses: ./.github/actions/cache-cargo-registry
+        with:
+          contract-key: ${{ needs.changes.outputs.registry-contract }}
+      - name: Build complete validator archive set
+        run: >-
+          "$CI_XTASK" release-archives
+          --package jackin-role
+          --version "0.0.0-preview+${GITHUB_SHA}"
+          --checksum-only
+      - name: Publish x86_64 validator
+        if: github.ref == 'refs/heads/main' && matrix.config.artifact_writer
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: jackin-role-x86_64-unknown-linux-gnu
+          path: dist/jackin-role-x86_64-unknown-linux-gnu.tar.gz*
+          retention-days: 7
+      - name: Publish aarch64 validator
+        if: github.ref == 'refs/heads/main' && matrix.config.artifact_writer
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: jackin-role-aarch64-unknown-linux-gnu
+          path: dist/jackin-role-aarch64-unknown-linux-gnu.tar.gz*
+          retention-days: 7
+
   # Single stable check name for branch-protection required-status,
   # regardless of which gated jobs skipped under it.
   ci-required:
@@ -1009,6 +1093,7 @@ jobs:
       - actionlint
       - affected-crates
       - audit
+      - build-validator
       - cargo-registry-warmup
       - fmt
       - dependency-policy

@@ -16,11 +16,29 @@ fn capsule_owns_complete_linux_target_set() {
 }
 
 #[test]
+fn validator_owns_only_its_complete_linux_target_set() {
+    assert_eq!(targets(ArchivePackage::JackinRole), &CAPSULE_TARGETS);
+    assert_eq!(binaries(ArchivePackage::JackinRole), &["jackin-role"]);
+}
+
+#[test]
 fn sidecars_preserve_archive_extension() {
     assert_eq!(
         sidecar(Path::new("dist/jackin-linux.tar.gz"), "sha256"),
         PathBuf::from("dist/jackin-linux.tar.gz.sha256")
     );
+}
+
+#[test]
+fn checksum_sidecar_names_the_archive_for_sha256sum_check() {
+    let temp = tempfile::tempdir().unwrap();
+    let archive = temp.path().join("jackin-role-linux.tar.gz");
+    fs::write(&archive, b"validator archive").unwrap();
+
+    write_checksum(&archive).unwrap();
+
+    let sidecar = fs::read_to_string(sidecar(&archive, "sha256")).unwrap();
+    assert!(sidecar.ends_with("  jackin-role-linux.tar.gz\n"));
 }
 
 #[test]

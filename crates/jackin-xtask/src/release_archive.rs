@@ -23,6 +23,7 @@ mod tests;
 pub(crate) enum ArchivePackage {
     Jackin,
     JackinCapsule,
+    JackinRole,
 }
 
 #[derive(Args, Debug)]
@@ -42,6 +43,9 @@ pub(crate) struct ReleaseArchivesArgs {
     /// Optional file receiving one complete sccache report for the crate job.
     #[arg(long)]
     sccache_stats: Option<PathBuf>,
+    /// Emit only the archive and checksum for an internal CI artifact.
+    #[arg(long)]
+    checksum_only: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -140,8 +144,10 @@ pub(crate) fn run(args: ReleaseArchivesArgs) -> Result<()> {
             &args.output_dir,
         )?;
         write_checksum(&archive)?;
-        sign(&archive)?;
-        write_sbom(&archive)?;
+        if !args.checksum_only {
+            sign(&archive)?;
+            write_sbom(&archive)?;
+        }
     }
     for target in targets {
         preserve_cargo_timings(&build_root.join(target.rust), &args.output_dir)?;
@@ -167,6 +173,7 @@ fn targets(package: ArchivePackage) -> &'static [TargetSpec] {
     match package {
         ArchivePackage::Jackin => &JACKIN_TARGETS,
         ArchivePackage::JackinCapsule => &CAPSULE_TARGETS,
+        ArchivePackage::JackinRole => &CAPSULE_TARGETS,
     }
 }
 
@@ -174,6 +181,7 @@ fn binaries(package: ArchivePackage) -> &'static [&'static str] {
     match package {
         ArchivePackage::Jackin => &["jackin", "jackin-role"],
         ArchivePackage::JackinCapsule => &["jackin-capsule"],
+        ArchivePackage::JackinRole => &["jackin-role"],
     }
 }
 
@@ -181,6 +189,7 @@ fn package_name(package: ArchivePackage) -> &'static str {
     match package {
         ArchivePackage::Jackin => "jackin",
         ArchivePackage::JackinCapsule => "jackin-capsule",
+        ArchivePackage::JackinRole => "jackin-role",
     }
 }
 
@@ -249,6 +258,8 @@ fn build(
     command.args(["zigbuild", "--timings", "--release", "--locked"]);
     if package == ArchivePackage::JackinCapsule {
         command.args(["-p", "jackin-capsule"]);
+    } else if package == ArchivePackage::JackinRole {
+        command.args(["--bin", "jackin-role"]);
     }
     command.args(["--target", target.zigbuild]);
     command.env("CARGO_BUILD_JOBS", jobs.to_string());
@@ -315,7 +326,11 @@ fn package(
 
 fn write_checksum(archive: &Path) -> Result<()> {
     let bytes = fs::read(archive).with_context(|| format!("reading {}", archive.display()))?;
-    let checksum = format!("{}\n", hex::encode(Sha256::digest(bytes)));
+    let filename = archive
+        .file_name()
+        .context("release archive path has no filename")?
+        .to_string_lossy();
+    let checksum = format!("{}  {filename}\n", hex::encode(Sha256::digest(bytes)));
     fs::write(sidecar(archive, "sha256"), checksum)
         .with_context(|| format!("writing checksum for {}", archive.display()))
 }
