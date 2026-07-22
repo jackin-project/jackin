@@ -226,6 +226,47 @@ public func bucketPrimaryPercentLabel(
     return "—"
 }
 
+/// Glance / Usage metric primary: remaining/used % or depleted Rust reset countdown.
+///
+/// When remaining is zero and Rust supplies a reset label, prefer the countdown
+/// (CodexBar “plan around resets”) over bare zero-percent wording.
+public func bucketMetricPrimaryLabel(
+    remainingPercent: UInt8?,
+    usedLabel: String?,
+    resetLabel: String?,
+    percentStyle: String = "left"
+) -> String {
+    if let remaining = remainingPercent, remaining == 0,
+       let reset = resetLabel, !reset.isEmpty
+    {
+        return statusItemResetCountdownLine(compactLabel: reset) ?? reset
+    }
+    return bucketPrimaryPercentLabel(
+        remainingPercent: remainingPercent,
+        usedLabel: usedLabel,
+        percentStyle: percentStyle
+    )
+}
+
+/// Sidebar / list subtitle: dual remaining tokens (`100% · 79%`) or single.
+///
+/// Empty when no numeric remainings — never invents percentages.
+public func surfaceRemainingSubtitle(
+    remainings: [UInt8],
+    compactLabel: String = "",
+    percentStyle: String = "left",
+    maxLines: Int = 2
+) -> String? {
+    let lines = tileRemainingBadgeLines(
+        remainings: remainings,
+        compactLabel: compactLabel,
+        percentStyle: percentStyle,
+        maxLines: maxLines
+    )
+    guard !lines.isEmpty else { return nil }
+    return lines.joined(separator: " · ")
+}
+
 /// Glyph for the menu-bar strip from Rust compact label (`Cl 37%` → `Cl`).
 ///
 /// Falls back to the frozen-host two-letter mark so every provider keeps an identity

@@ -177,6 +177,18 @@ struct DesktopParityMatrixHarness {
             "pace split CodexBar columns",
             splitPaceLabel("~22% left at reset · Resets in 1d 6h").count == 2
         )
+        check(
+            "metric primary depleted reset",
+            bucketMetricPrimaryLabel(
+                remainingPercent: 0,
+                usedLabel: nil,
+                resetLabel: "Resets in 3h 52m"
+            ) == "Resets in 3h 52m"
+        )
+        check(
+            "sidebar dual subtitle",
+            surfaceRemainingSubtitle(remainings: [99, 63]) == "99% · 63%"
+        )
 
         // --- Empty data honesty (no invented zeros) ---
         let emptyAmp = StatusItemSurfaceSnapshot(
@@ -273,6 +285,17 @@ struct DesktopParityMatrixHarness {
         check(
             "Overview pace under mini rows",
             overview.contains("paceLabel") && overview.contains("splitPaceLabel")
+        )
+        let usageRoot = read("UsageWindow/UsageWindowRoot.swift")
+        check(
+            "Usage sidebar dual remaining subtitle",
+            usageRoot.contains("surfaceRemainingSubtitle")
+                || usageRoot.contains("sidebarSubtitle")
+        )
+        check(
+            "shared metric primary helper wired",
+            popover.contains("bucketMetricPrimaryLabel")
+                && provider.contains("bucketMetricPrimaryLabel")
         )
         check(
             "no sparkline/donut/trend product UI in status item",

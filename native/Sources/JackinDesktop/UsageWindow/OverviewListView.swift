@@ -172,12 +172,10 @@ struct OverviewListView: View {
         _ bucket: PresentationStore.BucketRow,
         remaining: UInt8
     ) -> String {
-        if remaining == 0, let reset = bucket.resetLabel, !reset.isEmpty {
-            return statusItemResetCountdownLine(compactLabel: reset) ?? reset
-        }
-        return bucketPrimaryPercentLabel(
+        bucketMetricPrimaryLabel(
             remainingPercent: remaining,
             usedLabel: bucket.usedLabel,
+            resetLabel: bucket.resetLabel,
             percentStyle: store.percentStyle
         )
     }

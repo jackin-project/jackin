@@ -20,6 +20,7 @@ struct UsageWindowRoot: View {
                     Label("Overview", systemImage: "square.grid.2x2")
                         .tag(Self.overviewId)
                     ForEach(store.overviewRows) { row in
+                        let subtitle = sidebarSubtitle(for: row)
                         HStack(spacing: 8) {
                             Circle()
                                 .fill(severityTint(row.severity))
@@ -27,18 +28,22 @@ struct UsageWindowRoot: View {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(row.displayLabel)
                                     .font(.body.weight(.medium))
-                                if !row.headline.isEmpty {
-                                    Text(row.headline)
+                                // OpenUsage dual remaining when surface has two windows.
+                                if let subtitle, !subtitle.isEmpty {
+                                    Text(subtitle)
                                         .font(.caption)
                                         .foregroundStyle(.secondary)
                                         .monospacedDigit()
                                         .lineLimit(1)
+                                        .minimumScaleFactor(0.75)
                                 }
                             }
                             Spacer(minLength: 4)
                         }
                         .tag(row.surfaceId)
-                        .accessibilityLabel("\(row.displayLabel) \(row.headline)")
+                        .accessibilityLabel(
+                            "\(row.displayLabel) \(subtitle ?? row.headline)"
+                        )
                     }
                 }
             }
@@ -138,5 +143,26 @@ struct UsageWindowRoot: View {
                 store.setSelectedAccount(surfaceId: surface.id, accountKey: key)
             }
         )
+    }
+
+    /// Dual remaining subtitle for sidebar rows (OpenUsage multi-window density).
+    private func sidebarSubtitle(for row: PresentationStore.OverviewRow) -> String? {
+        let surface = store.surfaces.first(where: { $0.id == row.surfaceId })
+        let remainings = surface?.buckets.compactMap(\.remainingPercent) ?? []
+        if let dual = surfaceRemainingSubtitle(
+            remainings: remainings,
+            compactLabel: surface?.statusBarLabel ?? "",
+            percentStyle: store.percentStyle,
+            maxLines: 2
+        ) {
+            return dual
+        }
+        if !row.headline.isEmpty {
+            return row.headline
+        }
+        if !row.statusWord.isEmpty {
+            return row.statusWord
+        }
+        return nil
     }
 }

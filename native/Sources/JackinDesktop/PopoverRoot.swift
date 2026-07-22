@@ -471,14 +471,10 @@ struct PopoverRoot: View {
 
     /// Glance metric primary: remaining/used % or depleted countdown (CodexBar).
     private func metricPrimaryLabel(_ bucket: PresentationStore.BucketRow) -> String {
-        if let remaining = bucket.remainingPercent, remaining == 0,
-           let reset = bucket.resetLabel, !reset.isEmpty
-        {
-            return statusItemResetCountdownLine(compactLabel: reset) ?? reset
-        }
-        return bucketPrimaryPercentLabel(
+        bucketMetricPrimaryLabel(
             remainingPercent: bucket.remainingPercent,
             usedLabel: bucket.usedLabel,
+            resetLabel: bucket.resetLabel,
             percentStyle: store.percentStyle
         )
     }

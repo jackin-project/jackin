@@ -376,6 +376,28 @@ struct StatusItemChipHarness {
             ]
         )
         check(
+            "metric primary depleted prefers reset",
+            bucketMetricPrimaryLabel(
+                remainingPercent: 0,
+                usedLabel: nil,
+                resetLabel: "Resets in 2h",
+                percentStyle: "left"
+            ) == "Resets in 2h"
+        )
+        check(
+            "metric primary healthy left",
+            bucketMetricPrimaryLabel(
+                remainingPercent: 81,
+                usedLabel: nil,
+                resetLabel: "Resets in 5h",
+                percentStyle: "left"
+            ) == "81% left"
+        )
+        check(
+            "sidebar dual remaining subtitle",
+            surfaceRemainingSubtitle(remainings: [100, 79]) == "100% · 79%"
+        )
+        check(
             "dual depleted a11y keeps weekly",
             statusItemAccessibilityLabel(chips: dualDepChips)
                 == "jackin Desktop Cl resets 1h 21m and 79%",

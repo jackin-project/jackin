@@ -363,6 +363,26 @@ final class ArchitectureTests: XCTestCase {
             splitPaceLabel("On pace · Runs out in 4d 21h"),
             ["On pace", "Runs out in 4d 21h"]
         )
+        XCTAssertEqual(
+            bucketMetricPrimaryLabel(
+                remainingPercent: 0,
+                usedLabel: nil,
+                resetLabel: "Resets in 2h"
+            ),
+            "Resets in 2h"
+        )
+        XCTAssertEqual(
+            bucketMetricPrimaryLabel(
+                remainingPercent: 81,
+                usedLabel: nil,
+                resetLabel: "Resets in 5h"
+            ),
+            "81% left"
+        )
+        XCTAssertEqual(
+            surfaceRemainingSubtitle(remainings: [100, 79]),
+            "100% · 79%"
+        )
     }
 
     func testBuildStatusItemChipsRespectsCapAndHidesEmpty() {
