@@ -13,7 +13,7 @@ on:
       lanes:
         description: "Which runner(s) to run on. Default velnor; use both for parity runs."
         type: choice
-        options: [github, velnor, both]
+        options: [velnor, github, both]
         default: velnor
 
 permissions:
