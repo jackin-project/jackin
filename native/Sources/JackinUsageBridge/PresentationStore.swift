@@ -93,8 +93,10 @@ public final class PresentationStore: ObservableObject {
     @Published public private(set) var mergedBarLabel: String = "jackin❯ usage"
     /// Rust-owned short status-item label for focus mode (e.g. `Cl 63%`).
     @Published public private(set) var compactBarLabel: String = ""
-    /// Mode-selected status-item text (empty = icon only).
+    /// Mode-selected status-item text (empty = icon only). Accessibility + fallback.
     @Published public private(set) var statusItemText: String = ""
+    /// OpenUsage-style menu-bar chips (Rust compact labels + remaining for mini bars).
+    @Published public private(set) var statusItemChips: [StatusItemChip] = []
     /// Footer / window next-refresh string from Rust.
     @Published public private(set) var nextRefreshLabel: String = ""
     @Published public private(set) var surfaces: [SurfaceRow] = []
@@ -478,22 +480,117 @@ public final class PresentationStore: ObservableObject {
         )
         guard isOpen else {
             statusItemText = ""
+            statusItemChips = []
             return
         }
         do {
             switch selection {
             case .empty:
                 statusItemText = ""
+                statusItemChips = []
             case .focus:
                 statusItemText = try bridge.compactStatusBarLabel()
+                statusItemChips = try chipsForFocus()
             case .pinned(let surfaceId):
                 statusItemText = try bridge.compactStatusBarLabelFor(surfaceId: surfaceId) ?? ""
+                statusItemChips = try chipsForPinned(surfaceId: surfaceId)
             case .strip(let max):
                 statusItemText = try bridge.compactStatusBarStrip(max: max)
+                statusItemChips = try chipsForStrip(maxCount: max)
             }
         } catch {
             lastError = String(describing: error)
             statusItemText = ""
+            statusItemChips = []
         }
+    }
+
+    /// Worst enabled surface (lowest remaining) as a single OpenUsage-style chip.
+    private func chipsForFocus() throws -> [StatusItemChip] {
+        guard let row = worstEnabledSurfaceRow() else { return [] }
+        let label = try bridge.compactStatusBarLabel()
+        guard !label.isEmpty else { return [] }
+        let drive = drivingBucket(for: row)
+        return [
+            StatusItemChip(
+                surfaceId: row.id,
+                compactLabel: label,
+                remainingPercent: drive?.remainingPercent,
+                severity: drive?.severity ?? "ok"
+            ),
+        ]
+    }
+
+    private func chipsForPinned(surfaceId: String) throws -> [StatusItemChip] {
+        guard let label = try bridge.compactStatusBarLabelFor(surfaceId: surfaceId),
+              !label.isEmpty
+        else {
+            return []
+        }
+        let row = surfaces.first(where: { $0.id == surfaceId && $0.enabled })
+        let drive = row.flatMap { drivingBucket(for: $0) }
+        return [
+            StatusItemChip(
+                surfaceId: surfaceId,
+                compactLabel: label,
+                remainingPercent: drive?.remainingPercent,
+                severity: drive?.severity ?? "ok"
+            ),
+        ]
+    }
+
+    private func chipsForStrip(maxCount: UInt32) throws -> [StatusItemChip] {
+        let cap = Int(Swift.min(8, Swift.max(1, maxCount)))
+        let ranked = enabledNumericSurfaceRows().prefix(cap)
+        var chips: [StatusItemChip] = []
+        for row in ranked {
+            guard let label = try bridge.compactStatusBarLabelFor(surfaceId: row.id),
+                  !label.isEmpty
+            else {
+                continue
+            }
+            let drive = drivingBucket(for: row)
+            chips.append(
+                StatusItemChip(
+                    surfaceId: row.id,
+                    compactLabel: label,
+                    remainingPercent: drive?.remainingPercent,
+                    severity: drive?.severity ?? "ok"
+                )
+            )
+        }
+        return chips
+    }
+
+    private func worstEnabledSurfaceRow() -> SurfaceRow? {
+        enabledNumericSurfaceRows().first
+    }
+
+    /// Enabled surfaces with a numeric driving bucket, worst remaining first.
+    private func enabledNumericSurfaceRows() -> [SurfaceRow] {
+        surfaces
+            .filter(\.enabled)
+            .compactMap { row -> (SurfaceRow, UInt8)? in
+                guard let rem = drivingBucket(for: row)?.remainingPercent else { return nil }
+                return (row, rem)
+            }
+            .sorted { lhs, rhs in
+                if lhs.1 != rhs.1 { return lhs.1 < rhs.1 }
+                return false
+            }
+            .map(\.0)
+    }
+
+    private func drivingBucket(for row: SurfaceRow) -> BucketRow? {
+        let numeric = row.buckets.compactMap { bucket -> (UInt8, BucketRow)? in
+            guard let rem = bucket.remainingPercent else { return nil }
+            return (rem, bucket)
+        }
+        guard let best = drivingBucketForStatusItem(
+            remainingAndSeverity: numeric.map { (remaining: $0.0, severity: $0.1.severity) }
+        ) else {
+            return nil
+        }
+        return numeric.first(where: { $0.0 == best.remaining })?.1
     }
 }

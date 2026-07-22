@@ -101,11 +101,12 @@ All numbers and labels are the same Rust views the Capsule usage dialog uses.
 
 ## Menu bar appearance
 
-- Template jackin❯ logomark plus optional monospaced text from Rust. Settings **Display** mode:
-  - **Focus percent** (default) — worst enabled account, e.g. `Cl 63%`
+OpenUsage-inspired status strip (clean-room look-and-feel): template jackin❯ logomark, then compact **mini capacity bars** tinted by severity next to monospaced Rust labels. Empty metrics stay hidden. Settings **Display** mode:
+
+  - **Focus percent** (default) — worst enabled account as one chip (`Cl 63%` + mini bar)
   - **Icon only** — logomark alone
-  - **Pinned surface** — one surface’s number only
-  - **Multi-surface strip** — worst-first, capped (default 3), e.g. `Cl 63% · Cx 41% · ZA 12%`
+  - **Pinned surface** — one surface’s chip only
+  - **Multi-surface strip** — worst-first chips, capped (default 3), e.g. three mini bars + labels
 - **Format** flips (Rust-resolved, app-wide): **% left** / **% used**, **Countdown** / **Exact time**. Depleted accounts can show `Cl resets 1h 21m` when a reset time is known.
 - **Hide values while screen sharing** collapses the item to the icon while a share/recording is active (off by default).
 - The icon dims when every enabled surface is stale or unavailable — numbers stay honest and never invent a percent.

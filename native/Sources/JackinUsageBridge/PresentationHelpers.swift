@@ -55,3 +55,38 @@ public func overviewGlanceBody(headline: String, resetLabel: String?, statusWord
     }
     return .statusWord(statusWord)
 }
+
+/// One menu-bar chip (OpenUsage-style strip segment). Strings come from Rust.
+public struct StatusItemChip: Identifiable, Equatable, Sendable {
+    public var id: String { surfaceId }
+    public let surfaceId: String
+    /// Rust compact label, e.g. `Cl 63%` or depleted form.
+    public let compactLabel: String
+    /// Driving-bucket remaining from Rust (nil → text-only chip, no mini bar).
+    public let remainingPercent: UInt8?
+    public let severity: String
+
+    public init(
+        surfaceId: String,
+        compactLabel: String,
+        remainingPercent: UInt8?,
+        severity: String
+    ) {
+        self.surfaceId = surfaceId
+        self.compactLabel = compactLabel
+        self.remainingPercent = remainingPercent
+        self.severity = severity
+    }
+}
+
+/// Pick the driving bucket for status-item chips: lowest remaining among numeric buckets.
+public func drivingBucketForStatusItem(
+    remainingAndSeverity: [(remaining: UInt8, severity: String)]
+) -> (remaining: UInt8, severity: String)? {
+    remainingAndSeverity.min(by: { $0.remaining < $1.remaining })
+}
+
+/// Used-fraction for mini capacity bars from Rust remaining (display only).
+public func statusItemUsedFraction(remainingPercent: UInt8) -> Double {
+    Double(100 - Int(remainingPercent)) / 100.0
+}
