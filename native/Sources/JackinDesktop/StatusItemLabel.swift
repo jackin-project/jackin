@@ -98,17 +98,26 @@ private struct StatusItemChipView: View {
                 Text(chip.compactLabel)
                     .font(StatusItemLabel.chipFont)
                     .monospacedDigit()
+                    .foregroundStyle(severityTint(chip.severity))
                     .lineLimit(1)
             } else {
                 VStack(alignment: .trailing, spacing: 1) {
                     ForEach(Array(chip.percentLines.enumerated()), id: \.offset) { index, line in
+                        let lineSeverity =
+                            index < chip.severityPerLine.count
+                            ? chip.severityPerLine[index]
+                            : chip.severity
                         HStack(spacing: 2) {
                             if index < chip.remainingPerLine.count {
-                                miniBar(remaining: chip.remainingPerLine[index])
+                                miniBar(
+                                    remaining: chip.remainingPerLine[index],
+                                    severity: lineSeverity
+                                )
                             }
                             Text(line)
                                 .font(StatusItemLabel.chipFont)
                                 .monospacedDigit()
+                                .foregroundStyle(severityTint(lineSeverity))
                                 .lineLimit(1)
                         }
                     }
@@ -137,14 +146,14 @@ private struct StatusItemChipView: View {
         }
     }
 
-    private func miniBar(remaining: UInt8) -> some View {
+    private func miniBar(remaining: UInt8, severity: String) -> some View {
         let frac = Double(remaining) / 100.0
         return GeometryReader { geo in
             ZStack(alignment: .leading) {
                 Capsule()
                     .fill(Color.primary.opacity(0.15))
                 Capsule()
-                    .fill(severityTint(chip.severity))
+                    .fill(severityTint(severity))
                     .frame(width: max(1.5, geo.size.width * frac))
             }
         }

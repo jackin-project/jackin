@@ -178,6 +178,15 @@ struct StatusItemChipHarness {
             "claude dual remaining stack",
             chips[0].percentLines == ["100%", "79%"] && chips[0].remainingPerLine == [100, 79]
         )
+        check(
+            "claude severity per line",
+            chips[0].severityPerLine == ["ok", "ok"],
+            "sev=\(chips[0].severityPerLine)"
+        )
+        check(
+            "codex warn severity",
+            chips[1].severity == "warn" && chips[1].severityPerLine == ["warn"]
+        )
         check("claude driving remaining", chips[0].remainingPercent == 79)
         check(
             "compact matches driving remaining",

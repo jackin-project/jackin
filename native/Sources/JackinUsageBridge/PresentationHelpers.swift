@@ -75,6 +75,8 @@ public struct StatusItemChip: Identifiable, Equatable, Sendable {
     public let remainingPercent: UInt8?
     /// Per-line remainings for mini bars under stacked percents.
     public let remainingPerLine: [UInt8]
+    /// Per-line severity (same length as percentLines when available).
+    public let severityPerLine: [String]
     public let severity: String
 
     public init(
@@ -85,6 +87,7 @@ public struct StatusItemChip: Identifiable, Equatable, Sendable {
         compactLabel: String,
         remainingPercent: UInt8?,
         remainingPerLine: [UInt8] = [],
+        severityPerLine: [String] = [],
         severity: String
     ) {
         self.surfaceId = surfaceId
@@ -94,6 +97,7 @@ public struct StatusItemChip: Identifiable, Equatable, Sendable {
         self.compactLabel = compactLabel
         self.remainingPercent = remainingPercent
         self.remainingPerLine = remainingPerLine
+        self.severityPerLine = severityPerLine
         self.severity = severity
     }
 }
@@ -299,6 +303,7 @@ public func buildStatusItemChips(
             ? surface.compactLabel
             : (!surface.statusBarLabel.isEmpty ? surface.statusBarLabel : surface.label)
         let remainings = Array(surface.remainings.prefix(2))
+        let lineSeverities = Array(surface.severities.prefix(remainings.count))
         let lines = statusItemPercentLines(
             remainings: remainings,
             maxLines: 2,
@@ -313,6 +318,7 @@ public func buildStatusItemChips(
                 compactLabel: compact,
                 remainingPercent: surface.drivingRemaining,
                 remainingPerLine: remainings,
+                severityPerLine: lineSeverities,
                 severity: surface.drivingSeverity
             )
         )
