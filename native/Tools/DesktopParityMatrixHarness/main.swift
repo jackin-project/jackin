@@ -30,9 +30,18 @@ struct DesktopParityMatrixHarness {
         }
 
         print("=== OpenUsage/CodexBar limits-only parity matrix ===")
-        print("In scope: remaining %, dual windows, resets, multi-provider icons")
+        print("In scope: remaining %, dual windows, resets, multi-provider icons, mini bars")
         print("Out of scope: token unit prices, usage/spend trends (AGENTS hard rule)")
         print("")
+
+        check(
+            "remaining fraction complements used",
+            abs(
+                statusItemRemainingFraction(remainingPercent: 40)
+                    + statusItemUsedFraction(remainingPercent: 40) - 1.0
+            ) < 0.001
+        )
+        check("percent lines eligible for mini bars", statusItemLineShowsMiniBar("100%"))
 
         // --- Catalog ---
         check("frozen catalog has 8 surfaces", frozenHostSurfaceIds.count == 8)
@@ -269,6 +278,12 @@ struct DesktopParityMatrixHarness {
             statusItem.contains("statusItemChips") && statusItem.contains("StatusItemChipView")
         )
         check(
+            "StatusItemLabel CodexBar dual mini bars",
+            statusItem.contains("miniRemainingBar")
+                && statusItem.contains("statusItemRemainingFraction")
+                && statusItem.contains("remainingPerLine")
+        )
+        check(
             "Popover agent tile grid",
             popover.contains("agentTileGrid") && popover.contains("overviewStack")
         )
@@ -276,6 +291,10 @@ struct DesktopParityMatrixHarness {
             "Popover dual tile remaining badges",
             popover.contains("remainingBadgeLines")
                 && popover.contains("tileRemainingBadgeLines")
+        )
+        check(
+            "Popover tile dual mini bars",
+            popover.contains("tileMiniBar") && popover.contains("tileRemainingBarPercents")
         )
         check(
             "Popover multi-account pills",

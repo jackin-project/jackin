@@ -172,6 +172,25 @@ public func statusItemUsedFraction(remainingPercent: UInt8) -> Double {
     Double(100 - Int(remainingPercent)) / 100.0
 }
 
+/// Remaining-fraction for OpenUsage/CodexBar mini bars (full bar = healthy quota left).
+///
+/// Inverse of `statusItemUsedFraction`. Strip chips and dual meters fill left-to-right
+/// with remaining headroom so 100% reads full and depleted reads empty.
+public func statusItemRemainingFraction(remainingPercent: UInt8) -> Double {
+    Double(remainingPercent) / 100.0
+}
+
+/// Whether a chip display line should pair with a mini remaining bar.
+///
+/// Pure percent tokens (`79%`) get bars; depleted reset countdowns and placeholders
+/// (`—`) do not — the line already carries the stronger signal.
+public func statusItemLineShowsMiniBar(_ line: String) -> Bool {
+    let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard trimmed.hasSuffix("%"), trimmed.count >= 2 else { return false }
+    let digits = trimmed.dropLast()
+    return !digits.isEmpty && digits.allSatisfy(\.isNumber)
+}
+
 /// Whether Settings percent style is used-% (`used`) vs remaining-% (`left`).
 public func statusItemShowsUsedPercent(percentStyle: String) -> Bool {
     percentStyle == "used"

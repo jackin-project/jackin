@@ -89,7 +89,10 @@ struct StatusItemLabel: View {
     }
 }
 
-/// One provider chip: glass capsule + icon + available-token % (OpenUsage density).
+/// One provider chip: glass capsule + icon + remaining % + CodexBar dual mini bars.
+///
+/// OpenUsage Text density (stacked %) plus per-line remaining meters when Rust
+/// supplies numeric remainings. Countdown / empty lines skip the meter.
 private struct StatusItemChipView: View {
     let chip: StatusItemChip
 
@@ -104,23 +107,26 @@ private struct StatusItemChipView: View {
                     .foregroundStyle(severityTint(chip.severity))
                     .lineLimit(1)
             } else if chip.percentLines.count == 1 {
-                Text(chip.percentLines[0])
-                    .font(StatusItemLabel.chipFont)
-                    .monospacedDigit()
-                    .foregroundStyle(severityTint(chip.severity))
-                    .lineLimit(1)
+                metricLine(
+                    line: chip.percentLines[0],
+                    severity: chip.severity,
+                    remainingIndex: 0,
+                    dual: false
+                )
             } else {
-                VStack(alignment: .trailing, spacing: 0) {
+                // CodexBar dual stack: session on top, weekly under — each with mini bar.
+                VStack(alignment: .trailing, spacing: 1) {
                     ForEach(Array(chip.percentLines.enumerated()), id: \.offset) { index, line in
                         let lineSeverity =
                             index < chip.severityPerLine.count
                             ? chip.severityPerLine[index]
                             : chip.severity
-                        Text(line)
-                            .font(StatusItemLabel.dualFont)
-                            .monospacedDigit()
-                            .foregroundStyle(severityTint(lineSeverity))
-                            .lineLimit(1)
+                        metricLine(
+                            line: line,
+                            severity: lineSeverity,
+                            remainingIndex: index,
+                            dual: true
+                        )
                     }
                 }
             }
@@ -136,6 +142,57 @@ private struct StatusItemChipView: View {
                 ? chip.compactLabel
                 : "\(chip.glyph) \(chip.percentLines.joined(separator: " "))"
         )
+    }
+
+    @ViewBuilder
+    private func metricLine(
+        line: String,
+        severity: String,
+        remainingIndex: Int,
+        dual: Bool
+    ) -> some View {
+        HStack(spacing: 3) {
+            Text(line)
+                .font(dual ? StatusItemLabel.dualFont : StatusItemLabel.chipFont)
+                .monospacedDigit()
+                .foregroundStyle(severityTint(severity))
+                .lineLimit(1)
+            // CodexBar dual meter: always paint when Rust has a remaining for the line
+            // (empty fill when depleted; percent tokens and countdown lines both meter).
+            if remainingIndex < chip.remainingPerLine.count {
+                miniRemainingBar(
+                    remaining: chip.remainingPerLine[remainingIndex],
+                    severity: severity,
+                    dual: dual
+                )
+            }
+        }
+    }
+
+    /// CodexBar-style hairline remaining meter (full = quota left).
+    private func miniRemainingBar(
+        remaining: UInt8,
+        severity: String,
+        dual: Bool
+    ) -> some View {
+        let frac = statusItemRemainingFraction(remainingPercent: remaining)
+        let barWidth: CGFloat = dual ? 16 : 20
+        let barHeight: CGFloat = dual ? 2.5 : 3
+        return GeometryReader { geo in
+            ZStack(alignment: .leading) {
+                Capsule()
+                    .fill(Color.primary.opacity(0.14))
+                Capsule()
+                    .fill(severityTint(severity).opacity(0.9))
+                    .frame(
+                        width: remaining == 0
+                            ? 0
+                            : max(2, geo.size.width * frac)
+                    )
+            }
+        }
+        .frame(width: barWidth, height: barHeight)
+        .accessibilityHidden(true)
     }
 
     @ViewBuilder

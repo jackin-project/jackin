@@ -123,6 +123,11 @@ final class ArchitectureTests: XCTestCase {
         XCTAssertEqual(statusItemUsedFraction(remainingPercent: 63), 0.37, accuracy: 0.001)
         XCTAssertEqual(statusItemUsedFraction(remainingPercent: 100), 0.0, accuracy: 0.001)
         XCTAssertEqual(statusItemUsedFraction(remainingPercent: 0), 1.0, accuracy: 0.001)
+        XCTAssertEqual(statusItemRemainingFraction(remainingPercent: 63), 0.63, accuracy: 0.001)
+        XCTAssertEqual(statusItemRemainingFraction(remainingPercent: 100), 1.0, accuracy: 0.001)
+        XCTAssertEqual(statusItemRemainingFraction(remainingPercent: 0), 0.0, accuracy: 0.001)
+        XCTAssertTrue(statusItemLineShowsMiniBar("79%"))
+        XCTAssertFalse(statusItemLineShowsMiniBar("resets 1h"))
         XCTAssertEqual(statusItemPercentToken(remainingPercent: 79), "79%")
         XCTAssertEqual(
             statusItemPercentToken(remainingPercent: 37, percentStyle: "used"),

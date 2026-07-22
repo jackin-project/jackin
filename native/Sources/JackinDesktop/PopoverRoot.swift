@@ -121,7 +121,8 @@ struct PopoverRoot: View {
                     severity: worstSeverity(surface),
                     enabled: surface.enabled,
                     systemImage: agentSystemImage(surface.id),
-                    remainingBadgeLines: tileRemainingBadgeLines(for: surface)
+                    remainingBadgeLines: tileRemainingBadgeLines(for: surface),
+                    remainingBarPercents: tileRemainingBarPercents(for: surface)
                 )
             }
         }
@@ -136,7 +137,8 @@ struct PopoverRoot: View {
         severity: String,
         enabled: Bool,
         systemImage: String?,
-        remainingBadgeLines: [String] = []
+        remainingBadgeLines: [String] = [],
+        remainingBarPercents: [UInt8] = []
     ) -> some View {
         let selected = selectedSurfaceId == id
         return Button {
@@ -173,10 +175,13 @@ struct PopoverRoot: View {
                     )
                     .lineLimit(1)
                     .minimumScaleFactor(0.75)
-                // OpenUsage dual stack under tile (session/weekly remaining or reset).
+                // OpenUsage dual stack under tile (session/weekly remaining or reset)
+                // plus CodexBar dual hairline meters when Rust remainings are numeric.
                 if !remainingBadgeLines.isEmpty, enabled {
-                    VStack(spacing: 0) {
-                        ForEach(Array(remainingBadgeLines.enumerated()), id: \.offset) { _, line in
+                    VStack(spacing: 1) {
+                        ForEach(Array(remainingBadgeLines.enumerated()), id: \.offset) {
+                            index,
+                            line in
                             Text(line)
                                 .font(
                                     .system(
@@ -192,6 +197,13 @@ struct PopoverRoot: View {
                                 )
                                 .lineLimit(1)
                                 .minimumScaleFactor(0.65)
+                            if index < remainingBarPercents.count {
+                                tileMiniBar(
+                                    remaining: remainingBarPercents[index],
+                                    severity: severity,
+                                    selected: selected
+                                )
+                            }
                         }
                     }
                 } else {
@@ -214,6 +226,27 @@ struct PopoverRoot: View {
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
+    /// Dual hairline remaining meters under agent tiles (CodexBar dual-bar density).
+    private func tileMiniBar(remaining: UInt8, severity: String, selected: Bool) -> some View {
+        let frac = statusItemRemainingFraction(remainingPercent: remaining)
+        return GeometryReader { geo in
+            ZStack(alignment: .leading) {
+                Capsule()
+                    .fill(Color.primary.opacity(selected ? 0.18 : 0.12))
+                Capsule()
+                    .fill(
+                        selected
+                            ? Color.accentColor.opacity(0.85) : underlineTint(severity)
+                    )
+                    .frame(
+                        width: remaining == 0 ? 0 : max(2, geo.size.width * frac)
+                    )
+            }
+        }
+        .frame(width: 22, height: 2)
+        .accessibilityHidden(true)
+    }
+
     /// Dual remaining stack for agent tiles (OpenUsage menubar density).
     private func tileRemainingBadgeLines(for surface: PresentationStore.SurfaceRow) -> [String] {
         guard surface.enabled else { return [] }
@@ -228,6 +261,12 @@ struct PopoverRoot: View {
             percentStyle: store.percentStyle,
             maxLines: 2
         )
+    }
+
+    /// Numeric remainings for tile dual meters (same order/cap as badge lines).
+    private func tileRemainingBarPercents(for surface: PresentationStore.SurfaceRow) -> [UInt8] {
+        guard surface.enabled else { return [] }
+        return Array(surface.buckets.compactMap(\.remainingPercent).prefix(2))
     }
 
     /// Compact-like string for depleted tile countdown extraction.

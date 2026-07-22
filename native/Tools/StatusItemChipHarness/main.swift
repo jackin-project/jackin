@@ -38,6 +38,28 @@ struct StatusItemChipHarness {
             statusItemPercentToken(remainingPercent: 37, percentStyle: "used") == "63%"
         )
         check(
+            "remaining fraction full",
+            abs(statusItemRemainingFraction(remainingPercent: 100) - 1.0) < 0.001
+        )
+        check(
+            "remaining fraction depleted",
+            abs(statusItemRemainingFraction(remainingPercent: 0) - 0.0) < 0.001
+        )
+        check(
+            "remaining fraction mid",
+            abs(statusItemRemainingFraction(remainingPercent: 79) - 0.79) < 0.001
+        )
+        check("used+remaining fractions sum 1", {
+            let rem: UInt8 = 63
+            return abs(
+                statusItemRemainingFraction(remainingPercent: rem)
+                    + statusItemUsedFraction(remainingPercent: rem) - 1.0
+            ) < 0.001
+        }())
+        check("mini bar for percent token", statusItemLineShowsMiniBar("79%"))
+        check("no mini bar for countdown", !statusItemLineShowsMiniBar("resets 1h 21m"))
+        check("no mini bar for placeholder", !statusItemLineShowsMiniBar("—"))
+        check(
             "glyph from remaining compact",
             statusItemGlyph(compactLabel: "Cl 37%", surfaceId: "claude") == "Cl"
         )
