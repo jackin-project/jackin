@@ -5,14 +5,25 @@ import AppKit
 import JackinUsageBridge
 import SwiftUI
 
-/// Glance popover — OpenUsage-like floating dashboard (clean-room layout).
+/// Glance popover — CodexBar-inspired panel (clean-room layout).
 ///
-/// Solid elevated card, provider headers outside inset metric groups, full-width
-/// capacity bars with value/reset captions, money rows when Rust supplies them,
-/// Options footer. Cost donut / sparklines stay deferred (need more Rust models).
+/// Glyph tile grid for Overview + providers (selected tile filled accent;
+/// severity underline on degraded surfaces). Detail pane shows Capsule-parity
+/// fields for the selection. Menu-style footer with key equivalents.
+/// All numbers/strings are Rust-owned; no provider probes in Swift.
 struct PopoverRoot: View {
     @ObservedObject var store: PresentationStore
     @Environment(\.openWindow) private var openWindow
+
+    /// `nil` = Overview tile; otherwise surface id.
+    @State private var selectedSurfaceId: String?
+
+    private let tileColumns = [
+        GridItem(.flexible(), spacing: 6),
+        GridItem(.flexible(), spacing: 6),
+        GridItem(.flexible(), spacing: 6),
+        GridItem(.flexible(), spacing: 6),
+    ]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -20,44 +31,45 @@ struct PopoverRoot: View {
                 Text(err)
                     .font(.caption)
                     .foregroundStyle(.red)
-                    .padding(.horizontal, 16)
-                    .padding(.top, 14)
-                    .accessibilityLabel("Error \(err)")
+                    .padding(.horizontal, 14)
+                    .padding(.top, 12)
             }
 
             ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
+                VStack(alignment: .leading, spacing: 14) {
                     if enabledSurfaces.isEmpty {
                         emptyState
                     } else {
-                        // Optional spend summary when any bucket carries money.
-                        if !spendRows.isEmpty {
-                            spendSummaryCard
-                        }
-                        ForEach(enabledSurfaces) { surface in
-                            providerBlock(surface)
-                        }
+                        providerTileGrid
+                        Divider().opacity(0.35)
+                        detailPane
                     }
                 }
-                .padding(.horizontal, 14)
-                .padding(.top, 14)
-                .padding(.bottom, 10)
+                .padding(.horizontal, 12)
+                .padding(.top, 12)
+                .padding(.bottom, 6)
             }
-            .frame(maxHeight: 560)
+            .frame(maxHeight: 520)
 
-            footerBar
+            menuFooter
         }
         .frame(width: 320)
         .background {
-            // OpenUsage uses a solid elevated card, not heavy glass chrome.
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .fill(Color(nsColor: .windowBackgroundColor))
                 .shadow(color: .black.opacity(0.18), radius: 28, y: 10)
         }
-        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         .onAppear {
             if !store.isOpen {
                 store.openDefault()
+            }
+            // Prefer first overview row / enabled surface for a useful first paint.
+            if selectedSurfaceId == nil,
+               let first = store.overviewRows.first?.surfaceId
+                ?? enabledSurfaces.first?.id
+            {
+                selectedSurfaceId = first
             }
         }
     }
@@ -66,115 +78,224 @@ struct PopoverRoot: View {
         store.surfaces.filter(\.enabled)
     }
 
-    /// Surface spend lines from Rust money fields (no invented totals).
-    private var spendRows: [(id: String, label: String, amount: String)] {
-        enabledSurfaces.compactMap { surface in
-            let moneys = surface.buckets.compactMap(\.usedMoney)
-            guard let first = moneys.first else { return nil }
-            // Prefer a single bucket money line per surface (display only).
-            return (surface.id, surface.label, formatMoneyDto(first))
+    private var selectedSurface: PresentationStore.SurfaceRow? {
+        guard let id = selectedSurfaceId else { return nil }
+        return enabledSurfaces.first(where: { $0.id == id })
+    }
+
+    // MARK: - Provider tile grid (CodexBar switcher)
+
+    private var providerTileGrid: some View {
+        LazyVGrid(columns: tileColumns, spacing: 8) {
+            tileButton(
+                id: nil,
+                title: "Overview",
+                glyph: "▦",
+                severity: "ok",
+                systemImage: "square.grid.2x2"
+            )
+            ForEach(enabledSurfaces) { surface in
+                tileButton(
+                    id: surface.id,
+                    title: shortTitle(surface.label),
+                    glyph: statusItemGlyph(compactLabel: surface.label, surfaceId: surface.id),
+                    severity: worstSeverity(surface),
+                    systemImage: nil
+                )
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Providers")
+    }
+
+    private func tileButton(
+        id: String?,
+        title: String,
+        glyph: String,
+        severity: String,
+        systemImage: String?
+    ) -> some View {
+        let selected = selectedSurfaceId == id
+        return Button {
+            selectedSurfaceId = id
+        } label: {
+            VStack(spacing: 4) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(selected ? Color.accentColor : Color.primary.opacity(0.06))
+                        .frame(height: 36)
+                    if let systemImage {
+                        Image(systemName: systemImage)
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(selected ? Color.white : Color.primary.opacity(0.75))
+                    } else {
+                        Text(glyph)
+                            .font(.system(size: 12, weight: .bold, design: .rounded))
+                            .foregroundStyle(selected ? Color.white : Color.primary.opacity(0.85))
+                    }
+                }
+                Text(title)
+                    .font(.system(size: 10, weight: selected ? .semibold : .regular))
+                    .foregroundStyle(selected ? Color.accentColor : Color.secondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                // Severity underline (CodexBar Amp red / Grok green style).
+                Capsule()
+                    .fill(selected ? Color.clear : underlineTint(severity))
+                    .frame(width: 22, height: 2)
+            }
+            .frame(maxWidth: .infinity)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(title)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+
+    private func shortTitle(_ label: String) -> String {
+        // Keep tile captions compact (Codex / Claude / z.ai).
+        if label.count <= 8 { return label }
+        return String(label.prefix(7))
+    }
+
+    private func underlineTint(_ severity: String) -> Color {
+        switch severity {
+        case "danger": return .red
+        case "warn": return .orange
+        case "ok": return .green.opacity(0.0) // healthy: no underline noise
+        default: return .clear
         }
     }
 
-    // MARK: - Spend summary (list only — donut deferred)
+    // MARK: - Detail pane
 
-    private var spendSummaryCard: some View {
+    @ViewBuilder
+    private var detailPane: some View {
+        if let surface = selectedSurface {
+            providerDetail(surface)
+        } else {
+            overviewDetail
+        }
+    }
+
+    private var overviewDetail: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Spend")
-                .font(.subheadline.weight(.semibold))
-            ForEach(spendRows, id: \.id) { row in
-                HStack {
-                    Circle()
-                        .fill(severityTint("ok"))
-                        .frame(width: 8, height: 8)
-                    Text(row.label)
-                        .font(.subheadline)
-                    Spacer()
-                    Text(row.amount)
-                        .font(.subheadline.monospacedDigit())
-                        .foregroundStyle(.secondary)
+            Text("Overview")
+                .font(.title3.weight(.semibold))
+            ForEach(store.overviewRows) { row in
+                Button {
+                    selectedSurfaceId = row.surfaceId
+                } label: {
+                    HStack(spacing: 8) {
+                        Circle()
+                            .fill(severityTint(row.severity))
+                            .frame(width: 7, height: 7)
+                        Text(row.displayLabel)
+                            .font(.body.weight(.medium))
+                            .lineLimit(1)
+                        Spacer(minLength: 6)
+                        trailingOverview(row)
+                    }
+                    .padding(.vertical, 4)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+            if store.overviewRows.isEmpty {
+                Text("No fresh usage rows yet.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func trailingOverview(_ row: PresentationStore.OverviewRow) -> some View {
+        switch overviewGlanceBody(
+            headline: row.headline,
+            resetLabel: row.resetLabel,
+            statusWord: row.statusWord
+        ) {
+        case .numeric(let headline, let reset):
+            VStack(alignment: .trailing, spacing: 1) {
+                Text(headline)
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                if let reset {
+                    Text(reset)
+                        .font(.caption2.monospacedDigit())
+                        .foregroundStyle(.tertiary)
                 }
             }
-            Button {
-                store.selectUsageSurface(nil)
-                openWindow(id: "usage")
-            } label: {
-                Text("Open full usage…")
-                    .font(.caption.weight(.medium))
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
+        case .statusWord(let word):
+            Text(word)
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
-        .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background {
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(Color(nsColor: .controlBackgroundColor).opacity(0.65))
-        }
-        .accessibilityElement(children: .combine)
     }
 
-    // MARK: - Provider block
-
-    private func providerBlock(_ surface: PresentationStore.SurfaceRow) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            // Header outside the inset card (OpenUsage: Claude  Max 20x).
-            Button {
-                store.selectUsageSurface(surface.id)
-                openWindow(id: "usage")
-            } label: {
-                HStack(spacing: 8) {
-                    Text(statusItemGlyph(compactLabel: surface.label, surfaceId: surface.id))
-                        .font(.system(size: 11, weight: .bold, design: .rounded))
-                        .frame(width: 22, height: 22)
-                        .background {
-                            Circle().fill(severityTint(worstSeverity(surface)).opacity(0.22))
-                        }
-                    Text(surface.label)
-                        .font(.body.weight(.semibold))
-                        .lineLimit(1)
+    private func providerDetail(_ surface: PresentationStore.SurfaceRow) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            // Identity: name + updated / plan (CodexBar two-column).
+            VStack(alignment: .leading, spacing: 4) {
+                Text(surface.label)
+                    .font(.title3.weight(.semibold))
+                HStack {
+                    Text(surface.updatedLabel.isEmpty ? "—" : surface.updatedLabel)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
                     if let plan = surface.planLabel, !plan.isEmpty {
                         Text(plan)
                             .font(.caption.weight(.medium))
                             .foregroundStyle(.secondary)
                     }
-                    Spacer(minLength: 4)
-                    if let symbol = statusBadgeSymbol(surface.status) {
-                        Image(systemName: symbol)
-                            .font(.caption)
-                            .foregroundStyle(.orange)
-                    }
                 }
-                .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("\(surface.label), open usage")
 
-            VStack(alignment: .leading, spacing: 14) {
-                if surface.buckets.isEmpty {
-                    emptyMetric(title: nil)
-                } else {
-                    ForEach(surface.buckets) { bucket in
-                        metricRow(bucket)
-                    }
-                }
-                if let caption = surface.estimateCaption, !caption.isEmpty {
-                    Text(caption)
-                        .font(.caption2)
+            ForEach(surface.buckets) { bucket in
+                metricBlock(bucket)
+            }
+
+            if surface.buckets.isEmpty {
+                emptyMetric()
+            }
+
+            moneyGrid(surface)
+
+            if let caption = surface.estimateCaption, !caption.isEmpty {
+                Text(caption)
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            if let err = surface.lastError, !err.isEmpty {
+                Text(err)
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+            }
+
+            Button {
+                store.selectUsageSurface(surface.id)
+                openWindow(id: "usage")
+            } label: {
+                HStack {
+                    Text("Open full usage")
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.semibold))
                         .foregroundStyle(.tertiary)
                 }
+                .font(.body)
+                .padding(.top, 4)
             }
-            .padding(14)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background {
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(Color(nsColor: .controlBackgroundColor).opacity(0.55))
-            }
+            .buttonStyle(.plain)
         }
     }
 
-    private func metricRow(_ bucket: PresentationStore.BucketRow) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+    private func metricBlock(_ bucket: PresentationStore.BucketRow) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
             Text(bucket.label)
                 .font(.subheadline.weight(.semibold))
 
@@ -184,7 +305,6 @@ struct PopoverRoot: View {
             ) {
             case .gauge:
                 if let remaining = bucket.remainingPercent {
-                    // OpenUsage: remaining fill grows left-to-right (full = healthy).
                     remainingBar(remaining: remaining, severity: bucket.severity)
                 }
                 HStack(alignment: .firstTextBaseline) {
@@ -198,14 +318,18 @@ struct PopoverRoot: View {
                             .font(.caption)
                             .monospacedDigit()
                             .foregroundStyle(.secondary)
-                            .multilineTextAlignment(.trailing)
                     }
+                }
+                if let pace = bucket.paceLabel, !pace.isEmpty {
+                    // Pace as secondary line (CodexBar reserve / lasts-until).
+                    Text(pace)
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
                 }
             case .valueOnly:
                 HStack {
-                    Text(bucket.usedLabel ?? moneyLine(bucket) ?? "—")
-                        .font(.caption)
-                        .monospacedDigit()
+                    Text(bucket.usedLabel ?? "—")
+                        .font(.caption.monospacedDigit())
                         .foregroundStyle(.secondary)
                     Spacer()
                     if let reset = bucket.resetLabel {
@@ -215,41 +339,40 @@ struct PopoverRoot: View {
                     }
                 }
             case .empty:
-                emptyMetric(title: nil)
-            }
-
-            if let pace = bucket.paceLabel, !pace.isEmpty {
-                Text(pace)
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-            }
-            if let money = moneyLine(bucket), bucket.usedLabel == nil {
-                Text(money)
-                    .font(.caption)
-                    .monospacedDigit()
-                    .foregroundStyle(.secondary)
+                emptyMetric()
             }
         }
-        .accessibilityElement(children: .combine)
     }
 
-    private func moneyLine(_ bucket: PresentationStore.BucketRow) -> String? {
-        if let used = bucket.usedMoney {
-            if let limit = bucket.limitMoney {
-                return "\(formatMoneyDto(used)) / \(formatMoneyDto(limit))"
-            }
-            return formatMoneyDto(used)
+    private func moneyGrid(_ surface: PresentationStore.SurfaceRow) -> some View {
+        let pairs: [(String, String)] = surface.buckets.compactMap { bucket in
+            guard let money = bucket.usedMoney else { return nil }
+            return (bucket.label, formatMoneyDto(money))
         }
-        return nil
+        return Group {
+            if !pairs.isEmpty {
+                LazyVGrid(
+                    columns: [GridItem(.flexible()), GridItem(.flexible())],
+                    alignment: .leading,
+                    spacing: 10
+                ) {
+                    ForEach(Array(pairs.enumerated()), id: \.offset) { _, pair in
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(pair.0)
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                            Text(pair.1)
+                                .font(.body.weight(.semibold).monospacedDigit())
+                        }
+                    }
+                }
+                .padding(.top, 4)
+            }
+        }
     }
 
-    private func emptyMetric(title: String?) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            if let title {
-                Text(title)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.secondary)
-            }
+    private func emptyMetric() -> some View {
+        VStack(alignment: .leading, spacing: 5) {
             Capsule()
                 .fill(Color.primary.opacity(0.08))
                 .frame(height: 4)
@@ -265,20 +388,28 @@ struct PopoverRoot: View {
         }
     }
 
-    /// Full-width remaining bar (OpenUsage blue track density).
     private func remainingBar(remaining: UInt8, severity: String) -> some View {
-        let remainingFrac = Double(remaining) / 100.0
+        let frac = Double(remaining) / 100.0
         return GeometryReader { geo in
             ZStack(alignment: .leading) {
                 Capsule()
                     .fill(Color.primary.opacity(0.10))
+                // Warm fill (CodexBar salmon) for ok; severity still remaps danger/warn.
                 Capsule()
-                    .fill(severityTint(severity))
-                    .frame(width: max(3, geo.size.width * remainingFrac))
+                    .fill(barFill(severity))
+                    .frame(width: max(3, geo.size.width * frac))
             }
         }
-        .frame(height: 4)
+        .frame(height: 5)
         .accessibilityHidden(true)
+    }
+
+    private func barFill(_ severity: String) -> Color {
+        switch severity {
+        case "danger": return .red
+        case "warn": return .orange
+        default: return Color(red: 0.93, green: 0.55, blue: 0.42) // CodexBar warm accent
+        }
     }
 
     private func worstSeverity(_ surface: PresentationStore.SurfaceRow) -> String {
@@ -289,7 +420,40 @@ struct PopoverRoot: View {
             ?? "ok"
     }
 
-    // MARK: - Empty / footer
+    // MARK: - Menu footer (CodexBar)
+
+    private var menuFooter: some View {
+        VStack(spacing: 0) {
+            Divider().opacity(0.35)
+            menuRow(title: "Open Usage…", systemImage: "rectangle.split.2x1", shortcut: nil) {
+                store.selectUsageSurface(selectedSurfaceId)
+                openWindow(id: "usage")
+            }
+            menuRow(title: "Refresh", systemImage: "arrow.clockwise", shortcut: "⌘R") {
+                store.refreshAll()
+            }
+            .keyboardShortcut("r", modifiers: [.command])
+            SettingsLink {
+                menuRowLabel(title: "Settings…", systemImage: "gearshape", shortcut: "⌘,")
+            }
+            .keyboardShortcut(",", modifiers: [.command])
+            .buttonStyle(.plain)
+            if !store.nextRefreshLabel.isEmpty {
+                HStack {
+                    Text(store.nextRefreshLabel)
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                    Spacer()
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 4)
+            }
+            menuRow(title: "Quit", systemImage: "xmark.square", shortcut: "⌘Q") {
+                NSApplication.shared.terminate(nil)
+            }
+            .keyboardShortcut("q", modifiers: [.command])
+        }
+    }
 
     private var emptyState: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -307,64 +471,35 @@ struct PopoverRoot: View {
             .controlSize(.small)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .accessibilityElement(children: .combine)
     }
 
-    private var footerBar: some View {
-        VStack(spacing: 0) {
-            Divider().opacity(0.25)
-            HStack(alignment: .center, spacing: 10) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("jackin❯ Desktop")
-                        .font(.caption2.weight(.medium))
-                        .foregroundStyle(.secondary)
-                        .accessibilityLabel("jackin Desktop")
-                    if !store.nextRefreshLabel.isEmpty {
-                        Text(store.nextRefreshLabel)
-                            .font(.caption2)
-                            .foregroundStyle(.tertiary)
-                            .lineLimit(1)
-                    }
-                }
-                Spacer(minLength: 8)
-                Menu {
-                    Button("Open Usage…") {
-                        store.selectUsageSurface(nil)
-                        openWindow(id: "usage")
-                    }
-                    Button("Refresh") {
-                        store.refreshAll()
-                    }
-                    .keyboardShortcut("r", modifiers: [.command])
-                    Divider()
-                    SettingsLink {
-                        Text("Settings…")
-                    }
-                    .keyboardShortcut(",", modifiers: [.command])
-                    Divider()
-                    Button("Quit") {
-                        NSApplication.shared.terminate(nil)
-                    }
-                    .keyboardShortcut("q", modifiers: [.command])
-                } label: {
-                    HStack(spacing: 4) {
-                        Text("Options")
-                            .font(.caption.weight(.semibold))
-                        Image(systemName: "chevron.down")
-                            .font(.system(size: 8, weight: .bold))
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .background {
-                        Capsule()
-                            .fill(Color.primary.opacity(0.07))
-                    }
-                }
-                .menuStyle(.borderlessButton)
-                .fixedSize()
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
+    private func menuRow(
+        title: String,
+        systemImage: String,
+        shortcut: String?,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            menuRowLabel(title: title, systemImage: systemImage, shortcut: shortcut)
         }
+        .buttonStyle(.plain)
+    }
+
+    private func menuRowLabel(title: String, systemImage: String, shortcut: String?) -> some View {
+        HStack {
+            Label(title, systemImage: systemImage)
+                .labelStyle(.titleAndIcon)
+            Spacer()
+            if let shortcut {
+                Text(shortcut)
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+                    .monospacedDigit()
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .contentShape(Rectangle())
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
