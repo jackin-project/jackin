@@ -100,7 +100,7 @@ Footer actions: **Open Usage…**, **Refresh** (⌘R), **Settings…** (⌘,), *
 From the glance popover choose **Open Usage…** or click an agent identity header. A normal resizable window opens:
 
 - **Sidebar** — Overview plus every enabled provider (Capsule tab order) with a severity accent.
-- **Detail** — Overview list or a full provider card (account, plan, auth origin, quota gauges with OpenUsage-style **`{remaining}% left`** primary lines, pace/reset/money strings, estimate caption when Rust marks local estimates). Settings **Percent style** also applies here.
+- **Detail** — Overview list shows each agent’s **Session/Weekly remaining stack** (bars + `% left` / `% used` + reset) when Rust has dual buckets; select a provider for the full card (account, plan, auth origin, gauges, pace/money, estimate caption). Settings **Percent style** applies everywhere.
 - **⌘R** refreshes; **Esc** closes; **Settings…** opens Settings. The app stays a status-item process (`LSUIElement` — no Dock icon).
 
 All numbers and labels are the same Rust views the Capsule usage dialog uses.

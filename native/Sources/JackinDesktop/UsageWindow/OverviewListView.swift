@@ -5,6 +5,9 @@ import JackinUsageBridge
 import SwiftUI
 
 /// Full-width overview rows (S2/S3 content for the Overview selection).
+///
+/// OpenUsage-style density: provider identity + stacked remaining buckets
+/// (session/weekly) when Rust supplies remainings; driving headline as fallback.
 struct OverviewListView: View {
     @ObservedObject var store: PresentationStore
     var onSelect: (String) -> Void
@@ -21,49 +24,10 @@ struct OverviewListView: View {
                     Button {
                         onSelect(row.surfaceId)
                     } label: {
-                        HStack(alignment: .firstTextBaseline, spacing: 10) {
-                            Circle()
-                                .fill(severityTint(row.severity))
-                                .frame(width: 8, height: 8)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(row.displayLabel)
-                                    .font(.headline)
-                                if !row.headline.isEmpty {
-                                    Text(row.headline)
-                                        .font(.subheadline)
-                                        .monospacedDigit()
-                                } else {
-                                    Text(row.statusWord)
-                                        .font(.subheadline)
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
-                            Spacer(minLength: 8)
-                            VStack(alignment: .trailing, spacing: 2) {
-                                if let reset = row.resetLabel {
-                                    Text(reset)
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                        .monospacedDigit()
-                                }
-                                if let exact = row.exactReset {
-                                    Text(exact)
-                                        .font(.caption2)
-                                        .foregroundStyle(.tertiary)
-                                }
-                            }
-                        }
-                        .padding(12)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background {
-                            RoundedRectangle(cornerRadius: 10)
-                                .fill(.background.secondary)
-                        }
+                        overviewCard(row)
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel(
-                        "\(row.displayLabel) \(row.headline.isEmpty ? row.statusWord : row.headline)"
-                    )
+                    .accessibilityLabel(accessibilityLabel(for: row))
                 }
             }
             .padding(16)
@@ -81,5 +45,121 @@ struct OverviewListView: View {
                 GlassFallbacks.footerBarBackground()
             }
         }
+    }
+
+    private func overviewCard(_ row: PresentationStore.OverviewRow) -> some View {
+        let surface = store.surfaces.first(where: { $0.id == row.surfaceId })
+        let numericBuckets: [PresentationStore.BucketRow] =
+            surface?.buckets.filter { $0.remainingPercent != nil }.prefix(2).map { $0 } ?? []
+
+        return HStack(alignment: .top, spacing: 10) {
+            Circle()
+                .fill(severityTint(row.severity))
+                .frame(width: 8, height: 8)
+                .padding(.top, 6)
+
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text(row.displayLabel)
+                        .font(.headline)
+                    Spacer(minLength: 8)
+                    if let plan = surface?.planLabel, !plan.isEmpty {
+                        Text(plan)
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                if !numericBuckets.isEmpty {
+                    // Dual-bucket stack (OpenUsage Session/Weekly remainings).
+                    VStack(alignment: .leading, spacing: 6) {
+                        ForEach(numericBuckets) { bucket in
+                            bucketMiniRow(bucket)
+                        }
+                    }
+                } else if !row.headline.isEmpty {
+                    Text(row.headline)
+                        .font(.subheadline)
+                        .monospacedDigit()
+                } else {
+                    Text(row.statusWord)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+
+                if let reset = row.resetLabel, numericBuckets.isEmpty {
+                    Text(reset)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                }
+                if let exact = row.exactReset, numericBuckets.isEmpty {
+                    Text(exact)
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background {
+            RoundedRectangle(cornerRadius: 10)
+                .fill(.background.secondary)
+        }
+    }
+
+    @ViewBuilder
+    private func bucketMiniRow(_ bucket: PresentationStore.BucketRow) -> some View {
+        if let remaining = bucket.remainingPercent {
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text(bucket.label.isEmpty ? "Quota" : bucket.label)
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    Spacer(minLength: 6)
+                    Text(
+                        bucketPrimaryPercentLabel(
+                            remainingPercent: remaining,
+                            usedLabel: bucket.usedLabel,
+                            percentStyle: store.percentStyle
+                        )
+                    )
+                    .font(.caption.weight(.semibold))
+                    .monospacedDigit()
+                    if let reset = bucket.resetLabel, !reset.isEmpty {
+                        Text(reset)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .monospacedDigit()
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
+                    }
+                }
+                GeometryReader { geo in
+                    let frac = Double(remaining) / 100.0
+                    ZStack(alignment: .leading) {
+                        Capsule().fill(Color.primary.opacity(0.10))
+                        Capsule()
+                            .fill(severityTint(bucket.severity))
+                            .frame(width: max(2, geo.size.width * frac))
+                    }
+                }
+                .frame(height: 3)
+            }
+        }
+    }
+
+    private func accessibilityLabel(for row: PresentationStore.OverviewRow) -> String {
+        let surface = store.surfaces.first(where: { $0.id == row.surfaceId })
+        let remainings = surface?.buckets.compactMap(\.remainingPercent) ?? []
+        if !remainings.isEmpty {
+            let lines = statusItemPercentLines(
+                remainings: remainings,
+                maxLines: 2,
+                percentStyle: store.percentStyle
+            )
+            return "\(row.displayLabel) \(lines.joined(separator: " and "))"
+        }
+        return "\(row.displayLabel) \(row.headline.isEmpty ? row.statusWord : row.headline)"
     }
 }
