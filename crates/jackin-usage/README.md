@@ -1,8 +1,12 @@
 # jackin-usage
 
-Usage, pricing, telemetry, and token monitors for the `jackin-capsule` daemon.
+Usage, telemetry, and token monitors for the `jackin-capsule` daemon.
 Also owns the **Capsule-free host runtime** consumed by the macOS usage menu bar
 and `jackin usage host snapshot`.
+
+**Product surfaces (Capsule usage UI, jackin❯ Desktop):** **usage limits only** —
+remaining/used %, resets, plan/status. **Never** token unit prices or historical
+usage/spend trends as product features. See [AGENTS.md](AGENTS.md).
 
 ## What this crate owns
 

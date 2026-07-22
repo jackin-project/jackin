@@ -196,7 +196,9 @@ Operator-supplied screenshots of reference panels (an OpenUsage 0.7.6 dashboard 
 
 **Shipped multi-account (host):** account-switcher pills on glance + Usage cards; Rust `list_accounts` / `set_selected_account` over live login + durable store + shared container snapshots; selection persisted under `usage-menu-bar/selected-accounts.json`.
 
-Still deferred: aggregate-spend donut card with Today / Yesterday / 30 Days segmented capsule and ranked legend; usage-trend sparklines and spend-history bar charts with top-model captions; per-card external quick links (Usage Dashboard / Status Page) and provider incident lines; reset-credit expiry lists (`5d 4h · 10d 1h · 21d 22h`); drill-in subpages (Plan Usage / Cost); Buy Credits and any other write action; collapsible secondary-metrics section; segmented capacity-bar track marks (needs window-period metadata from Rust); simultaneous live probe of multiple host credential roots without prior shared/store snapshots.
+**Out of product scope forever (limits-only rule):** aggregate-spend donuts; Today / Yesterday / 30 Days spend or token histories; usage-trend sparklines; spend-history bar charts; token unit prices / cost-of-session UI; Buy Credits and commercial write actions. Do not reintroduce as “parity with OpenUsage/CodexBar”.
+
+Still deferred (limits-adjacent or ops only): per-card external quick links (Usage Dashboard / Status Page) and provider incident lines; reset-credit expiry lists (`5d 4h · 10d 1h · 21d 22h`); collapsible secondary-metrics section; segmented capacity-bar track marks (needs window-period metadata from Rust); simultaneous live probe of multiple host credential roots without prior shared/store snapshots.
 
 ### Screen inventory (v1)
 
@@ -335,7 +337,8 @@ Every picker persists a display preference that crosses FFI as a flag; Rust reso
 
 - **Adopted** (already ours or specified above): template status icon (jackin❯ logomark); honest stale/error dimming; last-good data never overwritten by a failed refresh; reset countdown with exact-time flip; used/left flip; depleted-shows-reset; launch at login; per-surface enable toggles; screen-share hide.
 - **Rejected** (permanent unless a future ADR reopens): provider zoo beyond jackin❯ surfaces; Swift-side probes or any browser-cookie / web-scrape credential source; plugin systems; multiple status items (jackin❯ Desktop keeps exactly one); menu-bar layout token editors; WidgetKit widgets; Sparkle (cask-only stands); app-embedded HTTP servers or CLI companions — `jackin usage host snapshot` already serves the same shared cache; analytics/telemetry SDKs.
-- **Deferred** (explicitly not v1; each needs Rust modeling first where data is involved): alert notifications of any kind — v1 is view-only; multi-account cards; spend/usage history charts (needs the durable snapshot store recorded in ADR-011); cross-device sync.
+- **Out of scope forever:** token unit prices and historical usage/spend trends (donuts, sparklines, 30-day cost series) — limits-only product rule in root / crate / native `AGENTS.md`.
+- **Deferred** (explicitly not v1): alert notifications of any kind — v1 is view-only; cross-device sync.
 
 ### Beyond the status bar (explicitly not v1)
 

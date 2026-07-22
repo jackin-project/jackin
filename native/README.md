@@ -5,6 +5,10 @@ Display-only Swift shell over `jackin-usage-ffi` (UniFFI). Product identity:
 Rust owns probes, cache, severity, and `status_bar_label`. CodexBar is a visual
 reference only (clean-room).
 
+**Product scope:** **usage limits only** — remaining/used %, resets, plan/status,
+multi-account. **Never** token unit prices or historical usage/spend trends
+(sparklines, donuts, 30-day series). See [AGENTS.md](AGENTS.md).
+
 ## Layout
 
 | Path | Role |
