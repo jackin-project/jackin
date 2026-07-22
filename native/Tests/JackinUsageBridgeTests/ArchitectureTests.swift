@@ -365,6 +365,40 @@ final class ArchitectureTests: XCTestCase {
         XCTAssertEqual(chips.map(\.surfaceId), ["s0", "s1", "s2"])
     }
 
+    /// OpenUsage/CodexBar matrix: all 8 frozen hosts displayable with icons + remaining %.
+    func testFullFrozenCatalogStripDisplayable() {
+        XCTAssertEqual(frozenHostSurfaceIds.count, 8)
+        XCTAssertTrue(allFrozenHostSurfacesHaveSystemImages())
+        let surfaces = frozenHostSurfaceIds.enumerated().map { i, id in
+            StatusItemSurfaceSnapshot(
+                surfaceId: id,
+                label: id,
+                enabled: true,
+                statusBarLabel: "ok",
+                status: "fresh",
+                compactLabel: "\(statusItemFallbackGlyph(surfaceId: id)) \(40 + i)%",
+                remainings: id == "claude" ? [100, 79] : [UInt8(40 + i)],
+                severities: ["ok"]
+            )
+        }
+        let chips = buildStatusItemChips(
+            surfaces: surfaces,
+            maxCount: 8,
+            preferWorstFirst: false,
+            percentStyle: "left",
+            includeAllEnabled: true
+        )
+        XCTAssertEqual(chips.map(\.surfaceId), frozenHostSurfaceIds)
+        for chip in chips {
+            XCTAssertNotNil(chip.systemImage, "\(chip.surfaceId) needs SF Symbol")
+            XCTAssertFalse(chip.percentLines.isEmpty, "\(chip.surfaceId) needs displayable %")
+        }
+        XCTAssertEqual(
+            chips.first(where: { $0.surfaceId == "claude" })?.percentLines,
+            ["100%", "79%"]
+        )
+    }
+
     func testPackageSwiftUsesBinaryTargetNotHostDylib() throws {
         let package = sourcesRoot
             .deletingLastPathComponent()

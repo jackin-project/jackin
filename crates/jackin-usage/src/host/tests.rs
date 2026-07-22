@@ -690,6 +690,45 @@ fn overview_rows_numeric_and_status_word() {
     );
 }
 
+/// OpenUsage/CodexBar-style: every frozen host surface can contribute a strip token.
+#[test]
+fn compact_status_bar_strip_all_eight_host_surfaces() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let mut runtime = open_runtime(dir.path());
+    for surface in HostSurfaceId::ALL {
+        runtime
+            .set_enabled(surface.id(), true)
+            .expect("enable set");
+    }
+    // Distinct remainings so each surface has numeric data.
+    let remainings = [90u8, 80, 70, 60, 50, 40, 30, 20];
+    for (surface, rem) in HostSurfaceId::ALL.iter().zip(remainings.iter().copied()) {
+        inject_remaining(&mut runtime, surface.id(), rem);
+    }
+    let strip = runtime.compact_status_bar_strip(8).expect("strip");
+    // Remaining % default (Left): worst-first → lowest remaining first.
+    assert!(
+        strip.contains(" · "),
+        "multi-provider strip separator: {strip}"
+    );
+    let parts: Vec<_> = strip.split(" · ").collect();
+    assert_eq!(parts.len(), 8, "expected 8 provider tokens: {strip}");
+    // Every compact prefix present.
+    for surface in HostSurfaceId::ALL {
+        let prefix = surface.compact_prefix();
+        assert!(
+            strip.contains(&format!("{prefix} ")),
+            "missing {prefix} in strip: {strip}"
+        );
+    }
+    // Worst-first: OpenCode 20% is first (lowest remaining).
+    assert!(
+        parts[0].starts_with("OC 20%"),
+        "worst-first remaining, got {}",
+        parts[0]
+    );
+}
+
 #[test]
 fn multi_account_list_select_and_snapshot() {
     use crate::host::{account_key_for_view, host_snapshot_store_path};

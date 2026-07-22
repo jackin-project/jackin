@@ -13,6 +13,7 @@ let package = Package(
         .executable(name: "JackinDesktop", targets: ["JackinDesktop"]),
         .executable(name: "StatusItemChipHarness", targets: ["StatusItemChipHarness"]),
         .executable(name: "DesktopArchitectureLint", targets: ["DesktopArchitectureLint"]),
+        .executable(name: "DesktopParityMatrixHarness", targets: ["DesktopParityMatrixHarness"]),
     ],
     targets: [
         .binaryTarget(
@@ -41,6 +42,12 @@ let package = Package(
             name: "DesktopArchitectureLint",
             dependencies: [],
             path: "Tools/DesktopArchitectureLint"
+        ),
+        // OpenUsage/CodexBar limits-only display matrix (full catalog, dual-bucket).
+        .executableTarget(
+            name: "DesktopParityMatrixHarness",
+            dependencies: ["JackinUsageBridge"],
+            path: "Tools/DesktopParityMatrixHarness"
         ),
         .testTarget(
             name: "JackinUsageBridgeTests",

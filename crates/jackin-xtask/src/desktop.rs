@@ -55,6 +55,8 @@ pub(crate) enum DesktopCommand {
     Verify(VerifyArgs),
     /// Launch a built `JackinDesktop.app` (menu-bar / `LSUIElement` — no Dock icon).
     Run(RunArgs),
+    /// Run host + pure Swift parity harnesses (OpenUsage/CodexBar limits-only matrix).
+    Test,
     /// Developer ID sign + notarize + staple + final release ZIP.
     SignNotarize(sign_notarize::SignNotarizeArgs),
     /// Independent publication state (`KEY=value` lines for `GITHUB_OUTPUT`).
@@ -116,6 +118,7 @@ pub(crate) fn run(command: DesktopCommand) -> Result<()> {
             let (version, build) = resolve_version_build(args.version, args.build)?;
             build_app(&docs::repo_root()?, &version, &build)
         }
+        DesktopCommand::Test => run_desktop_tests(&docs::repo_root()?),
         DesktopCommand::Verify(args) => {
             let release = args.release || env_truthy("RELEASE_MODE");
             let app = resolve_app_path(&args.app)?;
@@ -145,6 +148,55 @@ pub(super) fn resolve_app_path(app: &Path) -> Result<PathBuf> {
         );
     }
     Ok(fs::canonicalize(&path).unwrap_or(path))
+}
+
+/// Host unit tests + pure Swift harnesses (OpenUsage/CodexBar limits-only matrix).
+///
+/// Does not require full Xcode XCTest — uses CLT-safe `swift run` harnesses.
+fn run_desktop_tests(root: &Path) -> Result<()> {
+    require_macos("desktop test")?;
+    progress("==> jackin-usage + jackin-usage-ffi nextest");
+    let mut nextest = cmd::command("cargo");
+    nextest.current_dir(root).args([
+        "nextest",
+        "run",
+        "-p",
+        "jackin-usage",
+        "-p",
+        "jackin-usage-ffi",
+        "--lib",
+    ]);
+    cmd::run_streaming(&mut nextest)?;
+
+    // Ensure XCFramework exists for SwiftPM binary target.
+    let xcf = root.join("target/xcframework/JackinUsageFFI.xcframework");
+    if !xcf.is_dir() {
+        progress("==> XCFramework missing — building");
+        build_xcframework(root)?;
+    }
+
+    let native = root.join("native");
+    for (name, product) in [
+        ("StatusItemChipHarness", "StatusItemChipHarness"),
+        ("DesktopArchitectureLint", "DesktopArchitectureLint"),
+        ("DesktopParityMatrixHarness", "DesktopParityMatrixHarness"),
+    ] {
+        progress(format!("==> swift run -c release {name}"));
+        let mut swift = cmd::command("swift");
+        swift
+            .current_dir(&native)
+            .args(["run", "-c", "release", product]);
+        cmd::run_streaming(&mut swift)?;
+    }
+
+    progress("");
+    progress("┌─────────────────────────────────────────────────────────────");
+    progress("│ jackin❯ Desktop — tests OK");
+    progress("│   host nextest + StatusItemChipHarness");
+    progress("│   DesktopArchitectureLint + DesktopParityMatrixHarness");
+    progress("│   (full Xcode: cd native && swift test -c release)");
+    progress("└─────────────────────────────────────────────────────────────");
+    Ok(())
 }
 
 fn run_app(args: &RunArgs) -> Result<()> {

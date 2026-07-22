@@ -57,13 +57,26 @@ Build/verify/run each print a clear banner with the **absolute** app path (`DESK
 
 Swift tests (full Xcode): after the XCFramework exists, `cd native && swift test -c release`.
 
-Status-item chip harness (no XCTest — remaining% / dual-bucket / multi-provider parity):
+### Automated testing (macOS Desktop)
+
+OpenUsage/CodexBar **limits-only** display matrix + architecture gates:
 
 ```bash
-cd native && swift run -c release StatusItemChipHarness
+# Canonical (host nextest + three pure Swift harnesses; no full Xcode required)
+mise run desktop-test
+# or: cargo xtask desktop test
+
+# Individual harnesses (after XCFramework exists)
+cd native
+swift run -c release StatusItemChipHarness        # multi-provider chips, dual-bucket, depleted
+swift run -c release DesktopArchitectureLint      # bans Swift-composed usage tokens on UI sources
+swift run -c release DesktopParityMatrixHarness   # full 8-surface displayable matrix vs OpenUsage/CodexBar
+
+# Full XCTest suite (requires full Xcode, not Command Line Tools alone)
+swift test -c release
 ```
 
-Default status-item display is **all enabled providers** (icon + **remaining %**, OpenUsage-style; strip cap default 8). Empty data shows `—`. Settings → Percent style can flip compact + chip lines to **% used**.
+Default status-item display is **all enabled providers** (icon + **remaining %**, OpenUsage-style; strip cap default 8). Empty data shows `—`. Settings → Percent style can flip compact + chip lines to **% used**. **Never** token unit prices or historical usage trends.
 
 | Operator entry | Rust implementation |
 |---|---|

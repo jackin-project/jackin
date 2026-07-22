@@ -112,6 +112,10 @@ arg "<app>" help="Path to JackinDesktop.app" default="native/dist/JackinDesktop.
 '''
 run = 'cargo xtask desktop verify "$usage_app"'
 
+[tasks.desktop-test]
+description = "Host + pure Swift OpenUsage/CodexBar limits-only parity harnesses for Desktop"
+run = "cargo xtask desktop test"
+
 [tasks.desktop-run]
 description = "Launch JackinDesktop.app (menu bar only — no Dock icon)"
 usage = '''

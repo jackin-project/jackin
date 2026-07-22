@@ -102,6 +102,21 @@ public struct StatusItemChip: Identifiable, Equatable, Sendable {
     }
 }
 
+/// Frozen host surface ids in catalog order (matches Rust `HostSurfaceId::ALL`).
+///
+/// OpenUsage/CodexBar-style multi-provider strip must be able to show each of
+/// these when enabled — never Cursor/Gemini/Copilot.
+public let frozenHostSurfaceIds: [String] = [
+    "claude",
+    "codex",
+    "amp",
+    "grok",
+    "zai",
+    "kimi",
+    "minimax",
+    "opencode",
+]
+
 /// SF Symbol for a known host surface id (status-item / tile layout only).
 ///
 /// Every frozen host surface has a distinct mark so the OpenUsage-style strip
@@ -118,6 +133,11 @@ public func statusItemSystemImage(surfaceId: String) -> String? {
     case "opencode": return "chevron.left.forwardslash.chevron.right"
     default: return nil
     }
+}
+
+/// Whether every frozen host surface has a status-item system image (displayable strip).
+public func allFrozenHostSurfacesHaveSystemImages() -> Bool {
+    frozenHostSurfaceIds.allSatisfy { statusItemSystemImage(surfaceId: $0) != nil }
 }
 
 /// Stable two-letter mark when SF Symbol is unavailable (matches Rust compact prefixes).
