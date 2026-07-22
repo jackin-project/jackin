@@ -235,91 +235,82 @@ struct PopoverRoot: View {
     }
 
     private func providerDetail(_ surface: PresentationStore.SurfaceRow) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            // Account pill (CodexBar multi-account strip — single pill when one account).
-            if let account = accountDisplay(surface) {
-                accountPill(account)
-            }
+        // CodexBar Amp-style detail: identity header, stacked metric sections, menu below.
+        VStack(alignment: .leading, spacing: 0) {
+            identityHeader(surface)
+                .padding(.bottom, 10)
 
-            // Identity two-column (name/account · updated/plan).
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(alignment: .firstTextBaseline) {
-                    Text(surface.label)
-                        .font(.title3.weight(.semibold))
-                    Spacer(minLength: 8)
-                    if let account = accountDisplay(surface) {
-                        Text(account)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                    }
+            Divider().opacity(0.3)
+
+            VStack(alignment: .leading, spacing: 14) {
+                ForEach(surface.buckets) { bucket in
+                    metricBlock(bucket)
+                    Divider().opacity(0.2)
                 }
-                HStack {
-                    Text(surface.updatedLabel.isEmpty ? "—" : surface.updatedLabel)
+
+                if surface.buckets.isEmpty {
+                    emptyMetric()
+                    Divider().opacity(0.2)
+                }
+
+                moneyGrid(surface)
+
+                if let caption = surface.estimateCaption, !caption.isEmpty {
+                    Text(caption)
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                if let err = surface.lastError, !err.isEmpty {
+                    Text(err)
                         .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                    if let plan = surface.planLabel, !plan.isEmpty {
-                        Text(plan)
-                            .font(.caption.weight(.medium))
-                            .foregroundStyle(.secondary)
-                    }
+                        .foregroundStyle(.orange)
                 }
             }
-
-            Divider().opacity(0.25)
-
-            ForEach(surface.buckets) { bucket in
-                metricBlock(bucket)
-            }
-
-            if surface.buckets.isEmpty {
-                emptyMetric()
-            }
-
-            // statusSlot rows (e.g. reset-credits style captions from Rust).
-            ForEach(statusSlotRows(surface), id: \.self) { slot in
-                Text(slot)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            moneyGrid(surface)
-
-            if let caption = surface.estimateCaption, !caption.isEmpty {
-                Text(caption)
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            if let err = surface.lastError, !err.isEmpty {
-                Text(err)
-                    .font(.caption)
-                    .foregroundStyle(.orange)
-            }
-
-            if let origin = surface.credentialOrigin, !origin.isEmpty {
-                Text("Auth: \(origin)")
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-            }
+            .padding(.top, 12)
 
             Button {
                 store.selectUsageSurface(surface.id)
                 openWindow(id: "usage")
             } label: {
                 HStack {
-                    Text("Open full usage")
+                    Label("Open full usage", systemImage: "arrow.up.right.square")
                     Spacer()
-                    Image(systemName: "chevron.right")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.tertiary)
                 }
                 .font(.body)
-                .padding(.top, 2)
+                .padding(.top, 8)
             }
             .buttonStyle(.plain)
+        }
+    }
+
+    /// CodexBar two-column identity: name/account · updated/plan (no multi-account pills in v1).
+    private func identityHeader(_ surface: PresentationStore.SurfaceRow) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(surface.label)
+                    .font(.title3.weight(.semibold))
+                Spacer(minLength: 8)
+                if let account = accountDisplay(surface) {
+                    Text(account)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+            }
+            HStack {
+                Text(surface.updatedLabel.isEmpty ? "—" : surface.updatedLabel)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                if let plan = surface.planLabel, !plan.isEmpty {
+                    Text(plan)
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.secondary)
+                }
+            }
         }
     }
 
@@ -329,30 +320,10 @@ struct PopoverRoot: View {
         return nil
     }
 
-    private func accountPill(_ account: String) -> some View {
-        Text(account)
-            .font(.caption.weight(.semibold))
-            .padding(.horizontal, 10)
-            .padding(.vertical, 5)
-            .background {
-                Capsule().fill(Color.accentColor)
-            }
-            .foregroundStyle(.white)
-            .lineLimit(1)
-            .accessibilityLabel("Account \(account)")
-    }
-
-    private func statusSlotRows(_ surface: PresentationStore.SurfaceRow) -> [String] {
-        surface.buckets.compactMap { bucket in
-            guard let slot = bucket.statusSlot, !slot.isEmpty else { return nil }
-            return slot
-        }
-    }
-
     private func metricBlock(_ bucket: PresentationStore.BucketRow) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
+        VStack(alignment: .leading, spacing: 6) {
             Text(bucket.label)
-                .font(.subheadline.weight(.semibold))
+                .font(.body.weight(.semibold))
 
             switch bucketRowShape(
                 remainingPercent: bucket.remainingPercent,
@@ -362,7 +333,6 @@ struct PopoverRoot: View {
                 if let remaining = bucket.remainingPercent {
                     remainingBar(remaining: remaining, severity: bucket.severity)
                 }
-                // Primary captions: used/left · reset (CodexBar).
                 HStack(alignment: .firstTextBaseline) {
                     Text(bucket.usedLabel ?? "—")
                         .font(.caption)
@@ -376,7 +346,6 @@ struct PopoverRoot: View {
                             .foregroundStyle(.secondary)
                     }
                 }
-                // Secondary pace row (reserve / lasts-until) when Rust provides it.
                 if let pace = bucket.paceLabel, !pace.isEmpty {
                     Text(pace)
                         .font(.caption2)
@@ -384,20 +353,17 @@ struct PopoverRoot: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             case .valueOnly:
-                HStack {
-                    Text(bucket.usedLabel ?? "—")
+                // Credits-style: description under title (limit/statusSlot), value captions.
+                if let desc = bucket.limitLabel ?? bucket.statusSlot, !desc.isEmpty {
+                    Text(desc)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                if let used = bucket.usedLabel, !used.isEmpty {
+                    Text(used)
                         .font(.caption.monospacedDigit())
                         .foregroundStyle(.secondary)
-                    Spacer()
-                    if let limit = bucket.limitLabel, !limit.isEmpty {
-                        Text(limit)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    } else if let reset = bucket.resetLabel {
-                        Text(reset)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
                 }
             case .empty:
                 emptyMetric()
