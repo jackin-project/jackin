@@ -110,6 +110,27 @@ final class ArchitectureTests: XCTestCase {
         XCTAssertNil(statusBadgeSymbol("fresh"))
     }
 
+    func testStatusItemChipHelpers() {
+        let drive = drivingBucketForStatusItem(
+            remainingAndSeverity: [
+                (remaining: 63, severity: "ok"),
+                (remaining: 12, severity: "danger"),
+                (remaining: 41, severity: "warn"),
+            ]
+        )
+        XCTAssertEqual(drive?.remaining, 12)
+        XCTAssertEqual(drive?.severity, "danger")
+        XCTAssertEqual(statusItemUsedFraction(remainingPercent: 63), 0.37, accuracy: 0.001)
+        XCTAssertEqual(statusItemUsedFraction(remainingPercent: 100), 0.0, accuracy: 0.001)
+        XCTAssertEqual(statusItemUsedFraction(remainingPercent: 0), 1.0, accuracy: 0.001)
+        XCTAssertEqual(statusItemPercentToken(remainingPercent: 79), "79%")
+        XCTAssertEqual(statusItemGlyph(compactLabel: "Cl 63%", surfaceId: "claude"), "Cl")
+        XCTAssertEqual(
+            statusItemPercentLines(remainings: [100, 79, 12], maxLines: 2),
+            ["100%", "79%"]
+        )
+    }
+
     func testPackageSwiftUsesBinaryTargetNotHostDylib() throws {
         let package = sourcesRoot
             .deletingLastPathComponent()
