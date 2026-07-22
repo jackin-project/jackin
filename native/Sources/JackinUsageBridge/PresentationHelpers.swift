@@ -103,6 +103,9 @@ public struct StatusItemChip: Identifiable, Equatable, Sendable {
 }
 
 /// SF Symbol for a known host surface id (status-item / tile layout only).
+///
+/// Every frozen host surface has a distinct mark so the OpenUsage-style strip
+/// always shows a provider icon even when the compact glyph is empty.
 public func statusItemSystemImage(surfaceId: String) -> String? {
     switch surfaceId {
     case "claude": return "sparkles"
@@ -114,6 +117,26 @@ public func statusItemSystemImage(surfaceId: String) -> String? {
     case "minimax": return "waveform.path"
     case "opencode": return "chevron.left.forwardslash.chevron.right"
     default: return nil
+    }
+}
+
+/// Stable two-letter mark when SF Symbol is unavailable (matches Rust compact prefixes).
+public func statusItemFallbackGlyph(surfaceId: String) -> String {
+    switch surfaceId {
+    case "claude": return "Cl"
+    case "codex": return "Cx"
+    case "amp": return "Am"
+    case "grok": return "Gr"
+    case "zai": return "ZA"
+    case "kimi": return "Ki"
+    case "minimax": return "MM"
+    case "opencode": return "OC"
+    default:
+        let idLetters = surfaceId.filter(\.isLetter)
+        if idLetters.count >= 2 {
+            return String(idLetters.prefix(2)).uppercased()
+        }
+        return "j"
     }
 }
 
@@ -184,19 +207,20 @@ public func bucketPrimaryPercentLabel(
 }
 
 /// Glyph for the menu-bar strip from Rust compact label (`Cl 37%` → `Cl`).
+///
+/// Falls back to the frozen-host two-letter mark so every provider keeps an identity
+/// mark next to remaining % (OpenUsage strip).
 public func statusItemGlyph(compactLabel: String, surfaceId: String) -> String {
+    // Prefer compact-prefix letters only when the label looks like `Cl 37%` / `Cl resets…`
+    // (short letter run), not long status phrases.
     let letters = compactLabel.filter(\.isLetter)
-    if letters.count >= 2 {
+    if letters.count >= 2, letters.count <= 3 {
         return String(letters.prefix(2))
     }
     if letters.count == 1 {
         return String(letters)
     }
-    let idLetters = surfaceId.filter(\.isLetter)
-    if idLetters.count >= 2 {
-        return String(idLetters.prefix(2)).uppercased()
-    }
-    return "j"
+    return statusItemFallbackGlyph(surfaceId: surfaceId)
 }
 
 /// Up to two short percent lines from numeric remaining values (OpenUsage stack).
@@ -319,11 +343,13 @@ public func statusItemChipDisplayLines(
     return lines
 }
 
-/// Build CodexBar-style per-provider chips from pure snapshots (unit-testable).
+/// Build OpenUsage/CodexBar-style per-provider chips from pure snapshots (unit-testable).
 ///
 /// - Catalog order when `preferWorstFirst` is false.
 /// - Lowest remaining first when true (focus mode).
-/// - Hides surfaces without preview data; never invents percents.
+/// - `includeAllEnabled`: strip mode shows **every enabled** host surface (icon always),
+///   with remaining % when Rust supplies it; empty data shows `—` (never invents %).
+/// - Otherwise hides surfaces without preview data.
 /// - `percentStyle` (`left`/`used`) shapes stacked percent lines to match
 ///   Rust compact labels (OpenUsage remaining default).
 /// - Depleted + reset countdown prefers Rust compact over bare `0%`.
@@ -331,10 +357,15 @@ public func buildStatusItemChips(
     surfaces: [StatusItemSurfaceSnapshot],
     maxCount: Int,
     preferWorstFirst: Bool,
-    percentStyle: String = "left"
+    percentStyle: String = "left",
+    includeAllEnabled: Bool = false
 ) -> [StatusItemChip] {
     let cap = max(1, min(8, maxCount))
-    var candidates = surfaces.filter(\.hasPreviewData)
+    var candidates = surfaces.filter { surface in
+        guard surface.enabled else { return false }
+        if includeAllEnabled { return true }
+        return surface.hasPreviewData
+    }
     if preferWorstFirst {
         candidates.sort { lhs, rhs in
             let l = lhs.drivingRemaining ?? 100
@@ -351,23 +382,33 @@ public func buildStatusItemChips(
             : (!surface.statusBarLabel.isEmpty ? surface.statusBarLabel : surface.label)
         let remainings = Array(surface.remainings.prefix(2))
         let lineSeverities = Array(surface.severities.prefix(remainings.count))
-        let lines = statusItemChipDisplayLines(
-            remainings: remainings,
-            compactLabel: compact,
-            percentStyle: percentStyle,
-            maxLines: 2
-        )
+        let lines: [String]
+        if remainings.isEmpty {
+            // Honest placeholder — never invent a percent.
+            lines = includeAllEnabled ? ["—"] : []
+        } else {
+            lines = statusItemChipDisplayLines(
+                remainings: remainings,
+                compactLabel: compact,
+                percentStyle: percentStyle,
+                maxLines: 2
+            )
+        }
+        let displayCompact =
+            remainings.isEmpty && includeAllEnabled
+            ? "\(statusItemFallbackGlyph(surfaceId: surface.surfaceId)) —"
+            : compact
         chips.append(
             StatusItemChip(
                 surfaceId: surface.surfaceId,
                 glyph: statusItemGlyph(compactLabel: compact, surfaceId: surface.surfaceId),
                 systemImage: statusItemSystemImage(surfaceId: surface.surfaceId),
                 percentLines: lines,
-                compactLabel: compact,
+                compactLabel: displayCompact.isEmpty ? surface.label : displayCompact,
                 remainingPercent: surface.drivingRemaining,
                 remainingPerLine: remainings,
-                severityPerLine: lineSeverities,
-                severity: surface.drivingSeverity
+                severityPerLine: lineSeverities.isEmpty ? ["ok"] : lineSeverities,
+                severity: remainings.isEmpty ? "ok" : surface.drivingSeverity
             )
         )
     }

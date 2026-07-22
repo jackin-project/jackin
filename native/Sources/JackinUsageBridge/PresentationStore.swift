@@ -195,8 +195,8 @@ public final class PresentationStore: ObservableObject {
             self.displayMode = .strip
         }
         self.pinnedSurfaceId = defaults.string(forKey: Self.pinnedSurfaceKey) ?? ""
-        // Default cap 6 so several agents preview in the menu bar (CodexBar-style).
-        let strip = defaults.object(forKey: Self.stripMaxKey) as? Int ?? 6
+        // Default cap 8 = full frozen host catalog (OpenUsage: every enabled provider).
+        let strip = defaults.object(forKey: Self.stripMaxKey) as? Int ?? 8
         self.stripMax = max(1, min(8, strip))
         let percent = defaults.string(forKey: Self.percentStyleKey) ?? "left"
         self.percentStyle = (percent == "used") ? "used" : "left"
@@ -540,7 +540,10 @@ public final class PresentationStore: ObservableObject {
         return [makeChip(row: row, compactLabel: label)]
     }
 
-    /// One status-item chip per enabled provider that has usage data (CodexBar preview).
+    /// One status-item chip per enabled provider (OpenUsage strip: icon + remaining %).
+    ///
+    /// Strip mode includes all enabled hosts (cap `maxCount`); focus mode only those
+    /// with numeric remaining / preview data, worst-first.
     private func chipsForProviderPreview(maxCount: Int, preferWorstFirst: Bool) throws
         -> [StatusItemChip]
     {
@@ -549,7 +552,9 @@ public final class PresentationStore: ObservableObject {
             surfaces: snaps,
             maxCount: maxCount,
             preferWorstFirst: preferWorstFirst,
-            percentStyle: percentStyle
+            percentStyle: percentStyle,
+            // Catalog strip: show every enabled provider icon; focus: data only.
+            includeAllEnabled: !preferWorstFirst
         )
     }
 

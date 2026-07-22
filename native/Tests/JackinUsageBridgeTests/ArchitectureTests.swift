@@ -221,10 +221,30 @@ final class ArchitectureTests: XCTestCase {
             surfaces: surfaces,
             maxCount: 6,
             preferWorstFirst: false,
-            percentStyle: "left"
+            percentStyle: "left",
+            includeAllEnabled: false
         )
         // Amp empty/unavailable and disabled Grok hidden; Claude + Codex only.
         XCTAssertEqual(chips.map(\.surfaceId), ["claude", "codex"])
+
+        let openUsageStrip = buildStatusItemChips(
+            surfaces: surfaces,
+            maxCount: 8,
+            preferWorstFirst: false,
+            percentStyle: "left",
+            includeAllEnabled: true
+        )
+        // Enabled amp (no data) appears with "—"; disabled grok still hidden.
+        XCTAssertEqual(openUsageStrip.map(\.surfaceId), ["claude", "codex", "amp"])
+        XCTAssertEqual(
+            openUsageStrip.first(where: { $0.surfaceId == "amp" })?.percentLines,
+            ["—"]
+        )
+        XCTAssertNotNil(openUsageStrip.first(where: { $0.surfaceId == "claude" })?.systemImage)
+        XCTAssertEqual(
+            openUsageStrip.first(where: { $0.surfaceId == "claude" })?.percentLines,
+            ["100%", "79%"]
+        )
         XCTAssertEqual(chips[0].percentLines, ["100%", "79%"])
         XCTAssertEqual(chips[0].remainingPerLine, [100, 79])
         XCTAssertEqual(chips[0].remainingPercent, 79)

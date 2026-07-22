@@ -15,13 +15,18 @@ struct SettingsView: View {
         Form {
             Section("Menu bar") {
                 Picker("Display", selection: $store.displayMode) {
-                    Text("Per-provider strip (CodexBar-style)").tag(StatusItemDisplayMode.strip)
+                    Text("All providers (icon + remaining %)").tag(StatusItemDisplayMode.strip)
                     Text("Worst provider only").tag(StatusItemDisplayMode.focusPercent)
                     Text("Pinned provider").tag(StatusItemDisplayMode.pinnedSurface)
                     Text("Icon only").tag(StatusItemDisplayMode.iconOnly)
                 }
                 .pickerStyle(.radioGroup)
                 .accessibilityLabel("Status item display mode")
+                if store.displayMode == .strip {
+                    Text("OpenUsage-style: one icon and available-token % per enabled agent.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
 
                 if store.displayMode == .pinnedSurface {
                     Picker("Pinned provider", selection: $store.pinnedSurfaceId) {
@@ -34,9 +39,9 @@ struct SettingsView: View {
                 }
 
                 if store.displayMode == .strip {
-                    Picker("Providers in menu bar", selection: $store.stripMax) {
+                    Picker("Max providers in menu bar", selection: $store.stripMax) {
                         ForEach(1...8, id: \.self) { n in
-                            Text("\(n)").tag(n)
+                            Text(n == 8 ? "8 (all)" : "\(n)").tag(n)
                         }
                     }
                     .accessibilityLabel("Maximum providers shown in menu bar strip")

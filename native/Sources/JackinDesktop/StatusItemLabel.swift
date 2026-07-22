@@ -5,15 +5,16 @@ import AppKit
 import JackinUsageBridge
 import SwiftUI
 
-/// Menu-bar status item — **CodexBar-style per-provider usage preview**.
+/// Menu-bar status item — **OpenUsage-style multi-provider usage strip**.
 ///
-/// One chip per enabled provider with data: icon/glyph + stacked short percents
-/// (session/weekly). Clean-room look-and-feel; remainings from Rust only.
+/// One chip per enabled provider (up to strip cap): **provider icon + remaining %**
+/// (stacked session/weekly when Rust supplies dual buckets). Clean-room layout;
+/// remainings from Rust only — never invents percentages.
 struct StatusItemLabel: View {
     @ObservedObject var store: PresentationStore
 
     var body: some View {
-        HStack(spacing: 7) {
+        HStack(spacing: 6) {
             if store.statusItemChips.isEmpty {
                 statusIcon
                     .opacity(itemOpacity)
@@ -24,7 +25,7 @@ struct StatusItemLabel: View {
                         .opacity(itemOpacity)
                 }
             } else {
-                // Per-provider preview strip (CodexBar).
+                // OpenUsage: [icon 99%/63%] [icon 100%/81%] … for each provider.
                 ForEach(store.statusItemChips) { chip in
                     StatusItemChipView(chip: chip)
                         .opacity(itemOpacity)
@@ -71,7 +72,9 @@ struct StatusItemLabel: View {
         return "jackin Desktop"
     }
 
-    static let chipFont = Font.system(size: 10, weight: .semibold, design: .rounded)
+    /// Slightly larger than 10pt so stacked remaining % stays readable in the menu bar.
+    static let chipFont = Font.system(size: 11, weight: .semibold, design: .rounded)
+    static let dualFont = Font.system(size: 10, weight: .semibold, design: .rounded)
 
     private static func loadLogomark() -> NSImage? {
         let bundle = Bundle.module
@@ -86,7 +89,10 @@ struct StatusItemLabel: View {
     }
 }
 
-/// One provider chip: icon + stacked percents (and optional mini remaining bars).
+/// One provider chip: **icon + available-token %** (OpenUsage density).
+///
+/// Dual-bucket remainings stack as two short percent lines; depleted driving
+/// windows may show a Rust reset countdown instead of bare `0%`.
 private struct StatusItemChipView: View {
     let chip: StatusItemChip
 
@@ -100,43 +106,47 @@ private struct StatusItemChipView: View {
                     .monospacedDigit()
                     .foregroundStyle(severityTint(chip.severity))
                     .lineLimit(1)
+            } else if chip.percentLines.count == 1 {
+                // Single window: larger remaining % next to the icon.
+                Text(chip.percentLines[0])
+                    .font(StatusItemLabel.chipFont)
+                    .monospacedDigit()
+                    .foregroundStyle(severityTint(chip.severity))
+                    .lineLimit(1)
             } else {
-                VStack(alignment: .trailing, spacing: 1) {
+                // Dual stack (session / weekly remaining) — OpenUsage menubar.
+                VStack(alignment: .trailing, spacing: 0) {
                     ForEach(Array(chip.percentLines.enumerated()), id: \.offset) { index, line in
                         let lineSeverity =
                             index < chip.severityPerLine.count
                             ? chip.severityPerLine[index]
                             : chip.severity
-                        HStack(spacing: 2) {
-                            if index < chip.remainingPerLine.count {
-                                miniBar(
-                                    remaining: chip.remainingPerLine[index],
-                                    severity: lineSeverity
-                                )
-                            }
-                            Text(line)
-                                .font(StatusItemLabel.chipFont)
-                                .monospacedDigit()
-                                .foregroundStyle(severityTint(lineSeverity))
-                                .lineLimit(1)
-                        }
+                        Text(line)
+                            .font(StatusItemLabel.dualFont)
+                            .monospacedDigit()
+                            .foregroundStyle(severityTint(lineSeverity))
+                            .lineLimit(1)
                     }
                 }
             }
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(chip.compactLabel)
+        .accessibilityLabel(
+            chip.percentLines.isEmpty
+                ? chip.compactLabel
+                : "\(chip.glyph) \(chip.percentLines.joined(separator: " "))"
+        )
     }
 
     @ViewBuilder
     private var providerMark: some View {
         ZStack {
             Circle()
-                .fill(severityTint(chip.severity).opacity(0.22))
-                .frame(width: 15, height: 15)
+                .fill(severityTint(chip.severity).opacity(0.28))
+                .frame(width: 16, height: 16)
             if let systemImage = chip.systemImage {
                 Image(systemName: systemImage)
-                    .font(.system(size: 8, weight: .bold))
+                    .font(.system(size: 9, weight: .bold))
                     .foregroundStyle(severityTint(chip.severity))
             } else {
                 Text(chip.glyph)
@@ -144,20 +154,5 @@ private struct StatusItemChipView: View {
                     .foregroundStyle(.primary)
             }
         }
-    }
-
-    private func miniBar(remaining: UInt8, severity: String) -> some View {
-        let frac = Double(remaining) / 100.0
-        return GeometryReader { geo in
-            ZStack(alignment: .leading) {
-                Capsule()
-                    .fill(Color.primary.opacity(0.15))
-                Capsule()
-                    .fill(severityTint(severity))
-                    .frame(width: max(1.5, geo.size.width * frac))
-            }
-        }
-        .frame(width: 12, height: 3)
-        .accessibilityHidden(true)
     }
 }

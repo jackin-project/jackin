@@ -57,7 +57,7 @@ Status-item chip harness (no XCTest — remaining% / dual-bucket / multi-provide
 cd native && swift run -c release StatusItemChipHarness
 ```
 
-Default status-item display is **per-provider strip** with **remaining %** (`% left`). Settings → Percent style can flip compact + chip lines to **% used**.
+Default status-item display is **all enabled providers** (icon + **remaining %**, OpenUsage-style; strip cap default 8). Empty data shows `—`. Settings → Percent style can flip compact + chip lines to **% used**.
 
 | Operator entry | Rust implementation |
 |---|---|

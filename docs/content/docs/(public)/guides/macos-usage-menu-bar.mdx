@@ -107,11 +107,11 @@ All numbers and labels are the same Rust views the Capsule usage dialog uses.
 
 ## Menu bar appearance
 
-CodexBar-style **per-provider** menu-bar strip (clean-room): one chip per enabled agent with data — provider glyph + stacked short percents (session/weekly **remainings** from Rust by default). Empty providers stay hidden. Mini bars and percent text use per-bucket severity tints.
+OpenUsage-style **per-provider** menu-bar strip (clean-room): **one chip per enabled agent** — provider icon + **available-token remaining %** (stacked session/weekly when Rust supplies dual buckets). Providers without numeric data yet show the icon with `—` (never invents a percent). Disabled agents stay hidden. Percent text uses per-bucket severity tints.
 
 Settings **Display** mode:
 
-- **Per-provider strip** (default) — up to N agents (default 6) in catalog order
+- **All providers (icon + remaining %)** (default) — up to N agents (default **8 = full catalog**) in catalog order
 - **Worst provider only** — single chip for the lowest remaining account
 - **Pinned provider** — one surface’s chip only
 - **Icon only** — logomark alone

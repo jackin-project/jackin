@@ -166,13 +166,49 @@ struct StatusItemChipHarness {
             surfaces: surfaces,
             maxCount: 8,
             preferWorstFirst: false,
-            percentStyle: "left"
+            percentStyle: "left",
+            includeAllEnabled: false
         )
         let ids = chips.map(\.surfaceId)
         check(
-            "hides empty/disabled",
+            "hides empty/disabled without includeAll",
             ids == ["claude", "codex", "zai", "kimi", "minimax", "opencode"],
             "ids=\(ids)"
+        )
+
+        // OpenUsage strip: every enabled provider gets icon + remaining% or "—".
+        let allEnabled = buildStatusItemChips(
+            surfaces: surfaces,
+            maxCount: 8,
+            preferWorstFirst: false,
+            percentStyle: "left",
+            includeAllEnabled: true
+        )
+        check(
+            "includeAllEnabled shows amp unavailable",
+            allEnabled.map(\.surfaceId).contains("amp"),
+            "ids=\(allEnabled.map(\.surfaceId))"
+        )
+        check(
+            "includeAllEnabled hides disabled grok",
+            !allEnabled.map(\.surfaceId).contains("grok")
+        )
+        if let amp = allEnabled.first(where: { $0.surfaceId == "amp" }) {
+            check(
+                "amp empty shows placeholder not invented %",
+                amp.percentLines == ["—"] && amp.systemImage != nil,
+                "lines=\(amp.percentLines) icon=\(amp.systemImage ?? "nil")"
+            )
+        } else {
+            check("amp present for placeholder check", false)
+        }
+        check(
+            "every chip has icon or glyph",
+            allEnabled.allSatisfy { $0.systemImage != nil || !$0.glyph.isEmpty }
+        )
+        check(
+            "data providers still show remaining %",
+            allEnabled.first(where: { $0.surfaceId == "codex" })?.percentLines == ["84%"]
         )
         check(
             "claude dual remaining stack",
