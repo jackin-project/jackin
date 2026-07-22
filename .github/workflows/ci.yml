@@ -710,18 +710,6 @@ jobs:
         uses: ./.github/actions/cache-cargo-registry
         with:
           contract-key: ${{ needs.changes.outputs.registry-contract }}
-      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-        if: steps.ci-xtask-artifact.outputs.hit != 'true'
-        with:
-          shared-key: ci-xtask-dev-v1
-          cache-all-crates: "false"
-          cache-workspace-crates: "false"
-          env-vars: "CARGO CARGO_TARGET_DIR RUSTFLAGS RUSTDOC RUSTUP"
-          save-if: >-
-            ${{ github.ref == 'refs/heads/main' ||
-                github.event_name == 'workflow_dispatch' ||
-                (github.event_name == 'pull_request' &&
-                 github.event.pull_request.head.repo.full_name == github.repository) }}
       - name: Build shared CI xtask
         if: steps.ci-xtask-artifact.outputs.hit != 'true'
         env:
@@ -1042,12 +1030,6 @@ jobs:
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
-      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-        with:
-          shared-key: ci-telemetry-conformance-workspace-v3
-          cache-all-crates: "true"
-          cache-workspace-crates: "true"
-          env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTFLAGS RUSTDOC RUSTUP"
       - name: Run OTLP receiver and detector self-tests
         run: cargo nextest run -p jackin-otlp-testbed --locked
       - name: Run exporter-backed conformance matrix
