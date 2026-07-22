@@ -56,3 +56,35 @@ fn sibling_suffix_preserves_archive_extension() {
         PathBuf::from("jackin.tar.gz.bundle")
     );
 }
+
+#[test]
+fn sibling_suffix_works_for_zip_release_archives() {
+    assert_eq!(
+        sibling_with_suffix(
+            Path::new("jackin-desktop-1.0.0-aarch64-apple-darwin.zip"),
+            "sha256"
+        ),
+        PathBuf::from("jackin-desktop-1.0.0-aarch64-apple-darwin.zip.sha256")
+    );
+    assert_eq!(
+        sibling_with_suffix(
+            Path::new("jackin-desktop-1.0.0-aarch64-apple-darwin.zip"),
+            "sbom.json"
+        ),
+        PathBuf::from("jackin-desktop-1.0.0-aarch64-apple-darwin.zip.sbom.json")
+    );
+}
+
+#[test]
+fn accepts_matching_sha256_for_zip_bytes() {
+    let temp = tempfile::tempdir().unwrap();
+    let archive = temp.path().join("app.zip");
+    let sidecar = sibling_with_suffix(&archive, "sha256");
+    fs::write(&archive, b"zip-bytes").unwrap();
+    let digest = {
+        use sha2::{Digest, Sha256};
+        hex::encode(Sha256::digest(b"zip-bytes"))
+    };
+    fs::write(&sidecar, format!("{digest}\n")).unwrap();
+    verify_sha256_file(&archive, &sidecar).unwrap();
+}

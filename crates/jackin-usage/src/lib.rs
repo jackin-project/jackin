@@ -2,7 +2,9 @@
 //!
 //! **Architecture Invariant:** T3.
 //! Entry point: [`UsageTotals`] — usage aggregation surface.
+//! Host menu-bar / CLI: [`host::HostUsageRuntime`] (Capsule-free).
 
+pub mod host;
 pub mod logging;
 pub mod output;
 mod process_telemetry;

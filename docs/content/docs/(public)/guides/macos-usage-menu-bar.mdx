@@ -1,0 +1,157 @@
+---
+title: "macOS agent-usage menu bar"
+description: "Install and use jackin❯ Desktop for host account quotas without an open Capsule."
+---
+
+**jackin❯ Desktop** shows **usage limits** (remaining/used quota %, reset countdowns, plan/status) for every jackin❯-supported agent surface — **without** requiring a running Capsule session. It does **not** show token unit prices or historical usage/spend trends.
+
+On **macOS 26+** the glance popover, Usage sidebar/toolbar, and menu-bar chips use Apple **Liquid Glass** for navigation chrome only; usage cards and detail stay on standard materials so content stays legible (HIG). Older macOS uses system materials.
+
+## What it shows
+
+Only agents jackin❯ provisions (`claude`, `codex`, `amp`, `kimi`, `opencode`, `grok`) plus existing routed usage surfaces (**Z.AI / GLM**, **MiniMax**). It never grows a CodexBar-style provider zoo (no Cursor, Gemini, Copilot, …).
+
+Numbers come from the same Rust stack Capsule uses (`jackin-usage` + `jackin-protocol` views). Swift is display-only.
+
+## Install
+
+### Homebrew cask (stable)
+
+Once a notarized release ships:
+
+```bash
+brew install --cask jackin-project/tap/jackin-desktop
+```
+
+That installs `JackinDesktop.app` from the immutable GitHub Release ZIP. Floor: **macOS 14 (Sonoma)+**. Uninstall: `brew uninstall --cask jackin-desktop` (removes the app; no root daemon or LaunchDaemon).
+
+### Direct download
+
+Download `jackin-desktop-<VERSION>-aarch64-apple-darwin.zip` plus `.sha256` / `.bundle` / `.sbom.json` from the [GitHub Releases](https://github.com/jackin-project/jackin/releases) page, verify with `cargo xtask release-verify <zip>`, then open the app. See [Verifying releases](/getting-started/verifying-releases/).
+
+### Local developer build
+
+```bash
+mise install
+
+# Build + verify + launch (one shot)
+mise run desktop
+
+# Or step by step — each step prints the absolute app path
+mise run desktop-build -- 0.6.0 1   # ends with DESKTOP_APP=/…/JackinDesktop.app
+mise run desktop-verify
+mise run desktop-run                # launches the menu-bar app
+
+# cargo equivalents
+# cargo xtask desktop build --version 0.6.0 --build 1
+# cargo xtask desktop verify
+# cargo xtask desktop run
+```
+
+Default bundle: `native/dist/JackinDesktop.app`. The app is an **`LSUIElement`** process (no Dock icon — look at the menu bar). Quit: `osascript -e 'quit app "Jackin Desktop"'` or `killall JackinDesktop`. Uninstall: quit and delete the `.app` bundle. No root daemon is installed.
+
+### Local notarization rehearsal (operators)
+
+Requires a Developer ID Application identity and notarytool credentials (keychain profile or App Store Connect API key):
+
+```bash
+export DEVELOPER_ID_APPLICATION='Developer ID Application: Your Name (TEAMID)'
+export NOTARY_PROFILE=jackin-notary
+export JACKIN_APP_VERSION=0.6.0 JACKIN_APP_BUILD=1
+mise run desktop-build -- 0.6.0 1
+mise run desktop-sign-notarize
+```
+
+CI publishes the stapled ZIP from the **`release-macos`** environment on tag/`publish` mode (secret names only: see `native/README.md`).
+
+## Credentials (host)
+
+Probes read the **same host logins** operators already use for jackin❯ launch (home agent dirs and env keys first; container handoff paths only as last resort). See [ADR-011](/reference/adrs/adr-011-native-macos-usage-menu-bar/).
+
+| Surface | Typical host roots |
+|---|---|
+| Claude | `~/.claude/.credentials.json`, `ANTHROPIC_*` |
+| Codex | `~/.codex/auth.json` |
+| Amp / Grok / Kimi / OpenCode | respective home secrets |
+| Z.AI / MiniMax | `ZAI_API_KEY` / `MINIMAX_*` env |
+
+No passwords are stored by the menu bar app. It reuses local sessions/keys already present for jackin❯.
+
+## Debug CLI (no UI)
+
+```bash
+jackin usage host snapshot --agent claude
+jackin usage host snapshot --agent codex --format json
+jackin usage host snapshot --agent claude --no-refresh
+```
+
+This drives `HostUsageRuntime` — the same view fields Capsule renders (`status_bar_label`, buckets, Money, honest `unavailable` / `refreshing`).
+
+## Glance popover
+
+Click the status item for a **CodexBar-style Overview** (clean-room layout):
+
+1. **Agent tile grid** at the top — Overview plus every host surface (Claude, Codex, Amp, Grok Build, GLM / Z.AI, Kimi, MiniMax, OpenCode). Enabled tiles can show a short **remaining %** badge under the name; severity underline / tint follows Rust.
+2. **Stacked detail** under the grid — with **Overview** selected, every **enabled** agent’s full quota block is listed (identity, plan/updated, capacity bars, primary **`% left`** / **`% used`**, reset, pace, money when Rust supplies them). Select one agent tile to focus that agent only.
+3. Click an agent header (or Open Usage) to open the **Usage window** on that provider.
+
+Footer actions: **Open Usage…**, **Refresh** (⌘R), **Settings…** (⌘,), **Quit** (⌘Q), plus next-refresh caption. When no surfaces are enabled, the first-run note points you at Settings — there is no credential-harvesting UI.
+
+## Usage window
+
+From the glance popover choose **Open Usage…** or click an agent identity header. A normal resizable window opens:
+
+- **Sidebar** — Overview plus every enabled provider (Capsule tab order) with a severity accent.
+- **Detail** — Overview list shows each agent’s **Session/Weekly remaining stack** (bars + `% left` / `% used` + reset) when Rust has dual buckets; select a provider for the full card (account, plan, auth origin, gauges, pace/money, estimate caption). Settings **Percent style** applies everywhere.
+- **⌘R** refreshes; **Esc** closes; **Settings…** opens Settings. The app stays a status-item process (`LSUIElement` — no Dock icon).
+
+All numbers and labels are the same Rust views the Capsule usage dialog uses.
+
+## Multi-account
+
+jackin❯ Desktop lists **every known account** per provider — the current host login, accounts recorded in the durable menu-bar store after prior logins, and shared usage snapshots written by capsules for other OAuth identities (same `account_key` coordination jackin❯ uses host-wide).
+
+- **Glance + Usage detail** show account **pills** when more than one account is known; selecting a pill switches the card snapshot (selection is persisted).
+- **Status bar** still shows provider remaining for the selected/live account; it never invents a second provider chip from empty data.
+- Probing still uses host credential roots for the live login; additional accounts appear when jackin❯ has already stored or shared their usage views (same model as multi-workspace / multi-login coordination).
+
+## Menu bar appearance
+
+OpenUsage-style **per-provider** menu-bar strip (clean-room): **one chip per enabled agent** — provider icon + **available-token remaining %** (stacked session/weekly when Rust supplies dual buckets). Providers without numeric data yet show the icon with `—` (never invents a percent). Disabled agents stay hidden. Percent text uses per-bucket severity tints.
+
+Settings **Display** mode:
+
+- **All providers (icon + remaining %)** (default) — up to N agents (default **8 = full catalog**) in catalog order
+- **Worst provider only** — single chip for the lowest remaining account
+- **Pinned provider** — one surface’s chip only
+- **Icon only** — logomark alone
+
+Also:
+
+- **Percent style** (Rust-resolved, app-wide): **% left (remaining)** / **% used** — compact labels, chip lines, glance tiles, and card primary lines stay consistent.
+- **Reset style**: **Countdown** / **Exact time**. Depleted driving buckets with a known reset show the Rust countdown on the chip (e.g. `resets 1h 21m` next to the glyph) instead of a bare `0%`.
+- **Hide values while screen sharing** collapses the item to the icon while a share/recording is active (off by default).
+- The strip dims when every enabled surface is stale or unavailable — numbers stay honest and never invent a percent.
+
+## Settings
+
+- **Display** — Per-provider strip / Worst provider only / Pinned provider / Icon only (see Menu bar appearance). Not a single “Show percent” toggle.
+- **Providers in menu bar** — strip cap (1–8) when Per-provider strip is selected.
+- **Pinned provider** — which surface the pinned mode tracks.
+- **Percent style** — `% left (remaining)` (default) or `% used`.
+- **Reset style** — Countdown or Exact time.
+- **Hide values while screen sharing** — optional privacy collapse.
+- Enable/disable **Surfaces** (disabled surfaces leave the bar and refresh set).
+- **Launch at login** — optional; off by default. Uses macOS Login Items (`SMAppService`); if macOS requires approval, open System Settings → General → Login Items.
+- Refresh is owned by Rust (cooldown + floor ≥ 60s).
+
+## Privacy
+
+- Local process; probes use your host credentials and provider APIs the same way Capsule does.
+- Refreshing usage in the menu bar updates the same account snapshot every jackin❯ container reads (and vice versa), so numbers always match across surfaces.
+- No second OAuth client matrix in Swift.
+- Telemetry follows existing jackin❯ policy when the host binary enables it; the menu bar does not invent a parallel sink.
+
+## Architecture
+
+[ADR-011: Native macOS agent-usage menu bar](/reference/adrs/adr-011-native-macos-usage-menu-bar/) · roadmap living plan: [Native macOS agent-usage menu bar](/roadmap/native-macos-usage-menu-bar/).

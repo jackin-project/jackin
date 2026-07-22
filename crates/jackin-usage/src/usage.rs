@@ -125,10 +125,11 @@ pub(crate) use self::refresh::{
     ordered_refresh_targets, parse_retry_after_seconds, read_shared_usage_snapshot,
     record_persist_transition, refresh_interval_for_key, shared_usage_cooldown_active,
     shared_usage_cooldown_dir, shared_usage_cooldown_marker_path, shared_usage_file_path,
-    shared_usage_lock_dir, shared_usage_rate_limit_cooldown_active, shared_usage_snapshot_path,
-    shared_usage_snapshots_dir, usage_backoff_delay, usage_error_is_rate_limited,
-    usage_error_is_unauthorized, usage_rate_limit_delay, write_materialized_usage_accounts,
-    write_shared_usage_cooldown_marker, write_shared_usage_snapshot,
+    shared_usage_lock_dir, shared_usage_rate_limit_cooldown_active, shared_usage_snapshot_mtime,
+    shared_usage_snapshot_path, shared_usage_snapshots_dir, usage_backoff_delay,
+    usage_error_is_rate_limited, usage_error_is_unauthorized, usage_rate_limit_delay,
+    write_materialized_usage_accounts, write_shared_usage_cooldown_marker,
+    write_shared_usage_snapshot,
 };
 #[expect(
     unused_imports,
@@ -155,13 +156,17 @@ pub(crate) use self::zai::{
 };
 
 use format::{
-    CliOutput, codex_account_from_value, codex_limit_label, compact_count, compact_duration_label,
-    dollar_amounts, env_value, expiry_label, first_number_key, first_string_key,
-    format_amount_with_unit, format_cents, format_currency, home_path, humanize_plan_label,
-    humanize_words_with, json_number, local_timestamp_label, oauth_origin, parse_iso_epoch,
-    percent_before_used, quota_pace_label, remaining_from_fraction, reset_label,
-    run_cli_with_timeout, run_cli_with_timeout_full, titlecase_ascii, used_percent_from_fraction,
-    used_percent_label, window_minutes_label,
+    CliOutput, codex_account_from_value, codex_limit_label, compact_count, dollar_amounts,
+    env_value, expiry_label, first_number_key, first_string_key, format_amount_with_unit,
+    format_cents, format_currency, home_path, humanize_plan_label, humanize_words_with,
+    json_number, local_timestamp_label, oauth_origin, parse_iso_epoch, percent_before_used,
+    quota_pace_label, remaining_from_fraction, reset_label, run_cli_with_timeout,
+    run_cli_with_timeout_full, titlecase_ascii, used_percent_from_fraction, used_percent_label,
+    window_minutes_label,
+};
+// Crate-visible re-exports for host overview/compact presentation (plan 008).
+pub(crate) use format::{
+    compact_duration_label, exact_reset_parenthetical, percent_headline, reset_label_with_prefs,
 };
 
 pub(crate) const PROVIDER_HTTP_TIMEOUT: Duration = Duration::from_secs(10);
@@ -185,6 +190,9 @@ pub const USAGE_SNAPSHOT_STORE_PATH: &str = container_paths::USAGE_SNAPSHOT_STOR
 #[derive(Debug, Clone)]
 pub struct UsageCache {
     snapshots: HashMap<String, CachedUsage>,
+    /// Per shared-account-key mtime of the last shared snapshot file we read.
+    /// Skip the JSON parse when the file has not changed since the last check.
+    shared_snapshot_mtimes: HashMap<String, SystemTime>,
     codex_rpc_gate: ManagedCliLaunchGate,
     grok_rpc_gate: ManagedCliLaunchGate,
     refresh_schedule: UsageRefreshSchedule,
@@ -195,6 +203,9 @@ pub struct UsageCache {
     accounts_materialize_path: PathBuf,
     telemetry_persist_failed: bool,
     accounts_materialize_failed: bool,
+    /// Test seam: count of shared-snapshot JSON reads during seeding.
+    #[cfg(test)]
+    pub(crate) shared_snapshot_json_reads: u64,
 }
 
 #[derive(Debug, Clone)]
@@ -233,6 +244,9 @@ pub(crate) struct UsageRefreshSchedule {
     pub(crate) next_due: HashMap<String, Instant>,
     pub(crate) rate_limit_failures: HashMap<String, u32>,
     pub(crate) in_flight: bool,
+    /// Cache keys marked by [`Self::mark_due`] / force-refresh; consume once to
+    /// bypass success cooldowns while still honoring hard rate-limit backoff.
+    pub(crate) force_refresh: std::collections::HashSet<String>,
 }
 
 pub(crate) const USAGE_REFRESH_BASE_INTERVAL: Duration = Duration::from_mins(5);
@@ -433,35 +447,11 @@ impl UsageCache {
         }
         self.refresh_schedule.in_flight = true;
         let snapshots_dir = shared_usage_snapshots_dir();
+        // Propagation: a refresh completed by any process is visible to every
+        // other process within one of its poll ticks, without network I/O.
+        self.adopt_shared_snapshots(&targets, &snapshots_dir);
         let mut due_targets = Vec::new();
         for target in targets {
-            // Seed the in-memory cache from the account-scoped shared snapshot
-            // (as Stale) the first time this instance sees a target, so a fresh
-            // instance shows real last-known numbers immediately instead of
-            // "refreshing" — whether the target is due (about to fetch in the
-            // background) or not (cooldown active). The shared key is
-            // account-scoped so a different account's data on the same provider
-            // surface is never read in (Class III-C). Keyed in memory by provider
-            // (per-container), one account per agent.
-            if let std::collections::hash_map::Entry::Vacant(entry) =
-                self.snapshots.entry(target.cache_key())
-            {
-                match read_shared_usage_snapshot(&snapshots_dir, &target.shared_account_key()) {
-                    Some(view) => {
-                        jackin_telemetry::cache::decision(
-                            jackin_telemetry::schema::enums::CacheName::UsageSnapshot,
-                            jackin_telemetry::schema::enums::CacheResult::Stale,
-                        );
-                        entry.insert(CachedUsage {
-                            view: stale_shared_view(view, now_epoch()),
-                        });
-                    }
-                    None => jackin_telemetry::cache::decision(
-                        jackin_telemetry::schema::enums::CacheName::UsageSnapshot,
-                        jackin_telemetry::schema::enums::CacheResult::Miss,
-                    ),
-                }
-            }
             if self.refresh_schedule.should_refresh(&target, now) {
                 due_targets.push(target);
             }
@@ -564,6 +554,79 @@ impl UsageCache {
         self.refresh_schedule.mark_due(target, now);
     }
 
+    /// Adopt shared per-account snapshots into the in-memory cache.
+    ///
+    /// Contract: a refresh completed by any process is visible to every other
+    /// process within one of its poll ticks, without that process performing
+    /// network I/O. Vacant entries seed on first sight; occupied entries replace
+    /// when the shared `fetched_at_epoch` is strictly newer. Steady-state cost is
+    /// one `stat` per enabled account per tick (mtime map skips unchanged files).
+    pub(crate) fn adopt_shared_snapshots(
+        &mut self,
+        targets: &[UsageRefreshTarget],
+        snapshots_dir: &Path,
+    ) {
+        let now = now_epoch();
+        for target in targets {
+            let cache_key = target.cache_key();
+            let account_key = target.shared_account_key();
+            let Some(mtime) = shared_usage_snapshot_mtime(snapshots_dir, &account_key) else {
+                if !self.snapshots.contains_key(&cache_key) {
+                    jackin_telemetry::cache::decision(
+                        jackin_telemetry::schema::enums::CacheName::UsageSnapshot,
+                        jackin_telemetry::schema::enums::CacheResult::Miss,
+                    );
+                }
+                continue;
+            };
+            if self.shared_snapshot_mtimes.get(&account_key) == Some(&mtime) {
+                continue;
+            }
+            let Some(view) = read_shared_usage_snapshot(snapshots_dir, &account_key) else {
+                if !self.snapshots.contains_key(&cache_key) {
+                    jackin_telemetry::cache::decision(
+                        jackin_telemetry::schema::enums::CacheName::UsageSnapshot,
+                        jackin_telemetry::schema::enums::CacheResult::Miss,
+                    );
+                }
+                continue;
+            };
+            #[cfg(test)]
+            {
+                self.shared_snapshot_json_reads = self.shared_snapshot_json_reads.saturating_add(1);
+            }
+            self.shared_snapshot_mtimes
+                .insert(account_key.clone(), mtime);
+            self.insert_adopted_shared_view(cache_key, view, now);
+        }
+    }
+
+    fn insert_adopted_shared_view(&mut self, cache_key: String, view: FocusedUsageView, now: i64) {
+        match self.snapshots.entry(cache_key) {
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                jackin_telemetry::cache::decision(
+                    jackin_telemetry::schema::enums::CacheName::UsageSnapshot,
+                    jackin_telemetry::schema::enums::CacheResult::Stale,
+                );
+                entry.insert(CachedUsage {
+                    view: stale_shared_view(view, now),
+                });
+            }
+            std::collections::hash_map::Entry::Occupied(mut entry) => {
+                if view.fetched_at_epoch <= entry.get().view.fetched_at_epoch {
+                    return;
+                }
+                jackin_telemetry::cache::decision(
+                    jackin_telemetry::schema::enums::CacheName::UsageSnapshot,
+                    jackin_telemetry::schema::enums::CacheResult::Stale,
+                );
+                entry.insert(CachedUsage {
+                    view: stale_shared_view(view, now),
+                });
+            }
+        }
+    }
+
     pub(crate) fn materialize_accounts(&self, generated_at_epoch: i64) -> Result<(), String> {
         let snapshots: Vec<&FocusedUsageView> =
             self.snapshots.values().map(|cached| &cached.view).collect();
@@ -579,6 +642,7 @@ impl Default for UsageCache {
     fn default() -> Self {
         Self {
             snapshots: HashMap::new(),
+            shared_snapshot_mtimes: HashMap::new(),
             codex_rpc_gate: ManagedCliLaunchGate::default(),
             grok_rpc_gate: ManagedCliLaunchGate::default(),
             refresh_schedule: UsageRefreshSchedule::default(),
@@ -586,13 +650,17 @@ impl Default for UsageCache {
             accounts_materialize_path: PathBuf::from(MATERIALIZED_USAGE_ACCOUNTS_PATH),
             telemetry_persist_failed: false,
             accounts_materialize_failed: false,
+            #[cfg(test)]
+            shared_snapshot_json_reads: 0,
         }
     }
 }
 
 impl UsageRefreshSchedule {
     pub(crate) fn mark_due(&mut self, target: &UsageRefreshTarget, now: Instant) {
-        self.next_due.insert(target.cache_key(), now);
+        let key = target.cache_key();
+        self.next_due.insert(key.clone(), now);
+        self.force_refresh.insert(key);
     }
 
     pub(crate) fn should_refresh(&mut self, target: &UsageRefreshTarget, now: Instant) -> bool {
@@ -606,24 +674,30 @@ impl UsageRefreshSchedule {
         cooldown_dir: &Path,
     ) -> bool {
         // `next_due` is per-instance scheduling (provider-keyed, in-memory); the
-        // shared cooldown markers are cross-container and account-scoped so a
-        // refresh by any instance on the same account suppresses the others
-        // (Class III).
+        // shared cooldown markers are cross-process and account-scoped so a
+        // refresh by any process on the same account suppresses the others
+        // (Class III). Success markers suppress timer-driven due checks; force
+        // (mark_due / menu-bar Refresh) bypasses success but not rate-limit.
         let key = target.cache_key();
         match self.next_due.get(&key).copied() {
             // Common steady-state case: scheduled and not yet due. Returns without
             // resolving the account key, which would read credential files.
             Some(due) if due > now => false,
             Some(_) => {
-                // Scheduled or explicit mark_due refresh: only hard rate-limit
-                // cooldowns (429 backoff from Anthropic) block; advisory success
-                // cooldowns are skipped so user-triggered and timer-driven refreshes
-                // always proceed when due.
-                !shared_usage_rate_limit_cooldown_active(
-                    cooldown_dir,
-                    &target.shared_account_key(),
-                    now_epoch(),
-                )
+                let forced = self.force_refresh.remove(&key);
+                if forced {
+                    !shared_usage_rate_limit_cooldown_active(
+                        cooldown_dir,
+                        &target.shared_account_key(),
+                        now_epoch(),
+                    )
+                } else {
+                    !shared_usage_cooldown_active(
+                        cooldown_dir,
+                        &target.shared_account_key(),
+                        now_epoch(),
+                    )
+                }
             }
             None => {
                 // First check for this instance: consult all shared cooldowns
@@ -705,10 +779,10 @@ pub(crate) fn stable_usage_hash(value: &str) -> u64 {
     })
 }
 
-/// Resolve a directory from an env override, else a path under the container
-/// home — the one shape every shared-usage dir (and the cred-home resolvers)
-/// use. Runtime points the `JACKIN_USAGE_*_DIR` vars at the host-shared volume
-/// (Class III-B); unset falls back to the per-container default.
+/// Resolve a directory from an env override, else a path under the process home.
+/// Invariant: one host root `~/.jackin/data/usage-shared/*`; containers reach
+/// the same root via the `/jackin/usage-shared` bind mount (runtime sets
+/// `JACKIN_USAGE_*_DIR`); env vars override for tests only.
 pub(crate) fn env_dir_or_home(env_var: &str, home_default: &str) -> PathBuf {
     std::env::var(env_var).map_or_else(|_| home_path(home_default), PathBuf::from)
 }
@@ -750,6 +824,34 @@ pub fn resolved_usage_provider_label(
     let surface = resolve_surface(agent, focused_provider);
     (surface != UsageSurface::Unsupported).then_some(surface.label())
 }
+
+/// Shared provider display remap for Capsule tabs and jackin❯ Desktop overview.
+///
+/// Single mapping so Desktop never grows a second Swift-side provider rename.
+#[must_use]
+pub fn provider_display_label(label: &str) -> &str {
+    match label {
+        "Codex" | "OpenAI / Codex" => "OpenAI",
+        "Claude" | "Anthropic / Claude" => "Anthropic",
+        "Grok Build" | "xAI / Grok" => "xAI",
+        "GLM / Z.AI" => "Z.AI",
+        other => other,
+    }
+}
+
+/// Honesty caption when numbers are estimated / local-log derived.
+#[must_use]
+pub fn estimate_caption(view: &FocusedUsageView) -> Option<String> {
+    if matches!(view.confidence, UsageConfidence::Estimated)
+        || matches!(view.source, UsageSource::LocalLogs)
+    {
+        Some("Estimated from token usage · not a subscription bill".to_owned())
+    } else {
+        None
+    }
+}
+
+pub use self::format::{PercentStyle, ResetStyle, UsageFormatPrefs};
 
 pub fn usage_status_storage_label(status: UsageSnapshotStatus) -> &'static str {
     match status {

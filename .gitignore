@@ -4,6 +4,10 @@
 # Rust
 /target/
 
+# Native macOS menu-bar local build products (source + Generated bindings are tracked)
+/native/dist/
+/native/.build/
+
 # Claude Code
 .worktrees/
 .claude/settings.local.json

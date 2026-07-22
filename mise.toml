@@ -16,6 +16,8 @@ cargo-binstall = "1.21.0"
 "cargo:cargo-mutants" = "27.1.0"
 "aqua:nextest-rs/nextest/cargo-nextest" = "0.9.140"
 "cargo:cargo-shear" = "1.13.0"
+# Provides `uniffi-bindgen`; pin matches jackin-usage-ffi UniFFI (needs cli feature).
+"cargo:uniffi" = { version = "0.32.0", default-features = true, features = "cli" }
 "cargo:cargo-zigbuild" = "0.23.0"
 "cargo:codebook-lsp" = { version = "0.3.41", default-features = false }
 "cargo:sccache" = "0.16.0"
@@ -77,3 +79,93 @@ run = "cargo xtask construct inspect"
 [tasks.ci]
 description = "Run the local CI merge-readiness gate"
 run = "cargo xtask ci"
+
+# jackin❯ Desktop (native macOS usage menu bar).
+# Logic lives in `cargo xtask desktop`; mise tasks are the operator entry points.
+#
+# Local loop:
+#   mise run desktop-build          # prints DESKTOP_APP=… absolute path
+#   mise run desktop-verify
+#   mise run desktop-run            # launch menu-bar app (no Dock icon)
+#   mise run desktop                # build + verify + run (one shot)
+
+[tasks.desktop-bindings]
+description = "Generate UniFFI Swift bindings for jackin❯ Desktop"
+run = "cargo xtask desktop bindings"
+
+[tasks.desktop-xcframework]
+description = "Build the arm64 static JackinUsageFFI XCFramework"
+run = "cargo xtask desktop xcframework"
+
+[tasks.desktop-build]
+description = "Build JackinDesktop.app (prints absolute path + how to run)"
+usage = '''
+arg "<version>" help="CFBundleShortVersionString (e.g. 0.6.0)" default="0.6.0"
+arg "<build>" help="CFBundleVersion numeric build (e.g. 1)" default="1"
+'''
+run = 'cargo xtask desktop build --version "$usage_version" --build "$usage_build"'
+
+[tasks.desktop-verify]
+description = "Fail-closed verify of JackinDesktop.app (prints path + run hint)"
+usage = '''
+arg "<app>" help="Path to JackinDesktop.app" default="native/dist/JackinDesktop.app"
+'''
+run = 'cargo xtask desktop verify "$usage_app"'
+
+[tasks.desktop-test]
+description = "Host + pure Swift OpenUsage/CodexBar limits-only parity harnesses for Desktop"
+run = "cargo xtask desktop test"
+
+[tasks.desktop-run]
+description = "Launch JackinDesktop.app (menu bar only — no Dock icon)"
+usage = '''
+arg "<app>" help="Path to JackinDesktop.app" default="native/dist/JackinDesktop.app"
+flag "--verify" help="Run fail-closed verify before launch"
+'''
+run = '''
+if [ "${usage_verify:-}" = "true" ]; then
+  cargo xtask desktop run "$usage_app" --verify
+else
+  cargo xtask desktop run "$usage_app"
+fi
+'''
+
+[tasks.desktop]
+description = "Build + verify + launch jackin❯ Desktop (local smoke)"
+usage = '''
+arg "<version>" help="CFBundleShortVersionString (e.g. 0.6.0)" default="0.6.0"
+arg "<build>" help="CFBundleVersion numeric build (e.g. 1)" default="1"
+'''
+run = '''
+set -euo pipefail
+cargo xtask desktop build --version "$usage_version" --build "$usage_build"
+cargo xtask desktop verify native/dist/JackinDesktop.app
+cargo xtask desktop run native/dist/JackinDesktop.app
+'''
+
+[tasks.desktop-sign-notarize]
+description = "Developer ID sign + notarize + staple JackinDesktop.app (requires Apple credentials)"
+usage = '''
+arg "[app]" help="Path to JackinDesktop.app" default="native/dist/JackinDesktop.app"
+arg "[out_zip]" help="Final post-staple ZIP path"
+'''
+run = '''
+if [ -n "${usage_out_zip:-}" ]; then
+  cargo xtask desktop sign-notarize "$usage_app" "$usage_out_zip"
+else
+  cargo xtask desktop sign-notarize "$usage_app"
+fi
+'''
+
+[tasks.desktop-release-state]
+description = "Print independent Desktop release/cask state KEY=value lines"
+usage = '''
+arg "<version>" help="Release version without leading v"
+arg "--repo" help="GitHub owner/name" default="jackin-project/jackin"
+arg "--tap" help="Homebrew tap owner/name" default="jackin-project/homebrew-tap"
+'''
+run = 'cargo xtask desktop release-state "$usage_version" --repo "$usage_repo" --tap "$usage_tap"'
+
+[tasks.desktop-bootstrap-secrets]
+description = "Bootstrap release-macos Apple secrets into GitHub (never prints secret values)"
+run = "cargo xtask desktop bootstrap-secrets"

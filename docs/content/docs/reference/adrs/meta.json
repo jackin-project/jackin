@@ -11,6 +11,7 @@
     "adr-007-container-backend-lifecycle",
     "adr-008-launch-never-reconnects-live-instance",
     "adr-009-role-hooks-authors-domain",
-    "adr-010-cleanup-explicit-operator-approval"
+    "adr-010-cleanup-explicit-operator-approval",
+    "adr-011-native-macos-usage-menu-bar"
   ]
 }

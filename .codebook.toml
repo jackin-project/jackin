@@ -45,6 +45,17 @@ ignore_patterns = [
 ]
 
 words = [
+  "staticlib",
+  "LSUI",
+  "LSUIElement",
+  "notarytool",
+  "UniFFI",
+  "XCFramework",
+  "MenuBarExtra",
+  "codesign",
+  "killall",
+  "logomark",
+  "remainings",
   "jank",
   "parentbased",
   "updowncounter",

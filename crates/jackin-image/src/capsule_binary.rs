@@ -902,39 +902,45 @@ pub fn install_test_stub(paths: &JackinPaths) -> Result<()> {
 ///     `jackin-capsule` (preview).
 ///   * Non-Linux: scan the binary's bytes for the same markers since
 ///     the Linux ELF cannot be executed on macOS/Windows.
-#[cfg(target_os = "linux")]
-async fn verify_version(binary: &Path, expected: &str, is_preview: bool) -> Result<()> {
-    let request = jackin_process::ExecRequest::new(binary, ["--version"])
-        .timeout(std::time::Duration::from_secs(15));
-    let output = crate::process_telemetry::exec_async(
-        &request,
-        jackin_telemetry::schema::enums::ProcessExecutableName::JackinCapsule,
+// Non-Linux has no `.await` (the exec path is Linux-only); the signature stays
+// async for caller symmetry and the real Linux build.
+#[cfg_attr(
+    not(target_os = "linux"),
+    expect(
+        clippy::unused_async,
+        reason = "async retained for caller symmetry with the Linux exec path"
     )
-    .await
-    .context("running downloaded capsule verification process")?;
-    if !output.success {
-        return Err(ImageError::msg("downloaded capsule verification failed").into());
-    }
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    if is_preview {
-        if !stdout.contains(ASSET_PREFIX) {
-            return Err(ImageError::msg("downloaded capsule identity verification failed").into());
+)]
+async fn verify_version(binary: &Path, expected: &str, is_preview: bool) -> Result<()> {
+    #[cfg(target_os = "linux")]
+    {
+        let request = jackin_process::ExecRequest::new(binary, ["--version"])
+            .timeout(std::time::Duration::from_secs(15));
+        let output = crate::process_telemetry::exec_async(
+            &request,
+            jackin_telemetry::schema::enums::ProcessExecutableName::JackinCapsule,
+        )
+        .await
+        .context("running downloaded capsule verification process")?;
+        if !output.success {
+            return Err(ImageError::msg("downloaded capsule verification failed").into());
         }
-        return Ok(());
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        if is_preview {
+            if !stdout.contains(ASSET_PREFIX) {
+                return Err(
+                    ImageError::msg("downloaded capsule identity verification failed").into(),
+                );
+            }
+            return Ok(());
+        }
+        if !stdout.contains(expected) {
+            return Err(ImageError::msg("downloaded capsule version verification failed").into());
+        }
+        Ok(())
     }
-    if !stdout.contains(expected) {
-        return Err(ImageError::msg("downloaded capsule version verification failed").into());
-    }
-    Ok(())
-}
-
-#[cfg(not(target_os = "linux"))]
-fn verify_version(
-    binary: &Path,
-    expected: &str,
-    is_preview: bool,
-) -> std::future::Ready<Result<()>> {
-    std::future::ready((|| {
+    #[cfg(not(target_os = "linux"))]
+    {
         // Cannot exec a Linux ELF on macOS / Windows. Scan the file
         // contents for the same identity markers the Linux exec check
         // verifies; the version + asset prefix strings are baked in
@@ -959,7 +965,7 @@ fn verify_version(
             .into());
         }
         Ok(())
-    })())
+    }
 }
 
 #[cfg(not(target_os = "linux"))]

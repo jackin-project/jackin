@@ -109,7 +109,7 @@ key = "clippy::disallowed_methods@jackin-usage"
 bound = 4
 [[family.entry]]
 key = "clippy::disallowed_methods@jackin-xtask"
-bound = 1
+bound = 2
 [[family.entry]]
 key = "clippy::duration_suboptimal_units@jackin"
 bound = 1
@@ -246,6 +246,9 @@ bound = 4
 key = "clippy::panic@jackin-usage"
 bound = 3
 [[family.entry]]
+key = "clippy::panic@jackin-usage-ffi"
+bound = 1
+[[family.entry]]
 key = "clippy::print_stderr@jackin"
 bound = 4
 [[family.entry]]
@@ -265,7 +268,7 @@ key = "clippy::print_stderr@jackin-runtime"
 bound = 7
 [[family.entry]]
 key = "clippy::print_stderr@jackin-xtask"
-bound = 2
+bound = 3
 [[family.entry]]
 key = "clippy::print_stdout@jackin"
 bound = 3
@@ -283,7 +286,7 @@ key = "clippy::print_stdout@jackin-term"
 bound = 1
 [[family.entry]]
 key = "clippy::print_stdout@jackin-xtask"
-bound = 25
+bound = 26
 [[family.entry]]
 key = "clippy::redundant_pub_crate@jackin"
 bound = 1
@@ -319,7 +322,7 @@ key = "clippy::struct_excessive_bools@jackin-term"
 bound = 3
 [[family.entry]]
 key = "clippy::struct_excessive_bools@jackin-xtask"
-bound = 1
+bound = 2
 [[family.entry]]
 key = "clippy::suboptimal_flops@jackin-launch"
 bound = 1
@@ -386,6 +389,12 @@ bound = 2
 [[family.entry]]
 key = "clippy::unnecessary_wraps@jackin-runtime"
 bound = 1
+[[family.entry]]
+key = "clippy::unused_async@jackin-image"
+bound = 1
+[[family.entry]]
+key = "clippy::unused_self@jackin-agent-status"
+bound = 3
 [[family.entry]]
 key = "clippy::unwrap_used@jackin"
 bound = 12
@@ -491,10 +500,10 @@ mode = "enforce"
 cap = 0
 [[family.entry]]
 key = "AGENTS.md"
-bound = 6499
+bound = 7288
 [[family.entry]]
 key = "CLAUDE.md"
-bound = 6499
+bound = 7288
 [[family.entry]]
 key = "crates/AGENTS.md"
 bound = 14740
@@ -551,7 +560,7 @@ key = "crates/jackin-launch/README.md"
 bound = 1892
 [[family.entry]]
 key = "crates/jackin-lints/README.md"
-bound = 2038
+bound = 2031
 [[family.entry]]
 key = "crates/jackin-manifest/README.md"
 bound = 1797
@@ -584,10 +593,13 @@ key = "crates/jackin-tui/README.md"
 bound = 1812
 [[family.entry]]
 key = "crates/jackin-usage/README.md"
-bound = 2010
+bound = 3365
+[[family.entry]]
+key = "crates/jackin-usage-ffi/README.md"
+bound = 1220
 [[family.entry]]
 key = "crates/jackin-xtask/README.md"
-bound = 5892
+bound = 6027
 [[family.entry]]
 key = "crates/jackin/README.md"
 bound = 2860
@@ -712,7 +724,7 @@ key = "jackin-test-support"
 bound = 4
 [[family.entry]]
 key = "jackin-usage"
-bound = 7
+bound = 8
 
 
 # Plan 027: suite wall-time from nextest junit. The provider reports zero when
@@ -783,7 +795,7 @@ mode = "enforce"
 cap = 20
 [[family.entry]]
 key = "jackin"
-bound = 27
+bound = 28
 [[family.entry]]
 key = "jackin-agent-status"
 bound = 26
@@ -834,4 +846,4 @@ key = "jackin-usage"
 bound = 29
 [[family.entry]]
 key = "jackin-xtask"
-bound = 30
+bound = 38

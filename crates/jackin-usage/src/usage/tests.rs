@@ -1108,6 +1108,154 @@ fn fresh_instance_seeds_cache_from_shared_snapshot_when_cooldown_active() {
 }
 
 #[test]
+fn shared_usage_dirs_default_under_usage_shared() {
+    // Env overrides are for tests only; with them unset, defaults land under
+    // ~/.jackin/data/usage-shared/{cooldowns,snapshots,locks}.
+    let cases = [
+        (
+            "JACKIN_USAGE_COOLDOWN_DIR",
+            shared_usage_cooldown_dir(),
+            "data/usage-shared/cooldowns",
+        ),
+        (
+            "JACKIN_USAGE_SNAPSHOTS_DIR",
+            shared_usage_snapshots_dir(),
+            "data/usage-shared/snapshots",
+        ),
+        (
+            "JACKIN_USAGE_LOCK_DIR",
+            shared_usage_lock_dir(),
+            "data/usage-shared/locks",
+        ),
+    ];
+    for (var, path, suffix) in cases {
+        // Safety: only assert the default path when the override is unset in
+        // this process; parallel tests that set the var would change meaning.
+        if std::env::var_os(var).is_some() {
+            continue;
+        }
+        let path_str = path.to_string_lossy().replace('\\', "/");
+        assert!(
+            path_str.ends_with(suffix),
+            "{var} default should end with {suffix}, got {path_str}"
+        );
+        assert!(
+            !path_str.contains("daemon/usage-"),
+            "{var} must not use legacy daemon/usage-* defaults, got {path_str}"
+        );
+    }
+}
+
+#[test]
+fn adopt_shared_snapshots_reseeds_when_shared_is_newer() {
+    let snapshots_dir = tempfile::tempdir().expect("tempdir");
+    let target = UsageRefreshTarget {
+        agent: "claude".to_owned(),
+        provider: None,
+    };
+    let account_key = target.shared_account_key();
+    let cache_key = target.cache_key();
+
+    let older = FocusedUsageView::unavailable("older", 1_000);
+    let newer = FocusedUsageView::unavailable("newer", 2_000);
+    write_shared_usage_snapshot(snapshots_dir.path(), &account_key, &newer);
+
+    let mut cache_b = UsageCache::default();
+    cache_b
+        .snapshots
+        .insert(cache_key.clone(), CachedUsage { view: older });
+    cache_b.adopt_shared_snapshots(std::slice::from_ref(&target), snapshots_dir.path());
+
+    let adopted = cache_b
+        .snapshots
+        .get(&cache_key)
+        .expect("occupied entry remains");
+    assert_eq!(
+        adopted.view.fetched_at_epoch, 2_000,
+        "warm cache must adopt strictly newer shared snapshot"
+    );
+    assert_eq!(adopted.view.status, UsageSnapshotStatus::Stale);
+    assert_eq!(adopted.view.source, UsageSource::Cache);
+    // Identity scoping: a different account key's file is not read for this target.
+    let other_key = "other-account-key";
+    let alien = FocusedUsageView::unavailable("alien", 9_999);
+    write_shared_usage_snapshot(snapshots_dir.path(), other_key, &alien);
+    cache_b.adopt_shared_snapshots(std::slice::from_ref(&target), snapshots_dir.path());
+    assert_eq!(
+        cache_b
+            .snapshots
+            .get(&cache_key)
+            .expect("still present")
+            .view
+            .fetched_at_epoch,
+        2_000,
+        "foreign account key must not replace this surface's view"
+    );
+}
+
+#[test]
+fn adopt_shared_snapshots_mtime_guard_skips_json_reread() {
+    let snapshots_dir = tempfile::tempdir().expect("tempdir");
+    let target = UsageRefreshTarget {
+        agent: "claude".to_owned(),
+        provider: None,
+    };
+    let account_key = target.shared_account_key();
+    let view = FocusedUsageView::unavailable("seed", 1_500);
+    write_shared_usage_snapshot(snapshots_dir.path(), &account_key, &view);
+
+    let mut cache = UsageCache::default();
+    cache.adopt_shared_snapshots(std::slice::from_ref(&target), snapshots_dir.path());
+    assert_eq!(cache.shared_snapshot_json_reads, 1);
+    cache.adopt_shared_snapshots(std::slice::from_ref(&target), snapshots_dir.path());
+    assert_eq!(
+        cache.shared_snapshot_json_reads, 1,
+        "unchanged mtime must not re-parse shared snapshot JSON"
+    );
+}
+
+#[test]
+fn success_cooldown_suppresses_due_target_but_force_still_refreshes() {
+    let cooldown_dir = tempfile::tempdir().expect("tempdir");
+    let snapshots_dir = tempfile::tempdir().expect("tempdir");
+    let target = UsageRefreshTarget {
+        agent: "claude".to_owned(),
+        provider: None,
+    };
+    let now = Instant::now();
+    let view = FocusedUsageView::unavailable("from-a", now_epoch());
+
+    // Process A: successful refresh writes success cooldown + snapshot.
+    let mut schedule_a = UsageRefreshSchedule::default();
+    assert!(schedule_a.should_refresh_with_cooldown_dir(&target, now, cooldown_dir.path()));
+    schedule_a.mark_refreshed_with_cooldown_dir(
+        &target,
+        now,
+        &view,
+        cooldown_dir.path(),
+        snapshots_dir.path(),
+    );
+
+    // Process B: warm schedule with the target already due (timer), no force.
+    let mut schedule_b = UsageRefreshSchedule::default();
+    let due_past = now
+        .checked_sub(Duration::from_secs(1))
+        .expect("instant subtract");
+    schedule_b.next_due.insert(target.cache_key(), due_past);
+    assert!(
+        !schedule_b.should_refresh_with_cooldown_dir(&target, now, cooldown_dir.path()),
+        "due target must skip probe while another process's success cooldown is active"
+    );
+
+    // Forced refresh (menu bar / request_account_refresh) still probes.
+    schedule_b.mark_due(&target, now);
+    assert!(
+        schedule_b.should_refresh_with_cooldown_dir(&target, now, cooldown_dir.path()),
+        "force refresh must bypass success cooldown"
+    );
+}
+
+#[test]
 fn failed_refresh_preserves_last_fresh_quota_rows_as_stale_cache() {
     let mut cached = FocusedUsageView::unavailable("seed", 123);
     cached.status = UsageSnapshotStatus::Fresh;
@@ -2915,16 +3063,14 @@ fn usage_cli_owner_exports_outcomes_without_process_material() {
     let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
     let _subscriber = tracing::subscriber::set_default(subscriber);
 
-    run_cli_with_timeout_full(
-        &command,
-        &["-c", "printf usage-secret-output"],
-        Duration::from_secs(1),
-    )
-    .unwrap();
+    // Success/error paths must outlive heavy parallel nextest load; 1s races
+    // under full `ci --fast` when the host is saturated (poll loop is 50ms).
+    let settle = Duration::from_secs(10);
+    run_cli_with_timeout_full(&command, &["-c", "printf usage-secret-output"], settle).unwrap();
     run_cli_with_timeout_full(
         &command,
         &["-c", "printf usage-secret-stderr >&2; exit 17"],
-        Duration::from_secs(1),
+        settle,
     )
     .unwrap();
     let _timeout =
@@ -2933,7 +3079,7 @@ fn usage_cli_owner_exports_outcomes_without_process_material() {
     let _spawn = run_cli_with_timeout_full(
         "/usage-secret/missing/claude",
         &["usage-secret-argument"],
-        Duration::from_secs(1),
+        settle,
     )
     .unwrap_err();
 

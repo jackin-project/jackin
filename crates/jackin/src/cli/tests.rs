@@ -158,6 +158,10 @@ fn telemetry_command_mapper_covers_every_nested_leaf() {
         (&["diagnostics", "validate"], Name::DiagnosticsValidate),
         (&["usage", "target", "accounts"], Name::UsageAccounts),
         (&["usage", "target", "verify"], Name::UsageVerify),
+        (
+            &["usage", "host", "snapshot", "--agent", "claude"],
+            Name::UsageSnapshot,
+        ),
     ];
 
     for (args, expected) in cases {

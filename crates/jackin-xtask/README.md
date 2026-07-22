@@ -42,6 +42,7 @@ Workspace automation for CI, lints, docs, releases, schemas, and PRs. Merge-read
 | [`release_verify.rs`](src/release_verify.rs) · [`release_verify/`](src/release_verify) | release verification | [`tests.rs`](src/release_verify/tests.rs) |
 | [`health.rs`](src/health.rs) · [`health/`](src/health) | report-only code-health dashboard (Phase 0) | [`tests.rs`](src/health/tests.rs) |
 | [`fs_util.rs`](src/fs_util.rs) · [`fs_util/`](src/fs_util) | deterministic `read_dir_sorted` for gate code (plan 027) | [`tests.rs`](src/fs_util/tests.rs) |
+| [`desktop.rs`](src/desktop.rs) · [`desktop/`](src/desktop) | jackin❯ Desktop assembly: bindings, XCFramework, build/verify/run, sign-notarize, release-state, bootstrap-secrets | [`tests.rs`](src/desktop/tests.rs) |
 
 ## Public API
 
