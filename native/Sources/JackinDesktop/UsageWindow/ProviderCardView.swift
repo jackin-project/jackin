@@ -100,17 +100,17 @@ struct ProviderCardView: View {
             ) {
             case .gauge:
                 if let remaining = bucket.remainingPercent {
-                    let usedFrac = statusItemUsedFraction(remainingPercent: remaining)
+                    // OpenUsage: remaining fill grows left-to-right (full bar = healthy).
+                    let remainingFrac = Double(remaining) / 100.0
                     GeometryReader { geo in
                         ZStack(alignment: .leading) {
                             Capsule().fill(Color.primary.opacity(0.10))
-                            // Fill shows remaining (left), matching OpenUsage blue bars.
                             Capsule()
                                 .fill(severityTint(bucket.severity))
-                                .frame(width: max(3, geo.size.width * (1.0 - usedFrac)))
+                                .frame(width: max(3, geo.size.width * remainingFrac))
                         }
                     }
-                    .frame(height: 5)
+                    .frame(height: 4)
                     .accessibilityLabel(
                         "\(bucket.label) \(statusItemPercentToken(remainingPercent: remaining)) remaining"
                     )

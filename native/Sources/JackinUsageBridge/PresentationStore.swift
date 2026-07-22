@@ -77,6 +77,9 @@ public final class PresentationStore: ObservableObject {
         public let statusSlot: String?
         public let severity: String
         public let status: String
+        /// Rust money fields (display-only; formatted in the shell).
+        public let usedMoney: MoneyDto?
+        public let limitMoney: MoneyDto?
     }
 
     public struct OverviewRow: Identifiable, Sendable, Equatable {
@@ -421,7 +424,9 @@ public final class PresentationStore: ObservableObject {
                                     paceLabel: bucket.paceLabel,
                                     statusSlot: bucket.statusSlot,
                                     severity: bucket.severity,
-                                    status: bucket.status
+                                    status: bucket.status,
+                                    usedMoney: bucket.usedMoney,
+                                    limitMoney: bucket.limitMoney
                                 )
                             },
                             updatedLabel: view.updatedLabel,

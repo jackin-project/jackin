@@ -129,3 +129,23 @@ public func statusItemGlyph(compactLabel: String, surfaceId: String) -> String {
 public func statusItemPercentLines(remainings: [UInt8], maxLines: Int = 2) -> [String] {
     Array(remainings.prefix(max(0, maxLines)).map(statusItemPercentToken(remainingPercent:)))
 }
+
+/// Format Rust `MoneyDto` for display (no `String(format:)`).
+public func formatMoneyDto(_ money: MoneyDto) -> String {
+    let exp = Int(money.exponent)
+    let divisor = Int64(pow(10.0, Double(max(0, exp))))
+    let major = money.amountMinor / max(1, divisor)
+    let minor = abs(money.amountMinor % max(1, divisor))
+    let currency = money.currency.uppercased()
+    if exp <= 0 {
+        return currency == "USD" ? "$\(major)" : "\(major) \(currency)"
+    }
+    var frac = String(minor)
+    while frac.count < exp {
+        frac = "0" + frac
+    }
+    if currency == "USD" {
+        return "$\(major).\(frac)"
+    }
+    return "\(major).\(frac) \(currency)"
+}

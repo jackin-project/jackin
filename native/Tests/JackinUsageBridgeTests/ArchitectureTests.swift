@@ -129,6 +129,8 @@ final class ArchitectureTests: XCTestCase {
             statusItemPercentLines(remainings: [100, 79, 12], maxLines: 2),
             ["100%", "79%"]
         )
+        let money = MoneyDto(amountMinor: 6559, currency: "USD", exponent: 2)
+        XCTAssertEqual(formatMoneyDto(money), "$65.59")
     }
 
     func testPackageSwiftUsesBinaryTargetNotHostDylib() throws {
