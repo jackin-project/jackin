@@ -11,10 +11,10 @@ on:
   workflow_dispatch:
     inputs:
       lanes:
-        description: "Which runner(s) to run on. Default github; use both for parity runs."
+        description: "Which runner(s) to run on. Default velnor; use both for parity runs."
         type: choice
         options: [github, velnor, both]
-        default: github
+        default: velnor
 
 permissions:
   actions: read
@@ -37,7 +37,7 @@ jobs:
       - name: Build runner config
         id: config
         env:
-          LANES: ${{ github.event_name == 'workflow_dispatch' && inputs.lanes || 'github' }}
+          LANES: ${{ github.event_name == 'workflow_dispatch' && inputs.lanes || 'velnor' }}
         run: |
           set -euo pipefail
           github='{"lane":"GitHub","runner":"\"ubuntu-24.04\"","runner_os":"Linux","runner_arch":"X64"}'
@@ -317,7 +317,7 @@ jobs:
           # to cargo, which would probe rustc through a missing sccache.
           RUSTC_WRAPPER: ""
         with:
-          version: "2026.6.11"
+          version: "2026.7.7"
           cache_key_prefix: "mise-v2"
           cache_save: ${{ github.event_name == 'workflow_run' || github.ref == 'refs/heads/main' }}
           install_args: "cargo-binstall rust zig cargo:cargo-zigbuild cosign syft cargo:sccache"
@@ -413,7 +413,7 @@ jobs:
           # to cargo, which would probe rustc through a missing sccache.
           RUSTC_WRAPPER: ""
         with:
-          version: "2026.6.11"
+          version: "2026.7.7"
           cache_key_prefix: "mise-v2"
           cache_save: ${{ github.event_name == 'workflow_run' || github.ref == 'refs/heads/main' }}
           install_args: "cargo-binstall rust zig cargo:cargo-zigbuild cosign syft cargo:sccache"

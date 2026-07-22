@@ -15,9 +15,9 @@ on:
     inputs:
       lanes:
         description: |
-          Which runner(s) to run on. Default github; use both for parity runs.
+          Which runner(s) to run on. Default velnor; use both for parity runs.
         type: choice
-        default: github
+        default: velnor
         options: [github, velnor, both]
       refresh-package:
         description: Optional exact crate name whose successful result and target should be refreshed.
@@ -42,7 +42,7 @@ jobs:
     steps:
       - id: set
         env:
-          LANES: ${{ github.event_name == 'workflow_dispatch' && inputs.lanes || 'github' }}
+          LANES: ${{ github.event_name == 'workflow_dispatch' && inputs.lanes || 'velnor' }}
         run: |
           github_writer='{"lane":"GitHub","runner":"\"ubuntu-24.04\"","runner_os":"Linux","runner_arch":"X64","cache_writer":true}'
           velnor_writer='{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","runner_os":"Linux","runner_arch":"X64","cache_writer":true}'
@@ -337,7 +337,7 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          LANES: ${{ github.event_name == 'workflow_dispatch' && inputs.lanes || 'github' }}
+          LANES: ${{ github.event_name == 'workflow_dispatch' && inputs.lanes || 'velnor' }}
           REFRESH_PACKAGE: ${{ github.event_name == 'workflow_dispatch' && inputs.refresh-package || '' }}
           REPOSITORY: ${{ github.repository }}
         run: |
@@ -401,7 +401,7 @@ jobs:
         env:
           BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
           GH_TOKEN: ${{ github.token }}
-          LANES: ${{ github.event_name == 'workflow_dispatch' && inputs.lanes || 'github' }}
+          LANES: ${{ github.event_name == 'workflow_dispatch' && inputs.lanes || 'velnor' }}
           REPOSITORY: ${{ github.repository }}
         run: |
           set -euo pipefail
@@ -470,7 +470,7 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
         with:
-          version: "2026.6.11"
+          version: "2026.7.7"
           cache_key_prefix: "mise-v2"
           cache_save: ${{ github.ref == 'refs/heads/main' }}
           install_args: "actionlint shellcheck"
@@ -505,7 +505,7 @@ jobs:
             rustup-${{ runner.os }}-${{ runner.arch }}-
       - uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
         with:
-          version: "2026.6.11"
+          version: "2026.7.7"
           cache_key_prefix: "mise-v2"
           cache_save: ${{ github.ref == 'refs/heads/main' }}
           install_args: rust@${{ needs.changes.outputs.rust-version }}
@@ -664,7 +664,7 @@ jobs:
           (steps.toolchain-lookup.outputs.cache-hit != 'true' ||
            steps.ci-tools-artifact.outputs.hit != 'true')
         with:
-          version: "2026.6.11"
+          version: "2026.7.7"
           cache_key_prefix: "mise-v2"
           cache_save: >-
             ${{ github.ref == 'refs/heads/main' ||
@@ -710,18 +710,6 @@ jobs:
         uses: ./.github/actions/cache-cargo-registry
         with:
           contract-key: ${{ needs.changes.outputs.registry-contract }}
-      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-        if: steps.ci-xtask-artifact.outputs.hit != 'true'
-        with:
-          shared-key: ci-xtask-dev-v1
-          cache-all-crates: "false"
-          cache-workspace-crates: "false"
-          env-vars: "CARGO CARGO_TARGET_DIR RUSTFLAGS RUSTDOC RUSTUP"
-          save-if: >-
-            ${{ github.ref == 'refs/heads/main' ||
-                github.event_name == 'workflow_dispatch' ||
-                (github.event_name == 'pull_request' &&
-                 github.event.pull_request.head.repo.full_name == github.repository) }}
       - name: Build shared CI xtask
         if: steps.ci-xtask-artifact.outputs.hit != 'true'
         env:
@@ -876,7 +864,7 @@ jobs:
             rustup-${{ runner.os }}-${{ runner.arch }}-
       - uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
         with:
-          version: "2026.6.11"
+          version: "2026.7.7"
           cache_key_prefix: "mise-v2"
           cache_save: ${{ github.ref == 'refs/heads/main' }}
           install_args: rust@${{ needs.changes.outputs.rust-version }}
@@ -976,7 +964,7 @@ jobs:
             rustup-${{ runner.os }}-${{ runner.arch }}-
       - uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
         with:
-          version: "2026.6.11"
+          version: "2026.7.7"
           cache_key_prefix: "mise-v2"
           cache_save: ${{ github.ref == 'refs/heads/main' }}
           install_args: rust@${{ needs.changes.outputs.rust-version }}
@@ -1035,19 +1023,13 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
         with:
-          version: "2026.6.11"
+          version: "2026.7.7"
           cache_key_prefix: "mise-v2"
           cache_save: ${{ github.ref == 'refs/heads/main' }}
           install_args: "rust cargo:cargo-nextest"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
-      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-        with:
-          shared-key: ci-telemetry-conformance-workspace-v3
-          cache-all-crates: "true"
-          cache-workspace-crates: "true"
-          env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTFLAGS RUSTDOC RUSTUP"
       - name: Run OTLP receiver and detector self-tests
         run: cargo nextest run -p jackin-otlp-testbed --locked
       - name: Run exporter-backed conformance matrix
@@ -1094,7 +1076,7 @@ jobs:
             cargo-audit-${{ runner.os }}-
       - uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
         with:
-          version: "2026.6.11"
+          version: "2026.7.7"
           cache_key_prefix: "mise-v2"
           cache_save: ${{ github.ref == 'refs/heads/main' }}
           install_args: rust@${{ needs.changes.outputs.rust-version }}
@@ -1144,7 +1126,7 @@ jobs:
             rustup-${{ runner.os }}-${{ runner.arch }}-
       - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
         with:
-          version: "2026.6.11"
+          version: "2026.7.7"
           cache_key_prefix: "mise-v2"
           cache_save: ${{ github.ref == 'refs/heads/main' }}
           # Install rust + nextest only here. uniffi CLI needs --features cli and is
