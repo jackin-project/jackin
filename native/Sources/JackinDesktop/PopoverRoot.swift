@@ -5,25 +5,17 @@ import AppKit
 import JackinUsageBridge
 import SwiftUI
 
-/// Glance popover — CodexBar-style agent list + detail (clean-room).
+/// Glance popover — **OpenUsage** reference layout (clean-room).
 ///
-/// **Top:** Overview + every host surface tile (Claude, Codex, Amp, …) whether
-/// enabled or not. **Below:** detailization for the selected agent (identity,
-/// quota bars, money, pace). Menu footer with key equivalents.
-/// All numbers/strings are Rust-owned.
+/// Reference: OpenUsage 0.7.x dashboard panel (Cost summary + stacked provider
+/// cards + Options footer). Lists every available agent with full metric
+/// detailization under its header. All numbers/strings are Rust-owned.
+///
+/// Deferred vs reference (need more Rust models): donut chart, Today/Yesterday/
+/// 30d segmented control, sparklines, external Status/Dashboard URLs.
 struct PopoverRoot: View {
     @ObservedObject var store: PresentationStore
     @Environment(\.openWindow) private var openWindow
-
-    /// `nil` = Overview; otherwise surface id from `listSurfaces`.
-    @State private var selectedSurfaceId: String?
-
-    private let tileColumns = [
-        GridItem(.flexible(), spacing: 6),
-        GridItem(.flexible(), spacing: 6),
-        GridItem(.flexible(), spacing: 6),
-        GridItem(.flexible(), spacing: 6),
-    ]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -31,309 +23,157 @@ struct PopoverRoot: View {
                 Text(err)
                     .font(.caption)
                     .foregroundStyle(.red)
-                    .padding(.horizontal, 14)
-                    .padding(.top, 10)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 14)
             }
-
-            // Fixed agent strip (CodexBar): always visible above detail.
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Agents")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 14)
-                    .padding(.top, 12)
-                providerTileGrid
-                    .padding(.horizontal, 10)
-            }
-
-            Divider().opacity(0.35)
-                .padding(.top, 10)
 
             ScrollView {
-                Group {
-                    if store.surfaces.isEmpty {
+                VStack(alignment: .leading, spacing: 16) {
+                    if enabledAgents.isEmpty {
                         emptyState
                     } else {
-                        detailPane
+                        // Spend legend (OpenUsage Cost card without donut).
+                        if !spendLegend.isEmpty {
+                            spendCard
+                        }
+
+                        // Every available agent + full metric detailization.
+                        ForEach(enabledAgents) { surface in
+                            agentSection(surface)
+                        }
                     }
                 }
                 .padding(.horizontal, 14)
-                .padding(.top, 12)
-                .padding(.bottom, 8)
+                .padding(.top, 14)
+                .padding(.bottom, 10)
             }
-            .frame(maxHeight: 480)
+            .frame(maxHeight: 560)
 
-            menuFooter
+            optionsFooter
         }
         .frame(width: 320)
         .background {
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
+            // OpenUsage: solid elevated white card.
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
                 .fill(Color(nsColor: .windowBackgroundColor))
-                .shadow(color: .black.opacity(0.18), radius: 28, y: 10)
+                .shadow(color: .black.opacity(0.16), radius: 28, y: 10)
         }
-        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         .onAppear {
             if !store.isOpen {
                 store.openDefault()
             }
-            ensureSelection()
-        }
-        .onChange(of: store.surfaces) { _, _ in
-            ensureSelection()
         }
     }
 
-    /// Every surface from Rust `listSurfaces` (full agent catalog).
-    private var allAgents: [PresentationStore.SurfaceRow] {
-        store.surfaces
+    /// Enabled agents (available for usage display).
+    private var enabledAgents: [PresentationStore.SurfaceRow] {
+        store.surfaces.filter(\.enabled)
     }
 
-    private var selectedSurface: PresentationStore.SurfaceRow? {
-        guard let id = selectedSurfaceId else { return nil }
-        return allAgents.first(where: { $0.id == id })
-    }
-
-    private func ensureSelection() {
-        if let id = selectedSurfaceId, allAgents.contains(where: { $0.id == id }) {
-            return
-        }
-        // Prefer first agent that has live buckets; else first agent; else Overview.
-        if let withData = allAgents.first(where: { $0.enabled && !$0.buckets.isEmpty }) {
-            selectedSurfaceId = withData.id
-        } else if let first = allAgents.first {
-            selectedSurfaceId = first.id
-        } else {
-            selectedSurfaceId = nil
-        }
-    }
-
-    // MARK: - Agent tile grid
-
-    private var providerTileGrid: some View {
-        LazyVGrid(columns: tileColumns, spacing: 8) {
-            tileButton(
-                id: nil,
-                title: "Overview",
-                glyph: "",
-                severity: "ok",
-                enabled: true,
-                systemImage: "square.grid.2x2"
-            )
-            ForEach(allAgents) { surface in
-                tileButton(
-                    id: surface.id,
-                    title: shortTitle(label: surface.label, id: surface.id),
-                    glyph: statusItemGlyph(compactLabel: surface.label, surfaceId: surface.id),
-                    severity: worstSeverity(surface),
-                    enabled: surface.enabled,
-                    systemImage: tileSystemImage(surfaceId: surface.id)
-                )
+    /// Per-agent spend lines from Rust money (no invented grand total).
+    private var spendLegend: [(id: String, label: String, amount: String, color: Color)] {
+        let palette: [Color] = [
+            Color(red: 0.30, green: 0.70, blue: 0.55),
+            Color(red: 0.90, green: 0.45, blue: 0.35),
+            Color(red: 0.45, green: 0.50, blue: 0.55),
+            Color.accentColor,
+        ]
+        var i = 0
+        return enabledAgents.compactMap { surface in
+            guard let money = surface.buckets.compactMap(\.usedMoney).first else {
+                return nil
             }
-        }
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Agents")
-    }
-
-    private func tileButton(
-        id: String?,
-        title: String,
-        glyph: String,
-        severity: String,
-        enabled: Bool,
-        systemImage: String?
-    ) -> some View {
-        let selected = selectedSurfaceId == id
-        return Button {
-            selectedSurfaceId = id
-        } label: {
-            VStack(spacing: 4) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(selected ? Color.accentColor : Color.primary.opacity(enabled ? 0.06 : 0.03))
-                        .frame(height: 36)
-                    if let systemImage {
-                        Image(systemName: systemImage)
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(
-                                selected
-                                    ? Color.white
-                                    : Color.primary.opacity(enabled ? 0.8 : 0.35)
-                            )
-                    } else {
-                        Text(glyph)
-                            .font(.system(size: 12, weight: .bold, design: .rounded))
-                            .foregroundStyle(
-                                selected
-                                    ? Color.white
-                                    : Color.primary.opacity(enabled ? 0.85 : 0.35)
-                            )
-                    }
-                }
-                Text(title)
-                    .font(.system(size: 10, weight: selected ? .semibold : .regular))
-                    .foregroundStyle(
-                        selected
-                            ? Color.accentColor
-                            : Color.secondary.opacity(enabled ? 1 : 0.5)
-                    )
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.75)
-                // Severity underline (Amp red / Grok green) when not selected.
-                Capsule()
-                    .fill(selected || !enabled ? Color.clear : underlineTint(severity))
-                    .frame(width: 22, height: 2)
-            }
-            .frame(maxWidth: .infinity)
-            .contentShape(Rectangle())
-            .opacity(enabled || selected ? 1 : 0.85)
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(enabled ? title : "\(title), disabled")
-        .accessibilityAddTraits(selected ? .isSelected : [])
-    }
-
-    private func shortTitle(label: String, id: String) -> String {
-        switch id {
-        case "grok": return "Grok"
-        case "zai": return "z.ai"
-        case "minimax": return "MiniMax"
-        case "opencode": return "OpenCode"
-        default:
-            return label.count <= 8 ? label : String(label.prefix(7))
+            let color = palette[i % palette.count]
+            i += 1
+            return (surface.id, surface.label, formatMoneyDto(money), color)
         }
     }
 
-    /// SF Symbol for known surface ids (layout only — not a provider zoo).
-    private func tileSystemImage(surfaceId: String) -> String? {
-        switch surfaceId {
-        case "claude": return "sparkles"
-        case "codex": return "circle.hexagongrid.fill"
-        case "amp": return "waveform"
-        case "grok": return "circle.dashed"
-        case "zai": return "z.square.fill"
-        case "kimi": return "k.circle"
-        case "minimax": return "waveform.path"
-        case "opencode": return "chevron.left.forwardslash.chevron.right"
-        default: return nil
-        }
-    }
+    // MARK: - Spend card (OpenUsage Cost header, list form)
 
-    // MARK: - Detail (selected agent)
-
-    @ViewBuilder
-    private var detailPane: some View {
-        if let surface = selectedSurface {
-            if surface.enabled {
-                providerDetail(surface)
-            } else {
-                disabledDetail(surface)
-            }
-        } else {
-            overviewDetail
-        }
-    }
-
-    private var overviewDetail: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Overview")
-                .font(.title3.weight(.semibold))
-            Text("All enabled agents")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
-            ForEach(store.overviewRows) { row in
-                Button {
-                    selectedSurfaceId = row.surfaceId
-                } label: {
-                    HStack(spacing: 8) {
-                        Circle()
-                            .fill(severityTint(row.severity))
-                            .frame(width: 7, height: 7)
-                        Text(row.displayLabel)
-                            .font(.body.weight(.medium))
-                            .lineLimit(1)
-                        Spacer(minLength: 6)
-                        trailingOverview(row)
-                    }
-                    .padding(.vertical, 5)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-            }
-
-            if store.overviewRows.isEmpty {
-                Text("No fresh usage rows yet — select an agent or Refresh.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func trailingOverview(_ row: PresentationStore.OverviewRow) -> some View {
-        switch overviewGlanceBody(
-            headline: row.headline,
-            resetLabel: row.resetLabel,
-            statusWord: row.statusWord
-        ) {
-        case .numeric(let headline, let reset):
-            VStack(alignment: .trailing, spacing: 1) {
-                Text(headline)
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(.secondary)
-                if let reset {
-                    Text(reset)
-                        .font(.caption2.monospacedDigit())
-                        .foregroundStyle(.tertiary)
-                }
-            }
-        case .statusWord(let word):
-            Text(word)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-    }
-
-    private func disabledDetail(_ surface: PresentationStore.SurfaceRow) -> some View {
+    private var spendCard: some View {
         VStack(alignment: .leading, spacing: 12) {
-            identityHeader(surface)
-            Text("This agent is disabled in Settings. Enable it to refresh quotas and show bars.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-            Toggle(
-                "Enable \(surface.label)",
-                isOn: Binding(
-                    get: { surface.enabled },
-                    set: { store.setEnabled(surfaceId: surface.id, enabled: $0) }
-                )
-            )
-            .toggleStyle(.switch)
-            .controlSize(.small)
-        }
-    }
-
-    private func providerDetail(_ surface: PresentationStore.SurfaceRow) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            identityHeader(surface)
-                .padding(.bottom, 10)
-
-            Divider().opacity(0.3)
-
-            VStack(alignment: .leading, spacing: 14) {
-                if surface.buckets.isEmpty {
-                    emptyMetric()
-                    Text("No quota data yet. Try Refresh after signing in with this agent.")
+            HStack {
+                Text("Spend")
+                    .font(.subheadline.weight(.semibold))
+                Spacer()
+                Button {
+                    store.selectUsageSurface(nil)
+                    openWindow(id: "usage")
+                } label: {
+                    Image(systemName: "arrow.up.right.square")
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                } else {
-                    ForEach(surface.buckets) { bucket in
-                        metricBlock(bucket)
-                        Divider().opacity(0.2)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Open full usage")
+            }
+
+            ForEach(spendLegend, id: \.id) { row in
+                HStack(spacing: 8) {
+                    Circle()
+                        .fill(row.color)
+                        .frame(width: 8, height: 8)
+                    Text(row.label)
+                        .font(.subheadline)
+                    Spacer()
+                    Text(row.amount)
+                        .font(.subheadline.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(Color(nsColor: .controlBackgroundColor).opacity(0.65))
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Spend by agent")
+    }
+
+    // MARK: - Agent section (OpenUsage provider card)
+
+    private func agentSection(_ surface: PresentationStore.SurfaceRow) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            // Header outside inset card: glyph + name + plan.
+            Button {
+                store.selectUsageSurface(surface.id)
+                openWindow(id: "usage")
+            } label: {
+                HStack(spacing: 8) {
+                    agentGlyph(surface)
+                    Text(surface.label)
+                        .font(.body.weight(.semibold))
+                        .lineLimit(1)
+                    if let plan = surface.planLabel, !plan.isEmpty {
+                        Text(plan)
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer(minLength: 4)
+                    if let symbol = statusBadgeSymbol(surface.status) {
+                        Image(systemName: symbol)
+                            .font(.caption)
+                            .foregroundStyle(.orange)
                     }
                 }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("\(surface.label), open usage")
 
-                moneyGrid(surface)
+            // Inset metric group.
+            VStack(alignment: .leading, spacing: 14) {
+                if surface.buckets.isEmpty {
+                    emptyMetricRow()
+                } else {
+                    ForEach(surface.buckets) { bucket in
+                        metricRow(bucket)
+                    }
+                }
 
                 if let caption = surface.estimateCaption, !caption.isEmpty {
                     Text(caption)
@@ -347,49 +187,61 @@ struct PopoverRoot: View {
                         .font(.caption)
                         .foregroundStyle(.orange)
                 }
-            }
-            .padding(.top, 12)
 
-            Button {
-                store.selectUsageSurface(surface.id)
-                openWindow(id: "usage")
-            } label: {
+                // Account / updated meta footer inside card.
                 HStack {
-                    Label("Open full usage", systemImage: "arrow.up.right.square")
+                    Text(surface.updatedLabel.isEmpty ? "—" : surface.updatedLabel)
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
                     Spacer()
+                    if let account = accountDisplay(surface) {
+                        Text(account)
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
                 }
-                .font(.body)
-                .padding(.top, 8)
             }
-            .buttonStyle(.plain)
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background {
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(Color(nsColor: .controlBackgroundColor).opacity(0.55))
+            }
         }
     }
 
-    private func identityHeader(_ surface: PresentationStore.SurfaceRow) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(alignment: .firstTextBaseline) {
-                Text(surface.label)
-                    .font(.title3.weight(.semibold))
-                Spacer(minLength: 8)
-                if let account = accountDisplay(surface) {
-                    Text(account)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                }
+    @ViewBuilder
+    private func agentGlyph(_ surface: PresentationStore.SurfaceRow) -> some View {
+        let severity = worstSeverity(surface)
+        ZStack {
+            Circle()
+                .fill(severityTint(severity).opacity(0.18))
+                .frame(width: 22, height: 22)
+            if let symbol = agentSystemImage(surface.id) {
+                Image(systemName: symbol)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(severityTint(severity))
+            } else {
+                Text(statusItemGlyph(compactLabel: surface.label, surfaceId: surface.id))
+                    .font(.system(size: 10, weight: .bold, design: .rounded))
+                    .foregroundStyle(severityTint(severity))
             }
-            HStack {
-                Text(surface.updatedLabel.isEmpty ? "—" : surface.updatedLabel)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Spacer()
-                if let plan = surface.planLabel, !plan.isEmpty {
-                    Text(plan)
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(.secondary)
-                }
-            }
+        }
+    }
+
+    private func agentSystemImage(_ id: String) -> String? {
+        switch id {
+        case "claude": return "sparkles"
+        case "codex": return "circle.hexagongrid.fill"
+        case "amp": return "waveform"
+        case "grok": return "circle.dashed"
+        case "zai": return "z.square.fill"
+        case "kimi": return "k.circle"
+        case "minimax": return "waveform.path"
+        case "opencode": return "chevron.left.forwardslash.chevron.right"
+        default: return nil
         }
     }
 
@@ -399,10 +251,12 @@ struct PopoverRoot: View {
         return nil
     }
 
-    private func metricBlock(_ bucket: PresentationStore.BucketRow) -> some View {
+    // MARK: - Metric row (OpenUsage Session / Weekly anatomy)
+
+    private func metricRow(_ bucket: PresentationStore.BucketRow) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(bucket.label)
-                .font(.body.weight(.semibold))
+                .font(.subheadline.weight(.semibold))
 
             switch bucketRowShape(
                 remainingPercent: bucket.remainingPercent,
@@ -410,6 +264,7 @@ struct PopoverRoot: View {
             ) {
             case .gauge:
                 if let remaining = bucket.remainingPercent {
+                    // OpenUsage: remaining fill grows L→R (full = healthy).
                     remainingBar(remaining: remaining, severity: bucket.severity)
                 }
                 HStack(alignment: .firstTextBaseline) {
@@ -423,10 +278,13 @@ struct PopoverRoot: View {
                             .font(.caption)
                             .monospacedDigit()
                             .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.trailing)
                     }
                 }
                 if let pace = bucket.paceLabel, !pace.isEmpty {
-                    paceRow(pace)
+                    Text(pace)
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
                 }
             case .valueOnly:
                 if let desc = bucket.limitLabel ?? bucket.statusSlot, !desc.isEmpty {
@@ -435,47 +293,31 @@ struct PopoverRoot: View {
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                if let used = bucket.usedLabel, !used.isEmpty {
-                    Text(used)
-                        .font(.caption.monospacedDigit())
+                HStack {
+                    Text(bucket.usedLabel ?? moneyLine(bucket) ?? "—")
+                        .font(.caption)
+                        .monospacedDigit()
                         .foregroundStyle(.secondary)
-                }
-            case .empty:
-                emptyMetric()
-            }
-        }
-    }
-
-    private func moneyGrid(_ surface: PresentationStore.SurfaceRow) -> some View {
-        let pairs: [(String, String)] = surface.buckets.compactMap { bucket in
-            guard let money = bucket.usedMoney else { return nil }
-            let title = bucket.label.isEmpty ? "Spend" : bucket.label
-            return (title, formatMoneyDto(money))
-        }
-        return Group {
-            if !pairs.isEmpty {
-                LazyVGrid(
-                    columns: [GridItem(.flexible()), GridItem(.flexible())],
-                    alignment: .leading,
-                    spacing: 12
-                ) {
-                    ForEach(Array(pairs.enumerated()), id: \.offset) { _, pair in
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(pair.0)
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-                            Text(pair.1)
-                                .font(.title3.weight(.semibold).monospacedDigit())
-                        }
+                    Spacer()
+                    if let reset = bucket.resetLabel {
+                        Text(reset)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
                 }
-                .padding(.top, 2)
+            case .empty:
+                emptyMetricRow()
             }
         }
+        .accessibilityElement(children: .combine)
     }
 
-    private func emptyMetric() -> some View {
-        VStack(alignment: .leading, spacing: 5) {
+    private func moneyLine(_ bucket: PresentationStore.BucketRow) -> String? {
+        bucket.usedMoney.map(formatMoneyDto)
+    }
+
+    private func emptyMetricRow() -> some View {
+        VStack(alignment: .leading, spacing: 6) {
             Capsule()
                 .fill(Color.primary.opacity(0.08))
                 .frame(height: 4)
@@ -491,42 +333,6 @@ struct PopoverRoot: View {
         }
     }
 
-    @ViewBuilder
-    private func paceRow(_ pace: String) -> some View {
-        let parts = splitPace(pace)
-        if parts.count >= 2 {
-            HStack(alignment: .firstTextBaseline) {
-                Text(parts[0])
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-                    .monospacedDigit()
-                Spacer(minLength: 8)
-                Text(parts[1])
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-                    .multilineTextAlignment(.trailing)
-            }
-        } else {
-            Text(pace)
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-    }
-
-    private func splitPace(_ pace: String) -> [String] {
-        for sep in [" · ", " • ", " | ", " — "] {
-            let bits = pace.components(separatedBy: sep)
-            if bits.count >= 2 {
-                return [
-                    bits[0].trimmingCharacters(in: .whitespaces),
-                    bits.dropFirst().joined(separator: sep).trimmingCharacters(in: .whitespaces),
-                ]
-            }
-        }
-        return [pace]
-    }
-
     private func remainingBar(remaining: UInt8, severity: String) -> some View {
         let frac = Double(remaining) / 100.0
         return GeometryReader { geo in
@@ -534,38 +340,20 @@ struct PopoverRoot: View {
                 Capsule()
                     .fill(Color.primary.opacity(0.10))
                 Capsule()
-                    .fill(barFill(severity))
+                    .fill(openUsageBarFill(severity))
                     .frame(width: max(3, geo.size.width * frac))
-                HStack(spacing: 0) {
-                    ForEach(0..<4, id: \.self) { i in
-                        if i > 0 {
-                            Rectangle()
-                                .fill(Color(nsColor: .windowBackgroundColor).opacity(0.85))
-                                .frame(width: 2, height: 7)
-                        }
-                        Spacer(minLength: 0)
-                    }
-                }
             }
         }
-        .frame(height: 6)
+        .frame(height: 4)
         .accessibilityHidden(true)
     }
 
-    private func barFill(_ severity: String) -> Color {
+    /// OpenUsage uses a single blue accent for healthy bars.
+    private func openUsageBarFill(_ severity: String) -> Color {
         switch severity {
         case "danger": return .red
         case "warn": return .orange
-        default: return Color(red: 0.35, green: 0.72, blue: 0.55)
-        }
-    }
-
-    private func underlineTint(_ severity: String) -> Color {
-        switch severity {
-        case "danger": return .red
-        case "warn": return .orange
-        case "ok": return Color(red: 0.35, green: 0.72, blue: 0.55).opacity(0.9)
-        default: return .clear
+        default: return Color.accentColor
         }
     }
 
@@ -574,50 +362,74 @@ struct PopoverRoot: View {
         return surface.buckets
             .map(\.severity)
             .min(by: { (ranks[$0] ?? 9) < (ranks[$1] ?? 9) })
-            ?? (surface.enabled ? "ok" : "info")
+            ?? "ok"
     }
 
-    // MARK: - Menu footer
+    // MARK: - Footer (OpenUsage Options)
 
-    private var menuFooter: some View {
+    private var optionsFooter: some View {
         VStack(spacing: 0) {
-            Divider().opacity(0.35)
-            menuRow(title: "Open Usage…", systemImage: "rectangle.split.2x1", shortcut: nil) {
-                store.selectUsageSurface(selectedSurfaceId)
-                openWindow(id: "usage")
-            }
-            menuRow(title: "Refresh", systemImage: "arrow.clockwise", shortcut: "⌘R") {
-                store.refreshAll()
-            }
-            .keyboardShortcut("r", modifiers: [.command])
-            SettingsLink {
-                menuRowLabel(title: "Settings…", systemImage: "gearshape", shortcut: "⌘,")
-            }
-            .keyboardShortcut(",", modifiers: [.command])
-            .buttonStyle(.plain)
-            if !store.nextRefreshLabel.isEmpty {
-                HStack {
-                    Text(store.nextRefreshLabel)
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
-                    Spacer()
+            Divider().opacity(0.25)
+            HStack(alignment: .center, spacing: 10) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("jackin❯ Desktop")
+                        .font(.caption2.weight(.medium))
+                        .foregroundStyle(.secondary)
+                        .accessibilityLabel("jackin Desktop")
+                    if !store.nextRefreshLabel.isEmpty {
+                        Text(store.nextRefreshLabel)
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                            .lineLimit(1)
+                    }
                 }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 4)
+                Spacer(minLength: 8)
+                Menu {
+                    Button("Open Usage…") {
+                        store.selectUsageSurface(nil)
+                        openWindow(id: "usage")
+                    }
+                    Button("Refresh") {
+                        store.refreshAll()
+                    }
+                    .keyboardShortcut("r", modifiers: [.command])
+                    Divider()
+                    SettingsLink {
+                        Text("Settings…")
+                    }
+                    .keyboardShortcut(",", modifiers: [.command])
+                    Divider()
+                    Button("Quit") {
+                        NSApplication.shared.terminate(nil)
+                    }
+                    .keyboardShortcut("q", modifiers: [.command])
+                } label: {
+                    HStack(spacing: 4) {
+                        Text("Options")
+                            .font(.caption.weight(.semibold))
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 8, weight: .bold))
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background {
+                        Capsule().fill(Color.primary.opacity(0.07))
+                    }
+                }
+                .menuStyle(.borderlessButton)
+                .fixedSize()
             }
-            menuRow(title: "Quit", systemImage: "xmark.square", shortcut: "⌘Q") {
-                NSApplication.shared.terminate(nil)
-            }
-            .keyboardShortcut("q", modifiers: [.command])
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
         }
     }
 
     private var emptyState: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("No agents available.")
+            Text("No agents enabled.")
                 .font(.body.weight(.medium))
             Text(
-                "jackin❯ Desktop lists every supported agent surface. Sign in with an agent CLI, then Refresh."
+                "Enable agents in Settings. jackin❯ Desktop reads credentials your agent CLIs already store."
             )
             .font(.caption)
             .foregroundStyle(.secondary)
@@ -627,36 +439,6 @@ struct PopoverRoot: View {
             }
             .controlSize(.small)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private func menuRow(
-        title: String,
-        systemImage: String,
-        shortcut: String?,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            menuRowLabel(title: title, systemImage: systemImage, shortcut: shortcut)
-        }
-        .buttonStyle(.plain)
-    }
-
-    private func menuRowLabel(title: String, systemImage: String, shortcut: String?) -> some View {
-        HStack {
-            Label(title, systemImage: systemImage)
-                .labelStyle(.titleAndIcon)
-            Spacer()
-            if let shortcut {
-                Text(shortcut)
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
-                    .monospacedDigit()
-            }
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 8)
-        .contentShape(Rectangle())
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
