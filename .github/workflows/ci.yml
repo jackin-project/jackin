@@ -490,6 +490,7 @@ jobs:
           lane: ${{ matrix.config.lane }}
           xtask-contract: ${{ needs.changes.outputs.ci-xtask-contract }}
           include-tools: "false"
+          allow-miss: "true"
       - name: Cache Rust toolchain
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -696,6 +697,7 @@ jobs:
           tools-contract: ${{ needs.changes.outputs.ci-tools-contract }}
           xtask-contract: ${{ needs.changes.outputs.ci-xtask-contract }}
           include-tools: "false"
+          allow-miss: "true"
       - id: select
         name: Select affected crate tests once
         env:
@@ -733,6 +735,7 @@ jobs:
           tools-contract: ${{ needs.changes.outputs.ci-tools-contract }}
           xtask-contract: ${{ needs.changes.outputs.ci-xtask-contract }}
           include-tools: "false"
+          allow-miss: "true"
       - name: Fetch base branch
         run: git fetch --no-tags --depth=1 origin main:refs/remotes/origin/main
       - run: |
@@ -757,6 +760,7 @@ jobs:
           tools-contract: ${{ needs.changes.outputs.ci-tools-contract }}
           xtask-contract: ${{ needs.changes.outputs.ci-xtask-contract }}
           include-tools: "true"
+          allow-miss: "true"
       - name: Cache Rust toolchain
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -817,6 +821,7 @@ jobs:
           tools-contract: ${{ needs.changes.outputs.ci-tools-contract }}
           xtask-contract: ${{ needs.changes.outputs.ci-xtask-contract }}
           include-tools: "false"
+          allow-miss: "true"
       - name: Fetch base branch
         run: git fetch --no-tags origin "${{ github.base_ref }}"
       - name: README freshness gate
@@ -855,6 +860,7 @@ jobs:
           lane: ${{ matrix.config.lane }}
           tools-contract: ${{ needs.changes.outputs.ci-tools-contract }}
           xtask-contract: ${{ needs.changes.outputs.ci-xtask-contract }}
+          allow-miss: "true"
       - name: Cache Rust toolchain
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -964,6 +970,7 @@ jobs:
           lane: ${{ matrix.config.lane }}
           tools-contract: ${{ needs.changes.outputs.ci-tools-contract }}
           xtask-contract: ${{ needs.changes.outputs.ci-xtask-contract }}
+          allow-miss: "true"
       - name: Cache Rust toolchain
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -1037,6 +1044,7 @@ jobs:
           lane: ${{ matrix.config.lane }}
           tools-contract: ${{ needs.changes.outputs.ci-tools-contract }}
           xtask-contract: ${{ needs.changes.outputs.ci-xtask-contract }}
+          allow-miss: "true"
       - name: Cache Rust toolchain
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
