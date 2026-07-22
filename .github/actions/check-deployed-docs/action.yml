@@ -57,7 +57,7 @@ runs:
     - name: Setup lychee via mise
       uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4
       with:
-        version: "2026.6.11"
+        version: "2026.7.7"
         cache_key_prefix: "mise-v2"
         working_directory: docs
         install_args: "lychee"
