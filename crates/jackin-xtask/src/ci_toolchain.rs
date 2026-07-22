@@ -207,13 +207,13 @@ fn hard_remove_rustup_toolchains(version: &str) -> Result<()> {
         }
     }
     // Stale update-hashes cause rustup to skip re-download of corrupted components.
-    if let Some(hashes) = rustup_home().map(|home| home.join("update-hashes")) {
-        if hashes.is_dir() {
-            for entry in crate::fs_util::read_dir_sorted(&hashes)? {
-                let name = entry.file_name().into_string().unwrap_or_default();
-                if name.starts_with(version) {
-                    let _ = fs::remove_file(entry.path());
-                }
+    if let Some(hashes) = rustup_home().map(|home| home.join("update-hashes"))
+        && hashes.is_dir()
+    {
+        for entry in crate::fs_util::read_dir_sorted(&hashes)? {
+            let name = entry.file_name().into_string().unwrap_or_default();
+            if name.starts_with(version) {
+                drop(fs::remove_file(entry.path()));
             }
         }
     }
