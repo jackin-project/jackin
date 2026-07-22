@@ -30,8 +30,11 @@ Download `jackin-desktop-<VERSION>-aarch64-apple-darwin.zip` plus `.sha256` / `.
 ### Local developer build
 
 ```bash
-JACKIN_APP_VERSION=0.6.0 JACKIN_APP_BUILD=1 ./scripts/build-usage-menu-bar-app.sh
-JACKIN_APP_VERSION=0.6.0 JACKIN_APP_BUILD=1 ./scripts/verify-usage-menu-bar-app.sh native/dist/JackinDesktop.app
+mise install
+mise run desktop-build -- 0.6.0 1
+mise run desktop-verify
+# or: cargo xtask desktop build --version 0.6.0 --build 1
+#     cargo xtask desktop verify native/dist/JackinDesktop.app
 open native/dist/JackinDesktop.app
 ```
 
@@ -44,8 +47,7 @@ Requires a Developer ID Application identity and notarytool credentials (keychai
 ```bash
 export DEVELOPER_ID_APPLICATION='Developer ID Application: Your Name (TEAMID)'
 export NOTARY_PROFILE=jackin-notary
-export JACKIN_APP_VERSION=0.6.0 JACKIN_APP_BUILD=1
-./scripts/build-usage-menu-bar-app.sh
+mise run desktop-build -- 0.6.0 1
 ./scripts/sign-notarize-usage-menu-bar.sh
 ```
 

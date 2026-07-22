@@ -14,10 +14,8 @@ reference only (clean-room).
 | `Generated/` | UniFFI C header + module map (regenerate) |
 | `Sources/JackinUsageBridge` | Generated Swift + `PresentationStore` + pure display helpers |
 | `Sources/JackinDesktop/` | Split UI: `StatusItemLabel`, `PopoverRoot`, `SurfaceCard`, `SettingsView`, `GlassFallbacks`, logomark resource |
-| `../scripts/generate-usage-swift-bindings.sh` | Bindings |
-| `../scripts/build-usage-xcframework.sh` | XCFramework |
-| `../scripts/build-usage-menu-bar-app.sh` | Arm64 static `JackinDesktop.app` (local/PR/release assembly) |
-| `../scripts/verify-usage-menu-bar-app.sh` | Fail-closed verifier (ad-hoc or `RELEASE_MODE=1`) |
+| `cargo xtask desktop …` / `mise run desktop-*` | Canonical build, verify, XCFramework, bindings (Rust) |
+| `../scripts/*-usage-*.sh` | Thin wrappers re-executing `cargo xtask desktop …` (compat only) |
 | `../scripts/sign-notarize-usage-menu-bar.sh` | Developer ID sign + notarize + staple + final ZIP |
 | `../scripts/release-usage-menu-bar-state.sh` | Independent release/cask state for reconciliation |
 
@@ -37,12 +35,23 @@ One path builds the local, PR, and release app:
 
 ```bash
 mise install
-JACKIN_APP_VERSION=0.6.0 JACKIN_APP_BUILD=1 ./scripts/build-usage-menu-bar-app.sh
-JACKIN_APP_VERSION=0.6.0 JACKIN_APP_BUILD=1 ./scripts/verify-usage-menu-bar-app.sh native/dist/JackinDesktop.app
+mise run desktop-build -- 0.6.0 1
+# equivalent: cargo xtask desktop build --version 0.6.0 --build 1
+mise run desktop-verify
+# equivalent: cargo xtask desktop verify native/dist/JackinDesktop.app
 open native/dist/JackinDesktop.app
 ```
 
 Swift tests (full Xcode): after the XCFramework exists, `cd native && swift test -c release`.
+
+| Operator entry | Rust implementation |
+|---|---|
+| `mise run desktop-build -- <ver> <build>` | `cargo xtask desktop build` |
+| `mise run desktop-verify` | `cargo xtask desktop verify` |
+| `mise run desktop-xcframework` | `cargo xtask desktop xcframework` |
+| `mise run desktop-bindings` | `cargo xtask desktop bindings` |
+
+Legacy `scripts/build-usage-menu-bar-app.sh` / `verify-usage-menu-bar-app.sh` thin-wrap the same xtask commands (do not add new logic there).
 
 ## CI / release contracts (secret **names** only)
 
@@ -61,8 +70,7 @@ Swift tests (full Xcode): after the XCFramework exists, `cd native && swift test
 ```bash
 export DEVELOPER_ID_APPLICATION='Developer ID Application: Your Name (TEAMID)'
 export NOTARY_PROFILE=jackin-notary   # or set APP_STORE_CONNECT_* path/key/issuer
-export JACKIN_APP_VERSION=0.6.0 JACKIN_APP_BUILD=1
-./scripts/build-usage-menu-bar-app.sh
+mise run desktop-build -- 0.6.0 1
 ./scripts/sign-notarize-usage-menu-bar.sh
 # final ZIP: native/dist/jackin-desktop-0.6.0-aarch64-apple-darwin.zip
 ```

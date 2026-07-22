@@ -439,24 +439,23 @@ jobs:
         env:
           JACKIN_APP_VERSION: ${{ env.VERSION }}
           JACKIN_APP_BUILD: ${{ env.APP_BUILD }}
-        run: ./scripts/build-usage-menu-bar-app.sh
+        run: cargo xtask desktop build --version "${JACKIN_APP_VERSION}" --build "${JACKIN_APP_BUILD}"
 
       - name: Verify ad-hoc app
         env:
           JACKIN_APP_VERSION: ${{ env.VERSION }}
           JACKIN_APP_BUILD: ${{ env.APP_BUILD }}
-        run: ./scripts/verify-usage-menu-bar-app.sh native/dist/JackinDesktop.app
+        run: cargo xtask desktop verify native/dist/JackinDesktop.app --version "${JACKIN_APP_VERSION}" --build "${JACKIN_APP_BUILD}"
 
       - name: Ad-hoc must fail release-mode verifier
         if: env.MODE == 'validate'
         env:
           JACKIN_APP_VERSION: ${{ env.VERSION }}
           JACKIN_APP_BUILD: ${{ env.APP_BUILD }}
-          RELEASE_MODE: "1"
         run: |
           set -euo pipefail
-          if ./scripts/verify-usage-menu-bar-app.sh native/dist/JackinDesktop.app; then
-            echo "::error::ad-hoc app must not pass RELEASE_MODE=1"
+          if cargo xtask desktop verify native/dist/JackinDesktop.app --version "${JACKIN_APP_VERSION}" --build "${JACKIN_APP_BUILD}" --release; then
+            echo "::error::ad-hoc app must not pass --release"
             exit 1
           fi
           echo "ok: ad-hoc correctly fails release-mode checks"

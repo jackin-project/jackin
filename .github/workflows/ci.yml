@@ -194,6 +194,8 @@ jobs:
               - 'mise.toml'
             native:
               - 'native/**'
+              - 'crates/jackin-xtask/src/desktop.rs'
+              - 'crates/jackin-xtask/src/desktop/**'
               - 'scripts/build-usage-xcframework.sh'
               - 'scripts/build-usage-menu-bar-app.sh'
               - 'scripts/generate-usage-swift-bindings.sh'
@@ -1168,16 +1170,16 @@ jobs:
       - name: Regenerated bindings must be clean
         run: |
           set -euo pipefail
-          ./scripts/generate-usage-swift-bindings.sh
+          cargo xtask desktop bindings
           git diff --exit-code -- native/Generated native/Sources/JackinUsageBridge/jackin_usage_ffi.swift
       - name: Build arm64 static app
-        run: ./scripts/build-usage-menu-bar-app.sh
+        run: cargo xtask desktop build --version "${JACKIN_APP_VERSION}" --build "${JACKIN_APP_BUILD}"
       - name: Verify app + ZIP round-trip
         run: |
           set -euo pipefail
-          ./scripts/verify-usage-menu-bar-app.sh native/dist/JackinDesktop.app
+          cargo xtask desktop verify native/dist/JackinDesktop.app
           zip -qry /tmp/jackin-desktop-ci.zip native/dist/JackinDesktop.app
-          ./scripts/verify-usage-menu-bar-app.sh native/dist/JackinDesktop.app /tmp/jackin-desktop-ci.zip
+          cargo xtask desktop verify native/dist/JackinDesktop.app /tmp/jackin-desktop-ci.zip
       - name: Swift tests
         run: |
           set -euo pipefail
