@@ -6,8 +6,20 @@
 mod affected_crates;
 mod agent_files;
 mod agent_links;
+mod agent_status_truth;
 mod arch;
 mod ci;
+mod ci_audit;
+mod ci_build_times;
+mod ci_cargo_audit;
+mod ci_doc_examples;
+mod ci_fuzz;
+mod ci_junit;
+mod ci_result;
+mod ci_route;
+mod ci_stage;
+mod ci_target;
+mod ci_toolchain;
 mod cmd;
 mod construct;
 mod container_paths_gate;
@@ -15,6 +27,7 @@ mod desktop;
 mod docs;
 mod frame_timing;
 mod fs_util;
+mod github;
 mod headers;
 mod health;
 mod lint;
@@ -23,6 +36,7 @@ mod profile_matrix;
 mod pty_fixture;
 mod ratchet;
 mod readme_freshness;
+mod release_archive;
 mod release_verify;
 mod report;
 mod schema;
@@ -55,6 +69,42 @@ enum Command {
     /// Use as `cargo xtask ci --fast` for the non-e2e gate, or add `--e2e`
     /// to include Docker-backed smoke tests.
     Ci(ci::CiArgs),
+    /// Audit every job and step in the current GitHub Actions run.
+    #[command(name = "ci-audit")]
+    CiAudit(ci_audit::CiAuditArgs),
+    /// Measure clean-package and incremental build time without discarding dependencies.
+    #[command(name = "ci-build-times")]
+    CiBuildTimes(ci_build_times::CiBuildTimesArgs),
+    /// Run `cargo audit` without fetching when a restored advisory database is usable.
+    #[command(name = "ci-cargo-audit")]
+    CiCargoAudit(ci_cargo_audit::CiCargoAuditArgs),
+    /// Require documentation examples to have nextest-discoverable regression coverage.
+    #[command(name = "ci-doc-examples")]
+    CiDocExamples(ci_doc_examples::CiDocExamplesArgs),
+    /// Run every bounded fuzz target owned by one crate.
+    #[command(name = "ci-fuzz")]
+    CiFuzz(ci_fuzz::CiFuzzArgs),
+    /// Analyze one `JUnit` report and enforce the flake quarantine.
+    #[command(name = "ci-junit")]
+    CiJunit(ci_junit::CiJunitArgs),
+    /// Resolve reusable per-crate CI results.
+    #[command(name = "ci-result", subcommand)]
+    CiResult(ci_result::CiResultCommand),
+    /// Resolve affected crates and reusable test inputs in one CI step.
+    #[command(name = "ci-route")]
+    CiRoute(ci_route::CiRouteArgs),
+    /// Stage the prepared CI binary set as one atomic artifact operation.
+    #[command(name = "ci-stage")]
+    CiStage(ci_stage::CiStageArgs),
+    /// Manage the reusable per-crate Cargo target used by CI.
+    #[command(name = "ci-target", subcommand)]
+    CiTarget(ci_target::CiTargetCommand),
+    /// Validate and activate the prepared Rust toolchain used by CI.
+    #[command(name = "ci-toolchain", subcommand)]
+    CiToolchain(ci_toolchain::CiToolchainCommand),
+    /// Perform resilient GitHub API and release operations for CI.
+    #[command(name = "github", subcommand)]
+    Github(github::GithubCommand),
     /// Construct base-image build and publish tasks.
     ///
     /// Use as `cargo xtask construct <subcommand>`.
@@ -139,6 +189,9 @@ enum Command {
     /// Use as `cargo xtask release-verify <archive>.tar.gz` or `.zip` (usage menu-bar).
     #[command(name = "release-verify")]
     ReleaseVerify(release_verify::ReleaseVerifyArgs),
+    /// Build, package, sign, and describe every release target for one crate.
+    #[command(name = "release-archives")]
+    ReleaseArchives(release_archive::ReleaseArchivesArgs),
     /// Report-only code-health dashboard (completed codebase-health Phase 0).
     ///
     /// Use as `cargo xtask health`, `cargo xtask health --format json`, or
@@ -161,6 +214,8 @@ enum LintCommand {
     /// Enforce that no `README.md` or `AGENTS.md` links to an `AGENTS.md`
     /// (both files are self-contained; nearest-`AGENTS.md`-wins).
     AgentLinks(agent_links::LintAgentLinksArgs),
+    /// Keep the agent-runtime-status roadmap claim bound to compiled wiring.
+    AgentStatusTruth(agent_status_truth::LintAgentStatusTruthArgs),
     /// Dependency-direction gate (Workstream 4).
     Arch(arch::LintArchArgs),
     /// Residual `/jackin` production-literal shrink-only gate.
@@ -223,6 +278,23 @@ fn run_all_lints(strict: bool) -> anyhow::Result<()> {
     }
 }
 
+fn run_lint(command: Option<LintCommand>, strict: bool) -> anyhow::Result<()> {
+    match command {
+        Some(LintCommand::Files(args)) => lint::run(args),
+        Some(LintCommand::Tests(args)) => test_layout::run(args),
+        Some(LintCommand::Agents(args)) => agent_files::run(args),
+        Some(LintCommand::AgentLinks(args)) => agent_links::run(args),
+        Some(LintCommand::AgentStatusTruth(args)) => agent_status_truth::run(args),
+        Some(LintCommand::Arch(args)) => arch::run(args),
+        Some(LintCommand::ContainerPaths(args)) => container_paths_gate::run(args),
+        Some(LintCommand::Headers(args)) => headers::run(args),
+        Some(LintCommand::ReadmeFreshness(args)) => readme_freshness::run(args),
+        Some(LintCommand::Suppressions(args)) => suppressions::run(args),
+        Some(LintCommand::Ratchet(args)) => ratchet::run(args),
+        None => run_all_lints(strict),
+    }
+}
+
 fn main() -> ExitCode {
     let cli = Cli::parse();
     let result = match cli.command {
@@ -230,6 +302,18 @@ fn main() -> ExitCode {
         Command::Construct(cmd) => construct::run(cmd),
         Command::Desktop(cmd) => desktop::run(cmd),
         Command::Ci(args) => ci::run(args),
+        Command::CiAudit(args) => ci_audit::run(args),
+        Command::CiBuildTimes(args) => ci_build_times::run(args),
+        Command::CiCargoAudit(args) => ci_cargo_audit::run(args),
+        Command::CiDocExamples(args) => ci_doc_examples::run(args),
+        Command::CiFuzz(args) => ci_fuzz::run(args),
+        Command::CiJunit(args) => ci_junit::run(args),
+        Command::CiResult(command) => ci_result::run(command),
+        Command::CiRoute(args) => ci_route::run(args),
+        Command::CiStage(args) => ci_stage::run(args),
+        Command::CiTarget(command) => ci_target::run(command),
+        Command::CiToolchain(command) => ci_toolchain::run(command),
+        Command::Github(command) => github::run(command),
         Command::Pr(cmd) => pr::run(cmd),
         Command::PtyFixture(args) => pty_fixture::run(args),
         Command::FrameTiming(args) => frame_timing::run(args),
@@ -242,20 +326,9 @@ fn main() -> ExitCode {
         Command::TelemetryBench(args) => telemetry_bench::run(args),
         Command::ProfileMatrix(args) => profile_matrix::run(args),
         Command::ReleaseVerify(args) => release_verify::run(args),
+        Command::ReleaseArchives(args) => release_archive::run(args),
         Command::Health(args) => health::run(args),
-        Command::Lint { command, strict } => match command {
-            Some(LintCommand::Files(args)) => lint::run(args),
-            Some(LintCommand::Tests(args)) => test_layout::run(args),
-            Some(LintCommand::Agents(args)) => agent_files::run(args),
-            Some(LintCommand::AgentLinks(args)) => agent_links::run(args),
-            Some(LintCommand::Arch(args)) => arch::run(args),
-            Some(LintCommand::ContainerPaths(args)) => container_paths_gate::run(args),
-            Some(LintCommand::Headers(args)) => headers::run(args),
-            Some(LintCommand::ReadmeFreshness(args)) => readme_freshness::run(args),
-            Some(LintCommand::Suppressions(args)) => suppressions::run(args),
-            Some(LintCommand::Ratchet(args)) => ratchet::run(args),
-            None => run_all_lints(strict),
-        },
+        Command::Lint { command, strict } => run_lint(command, strict),
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,

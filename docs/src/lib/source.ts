@@ -16,6 +16,21 @@ export const source = loader({
   },
 })
 
+export const publicPageUrls = source
+  .getPages()
+  .map((page) => page.url)
+  .filter((url) => !url.startsWith('/reference') && !url.startsWith('/roadmap'))
+
+const serializedPageTreeJson = source
+  .serializePageTree(source.getPageTree())
+  .then((tree) => JSON.stringify(tree))
+
+export async function freshSerializedPageTree() {
+  return JSON.parse(await serializedPageTreeJson) as Awaited<
+    ReturnType<typeof source.serializePageTree>
+  >
+}
+
 export function pageCanonicalUrl(pageUrl: string) {
   return new URL(pageUrl.replace(/\/?$/, '/'), site.origin).toString()
 }

@@ -1,6 +1,6 @@
 # jackin-xtask
 
-The workspace's `cargo xtask` automation — CI lanes, lint gates, docs checks, release/construct helpers, schema checks, and PR tooling. The single entry point for "run the project's checks locally": `cargo xtask ci`, `cargo xtask ci --fast`, `cargo xtask ci --e2e`.
+Workspace automation for CI, lints, docs, releases, schemas, and PRs. Merge-readiness entry points are `cargo xtask ci`, `cargo xtask ci --fast`, and `cargo xtask ci --e2e`.
 
 ## What this crate owns
 
@@ -18,21 +18,21 @@ The workspace's `cargo xtask` automation — CI lanes, lint gates, docs checks, 
 |---|---|---|
 | [`main.rs`](src/main.rs) | `cargo xtask` dispatcher | — |
 | [`ci.rs`](src/ci.rs) · [`ci/`](src/ci) | CI orchestration | [`tests.rs`](src/ci/tests.rs) |
+| [`ci_audit.rs`](src/ci_audit.rs) · [`ci_cargo_audit.rs`](src/ci_cargo_audit.rs) · [`ci_target.rs`](src/ci_target.rs) | workflow audit, advisory-cache selection, and target transport | sibling `tests.rs` files |
+| [`ci_doc_examples.rs`](src/ci_doc_examples.rs) · [`ci_doc_examples/`](src/ci_doc_examples) | nextest-only documentation-example gate | [`tests.rs`](src/ci_doc_examples/tests.rs) |
 | [`lint.rs`](src/lint.rs) · [`lint/`](src/lint) | file-size lint gate (adapter; budgets also in `ratchet.toml`) | [`tests.rs`](src/lint/tests.rs) |
 | [`ratchet.rs`](src/ratchet.rs) · [`ratchet/`](src/ratchet) | unified shrink-only ratchet engine (`lint ratchet`) | [`tests.rs`](src/ratchet/tests.rs) |
-| [`test_layout.rs`](src/test_layout.rs) | test-layout presence family (adapter over ratchet semantics) | — |
-| [`suppressions.rs`](src/suppressions.rs) | bare-allow/expect reason-gate (adapter) | — |
 | [`agent_files.rs`](src/agent_files.rs) · [`agent_files/`](src/agent_files) | agent-file symlink gate (`--format human\|json\|github`) | [`tests.rs`](src/agent_files/tests.rs) |
 | [`report.rs`](src/report.rs) · [`report/`](src/report) | shared gate reporter (human/json/github) | [`tests.rs`](src/report/tests.rs) |
 | [`agent_links.rs`](src/agent_links.rs) · [`agent_links/`](src/agent_links) | no-cross-ref gate (README/AGENTS) | [`tests.rs`](src/agent_links/tests.rs) |
-| [`container_paths_gate.rs`](src/container_paths_gate.rs) · [`container_paths_gate/`](src/container_paths_gate) | residual `/jackin` literal shrink-only gate | [`tests.rs`](src/container_paths_gate/tests.rs) |
-| [`suppressions.rs`](src/suppressions.rs) · [`suppressions/`](src/suppressions) | bare-allow / per-lint expect shrink-only reason-gate | [`tests.rs`](src/suppressions/tests.rs) |
+| [`container_paths_gate.rs`](src/container_paths_gate.rs) · [`container_paths_gate/`](src/container_paths_gate) | container-path gate | [`tests.rs`](src/container_paths_gate/tests.rs) |
+| [`suppressions.rs`](src/suppressions.rs) · [`suppressions/`](src/suppressions) | lint-suppression gate | [`tests.rs`](src/suppressions/tests.rs) |
 | [`headers.rs`](src/headers.rs) · [`headers/`](src/headers) | ownership-header contract gate | [`tests.rs`](src/headers/tests.rs) |
 | [`arch.rs`](src/arch.rs) · [`arch/`](src/arch) | tier-graph dependency-direction gate (`TIERS` table; prod edges must descend; dev-cycle allowlist) | [`tests.rs`](src/arch/tests.rs) |
 | [`readme_freshness.rs`](src/readme_freshness.rs) · [`readme_freshness/`](src/readme_freshness) | structural src change ⇒ README same-PR gate | [`tests.rs`](src/readme_freshness/tests.rs) |
 | [`test_layout.rs`](src/test_layout.rs) · [`test_layout/`](src/test_layout) | test-layout gate | [`tests.rs`](src/test_layout/tests.rs) |
 | [`schema.rs`](src/schema.rs) · [`schema/`](src/schema) | schema check | [`tests.rs`](src/schema/tests.rs) |
-| [`docs.rs`](src/docs.rs) · [`docs/`](src/docs) | docs repo-links / brand / specs / roadmap / research | [`tests.rs`](src/docs/tests.rs), brand/specs unit tests |
+| [`docs.rs`](src/docs.rs) · [`docs/`](src/docs) | docs repo-links / brand / specs / roadmap / research and semantic CI cache contracts | [`tests.rs`](src/docs/tests.rs), contract/brand/specs unit tests |
 | [`telemetry_registry.rs`](src/telemetry_registry.rs) · [`telemetry_registry/`](src/telemetry_registry) | closed-registry Weaver validation and namespace/privacy gates | [`tests.rs`](src/telemetry_registry/tests.rs) |
 | [`telemetry_bench.rs`](src/telemetry_bench.rs) · [`telemetry_bench/`](src/telemetry_bench) | telemetry performance capture and 5% comparison gate | [`tests.rs`](src/telemetry_bench/tests.rs) |
 | [`pr.rs`](src/pr.rs) · [`pr/`](src/pr) | PR tooling | [`tests.rs`](src/pr/tests.rs) |

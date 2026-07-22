@@ -574,12 +574,9 @@ fn vt_cursor_save_restore_sc_rc() {
 #[test]
 fn vt_decawm_autowrap_off() {
     // Disable auto-wrap (DECAWM off). Characters past end of line stay at last col.
-    let seq = b"\x1b[?7l";
-    for _ in 0..100 {
-        let mut full = seq.to_vec();
-        full.extend_from_slice(b"X");
-        run_conformance(24, 80, &full, "DECAWM off single char");
-    }
+    let mut seq = b"\x1b[?7l".to_vec();
+    seq.extend(std::iter::repeat_n(b'X', 100));
+    run_conformance(24, 80, &seq, "DECAWM off beyond right margin");
 }
 
 #[test]

@@ -28,7 +28,7 @@ runs:
         path: |
           ~/.cargo/registry
           ~/.cargo/git/db
-        key: cargo-registry-v5-${{ inputs.contract-key || hashFiles('Cargo.lock', 'crates/**/fuzz/Cargo.lock', 'rust-toolchain.toml', '.cargo/config.toml') }}
+        key: cargo-registry-v5-${{ inputs.contract-key || hashFiles('Cargo.lock', 'crates/**/fuzz/Cargo.lock', 'crates/jackin-lints/Cargo.lock', 'rust-toolchain.toml', '.cargo/config.toml') }}
         restore-keys: |
           cargo-registry-v5-
           cargo-registry-v4-
@@ -47,6 +47,7 @@ runs:
           while IFS= read -r manifest; do
             cargo fetch --manifest-path "$manifest" --locked --offline || return 1
           done < <(find crates -path '*/fuzz/Cargo.toml' -type f | sort)
+          cargo fetch --manifest-path crates/jackin-lints/Cargo.toml --locked --offline
         }
 
         if fetch_offline; then
@@ -85,6 +86,8 @@ runs:
             attempt="$((attempt + 1))"
           done
         done < <(find crates -path '*/fuzz/Cargo.toml' -type f | sort)
+
+        cargo fetch --manifest-path crates/jackin-lints/Cargo.toml --locked
     - name: Save Cargo registry
       if: >-
         steps.restore.outputs.cache-hit != 'true' &&

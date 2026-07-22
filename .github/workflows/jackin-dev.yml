@@ -24,26 +24,38 @@ on:
           Which runner(s) to run on. Default velnor; use both for parity runs.
         type: choice
         default: velnor
-        options: [github, velnor, both]
+        options: [velnor, github, both]
 
 concurrency:
-  # PRs are validation-only, not part of the publish stream. Scope them by
-  # source branch so cross-branch runs do not cancel each other. Main pushes
-  # and dispatches share the jackin-dev-publish stream so only the latest
-  # source commit publishes.
-  group: jackin-dev-${{ github.head_ref || 'publish' }}
-  cancel-in-progress: true
+  # PR validation may cancel superseded work. Publishing runs serialize and
+  # finish because cancellation can leave partially written registry state.
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   validate-version-bump:
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 0
+          # Version policy compares the complete pull-request base range.
+          fetch-depth: 0 # required by pull-request version-range policy
+      - name: Classify version-check inputs
+        id: version-inputs
+        uses: dorny/paths-filter@7b450fff21473bca461d4b92ce414b9d0420d706 # v4.0.2
+        with:
+          token: ""
+          filters: |
+            lock:
+              - 'Cargo.lock'
+            artifact:
+              - 'Cargo.toml'
+              - 'crates/jackin-dev/**'
+              - '!crates/jackin-dev/**/*.md'
       - name: Cache Rust toolchain
+        if: steps.version-inputs.outputs.lock == 'true' && steps.version-inputs.outputs.artifact != 'true'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -53,13 +65,15 @@ jobs:
           restore-keys: |
             rustup-${{ runner.os }}-${{ runner.arch }}-
       - uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
+        if: steps.version-inputs.outputs.lock == 'true' && steps.version-inputs.outputs.artifact != 'true'
         with:
           version: "2026.7.7"
           cache_key_prefix: "mise-v2"
           cache_save: ${{ github.ref == 'refs/heads/main' }}
           install_args: "rust"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
-      - uses: ./.github/actions/cache-cargo-registry
+      - if: steps.version-inputs.outputs.lock == 'true' && steps.version-inputs.outputs.artifact != 'true'
+        uses: ./.github/actions/cache-cargo-registry
 
       - name: Require jackin-dev version bump for artifact changes
         env:
@@ -166,12 +180,13 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
   version:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     outputs:
       version: ${{ steps.version.outputs.version }}
+      runner-configs: ${{ (github.event_name == 'workflow_dispatch' && inputs.lanes == 'both') && '[{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","runner_os":"Linux","runner_arch":"X64","writer":true},{"lane":"GitHub","runner":"\"ubuntu-26.04\"","runner_os":"Linux","runner_arch":"X64","writer":false}]' || (github.event_name == 'workflow_dispatch' && inputs.lanes == 'github') && '[{"lane":"GitHub","runner":"\"ubuntu-26.04\"","runner_os":"Linux","runner_arch":"X64","writer":true}]' || '[{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","runner_os":"Linux","runner_arch":"X64","writer":true}]' }}
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - id: version
         run: |
           version=$(sed -n 's/^version = "\(.*\)"/\1/p' crates/jackin-dev/Cargo.toml | head -1)
@@ -180,7 +195,7 @@ jobs:
 
   assert-version:
     needs: version
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 60
     outputs:
       published: ${{ steps.result.outputs.published || steps.off-main.outputs.published }}
@@ -223,7 +238,7 @@ jobs:
     if: >-
       github.event_name != 'pull_request' &&
       needs.assert-version.outputs.published != 'true'
-    needs: [version, matrix-setup, assert-version]
+    needs: [version, assert-version]
     runs-on: ${{ fromJSON(matrix.config.runner) }}
     timeout-minutes: 60
     name: build ${{ matrix.target.target }} (${{ matrix.config.lane }})
@@ -236,11 +251,12 @@ jobs:
       CARGO_TERM_COLOR: always
       RUSTC_WRAPPER: sccache
       SCCACHE_BASEDIRS: ${{ github.workspace }}
-      SCCACHE_GHA_ENABLED: "off"
+      SCCACHE_GHA_ENABLED: "false"
+      SCCACHE_CACHE_SIZE: 20G
     strategy:
       fail-fast: false
       matrix:
-        config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
+        config: ${{ fromJSON(needs.version.outputs.runner-configs) }}
         target:
           - target: aarch64-apple-darwin
             zigbuild_target: aarch64-apple-darwin
@@ -251,7 +267,7 @@ jobs:
           - target: x86_64-unknown-linux-gnu
             zigbuild_target: x86_64-unknown-linux-gnu.2.17
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Cache Rust toolchain
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -270,20 +286,22 @@ jobs:
           version: "2026.7.7"
           cache_key_prefix: "mise-v2"
           cache_save: ${{ github.ref == 'refs/heads/main' }}
-          install_args: "cargo-binstall rust zig cargo:cargo-zigbuild cosign syft cargo:sccache"
+          install_args: "cargo-binstall rust zig cargo:cargo-zigbuild cosign syft"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
+      - id: sccache
+        uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
+        with:
+          version: v0.16.0
+          disable_annotations: "false"
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
-      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-        with:
-          shared-key: jackin-dev-${{ matrix.target.target }}-workspace-v2
-          cache-all-crates: "true"
-          cache-workspace-crates: "true"
-          env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTC_WRAPPER RUSTFLAGS RUSTDOC RUSTUP"
-          # Match release/preview archive builds: one target-scoped workspace
-          # cache, shared across branches through GitHub's default-branch
-          # fallback, plus the lockfile-bound Cargo registry cache above.
       - run: rustup target add ${{ matrix.target.target }}
+      - name: Cache Cargo target
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: target
+          key: cargo-target-${{ matrix.config.lane }}-${{ runner.os }}-${{ github.job }}-${{ matrix.target.target }}-${{ hashFiles('rust-toolchain.toml', '.cargo/config.toml', '**/Cargo.toml', '**/Cargo.lock') }}-${{ github.sha }}
+          restore-keys: cargo-target-${{ matrix.config.lane }}-${{ runner.os }}-${{ github.job }}-${{ matrix.target.target }}-${{ hashFiles('rust-toolchain.toml', '.cargo/config.toml', '**/Cargo.toml', '**/Cargo.lock') }}-
       - name: Cache macOS SDK
         if: contains(matrix.target.target, 'apple')
         id: sdk-cache
@@ -320,19 +338,13 @@ jobs:
             cp -a "${target_dir}/cargo-timings/." target/cargo-timings/
           fi
       - name: Upload cargo timings
-        if: always()
+        if: always() && matrix.config.writer
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: cargo-timings-jackin-dev-${{ matrix.config.lane }}-${{ matrix.target.target }}
           path: target/cargo-timings/*.html
           if-no-files-found: ignore
           retention-days: 7
-      - name: Capture sccache stats
-        if: always()
-        uses: ./.github/actions/sccache-stats
-        with:
-          artifact-name: sccache-stats-jackin-dev-${{ matrix.config.lane }}-${{ matrix.target.target }}
-          heading: sccache jackin-dev ${{ matrix.target.target }} (${{ matrix.config.lane }})
       - name: Package
         env:
           TARGET: ${{ matrix.target.target }}
@@ -346,10 +358,12 @@ jobs:
           sha256sum "$archive" | awk '{print $1}' > "$archive.sha256"
           echo "archive=$archive" >> "$GITHUB_ENV"
       - name: Sign, SBOM, and attest archive
+        if: matrix.config.writer
         uses: ./.github/actions/sign-and-attest-archive
         with:
           archive: ${{ env.archive }}
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - if: matrix.config.writer
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: jackin-dev-${{ matrix.config.lane }}-${{ matrix.target.target }}
           path: |
@@ -361,10 +375,9 @@ jobs:
   publish:
     if: >-
       github.ref == 'refs/heads/main' &&
-      needs.matrix-setup.outputs.has_github == 'true' &&
       needs.assert-version.outputs.published != 'true'
-    needs: [version, matrix-setup, assert-version, build]
-    runs-on: ubuntu-latest
+    needs: [version, assert-version, build]
+    runs-on: ubuntu-26.04
     timeout-minutes: 60
     concurrency:
       group: homebrew-tap-publish
@@ -374,7 +387,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          pattern: jackin-dev-GitHub-*
+          pattern: jackin-dev-*
           path: artifacts
           merge-multiple: true
       - name: Publish jackin-dev release
@@ -390,7 +403,7 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --title "jackin-dev v${VERSION}" \
             --notes "jackin-dev v${VERSION}"
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: jackin-project/homebrew-tap
           ref: main

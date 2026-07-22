@@ -11,6 +11,8 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  schedule:
+    - cron: "0 4 * * 0"
   workflow_dispatch:
     inputs:
       lanes:
@@ -18,7 +20,7 @@ on:
           Which runner(s) to run on. Default velnor; use both for parity runs.
         type: choice
         default: velnor
-        options: [github, velnor, both]
+        options: [velnor, github, both]
       refresh-package:
         description: Optional exact crate name whose successful result and target should be refreshed.
         type: string
@@ -55,7 +57,7 @@ jobs:
           echo "configs=$configs" >> "$GITHUB_OUTPUT"
 
   changes:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     outputs:
       rust: ${{ steps.route.outputs.rust }}
@@ -63,13 +65,12 @@ jobs:
       construct_image: ${{ steps.route.outputs.construct_image }}
       docker_e2e: ${{ steps.route.outputs.docker_e2e }}
       workflows: ${{ steps.route.outputs.workflows }}
-      native: ${{ steps.route.outputs.native }}
       audit-contract: ${{ steps.contracts.outputs.audit }}
       ci-xtask-contract: ${{ steps.contracts.outputs.ci-xtask }}
-      docs-xtask-contract: ${{ steps.contracts.outputs.docs-xtask }}
+      docs-xtask-contract: ${{ steps.docs-xtask-contract.outputs.docs-xtask }}
       ci-tools-contract: ${{ steps.contracts.outputs.ci-tools }}
       docker-contract: ${{ steps.contracts.outputs.docker }}
-      nextest-contract: ${{ steps.contracts.outputs.nextest }}
+      nextest-contract: 2c87e22194a8df9228603249e7d4efdee1df4ab829909d9350b0194d8b0ab83b
       registry-contract: ${{ steps.contracts.outputs.registry }}
       rustup-contract: ${{ steps.contracts.outputs.rustup }}
       rust-version: ${{ steps.contracts.outputs.rust-version }}
@@ -77,30 +78,38 @@ jobs:
       result-name: ${{ steps.ci-result.outputs.name }}
       policy-reuse: ${{ steps.policy-result.outputs.hit }}
       policy-result-name: ${{ steps.policy-result.outputs.name }}
+      runner-configs: ${{ (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.lanes == 'both')) && '[{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","runner_os":"Linux","runner_arch":"X64","mise_data_dir":"/opt/mise","cache_writer":true,"artifact_writer":true},{"lane":"GitHub","runner":"\"ubuntu-26.04\"","runner_os":"Linux","runner_arch":"X64","mise_data_dir":"/home/runner/.local/share/mise","cache_writer":false,"artifact_writer":false}]' || (github.event_name == 'workflow_dispatch' && inputs.lanes == 'github') && '[{"lane":"GitHub","runner":"\"ubuntu-26.04\"","runner_os":"Linux","runner_arch":"X64","mise_data_dir":"/home/runner/.local/share/mise","cache_writer":true,"artifact_writer":true}]' || '[{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","runner_os":"Linux","runner_arch":"X64","mise_data_dir":"/opt/mise","cache_writer":true,"artifact_writer":true}]' }}
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 0
+          # Result-reuse classification compares earlier source commits.
+          fetch-depth: 0 # required by result-reuse source comparison
+
+      - name: Resolve Docs xtask contract
+        id: docs-xtask-contract
+        uses: actions/github-script@373c709c69115d41ff229c7e5df9f8788daa9553 # v9.0.0
+        env:
+          CONTRACT: ${{ hashFiles('.cargo/**', 'Cargo.lock', 'Cargo.toml', 'rust-toolchain.toml', 'crates/*/Cargo.toml', 'crates/jackin-xtask/src/arch.rs', 'crates/jackin-xtask/src/cmd.rs', 'crates/jackin-xtask/src/docs.rs', 'crates/jackin-xtask/src/docs/**', 'crates/jackin-xtask/src/fs_util.rs', 'crates/jackin-xtask/src/main.rs', 'crates/jackin-xtask/src/report.rs') }}
+        with:
+          script: core.setOutput('docs-xtask', process.env.CONTRACT)
 
       - name: Resolve runner-independent cache contracts
         id: contracts
         shell: bash
         env:
           AUDIT: ${{ hashFiles('Cargo.lock', '.cargo/audit.toml') }}
-          CI_TOOLS: ${{ hashFiles('mise.toml', 'mise.lock') }}
+          CI_TOOLS: ${{ hashFiles('mise.toml', 'mise.lock', 'crates/jackin-xtask/src/ci_stage.rs') }}
           CI_TOOLS_LAYOUT: v2-weaver
           CI_XTASK: ${{ hashFiles('Cargo.lock', 'Cargo.toml', 'rust-toolchain.toml', '.cargo/**', 'crates/*/Cargo.toml', 'crates/jackin-xtask/src/**', 'crates/jackin-process/src/**') }}
           DOCKER: ${{ hashFiles('docker/**', 'docker-bake.hcl') }}
-          REGISTRY: ${{ hashFiles('Cargo.lock', 'crates/**/fuzz/Cargo.lock', 'rust-toolchain.toml', '.cargo/config.toml') }}
+          REGISTRY: ${{ hashFiles('Cargo.lock', 'crates/**/fuzz/Cargo.lock', 'crates/jackin-lints/Cargo.lock', 'rust-toolchain.toml', '.cargo/config.toml') }}
           RUSTUP: ${{ hashFiles('rust-toolchain.toml') }}
         run: |
           {
             echo "audit=$AUDIT"
             echo "ci-tools=$(printf '%s:%s' "$CI_TOOLS" "$CI_TOOLS_LAYOUT" | sha256sum | cut -d' ' -f1)"
             echo "ci-xtask=$CI_XTASK"
-            echo "docs-xtask=$(scripts/ci/docs-xtask-contract.sh)"
             echo "docker=$DOCKER"
-            echo "nextest=$(scripts/ci/crate-test-contract.sh)"
             echo "registry=$REGISTRY"
             echo "rustup=$RUSTUP"
             echo "rust-version=$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)"
@@ -122,7 +131,6 @@ jobs:
             echo "construct_image=true"
             echo "docker_e2e=true"
             echo "workflows=true"
-            echo "native=true"
           } >> "$GITHUB_OUTPUT"
 
       # build.rs supplies compile-time version metadata and
@@ -140,7 +148,7 @@ jobs:
             rust:
               - '.cargo/**'
               - '.github/workflows/ci.yml'
-              - 'scripts/ci/crate-test-contract.sh'
+              - '.github/workflows/rust-nextest.yml'
               - 'Cargo.toml'
               - 'Cargo.lock'
               - 'clippy.toml'
@@ -163,7 +171,6 @@ jobs:
             docker_e2e:
               - '.config/nextest.toml'
               - '.github/workflows/ci.yml'
-              - 'scripts/ci/crate-test-contract.sh'
               - 'docker/**'
               - 'crates/jackin/tests/dind_e2e.rs'
               - 'crates/jackin/tests/dind_e2e/**'
@@ -192,19 +199,6 @@ jobs:
               - '.github/actions/**'
             mise:
               - 'mise.toml'
-            native:
-              - 'native/**'
-              - 'crates/jackin-xtask/src/desktop.rs'
-              - 'crates/jackin-xtask/src/desktop/**'
-              - 'crates/jackin-usage/**'
-              - 'crates/jackin-usage-ffi/**'
-              - 'Cargo.toml'
-              - 'Cargo.lock'
-              - 'rust-toolchain.toml'
-              - 'mise.toml'
-              - 'mise.lock'
-              - '.github/workflows/ci.yml'
-              - '.github/workflows/hygiene.yml'
 
       - name: Route changed paths
         id: route
@@ -215,14 +209,12 @@ jobs:
           FORCE_CONSTRUCT_IMAGE: ${{ steps.dispatch.outputs.construct_image }}
           FORCE_DOCKER_E2E: ${{ steps.dispatch.outputs.docker_e2e }}
           FORCE_WORKFLOWS: ${{ steps.dispatch.outputs.workflows }}
-          FORCE_NATIVE: ${{ steps.dispatch.outputs.native }}
           FILTER_RUST: ${{ steps.filter.outputs.rust }}
           FILTER_CONSTRUCT: ${{ steps.filter.outputs.construct }}
           FILTER_CONSTRUCT_IMAGE: ${{ steps.filter.outputs.construct_image }}
           FILTER_DOCKER_E2E: ${{ steps.filter.outputs.docker_e2e }}
           FILTER_WORKFLOWS: ${{ steps.filter.outputs.workflows }}
           FILTER_MISE: ${{ steps.filter.outputs.mise }}
-          FILTER_NATIVE: ${{ steps.filter.outputs.native }}
           BASE_REF: ${{ github.base_ref }}
           BEFORE_SHA: ${{ github.event.before }}
           EVENT_NAME: ${{ github.event_name }}
@@ -234,7 +226,6 @@ jobs:
           construct_image="${FORCE_CONSTRUCT_IMAGE:-${FILTER_CONSTRUCT_IMAGE:-false}}"
           docker_e2e="${FORCE_DOCKER_E2E:-${FILTER_DOCKER_E2E:-false}}"
           workflows="${FORCE_WORKFLOWS:-${FILTER_WORKFLOWS:-false}}"
-          native="${FORCE_NATIVE:-${FILTER_NATIVE:-false}}"
 
           if [ "$docker_e2e" = "true" ] || [ "$construct_image" = "true" ]; then
             rust=true
@@ -329,7 +320,6 @@ jobs:
             echo "construct_image=$construct_image"
             echo "docker_e2e=$docker_e2e"
             echo "workflows=$workflows"
-            echo "native=$native"
           } >> "$GITHUB_OUTPUT"
 
       - name: Find input-identical successful CI result
@@ -427,7 +417,6 @@ jobs:
                   'file-size-budget.toml' \
                   'ratchet.toml' \
                   'rust-toolchain.toml' \
-                  'scripts/ci/check-agent-status-truthful.sh' \
                   'src/**' \
                   'test-layout-allowlist.toml' \
                   'tests/**'
@@ -457,17 +446,17 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
   actionlint:
-    needs: [changes, matrix-setup]
+    needs: [changes]
     if: needs.changes.outputs.workflows == 'true' && needs.changes.outputs.result-reuse != 'true'
     strategy:
       fail-fast: false
       matrix:
-        config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
+        config: ${{ fromJSON(needs.changes.outputs.runner-configs) }}
     runs-on: ${{ fromJSON(matrix.config.runner) }}
     timeout-minutes: 60
     name: actionlint (${{ matrix.config.lane }})
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
         with:
           version: "2026.7.7"
@@ -478,7 +467,7 @@ jobs:
       - run: actionlint .github/workflows/*.yml
 
   fmt:
-    needs: [changes, matrix-setup, cargo-registry-warmup]
+    needs: [changes, cargo-registry-warmup]
     if: >-
       needs.changes.outputs.rust == 'true' &&
       needs.changes.outputs.result-reuse != 'true' &&
@@ -486,183 +475,96 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
+        config: ${{ fromJSON(needs.changes.outputs.runner-configs) }}
     runs-on: ${{ fromJSON(matrix.config.runner) }}
     timeout-minutes: 60
     name: cargo fmt (${{ matrix.config.lane }})
     env:
       CARGO_TERM_COLOR: always
+      RUSTUP_HOME: ${{ github.workspace }}/.ci-rustup
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/download-ci-xtask
+        with:
+          token: ${{ github.token }}
+          lane: ${{ matrix.config.lane }}
+          xtask-contract: ${{ needs.changes.outputs.ci-xtask-contract }}
+          include-tools: "false"
+          allow-miss: "true"
       - name: Cache Rust toolchain
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
-            ~/.rustup/toolchains
-            ~/.rustup/update-hashes
-          key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ needs.changes.outputs.rustup-contract }}
+            ${{ env.RUSTUP_HOME }}/toolchains
+            ${{ env.RUSTUP_HOME }}/update-hashes
+          key: rustup-v3-${{ runner.os }}-${{ runner.arch }}-${{ needs.changes.outputs.rustup-contract }}
           restore-keys: |
-            rustup-${{ runner.os }}-${{ runner.arch }}-
-      - uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
-        with:
-          version: "2026.7.7"
-          cache_key_prefix: "mise-v2"
-          cache_save: ${{ github.ref == 'refs/heads/main' }}
-          install_args: rust@${{ needs.changes.outputs.rust-version }}
-          github_token: ${{ secrets.GH_READONLY_TOKEN }}
+            rustup-v3-${{ runner.os }}-${{ runner.arch }}-
       - name: Use the prepared current Rust toolchain
-        run: |
-          version=$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)
-          scripts/ci/activate-installed-rust-toolchain.sh "$version"
+        run: >-
+          "$CI_XTASK" ci-toolchain prepare
+          --version "${{ needs.changes.outputs.rust-version }}"
       - run: cargo fmt --check
 
   cargo-registry-warmup:
-    needs: [changes, matrix-setup]
+    needs: [changes]
     if: needs.changes.outputs.rust == 'true' && needs.changes.outputs.result-reuse != 'true'
     strategy:
       fail-fast: false
       matrix:
-        config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
+        config: ${{ fromJSON(needs.changes.outputs.runner-configs) }}
     runs-on: ${{ fromJSON(matrix.config.runner) }}
     timeout-minutes: 60
     name: cargo registry warmup (${{ matrix.config.lane }})
     env:
+      CARGO_INCREMENTAL: "0"
       CARGO_TARGET_DIR: target
+      CARGO_PROFILE_DEV_DEBUG: "0"
+      CARGO_PROFILE_TEST_DEBUG: "0"
       CARGO_TERM_COLOR: always
+      MISE_DATA_DIR: ${{ matrix.config.mise_data_dir }}
+      RUSTC_WRAPPER: sccache
+      RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
+      RUSTUP_HOME: ${{ github.workspace }}/.ci-rustup
+      SCCACHE_GHA_ENABLED: "false"
+      SCCACHE_CACHE_SIZE: 20G
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-      - id: ci-xtask-artifact
-        name: Restore input-identical CI xtask
-        shell: bash
-        env:
-          ARTIFACT_NAME: ci-xtask-${{ runner.os }}-${{ runner.arch }}-${{ needs.changes.outputs.ci-xtask-contract }}
-          GH_TOKEN: ${{ github.token }}
-          REPOSITORY: ${{ github.repository }}
-        run: |
-          set -euo pipefail
-          mkdir -p .ci-prebuilt-xtask
-          artifact_id=$(
-            gh api "repos/${REPOSITORY}/actions/artifacts?name=${ARTIFACT_NAME}&per_page=10" \
-              --jq '.artifacts[] | select(.expired == false) | .id' \
-              | head -n 1
-          )
-          if [ -z "$artifact_id" ]; then
-            echo "hit=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          archive=.ci-prebuilt-xtask/.artifact.zip
-          gh api "repos/${REPOSITORY}/actions/artifacts/${artifact_id}/zip" > "$archive"
-          python3 -m zipfile -e "$archive" .ci-prebuilt-xtask
-          rm "$archive"
-          chmod +x .ci-prebuilt-xtask/jackin-xtask
-          echo "hit=true" >> "$GITHUB_OUTPUT"
-      - id: ci-tools-artifact
-        name: Restore resolved CI tool binaries
-        shell: bash
-        env:
-          ARTIFACT_NAME: ci-tools-${{ runner.os }}-${{ runner.arch }}-${{ needs.changes.outputs.ci-tools-contract }}
-          GH_TOKEN: ${{ github.token }}
-          REPOSITORY: ${{ github.repository }}
-        run: |
-          set -euo pipefail
-          mkdir -p .ci-prebuilt-tools
-          artifact_id=$(
-            gh api "repos/${REPOSITORY}/actions/artifacts?name=${ARTIFACT_NAME}&per_page=10" \
-              --jq '.artifacts[] | select(.expired == false) | .id' \
-              | head -n 1
-          )
-          if [ -z "$artifact_id" ]; then
-            echo "hit=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          archive=.ci-prebuilt-tools/.artifact.zip
-          gh api "repos/${REPOSITORY}/actions/artifacts/${artifact_id}/zip" > "$archive"
-          python3 -m zipfile -e "$archive" .ci-prebuilt-tools
-          rm "$archive"
-          chmod +x .ci-prebuilt-tools/*
-          echo "hit=true" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: rui314/setup-mold@9c9c13bf4c3f1adef0cc596abc155580bcb04444 # v1.1.0
+      - uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
+        with:
+          version: v0.16.0
+          disable_annotations: "false"
+      - id: prepared-artifacts
+        name: Restore prepared xtask and Cargo tools
+        uses: ./.github/actions/download-ci-xtask
+        with:
+          token: ${{ github.token }}
+          lane: ${{ matrix.config.lane }}
+          tools-contract: ${{ needs.changes.outputs.ci-tools-contract }}
+          xtask-contract: ${{ needs.changes.outputs.ci-xtask-contract }}
+          allow-miss: "true"
       - id: cargo-registry-lookup
         name: Restore prepared Cargo registry
-        if: steps.ci-xtask-artifact.outputs.hit != 'true'
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git/db
           key: cargo-registry-v5-${{ needs.changes.outputs.registry-contract }}
-      - id: prepared-inputs
-        name: Resolve warmup ownership
-        shell: bash
-        run: |
-          if [ "${{ steps.ci-xtask-artifact.outputs.hit }}" = "true" ] && \
-             [ "${{ steps.ci-tools-artifact.outputs.hit }}" = "true" ]; then
-            echo "ready=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "ready=false" >> "$GITHUB_OUTPUT"
-          fi
-      - id: xtask-target-seed
-        name: Find latest successful jackin-xtask target
-        if: steps.ci-xtask-artifact.outputs.hit != 'true'
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPOSITORY: ${{ github.repository }}
-        run: |
-          set -euo pipefail
-          result=$(scripts/ci/find-crate-target.sh \
-            jackin-xtask "$(printf '0%.0s' {1..64})" true \
-            "${{ runner.os }}" "${{ runner.arch }}")
-          {
-            echo "hit=$(jq -r '.hit' <<< "$result")"
-            echo "download-prefix=$(jq -r '.download_prefix' <<< "$result")"
-            echo "run-id=$(jq -r '.run_id' <<< "$result")"
-          } >> "$GITHUB_OUTPUT"
-      - name: Download latest successful jackin-xtask target
-        if: >-
-          steps.ci-xtask-artifact.outputs.hit != 'true' &&
-          steps.xtask-target-seed.outputs.hit == 'true'
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPOSITORY: ${{ github.repository }}
-        run: |
-          scripts/ci/download-crate-target.sh \
-            "${{ steps.xtask-target-seed.outputs.run-id }}" \
-            "${{ steps.xtask-target-seed.outputs.download-prefix }}" \
-            target/.ci-restore
-      - name: Restore latest successful jackin-xtask target
-        if: >-
-          steps.ci-xtask-artifact.outputs.hit != 'true' &&
-          steps.xtask-target-seed.outputs.hit == 'true'
-        shell: bash
-        run: |
-          set -euo pipefail
-          target_dir=${CARGO_TARGET_DIR:-target}
-          mkdir -p "$target_dir"
-          tar --zstd --strip-components=1 -C "$target_dir" \
-            -xf target/.ci-restore/target.tar.zst
-          rm -rf target/.ci-restore
-          git ls-files -z | xargs -0r touch --date='2000-01-01T00:00:00Z' --
       - name: Restore prepared Rust toolchains
         id: toolchain-lookup
-        if: steps.prepared-inputs.outputs.ready != 'true'
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
-            ~/.rustup/toolchains
-            ~/.rustup/update-hashes
-          key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ needs.changes.outputs.rustup-contract }}
-          restore-keys: rustup-${{ runner.os }}-${{ runner.arch }}-
-      - name: Use the minimal Rust CI profile
-        if: >-
-          steps.prepared-inputs.outputs.ready != 'true' &&
-          steps.toolchain-lookup.outputs.cache-hit != 'true'
-        run: rustup set profile minimal
+            ${{ env.RUSTUP_HOME }}/toolchains
+            ${{ env.RUSTUP_HOME }}/update-hashes
+          key: rustup-v3-${{ runner.os }}-${{ runner.arch }}-${{ needs.changes.outputs.rustup-contract }}
       - uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
         if: >-
-          steps.prepared-inputs.outputs.ready != 'true' &&
-          (steps.toolchain-lookup.outputs.cache-hit != 'true' ||
-           steps.ci-tools-artifact.outputs.hit != 'true')
+          steps.toolchain-lookup.outputs.cache-hit != 'true' ||
+          env.CI_XTASK_HIT != 'true' ||
+          env.CI_TOOLS_HIT != 'true'
         with:
           version: "2026.7.7"
           cache_key_prefix: "mise-v2"
@@ -673,68 +575,82 @@ jobs:
                  github.event.pull_request.head.repo.full_name == github.repository) }}
           install_args: >-
             rust@${{ needs.changes.outputs.rust-version }}
-            ${{ steps.ci-tools-artifact.outputs.hit != 'true' &&
-                'cargo-binstall cargo:sccache cargo:cargo-nextest cargo:cargo-deny cargo:cargo-shear cargo:cargo-audit cargo:cargo-fuzz cargo:cargo-hack github:open-telemetry/weaver@0.24.2' || '' }}
+            ${{ env.CI_TOOLS_HIT != 'true' &&
+                'cargo-binstall cargo:sccache aqua:nextest-rs/nextest/cargo-nextest cargo:cargo-deny cargo:cargo-shear cargo:cargo-audit cargo:cargo-dylint cargo:cargo-fuzz cargo:cargo-hack cargo:cargo-hakari cargo:cargo-llvm-cov cargo:cargo-mutants cargo:cargo-zigbuild cargo:dylint-link github:open-telemetry/weaver@0.24.2' || '' }}
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
-      - name: Prepare the exact current Rust toolchain
-        if: steps.prepared-inputs.outputs.ready != 'true'
-        shell: bash
-        run: |
-          set -euo pipefail
-          version=$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)
-          if scripts/ci/activate-installed-rust-toolchain.sh "$version" 2>/dev/null; then
-            exit 0
-          fi
-
-          mise_install=${MISE_DATA_DIR:?MISE_DATA_DIR must be set}/installs/rust/$version
-          if [ ! -x "$mise_install/bin/rustc" ]; then
-            rm -rf "$mise_install"
-            mise install "rust@$version"
-          fi
-          scripts/ci/activate-installed-rust-toolchain.sh "$version"
-      - name: Save prepared Rust toolchain
+      - name: Use the minimal Rust CI profile
         if: >-
-          steps.prepared-inputs.outputs.ready != 'true' &&
-          steps.toolchain-lookup.outputs.cache-hit != 'true' &&
-          matrix.config.cache_writer
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            ~/.rustup/toolchains
-            ~/.rustup/update-hashes
-          key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ needs.changes.outputs.rustup-contract }}
+          steps.toolchain-lookup.outputs.cache-hit != 'true'
+        run: rustup set profile minimal
       - id: cargo-registry-cache
-        if: >-
-          steps.ci-xtask-artifact.outputs.hit != 'true' &&
-          steps.cargo-registry-lookup.outputs.cache-hit != 'true'
+        if: steps.cargo-registry-lookup.outputs.cache-hit != 'true'
         uses: ./.github/actions/cache-cargo-registry
         with:
           contract-key: ${{ needs.changes.outputs.registry-contract }}
+      - &cargo-target-cache
+        name: Cache Cargo target
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: target
+          key: cargo-target-${{ matrix.config.lane }}-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ hashFiles('rust-toolchain.toml', '.cargo/config.toml', '**/Cargo.toml', '**/Cargo.lock') }}-${{ github.sha }}
+          restore-keys: cargo-target-${{ matrix.config.lane }}-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ hashFiles('rust-toolchain.toml', '.cargo/config.toml', '**/Cargo.toml', '**/Cargo.lock') }}-
       - name: Build shared CI xtask
-        if: steps.ci-xtask-artifact.outputs.hit != 'true'
+        if: env.CI_XTASK_HIT != 'true'
         env:
           CARGO_NET_OFFLINE: "true"
-        run: cargo build -p jackin-xtask --locked
+        run: >-
+          mise exec rust@${{ needs.changes.outputs.rust-version }} --
+          cargo build -p jackin-xtask --locked
+      - name: Pack shared CI xtask target seed
+        if: env.CI_XTASK_HIT != 'true' && matrix.config.cache_writer
+        run: >-
+          target/debug/jackin-xtask ci-target pack
+          --target target
+          --source-key warmup
+          --output target.tar.zst
+      - name: Publish shared CI xtask target seed
+        if: env.CI_XTASK_HIT != 'true' && matrix.config.cache_writer
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ci-crate-target-v9-${{ runner.os }}-${{ runner.arch }}-jackin-xtask-warmup
+          path: target.tar.zst
+          compression-level: 0
+          retention-days: 1
       - name: Stage shared CI xtask
-        run: |
-          mkdir -p .ci-prebuilt-tools .ci-prebuilt-xtask target/ci-tools
-          if [ "${{ steps.ci-tools-artifact.outputs.hit }}" != "true" ]; then
-            for tool in sccache cargo-nextest cargo-deny cargo-shear cargo-audit cargo-fuzz cargo-hack weaver; do
-              cp "$(mise which "$tool")" ".ci-prebuilt-tools/$tool"
-            done
-            strip .ci-prebuilt-tools/*
-          fi
-          if [ "${{ steps.ci-xtask-artifact.outputs.hit }}" != "true" ]; then
-            cp target/debug/jackin-xtask .ci-prebuilt-xtask/jackin-xtask
-            strip .ci-prebuilt-xtask/jackin-xtask
-            cargo metadata --format-version 1 --locked --offline \
-              > .ci-prebuilt-xtask/workspace-metadata.json
-          fi
-          cp .ci-prebuilt-tools/* target/ci-tools/
-          cp .ci-prebuilt-xtask/* target/ci-tools/
+        run: >-
+          "$CI_XTASK" ci-stage
+          ${{ env.CI_XTASK_HIT == 'true' && '--xtask-hit' || '' }}
+          ${{ env.CI_TOOLS_HIT == 'true' && '--tools-hit' || '' }}
+          --cached-xtask "$CI_XTASK"
+          --cached-tools "$CI_TOOLS_PATH"
+      - name: Validate the prepared current Rust toolchain
+        run: >-
+          "$CI_XTASK" ci-toolchain prepare
+          --version "${{ needs.changes.outputs.rust-version }}"
+      - name: Save prepared Rust toolchain
+        if: >-
+          steps.toolchain-lookup.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ${{ env.RUSTUP_HOME }}/toolchains
+            ${{ env.RUSTUP_HOME }}/update-hashes
+          key: rustup-v3-${{ runner.os }}-${{ runner.arch }}-${{ needs.changes.outputs.rustup-contract }}
+      - name: Cache newly prepared Cargo tools
+        if: steps.prepared-artifacts.outputs.tools-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ github.workspace }}/.ci-prebuilt-tools
+          key: ci-prepared-tools-v1-${{ runner.os }}-${{ runner.arch }}-${{ needs.changes.outputs.ci-tools-contract }}
+      - name: Cache newly prepared CI xtask
+        if: steps.prepared-artifacts.outputs.xtask-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ github.workspace }}/.ci-prebuilt-xtask
+          key: ci-prepared-xtask-v1-${{ runner.os }}-${{ runner.arch }}-${{ needs.changes.outputs.ci-xtask-contract }}
       - name: Publish resolved CI tool binaries
         if: >-
-          steps.ci-tools-artifact.outputs.hit != 'true' &&
+          env.CI_TOOLS_HIT != 'true' &&
           matrix.config.cache_writer
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -744,7 +660,7 @@ jobs:
           retention-days: 7
           include-hidden-files: true
       - name: Publish input-identical CI xtask
-        if: steps.ci-xtask-artifact.outputs.hit != 'true' && matrix.config.cache_writer
+        if: env.CI_XTASK_HIT != 'true' && matrix.config.cache_writer
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ci-xtask-${{ runner.os }}-${{ runner.arch }}-${{ needs.changes.outputs.ci-xtask-contract }}
@@ -761,18 +677,10 @@ jobs:
           compression-level: 0
           retention-days: 7
           include-hidden-files: true
-      - name: Upload shared CI xtask
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: ci-xtask-${{ matrix.config.lane }}
-          path: target/ci-tools/*
-          compression-level: 0
-          retention-days: 1
-
   affected-crates:
     needs: [changes, cargo-registry-warmup]
     if: needs.changes.outputs.rust == 'true' && needs.changes.outputs.result-reuse != 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     outputs:
       packages: ${{ steps.select.outputs.packages }}
@@ -780,86 +688,85 @@ jobs:
       reused-packages: ${{ steps.select.outputs.reused-packages }}
       target-results: ${{ steps.select.outputs.target-results }}
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/download-ci-xtask
         with:
+          token: ${{ github.token }}
           lane: GitHub
           tools-contract: ${{ needs.changes.outputs.ci-tools-contract }}
           xtask-contract: ${{ needs.changes.outputs.ci-xtask-contract }}
           include-tools: "false"
+          allow-miss: "true"
       - id: select
         name: Select affected crate tests once
-        shell: bash
         env:
-          BASE_REF: ${{ github.base_ref }}
-          BEFORE_SHA: ${{ github.event.before }}
-          COMMON_CONTRACT_KEY: ${{ needs.changes.outputs.nextest-contract }}
-          CONSTRUCT_IMAGE_CHANGED: ${{ needs.changes.outputs.construct_image }}
-          DOCKER_CONTRACT_KEY: ${{ needs.changes.outputs.docker-contract }}
-          DOCKER_E2E: ${{ needs.changes.outputs.docker_e2e }}
-          EVENT_NAME: ${{ github.event_name }}
-          FORCE_PACKAGE: ${{ github.event_name == 'workflow_dispatch' && inputs.refresh-package || '' }}
           GH_TOKEN: ${{ github.token }}
-          SOURCE_SHA: ${{ github.sha }}
-        run: |
-          set -euo pipefail
-          result=$(scripts/ci/select-affected-crates.sh)
-          {
-            echo "packages=$(jq -c '.packages' <<< "$result")"
-            echo "cache-keys=$(jq -c '.cache_keys' <<< "$result")"
-            echo "reused-packages=$(jq -c '.reused_packages' <<< "$result")"
-            echo "target-results=$(jq -c '.target_results' <<< "$result")"
-          } >> "$GITHUB_OUTPUT"
-          {
-            echo "### Crate test routing"
-            echo
-            echo "Reused: $(jq '.reused_packages | length' <<< "$result"); scheduled: $(jq '.packages | length' <<< "$result")."
-            jq -r '.reused_packages[] | "- reused `\(.)`"' <<< "$result"
-            jq -r '.packages[] | "- scheduled `\(.)`"' <<< "$result"
-          } >> "$GITHUB_STEP_SUMMARY"
+        run: >-
+          "$CI_XTASK" ci-route
+          --metadata "$CI_METADATA"
+          --base-ref "${{ github.base_ref }}"
+          --before-sha "${{ github.event.before }}"
+          --event-name "${{ github.event_name }}"
+          --force-package "${{ github.event_name == 'workflow_dispatch' && inputs.refresh-package || '' }}"
+          --common-contract-key "${{ needs.changes.outputs.nextest-contract }}"
+          --construct-image-changed "${{ needs.changes.outputs.construct_image }}"
+          --docker-contract-key "${{ needs.changes.outputs.docker-contract }}"
+          --docker-e2e "${{ needs.changes.outputs.docker_e2e }}"
+          --source-sha "${{ github.sha }}"
+          --repository "${{ github.repository }}"
 
   schema-check:
-    needs: [changes, matrix-setup, cargo-registry-warmup]
+    needs: [changes, cargo-registry-warmup]
     if: needs.changes.outputs.rust == 'true' && needs.changes.outputs.policy-reuse != 'true'
     strategy:
       fail-fast: false
       matrix:
-        config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
+        config: ${{ fromJSON(needs.changes.outputs.runner-configs) }}
     runs-on: ${{ fromJSON(matrix.config.runner) }}
     timeout-minutes: 60
     name: schema-check (${{ matrix.config.lane }})
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/download-ci-xtask
         with:
+          token: ${{ github.token }}
           lane: ${{ matrix.config.lane }}
           tools-contract: ${{ needs.changes.outputs.ci-tools-contract }}
           xtask-contract: ${{ needs.changes.outputs.ci-xtask-contract }}
           include-tools: "false"
+          allow-miss: "true"
       - name: Fetch base branch
         run: git fetch --no-tags --depth=1 origin main:refs/remotes/origin/main
       - run: |
           "$CI_XTASK" schema-check --base origin/main
 
   file-size-gate:
-    needs: [changes, matrix-setup, cargo-registry-warmup]
+    needs: [changes, cargo-registry-warmup]
     if: needs.changes.outputs.rust == 'true' && needs.changes.outputs.policy-reuse != 'true'
     strategy:
       fail-fast: false
       matrix:
-        config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
+        config: ${{ fromJSON(needs.changes.outputs.runner-configs) }}
     runs-on: ${{ fromJSON(matrix.config.runner) }}
     timeout-minutes: 60
     name: file-size ratchet gate (${{ matrix.config.lane }})
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/download-ci-xtask
+        with:
+          token: ${{ github.token }}
+          lane: ${{ matrix.config.lane }}
+          tools-contract: ${{ needs.changes.outputs.ci-tools-contract }}
+          xtask-contract: ${{ needs.changes.outputs.ci-xtask-contract }}
+          include-tools: "true"
+          allow-miss: "true"
       - name: Cache Rust toolchain
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/.rustup/toolchains
             ~/.rustup/update-hashes
-          key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ needs.changes.outputs.rustup-contract }}
+          key: rustup-v3-${{ runner.os }}-${{ runner.arch }}-${{ needs.changes.outputs.rustup-contract }}
           restore-keys: |
             rustup-${{ runner.os }}-${{ runner.arch }}-
       - uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
@@ -870,15 +777,9 @@ jobs:
           install_args: rust@${{ needs.changes.outputs.rust-version }}
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - name: Use the prepared current Rust toolchain
-        run: |
-          version=$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)
-          scripts/ci/activate-installed-rust-toolchain.sh "$version"
-      - uses: ./.github/actions/download-ci-xtask
-        with:
-          lane: ${{ matrix.config.lane }}
-          tools-contract: ${{ needs.changes.outputs.ci-tools-contract }}
-          xtask-contract: ${{ needs.changes.outputs.ci-xtask-contract }}
-          include-tools: "true"
+        run: >-
+          "$CI_XTASK" ci-toolchain activate
+          --version "${{ needs.changes.outputs.rust-version }}"
       # Gate: codebase-health lint checks via the umbrella `lint --strict`
       # command. The file-size ratchet (file-size-budget.toml: production
       # ≤1850L production / ≤10000L tests via ratchet.toml + file-size-budget.toml) and the test-file-layout ratchet
@@ -894,7 +795,7 @@ jobs:
 
   # Plan 028: README freshness owns checkout (fetch-depth 0) so the gate can run.
   readme-freshness:
-    needs: [changes, matrix-setup, cargo-registry-warmup]
+    needs: [changes, cargo-registry-warmup]
     if: >-
       needs.changes.outputs.rust == 'true' &&
       needs.changes.outputs.policy-reuse != 'true' &&
@@ -902,21 +803,24 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
+        config: ${{ fromJSON(needs.changes.outputs.runner-configs) }}
     runs-on: ${{ fromJSON(matrix.config.runner) }}
     timeout-minutes: 20
     name: README freshness (advisory) (${{ matrix.config.lane }})
     continue-on-error: true
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 0
+          # README freshness compares the pull request with its base branch.
+          fetch-depth: 0 # required by pull-request README comparison
       - uses: ./.github/actions/download-ci-xtask
         with:
+          token: ${{ github.token }}
           lane: ${{ matrix.config.lane }}
           tools-contract: ${{ needs.changes.outputs.ci-tools-contract }}
           xtask-contract: ${{ needs.changes.outputs.ci-xtask-contract }}
           include-tools: "false"
+          allow-miss: "true"
       - name: Fetch base branch
         run: git fetch --no-tags origin "${{ github.base_ref }}"
       - name: README freshness gate
@@ -935,54 +839,50 @@ jobs:
           # Advisory job: either non-zero (fail-closed) or empty-diff OK message is acceptable.
 
   dependency-policy:
-    needs: [changes, matrix-setup, cargo-registry-warmup]
+    needs: [changes, cargo-registry-warmup]
     if: needs.changes.outputs.rust == 'true' && needs.changes.outputs.policy-reuse != 'true'
     strategy:
       fail-fast: false
       matrix:
-        config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
+        config: ${{ fromJSON(needs.changes.outputs.runner-configs) }}
     runs-on: ${{ fromJSON(matrix.config.runner) }}
     timeout-minutes: 60
     name: cargo dependency policy (${{ matrix.config.lane }})
     env:
       CARGO_TERM_COLOR: always
+      RUSTUP_HOME: ${{ github.workspace }}/.ci-rustup
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/download-ci-xtask
         with:
+          token: ${{ github.token }}
           lane: ${{ matrix.config.lane }}
           tools-contract: ${{ needs.changes.outputs.ci-tools-contract }}
           xtask-contract: ${{ needs.changes.outputs.ci-xtask-contract }}
+          allow-miss: "true"
       - name: Cache Rust toolchain
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
-            ~/.rustup/toolchains
-            ~/.rustup/update-hashes
-          key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ needs.changes.outputs.rustup-contract }}
+            ${{ env.RUSTUP_HOME }}/toolchains
+            ${{ env.RUSTUP_HOME }}/update-hashes
+          key: rustup-v3-${{ runner.os }}-${{ runner.arch }}-${{ needs.changes.outputs.rustup-contract }}
           restore-keys: |
-            rustup-${{ runner.os }}-${{ runner.arch }}-
-      - uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
-        with:
-          version: "2026.7.7"
-          cache_key_prefix: "mise-v2"
-          cache_save: ${{ github.ref == 'refs/heads/main' }}
-          install_args: rust@${{ needs.changes.outputs.rust-version }}
-          github_token: ${{ secrets.GH_READONLY_TOKEN }}
+            rustup-v3-${{ runner.os }}-${{ runner.arch }}-
       - name: Use the prepared current Rust toolchain
-        run: |
-          version=$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)
-          scripts/ci/activate-installed-rust-toolchain.sh "$version"
+        run: >-
+          "$CI_XTASK" ci-toolchain prepare
+          --version "${{ needs.changes.outputs.rust-version }}"
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
         with:
           contract-key: ${{ needs.changes.outputs.registry-contract }}
       - run: cargo shear --deny-warnings
-      - run: bash scripts/ci/check-agent-status-truthful.sh
+      - run: '"$CI_XTASK" lint agent-status-truth'
       - run: cargo deny check licenses bans sources
 
   test:
-    needs: [changes, affected-crates, matrix-setup, cargo-registry-warmup]
+    needs: [changes, affected-crates, cargo-registry-warmup]
     if: >-
       always() && needs.changes.outputs.rust == 'true' &&
       needs.changes.outputs.result-reuse != 'true' &&
@@ -990,7 +890,7 @@ jobs:
       !failure() && !cancelled()
     uses: ./.github/workflows/rust-nextest.yml
     with:
-      runner-configs-json: ${{ needs.matrix-setup.outputs.configs }}
+      runner-configs-json: ${{ needs.changes.outputs.runner-configs }}
       packages-json: ${{ needs.affected-crates.outputs.packages }}
       package-cache-keys-json: ${{ needs.affected-crates.outputs.cache-keys }}
       package-target-results-json: ${{ needs.affected-crates.outputs.target-results }}
@@ -1004,32 +904,42 @@ jobs:
       nextest-contract: ${{ needs.changes.outputs.nextest-contract }}
       registry-contract: ${{ needs.changes.outputs.registry-contract }}
       rustup-contract: ${{ needs.changes.outputs.rustup-contract }}
+      rust-version: ${{ needs.changes.outputs.rust-version }}
     secrets: inherit
 
   telemetry-conformance:
-    needs: [changes, matrix-setup, cargo-registry-warmup]
+    needs: [changes, cargo-registry-warmup]
     if: needs.changes.outputs.rust == 'true'
     strategy:
       fail-fast: false
       matrix:
-        config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
+        config: ${{ fromJSON(needs.changes.outputs.runner-configs) }}
     runs-on: ${{ fromJSON(matrix.config.runner) }}
     timeout-minutes: 30
     name: telemetry conformance (${{ matrix.config.lane }})
     env:
       CARGO_INCREMENTAL: "0"
       CARGO_TERM_COLOR: always
+      RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
+      SCCACHE_GHA_ENABLED: "false"
+      SCCACHE_CACHE_SIZE: 20G
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: rui314/setup-mold@9c9c13bf4c3f1adef0cc596abc155580bcb04444 # v1.1.0
+      - uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
+        with:
+          version: v0.16.0
+          disable_annotations: "false"
       - uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
         with:
           version: "2026.7.7"
           cache_key_prefix: "mise-v2"
           cache_save: ${{ github.ref == 'refs/heads/main' }}
-          install_args: "rust cargo:cargo-nextest"
+          install_args: "rust aqua:nextest-rs/nextest/cargo-nextest"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
+      - *cargo-target-cache
       - name: Run OTLP receiver and detector self-tests
         run: cargo nextest run -p jackin-otlp-testbed --locked
       - name: Run exporter-backed conformance matrix
@@ -1039,33 +949,36 @@ jobs:
     # Advisories are also covered daily by hygiene.yml (cargo deny check
     # advisories); in PR CI the audit only needs to run when the dependency
     # graph can change (the rust filter includes Cargo.lock).
-    needs: [changes, matrix-setup, cargo-registry-warmup]
+    needs: [changes, cargo-registry-warmup]
     if: needs.changes.outputs.rust == 'true' && needs.changes.outputs.policy-reuse != 'true'
     strategy:
       fail-fast: false
       matrix:
-        config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
+        config: ${{ fromJSON(needs.changes.outputs.runner-configs) }}
     runs-on: ${{ fromJSON(matrix.config.runner) }}
     timeout-minutes: 60
     name: cargo audit (${{ matrix.config.lane }})
     env:
       CARGO_TERM_COLOR: always
+      RUSTUP_HOME: ${{ github.workspace }}/.ci-rustup
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/download-ci-xtask
         with:
+          token: ${{ github.token }}
           lane: ${{ matrix.config.lane }}
           tools-contract: ${{ needs.changes.outputs.ci-tools-contract }}
           xtask-contract: ${{ needs.changes.outputs.ci-xtask-contract }}
+          allow-miss: "true"
       - name: Cache Rust toolchain
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
-            ~/.rustup/toolchains
-            ~/.rustup/update-hashes
-          key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ needs.changes.outputs.rustup-contract }}
+            ${{ env.RUSTUP_HOME }}/toolchains
+            ${{ env.RUSTUP_HOME }}/update-hashes
+          key: rustup-v3-${{ runner.os }}-${{ runner.arch }}-${{ needs.changes.outputs.rustup-contract }}
           restore-keys: |
-            rustup-${{ runner.os }}-${{ runner.arch }}-
+            rustup-v3-${{ runner.os }}-${{ runner.arch }}-
       - name: Cache audit indexes
         id: audit-cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -1082,133 +995,116 @@ jobs:
           install_args: rust@${{ needs.changes.outputs.rust-version }}
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - name: Use the prepared current Rust toolchain
-        run: |
-          version=$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)
-          scripts/ci/activate-installed-rust-toolchain.sh "$version"
+        run: >-
+          "$CI_XTASK" ci-toolchain prepare
+          --version "${{ needs.changes.outputs.rust-version }}"
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
         with:
           contract-key: ${{ needs.changes.outputs.registry-contract }}
       - name: Run cargo audit
-        shell: bash
-        run: |
-          set -euo pipefail
+        run: >-
+          "$CI_XTASK" ci-cargo-audit
 
-          args=(--no-yanked)
-          if [ "${{ steps.audit-cache.outputs.cache-hit }}" = "true" ]; then
-            args+=(--no-fetch --stale)
-          fi
-          cargo audit "${args[@]}"
-
-  # Secret-free arm64 static menu-bar assembly (Plan 001). No Apple/tap secrets.
-  native-usage-menu-bar:
-    name: Native usage menu bar
-    if: needs.changes.outputs.native == 'true' && needs.changes.outputs.result-reuse != 'true'
-    needs: [changes]
-    runs-on: macos-latest
-    timeout-minutes: 90
+  build-validator:
+    needs: [changes, cargo-registry-warmup]
+    if: >-
+      always() && !failure() && !cancelled() &&
+      (needs.changes.outputs.rust == 'true' ||
+       github.event_name == 'schedule' ||
+       github.event_name == 'workflow_dispatch')
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        config: ${{ fromJSON(needs.changes.outputs.runner-configs) }}
+    runs-on: ${{ fromJSON(matrix.config.runner) }}
+    timeout-minutes: 60
+    name: cargo build validator (${{ matrix.config.lane }})
     env:
       CARGO_INCREMENTAL: "0"
       CARGO_TERM_COLOR: always
-      JACKIN_APP_VERSION: "0.6.0"
-      JACKIN_APP_BUILD: "1"
-      MACOSX_DEPLOYMENT_TARGET: "14.0"
+      MISE_DATA_DIR: ${{ matrix.config.mise_data_dir }}
+      RUSTC_WRAPPER: sccache
+      RUSTUP_HOME: ${{ github.workspace }}/.ci-rustup
+      SCCACHE_BASEDIRS: ${{ github.workspace }}
+      SCCACHE_GHA_ENABLED: "false"
+      SCCACHE_CACHE_SIZE: 20G
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: rui314/setup-mold@9c9c13bf4c3f1adef0cc596abc155580bcb04444 # v1.1.0
+      - uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
+        with:
+          version: v0.16.0
+          disable_annotations: "false"
+      - uses: ./.github/actions/download-ci-xtask
+        with:
+          token: ${{ github.token }}
+          lane: ${{ matrix.config.lane }}
+          tools-contract: ${{ needs.changes.outputs.ci-tools-contract }}
+          xtask-contract: ${{ needs.changes.outputs.ci-xtask-contract }}
+          allow-miss: "true"
       - name: Cache Rust toolchain
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
-            ~/.rustup/toolchains
-            ~/.rustup/update-hashes
-          key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ needs.changes.outputs.rustup-contract }}
+            ${{ env.RUSTUP_HOME }}/toolchains
+            ${{ env.RUSTUP_HOME }}/update-hashes
+          key: rustup-v3-${{ runner.os }}-${{ runner.arch }}-${{ needs.changes.outputs.rustup-contract }}
           restore-keys: |
-            rustup-${{ runner.os }}-${{ runner.arch }}-
-      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+            rustup-v3-${{ runner.os }}-${{ runner.arch }}-
+      - name: Use the prepared current Rust toolchain
+        run: >-
+          "$CI_XTASK" ci-toolchain prepare
+          --version "${{ needs.changes.outputs.rust-version }}"
+      - uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
+        env:
+          RUSTC_WRAPPER: ""
         with:
           version: "2026.7.7"
           cache_key_prefix: "mise-v2"
           cache_save: ${{ github.ref == 'refs/heads/main' }}
-          # Install rust + nextest only here. uniffi CLI needs --features cli and is
-          # installed in a dedicated step so a mise cargo-tool failure does not
-          # cascade into rustup install aborts on macOS runners.
-          install_args: rust@${{ needs.changes.outputs.rust-version }} cargo:cargo-nextest
+          install_args: "zig"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
         with:
           contract-key: ${{ needs.changes.outputs.registry-contract }}
-      - name: Install uniffi-bindgen (pinned)
+      - name: Build complete validator archive set
         run: |
           set -euo pipefail
-          cargo install uniffi --version 0.32.0 --features cli --locked --force
-          uniffi-bindgen --version
-      - name: Rust usage + FFI tests
-        run: cargo nextest run -p jackin-usage -p jackin-usage-ffi --locked
-      - name: Regenerated bindings must be clean
-        run: |
-          set -euo pipefail
-          cargo xtask desktop bindings
-          git diff --exit-code -- native/Generated native/Sources/JackinUsageBridge/jackin_usage_ffi.swift
-      - name: Build arm64 static app
-        run: cargo xtask desktop build --version "${JACKIN_APP_VERSION}" --build "${JACKIN_APP_BUILD}"
-      - name: Verify app + ZIP round-trip
-        run: |
-          set -euo pipefail
-          cargo xtask desktop verify native/dist/JackinDesktop.app
-          zip -qry /tmp/jackin-desktop-ci.zip native/dist/JackinDesktop.app
-          cargo xtask desktop verify native/dist/JackinDesktop.app /tmp/jackin-desktop-ci.zip
-      - name: Swift tests
-        run: |
-          set -euo pipefail
-          cd native
-          # XCFramework already produced by the app build.
-          swift test -c release
-      - name: Launch app without credentials (alive then quit)
-        run: |
-          set -euo pipefail
-          # Prefer direct exec (more reliable than open(1) for LSUIElement).
-          # GitHub-hosted macOS may still Trace/BPT-trap without a full Aqua
-          # session — static assembly + verify + swift test remain hard gates;
-          # launch is best-effort with explicit warning (Plan 004 runner decision).
-          APP_BIN=native/dist/JackinDesktop.app/Contents/MacOS/JackinDesktop
-          xattr -cr native/dist/JackinDesktop.app || true
-          set +e
-          "$APP_BIN" >/tmp/jackin-desktop-launch.log 2>&1 &
-          PID=$!
-          alive=0
-          for _ in $(seq 1 30); do
-            if kill -0 "$PID" 2>/dev/null; then
-              alive=1
-              break
-            fi
-            sleep 0.2
-          done
-          if [ "$alive" = "1" ]; then
-            sleep 2
-            if kill -0 "$PID" 2>/dev/null; then
-              echo "OK: menu bar binary stayed alive 2s (pid=$PID)"
-              kill "$PID" 2>/dev/null || true
-              wait "$PID" 2>/dev/null || true
-              exit 0
-            fi
-          fi
-          echo "::warning::GHA macOS could not keep LSUIElement app alive without Aqua (see log; often Trace/BPT trap: 5). Assembly, verify, and swift test already passed — full interactive launch is a Plan 004 operator decision."
-          cat /tmp/jackin-desktop-launch.log || true
-          kill "$PID" 2>/dev/null || true
-          wait "$PID" 2>/dev/null || true
-          exit 0
+          # Dual zigbuild/mold peaks FDs; sequential xtask + higher soft limit
+          # avoids ProcessFdQuotaExceeded on multi-slot Velnor hosts.
+          ulimit -n 65536 || true
+          "$CI_XTASK" release-archives \
+            --package jackin-role \
+            --version "0.0.0-preview+${GITHUB_SHA}" \
+            --checksum-only
+      - name: Publish x86_64 validator
+        if: github.ref == 'refs/heads/main' && matrix.config.artifact_writer
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: jackin-role-x86_64-unknown-linux-gnu
+          path: dist/jackin-role-x86_64-unknown-linux-gnu.tar.gz*
+          retention-days: 7
+      - name: Publish aarch64 validator
+        if: github.ref == 'refs/heads/main' && matrix.config.artifact_writer
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: jackin-role-aarch64-unknown-linux-gnu
+          path: dist/jackin-role-aarch64-unknown-linux-gnu.tar.gz*
+          retention-days: 7
 
   # Single stable check name for branch-protection required-status,
   # regardless of which gated jobs skipped under it.
   ci-required:
     if: always()
     needs:
-      - matrix-setup
       - changes
       - actionlint
       - affected-crates
       - audit
+      - build-validator
       - cargo-registry-warmup
       - fmt
       - dependency-policy
@@ -1216,22 +1112,30 @@ jobs:
       - file-size-gate
       - test
       - telemetry-conformance
-      - native-usage-menu-bar
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/aggregate-needs
         with:
           needs-json: ${{ toJSON(needs) }}
           workflow-label: CI
+      - uses: ./.github/actions/download-ci-xtask
+        if: always()
+        with:
+          token: ${{ github.token }}
+          lane: GitHub
+          tools-contract: ${{ needs.changes.outputs.ci-tools-contract }}
+          xtask-contract: ${{ needs.changes.outputs.ci-xtask-contract }}
+          include-tools: "false"
       - name: Audit every CI job's performance
         if: always()
         env:
-          EXPECT_CLEAN: ${{ needs.changes.outputs.result-reuse == 'true' }}
           GH_TOKEN: ${{ github.token }}
-          WORKFLOW_LABEL: CI
-        run: scripts/ci/audit-workflow-performance.sh
+        run: >-
+          "$CI_XTASK" ci-audit
+          --expect-clean "${{ needs.changes.outputs.result-reuse == 'true' }}"
+          --workflow-label CI
       - name: Stage input-identical successful CI result
         if: >-
           needs.changes.outputs.result-reuse != 'true' &&

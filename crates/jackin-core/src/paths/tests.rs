@@ -62,6 +62,13 @@ fn no_overrides_falls_back_to_home_relative_defaults() {
 }
 
 #[test]
+fn test_layout_identity_is_explicit() {
+    let root = fake_home();
+    assert!(!JackinPaths::resolve_with_env(root.path(), None, None).test_layout);
+    assert!(JackinPaths::for_tests(root.path()).test_layout);
+}
+
+#[test]
 fn paths_error_home_dir_message_parity() {
     let err = PathsError::HomeDirUnresolved;
     assert_eq!(err.to_string(), "Cannot resolve home directory");

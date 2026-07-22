@@ -13,7 +13,7 @@ on:
       lanes:
         description: "Which runner(s) to run on. Default velnor; use both for parity runs."
         type: choice
-        options: [github, velnor, both]
+        options: [velnor, github, both]
         default: velnor
 
 permissions:
@@ -70,13 +70,17 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'workflow_run' &&
        github.event.workflow_run.conclusion == 'success')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     outputs:
       source: ${{ steps.filter.outputs.source }}
       sha: ${{ steps.source.outputs.sha }}
       short_sha: ${{ steps.meta.outputs.short_sha }}
       version: ${{ steps.meta.outputs.version }}
+      toolchain_key: ${{ steps.toolchain.outputs.key }}
+      xtask_contract: ${{ steps.toolchain.outputs.xtask_contract }}
+      jackin_archive_contract: ${{ steps.toolchain.outputs.jackin_archive_contract }}
+      capsule_archive_contract: ${{ steps.toolchain.outputs.capsule_archive_contract }}
     steps:
       - name: Resolve source SHA
         id: source
@@ -101,10 +105,26 @@ jobs:
               ;;
           esac
 
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ steps.source.outputs.sha }}
+          # Preview result reuse compares the prior published source commit.
           fetch-depth: 0
+
+      - name: Resolve Rust toolchain cache key
+        id: toolchain
+        env:
+          CACHE_KEY: ${{ hashFiles('rust-toolchain.toml') }}
+          XTASK_CONTRACT: ${{ hashFiles('Cargo.lock', 'Cargo.toml', 'rust-toolchain.toml', '.cargo/**', 'crates/*/Cargo.toml', 'crates/jackin-xtask/src/**', 'crates/jackin-process/src/**') }}
+          JACKIN_ARCHIVE_CONTRACT: ${{ hashFiles('Cargo.lock', 'Cargo.toml', 'rust-toolchain.toml', 'mise.toml', 'mise.lock', '.cargo/**', 'crates/jackin/Cargo.toml', 'crates/jackin-brand/Cargo.toml', 'crates/jackin-build-meta/Cargo.toml', 'crates/jackin-config/Cargo.toml', 'crates/jackin-console/Cargo.toml', 'crates/jackin-core/Cargo.toml', 'crates/jackin-diagnostics/Cargo.toml', 'crates/jackin-docker/Cargo.toml', 'crates/jackin-env/Cargo.toml', 'crates/jackin-host/Cargo.toml', 'crates/jackin-image/Cargo.toml', 'crates/jackin-instance/Cargo.toml', 'crates/jackin-isolation/Cargo.toml', 'crates/jackin-launch/Cargo.toml', 'crates/jackin-manifest/Cargo.toml', 'crates/jackin-oppicker/Cargo.toml', 'crates/jackin-process/Cargo.toml', 'crates/jackin-protocol/Cargo.toml', 'crates/jackin-runtime/Cargo.toml', 'crates/jackin-test-support/Cargo.toml', 'crates/jackin-tui/Cargo.toml', 'crates/jackin-usage/Cargo.toml', 'crates/jackin/src/**', 'crates/jackin-brand/src/**', 'crates/jackin-build-meta/src/**', 'crates/jackin-config/src/**', 'crates/jackin-console/src/**', 'crates/jackin-core/src/**', 'crates/jackin-diagnostics/src/**', 'crates/jackin-docker/src/**', 'crates/jackin-env/src/**', 'crates/jackin-host/src/**', 'crates/jackin-image/src/**', 'crates/jackin-instance/src/**', 'crates/jackin-isolation/src/**', 'crates/jackin-launch/src/**', 'crates/jackin-manifest/src/**', 'crates/jackin-oppicker/src/**', 'crates/jackin-process/src/**', 'crates/jackin-protocol/src/**', 'crates/jackin-runtime/src/**', 'crates/jackin-test-support/src/**', 'crates/jackin-tui/src/**', 'crates/jackin-usage/src/**', 'crates/jackin-xtask/src/release_archive.rs', 'crates/jackin-xtask/src/cmd.rs') }}
+          CAPSULE_ARCHIVE_CONTRACT: ${{ hashFiles('Cargo.lock', 'Cargo.toml', 'rust-toolchain.toml', 'mise.toml', 'mise.lock', '.cargo/**', 'crates/jackin-agent-status/Cargo.toml', 'crates/jackin-agent-status/src/**', 'crates/jackin-brand/Cargo.toml', 'crates/jackin-brand/src/**', 'crates/jackin-build-meta/Cargo.toml', 'crates/jackin-build-meta/src/**', 'crates/jackin-capsule/Cargo.toml', 'crates/jackin-capsule/src/**', 'crates/jackin-core/Cargo.toml', 'crates/jackin-core/src/**', 'crates/jackin-diagnostics/Cargo.toml', 'crates/jackin-diagnostics/src/**', 'crates/jackin-process/Cargo.toml', 'crates/jackin-process/src/**', 'crates/jackin-protocol/Cargo.toml', 'crates/jackin-protocol/src/**', 'crates/jackin-term/Cargo.toml', 'crates/jackin-term/src/**', 'crates/jackin-tui/Cargo.toml', 'crates/jackin-tui/src/**', 'crates/jackin-usage/Cargo.toml', 'crates/jackin-usage/src/**', 'crates/jackin-xtask/src/release_archive.rs', 'crates/jackin-xtask/src/cmd.rs') }}
+        run: |
+          {
+            echo "key=$CACHE_KEY"
+            echo "xtask_contract=$XTASK_CONTRACT"
+            echo "jackin_archive_contract=$JACKIN_ARCHIVE_CONTRACT"
+            echo "capsule_archive_contract=$CAPSULE_ARCHIVE_CONTRACT"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Classify changed paths
         id: filter
@@ -213,7 +233,7 @@ jobs:
             # src/, docker/runtime/) MUST drift together with ci.yml
             # — when adding a new build input there, add it here too.
             case "$path" in
-              .github/actions/build-release-archive/**|.github/workflows/preview.yml|Cargo.toml|Cargo.lock|rust-toolchain.toml|build.rs|src/**|docker/runtime/**|crates/**)
+              .github/workflows/preview.yml|Cargo.toml|Cargo.lock|rust-toolchain.toml|build.rs|src/**|docker/runtime/**|crates/**)
                 source=true
                 ;;
               mise.toml)
@@ -271,12 +291,16 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
   build-preview:
-    name: build preview jackin (${{ matrix.config.lane }}, ${{ matrix.target.target }})
-    needs: [matrix-setup, source-changed]
+    name: build preview jackin (${{ matrix.config.lane }})
+    needs: [source-changed]
     if: needs.source-changed.outputs.source == 'true'
     runs-on: ${{ fromJSON(matrix.config.runner) }}
     timeout-minutes: 60
+    concurrency:
+      group: preview-jackin-${{ needs.source-changed.outputs.jackin_archive_contract }}
+      cancel-in-progress: false
     permissions:
+      actions: read
       contents: read
       id-token: write
       attestations: write
@@ -285,33 +309,52 @@ jobs:
       CARGO_TERM_COLOR: always
       RUSTC_WRAPPER: sccache
       SCCACHE_BASEDIRS: ${{ github.workspace }}
-      SCCACHE_GHA_ENABLED: "off"
+      SCCACHE_GHA_ENABLED: "false"
+      SCCACHE_CACHE_SIZE: 20G
+      MISE_DATA_DIR: ${{ matrix.config.mise_data_dir }}
+      RUSTUP_HOME: ${{ github.workspace }}/.ci-rustup
     strategy:
+      fail-fast: false
+      max-parallel: 1
       matrix:
-        config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
-        target:
-          - target: aarch64-apple-darwin
-            zigbuild_target: aarch64-apple-darwin
-          - target: x86_64-apple-darwin
-            zigbuild_target: x86_64-apple-darwin
-          - target: aarch64-unknown-linux-gnu
-            zigbuild_target: aarch64-unknown-linux-gnu.2.17
-          - target: x86_64-unknown-linux-gnu
-            zigbuild_target: x86_64-unknown-linux-gnu.2.17
+        config: ${{ fromJSON((github.event_name == 'workflow_dispatch' && inputs.lanes == 'github') && '[{"lane":"GitHub","runner":"\"ubuntu-26.04\"","mise_data_dir":"/home/runner/.local/share/mise"}]' || (github.event_name != 'workflow_dispatch' || inputs.lanes == 'velnor') && '[{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","mise_data_dir":"/opt/mise"}]' || '[{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","mise_data_dir":"/opt/mise"},{"lane":"GitHub","runner":"\"ubuntu-26.04\"","mise_data_dir":"/home/runner/.local/share/mise"}]') }}
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.source-changed.outputs.sha }}
+      - name: Restore input-identical jackin archive set
+        id: archive-result
+        uses: ./.github/actions/restore-package-result
+        with:
+          workflow: preview.yml
+          branch: ${{ github.ref_name }}
+          primary-name: preview-GitHub-jackin-${{ needs.source-changed.outputs.jackin_archive_contract }}
+          alternate-name: preview-Velnor-jackin-${{ needs.source-changed.outputs.jackin_archive_contract }}
+          current-name-regexp: ^preview-(GitHub|Velnor)-jackin-${{ needs.source-changed.outputs.jackin_archive_contract }}$
+          dry-run: ${{ github.event_name == 'workflow_dispatch' }}
+      - uses: ./.github/actions/download-ci-xtask
+        if: steps.archive-result.outputs.found != 'true'
+        with:
+          token: ${{ github.token }}
+          lane: ${{ matrix.config.lane }}
+          xtask-contract: ${{ needs.source-changed.outputs.xtask_contract }}
+          include-tools: "false"
       - name: Cache Rust toolchain
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: steps.archive-result.outputs.found != 'true'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
-            ~/.rustup/toolchains
-            ~/.rustup/update-hashes
-          key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}
+            ${{ env.RUSTUP_HOME }}/toolchains
+            ${{ env.RUSTUP_HOME }}/update-hashes
+          key: rustup-v2-${{ runner.os }}-${{ runner.arch }}-${{ needs.source-changed.outputs.toolchain_key }}
           restore-keys: |
-            rustup-${{ runner.os }}-${{ runner.arch }}-
+            rustup-v2-${{ runner.os }}-${{ runner.arch }}-
+      - name: Use the prepared current Rust toolchain
+        if: steps.archive-result.outputs.found != 'true'
+        run: >-
+          "$CI_XTASK" ci-toolchain prepare
       - uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
+        if: steps.archive-result.outputs.found != 'true'
         env:
           # sccache install: blank wrapper in case binstall source-falls-back
           # to cargo, which would probe rustc through a missing sccache.
@@ -320,61 +363,56 @@ jobs:
           version: "2026.7.7"
           cache_key_prefix: "mise-v2"
           cache_save: ${{ github.event_name == 'workflow_run' || github.ref == 'refs/heads/main' }}
-          install_args: "cargo-binstall rust zig cargo:cargo-zigbuild cosign syft cargo:sccache"
+          install_args: "cargo-binstall zig cargo:cargo-zigbuild cosign syft cargo:sccache"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
+        if: steps.archive-result.outputs.found != 'true'
         uses: ./.github/actions/cache-cargo-registry
-      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-        with:
-          shared-key: release-archive-jackin-${{ matrix.target.target }}-workspace-v2
-          cache-all-crates: "true"
-          cache-workspace-crates: "true"
-          env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTC_WRAPPER RUSTFLAGS RUSTDOC RUSTUP"
-          save-if: ${{ github.event_name == 'workflow_run' || github.ref == 'refs/heads/main' }}
-          # No branch in the cache key: GitHub isolates branch caches, so every
-          # PR/branch/release reads the default branch's warm cache via fallback.
-          # Only main saves, preserving limited cache quota for reusable entries.
-      - run: rustup target add ${{ matrix.target.target }}
       - name: Cache macOS SDK
-        if: contains(matrix.target.target, 'apple')
-        id: sdk-cache
+        if: steps.archive-result.outputs.found != 'true'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: /tmp/macos-sdk
+          path: ${{ runner.temp }}/macos-sdk
           key: macos-sdk-26.1
-      - name: Download macOS SDK
-        if: contains(matrix.target.target, 'apple') && steps.sdk-cache.outputs.cache-hit != 'true'
-        run: |
-          mkdir -p /tmp/macos-sdk
-          curl -fsSL "https://github.com/joseluisq/macosx-sdks/releases/download/26.1/MacOSX26.1.sdk.tar.xz" \
-            | tar -xJ -C /tmp/macos-sdk
-      - name: Set macOS SDKROOT
-        if: contains(matrix.target.target, 'apple')
-        run: |
-          echo "SDKROOT=/tmp/macos-sdk/MacOSX26.1.sdk" >> "$GITHUB_ENV"
-          # Pin deployment target so the binary runs on macOS 12+ even
-          # though we build with the latest SDK.
-          echo "MACOSX_DEPLOYMENT_TARGET=12.0" >> "$GITHUB_ENV"
-      - name: Build signed archive
-        uses: ./.github/actions/build-release-archive
+      - name: Build complete signed jackin archive set
+        if: steps.archive-result.outputs.found != 'true'
+        env:
+          VERSION: ${{ needs.source-changed.outputs.version }}
+        run: >-
+          "$CI_XTASK" release-archives
+          --package jackin
+          --version "$VERSION"
+      - name: Attest complete jackin archive set
+        if: steps.archive-result.outputs.found != 'true' || github.event_name != 'workflow_dispatch'
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
-          package: jackin
-          target: ${{ matrix.target.target }}
-          zigbuild-target: ${{ matrix.target.zigbuild_target }}
-          version: ${{ needs.source-changed.outputs.version }}
-          archive-basename: jackin-${{ matrix.target.target }}
-          artifact-name: preview-${{ matrix.config.lane }}-jackin-${{ matrix.target.target }}
-          timings-artifact-name: cargo-timings-preview-jackin-${{ matrix.target.target }}-${{ matrix.config.lane }}
-          sccache-stats-artifact-name: sccache-stats-preview-jackin-${{ matrix.target.target }}-${{ matrix.config.lane }}
-          sccache-stats-heading: sccache preview jackin ${{ matrix.target.target }} (${{ matrix.config.lane }})
+          subject-path: dist/*.tar.gz
+      - name: Upload complete jackin archive set
+        if: steps.archive-result.outputs.found != 'true' || github.event_name != 'workflow_dispatch'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: preview-${{ matrix.config.lane }}-jackin-${{ needs.source-changed.outputs.jackin_archive_contract }}
+          path: dist/*.tar.gz*
+      - name: Upload jackin cargo timings
+        if: always() && steps.archive-result.outputs.found != 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: cargo-timings-preview-jackin-${{ matrix.config.lane }}
+          path: dist/cargo-timings/*.html
+          if-no-files-found: ignore
+          retention-days: 7
 
   build-jackin-capsule:
-    name: build preview capsule (${{ matrix.config.lane }}, ${{ matrix.target.target }})
-    needs: [matrix-setup, source-changed]
+    name: build preview capsule (${{ matrix.config.lane }})
+    needs: [source-changed]
     if: needs.source-changed.outputs.source == 'true'
     runs-on: ${{ fromJSON(matrix.config.runner) }}
     timeout-minutes: 60
+    concurrency:
+      group: preview-capsule-${{ needs.source-changed.outputs.capsule_archive_contract }}
+      cancel-in-progress: false
     permissions:
+      actions: read
       contents: read
       id-token: write
       attestations: write
@@ -383,31 +421,52 @@ jobs:
       CARGO_TERM_COLOR: always
       RUSTC_WRAPPER: sccache
       SCCACHE_BASEDIRS: ${{ github.workspace }}
-      SCCACHE_GHA_ENABLED: "off"
+      SCCACHE_GHA_ENABLED: "false"
+      SCCACHE_CACHE_SIZE: 20G
+      MISE_DATA_DIR: ${{ matrix.config.mise_data_dir }}
+      RUSTUP_HOME: ${{ github.workspace }}/.ci-rustup
     strategy:
+      fail-fast: false
+      max-parallel: 1
       matrix:
-        config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
-        target:
-          - target: aarch64-unknown-linux-gnu
-            zigbuild_target: aarch64-unknown-linux-gnu.2.17
-            arch: arm64
-          - target: x86_64-unknown-linux-gnu
-            zigbuild_target: x86_64-unknown-linux-gnu.2.17
-            arch: amd64
+        config: ${{ fromJSON((github.event_name == 'workflow_dispatch' && inputs.lanes == 'github') && '[{"lane":"GitHub","runner":"\"ubuntu-26.04\"","mise_data_dir":"/home/runner/.local/share/mise"}]' || (github.event_name != 'workflow_dispatch' || inputs.lanes == 'velnor') && '[{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","mise_data_dir":"/opt/mise"}]' || '[{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","mise_data_dir":"/opt/mise"},{"lane":"GitHub","runner":"\"ubuntu-26.04\"","mise_data_dir":"/home/runner/.local/share/mise"}]') }}
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.source-changed.outputs.sha }}
+      - name: Restore input-identical capsule archive set
+        id: archive-result
+        uses: ./.github/actions/restore-package-result
+        with:
+          workflow: preview.yml
+          branch: ${{ github.ref_name }}
+          primary-name: preview-GitHub-jackin-capsule-${{ needs.source-changed.outputs.capsule_archive_contract }}
+          alternate-name: preview-Velnor-jackin-capsule-${{ needs.source-changed.outputs.capsule_archive_contract }}
+          current-name-regexp: ^preview-(GitHub|Velnor)-jackin-capsule-${{ needs.source-changed.outputs.capsule_archive_contract }}$
+          dry-run: ${{ github.event_name == 'workflow_dispatch' }}
+      - uses: ./.github/actions/download-ci-xtask
+        if: steps.archive-result.outputs.found != 'true'
+        with:
+          token: ${{ github.token }}
+          lane: ${{ matrix.config.lane }}
+          xtask-contract: ${{ needs.source-changed.outputs.xtask_contract }}
+          include-tools: "false"
       - name: Cache Rust toolchain
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: steps.archive-result.outputs.found != 'true'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
-            ~/.rustup/toolchains
-            ~/.rustup/update-hashes
-          key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}
+            ${{ env.RUSTUP_HOME }}/toolchains
+            ${{ env.RUSTUP_HOME }}/update-hashes
+          key: rustup-v2-${{ runner.os }}-${{ runner.arch }}-${{ needs.source-changed.outputs.toolchain_key }}
           restore-keys: |
-            rustup-${{ runner.os }}-${{ runner.arch }}-
+            rustup-v2-${{ runner.os }}-${{ runner.arch }}-
+      - name: Use the prepared current Rust toolchain
+        if: steps.archive-result.outputs.found != 'true'
+        run: >-
+          "$CI_XTASK" ci-toolchain prepare
       - uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
+        if: steps.archive-result.outputs.found != 'true'
         env:
           # sccache install: blank wrapper in case binstall source-falls-back
           # to cargo, which would probe rustc through a missing sccache.
@@ -416,41 +475,46 @@ jobs:
           version: "2026.7.7"
           cache_key_prefix: "mise-v2"
           cache_save: ${{ github.event_name == 'workflow_run' || github.ref == 'refs/heads/main' }}
-          install_args: "cargo-binstall rust zig cargo:cargo-zigbuild cosign syft cargo:sccache"
+          install_args: "cargo-binstall zig cargo:cargo-zigbuild cosign syft cargo:sccache"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
+        if: steps.archive-result.outputs.found != 'true'
         uses: ./.github/actions/cache-cargo-registry
-      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      - name: Build complete signed capsule archive set
+        if: steps.archive-result.outputs.found != 'true'
+        env:
+          VERSION: ${{ needs.source-changed.outputs.version }}
+        run: >-
+          "$CI_XTASK" release-archives
+          --package jackin-capsule
+          --version "$VERSION"
+      - name: Attest complete capsule archive set
+        if: steps.archive-result.outputs.found != 'true' || github.event_name != 'workflow_dispatch'
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
-          shared-key: release-archive-capsule-${{ matrix.target.target }}-workspace-v2
-          cache-all-crates: "true"
-          cache-workspace-crates: "true"
-          env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTC_WRAPPER RUSTFLAGS RUSTDOC RUSTUP"
-          save-if: ${{ github.event_name == 'workflow_run' || github.ref == 'refs/heads/main' }}
-          # No branch in the cache key: GitHub isolates branch caches, so every
-          # PR/branch/release reads the default branch's warm cache via fallback.
-          # Only main saves, preserving limited cache quota for reusable entries.
-      - run: rustup target add ${{ matrix.target.target }}
-      - name: Build signed capsule archive
-        uses: ./.github/actions/build-release-archive
+          subject-path: dist/*.tar.gz
+      - name: Upload complete capsule archive set
+        if: steps.archive-result.outputs.found != 'true' || github.event_name != 'workflow_dispatch'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          package: jackin-capsule
-          target: ${{ matrix.target.target }}
-          zigbuild-target: ${{ matrix.target.zigbuild_target }}
-          version: ${{ needs.source-changed.outputs.version }}
-          archive-basename: jackin-capsule-${{ matrix.target.target }}
-          artifact-name: preview-${{ matrix.config.lane }}-jackin-capsule-${{ matrix.target.target }}
-          timings-artifact-name: cargo-timings-preview-capsule-${{ matrix.target.target }}-${{ matrix.config.lane }}
-          sccache-stats-artifact-name: sccache-stats-preview-capsule-${{ matrix.target.target }}-${{ matrix.config.lane }}
-          sccache-stats-heading: sccache preview capsule ${{ matrix.target.target }} (${{ matrix.config.lane }})
+          name: preview-${{ matrix.config.lane }}-jackin-capsule-${{ needs.source-changed.outputs.capsule_archive_contract }}
+          path: dist/*.tar.gz*
+      - name: Upload capsule cargo timings
+        if: always() && steps.archive-result.outputs.found != 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: cargo-timings-preview-capsule-${{ matrix.config.lane }}
+          path: dist/cargo-timings/*.html
+          if-no-files-found: ignore
+          retention-days: 7
 
   publish-gate:
-    needs: [matrix-setup, source-changed, build-preview, build-jackin-capsule]
+    needs: [source-changed, build-preview, build-jackin-capsule]
     if: >-
       (github.event_name == 'workflow_run' || github.ref == 'refs/heads/main') &&
       needs.source-changed.outputs.source == 'true' &&
-      needs.matrix-setup.outputs.has_github == 'true'
-    runs-on: ubuntu-latest
+      (github.event_name != 'workflow_dispatch' || inputs.lanes != 'velnor')
+    runs-on: ubuntu-26.04
     timeout-minutes: 45
     outputs:
       ci_ok: ${{ steps.ci.outputs.ok }}
@@ -484,7 +548,7 @@ jobs:
       (github.event_name == 'workflow_run' || github.ref == 'refs/heads/main') &&
       needs.source-changed.outputs.source == 'true' &&
       needs.publish-gate.outputs.ci_ok == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 60
     concurrency:
       group: homebrew-tap-publish
@@ -493,9 +557,10 @@ jobs:
       contents: write
       id-token: write
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.source-changed.outputs.sha }}
+          # Publishing verifies source ancestry before updating the formula.
           fetch-depth: 0
 
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
@@ -503,6 +568,14 @@ jobs:
           path: artifacts
           pattern: preview-GitHub-*
           merge-multiple: true
+
+      - name: Restore prepared CI xtask
+        uses: ./.github/actions/download-ci-xtask
+        with:
+          token: ${{ github.token }}
+          lane: GitHub
+          xtask-contract: ${{ hashFiles('Cargo.lock', 'Cargo.toml', 'rust-toolchain.toml', '.cargo/**', 'crates/*/Cargo.toml', 'crates/jackin-xtask/src/**', 'crates/jackin-process/src/**') }}
+          include-tools: "false"
 
       - name: Verify source SHA is on main
         env:
@@ -555,51 +628,14 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.source-changed.outputs.version }}
           SHA: ${{ needs.source-changed.outputs.sha }}
-        run: |
-          set -euo pipefail
-          notes="Preview build from [${SHA:0:7}](https://github.com/${GITHUB_REPOSITORY}/commit/${SHA})."
-          assets=(
-            artifacts/jackin-[ax]*.tar.gz
-            artifacts/jackin-[ax]*.tar.gz.sha256
-            artifacts/jackin-[ax]*.tar.gz.bundle
-            artifacts/jackin-[ax]*.tar.gz.sbom.json
-            artifacts/jackin-capsule-*.tar.gz
-            artifacts/jackin-capsule-*.tar.gz.sha256
-            artifacts/jackin-capsule-*.tar.gz.bundle
-            artifacts/jackin-capsule-*.tar.gz.sbom.json
-            artifacts/capsule-manifest.json
-            artifacts/capsule-manifest.json.bundle
-          )
+        run: >-
+          "$CI_XTASK" github publish-preview
+          --repository "$GITHUB_REPOSITORY"
+          --version "$VERSION"
+          --sha "$SHA"
+          --assets artifacts
 
-          # The repository protects tags from deletion and non-fast-forward
-          # updates, so the rolling preview channel must not delete and
-          # recreate the `preview` tag. Keep the release as a stable download
-          # alias and replace assets in place.
-          if view_output=$(gh release view preview --json tagName 2>&1); then
-            echo "preview release exists: $view_output"
-            gh release edit preview \
-              --prerelease \
-              --target "$SHA" \
-              --title "Preview ${VERSION}" \
-              --notes "$notes"
-            gh release upload preview "${assets[@]}" --clobber
-            exit 0
-          fi
-
-          status=$?
-          if echo "$view_output" | grep -qiE 'release not found|not found|release does not exist'; then
-            gh release create preview \
-              --prerelease \
-              --target "$SHA" \
-              --title "Preview ${VERSION}" \
-              --notes "$notes" \
-              "${assets[@]}"
-          else
-            echo "::error::gh release view failed: $view_output"
-            exit "$status"
-          fi
-
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: jackin-project/homebrew-tap
           ref: main

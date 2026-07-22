@@ -3822,6 +3822,7 @@ async fn stale_agent_version_cache_does_not_force_foreground_update_probe() {
 async fn load_agent_cleans_up_when_parallel_sidecar_start_fails() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let selector = RoleSelector::new(None, "agent-smith");
     let agent = jackin_core::Agent::Claude;
@@ -3917,6 +3918,7 @@ async fn load_agent_skips_operator_env_resolution_when_no_env_layers_apply() {
 
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let selector = RoleSelector::new(None, "agent-smith");
     let agent = jackin_core::Agent::Claude;
@@ -3983,6 +3985,7 @@ async fn load_agent_skips_non_required_operator_credential_refs() {
 
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     config.env.insert(
         "OPENAI_API_KEY".to_owned(),
@@ -4046,6 +4049,7 @@ async fn load_agent_skips_non_required_operator_credential_refs() {
 async fn load_agent_skips_non_required_manifest_credential_prompts() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let selector = RoleSelector::new(None, "agent-smith");
     let agent = jackin_core::Agent::Claude;
@@ -4182,6 +4186,7 @@ async fn load_agent_skips_github_env_resolution_when_github_auth_ignored() {
 
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let mut github_env = std::collections::BTreeMap::new();
     github_env.insert(
@@ -4258,6 +4263,7 @@ async fn load_agent_skips_unused_github_env_resolution() {
 
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let mut github_env = std::collections::BTreeMap::new();
     github_env.insert(

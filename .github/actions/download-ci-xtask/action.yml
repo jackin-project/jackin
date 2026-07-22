@@ -1,10 +1,21 @@
 # SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 # SPDX-License-Identifier: Apache-2.0
 
-name: Download CI xtask
-description: Restore the lane-scoped jackin-xtask binary prepared once by CI.
+name: Restore CI xtask
+description: Restore contract-keyed CI binaries from cache or the cross-ref artifact fallback.
+
+outputs:
+  tools-hit:
+    description: Whether the requested Cargo tool bundle is available.
+    value: ${{ steps.restore.outputs.tools-hit }}
+  xtask-hit:
+    description: Whether the requested jackin-xtask binary is available.
+    value: ${{ steps.restore.outputs.xtask-hit }}
 
 inputs:
+  token:
+    description: Token with Actions artifact read access.
+    required: true
   lane:
     description: Runner lane that produced the binary.
     required: true
@@ -16,116 +27,78 @@ inputs:
     description: Runner-independent xtask artifact contract computed by the metadata job.
     required: false
     default: ""
+  fallback-xtask-contract:
+    description: Exact xtask contract used when a specialized artifact is not available yet.
+    required: false
+    default: ""
   include-tools:
     description: Download the Cargo tool bundle in addition to jackin-xtask.
     required: false
     default: "true"
+  include-xtask:
+    description: Download jackin-xtask in addition to any requested Cargo tools.
+    required: false
+    default: "true"
+  allow-miss:
+    description: Return miss outputs instead of failing when preparation must build the artifacts.
+    required: false
+    default: "false"
 
 runs:
   using: composite
   steps:
-    - name: Download prepared xtask
-      shell: bash
+    - name: Restore cached Cargo tools
+      id: tools-cache
+      if: inputs.include-tools == 'true'
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ github.workspace }}/.ci-prebuilt-tools
+        key: ci-prepared-tools-v1-${{ runner.os }}-${{ runner.arch }}-${{ inputs.tools-contract }}
+    - name: Restore cached CI xtask
+      id: xtask-cache
+      if: inputs.include-xtask == 'true'
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ github.workspace }}/.ci-prebuilt-xtask
+        key: ci-prepared-xtask-v1-${{ runner.os }}-${{ runner.arch }}-${{ inputs.xtask-contract }}
+    - name: Restore prepared CI tools
+      id: restore
+      uses: actions/github-script@373c709c69115d41ff229c7e5df9f8788daa9553 # v9.0.0
       env:
-        ARTIFACT_NAME: ci-xtask-${{ inputs.lane }}
-        ARTIFACT_PATH: ${{ github.workspace }}/.ci-tools/${{ inputs.lane }}
-        GH_TOKEN: ${{ github.token }}
-        REPOSITORY: ${{ github.repository }}
-        RUN_ID: ${{ github.run_id }}
-        TOOLS_ARTIFACT_NAME: ci-tools-${{ runner.os }}-${{ runner.arch }}-${{ inputs.tools-contract || hashFiles('mise.toml', 'mise.lock') }}
-        XTASK_ARTIFACT_NAME: ci-xtask-${{ runner.os }}-${{ runner.arch }}-${{ inputs.xtask-contract || hashFiles('Cargo.lock', 'Cargo.toml', 'rust-toolchain.toml', '.cargo/**', 'crates/*/Cargo.toml', 'crates/jackin-xtask/src/**', 'crates/jackin-process/src/**') }}
-        XTASK_EXACT_ARTIFACT_NAME: ci-xtask-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'rust-toolchain.toml', '.cargo/**', 'crates/*/Cargo.toml', 'crates/jackin-xtask/src/**', 'crates/jackin-process/src/**') }}
-        INCLUDE_TOOLS: ${{ inputs.include-tools }}
-      run: |
-        set -euo pipefail
-        mkdir -p "$ARTIFACT_PATH"
-        artifact_id=
-        if [ "$INCLUDE_TOOLS" = "true" ]; then
-          artifact_id=$(
-            gh api "repos/${REPOSITORY}/actions/runs/${RUN_ID}/artifacts" \
-              --paginate \
-              --jq ".artifacts[] | select(.name == \"${ARTIFACT_NAME}\") | .id" \
-              | head -n 1
-          )
-        fi
-        if [ -n "$artifact_id" ]; then
-          archive="$ARTIFACT_PATH/.artifact.zip"
-          gh api "repos/${REPOSITORY}/actions/artifacts/${artifact_id}/zip" > "$archive"
-          python3 -m zipfile -e "$archive" "$ARTIFACT_PATH"
-          rm "$archive"
-          exit 0
-        fi
-
-        names=()
-        if [ "$INCLUDE_TOOLS" = "true" ]; then
-          names+=("$TOOLS_ARTIFACT_NAME")
-        fi
-        names+=("$XTASK_ARTIFACT_NAME")
-        if [ "$XTASK_EXACT_ARTIFACT_NAME" != "$XTASK_ARTIFACT_NAME" ]; then
-          names+=("$XTASK_EXACT_ARTIFACT_NAME")
-        fi
-
-        deadline=$((SECONDS + 40))
-        xtask_found=false
-        for name in "${names[@]}"; do
-          artifact_id=
-          announced=false
-          while [ -z "$artifact_id" ]; do
-            artifact_id=$(
-              gh api "repos/${REPOSITORY}/actions/artifacts?name=${name}&per_page=10" \
-                --jq '.artifacts[] | select(.expired == false) | .id' \
-                | head -n 1
-            ) || artifact_id=
-            if [ -n "$artifact_id" ]; then
-              break
-            fi
-            if [ "$name" = "$XTASK_ARTIFACT_NAME" ] && \
-               [ "$XTASK_ARTIFACT_NAME" != "$XTASK_EXACT_ARTIFACT_NAME" ]; then
-              break
-            fi
-            if (( SECONDS >= deadline )); then
-              break
-            fi
-            if [ "$announced" = false ]; then
-              echo "::notice::waiting up to 40 seconds for concurrent CI artifact: ${name}"
-              announced=true
-            fi
-            sleep 2
-          done
-          if [ -z "$artifact_id" ]; then
-            if [[ "$name" == ci-xtask-* ]] && [ "$name" != "$XTASK_EXACT_ARTIFACT_NAME" ]; then
-              continue
-            fi
-            echo "::error::prepared CI artifact not found: ${name}"
-            exit 1
-          fi
-          archive="$ARTIFACT_PATH/.artifact.zip"
-          gh api "repos/${REPOSITORY}/actions/artifacts/${artifact_id}/zip" > "$archive"
-          python3 -m zipfile -e "$archive" "$ARTIFACT_PATH"
-          rm "$archive"
-          if [[ "$name" == ci-xtask-* ]]; then
-            xtask_found=true
-            break
-          fi
-        done
-        if [ "$xtask_found" != "true" ]; then
-          echo "::error::prepared CI xtask artifact not found"
-          exit 1
-        fi
-    - name: Export prepared xtask path
-      shell: bash
-      env:
-        CI_XTASK_PATH: ${{ github.workspace }}/.ci-tools/${{ inputs.lane }}/jackin-xtask
-        CI_TOOLS_PATH: ${{ github.workspace }}/.ci-tools/${{ inputs.lane }}
-      run: |
-        set -euo pipefail
-        chmod +x "$CI_XTASK_PATH"
-        echo "CI_XTASK=$CI_XTASK_PATH" >> "$GITHUB_ENV"
-        if [ -f "$CI_TOOLS_PATH/cargo-fuzz" ]; then
-          chmod +x "$CI_TOOLS_PATH"/*
-          echo "CI_CARGO_FUZZ=$CI_TOOLS_PATH/cargo-fuzz" >> "$GITHUB_ENV"
-        fi
-        if [ -f "$CI_TOOLS_PATH/workspace-metadata.json" ]; then
-          echo "CI_METADATA=$CI_TOOLS_PATH/workspace-metadata.json" >> "$GITHUB_ENV"
-        fi
-        echo "$CI_TOOLS_PATH" >> "$GITHUB_PATH"
+        JACKIN_TOKEN: ${{ inputs.token }}
+        JACKIN_REPOSITORY: ${{ github.repository }}
+        JACKIN_RUN_ID: ${{ github.run_id }}
+        JACKIN_WORKSPACE: ${{ github.workspace }}
+        JACKIN_RUNNER_OS: ${{ runner.os }}
+        JACKIN_RUNNER_ARCH: ${{ runner.arch }}
+        JACKIN_LANE: ${{ inputs.lane }}
+        JACKIN_TOOLS_CONTRACT: ${{ inputs.tools-contract }}
+        JACKIN_XTASK_CONTRACT: ${{ inputs.xtask-contract }}
+        JACKIN_FALLBACK_XTASK_CONTRACT: ${{ inputs.fallback-xtask-contract }}
+        JACKIN_INCLUDE_TOOLS: ${{ inputs.include-tools }}
+        JACKIN_INCLUDE_XTASK: ${{ inputs.include-xtask }}
+        JACKIN_TOOLS_CACHE_HIT: ${{ steps.tools-cache.outputs.cache-hit }}
+        JACKIN_XTASK_CACHE_HIT: ${{ steps.xtask-cache.outputs.cache-hit }}
+        JACKIN_ALLOW_MISS: ${{ inputs.allow-miss }}
+        JACKIN_ACTION_RUNTIME: ${{ github.action_path }}/runtime/dist/index.js
+      with:
+        github-token: ${{ inputs.token }}
+        script: return await import(process.env.JACKIN_ACTION_RUNTIME).then(({ main }) => main())
+    - name: Cache restored Cargo tools
+      if: >-
+        inputs.include-tools == 'true' &&
+        steps.tools-cache.outputs.cache-hit != 'true' &&
+        steps.restore.outputs.tools-hit == 'true'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ github.workspace }}/.ci-prebuilt-tools
+        key: ci-prepared-tools-v1-${{ runner.os }}-${{ runner.arch }}-${{ inputs.tools-contract }}
+    - name: Cache restored CI xtask
+      if: >-
+        inputs.include-xtask == 'true' &&
+        steps.xtask-cache.outputs.cache-hit != 'true' &&
+        steps.restore.outputs.xtask-hit == 'true'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ github.workspace }}/.ci-prebuilt-xtask
+        key: ci-prepared-xtask-v1-${{ runner.os }}-${{ runner.arch }}-${{ inputs.xtask-contract }}

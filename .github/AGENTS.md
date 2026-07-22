@@ -17,4 +17,8 @@ Apply this file to pull requests, GitHub metadata, composite actions, and reposi
 ## Actions and Composites
 
 - Pin third-party actions to a full commit SHA with the upstream version comment. Use the least privileged `permissions` required by each workflow or job.
+- Keep runner-selectable workflows portable across the Velnor default,
+  `ubuntu-26.04` GitHub, and `both` dispatch lanes. Rust compilation uses mold,
+  sccache v0.16.0, and the shared Cargo registry cache without a second target
+  cache or explicit cache-statistics step.
 - Before changing `.github/workflows/`, read and follow that directory's local instructions. Keep composite actions reusable and apply the same token and cache rules when they participate in workflows.

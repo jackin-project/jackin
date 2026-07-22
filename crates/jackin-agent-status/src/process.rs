@@ -24,7 +24,7 @@ mod procfs {
         use super::PathBuf;
 
         #[derive(Debug, Clone)]
-        pub(crate) struct Process;
+        pub(crate) enum Process {}
 
         #[derive(Debug, Clone)]
         pub(crate) struct Stat {
@@ -48,7 +48,7 @@ mod procfs {
                 reason = "non-Linux stub mirrors procfs Process method receivers used on Linux"
             )]
             pub(crate) fn stat(&self) -> Result<Stat, ()> {
-                Err(())
+                match *self {}
             }
 
             #[expect(
@@ -56,7 +56,7 @@ mod procfs {
                 reason = "non-Linux stub mirrors procfs Process method receivers used on Linux"
             )]
             pub(crate) fn exe(&self) -> Result<PathBuf, ()> {
-                Err(())
+                match *self {}
             }
 
             #[expect(
@@ -64,7 +64,7 @@ mod procfs {
                 reason = "non-Linux stub mirrors procfs Process method receivers used on Linux"
             )]
             pub(crate) fn cmdline(&self) -> Result<Vec<String>, ()> {
-                Err(())
+                match *self {}
             }
         }
 

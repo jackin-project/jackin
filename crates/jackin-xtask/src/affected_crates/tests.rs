@@ -8,20 +8,32 @@ fn graph() -> WorkspaceGraph {
             ("app-id".into(), "jackin".into()),
             ("tool-id".into(), "tool".into()),
         ]),
+        package_names: BTreeMap::from([
+            ("core-id".into(), "core".into()),
+            ("runtime-id".into(), "runtime".into()),
+            ("app-id".into(), "jackin".into()),
+            ("tool-id".into(), "tool".into()),
+            ("serde 1.0.0".into(), "serde".into()),
+        ]),
         roots: BTreeMap::from([
             ("core-id".into(), PathBuf::from("crates/core")),
             ("runtime-id".into(), PathBuf::from("crates/runtime")),
             ("app-id".into(), PathBuf::from("crates/app")),
             ("tool-id".into(), PathBuf::from("crates/tool")),
         ]),
-        dependencies: BTreeMap::from([
-            ("runtime-id".into(), BTreeSet::from(["core-id".into()])),
-            ("app-id".into(), BTreeSet::from(["runtime-id".into()])),
-        ]),
         dependents: BTreeMap::from([
             ("core-id".into(), BTreeSet::from(["runtime-id".into()])),
             ("runtime-id".into(), BTreeSet::from(["app-id".into()])),
         ]),
+        resolved_dependencies: BTreeMap::from([
+            ("core-id".into(), BTreeSet::from(["serde 1.0.0".into()])),
+            ("runtime-id".into(), BTreeSet::from(["core-id".into()])),
+            ("app-id".into(), BTreeSet::from(["runtime-id".into()])),
+        ]),
+        resolved_features: BTreeMap::from([(
+            "serde 1.0.0".into(),
+            BTreeSet::from(["derive".into()]),
+        )]),
     }
 }
 
@@ -46,12 +58,14 @@ fn metadata_snapshot_keeps_only_relocatable_crate_roots() {
                 Node {
                     id: "core-id".into(),
                     deps: vec![],
+                    features: BTreeSet::new(),
                 },
                 Node {
                     id: "app-id".into(),
                     deps: vec![Dependency {
                         pkg: "core-id".into(),
                     }],
+                    features: BTreeSet::new(),
                 },
             ],
         }),
@@ -63,10 +77,15 @@ fn metadata_snapshot_keeps_only_relocatable_crate_roots() {
 }
 
 #[test]
-fn cache_closure_follows_workspace_dependencies() {
+fn resolved_cache_closure_includes_external_dependencies() {
     assert_eq!(
-        graph().forward_closure("app-id"),
-        BTreeSet::from(["app-id".into(), "core-id".into(), "runtime-id".into()])
+        graph().resolved_forward_closure("app-id"),
+        BTreeSet::from([
+            "app-id".into(),
+            "core-id".into(),
+            "runtime-id".into(),
+            "serde 1.0.0".into(),
+        ])
     );
 }
 
@@ -118,8 +137,73 @@ fn ignores_ci_orchestration_for_crate_selection() {
 #[test]
 fn selects_all_for_workspace_input_or_unknown_rust_path() {
     let expected = ["core", "jackin", "runtime", "tool"];
-    assert_eq!(graph().affected(&[PathBuf::from("Cargo.lock")]), expected);
+    assert_eq!(graph().affected(&[PathBuf::from("Cargo.toml")]), expected);
     assert_eq!(graph().affected(&[PathBuf::from("src/build.rs")]), expected);
+}
+
+#[test]
+fn lock_changes_select_only_resolved_consumers_and_dependents() {
+    assert_eq!(
+        graph().affected_with_dependencies(
+            &[PathBuf::from("Cargo.lock")],
+            Some(&BTreeSet::from(["serde".into()])),
+            None,
+        ),
+        ["core", "jackin", "runtime"]
+    );
+}
+
+#[test]
+fn unknown_removed_lock_package_fails_safe_to_every_crate() {
+    assert_eq!(
+        graph().affected_with_dependencies(
+            &[PathBuf::from("Cargo.lock")],
+            Some(&BTreeSet::from(["removed".into()])),
+            None,
+        ),
+        ["core", "jackin", "runtime", "tool"]
+    );
+}
+
+#[test]
+fn lock_parser_detects_package_record_changes() {
+    let base = br#"version = 4
+[[package]]
+name = "serde"
+version = "1.0.0"
+checksum = "old"
+"#;
+    let head = br#"version = 4
+[[package]]
+name = "serde"
+version = "1.0.0"
+checksum = "new"
+"#;
+    let base = lock_packages(base).unwrap();
+    let head = lock_packages(head).unwrap();
+    assert_ne!(base, head);
+}
+
+#[test]
+fn workspace_dependency_only_change_is_not_global() {
+    let base = br#"[workspace]
+members = ["crates/*"]
+
+[workspace.dependencies]
+serde = "1"
+"#;
+    let head = br#"[workspace]
+members = ["crates/*"]
+
+[workspace.dependencies]
+serde = "2"
+"#;
+    let mut base = manifest_value(base).unwrap();
+    let mut head = manifest_value(head).unwrap();
+    let base_dependencies = take_workspace_dependencies(&mut base);
+    let head_dependencies = take_workspace_dependencies(&mut head);
+    assert_eq!(base, head);
+    assert_ne!(base_dependencies, head_dependencies);
 }
 
 #[test]

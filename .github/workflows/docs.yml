@@ -237,6 +237,7 @@ jobs:
 
       - uses: ./.github/actions/download-ci-xtask
         with:
+          token: ${{ github.token }}
           lane: GitHub
           xtask-contract: ${{ needs.changes.outputs.docs-xtask-contract }}
           include-tools: "false"

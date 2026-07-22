@@ -5,7 +5,10 @@
 //! share one shape.
 
 use std::ffi::OsStr;
-use std::process::Command;
+use std::fs::File;
+use std::path::Path;
+use std::process::{Command, Stdio};
+use std::time::Duration;
 
 use anyhow::{Context, Result, anyhow};
 
@@ -46,17 +49,88 @@ pub(crate) fn run_streaming(cmd: &mut Command) -> Result<()> {
     }
 }
 
+/// Stream stdout into a file while inheriting stderr.
+pub(crate) fn run_stdout_file(cmd: &mut Command, path: &Path) -> Result<()> {
+    let display = display_command(cmd);
+    let file = File::create(path).with_context(|| format!("creating {}", path.display()))?;
+    let status = cmd
+        .stdout(Stdio::from(file))
+        .stderr(Stdio::inherit())
+        .status()
+        .with_context(|| format!("running {display}"))?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(anyhow!("{display} failed with {status}"))
+    }
+}
+
+/// Pipe one command into another and write the second command's stdout to a file.
+pub(crate) fn run_pipeline_to_file(
+    producer: &mut Command,
+    consumer: &mut Command,
+    path: &Path,
+) -> Result<()> {
+    let producer_display = display_command(producer);
+    let consumer_display = display_command(consumer);
+    let mut producer = producer
+        .stdout(Stdio::piped())
+        .stderr(Stdio::inherit())
+        .spawn()
+        .with_context(|| format!("running {producer_display}"))?;
+    let producer_stdout = producer
+        .stdout
+        .take()
+        .context("producer stdout was not piped")?;
+    let file = File::create(path).with_context(|| format!("creating {}", path.display()))?;
+    let consumer_status = consumer
+        .stdin(Stdio::from(producer_stdout))
+        .stdout(Stdio::from(file))
+        .stderr(Stdio::inherit())
+        .status()
+        .with_context(|| format!("running {consumer_display}"))?;
+    let producer_status = producer
+        .wait()
+        .with_context(|| format!("waiting for {producer_display}"))?;
+    if !producer_status.success() {
+        bail_process(&producer_display, producer_status)
+    } else if !consumer_status.success() {
+        bail_process(&consumer_display, consumer_status)
+    } else {
+        Ok(())
+    }
+}
+
+fn bail_process(display: &str, status: std::process::ExitStatus) -> Result<()> {
+    Err(anyhow!("{display} failed with {status}"))
+}
+
 /// Capture stdout as bytes. On failure, error includes trimmed stderr.
 ///
 /// Routes through [`jackin_process`] when the command is a simple program+args
 /// capture with inherited env; keeps `Command::output` for complex configured
 /// commands (env/cwd/stdio already set on the builder).
 pub(crate) fn output(cmd: &mut Command) -> Result<Vec<u8>> {
+    output_request(cmd, None)
+}
+
+/// Capture stdout with a bounded wall-clock wait.
+pub(crate) fn output_timeout(cmd: &mut Command, timeout: Duration) -> Result<Vec<u8>> {
+    output_request(cmd, Some(timeout))
+}
+
+fn output_request(cmd: &mut Command, timeout: Option<Duration>) -> Result<Vec<u8>> {
     let display = display_command(cmd);
-    let output = jackin_process::exec_sync(&exec_request(cmd))
-        .with_context(|| format!("running {display}"))?;
+    let mut request = exec_request(cmd);
+    if let Some(timeout) = timeout {
+        request = request.timeout(timeout);
+    }
+    let output =
+        jackin_process::exec_sync(&request).with_context(|| format!("running {display}"))?;
     if output.success {
         Ok(output.stdout)
+    } else if output.timed_out {
+        Err(anyhow!("{display} timed out"))
     } else {
         let stderr = String::from_utf8_lossy(&output.stderr);
         Err(anyhow!(

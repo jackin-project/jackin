@@ -117,7 +117,7 @@ impl OscPolicy {
     /// attribute hides this from rustdoc and the `for_test_` prefix
     /// flags intent to readers. Cargo cannot list a crate in its own
     /// `[dev-dependencies]` with a feature flag, so a `#[cfg(feature
-    /// = "test-helpers")]` gate would break the default `cargo test`
+    /// = "test-helpers")]` gate would break the default unit-test build
     /// invocation that integration tests rely on.
     #[doc(hidden)]
     pub fn for_test_deny_all() -> Self {

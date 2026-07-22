@@ -115,7 +115,7 @@ Stating a numeric per-problem token budget cuts reasoning tokens ~67% with &lt;3
 - **Availability:** CLAUDE-CODE-TODAY / SDK (prompt-only for TALE-EP; use Haiku 4.5 at $1/$5 as the estimator).
 - **Effort to adopt:** low (phrasing) to hours (estimator pre-call plumbing).
 - **Composability:** combines with CoD (budget + draft style); the estimator call is a natural Haiku-routing case; anti-synergy with fixed global budgets across heterogeneous tasks.
-- **Validation protocol:** sweep budgets {25, 50, 100, 200, none} over 100 fixed problems; plot actual `usage.output_tokens` and accuracy per budget to locate your elasticity knee before deploying any budget phrasing; re-run quarterly (model updates move the knee).
+- **Validation protocol:** sweep budgets `25, 50, 100, 200, none` over 100 fixed problems; plot actual `usage.output_tokens` and accuracy per budget to locate your elasticity knee before deploying any budget phrasing; re-run quarterly (model updates move the knee).
 
 ### 5. Sketch-of-Thought (SoT) — routed compression paradigms
 

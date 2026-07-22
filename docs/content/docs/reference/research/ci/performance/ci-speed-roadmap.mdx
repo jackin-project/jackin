@@ -131,9 +131,12 @@ downloading its `1.02GB` target and `63s` in package tests, while
 package, documentation, feature-powerset, and benchmark checks. The next exact
 v4 run must therefore measure the no-republish path, and the remaining work
 must reduce real test time and transferred bytes rather than add test shards.
-The shared setup job now treats prepared xtask/tool hits as a complete warm
-state: it skips the Rust toolchain, Cargo registry, mise, and clippy setup that
-only cold artifact population requires. On a miss, registry preparation runs
+The shared setup job treats prepared xtask/tool hits as reusable build inputs,
+but no longer mistakes them for proof that the pinned Rust toolchain exists.
+Both runner lanes now validate the rustup or mise installation independently;
+an incomplete persistent mise entry is removed and repaired once before crate
+fan-out. The warm path still skips Cargo registry and clippy setup that only
+cold artifact population requires. On a miss, registry preparation runs
 before any source-build fallback. Run `29500145758` rejected the first version
 of that shortcut because the restored xtask still invoked
 `cargo metadata --offline`; without a restored git dependency cache it tried
@@ -141,6 +144,42 @@ to resolve `termrock` and failed before selecting crates. The prepared xtask
 artifact now carries the locked workspace metadata document as well as the
 binary. Selection and cache-key derivation read that snapshot without invoking
 Cargo, while any crate-manifest change invalidates and regenerates both files.
+
+Both-lane run `29541459778` rejected the assumption that a successful prepared
+binary restore implied a valid persistent toolchain. GitHub completed the same
+steps, but Velnor exposed an incomplete `1.97.0` mise entry: format, policy,
+audit, and the `jackin` crate job attempted rustup synchronization instead of
+remaining offline. The same run also exposed a crate-result lookup that relied
+on GitHub's implicit `GITHUB_REPOSITORY` environment variable. Toolchain
+validation/repair and result-artifact lookup now live in `jackin-xtask`, take
+explicit inputs, and run unchanged on both lanes. Construct run `29541460946`
+proved the intended parity shape independently: the shared amd64 command took
+`46s` on Velnor and `62s` on GitHub; native GitHub arm64 took `77s`.
+Follow-up run `29542190448` rejected repair from every downstream job: four
+Velnor jobs concurrently invoked mise against the same persistent install,
+downloaded six or seven Rust components apiece, and invalidated one another's
+toolchain directories. The invalid rustup cache namespace advances to `v2`,
+and `jackin-xtask ci-toolchain prepare` now installs the pinned toolchain
+directly through rustup, including every component and target declared in
+`rust-toolchain.toml`. Velnor persistence is runner-slot-local rather than
+shared across every matrix slot, so each downstream job validates and repairs
+only its own slot instead of assuming the warmup slot's filesystem is visible.
+GitHub restores the same toolchain contract from its portable cache.
+
+Runs `29542466968` through `29543767415` rejected, in sequence, an exact-cache
+hit that skipped rustup restoration, stale mise installations, cross-slot
+toolchain assumptions, a minimal Rust profile without `rustfmt`, and complex
+GitHub expression values embedded directly in a Velnor command. The final
+workflow normalizes runner expressions into ordinary environment inputs before
+calling Rust, so both runners execute the same argument contract. Population
+run `29544036610` then passed both lanes: every completed job stayed below one
+minute, the Velnor warmup was the high-water mark at `59s`, and the complete
+log audit found no third-party or source-tool compilation. Its four download
+and miss markers were the explicit first population of separate Velnor runner
+slots. Input-identical repeat `29544175664` completed in about `18s`; all
+substantive jobs were admitted as already proven, and the strict audit found
+zero download, compile, source-tool-build, or cache-miss markers across every
+job and step.
 
 Target archives remain the cold-population fallback, not the final warm path.
 An exact source-closure miss now consults a small per-crate latest-target
@@ -151,12 +190,13 @@ registry/git outputs survive a source-key transition. This addresses cold run
 `29502952627`, which downloaded no dependencies but still emitted 160
 third-party compile lines: 63 while rebuilding the changed shared xtask and 97
 when the `jackin-xtask` crate's new exact target key had no seed.
-After every successful crate job, the configured canonical lane publishes a seven-day result marker
+After every successful crate job, the first admitted lane publishes a seven-day result marker
 keyed by the crate's exact forward dependency closure, Cargo/toolchain inputs,
 runner platform, feature and Docker modes, and the semantic crate-test
-contract. The contract is a stable identifier owned by
-<RepoFile path="scripts/ci/crate-test-contract.sh">scripts/ci/crate-test-contract.sh</RepoFile>,
-not a hash of the complete reusable workflow. A cache-transport, artifact, or
+contract. The contract is a stable declarative identifier in the
+`nextest-contract` output of
+<RepoFile path=".github/workflows/ci.yml">.github/workflows/ci.yml</RepoFile>,
+not a hash of the complete reusable workflow and not a runtime shell program. A cache-transport, artifact, or
 reporting edit therefore does not discard still-valid crate proofs. Changing a
 test command or its acceptance criteria requires bumping that identifier and
 intentionally misses every affected proof. Workflow and composite-action paths
@@ -166,10 +206,13 @@ expansion and before any crate runner is requested. A hit is reported in the
 routing summary and creates no empty matrix job; a miss creates exactly one
 dedicated job for that crate. This distinction is required for the one-minute
 pipeline target because hosted-runner admission serialized the nominally
-parallel matrix even when each cache-hit job did no work. The writer also
-publishes an exact-SHA alias for release workflows. GitHub is the canonical
-writer when present, while a Velnor-only dispatch makes Velnor the writer; both
-lanes read the same marker names and execute the same lookup and test contract.
+parallel matrix even when each cache-hit job did no work. Main-branch producers
+also publish an exact-SHA alias for release workflows; PR source SHAs cannot
+become the merged main SHA and do not publish that otherwise-unused duplicate
+marker. A per-crate concurrency
+contract prevents GitHub and Velnor from rebuilding or publishing the same
+input simultaneously; both lanes read the same marker names and execute the
+same lookup and test contract.
 A changed crate/dependency,
 lockfile, toolchain, test configuration, semantic test contract, fuzz input, Docker
 input, or execution mode produces a miss and runs the complete crate contract.
@@ -241,6 +284,87 @@ toolchain preparation whenever tool binaries were already available. Toolchain
 preparation is now unconditional in the single warmup owner, and crate jobs use
 restore-only toolchain access so they cannot download or spend 45 seconds
 saving the same 646 MB toolchain independently.
+
+The v6 transport removes the remaining pointer artifact. Each crate and
+feature mode now owns one stable reusable target-seed artifact containing one
+`target.tar.zst` archive with an embedded source-closure key. Discovery resolves
+that artifact directly with one API query, and download uses its artifact ID
+without scanning every artifact in the producing run. A matching embedded key
+permits the exact-source timestamp fast path; a different key preserves
+checkout timestamps so Cargo rebuilds changed first-party inputs while reusing
+compiled dependencies. Successful changed-source jobs replace the seed in one
+publish step. Semantic crate-result markers remain the higher-level path that
+skips an input-identical crate job entirely. During v5-to-v6 population, a v6
+miss may resolve the known input-identical v5 artifact directly from the same
+source key; it never follows or republishes a v5 latest-target pointer.
+
+Docs link proofs now invalidate on the rendered link surface rather than every
+prose byte. Route paths, headings and fragments, imports, link-bearing MDX,
+generated crate-page inputs, docs tooling, and public assets remain in the
+contract. A prose-only change can therefore migrate a recent base proof and
+publish the new semantic marker without rebuilding the site; any link-surface
+change still runs the complete site build and Lychee check. The prepared Rust
+`jackin-xtask` binary calculates these contracts; CI does not interpret the
+documentation tree with a Bash script.
+
+Reusable crate seeds are transport artifacts, not debugging deliverables, so
+their CI dev and test profiles omit debug information. Tests, checks, Clippy,
+feature powersets, and benchmarks remain complete inside the crate's one job;
+the archive no longer spends network and extraction time carrying symbols that
+no later CI consumer reads.
+
+Run `29538653820` exposed why Cargo profile settings are cache semantics, not
+workflow plumbing. The first debugless producer restored the debug-bearing v6
+seed, then Cargo rejected those objects and compiled every third-party
+dependency under the new profile. The job took 63 seconds and the published
+archive grew from 95 MB to 145 MB because both generations remained in the
+same target tree. The v7 target contract starts a clean cache generation for
+the debugless profiles instead of appending incompatible outputs. Target
+lookup, REST download, restore validation, timestamp normalization, and archive
+packing now live in the prepared `jackin-xtask` binary; the two Bash transport
+scripts are removed. A v7 producer is an intentional one-time profile migration,
+while later source changes reuse only profile-compatible dependency objects.
+
+The v7 producer in run `29539711361` validated the corrected shape. Warmup
+finished in 48 seconds and emitted a 41.3 MB build seed; the one complete
+`jackin-xtask` job finished in 49 seconds, then emitted a 61.3 MB canonical
+test/check/Clippy seed. Tests took 9 seconds, default-feature check 8 seconds,
+Clippy 3 seconds, packing 1 second, and publishing 2 seconds. The canonical
+archive is 58% smaller than the rejected 145 MB mixed-profile v6 artifact.
+
+Attempt 2 also proved that GitHub's rerun operation replaces artifacts owned by
+the original run: identical jobs waited 32--33 seconds for same-run xtask
+publication instead of consuming attempt 1. Treat a new workflow run, not a
+rerun attempt, as the sequential-cache proof. That attempt exposed a separate
+GitHub API failure in every workflow aggregator: the run-level jobs endpoint
+returned an HTML 503 body, which the Bash auditor passed directly to its JSON
+parser. Performance auditing now runs in `jackin-xtask`, queries the
+attempt-scoped jobs endpoint, retries and validates API responses, and fetches
+independent job logs concurrently. A local audit of all 13 CI jobs completed in
+4.5 seconds with zero dependency-download, third-party-build, source-tool, or
+cache-miss markers.
+
+Run `29540579595` exercised the first Rust-auditor producer. Warmup fell to 28
+seconds, affected-crate routing to 36 seconds, and the complete changed
+`jackin-xtask` job stayed inside the objective at 59 seconds. Its longest real
+crate steps were package tests at 12 seconds, toolchain restore at 8 seconds,
+registry restore at 7 seconds, and Clippy at 4 seconds; target download took 3
+seconds and packing took 1 second. The auditor itself completed in 2 seconds.
+Construct's changed-input producers took 74--75 seconds: 20--24 seconds were
+the cached platform builds, while Rust/tool/registry/Buildx setup consumed the
+remaining time. The next input-identical run must reuse the Construct result
+rather than paying that producer path. Docs performed a required full link
+proof because the contributor README added new source links; the following
+prose-only evidence update is the semantic-proof migration test.
+
+Run `29540800595` completed that corrected Cargo proof: warmup took 28 seconds,
+affected routing 31 seconds, the one complete changed-crate job 43 seconds, and
+`ci-required` 10 seconds. Sibling Docs run `29540800474` migrated the semantic
+proof without a site build: link check took 8 seconds, repository links 19
+seconds, and `docs-required` 13 seconds. Construct run `29540800481` finally
+published the reusable result after its Rust auditor passed; its required gate
+took 8 seconds. The following prose-only commit is the preserved-artifact test
+for all three workflow boundaries.
 
 The next producer run exposed a separate invalidation problem: hashing the
 entire reusable test workflow turned cache-only plumbing changes into misses
@@ -447,6 +571,137 @@ Run `28054308931` then proved the schema-check cache split after one cache-popul
 
 Run `28056690350` proved the current head across both lanes immediately after cleaning the old GitHub Actions cache set. The dual-lane dispatch was green, with `ci-required` and `timing-summary` passing; Velnor stayed faster across the Rust compile/test lanes (`check-default` `25s` vs GitHub `2m10s`, `clippy` `34s` vs GitHub `2m23s`, construct E2E image `1m21s` vs GitHub `2m14s`, and package shards `27s`-`59s` vs GitHub `53s`-`3m03s`), while Docker E2E remained real Docker/test-runtime dominated (`3m46s` on Velnor vs `5m15s` on GitHub). Because the GitHub cache set had just been intentionally cleared, the scan correctly found first-run GitHub cache misses and Cargo registry downloads; it still found zero external-crate compile/check/build markers, zero source-tool compiles, zero prepared-workspace restores, zero Docker Hub/rate-limit markers, and zero nonzero `sccache` errors. The follow-up warm GitHub dispatch `28057443103` then proved the desired sequential-run behavior on the same head: all CI jobs passed, the log scan found zero dependency downloads, zero cache misses, zero external-crate compile/check/build markers, zero source-tool compiles, zero prepared-workspace restores, zero Docker Hub/rate-limit markers, and zero nonzero `sccache` errors. The warm GitHub timings also showed the expected speedup from the rebuilt shared caches: `check-default` `48s`, `clippy` `1m03s`, construct E2E image `1m37s`, package shards `27s`-`1m12s`, Docker E2E `3m04s`, and only `28` low-utility hosted-runner `sccache` stat markers that did not correspond to dependency rebuilds. After the latest trailer-only force-push, current-head run `28071592012` attempt 3 proved the same warm hosted path on commit `9ffb47c`: all CI jobs passed, `ci-required` completed in about `3m17s`, and the log scan found zero dependency downloads, zero cache misses, zero external-crate compile/check/build markers, zero source-tool compiles, zero prepared-workspace restores, zero Docker Hub/rate-limit markers, and zero nonzero `sccache` errors. The only remaining signal was `28` low-utility hosted-runner `sccache` stat markers, again not tied to dependency rebuilds.
 
+Run `29552004758` proved the current per-crate CI shape for a `jackin-xtask` source change: the one complete crate job passed in `49s`, every other job stayed below one minute, and the raw log scan found zero dependency downloads, crates.io updates, toolchain downloads, cache misses, or third-party `Compiling`/`Checking` lines. Exact-input repeat `29552157502` completed in `19s`; metadata took `10s`, the required gate took `7s`, and every warmup, policy, audit, format, routing, and crate-test job was structurally skipped. Preview population run `29552356314` measured the unavoidable cold release ceiling without target shards: capsule took `13m22s` and jackin❯ took `50m39s` while producing one complete signed archive set per crate. After population, dual-lane run `29554843310` was green with every crate job below one minute: GitHub capsule `19s`, GitHub jackin❯ `20s`, Velnor capsule `28s`, and Velnor jackin❯ `40s`. GitHub restored the exact complete-result caches; Velnor downloaded completed-run artifacts named with the same archive contract. The raw parity log contained zero crate/toolchain downloads, registry updates, dependency compilation/checking, or cache misses; its only download markers were the intended complete archive transport (`23.61 MB` capsule and `75.23 MB` jackin❯). Retiring the superseded per-target main release caches then reduced repository cache usage from `10.27 GiB` to `5.30 GiB` while retaining the compact complete-result caches.
+
+The prepared-xtask bootstrap now contains no shell program. One bundled Node 24 action performs only the unavoidable artifact API transport, in-process ZIP extraction, executable-bit restoration, and Actions environment export. Contract calculation, cache decisions, validation, and every operation after bootstrap remain in the prepared `jackin-xtask` binary. GitHub and Velnor invoke the same local action with the same semantic artifact names; the action carries its extractor so neither lane depends on a host `unzip`, Python, or GitHub CLI installation.
+
+Dual-lane run `29557016424` proved that shared bootstrap and the direct warmup reuse path. Every job passed below one minute: GitHub warmup took `12s`, Velnor warmup took `36s`, and the required gate took `8s`. The shared action restored the exact xtask and Cargo tool artifacts in `4s` on GitHub and `18s` on Velnor; staging took less than one second on both. Compared with run `29556489665`, this removed the old Bash transport and redundant toolchain setup from warmup, reducing GitHub from `34s` and Velnor from `64s`. Raw GitHub logs and Velnor `job-log` artifacts contained zero crate downloads, toolchain downloads, registry updates, dependency compilation/checking, or source-tool compilation.
+
+The next bootstrap iteration moved tool staging into one tested `jackin-xtask ci-stage` operation and made Cargo dep-info paths relative so target seeds survive GitHub's `/home/runner/work/...` and Velnor's `/__w` checkout roots. Failed experiments `29557476784`, `29557626698`, and `29557847595` exposed, respectively, an undefined cold-bootstrap workspace export, a disallowed direct subprocess capture, and an unbounded Velnor result lookup. The Rust process layer now bounds that lookup at five seconds, and `jackin-xtask ci-doctest` owns library-target detection because Velnor did not honor the previous complex workflow expression for binary-only crates. Focused dual-lane run `29558860765` then completed one whole `jackin-xtask` job per lane with no shards: GitHub took `47s`, Velnor `55s`, GitHub warmup `10s`, Velnor warmup `41s`, routing `6s`, and the required gate `9s`. Strict audit found zero third-party builds and zero source-tool builds, but it still found one Velnor rustup cache miss and one six-component toolchain download. Runs `29559042872` and `29559260419` proved the boundary: isolated Velnor crate containers expose neither the warmup's `/opt/rustup` storage nor its `/opt/mise` installation. Consumers correctly fail in download-free activation mode. Until the Velnor job image or mounts provide the pinned toolchain to every container, the green fallback remains `ci-toolchain prepare`; shipping the roughly gigabyte-scale toolchain as a per-job artifact would violate the one-minute target. Final focused parity run `29559492420` was green with every job below one minute: the complete `jackin-xtask` job took `34s` on GitHub and `59s` on Velnor, warmup took `13s` and `36s`, and the required gate took `10s`. This infrastructure correction is separate from the deferred shared remote sccache backend.
+
+The cold warmup path no longer parses or activates the pinned Rust toolchain
+through repository Bash helpers. `jdx/mise-action` prepares the exact version,
+then the workflow invokes Cargo through `mise exec rust@<version> -- ...`; all
+subsequent preparation, validation, packing, and cache decisions remain in
+`jackin-xtask`. Removing the now-unreferenced activation and discovery scripts
+also removes a second, runner-specific toolchain selection implementation.
+Run `29562776673` rejected an incomplete condition on that change: a restored
+rustup archive caused mise setup to skip even though changed xtask source still
+needed `mise exec`, producing exit 127 before Cargo. Warmup now prepares mise
+whenever either the xtask or tool bundle misses; a rustup cache hit no longer
+claims that the separate mise execution environment exists.
+Replacement run `29562925946` proved the corrected bootstrap in `46s`. Its v8
+warmup seed was `38,114,507` bytes, replacing the previous transport shape with
+a compact dependency-output seed. The complete `jackin-xtask` job reached
+clippy in `62s`; clippy caught a needless borrow in the new current-run lookup,
+which the follow-up removed before repeating the proof.
+Run `29563157833` then completed warmup in `40s` and the whole one-crate
+`jackin-xtask` contract in `55s`, including target transport, tests, doctests,
+default checking, all-feature clippy, feature powerset, and benchmark build.
+The semantic crate-test identifier is now a declarative workflow output rather
+than a Bash program; changing transport code still preserves test proofs, while
+changing the commands or acceptance criteria still requires an explicit bump.
+The Docs-specific xtask source contract now uses the same declarative `hashFiles`
+expression in CI and Docs, exported through the already-pinned bootstrap action.
+This removes another Bash hashing implementation while preserving the narrower
+Docs command surface that prevents unrelated xtask edits from rebuilding Docs.
+Exact-repeat run `29563490993` completed CI warmup in `21s`, affected-crate
+routing in `11s`, and the required gate in `8s`; the crate matrix was empty
+because the previous complete proof remained valid. Companion Docs run
+`29563490851` completed its required gate with link checks at `29s` and `32s`
+and no redundant xtask build, proving the shared declarative contract handoff.
+
+Dual-lane crate tests no longer assign target and successful-result publication
+to a configured cache-writer lane. A per-crate concurrency group serializes only
+the GitHub and Velnor copies of the same complete crate job; unrelated crates
+remain parallel. The first admitted lane publishes the runner-independent target
+and result contract, and the second lane performs the same lookup and reuses that
+result instead of compiling it again. This keeps one crate per job, introduces no
+test partitions, and makes lane speed determine the producer rather than a
+GitHub-specific cache policy.
+
+Cold-marker proof run `29562214044` also measured why the prior target transport
+cannot meet the one-minute objective: the `jackin` v7 seed was `1,506,823,697`
+bytes, took `137s` to download, and took another `30s` to restore before Cargo
+started. The v8 pack contract keeps dependency libraries, metadata, fingerprints,
+build-script state, and dep-info, but drops generated package, test, benchmark,
+and example executables. Cargo can recreate those first-party binaries from the
+retained compilation outputs; CI no longer spends minutes transporting binaries
+that each complete crate job is required to execute or rebuild locally anyway.
+The same run rejected repository-wide artifact lookup alone for lane handoff:
+Velnor started after GitHub published the result, but GitHub's repository artifact
+listing had not converged and Velnor entered setup. Result lookup now falls back
+to the current run's artifact endpoint, allowing the queued lane to observe the
+producer directly without a sleep, polling shell, or runner-specific branch.
+
+Dual-lane run `29563873715` rejected the first runner-neutral producer proof.
+Velnor was admitted first, while the equivalent GitHub crate job remained queued,
+so per-crate concurrency correctly selected the faster available lane without
+sharding the crate. The Velnor crate steps took `52s`: result lookup consumed
+`11s`, toolchain preparation `8s`, tests `6s`, default checking `1s`, doctests
+`1s`, and clippy `3s`; the Actions job displayed `1m09s` because Velnor added
+about `16s` of post-job log transport. The crate used its validated runner-local
+target seed and emitted no dependency downloads or third-party compilation, but
+the workflow then incorrectly tried to repack that same seed because it checked
+only the artifact-restore output. The pack failed before publishing the complete
+result, so the queued GitHub lane could not reuse it and the run was cancelled
+before duplicate Cargo work began. Runner-local hits now bypass both target pack
+and publication. The post-miss bootstrap also preserves the xtask restored by
+the first action and retrieves only the Cargo tool bundle, removing a redundant
+xtask lookup, download, and extraction from the crate critical path. The next
+accepted proof must show one complete producer job, a current-run result hit in
+the queued lane, no Cargo execution in that consumer, and displayed job times
+below one minute on both lanes.
+
+Runs `29564416578` and `29564712274` rejected the next proof setup and transport
+shape. The first run was cancelled before crate Cargo work after discovering
+that `refresh-package=jackin-xtask` deliberately disables reuse for both lanes;
+a valid producer/consumer proof must instead delete only the existing result
+marker and leave the refresh input empty. In the corrected run, Velnor warmup
+took `1m51s`: restoring the unchanged `86MB` xtask/tool payload consumed `56s`
+and re-uploading the same run-local payload consumed another `42s`. The Velnor
+crate producer then spent `11s` restoring xtask, `10s` proving the result miss,
+and `53s` downloading the unchanged `72MB` Cargo-tool artifact before its real
+test contract began. All `224` tests passed, the default check took `2s`, clippy
+took `4s`, the runner-local target avoided target transport, and sccache reported
+two Rust hits with zero misses. Publication nevertheless failed because Velnor
+received a nested workflow `fromJSON` expression literally and the Bash marker
+step attempted to expand it, after which GitHub repeated the complete crate job.
+This is rejected even though the GitHub copy passed: it performed duplicate
+Cargo work and several Velnor jobs exceeded one minute (`cargo fmt` `1m03s`,
+dependency policy and audit `1m08s`, ratchet `1m14s`). Prepared xtask and Cargo
+tools now use separate contract-keyed `actions/cache` entries with exact-only
+restore, artifact fallback on the first ref miss, and one cache population after
+fallback or build. Both lanes run the same cache actions and keys; Velnor may
+serve them from its native persistent adapter without workflow divergence.
+Repository cache usage before introducing this pair was `7.34GB` across `81`
+entries. The first populated entries measured `30.5MB` for tools and `3.2MB`
+for each xtask contract, instead of the old `72.4MB` and `13.8MB` artifact
+payloads; they use no prefix fallback and remain subject to the existing
+per-run cache-budget audit.
+The redundant run-local combined upload is removed. Crate-key parsing and result
+marker creation also move into tested `jackin-xtask` commands, eliminating Bash
+and runner-specific nested-expression evaluation from the producer handoff.
+
+Run `29566043776` accepted the runner-neutral crate-result handoff and rejected
+the remaining toolchain warmup condition. Every displayed job finished below
+one minute: GitHub warmup took `24s`, Velnor warmup `42s`, policy jobs `7s`-
+`30s`, and the required gate completed after the crate pair. Velnor won producer
+admission and completed the whole `jackin-xtask` contract in `54s`; prepared
+xtask restore took `2s`, exact-key resolution and result lookup took `1s`, tools
+restore took `1s`, the runner-local target required no transport, and result
+publication succeeded. The queued GitHub copy then completed in `7s`, found the
+current-run marker immediately, and skipped toolchain setup, target handling,
+every Cargo command, reporting, and publication. The raw scan found zero Cargo
+registry updates, crate downloads, external compilation/checking, or marker
+substitution errors. It nevertheless found four Velnor rustup cache misses and
+four six-component downloads: prepared-binary hits had caused warmup to skip
+toolchain restore and validation, so policy and crate jobs repaired the same
+toolchain independently. Toolchain restore and validation are now unconditional
+warmup responsibilities, and either lane may populate the same exact cache key
+before fan-out. The next proof must preserve the accepted producer/consumer
+shape while reducing toolchain download and cache-miss markers to zero.
+
 ## Problem
 
 PR feedback, main-branch confidence, preview publishing, and tagged releases all need faster wall-clock results without dropping coverage. jackin❯ already has many good CI primitives -- path filters, PR cancellation, aggregator jobs, `Swatinem/rust-cache`, `cargo-nextest`, Docker Buildx layer caches, Bun download caching, pinned mise tools, and split workflows -- but the run triggered by commit [`4c8b94bd05f84a62a04f9f235e2d846f14d04366`](https://github.com/jackin-project/jackin/commit/4c8b94bd05f84a62a04f9f235e2d846f14d04366) shows that broad Rust/runtime changes still produce a long post-merge feedback loop: roughly 12.5 minutes to green `CI`, then roughly 8.5 more minutes before preview artifacts publish.
@@ -638,7 +893,7 @@ Measurement (Phase 0) still comes first in practice: capture a lane's baseline b
 
 ### Phase 1 -- No-risk cache hygiene
 
-1. Done in this branch: every `jdx/mise-action` call in workflows and composite actions now pins `version: "2026.6.11"` so the action's internal mise cache is reproducible instead of fetching the latest mise release on every cold cache.
+1. Done in this branch: every `jdx/mise-action` call in workflows and composite actions now pins `version: "2026.7.7"` so the action's internal mise cache is reproducible instead of fetching the latest mise release on every cold cache.
 2. Done in this branch: rely on `jdx/mise-action`'s cache with the stable `mise-v2` prefix for mise-managed tools, while keeping only targeted manual caches where measurement showed they own different data (`~/.bun/install/cache`, Lychee's link cache, Rust toolchain, Cargo registry, Rust target caches, construct Buildx, shellfirm, RustSec advisory DB, and macOS SDK archives). This avoids broad duplicate tool caches that would compete with the 10GB GitHub Actions cache budget.
 3. Done in this branch: audited cargo-installed tools and declared them through mise's Cargo backend with pinned `cargo-binstall`: `cargo-nextest`, `cargo-deny`, `cargo-audit`, `cargo-hack`, `cargo-zigbuild`, `cargo-shear`, `cargo-fuzz`, `codebook-lsp`, `sccache`, and `shellfirm`. CI now uses prebuilt Cargo binaries when available while keeping portable source-build fallback for architectures without upstream assets.
 4. Done in this branch: docs jobs use `bun ci` for locked installs, keep the Bun download cache, and do not cache `node_modules` because the measured warm path is already small and deterministic.
@@ -688,6 +943,44 @@ Measurement (Phase 0) still comes first in practice: capture a lane's baseline b
    the required admission graph. Keep the separate post-CI workflow unless
    measurements prove isolated capacity for release builds.
 
+Main run `29542209357` records the rejected preview baseline after PR #794:
+six target-specific jobs took between `7m00s` and `15m42s`, and the complete
+workflow took `16m24s`. The current branch instead keeps one complete archive
+job per package. Input-identical parity run `29554843310` completed those jobs
+in `19s`--`40s`, but exposed a remaining structural mismatch: GitHub restored
+an Actions cache while Velnor downloaded a GitHub-owned artifact. The preview
+jobs now use one runner-neutral completed-result lookup on both lanes, fall
+back to the other lane's byte-identical artifact under the same source
+contract, and execute the same complete cold-build path only when neither
+result exists. The old `cache_writer` role and serial lane ordering are gone;
+runner persistence may make Velnor faster, but it no longer changes the
+workflow algorithm. Completed archive artifacts also replace the duplicate
+preview archive cache family, releasing roughly `100MB` of active cache budget
+for toolchains and dependency state that cannot be reconstructed from a final
+release archive.
+
+Cold parity run `29560061337` rejected unconstrained symmetric production. All
+four package/lane jobs followed the same miss path, but Velnor's first complete
+capsule archive still took `500s`; its GitHub duplicate and both `jackin` jobs
+continued compiling past eleven minutes. The run also delayed a new required
+PR run, where the complete `jackin` crate job had already measured `320s` under
+the competing load. Preview package jobs now serialize by package source
+contract, not by lane: whichever runner is admitted first produces the one
+complete package, and the next runner executes the identical lookup sequence
+and restores the current run's finished artifact. A completed or cancelled
+workflow remains a valid lookup source because artifacts are uploaded only
+after the package build, deterministic packaging, signatures, checksums, SBOMs,
+and provenance step succeed. This preserves one complete job per package and
+runner-neutral configuration while preventing duplicate cold compilation.
+For an explicit `lanes=both` producer run, the package matrix admits one lane
+at a time with Velnor first under that same lock, so its purpose-built
+persistent runner performs a cold build before the hosted parity consumer.
+Run `29561317307` rejected relying on concurrency-group scheduling alone:
+GitHub queued first despite matrix declaration order. The explicit matrix
+admission limit makes the ordering deterministic. GitHub-only automatic and
+manual runs are unchanged. This prevents optional release work from occupying
+the hosted slots needed by required pull-request admission.
+
 ### Phase 5 -- Docker and construct-image speedups
 
 1. Corrected after parity measurement: CI Docker E2E keeps its scoped GHA cache, while standalone Construct builds on both lanes restore the same durable registry cache written by `main`. A dual-lane GHA-export trial made every platform build exceed five minutes, so it was rejected rather than forcing Velnor through a slower hosted-cache path.
@@ -706,11 +999,18 @@ Measurement (Phase 0) still comes first in practice: capture a lane's baseline b
 
 ### Phase 7 -- Release workflow speedups
 
-1. Done in this branch: share the preview build implementation with tagged release builds through <RepoFile path=".github/actions/build-release-archive/action.yml">.github/actions/build-release-archive/action.yml</RepoFile>, so preview and release use the same `cargo-zigbuild`, package, SHA256, signing/SBOM/attestation, timings, and artifact-upload contract while keeping their separate version names and publish gates.
+1. Done in this branch: preview and tagged release builds share `jackin-xtask release-archives`, so one complete crate job owns every target and the same Rust implementation owns `cargo-zigbuild`, deterministic packaging, SHA256, signing, and SBOM generation. The Rust command gives independent target compilations separate Cargo target directories, divides the runner's available compiler jobs across them, and schedules them concurrently, then joins every build before packaging and signing the complete set. One multi-subject attestation and one artifact upload preserve the security and transport boundaries without splitting a crate into target jobs; preview and release retain their separate version names and publish gates.
 2. Done in this branch: start release artifact builds in parallel with the release test workflow, then gate `gh release create`, signing publication, and Homebrew stable formula mutation on tests plus all build jobs passing. This preserves release safety while avoiding idle build machines.
 3. Done in this branch: keep final release artifacts on deterministic settings. Archive build jobs keep `CARGO_INCREMENTAL=0`, pinned toolchain, pinned SDK/tool versions, and unchanged SBOM/signing/attestation, while the shared archive action now normalizes tar entry order, mtime, owner/group metadata, numeric owners, and gzip header names.
 4. Done in this branch: extend `sccache` to release archive builds using the same release-profile archive action and short-retention stats artifacts as preview, while keeping deterministic release settings and `Swatinem/rust-cache` in place.
 5. Done in this branch: standardize on `cargo-zigbuild`-from-Linux for every release target, including macOS, and drop the `macos-latest` runners from the release critical path. Preview already cross-compiles macOS this way with a cached SDK, so this also collapses preview and release onto one build implementation. Keep a single native-macOS build-and-test in the scheduled hygiene lane for parity, so a macOS-specific link or runtime regression is still caught -- just not on the release critical path. Unify the `Swatinem/rust-cache` `shared-key` across the preview and release build jobs so one target triple warms a single cache instead of `build-preview-<target>` and `build-<target>` never sharing.
+6. Corrected in this branch: preview and tagged Release now invoke the same
+   declarative package-result restore action. Both lanes search completed
+   artifacts from either runner, then the current run, before invoking the
+   shared Rust archive producer. Package-contract concurrency admits one cold
+   producer and makes the other lane reuse its complete result. The old
+   GitHub-only archive-cache writer and duplicate final-archive cache families
+   are removed; runner choice changes performance, not the build algorithm.
 
 ### Phase 8 -- Warm persistent-runner fast lane (highest-leverage Rust speedup)
 
@@ -744,7 +1044,7 @@ Construct builds also hid their active work: the xtask subprocess helper capture
 
 ### Final warm proof after main synchronization
 
-The post-merge producer sequence established the current v5 crate targets without
+The post-merge producer sequence established the historical v5 crate targets without
 sharding or combining crates. Run `29524036639` reused the successful
 `jackin-runtime` and `jackin-capsule` results and scheduled only the still-missing
 `jackin` producer after its predecessor was cancelled; that one complete crate
@@ -772,6 +1072,268 @@ when semantic inputs changed or no valid proof exists; once the proof exists,
 CI, Docs, and Construct must each finish below one minute without Cargo crate
 downloads or unchanged dependency compilation. Workflow transport, cache
 plumbing, and path-classification edits are not semantic build inputs.
+
+Dual-lane run `29566477117` kept every job below one minute and proved the
+crate-result handoff: Velnor ran one complete `jackin-xtask` producer in 52
+seconds, while the queued GitHub job consumed its result in 9 seconds. The log
+audit found no registry update, crate download, dependency compilation, or
+external dependency check. It rejected the initial Rustup cache location,
+however. The Velnor warmup on slot 4 and crate producer on slot 2 each
+downloaded six toolchain components. The warmup's cache post-step reported
+that neither `/opt/rustup/toolchains` nor `/opt/rustup/update-hashes` existed:
+those container-private paths are not visible to the cache action after the
+job exits, and `ci-toolchain prepare` had accepted the mise installation
+without populating Rustup. Prepared toolchains therefore now use the same
+workspace-backed `.ci-rustup` store on every lane. Repair mode must populate
+that portable store; download-free activation may still accept a complete
+runner-provided mise installation. The exact Rust toolchain contract remains
+the cache key, so one cold producer owns a version change and every later job
+restores the same prepared bytes.
+
+The corrected cache proof is runs `29567144700` and `29567250499`. In the
+first, Velnor restored the exact workspace-backed toolchain in 15 milliseconds
+and GitHub restored the same 239 MB archive in about three seconds; both
+validated it from Rustup storage without synchronization or component
+downloads. The second forced `jackin-xtask` refresh so result admission could
+not hide downstream setup. It ran exactly one complete, unsharded crate job
+per lane: 38 seconds on GitHub and 40 seconds on Velnor. Both jobs restored the
+same toolchain contract and reusable target, then executed the whole
+test/doctest/check/clippy contract. Every job remained below one minute. The
+strict log scan found no registry update, crate download, external dependency
+compile/check, Rustup synchronization or component download, missing
+toolchain-cache path, or shell-substitution failure.
+
+Run `29567929549` then proved the first per-crate shell removal. Runner-local
+target validation moved into tested `ci-target validate-local`; reusable target
+download/restore and nextest execution became direct single-tool steps instead
+of shell programs. The forced refresh ran the complete `jackin-xtask` contract
+in 50 seconds on GitHub and 52 seconds on Velnor. Every other job also stayed
+below one minute. When neither lane had a valid runner-local seed, both took
+the same reusable-artifact fallback. The strict scan found no registry update,
+crate download, external compile/check, toolchain synchronization/component
+download, cache-path failure, or workflow argument/substitution error.
+
+Runs `29572197999`, `29572481010`, `29572727487`, and `29573000462`
+closed the remaining reusable-target portability gaps. GitHub Actions and
+Velnor expose separate cache namespaces, and Velnor restores a single cached
+file as a directory, so the shared contract now caches a directory containing
+the target archive. Each backend writes one native post-test seed because
+Cargo fingerprints include the different workspace roots; only GitHub owns
+the portable cross-backend artifact name. The packer also retains nextest's
+extensionless crate test executable instead of forcing an ephemeral hosted
+runner to relink it. Runner-local reuse requires the same stored source key as
+archive reuse; structural target contents alone cannot prove input identity
+after a lockfile or source change. That completeness cost only about 3 MB: the `jackin-env`
+archive grew from 197,999,447 bytes to 200,934,109 bytes.
+
+The identical v13 repeat, run `29573000462`, is the decisive proof. The whole
+GitHub crate job took 27 seconds and the whole Velnor crate job took 42
+seconds. Both restored the exact native key, executed the complete crate
+test/doctest/check/clippy/fuzz contract, and emitted no `Compiling`,
+`Checking`, dependency-download, registry-update, or Rustup-sync marker. Every
+job remained below one minute. JUnit existence detection, slow-test summaries,
+and flake-quarantine enforcement subsequently moved from duplicated
+Bash/Python fragments into the tested `ci-junit` xtask command, preserving one
+semantic analysis step for both normal and Docker E2E reports.
+
+Runs `29573869202` and `29574113061` then verified the exact runner-local
+source-key correction and the Rust-owned JUnit analysis. The first forced
+`jackin-env` refresh was green with every job below one minute: the complete
+crate job took 35 seconds on GitHub and 43 seconds on Velnor. Its only compile
+markers came from producing the changed shared xtask itself; neither crate job
+compiled or downloaded anything. The input-identical repeat is the steady-state
+acceptance proof: warmup took 15 seconds on GitHub and 20 seconds on Velnor,
+while the complete, unsharded `jackin-env` job took 33 and 39 seconds. A scan of
+the entire repeat log found zero compile, check, dependency-download,
+registry-update, fetch, or Rustup-sync markers.
+
+PR run `29574530427` exposed a broader invalidation bug after the JUnit parser
+added `quick-xml`: <RepoFile path="Cargo.lock" /> and the root workspace
+manifest were treated as unconditional full-workspace changes, and every crate
+target key hashed both files wholesale. The run therefore launched all 28 crate
+jobs even though the dependency was consumed only by `jackin-xtask`; completed
+cold jobs included
+`jackin-protocol` at 65 seconds and `jackin-diagnostics` at 82 seconds, already
+violating the one-minute gate before concurrency cancelled the obsolete run.
+Affected-crate routing now compares base/head lock package records and
+workspace dependency entries, maps changed packages through Cargo's resolved
+graph, and selects only their workspace consumers plus reverse-dependents.
+Per-crate target keys likewise hash the complete resolved forward closure and
+normalized workspace-wide build inputs instead of the whole lockfile or
+dependency table. Removed or otherwise unresolvable packages still fail safe
+to the full workspace, as do compiler, profile, lint, and Cargo configuration
+changes.
+
+Manual run `29576400249` is the input-identical acceptance proof for the
+dependency-closure cache contract. Every one of its 15 jobs completed below one
+minute: the complete, unsharded `jackin-xtask` crate job took 42 seconds on
+GitHub and 39 seconds on Velnor, while the shared warmup took 21 and 22 seconds.
+The longest GitHub step was the complete package test at eight seconds. A scan
+of the entire run log found zero compile, check, dependency-download,
+registry-update, fetch, or Rustup-sync markers; the remaining elapsed time was
+cache transport and the requested validation itself.
+
+Docs run `29576710869` isolated the remaining changed-input long pole:
+`docs-link-check` took 94 seconds, of which the complete site build consumed 57
+seconds. The build compiled 2,748 client modules, 646 SSR modules, and 3,068
+Nitro modules before the custom prerenderer requested 1,080 static routes. That
+prerenderer also launched all requests simultaneously while leaving the preview
+server's stdout and stderr pipes unread. A local route audit exposed three SSR
+render failures that the HTTP status check did not detect, plus the possibility
+of the child blocking when either pipe filled. <RepoFile path="docs/scripts/prerender-static.ts" />
+now drains and forwards both streams, fails on React stream-render errors, and
+uses one hardware-adaptive bounded worker pool on every runner. The three
+invalid MDX brace expressions are corrected. Vite's unused compressed-size
+reporting is disabled without changing emitted or uploaded files; the complete
+local 1,080-route build fell from 55.3 to 49.7 seconds and passed without hidden
+SSR errors. The pushed GitHub run remains the acceptance measurement.
+
+Docs run `29578050289` passed the corrected 1,080-route contract. Its first
+attempt took 100 seconds: 56 seconds for the complete build, nine seconds for
+link validation, and 35 seconds of runner, setup, publication, and teardown
+overhead. An exact rerun is not a valid reuse probe because GitHub replaces the
+artifacts associated with the rerun attempt. A separate input-identical manual
+run `29578314469` did find the published semantic result and skipped every
+validation job, but its audit correctly rejected a cache miss emitted while
+preparing an xtask used only for main-branch deployment lookup. Feature-branch
+manual runs now skip that irrelevant deployment preparation; main push and
+manual runs retain the deployment-reuse check. PR run `29578455310` then kept
+every Docs job below one minute: link validation took nine seconds, repository
+links 17 seconds, and the aggregator 13 seconds. Separate input-identical
+manual run `29578518792` reused the complete published result, skipped all
+validation jobs, and passed the clean-log performance audit in 11 seconds.
+
+The Docs site-cache digest and generated-site link invocation no longer have
+Bash implementations: the prepared xtask owns both contracts identically on
+every runner. Cold contract-migration run `29579136651` also proved that Docs
+does not compile a second xtask while CI prepares the new binary; both waiting
+jobs restored the one published artifact. That run still exposed a cold-path
+limit: combining the 41-second cross-workflow artifact wait with the 56-second
+site build made `docs-link-check` take 124 seconds. Input-identical manual run
+`29579330028` then reused the complete result, skipped every validation job,
+and passed the clean-log audit in 13 seconds. The cold changed-input path still
+needs independent improvement; the steady-state no-repeat contract is proven.
+
+Focused dual-lane run `29579832025` then forced one complete
+`jackin-xtask` crate validation in each lane after the PR-only exact-SHA result
+alias was removed. The unsharded job took 51 seconds on GitHub and 41 seconds
+on Velnor; every supporting job also stayed below one minute. The complete log
+contained zero dependency downloads, registry updates, toolchain downloads, or
+Rust dependency `Compiling`/`Checking` markers. The prepared-xtask cache lookup
+missed its exact key, but both warmup jobs staged the already published binary
+instead of rebuilding it. Velnor likewise missed the runner-local crate-target
+key and restored the reusable target archive before testing. These are
+transport fallbacks, not repeated compilation. PR runs no longer publish an
+exact-SHA crate-result alias that can only be consumed after the commit reaches
+`main`; they retain the semantic closure-key result, while `main` retains the
+exact-SHA alias needed by merged-commit consumers.
+
+Docs run `29581465702` exposed a second cold-cache failure mode after the
+page-tree serialization experiment: the generated 1,080-route site was valid,
+but the evicted lychee response cache forced a live sweep of 6,103 unique URLs
+and 216 external sites timed out. Run `29581818619` repopulated that proof and
+passed, but its one-time xtask contract build made both xtask consumers wait
+about one minute; the complete link job took 146 seconds and the repository
+link job took 71 seconds. Link-result invalidation now hashes the actual link
+surface of ordinary TypeScript/TSX implementation files while retaining full
+invalidation for link-producing helpers, MDX components, generated crate-page
+rewrites, metadata, public assets, and dependency/configuration inputs. Pure
+implementation and prose changes therefore reuse the existing successful link
+proof instead of rebuilding the site and repeating thousands of network
+requests. A changed link target still invalidates the proof and runs the whole
+unsharded validation. Prose-only acceptance run `29582046782` then reused that
+proof: `docs-link-check` fell from 146 seconds to nine seconds, skipped the
+build, dependency installation, lychee cache, all 6,103 network checks, and
+site-artifact publication, and every Docs job stayed below one minute.
+
+Docs run `29583135163` populated a runner-neutral, 90-day lychee response
+artifact so GitHub cache eviction no longer forces thousands of repeat network
+requests. The complete unsharded link job took 111 seconds because a new xtask
+contract required a 28-second artifact wait and the changed site contract
+required a 53-second 1,080-route build. Dependency installation took one
+second, the existing Actions response cache restored in one second, and the
+full link check took three seconds with no repeated downloads or compilation.
+The job then published the same response state as a durable artifact keyed by
+the lychee semantic contract; later runners can restore it when the bounded
+Actions cache misses.
+
+Preview run `29586027432` proves the input-identical archive fast path across
+both runner lanes. The workflow completed in 54 seconds; its complete package
+jobs took 19 seconds and 20 seconds on Velnor and 13 seconds and nine seconds
+on GitHub. Each job performed an artifact-existence probe, then skipped the
+toolchain, Cargo registry, target cache, complete multi-target build,
+attestation, diagnostics, artifact download, and artifact upload steps. The
+full log contained zero Cargo or Rustup dependency downloads and zero Rust
+compile/check markers. GitHub still prefetched declared action implementations
+during job setup, including the skipped attestation action, but no package
+archive crossed the network. The cold population run remains one complete
+multi-target archive job per package; the warm path does not introduce target
+parts, batches, or test shards.
+
+Hygiene run `29587713698` restored one 106.7 MB contract-keyed bundle of
+stripped Cargo utilities in every Linux consumer instead of installing the
+same tools independently. Restore took one to four seconds. Mise then took two
+seconds in the complete scheduled-hygiene job, down from 131 seconds in main
+run `29580885810`; coverage, mutation, Hakari, Dylint, and DinD entered their
+semantic work within 28 to 35 seconds of job start. Dylint no longer spends
+minutes installing its driver from source. Its first measured analysis still
+downloaded and compiled the standalone lint workspace because the shared
+registry contract omitted <RepoFile path="crates/jackin-lints/Cargo.lock" />, then failed on a
+nightly compiler API change before its target cache could save. CI run
+`29588123914` corrected that ownership: the single registry-warmup job restored
+the prior registry, fetched the missing lint dependencies once, and saved the
+new 204 MB immutable contract in 35 seconds. Dylint also enables failure-path
+target persistence, so nightly incompatibility cannot force the next run to
+repeat an otherwise valid dependency build.
+
+CI run `29588439870` then proved the exact registry contract is reusable: the
+single warmup owner restored it and skipped every fetch step. The complete,
+unsharded `jackin-term` crate job finished in 56 seconds with no dependency
+downloads or external-crate compilation. Its separately attributable reverse
+dependent, `jackin-capsule`, took 157 seconds. The raw step ledger located 17
+seconds in restoration of a non-canonical target seed, 29 seconds in the
+feature powerset, and 33 seconds compressing a 472 MB replacement seed at Zstd
+level 10. Cache-only target archives now use Zstd level 3 and a new archive
+contract; this preserves every crate check while removing avoidable
+high-compression CPU from the critical job. The remaining repeated
+`jackin-capsule` compilations are distinct feature combinations, not dependency
+cache misses, and require a separate semantic optimization rather than shards.
+Docker E2E now follows the same Rust-owned execution contract on GitHub and
+Velnor: xtask resolves the capsule path, carries the optional nextest filter,
+and maps the runner-provided Docker temporary directory into the child process.
+The shared per-crate workflow no longer uses shell logic or a Velnor-specific
+execution branch to mutate `JACKIN_CAPSULE_BIN`; runner differences are inputs
+to one implementation.
+
+The measured Hygiene build-time ratchet also moved into the prepared xtask.
+The command cleans only each measured workspace package, preserves dependency
+outputs, resolves library sources from Cargo metadata, performs both builds
+offline, and writes the ratchet JSON and step summary directly. This removes
+the shell loop, the redundant network-enabled fetch, and the final
+`cargo run -p jackin-xtask` that spent 10 seconds recompiling the enforcement
+tool in run `29587713698`.
+
+The same Hygiene evidence shows why the remaining multi-minute jobs cannot be
+classified as cache setup. Miri `jackin-term` runs one complete crate job, but
+main run `29499861725` spent 9,432 seconds interpreting 43 conformance tests;
+`sanity_high_volume_plain_text` alone took about 46 minutes and
+`vt_decawm_autowrap_off` about 61 minutes. The unit-test binary spent another
+1,162 seconds, dominated by bounded hyperlink-map and resize-equivalence
+stress cases. Any Miri optimization must preserve one attributable crate job
+and the memory-semantics coverage while scaling interpreter-hostile stress
+inputs or reusing an input-identical result; it must not shard the crate or
+silently drop the conformance suite.
+
+Runs `29575485166` and `29575735792` validated the closure-key migration with
+one complete `jackin-xtask` job per lane. The first run populated the new key
+and finished at the one-minute boundary on both runners. The input-identical
+repeat took 37 seconds on GitHub and 40 seconds on Velnor; both restored the
+same exact closure key and the complete run log contained zero compile, check,
+download, fetch, registry-update, or Rustup-sync markers. The cold run also
+showed that `actions/cache` can restore a valid advisory database through a
+prefix key while reporting `cache-hit=false`, causing the Bash audit step to
+fetch unnecessarily. `ci-cargo-audit` now inspects the restored database
+itself and owns the offline/stale decision in Rust.
 
 ## Guardrails
 

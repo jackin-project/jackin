@@ -23,7 +23,7 @@ jackin❯-specific invariants that Clippy cannot express structurally.
 cd crates/jackin-lints && cargo build
 
 # UI tests:
-cd crates/jackin-lints && cargo test
+cd crates/jackin-lints && cargo nextest run
 
 # Against the main workspace (from repo root; requires cargo-dylint):
 cargo dylint --all -- --workspace

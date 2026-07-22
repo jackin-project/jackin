@@ -137,7 +137,7 @@ fn curated_pub_mods_accepts_env_pilot_shape() {
 
 #[test]
 fn real_tree_curated_pub_mods_green() {
-    // Workspace root is two levels up from this crate when run via cargo test.
+    // Workspace root is two levels up from this crate under the test runner.
     let root = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../..")
         .canonicalize()

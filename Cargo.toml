@@ -105,6 +105,7 @@ predicates = "=3.1.4"
 proptest = "1.9"
 proc-macro2 = { version = "1", features = ["span-locations"] }
 procfs = "0.18"
+quick-xml = "0.41.0"
 rand = "0.10"
 rcgen = "0.14.8"
 ratatui = "0.30"

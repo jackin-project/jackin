@@ -21,10 +21,17 @@ concurrency:
   group: hygiene-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  CARGO_INCREMENTAL: "0"
+  RUSTC_WRAPPER: sccache
+  RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
+  SCCACHE_GHA_ENABLED: "false"
+  SCCACHE_CACHE_SIZE: 20G
+
 jobs:
   cache-usage:
     name: Cache usage review
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 60
     steps:
       - name: Summarize GitHub Actions cache usage
@@ -56,13 +63,18 @@ jobs:
 
   scheduled-hygiene:
     name: Scheduled hygiene
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 60
     env:
       CARGO_INCREMENTAL: "0"
       CARGO_TERM_COLOR: always
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: rui314/setup-mold@9c9c13bf4c3f1adef0cc596abc155580bcb04444 # v1.1.0
+      - uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
+        with:
+          version: v0.16.0
+          disable_annotations: "false"
       - name: Cache Rust toolchain
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -72,28 +84,28 @@ jobs:
           key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}
           restore-keys: |
             rustup-${{ runner.os }}-${{ runner.arch }}-
+      - name: Restore prepared CI tools
+        uses: ./.github/actions/download-ci-xtask
+        with:
+          token: ${{ github.token }}
+          lane: shared
+          tools-contract: ${{ hashFiles('mise.toml', 'mise.lock', 'crates/jackin-xtask/src/ci_stage.rs') }}
+          xtask-contract: ${{ hashFiles('Cargo.lock', 'Cargo.toml', 'rust-toolchain.toml', '.cargo/**', 'crates/*/Cargo.toml', 'crates/jackin-xtask/src/**', 'crates/jackin-process/src/**') }}
+          allow-miss: "true"
       - uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
         with:
           version: "2026.7.7"
           cache_key_prefix: "mise-v2"
           cache_save: ${{ github.ref == 'refs/heads/main' }}
-          install_args: "cargo-binstall rust cargo:cargo-deny cargo:cargo-fuzz cargo:cargo-hack shellcheck"
+          install_args: >-
+            rust shellcheck
+            ${{ env.CI_TOOLS_HIT != 'true' &&
+                'cargo-binstall cargo:cargo-deny cargo:cargo-fuzz cargo:cargo-hack' || '' }}
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
-      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-        with:
-          shared-key: ci-policy-workspace-v2
-          cache-all-crates: "true"
-          cache-workspace-crates: "true"
-          env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTFLAGS RUSTDOC RUSTUP"
-          # No branch in the cache key: GitHub isolates branch caches, so every
-          # PR/branch/release reads the default branch's warm cache via fallback,
-          # and each branch also writes its own small pruned (deps-only) cache so
-          # reruns skip recompiling unchanged dependencies.
       - run: cargo deny check advisories
       - run: cargo hack check --workspace --feature-powerset --all-targets --locked
-      - run: cargo test --doc --workspace --locked
       - run: shellcheck docker/runtime/entrypoint.sh docker/runtime/agent-status/hooks/*/report-hook.sh scripts/*.sh
       - name: Long jackin-term fuzz run
         run: |
@@ -135,7 +147,7 @@ jobs:
       CARGO_INCREMENTAL: "0"
       CARGO_TERM_COLOR: always
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Cache Rust toolchain
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -167,13 +179,18 @@ jobs:
   # same-run calibration benchmark before the reviewed 5% threshold is applied.
   bench-run:
     name: Criterion bench run (advisory)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 90
     env:
       CARGO_INCREMENTAL: "0"
       CARGO_TERM_COLOR: always
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: rui314/setup-mold@9c9c13bf4c3f1adef0cc596abc155580bcb04444 # v1.1.0
+      - uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
+        with:
+          version: v0.16.0
+          disable_annotations: "false"
       - name: Cache Rust toolchain
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -188,16 +205,17 @@ jobs:
           version: "2026.7.7"
           cache_key_prefix: "mise-v2"
           cache_save: ${{ github.ref == 'refs/heads/main' }}
-          install_args: "rust cargo:cargo-nextest"
+          install_args: "rust aqua:nextest-rs/nextest/cargo-nextest"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
-      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      - &cargo-target-cache
+        name: Cache Cargo target
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          shared-key: hygiene-bench-run-workspace-v2
-          cache-all-crates: "true"
-          cache-workspace-crates: "true"
-          env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTFLAGS RUSTDOC RUSTUP"
+          path: target
+          key: cargo-target-GitHub-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ hashFiles('rust-toolchain.toml', '.cargo/config.toml', '**/Cargo.toml', '**/Cargo.lock') }}-${{ github.sha }}
+          restore-keys: cargo-target-GitHub-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ hashFiles('rust-toolchain.toml', '.cargo/config.toml', '**/Cargo.toml', '**/Cargo.lock') }}-
       - name: Compile all benchmarks and run telemetry baselines
         run: |
           set -o pipefail
@@ -226,14 +244,19 @@ jobs:
   # multi-run stability is proven (see TESTING.md allocation lane).
   dhat-allocation:
     name: dhat allocation suites (advisory)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 45
     continue-on-error: true
     env:
       CARGO_INCREMENTAL: "0"
       CARGO_TERM_COLOR: always
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: rui314/setup-mold@9c9c13bf4c3f1adef0cc596abc155580bcb04444 # v1.1.0
+      - uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
+        with:
+          version: v0.16.0
+          disable_annotations: "false"
       - name: Cache Rust toolchain
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -248,20 +271,15 @@ jobs:
           version: "2026.7.7"
           cache_key_prefix: "mise-v2"
           cache_save: ${{ github.ref == 'refs/heads/main' }}
-          install_args: "cargo-binstall rust cargo:cargo-nextest"
+          install_args: "rust"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
-      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-        with:
-          shared-key: dhat-allocation-v1
-          cache-all-crates: "true"
-          cache-workspace-crates: "true"
-          env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTFLAGS RUSTDOC RUSTUP"
+      - *cargo-target-cache
       - name: Run dhat-heap allocation tests
         run: |
           set -euo pipefail
-          cargo test -p jackin-term -p jackin-capsule --features dhat-heap --locked -- --nocapture 2>&1 | tee dhat-allocation.txt
+          cargo nextest run -p jackin-term -p jackin-capsule --features dhat-heap --locked --no-capture 2>&1 | tee dhat-allocation.txt
       - name: Upload dhat allocation log
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -272,13 +290,18 @@ jobs:
 
   cold-start-bench:
     name: Cold-start and PTY frame timing (advisory)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 45
     env:
       CARGO_INCREMENTAL: "0"
       CARGO_TERM_COLOR: always
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: rui314/setup-mold@9c9c13bf4c3f1adef0cc596abc155580bcb04444 # v1.1.0
+      - uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
+        with:
+          version: v0.16.0
+          disable_annotations: "false"
       - name: Cache Rust toolchain
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -293,16 +316,11 @@ jobs:
           version: "2026.7.7"
           cache_key_prefix: "mise-v2"
           cache_save: ${{ github.ref == 'refs/heads/main' }}
-          install_args: "cargo-binstall rust hyperfine"
+          install_args: "rust hyperfine"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
-      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-        with:
-          shared-key: cold-start-v1
-          cache-all-crates: "true"
-          cache-workspace-crates: "true"
-          env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTFLAGS RUSTDOC RUSTUP"
+      - *cargo-target-cache
       - run: cargo build --release --locked -p jackin
       - name: Hyperfine cold-start
         run: |
@@ -342,13 +360,13 @@ jobs:
   # Advisory rust-analyzer workspace load check (plan 048).
   rust-analyzer-clean:
     name: rust-analyzer clean (advisory)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 45
     env:
       CARGO_INCREMENTAL: "0"
       CARGO_TERM_COLOR: always
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Cache Rust toolchain
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -363,16 +381,10 @@ jobs:
           version: "2026.7.7"
           cache_key_prefix: "mise-v2"
           cache_save: ${{ github.ref == 'refs/heads/main' }}
-          install_args: "cargo-binstall rust"
+          install_args: "rust"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
-      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-        with:
-          shared-key: rust-analyzer-clean-v1
-          cache-all-crates: "true"
-          cache-workspace-crates: "true"
-          env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTFLAGS RUSTDOC RUSTUP"
       - run: rustup component add rust-analyzer
       - name: rust-analyzer analysis-stats
         run: |
@@ -404,13 +416,19 @@ jobs:
   # Scheduled per-crate clean + incremental build-time ceiling (plans 026/048).
   build-time-measure:
     name: Per-crate build-time ratchet
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 90
     env:
       CARGO_INCREMENTAL: "0"
       CARGO_TERM_COLOR: always
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/download-ci-xtask
+        with:
+          token: ${{ github.token }}
+          lane: shared
+          xtask-contract: ${{ hashFiles('Cargo.lock', 'Cargo.toml', 'rust-toolchain.toml', '.cargo/**', 'crates/*/Cargo.toml', 'crates/jackin-xtask/src/**', 'crates/jackin-process/src/**') }}
+          include-tools: "false"
       - name: Cache Rust toolchain
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -425,82 +443,35 @@ jobs:
           version: "2026.7.7"
           cache_key_prefix: "mise-v2"
           cache_save: ${{ github.ref == 'refs/heads/main' }}
-          install_args: "cargo-binstall rust"
+          install_args: "rust"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
-      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-        with:
-          shared-key: build-time-v1
-          cache-all-crates: "true"
-          cache-workspace-crates: "true"
-          env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTFLAGS RUSTDOC RUSTUP"
-      - name: Fetch deps (exclude network from timings)
-        run: cargo fetch --locked
       - name: Measure clean + incremental builds
-        run: |
-          set -euo pipefail
-          crates=(jackin-runtime jackin-capsule jackin-console jackin-term jackin-config)
-          echo '{' > build-times.json
-          first=1
-          {
-            echo "### Per-crate build times (advisory)"
-            echo
-            echo "| Crate | Clean (s) | Incremental (s) |"
-            echo "| --- | ---: | ---: |"
-          } >> "$GITHUB_STEP_SUMMARY"
-          for crate in "${crates[@]}"; do
-            cargo clean -p "$crate" --locked || cargo clean -p "$crate"
-            start=$(date +%s)
-            cargo build -p "$crate" --locked
-            end=$(date +%s)
-            clean_s=$((end - start))
-            # touch one source root if present for incremental recompile
-            lib_rs=$(cargo metadata --format-version 1 --no-deps --locked \
-              | jq -r --arg c "$crate" '.packages[] | select(.name==$c) | .targets[] | select(.kind[]?=="lib") | .src_path' \
-              | head -1)
-            if [[ -n "${lib_rs}" && -f "${lib_rs}" ]]; then
-              touch "$lib_rs"
-            fi
-            start=$(date +%s)
-            cargo build -p "$crate" --locked
-            end=$(date +%s)
-            incr_s=$((end - start))
-            if [[ $first -eq 0 ]]; then
-              echo ',' >> build-times.json
-            fi
-            first=0
-            printf '  "%s": {"clean_s": %s, "incremental_s": %s}' "$crate" "$clean_s" "$incr_s" >> build-times.json
-            printf "| \`%s\` | %s | %s |\n" "$crate" "$clean_s" "$incr_s" >> "$GITHUB_STEP_SUMMARY"
-          done
-          echo >> build-times.json
-          echo '}' >> build-times.json
-          cat build-times.json
+        run: >-
+          "$CI_XTASK" ci-build-times
       - name: Enforce scheduled build-time ceilings
-        run: |
-          set -euo pipefail
-          mkdir -p target
-          cp build-times.json target/build-times.json
-          cargo run -p jackin-xtask --locked -- lint ratchet --only build-time
+        run: >-
+          "$CI_XTASK" lint ratchet --only build-time
       - name: Upload build-time artifact
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: build-time-measure
-          path: build-times.json
+          path: target/build-times.json
           if-no-files-found: error
 
   # Plan 022: beta-toolchain clippy canary (advisory — never blocks).
   beta-clippy-canary:
     name: Beta clippy canary (advisory)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 60
     continue-on-error: true
     env:
       CARGO_INCREMENTAL: "0"
       CARGO_TERM_COLOR: always
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Cache Rust toolchain
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -515,16 +486,10 @@ jobs:
           version: "2026.7.7"
           cache_key_prefix: "mise-v2"
           cache_save: ${{ github.ref == 'refs/heads/main' }}
-          install_args: "cargo-binstall rust"
+          install_args: "rust"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
-      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-        with:
-          shared-key: hygiene-beta-clippy-v1
-          cache-all-crates: "true"
-          cache-workspace-crates: "true"
-          env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTFLAGS RUSTDOC RUSTUP"
       - name: Install beta toolchain + clippy
         run: rustup toolchain install beta --profile minimal --component clippy
       - name: cargo +beta clippy
@@ -543,13 +508,13 @@ jobs:
   # Plan 035: coverage artifact lane (advisory).
   coverage:
     name: Coverage (advisory)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 45
     env:
       CARGO_INCREMENTAL: "0"
       CARGO_TERM_COLOR: always
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Cache Rust toolchain
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -559,21 +524,26 @@ jobs:
           key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}
           restore-keys: |
             rustup-${{ runner.os }}-${{ runner.arch }}-
+      - name: Restore prepared CI tools
+        uses: ./.github/actions/download-ci-xtask
+        with:
+          token: ${{ github.token }}
+          lane: shared
+          tools-contract: ${{ hashFiles('mise.toml', 'mise.lock', 'crates/jackin-xtask/src/ci_stage.rs') }}
+          include-xtask: "false"
+          allow-miss: "true"
       - uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
         with:
           version: "2026.7.7"
           cache_key_prefix: "mise-v2"
           cache_save: ${{ github.ref == 'refs/heads/main' }}
-          install_args: "cargo-binstall rust cargo:cargo-llvm-cov cargo:cargo-nextest"
+          install_args: >-
+            rust
+            ${{ env.CI_TOOLS_HIT != 'true' &&
+                'cargo-binstall cargo:cargo-llvm-cov aqua:nextest-rs/nextest/cargo-nextest' || '' }}
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
-      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-        with:
-          shared-key: hygiene-coverage-v1
-          cache-all-crates: "true"
-          cache-workspace-crates: "true"
-          env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTFLAGS RUSTDOC RUSTUP"
       - run: rustup component add llvm-tools
       - name: llvm-cov nextest
         run: |
@@ -592,7 +562,7 @@ jobs:
   # Plan 035: Miri pure-crate lane (advisory).
   miri:
     name: Miri ${{ matrix.crate }} (advisory)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 180
     strategy:
       fail-fast: false
@@ -604,7 +574,7 @@ jobs:
       # jackin-config tests use tempdirs.
       MIRIFLAGS: -Zmiri-disable-isolation
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Cache Rust toolchain
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -619,16 +589,10 @@ jobs:
           version: "2026.7.7"
           cache_key_prefix: "mise-v2"
           cache_save: ${{ github.ref == 'refs/heads/main' }}
-          install_args: "cargo-binstall rust cargo:cargo-nextest"
+          install_args: "rust"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
-      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-        with:
-          shared-key: hygiene-miri-v1
-          cache-all-crates: "true"
-          cache-workspace-crates: "true"
-          env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTFLAGS RUSTDOC RUSTUP"
       - name: Install nightly + miri
         run: rustup toolchain install nightly --profile minimal --component miri
       # Independent matrix invocations prevent one slow crate from starving the rest.
@@ -649,13 +613,13 @@ jobs:
   # Plan 035: cargo-mutants on smallest pure crates (advisory; never fails job).
   mutants:
     name: cargo-mutants pure crates (advisory)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 90
     env:
       CARGO_INCREMENTAL: "0"
       CARGO_TERM_COLOR: always
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Cache Rust toolchain
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -665,21 +629,26 @@ jobs:
           key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}
           restore-keys: |
             rustup-${{ runner.os }}-${{ runner.arch }}-
+      - name: Restore prepared CI tools
+        uses: ./.github/actions/download-ci-xtask
+        with:
+          token: ${{ github.token }}
+          lane: shared
+          tools-contract: ${{ hashFiles('mise.toml', 'mise.lock', 'crates/jackin-xtask/src/ci_stage.rs') }}
+          include-xtask: "false"
+          allow-miss: "true"
       - uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
         with:
           version: "2026.7.7"
           cache_key_prefix: "mise-v2"
           cache_save: ${{ github.ref == 'refs/heads/main' }}
-          install_args: "cargo-binstall rust cargo:cargo-mutants cargo:cargo-nextest"
+          install_args: >-
+            rust
+            ${{ env.CI_TOOLS_HIT != 'true' &&
+                'cargo-binstall cargo:cargo-mutants' || '' }}
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
-      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-        with:
-          shared-key: hygiene-mutants-v1
-          cache-all-crates: "true"
-          cache-workspace-crates: "true"
-          env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTFLAGS RUSTDOC RUSTUP"
       - name: cargo mutants (manifest + config)
         run: |
           set +e
@@ -700,13 +669,18 @@ jobs:
   # Plan 012: create an ephemeral workspace-hack in the CI checkout for timing only.
   hakari-timing:
     name: hakari timing investigation (advisory)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 45
     env:
       CARGO_INCREMENTAL: "0"
       CARGO_TERM_COLOR: always
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: rui314/setup-mold@9c9c13bf4c3f1adef0cc596abc155580bcb04444 # v1.1.0
+      - uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
+        with:
+          version: v0.16.0
+          disable_annotations: "false"
       - name: Cache Rust toolchain
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -716,21 +690,27 @@ jobs:
           key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}
           restore-keys: |
             rustup-${{ runner.os }}-${{ runner.arch }}-
+      - name: Restore prepared CI tools
+        uses: ./.github/actions/download-ci-xtask
+        with:
+          token: ${{ github.token }}
+          lane: shared
+          tools-contract: ${{ hashFiles('mise.toml', 'mise.lock', 'crates/jackin-xtask/src/ci_stage.rs') }}
+          include-xtask: "false"
+          allow-miss: "true"
       - uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
         with:
           version: "2026.7.7"
           cache_key_prefix: "mise-v2"
           cache_save: ${{ github.ref == 'refs/heads/main' }}
-          install_args: "cargo-binstall rust cargo:cargo-hakari"
+          install_args: >-
+            rust
+            ${{ env.CI_TOOLS_HIT != 'true' &&
+                'cargo-binstall cargo:cargo-hakari' || '' }}
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
-      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-        with:
-          shared-key: hygiene-hakari-timing-v1
-          cache-all-crates: "true"
-          cache-workspace-crates: "true"
-          env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTFLAGS RUSTDOC RUSTUP"
+      - *cargo-target-cache
       # Exit-checked hakari with before/after wall-clock (advisory job; summary distinguishes tool failure).
       - name: baseline workspace build (before)
         id: hakari-before
@@ -801,13 +781,13 @@ jobs:
   # Plan 048: hyperfine cold-start measurement (advisory).
   dylint-advisory:
     name: dylint render purity
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 60
     env:
       CARGO_INCREMENTAL: "0"
       CARGO_TERM_COLOR: always
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Cache Rust toolchain
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -817,25 +797,26 @@ jobs:
           key: rustup-${{ runner.os }}-${{ runner.arch }}-dylint-v1
           restore-keys: |
             rustup-${{ runner.os }}-${{ runner.arch }}-
+      - name: Restore prepared CI tools
+        uses: ./.github/actions/download-ci-xtask
+        with:
+          token: ${{ github.token }}
+          lane: shared
+          tools-contract: ${{ hashFiles('mise.toml', 'mise.lock', 'crates/jackin-xtask/src/ci_stage.rs') }}
+          include-xtask: "false"
+          allow-miss: "true"
       - uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
         with:
           version: "2026.7.7"
           cache_key_prefix: "mise-v2"
           cache_save: ${{ github.ref == 'refs/heads/main' }}
-          install_args: "cargo-binstall rust"
+          install_args: >-
+            rust
+            ${{ env.CI_TOOLS_HIT != 'true' &&
+                'cargo-binstall cargo:cargo-dylint cargo:dylint-link' || '' }}
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
-      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-        with:
-          shared-key: hygiene-dylint-v1
-          cache-all-crates: "true"
-          cache-workspace-crates: "true"
-          env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTFLAGS RUSTDOC RUSTUP"
-      - name: Install pinned Dylint tools from source
-        run: |
-          cargo install --locked --version 6.0.1 --root target/dylint-tools \
-            cargo-dylint dylint-link
       - name: cargo dylint
         id: dylint-run
         run: |
@@ -866,14 +847,14 @@ jobs:
 
   dind-chaos:
     name: Full DinD E2E
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 90
     env:
       CARGO_INCREMENTAL: "0"
       CARGO_TERM_COLOR: always
       JACKIN_CHAOS_SEED: ${{ inputs.chaos_seed }}
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Cache Rust toolchain
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -883,43 +864,48 @@ jobs:
           key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}
           restore-keys: |
             rustup-${{ runner.os }}-${{ runner.arch }}-
+      - name: Restore prepared CI tools
+        uses: ./.github/actions/download-ci-xtask
+        with:
+          token: ${{ github.token }}
+          lane: shared
+          tools-contract: ${{ hashFiles('mise.toml', 'mise.lock', 'crates/jackin-xtask/src/ci_stage.rs') }}
+          xtask-contract: ${{ hashFiles('Cargo.lock', 'Cargo.toml', 'rust-toolchain.toml', '.cargo/**', 'crates/*/Cargo.toml', 'crates/jackin-xtask/src/**', 'crates/jackin-process/src/**') }}
+          allow-miss: "true"
       - uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
         with:
           version: "2026.7.7"
           cache_key_prefix: "mise-v2"
           cache_save: ${{ github.ref == 'refs/heads/main' }}
-          install_args: "cargo-binstall rust cargo:cargo-nextest cargo:cargo-zigbuild zig"
+          install_args: >-
+            rust zig
+            ${{ env.CI_TOOLS_HIT != 'true' &&
+                'cargo-binstall aqua:nextest-rs/nextest/cargo-nextest cargo:cargo-zigbuild' || '' }}
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
-      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-        with:
-          shared-key: hygiene-dind-chaos-v1
-          cache-all-crates: "true"
-          cache-workspace-crates: "true"
-          env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTFLAGS RUSTDOC RUSTUP"
-      - name: Export local capsule binary
-        run: |
-          set -euo pipefail
-          eval "$(cargo run -p jackin --bin build-jackin-capsule -- --export)"
-          echo "JACKIN_CAPSULE_BIN=$JACKIN_CAPSULE_BIN" >> "$GITHUB_ENV"
       - name: Run full DinD E2E suite
-        run: |
-          cargo nextest run -p jackin --features e2e --profile docker-e2e --locked
+        run: >-
+          "$CI_XTASK" ci --only e2e
 
 
   # Plan 027: per-main health JSON snapshot (advisory series seed).
   health-trend:
     name: Health trend snapshot (advisory)
     if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 30
     continue-on-error: true
     env:
       CARGO_INCREMENTAL: "0"
       CARGO_TERM_COLOR: always
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: rui314/setup-mold@9c9c13bf4c3f1adef0cc596abc155580bcb04444 # v1.1.0
+      - uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
+        with:
+          version: v0.16.0
+          disable_annotations: "false"
       - uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
         with:
           version: "2026.7.7"
@@ -945,6 +931,7 @@ jobs:
             unzip -p "target/health-history/${index}.zip" health-snapshot.json \
               | jq -c . >> health-history.jsonl
           done < target/health-history/urls.txt
+      - *cargo-target-cache
       - name: Emit health JSON
         run: |
           set -euo pipefail
