@@ -88,24 +88,46 @@ fn activate(version: &str, repair: bool) -> Result<()> {
     if !repair {
         bail!("prepared Rust toolchain {version} is unavailable; the warmup job must repair it");
     }
-    remove_incomplete_rustup_toolchains(version, &config)?;
-    let mut install = Command::new("rustup");
-    install.args(["toolchain", "install", version, "--profile", "minimal"]);
-    if !config.components.is_empty() {
-        install.args(["--component", &config.components.join(",")]);
-    }
-    if !config.targets.is_empty() {
-        install.args(["--target", &config.targets.join(",")]);
-    }
-    cmd::run_streaming(&mut install)
-        .with_context(|| format!("installing Rust {version} with rustup"))?;
-    if let Some(toolchain) = find_rustup_toolchain(version, &config)? {
-        append_github_file("GITHUB_ENV", &format!("RUSTUP_TOOLCHAIN={toolchain}"))?;
+    // Shared Velnor slots can leave partial toolchains after concurrent install/uninstall.
+    // Uninstall + hard-remove leftovers, install, and retry once on component conflicts.
+    for attempt in 1..=2 {
+        remove_incomplete_rustup_toolchains(version, &config)?;
+        hard_remove_rustup_toolchains(version)?;
+        let mut install = Command::new("rustup");
+        install.args(["toolchain", "install", version, "--profile", "minimal"]);
+        if !config.components.is_empty() {
+            install.args(["--component", &config.components.join(",")]);
+        }
+        if !config.targets.is_empty() {
+            install.args(["--target", &config.targets.join(",")]);
+        }
+        match cmd::run_streaming(&mut install) {
+            Ok(()) => {}
+            Err(err) if attempt == 1 => {
+                writeln!(
+                    io::stdout().lock(),
+                    "rustup install attempt {attempt} failed ({err:#}); hard-cleaning and retrying"
+                )?;
+                hard_remove_rustup_toolchains(version)?;
+                continue;
+            }
+            Err(err) => {
+                return Err(err).with_context(|| format!("installing Rust {version} with rustup"));
+            }
+        }
+        if let Some(toolchain) = find_rustup_toolchain(version, &config)? {
+            append_github_file("GITHUB_ENV", &format!("RUSTUP_TOOLCHAIN={toolchain}"))?;
+            writeln!(
+                io::stdout().lock(),
+                "prepared Rust toolchain {toolchain} from repaired rustup storage (attempt {attempt})"
+            )?;
+            return Ok(());
+        }
         writeln!(
             io::stdout().lock(),
-            "prepared Rust toolchain {toolchain} from repaired rustup storage"
+            "rustup install attempt {attempt} left incomplete toolchain; hard-cleaning and retrying"
         )?;
-        return Ok(());
+        hard_remove_rustup_toolchains(version)?;
     }
     bail!("rustup reported Rust {version} installed, but its toolchain is incomplete")
 }
@@ -135,15 +157,7 @@ fn find_rustup_toolchain(version: &str, config: &ToolchainConfig) -> Result<Opti
 }
 
 fn rustup_toolchain_candidates(version: &str) -> Result<Vec<(String, PathBuf)>> {
-    let rustup_home = env::var_os("RUSTUP_HOME").map_or_else(
-        || {
-            env::var_os("HOME")
-                .map(PathBuf::from)
-                .map(|home| home.join(".rustup"))
-        },
-        |path| Some(PathBuf::from(path)),
-    );
-    let Some(root) = rustup_home.map(|home| home.join("toolchains")) else {
+    let Some(root) = rustup_home().map(|home| home.join("toolchains")) else {
         return Ok(Vec::new());
     };
     if !root.is_dir() {
@@ -169,10 +183,52 @@ fn remove_incomplete_rustup_toolchains(version: &str, config: &ToolchainConfig) 
         }
         let mut uninstall = Command::new("rustup");
         uninstall.args(["toolchain", "uninstall", &name]);
-        cmd::run_streaming(&mut uninstall)
-            .with_context(|| format!("removing incomplete Rust toolchain {name}"))?;
+        // Uninstall can fail on half-written trees; hard-remove still runs after.
+        if let Err(err) = cmd::run_streaming(&mut uninstall) {
+            writeln!(
+                io::stdout().lock(),
+                "rustup uninstall {name} failed ({err:#}); continuing with hard remove"
+            )?;
+        }
     }
     Ok(())
+}
+
+fn hard_remove_rustup_toolchains(version: &str) -> Result<()> {
+    for (name, path) in rustup_toolchain_candidates(version)? {
+        if path.exists() {
+            writeln!(
+                io::stdout().lock(),
+                "hard-removing rustup toolchain tree {}",
+                path.display()
+            )?;
+            fs::remove_dir_all(&path)
+                .with_context(|| format!("hard-removing incomplete Rust toolchain {name}"))?;
+        }
+    }
+    // Stale update-hashes cause rustup to skip re-download of corrupted components.
+    if let Some(hashes) = rustup_home().map(|home| home.join("update-hashes")) {
+        if hashes.is_dir() {
+            for entry in crate::fs_util::read_dir_sorted(&hashes)? {
+                let name = entry.file_name().into_string().unwrap_or_default();
+                if name.starts_with(version) {
+                    let _ = fs::remove_file(entry.path());
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn rustup_home() -> Option<PathBuf> {
+    env::var_os("RUSTUP_HOME").map_or_else(
+        || {
+            env::var_os("HOME")
+                .map(PathBuf::from)
+                .map(|home| home.join(".rustup"))
+        },
+        |path| Some(PathBuf::from(path)),
+    )
 }
 
 fn valid_toolchain(path: &Path, config: &ToolchainConfig) -> bool {
