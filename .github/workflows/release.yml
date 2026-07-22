@@ -11,10 +11,10 @@ on:
     inputs:
       lanes:
         description: |
-          Which runner(s) to run on. Default github; use both for parity runs.
+          Which runner(s) to run on. Default velnor; use both for parity runs.
         type: choice
-        default: github
-        options: [github, velnor, both]
+        default: velnor
+        options: [velnor, github, both]
 
 permissions:
   actions: read
@@ -40,7 +40,7 @@ jobs:
     steps:
       - id: set
         env:
-          LANES: ${{ github.event_name == 'workflow_dispatch' && inputs.lanes || 'github' }}
+          LANES: ${{ github.event_name == 'workflow_dispatch' && inputs.lanes || 'velnor' }}
         run: |
           github='{"lane":"GitHub","runner":"\"ubuntu-24.04\"","runner_os":"Linux","runner_arch":"X64"}'
           velnor='{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","runner_os":"Linux","runner_arch":"X64"}'
