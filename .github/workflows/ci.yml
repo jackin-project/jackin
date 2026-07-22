@@ -1071,11 +1071,15 @@ jobs:
         with:
           contract-key: ${{ needs.changes.outputs.registry-contract }}
       - name: Build complete validator archive set
-        run: >-
-          "$CI_XTASK" release-archives
-          --package jackin-role
-          --version "0.0.0-preview+${GITHUB_SHA}"
-          --checksum-only
+        run: |
+          set -euo pipefail
+          # Dual zigbuild/mold peaks FDs; sequential xtask + higher soft limit
+          # avoids ProcessFdQuotaExceeded on multi-slot Velnor hosts.
+          ulimit -n 65536 || true
+          "$CI_XTASK" release-archives \
+            --package jackin-role \
+            --version "0.0.0-preview+${GITHUB_SHA}" \
+            --checksum-only
       - name: Publish x86_64 validator
         if: github.ref == 'refs/heads/main' && matrix.config.artifact_writer
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

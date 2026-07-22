@@ -101,39 +101,26 @@ pub(crate) fn run(args: ReleaseArchivesArgs) -> Result<()> {
         .transpose()?;
 
     let targets = targets(args.package);
-    let jobs_per_target = jobs_per_target(targets.len());
+    // Sequential targets: full core count per target (no divide-by-N).
+    let jobs_per_target = jobs_per_target(1);
     for target in targets {
         prepare_target(target.rust)?;
     }
 
-    thread::scope(|scope| -> Result<()> {
-        let builds = targets
-            .iter()
-            .map(|target| {
-                scope.spawn(|| {
-                    build(
-                        args.package,
-                        *target,
-                        &args.version,
-                        jobs_per_target,
-                        &build_root.join(target.rust),
-                        &zig_cache,
-                        macos_sdk.as_deref(),
-                    )
-                })
-            })
-            .collect::<Vec<_>>();
-        for (target, build) in targets.iter().zip(builds) {
-            build.join().map_err(|_| {
-                anyhow::anyhow!(
-                    "building {} for {} panicked",
-                    package_name(args.package),
-                    target.rust
-                )
-            })??;
-        }
-        Ok(())
-    })?;
+    // Build targets one-at-a-time. Parallel zigbuild/mold peaks open enough
+    // files to hit ProcessFdQuotaExceeded on multi-slot Velnor hosts (each
+    // target already uses `jobs_per_target` cores internally).
+    for target in targets {
+        build(
+            args.package,
+            *target,
+            &args.version,
+            jobs_per_target,
+            &build_root.join(target.rust),
+            &zig_cache,
+            macos_sdk.as_deref(),
+        )?;
+    }
 
     for target in targets {
         let archive = package(
