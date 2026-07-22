@@ -236,10 +236,24 @@ struct PopoverRoot: View {
 
     private func providerDetail(_ surface: PresentationStore.SurfaceRow) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            // Identity: name + updated / plan (CodexBar two-column).
+            // Account pill (CodexBar multi-account strip — single pill when one account).
+            if let account = accountDisplay(surface) {
+                accountPill(account)
+            }
+
+            // Identity two-column (name/account · updated/plan).
             VStack(alignment: .leading, spacing: 4) {
-                Text(surface.label)
-                    .font(.title3.weight(.semibold))
+                HStack(alignment: .firstTextBaseline) {
+                    Text(surface.label)
+                        .font(.title3.weight(.semibold))
+                    Spacer(minLength: 8)
+                    if let account = accountDisplay(surface) {
+                        Text(account)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                }
                 HStack {
                     Text(surface.updatedLabel.isEmpty ? "—" : surface.updatedLabel)
                         .font(.caption)
@@ -253,12 +267,21 @@ struct PopoverRoot: View {
                 }
             }
 
+            Divider().opacity(0.25)
+
             ForEach(surface.buckets) { bucket in
                 metricBlock(bucket)
             }
 
             if surface.buckets.isEmpty {
                 emptyMetric()
+            }
+
+            // statusSlot rows (e.g. reset-credits style captions from Rust).
+            ForEach(statusSlotRows(surface), id: \.self) { slot in
+                Text(slot)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             moneyGrid(surface)
@@ -276,6 +299,12 @@ struct PopoverRoot: View {
                     .foregroundStyle(.orange)
             }
 
+            if let origin = surface.credentialOrigin, !origin.isEmpty {
+                Text("Auth: \(origin)")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
+
             Button {
                 store.selectUsageSurface(surface.id)
                 openWindow(id: "usage")
@@ -288,9 +317,35 @@ struct PopoverRoot: View {
                         .foregroundStyle(.tertiary)
                 }
                 .font(.body)
-                .padding(.top, 4)
+                .padding(.top, 2)
             }
             .buttonStyle(.plain)
+        }
+    }
+
+    private func accountDisplay(_ surface: PresentationStore.SurfaceRow) -> String? {
+        if let user = surface.username, !user.isEmpty { return user }
+        if !surface.accountLabel.isEmpty { return surface.accountLabel }
+        return nil
+    }
+
+    private func accountPill(_ account: String) -> some View {
+        Text(account)
+            .font(.caption.weight(.semibold))
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background {
+                Capsule().fill(Color.accentColor)
+            }
+            .foregroundStyle(.white)
+            .lineLimit(1)
+            .accessibilityLabel("Account \(account)")
+    }
+
+    private func statusSlotRows(_ surface: PresentationStore.SurfaceRow) -> [String] {
+        surface.buckets.compactMap { bucket in
+            guard let slot = bucket.statusSlot, !slot.isEmpty else { return nil }
+            return slot
         }
     }
 
@@ -307,6 +362,7 @@ struct PopoverRoot: View {
                 if let remaining = bucket.remainingPercent {
                     remainingBar(remaining: remaining, severity: bucket.severity)
                 }
+                // Primary captions: used/left · reset (CodexBar).
                 HStack(alignment: .firstTextBaseline) {
                     Text(bucket.usedLabel ?? "—")
                         .font(.caption)
@@ -320,11 +376,12 @@ struct PopoverRoot: View {
                             .foregroundStyle(.secondary)
                     }
                 }
+                // Secondary pace row (reserve / lasts-until) when Rust provides it.
                 if let pace = bucket.paceLabel, !pace.isEmpty {
-                    // Pace as secondary line (CodexBar reserve / lasts-until).
                     Text(pace)
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             case .valueOnly:
                 HStack {
@@ -332,7 +389,11 @@ struct PopoverRoot: View {
                         .font(.caption.monospacedDigit())
                         .foregroundStyle(.secondary)
                     Spacer()
-                    if let reset = bucket.resetLabel {
+                    if let limit = bucket.limitLabel, !limit.isEmpty {
+                        Text(limit)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else if let reset = bucket.resetLabel {
                         Text(reset)
                             .font(.caption)
                             .foregroundStyle(.secondary)
@@ -347,14 +408,15 @@ struct PopoverRoot: View {
     private func moneyGrid(_ surface: PresentationStore.SurfaceRow) -> some View {
         let pairs: [(String, String)] = surface.buckets.compactMap { bucket in
             guard let money = bucket.usedMoney else { return nil }
-            return (bucket.label, formatMoneyDto(money))
+            let title = bucket.label.isEmpty ? "Spend" : bucket.label
+            return (title, formatMoneyDto(money))
         }
         return Group {
             if !pairs.isEmpty {
                 LazyVGrid(
                     columns: [GridItem(.flexible()), GridItem(.flexible())],
                     alignment: .leading,
-                    spacing: 10
+                    spacing: 12
                 ) {
                     ForEach(Array(pairs.enumerated()), id: \.offset) { _, pair in
                         VStack(alignment: .leading, spacing: 2) {
@@ -362,11 +424,11 @@ struct PopoverRoot: View {
                                 .font(.caption2)
                                 .foregroundStyle(.secondary)
                             Text(pair.1)
-                                .font(.body.weight(.semibold).monospacedDigit())
+                                .font(.title3.weight(.semibold).monospacedDigit())
                         }
                     }
                 }
-                .padding(.top, 4)
+                .padding(.top, 2)
             }
         }
     }
@@ -390,17 +452,27 @@ struct PopoverRoot: View {
 
     private func remainingBar(remaining: UInt8, severity: String) -> some View {
         let frac = Double(remaining) / 100.0
+        // Soft tick marks (CodexBar segmented look) — layout only, not new metrics.
         return GeometryReader { geo in
             ZStack(alignment: .leading) {
                 Capsule()
                     .fill(Color.primary.opacity(0.10))
-                // Warm fill (CodexBar salmon) for ok; severity still remaps danger/warn.
                 Capsule()
                     .fill(barFill(severity))
                     .frame(width: max(3, geo.size.width * frac))
+                HStack(spacing: 0) {
+                    ForEach(0..<4, id: \.self) { i in
+                        if i > 0 {
+                            Rectangle()
+                                .fill(Color(nsColor: .windowBackgroundColor).opacity(0.85))
+                                .frame(width: 2, height: 7)
+                        }
+                        Spacer(minLength: 0)
+                    }
+                }
             }
         }
-        .frame(height: 5)
+        .frame(height: 6)
         .accessibilityHidden(true)
     }
 
@@ -408,7 +480,8 @@ struct PopoverRoot: View {
         switch severity {
         case "danger": return .red
         case "warn": return .orange
-        default: return Color(red: 0.93, green: 0.55, blue: 0.42) // CodexBar warm accent
+        // CodexBar teal for codex-ish healthy fill; accent otherwise.
+        default: return Color(red: 0.40, green: 0.72, blue: 0.78)
         }
     }
 
