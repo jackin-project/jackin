@@ -8,11 +8,6 @@ on:
     types: [closed]
   workflow_dispatch:
     inputs:
-      lanes:
-        description: velnor (default) | github | both
-        type: choice
-        default: velnor
-        options: [velnor, github, both]
       ref:
         description: Cache ref to delete, for example refs/pull/632/merge.
         required: true
@@ -22,23 +17,27 @@ permissions:
   actions: write
   contents: read
 
-concurrency:
-  group: cache-cleanup-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
   cleanup:
-    name: Cleanup (${{ matrix.config.lane }})
-    strategy:
-      fail-fast: false
-      matrix:
-        config: ${{ fromJSON((github.event_name == 'workflow_dispatch' && inputs.lanes == 'both') && '[{"lane":"Velnor","runner":["self-hosted","velnor-target-mvp"],"writer":true},{"lane":"GitHub","runner":"ubuntu-26.04","writer":false}]' || (github.event_name == 'workflow_dispatch' && inputs.lanes == 'github') && '[{"lane":"GitHub","runner":"ubuntu-26.04","writer":true}]' || '[{"lane":"Velnor","runner":["self-hosted","velnor-target-mvp"],"writer":true}]') }}
-    runs-on: ${{ matrix.config.runner }}
+    runs-on: ${{ fromJSON('["self-hosted","velnor-target-mvp"]') }}
     timeout-minutes: 15
     steps:
       - name: Delete scoped caches
-        if: matrix.config.writer
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
           CACHE_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || format('refs/pull/{0}/merge', github.event.pull_request.number) }}
-        run: gh cache delete --all --ref "$CACHE_REF" --succeed-on-no-caches
+        run: |
+          set -euo pipefail
+
+          echo "Deleting caches for ${CACHE_REF}"
+          while :; do
+            cache_ids=$(gh cache list --ref "$CACHE_REF" --limit 100 --json id --jq '.[].id')
+            if [ -z "$cache_ids" ]; then
+              break
+            fi
+            while IFS= read -r cache_id; do
+              [ -z "$cache_id" ] && continue
+              gh cache delete "$cache_id" || true
+            done <<< "$cache_ids"
+          done
