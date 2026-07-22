@@ -215,6 +215,7 @@ pub const CLI_COMMAND_NAME_DEF: super::AttributeMetadata = super::AttributeMetad
         "prune.system",
         "usage.accounts",
         "usage.verify",
+        "usage.snapshot",
     ],
 };
 // registry-type: string

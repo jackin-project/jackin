@@ -11,6 +11,7 @@ mod ci;
 mod cmd;
 mod construct;
 mod container_paths_gate;
+mod desktop;
 mod docs;
 mod frame_timing;
 mod fs_util;
@@ -59,6 +60,12 @@ enum Command {
     /// Use as `cargo xtask construct <subcommand>`.
     #[command(subcommand)]
     Construct(construct::ConstructCommand),
+    /// jackin❯ Desktop (native macOS usage menu bar) build, verify, and release.
+    ///
+    /// Use as `cargo xtask desktop build|verify|run|…`.
+    /// Prefer mise: `mise run desktop-build`, `mise run desktop-verify`, `mise run desktop-run`.
+    #[command(subcommand)]
+    Desktop(desktop::DesktopCommand),
     /// Generate pull request body skeletons.
     ///
     /// Use as `cargo xtask pr body`.
@@ -129,7 +136,7 @@ enum Command {
     ProfileMatrix(profile_matrix::ProfileMatrixArgs),
     /// Verify a signed release archive and its published sidecars.
     ///
-    /// Use as `cargo xtask release-verify <archive>.tar.gz`.
+    /// Use as `cargo xtask release-verify <archive>.tar.gz` or `.zip` (usage menu-bar).
     #[command(name = "release-verify")]
     ReleaseVerify(release_verify::ReleaseVerifyArgs),
     /// Report-only code-health dashboard (completed codebase-health Phase 0).
@@ -221,6 +228,7 @@ fn main() -> ExitCode {
     let result = match cli.command {
         Command::AffectedCrates(args) => affected_crates::run(args),
         Command::Construct(cmd) => construct::run(cmd),
+        Command::Desktop(cmd) => desktop::run(cmd),
         Command::Ci(args) => ci::run(args),
         Command::Pr(cmd) => pr::run(cmd),
         Command::PtyFixture(args) => pty_fixture::run(args),

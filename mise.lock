@@ -215,6 +215,14 @@ backend = "cargo:dylint-link"
 version = "0.16.0"
 backend = "cargo:sccache"
 
+[[tools."cargo:uniffi"]]
+version = "0.32.0"
+backend = "cargo:uniffi"
+
+[tools."cargo:uniffi".options]
+default-features = "true"
+features = "cli"
+
 [[tools.cosign]]
 version = "3.1.1"
 backend = "aqua:sigstore/cosign"
@@ -552,6 +560,7 @@ url = "https://ziglang.org/download/0.16.0/zig-x86_64-linux-0.16.0.tar.xz"
 [tools.zig."platforms.macos-arm64"]
 checksum = "sha256:b23d70deaa879b5c2d486ed3316f7eaa53e84acf6fc9cc747de152450d401489"
 url = "https://ziglang.org/download/0.16.0/zig-aarch64-macos-0.16.0.tar.xz"
+provenance = "minisign"
 
 [tools.zig."platforms.macos-x64"]
 checksum = "sha256:0387557ed1877bc6a2e1802c8391953baddba76081876301c522f52977b52ba7"

@@ -63,6 +63,7 @@ jobs:
       construct_image: ${{ steps.route.outputs.construct_image }}
       docker_e2e: ${{ steps.route.outputs.docker_e2e }}
       workflows: ${{ steps.route.outputs.workflows }}
+      native: ${{ steps.route.outputs.native }}
       audit-contract: ${{ steps.contracts.outputs.audit }}
       ci-xtask-contract: ${{ steps.contracts.outputs.ci-xtask }}
       docs-xtask-contract: ${{ steps.contracts.outputs.docs-xtask }}
@@ -121,6 +122,7 @@ jobs:
             echo "construct_image=true"
             echo "docker_e2e=true"
             echo "workflows=true"
+            echo "native=true"
           } >> "$GITHUB_OUTPUT"
 
       # build.rs supplies compile-time version metadata and
@@ -190,6 +192,19 @@ jobs:
               - '.github/actions/**'
             mise:
               - 'mise.toml'
+            native:
+              - 'native/**'
+              - 'crates/jackin-xtask/src/desktop.rs'
+              - 'crates/jackin-xtask/src/desktop/**'
+              - 'crates/jackin-usage/**'
+              - 'crates/jackin-usage-ffi/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+              - 'rust-toolchain.toml'
+              - 'mise.toml'
+              - 'mise.lock'
+              - '.github/workflows/ci.yml'
+              - '.github/workflows/hygiene.yml'
 
       - name: Route changed paths
         id: route
@@ -200,12 +215,14 @@ jobs:
           FORCE_CONSTRUCT_IMAGE: ${{ steps.dispatch.outputs.construct_image }}
           FORCE_DOCKER_E2E: ${{ steps.dispatch.outputs.docker_e2e }}
           FORCE_WORKFLOWS: ${{ steps.dispatch.outputs.workflows }}
+          FORCE_NATIVE: ${{ steps.dispatch.outputs.native }}
           FILTER_RUST: ${{ steps.filter.outputs.rust }}
           FILTER_CONSTRUCT: ${{ steps.filter.outputs.construct }}
           FILTER_CONSTRUCT_IMAGE: ${{ steps.filter.outputs.construct_image }}
           FILTER_DOCKER_E2E: ${{ steps.filter.outputs.docker_e2e }}
           FILTER_WORKFLOWS: ${{ steps.filter.outputs.workflows }}
           FILTER_MISE: ${{ steps.filter.outputs.mise }}
+          FILTER_NATIVE: ${{ steps.filter.outputs.native }}
           BASE_REF: ${{ github.base_ref }}
           BEFORE_SHA: ${{ github.event.before }}
           EVENT_NAME: ${{ github.event_name }}
@@ -217,6 +234,7 @@ jobs:
           construct_image="${FORCE_CONSTRUCT_IMAGE:-${FILTER_CONSTRUCT_IMAGE:-false}}"
           docker_e2e="${FORCE_DOCKER_E2E:-${FILTER_DOCKER_E2E:-false}}"
           workflows="${FORCE_WORKFLOWS:-${FILTER_WORKFLOWS:-false}}"
+          native="${FORCE_NATIVE:-${FILTER_NATIVE:-false}}"
 
           if [ "$docker_e2e" = "true" ] || [ "$construct_image" = "true" ]; then
             rust=true
@@ -311,6 +329,7 @@ jobs:
             echo "construct_image=$construct_image"
             echo "docker_e2e=$docker_e2e"
             echo "workflows=$workflows"
+            echo "native=$native"
           } >> "$GITHUB_OUTPUT"
 
       - name: Find input-identical successful CI result
@@ -1099,6 +1118,105 @@ jobs:
           fi
           cargo audit "${args[@]}"
 
+  # Secret-free arm64 static menu-bar assembly (Plan 001). No Apple/tap secrets.
+  native-usage-menu-bar:
+    name: Native usage menu bar
+    if: needs.changes.outputs.native == 'true' && needs.changes.outputs.result-reuse != 'true'
+    needs: [changes]
+    runs-on: macos-latest
+    timeout-minutes: 90
+    env:
+      CARGO_INCREMENTAL: "0"
+      CARGO_TERM_COLOR: always
+      JACKIN_APP_VERSION: "0.6.0"
+      JACKIN_APP_BUILD: "1"
+      MACOSX_DEPLOYMENT_TARGET: "14.0"
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Cache Rust toolchain
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.rustup/toolchains
+            ~/.rustup/update-hashes
+          key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ needs.changes.outputs.rustup-contract }}
+          restore-keys: |
+            rustup-${{ runner.os }}-${{ runner.arch }}-
+      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+        with:
+          version: "2026.6.11"
+          cache_key_prefix: "mise-v2"
+          cache_save: ${{ github.ref == 'refs/heads/main' }}
+          # Install rust + nextest only here. uniffi CLI needs --features cli and is
+          # installed in a dedicated step so a mise cargo-tool failure does not
+          # cascade into rustup install aborts on macOS runners.
+          install_args: rust@${{ needs.changes.outputs.rust-version }} cargo:cargo-nextest
+          github_token: ${{ secrets.GH_READONLY_TOKEN }}
+      - id: cargo-registry-cache
+        uses: ./.github/actions/cache-cargo-registry
+        with:
+          contract-key: ${{ needs.changes.outputs.registry-contract }}
+      - name: Install uniffi-bindgen (pinned)
+        run: |
+          set -euo pipefail
+          cargo install uniffi --version 0.32.0 --features cli --locked --force
+          uniffi-bindgen --version
+      - name: Rust usage + FFI tests
+        run: cargo nextest run -p jackin-usage -p jackin-usage-ffi --locked
+      - name: Regenerated bindings must be clean
+        run: |
+          set -euo pipefail
+          cargo xtask desktop bindings
+          git diff --exit-code -- native/Generated native/Sources/JackinUsageBridge/jackin_usage_ffi.swift
+      - name: Build arm64 static app
+        run: cargo xtask desktop build --version "${JACKIN_APP_VERSION}" --build "${JACKIN_APP_BUILD}"
+      - name: Verify app + ZIP round-trip
+        run: |
+          set -euo pipefail
+          cargo xtask desktop verify native/dist/JackinDesktop.app
+          zip -qry /tmp/jackin-desktop-ci.zip native/dist/JackinDesktop.app
+          cargo xtask desktop verify native/dist/JackinDesktop.app /tmp/jackin-desktop-ci.zip
+      - name: Swift tests
+        run: |
+          set -euo pipefail
+          cd native
+          # XCFramework already produced by the app build.
+          swift test -c release
+      - name: Launch app without credentials (alive then quit)
+        run: |
+          set -euo pipefail
+          # Prefer direct exec (more reliable than open(1) for LSUIElement).
+          # GitHub-hosted macOS may still Trace/BPT-trap without a full Aqua
+          # session — static assembly + verify + swift test remain hard gates;
+          # launch is best-effort with explicit warning (Plan 004 runner decision).
+          APP_BIN=native/dist/JackinDesktop.app/Contents/MacOS/JackinDesktop
+          xattr -cr native/dist/JackinDesktop.app || true
+          set +e
+          "$APP_BIN" >/tmp/jackin-desktop-launch.log 2>&1 &
+          PID=$!
+          alive=0
+          for _ in $(seq 1 30); do
+            if kill -0 "$PID" 2>/dev/null; then
+              alive=1
+              break
+            fi
+            sleep 0.2
+          done
+          if [ "$alive" = "1" ]; then
+            sleep 2
+            if kill -0 "$PID" 2>/dev/null; then
+              echo "OK: menu bar binary stayed alive 2s (pid=$PID)"
+              kill "$PID" 2>/dev/null || true
+              wait "$PID" 2>/dev/null || true
+              exit 0
+            fi
+          fi
+          echo "::warning::GHA macOS could not keep LSUIElement app alive without Aqua (see log; often Trace/BPT trap: 5). Assembly, verify, and swift test already passed — full interactive launch is a Plan 004 operator decision."
+          cat /tmp/jackin-desktop-launch.log || true
+          kill "$PID" 2>/dev/null || true
+          wait "$PID" 2>/dev/null || true
+          exit 0
+
   # Single stable check name for branch-protection required-status,
   # regardless of which gated jobs skipped under it.
   ci-required:
@@ -1116,6 +1234,7 @@ jobs:
       - file-size-gate
       - test
       - telemetry-conformance
+      - native-usage-menu-bar
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:

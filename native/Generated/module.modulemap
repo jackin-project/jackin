@@ -1,0 +1,4 @@
+module jackin_usage_ffiFFI {
+    header "jackin_usage_ffiFFI.h"
+    export *
+}

@@ -17,3 +17,4 @@ Architecture Decision Records (ADRs) document significant design choices — wha
 - **[ADR-008: Launch never reconnects to a live instance](/reference/adrs/adr-008-launch-never-reconnects-live-instance)** — why launch creates or restores dead instances but never silently attaches to a healthy live one.
 - **[ADR-009: Role hooks are the role author's domain](/reference/adrs/adr-009-role-hooks-authors-domain)** — why role hooks run exactly as authored and startup-speed policy stays in role documentation.
 - **[ADR-010: Cleanup requires explicit operator approval](/reference/adrs/adr-010-cleanup-explicit-operator-approval)** — why dirty or unpushed isolated work is preserved unless the operator explicitly deletes or discards it.
+- **[ADR-011: Native macOS agent-usage menu bar](/reference/adrs/adr-011-native-macos-usage-menu-bar)** — Rust owns probes/views via UniFFI; Swift is display-only; host credential roots and hard `Agent::ALL` / `UsageSurface` scope.
