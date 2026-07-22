@@ -341,6 +341,28 @@ final class ArchitectureTests: XCTestCase {
             statusItemAccessibilityLabel(chips: dual),
             "jackin Desktop Cl resets 1h 21m and 79%"
         )
+
+        // Agent tiles: dual remaining + bucket "Resets in …" depleted form.
+        XCTAssertEqual(
+            tileRemainingBadgeLines(remainings: [86, 95]),
+            ["86%", "95%"]
+        )
+        XCTAssertEqual(tileRemainingBadgeCompact(remainings: [86, 95]), "86%/95%")
+        XCTAssertEqual(
+            tileRemainingBadgeLines(
+                remainings: [0, 79],
+                compactLabel: "Resets in 1h 21m"
+            ),
+            ["Resets in 1h 21m", "79%"]
+        )
+        XCTAssertEqual(
+            statusItemResetCountdownLine(compactLabel: "Resets in 2h"),
+            "Resets in 2h"
+        )
+        XCTAssertEqual(
+            splitPaceLabel("On pace · Runs out in 4d 21h"),
+            ["On pace", "Runs out in 4d 21h"]
+        )
     }
 
     func testBuildStatusItemChipsRespectsCapAndHidesEmpty() {

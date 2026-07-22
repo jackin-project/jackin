@@ -162,6 +162,21 @@ struct DesktopParityMatrixHarness {
                 percentStyle: "left"
             ) == ["resets 1h 21m", "79%"]
         )
+        check(
+            "tile dual remaining (OpenUsage stack)",
+            tileRemainingBadgeLines(remainings: [100, 79]) == ["100%", "79%"]
+        )
+        check(
+            "tile depleted bucket Resets label",
+            tileRemainingBadgeLines(
+                remainings: [0],
+                compactLabel: "Resets in 3h 52m"
+            ) == ["Resets in 3h 52m"]
+        )
+        check(
+            "pace split CodexBar columns",
+            splitPaceLabel("~22% left at reset · Resets in 1d 6h").count == 2
+        )
 
         // --- Empty data honesty (no invented zeros) ---
         let emptyAmp = StatusItemSurfaceSnapshot(
@@ -235,16 +250,29 @@ struct DesktopParityMatrixHarness {
             popover.contains("agentTileGrid") && popover.contains("overviewStack")
         )
         check(
+            "Popover dual tile remaining badges",
+            popover.contains("remainingBadgeLines")
+                && popover.contains("tileRemainingBadgeLines")
+        )
+        check(
             "Popover multi-account pills",
             popover.contains("accountsForSurface") && popover.contains("setSelectedAccount")
         )
         check(
             "ProviderCard primary limit labels",
-            provider.contains("bucketPrimaryPercentLabel")
+            provider.contains("bucketPrimaryPercentLabel") || provider.contains("metricPrimaryLabel")
+        )
+        check(
+            "ProviderCard depleted reset + pace",
+            provider.contains("metricPrimaryLabel") && provider.contains("splitPaceLabel")
         )
         check(
             "Overview dual-bucket stack",
             overview.contains("bucketMiniRow") || overview.contains("remainingPercent")
+        )
+        check(
+            "Overview pace under mini rows",
+            overview.contains("paceLabel") && overview.contains("splitPaceLabel")
         )
         check(
             "no sparkline/donut/trend product UI in status item",

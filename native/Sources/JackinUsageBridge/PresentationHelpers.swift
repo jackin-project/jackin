@@ -323,14 +323,24 @@ public func statusItemCompactIsResetCountdown(_ compactLabel: String) -> Bool {
     return lower.contains("resets")
 }
 
-/// Short reset fragment from Rust compact (`Cl resets 1h 21m` → `resets 1h 21m`).
+/// Short reset fragment from Rust compact or bucket reset label.
+///
+/// - Compact status: `Cl resets 1h 21m` → `resets 1h 21m`
+/// - Bucket label: `Resets in 2h` / `Resets now` kept as-is (OpenUsage/CodexBar)
 public func statusItemResetCountdownLine(compactLabel: String) -> String? {
     guard statusItemCompactIsResetCountdown(compactLabel) else { return nil }
-    let parts = compactLabel.split(separator: " ", maxSplits: 1, omittingEmptySubsequences: true)
+    let trimmed = compactLabel.trimmingCharacters(in: .whitespacesAndNewlines)
+    let lower = trimmed.lowercased()
+    // Full bucket reset strings start with "resets " (no provider glyph).
+    if lower.hasPrefix("resets ") || lower == "resets now" {
+        return trimmed
+    }
+    // Compact strip form: drop leading glyph (`Cl resets …` → `resets …`).
+    let parts = trimmed.split(separator: " ", maxSplits: 1, omittingEmptySubsequences: true)
     if parts.count == 2 {
         return String(parts[1])
     }
-    return compactLabel
+    return trimmed
 }
 
 /// Chip display lines from Rust remainings + compact (OpenUsage/CodexBar).
@@ -460,6 +470,61 @@ public func statusItemAccessibilityLabel(chips: [StatusItemChip]) -> String {
         return chip.compactLabel
     }
     return "jackin Desktop \(parts.joined(separator: ", "))"
+}
+
+/// Agent-tile remaining badge lines (OpenUsage glance density).
+///
+/// Same dual-bucket + depleted-countdown rules as status chips: up to two
+/// short lines (`100%` / `79%`, or `resets 1h 21m` when depleted). Empty when
+/// no numeric remainings — never invents a percent.
+public func tileRemainingBadgeLines(
+    remainings: [UInt8],
+    compactLabel: String = "",
+    percentStyle: String = "left",
+    maxLines: Int = 2
+) -> [String] {
+    statusItemChipDisplayLines(
+        remainings: remainings,
+        compactLabel: compactLabel,
+        percentStyle: percentStyle,
+        maxLines: maxLines
+    )
+}
+
+/// Single-line tile badge (focus / space-tight): dual remainings as `100%/79%`,
+/// or depleted countdown when that is the only line.
+public func tileRemainingBadgeCompact(
+    remainings: [UInt8],
+    compactLabel: String = "",
+    percentStyle: String = "left"
+) -> String? {
+    let lines = tileRemainingBadgeLines(
+        remainings: remainings,
+        compactLabel: compactLabel,
+        percentStyle: percentStyle,
+        maxLines: 2
+    )
+    guard !lines.isEmpty else { return nil }
+    if lines.count == 1 { return lines[0] }
+    // Dual remaining tokens compress with `/` (OpenUsage dual stack, single row).
+    if lines.allSatisfy({ $0.hasSuffix("%") || $0.allSatisfy(\.isNumber) }) {
+        return lines.joined(separator: "/")
+    }
+    return lines.joined(separator: " · ")
+}
+
+/// Split Rust pace label on common separators (` · ` / ` • ` / …) for dual-column layout.
+public func splitPaceLabel(_ pace: String) -> [String] {
+    for sep in [" · ", " • ", " | ", " — "] {
+        let bits = pace.components(separatedBy: sep)
+        if bits.count >= 2 {
+            return [
+                bits[0].trimmingCharacters(in: .whitespaces),
+                bits.dropFirst().joined(separator: sep).trimmingCharacters(in: .whitespaces),
+            ]
+        }
+    }
+    return [pace]
 }
 
 /// Format Rust `MoneyDto` for display (no `String(format:)`).

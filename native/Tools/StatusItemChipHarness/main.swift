@@ -346,6 +346,35 @@ struct StatusItemChipHarness {
             dualDepChips[0].percentLines.count == 2
                 && dualDepChips[0].percentLines[1] == "79%"
         )
+
+        // Agent-tile dual badges (OpenUsage glance density).
+        check(
+            "tile dual remaining lines",
+            tileRemainingBadgeLines(remainings: [86, 95], percentStyle: "left") == ["86%", "95%"]
+        )
+        check(
+            "tile compact dual slash",
+            tileRemainingBadgeCompact(remainings: [86, 95]) == "86%/95%"
+        )
+        check(
+            "tile depleted uses bucket Resets label",
+            tileRemainingBadgeLines(
+                remainings: [0, 79],
+                compactLabel: "Resets in 1h 21m",
+                percentStyle: "left"
+            ) == ["Resets in 1h 21m", "79%"],
+            "lines=\(tileRemainingBadgeLines(remainings: [0, 79], compactLabel: "Resets in 1h 21m"))"
+        )
+        check(
+            "bucket reset countdown line preserved",
+            statusItemResetCountdownLine(compactLabel: "Resets in 2h") == "Resets in 2h"
+        )
+        check(
+            "pace split dual columns",
+            splitPaceLabel("On pace · Runs out in 4d 21h") == [
+                "On pace", "Runs out in 4d 21h",
+            ]
+        )
         check(
             "dual depleted a11y keeps weekly",
             statusItemAccessibilityLabel(chips: dualDepChips)

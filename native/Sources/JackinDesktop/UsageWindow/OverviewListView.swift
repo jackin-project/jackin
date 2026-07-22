@@ -117,16 +117,12 @@ struct OverviewListView: View {
                         .font(.caption2.weight(.semibold))
                         .foregroundStyle(.secondary)
                     Spacer(minLength: 6)
-                    Text(
-                        bucketPrimaryPercentLabel(
-                            remainingPercent: remaining,
-                            usedLabel: bucket.usedLabel,
-                            percentStyle: store.percentStyle
-                        )
-                    )
-                    .font(.caption.weight(.semibold))
-                    .monospacedDigit()
-                    if let reset = bucket.resetLabel, !reset.isEmpty {
+                    // Depleted: prefer Rust reset countdown over bare zero percent.
+                    Text(miniPrimaryLabel(bucket, remaining: remaining))
+                        .font(.caption.weight(.semibold))
+                        .monospacedDigit()
+                        .foregroundStyle(severityTint(bucket.severity))
+                    if remaining > 0, let reset = bucket.resetLabel, !reset.isEmpty {
                         Text(reset)
                             .font(.caption2)
                             .foregroundStyle(.secondary)
@@ -145,8 +141,45 @@ struct OverviewListView: View {
                     }
                 }
                 .frame(height: 3)
+                // CodexBar/OpenUsage: pace projection under the quota window.
+                if let pace = bucket.paceLabel, !pace.isEmpty {
+                    let parts = splitPaceLabel(pace)
+                    if parts.count >= 2 {
+                        HStack(alignment: .firstTextBaseline) {
+                            Text(parts[0])
+                                .font(.caption2)
+                                .foregroundStyle(.tertiary)
+                                .monospacedDigit()
+                            Spacer(minLength: 6)
+                            Text(parts[1])
+                                .font(.caption2)
+                                .foregroundStyle(.tertiary)
+                                .multilineTextAlignment(.trailing)
+                        }
+                    } else {
+                        Text(pace)
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
             }
         }
+    }
+
+    /// OpenUsage primary line: remaining/used % or depleted reset countdown.
+    private func miniPrimaryLabel(
+        _ bucket: PresentationStore.BucketRow,
+        remaining: UInt8
+    ) -> String {
+        if remaining == 0, let reset = bucket.resetLabel, !reset.isEmpty {
+            return statusItemResetCountdownLine(compactLabel: reset) ?? reset
+        }
+        return bucketPrimaryPercentLabel(
+            remainingPercent: remaining,
+            usedLabel: bucket.usedLabel,
+            percentStyle: store.percentStyle
+        )
     }
 
     private func accessibilityLabel(for row: PresentationStore.OverviewRow) -> String {

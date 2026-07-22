@@ -170,22 +170,19 @@ struct ProviderCardView: View {
                     }
                     .frame(height: 4)
                     .accessibilityLabel(
-                        "\(bucket.label) \(bucketPrimaryPercentLabel(remainingPercent: remaining, usedLabel: bucket.usedLabel, percentStyle: percentStyle))"
+                        "\(bucket.label) \(metricPrimaryLabel(bucket))"
                     )
                 }
-                // OpenUsage primary remaining/used line · Rust reset countdown.
-                HStack {
-                    Text(
-                        bucketPrimaryPercentLabel(
-                            remainingPercent: bucket.remainingPercent,
-                            usedLabel: bucket.usedLabel,
-                            percentStyle: percentStyle
-                        )
-                    )
-                    .font(.caption.weight(.semibold))
-                    .monospacedDigit()
-                    Spacer()
-                    if let reset = bucket.resetLabel {
+                // OpenUsage: primary remaining/used (or depleted reset) · reset right.
+                HStack(alignment: .firstTextBaseline) {
+                    Text(metricPrimaryLabel(bucket))
+                        .font(.caption.weight(.semibold))
+                        .monospacedDigit()
+                        .foregroundStyle(severityTint(bucket.severity))
+                    Spacer(minLength: 8)
+                    if let remaining = bucket.remainingPercent, remaining > 0,
+                       let reset = bucket.resetLabel, !reset.isEmpty
+                    {
                         Text(reset)
                             .font(.caption)
                             .foregroundStyle(.secondary)
@@ -209,10 +206,26 @@ struct ProviderCardView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+            // CodexBar dual-column pace ("On pace" · "Runs out in …").
             if let pace = bucket.paceLabel, !pace.isEmpty {
-                Text(pace)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
+                let parts = splitPaceLabel(pace)
+                if parts.count >= 2 {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text(parts[0])
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .monospacedDigit()
+                        Spacer(minLength: 8)
+                        Text(parts[1])
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.trailing)
+                    }
+                } else {
+                    Text(pace)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
             }
             if let limit = bucket.limitLabel, !limit.isEmpty {
                 Text(limit)
@@ -227,6 +240,20 @@ struct ProviderCardView: View {
             GlassFallbacks.contentCardBackground()
         }
         .accessibilityElement(children: .combine)
+    }
+
+    /// Primary metric line: remaining/used % or depleted Rust reset countdown.
+    private func metricPrimaryLabel(_ bucket: PresentationStore.BucketRow) -> String {
+        if let remaining = bucket.remainingPercent, remaining == 0,
+           let reset = bucket.resetLabel, !reset.isEmpty
+        {
+            return statusItemResetCountdownLine(compactLabel: reset) ?? reset
+        }
+        return bucketPrimaryPercentLabel(
+            remainingPercent: bucket.remainingPercent,
+            usedLabel: bucket.usedLabel,
+            percentStyle: percentStyle
+        )
     }
 
     private func badgeTint(_ status: String) -> Color {

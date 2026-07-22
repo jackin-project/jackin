@@ -13,8 +13,9 @@ import SwiftUI
 ///    (Codex block, Claude block, …).
 /// 3. When a **single agent** is selected: only that agent’s detailization.
 ///
-/// All numbers/strings are Rust-owned. Deferred vs reference: multi-account pills,
-/// segmented multi-color period bars, spend charts, external dashboard URLs.
+/// All numbers/strings are Rust-owned. Multi-account pills ship when the host
+/// store has >1 account. Non-goals vs reference: spend charts, token prices,
+/// external dashboard URLs (AGENTS limits-only).
 struct PopoverRoot: View {
     @ObservedObject var store: PresentationStore
     @Environment(\.openWindow) private var openWindow
@@ -120,7 +121,7 @@ struct PopoverRoot: View {
                     severity: worstSeverity(surface),
                     enabled: surface.enabled,
                     systemImage: agentSystemImage(surface.id),
-                    remainingBadge: tileRemainingBadge(surface)
+                    remainingBadgeLines: tileRemainingBadgeLines(for: surface)
                 )
             }
         }
@@ -135,7 +136,7 @@ struct PopoverRoot: View {
         severity: String,
         enabled: Bool,
         systemImage: String?,
-        remainingBadge: String? = nil
+        remainingBadgeLines: [String] = []
     ) -> some View {
         let selected = selectedSurfaceId == id
         return Button {
@@ -172,16 +173,27 @@ struct PopoverRoot: View {
                     )
                     .lineLimit(1)
                     .minimumScaleFactor(0.75)
-                // CodexBar-style at-a-glance remaining under the tile.
-                if let remainingBadge, enabled {
-                    Text(remainingBadge)
-                        .font(.system(size: 9, weight: .semibold, design: .rounded))
-                        .monospacedDigit()
-                        .foregroundStyle(
-                            selected ? Color.accentColor.opacity(0.9) : underlineTint(severity)
-                        )
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.7)
+                // OpenUsage dual stack under tile (session/weekly remaining or reset).
+                if !remainingBadgeLines.isEmpty, enabled {
+                    VStack(spacing: 0) {
+                        ForEach(Array(remainingBadgeLines.enumerated()), id: \.offset) { _, line in
+                            Text(line)
+                                .font(
+                                    .system(
+                                        size: remainingBadgeLines.count > 1 ? 8 : 9,
+                                        weight: .semibold,
+                                        design: .rounded
+                                    )
+                                )
+                                .monospacedDigit()
+                                .foregroundStyle(
+                                    selected
+                                        ? Color.accentColor.opacity(0.9) : underlineTint(severity)
+                                )
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.65)
+                        }
+                    }
                 } else {
                     Capsule()
                         .fill(selected || !enabled ? Color.clear : underlineTint(severity))
@@ -194,21 +206,38 @@ struct PopoverRoot: View {
         .buttonStyle(.plain)
         .accessibilityLabel(
             enabled
-                ? (remainingBadge.map { "\(title) \($0)" } ?? title)
+                ? (remainingBadgeLines.isEmpty
+                    ? title
+                    : "\(title) \(remainingBadgeLines.joined(separator: " and "))")
                 : "\(title), disabled"
         )
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
-    /// Driving remaining token for agent tiles (OpenUsage menu-bar style).
-    private func tileRemainingBadge(_ surface: PresentationStore.SurfaceRow) -> String? {
-        guard surface.enabled else { return nil }
+    /// Dual remaining stack for agent tiles (OpenUsage menubar density).
+    private func tileRemainingBadgeLines(for surface: PresentationStore.SurfaceRow) -> [String] {
+        guard surface.enabled else { return [] }
         let remainings = surface.buckets.compactMap(\.remainingPercent)
-        guard let minRem = remainings.min() else { return nil }
-        return statusItemPercentToken(
-            remainingPercent: minRem,
-            percentStyle: store.percentStyle
+        guard !remainings.isEmpty else { return [] }
+        // When a bucket is depleted, feed its Rust reset label so lines show
+        // countdown instead of bare `0%` (same rule as status chips).
+        let compact = tileCompactForCountdown(surface)
+        return JackinUsageBridge.tileRemainingBadgeLines(
+            remainings: remainings,
+            compactLabel: compact,
+            percentStyle: store.percentStyle,
+            maxLines: 2
         )
+    }
+
+    /// Compact-like string for depleted tile countdown extraction.
+    private func tileCompactForCountdown(_ surface: PresentationStore.SurfaceRow) -> String {
+        if let bucket = surface.buckets.first(where: { $0.remainingPercent == 0 }),
+           let reset = bucket.resetLabel, !reset.isEmpty
+        {
+            return reset
+        }
+        return surface.statusBarLabel
     }
 
     // MARK: - Overview stack (all agents detailed)
@@ -376,20 +405,16 @@ struct PopoverRoot: View {
                 if let remaining = bucket.remainingPercent {
                     remainingBar(remaining: remaining, severity: bucket.severity)
                 }
-                // OpenUsage: primary remaining/used percent line (Rust helpers), reset right.
+                // OpenUsage: primary remaining/used (or depleted reset) · reset right.
                 HStack(alignment: .firstTextBaseline) {
-                    Text(
-                        bucketPrimaryPercentLabel(
-                            remainingPercent: bucket.remainingPercent,
-                            usedLabel: bucket.usedLabel,
-                            percentStyle: store.percentStyle
-                        )
-                    )
-                    .font(.caption.weight(.semibold))
-                    .monospacedDigit()
-                    .foregroundStyle(.primary)
+                    Text(metricPrimaryLabel(bucket))
+                        .font(.caption.weight(.semibold))
+                        .monospacedDigit()
+                        .foregroundStyle(severityTint(bucket.severity))
                     Spacer(minLength: 8)
-                    if let reset = bucket.resetLabel, !reset.isEmpty {
+                    if let remaining = bucket.remainingPercent, remaining > 0,
+                       let reset = bucket.resetLabel, !reset.isEmpty
+                    {
                         Text(reset)
                             .font(.caption)
                             .monospacedDigit()
@@ -444,9 +469,23 @@ struct PopoverRoot: View {
         }
     }
 
+    /// Glance metric primary: remaining/used % or depleted countdown (CodexBar).
+    private func metricPrimaryLabel(_ bucket: PresentationStore.BucketRow) -> String {
+        if let remaining = bucket.remainingPercent, remaining == 0,
+           let reset = bucket.resetLabel, !reset.isEmpty
+        {
+            return statusItemResetCountdownLine(compactLabel: reset) ?? reset
+        }
+        return bucketPrimaryPercentLabel(
+            remainingPercent: bucket.remainingPercent,
+            usedLabel: bucket.usedLabel,
+            percentStyle: store.percentStyle
+        )
+    }
+
     @ViewBuilder
     private func paceRow(_ pace: String) -> some View {
-        let parts = splitPace(pace)
+        let parts = splitPaceLabel(pace)
         if parts.count >= 2 {
             HStack(alignment: .firstTextBaseline) {
                 Text(parts[0])
@@ -465,19 +504,6 @@ struct PopoverRoot: View {
                 .foregroundStyle(.tertiary)
                 .fixedSize(horizontal: false, vertical: true)
         }
-    }
-
-    private func splitPace(_ pace: String) -> [String] {
-        for sep in [" · ", " • ", " | ", " — "] {
-            let bits = pace.components(separatedBy: sep)
-            if bits.count >= 2 {
-                return [
-                    bits[0].trimmingCharacters(in: .whitespaces),
-                    bits.dropFirst().joined(separator: sep).trimmingCharacters(in: .whitespaces),
-                ]
-            }
-        }
-        return [pace]
     }
 
     private func emptyMetric() -> some View {
