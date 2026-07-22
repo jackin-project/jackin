@@ -5,36 +5,33 @@ import AppKit
 import JackinUsageBridge
 import SwiftUI
 
-/// Menu-bar status item — OpenUsage-inspired strip of mini capacity bars + Rust compact labels.
+/// Menu-bar status item — OpenUsage-inspired strip (glyph + stacked short percents).
 ///
-/// Clean-room look-and-feel only (template mark, monospaced chips, thin bars, hide empty).
-/// Every displayed string and remaining percent comes from Rust; Swift only lays out.
+/// Clean-room look-and-feel only. Percent tokens are derived from Rust
+/// `remainingPercent` fields; full compact labels stay on accessibility.
 struct StatusItemLabel: View {
     @ObservedObject var store: PresentationStore
 
     var body: some View {
-        HStack(spacing: 6) {
-            statusIcon
-                .opacity(itemOpacity)
-
-            if !store.statusItemChips.isEmpty {
-                // OpenUsage-style multi-metric strip (one chip when focus/pinned).
-                HStack(spacing: 7) {
-                    ForEach(store.statusItemChips) { chip in
-                        StatusItemChipView(chip: chip)
-                            .opacity(itemOpacity)
-                    }
-                }
-            } else if !store.statusItemText.isEmpty {
-                // Fallback when chips empty but Rust still has a text label.
-                Text(store.statusItemText)
-                    .font(Self.chipFont)
-                    .monospacedDigit()
+        HStack(spacing: 8) {
+            if store.statusItemChips.isEmpty {
+                statusIcon
                     .opacity(itemOpacity)
+                if !store.statusItemText.isEmpty {
+                    Text(store.statusItemText)
+                        .font(Self.chipFont)
+                        .monospacedDigit()
+                        .opacity(itemOpacity)
+                }
+            } else {
+                // OpenUsage multi-metric strip: no single global logo crowding chips.
+                ForEach(store.statusItemChips) { chip in
+                    StatusItemChipView(chip: chip)
+                        .opacity(itemOpacity)
+                }
             }
         }
-        // WHY: MenuBarExtra collapses zero-size labels; pin a minimum hit target.
-        .frame(minWidth: 16, minHeight: 18)
+        .frame(minWidth: 18, minHeight: 20)
         .padding(.horizontal, 2)
         .accessibilityLabel(accessibilityText)
         .onAppear {
@@ -71,7 +68,7 @@ struct StatusItemLabel: View {
         return "jackin Desktop"
     }
 
-    static let chipFont = Font.system(size: 11, weight: .semibold, design: .rounded)
+    static let chipFont = Font.system(size: 10, weight: .semibold, design: .rounded)
 
     private static func loadLogomark() -> NSImage? {
         let bundle = Bundle.module
@@ -86,37 +83,37 @@ struct StatusItemLabel: View {
     }
 }
 
-/// One OpenUsage-like chip: thin capacity bar + Rust compact label (`Cl 63%`).
+/// OpenUsage menu-bar chip: small glyph + stacked short percents (session/weekly).
 private struct StatusItemChipView: View {
     let chip: StatusItemChip
 
     var body: some View {
-        HStack(spacing: 4) {
-            if let remaining = chip.remainingPercent {
-                miniBar(remaining: remaining, severity: chip.severity)
+        HStack(spacing: 3) {
+            Text(chip.glyph)
+                .font(.system(size: 9, weight: .bold, design: .rounded))
+                .foregroundStyle(.primary)
+                .frame(width: 14, height: 14)
+                .background {
+                    Circle().fill(severityTint(chip.severity).opacity(0.22))
+                }
+
+            if chip.percentLines.isEmpty {
+                Text(chip.compactLabel)
+                    .font(StatusItemLabel.chipFont)
+                    .monospacedDigit()
+                    .lineLimit(1)
+            } else {
+                VStack(alignment: .trailing, spacing: 0) {
+                    ForEach(Array(chip.percentLines.enumerated()), id: \.offset) { _, line in
+                        Text(line)
+                            .font(StatusItemLabel.chipFont)
+                            .monospacedDigit()
+                            .lineLimit(1)
+                    }
+                }
             }
-            Text(chip.compactLabel)
-                .font(StatusItemLabel.chipFont)
-                .monospacedDigit()
-                .lineLimit(1)
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(chip.compactLabel)
-    }
-
-    /// Thin horizontal used/remaining bar (OpenUsage “Bars” density, severity tint).
-    private func miniBar(remaining: UInt8, severity: String) -> some View {
-        let used = statusItemUsedFraction(remainingPercent: remaining)
-        return GeometryReader { geo in
-            ZStack(alignment: .leading) {
-                Capsule()
-                    .fill(Color.primary.opacity(0.18))
-                Capsule()
-                    .fill(severityTint(severity))
-                    .frame(width: max(2, geo.size.width * used))
-            }
-        }
-        .frame(width: 16, height: 4)
-        .accessibilityHidden(true)
     }
 }

@@ -56,23 +56,34 @@ public func overviewGlanceBody(headline: String, resetLabel: String?, statusWord
     return .statusWord(statusWord)
 }
 
-/// One menu-bar chip (OpenUsage-style strip segment). Strings come from Rust.
+/// One menu-bar chip (OpenUsage-style strip segment).
+///
+/// Strings are Rust-owned compact labels / remaining tokens. Swift only lays out
+/// glyph + stacked short percents (OpenUsage menu-bar density).
 public struct StatusItemChip: Identifiable, Equatable, Sendable {
     public var id: String { surfaceId }
     public let surfaceId: String
-    /// Rust compact label, e.g. `Cl 63%` or depleted form.
+    /// 1–2 letter glyph for the strip (from Rust compact label / surface id).
+    public let glyph: String
+    /// Up to two short percent lines for stacked display (e.g. `100%`, `79%`).
+    public let percentLines: [String]
+    /// Full Rust compact label for accessibility / fallback (`Cl 63%`).
     public let compactLabel: String
-    /// Driving-bucket remaining from Rust (nil → text-only chip, no mini bar).
+    /// Driving-bucket remaining for primary mini-indicator.
     public let remainingPercent: UInt8?
     public let severity: String
 
     public init(
         surfaceId: String,
+        glyph: String,
+        percentLines: [String],
         compactLabel: String,
         remainingPercent: UInt8?,
         severity: String
     ) {
         self.surfaceId = surfaceId
+        self.glyph = glyph
+        self.percentLines = percentLines
         self.compactLabel = compactLabel
         self.remainingPercent = remainingPercent
         self.severity = severity
@@ -89,4 +100,32 @@ public func drivingBucketForStatusItem(
 /// Used-fraction for mini capacity bars from Rust remaining (display only).
 public func statusItemUsedFraction(remainingPercent: UInt8) -> Double {
     Double(100 - Int(remainingPercent)) / 100.0
+}
+
+/// Short OpenUsage-style percent token from Rust remaining (e.g. `79%`).
+public func statusItemPercentToken(remainingPercent: UInt8) -> String {
+    var s = String(remainingPercent)
+    s.append("%")
+    return s
+}
+
+/// Glyph for the menu-bar strip from Rust compact label (`Cl 63%` → `Cl`).
+public func statusItemGlyph(compactLabel: String, surfaceId: String) -> String {
+    let letters = compactLabel.filter(\.isLetter)
+    if letters.count >= 2 {
+        return String(letters.prefix(2))
+    }
+    if letters.count == 1 {
+        return String(letters)
+    }
+    let idLetters = surfaceId.filter(\.isLetter)
+    if idLetters.count >= 2 {
+        return String(idLetters.prefix(2)).uppercased()
+    }
+    return "j"
+}
+
+/// Up to two short percent lines from numeric remaining values (OpenUsage stack).
+public func statusItemPercentLines(remainings: [UInt8], maxLines: Int = 2) -> [String] {
+    Array(remainings.prefix(max(0, maxLines)).map(statusItemPercentToken(remainingPercent:)))
 }

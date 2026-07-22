@@ -188,7 +188,8 @@ public final class PresentationStore: ObservableObject {
                 : .iconOnly
             defaults.removeObject(forKey: "jackin.desktop.showPercent")
         } else {
-            self.displayMode = .focusPercent
+            // OpenUsage-like multi-metric strip by default (worst-first, cap stripMax).
+            self.displayMode = .strip
         }
         self.pinnedSurfaceId = defaults.string(forKey: Self.pinnedSurfaceKey) ?? ""
         let strip = defaults.object(forKey: Self.stripMaxKey) as? Int ?? 3
@@ -510,15 +511,7 @@ public final class PresentationStore: ObservableObject {
         guard let row = worstEnabledSurfaceRow() else { return [] }
         let label = try bridge.compactStatusBarLabel()
         guard !label.isEmpty else { return [] }
-        let drive = drivingBucket(for: row)
-        return [
-            StatusItemChip(
-                surfaceId: row.id,
-                compactLabel: label,
-                remainingPercent: drive?.remainingPercent,
-                severity: drive?.severity ?? "ok"
-            ),
-        ]
+        return [makeChip(row: row, compactLabel: label)]
     }
 
     private func chipsForPinned(surfaceId: String) throws -> [StatusItemChip] {
@@ -527,16 +520,19 @@ public final class PresentationStore: ObservableObject {
         else {
             return []
         }
-        let row = surfaces.first(where: { $0.id == surfaceId && $0.enabled })
-        let drive = row.flatMap { drivingBucket(for: $0) }
-        return [
-            StatusItemChip(
-                surfaceId: surfaceId,
-                compactLabel: label,
-                remainingPercent: drive?.remainingPercent,
-                severity: drive?.severity ?? "ok"
-            ),
-        ]
+        guard let row = surfaces.first(where: { $0.id == surfaceId && $0.enabled }) else {
+            return [
+                StatusItemChip(
+                    surfaceId: surfaceId,
+                    glyph: statusItemGlyph(compactLabel: label, surfaceId: surfaceId),
+                    percentLines: [],
+                    compactLabel: label,
+                    remainingPercent: nil,
+                    severity: "ok"
+                ),
+            ]
+        }
+        return [makeChip(row: row, compactLabel: label)]
     }
 
     private func chipsForStrip(maxCount: UInt32) throws -> [StatusItemChip] {
@@ -549,17 +545,22 @@ public final class PresentationStore: ObservableObject {
             else {
                 continue
             }
-            let drive = drivingBucket(for: row)
-            chips.append(
-                StatusItemChip(
-                    surfaceId: row.id,
-                    compactLabel: label,
-                    remainingPercent: drive?.remainingPercent,
-                    severity: drive?.severity ?? "ok"
-                )
-            )
+            chips.append(makeChip(row: row, compactLabel: label))
         }
         return chips
+    }
+
+    private func makeChip(row: SurfaceRow, compactLabel: String) -> StatusItemChip {
+        let drive = drivingBucket(for: row)
+        let remainings = row.buckets.compactMap(\.remainingPercent)
+        return StatusItemChip(
+            surfaceId: row.id,
+            glyph: statusItemGlyph(compactLabel: compactLabel, surfaceId: row.id),
+            percentLines: statusItemPercentLines(remainings: remainings, maxLines: 2),
+            compactLabel: compactLabel,
+            remainingPercent: drive?.remainingPercent,
+            severity: drive?.severity ?? "ok"
+        )
     }
 
     private func worstEnabledSurfaceRow() -> SurfaceRow? {

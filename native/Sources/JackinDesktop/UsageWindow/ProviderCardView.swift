@@ -90,6 +90,7 @@ struct ProviderCardView: View {
 
     @ViewBuilder
     private func metricCard(_ bucket: PresentationStore.BucketRow) -> some View {
+        // OpenUsage metric anatomy: title, thin full-width bar, value left / reset right.
         VStack(alignment: .leading, spacing: 6) {
             Text(bucket.label)
                 .font(.subheadline.weight(.semibold))
@@ -99,18 +100,26 @@ struct ProviderCardView: View {
             ) {
             case .gauge:
                 if let remaining = bucket.remainingPercent {
-                    let used = Double(100 - Int(remaining))
-                    Gauge(value: used, in: 0...100) {
-                        EmptyView()
+                    let usedFrac = statusItemUsedFraction(remainingPercent: remaining)
+                    GeometryReader { geo in
+                        ZStack(alignment: .leading) {
+                            Capsule().fill(Color.primary.opacity(0.10))
+                            // Fill shows remaining (left), matching OpenUsage blue bars.
+                            Capsule()
+                                .fill(severityTint(bucket.severity))
+                                .frame(width: max(3, geo.size.width * (1.0 - usedFrac)))
+                        }
                     }
-                    .gaugeStyle(.accessoryLinearCapacity)
-                    .tint(severityTint(bucket.severity))
-                    .accessibilityLabel("\(bucket.label) \(Int(used)) percent used")
+                    .frame(height: 5)
+                    .accessibilityLabel(
+                        "\(bucket.label) \(statusItemPercentToken(remainingPercent: remaining)) remaining"
+                    )
                 }
                 HStack {
                     Text(bucket.usedLabel ?? "—")
                         .font(.caption)
                         .monospacedDigit()
+                        .foregroundStyle(.secondary)
                     Spacer()
                     if let reset = bucket.resetLabel {
                         Text(reset)
