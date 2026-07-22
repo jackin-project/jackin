@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 The jackin❯ Authors
+// SPDX-License-Identifier: Apache-2.0
+
 use std::env;
 use std::fs;
 use std::io::{self, Write};

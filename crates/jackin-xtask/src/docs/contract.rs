@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 The jackin❯ Authors
+// SPDX-License-Identifier: Apache-2.0
+
 //! Stable documentation cache contracts used by GitHub Actions.
 
 use std::collections::BTreeMap;

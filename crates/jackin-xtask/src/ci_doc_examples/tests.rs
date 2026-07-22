@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 The jackin❯ Authors
+// SPDX-License-Identifier: Apache-2.0
+
 use syn::visit::Visit;
 
 use super::{Documentation, Metadata, has_runnable_doc_fence};

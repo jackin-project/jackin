@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 The jackin❯ Authors
+// SPDX-License-Identifier: Apache-2.0
+
 //! Resolve the complete per-crate CI routing contract without shell glue.
 
 use std::collections::BTreeMap;
