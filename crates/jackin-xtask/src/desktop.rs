@@ -152,7 +152,7 @@ pub(super) fn resolve_app_path(app: &Path) -> Result<PathBuf> {
 
 /// Host unit tests + pure Swift harnesses (OpenUsage/CodexBar limits-only matrix).
 ///
-/// Does not require full Xcode XCTest — uses CLT-safe `swift run` harnesses.
+/// Does not require full Xcode `XCTest` — uses CLT-safe `swift run` harnesses.
 fn run_desktop_tests(root: &Path) -> Result<()> {
     require_macos("desktop test")?;
     progress("==> jackin-usage + jackin-usage-ffi nextest");
@@ -324,7 +324,9 @@ fn resolve_version_build_for_verify(
             let plist = app.join("Contents/Info.plist");
             plist_buddy_print(&plist, "CFBundleShortVersionString").ok()
         })
-        .context("version required: pass --version, set JACKIN_APP_VERSION, or point at a built app")?;
+        .context(
+            "version required: pass --version, set JACKIN_APP_VERSION, or point at a built app",
+        )?;
     let build = build
         .or_else(|| env::var("JACKIN_APP_BUILD").ok())
         .or_else(|| {
@@ -427,14 +429,19 @@ fn generate_bindings(root: &Path, profile: &str) -> Result<()> {
         )?;
     }
 
-    progress(format!("==> generated bindings under {}", out_dir.display()));
+    progress(format!(
+        "==> generated bindings under {}",
+        out_dir.display()
+    ));
     Ok(())
 }
 
 fn build_xcframework(root: &Path) -> Result<()> {
     require_macos("desktop xcframework")?;
 
-    progress(format!("==> building staticlib for {HOST_TARGET} (macOS 14 floor)"));
+    progress(format!(
+        "==> building staticlib for {HOST_TARGET} (macOS 14 floor)"
+    ));
     let mut rustup = cmd::command("rustup");
     rustup.args(["target", "add", HOST_TARGET]);
     // Already-installed target is fine; surface other rustup failures below if cargo fails.
@@ -469,7 +476,9 @@ fn build_xcframework(root: &Path) -> Result<()> {
     }
     fs::create_dir_all(&xcframework)?;
 
-    progress(format!("==> assembling static XCFramework ({MODULE_NAME}, arm64 only)"));
+    progress(format!(
+        "==> assembling static XCFramework ({MODULE_NAME}, arm64 only)"
+    ));
     install_slice(&xcframework, ARCH, &arm_lib, &header)?;
 
     let info_plist = xcframework.join("Info.plist");
@@ -649,7 +658,10 @@ pub(super) fn verify_app(
         bail!("missing {}", plist.display());
     }
     if !resource_bundle.is_dir() {
-        bail!("missing SwiftPM resource bundle {}", resource_bundle.display());
+        bail!(
+            "missing SwiftPM resource bundle {}",
+            resource_bundle.display()
+        );
     }
 
     assert_plist_string(&plist, "CFBundleIdentifier", BUNDLE_ID)?;
@@ -847,7 +859,9 @@ fn assert_no_absolute_ffi_link(bin: &Path) -> Result<()> {
 
 fn swift_bin_path(native: &Path, arch: &str) -> Result<PathBuf> {
     let mut swift = cmd::command("swift");
-    swift.current_dir(native).args(["build", "-c", "release", "--show-bin-path"]);
+    swift
+        .current_dir(native)
+        .args(["build", "-c", "release", "--show-bin-path"]);
     if !arch.is_empty() {
         swift.args(["--arch", arch]);
     }
@@ -863,13 +877,13 @@ fn find_resource_bundle(bin_dir: &Path) -> Result<PathBuf> {
         }
     }
     for path in walk_dirs(bin_dir)? {
-        if path
-            .file_name()
-            .and_then(|s| s.to_str())
-            == Some("JackinDesktop_JackinDesktop.bundle")
-        {
+        if path.file_name().and_then(|s| s.to_str()) == Some("JackinDesktop_JackinDesktop.bundle") {
             // Prefer shallow matches under bin_dir (maxdepth-ish: path components).
-            if path.strip_prefix(bin_dir).ok().is_some_and(|rel| rel.components().count() <= 3) {
+            if path
+                .strip_prefix(bin_dir)
+                .ok()
+                .is_some_and(|rel| rel.components().count() <= 3)
+            {
                 return Ok(path);
             }
         }
@@ -959,8 +973,7 @@ pub(super) fn tempfile_dir(prefix: &str) -> Result<PathBuf> {
 
 fn copy_dir_all(src: &Path, dst: &Path) -> Result<()> {
     fs::create_dir_all(dst)?;
-    for entry in fs::read_dir(src).with_context(|| format!("reading {}", src.display()))? {
-        let entry = entry?;
+    for entry in crate::fs_util::read_dir_sorted(src)? {
         let ty = entry.file_type()?;
         let to = dst.join(entry.file_name());
         if ty.is_dir() {
@@ -988,8 +1001,7 @@ fn walk_collect(root: &Path, out: &mut Vec<PathBuf>, files: bool, dirs: bool) ->
     if !root.exists() {
         return Ok(());
     }
-    for entry in fs::read_dir(root).with_context(|| format!("reading {}", root.display()))? {
-        let entry = entry?;
+    for entry in crate::fs_util::read_dir_sorted(root)? {
         let path = entry.path();
         let ty = entry.file_type()?;
         if ty.is_dir() {
@@ -1026,5 +1038,4 @@ fn find_files_with_ext(root: &Path, ext: &str) -> Result<Vec<PathBuf>> {
 }
 
 #[cfg(test)]
-#[path = "desktop/tests.rs"]
 mod tests;

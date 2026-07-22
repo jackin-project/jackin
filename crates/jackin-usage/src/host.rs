@@ -529,8 +529,8 @@ impl HostUsageRuntime {
             .unwrap_or_default();
         let surfaces: Vec<HostSurfaceId> = match surface_id {
             Some(id) => {
-                let surface = HostSurfaceId::from_id(id)
-                    .ok_or_else(|| format!("unknown surface: {id}"))?;
+                let surface =
+                    HostSurfaceId::from_id(id).ok_or_else(|| format!("unknown surface: {id}"))?;
                 vec![surface]
             }
             None => HostSurfaceId::ALL.to_vec(),
@@ -544,7 +544,9 @@ impl HostUsageRuntime {
             let mut account_map =
                 accounts::collect_account_views(surface, Some(&live), &store_path);
             if !live_key.is_empty() {
-                account_map.entry(live_key.clone()).or_insert_with(|| live.clone());
+                account_map
+                    .entry(live_key.clone())
+                    .or_insert_with(|| live.clone());
             }
             let mut keys: Vec<String> = account_map.keys().cloned().collect();
             keys.sort();
@@ -565,8 +567,8 @@ impl HostUsageRuntime {
                     .cloned()
                     .unwrap_or_else(|| live.clone());
                 let label = view.account.account_label.clone();
-                let placeholder = label.trim().is_empty()
-                    || label.eq_ignore_ascii_case("account unavailable");
+                let placeholder =
+                    label.trim().is_empty() || label.eq_ignore_ascii_case("account unavailable");
                 if placeholder && account_map.len() > 1 && key != live_key {
                     continue;
                 }

@@ -5,7 +5,7 @@ agent-usage menu bar. Mirrors TableRock’s `tablerock-ffi` split: Rust owns all
 truth; Swift is display-only.
 
 **Limits only** for Desktop DTOs — no token unit prices or historical usage
-trends. See [AGENTS.md](AGENTS.md).
+trends.
 
 ## Build
 

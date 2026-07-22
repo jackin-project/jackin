@@ -18,5 +18,5 @@ or second provider matrix in this crate or in the Swift shell.
   **usage limits** (remaining/used %, resets, plan, multi-account, provider limit
   windows). **Never** add FFI fields or methods for token unit prices, cost-of-
   session estimates, historical usage/spend series, sparklines, donuts, or
-  Today/Yesterday/30-day trends. Match root [AGENTS.md](../../AGENTS.md) and
-  [jackin-usage/AGENTS.md](../jackin-usage/AGENTS.md).
+  Today/Yesterday/30-day trends. Match root product limits-only rules and
+  `jackin-usage` crate rules.

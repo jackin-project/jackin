@@ -107,9 +107,7 @@ pub(crate) fn run(args: BootstrapSecretsArgs) -> Result<()> {
         progress(
             "  secrets: DEVELOPER_ID_APPLICATION_P12_BASE64, DEVELOPER_ID_APPLICATION_P12_PASSWORD, APP_STORE_CONNECT_API_KEY_P8, APP_STORE_CONNECT_KEY_ID, APP_STORE_CONNECT_ISSUER_ID",
         );
-        progress(
-            "  variables: JACKIN_DEVELOPER_ID_TEAM_ID, JACKIN_DEVELOPER_ID_CERT_SHA256",
-        );
+        progress("  variables: JACKIN_DEVELOPER_ID_TEAM_ID, JACKIN_DEVELOPER_ID_CERT_SHA256");
         progress(format!(
             "  key-id length={} issuer length={} p12_b64 length={} p8 length={}",
             key_id.len(),
@@ -171,9 +169,7 @@ fn resolve_p12_b64(args: &BootstrapSecretsArgs) -> Result<String> {
         tmp_holder = Some(tmp);
         path = Some(file);
     }
-    let path = path.context(
-        "provide --p12, --op-p12, or DEVELOPER_ID_APPLICATION_P12_BASE64",
-    )?;
+    let path = path.context("provide --p12, --op-p12, or DEVELOPER_ID_APPLICATION_P12_BASE64")?;
     if !path.is_file() {
         bail!("p12 not found: {}", path.display());
     }
@@ -194,8 +190,7 @@ fn resolve_p12_password(args: &BootstrapSecretsArgs) -> Result<String> {
         return Ok(p.clone());
     }
     if let Some(name) = args.p12_password_env.as_ref() {
-        return env::var(name)
-            .with_context(|| format!("env {name} empty for --p12-password-env"));
+        return env::var(name).with_context(|| format!("env {name} empty for --p12-password-env"));
     }
     if let Some(op_ref) = args.op_p12_password.as_ref() {
         return op_read(op_ref);
@@ -212,8 +207,7 @@ fn resolve_p8(args: &BootstrapSecretsArgs) -> Result<String> {
         return Ok(v);
     }
     if let Some(path) = args.p8.as_ref() {
-        return fs::read_to_string(path)
-            .with_context(|| format!("reading p8 {}", path.display()));
+        return fs::read_to_string(path).with_context(|| format!("reading p8 {}", path.display()));
     }
     if let Some(op_ref) = args.op_p8.as_ref() {
         return op_read(op_ref);
@@ -236,8 +230,7 @@ fn base64_file(path: &Path) -> Result<String> {
 
 fn base64_nopad_std(bytes: &[u8]) -> String {
     // Standard base64 without newlines (no external crate — simple encoder).
-    const T: &[u8] =
-        b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    const T: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
     let mut i = 0;
     while i < bytes.len() {
@@ -337,19 +330,13 @@ fn ensure_environment(repo: &str) -> Result<()> {
 
 fn gh_secret_set(repo: &str, name: &str, value: &str) -> Result<()> {
     let mut gh = Command::new("gh");
-    gh.args([
-        "secret",
-        "set",
-        name,
-        "--repo",
-        repo,
-        "--env",
-        ENV_NAME,
-    ])
-    .stdin(Stdio::piped())
-    .stdout(Stdio::null())
-    .stderr(Stdio::piped());
-    let mut child = gh.spawn().with_context(|| format!("gh secret set {name}"))?;
+    gh.args(["secret", "set", name, "--repo", repo, "--env", ENV_NAME])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped());
+    let mut child = gh
+        .spawn()
+        .with_context(|| format!("gh secret set {name}"))?;
     if let Some(mut stdin) = child.stdin.take() {
         stdin.write_all(value.as_bytes())?;
     }
@@ -384,16 +371,4 @@ fn cmd_command(program: &str) -> Command {
 }
 
 #[cfg(test)]
-mod pure_tests {
-    use super::base64_nopad_std;
-
-    #[test]
-    fn base64_empty() {
-        assert_eq!(base64_nopad_std(b""), "");
-    }
-
-    #[test]
-    fn base64_hello() {
-        assert_eq!(base64_nopad_std(b"hello"), "aGVsbG8=");
-    }
-}
+mod tests;

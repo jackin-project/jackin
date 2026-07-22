@@ -7,7 +7,7 @@ reference only (clean-room).
 
 **Product scope:** **usage limits only** — remaining/used %, resets, plan/status,
 multi-account. **Never** token unit prices or historical usage/spend trends
-(sparklines, donuts, 30-day series). See [AGENTS.md](AGENTS.md).
+(sparklines, donuts, 30-day series).
 
 ## Layout
 

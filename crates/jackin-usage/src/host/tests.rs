@@ -209,10 +209,7 @@ fn inject_dual_remaining(
     view.buckets = vec![
         QuotaBucketView {
             label: "Session".to_owned(),
-            used_label: Some(format!(
-                "{}% used",
-                100u8.saturating_sub(session_remaining)
-            )),
+            used_label: Some(format!("{}% used", 100u8.saturating_sub(session_remaining))),
             limit_label: Some("100%".to_owned()),
             remaining_percent: Some(session_remaining),
             reset_label: Some("Resets in 5h".to_owned()),
@@ -226,10 +223,7 @@ fn inject_dual_remaining(
         },
         QuotaBucketView {
             label: "Weekly".to_owned(),
-            used_label: Some(format!(
-                "{}% used",
-                100u8.saturating_sub(weekly_remaining)
-            )),
+            used_label: Some(format!("{}% used", 100u8.saturating_sub(weekly_remaining))),
             limit_label: Some("100%".to_owned()),
             remaining_percent: Some(weekly_remaining),
             reset_label: Some("Resets in 2d".to_owned()),
@@ -242,7 +236,9 @@ fn inject_dual_remaining(
             severity: UsageSeverity::Normal,
         },
     ];
-    runtime.inject_snapshot(surface_id, view).expect("inject dual");
+    runtime
+        .inject_snapshot(surface_id, view)
+        .expect("inject dual");
 }
 
 #[test]
@@ -490,9 +486,7 @@ fn compact_status_bar_strip_all_enabled_host_surfaces_with_data() {
     let mut runtime = open_runtime(dir.path());
     // Enable the full frozen catalog.
     for surface in HostSurfaceId::ALL {
-        runtime
-            .set_enabled(surface.id(), true)
-            .expect("enable set");
+        runtime.set_enabled(surface.id(), true).expect("enable set");
     }
     // Inject distinct remainings for five surfaces; leave others empty (hidden).
     inject_remaining(&mut runtime, "claude", 50);
@@ -696,9 +690,7 @@ fn compact_status_bar_strip_all_eight_host_surfaces() {
     let dir = tempfile::tempdir().expect("tempdir");
     let mut runtime = open_runtime(dir.path());
     for surface in HostSurfaceId::ALL {
-        runtime
-            .set_enabled(surface.id(), true)
-            .expect("enable set");
+        runtime.set_enabled(surface.id(), true).expect("enable set");
     }
     // Distinct remainings so each surface has numeric data.
     let remainings = [90u8, 80, 70, 60, 50, 40, 30, 20];

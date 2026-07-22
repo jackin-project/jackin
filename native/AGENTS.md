@@ -18,7 +18,7 @@ Display-only Swift shell over `jackin-usage-ffi` (UniFFI). Product: **jackin❯ 
   - aggregate-spend donuts, cost legends, ranked spend-by-model UI
   - Buy Credits or other commercial write actions
   OpenUsage/CodexBar may include those — **do not copy them**. See root
-  [AGENTS.md](../AGENTS.md) and [jackin-usage/AGENTS.md](../crates/jackin-usage/AGENTS.md).
+  product limits-only rules and the `jackin-usage` crate agent rules.
 - **Liquid Glass** only in `GlassFallbacks.swift` for navigation chrome; content
   cards use standard materials (HIG).
 - **Frozen host catalog only** — Claude, Codex, Amp, Grok Build, GLM/Z.AI, Kimi,

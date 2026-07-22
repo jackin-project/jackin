@@ -1,6 +1,6 @@
 use super::{
-    app_info_plist, minos_newer_than_14, validate_build, validate_version, APP_EXECUTABLE,
-    BUNDLE_ID, BUNDLE_NAME, MIN_OS,
+    APP_EXECUTABLE, BUNDLE_ID, BUNDLE_NAME, MIN_OS, app_info_plist, minos_newer_than_14,
+    validate_build, validate_version,
 };
 
 #[test]

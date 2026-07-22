@@ -105,7 +105,7 @@ public struct StatusItemChip: Identifiable, Equatable, Sendable {
 /// Frozen host surface ids in catalog order (matches Rust `HostSurfaceId::ALL`).
 ///
 /// OpenUsage/CodexBar-style multi-provider strip must be able to show each of
-/// these when enabled — never Cursor/Gemini/Copilot.
+/// these when enabled — never non-jackin third-party IDE agent products.
 public let frozenHostSurfaceIds: [String] = [
     "claude",
     "codex",

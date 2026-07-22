@@ -8,11 +8,11 @@ use anyhow::{Context, Result, bail};
 use clap::Args;
 use serde_json::Value;
 
-use crate::cmd;
 use super::{
     assert_no_embedded_libs, progress, require_macos, resolve_version_build, tempfile_dir,
     verify_app, which,
 };
+use crate::cmd;
 
 #[derive(Args)]
 pub(crate) struct SignNotarizeArgs {
@@ -37,9 +37,8 @@ pub(crate) fn run(args: SignNotarizeArgs) -> Result<()> {
     let (version, build) = resolve_version_build(args.version, args.build)?;
     validate_stable_version(&version)?;
 
-    let identity = env::var("DEVELOPER_ID_APPLICATION").context(
-        "set DEVELOPER_ID_APPLICATION to the Developer ID Application identity",
-    )?;
+    let identity = env::var("DEVELOPER_ID_APPLICATION")
+        .context("set DEVELOPER_ID_APPLICATION to the Developer ID Application identity")?;
     if !app.is_dir() {
         bail!(
             "app not found at {} — run `cargo xtask desktop build` first",
@@ -154,7 +153,11 @@ pub(crate) fn run(args: SignNotarizeArgs) -> Result<()> {
 
 fn validate_stable_version(version: &str) -> Result<()> {
     let parts: Vec<_> = version.split('.').collect();
-    if parts.len() != 3 || parts.iter().any(|p| p.is_empty() || !p.chars().all(|c| c.is_ascii_digit())) {
+    if parts.len() != 3
+        || parts
+            .iter()
+            .any(|p| p.is_empty() || !p.chars().all(|c| c.is_ascii_digit()))
+    {
         bail!("JACKIN_APP_VERSION must be stable X.Y.Z (got {version})");
     }
     Ok(())
@@ -165,25 +168,21 @@ fn ditto_zip(app: &Path, zip: &Path) -> Result<()> {
     let parent = app.parent().context("app parent")?;
     let name = app.file_name().context("app name")?;
     let mut ditto = cmd::command("ditto");
-    ditto
-        .current_dir(parent)
-        .args([
-            "-c",
-            "-k",
-            "--keepParent",
-            name.to_str().context("name utf-8")?,
-            zip.to_str().context("zip utf-8")?,
-        ]);
+    ditto.current_dir(parent).args([
+        "-c",
+        "-k",
+        "--keepParent",
+        name.to_str().context("name utf-8")?,
+        zip.to_str().context("zip utf-8")?,
+    ]);
     cmd::run(&mut ditto)
 }
 
 fn run_notarytool(submit_zip: &Path, notary_json: &Path) -> Result<()> {
     let mut base = cmd::command("xcrun");
-    base.arg("notarytool").arg("submit").arg(
-        submit_zip
-            .to_str()
-            .context("submit zip utf-8")?,
-    );
+    base.arg("notarytool")
+        .arg("submit")
+        .arg(submit_zip.to_str().context("submit zip utf-8")?);
 
     if let Ok(key_path) = env::var("APP_STORE_CONNECT_API_KEY_PATH") {
         if !Path::new(&key_path).is_file() {
@@ -293,11 +292,7 @@ fn check_expected_team(app: &Path) -> Result<()> {
         reason = "codesign -dv emits identity on stderr; cmd helpers only surface stdout on success"
     )]
     let output = std::process::Command::new("codesign")
-        .args([
-            "-dv",
-            "--verbose=4",
-            app.to_str().context("app utf-8")?,
-        ])
+        .args(["-dv", "--verbose=4", app.to_str().context("app utf-8")?])
         .output()
         .context("codesign -dv")?;
     let combined = format!(

@@ -6,7 +6,7 @@ and `jackin usage host snapshot`.
 
 **Product surfaces (Capsule usage UI, jackin❯ Desktop):** **usage limits only** —
 remaining/used %, resets, plan/status. **Never** token unit prices or historical
-usage/spend trends as product features. See [AGENTS.md](AGENTS.md).
+usage/spend trends as product features.
 
 ## What this crate owns
 

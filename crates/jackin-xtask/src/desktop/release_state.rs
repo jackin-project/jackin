@@ -81,15 +81,12 @@ pub(crate) fn compute_state(
             has_sbom = true;
         }
     }
-    let app_file_assets_complete =
-        release_exists && has_zip && has_sha && has_bundle && has_sbom;
+    let app_file_assets_complete = release_exists && has_zip && has_sha && has_bundle && has_sbom;
 
-    let formula_complete = formula_body.is_some_and(|body| {
-        extract_quoted_field(body, "version").as_deref() == Some(version)
-    });
+    let formula_complete = formula_body
+        .is_some_and(|body| extract_quoted_field(body, "version").as_deref() == Some(version));
 
-    let expected_url =
-        format!("https://github.com/{repo}/releases/download/v{version}/{asset}");
+    let expected_url = format!("https://github.com/{repo}/releases/download/v{version}/{asset}");
     let cask_complete = cask_body.is_some_and(|body| {
         let cask_version = extract_quoted_field(body, "version");
         let cask_url = extract_quoted_field(body, "url");
@@ -147,10 +144,8 @@ fn live_state(version: &str, repo: &str, tap: &str) -> Result<ReleaseState> {
     } else {
         Vec::new()
     };
-    let formula_url =
-        format!("https://raw.githubusercontent.com/{tap}/main/Formula/jackin.rb");
-    let cask_url =
-        format!("https://raw.githubusercontent.com/{tap}/main/Casks/jackin-desktop.rb");
+    let formula_url = format!("https://raw.githubusercontent.com/{tap}/main/Formula/jackin.rb");
+    let cask_url = format!("https://raw.githubusercontent.com/{tap}/main/Casks/jackin-desktop.rb");
     let formula_body = curl_text(&formula_url).ok();
     let cask_body = curl_text(&cask_url).ok();
     Ok(compute_state(
@@ -199,75 +194,4 @@ fn curl_text(url: &str) -> Result<String> {
 }
 
 #[cfg(test)]
-mod pure_tests {
-    use super::*;
-
-    #[test]
-    fn missing_release() {
-        let state = compute_state("1.2.3", DEFAULT_REPO, false, &[], None, None);
-        assert!(!state.release_exists);
-        assert!(!state.app_file_assets_complete);
-        assert!(!state.complete);
-        assert_eq!(state.asset, desktop_asset_name("1.2.3"));
-    }
-
-    #[test]
-    fn complete_release_formula_cask() {
-        let version = "1.2.3";
-        let asset = desktop_asset_name(version);
-        let names = vec![
-            asset.clone(),
-            format!("{asset}.sha256"),
-            format!("{asset}.bundle"),
-            format!("{asset}.sbom.json"),
-        ];
-        let formula = r#"  version "1.2.3""#;
-        let cask = format!(
-            r#"  version "1.2.3"
-  sha256 "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-  url "https://github.com/{DEFAULT_REPO}/releases/download/v1.2.3/{asset}"
-"#
-        );
-        let state = compute_state(
-            version,
-            DEFAULT_REPO,
-            true,
-            &names,
-            Some(formula),
-            Some(&cask),
-        );
-        assert!(state.release_exists);
-        assert!(state.app_file_assets_complete);
-        assert!(state.formula_complete);
-        assert!(state.cask_complete);
-        assert!(state.complete);
-        // idempotent pure computation
-        let again = compute_state(
-            version,
-            DEFAULT_REPO,
-            true,
-            &names,
-            Some(formula),
-            Some(&cask),
-        );
-        assert_eq!(state, again);
-    }
-
-    #[test]
-    fn partial_assets_incomplete() {
-        let names = vec![desktop_asset_name("9.9.9")];
-        let state = compute_state("9.9.9", DEFAULT_REPO, true, &names, None, None);
-        assert!(state.release_exists);
-        assert!(!state.app_file_assets_complete);
-        assert!(!state.complete);
-    }
-
-    #[test]
-    fn render_key_value_lines() {
-        let state = compute_state("0.1.0", DEFAULT_REPO, false, &[], None, None);
-        let rendered = state.render();
-        assert!(rendered.contains("release_exists=false\n"));
-        assert!(rendered.contains("complete=false\n"));
-        assert!(rendered.contains(&format!("asset={}\n", desktop_asset_name("0.1.0"))));
-    }
-}
+mod tests;

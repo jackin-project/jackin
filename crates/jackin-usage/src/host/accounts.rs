@@ -81,10 +81,7 @@ pub(super) fn save_selected_accounts(
 /// Stable key for a focused usage view (matches snapshot-store hashing).
 #[must_use]
 pub fn account_key_for_view(view: &FocusedUsageView) -> String {
-    account_key_hash(
-        &view.account.provider_label,
-        &view.account.account_label,
-    )
+    account_key_hash(&view.account.provider_label, &view.account.account_label)
 }
 
 /// Compact identity for status chips (email local-part when possible).
@@ -97,10 +94,10 @@ pub fn short_account_identity(account_label: &str) -> String {
     {
         return String::new();
     }
-    if let Some((local, _)) = trimmed.split_once('@') {
-        if !local.is_empty() {
-            return local.to_owned();
-        }
+    if let Some((local, _)) = trimmed.split_once('@')
+        && !local.is_empty()
+    {
+        return local.to_owned();
     }
     if trimmed.chars().count() > 12 {
         return trimmed.chars().take(10).collect::<String>() + "…";
@@ -122,10 +119,10 @@ pub fn min_remaining(view: &FocusedUsageView) -> Option<u8> {
 pub(super) fn surface_for_view(view: &FocusedUsageView) -> Option<HostSurfaceId> {
     let provider = view.account.provider_label.as_str();
     for surface in HostSurfaceId::ALL {
-        if let Some(label) = surface.provider_label() {
-            if provider_matches(label, provider) {
-                return Some(*surface);
-            }
+        if let Some(label) = surface.provider_label()
+            && provider_matches(label, provider)
+        {
+            return Some(*surface);
         }
         // Agent slug match (OpenCode, Amp, …).
         if provider_matches(surface.label(), provider)
@@ -224,10 +221,10 @@ pub(super) fn collect_account_views(
 }
 
 fn surface_matches_provider(surface: HostSurfaceId, provider: &str) -> bool {
-    if let Some(label) = surface.provider_label() {
-        if provider_matches(label, provider) {
-            return true;
-        }
+    if let Some(label) = surface.provider_label()
+        && provider_matches(label, provider)
+    {
+        return true;
     }
     provider_matches(surface.label(), provider)
         || provider_matches(surface.id(), provider)
@@ -273,4 +270,3 @@ pub(super) fn resolve_account_view(
     let accounts = collect_account_views(surface, Some(&live), store_path);
     accounts.get(want).cloned().unwrap_or(live)
 }
-
