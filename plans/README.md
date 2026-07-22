@@ -8,7 +8,7 @@ Plans hold **unfinished** multi-step work. Fully shipped plan bodies are removed
 |------|--------|--------|
 | [agent-status/](agent-status/) | Product detection (live goldens, pack rewrite, live authority, remote packs) | Deferred / open residuals |
 | [codebase-health/](codebase-health/) | Deep advisor gap-audit of the codebase-health enforcement roadmap (2026-07-14, commit 846038946): 27 unfinished plans, telemetry/OTLP first (001–009), then lints/CI/ownership/testing/perf/docs | Open / in progress |
-| [native-macos-usage-menu-bar/](native-macos-usage-menu-bar/) | Host-global usage cache, Tahoe UI, arm64 static PR gate, release/cask pipeline, **jackin❯ Desktop v1** | 001–002, 005–012 **DONE** (v1 UI); 003–004 **BLOCKED** on Apple `release-macos` secrets + first notarized publish/cask merge (ops residual) |
+| [native-macos-usage-menu-bar/](native-macos-usage-menu-bar/) | Host-global usage cache, Tahoe UI, arm64 static PR gate, release/cask pipeline, **jackin❯ Desktop v1** | 013 **OPEN** — PR #816 correctness/merge blockers and screen coherence; 003–004 **BLOCKED** on Apple `release-macos` secrets + first notarized publish/cask merge |
 
 ## Removed (shipped)
 
