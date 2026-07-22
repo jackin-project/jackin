@@ -9,11 +9,17 @@ struct ProviderCardView: View {
     let surface: PresentationStore.SurfaceRow
     /// Settings percent style (`left` / `used`) — matches menu-bar chips.
     var percentStyle: String = "left"
+    /// Multi-account rows for this surface (empty when single host login).
+    var accounts: [PresentationStore.AccountRow] = []
+    var onSelectAccount: ((String) -> Void)?
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 identityBlock
+                if accounts.count > 1 {
+                    accountSwitcher
+                }
                 ForEach(surface.buckets) { bucket in
                     metricCard(bucket)
                 }
@@ -86,6 +92,56 @@ struct ProviderCardView: View {
                 Text("Auth: \(origin)")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    /// OpenUsage/CodexBar-style account pills (multi-account per provider).
+    private var accountSwitcher: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Accounts")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(accounts) { account in
+                        Button {
+                            onSelectAccount?(account.accountKey)
+                        } label: {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(account.accountLabel)
+                                    .font(.caption.weight(account.selected ? .semibold : .regular))
+                                    .lineLimit(1)
+                                if let rem = account.remainingPercent {
+                                    Text(
+                                        statusItemPercentToken(
+                                            remainingPercent: rem,
+                                            percentStyle: percentStyle
+                                        )
+                                    )
+                                    .font(.caption2.monospacedDigit())
+                                    .foregroundStyle(account.selected ? Color.white.opacity(0.9) : .secondary)
+                                }
+                            }
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 7)
+                            .background {
+                                Capsule(style: .continuous)
+                                    .fill(
+                                        account.selected
+                                            ? Color.accentColor.opacity(0.92)
+                                            : Color.primary.opacity(0.06)
+                                    )
+                            }
+                            .foregroundStyle(account.selected ? Color.white : Color.primary)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(
+                            "\(account.accountLabel)\(account.selected ? ", selected" : "")"
+                        )
+                        .accessibilityAddTraits(account.selected ? .isSelected : [])
+                    }
+                }
             }
         }
     }

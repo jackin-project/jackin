@@ -620,6 +620,11 @@ public protocol UsageMenuBarBridgeProtocol: AnyObject, Sendable {
     func compactStatusBarStrip(max: UInt32) throws  -> String
     
     /**
+     * List known accounts for one surface (`Some`) or all surfaces (`None`).
+     */
+    func listAccounts(surfaceId: String?) throws  -> [AccountDescriptorDto]
+    
+    /**
      * List all host surfaces with enable flags.
      */
     func listSurfaces() throws  -> [SurfaceDescriptorDto]
@@ -692,12 +697,17 @@ public protocol UsageMenuBarBridgeProtocol: AnyObject, Sendable {
     func setRefreshFloorSecs(secs: UInt64) throws 
     
     /**
+     * Select which account drives snapshot/detail for a surface (persisted).
+     */
+    func setSelectedAccount(surfaceId: String, accountKey: String) throws 
+    
+    /**
      * Shutdown; idempotent.
      */
     func shutdown() throws 
     
     /**
-     * Snapshot for one enabled surface.
+     * Snapshot for one enabled surface (selected multi-account when set).
      */
     func snapshot(surfaceId: String) throws  -> UsageViewDto
     
@@ -808,6 +818,19 @@ open func compactStatusBarStrip(max: UInt32)throws  -> String  {
     uniffi_jackin_usage_ffi_fn_method_usagemenubarbridge_compact_status_bar_strip(
             self.uniffiCloneHandle(),
         FfiConverterUInt32.lower(max),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * List known accounts for one surface (`Some`) or all surfaces (`None`).
+     */
+open func listAccounts(surfaceId: String?)throws  -> [AccountDescriptorDto]  {
+    return try  FfiConverterSequenceTypeAccountDescriptorDto.lift(try rustCallWithError(FfiConverterTypeUsageBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_jackin_usage_ffi_fn_method_usagemenubarbridge_list_accounts(
+            self.uniffiCloneHandle(),
+        FfiConverterOptionString.lower(surfaceId),uniffiCallStatus
     )
 })
 }
@@ -979,6 +1002,19 @@ open func setRefreshFloorSecs(secs: UInt64)throws   {try rustCallWithError(FfiCo
 }
     
     /**
+     * Select which account drives snapshot/detail for a surface (persisted).
+     */
+open func setSelectedAccount(surfaceId: String, accountKey: String)throws   {try rustCallWithError(FfiConverterTypeUsageBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_jackin_usage_ffi_fn_method_usagemenubarbridge_set_selected_account(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(surfaceId),
+        FfiConverterString.lower(accountKey),uniffiCallStatus
+    )
+}
+}
+    
+    /**
      * Shutdown; idempotent.
      */
 open func shutdown()throws   {try rustCallWithError(FfiConverterTypeUsageBridgeError_lift) {
@@ -990,7 +1026,7 @@ open func shutdown()throws   {try rustCallWithError(FfiConverterTypeUsageBridgeE
 }
     
     /**
-     * Snapshot for one enabled surface.
+     * Snapshot for one enabled surface (selected multi-account when set).
      */
 open func snapshot(surfaceId: String)throws  -> UsageViewDto  {
     return try  FfiConverterTypeUsageViewDto_lift(try rustCallWithError(FfiConverterTypeUsageBridgeError_lift) {
@@ -1061,6 +1097,83 @@ public func FfiConverterTypeUsageMenuBarBridge_lower(_ value: UsageMenuBarBridge
 }
 
 
+
+
+/**
+ * One known account for a host surface (multi-account Desktop).
+ */
+public struct AccountDescriptorDto: Equatable, Hashable {
+    public var surfaceId: String
+    public var accountKey: String
+    public var accountLabel: String
+    public var planLabel: String?
+    public var selected: Bool
+    public var remainingPercent: UInt8?
+    public var statusWord: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(surfaceId: String, accountKey: String, accountLabel: String, planLabel: String?, selected: Bool, remainingPercent: UInt8?, statusWord: String) {
+        self.surfaceId = surfaceId
+        self.accountKey = accountKey
+        self.accountLabel = accountLabel
+        self.planLabel = planLabel
+        self.selected = selected
+        self.remainingPercent = remainingPercent
+        self.statusWord = statusWord
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension AccountDescriptorDto: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeAccountDescriptorDto: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> AccountDescriptorDto {
+        return
+            try AccountDescriptorDto(
+                surfaceId: FfiConverterString.read(from: &buf), 
+                accountKey: FfiConverterString.read(from: &buf), 
+                accountLabel: FfiConverterString.read(from: &buf), 
+                planLabel: FfiConverterOptionString.read(from: &buf), 
+                selected: FfiConverterBool.read(from: &buf), 
+                remainingPercent: FfiConverterOptionUInt8.read(from: &buf), 
+                statusWord: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: AccountDescriptorDto, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.surfaceId, into: &buf)
+        FfiConverterString.write(value.accountKey, into: &buf)
+        FfiConverterString.write(value.accountLabel, into: &buf)
+        FfiConverterOptionString.write(value.planLabel, into: &buf)
+        FfiConverterBool.write(value.selected, into: &buf)
+        FfiConverterOptionUInt8.write(value.remainingPercent, into: &buf)
+        FfiConverterString.write(value.statusWord, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAccountDescriptorDto_lift(_ buf: RustBuffer) throws -> AccountDescriptorDto {
+    return try FfiConverterTypeAccountDescriptorDto.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAccountDescriptorDto_lower(_ value: AccountDescriptorDto) -> RustBuffer {
+    return FfiConverterTypeAccountDescriptorDto.lower(value)
+}
 
 
 /**
@@ -1997,6 +2110,31 @@ fileprivate struct FfiConverterSequenceString: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypeAccountDescriptorDto: FfiConverterRustBuffer {
+    typealias SwiftType = [AccountDescriptorDto]
+
+    public static func write(_ value: [AccountDescriptorDto], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeAccountDescriptorDto.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [AccountDescriptorDto] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [AccountDescriptorDto]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeAccountDescriptorDto.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeOverviewRowDto: FfiConverterRustBuffer {
     typealias SwiftType = [OverviewRowDto]
 
@@ -2118,6 +2256,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_jackin_usage_ffi_checksum_method_usagemenubarbridge_compact_status_bar_strip() != 29560) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_jackin_usage_ffi_checksum_method_usagemenubarbridge_list_accounts() != 28969) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_jackin_usage_ffi_checksum_method_usagemenubarbridge_list_surfaces() != 14496) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -2157,10 +2298,13 @@ private let initializationResult: InitializationResult = {
     if (uniffi_jackin_usage_ffi_checksum_method_usagemenubarbridge_set_refresh_floor_secs() != 6201) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_jackin_usage_ffi_checksum_method_usagemenubarbridge_set_selected_account() != 7286) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_jackin_usage_ffi_checksum_method_usagemenubarbridge_shutdown() != 32908) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_jackin_usage_ffi_checksum_method_usagemenubarbridge_snapshot() != 21774) {
+    if (uniffi_jackin_usage_ffi_checksum_method_usagemenubarbridge_snapshot() != 15318) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_jackin_usage_ffi_checksum_method_usagemenubarbridge_status_bar_label() != 38813) {

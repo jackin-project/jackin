@@ -15,15 +15,33 @@ use std::sync::{Mutex, OnceLock};
 
 use crate::store_backend::{self, Connection, DbOperation, Row, connect_local, params};
 use jackin_core::account_key_hash;
-use jackin_protocol::control::{FocusedUsageView, QuotaBucketView};
-#[cfg(test)]
-use jackin_protocol::control::{UsageConfidence, UsageSnapshotStatus, UsageSource};
+use jackin_protocol::control::{
+    FocusedAccountHeader, FocusedUsageView, QuotaBucketView, UsageConfidence, UsageSnapshotStatus,
+    UsageSource,
+};
 use jackin_telemetry::ResultTelemetryExt as _;
 
 const SCHEMA_VERSION: &str = "4";
 
 #[cfg(test)]
 static CONNECTION_BUILDS: OnceLock<Mutex<HashMap<String, usize>>> = OnceLock::new();
+
+/// Distinct account identity known to the durable snapshot store.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AccountIdentitySummary {
+    /// Provider label as stored (`Anthropic / Claude`, `OpenAI / Codex`, …).
+    pub provider: String,
+    /// `account_key_hash` (stable multi-account id).
+    pub account_key_hash: String,
+    /// Operator-visible account label.
+    pub account_label: String,
+    /// Plan when last stored.
+    pub plan_label: Option<String>,
+    /// Tightest remaining % among latest windows for this account.
+    pub remaining_percent: Option<u8>,
+    /// Latest `fetched_at` epoch among rows for this account.
+    pub fetched_at: i64,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StoredAccountUsageSnapshot {
@@ -515,7 +533,7 @@ pub fn focused_usage_view(
             .clone()
             .or_else(|| resolved_provider.map(str::to_owned))
             .or_else(|| Some(provider.clone())),
-        account: jackin_protocol::control::FocusedAccountHeader {
+        account: FocusedAccountHeader {
             provider_label: provider,
             account_label: first.account_label.clone(),
             // username + credential_origin are live-snapshot fields, not
@@ -843,13 +861,11 @@ pub fn schema_version(path: &Path) -> Result<Option<String>, String> {
     })
 }
 
-#[cfg(test)]
 fn row_i64(row: &Row, idx: usize, name: &str) -> Result<i64, String> {
     row.get(idx)
         .map_err(|err| format!("decode telemetry {name} failed: {err}"))
 }
 
-#[cfg(test)]
 fn row_opt_i64(row: &Row, idx: usize, name: &str) -> Result<Option<i64>, String> {
     row.get(idx)
         .map_err(|err| format!("decode telemetry {name} failed: {err}"))
@@ -860,10 +876,234 @@ fn row_string(row: &Row, idx: usize, name: &str) -> Result<String, String> {
         .map_err(|err| format!("decode telemetry {name} failed: {err}"))
 }
 
-#[cfg(test)]
 fn row_opt_string(row: &Row, idx: usize, name: &str) -> Result<Option<String>, String> {
     row.get(idx)
         .map_err(|err| format!("decode telemetry {name} failed: {err}"))
+}
+
+/// List distinct accounts in the durable store (multi-account Desktop / host).
+pub fn list_account_identities(path: &Path) -> Result<Vec<AccountIdentitySummary>, String> {
+    let rows = load_all_account_snapshot_rows(path)?;
+    let mut by_key: HashMap<String, AccountIdentitySummary> = HashMap::new();
+    for row in rows {
+        let entry = by_key
+            .entry(row.account_key_hash.clone())
+            .or_insert_with(|| AccountIdentitySummary {
+                provider: row.provider.clone(),
+                account_key_hash: row.account_key_hash.clone(),
+                account_label: row.account_label.clone(),
+                plan_label: row.plan_label.clone(),
+                remaining_percent: None,
+                fetched_at: row.fetched_at,
+            });
+        if row.fetched_at >= entry.fetched_at {
+            entry.fetched_at = row.fetched_at;
+            entry.account_label = row.account_label.clone();
+            entry.plan_label = row.plan_label.clone();
+            entry.provider = row.provider.clone();
+        }
+        if let Some(rem) = row
+            .remaining_percent
+            .and_then(|v| u8::try_from(v.clamp(0, 100)).ok())
+        {
+            entry.remaining_percent = Some(match entry.remaining_percent {
+                Some(prev) => prev.min(rem),
+                None => rem,
+            });
+        }
+    }
+    let mut out: Vec<_> = by_key.into_values().collect();
+    out.sort_by(|a, b| {
+        a.provider
+            .cmp(&b.provider)
+            .then(a.account_label.cmp(&b.account_label))
+    });
+    Ok(out)
+}
+
+/// Reconstruct a focused usage view for one account key from the durable store.
+pub fn load_account_usage_view(
+    path: &Path,
+    account_key_hash: &str,
+    now_epoch: i64,
+) -> Result<Option<FocusedUsageView>, String> {
+    let rows = load_all_account_snapshot_rows(path)?;
+    let mut matches: Vec<_> = rows
+        .into_iter()
+        .filter(|row| row.account_key_hash == account_key_hash)
+        .collect();
+    if matches.is_empty() {
+        return Ok(None);
+    }
+    let latest = matches.iter().map(|r| r.fetched_at).max().unwrap_or(0);
+    matches.retain(|r| r.fetched_at == latest);
+    let Some(first) = matches.first() else {
+        return Ok(None);
+    };
+    let provider = first.provider.clone();
+    let status = usage_status_from_storage(&first.view_status);
+    let source = usage_source_from_storage(&first.source);
+    let confidence = usage_confidence_from_storage(&first.confidence);
+    let mut buckets: Vec<QuotaBucketView> = matches
+        .iter()
+        .map(|row| QuotaBucketView {
+            used_money: None,
+            limit_money: None,
+            severity: jackin_protocol::control::UsageSeverity::default(),
+            label: row.window_kind.clone(),
+            used_label: row.used_label.clone(),
+            limit_label: row.limit_label.clone(),
+            remaining_percent: row
+                .remaining_percent
+                .and_then(|value| u8::try_from(value.clamp(0, 100)).ok()),
+            reset_label: row.reset_label.clone(),
+            resets_at: row.resets_at,
+            status_slot: None,
+            pace_label: row.pace_label.clone(),
+            status: usage_status_from_storage(&row.status),
+        })
+        .collect();
+    // Stable window order: session/weekly first when present.
+    buckets.sort_by(|a, b| a.label.cmp(&b.label));
+    Ok(Some(FocusedUsageView {
+        focused_agent: None,
+        focused_provider: first.focused_provider.clone().or(Some(provider.clone())),
+        account: FocusedAccountHeader {
+            provider_label: provider,
+            account_label: first.account_label.clone(),
+            username: None,
+            plan_label: first.plan_label.clone(),
+            credential_origin: None,
+        },
+        buckets,
+        status,
+        source,
+        confidence,
+        fetched_at_epoch: latest,
+        updated_label: if first.updated_label.trim().is_empty() {
+            crate::usage::relative_updated_label(latest, now_epoch)
+        } else {
+            first.updated_label.clone()
+        },
+        status_bar_label: if first.status_bar_label.trim().is_empty() {
+            "usage cached".to_owned()
+        } else {
+            first.status_bar_label.clone()
+        },
+        tabs: Vec::new(),
+        last_error: first.last_error.clone(),
+    }))
+}
+
+fn usage_status_from_storage(label: &str) -> UsageSnapshotStatus {
+    match label {
+        "fresh" => UsageSnapshotStatus::Fresh,
+        "stale" => UsageSnapshotStatus::Stale,
+        "needs_login" => UsageSnapshotStatus::NeedsLogin,
+        "needs_secret" => UsageSnapshotStatus::NeedsSecret,
+        "unsupported" => UsageSnapshotStatus::Unsupported,
+        "error" => UsageSnapshotStatus::Error,
+        _ => UsageSnapshotStatus::Unavailable,
+    }
+}
+
+fn usage_source_from_storage(label: &str) -> UsageSource {
+    match label {
+        "provider_api" => UsageSource::ProviderApi,
+        "cli" => UsageSource::Cli,
+        "local_logs" => UsageSource::LocalLogs,
+        "cache" => UsageSource::Cache,
+        _ => UsageSource::None,
+    }
+}
+
+fn usage_confidence_from_storage(label: &str) -> UsageConfidence {
+    match label {
+        "authoritative" => UsageConfidence::Authoritative,
+        "estimated" => UsageConfidence::Estimated,
+        "presence_only" => UsageConfidence::PresenceOnly,
+        _ => UsageConfidence::None,
+    }
+}
+
+fn load_all_account_snapshot_rows(path: &Path) -> Result<Vec<StoredAccountUsageSnapshot>, String> {
+    let path = path.to_path_buf();
+    block_on_store(async move {
+        let conn = open_store(&path).await?;
+        let mut rows = store_backend::operation(
+            DbOperation::Select,
+            conn.query(
+                "
+                SELECT
+                    provider,
+                    account_key_hash,
+                    account_label,
+                    source,
+                    confidence,
+                    window_kind,
+                    used_amount,
+                    used_unit,
+                    limit_amount,
+                    limit_unit,
+                    resets_at,
+                    fetched_at,
+                    expires_at,
+                    status,
+                    last_error,
+                    focused_provider,
+                    plan_label,
+                    remaining_percent,
+                    used_label,
+                    limit_label,
+                    reset_label,
+                    pace_label,
+                    view_status,
+                    updated_label,
+                    status_bar_label
+                FROM account_usage_snapshots
+                ORDER BY provider, account_key_hash, source, window_kind
+                ",
+                (),
+            ),
+        )
+        .await
+        .map_err(|err| format!("query telemetry snapshots failed: {err}"))?;
+        let mut snapshots = Vec::new();
+        while let Some(row) = rows
+            .next()
+            .await
+            .map_err(|err| format!("read telemetry snapshot row failed: {err}"))?
+        {
+            snapshots.push(StoredAccountUsageSnapshot {
+                provider: row_string(&row, 0, "provider")?,
+                account_key_hash: row_string(&row, 1, "account_key_hash")?,
+                account_label: row_string(&row, 2, "account_label")?,
+                source: row_string(&row, 3, "source")?,
+                confidence: row_string(&row, 4, "confidence")?,
+                window_kind: row_string(&row, 5, "window_kind")?,
+                used_amount: row_opt_i64(&row, 6, "used_amount")?,
+                used_unit: row_opt_string(&row, 7, "used_unit")?,
+                limit_amount: row_opt_i64(&row, 8, "limit_amount")?,
+                limit_unit: row_opt_string(&row, 9, "limit_unit")?,
+                resets_at: row_opt_i64(&row, 10, "resets_at")?,
+                fetched_at: row_i64(&row, 11, "fetched_at")?,
+                expires_at: row_opt_i64(&row, 12, "expires_at")?,
+                status: row_string(&row, 13, "status")?,
+                last_error: row_opt_string(&row, 14, "last_error")?,
+                focused_provider: row_opt_string(&row, 15, "focused_provider")?,
+                plan_label: row_opt_string(&row, 16, "plan_label")?,
+                remaining_percent: row_opt_i64(&row, 17, "remaining_percent")?,
+                used_label: row_opt_string(&row, 18, "used_label")?,
+                limit_label: row_opt_string(&row, 19, "limit_label")?,
+                reset_label: row_opt_string(&row, 20, "reset_label")?,
+                pace_label: row_opt_string(&row, 21, "pace_label")?,
+                view_status: row_string(&row, 22, "view_status")?,
+                updated_label: row_string(&row, 23, "updated_label")?,
+                status_bar_label: row_string(&row, 24, "status_bar_label")?,
+            });
+        }
+        Ok(snapshots)
+    })
 }
 
 #[cfg(test)]

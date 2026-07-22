@@ -298,6 +298,38 @@ struct PopoverRoot: View {
                 .toggleStyle(.switch)
                 .controlSize(.small)
             } else {
+                let surfaceAccounts = store.accountsForSurface(surface.id)
+                if surfaceAccounts.count > 1 {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 6) {
+                            ForEach(surfaceAccounts) { account in
+                                Button {
+                                    store.setSelectedAccount(
+                                        surfaceId: surface.id,
+                                        accountKey: account.accountKey
+                                    )
+                                } label: {
+                                    Text(account.accountLabel)
+                                        .font(.caption2.weight(account.selected ? .semibold : .regular))
+                                        .lineLimit(1)
+                                        .padding(.horizontal, 8)
+                                        .padding(.vertical, 4)
+                                        .background {
+                                            Capsule(style: .continuous)
+                                                .fill(
+                                                    account.selected
+                                                        ? Color.accentColor.opacity(0.9)
+                                                        : Color.primary.opacity(0.07)
+                                                )
+                                        }
+                                        .foregroundStyle(account.selected ? Color.white : Color.primary)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+                }
+
                 Divider().opacity(0.25)
 
                 VStack(alignment: .leading, spacing: 12) {

@@ -6,7 +6,9 @@
 use jackin_protocol::control::{
     FocusedUsageView, Money, QuotaBucketView, UsageConfidence, UsageSnapshotStatus, UsageSource,
 };
-use jackin_usage::host::{HostEventBatch, HostOverviewRow, HostSurfaceDescriptor, HostUsageEvent};
+use jackin_usage::host::{
+    HostAccountDescriptor, HostEventBatch, HostOverviewRow, HostSurfaceDescriptor, HostUsageEvent,
+};
 use jackin_usage::usage::{PercentStyle, ResetStyle, UsageFormatPrefs, estimate_caption};
 
 /// Open configuration from Swift (paths only — no credentials).
@@ -96,6 +98,30 @@ pub struct OverviewRowDto {
     pub exact_reset: Option<String>,
     pub status_word: String,
     pub severity: String,
+}
+
+/// One known account for a host surface (multi-account Desktop).
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct AccountDescriptorDto {
+    pub surface_id: String,
+    pub account_key: String,
+    pub account_label: String,
+    pub plan_label: Option<String>,
+    pub selected: bool,
+    pub remaining_percent: Option<u8>,
+    pub status_word: String,
+}
+
+pub(crate) fn account_dto(row: HostAccountDescriptor) -> AccountDescriptorDto {
+    AccountDescriptorDto {
+        surface_id: row.surface_id,
+        account_key: row.account_key,
+        account_label: row.account_label,
+        plan_label: row.plan_label,
+        selected: row.selected,
+        remaining_percent: row.remaining_percent,
+        status_word: row.status_word,
+    }
 }
 
 /// One host event.

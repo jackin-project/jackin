@@ -7,7 +7,9 @@
 //! `FocusedUsageView` shaping. State roots live under the operator jackin
 //! data dir (not container `/jackin/...` paths).
 
-use std::collections::{BTreeMap, HashSet, VecDeque};
+mod accounts;
+
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
@@ -19,6 +21,10 @@ use crate::usage::{
     UsageCache, UsageFormatPrefs, UsageRefreshTarget, compact_duration_label, estimate_caption,
     exact_reset_parenthetical, percent_headline, provider_display_label, reset_label_with_prefs,
     usage_status_storage_label,
+};
+
+pub use accounts::{
+    HostAccountDescriptor, account_key_for_view, min_remaining, short_account_identity,
 };
 
 /// Relative data-dir subtree for menu-bar durable state.
@@ -277,6 +283,10 @@ pub struct HostUsageRuntime {
     /// Presentation-time format prefs (not persisted).
     format_prefs: UsageFormatPrefs,
     open: bool,
+    /// Absolute jackin data dir (for snapshot store + selected-accounts prefs).
+    data_dir: Option<PathBuf>,
+    /// Selected account key per surface id (persisted).
+    selected_accounts: HashMap<String, String>,
 }
 
 impl HostUsageRuntime {
@@ -293,6 +303,8 @@ impl HostUsageRuntime {
             last_refresh: None,
             format_prefs: UsageFormatPrefs::default(),
             open: false,
+            data_dir: None,
+            selected_accounts: HashMap::new(),
         }
     }
 
@@ -329,6 +341,9 @@ impl HostUsageRuntime {
                 agent.slug()
             );
         }
+        let selected_path = accounts::selected_accounts_path(&config.data_dir);
+        self.selected_accounts = accounts::load_selected_accounts(&selected_path);
+        self.data_dir = Some(config.data_dir);
         self.open = true;
         self.push_event("runtime_ready", None, None);
         Ok(())
@@ -472,6 +487,9 @@ impl HostUsageRuntime {
     }
 
     /// Cached snapshot for one surface (honest refreshing/unavailable).
+    ///
+    /// When a non-live account is selected, returns that account's durable view
+    /// (multi-account Desktop); otherwise the live host-login snapshot.
     pub fn snapshot(&mut self, surface_id: &str) -> Result<FocusedUsageView, String> {
         self.require_open()?;
         let surface = HostSurfaceId::from_id(surface_id)
@@ -479,9 +497,122 @@ impl HostUsageRuntime {
         if !self.enabled.contains(surface.id()) {
             return Err(format!("surface disabled: {surface_id}"));
         }
-        Ok(self
+        let live = self
             .cache
-            .focused_snapshot(Some(surface.agent_slug()), surface.provider_label()))
+            .focused_snapshot(Some(surface.agent_slug()), surface.provider_label());
+        let store_path = self
+            .data_dir
+            .as_ref()
+            .map(|d| host_snapshot_store_path(d))
+            .unwrap_or_default();
+        let selected = self.selected_accounts.get(surface.id()).map(String::as_str);
+        Ok(accounts::resolve_account_view(
+            surface,
+            selected,
+            live,
+            &store_path,
+        ))
+    }
+
+    /// List known accounts for one surface (or all surfaces when `None`).
+    ///
+    /// Sources: live host login, durable menu-bar store, shared container snapshots.
+    pub fn list_accounts(
+        &mut self,
+        surface_id: Option<&str>,
+    ) -> Result<Vec<HostAccountDescriptor>, String> {
+        self.require_open()?;
+        let store_path = self
+            .data_dir
+            .as_ref()
+            .map(|d| host_snapshot_store_path(d))
+            .unwrap_or_default();
+        let surfaces: Vec<HostSurfaceId> = match surface_id {
+            Some(id) => {
+                let surface = HostSurfaceId::from_id(id)
+                    .ok_or_else(|| format!("unknown surface: {id}"))?;
+                vec![surface]
+            }
+            None => HostSurfaceId::ALL.to_vec(),
+        };
+        let mut out = Vec::new();
+        for surface in surfaces {
+            let live = self
+                .cache
+                .focused_snapshot(Some(surface.agent_slug()), surface.provider_label());
+            let live_key = account_key_for_view(&live);
+            let mut account_map =
+                accounts::collect_account_views(surface, Some(&live), &store_path);
+            if !live_key.is_empty() {
+                account_map.entry(live_key.clone()).or_insert_with(|| live.clone());
+            }
+            let mut keys: Vec<String> = account_map.keys().cloned().collect();
+            keys.sort();
+            let selected = self
+                .selected_accounts
+                .get(surface.id())
+                .cloned()
+                .filter(|k| keys.contains(k))
+                .unwrap_or_else(|| live_key.clone());
+            if !selected.is_empty() {
+                self.selected_accounts
+                    .entry(surface.id().to_owned())
+                    .or_insert_with(|| selected.clone());
+            }
+            for key in keys {
+                let view = account_map
+                    .get(&key)
+                    .cloned()
+                    .unwrap_or_else(|| live.clone());
+                let label = view.account.account_label.clone();
+                let placeholder = label.trim().is_empty()
+                    || label.eq_ignore_ascii_case("account unavailable");
+                if placeholder && account_map.len() > 1 && key != live_key {
+                    continue;
+                }
+                out.push(HostAccountDescriptor {
+                    surface_id: surface.id().to_owned(),
+                    account_key: key.clone(),
+                    account_label: if placeholder {
+                        "Current host login".to_owned()
+                    } else {
+                        label
+                    },
+                    plan_label: view.account.plan_label.clone(),
+                    selected: key == selected,
+                    remaining_percent: min_remaining(&view),
+                    status_word: usage_status_storage_label(view.status).to_owned(),
+                });
+            }
+        }
+        Ok(out)
+    }
+
+    /// Select which account drives detail/snapshot for a surface (persisted).
+    pub fn set_selected_account(
+        &mut self,
+        surface_id: &str,
+        account_key: &str,
+    ) -> Result<(), String> {
+        self.require_open()?;
+        let surface = HostSurfaceId::from_id(surface_id)
+            .ok_or_else(|| format!("unknown surface: {surface_id}"))?;
+        if account_key.is_empty() {
+            self.selected_accounts.remove(surface.id());
+        } else {
+            self.selected_accounts
+                .insert(surface.id().to_owned(), account_key.to_owned());
+        }
+        if let Some(dir) = &self.data_dir {
+            let path = accounts::selected_accounts_path(dir);
+            accounts::save_selected_accounts(&path, &self.selected_accounts)?;
+        }
+        self.push_event(
+            "account_selected",
+            Some(surface.id()),
+            Some(account_key.to_owned()),
+        );
+        Ok(())
     }
 
     /// Compact bar label for one enabled surface, if known.

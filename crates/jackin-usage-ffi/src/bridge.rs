@@ -8,9 +8,9 @@ use std::sync::{Arc, Mutex};
 use jackin_usage::host::HostUsageRuntime;
 
 use crate::dto::{
-    OpenConfig, OverviewRowDto, SurfaceDescriptorDto, UsageEventBatchDto, UsageFormatPrefsDto,
-    UsageViewDto, event_batch_dto, map_open_err, map_runtime_err, overview_row_dto,
-    parse_format_prefs, surface_dto, to_host_config, view_dto,
+    AccountDescriptorDto, OpenConfig, OverviewRowDto, SurfaceDescriptorDto, UsageEventBatchDto,
+    UsageFormatPrefsDto, UsageViewDto, account_dto, event_batch_dto, map_open_err, map_runtime_err,
+    overview_row_dto, parse_format_prefs, surface_dto, to_host_config, view_dto,
 };
 use crate::error::{UsageBridgeError, catch_entry};
 
@@ -91,13 +91,43 @@ impl UsageMenuBarBridge {
         })
     }
 
-    /// Snapshot for one enabled surface.
+    /// Snapshot for one enabled surface (selected multi-account when set).
     pub fn snapshot(&self, surface_id: String) -> Result<UsageViewDto, UsageBridgeError> {
         catch_entry(|| {
             let mut guard = self.lock()?;
             guard
                 .snapshot(&surface_id)
                 .map(view_dto)
+                .map_err(map_runtime_err)
+        })
+    }
+
+    /// List known accounts for one surface (`Some`) or all surfaces (`None`).
+    pub fn list_accounts(
+        &self,
+        surface_id: Option<String>,
+    ) -> Result<Vec<AccountDescriptorDto>, UsageBridgeError> {
+        catch_entry(|| {
+            let mut guard = self.lock()?;
+            Ok(guard
+                .list_accounts(surface_id.as_deref())
+                .map_err(map_runtime_err)?
+                .into_iter()
+                .map(account_dto)
+                .collect())
+        })
+    }
+
+    /// Select which account drives snapshot/detail for a surface (persisted).
+    pub fn set_selected_account(
+        &self,
+        surface_id: String,
+        account_key: String,
+    ) -> Result<(), UsageBridgeError> {
+        catch_entry(|| {
+            let mut guard = self.lock()?;
+            guard
+                .set_selected_account(&surface_id, &account_key)
                 .map_err(map_runtime_err)
         })
     }

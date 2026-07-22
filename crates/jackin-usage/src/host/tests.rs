@@ -691,6 +691,84 @@ fn overview_rows_numeric_and_status_word() {
 }
 
 #[test]
+fn multi_account_list_select_and_snapshot() {
+    use crate::host::{account_key_for_view, host_snapshot_store_path};
+    use crate::usage_snapshot_store::store_usage_snapshot;
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    let mut runtime = open_runtime(dir.path());
+    for surface in HostSurfaceId::ALL {
+        runtime
+            .set_enabled(surface.id(), *surface == HostSurfaceId::Claude)
+            .expect("enable");
+    }
+
+    let mut account_a = FocusedUsageView::unavailable("seed", 1);
+    account_a.status = UsageSnapshotStatus::Fresh;
+    account_a.source = UsageSource::ProviderApi;
+    account_a.confidence = UsageConfidence::Authoritative;
+    account_a.account.provider_label = "Anthropic / Claude".to_owned();
+    account_a.account.account_label = "personal@example.com".to_owned();
+    account_a.account.plan_label = Some("Max".to_owned());
+    account_a.status_bar_label = "50% left".to_owned();
+    account_a.buckets = vec![QuotaBucketView {
+        label: "Session".to_owned(),
+        used_label: Some("50% used".to_owned()),
+        limit_label: Some("100%".to_owned()),
+        remaining_percent: Some(50),
+        reset_label: None,
+        resets_at: None,
+        status_slot: Some(StatusSlot::Session),
+        pace_label: None,
+        status: UsageSnapshotStatus::Fresh,
+        used_money: None,
+        limit_money: None,
+        severity: UsageSeverity::Normal,
+    }];
+    let key_a = account_key_for_view(&account_a);
+    let store = host_snapshot_store_path(dir.path());
+    store_usage_snapshot(&store, &account_a).expect("store A");
+
+    let mut account_b = account_a.clone();
+    account_b.account.account_label = "work@company.com".to_owned();
+    account_b.account.plan_label = Some("Team".to_owned());
+    account_b.status_bar_label = "20% left".to_owned();
+    account_b.buckets[0].remaining_percent = Some(20);
+    account_b.buckets[0].used_label = Some("80% used".to_owned());
+    let key_b = account_key_for_view(&account_b);
+    runtime
+        .inject_snapshot("claude", account_b)
+        .expect("inject live B");
+
+    let listed = runtime
+        .list_accounts(Some("claude"))
+        .expect("list accounts");
+    assert!(
+        listed.len() >= 2,
+        "expected ≥2 accounts (store A + live B), got {}: {listed:?}",
+        listed.len()
+    );
+    assert!(listed.iter().any(|a| a.account_key == key_a));
+    assert!(listed.iter().any(|a| a.account_key == key_b));
+    assert!(listed.iter().any(|a| a.account_label.contains("work@")));
+
+    // Select durable personal account — snapshot must not invent, must return A.
+    runtime
+        .set_selected_account("claude", &key_a)
+        .expect("select A");
+    let snap = runtime.snapshot("claude").expect("snapshot A");
+    assert_eq!(snap.account.account_label, "personal@example.com");
+    assert_eq!(snap.buckets[0].remaining_percent, Some(50));
+
+    runtime
+        .set_selected_account("claude", &key_b)
+        .expect("select B");
+    let snap_b = runtime.snapshot("claude").expect("snapshot B");
+    assert_eq!(snap_b.account.account_label, "work@company.com");
+    assert_eq!(snap_b.buckets[0].remaining_percent, Some(20));
+}
+
+#[test]
 fn provider_display_label_cases() {
     assert_eq!(provider_display_label("Codex"), "OpenAI");
     assert_eq!(provider_display_label("OpenAI / Codex"), "OpenAI");

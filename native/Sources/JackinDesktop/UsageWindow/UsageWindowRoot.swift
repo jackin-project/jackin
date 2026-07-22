@@ -68,7 +68,7 @@ struct UsageWindowRoot: View {
                 if let id = store.usageSelection,
                    let surface = store.surfaces.first(where: { $0.id == id && $0.enabled })
                 {
-                    ProviderCardView(surface: surface, percentStyle: store.percentStyle)
+                    providerDetail(surface)
                 } else {
                     OverviewListView(store: store) { surfaceId in
                         store.selectUsageSurface(surfaceId)
@@ -123,6 +123,19 @@ struct UsageWindowRoot: View {
                 } else {
                     store.selectUsageSurface(newValue)
                 }
+            }
+        )
+    }
+
+    @ViewBuilder
+    private func providerDetail(_ surface: PresentationStore.SurfaceRow) -> some View {
+        let accountRows = store.accountsForSurface(surface.id)
+        ProviderCardView(
+            surface: surface,
+            percentStyle: store.percentStyle,
+            accounts: accountRows,
+            onSelectAccount: { key in
+                store.setSelectedAccount(surfaceId: surface.id, accountKey: key)
             }
         )
     }

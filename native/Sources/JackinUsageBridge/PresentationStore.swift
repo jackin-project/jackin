@@ -93,6 +93,18 @@ public final class PresentationStore: ObservableObject {
         public let severity: String
     }
 
+    /// Multi-account row for a host surface (Rust-owned keys/labels).
+    public struct AccountRow: Identifiable, Sendable, Equatable {
+        public var id: String { "\(surfaceId)#\(accountKey)" }
+        public let surfaceId: String
+        public let accountKey: String
+        public let accountLabel: String
+        public let planLabel: String?
+        public let selected: Bool
+        public let remainingPercent: UInt8?
+        public let statusWord: String
+    }
+
     @Published public private(set) var mergedBarLabel: String = "jackin❯ usage"
     /// Rust-owned short status-item label for focus mode (e.g. `Cl 37%` remaining).
     @Published public private(set) var compactBarLabel: String = ""
@@ -104,6 +116,8 @@ public final class PresentationStore: ObservableObject {
     @Published public private(set) var nextRefreshLabel: String = ""
     @Published public private(set) var surfaces: [SurfaceRow] = []
     @Published public private(set) var overviewRows: [OverviewRow] = []
+    /// Known accounts across surfaces (multi-account host logins / shared snapshots).
+    @Published public private(set) var accounts: [AccountRow] = []
     /// Sidebar / detail selection: `nil` = Overview, else surface id.
     @Published public var usageSelection: String?
     @Published public private(set) var lastError: String?
@@ -265,6 +279,21 @@ public final class PresentationStore: ObservableObject {
         } catch {
             lastError = String(describing: error)
         }
+    }
+
+    /// Select multi-account identity for a surface (Rust-persisted).
+    public func setSelectedAccount(surfaceId: String, accountKey: String) {
+        do {
+            try bridge.setSelectedAccount(surfaceId: surfaceId, accountKey: accountKey)
+            applySnapshots()
+        } catch {
+            lastError = String(describing: error)
+        }
+    }
+
+    /// Accounts for one surface (empty when none known).
+    public func accountsForSurface(_ surfaceId: String) -> [AccountRow] {
+        accounts.filter { $0.surfaceId == surfaceId }
     }
 
     public func setRefreshFloorSecs(_ secs: UInt64) {
@@ -466,6 +495,17 @@ public final class PresentationStore: ObservableObject {
                     severity: row.severity
                 )
             }
+            accounts = (try? bridge.listAccounts(surfaceId: nil))?.map { row in
+                AccountRow(
+                    surfaceId: row.surfaceId,
+                    accountKey: row.accountKey,
+                    accountLabel: row.accountLabel,
+                    planLabel: row.planLabel,
+                    selected: row.selected,
+                    remainingPercent: row.remainingPercent,
+                    statusWord: row.statusWord
+                )
+            } ?? []
             applyStatusItemText()
             lastError = nil
         } catch {

@@ -107,6 +107,14 @@ From the glance popover choose **Open Usage…** or click an agent identity head
 
 All numbers and labels are the same Rust views the Capsule usage dialog uses.
 
+## Multi-account
+
+jackin❯ Desktop lists **every known account** per provider — the current host login, accounts recorded in the durable menu-bar store after prior logins, and shared usage snapshots written by capsules for other OAuth identities (same `account_key` coordination jackin❯ uses host-wide).
+
+- **Glance + Usage detail** show account **pills** when more than one account is known; selecting a pill switches the card snapshot (selection is persisted).
+- **Status bar** still shows provider remaining for the selected/live account; it never invents a second provider chip from empty data.
+- Probing still uses host credential roots for the live login; additional accounts appear when jackin❯ has already stored or shared their usage views (same model as multi-workspace / multi-login coordination).
+
 ## Menu bar appearance
 
 OpenUsage-style **per-provider** menu-bar strip (clean-room): **one chip per enabled agent** — provider icon + **available-token remaining %** (stacked session/weekly when Rust supplies dual buckets). Providers without numeric data yet show the icon with `—` (never invents a percent). Disabled agents stay hidden. Percent text uses per-bucket severity tints.
