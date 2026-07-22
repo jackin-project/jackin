@@ -181,7 +181,7 @@ fn run_app(args: &RunArgs) -> Result<()> {
     progress(format!("│   bin:  {}", bin.display()));
     progress("│   note: LSUIElement — no Dock icon; look at the menu bar");
     progress("│         (right side near Control Center / clock)");
-    progress("│   look: gauge icon and/or short label like \"Cl 63%\"");
+    progress("│   look: per-provider chips (e.g. Cl 100%/79% remaining) or Cl 37%");
     progress("│   quit: osascript -e 'quit app \"Jackin Desktop\"'");
     progress("│         or: pkill -x JackinDesktop");
     progress("└─────────────────────────────────────────────────────────────");
