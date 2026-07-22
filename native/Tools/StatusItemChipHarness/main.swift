@@ -273,6 +273,50 @@ struct StatusItemChipHarness {
             ) == ["100%", "79%"]
         )
 
+        // Dual-bucket: session depleted + weekly healthy — keep 79% line.
+        check(
+            "dual depleted+healthy keeps weekly",
+            statusItemChipDisplayLines(
+                remainings: [0, 79],
+                compactLabel: "Cl resets 1h 21m",
+                percentStyle: "left"
+            ) == ["resets 1h 21m", "79%"]
+        )
+        let dualDep = StatusItemSurfaceSnapshot(
+            surfaceId: "claude",
+            label: "Claude",
+            enabled: true,
+            statusBarLabel: "Session 0 · Weekly 79",
+            status: "fresh",
+            compactLabel: "Cl resets 1h 21m",
+            remainings: [0, 79],
+            severities: ["danger", "ok"]
+        )
+        let dualDepChips = buildStatusItemChips(
+            surfaces: [dualDep],
+            maxCount: 1,
+            preferWorstFirst: false,
+            percentStyle: "left"
+        )
+        check(
+            "chip dual depleted+healthy stack",
+            dualDepChips.count == 1
+                && dualDepChips[0].percentLines == ["resets 1h 21m", "79%"]
+                && dualDepChips[0].remainingPerLine == [0, 79],
+            "lines=\(dualDepChips.first?.percentLines ?? [])"
+        )
+        check(
+            "weekly second after session countdown",
+            dualDepChips[0].percentLines.count == 2
+                && dualDepChips[0].percentLines[1] == "79%"
+        )
+        check(
+            "dual depleted a11y keeps weekly",
+            statusItemAccessibilityLabel(chips: dualDepChips)
+                == "jackin Desktop Cl resets 1h 21m and 79%",
+            "a11y=\(statusItemAccessibilityLabel(chips: dualDepChips))"
+        )
+
         print("---")
         if failures == 0 {
             print("StatusItemChipHarness: ALL PASS")

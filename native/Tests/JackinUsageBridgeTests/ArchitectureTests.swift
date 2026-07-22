@@ -287,6 +287,40 @@ final class ArchitectureTests: XCTestCase {
             statusItemAccessibilityLabel(chips: dep),
             "jackin Desktop Cl resets 1h 21m"
         )
+
+        // Dual-bucket depleted session + healthy weekly must keep 79%.
+        XCTAssertEqual(
+            statusItemChipDisplayLines(
+                remainings: [0, 79],
+                compactLabel: "Cl resets 1h 21m",
+                percentStyle: "left"
+            ),
+            ["resets 1h 21m", "79%"]
+        )
+        let dualDep = StatusItemSurfaceSnapshot(
+            surfaceId: "claude",
+            label: "Claude",
+            enabled: true,
+            statusBarLabel: "Session 0 · Weekly 79",
+            status: "fresh",
+            compactLabel: "Cl resets 1h 21m",
+            remainings: [0, 79],
+            severities: ["danger", "ok"]
+        )
+        let dual = buildStatusItemChips(
+            surfaces: [dualDep],
+            maxCount: 1,
+            preferWorstFirst: false,
+            percentStyle: "left"
+        )
+        XCTAssertEqual(dual.count, 1)
+        XCTAssertEqual(dual[0].percentLines, ["resets 1h 21m", "79%"])
+        XCTAssertEqual(dual[0].remainingPerLine, [0, 79])
+        XCTAssertEqual(dual[0].percentLines[1], "79%")
+        XCTAssertEqual(
+            statusItemAccessibilityLabel(chips: dual),
+            "jackin Desktop Cl resets 1h 21m and 79%"
+        )
     }
 
     func testBuildStatusItemChipsRespectsCapAndHidesEmpty() {

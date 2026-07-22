@@ -279,32 +279,44 @@ public func statusItemCompactIsResetCountdown(_ compactLabel: String) -> Bool {
     return lower.contains("resets")
 }
 
+/// Short reset fragment from Rust compact (`Cl resets 1h 21m` → `resets 1h 21m`).
+public func statusItemResetCountdownLine(compactLabel: String) -> String? {
+    guard statusItemCompactIsResetCountdown(compactLabel) else { return nil }
+    let parts = compactLabel.split(separator: " ", maxSplits: 1, omittingEmptySubsequences: true)
+    if parts.count == 2 {
+        return String(parts[1])
+    }
+    return compactLabel
+}
+
 /// Chip display lines from Rust remainings + compact (OpenUsage/CodexBar).
 ///
-/// When the driving bucket is depleted and Rust compact is a reset countdown,
-/// show that countdown instead of a bare `0%` (matches menu-bar “plan around resets”).
+/// Zero remaining lines use the Rust reset countdown when compact is depleted
+/// (`Cl resets …`); **non-zero dual-bucket lines stay as percent tokens**
+/// (e.g. remainings `[0, 79]` → `["resets 1h 21m", "79%"]`). Countdown is
+/// used at most once so dual-zero stacks do not repeat the same string.
 public func statusItemChipDisplayLines(
     remainings: [UInt8],
     compactLabel: String,
     percentStyle: String = "left",
     maxLines: Int = 2
 ) -> [String] {
-    if let minRem = remainings.min(),
-       minRem == 0,
-       statusItemCompactIsResetCountdown(compactLabel)
-    {
-        // "Cl resets 1h 21m" → line next to glyph: "resets 1h 21m"
-        let parts = compactLabel.split(separator: " ", maxSplits: 1, omittingEmptySubsequences: true)
-        if parts.count == 2 {
-            return [String(parts[1])]
+    let slice = Array(remainings.prefix(max(0, maxLines)))
+    guard !slice.isEmpty else { return [] }
+    let countdown = statusItemResetCountdownLine(compactLabel: compactLabel)
+    var usedCountdown = false
+    var lines: [String] = []
+    for rem in slice {
+        if rem == 0, let countdown, !usedCountdown {
+            lines.append(countdown)
+            usedCountdown = true
+        } else {
+            lines.append(
+                statusItemPercentToken(remainingPercent: rem, percentStyle: percentStyle)
+            )
         }
-        return [compactLabel]
     }
-    return statusItemPercentLines(
-        remainings: remainings,
-        maxLines: maxLines,
-        percentStyle: percentStyle
-    )
+    return lines
 }
 
 /// Build CodexBar-style per-provider chips from pure snapshots (unit-testable).
@@ -371,6 +383,11 @@ public func statusItemAccessibilityLabel(chips: [StatusItemChip]) -> String {
     if chips.isEmpty { return "jackin Desktop" }
     let parts = chips.map { chip -> String in
         if statusItemCompactIsResetCountdown(chip.compactLabel) {
+            // Dual-bucket: compact is driving countdown; keep secondary percent lines.
+            if chip.percentLines.count > 1 {
+                let rest = chip.percentLines.dropFirst().joined(separator: " and ")
+                return "\(chip.compactLabel) and \(rest)"
+            }
             return chip.compactLabel
         }
         if chip.percentLines.count >= 2 {
