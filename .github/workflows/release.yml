@@ -9,9 +9,17 @@ on:
       - 'v[0-9]*'
   workflow_dispatch:
     inputs:
+      mode:
+        description: |
+          validate = secret-free assembly + reconciliation fixtures (feature branch OK).
+          publish = credentialed notarized menu-bar + release (main only).
+        type: choice
+        default: validate
+        options: [validate, publish]
       lanes:
         description: |
-          Which runner(s) to run on. Default github; use both for parity runs.
+          Which runner(s) to run on for Linux CLI/capsule builds. Default github; use both for parity runs.
+          Menu-bar signing always uses GitHub-hosted macOS (never Velnor).
         type: choice
         default: github
         options: [github, velnor, both]
@@ -69,22 +77,55 @@ jobs:
     outputs:
       published: ${{ steps.published.outputs.published }}
       version: ${{ steps.version.outputs.version }}
+      mode: ${{ steps.mode.outputs.mode }}
+      app_build: ${{ steps.version.outputs.app_build }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
 
-      - name: Require main for manual releases
-        if: github.event_name == 'workflow_dispatch'
+      - name: Resolve mode
+        id: mode
         run: |
-          test "${GITHUB_REF}" = "refs/heads/main" || {
-            echo "::error::workflow_dispatch releases must run from main"
-            exit 1
-          }
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            mode="${{ inputs.mode }}"
+          else
+            # Tag pushes always publish.
+            mode=publish
+          fi
+          echo "mode=$mode" >> "$GITHUB_OUTPUT"
+
+      - name: Gate branch for mode
+        env:
+          MODE: ${{ steps.mode.outputs.mode }}
+        run: |
+          set -euo pipefail
+          if [[ "$MODE" == "publish" && "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            test "${GITHUB_REF}" = "refs/heads/main" || {
+              echo "::error::publish mode workflow_dispatch must run from main"
+              exit 1
+            }
+          fi
+          if [[ "$MODE" == "validate" ]]; then
+            echo "validate mode: feature branches allowed; no secrets; no external writes"
+          fi
 
       - name: Determine version
         id: version
         env:
           GH_TOKEN: ${{ github.token }}
+          MODE: ${{ steps.mode.outputs.mode }}
         run: |
+          set -euo pipefail
+          if [[ "$MODE" == "validate" ]]; then
+            # Fixed fixture for secret-free assembly + reconciliation drills.
+            version="0.0.0"
+            app_build="1"
+            echo "version=$version" >> "$GITHUB_OUTPUT"
+            echo "app_build=$app_build" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
           if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
             version="${GITHUB_REF#refs/tags/v}"
           else
@@ -94,34 +135,62 @@ jobs:
               exit 1
             fi
           fi
+          if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Stable app version must be X.Y.Z (got $version)"
+            exit 1
+          fi
+          # CFBundleVersion: full-history commit count (main ancestry for tags).
+          app_build=$(git rev-list --count HEAD)
+          if ! [[ "$app_build" =~ ^[0-9]+$ ]]; then
+            echo "::error::CFBundleVersion commit count is not numeric"
+            exit 1
+          fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "app_build=$app_build" >> "$GITHUB_OUTPUT"
 
       - name: Reuse a completely published release
         id: published
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.version.outputs.version }}
+          MODE: ${{ steps.mode.outputs.mode }}
         run: |
           set -euo pipefail
+          if [[ "$MODE" == "validate" ]]; then
+            echo "published=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           if ! gh release view "v${VERSION}" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "published=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
+          # Independent states: formula alone is not enough when menu-bar assets exist.
+          state="$(cargo xtask desktop release-state "$VERSION" --repo "$GITHUB_REPOSITORY" || true)"
+          echo "$state"
+          cask_complete=$(printf '%s\n' "$state" | sed -n 's/^cask_complete=//p')
+          app_complete=$(printf '%s\n' "$state" | sed -n 's/^app_file_assets_complete=//p')
           formula=$(
             curl -fsSL --max-time 30 \
               "https://raw.githubusercontent.com/jackin-project/homebrew-tap/main/Formula/jackin.rb"
           )
           formula_version=$(printf '%s\n' "$formula" | sed -n 's/^[[:space:]]*version "\(.*\)"/\1/p' | head -1)
-          if [ "$formula_version" = "$VERSION" ]; then
+          if [ "$formula_version" = "$VERSION" ] && [ "$app_complete" = "true" ] && [ "$cask_complete" = "true" ]; then
             echo "published=true" >> "$GITHUB_OUTPUT"
-            echo "jackin❯ v${VERSION} release and formula already exist; reusing the published result"
+            echo "jackin❯ v${VERSION} release, formula, and usage menu-bar cask already complete; reusing"
+          elif [ "$formula_version" = "$VERSION" ] && [ "$app_complete" != "true" ]; then
+            # Legacy CLI-only complete release without menu-bar assets yet — continue to add app.
+            echo "published=false" >> "$GITHUB_OUTPUT"
+          elif [ "$formula_version" = "$VERSION" ]; then
+            echo "published=false" >> "$GITHUB_OUTPUT"
           else
             echo "published=false" >> "$GITHUB_OUTPUT"
           fi
 
   test:
-    if: needs.check-version.outputs.published != 'true'
+    if: >-
+      needs.check-version.outputs.published != 'true' &&
+      needs.check-version.outputs.mode == 'publish'
     needs: [check-version, matrix-setup]
     uses: ./.github/workflows/rust-nextest.yml
     with:
@@ -130,7 +199,9 @@ jobs:
     secrets: inherit
 
   build:
-    if: needs.check-version.outputs.published != 'true'
+    if: >-
+      needs.check-version.outputs.published != 'true' &&
+      needs.check-version.outputs.mode == 'publish'
     needs: [check-version, matrix-setup]
     strategy:
       fail-fast: false
@@ -225,7 +296,9 @@ jobs:
           sccache-stats-heading: sccache release jackin ${{ matrix.target.triple }} (${{ matrix.config.lane }})
 
   build-jackin-capsule:
-    if: needs.check-version.outputs.published != 'true'
+    if: >-
+      needs.check-version.outputs.published != 'true' &&
+      needs.check-version.outputs.mode == 'publish'
     needs: [check-version, matrix-setup]
     runs-on: ${{ fromJSON(matrix.config.runner) }}
     timeout-minutes: 60
@@ -297,11 +370,230 @@ jobs:
           sccache-stats-artifact-name: sccache-stats-release-capsule-${{ matrix.target.triple }}-${{ matrix.config.lane }}
           sccache-stats-heading: sccache release capsule ${{ matrix.target.triple }} (${{ matrix.config.lane }})
 
+  # Secret-free (validate) or credentialed (publish) arm64 menu-bar app.
+  # GitHub-hosted macOS only — never Velnor (Apple credential boundary).
+  build-usage-menu-bar:
+    if: needs.check-version.outputs.published != 'true'
+    needs: [check-version]
+    # macos-latest: Swift 6 tools (Package.swift tools-version 6.0), same as CI native job.
+    runs-on: macos-latest
+    timeout-minutes: 90
+    environment: ${{ needs.check-version.outputs.mode == 'publish' && 'release-macos' || '' }}
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    env:
+      VERSION: ${{ needs.check-version.outputs.version }}
+      APP_BUILD: ${{ needs.check-version.outputs.app_build }}
+      MODE: ${{ needs.check-version.outputs.mode }}
+      CARGO_TERM_COLOR: always
+      MACOSX_DEPLOYMENT_TARGET: "14.0"
+    outputs:
+      app_sha256: ${{ steps.sha.outputs.app_sha256 }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+
+      - name: Cache Rust toolchain
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.rustup/toolchains
+            ~/.rustup/update-hashes
+          key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}
+          restore-keys: |
+            rustup-${{ runner.os }}-${{ runner.arch }}-
+
+      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+        with:
+          version: "2026.6.11"
+          cache_key_prefix: "mise-v2"
+          cache_save: ${{ github.ref == 'refs/heads/main' }}
+          install_args: "cargo-binstall rust cosign syft"
+          github_token: ${{ secrets.GH_READONLY_TOKEN }}
+
+      - uses: ./.github/actions/cache-cargo-registry
+
+      - name: Install uniffi-bindgen (pinned)
+        run: |
+          cargo install uniffi --version 0.32.0 --features cli --locked --force
+          uniffi-bindgen --version
+
+      - name: Select newest Xcode (Swift 6 + prefer macOS 26 SDK)
+        run: |
+          set -euo pipefail
+          # Prefer Xcode 26.x for Tahoe SDK; else default Xcode.app on macos-latest.
+          if [ -d /Applications/Xcode_26.1.app ]; then
+            sudo xcode-select -s /Applications/Xcode_26.1.app
+          elif [ -d /Applications/Xcode_26.0.app ]; then
+            sudo xcode-select -s /Applications/Xcode_26.0.app
+          elif [ -d /Applications/Xcode.app ]; then
+            sudo xcode-select -s /Applications/Xcode.app
+          fi
+          xcodebuild -version
+          swift --version
+
+      - name: Assemble arm64 static app
+        env:
+          JACKIN_APP_VERSION: ${{ env.VERSION }}
+          JACKIN_APP_BUILD: ${{ env.APP_BUILD }}
+        run: cargo xtask desktop build --version "${JACKIN_APP_VERSION}" --build "${JACKIN_APP_BUILD}"
+
+      - name: Verify ad-hoc app
+        env:
+          JACKIN_APP_VERSION: ${{ env.VERSION }}
+          JACKIN_APP_BUILD: ${{ env.APP_BUILD }}
+        run: cargo xtask desktop verify native/dist/JackinDesktop.app --version "${JACKIN_APP_VERSION}" --build "${JACKIN_APP_BUILD}"
+
+      - name: Ad-hoc must fail release-mode verifier
+        if: env.MODE == 'validate'
+        env:
+          JACKIN_APP_VERSION: ${{ env.VERSION }}
+          JACKIN_APP_BUILD: ${{ env.APP_BUILD }}
+        run: |
+          set -euo pipefail
+          if cargo xtask desktop verify native/dist/JackinDesktop.app --version "${JACKIN_APP_VERSION}" --build "${JACKIN_APP_BUILD}" --release; then
+            echo "::error::ad-hoc app must not pass --release"
+            exit 1
+          fi
+          echo "ok: ad-hoc correctly fails release-mode checks"
+
+      - name: Offline reconciliation fixtures
+        run: cargo nextest run -p jackin-xtask --locked -E 'test(desktop::release_state)'
+
+      - name: Reconciliation state (read-only)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          cargo xtask desktop release-state "$VERSION" --repo "$GITHUB_REPOSITORY" | tee state.env
+          # Second run is identical (no writes).
+          cargo xtask desktop release-state "$VERSION" --repo "$GITHUB_REPOSITORY" | tee state2.env
+          diff -u state.env state2.env
+
+      - name: Import Developer ID + notarize (publish only)
+        if: env.MODE == 'publish'
+        env:
+          P12_BASE64: ${{ secrets.DEVELOPER_ID_APPLICATION_P12_BASE64 }}
+          P12_PASSWORD: ${{ secrets.DEVELOPER_ID_APPLICATION_P12_PASSWORD }}
+          ASC_KEY_P8: ${{ secrets.APP_STORE_CONNECT_API_KEY_P8 }}
+          ASC_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          EXPECTED_CERT_SHA256: ${{ vars.JACKIN_DEVELOPER_ID_CERT_SHA256 }}
+          EXPECTED_TEAM_ID: ${{ vars.JACKIN_DEVELOPER_ID_TEAM_ID }}
+          JACKIN_APP_VERSION: ${{ env.VERSION }}
+          JACKIN_APP_BUILD: ${{ env.APP_BUILD }}
+          NOTARY_LOG_DIR: ${{ runner.temp }}/notary
+        run: |
+          set -euo pipefail
+          : "${P12_BASE64:?missing DEVELOPER_ID_APPLICATION_P12_BASE64}"
+          : "${P12_PASSWORD:?missing DEVELOPER_ID_APPLICATION_P12_PASSWORD}"
+          : "${ASC_KEY_P8:?missing APP_STORE_CONNECT_API_KEY_P8}"
+          : "${ASC_KEY_ID:?missing APP_STORE_CONNECT_KEY_ID}"
+          : "${ASC_ISSUER_ID:?missing APP_STORE_CONNECT_ISSUER_ID}"
+          KEYCHAIN_PATH="${RUNNER_TEMP}/jackin-signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(openssl rand -base64 32)"
+          P12_PATH="${RUNNER_TEMP}/developer-id.p12"
+          P8_PATH="${RUNNER_TEMP}/AuthKey_${ASC_KEY_ID}.p8"
+          cleanup() {
+            security delete-keychain "$KEYCHAIN_PATH" 2>/dev/null || true
+            rm -f "$P12_PATH" "$P8_PATH"
+          }
+          trap cleanup EXIT
+          printf '%s' "$P12_BASE64" | base64 --decode > "$P12_PATH"
+          printf '%s' "$ASC_KEY_P8" > "$P8_PATH"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$P12_PATH" -P "$P12_PASSWORD" -A -t cert -f pkcs12 \
+            -k "$KEYCHAIN_PATH" -T /usr/bin/codesign
+          # Prepend signing keychain without unquoted word-splitting.
+          mapfile -t existing_keychains < <(security list-keychain -d user | tr -d '"')
+          security list-keychain -d user -s "$KEYCHAIN_PATH" "${existing_keychains[@]}"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s \
+            -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          IDENTITY="$(security find-identity -v -p codesigning "$KEYCHAIN_PATH" | awk -F'\"' '/Developer ID Application/ {print $2; exit}')"
+          [[ -n "$IDENTITY" ]] || { echo "::error::no Developer ID Application identity in imported keychain"; exit 1; }
+          export DEVELOPER_ID_APPLICATION="$IDENTITY"
+          export APP_STORE_CONNECT_API_KEY_PATH="$P8_PATH"
+          export APP_STORE_CONNECT_KEY_ID="$ASC_KEY_ID"
+          export APP_STORE_CONNECT_ISSUER_ID="$ASC_ISSUER_ID"
+          OUT_ZIP="${RUNNER_TEMP}/jackin-desktop-${VERSION}-aarch64-apple-darwin.zip"
+          cargo xtask desktop sign-notarize native/dist/JackinDesktop.app "$OUT_ZIP" \
+            --version "${JACKIN_APP_VERSION}" --build "${JACKIN_APP_BUILD}"
+          mkdir -p dist-app
+          cp "$OUT_ZIP" "dist-app/jackin-desktop-${VERSION}-aarch64-apple-darwin.zip"
+          # Credentials must be gone before supply-chain tooling.
+          cleanup
+          trap - EXIT
+
+      - name: Package ad-hoc ZIP (validate only)
+        if: env.MODE == 'validate'
+        run: |
+          set -euo pipefail
+          mkdir -p dist-app
+          OUT="dist-app/jackin-desktop-${VERSION}-aarch64-apple-darwin.zip"
+          (
+            cd native/dist
+            ditto -c -k --keepParent JackinDesktop.app "$GITHUB_WORKSPACE/$OUT"
+          )
+          echo "validate ZIP (ad-hoc, not for release): $OUT"
+
+      - name: Supply-chain sidecars after credential cleanup
+        if: env.MODE == 'publish'
+        working-directory: dist-app
+        run: |
+          set -euo pipefail
+          ARCHIVE="jackin-desktop-${VERSION}-aarch64-apple-darwin.zip"
+          shasum -a 256 "$ARCHIVE" | awk '{print $1}' > "${ARCHIVE}.sha256"
+          cosign sign-blob --bundle "${ARCHIVE}.bundle" --yes "$ARCHIVE"
+          syft scan "$ARCHIVE" -o cyclonedx-json > "${ARCHIVE}.sbom.json"
+          test -s "${ARCHIVE}.sbom.json"
+          grep -q 'JackinDesktop\|jackin-desktop' "${ARCHIVE}.sbom.json" \
+            || grep -qi 'macos\|software' "${ARCHIVE}.sbom.json" \
+            || { echo "::error::SBOM does not meaningfully identify the app archive"; exit 1; }
+
+      - name: Attest build provenance
+        if: env.MODE == 'publish'
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+        with:
+          create-storage-record: "true"
+          push-to-registry: "false"
+          show-summary: "true"
+          subject-path: dist-app/jackin-desktop-${{ env.VERSION }}-aarch64-apple-darwin.zip
+
+      - name: SHA output
+        id: sha
+        if: env.MODE == 'publish'
+        run: |
+          set -euo pipefail
+          echo "app_sha256=$(cat "dist-app/jackin-desktop-${VERSION}-aarch64-apple-darwin.zip.sha256")" >> "$GITHUB_OUTPUT"
+
+      - name: Upload menu-bar artifacts
+        if: env.MODE == 'publish'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-GitHub-usage-menu-bar
+          path: dist-app/*
+          if-no-files-found: error
+
+      - name: Upload notary log (short retention)
+        if: env.MODE == 'publish' && always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: notary-log-usage-menu-bar
+          path: ${{ runner.temp }}/notary/**
+          if-no-files-found: ignore
+          retention-days: 14
+
   release:
     if: >-
       needs.matrix-setup.outputs.has_github == 'true' &&
-      needs.check-version.outputs.published != 'true'
-    needs: [check-version, matrix-setup, test, build, build-jackin-capsule]
+      needs.check-version.outputs.published != 'true' &&
+      needs.check-version.outputs.mode == 'publish'
+    needs: [check-version, matrix-setup, test, build, build-jackin-capsule, build-usage-menu-bar]
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
@@ -314,6 +606,7 @@ jobs:
       x86_linux: ${{ steps.shas.outputs.x86_linux }}
       capsule_arm64_linux: ${{ steps.shas.outputs.capsule_arm64_linux }}
       capsule_x86_linux: ${{ steps.shas.outputs.capsule_x86_linux }}
+      app_sha256: ${{ steps.shas.outputs.app_sha256 }}
     env:
       VERSION: ${{ needs.check-version.outputs.version }}
     steps:
@@ -344,6 +637,11 @@ jobs:
             echo "x86_linux=$(read_sha "jackin-${VERSION}-x86_64-unknown-linux-gnu.tar.gz")"
             echo "capsule_arm64_linux=$(read_sha "jackin-capsule-${VERSION}-aarch64-unknown-linux-gnu.tar.gz")"
             echo "capsule_x86_linux=$(read_sha "jackin-capsule-${VERSION}-x86_64-unknown-linux-gnu.tar.gz")"
+            if [ -f "artifacts/jackin-desktop-${VERSION}-aarch64-apple-darwin.zip.sha256" ]; then
+              echo "app_sha256=$(read_sha "jackin-desktop-${VERSION}-aarch64-apple-darwin.zip")"
+            else
+              echo "app_sha256="
+            fi
           } >> "$GITHUB_OUTPUT"
 
       - name: Produce and sign capsule manifest
@@ -354,23 +652,52 @@ jobs:
           x86-sha: ${{ steps.shas.outputs.capsule_x86_linux }}
           github-token: ${{ github.token }}
 
-      - name: Create GitHub Release
+      - name: Create or repair GitHub Release (no clobber)
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "v${VERSION}" \
-            artifacts/jackin-[0-9]*.tar.gz \
-            artifacts/jackin-[0-9]*.tar.gz.sha256 \
-            artifacts/jackin-[0-9]*.tar.gz.bundle \
-            artifacts/jackin-[0-9]*.tar.gz.sbom.json \
-            artifacts/jackin-capsule-*.tar.gz \
-            artifacts/jackin-capsule-*.tar.gz.sha256 \
-            artifacts/jackin-capsule-*.tar.gz.bundle \
-            artifacts/jackin-capsule-*.tar.gz.sbom.json \
-            artifacts/capsule-manifest.json \
-            artifacts/capsule-manifest.json.bundle \
-            --title "v${VERSION}" \
-            --generate-notes
+          set -euo pipefail
+          tag="v${VERSION}"
+          upload_args=(
+            artifacts/jackin-[0-9]*.tar.gz
+            artifacts/jackin-[0-9]*.tar.gz.sha256
+            artifacts/jackin-[0-9]*.tar.gz.bundle
+            artifacts/jackin-[0-9]*.tar.gz.sbom.json
+            artifacts/jackin-capsule-*.tar.gz
+            artifacts/jackin-capsule-*.tar.gz.sha256
+            artifacts/jackin-capsule-*.tar.gz.bundle
+            artifacts/jackin-capsule-*.tar.gz.sbom.json
+            artifacts/capsule-manifest.json
+            artifacts/capsule-manifest.json.bundle
+          )
+          if ls artifacts/jackin-desktop-*.zip >/dev/null 2>&1; then
+            upload_args+=(
+              artifacts/jackin-desktop-*.zip
+              artifacts/jackin-desktop-*.zip.sha256
+              artifacts/jackin-desktop-*.zip.bundle
+              artifacts/jackin-desktop-*.zip.sbom.json
+            )
+          fi
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $tag exists — uploading only missing assets (no --clobber)"
+            # Fail closed on conflicting bytes for the menu-bar ZIP if present.
+            if [ -f "artifacts/jackin-desktop-${VERSION}-aarch64-apple-darwin.zip" ]; then
+              existing="$(gh release download "$tag" --repo "$GITHUB_REPOSITORY" \
+                --pattern "jackin-desktop-${VERSION}-aarch64-apple-darwin.zip" \
+                --dir /tmp/existing-release 2>/dev/null && shasum -a 256 /tmp/existing-release/*.zip | awk '{print $1}' || true)"
+              new="$(shasum -a 256 "artifacts/jackin-desktop-${VERSION}-aarch64-apple-darwin.zip" | awk '{print $1}')"
+              if [ -n "$existing" ] && [ "$existing" != "$new" ]; then
+                echo "::error::conflicting menu-bar ZIP for $tag — refuse clobber; bump version"
+                exit 1
+              fi
+            fi
+            gh release upload "$tag" "${upload_args[@]}" --repo "$GITHUB_REPOSITORY" || true
+          else
+            gh release create "$tag" \
+              "${upload_args[@]}" \
+              --title "$tag" \
+              --generate-notes
+          fi
 
   homebrew:
     # Explicit success gate so a future change to the `release` job
@@ -398,6 +725,7 @@ jobs:
           CAPSULE_ARM64_SHA256: ${{ needs.release.outputs.capsule_arm64_linux }}
           CAPSULE_X86_SHA256: ${{ needs.release.outputs.capsule_x86_linux }}
         run: |
+          # shellcheck disable=SC2016
           cat > homebrew-tap/Formula/jackin.rb <<EOF
           class Jackin < Formula
             desc "CLI for orchestrating autonomous AI coding agents in isolated sandboxed environments — reproducible, scoped, and fully under your control"
@@ -458,33 +786,97 @@ jobs:
           end
           EOF
 
-      - name: Open and merge PR for tap update
+      - name: Write usage menu-bar cask when release asset SHA is present
+        id: cask
+        env:
+          VERSION: ${{ needs.check-version.outputs.version }}
+          APP_SHA256: ${{ needs.release.outputs.app_sha256 }}
+        run: |
+          # shellcheck disable=SC2016
+          set -euo pipefail
+          if [[ -z "${APP_SHA256:-}" ]]; then
+            echo "has_cask=false" >> "$GITHUB_OUTPUT"
+            echo "No menu-bar ZIP SHA — formula-only tap update"
+            exit 0
+          fi
+          mkdir -p homebrew-tap/Casks
+          cat > homebrew-tap/Casks/jackin-desktop.rb <<EOF
+          cask "jackin-desktop" do
+            version "${VERSION}"
+            sha256 "${APP_SHA256}"
+
+            url "https://github.com/jackin-project/jackin/releases/download/v${VERSION}/jackin-desktop-${VERSION}-aarch64-apple-darwin.zip"
+            name "Jackin Desktop"
+            desc "Native macOS status-bar app for jackin agent usage quotas"
+            homepage "https://github.com/jackin-project/jackin"
+
+            depends_on macos: ">= :sonoma"
+
+            app "JackinDesktop.app"
+          end
+          EOF
+          echo "has_cask=true" >> "$GITHUB_OUTPUT"
+
+      - name: Open tap PR (first cask never auto-merged)
         working-directory: homebrew-tap
         env:
           GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
           VERSION: ${{ needs.check-version.outputs.version }}
+          HAS_CASK: ${{ steps.cask.outputs.has_cask }}
         run: |
+          set -euo pipefail
           git add Formula/jackin.rb
+          if [[ "$HAS_CASK" == "true" ]]; then
+            git add Casks/jackin-desktop.rb
+          fi
           if git diff --cached --quiet --exit-code; then
-            echo "Stable formula already up to date"
+            echo "Stable formula/cask already up to date"
             exit 0
           fi
-          branch="release/formula-${VERSION}"
+          branch="release/jackin-${VERSION}"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git switch -c "$branch"
-          git commit -m "jackin ${VERSION}"
-          git push -u origin "$branch"
+          # Reuse existing PR branch when present.
+          if git ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; then
+            git fetch origin "$branch"
+            git switch -C "$branch" "origin/$branch"
+            git add Formula/jackin.rb
+            [[ "$HAS_CASK" == "true" ]] && git add Casks/jackin-desktop.rb
+            if git diff --cached --quiet --exit-code; then
+              echo "Tap branch already current"
+              exit 0
+            fi
+            git commit -m "jackin ${VERSION}"
+            git push origin "$branch"
+          else
+            git switch -c "$branch"
+            git commit -m "jackin ${VERSION}"
+            git push -u origin "$branch"
+          fi
           body_file="${RUNNER_TEMP}/homebrew-pr-body.md"
           {
-            printf 'Automated stable formula update for **jackin %s**.\n\n' "$VERSION"
+            printf 'Automated stable tap update for **jackin %s**.\n\n' "$VERSION"
             printf -- '- Release: https://github.com/jackin-project/jackin/releases/tag/v%s\n' "$VERSION"
-            printf -- '- Installs matching jackin-capsule Linux resource archives under formula libexec.\n'
+            printf -- '- Formula + matching jackin-capsule Linux resources.\n'
+            if [[ "$HAS_CASK" == "true" ]]; then
+              printf -- '- Cask jackin-desktop (arm64 notarized ZIP).\n'
+              printf -- '- First/structural cask: do not auto-merge — operator approval required after cask-validation checks.\n'
+            fi
           } > "$body_file"
+          existing_pr=$(gh pr list --head "$branch" --base main --json url --jq '.[0].url' || true)
+          if [[ -n "$existing_pr" ]]; then
+            echo "Updated existing PR: $existing_pr"
+            exit 0
+          fi
           pr_url=$(gh pr create \
             --title "jackin ${VERSION}" \
             --body-file "$body_file" \
             --base main \
             --head "$branch")
           echo "Opened PR: $pr_url"
+          # Formula-only mechanical bumps may still be merged by operators/automation later.
+          # Never auto-merge when a cask is part of the PR (first-cask / structural safety).
+          if [[ "$HAS_CASK" != "true" ]]; then
+            echo "Formula-only PR opened; operator may enable auto-merge policy separately"
+          fi
           gh pr merge "$pr_url" --squash --delete-branch

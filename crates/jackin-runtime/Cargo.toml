@@ -52,7 +52,7 @@ tempfile = { workspace = true }
 tracing.workspace = true
 
 [target.'cfg(unix)'.dependencies]
-nix = { workspace = true, features = ["user"] }
+nix = { workspace = true, features = ["user", "socket"] }
 
 [dev-dependencies]
 jackin-diagnostics = { workspace = true, features = ["test-support"] }

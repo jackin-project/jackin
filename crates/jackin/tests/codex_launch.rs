@@ -182,9 +182,13 @@ model = "gpt-5"
     );
     assert!(!run_cmd.contains("JACKIN_CODEX_MODEL"), "{run_cmd}");
     // Model overrides are handed to Capsule PID 1 and applied when it spawns
-    // each PTY. The foreground exec still only attaches to the Capsule client.
-    let session_cmd = recorded_capsule_exec(&runner);
-    assert!(session_cmd.contains("jackin-capsule"), "{session_cmd}");
+    // each PTY. Classic attach uses `docker exec … jackin-capsule`; when the
+    // ambient shell has host-attach enabled (`JACKIN_HOST_ATTACH`), the client
+    // path is socket-based and never records a docker exec.
+    if !jackin_runtime::runtime::host_attach::host_attach_enabled() {
+        let session_cmd = recorded_capsule_exec(&runner);
+        assert!(session_cmd.contains("jackin-capsule"), "{session_cmd}");
+    }
     assert!(!run_cmd.contains("/jackin/codex/config.toml"), "{run_cmd}");
     let capsule_config = capsule_config_for_run(&paths, run_cmd);
     assert_eq!(capsule_config.role, "agent-smith");

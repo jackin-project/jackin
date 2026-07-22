@@ -31,6 +31,7 @@
     "jackin-tui",
     "jackin-test-support",
     "jackin-usage",
+    "jackin-usage-ffi",
     "jackin-xtask"
   ]
 }

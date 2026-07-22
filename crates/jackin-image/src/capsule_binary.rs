@@ -904,7 +904,13 @@ pub fn install_test_stub(paths: &JackinPaths) -> Result<()> {
 ///     the Linux ELF cannot be executed on macOS/Windows.
 // Non-Linux has no `.await` (the exec path is Linux-only); the signature stays
 // async for caller symmetry and the real Linux build.
-#[cfg_attr(not(target_os = "linux"), allow(clippy::unused_async))]
+#[cfg_attr(
+    not(target_os = "linux"),
+    expect(
+        clippy::unused_async,
+        reason = "async retained for caller symmetry with the Linux exec path"
+    )
+)]
 async fn verify_version(binary: &Path, expected: &str, is_preview: bool) -> Result<()> {
     #[cfg(target_os = "linux")]
     {

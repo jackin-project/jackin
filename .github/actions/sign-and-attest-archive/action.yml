@@ -3,12 +3,13 @@
 
 name: Sign and attest a release archive
 description: |
-  Sign a built `.tar.gz` archive with cosign keyless signing (producing
-  `<archive>.bundle`), generate a CycloneDX SBOM with syft (`<archive>.sbom.json`),
-  and optionally attest SLSA build provenance for it. Used by the `build` /
-  `build-jackin-capsule` jobs in release.yml and the `build-preview` /
-  `build-jackin-capsule` jobs in preview.yml so the three-step signing contract
-  lives in one place instead of four verbatim copies.
+  Sign a built release archive (`.tar.gz`, `.zip`, or other file) with cosign
+  keyless signing (producing `<archive>.bundle`), generate a CycloneDX SBOM with
+  syft (`<archive>.sbom.json`), and optionally attest SLSA build provenance for
+  it. Used by the `build` / `build-jackin-capsule` jobs in release.yml and the
+  `build-preview` / `build-jackin-capsule` jobs in preview.yml so the three-step
+  signing contract lives in one place instead of four verbatim copies. The
+  usage menu-bar job may inline the same steps after Apple credential cleanup.
 
   Caller requirements: `cosign` and `syft` already on PATH (the calling job
   installs them in its `jdx/mise-action` step), and job-level
@@ -16,7 +17,7 @@ description: |
   and provenance attestation.
 inputs:
   archive:
-    description: Path to the .tar.gz archive to sign, SBOM, and attest.
+    description: Path to the release archive file to sign, SBOM, and attest.
     required: true
   attest:
     description: Whether to run GitHub artifact attestation for the archive.

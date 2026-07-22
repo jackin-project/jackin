@@ -1,0 +1,7 @@
+module jackin_usage_ffiFFI {
+    header "jackin_usage_ffiFFI.h"
+    export *
+    use "Darwin"
+    use "_Builtin_stdbool"
+    use "_Builtin_stdint"
+}

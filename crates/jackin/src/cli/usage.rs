@@ -14,19 +14,20 @@ use jackin_runtime::runtime::snapshot;
 
 mod store;
 
-/// `jackin usage` — read cached Capsule usage/quota snapshots.
+/// `jackin usage` — Capsule-cached or host-probed usage snapshots.
 #[derive(Debug, Args, PartialEq, Eq)]
 #[command(
-    about = "Read cached usage and quota data from a running Capsule daemon",
-    long_about = "Read cached usage and quota data from a running Capsule daemon.\n\n\
-        This command never polls providers itself. It talks to the selected\n\
-        instance's jackin-capsule daemon and renders the daemon-cached account\n\
-        snapshots that Capsule uses for the status bar and overlay.\n\n\
-        Use `jackin usage cache accounts` to read the explicit host-global\n\
-        account cache seeded by `accounts --sync-host-cache`."
+    about = "Read usage and quota data from Capsule cache or host probes",
+    long_about = "Read usage and quota data.\n\n\
+        Default path talks to a Capsule daemon instance and renders daemon-cached\n\
+        account snapshots (status bar + overlay). Use `jackin usage cache accounts`\n\
+        for the host-global account cache.\n\n\
+        Host path (menu bar / offline Capsule): `jackin usage host snapshot`\n\
+        probes via jackin-usage HostUsageRuntime — same FocusedUsageView fields\n\
+        as Capsule, from host credentials."
 )]
 pub struct UsageArgs {
-    /// Container name, short instance id, or `cache`
+    /// Container name, short instance id, `cache`, or `host`
     pub instance: String,
     #[command(subcommand)]
     pub scope: UsageScope,
@@ -43,6 +44,20 @@ pub enum UsageScope {
     /// Verify all provider quota rows are present and trusted
     #[command(before_help = BANNER, styles = HELP_STYLES)]
     Verify,
+    /// Host-side probe snapshot (no Capsule; uses jackin-usage host runtime)
+    #[command(before_help = BANNER, styles = HELP_STYLES)]
+    Snapshot(UsageHostSnapshotArgs),
+}
+
+/// `jackin usage host snapshot --agent claude`
+#[derive(Debug, Args, PartialEq, Eq)]
+pub struct UsageHostSnapshotArgs {
+    /// Host surface id: claude, codex, amp, grok, kimi, opencode, zai, minimax
+    #[arg(long, value_name = "SURFACE")]
+    pub agent: String,
+    /// Skip network refresh (read cache / honest refreshing only)
+    #[arg(long, default_value_t = false)]
+    pub no_refresh: bool,
 }
 
 #[derive(Debug, Args, PartialEq, Eq)]
@@ -73,11 +88,96 @@ pub async fn run(args: &UsageArgs, paths: &JackinPaths) -> Result<()> {
     if args.instance == "cache" {
         return run_cache(args, paths).await;
     }
+    if args.instance == "host" {
+        return run_host(args, paths);
+    }
     let target = resolve_usage_target(paths, &args.instance)?;
     match &args.scope {
         UsageScope::Accounts(scope_args) => run_accounts(args, paths, &target, scope_args).await,
         UsageScope::Verify => run_verify(paths, &target),
+        UsageScope::Snapshot(_) => {
+            anyhow::bail!("`jackin usage <instance> snapshot` is only valid with instance `host`")
+        }
     }
+}
+
+fn run_host(args: &UsageArgs, paths: &JackinPaths) -> Result<()> {
+    match &args.scope {
+        UsageScope::Snapshot(scope) => run_host_snapshot(args, paths, scope),
+        UsageScope::Accounts(_) | UsageScope::Verify => {
+            anyhow::bail!(
+                "`jackin usage host` supports `snapshot` only; use `jackin usage cache accounts` for the host cache"
+            )
+        }
+    }
+}
+
+fn run_host_snapshot(
+    args: &UsageArgs,
+    paths: &JackinPaths,
+    scope: &UsageHostSnapshotArgs,
+) -> Result<()> {
+    use jackin_usage::host::{HostRuntimeConfig, HostSurfaceId, HostUsageRuntime};
+
+    let surface = HostSurfaceId::from_id(&scope.agent).ok_or_else(|| {
+        anyhow::anyhow!(
+            "unknown host surface `{}`; expected one of: {}",
+            scope.agent,
+            HostSurfaceId::ALL
+                .iter()
+                .map(|s| s.id())
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
+    })?;
+
+    let mut runtime = HostUsageRuntime::new();
+    runtime
+        .open(HostRuntimeConfig::under_data_dir(&paths.data_dir))
+        .map_err(|err| anyhow::anyhow!(err))?;
+
+    if !scope.no_refresh {
+        runtime
+            .refresh(Some(surface.id()), true)
+            .map_err(|err| anyhow::anyhow!(err))?;
+    }
+    let view = runtime
+        .snapshot(surface.id())
+        .map_err(|err| anyhow::anyhow!(err))?;
+
+    if args.output_format() == OutputFormat::Json {
+        let envelope = OutputEnvelope::v1(view);
+        println!("{}", serde_json::to_string_pretty(&envelope)?);
+        return Ok(());
+    }
+
+    print!("{BANNER}");
+    println!("host usage snapshot · {}\n", surface.label());
+    println!("  status_bar_label  {}", view.status_bar_label);
+    println!("  status            {:?}", view.status);
+    println!("  source            {:?}", view.source);
+    println!("  confidence        {:?}", view.confidence);
+    println!("  account           {}", view.account.account_label);
+    if let Some(plan) = &view.account.plan_label {
+        println!("  plan              {plan}");
+    }
+    if let Some(origin) = &view.account.credential_origin {
+        println!("  credential        {origin}");
+    }
+    if view.buckets.is_empty() {
+        println!("  buckets           (none — no invented percentages)");
+    } else {
+        for bucket in &view.buckets {
+            println!(
+                "  bucket            {} remaining={:?} resets_at={:?} status={:?}",
+                bucket.label, bucket.remaining_percent, bucket.resets_at, bucket.status
+            );
+        }
+    }
+    if let Some(err) = &view.last_error {
+        println!("  last_error        {err}");
+    }
+    Ok(())
 }
 
 async fn run_cache(args: &UsageArgs, paths: &JackinPaths) -> Result<()> {
@@ -108,6 +208,11 @@ async fn run_cache(args: &UsageArgs, paths: &JackinPaths) -> Result<()> {
         UsageScope::Verify => {
             anyhow::bail!(
                 "`jackin usage cache verify` is invalid; verification must query a running Capsule daemon"
+            )
+        }
+        UsageScope::Snapshot(_) => {
+            anyhow::bail!(
+                "`jackin usage cache snapshot` is invalid; use `jackin usage host snapshot`"
             )
         }
     }
