@@ -31,14 +31,22 @@ Download `jackin-desktop-<VERSION>-aarch64-apple-darwin.zip` plus `.sha256` / `.
 
 ```bash
 mise install
-mise run desktop-build -- 0.6.0 1
+
+# Build + verify + launch (one shot)
+mise run desktop
+
+# Or step by step — each step prints the absolute app path
+mise run desktop-build -- 0.6.0 1   # ends with DESKTOP_APP=/…/JackinDesktop.app
 mise run desktop-verify
-# or: cargo xtask desktop build --version 0.6.0 --build 1
-#     cargo xtask desktop verify native/dist/JackinDesktop.app
-open native/dist/JackinDesktop.app
+mise run desktop-run                # launches the menu-bar app
+
+# cargo equivalents
+# cargo xtask desktop build --version 0.6.0 --build 1
+# cargo xtask desktop verify
+# cargo xtask desktop run
 ```
 
-The app is an **`LSUIElement`** process (no Dock icon). Uninstall: quit the app and delete the `.app` bundle. No root daemon is installed.
+Default bundle: `native/dist/JackinDesktop.app`. The app is an **`LSUIElement`** process (no Dock icon — look at the menu bar). Quit: `osascript -e 'quit app "Jackin Desktop"'` or `killall JackinDesktop`. Uninstall: quit and delete the `.app` bundle. No root daemon is installed.
 
 ### Local notarization rehearsal (operators)
 

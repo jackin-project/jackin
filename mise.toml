@@ -80,8 +80,15 @@ run = "cargo xtask construct inspect"
 description = "Run the local CI merge-readiness gate"
 run = "cargo xtask ci"
 
-# jackin❯ Desktop (native macOS usage menu bar). Logic lives in
-# `cargo xtask desktop`; these tasks are thin operator entry points.
+# jackin❯ Desktop (native macOS usage menu bar).
+# Logic lives in `cargo xtask desktop`; mise tasks are the operator entry points.
+#
+# Local loop:
+#   mise run desktop-build          # prints DESKTOP_APP=… absolute path
+#   mise run desktop-verify
+#   mise run desktop-run            # launch menu-bar app (no Dock icon)
+#   mise run desktop                # build + verify + run (one shot)
+
 [tasks.desktop-bindings]
 description = "Generate UniFFI Swift bindings for jackin❯ Desktop"
 run = "cargo xtask desktop bindings"
@@ -91,7 +98,7 @@ description = "Build the arm64 static JackinUsageFFI XCFramework"
 run = "cargo xtask desktop xcframework"
 
 [tasks.desktop-build]
-description = "Assemble arm64 static JackinDesktop.app under native/dist/"
+description = "Build JackinDesktop.app (prints absolute path + how to run)"
 usage = '''
 arg "<version>" help="CFBundleShortVersionString (e.g. 0.6.0)" default="0.6.0"
 arg "<build>" help="CFBundleVersion numeric build (e.g. 1)" default="1"
@@ -99,11 +106,38 @@ arg "<build>" help="CFBundleVersion numeric build (e.g. 1)" default="1"
 run = 'cargo xtask desktop build --version "$usage_version" --build "$usage_build"'
 
 [tasks.desktop-verify]
-description = "Fail-closed verify of JackinDesktop.app (pass extra args through to cargo xtask)"
+description = "Fail-closed verify of JackinDesktop.app (prints path + run hint)"
 usage = '''
 arg "<app>" help="Path to JackinDesktop.app" default="native/dist/JackinDesktop.app"
 '''
 run = 'cargo xtask desktop verify "$usage_app"'
+
+[tasks.desktop-run]
+description = "Launch JackinDesktop.app (menu bar only — no Dock icon)"
+usage = '''
+arg "<app>" help="Path to JackinDesktop.app" default="native/dist/JackinDesktop.app"
+flag "--verify" help="Run fail-closed verify before launch"
+'''
+run = '''
+if [ "${usage_verify:-}" = "true" ]; then
+  cargo xtask desktop run "$usage_app" --verify
+else
+  cargo xtask desktop run "$usage_app"
+fi
+'''
+
+[tasks.desktop]
+description = "Build + verify + launch jackin❯ Desktop (local smoke)"
+usage = '''
+arg "<version>" help="CFBundleShortVersionString (e.g. 0.6.0)" default="0.6.0"
+arg "<build>" help="CFBundleVersion numeric build (e.g. 1)" default="1"
+'''
+run = '''
+set -euo pipefail
+cargo xtask desktop build --version "$usage_version" --build "$usage_build"
+cargo xtask desktop verify native/dist/JackinDesktop.app
+cargo xtask desktop run native/dist/JackinDesktop.app
+'''
 
 [tasks.desktop-sign-notarize]
 description = "Developer ID sign + notarize + staple JackinDesktop.app (requires Apple credentials)"

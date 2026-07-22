@@ -32,20 +32,32 @@ One path builds the local, PR, and release app:
 
 ```bash
 mise install
-mise run desktop-build -- 0.6.0 1
-mise run desktop-verify
-# equivalent:
+
+# One-shot local smoke (build + verify + launch menu-bar app)
+mise run desktop
+
+# Or step by step:
+mise run desktop-build -- 0.6.0 1   # prints absolute path + DESKTOP_APP=…
+mise run desktop-verify             # fail-closed bundle checks
+mise run desktop-run                # launch (LSUIElement — no Dock icon; look at menu bar)
+
+# equivalent cargo:
 #   cargo xtask desktop build --version 0.6.0 --build 1
-#   cargo xtask desktop verify native/dist/JackinDesktop.app
-open native/dist/JackinDesktop.app
+#   cargo xtask desktop verify
+#   cargo xtask desktop run
 ```
+
+Build/verify/run each print a clear banner with the **absolute** app path (`DESKTOP_APP=…` for grepping). The default bundle is `native/dist/JackinDesktop.app`.
 
 Swift tests (full Xcode): after the XCFramework exists, `cd native && swift test -c release`.
 
 | Operator entry | Rust implementation |
 |---|---|
+| `mise run desktop` | build + verify + run (local smoke) |
 | `mise run desktop-build -- <ver> <build>` | `cargo xtask desktop build` |
 | `mise run desktop-verify` | `cargo xtask desktop verify` |
+| `mise run desktop-run` | `cargo xtask desktop run` |
+| `mise run desktop-run -- --verify` | `cargo xtask desktop run --verify` |
 | `mise run desktop-xcframework` | `cargo xtask desktop xcframework` |
 | `mise run desktop-bindings` | `cargo xtask desktop bindings` |
 | `mise run desktop-sign-notarize` | `cargo xtask desktop sign-notarize` |

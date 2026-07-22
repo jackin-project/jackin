@@ -62,8 +62,8 @@ enum Command {
     Construct(construct::ConstructCommand),
     /// jackin❯ Desktop (native macOS usage menu bar) build, verify, and release.
     ///
-    /// Use as `cargo xtask desktop build|verify|xcframework|bindings|sign-notarize|release-state|bootstrap-secrets`.
-    /// Prefer mise thin-wraps: `mise run desktop-build`, `mise run desktop-verify`, …
+    /// Use as `cargo xtask desktop build|verify|run|…`.
+    /// Prefer mise: `mise run desktop-build`, `mise run desktop-verify`, `mise run desktop-run`.
     #[command(subcommand)]
     Desktop(desktop::DesktopCommand),
     /// Generate pull request body skeletons.

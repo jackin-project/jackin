@@ -53,6 +53,8 @@ pub(crate) enum DesktopCommand {
     Build(BuildArgs),
     /// Fail-closed validation for a `JackinDesktop.app` (and optional ZIP).
     Verify(VerifyArgs),
+    /// Launch a built `JackinDesktop.app` (menu-bar / `LSUIElement` — no Dock icon).
+    Run(RunArgs),
     /// Developer ID sign + notarize + staple + final release ZIP.
     SignNotarize(sign_notarize::SignNotarizeArgs),
     /// Independent publication state (`KEY=value` lines for `GITHUB_OUTPUT`).
@@ -80,7 +82,8 @@ pub(crate) struct BuildArgs {
 
 #[derive(Args)]
 pub(crate) struct VerifyArgs {
-    /// Path to `JackinDesktop.app`.
+    /// Path to `JackinDesktop.app` (default `native/dist/JackinDesktop.app`).
+    #[arg(default_value = "native/dist/JackinDesktop.app")]
     app: PathBuf,
     /// Optional ZIP for archive round-trip verification.
     zip: Option<PathBuf>,
@@ -95,6 +98,16 @@ pub(crate) struct VerifyArgs {
     build: Option<String>,
 }
 
+#[derive(Args)]
+pub(crate) struct RunArgs {
+    /// Path to `JackinDesktop.app` (default `native/dist/JackinDesktop.app`).
+    #[arg(default_value = "native/dist/JackinDesktop.app")]
+    app: PathBuf,
+    /// Fail-closed verify the bundle before launching.
+    #[arg(long)]
+    verify: bool,
+}
+
 pub(crate) fn run(command: DesktopCommand) -> Result<()> {
     match command {
         DesktopCommand::Bindings(args) => generate_bindings(&docs::repo_root()?, &args.profile),
@@ -105,14 +118,100 @@ pub(crate) fn run(command: DesktopCommand) -> Result<()> {
         }
         DesktopCommand::Verify(args) => {
             let release = args.release || env_truthy("RELEASE_MODE");
+            let app = resolve_app_path(&args.app)?;
             let (version, build) =
-                resolve_version_build_for_verify(&args.app, args.version, args.build)?;
-            verify_app(&args.app, args.zip.as_deref(), &version, &build, release)
+                resolve_version_build_for_verify(&app, args.version, args.build)?;
+            verify_app(&app, args.zip.as_deref(), &version, &build, release)
         }
+        DesktopCommand::Run(args) => run_app(&args),
         DesktopCommand::SignNotarize(args) => sign_notarize::run(args),
         DesktopCommand::ReleaseState(args) => release_state::run(args),
         DesktopCommand::BootstrapSecrets(args) => bootstrap::run(*args),
     }
+}
+
+/// Resolve a relative app path against the repo root and return an absolute path.
+pub(super) fn resolve_app_path(app: &Path) -> Result<PathBuf> {
+    let root = docs::repo_root()?;
+    let path = if app.is_absolute() {
+        app.to_path_buf()
+    } else {
+        root.join(app)
+    };
+    if !path.exists() {
+        bail!(
+            "app not found at {}\n  build first: mise run desktop-build\n  or:         cargo xtask desktop build --version 0.6.0 --build 1",
+            path.display()
+        );
+    }
+    Ok(fs::canonicalize(&path).unwrap_or(path))
+}
+
+fn run_app(args: &RunArgs) -> Result<()> {
+    require_macos("desktop run")?;
+    let app = resolve_app_path(&args.app)?;
+    if args.verify {
+        let (version, build) = resolve_version_build_for_verify(&app, None, None)?;
+        verify_app(&app, None, &version, &build, false)?;
+    }
+    let bin = app.join(format!("Contents/MacOS/{APP_EXECUTABLE}"));
+    if !bin.is_file() {
+        bail!("missing executable {}", bin.display());
+    }
+
+    progress("");
+    progress("┌─────────────────────────────────────────────────────────────");
+    progress("│ jackin❯ Desktop — launching");
+    progress(format!("│   app:  {}", app.display()));
+    progress(format!("│   bin:  {}", bin.display()));
+    progress("│   note: LSUIElement — no Dock icon; look at the menu bar");
+    progress("│   quit: osascript -e 'quit app \"Jackin Desktop\"'");
+    progress("│         or: killall JackinDesktop");
+    progress("└─────────────────────────────────────────────────────────────");
+    progress("");
+
+    // Prefer open(1) so LaunchServices owns the app lifecycle (same as double-click).
+    let mut open = cmd::command("open");
+    open.args(["-a", app.to_str().context("app utf-8")?]);
+    cmd::run(&mut open).with_context(|| format!("opening {}", app.display()))?;
+
+    // Best-effort liveness (no sleep — launch may still be racing on headless hosts).
+    let mut pgrep = cmd::command("pgrep");
+    pgrep.args(["-lf", APP_EXECUTABLE]);
+    match cmd::output_string(&mut pgrep) {
+        Ok(out) if !out.trim().is_empty() => {
+            progress(format!("OK: process running:\n{}", out.trim()));
+        }
+        _ => {
+            progress(
+                "launched via open(1) — check the menu bar (LSUIElement; no Dock icon)",
+            );
+        }
+    }
+    Ok(())
+}
+
+fn print_app_ready_banner(app: &Path, version: &str, build: &str) {
+    let abs = fs::canonicalize(app).unwrap_or_else(|_| app.to_path_buf());
+    let rel = PathBuf::from("native/dist/JackinDesktop.app");
+    progress("");
+    progress("┌─────────────────────────────────────────────────────────────");
+    progress("│ jackin❯ Desktop — build complete");
+    progress(format!("│   version: {version}  (CFBundleVersion {build})"));
+    progress(format!("│   app:     {}", abs.display()));
+    progress(format!("│   rel:     {}", rel.display()));
+    progress("│");
+    progress("│   verify:  mise run desktop-verify");
+    progress("│            cargo xtask desktop verify");
+    progress("│   run:     mise run desktop-run");
+    progress("│            cargo xtask desktop run");
+    progress(format!("│   open:    open {}", abs.display()));
+    progress("│");
+    progress("│   (menu bar only — no Dock icon; LSUIElement)");
+    progress("└─────────────────────────────────────────────────────────────");
+    progress("");
+    // Machine-readable line for scripts / CI grepping.
+    progress(format!("DESKTOP_APP={}", abs.display()));
 }
 
 pub(super) fn resolve_version_build(
@@ -440,9 +539,7 @@ fn build_app(root: &Path, version: &str, build: &str) -> Result<()> {
     ]);
     cmd::run(&mut codesign)?;
 
-    progress(format!("==> app ready: {}", dist.display()));
-    progress("Apple Silicon (arm64) static: no embedded libjackin_usage_ffi.dylib");
-    progress(format!("Run with: open {}", dist.display()));
+    print_app_ready_banner(&dist, version, build);
     Ok(())
 }
 
@@ -540,7 +637,25 @@ pub(super) fn verify_app(
         drop(fs::remove_dir_all(&tmp));
     }
 
-    progress(format!("OK: verified {}", app.display()));
+    let abs = fs::canonicalize(app).unwrap_or_else(|_| app.to_path_buf());
+    progress("");
+    progress("┌─────────────────────────────────────────────────────────────");
+    progress("│ jackin❯ Desktop — verify OK");
+    progress(format!("│   app:     {}", abs.display()));
+    progress(format!("│   version: {version}  (CFBundleVersion {build})"));
+    progress(format!(
+        "│   mode:    {}",
+        if release_mode {
+            "release (Gatekeeper + stapler)"
+        } else {
+            "ad-hoc / PR"
+        }
+    ));
+    progress("│   run:     mise run desktop-run");
+    progress("│            cargo xtask desktop run");
+    progress("└─────────────────────────────────────────────────────────────");
+    progress("");
+    progress(format!("DESKTOP_APP={}", abs.display()));
     Ok(())
 }
 
