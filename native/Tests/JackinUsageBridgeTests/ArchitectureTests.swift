@@ -398,6 +398,16 @@ final class ArchitectureTests: XCTestCase {
             ),
             "work@ex.com, 63%, selected"
         )
+        XCTAssertTrue(isMachineStatusSlot("session"))
+        XCTAssertTrue(isMachineStatusSlot("weekly"))
+        XCTAssertTrue(isMachineStatusSlot("spend"))
+        XCTAssertNil(
+            bucketGaugeSecondaryLimitLabel(limitLabel: "100%", remainingPercent: 81)
+        )
+        XCTAssertEqual(
+            bucketGaugeSecondaryLimitLabel(limitLabel: "SGD 260", remainingPercent: nil),
+            "SGD 260"
+        )
     }
 
     func testBuildStatusItemChipsRespectsCapAndHidesEmpty() {

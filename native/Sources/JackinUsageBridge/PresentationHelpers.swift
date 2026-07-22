@@ -296,6 +296,55 @@ public func accountPillLabel(
     return parts.joined(separator: ", ")
 }
 
+/// FFI `status_slot` values are machine taxonomy only (`session`/`weekly`/`spend`).
+///
+/// Never show these as user-facing copy under metrics — window titles already
+/// come from `bucket.label`.
+public func isMachineStatusSlot(_ statusSlot: String?) -> Bool {
+    guard let raw = statusSlot?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
+          !raw.isEmpty
+    else {
+        return false
+    }
+    switch raw {
+    case "session", "weekly", "spend":
+        return true
+    default:
+        // Unknown future slots still treated as non-user unless proven otherwise.
+        return true
+    }
+}
+
+/// Secondary limit copy under a **gauge** row (after remaining% + reset + pace).
+///
+/// Drops bare capacity percents (`100%`) that only restate the gauge — common
+/// Rust `limit_label` for percent windows. Keeps human limits (money caps, etc.).
+public func bucketGaugeSecondaryLimitLabel(
+    limitLabel: String?,
+    remainingPercent: UInt8? = nil
+) -> String? {
+    guard let limit = limitLabel?.trimmingCharacters(in: .whitespacesAndNewlines),
+          !limit.isEmpty
+    else {
+        return nil
+    }
+    // Bare "N%" restates capacity — not CodexBar secondary copy.
+    if limit.hasSuffix("%") {
+        let digits = limit.dropLast()
+        if !digits.isEmpty, digits.allSatisfy(\.isNumber) {
+            return nil
+        }
+    }
+    // Same as primary remaining token (e.g. "81%" when remaining is 81).
+    if let remaining = remainingPercent {
+        let token = statusItemPercentToken(remainingPercent: remaining, percentStyle: "left")
+        if limit == token {
+            return nil
+        }
+    }
+    return limit
+}
+
 /// Glyph for the menu-bar strip from Rust compact label (`Cl 37%` → `Cl`).
 ///
 /// Falls back to the frozen-host two-letter mark so every provider keeps an identity

@@ -286,12 +286,31 @@ struct DesktopParityMatrixHarness {
             popover.contains("remainingPercent") && popover.contains("statusItemPercentToken")
         )
         check(
-            "Popover gauge statusSlot",
-            popover.contains("statusSlot")
-        )
-        check(
             "Overview multi-window cap",
             overview.contains("overviewNumericBucketCap")
+        )
+        // status_slot is machine taxonomy — UI must filter via pure helper, not dump raw.
+        check(
+            "machine status_slot tokens recognized",
+            isMachineStatusSlot("session")
+                && isMachineStatusSlot("weekly")
+                && isMachineStatusSlot("spend")
+        )
+        check(
+            "gauge secondary never bare 100%",
+            bucketGaugeSecondaryLimitLabel(limitLabel: "100%", remainingPercent: 40) == nil
+        )
+        check(
+            "Popover uses gauge secondary filter not raw statusSlot Text",
+            popover.contains("bucketGaugeSecondaryLimitLabel")
+                && !popover.contains("Text(slot)")
+                && !popover.contains("Text(bucket.statusSlot")
+        )
+        check(
+            "ProviderCard uses gauge secondary filter not raw statusSlot Text",
+            provider.contains("bucketGaugeSecondaryLimitLabel")
+                && !provider.contains("Text(slot)")
+                && !provider.contains("Text(bucket.statusSlot")
         )
         check(
             "ProviderCard primary limit labels",

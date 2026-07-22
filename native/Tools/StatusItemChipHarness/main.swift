@@ -412,6 +412,20 @@ struct StatusItemChipHarness {
                 selected: true
             ) == "work@ex.com, 63%, selected"
         )
+        check("status_slot session is machine", isMachineStatusSlot("session"))
+        check("status_slot weekly is machine", isMachineStatusSlot("weekly"))
+        check("status_slot spend is machine", isMachineStatusSlot("spend"))
+        check(
+            "gauge secondary drops bare 100%",
+            bucketGaugeSecondaryLimitLabel(limitLabel: "100%", remainingPercent: 81) == nil
+        )
+        check(
+            "gauge secondary keeps money limit",
+            bucketGaugeSecondaryLimitLabel(
+                limitLabel: "SGD 260",
+                remainingPercent: nil
+            ) == "SGD 260"
+        )
         check(
             "dual depleted a11y keeps weekly",
             statusItemAccessibilityLabel(chips: dualDepChips)

@@ -452,20 +452,19 @@ struct PopoverRoot: View {
                 if let pace = bucket.paceLabel, !pace.isEmpty {
                     paceRow(pace)
                 }
-                // CodexBar secondary status/reserve slot when Rust supplies it.
-                if let slot = bucket.statusSlot, !slot.isEmpty {
-                    Text(slot)
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                if let limit = bucket.limitLabel, !limit.isEmpty {
+                // Human limit copy only — never raw status_slot machine tokens
+                // (session/weekly/spend) and never bare "100%" capacity restatement.
+                if let limit = bucketGaugeSecondaryLimitLabel(
+                    limitLabel: bucket.limitLabel,
+                    remainingPercent: bucket.remainingPercent
+                ) {
                     Text(limit)
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
             case .valueOnly:
-                if let desc = bucket.limitLabel ?? bucket.statusSlot, !desc.isEmpty {
+                // status_slot is FFI taxonomy only — not user-facing description.
+                if let desc = bucket.limitLabel, !desc.isEmpty {
                     Text(desc)
                         .font(.caption)
                         .foregroundStyle(.secondary)

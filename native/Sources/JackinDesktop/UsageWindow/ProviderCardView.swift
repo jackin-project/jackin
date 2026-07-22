@@ -227,14 +227,12 @@ struct ProviderCardView: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            // Secondary status/reserve slot from Rust (limits density only).
-            if let slot = bucket.statusSlot, !slot.isEmpty {
-                Text(slot)
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            if let limit = bucket.limitLabel, !limit.isEmpty {
+            // Human limit copy only — never raw status_slot (session/weekly/spend)
+            // and never bare capacity percent restatement under remaining%.
+            if let limit = bucketGaugeSecondaryLimitLabel(
+                limitLabel: bucket.limitLabel,
+                remainingPercent: bucket.remainingPercent
+            ) {
                 Text(limit)
                     .font(.caption2)
                     .foregroundStyle(.secondary)
