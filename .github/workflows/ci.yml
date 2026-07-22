@@ -436,7 +436,7 @@ jobs:
     name: actionlint (${{ matrix.config.lane }})
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+      - uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
         with:
           version: "2026.7.7"
           cache_key_prefix: "mise-v2"
@@ -539,7 +539,7 @@ jobs:
             ${{ env.RUSTUP_HOME }}/update-hashes
           key: rustup-v2-${{ runner.os }}-${{ runner.arch }}-${{ needs.changes.outputs.rustup-contract }}
           restore-keys: rustup-v2-${{ runner.os }}-${{ runner.arch }}-
-      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+      - uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
         if: >-
           steps.toolchain-lookup.outputs.cache-hit != 'true' ||
           env.CI_XTASK_HIT != 'true' ||
@@ -745,7 +745,7 @@ jobs:
           key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ needs.changes.outputs.rustup-contract }}
           restore-keys: |
             rustup-${{ runner.os }}-${{ runner.arch }}-
-      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+      - uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
         with:
           version: "2026.7.7"
           cache_key_prefix: "mise-v2"
@@ -904,7 +904,7 @@ jobs:
         with:
           version: v0.16.0
           disable_annotations: "false"
-      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+      - uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
         with:
           version: "2026.7.7"
           cache_key_prefix: "mise-v2"

@@ -92,7 +92,7 @@ jobs:
           tools-contract: ${{ hashFiles('mise.toml', 'mise.lock', 'crates/jackin-xtask/src/ci_stage.rs') }}
           xtask-contract: ${{ hashFiles('Cargo.lock', 'Cargo.toml', 'rust-toolchain.toml', '.cargo/**', 'crates/*/Cargo.toml', 'crates/jackin-xtask/src/**', 'crates/jackin-process/src/**') }}
           allow-miss: "true"
-      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+      - uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
         with:
           version: "2026.7.7"
           cache_key_prefix: "mise-v2"
@@ -136,6 +136,42 @@ jobs:
           cd crates/jackin-term
           cargo +nightly fuzz run --sanitizer address --target x86_64-unknown-linux-gnu damage_grid_process -- -max_total_time=300
 
+  native-macos:
+    name: Native macOS smoke
+    runs-on: macos-latest
+    timeout-minutes: 60
+    env:
+      CARGO_INCREMENTAL: "0"
+      CARGO_TERM_COLOR: always
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Cache Rust toolchain
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.rustup/toolchains
+            ~/.rustup/update-hashes
+          key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}
+          restore-keys: |
+            rustup-${{ runner.os }}-${{ runner.arch }}-
+      - uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
+        with:
+          version: "2026.6.11"
+          cache_key_prefix: "mise-v2"
+          cache_save: ${{ github.ref == 'refs/heads/main' }}
+          install_args: "cargo-binstall rust cargo:cargo-nextest"
+          github_token: ${{ secrets.GH_READONLY_TOKEN }}
+      - id: cargo-registry-cache
+        uses: ./.github/actions/cache-cargo-registry
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          shared-key: native-macos-workspace-v2
+          cache-all-crates: "true"
+          cache-workspace-crates: "true"
+          env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTFLAGS RUSTDOC RUSTUP"
+      - run: cargo build --release --locked
+      - run: cargo nextest run --workspace --locked
+
   # Measured Criterion lane for plan 014. Workload medians are normalized by a
   # same-run calibration benchmark before the reviewed 5% threshold is applied.
   bench-run:
@@ -161,7 +197,7 @@ jobs:
           key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}
           restore-keys: |
             rustup-${{ runner.os }}-${{ runner.arch }}-
-      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+      - uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
         with:
           version: "2026.7.7"
           cache_key_prefix: "mise-v2"
@@ -227,7 +263,7 @@ jobs:
           key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}
           restore-keys: |
             rustup-${{ runner.os }}-${{ runner.arch }}-
-      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+      - uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
         with:
           version: "2026.7.7"
           cache_key_prefix: "mise-v2"
@@ -272,7 +308,7 @@ jobs:
           key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}
           restore-keys: |
             rustup-${{ runner.os }}-${{ runner.arch }}-
-      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+      - uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
         with:
           version: "2026.7.7"
           cache_key_prefix: "mise-v2"
@@ -337,7 +373,7 @@ jobs:
           key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}
           restore-keys: |
             rustup-${{ runner.os }}-${{ runner.arch }}-
-      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+      - uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
         with:
           version: "2026.7.7"
           cache_key_prefix: "mise-v2"
@@ -399,7 +435,7 @@ jobs:
           key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}
           restore-keys: |
             rustup-${{ runner.os }}-${{ runner.arch }}-
-      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+      - uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
         with:
           version: "2026.7.7"
           cache_key_prefix: "mise-v2"
@@ -442,7 +478,7 @@ jobs:
           key: rustup-${{ runner.os }}-${{ runner.arch }}-beta-clippy-v1
           restore-keys: |
             rustup-${{ runner.os }}-${{ runner.arch }}-
-      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+      - uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
         with:
           version: "2026.7.7"
           cache_key_prefix: "mise-v2"
@@ -493,7 +529,7 @@ jobs:
           tools-contract: ${{ hashFiles('mise.toml', 'mise.lock', 'crates/jackin-xtask/src/ci_stage.rs') }}
           include-xtask: "false"
           allow-miss: "true"
-      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+      - uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
         with:
           version: "2026.7.7"
           cache_key_prefix: "mise-v2"
@@ -545,7 +581,7 @@ jobs:
           key: rustup-${{ runner.os }}-${{ runner.arch }}-nightly-miri-v1
           restore-keys: |
             rustup-${{ runner.os }}-${{ runner.arch }}-
-      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+      - uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
         with:
           version: "2026.7.7"
           cache_key_prefix: "mise-v2"
@@ -598,7 +634,7 @@ jobs:
           tools-contract: ${{ hashFiles('mise.toml', 'mise.lock', 'crates/jackin-xtask/src/ci_stage.rs') }}
           include-xtask: "false"
           allow-miss: "true"
-      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+      - uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
         with:
           version: "2026.7.7"
           cache_key_prefix: "mise-v2"
@@ -659,7 +695,7 @@ jobs:
           tools-contract: ${{ hashFiles('mise.toml', 'mise.lock', 'crates/jackin-xtask/src/ci_stage.rs') }}
           include-xtask: "false"
           allow-miss: "true"
-      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+      - uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
         with:
           version: "2026.7.7"
           cache_key_prefix: "mise-v2"
@@ -766,7 +802,7 @@ jobs:
           tools-contract: ${{ hashFiles('mise.toml', 'mise.lock', 'crates/jackin-xtask/src/ci_stage.rs') }}
           include-xtask: "false"
           allow-miss: "true"
-      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+      - uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
         with:
           version: "2026.7.7"
           cache_key_prefix: "mise-v2"
@@ -833,7 +869,7 @@ jobs:
           tools-contract: ${{ hashFiles('mise.toml', 'mise.lock', 'crates/jackin-xtask/src/ci_stage.rs') }}
           xtask-contract: ${{ hashFiles('Cargo.lock', 'Cargo.toml', 'rust-toolchain.toml', '.cargo/**', 'crates/*/Cargo.toml', 'crates/jackin-xtask/src/**', 'crates/jackin-process/src/**') }}
           allow-miss: "true"
-      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+      - uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
         with:
           version: "2026.7.7"
           cache_key_prefix: "mise-v2"
@@ -867,7 +903,7 @@ jobs:
         with:
           version: v0.16.0
           disable_annotations: "false"
-      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+      - uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
         with:
           version: "2026.7.7"
           cache_key_prefix: "mise-v2"
