@@ -22,7 +22,7 @@ cargo-binstall = "1.21.0"
 "cargo:codebook-lsp" = { version = "0.3.41", default-features = false }
 "cargo:sccache" = "0.16.0"
 "cargo:dylint-link" = "6.0.1"
-cosign = "3.1.1"
+cosign = "3.1.2"
 hyperfine = "1.20.0"
 shellcheck = "0.11.0"
 node = "24.18.0"
