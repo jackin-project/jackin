@@ -36,18 +36,20 @@ struct PopoverRoot: View {
                     .font(.caption)
                     .foregroundStyle(.red)
                     .padding(.horizontal, 14)
-                    .padding(.top, 10)
+                    .padding(.top, 12)
             }
 
-            // 1) Agent list (always on top).
+            // 1) Agent catalog — floating chrome island (Liquid Glass navigation layer).
             agentTileGrid
-                .padding(.horizontal, 10)
+                .padding(10)
+                .background {
+                    GlassFallbacks.floatingChromeIsland()
+                }
+                .padding(.horizontal, 12)
                 .padding(.top, 12)
-                .padding(.bottom, 8)
+                .padding(.bottom, 10)
 
-            Divider().opacity(0.35)
-
-            // 2) Detailization.
+            // 2) Detailization — content layer (scrolls under glass chrome).
             ScrollView {
                 Group {
                     if allAgents.isEmpty {
@@ -62,20 +64,25 @@ struct PopoverRoot: View {
                     }
                 }
                 .padding(.horizontal, 14)
-                .padding(.top, 12)
-                .padding(.bottom, 10)
+                .padding(.top, 4)
+                .padding(.bottom, 12)
             }
             .frame(maxHeight: 520)
 
+            // 3) Footer actions — glass control strip.
             menuFooter
         }
-        .frame(width: 320)
+        .frame(width: 340)
         .background {
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(Color(nsColor: .windowBackgroundColor))
-                .shadow(color: .black.opacity(0.18), radius: 28, y: 10)
+            // Detached Tahoe panel — Liquid Glass chrome (not content fill).
+            GlassFallbacks.panelSurfaceBackground()
         }
-        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .clipShape(
+            RoundedRectangle(
+                cornerRadius: GlassFallbacks.panelCornerRadius,
+                style: .continuous
+            )
+        )
         .onAppear {
             if !store.isOpen {
                 store.openDefault()
@@ -136,9 +143,14 @@ struct PopoverRoot: View {
         } label: {
             VStack(spacing: 4) {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(selected ? Color.accentColor : Color.primary.opacity(enabled ? 0.06 : 0.03))
-                        .frame(height: 36)
+                    Group {
+                        if selected {
+                            GlassFallbacks.selectedControlFill()
+                        } else {
+                            GlassFallbacks.idleControlFill(enabled: enabled)
+                        }
+                    }
+                    .frame(height: 36)
                     if let systemImage {
                         Image(systemName: systemImage)
                             .font(.system(size: 14, weight: .semibold))
@@ -536,8 +548,8 @@ struct PopoverRoot: View {
     // MARK: - Menu
 
     private var menuFooter: some View {
-        VStack(spacing: 0) {
-            Divider().opacity(0.35)
+        VStack(spacing: 2) {
+            Divider().opacity(0.28)
             menuRow(title: "Open Usage…", systemImage: "rectangle.split.2x1", shortcut: nil) {
                 store.selectUsageSurface(selectedSurfaceId)
                 openWindow(id: "usage")
@@ -553,18 +565,25 @@ struct PopoverRoot: View {
             .buttonStyle(.plain)
             if !store.nextRefreshLabel.isEmpty {
                 HStack {
+                    Image(systemName: "clock")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
                     Text(store.nextRefreshLabel)
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
                     Spacer()
                 }
                 .padding(.horizontal, 14)
-                .padding(.vertical, 4)
+                .padding(.vertical, 6)
             }
             menuRow(title: "Quit", systemImage: "xmark.square", shortcut: "⌘Q") {
                 NSApplication.shared.terminate(nil)
             }
             .keyboardShortcut("q", modifiers: [.command])
+        }
+        .padding(.bottom, 6)
+        .background {
+            GlassFallbacks.footerBarBackground()
         }
     }
 
@@ -604,7 +623,7 @@ struct PopoverRoot: View {
             }
         }
         .padding(.horizontal, 14)
-        .padding(.vertical, 8)
+        .padding(.vertical, 9)
         .contentShape(Rectangle())
         .frame(maxWidth: .infinity, alignment: .leading)
     }

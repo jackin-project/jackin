@@ -25,10 +25,14 @@ struct JackinDesktopApp: App {
         Window("jackin❯ Desktop — Usage", id: "usage") {
             UsageWindowRoot(store: store)
         }
-        .defaultSize(width: 900, height: 600)
+        .defaultSize(width: 920, height: 620)
+        // Tahoe: unified toolbar sits in the Liquid Glass chrome layer.
+        .windowToolbarStyle(.unified)
+        .windowResizability(.contentMinSize)
 
         Settings {
             SettingsView(store: store)
+                .formStyle(.grouped)
         }
     }
 }

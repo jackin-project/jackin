@@ -4,7 +4,8 @@
 import JackinUsageBridge
 import SwiftUI
 
-/// Liquid Glass Usage window: Overview sidebar + provider detail (S3/S4).
+/// Liquid Glass Usage window: glass **sidebar + toolbar** chrome above
+/// standard-material **content** (HIG: no Liquid Glass in the content layer).
 struct UsageWindowRoot: View {
     @ObservedObject var store: PresentationStore
     @Environment(\.dismiss) private var dismiss
@@ -15,33 +16,54 @@ struct UsageWindowRoot: View {
     var body: some View {
         NavigationSplitView {
             List(selection: selectionBinding) {
-                Label("Overview", systemImage: "square.grid.2x2")
-                    .tag(Self.overviewId)
-                ForEach(store.overviewRows) { row in
-                    HStack(spacing: 8) {
-                        Circle()
-                            .fill(severityTint(row.severity))
-                            .frame(width: 8, height: 8)
-                        Text(row.displayLabel)
-                        Spacer(minLength: 4)
-                        if !row.headline.isEmpty {
-                            Text(row.headline)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .monospacedDigit()
-                                .lineLimit(1)
+                Section {
+                    Label("Overview", systemImage: "square.grid.2x2")
+                        .tag(Self.overviewId)
+                    ForEach(store.overviewRows) { row in
+                        HStack(spacing: 8) {
+                            Circle()
+                                .fill(severityTint(row.severity))
+                                .frame(width: 8, height: 8)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(row.displayLabel)
+                                    .font(.body.weight(.medium))
+                                if !row.headline.isEmpty {
+                                    Text(row.headline)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                        .monospacedDigit()
+                                        .lineLimit(1)
+                                }
+                            }
+                            Spacer(minLength: 4)
                         }
+                        .tag(row.surfaceId)
+                        .accessibilityLabel("\(row.displayLabel) \(row.headline)")
                     }
-                    .tag(row.surfaceId)
-                    .accessibilityLabel("\(row.displayLabel) \(row.headline)")
                 }
             }
             .listStyle(.sidebar)
-            .navigationSplitViewColumnWidth(min: 180, ideal: 220, max: 300)
+            .navigationSplitViewColumnWidth(min: 200, ideal: 240, max: 320)
             .background {
+                // Navigation layer — Liquid Glass.
                 GlassFallbacks.sidebarBackground()
             }
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                HStack {
+                    Text(store.nextRefreshLabel)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                    Spacer(minLength: 4)
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .background {
+                    GlassFallbacks.footerBarBackground()
+                }
+            }
         } detail: {
+            // Content layer — standard window background only (no glass).
             Group {
                 if let id = store.usageSelection,
                    let surface = store.surfaces.first(where: { $0.id == id && $0.enabled })
@@ -58,17 +80,25 @@ struct UsageWindowRoot: View {
                 GlassFallbacks.windowContentBackground()
             }
         }
-        .navigationTitle("jackin❯ Desktop — Usage")
+        .navigationSplitViewStyle(.balanced)
+        .navigationTitle("Usage")
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
-                Button("Refresh") {
+                Button {
                     store.refreshAll()
+                } label: {
+                    Label("Refresh", systemImage: "arrow.clockwise")
                 }
                 .keyboardShortcut("r", modifiers: [.command])
-                Button("Settings…") {
+                .help("Refresh all enabled providers")
+
+                Button {
                     openSettings()
+                } label: {
+                    Label("Settings", systemImage: "gearshape")
                 }
                 .keyboardShortcut(",", modifiers: [.command])
+                .help("Open Settings")
             }
         }
         .onExitCommand {
@@ -79,7 +109,7 @@ struct UsageWindowRoot: View {
                 store.openDefault()
             }
         }
-        .frame(minWidth: 720, minHeight: 480)
+        .frame(minWidth: 760, minHeight: 500)
     }
 
     private var selectionBinding: Binding<String?> {

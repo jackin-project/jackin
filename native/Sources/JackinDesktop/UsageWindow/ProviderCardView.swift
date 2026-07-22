@@ -164,11 +164,11 @@ struct ProviderCardView: View {
                     .foregroundStyle(.secondary)
             }
         }
-        .padding(12)
+        .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background {
-            RoundedRectangle(cornerRadius: 10)
-                .fill(.background.secondary)
+            // Content layer — standard material only (HIG: no Liquid Glass here).
+            GlassFallbacks.contentCardBackground()
         }
         .accessibilityElement(children: .combine)
     }

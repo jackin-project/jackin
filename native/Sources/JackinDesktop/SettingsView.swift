@@ -23,7 +23,7 @@ struct SettingsView: View {
                 .pickerStyle(.radioGroup)
                 .accessibilityLabel("Status item display mode")
                 if store.displayMode == .strip {
-                    Text("OpenUsage-style: one icon and available-token % per enabled agent.")
+                    Text("OpenUsage-style strip with Liquid Glass chip capsules on macOS 26+.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }

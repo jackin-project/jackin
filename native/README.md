@@ -18,7 +18,9 @@ reference only (clean-room).
 
 ## SDK requirement
 
-Deployment target stays **macOS 14+**. **Release builds must use the macOS 26 SDK** so Tahoe Liquid Glass resolves in `GlassFallbacks.swift` (the only file allowed to contain `#available(macOS 26, *)`). On macOS 14/15 or with Reduce Transparency, chrome falls back to system materials.
+Deployment target stays **macOS 14+**. **Release builds must use the macOS 26 SDK** so Tahoe Liquid Glass resolves in `GlassFallbacks.swift` (the only file allowed to contain `#available(macOS 26, *)`).
+
+Liquid Glass is applied only to the **navigation / control layer** (status chips, glance panel chrome, agent tile island, sidebar, footer, unified toolbar) per Apple HIG. **Content** (provider cards, overview rows, metric bodies) uses standard materials so hierarchy stays clear. On macOS 14/15 or with Reduce Transparency, chrome falls back to system materials.
 
 ## Apple Silicon (arm64) static assembly (source of truth)
 

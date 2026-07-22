@@ -5,16 +5,17 @@ import AppKit
 import JackinUsageBridge
 import SwiftUI
 
-/// Menu-bar status item — **OpenUsage-style multi-provider usage strip**.
+/// Menu-bar status item — **OpenUsage-style multi-provider strip** with
+/// Liquid Glass chip capsules (macOS 26+) / ultraThinMaterial fallback.
 ///
-/// One chip per enabled provider (up to strip cap): **provider icon + remaining %**
-/// (stacked session/weekly when Rust supplies dual buckets). Clean-room layout;
-/// remainings from Rust only — never invents percentages.
+/// One chip per enabled provider: **provider icon + remaining %**
+/// (stacked session/weekly when Rust supplies dual buckets). Remainings from
+/// Rust only — never invents percentages.
 struct StatusItemLabel: View {
     @ObservedObject var store: PresentationStore
 
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 5) {
             if store.statusItemChips.isEmpty {
                 statusIcon
                     .opacity(itemOpacity)
@@ -33,7 +34,7 @@ struct StatusItemLabel: View {
             }
         }
         .frame(minWidth: 18, minHeight: 22)
-        .padding(.horizontal, 2)
+        .padding(.horizontal, 1)
         .accessibilityLabel(accessibilityText)
         .onAppear {
             if !store.isOpen {
@@ -72,7 +73,6 @@ struct StatusItemLabel: View {
         return "jackin Desktop"
     }
 
-    /// Slightly larger than 10pt so stacked remaining % stays readable in the menu bar.
     static let chipFont = Font.system(size: 11, weight: .semibold, design: .rounded)
     static let dualFont = Font.system(size: 10, weight: .semibold, design: .rounded)
 
@@ -89,10 +89,7 @@ struct StatusItemLabel: View {
     }
 }
 
-/// One provider chip: **icon + available-token %** (OpenUsage density).
-///
-/// Dual-bucket remainings stack as two short percent lines; depleted driving
-/// windows may show a Rust reset countdown instead of bare `0%`.
+/// One provider chip: glass capsule + icon + available-token % (OpenUsage density).
 private struct StatusItemChipView: View {
     let chip: StatusItemChip
 
@@ -107,14 +104,12 @@ private struct StatusItemChipView: View {
                     .foregroundStyle(severityTint(chip.severity))
                     .lineLimit(1)
             } else if chip.percentLines.count == 1 {
-                // Single window: larger remaining % next to the icon.
                 Text(chip.percentLines[0])
                     .font(StatusItemLabel.chipFont)
                     .monospacedDigit()
                     .foregroundStyle(severityTint(chip.severity))
                     .lineLimit(1)
             } else {
-                // Dual stack (session / weekly remaining) — OpenUsage menubar.
                 VStack(alignment: .trailing, spacing: 0) {
                     ForEach(Array(chip.percentLines.enumerated()), id: \.offset) { index, line in
                         let lineSeverity =
@@ -130,6 +125,11 @@ private struct StatusItemChipView: View {
                 }
             }
         }
+        .padding(.horizontal, 5)
+        .padding(.vertical, 2)
+        .background {
+            GlassFallbacks.statusItemChipBackground(severity: severityTint(chip.severity))
+        }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(
             chip.percentLines.isEmpty
@@ -143,10 +143,10 @@ private struct StatusItemChipView: View {
         ZStack {
             Circle()
                 .fill(severityTint(chip.severity).opacity(0.28))
-                .frame(width: 16, height: 16)
+                .frame(width: 15, height: 15)
             if let systemImage = chip.systemImage {
                 Image(systemName: systemImage)
-                    .font(.system(size: 9, weight: .bold))
+                    .font(.system(size: 8, weight: .bold))
                     .foregroundStyle(severityTint(chip.severity))
             } else {
                 Text(chip.glyph)
