@@ -273,6 +273,40 @@ public struct StatusItemSurfaceSnapshot: Sendable, Equatable {
     }
 }
 
+/// Whether Rust compact label is a depleted reset countdown (`Cl resets 1h 21m`).
+public func statusItemCompactIsResetCountdown(_ compactLabel: String) -> Bool {
+    let lower = compactLabel.lowercased()
+    return lower.contains("resets")
+}
+
+/// Chip display lines from Rust remainings + compact (OpenUsage/CodexBar).
+///
+/// When the driving bucket is depleted and Rust compact is a reset countdown,
+/// show that countdown instead of a bare `0%` (matches menu-bar “plan around resets”).
+public func statusItemChipDisplayLines(
+    remainings: [UInt8],
+    compactLabel: String,
+    percentStyle: String = "left",
+    maxLines: Int = 2
+) -> [String] {
+    if let minRem = remainings.min(),
+       minRem == 0,
+       statusItemCompactIsResetCountdown(compactLabel)
+    {
+        // "Cl resets 1h 21m" → line next to glyph: "resets 1h 21m"
+        let parts = compactLabel.split(separator: " ", maxSplits: 1, omittingEmptySubsequences: true)
+        if parts.count == 2 {
+            return [String(parts[1])]
+        }
+        return [compactLabel]
+    }
+    return statusItemPercentLines(
+        remainings: remainings,
+        maxLines: maxLines,
+        percentStyle: percentStyle
+    )
+}
+
 /// Build CodexBar-style per-provider chips from pure snapshots (unit-testable).
 ///
 /// - Catalog order when `preferWorstFirst` is false.
@@ -280,6 +314,7 @@ public struct StatusItemSurfaceSnapshot: Sendable, Equatable {
 /// - Hides surfaces without preview data; never invents percents.
 /// - `percentStyle` (`left`/`used`) shapes stacked percent lines to match
 ///   Rust compact labels (OpenUsage remaining default).
+/// - Depleted + reset countdown prefers Rust compact over bare `0%`.
 public func buildStatusItemChips(
     surfaces: [StatusItemSurfaceSnapshot],
     maxCount: Int,
@@ -304,10 +339,11 @@ public func buildStatusItemChips(
             : (!surface.statusBarLabel.isEmpty ? surface.statusBarLabel : surface.label)
         let remainings = Array(surface.remainings.prefix(2))
         let lineSeverities = Array(surface.severities.prefix(remainings.count))
-        let lines = statusItemPercentLines(
+        let lines = statusItemChipDisplayLines(
             remainings: remainings,
-            maxLines: 2,
-            percentStyle: percentStyle
+            compactLabel: compact,
+            percentStyle: percentStyle,
+            maxLines: 2
         )
         chips.append(
             StatusItemChip(
@@ -330,9 +366,13 @@ public func buildStatusItemChips(
 ///
 /// Prefer stacked percent lines when present so dual-bucket chips speak both
 /// session and weekly values (OpenUsage/CodexBar parity), not only the driving compact.
+/// Depleted reset countdowns use the full Rust compact label.
 public func statusItemAccessibilityLabel(chips: [StatusItemChip]) -> String {
     if chips.isEmpty { return "jackin Desktop" }
     let parts = chips.map { chip -> String in
+        if statusItemCompactIsResetCountdown(chip.compactLabel) {
+            return chip.compactLabel
+        }
         if chip.percentLines.count >= 2 {
             return "\(chip.glyph) \(chip.percentLines.joined(separator: " and "))"
         }

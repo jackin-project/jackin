@@ -236,6 +236,43 @@ struct StatusItemChipHarness {
         )
         check("cap 2", capped.count == 2)
 
+        // Depleted + Rust reset countdown: show countdown, not bare 0%.
+        let depleted = StatusItemSurfaceSnapshot(
+            surfaceId: "claude",
+            label: "Claude",
+            enabled: true,
+            statusBarLabel: "Session 100% used",
+            status: "fresh",
+            compactLabel: "Cl resets 1h 21m",
+            remainings: [0],
+            severities: ["danger"]
+        )
+        let depChips = buildStatusItemChips(
+            surfaces: [depleted],
+            maxCount: 1,
+            preferWorstFirst: false,
+            percentStyle: "left"
+        )
+        check(
+            "depleted shows reset countdown",
+            depChips.count == 1
+                && depChips[0].percentLines == ["resets 1h 21m"]
+                && depChips[0].compactLabel == "Cl resets 1h 21m",
+            "lines=\(depChips.first?.percentLines ?? []) compact=\(depChips.first?.compactLabel ?? "")"
+        )
+        check(
+            "depleted a11y uses full compact",
+            statusItemAccessibilityLabel(chips: depChips) == "jackin Desktop Cl resets 1h 21m"
+        )
+        check(
+            "display lines helper remaining healthy",
+            statusItemChipDisplayLines(
+                remainings: [100, 79],
+                compactLabel: "Cl 79%",
+                percentStyle: "left"
+            ) == ["100%", "79%"]
+        )
+
         print("---")
         if failures == 0 {
             print("StatusItemChipHarness: ALL PASS")

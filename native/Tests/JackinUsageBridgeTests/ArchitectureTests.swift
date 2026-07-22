@@ -262,6 +262,31 @@ final class ArchitectureTests: XCTestCase {
         XCTAssertEqual(usedChips[0].percentLines, ["0%", "21%"])
         XCTAssertEqual(usedChips[1].percentLines, ["16%"])
         XCTAssertEqual(usedChips[0].remainingPerLine, [100, 79])
+
+        // Depleted with Rust reset countdown (CodexBar plan-around-resets).
+        let depleted = StatusItemSurfaceSnapshot(
+            surfaceId: "claude",
+            label: "Claude",
+            enabled: true,
+            statusBarLabel: "depleted",
+            status: "fresh",
+            compactLabel: "Cl resets 1h 21m",
+            remainings: [0],
+            severities: ["danger"]
+        )
+        let dep = buildStatusItemChips(
+            surfaces: [depleted],
+            maxCount: 1,
+            preferWorstFirst: false,
+            percentStyle: "left"
+        )
+        XCTAssertEqual(dep.count, 1)
+        XCTAssertEqual(dep[0].percentLines, ["resets 1h 21m"])
+        XCTAssertTrue(statusItemCompactIsResetCountdown(dep[0].compactLabel))
+        XCTAssertEqual(
+            statusItemAccessibilityLabel(chips: dep),
+            "jackin Desktop Cl resets 1h 21m"
+        )
     }
 
     func testBuildStatusItemChipsRespectsCapAndHidesEmpty() {
