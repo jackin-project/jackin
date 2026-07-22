@@ -555,7 +555,7 @@ jobs:
           install_args: >-
             rust@${{ needs.changes.outputs.rust-version }}
             ${{ env.CI_TOOLS_HIT != 'true' &&
-                'cargo-binstall cargo:sccache cargo:cargo-nextest cargo:cargo-deny cargo:cargo-shear cargo:cargo-audit cargo:cargo-dylint cargo:cargo-fuzz cargo:cargo-hack cargo:cargo-hakari cargo:cargo-llvm-cov cargo:cargo-mutants cargo:cargo-zigbuild cargo:dylint-link github:open-telemetry/weaver@0.24.2' || '' }}
+                'cargo-binstall cargo:sccache aqua:nextest-rs/nextest/cargo-nextest cargo:cargo-deny cargo:cargo-shear cargo:cargo-audit cargo:cargo-dylint cargo:cargo-fuzz cargo:cargo-hack cargo:cargo-hakari cargo:cargo-llvm-cov cargo:cargo-mutants cargo:cargo-zigbuild cargo:dylint-link github:open-telemetry/weaver@0.24.2' || '' }}
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - name: Use the minimal Rust CI profile
         if: >-
@@ -566,6 +566,13 @@ jobs:
         uses: ./.github/actions/cache-cargo-registry
         with:
           contract-key: ${{ needs.changes.outputs.registry-contract }}
+      - &cargo-target-cache
+        name: Cache Cargo target
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: target
+          key: cargo-target-${{ matrix.config.lane }}-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ hashFiles('rust-toolchain.toml', '.cargo/config.toml', '**/Cargo.toml', '**/Cargo.lock') }}-${{ github.sha }}
+          restore-keys: cargo-target-${{ matrix.config.lane }}-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ hashFiles('rust-toolchain.toml', '.cargo/config.toml', '**/Cargo.toml', '**/Cargo.lock') }}-
       - name: Build shared CI xtask
         if: env.CI_XTASK_HIT != 'true'
         env:
@@ -902,10 +909,11 @@ jobs:
           version: "2026.7.7"
           cache_key_prefix: "mise-v2"
           cache_save: ${{ github.ref == 'refs/heads/main' }}
-          install_args: "rust cargo:cargo-nextest"
+          install_args: "rust aqua:nextest-rs/nextest/cargo-nextest"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
+      - *cargo-target-cache
       - name: Run OTLP receiver and detector self-tests
         run: cargo nextest run -p jackin-otlp-testbed --locked
       - name: Run exporter-backed conformance matrix

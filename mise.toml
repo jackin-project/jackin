@@ -14,7 +14,7 @@ cargo-binstall = "1.21.0"
 "cargo:cargo-hakari" = "0.9.38"
 "cargo:cargo-llvm-cov" = "0.8.7"
 "cargo:cargo-mutants" = "27.1.0"
-"cargo:cargo-nextest" = "0.9.140"
+"aqua:nextest-rs/nextest/cargo-nextest" = "0.9.140"
 "cargo:cargo-shear" = "1.13.0"
 "cargo:cargo-zigbuild" = "0.23.0"
 "cargo:codebook-lsp" = { version = "0.3.41", default-features = false }

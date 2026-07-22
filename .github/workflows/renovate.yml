@@ -27,17 +27,10 @@ jobs:
       - name: Cache Renovate repository cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
-          path: /tmp/renovate/cache
+          path: .renovate/cache
           key: renovate-${{ runner.os }}-${{ github.run_id }}
           restore-keys: |
             renovate-${{ runner.os }}-
-
-      - name: Prepare renovate cache dir
-        # actions/cache restores /tmp/renovate owned by the runner user;
-        # the renovate container user then can't mkdir /tmp/renovate/repos.
-        run: |
-          sudo mkdir -p /tmp/renovate/repos /tmp/renovate/cache
-          sudo chmod -R 0777 /tmp/renovate
 
       - name: Self-hosted Renovate
         uses: renovatebot/github-action@22e0a16091fc706b04affe6ae53d5e3358ac4023 # v46.1.19
@@ -45,6 +38,7 @@ jobs:
           token: ${{ secrets.RENOVATE_TOKEN }}
         env:
           RENOVATE_REPOSITORIES: ${{ github.repository }}
+          RENOVATE_BASE_DIR: ${{ github.workspace }}/.renovate
           RENOVATE_ONBOARDING: false
           RENOVATE_REPOSITORY_CACHE: enabled
           # Pin the git author identity so the DCO sign-off trailer in
@@ -54,7 +48,3 @@ jobs:
           # default author would silently break DCO on every Renovate PR.
           RENOVATE_GIT_AUTHOR: "Renovate Bot <renovate@whitesourcesoftware.com>"
           LOG_LEVEL: debug
-
-      - name: Fix Renovate cache ownership for save
-        if: always()
-        run: sudo chown -R "$(whoami)" /tmp/renovate 2>/dev/null || true

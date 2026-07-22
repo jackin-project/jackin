@@ -166,10 +166,17 @@ jobs:
           version: "2026.7.7"
           cache_key_prefix: "mise-v2"
           cache_save: ${{ github.ref == 'refs/heads/main' }}
-          install_args: "rust cargo:cargo-nextest"
+          install_args: "rust aqua:nextest-rs/nextest/cargo-nextest"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
+      - &cargo-target-cache
+        name: Cache Cargo target
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: target
+          key: cargo-target-GitHub-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ hashFiles('rust-toolchain.toml', '.cargo/config.toml', '**/Cargo.toml', '**/Cargo.lock') }}-${{ github.sha }}
+          restore-keys: cargo-target-GitHub-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ hashFiles('rust-toolchain.toml', '.cargo/config.toml', '**/Cargo.toml', '**/Cargo.lock') }}-
       - name: Compile all benchmarks and run telemetry baselines
         run: |
           set -o pipefail
@@ -229,6 +236,7 @@ jobs:
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
+      - *cargo-target-cache
       - name: Run dhat-heap allocation tests
         run: |
           set -euo pipefail
@@ -273,6 +281,7 @@ jobs:
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
+      - *cargo-target-cache
       - run: cargo build --release --locked -p jackin
       - name: Hyperfine cold-start
         run: |
@@ -492,7 +501,7 @@ jobs:
           install_args: >-
             rust
             ${{ env.CI_TOOLS_HIT != 'true' &&
-                'cargo-binstall cargo:cargo-llvm-cov cargo:cargo-nextest' || '' }}
+                'cargo-binstall cargo:cargo-llvm-cov aqua:nextest-rs/nextest/cargo-nextest' || '' }}
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
@@ -662,6 +671,7 @@ jobs:
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
+      - *cargo-target-cache
       # Exit-checked hakari with before/after wall-clock (advisory job; summary distinguishes tool failure).
       - name: baseline workspace build (before)
         id: hakari-before
@@ -831,7 +841,7 @@ jobs:
           install_args: >-
             rust zig
             ${{ env.CI_TOOLS_HIT != 'true' &&
-                'cargo-binstall cargo:cargo-nextest cargo:cargo-zigbuild' || '' }}
+                'cargo-binstall aqua:nextest-rs/nextest/cargo-nextest cargo:cargo-zigbuild' || '' }}
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
@@ -882,6 +892,7 @@ jobs:
             unzip -p "target/health-history/${index}.zip" health-snapshot.json \
               | jq -c . >> health-history.jsonl
           done < target/health-history/urls.txt
+      - *cargo-target-cache
       - name: Emit health JSON
         run: |
           set -euo pipefail
