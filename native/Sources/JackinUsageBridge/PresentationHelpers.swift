@@ -153,6 +153,115 @@ public func statusItemPercentLines(remainings: [UInt8], maxLines: Int = 2) -> [S
     Array(remainings.prefix(max(0, maxLines)).map(statusItemPercentToken(remainingPercent:)))
 }
 
+/// Pure snapshot used to build status-item chips without UniFFI/AppKit.
+public struct StatusItemSurfaceSnapshot: Sendable, Equatable {
+    public let surfaceId: String
+    public let label: String
+    public let enabled: Bool
+    public let statusBarLabel: String
+    public let status: String
+    /// Rust `compact_status_bar_label_for` result (may be empty).
+    public let compactLabel: String
+    /// Numeric bucket remainings in display order (session then weekly…).
+    public let remainings: [UInt8]
+    /// Severity per remaining entry (same length as remainings when possible).
+    public let severities: [String]
+
+    public init(
+        surfaceId: String,
+        label: String,
+        enabled: Bool,
+        statusBarLabel: String,
+        status: String,
+        compactLabel: String,
+        remainings: [UInt8],
+        severities: [String]
+    ) {
+        self.surfaceId = surfaceId
+        self.label = label
+        self.enabled = enabled
+        self.statusBarLabel = statusBarLabel
+        self.status = status
+        self.compactLabel = compactLabel
+        self.remainings = remainings
+        self.severities = severities
+    }
+
+    /// Whether this surface can appear in the menu-bar strip (hide empty).
+    public var hasPreviewData: Bool {
+        guard enabled else { return false }
+        if !remainings.isEmpty { return true }
+        return !statusBarLabel.isEmpty
+            && status != "disabled"
+            && status != "unavailable"
+    }
+
+    public var drivingRemaining: UInt8? {
+        remainings.min()
+    }
+
+    public var drivingSeverity: String {
+        guard let minRem = drivingRemaining,
+              let idx = remainings.firstIndex(of: minRem),
+              idx < severities.count
+        else {
+            return severities.first ?? "ok"
+        }
+        return severities[idx]
+    }
+}
+
+/// Build CodexBar-style per-provider chips from pure snapshots (unit-testable).
+///
+/// - Catalog order when `preferWorstFirst` is false.
+/// - Lowest remaining first when true (focus mode).
+/// - Hides surfaces without preview data; never invents percents.
+public func buildStatusItemChips(
+    surfaces: [StatusItemSurfaceSnapshot],
+    maxCount: Int,
+    preferWorstFirst: Bool
+) -> [StatusItemChip] {
+    let cap = max(1, min(8, maxCount))
+    var candidates = surfaces.filter(\.hasPreviewData)
+    if preferWorstFirst {
+        candidates.sort { lhs, rhs in
+            let l = lhs.drivingRemaining ?? 100
+            let r = rhs.drivingRemaining ?? 100
+            if l != r { return l < r }
+            return false
+        }
+    }
+    var chips: [StatusItemChip] = []
+    for surface in candidates.prefix(cap) {
+        let compact =
+            !surface.compactLabel.isEmpty
+            ? surface.compactLabel
+            : (!surface.statusBarLabel.isEmpty ? surface.statusBarLabel : surface.label)
+        let remainings = Array(surface.remainings.prefix(2))
+        let lines = statusItemPercentLines(remainings: remainings, maxLines: 2)
+        chips.append(
+            StatusItemChip(
+                surfaceId: surface.surfaceId,
+                glyph: statusItemGlyph(compactLabel: compact, surfaceId: surface.surfaceId),
+                systemImage: statusItemSystemImage(surfaceId: surface.surfaceId),
+                percentLines: lines,
+                compactLabel: compact,
+                remainingPercent: surface.drivingRemaining,
+                remainingPerLine: remainings,
+                severity: surface.drivingSeverity
+            )
+        )
+    }
+    return chips
+}
+
+/// Accessibility / VoiceOver string for a multi-provider strip.
+public func statusItemAccessibilityLabel(chips: [StatusItemChip]) -> String {
+    if chips.isEmpty { return "jackin Desktop" }
+    let parts = chips.map(\.compactLabel).joined(separator: ", ")
+    return "jackin Desktop \(parts)"
+}
+
 /// Format Rust `MoneyDto` for display (no `String(format:)`).
 public func formatMoneyDto(_ money: MoneyDto) -> String {
     let exp = Int(money.exponent)

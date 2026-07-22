@@ -541,72 +541,73 @@ public final class PresentationStore: ObservableObject {
     }
 
     /// One status-item chip per enabled provider that has usage data (CodexBar preview).
-    ///
-    /// - Catalog order when `preferWorstFirst` is false (stable multi-provider strip).
-    /// - Worst remaining first when true (focus mode).
     private func chipsForProviderPreview(maxCount: Int, preferWorstFirst: Bool) throws
         -> [StatusItemChip]
     {
-        let cap = max(1, min(8, maxCount))
-        let candidates: [SurfaceRow]
-        if preferWorstFirst {
-            candidates = enabledSurfacesWithPreviewData().sorted { lhs, rhs in
-                let l = drivingBucket(for: lhs)?.remainingPercent ?? 100
-                let r = drivingBucket(for: rhs)?.remainingPercent ?? 100
-                if l != r { return l < r }
-                return false
-            }
-        } else {
-            // Preserve HostSurfaceId / listSurfaces order.
-            candidates = enabledSurfacesWithPreviewData()
-        }
-
-        var chips: [StatusItemChip] = []
-        for row in candidates {
-            if chips.count >= cap { break }
-            let label =
-                (try? bridge.compactStatusBarLabelFor(surfaceId: row.id))
-                ?? row.statusBarLabel
-            if label.isEmpty,
-               row.buckets.compactMap(\.remainingPercent).isEmpty
-            {
-                continue
-            }
-            chips.append(makeChip(row: row, compactLabel: label.isEmpty ? row.label : label))
-        }
-        return chips
+        let snaps = try surfaceSnapshotsForStatusItem()
+        return buildStatusItemChips(
+            surfaces: snaps,
+            maxCount: maxCount,
+            preferWorstFirst: preferWorstFirst
+        )
     }
 
-    /// Enabled surfaces that can show a status-bar preview (numeric bucket or bar label).
-    private func enabledSurfacesWithPreviewData() -> [SurfaceRow] {
-        surfaces.filter { row in
-            guard row.enabled else { return false }
-            if row.buckets.contains(where: { $0.remainingPercent != nil }) {
-                return true
+    private func surfaceSnapshotsForStatusItem() throws -> [StatusItemSurfaceSnapshot] {
+        var snaps: [StatusItemSurfaceSnapshot] = []
+        for row in surfaces {
+            let compact =
+                (try? bridge.compactStatusBarLabelFor(surfaceId: row.id))
+                ?? ""
+            let pairs: [(UInt8, String)] = row.buckets.compactMap { bucket in
+                guard let rem = bucket.remainingPercent else { return nil }
+                return (rem, bucket.severity)
             }
-            return !row.statusBarLabel.isEmpty
-                && row.status != "disabled"
-                && row.status != "unavailable"
+            snaps.append(
+                StatusItemSurfaceSnapshot(
+                    surfaceId: row.id,
+                    label: row.label,
+                    enabled: row.enabled,
+                    statusBarLabel: row.statusBarLabel,
+                    status: row.status,
+                    compactLabel: compact,
+                    remainings: pairs.map(\.0),
+                    severities: pairs.map(\.1)
+                )
+            )
         }
+        return snaps
     }
 
     private func makeChip(row: SurfaceRow, compactLabel: String) -> StatusItemChip {
-        let drive = drivingBucket(for: row)
-        // Up to two numeric buckets for session/weekly stack (CodexBar density).
-        let remainings = Array(
-            row.buckets.compactMap(\.remainingPercent).prefix(2)
-        )
-        let lines = statusItemPercentLines(remainings: remainings, maxLines: 2)
-        return StatusItemChip(
+        let pairs: [(UInt8, String)] = row.buckets.compactMap { bucket in
+            guard let rem = bucket.remainingPercent else { return nil }
+            return (rem, bucket.severity)
+        }
+        let snap = StatusItemSurfaceSnapshot(
             surfaceId: row.id,
-            glyph: statusItemGlyph(compactLabel: compactLabel, surfaceId: row.id),
-            systemImage: statusItemSystemImage(surfaceId: row.id),
-            percentLines: lines,
+            label: row.label,
+            enabled: row.enabled,
+            statusBarLabel: row.statusBarLabel,
+            status: row.status,
             compactLabel: compactLabel,
-            remainingPercent: drive?.remainingPercent,
-            remainingPerLine: remainings,
-            severity: drive?.severity ?? "ok"
+            remainings: pairs.map(\.0),
+            severities: pairs.map(\.1)
         )
+        return buildStatusItemChips(
+            surfaces: [snap],
+            maxCount: 1,
+            preferWorstFirst: false
+        ).first
+            ?? StatusItemChip(
+                surfaceId: row.id,
+                glyph: statusItemGlyph(compactLabel: compactLabel, surfaceId: row.id),
+                systemImage: statusItemSystemImage(surfaceId: row.id),
+                percentLines: [],
+                compactLabel: compactLabel,
+                remainingPercent: nil,
+                remainingPerLine: [],
+                severity: "ok"
+            )
     }
 
     private func drivingBucket(for row: SurfaceRow) -> BucketRow? {

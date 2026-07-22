@@ -194,6 +194,57 @@ fn inject_remaining(runtime: &mut HostUsageRuntime, surface_id: &str, remaining:
     runtime.inject_snapshot(surface_id, view).expect("inject");
 }
 
+/// Dual-bucket inject (session + weekly) for Desktop dual-line chip parity.
+fn inject_dual_remaining(
+    runtime: &mut HostUsageRuntime,
+    surface_id: &str,
+    session_remaining: u8,
+    weekly_remaining: u8,
+) {
+    let mut view = FocusedUsageView::unavailable("seed", 1);
+    view.status = UsageSnapshotStatus::Fresh;
+    view.source = UsageSource::ProviderApi;
+    view.confidence = UsageConfidence::Authoritative;
+    view.status_bar_label = format!("{session_remaining}% left");
+    view.buckets = vec![
+        QuotaBucketView {
+            label: "Session".to_owned(),
+            used_label: Some(format!(
+                "{}% used",
+                100u8.saturating_sub(session_remaining)
+            )),
+            limit_label: Some("100%".to_owned()),
+            remaining_percent: Some(session_remaining),
+            reset_label: Some("Resets in 5h".to_owned()),
+            resets_at: None,
+            status_slot: Some(StatusSlot::Session),
+            pace_label: None,
+            status: UsageSnapshotStatus::Fresh,
+            used_money: None,
+            limit_money: None,
+            severity: UsageSeverity::Normal,
+        },
+        QuotaBucketView {
+            label: "Weekly".to_owned(),
+            used_label: Some(format!(
+                "{}% used",
+                100u8.saturating_sub(weekly_remaining)
+            )),
+            limit_label: Some("100%".to_owned()),
+            remaining_percent: Some(weekly_remaining),
+            reset_label: Some("Resets in 2d".to_owned()),
+            resets_at: None,
+            status_slot: Some(StatusSlot::Weekly),
+            pace_label: Some("10% in reserve".to_owned()),
+            status: UsageSnapshotStatus::Fresh,
+            used_money: None,
+            limit_money: None,
+            severity: UsageSeverity::Normal,
+        },
+    ];
+    runtime.inject_snapshot(surface_id, view).expect("inject dual");
+}
+
 #[test]
 fn compact_status_bar_label_picks_highest_used_percent() {
     let dir = tempfile::tempdir().expect("tempdir");
@@ -417,6 +468,74 @@ fn compact_status_bar_strip_worst_first_cap_and_separator() {
         "Cl 63% · Cx 41% · ZA 12%"
     );
     assert_eq!(runtime.compact_status_bar_strip(1).expect("cap1"), "Cl 63%");
+}
+
+/// Multi-provider strip: every enabled surface with numeric data contributes a token.
+#[test]
+fn compact_status_bar_strip_all_enabled_host_surfaces_with_data() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let mut runtime = open_runtime(dir.path());
+    // Enable the full frozen catalog.
+    for surface in HostSurfaceId::ALL {
+        runtime
+            .set_enabled(surface.id(), true)
+            .expect("enable set");
+    }
+    // Inject distinct remainings for five surfaces; leave others empty (hidden).
+    inject_remaining(&mut runtime, "claude", 50);
+    inject_remaining(&mut runtime, "codex", 40);
+    inject_remaining(&mut runtime, "amp", 30);
+    inject_remaining(&mut runtime, "grok", 20);
+    inject_remaining(&mut runtime, "kimi", 10);
+    let strip = runtime.compact_status_bar_strip(8).expect("strip");
+    // Worst-first: lowest remaining first → Kimi, Grok, Amp, Codex, Claude.
+    assert!(
+        strip.contains("Ki ") && strip.contains("Gr ") && strip.contains("Am "),
+        "strip should include per-provider compact tokens: {strip}"
+    );
+    assert!(
+        strip.contains(" · "),
+        "multi-provider strip joins with middle-dot separator: {strip}"
+    );
+    let parts: Vec<_> = strip.split(" · ").collect();
+    assert!(
+        parts.len() >= 5,
+        "expected ≥5 provider tokens, got {}: {strip}",
+        parts.len()
+    );
+    // Cap still applies.
+    let capped = runtime.compact_status_bar_strip(2).expect("cap2");
+    assert_eq!(capped.split(" · ").count(), 2, "cap2 strip: {capped}");
+}
+
+/// Dual-bucket surface still exposes both remainings via snapshot (Desktop chip stack).
+#[test]
+fn dual_bucket_snapshot_exposes_session_and_weekly_remainings() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let mut runtime = open_runtime(dir.path());
+    for surface in HostSurfaceId::ALL {
+        runtime
+            .set_enabled(surface.id(), *surface == HostSurfaceId::Claude)
+            .expect("enable set");
+    }
+    inject_dual_remaining(&mut runtime, "claude", 100, 79);
+    let snap = runtime.snapshot("claude").expect("snapshot");
+    let remainings: Vec<u8> = snap
+        .buckets
+        .iter()
+        .filter_map(|b| b.remaining_percent)
+        .collect();
+    assert_eq!(
+        remainings,
+        vec![100, 79],
+        "session then weekly remainings for dual-line chips"
+    );
+    assert_eq!(snap.buckets[0].label, "Session");
+    assert_eq!(snap.buckets[1].label, "Weekly");
+    assert!(
+        snap.buckets[1].pace_label.as_deref() == Some("10% in reserve"),
+        "pace present for Desktop two-column caption"
+    );
 }
 
 #[test]

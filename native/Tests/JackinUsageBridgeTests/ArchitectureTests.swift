@@ -133,6 +133,98 @@ final class ArchitectureTests: XCTestCase {
         XCTAssertEqual(formatMoneyDto(money), "$65.59")
     }
 
+    /// Multi-provider strip: one chip per surface with dual-bucket remainings (CodexBar parity).
+    func testBuildStatusItemChipsMultiProviderDualBucket() {
+        let surfaces = [
+            StatusItemSurfaceSnapshot(
+                surfaceId: "claude",
+                label: "Claude",
+                enabled: true,
+                statusBarLabel: "Claude Session: 0% used",
+                status: "fresh",
+                compactLabel: "Cl 100%",
+                remainings: [100, 79],
+                severities: ["ok", "ok"]
+            ),
+            StatusItemSurfaceSnapshot(
+                surfaceId: "codex",
+                label: "Codex",
+                enabled: true,
+                statusBarLabel: "Codex Session: 16% used",
+                status: "fresh",
+                compactLabel: "Cx 84%",
+                remainings: [84],
+                severities: ["warn"]
+            ),
+            StatusItemSurfaceSnapshot(
+                surfaceId: "amp",
+                label: "Amp",
+                enabled: true,
+                statusBarLabel: "",
+                status: "unavailable",
+                compactLabel: "",
+                remainings: [],
+                severities: []
+            ),
+            StatusItemSurfaceSnapshot(
+                surfaceId: "grok",
+                label: "Grok Build",
+                enabled: false,
+                statusBarLabel: "unused",
+                status: "fresh",
+                compactLabel: "Gr 50%",
+                remainings: [50],
+                severities: ["ok"]
+            ),
+        ]
+        let chips = buildStatusItemChips(
+            surfaces: surfaces,
+            maxCount: 6,
+            preferWorstFirst: false
+        )
+        // Amp empty/unavailable and disabled Grok hidden; Claude + Codex only.
+        XCTAssertEqual(chips.map(\.surfaceId), ["claude", "codex"])
+        XCTAssertEqual(chips[0].percentLines, ["100%", "79%"])
+        XCTAssertEqual(chips[0].remainingPerLine, [100, 79])
+        XCTAssertEqual(chips[1].percentLines, ["84%"])
+        XCTAssertEqual(chips[1].systemImage, "circle.hexagongrid.fill")
+        XCTAssertFalse(chips[0].compactLabel.isEmpty)
+        XCTAssertEqual(
+            statusItemAccessibilityLabel(chips: chips),
+            "jackin Desktop Cl 100%, Cx 84%"
+        )
+
+        let worstFirst = buildStatusItemChips(
+            surfaces: surfaces,
+            maxCount: 1,
+            preferWorstFirst: true
+        )
+        // Codex 84% remaining is worse than Claude 79% min… Claude min remaining is 79, Codex 84 → Claude is worse (lower remaining).
+        XCTAssertEqual(worstFirst.map(\.surfaceId), ["claude"])
+    }
+
+    func testBuildStatusItemChipsRespectsCapAndHidesEmpty() {
+        let surfaces = (0..<5).map { i in
+            StatusItemSurfaceSnapshot(
+                surfaceId: "s\(i)",
+                label: "S\(i)",
+                enabled: true,
+                statusBarLabel: "ok",
+                status: "fresh",
+                compactLabel: "S\(i) \(50 + i)%",
+                remainings: [UInt8(50 + i)],
+                severities: ["ok"]
+            )
+        }
+        let chips = buildStatusItemChips(
+            surfaces: surfaces,
+            maxCount: 3,
+            preferWorstFirst: false
+        )
+        XCTAssertEqual(chips.count, 3)
+        XCTAssertEqual(chips.map(\.surfaceId), ["s0", "s1", "s2"])
+    }
+
     func testPackageSwiftUsesBinaryTargetNotHostDylib() throws {
         let package = sourcesRoot
             .deletingLastPathComponent()

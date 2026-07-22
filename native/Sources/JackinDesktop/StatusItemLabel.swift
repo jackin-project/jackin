@@ -63,8 +63,7 @@ struct StatusItemLabel: View {
 
     private var accessibilityText: String {
         if !store.statusItemChips.isEmpty {
-            let parts = store.statusItemChips.map(\.compactLabel).joined(separator: ", ")
-            return "jackin Desktop \(parts)"
+            return statusItemAccessibilityLabel(chips: store.statusItemChips)
         }
         if !store.statusItemText.isEmpty {
             return "jackin Desktop \(store.statusItemText)"
