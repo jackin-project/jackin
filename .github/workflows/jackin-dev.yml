@@ -27,12 +27,10 @@ on:
         options: [velnor, github, both]
 
 concurrency:
-  # PRs are validation-only, not part of the publish stream. Scope them by
-  # source branch so cross-branch runs do not cancel each other. Main pushes
-  # and dispatches share the jackin-dev-publish stream so only the latest
-  # source commit publishes.
-  group: jackin-dev-${{ github.head_ref || 'publish' }}
-  cancel-in-progress: true
+  # PR validation may cancel superseded work. Publishing runs serialize and
+  # finish because cancellation can leave partially written registry state.
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   validate-version-bump:
