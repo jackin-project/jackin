@@ -9,28 +9,16 @@ import JackinUsageBridge
 
 @main
 struct JackinDesktopApp: App {
+    @NSApplicationDelegateAdaptor(DesktopAppDelegate.self) private var appDelegate
     @StateObject private var store = PresentationStore()
 
     var body: some Scene {
-        // WHY: SettingsLink from MenuBarExtra is unreliable on Tahoe without an
-        // existing SwiftUI render tree; a 1×1 hidden window keeps one alive.
-        Window("JackinDesktopKeepalive", id: "keepalive") {
-            Color.clear
-                .frame(width: 1, height: 1)
-                .accessibilityHidden(true)
-                .onAppear {
-                    if !store.isOpen {
-                        store.openDefault()
-                    }
-                }
-        }
-        .windowResizability(.contentSize)
-        .defaultSize(width: 1, height: 1)
-
         MenuBarExtra {
             PopoverRoot(store: store)
+                .onAppear { appDelegate.store = store }
         } label: {
             StatusItemLabel(store: store)
+                .onAppear { appDelegate.store = store }
         }
         .menuBarExtraStyle(.window)
 

@@ -159,35 +159,65 @@ fn run_app(args: &RunArgs) -> Result<()> {
         bail!("missing executable {}", bin.display());
     }
 
+    // WHY: reusing a stale agent process (open without -n) can leave a PID alive
+    // with no MenuBarExtra after a bad first launch. Always restart cleanly.
+    {
+        let mut pkill = cmd::command("pkill");
+        pkill.args(["-x", APP_EXECUTABLE]);
+        drop(cmd::run(&mut pkill));
+    }
+
+    // Clear quarantine bits from local builds so LaunchServices will map UI.
+    {
+        let mut xattr = cmd::command("xattr");
+        xattr.args(["-cr", app.to_str().context("app utf-8")?]);
+        drop(cmd::run(&mut xattr));
+    }
+
     progress("");
     progress("┌─────────────────────────────────────────────────────────────");
     progress("│ jackin❯ Desktop — launching");
     progress(format!("│   app:  {}", app.display()));
     progress(format!("│   bin:  {}", bin.display()));
     progress("│   note: LSUIElement — no Dock icon; look at the menu bar");
+    progress("│         (right side near Control Center / clock)");
+    progress("│   look: gauge icon and/or short label like \"Cl 63%\"");
     progress("│   quit: osascript -e 'quit app \"Jackin Desktop\"'");
-    progress("│         or: killall JackinDesktop");
+    progress("│         or: pkill -x JackinDesktop");
     progress("└─────────────────────────────────────────────────────────────");
     progress("");
 
-    // Prefer open(1) so LaunchServices owns the app lifecycle (same as double-click).
+    // -n forces a new instance after pkill; absolute path avoids PATH ambiguity.
     let mut open = cmd::command("open");
-    open.args(["-a", app.to_str().context("app utf-8")?]);
+    open.args(["-n", app.to_str().context("app utf-8")?]);
     cmd::run(&mut open).with_context(|| format!("opening {}", app.display()))?;
 
-    // Best-effort liveness (no sleep — launch may still be racing on headless hosts).
-    let mut pgrep = cmd::command("pgrep");
-    pgrep.args(["-lf", APP_EXECUTABLE]);
-    match cmd::output_string(&mut pgrep) {
-        Ok(out) if !out.trim().is_empty() => {
-            progress(format!("OK: process running:\n{}", out.trim()));
+    // Poll briefly for a live process (no thread::sleep — short bash wait).
+    let mut seen = String::new();
+    for _ in 0..20 {
+        let mut pgrep = cmd::command("pgrep");
+        pgrep.args(["-x", APP_EXECUTABLE]);
+        if let Ok(out) = cmd::output_string(&mut pgrep) {
+            let trimmed = out.trim();
+            if !trimmed.is_empty() {
+                seen = trimmed.to_owned();
+                break;
+            }
         }
-        _ => {
-            progress(
-                "launched via open(1) — check the menu bar (LSUIElement; no Dock icon)",
-            );
-        }
+        let mut nap = cmd::command("/bin/bash");
+        nap.args(["-c", "read -t 0.05 || true"]);
+        drop(cmd::run(&mut nap));
     }
+    if seen.is_empty() {
+        bail!(
+            "JackinDesktop did not stay running after open. \
+Try: open -n {}  and check Console.app for crash reports.",
+            app.display()
+        );
+    }
+    progress(format!("OK: process running (pid {seen})"));
+    progress("If no menu-bar icon: System Settings → Control Center → Menu Bar Only");
+    progress("  and ensure menu bar icons are not hidden (fullscreen / Stage Manager).");
     Ok(())
 }
 
