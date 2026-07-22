@@ -267,6 +267,35 @@ public func surfaceRemainingSubtitle(
     return lines.joined(separator: " · ")
 }
 
+/// Max numeric quota windows shown in Overview mini stacks (Session/Weekly + scoped).
+public let overviewNumericBucketCap: Int = 4
+
+/// Select numeric buckets for Overview mini-rows (display order, capped).
+public func overviewNumericBuckets(
+    remainingPercents: [UInt8?],
+    maxCount: Int = overviewNumericBucketCap
+) -> [UInt8] {
+    let numeric = remainingPercents.compactMap { $0 }
+    return Array(numeric.prefix(max(0, maxCount)))
+}
+
+/// Accessibility / subtitle for a multi-account pill (label + optional remaining).
+public func accountPillLabel(
+    accountLabel: String,
+    remainingPercent: UInt8?,
+    percentStyle: String = "left",
+    selected: Bool = false
+) -> String {
+    var parts = [accountLabel]
+    if let remaining = remainingPercent {
+        parts.append(
+            statusItemPercentToken(remainingPercent: remaining, percentStyle: percentStyle)
+        )
+    }
+    if selected { parts.append("selected") }
+    return parts.joined(separator: ", ")
+}
+
 /// Glyph for the menu-bar strip from Rust compact label (`Cl 37%` → `Cl`).
 ///
 /// Falls back to the frozen-host two-letter mark so every provider keeps an identity

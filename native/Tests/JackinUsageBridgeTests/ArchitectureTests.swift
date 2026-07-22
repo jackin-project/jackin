@@ -383,6 +383,21 @@ final class ArchitectureTests: XCTestCase {
             surfaceRemainingSubtitle(remainings: [100, 79]),
             "100% · 79%"
         )
+        XCTAssertEqual(
+            overviewNumericBuckets(
+                remainingPercents: [100, 79, 40, 22, 5].map { Optional($0) }
+            ),
+            [100, 79, 40, 22]
+        )
+        XCTAssertEqual(overviewNumericBucketCap, 4)
+        XCTAssertEqual(
+            accountPillLabel(
+                accountLabel: "work@ex.com",
+                remainingPercent: 63,
+                selected: true
+            ),
+            "work@ex.com, 63%, selected"
+        )
     }
 
     func testBuildStatusItemChipsRespectsCapAndHidesEmpty() {

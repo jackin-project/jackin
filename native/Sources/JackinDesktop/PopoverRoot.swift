@@ -329,6 +329,7 @@ struct PopoverRoot: View {
             } else {
                 let surfaceAccounts = store.accountsForSurface(surface.id)
                 if surfaceAccounts.count > 1 {
+                    // CodexBar/OpenUsage: multi-account pills with remaining when known.
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 6) {
                             ForEach(surfaceAccounts) { account in
@@ -338,22 +339,49 @@ struct PopoverRoot: View {
                                         accountKey: account.accountKey
                                     )
                                 } label: {
-                                    Text(account.accountLabel)
-                                        .font(.caption2.weight(account.selected ? .semibold : .regular))
-                                        .lineLimit(1)
-                                        .padding(.horizontal, 8)
-                                        .padding(.vertical, 4)
-                                        .background {
-                                            Capsule(style: .continuous)
-                                                .fill(
-                                                    account.selected
-                                                        ? Color.accentColor.opacity(0.9)
-                                                        : Color.primary.opacity(0.07)
+                                    VStack(alignment: .leading, spacing: 1) {
+                                        Text(account.accountLabel)
+                                            .font(
+                                                .caption2.weight(
+                                                    account.selected ? .semibold : .regular
                                                 )
+                                            )
+                                            .lineLimit(1)
+                                        if let rem = account.remainingPercent {
+                                            Text(
+                                                statusItemPercentToken(
+                                                    remainingPercent: rem,
+                                                    percentStyle: store.percentStyle
+                                                )
+                                            )
+                                            .font(.system(size: 9, weight: .semibold, design: .rounded))
+                                            .monospacedDigit()
+                                            .foregroundStyle(
+                                                account.selected
+                                                    ? Color.white.opacity(0.9) : Color.secondary
+                                            )
                                         }
-                                        .foregroundStyle(account.selected ? Color.white : Color.primary)
+                                    }
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 4)
+                                    .background {
+                                        Capsule(style: .continuous)
+                                            .fill(
+                                                account.selected
+                                                    ? Color.accentColor.opacity(0.9)
+                                                    : Color.primary.opacity(0.07)
+                                            )
+                                    }
+                                    .foregroundStyle(account.selected ? Color.white : Color.primary)
                                 }
                                 .buttonStyle(.plain)
+                                .accessibilityLabel(
+                                    accountPillAccessibility(
+                                        label: account.accountLabel,
+                                        remaining: account.remainingPercent,
+                                        selected: account.selected
+                                    )
+                                )
                             }
                         }
                     }
@@ -424,6 +452,18 @@ struct PopoverRoot: View {
                 if let pace = bucket.paceLabel, !pace.isEmpty {
                     paceRow(pace)
                 }
+                // CodexBar secondary status/reserve slot when Rust supplies it.
+                if let slot = bucket.statusSlot, !slot.isEmpty {
+                    Text(slot)
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                if let limit = bucket.limitLabel, !limit.isEmpty {
+                    Text(limit)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
             case .valueOnly:
                 if let desc = bucket.limitLabel ?? bucket.statusSlot, !desc.isEmpty {
                     Text(desc)
@@ -440,6 +480,24 @@ struct PopoverRoot: View {
                 emptyMetric()
             }
         }
+    }
+
+    private func accountPillAccessibility(
+        label: String,
+        remaining: UInt8?,
+        selected: Bool
+    ) -> String {
+        var parts = [label]
+        if let remaining {
+            parts.append(
+                statusItemPercentToken(
+                    remainingPercent: remaining,
+                    percentStyle: store.percentStyle
+                )
+            )
+        }
+        if selected { parts.append("selected") }
+        return parts.joined(separator: ", ")
     }
 
     private func moneyGrid(_ surface: PresentationStore.SurfaceRow) -> some View {

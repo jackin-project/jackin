@@ -189,6 +189,17 @@ struct DesktopParityMatrixHarness {
             "sidebar dual subtitle",
             surfaceRemainingSubtitle(remainings: [99, 63]) == "99% · 63%"
         )
+        check(
+            "overview keeps third scoped window",
+            overviewNumericBuckets(
+                remainingPercents: [100, 36, 27].map { Optional($0) }
+            ) == [100, 36, 27]
+        )
+        check(
+            "account pill remaining a11y",
+            accountPillLabel(accountLabel: "a", remainingPercent: 50, selected: false)
+                == "a, 50%"
+        )
 
         // --- Empty data honesty (no invented zeros) ---
         let emptyAmp = StatusItemSurfaceSnapshot(
@@ -269,6 +280,18 @@ struct DesktopParityMatrixHarness {
         check(
             "Popover multi-account pills",
             popover.contains("accountsForSurface") && popover.contains("setSelectedAccount")
+        )
+        check(
+            "Popover account pill remaining%",
+            popover.contains("remainingPercent") && popover.contains("statusItemPercentToken")
+        )
+        check(
+            "Popover gauge statusSlot",
+            popover.contains("statusSlot")
+        )
+        check(
+            "Overview multi-window cap",
+            overview.contains("overviewNumericBucketCap")
         )
         check(
             "ProviderCard primary limit labels",

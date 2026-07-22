@@ -49,8 +49,10 @@ struct OverviewListView: View {
 
     private func overviewCard(_ row: PresentationStore.OverviewRow) -> some View {
         let surface = store.surfaces.first(where: { $0.id == row.surfaceId })
+        // Session/Weekly + model-scoped windows (Fable, …) up to overviewNumericBucketCap.
         let numericBuckets: [PresentationStore.BucketRow] =
-            surface?.buckets.filter { $0.remainingPercent != nil }.prefix(2).map { $0 } ?? []
+            surface?.buckets.filter { $0.remainingPercent != nil }
+            .prefix(overviewNumericBucketCap).map { $0 } ?? []
 
         return HStack(alignment: .top, spacing: 10) {
             Circle()

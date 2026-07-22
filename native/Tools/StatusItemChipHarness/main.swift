@@ -398,6 +398,21 @@ struct StatusItemChipHarness {
             surfaceRemainingSubtitle(remainings: [100, 79]) == "100% · 79%"
         )
         check(
+            "overview numeric cap keeps four windows",
+            overviewNumericBuckets(
+                remainingPercents: [100, 79, 40, 22, 5].map { Optional($0) }
+            ) == [100, 79, 40, 22]
+        )
+        check(
+            "account pill with remaining",
+            accountPillLabel(
+                accountLabel: "work@ex.com",
+                remainingPercent: 63,
+                percentStyle: "left",
+                selected: true
+            ) == "work@ex.com, 63%, selected"
+        )
+        check(
             "dual depleted a11y keeps weekly",
             statusItemAccessibilityLabel(chips: dualDepChips)
                 == "jackin Desktop Cl resets 1h 21m and 79%",
