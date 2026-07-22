@@ -1,7 +1,0 @@
-{
-  "default_mode_logs": 16,
-  "default_mode_spans": 6,
-  "default_mode_metrics": 0,
-  "max_debug_logs": 64,
-  "max_spans": 48
-}
