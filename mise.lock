@@ -219,10 +219,6 @@ backend = "cargo:sccache"
 version = "0.32.0"
 backend = "cargo:uniffi"
 
-[[tools."cargo:uniffi"]]
-version = "0.32.0"
-backend = "cargo:uniffi"
-
 [tools."cargo:uniffi".options]
 default-features = "true"
 features = "cli"
