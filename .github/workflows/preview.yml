@@ -101,7 +101,7 @@ jobs:
               ;;
           esac
 
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ steps.source.outputs.sha }}
           fetch-depth: 0
@@ -299,7 +299,7 @@ jobs:
           - target: x86_64-unknown-linux-gnu
             zigbuild_target: x86_64-unknown-linux-gnu.2.17
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.source-changed.outputs.sha }}
       - name: Cache Rust toolchain
@@ -395,7 +395,7 @@ jobs:
             zigbuild_target: x86_64-unknown-linux-gnu.2.17
             arch: amd64
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.source-changed.outputs.sha }}
       - name: Cache Rust toolchain
@@ -493,7 +493,7 @@ jobs:
       contents: write
       id-token: write
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.source-changed.outputs.sha }}
           fetch-depth: 0
@@ -599,7 +599,7 @@ jobs:
             exit "$status"
           fi
 
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: jackin-project/homebrew-tap
           ref: main
