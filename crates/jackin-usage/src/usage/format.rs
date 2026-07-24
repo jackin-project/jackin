@@ -667,3 +667,125 @@ pub fn usage_bucket_presentation(
         meter_percent,
     }
 }
+
+/// The focused-header value line: `<agent> · <provider> · <account>` with the
+/// account falling back to `account unavailable`. Moved here from Capsule so the
+/// Desktop Usage window and the Capsule dialog share one wording (plan 008).
+fn usage_focused_label(view: &jackin_protocol::control::FocusedUsageView) -> String {
+    let account = view.account.account_label.trim();
+    let account = if account.is_empty() {
+        "account unavailable"
+    } else {
+        account
+    };
+    match (&view.focused_agent, &view.focused_provider) {
+        (Some(agent), Some(provider)) => format!("{agent} · {provider} · {account}"),
+        (Some(agent), None) => format!("{agent} · {account}"),
+        (None, Some(provider)) => format!("{provider} · {account}"),
+        (None, None) => format!("no focused agent · {account}"),
+    }
+}
+
+/// One leading-only metadata line plus its `display_label`.
+fn metadata_row(
+    row_id: &str,
+    label: &str,
+    value: String,
+) -> jackin_protocol::control::UsageDetailRow {
+    jackin_protocol::control::UsageDetailRow {
+        row_id: row_id.to_owned(),
+        kind: jackin_protocol::control::UsageDetailRowKind::Metadata,
+        label: label.to_owned(),
+        display_label: value.clone(),
+        layout_lines: vec![jackin_protocol::control::UsagePresentationLine {
+            leading: Some(value),
+            trailing: None,
+        }],
+        meter_percent: None,
+        severity: jackin_protocol::control::UsageSeverity::Normal,
+    }
+}
+
+/// Build the single Rust-owned provider-detail card shared by the Capsule usage
+/// dialog and the native Desktop Usage window. Emits rows in the fixed order
+/// `focused`, `header`, `provider`, `account`, `status`, `updated`, optional
+/// `username`/`plan`/`auth`, one `bucket:<zero-based index>` per source bucket
+/// (so duplicate provider labels stay distinct), then optional `detail`
+/// (`last_error`, appended after the last-good bucket rows — errors never
+/// replace data). Every visible string is produced here; consumers render the
+/// rows mechanically.
+#[must_use]
+pub fn usage_detail_presentation(
+    view: &jackin_protocol::control::FocusedUsageView,
+) -> jackin_protocol::control::UsageDetailPresentation {
+    use jackin_protocol::control::{UsageDetailRow, UsageDetailRowKind, UsagePresentationLine};
+
+    let mut rows = vec![
+        metadata_row("focused", "Focused", usage_focused_label(view)),
+        metadata_row(
+            "header",
+            "Header",
+            super::provider_display_label(&view.account.provider_label).to_owned(),
+        ),
+        metadata_row("provider", "Provider", view.account.provider_label.clone()),
+        metadata_row("account", "Account", view.account.account_label.clone()),
+        metadata_row(
+            "status",
+            "Status",
+            usage_display_status_label(view.status).to_owned(),
+        ),
+        metadata_row("updated", "Updated", view.updated_label.clone()),
+    ];
+    if let Some(username) = &view.account.username {
+        rows.push(metadata_row("username", "Username", username.clone()));
+    }
+    if let Some(plan) = &view.account.plan_label {
+        rows.push(metadata_row("plan", "Plan", plan.clone()));
+    }
+    if let Some(origin) = &view.account.credential_origin {
+        rows.push(metadata_row("auth", "Auth", origin.clone()));
+    }
+
+    for (index, bucket) in view.buckets.iter().enumerate() {
+        let presentation = usage_bucket_presentation(bucket);
+        // Canonical semantic order is already flattened in `display_segments`
+        // (remaining, pace/run-out, reset, quota-bound/status). The reset
+        // segment moves to the trailing column so the window can right-align it;
+        // every other segment is a leading line. Order — and therefore the
+        // joined `display_label` — is preserved either way.
+        let layout_lines: Vec<UsagePresentationLine> = presentation
+            .display_segments
+            .iter()
+            .map(|segment| {
+                if bucket.reset_label.as_deref() == Some(segment.as_str()) {
+                    UsagePresentationLine {
+                        leading: None,
+                        trailing: Some(segment.clone()),
+                    }
+                } else {
+                    UsagePresentationLine {
+                        leading: Some(segment.clone()),
+                        trailing: None,
+                    }
+                }
+            })
+            .collect();
+        rows.push(UsageDetailRow {
+            row_id: format!("bucket:{index}"),
+            kind: UsageDetailRowKind::Bucket,
+            label: bucket.label.clone(),
+            display_label: presentation.display_label,
+            layout_lines,
+            meter_percent: presentation.meter_percent,
+            severity: bucket.severity,
+        });
+    }
+
+    if let Some(error) = &view.last_error {
+        let mut row = metadata_row("detail", "Detail", error.clone());
+        row.kind = UsageDetailRowKind::Detail;
+        rows.push(row);
+    }
+
+    jackin_protocol::control::UsageDetailPresentation { rows }
+}

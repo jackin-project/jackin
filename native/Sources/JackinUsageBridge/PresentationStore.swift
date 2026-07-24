@@ -64,6 +64,9 @@ public final class PresentationStore: ObservableObject {
         public var buckets: [BucketRow]
         public var updatedLabel: String
         public var lastError: String?
+        /// Rust-owned Capsule-parity provider-detail card. The Usage window
+        /// renders these rows verbatim; other surfaces ignore it.
+        public var detailPresentation: UsageDetailPresentation
     }
 
     public struct BucketRow: Identifiable, Sendable, Equatable {
@@ -611,7 +614,8 @@ public final class PresentationStore: ObservableObject {
                     estimateCaption: nil,
                     buckets: [],
                     updatedLabel: "",
-                    lastError: nil
+                    lastError: nil,
+                    detailPresentation: .empty
                 )
             }
             guard let view = entry.view else {
@@ -628,7 +632,8 @@ public final class PresentationStore: ObservableObject {
                     estimateCaption: nil,
                     buckets: [],
                     updatedLabel: "",
-                    lastError: nil
+                    lastError: nil,
+                    detailPresentation: .empty
                 )
             }
             return SurfaceRow(
@@ -662,7 +667,8 @@ public final class PresentationStore: ObservableObject {
                     )
                 },
                 updatedLabel: view.updatedLabel,
-                lastError: view.lastError
+                lastError: view.lastError,
+                detailPresentation: UsageDetailPresentation(dto: view.detailPresentation)
             )
         }
         compactLabelBySurface = labelBySurface

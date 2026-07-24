@@ -47,74 +47,29 @@ impl Dialog {
         if *selected == UsageDialogTab::Overview {
             return Some(Self::usage_overview_state(view, scroll.clone()));
         }
-        let mut rows = Vec::new();
-        rows.extend([
-            crate::tui::components::container_info_surface::ContainerInfoRow::new(
-                "Focused",
-                Self::usage_focused_label(view),
-            ),
-            crate::tui::components::container_info_surface::ContainerInfoRow::new(
-                "Header",
-                Self::usage_provider_header_label(&view.account.provider_label),
-            ),
-            crate::tui::components::container_info_surface::ContainerInfoRow::new(
-                "Provider",
-                view.account.provider_label.clone(),
-            ),
-            crate::tui::components::container_info_surface::ContainerInfoRow::new(
-                "Account",
-                view.account.account_label.clone(),
-            ),
-            crate::tui::components::container_info_surface::ContainerInfoRow::new(
-                "Status",
-                Self::usage_status_label(view.status),
-            ),
-            crate::tui::components::container_info_surface::ContainerInfoRow::new(
-                "Updated",
-                view.updated_label.clone(),
-            ),
-        ]);
-        if let Some(username) = &view.account.username {
-            rows.push(
+        // Rust owns every provider-card field, string, and order in
+        // `jackin_usage::usage::usage_detail_presentation` so this dialog and the
+        // native Desktop Usage window stay parity-locked. The dialog only maps
+        // each shared row to a `ContainerInfoRow`, prepending its TUI meter glyph
+        // (geometry from `meter_percent`) to a bucket's leading segment.
+        let presentation = jackin_usage::usage::usage_detail_presentation(view);
+        let mut rows = Vec::with_capacity(presentation.rows.len());
+        for row in &presentation.rows {
+            let value = match row.meter_percent {
+                Some(meter_percent) => {
+                    format!("{} {}", Self::usage_meter(meter_percent), row.display_label)
+                }
+                None => row.display_label.clone(),
+            };
+            let mut info_row =
                 crate::tui::components::container_info_surface::ContainerInfoRow::new(
-                    "Username",
-                    username.clone(),
-                ),
-            );
-        }
-        if let Some(plan) = &view.account.plan_label {
-            rows.push(
-                crate::tui::components::container_info_surface::ContainerInfoRow::new(
-                    "Plan",
-                    plan.clone(),
-                ),
-            );
-        }
-        if let Some(origin) = &view.account.credential_origin {
-            rows.push(
-                crate::tui::components::container_info_surface::ContainerInfoRow::new(
-                    "Auth",
-                    origin.clone(),
-                ),
-            );
-        }
-        for bucket in &view.buckets {
-            let mut row = crate::tui::components::container_info_surface::ContainerInfoRow::new(
-                bucket.label.clone(),
-                Self::usage_bucket_value(bucket),
-            );
-            if let Some(accent) = Self::usage_severity_accent(bucket.severity) {
-                row = row.accent(accent);
+                    row.label.clone(),
+                    value,
+                );
+            if let Some(accent) = Self::usage_severity_accent(row.severity) {
+                info_row = info_row.accent(accent);
             }
-            rows.push(row);
-        }
-        if let Some(error) = &view.last_error {
-            rows.push(
-                crate::tui::components::container_info_surface::ContainerInfoRow::new(
-                    "Detail",
-                    error.clone(),
-                ),
-            );
+            rows.push(info_row);
         }
         let mut state =
             crate::tui::components::container_info_surface::ContainerInfoState::new("Usage", rows);
@@ -159,21 +114,6 @@ impl Dialog {
             crate::tui::components::container_info_surface::ContainerInfoState::new("Usage", rows);
         state.scroll = scroll;
         state
-    }
-
-    fn usage_focused_label(view: &jackin_protocol::control::FocusedUsageView) -> String {
-        let account = view.account.account_label.trim();
-        let account = if account.is_empty() {
-            "account unavailable"
-        } else {
-            account
-        };
-        match (&view.focused_agent, &view.focused_provider) {
-            (Some(agent), Some(provider)) => format!("{agent} · {provider} · {account}"),
-            (Some(agent), None) => format!("{agent} · {account}"),
-            (None, Some(provider)) => format!("{provider} · {account}"),
-            (None, None) => format!("no focused agent · {account}"),
-        }
     }
 
     fn usage_provider_header_label(label: &str) -> String {
@@ -246,20 +186,6 @@ impl Dialog {
         Some(*selected)
     }
 
-    fn usage_bucket_value(bucket: &jackin_protocol::control::QuotaBucketView) -> String {
-        // Rust owns semantic segment choice and order (limits-only) in
-        // `jackin_usage::usage::usage_bucket_presentation`; the Capsule dialog
-        // only prepends its TUI meter to the first segment.
-        let presentation = jackin_usage::usage::usage_bucket_presentation(bucket);
-        let mut segments = presentation.display_segments;
-        if let Some(meter_percent) = presentation.meter_percent
-            && let Some(first) = segments.first_mut()
-        {
-            *first = format!("{} {first}", Self::usage_meter(meter_percent));
-        }
-        segments.join(" · ")
-    }
-
     fn usage_meter(remaining_percent: u8) -> String {
         const WIDTH: usize = 32;
         let remaining = usize::from(remaining_percent.min(100));
@@ -273,19 +199,6 @@ impl Dialog {
             "█".repeat(filled),
             "·".repeat(WIDTH.saturating_sub(filled))
         )
-    }
-
-    fn usage_status_label(status: jackin_protocol::control::UsageSnapshotStatus) -> String {
-        match status {
-            jackin_protocol::control::UsageSnapshotStatus::Fresh => "fresh",
-            jackin_protocol::control::UsageSnapshotStatus::Stale => "stale",
-            jackin_protocol::control::UsageSnapshotStatus::NeedsLogin => "needs login",
-            jackin_protocol::control::UsageSnapshotStatus::NeedsSecret => "needs secret",
-            jackin_protocol::control::UsageSnapshotStatus::Unsupported => "unsupported",
-            jackin_protocol::control::UsageSnapshotStatus::Unavailable => "unavailable",
-            jackin_protocol::control::UsageSnapshotStatus::Error => "error",
-        }
-        .to_owned()
     }
 
     pub fn new_usage(view: jackin_protocol::control::FocusedUsageView) -> Self {

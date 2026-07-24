@@ -291,3 +291,70 @@ fn provider_glance_rows_via_bridge_project_rust_rows() {
     assert_eq!(codex.glance_remaining_percent, Some(57));
     assert!(!codex.is_refreshing);
 }
+
+#[test]
+fn detail_presentation_rides_the_snapshot_dto() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let bridge = open_bridge(dir.path());
+    {
+        let mut guard = bridge.inner.lock().expect("lock");
+        let mut view = FocusedUsageView::unavailable("seed", 1);
+        view.status = UsageSnapshotStatus::Stale;
+        view.source = UsageSource::ProviderApi;
+        view.confidence = UsageConfidence::Authoritative;
+        view.focused_agent = Some("codex".to_owned());
+        view.focused_provider = Some("OpenAI".to_owned());
+        view.account.provider_label = "OpenAI".to_owned();
+        view.account.account_label = "codex@example.com".to_owned();
+        view.updated_label = "Updated 2m ago".to_owned();
+        view.last_error = Some("upstream 503".to_owned());
+        let weekly = |rem| QuotaBucketView {
+            label: "Weekly".to_owned(),
+            used_label: None,
+            limit_label: None,
+            remaining_percent: Some(rem),
+            reset_label: Some("Resets in 3d".to_owned()),
+            resets_at: None,
+            status_slot: Some(StatusSlot::Weekly),
+            pace_label: None,
+            status: UsageSnapshotStatus::Stale,
+            used_money: None,
+            limit_money: None,
+            severity: UsageSeverity::Normal,
+        };
+        view.buckets = vec![weekly(80), weekly(20)];
+        guard.inject_snapshot("codex", view).expect("inject");
+    }
+    let dto = bridge.snapshot("codex".to_owned()).expect("snapshot");
+    let rows = &dto.detail_presentation.rows;
+    let ids: Vec<&str> = rows.iter().map(|r| r.row_id.as_str()).collect();
+    // Fixed metadata order, then position-based bucket ids, then Detail last.
+    assert_eq!(
+        ids,
+        vec![
+            "focused", "header", "provider", "account", "status", "updated", "bucket:0",
+            "bucket:1", "detail",
+        ]
+    );
+    // Duplicate labels keep distinct ids and distinct values.
+    let b0 = rows.iter().find(|r| r.row_id == "bucket:0").expect("b0");
+    let b1 = rows.iter().find(|r| r.row_id == "bucket:1").expect("b1");
+    assert_eq!(b0.label, "Weekly");
+    assert_eq!(b1.label, "Weekly");
+    assert!(b0.display_label.starts_with("80% left"));
+    assert!(b1.display_label.starts_with("20% left"));
+    assert_eq!(b0.kind, "bucket");
+    // Reset segment is the trailing column; line grouping survives FFI.
+    let reset_line = b0
+        .layout_lines
+        .iter()
+        .find(|line| line.trailing.is_some())
+        .expect("reset line");
+    assert_eq!(reset_line.leading, None);
+    assert_eq!(reset_line.trailing.as_deref(), Some("Resets in 3d"));
+    // Exactly one Detail row, appended after the last-good buckets.
+    let detail: Vec<&crate::dto::UsageDetailRowDto> =
+        rows.iter().filter(|r| r.kind == "detail").collect();
+    assert_eq!(detail.len(), 1);
+    assert_eq!(detail[0].display_label, "upstream 503");
+}

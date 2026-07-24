@@ -609,3 +609,23 @@ dialog; numbers come from the same Rust views).
   `desktop test` (menu-model/router checks added to `StatusItemChipHarness`) +
   `desktop build` + ephemeral launch smoke. Deviation: model/router XCTest suites
   replaced by the runnable harness checks — XCTest unavailable on the CLT-only host.
+- 2026-07-24 — execution — plan 008 reconciled the Usage window to Capsule parity
+  by collapsing the dual presentation model. One Rust `usage_detail_presentation`
+  builds the ordered `UsageDetailPresentation` (protocol `UsageDetailRow` /
+  `UsagePresentationLine` / `UsageDetailRowKind`): fixed metadata rows,
+  position-based `bucket:<i>` ids (duplicate labels stay distinct), grouped
+  `layout_lines` with the reset segment on the trailing column, and a
+  `display_label` equal to the joined lines. The Capsule dialog now maps those rows
+  to `ContainerInfoRow`s (output byte-identical — 159 dialog tests), FFI adds
+  `UsageViewDto.detail_presentation`, and a new pure `UsageWindowModel` (bridge
+  target) resolves the Rust sidebar order + incoming `usageSelection`; the three
+  Usage-window views render rows/lines mechanically with no Swift split/join/
+  reorder/fallback copy. Verified via `desktop test` (nextest + all three harnesses
+  ALL PASS) + `desktop build` + `desktop verify` + ephemeral launch smoke;
+  Rust/FFI/Capsule nextest + clippy green; regenerated bindings left the generated
+  C header/modulemaps byte-identical. Deviations: `UsageWindowModelTests` /
+  `ArchitectureTests` authored but unrunnable (XCTest absent on the CLT-only host),
+  so behavior is executed by the runnable harnesses instead; the parity harness's 8
+  obsolete OpenUsage Usage-window assertions were updated to the new Rust-detail-row
+  model (a required edit to `native/Tools/**` past the plan's Tools-out-of-scope
+  note, since they encoded the exact synthesis this plan removes).

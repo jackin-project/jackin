@@ -652,6 +652,69 @@ pub struct QuotaBucketView {
     pub severity: UsageSeverity,
 }
 
+/// One already-grouped visual line of a [`UsageDetailRow`]. `leading` is the
+/// left-column text and `trailing` the right-column text; either may be absent.
+/// Flattening a line is `leading` then `trailing`; flattening a row's lines
+/// preserves vector order. Both strings are finished display data — no consumer
+/// reformats, splits, or reorders them.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct UsagePresentationLine {
+    /// Left-column finished string, when present.
+    pub leading: Option<String>,
+    /// Right-column finished string, when present.
+    pub trailing: Option<String>,
+}
+
+/// Layout kind of a [`UsageDetailRow`]. Pure layout metadata for the renderer;
+/// never prose. `Metadata` is an identity/status field, `Bucket` a quota window
+/// (carries `meter_percent`/`severity`), `Detail` the trailing degradation row.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum UsageDetailRowKind {
+    /// Identity/status metadata field.
+    Metadata,
+    /// A quota/spend window.
+    Bucket,
+    /// The trailing degradation (`last_error`) row.
+    Detail,
+}
+
+/// One row of the shared provider-detail card. `display_label` is the
+/// accessibility/Capsule semantic value and MUST equal the row's non-empty line
+/// fields joined in vector order with `" · "`. `meter_percent`/`severity` are
+/// geometry/style metadata (buckets only); consumers never turn them into text.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct UsageDetailRow {
+    /// Stable identity: fixed slug for metadata/detail rows, `bucket:<index>`
+    /// (zero-based source position) for bucket rows so duplicate provider labels
+    /// stay distinct. Never derived from the visible label.
+    pub row_id: String,
+    /// Layout kind (never prose).
+    pub kind: UsageDetailRowKind,
+    /// Rust-owned row label (left gutter title).
+    pub label: String,
+    /// Already-grouped visual lines in display order.
+    pub layout_lines: Vec<UsagePresentationLine>,
+    /// `layout_lines` non-empty fields joined in order with `" · "`.
+    pub display_label: String,
+    /// Meter geometry (bucket rows): remaining for ordinary/credits, used for
+    /// Spend. Not visible text.
+    pub meter_percent: Option<u8>,
+    /// API severity for meter/chip color-grading. Not visible text.
+    pub severity: UsageSeverity,
+}
+
+/// The complete Rust-owned provider-detail card: rows in the fixed order
+/// `focused`, `header`, `provider`, `account`, `status`, `updated`, optional
+/// `username`/`plan`/`auth`, one `bucket:<index>` per source bucket in source
+/// order, then optional `detail`. Capsule and Desktop render these rows
+/// mechanically without splitting, joining, reordering, or relabeling.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct UsageDetailPresentation {
+    /// Detail rows in canonical order.
+    pub rows: Vec<UsageDetailRow>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 /// `UsageProviderTab` protocol type.
 pub struct UsageProviderTab {

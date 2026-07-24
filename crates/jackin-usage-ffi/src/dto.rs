@@ -68,6 +68,37 @@ pub struct QuotaBucketDto {
     pub meter_percent: Option<u8>,
 }
 
+/// One already-grouped visual line of a [`UsageDetailRowDto`] (1:1 mirror of the
+/// Rust `UsagePresentationLine`). `leading`/`trailing` are finished strings.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct UsagePresentationLineDto {
+    pub leading: Option<String>,
+    pub trailing: Option<String>,
+}
+
+/// One provider-detail row (1:1 mirror of the Rust `UsageDetailRow`). Every
+/// visible string is Rust-owned; `kind`/`severity` are machine strings and
+/// `meter_percent` is meter geometry only.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct UsageDetailRowDto {
+    pub row_id: String,
+    /// `metadata` | `bucket` | `detail`
+    pub kind: String,
+    pub label: String,
+    pub layout_lines: Vec<UsagePresentationLineDto>,
+    pub display_label: String,
+    pub meter_percent: Option<u8>,
+    /// `normal` | `warn` | `danger`
+    pub severity: String,
+}
+
+/// The complete Rust-owned provider-detail card (mirror of
+/// `UsageDetailPresentation`). Rows are already in canonical order.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct UsageDetailPresentationDto {
+    pub rows: Vec<UsageDetailRowDto>,
+}
+
 /// One selected-account-aware provider glance row (1:1 mirror of the Rust
 /// `HostProviderGlanceRow`). The Desktop status bar, popover, and Usage window
 /// all consume this same Rust-owned row.
@@ -136,6 +167,9 @@ pub struct UsageViewDto {
     pub last_error: Option<String>,
     /// Honesty caption when estimated / local-log derived; `None` for authoritative.
     pub estimate_caption: Option<String>,
+    /// Rust-owned Capsule-parity provider-detail card (same rows/strings/order
+    /// as the Capsule usage dialog). The Usage window renders this verbatim.
+    pub detail_presentation: UsageDetailPresentationDto,
 }
 
 /// Presentation-time format prefs (string enums).
@@ -239,8 +273,46 @@ fn event_dto(event: HostUsageEvent) -> UsageEventDto {
     }
 }
 
+fn detail_presentation_dto(view: &FocusedUsageView) -> UsageDetailPresentationDto {
+    // Same Rust builder Capsule uses — one parity handoff, no second assembler.
+    let presentation = jackin_usage::usage::usage_detail_presentation(view);
+    UsageDetailPresentationDto {
+        rows: presentation
+            .rows
+            .into_iter()
+            .map(|row| UsageDetailRowDto {
+                row_id: row.row_id,
+                kind: match row.kind {
+                    jackin_protocol::control::UsageDetailRowKind::Metadata => "metadata",
+                    jackin_protocol::control::UsageDetailRowKind::Bucket => "bucket",
+                    jackin_protocol::control::UsageDetailRowKind::Detail => "detail",
+                }
+                .to_owned(),
+                label: row.label,
+                layout_lines: row
+                    .layout_lines
+                    .into_iter()
+                    .map(|line| UsagePresentationLineDto {
+                        leading: line.leading,
+                        trailing: line.trailing,
+                    })
+                    .collect(),
+                display_label: row.display_label,
+                meter_percent: row.meter_percent,
+                severity: match row.severity {
+                    jackin_protocol::control::UsageSeverity::Normal => "normal",
+                    jackin_protocol::control::UsageSeverity::Warn => "warn",
+                    jackin_protocol::control::UsageSeverity::Danger => "danger",
+                }
+                .to_owned(),
+            })
+            .collect(),
+    }
+}
+
 pub(crate) fn view_dto(view: FocusedUsageView) -> UsageViewDto {
     let caption = estimate_caption(&view);
+    let detail_presentation = detail_presentation_dto(&view);
     UsageViewDto {
         focused_agent: view.focused_agent,
         focused_provider: view.focused_provider,
@@ -258,6 +330,7 @@ pub(crate) fn view_dto(view: FocusedUsageView) -> UsageViewDto {
         status_bar_label: view.status_bar_label,
         last_error: view.last_error,
         estimate_caption: caption,
+        detail_presentation,
     }
 }
 

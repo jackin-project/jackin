@@ -107,8 +107,9 @@ Footer: a single **Refresh** (⌘R) row plus the next-refresh caption. When no s
 
 Click an agent identity header in the popover, or choose **Open Usage Window** from a provider item's right-click menu. A normal resizable window opens:
 
-- **Sidebar** — Overview plus every enabled provider (Capsule tab order) with a severity accent.
-- **Detail** — Overview list shows each agent’s **Session/Weekly remaining stack** (bars + `% left` / `% used` + reset) when Rust has dual buckets; select a provider for the full card (account, plan, auth origin, gauges, pace/money, estimate caption). Settings **Percent style** applies everywhere.
+- **Sidebar** — Overview plus every detected provider in the Capsule dialog's tab order, each with a severity accent.
+- **Overview** — one row per provider showing the same identity, plan, headline, and reset strings the glance popover uses. When no credentials are detected the list shows the hint *no agent credentials found*.
+- **Detail** — selecting a provider shows the **full Capsule-parity card**: the exact same fields, strings, and order the Capsule usage dialog renders for that account and fetch (identity, plan, auth origin, every quota window with its meter, pace, run-out, reset, and money caps). Rust produces the whole card; the window draws it row for row and invents nothing. Multi-account providers show account chips that drive the same selection as the popover.
 - **⌘R** refreshes; **Esc** closes. The app stays a status-item process (`LSUIElement` — no Dock icon).
 
 All numbers and labels are the same Rust views the Capsule usage dialog uses. Rust models each provider's semantic Session/Weekly glance slots (Weekly-only where a provider has no Session window), while **Amp Free** uses its exact **Daily** allowance (`N% remaining today`, resets daily). Individual and per-workspace credit balances stay detail-only quota bounds and never become the status headline.

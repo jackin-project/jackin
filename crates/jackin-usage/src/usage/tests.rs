@@ -4441,6 +4441,236 @@ fn usage_bucket_presentation_limit_only_balance() {
     assert_eq!(presentation.remaining_label, None);
 }
 
+// ===== Plan 008: shared detail-presentation producer =====
+
+fn detail_view(
+    buckets: Vec<QuotaBucketView>,
+    last_error: Option<&str>,
+    status: UsageSnapshotStatus,
+) -> FocusedUsageView {
+    FocusedUsageView {
+        focused_agent: Some("codex".to_owned()),
+        focused_provider: Some("OpenAI".to_owned()),
+        account: FocusedAccountHeader {
+            provider_label: "OpenAI".to_owned(),
+            account_label: "operator@example.com".to_owned(),
+            username: Some("operator".to_owned()),
+            plan_label: Some("Pro 20x".to_owned()),
+            credential_origin: Some("OAuth · ~/.codex/auth.json".to_owned()),
+        },
+        buckets,
+        status,
+        updated_label: "Updated 2m ago".to_owned(),
+        last_error: last_error.map(str::to_owned),
+        ..FocusedUsageView::unavailable("seed", 1_781_185_560)
+    }
+}
+
+#[test]
+fn usage_detail_presentation_preserves_exact_capsule_row_order() {
+    let session = presentation_bucket(
+        "Session",
+        Some(97),
+        Some(StatusSlot::Session),
+        UsageSnapshotStatus::Fresh,
+    );
+    let view = detail_view(vec![session], None, UsageSnapshotStatus::Fresh);
+    let presentation = usage_detail_presentation(&view);
+    let ids: Vec<&str> = presentation
+        .rows
+        .iter()
+        .map(|r| r.row_id.as_str())
+        .collect();
+    assert_eq!(
+        ids,
+        vec![
+            "focused", "header", "provider", "account", "status", "updated", "username", "plan",
+            "auth", "bucket:0",
+        ]
+    );
+    // Focused/status wording is the exact Capsule wording, produced in Rust.
+    assert_eq!(
+        presentation.rows[0].display_label,
+        "codex · OpenAI · operator@example.com"
+    );
+    assert_eq!(presentation.rows[4].display_label, "fresh");
+}
+
+#[test]
+fn usage_detail_presentation_flattens_lines_once_in_semantic_order() {
+    let mut bucket = presentation_bucket(
+        "Weekly",
+        Some(40),
+        Some(StatusSlot::Weekly),
+        UsageSnapshotStatus::Fresh,
+    );
+    bucket.pace_label = Some("5% in deficit · Runs out in 3d 1h".to_owned());
+    bucket.reset_label = Some("Resets in 6d 22h".to_owned());
+    let view = detail_view(vec![bucket], None, UsageSnapshotStatus::Fresh);
+    let presentation = usage_detail_presentation(&view);
+    let row = presentation
+        .rows
+        .iter()
+        .find(|r| r.row_id == "bucket:0")
+        .expect("bucket row");
+    // pace then run-out then reset, exactly once, in that order.
+    assert_eq!(
+        row.display_label,
+        "40% left · 5% in deficit · Runs out in 3d 1h · Resets in 6d 22h"
+    );
+    // The reset segment is the trailing column; every other segment is leading.
+    let flattened: Vec<String> = row
+        .layout_lines
+        .iter()
+        .flat_map(|line| {
+            [line.leading.clone(), line.trailing.clone()]
+                .into_iter()
+                .flatten()
+        })
+        .collect();
+    assert_eq!(
+        flattened,
+        vec![
+            "40% left",
+            "5% in deficit",
+            "Runs out in 3d 1h",
+            "Resets in 6d 22h"
+        ]
+    );
+    let reset_line = row.layout_lines.last().expect("reset line");
+    assert_eq!(reset_line.leading, None);
+    assert_eq!(reset_line.trailing.as_deref(), Some("Resets in 6d 22h"));
+}
+
+#[test]
+fn usage_detail_presentation_keeps_duplicate_bucket_labels() {
+    let first = presentation_bucket(
+        "Weekly",
+        Some(80),
+        Some(StatusSlot::Weekly),
+        UsageSnapshotStatus::Fresh,
+    );
+    let second = presentation_bucket(
+        "Weekly",
+        Some(20),
+        Some(StatusSlot::Weekly),
+        UsageSnapshotStatus::Fresh,
+    );
+    let view = detail_view(vec![first, second], None, UsageSnapshotStatus::Fresh);
+    let presentation = usage_detail_presentation(&view);
+    let buckets: Vec<(&str, &str)> = presentation
+        .rows
+        .iter()
+        .filter(|r| r.kind == jackin_protocol::control::UsageDetailRowKind::Bucket)
+        .map(|r| (r.row_id.as_str(), r.label.as_str()))
+        .collect();
+    assert_eq!(
+        buckets,
+        vec![("bucket:0", "Weekly"), ("bucket:1", "Weekly")]
+    );
+    let by_id = |id: &str| {
+        presentation
+            .rows
+            .iter()
+            .find(|r| r.row_id == id)
+            .map(|r| r.display_label.as_str())
+    };
+    assert_eq!(by_id("bucket:0"), Some("80% left"));
+    assert_eq!(by_id("bucket:1"), Some("20% left"));
+}
+
+#[test]
+fn usage_detail_presentation_stale_keeps_buckets_and_one_detail() {
+    let bucket = presentation_bucket(
+        "Weekly",
+        Some(57),
+        Some(StatusSlot::Weekly),
+        UsageSnapshotStatus::Stale,
+    );
+    let view = detail_view(
+        vec![bucket],
+        Some("upstream 503"),
+        UsageSnapshotStatus::Stale,
+    );
+    let presentation = usage_detail_presentation(&view);
+    let detail_rows: Vec<&jackin_protocol::control::UsageDetailRow> = presentation
+        .rows
+        .iter()
+        .filter(|r| r.kind == jackin_protocol::control::UsageDetailRowKind::Detail)
+        .collect();
+    assert_eq!(detail_rows.len(), 1, "exactly one Detail row");
+    assert_eq!(detail_rows[0].display_label, "upstream 503");
+    // The Detail row is last and the last-good bucket survives.
+    assert_eq!(
+        presentation.rows.last().map(|r| r.row_id.as_str()),
+        Some("detail")
+    );
+    assert!(
+        presentation.rows.iter().any(|r| r.row_id == "bucket:0"),
+        "bucket retained under stale"
+    );
+}
+
+#[test]
+fn usage_detail_presentation_amp_daily_and_bounds() {
+    let mut daily = presentation_bucket(
+        "Daily",
+        Some(61),
+        Some(StatusSlot::Daily),
+        UsageSnapshotStatus::Fresh,
+    );
+    daily.reset_label = Some("Resets daily".to_owned());
+    let mut individual = presentation_bucket("Credits", None, None, UsageSnapshotStatus::Fresh);
+    individual.limit_label = Some("$4.76".to_owned());
+    let view = detail_view(vec![daily, individual], None, UsageSnapshotStatus::Fresh);
+    let presentation = usage_detail_presentation(&view);
+    let by_id = |id: &str| {
+        presentation
+            .rows
+            .iter()
+            .find(|r| r.row_id == id)
+            .expect("row")
+    };
+    let daily_row = by_id("bucket:0");
+    assert_eq!(daily_row.display_label, "61% left · Resets daily");
+    // No fabricated exact reset timestamp or paid-plan label.
+    assert!(!daily_row.display_label.contains('('));
+    // Credit bound stays in source order after Daily.
+    assert_eq!(by_id("bucket:1").display_label, "$4.76");
+}
+
+#[test]
+fn usage_detail_presentation_grok_bounds_no_provider_path() {
+    let mut weekly = presentation_bucket(
+        "Weekly",
+        Some(72),
+        Some(StatusSlot::Weekly),
+        UsageSnapshotStatus::Fresh,
+    );
+    weekly.reset_label = Some("Resets in 3d".to_owned());
+    let mut prepaid = presentation_bucket(
+        "Extra usage credits",
+        None,
+        None,
+        UsageSnapshotStatus::Fresh,
+    );
+    prepaid.limit_label = Some("$25.00".to_owned());
+    let view = detail_view(vec![weekly, prepaid], None, UsageSnapshotStatus::Fresh);
+    let view = FocusedUsageView {
+        account: FocusedAccountHeader {
+            plan_label: Some("SuperGrok".to_owned()),
+            ..view.account.clone()
+        },
+        ..view
+    };
+    let presentation = usage_detail_presentation(&view);
+    assert_eq!(presentation.rows[7].display_label, "SuperGrok");
+    assert_eq!(
+        presentation.rows.last().map(|r| r.display_label.as_str()),
+        Some("$25.00")
+    );
+}
+
 // ===== Plan 004: Variant A run-out producer =====
 
 #[test]

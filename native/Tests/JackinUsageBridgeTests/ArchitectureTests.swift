@@ -533,6 +533,60 @@ final class ArchitectureTests: XCTestCase {
         }
     }
 
+    /// Plan 008: the three Usage-window views render the Rust
+    /// `UsageDetailPresentation` mechanically. They must not split/index/join
+    /// usage strings, read raw buckets, use label-based identity, or invent field
+    /// copy; and must consume the shared model's rows/lines/ids.
+    func testUsageWindowRendersSharedDetailModel() throws {
+        let usageDir = sourcesRoot
+            .appendingPathComponent("JackinDesktop")
+            .appendingPathComponent("UsageWindow")
+        let files = ["UsageWindowRoot.swift", "OverviewListView.swift", "ProviderCardView.swift"]
+        let banned = [
+            "splitPaceLabel",
+            "displaySegments",
+            "bucketMetricPrimaryLabel",
+            "statusItemPercentToken",
+            "surface.buckets",
+            "ForEach(surface.buckets)",
+            "\"Auth: \"",
+            "\"Accounts\"",
+            "\"— No data\"",
+            "overviewNumericBucketCap",
+            "sidebarSubtitle",
+            "surfaceRemainingSubtitle",
+            "openSettings",
+        ]
+        for file in files {
+            let text = try String(
+                contentsOf: usageDir.appendingPathComponent(file),
+                encoding: .utf8
+            )
+            for token in banned {
+                XCTAssertFalse(
+                    text.contains(token),
+                    "\(file) must not use \(token) — render the Rust detail model verbatim"
+                )
+            }
+        }
+        let provider = try String(
+            contentsOf: usageDir.appendingPathComponent("ProviderCardView.swift"),
+            encoding: .utf8
+        )
+        XCTAssertTrue(provider.contains("content.detail.rows"))
+        XCTAssertTrue(provider.contains("layoutLines"))
+        let root = try String(
+            contentsOf: usageDir.appendingPathComponent("UsageWindowRoot.swift"),
+            encoding: .utf8
+        )
+        XCTAssertTrue(root.contains("UsageWindowModel"))
+        let overview = try String(
+            contentsOf: usageDir.appendingPathComponent("OverviewListView.swift"),
+            encoding: .utf8
+        )
+        XCTAssertTrue(overview.contains("UsageWindowModel.emptyHint"))
+    }
+
     func testScreenShareProbeLivesOnlyInPresentationStore() throws {
         for file in try handwrittenSwiftFiles() {
             let text = try String(contentsOf: file, encoding: .utf8)

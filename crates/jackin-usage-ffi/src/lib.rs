@@ -18,6 +18,7 @@ mod error;
 pub use bridge::UsageMenuBarBridge;
 pub use dto::{
     MoneyDto, OpenConfig, ProviderGlanceRowDto, QuotaBucketDto, SurfaceDescriptorDto,
-    UsageEventBatchDto, UsageEventDto, UsageViewDto,
+    UsageDetailPresentationDto, UsageDetailRowDto, UsageEventBatchDto, UsageEventDto,
+    UsagePresentationLineDto, UsageViewDto,
 };
 pub use error::UsageBridgeError;

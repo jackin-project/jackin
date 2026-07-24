@@ -303,8 +303,11 @@ struct DesktopParityMatrixHarness {
             popover.contains("accountsForSurface") && popover.contains("setSelectedAccount")
         )
         check(
-            "Overview multi-window cap",
-            overview.contains("overviewNumericBucketCap")
+            "Usage Overview renders Rust glance rows verbatim (no bucket synthesis)",
+            overview.contains("model.sidebar")
+                && !overview.contains("overviewNumericBucketCap")
+                && !overview.contains("bucketMiniRow")
+                && !overview.contains("splitPaceLabel")
         )
         // status_slot is machine taxonomy — UI must filter via pure helper, not dump raw.
         check(
@@ -323,36 +326,42 @@ struct DesktopParityMatrixHarness {
                 && !popoverProviderTab.contains("Text(bucket.statusSlot")
         )
         check(
-            "ProviderCard uses gauge secondary filter not raw statusSlot Text",
-            provider.contains("bucketGaugeSecondaryLimitLabel")
-                && !provider.contains("Text(slot)")
-                && !provider.contains("Text(bucket.statusSlot")
+            "ProviderCard renders Rust detail rows mechanically (plan 008)",
+            provider.contains("content.detail.rows")
+                && provider.contains("layoutLines")
+                && provider.contains("row.label")
         )
         check(
-            "ProviderCard primary limit labels",
-            provider.contains("bucketPrimaryPercentLabel") || provider.contains("metricPrimaryLabel")
+            "ProviderCard splits/joins no usage string and invents no field copy",
+            !provider.contains("splitPaceLabel")
+                && !provider.contains("bucketMetricPrimaryLabel")
+                && !provider.contains("statusItemPercentToken")
+                && !provider.contains("surface.buckets")
+                && !provider.contains("\"Auth: \"")
+                && !provider.contains("\"Accounts\"")
+                && !provider.contains("\"— No data\"")
         )
         check(
-            "ProviderCard depleted reset + pace",
-            provider.contains("metricPrimaryLabel") && provider.contains("splitPaceLabel")
+            "ProviderCard bucket identity is Rust rowId, not label",
+            provider.contains("ForEach(content.detail.rows)")
+                && !provider.contains("ForEach(surface.buckets)")
         )
         check(
-            "Overview dual-bucket stack",
-            overview.contains("bucketMiniRow") || overview.contains("remainingPercent")
-        )
-        check(
-            "Overview pace under mini rows",
-            overview.contains("paceLabel") && overview.contains("splitPaceLabel")
+            "Usage detail meter/severity are geometry+style only (no visible text)",
+            provider.contains("meterPercent") && provider.contains("severityTint")
         )
         let usageRoot = read("UsageWindow/UsageWindowRoot.swift")
         check(
-            "Usage sidebar dual remaining subtitle",
-            usageRoot.contains("surfaceRemainingSubtitle")
-                || usageRoot.contains("sidebarSubtitle")
+            "Usage window drives sidebar/detail from UsageWindowModel",
+            usageRoot.contains("UsageWindowModel")
+                && !usageRoot.contains("surfaceRemainingSubtitle")
+                && !usageRoot.contains("sidebarSubtitle")
+                && !usageRoot.contains("openSettings")
         )
         check(
-            "shared metric primary helper wired (Usage-window provider card)",
-            provider.contains("bucketMetricPrimaryLabel")
+            "Usage empty state is the fixed hint (no invented fallback copy)",
+            overview.contains("UsageWindowModel.emptyHint")
+                && !overview.contains("\"No enabled surfaces\"")
         )
         check(
             "no sparkline/donut/trend product UI in status item",
