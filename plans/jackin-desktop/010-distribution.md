@@ -420,8 +420,13 @@ All proven by `research/jackin-desktop-verification-tooling/01-commands.md`
   `homebrew` job step "Write usage menu-bar cask when release asset SHA
   is present" (`release.yml:789-818`): the `name` and `desc` stanzas.
   This is inside the territory the prior program's plans 003/004 already
-  scoped (003 Step 5 owned cask generation). **Any broader release.yml
-  edit is out of scope for this plan.**
+  scoped (003 Step 5 owned cask generation). Also in scope: add the
+  repository-pinned `cargo:cargo-nextest` tool to the
+  `build-usage-menu-bar` mise install list because this same job invokes
+  `cargo nextest` for the required offline reconciliation gate. This narrow
+  drift repair removes the architectural cause of validate run 30069549561's
+  failure without weakening or replacing the gate. **Any broader
+  release.yml edit is out of scope for this plan.**
 - `scripts/desktop-install-proof.sh` — new verification script (Step 4).
 
 **Out of scope** (do NOT touch, even though related):
@@ -438,7 +443,8 @@ All proven by `research/jackin-desktop-verification-tooling/01-commands.md`
   untouched.
 - All other `release.yml` jobs/steps (version gating, signing,
   reconciliation, upload) — shipped and proven by the prior program;
-  weakening them violates Must NOT.
+  weakening them violates Must NOT. The one tool-provisioning addition
+  named above is the sole exception.
 
 The hub `plans/jackin-desktop/README.md` and the roadmap item are
 protocol-writable and never listed in scope.

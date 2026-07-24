@@ -411,7 +411,7 @@ jobs:
           version: "2026.7.7"
           cache_key_prefix: "mise-v2"
           cache_save: ${{ github.ref == 'refs/heads/main' }}
-          install_args: "cargo-binstall rust cosign syft"
+          install_args: "cargo-binstall rust cosign syft cargo:cargo-nextest"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
 
       - uses: ./.github/actions/cache-cargo-registry
