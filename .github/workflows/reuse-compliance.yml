@@ -26,10 +26,6 @@ jobs:
         config: ${{ fromJSON((github.event_name == 'workflow_dispatch' && inputs.lanes == 'both') && '[{"lane":"Velnor","runner":["self-hosted","velnor-target-mvp"],"writer":true},{"lane":"GitHub","runner":"ubuntu-26.04","writer":false}]' || (github.event_name == 'workflow_dispatch' && inputs.lanes == 'github') && '[{"lane":"GitHub","runner":"ubuntu-26.04","writer":true}]' || '[{"lane":"Velnor","runner":["self-hosted","velnor-target-mvp"],"writer":true}]') }}
     runs-on: ${{ matrix.config.runner }}
     timeout-minutes: 10
-    env:
-      MISE_DATA_DIR: ${{ runner.temp }}/mise-data
-      MISE_CACHE_DIR: ${{ runner.temp }}/mise-cache
-      MISE_CONFIG_DIR: ${{ runner.temp }}/mise-config
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -45,4 +41,8 @@ jobs:
           cache_save: ${{ github.ref == 'refs/heads/main' }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
       - name: REUSE Compliance Check
+        env:
+          MISE_DATA_DIR: ${{ runner.temp }}/mise-data
+          MISE_CACHE_DIR: ${{ runner.temp }}/mise-cache
+          MISE_CONFIG_DIR: ${{ runner.temp }}/mise-config
         run: reuse lint
