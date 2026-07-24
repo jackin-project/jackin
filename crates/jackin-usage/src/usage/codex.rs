@@ -426,15 +426,18 @@ pub(crate) struct CodexRpcAccountResponse {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(tag = "type", rename_all = "lowercase")]
+#[serde(tag = "type")]
 pub(crate) enum CodexRpcAccountDetails {
-    #[serde(rename = "apikey")]
+    #[serde(rename = "apiKey")]
     ApiKey,
+    #[serde(rename = "chatgpt")]
     Chatgpt {
         email: Option<String>,
         #[serde(rename = "planType")]
         plan_type: Option<String>,
     },
+    #[serde(rename = "amazonBedrock")]
+    AmazonBedrock,
 }
 
 #[derive(Debug, Deserialize)]
@@ -507,7 +510,7 @@ impl CodexRpcUsage {
         let account_label = match &account_details {
             Some(CodexRpcAccountDetails::Chatgpt { email, .. }) => email.clone(),
             Some(CodexRpcAccountDetails::ApiKey) => Some("Codex API key".to_owned()),
-            None => None,
+            Some(CodexRpcAccountDetails::AmazonBedrock) | None => None,
         };
         let account_plan = match account_details {
             Some(CodexRpcAccountDetails::Chatgpt { plan_type, .. }) => plan_type,
@@ -711,6 +714,20 @@ pub(crate) fn push_codex_window(
     ));
 }
 
+pub(crate) fn decode_codex_rpc_usage(
+    limits_value: serde_json::Value,
+    account_value: Option<serde_json::Value>,
+) -> Result<CodexRpcUsage, String> {
+    let limits = serde_json::from_value::<CodexRpcRateLimitsResponse>(limits_value)
+        .map_err(|err| format!("Codex app-server rate limit decode failed: {err}"))?;
+    // The account label is non-essential, so a decode mismatch (unknown
+    // tag, shape drift) degrades to no label rather than failing
+    // rate-limit collection.
+    let account = account_value
+        .and_then(|value| serde_json::from_value::<CodexRpcAccountResponse>(value).ok());
+    Ok(CodexRpcUsage::from_rpc(limits, account))
+}
+
 pub(crate) fn fetch_codex_rpc_usage(
     gate: &mut ManagedCliLaunchGate,
 ) -> Result<CodexRpcUsage, String> {
@@ -783,13 +800,7 @@ pub(crate) fn fetch_codex_rpc_usage(
             CODEX_RPC_REQUEST_TIMEOUT,
         )
         .ok();
-        let limits = serde_json::from_value::<CodexRpcRateLimitsResponse>(limits_value)
-            .map_err(|err| format!("Codex app-server rate limit decode failed: {err}"))?;
-        let account = account_value
-            .map(serde_json::from_value::<CodexRpcAccountResponse>)
-            .transpose()
-            .map_err(|err| format!("Codex app-server account decode failed: {err}"))?;
-        Ok(CodexRpcUsage::from_rpc(limits, account))
+        decode_codex_rpc_usage(limits_value, account_value)
     })();
 
     drop(stdin);

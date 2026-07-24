@@ -1,0 +1,77 @@
+# 03 — Claude usage API
+
+Questions: (1) Which official Anthropic endpoint(s) expose subscription usage windows for Claude Code OAuth users — Session (5-hour), Weekly (all models), per-model weekly ("Fable only" / previously "Opus only"), percent used/remaining, reset timestamps? (2) Is a "Daily Routines" usage window documented in the subscription usage payload, and under what field names? (3) What auth is required (OAuth access token, scopes, token storage location/type)? (4) Does any official endpoint expose plan label ("Max 20x"), account email, and multi-account data, or is that client-side from stored credentials? (5) Which CodexBar-style display elements have no direct API source for Claude and must be computed client-side?
+
+Informs: jackin-desktop
+Method: web
+Vetted: 2026-07-24
+
+Clean-room note: CodexBar/OpenUsage source was not read. A CodexBar `docs/claude.md` page surfaced in one search result; it was deliberately not fetched. All payload-shape claims below come from Anthropic docs, anthropics GitHub issues, independent community observations, and the jackin❯ repo's own live-API mirror fixtures. No embedded instructions were encountered in any fetched page.
+
+## Findings
+
+### 1. Endpoints exposing subscription usage windows
+
+- There is NO officially documented public API for subscription usage windows. Anthropic's own docs confirm one exists implicitly: the `/usage` command's plan bars come from "the usage endpoint", which the docs describe as frequently rate-limited ("When the request for your plan limits fails, most often because the usage endpoint is rate limited…") — https://code.claude.com/docs/en/costs.md (confidence: HIGH)
+- The endpoint in practice is `GET https://api.anthropic.com/api/oauth/usage`, reported in Anthropic's official repo issue tracker (issue closed "not planned"/`invalid`, no staff confirmation): requires `Authorization: Bearer <oauth token>` and header `anthropic-beta: oauth-2025-04-20` — https://github.com/anthropics/claude-code/issues/31637 (confidence: MED — official repo, community-authored)
+- Same endpoint, headers (`anthropic-beta: oauth-2025-04-20`, `User-Agent: claude-code/<version>`), and response shape independently documented by Claude-Code-Usage-Monitor — https://github.com/Maciek-roboblog/Claude-Code-Usage-Monitor/issues/202 (confidence: MED)
+- Response windows observed: `five_hour` (Session), `seven_day` (Weekly, all models), `seven_day_opus`, `seven_day_sonnet` (both nullable), each `{utilization: 0–100, resets_at: ISO 8601 UTC}`, plus `extra_usage` (`is_enabled`, `monthly_limit`, `used_credits`, `utilization`) — https://github.com/Maciek-roboblog/Claude-Code-Usage-Monitor/issues/202 and https://gist.github.com/monperrus/3ac4b303a84946bbeaf2b1123ee99491 (confidence: MED)
+- The API returns percent used (`utilization`), never absolute token counts or plan-limit sizes — https://github.com/anthropics/claude-code/issues/45392 (closed not planned) (confidence: MED)
+- jackin❯ cross-reference: the live 200 body decoded at `crates/jackin-usage/src/usage/claude.rs:833` (endpoint + headers) and mirrored in `crates/jackin-usage/src/usage/tests.rs:218-245` additionally carries `seven_day_oauth_apps`, a `limits[]` array (`kind`, `group`, `percent`, `severity`, `resets_at`, `scope`, `is_active`), a `spend` object (money as `amount_minor`/`currency`/`exponent`), and rotating codename keys (`amber_ladder`, `omelette_promotional`, …). Per code comments, legacy `seven_day_sonnet`/`seven_day_opus` are now `null` on current accounts and per-model weekly data (Fable today) lives only in `limits[]` as `weekly_scoped` entries (confidence: MED — first-hand live observation recorded in-repo, not a primary Anthropic doc)
+- Official UI surfaces for the same windows: the `/usage` command in Claude Code (plan usage bars, activity stats, usage breakdown for subscribers) and claude.ai Settings > Usage, which shows "how much of your plan's five-hour session limit you've used" and "when your plan's weekly usage limit resets for Opus only and all other models" — https://code.claude.com/docs/en/costs.md and https://support.claude.com/en/articles/9797557-usage-limit-best-practices (confidence: HIGH)
+- Per-model window on current plans: Max plans include "up to 50% of your weekly usage limits on Fable 5"; on Pro, Fable 5 runs on usage credits outside plan limits — https://support.claude.com/en/articles/15424964-claude-fable-5-on-your-plan (confidence: HIGH). The article does not name a "Fable only" window label; the support UI wording "for Opus only" is the documented per-model label precedent — https://support.claude.com/en/articles/9797557-usage-limit-best-practices (confidence: HIGH)
+- Rate limiting: the endpoint 429s aggressively with no `Retry-After` and no reset indication — https://github.com/anthropics/claude-code/issues/31637 (confidence: MED). Claude Code itself falls back to last-known bars cached ≤60 min with a "Showing last-known usage" note — https://code.claude.com/docs/en/costs.md (confidence: HIGH; the fallback is documented there, not in the issue)
+- A second host variant `https://claude.ai/api/oauth/usage` was polled in one longitudinal community study — https://gist.github.com/monperrus/3ac4b303a84946bbeaf2b1123ee99491 (confidence: LOW — single source; canonical host unclear)
+
+### 2. "Daily Routines" usage window
+
+- Primary sources document a per-account DAILY ROUTINE RUN CAP, not a payload window: "routines have a daily cap on how many runs can start per account. See your current consumption and remaining daily routine runs at claude.ai/code/routines or claude.ai/settings/usage"; one-off runs are exempt — https://code.claude.com/docs/en/routines.md (confidence: HIGH)
+- Caps per plan: Pro 5, Max 15, Team/Enterprise 25 routine runs per day; "Routines draw down subscription usage limits in the same way as interactive sessions" — https://claude.com/blog/introducing-routines-in-claude-code (confidence: HIGH)
+- No primary source documents a "Daily Routines" field in the `oauth/usage` payload or its field name. jackin❯ cross-reference: the live body mirrored in `crates/jackin-usage/src/usage/tests.rs:229` contains key `seven_day_cowork` (observed `null`); the decoder at `crates/jackin-usage/src/usage/claude.rs:278-283` canonicalizes `seven_day_routines` with aliases `seven_day_claude_routines`, `claude_routines`, `routines`, `seven_day_cowork` (confidence: MED for `seven_day_cowork` existing as a live key; LOW for which key carries data on routines-active accounts)
+
+### 3. Auth required
+
+- Auth = the Claude Code subscription OAuth access token as a Bearer token, plus `anthropic-beta: oauth-2025-04-20` — https://github.com/anthropics/claude-code/issues/31637 and https://github.com/Maciek-roboblog/Claude-Code-Usage-Monitor/issues/202 (confidence: MED; header value undocumented officially)
+- Token storage (official; locations/types only, no values): macOS — encrypted macOS Keychain; Linux — `~/.claude/.credentials.json` mode `0600`; Windows — `%USERPROFILE%\.claude\.credentials.json`; `CLAUDE_CONFIG_DIR` relocates the file on Linux/Windows — https://code.claude.com/docs/en/authentication.md (confidence: HIGH)
+- macOS Keychain item is a generic password with service name `Claude Code-credentials` — https://github.com/Maciek-roboblog/Claude-Code-Usage-Monitor/issues/202 (confidence: MED — community; official docs name the Keychain but not the service string)
+- Credential JSON shape: top-level `claudeAiOauth` object with `accessToken`, `refreshToken`, `expiresAt`, `scopes` — community write-ups, e.g. https://git.joshthomas.dev/mirrors/claude-code-sandbox/src/commit/b44cf1a84e0bab3f5f2ded8a871cbdc43ce50249/docs/lift-and-shift-credentials.md (confidence: MED; matches jackin❯ decoder `crates/jackin-usage/src/usage/claude.rs:235-257`)
+- Scopes `user:inference` and `user:profile` appear in community documentation of the stored credential; no official Anthropic source lists Claude Code OAuth scopes — same sources as above (confidence: LOW–MED, needs verification)
+- `claude setup-token` long-lived tokens (`CLAUDE_CODE_OAUTH_TOKEN`) "can only make model requests" per official docs — whether they can call the usage endpoint is untested — https://code.claude.com/docs/en/authentication.md (confidence: HIGH for the quote; unknown for usage-endpoint applicability)
+
+### 4. Plan label, email, multi-account
+
+- Plan tier labels "Max 5x" ($100/mo) and "Max 20x" ($200/mo) are official product names — https://support.claude.com/en/articles/11049741-what-is-the-max-plan (confidence: HIGH)
+- No official documentation of any endpoint returning plan label or email. Claude Code's own `/status` shows "the organization and email it has saved for the expired login" — i.e., identity is persisted client-side with the login — https://code.claude.com/docs/en/authentication.md (confidence: HIGH)
+- Client-side sources on disk (locations/types only): `~/.claude.json` → `oauthAccount.emailAddress` (account email) and `oauthAccount.organizationType` (tier, e.g. `claude_max`); credentials file → `claudeAiOauth.subscriptionType` / `rateLimitTier` — jackin❯ cross-reference `crates/jackin-usage/src/usage/claude.rs:196-257` (confidence: MED — live-verified in-repo, no primary doc)
+- Multi-account: no official multi-account usage API exists; multi-account display is client aggregation over multiple stored credentials/config dirs (`CLAUDE_CONFIG_DIR` per official docs enables parallel credential stores) — https://code.claude.com/docs/en/authentication.md (confidence: HIGH for the mechanism; the aggregation itself is purely client-side)
+- Community references to an `api.anthropic.com/api/oauth/profile` endpoint could not be verified against any citable non-banned source — dropped to open unknown
+
+### 5. CodexBar-style elements with no direct API source (client-side computation required)
+
+- The per-window payload carries only `utilization` (percent used) and `resets_at` — no burn rate, no history, no projections, no absolute tokens, no plan-size denominators — https://github.com/Maciek-roboblog/Claude-Code-Usage-Monitor/issues/202 and https://gist.github.com/monperrus/3ac4b303a84946bbeaf2b1123ee99491 (confidence: HIGH — consistent across all independent observations, incl. jackin❯ live fixtures)
+- Anthropic itself computes activity analytics client-side: the `/usage` breakdown "figures are approximate and computed from local session history on this machine, so usage from other devices or claude.ai is not included" — https://code.claude.com/docs/en/costs.md (confidence: HIGH)
+- Therefore all pace-derived elements have NO direct API source and must be computed client-side from successive snapshots of `utilization` vs. elapsed window time: deficit % (used ahead of linear pace), reserve % (used behind pace), "Projected empty in" (extrapolated exhaustion time), and "Lasts until reset" (projected non-exhaustion) (confidence: HIGH as an inference from the payload shape above)
+- Also client-side only: plan label and email attribution (from stored credentials, finding 4), window display names ("Session", "Weekly", "Daily Routines" — the API uses raw keys like `five_hour`/`seven_day`), and any cross-account merge. CodexBar's README claims only "session and weekly usage where available" plus reset countdowns as displayed provider data — https://github.com/steipete/codexbar (README prose, concept evidence only) (confidence: MED)
+- Direct API sources DO exist for: percent used per window, reset timestamps, extra-usage/spend money caps (`extra_usage`, `spend`, dollar-budget windows) — same payload sources as above (confidence: MED)
+
+## Dead ends and contradictions
+
+- Anthropic Admin "Usage and Cost API" (`/v1/organizations/usage_report/messages`) and Enterprise Analytics API: real, documented — but Admin-API-key, API-organization scoped; they do not expose Pro/Max subscription windows — https://platform.claude.com/docs/en/manage-claude/usage-cost-api (checked, ruled out for this use)
+- support.claude.com articles 11647753 ("How do usage and length limits work?") and 14552983 ("Models, usage, and limits in Claude Code") were fetched: neither names concrete window labels or payload fields (ruled out as sources for window naming)
+- Contradiction on weekly reset semantics: support article says "Weekly limits reset at a fixed time each week that is assigned to your account" (https://support.claude.com/en/articles/11049741-what-is-the-max-plan), while an 11-day longitudinal poll of `seven_day.utilization` observed resets every ~72h with `resets_at` NOT predicting fresh allocation (https://gist.github.com/monperrus/3ac4b303a84946bbeaf2b1123ee99491). Unresolved; treat `resets_at` as window-tail metadata, not a refill promise
+- Official-API feature requests are closed "not planned": anthropics/claude-code #45392 and the rate-limit complaint #31637 (`invalid`/`stale`) — no signal of a supported public endpoint coming
+- Host ambiguity: `api.anthropic.com/api/oauth/usage` vs `claude.ai/api/oauth/usage` both observed working in different community reports; canonical host undocumented
+- Claude Code CHANGELOG (fetched via raw.githubusercontent.com) confirms `/usage` cache/rate-limit behavior fixes (2.1.186, 2.1.207, 2.1.211) but names no endpoint or payload fields
+- CodexBar `docs/claude.md` appeared in search results; not fetched (clean-room constraint) — nothing from it is used here
+
+## Open unknowns
+
+Round-2 resolutions (see chapter 09, vetted 2026-07-24): the `oauth/profile` endpoint exists (scope-gated `any_of(user:profile, user:office)`, returns account email/uuid + organization uuid); `claude setup-token` tokens are REJECTED by `oauth/usage` (403, `user:inference` only); the single-source payload fields (`weekly_scoped`, `seven_day_cowork`, `amber_ladder`, `seven_day_oauth_apps`) are corroborated by dozens-to-hundreds of independent public repos plus a full public fixture; macOS stores credentials Keychain-ONLY by default (service `Claude Code-credentials`) and even unlinks the credentials file — a macOS Desktop reader needs Keychain access.
+
+- Exact live payload key for the routines window on a routines-active account (`seven_day_routines` vs `seven_day_cowork` vs another key), and the exact UI label ("Daily Routines"?) in claude.ai/settings/usage and `/usage` — needs an operator-authenticated browser session inspecting settings/usage network traffic on an account with routine runs
+- ~~Whether `api.anthropic.com/api/oauth/profile` exists and returns plan label/email~~ RESOLVED → chapter 09 (exists; scope-gated; returns email/uuid; plan-label field still unknown)
+- Official OAuth scope list for Claude Code (`user:inference`, `user:profile` unconfirmed by any primary source) — capture of the `/login` authorize URL would settle it; chapter 09 adds MED corroboration (dagger's scope constants, issue #79360 scope errors)
+- ~~Whether `claude setup-token` tokens are accepted by the usage endpoint~~ RESOLVED → chapter 09 (rejected: 403 scope error)
+- Documented rate-limit policy for `oauth/usage` (429 without `Retry-After` reported; no official statement)
+- Whether the plan label string ("Max 20x") is ever served server-side (e.g. inside the usage payload's `limits[]`/profile data) or is always client-derived from stored `rateLimitTier`/`organizationType` codes — needs the same authenticated traffic inspection
+- Semantics of `limits[].scope` entries (`weekly_scoped`) for per-model (Fable) windows — first-hand jackin❯ observation only; no second source

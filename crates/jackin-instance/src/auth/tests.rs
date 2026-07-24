@@ -8,27 +8,30 @@ use jackin_config::AuthForwardMode;
 use jackin_core::JackinPaths;
 use tempfile::tempdir;
 
-/// The macOS Keychain service name Claude Code derives for a custom
-/// `CLAUDE_CONFIG_DIR` must match the live entries observed on disk:
-/// the default `~/.claude` uses the bare service, and any other config
-/// dir uses `Claude Code-credentials-<sha256(path)[..8]>`. Pure string
-/// derivation — no real Keychain access.
+/// Provisioning derives its per-config-dir Keychain service through the shared
+/// `jackin_core::claude_keychain_scope` helper (no local hash). Passing the
+/// same normalized absolute source paths must reproduce the live scheme: the
+/// default `~/.claude` uses the bare service; custom dirs use the suffixed one.
+/// Pure derivation — no real Keychain access.
 #[cfg(target_os = "macos")]
 #[test]
 fn claude_keychain_service_name_matches_claude_scheme() {
     use std::path::Path;
     let home = Path::new("/Users/donbeave");
 
+    let scope = |dir: std::path::PathBuf| {
+        jackin_core::claude_keychain_scope(&dir, home, &dir)
+            .expect("scope")
+            .service
+    };
+
+    assert_eq!(scope(home.join(".claude")), "Claude Code-credentials");
     assert_eq!(
-        super::claude_keychain_service_for_config_dir(&home.join(".claude"), home),
-        "Claude Code-credentials"
-    );
-    assert_eq!(
-        super::claude_keychain_service_for_config_dir(&home.join(".claude-chainargos"), home),
+        scope(home.join(".claude-chainargos")),
         "Claude Code-credentials-93aecf3d"
     );
     assert_eq!(
-        super::claude_keychain_service_for_config_dir(&home.join(".claude-work"), home),
+        scope(home.join(".claude-work")),
         "Claude Code-credentials-3342f2c7"
     );
 }

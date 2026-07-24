@@ -8,9 +8,10 @@ use std::sync::{Arc, Mutex};
 use jackin_usage::host::HostUsageRuntime;
 
 use crate::dto::{
-    AccountDescriptorDto, OpenConfig, OverviewRowDto, SurfaceDescriptorDto, UsageEventBatchDto,
-    UsageFormatPrefsDto, UsageViewDto, account_dto, event_batch_dto, map_open_err, map_runtime_err,
-    overview_row_dto, parse_format_prefs, surface_dto, to_host_config, view_dto,
+    AccountDescriptorDto, OpenConfig, OverviewRowDto, ProviderGlanceRowDto, SurfaceDescriptorDto,
+    UsageEventBatchDto, UsageFormatPrefsDto, UsageViewDto, account_dto, event_batch_dto,
+    map_open_err, map_runtime_err, overview_row_dto, parse_format_prefs, provider_glance_row_dto,
+    surface_dto, to_host_config, view_dto,
 };
 use crate::error::{UsageBridgeError, catch_entry};
 
@@ -195,6 +196,21 @@ impl UsageMenuBarBridge {
                 .map_err(map_runtime_err)?
                 .into_iter()
                 .map(overview_row_dto)
+                .collect())
+        })
+    }
+
+    /// Selected-account-aware provider glance rows in the canonical Desktop
+    /// order (status bar / popover / Usage window). Rust owns detection,
+    /// ordering, and every display string.
+    pub fn provider_glance_rows(&self) -> Result<Vec<ProviderGlanceRowDto>, UsageBridgeError> {
+        catch_entry(|| {
+            let mut guard = self.lock()?;
+            Ok(guard
+                .provider_glance_rows()
+                .map_err(map_runtime_err)?
+                .into_iter()
+                .map(provider_glance_row_dto)
                 .collect())
         })
     }

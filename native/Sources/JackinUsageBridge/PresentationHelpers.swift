@@ -135,6 +135,23 @@ public func statusItemSystemImage(surfaceId: String) -> String? {
     }
 }
 
+/// The exact seven-provider Desktop icon domain (canonical order). `opencode`
+/// is intentionally excluded from the Desktop status-item contract.
+public let desktopProviderIconKeys = [
+    "codex", "claude", "amp", "grok", "zai", "kimi", "minimax",
+]
+
+/// SF Symbol name for a Desktop provider status item. Rejects any key outside
+/// `desktopProviderIconKeys` (so `opencode` and unknown keys return `nil`),
+/// then delegates to the existing `statusItemSystemImage` mapping. Performs no
+/// usage formatting or provider detection.
+public func desktopProviderSystemImage(iconKey: String) -> String? {
+    guard desktopProviderIconKeys.contains(iconKey) else {
+        return nil
+    }
+    return statusItemSystemImage(surfaceId: iconKey)
+}
+
 /// Whether every frozen host surface has a status-item system image (displayable strip).
 public func allFrozenHostSurfacesHaveSystemImages() -> Bool {
     frozenHostSurfaceIds.allSatisfy { statusItemSystemImage(surfaceId: $0) != nil }

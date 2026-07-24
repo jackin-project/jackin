@@ -76,7 +76,7 @@ swift run -c release DesktopParityMatrixHarness   # full 8-surface displayable m
 swift test -c release
 ```
 
-Default status-item display is **all enabled providers** (icon + **remaining %**, OpenUsage-style; strip cap default 8). Empty data shows `—`. Settings → Percent style can flip compact + chip lines to **% used**. **Never** token unit prices or historical usage trends.
+Default status-item display is one item per auto-detected provider: template icon + the selected account's Rust-owned glance percentage (**Weekly remaining** for six providers; **Amp Free Daily remaining** for Amp). Empty data shows `—`; stale or unavailable last-known data stays visible and dimmed. **Never** token unit prices or historical usage/spend charts.
 
 | Operator entry | Rust implementation |
 |---|---|
@@ -149,7 +149,7 @@ gh workflow run release.yml --ref main -f mode=publish -f lanes=github
 ```
 
 5. Approve/merge the tap PR after `cask-validation` (first cask is never auto-merged).
-6. Plan 004: `cargo xtask release-verify` on the public ZIP + `brew install --cask` on Apple Silicon (arm64).
+6. Install proof (`plans/jackin-desktop/` plan 010; formerly plan 004 of the retired `plans/native-macos-usage-menu-bar/` program): `cargo xtask release-verify` on the public ZIP + `brew install --cask` on Apple Silicon (arm64).
 
 ### Path B — First stable jackin❯ release rides the same tag
 

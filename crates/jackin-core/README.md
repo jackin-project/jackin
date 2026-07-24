@@ -26,6 +26,7 @@ Cross-surface **product presentation** (Debug-info paint, product brand/domain R
 | [`operator_notice.rs`](src/operator_notice.rs) | operator notice | — |
 | [`auth.rs`](src/auth.rs) | auth model | — |
 | [`account_key.rs`](src/account_key.rs) · [`account_key/`](src/account_key) | account key | [`tests.rs`](src/account_key/tests.rs) |
+| [`claude_keychain.rs`](src/claude_keychain.rs) · [`claude_keychain/`](src/claude_keychain) | Claude Code macOS Keychain service derivation (`claude_keychain_scope`) shared by instance provisioning and the usage probe | [`tests.rs`](src/claude_keychain/tests.rs) |
 | [`env_model.rs`](src/env_model.rs) · [`env_model/`](src/env_model) | env model | [`tests.rs`](src/env_model/tests.rs) |
 | [`env_value.rs`](src/env_value.rs) · [`env_value/`](src/env_value) | env value | [`tests.rs`](src/env_value/tests.rs) |
 | [`paths.rs`](src/paths.rs) · [`paths/`](src/paths) | host paths + `PathsError` | [`tests.rs`](src/paths/tests.rs) |

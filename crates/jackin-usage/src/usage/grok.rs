@@ -6,10 +6,6 @@
 //! Carved out of `usage.rs` for the file-size ratchet. Items in this module
 //! are `pub(crate)` so the coordinator (`usage.rs`) can re-export them.
 
-#[cfg_attr(
-    not(test),
-    expect(clippy::wildcard_imports, reason = "target-dependent")
-)]
 use super::*;
 use serde::Deserialize;
 
@@ -99,7 +95,9 @@ pub(crate) fn grok_snapshot_from_rpc_result(
         surface: UsageSurface::Grok,
         account_label: account,
         username: None,
-        plan_label: grok_plan_label(auth),
+        plan_label: billing_usage
+            .as_ref()
+            .and_then(GrokBillingSnapshot::plan_label),
         credential_origin,
         buckets,
         status,
@@ -126,45 +124,66 @@ pub(crate) fn grok_snapshot_from_rpc_result(
     })
 }
 
+/// Current ACP `x.ai/billing` response (top-level `config` + resolved tier).
 #[derive(Debug, Deserialize)]
 pub(crate) struct GrokBillingResponse {
-    #[serde(rename = "billingCycle")]
-    pub(crate) billing_cycle: Option<GrokBillingCycle>,
-    #[serde(rename = "monthlyLimit")]
-    pub(crate) monthly_limit: Option<GrokCent>,
-    #[serde(rename = "onDemandCap")]
-    pub(crate) on_demand_cap: Option<GrokCent>,
-    #[serde(rename = "on_demand_enabled")]
+    pub(crate) config: Option<GrokBillingConfig>,
     pub(crate) on_demand_enabled: Option<bool>,
-    pub(crate) usage: Option<GrokBillingUsage>,
+    /// Server-resolved subscription tier (already `display.or(machine)` upstream).
+    pub(crate) subscription_tier: Option<String>,
 }
 
+/// The one `config` object: preferred `creditUsagePercent`/`currentPeriod`,
+/// current fallback `monthlyLimit`/`used`/`billingPeriod*`, and confirmed
+/// prepaid/on-demand quota bounds.
 #[derive(Debug, Deserialize)]
-pub(crate) struct GrokBillingCycle {
-    #[serde(rename = "billingPeriodStart")]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct GrokBillingConfig {
+    pub(crate) credit_usage_percent: Option<f64>,
+    pub(crate) current_period: Option<GrokCurrentPeriod>,
+    pub(crate) monthly_limit: Option<GrokCent>,
+    pub(crate) used: Option<GrokCent>,
+    pub(crate) on_demand_cap: Option<GrokCent>,
+    pub(crate) on_demand_used: Option<GrokCent>,
+    pub(crate) prepaid_balance: Option<GrokCent>,
     pub(crate) billing_period_start: Option<String>,
-    #[serde(rename = "billingPeriodEnd")]
     pub(crate) billing_period_end: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct GrokBillingUsage {
-    #[serde(rename = "includedUsed")]
-    pub(crate) included_used: Option<GrokCent>,
-    #[serde(rename = "onDemandUsed")]
-    pub(crate) on_demand_used: Option<GrokCent>,
-    #[serde(rename = "totalUsed")]
-    pub(crate) total_used: Option<GrokCent>,
+pub(crate) struct GrokCurrentPeriod {
+    #[serde(rename = "type")]
+    pub(crate) period_type: Option<String>,
+    pub(crate) start: Option<String>,
+    pub(crate) end: Option<String>,
 }
 
+/// Proto3 JSON cents: an omitted `{}` object means zero.
 #[derive(Debug, Deserialize)]
 pub(crate) struct GrokCent {
-    pub(crate) val: Option<i64>,
+    #[serde(default)]
+    pub(crate) val: i64,
+}
+
+/// Normalized cent magnitude; `i64::MIN` (no `checked_abs`) is invalid → `None`.
+/// Every monetary quota field passes through this before comparison/label/money.
+fn checked_cent_magnitude(val: i64) -> Option<i64> {
+    val.checked_abs()
+}
+
+/// Period label: the server period type wins, then window duration, then Credits.
+fn grok_period_label(period_type: Option<&str>, window_seconds: i64) -> &'static str {
+    match period_type {
+        Some(kind) if kind.contains("WEEKLY") => "Weekly",
+        Some(kind) if kind.contains("MONTHLY") => "Monthly",
+        _ => grok_cycle_label_from_minutes(window_seconds / 60),
+    }
 }
 
 #[derive(Debug)]
 pub(crate) enum GrokBillingSnapshot {
-    Rpc(GrokBillingResponse),
+    // Boxed: the current `config`-bearing RPC response is far larger than Web.
+    Rpc(Box<GrokBillingResponse>),
     Web(GrokWebBillingSnapshot),
 }
 
@@ -186,6 +205,15 @@ impl GrokBillingSnapshot {
         match self {
             Self::Rpc(_) => UsageSource::Cli,
             Self::Web(_) => UsageSource::ProviderApi,
+        }
+    }
+
+    /// Plan label from server-resolved truth: the RPC `subscription_tier`; the
+    /// web-scrape path carries no tier and returns `None` (no auth heuristic).
+    pub(crate) fn plan_label(&self) -> Option<String> {
+        match self {
+            Self::Rpc(response) => response.plan_label(),
+            Self::Web(_) => None,
         }
     }
 }
@@ -221,94 +249,143 @@ impl GrokWebBillingSnapshot {
 }
 
 impl GrokBillingResponse {
+    /// Server-resolved plan label (trimmed, nonempty), or `None`.
+    pub(crate) fn plan_label(&self) -> Option<String> {
+        self.subscription_tier
+            .as_deref()
+            .map(str::trim)
+            .filter(|tier| !tier.is_empty())
+            .map(str::to_owned)
+    }
+
     pub(crate) fn buckets(&self, now: i64) -> Vec<QuotaBucketView> {
         let mut buckets = Vec::new();
-        if let Some(limit) = self.monthly_limit.as_ref().and_then(|amount| amount.val) {
-            let reset_at = self.billing_period_end_epoch();
-            let label = self
-                .billing_period_minutes()
-                .map_or("Credits", grok_cycle_label_from_minutes);
-            let total_used = self
-                .usage
+        let Some(config) = self.config.as_ref() else {
+            return buckets;
+        };
+        if let Some(headline) = config.headline_bucket(now) {
+            buckets.push(headline);
+        }
+        // Extra usage credits (prepaid balance): a quota bound, never a price;
+        // limit-only, no status slot (renders via the generic balance seam).
+        if let Some(balance) = config
+            .prepaid_balance
+            .as_ref()
+            .and_then(|cents| checked_cent_magnitude(cents.val))
+            .filter(|balance| *balance > 0)
+        {
+            let mut view = bucket(
+                "Extra usage credits",
+                None,
+                Some(format_cents(balance)),
+                None,
+                None,
+                None,
+                UsageSnapshotStatus::Fresh,
+            );
+            view.limit_money = Some(Money::new(balance, "USD", 2));
+            buckets.push(view);
+        }
+        // On-demand usage: only a positive provider cap is an N3-permitted quota
+        // bound; without one it is unbounded spend and emits no row.
+        if self.on_demand_enabled != Some(false)
+            && let Some(cap) = config
+                .on_demand_cap
                 .as_ref()
-                .and_then(|usage| usage.total_used.as_ref())
-                .and_then(|amount| amount.val)
-                .unwrap_or(0);
-            let used_percent = if limit > 0 {
-                Some(((total_used as f64 / limit as f64) * 100.0).clamp(0.0, 100.0))
-            } else {
-                None
-            };
-            // Billing cycle fills the Weekly slot; Grok has no session window.
-            buckets.push(with_status_slot(
-                timed_bucket(
-                    label,
-                    Some(format_cents(total_used)),
-                    Some(format_cents(limit)),
-                    used_percent.map(|used| {
-                        #[expect(
-                            clippy::cast_sign_loss,
-                            reason = "used_percent clamped 0.0..=100.0 above"
-                        )]
-                        {
-                            100u8.saturating_sub(used.round() as u8)
-                        }
-                    }),
-                    reset_at,
-                    now,
-                    None,
-                    UsageSnapshotStatus::Fresh,
-                ),
-                Some(StatusSlot::Weekly),
-            ));
-        }
-        if let Some(usage) = &self.usage
-            && let Some(included) = usage.included_used.as_ref().and_then(|amount| amount.val)
-            && included > 0
+                .and_then(|cents| checked_cent_magnitude(cents.val))
+                .filter(|cap| *cap > 0)
         {
-            buckets.push(bucket(
-                "Included usage",
-                Some(format_cents(included)),
-                None,
-                None,
-                None,
-                Some("used this cycle"),
-                UsageSnapshotStatus::Fresh,
-            ));
-        }
-        if let Some(usage) = &self.usage
-            && let Some(on_demand) = usage.on_demand_used.as_ref().and_then(|amount| amount.val)
-            && on_demand > 0
-        {
-            buckets.push(bucket(
+            let used = config
+                .on_demand_used
+                .as_ref()
+                .map_or(0, |cents| cents.val.max(0));
+            let mut view = bucket(
                 "On-demand usage",
-                Some(format_cents(on_demand)),
-                self.on_demand_cap
-                    .as_ref()
-                    .and_then(|amount| amount.val)
-                    .map(format_cents),
+                Some(format_cents(used)),
+                Some(format_cents(cap)),
                 None,
                 None,
-                self.on_demand_enabled
-                    .unwrap_or(false)
-                    .then_some("enabled")
-                    .or(Some("disabled")),
+                None,
                 UsageSnapshotStatus::Fresh,
-            ));
+            );
+            view.used_money = Some(Money::new(used, "USD", 2));
+            view.limit_money = Some(Money::new(cap, "USD", 2));
+            buckets.push(view);
         }
         buckets
     }
+}
 
-    pub(crate) fn billing_period_end_epoch(&self) -> Option<i64> {
-        parse_iso_epoch(self.billing_cycle.as_ref()?.billing_period_end.as_deref()?)
+impl GrokBillingConfig {
+    /// The single current billing headline, with pace when a positive window is
+    /// derivable. Preferred: finite `creditUsagePercent` + a positive
+    /// `currentPeriod`; fallback: positive normalized `monthlyLimit` +
+    /// `billingPeriod*`. Neither complete → no headline.
+    fn headline_bucket(&self, now: i64) -> Option<QuotaBucketView> {
+        if let Some(percent) = self.credit_usage_percent.filter(|value| value.is_finite())
+            && let Some(period) = self.current_period.as_ref()
+            && let Some(start) = period.start.as_deref().and_then(parse_iso_epoch)
+            && let Some(end) = period.end.as_deref().and_then(parse_iso_epoch)
+            && end > start
+        {
+            let window_seconds = end - start;
+            let remaining = remaining_from_used_percent(percent);
+            let label = grok_period_label(period.period_type.as_deref(), window_seconds);
+            let pace = quota_pace_label(Some(remaining), Some(end), Some(window_seconds), now);
+            return Some(weekly_billing_headline(label, remaining, end, now, pace));
+        }
+        if let Some(limit) = self
+            .monthly_limit
+            .as_ref()
+            .and_then(|cents| checked_cent_magnitude(cents.val))
+            .filter(|limit| *limit > 0)
+            && let Some(start) = self
+                .billing_period_start
+                .as_deref()
+                .and_then(parse_iso_epoch)
+            && let Some(end) = self.billing_period_end.as_deref().and_then(parse_iso_epoch)
+            && end > start
+        {
+            let window_seconds = end - start;
+            let used_cents = self.used.as_ref().map_or(0, |cents| cents.val.max(0));
+            #[expect(clippy::cast_precision_loss, reason = "cents magnitudes fit f64")]
+            let percent = ((used_cents as f64 / limit as f64) * 100.0).clamp(0.0, 100.0);
+            let remaining = remaining_from_used_percent(percent);
+            let label = grok_cycle_label_from_minutes(window_seconds / 60);
+            let pace = quota_pace_label(Some(remaining), Some(end), Some(window_seconds), now);
+            return Some(weekly_billing_headline(label, remaining, end, now, pace));
+        }
+        None
     }
+}
 
-    pub(crate) fn billing_period_minutes(&self) -> Option<i64> {
-        let cycle = self.billing_cycle.as_ref()?;
-        let start = parse_iso_epoch(cycle.billing_period_start.as_deref()?)?;
-        let end = parse_iso_epoch(cycle.billing_period_end.as_deref()?)?;
-        (end > start).then_some((end - start) / 60)
+fn remaining_from_used_percent(used_percent: f64) -> u8 {
+    #[expect(clippy::cast_sign_loss, reason = "clamped 0.0..=100.0 before cast")]
+    {
+        100u8.saturating_sub(used_percent.clamp(0.0, 100.0).round() as u8)
     }
+}
+
+fn weekly_billing_headline(
+    label: &str,
+    remaining: u8,
+    reset_at: i64,
+    now: i64,
+    pace: Option<String>,
+) -> QuotaBucketView {
+    // Grok exposes only a billing cycle (no session), so it fills the Weekly slot.
+    let mut view = timed_bucket(
+        label,
+        None,
+        None,
+        Some(remaining),
+        Some(reset_at),
+        now,
+        pace.as_deref(),
+        UsageSnapshotStatus::Fresh,
+    );
+    view.status_slot = Some(StatusSlot::Weekly);
+    view
 }
 
 pub(crate) fn grok_cycle_label_from_minutes(minutes: i64) -> &'static str {
@@ -339,7 +416,7 @@ pub(crate) fn fetch_grok_billing(
     gate: &mut ManagedCliLaunchGate,
 ) -> Result<GrokBillingSnapshot, String> {
     match fetch_grok_rpc_billing(gate) {
-        Ok(response) => Ok(GrokBillingSnapshot::Rpc(response)),
+        Ok(response) => Ok(GrokBillingSnapshot::Rpc(Box::new(response))),
         Err(rpc_error) => match fetch_grok_web_billing(auth_path, now) {
             Ok(snapshot) => {
                 gate.record_success();
@@ -788,17 +865,6 @@ pub(crate) fn grok_account_label(path: &Path) -> Option<String> {
     first_string_key(&value, "email")
         .or_else(|| first_string_key(&value, "user_id"))
         .or_else(|| first_string_key(&value, "team_id"))
-}
-
-pub(crate) fn grok_plan_label(path: &Path) -> Option<String> {
-    let value = read_json_file(path)?;
-    first_string_key(&value, "auth_mode").map(|mode| {
-        if mode.eq_ignore_ascii_case("oidc") {
-            "SuperGrok".to_owned()
-        } else {
-            mode
-        }
-    })
 }
 
 pub(crate) fn grok_account_label_or_presence(

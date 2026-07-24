@@ -15,5 +15,8 @@ Primary entry: [`ClientFrame`](src/attach.rs) (attach-protocol client frames). R
 - `ClientMsg` / `ServerMsg` — control-channel JSON frames
 - `TelemetryContext` — validated W3C trace context propagated across host/Capsule control frames
 - `host_terminal` — the single OSC 10/11 default-color handshake and input-preservation adapter used by both attach clients
+- `StatusSlot` — semantic status-bar glance slot a usage quota window fills (`session`, `daily`, `weekly`, `spend`); `daily` carries Amp Free's `N% remaining today` allowance
+- `FocusedUsageView::is_refreshing_placeholder()` — one machine predicate for the exact cold `refreshing` placeholder invariant, so host/Swift code never compares display strings
+- `UsageDetailPresentation` / `UsageDetailRow` / `UsagePresentationLine` / `UsageDetailRowKind` — the shared Capsule-parity provider-detail card contract: fixed row order (focused, header, provider, account, status, updated, optional username/plan/auth, `bucket:<i>` per source bucket, optional detail), position-based bucket ids, and already-grouped `leading`/`trailing` layout lines. `display_label` equals the row's non-empty line fields joined with `" · "`. Built by `jackin_usage::usage::usage_detail_presentation`; the Capsule dialog and the Desktop Usage window render it verbatim.
 
 `#![deny(missing_docs)]` is on; public surface is rustdoc-complete.

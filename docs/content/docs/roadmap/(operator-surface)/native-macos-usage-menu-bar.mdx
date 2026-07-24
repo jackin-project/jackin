@@ -2,15 +2,17 @@
 title: "jackin❯ Desktop — native macOS usage status bar"
 ---
 
-**Status**: Partially implemented
+**Status**: Implemented — jackin❯ Desktop ships one native status item per auto-detected provider, the tab-grid Agent Usage preview, and the Capsule-parity Usage window. Secret-free release validation and the cask/install-proof automation are ready; public notarized Homebrew activation remains an operator action requiring Apple release authority.
 
-**Remaining phases**: plan 003 (notarized public ZIP + Homebrew cask, blocked on Apple secrets in `release-macos`); plan 004 (production install proof deferred until 003 ships).
+**Remaining phases**: none for this item. The Amp post-subscription `displayText` parser is a separately triggered deferred follow-up until an operator capture exists; it does not reopen the completed Desktop program.
+
+**Program record**: completion status and rejected public-activation boundary are recorded in `plans/jackin-desktop/`.
 
 **Operator guide**: [macOS agent-usage menu bar](/guides/macos-usage-menu-bar/)
 
 **Architecture**: [ADR-011](/reference/adrs/adr-011-native-macos-usage-menu-bar/)
 
-**Implementation plans**: `plans/native-macos-usage-menu-bar/` (005 cache unification → 006 design refresh → 001–002 distribution engineering → 007–012 jackin❯ Desktop v1 → 003–004 notarized activation residual)
+**Implementation plans**: active program `plans/jackin-desktop/` (provider-core fixes → per-provider status items → Agent Usage preview popover → Usage window parity → Liquid Glass polish → distribution). Executed history: `plans/native-macos-usage-menu-bar/` (001–013, retired 2026-07-24 — superseded by the jackin❯ Desktop program; its plan numbers are unrelated to the active program's).
 
 **References (external, clean-room — concepts only, never code or provider lists)**:
 
@@ -21,6 +23,8 @@ title: "jackin❯ Desktop — native macOS usage status bar"
 A second, deeper clean-room concept review of both references was recorded on 2026-07-22 and drives the adopt/adapt/reject matrix in the product spec below.
 
 ## jackin❯ Desktop — product spec (v1: status bar only)
+
+<Aside type="note">The product spec below is the shipped v1 baseline, kept as executed history. Since 2026-07-24 the active design source of truth is the jackin❯ Desktop program (`roadmap/jackin-desktop/` + `plans/jackin-desktop/`): where they differ — per-provider status items showing one Rust-selected glance percentage (Weekly for six providers; Amp Free Daily for Amp), the tab-grid Agent Usage preview popover with a Refresh-only footer, no Settings surface, Usage window entry via the status-item right-click menu and popover provider headers — the jackin❯ Desktop program governs.</Aside>
 
 The shipped menu-bar engineering is the seed of **jackin❯ Desktop**, our first native macOS application. v1 stays deliberately small: `LSUIElement`, no Dock icon — one status item carrying the jackin❯ logomark, a glance popover, on-demand Liquid Glass detail windows, and Settings. Its single job is **viewing subscription usage across every account** for the providers jackin❯ supports: exactly what the Capsule usage dialog shows in-session, always visible on the host without an open Capsule. View-only in v1 — no alerts, no notifications, no write actions.
 

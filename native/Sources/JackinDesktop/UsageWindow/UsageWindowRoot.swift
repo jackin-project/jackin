@@ -6,21 +6,34 @@ import SwiftUI
 
 /// Liquid Glass Usage window: glass **sidebar + toolbar** chrome above
 /// standard-material **content** (HIG: no Liquid Glass in the content layer).
+///
+/// Every provider, order, label, number, and segment comes from Rust via
+/// ``UsageWindowModel``; this view only routes selection actions to the store's
+/// one mutation each and draws the Rust-finished rows (plan 008).
 struct UsageWindowRoot: View {
     @ObservedObject var store: PresentationStore
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.openSettings) private var openSettings
 
     private static let overviewId = "__overview__"
 
+    private var model: UsageWindowModel {
+        UsageWindowModel(
+            glanceRows: store.providerGlanceRows,
+            surfaces: store.surfaces,
+            accounts: store.accounts,
+            selection: store.usageSelection
+        )
+    }
+
     var body: some View {
+        let model = self.model
         NavigationSplitView {
             List(selection: selectionBinding) {
                 Section {
                     Label("Overview", systemImage: "square.grid.2x2")
                         .tag(Self.overviewId)
-                    ForEach(store.overviewRows) { row in
-                        let subtitle = sidebarSubtitle(for: row)
+                    // Sidebar rows in the Rust-owned canonical (Capsule tab) order.
+                    ForEach(model.sidebar) { row in
                         HStack(spacing: 8) {
                             Circle()
                                 .fill(severityTint(row.severity))
@@ -28,9 +41,8 @@ struct UsageWindowRoot: View {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(row.displayLabel)
                                     .font(.body.weight(.medium))
-                                // OpenUsage dual remaining when surface has two windows.
-                                if let subtitle, !subtitle.isEmpty {
-                                    Text(subtitle)
+                                if !row.headline.isEmpty {
+                                    Text(row.headline)
                                         .font(.caption)
                                         .foregroundStyle(.secondary)
                                         .monospacedDigit()
@@ -41,9 +53,7 @@ struct UsageWindowRoot: View {
                             Spacer(minLength: 4)
                         }
                         .tag(row.surfaceId)
-                        .accessibilityLabel(
-                            "\(row.displayLabel) \(subtitle ?? row.headline)"
-                        )
+                        .accessibilityLabel("\(row.displayLabel) \(row.headline)")
                     }
                 }
             }
@@ -70,12 +80,18 @@ struct UsageWindowRoot: View {
         } detail: {
             // Content layer — standard window background only (no glass).
             Group {
-                if let id = store.usageSelection,
-                   let surface = store.surfaces.first(where: { $0.id == id && $0.enabled })
-                {
-                    providerDetail(surface)
+                if let content = model.content {
+                    ProviderCardView(
+                        content: content,
+                        onSelectAccount: { key in
+                            store.setSelectedAccount(
+                                surfaceId: content.surfaceId,
+                                accountKey: key
+                            )
+                        }
+                    )
                 } else {
-                    OverviewListView(store: store) { surfaceId in
+                    OverviewListView(model: model) { surfaceId in
                         store.selectUsageSurface(surfaceId)
                     }
                 }
@@ -88,7 +104,7 @@ struct UsageWindowRoot: View {
         .navigationSplitViewStyle(.balanced)
         .navigationTitle("Usage")
         .toolbar {
-            ToolbarItemGroup(placement: .primaryAction) {
+            ToolbarItem(placement: .primaryAction) {
                 Button {
                     store.refreshAll()
                 } label: {
@@ -96,14 +112,6 @@ struct UsageWindowRoot: View {
                 }
                 .keyboardShortcut("r", modifiers: [.command])
                 .help("Refresh all enabled providers")
-
-                Button {
-                    openSettings()
-                } label: {
-                    Label("Settings", systemImage: "gearshape")
-                }
-                .keyboardShortcut(",", modifiers: [.command])
-                .help("Open Settings")
             }
         }
         .onExitCommand {
@@ -130,39 +138,5 @@ struct UsageWindowRoot: View {
                 }
             }
         )
-    }
-
-    @ViewBuilder
-    private func providerDetail(_ surface: PresentationStore.SurfaceRow) -> some View {
-        let accountRows = store.accountsForSurface(surface.id)
-        ProviderCardView(
-            surface: surface,
-            percentStyle: store.percentStyle,
-            accounts: accountRows,
-            onSelectAccount: { key in
-                store.setSelectedAccount(surfaceId: surface.id, accountKey: key)
-            }
-        )
-    }
-
-    /// Dual remaining subtitle for sidebar rows (OpenUsage multi-window density).
-    private func sidebarSubtitle(for row: PresentationStore.OverviewRow) -> String? {
-        let surface = store.surfaces.first(where: { $0.id == row.surfaceId })
-        let remainings = surface?.buckets.compactMap(\.remainingPercent) ?? []
-        if let dual = surfaceRemainingSubtitle(
-            remainings: remainings,
-            compactLabel: surface?.statusBarLabel ?? "",
-            percentStyle: store.percentStyle,
-            maxLines: 2
-        ) {
-            return dual
-        }
-        if !row.headline.isEmpty {
-            return row.headline
-        }
-        if !row.statusWord.isEmpty {
-            return row.statusWord
-        }
-        return nil
     }
 }

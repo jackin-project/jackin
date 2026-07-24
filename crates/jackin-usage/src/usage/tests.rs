@@ -700,19 +700,19 @@ fn status_bar_label_drops_tagged_bucket_that_failed() {
 }
 
 #[test]
-fn status_bar_label_uses_amp_free_and_credits() {
+fn status_bar_label_uses_amp_daily_only() {
     let buckets = vec![
         QuotaBucketView {
             used_money: None,
             limit_money: None,
             severity: UsageSeverity::default(),
             label: "Amp Free".to_owned(),
-            used_label: Some("$5.24".to_owned()),
-            limit_label: Some("$10".to_owned()),
+            used_label: None,
+            limit_label: None,
             remaining_percent: Some(48),
-            reset_label: None,
+            reset_label: Some("Resets daily".to_owned()),
             resets_at: None,
-            status_slot: None,
+            status_slot: Some(StatusSlot::Daily),
             pace_label: None,
             status: UsageSnapshotStatus::Fresh,
         },
@@ -732,6 +732,7 @@ fn status_bar_label_uses_amp_free_and_credits() {
         },
     ];
 
+    // Daily is the only glance; credits stay detail-only.
     assert_eq!(
         status_bar_label(
             UsageSurface::Amp,
@@ -739,7 +740,7 @@ fn status_bar_label_uses_amp_free_and_credits() {
             UsageSnapshotStatus::Fresh,
             &buckets
         ),
-        "Free 48% · $4.76"
+        "Free 48%"
     );
 }
 
@@ -750,12 +751,12 @@ fn status_bar_label_uses_stale_amp_cache() {
         limit_money: None,
         severity: UsageSeverity::default(),
         label: "Amp Free".to_owned(),
-        used_label: Some("$9.10".to_owned()),
-        limit_label: Some("$10".to_owned()),
+        used_label: None,
+        limit_label: None,
         remaining_percent: Some(9),
-        reset_label: None,
+        reset_label: Some("Resets daily".to_owned()),
         resets_at: None,
-        status_slot: None,
+        status_slot: Some(StatusSlot::Daily),
         pace_label: None,
         status: UsageSnapshotStatus::Stale,
     }];
@@ -884,6 +885,7 @@ fn usage_refresh_max_active_probes_are_spawned_before_any_join() {
                 UsageRefreshResult {
                     target,
                     view: FocusedUsageView::unavailable("test", now_epoch()),
+                    policy: UsageSnapshotPolicy::Shared,
                     codex_rpc_gate: ManagedCliLaunchGate::default(),
                     grok_rpc_gate: ManagedCliLaunchGate::default(),
                 }
@@ -925,6 +927,7 @@ fn usage_refresh_probe_timeout_returns_fallback_result() {
             UsageRefreshResult {
                 target,
                 view: FocusedUsageView::unavailable("test", now_epoch()),
+                policy: UsageSnapshotPolicy::Shared,
                 codex_rpc_gate: ManagedCliLaunchGate::default(),
                 grok_rpc_gate: ManagedCliLaunchGate::default(),
             }
@@ -2264,6 +2267,54 @@ fn codex_rpc_response_maps_account_windows_and_credits() {
     assert_eq!(credits.limit_label.as_deref(), Some("12.50 credits"));
 }
 
+fn codex_minimal_limits_value() -> serde_json::Value {
+    serde_json::json!({
+        "rateLimits": {
+            "primary": {
+                "usedPercent": 25.0,
+                "windowDurationMins": 300,
+                "resetsAt": 1_781_189_520_i64
+            }
+        }
+    })
+}
+
+#[test]
+fn codex_rpc_account_api_key_tag_yields_origin_label_and_rate_limits() {
+    let usage = codex::decode_codex_rpc_usage(
+        codex_minimal_limits_value(),
+        Some(serde_json::json!({ "account": { "type": "apiKey" } })),
+    )
+    .expect("Codex RPC decode");
+    assert_eq!(usage.account_label.as_deref(), Some("Codex API key"));
+    let buckets = usage.response.buckets(1_781_185_560);
+    assert!(buckets.iter().any(|bucket| bucket.label == "Session"));
+}
+
+#[test]
+fn codex_rpc_account_amazon_bedrock_tag_decodes_without_label() {
+    let account: CodexRpcAccountResponse = serde_json::from_value(serde_json::json!({
+        "account": { "type": "amazonBedrock", "usesCodexManagedCredentials": true }
+    }))
+    .expect("Codex Bedrock account decodes");
+    let limits: CodexRpcRateLimitsResponse =
+        serde_json::from_value(codex_minimal_limits_value()).expect("limits");
+    let usage = CodexRpcUsage::from_rpc(limits, Some(account));
+    assert_eq!(usage.account_label, None);
+}
+
+#[test]
+fn codex_rpc_account_decode_failure_degrades_to_no_label() {
+    let usage = codex::decode_codex_rpc_usage(
+        codex_minimal_limits_value(),
+        Some(serde_json::json!({ "account": { "type": "someFutureTag" } })),
+    )
+    .expect("unknown account tag still yields usage");
+    assert_eq!(usage.account_label, None);
+    let buckets = usage.response.buckets(1_781_185_560);
+    assert!(buckets.iter().any(|bucket| bucket.label == "Session"));
+}
+
 #[test]
 fn managed_cli_launch_gate_cools_down_after_launch_failure() {
     let mut gate = ManagedCliLaunchGate::default();
@@ -2461,58 +2512,102 @@ fn provider_matches_usage_label_resolves_canonical_synonyms() {
 }
 
 #[test]
-fn grok_billing_response_maps_monthly_credits() {
+fn grok_billing_config_maps_current_fallback_and_bounds() {
     let usage: GrokBillingResponse = serde_json::from_value(serde_json::json!({
-        "billingCycle": {
-            "billingPeriodStart": "2026-06-01T00:00:00Z",
-            "billingPeriodEnd": "2026-07-01T00:00:00Z"
-        },
-        "monthlyLimit": { "val": 5000 },
-        "onDemandCap": { "val": 2500 },
+        "subscription_tier": "SuperGrok",
         "on_demand_enabled": true,
-        "usage": {
-            "includedUsed": { "val": 1500 },
-            "onDemandUsed": { "val": 300 },
-            "totalUsed": { "val": 1800 }
+        "config": {
+            "monthlyLimit": { "val": 5000 },
+            "used": { "val": 1800 },
+            "billingPeriodStart": "2026-06-01T00:00:00Z",
+            "billingPeriodEnd": "2026-07-01T00:00:00Z",
+            "prepaidBalance": { "val": 2500 },
+            "onDemandCap": { "val": 4000 },
+            "onDemandUsed": { "val": 300 }
         }
     }))
-    .expect("valid Grok billing response");
+    .expect("valid current Grok billing response");
 
+    assert_eq!(usage.plan_label().as_deref(), Some("SuperGrok"));
     let buckets = usage.buckets(1_780_315_200);
 
+    // One headline (Weekly slot), detail rows stay untagged.
     assert_eq!(buckets[0].label, "Monthly");
-    // The RPC/CLI billing path tags its cycle bucket Weekly (no Session); the
-    // detail rows must stay untagged so they never reach the headline.
     assert_eq!(buckets[0].status_slot, Some(StatusSlot::Weekly));
+    assert_eq!(buckets[0].remaining_percent, Some(64));
     assert!(
         buckets[1..]
             .iter()
             .all(|bucket| bucket.status_slot.is_none())
     );
-    assert_eq!(buckets[0].used_label.as_deref(), Some("$18"));
-    assert_eq!(buckets[0].limit_label.as_deref(), Some("$50"));
-    assert_eq!(buckets[0].remaining_percent, Some(64));
-    assert_eq!(
-        buckets[0].reset_label.as_deref(),
-        Some(
-            reset_label(
-                parse_iso_epoch("2026-07-01T00:00:00Z").expect("billing reset"),
-                1_780_315_200,
-            )
-            .as_str()
-        )
-    );
-    assert_eq!(buckets[0].pace_label, None);
-    assert!(
-        buckets.iter().any(|bucket| bucket.label == "Included usage"
-            && bucket.used_label.as_deref() == Some("$15"))
-    );
+
+    let credits = buckets
+        .iter()
+        .find(|bucket| bucket.label == "Extra usage credits")
+        .expect("prepaid balance bound");
+    assert_eq!(credits.limit_label.as_deref(), Some("$25"));
+    assert!(credits.limit_money.is_some());
+    assert_eq!(credits.used_label, None);
+
+    let on_demand = buckets
+        .iter()
+        .find(|bucket| bucket.label == "On-demand usage")
+        .expect("on-demand bound");
+    assert_eq!(on_demand.used_label.as_deref(), Some("$3"));
+    assert_eq!(on_demand.limit_label.as_deref(), Some("$40"));
+    assert!(on_demand.limit_money.is_some());
+}
+
+#[test]
+fn grok_billing_config_preferred_percent_path_has_pace() {
+    let usage: GrokBillingResponse = serde_json::from_value(serde_json::json!({
+        "config": {
+            "creditUsagePercent": 43.0,
+            "currentPeriod": {
+                "type": "USAGE_PERIOD_TYPE_WEEKLY",
+                "start": "2026-06-01T00:00:00Z",
+                "end": "2026-06-08T00:00:00Z"
+            }
+        }
+    }))
+    .expect("valid preferred config");
+    let now = parse_iso_epoch("2026-06-04T00:00:00Z").expect("now");
+    let buckets = usage.buckets(now);
+    assert_eq!(buckets[0].label, "Weekly");
+    assert_eq!(buckets[0].status_slot, Some(StatusSlot::Weekly));
+    assert_eq!(buckets[0].remaining_percent, Some(57));
+    assert!(buckets[0].pace_label.is_some());
+}
+
+#[test]
+fn grok_plan_label_from_server_tier_only() {
+    let free: GrokBillingResponse = serde_json::from_value(serde_json::json!({
+        "config": {},
+        "subscription_tier": "  "
+    }))
+    .expect("blank tier");
+    assert_eq!(free.plan_label(), None);
+    // Web path never guesses a plan (no auth heuristic).
+    let web = GrokBillingSnapshot::Web(GrokWebBillingSnapshot {
+        used_percent: 40.0,
+        reset_at_epoch: Some(1_780_315_200),
+    });
+    assert_eq!(web.plan_label(), None);
+}
+
+#[test]
+fn grok_on_demand_requires_positive_cap() {
+    let usage: GrokBillingResponse = serde_json::from_value(serde_json::json!({
+        "on_demand_enabled": true,
+        "config": { "onDemandUsed": { "val": 500 } }
+    }))
+    .expect("no cap config");
+    let buckets = usage.buckets(1_780_315_200);
+    // Used without a positive provider cap is unbounded spend, not a quota bound.
     assert!(
         buckets
             .iter()
-            .any(|bucket| bucket.label == "On-demand usage"
-                && bucket.used_label.as_deref() == Some("$3")
-                && bucket.limit_label.as_deref() == Some("$25"))
+            .all(|bucket| bucket.label != "On-demand usage")
     );
 }
 
@@ -2562,14 +2657,14 @@ fn grok_account_label_reports_safe_credential_presence() {
 fn grok_snapshot_uses_probe_success_without_local_credential_marker() {
     let missing = Path::new("/tmp/nonexistent-grok-auth-for-test.json");
     let billing: GrokBillingResponse = serde_json::from_value(serde_json::json!({
-        "billingCycle": {
+        "config": {
+            "monthlyLimit": { "val": 5000 },
+            "used": { "val": 1000 },
             "billingPeriodStart": "2026-06-01T00:00:00Z",
             "billingPeriodEnd": "2026-07-01T00:00:00Z"
-        },
-        "monthlyLimit": { "val": 5000 },
-        "usage": { "totalUsed": { "val": 1000 } }
+        }
     }))
-    .expect("valid Grok billing response");
+    .expect("valid current Grok billing response");
 
     let view = grok_snapshot_from_rpc_result(
         "grok",
@@ -2578,7 +2673,7 @@ fn grok_snapshot_uses_probe_success_without_local_credential_marker() {
         false,
         false,
         false,
-        Ok(GrokBillingSnapshot::Rpc(billing)),
+        Ok(GrokBillingSnapshot::Rpc(Box::new(billing))),
     );
 
     assert_eq!(view.status, UsageSnapshotStatus::Fresh);
@@ -2820,9 +2915,10 @@ fn test_jwt(payload: serde_json::Value) -> String {
 #[test]
 fn quota_pace_label_uses_codexbar_reserve_deficit_onpace() {
     // Behind pace (burning faster than the clock): 60% quota left with 90%
-    // of the window still remaining -> 30 points of deficit.
+    // of the window still remaining -> 30 points of deficit, and the linear
+    // projection runs out before the reset (Variant A composite).
     let deficit = quota_pace_label(Some(60), Some(900), Some(1_000), 0).expect("pace label");
-    assert_eq!(deficit, "30% in deficit");
+    assert_eq!(deficit, "30% in deficit · Runs out in 2m");
 
     // Ahead of pace (quota outlasting the clock): 90% left, 60% of window
     // remaining -> 30 points in reserve.
@@ -2840,17 +2936,26 @@ fn reset_label_uses_relative_and_local_timestamp() {
     let same_day = parse_iso_epoch("2026-06-11T15:12:00Z").expect("same day");
     assert_eq!(
         reset_label(same_day, now),
-        format!("Resets in 1h 26m ({})", local_timestamp_label(same_day))
+        format!(
+            "Resets in 1h 26m ({})",
+            format::local_timestamp_label(same_day)
+        )
     );
     let tomorrow = parse_iso_epoch("2026-06-12T04:18:00Z").expect("tomorrow");
     assert_eq!(
         reset_label(tomorrow, now),
-        format!("Resets in 14h 32m ({})", local_timestamp_label(tomorrow))
+        format!(
+            "Resets in 14h 32m ({})",
+            format::local_timestamp_label(tomorrow)
+        )
     );
     let future = parse_iso_epoch("2026-07-01T16:31:00Z").expect("future");
     assert_eq!(
         reset_label(future, now),
-        format!("Resets in 20d 2h ({})", local_timestamp_label(future))
+        format!(
+            "Resets in 20d 2h ({})",
+            format::local_timestamp_label(future)
+        )
     );
     assert_eq!(reset_label(now, now), "Resets now");
 }
@@ -2997,35 +3102,161 @@ fn claude_code_user_agent_parses_cli_version() {
     );
 }
 
-#[test]
-fn amp_cli_usage_parser_maps_free_and_credit_rows() {
-    let usage = parse_amp_usage_output(
-            "Signed in as person@example.com (handle)\n\
-             Amp Free: $2.42/$10 remaining (replenishes +$0.42/hour) - https://ampcode.com/settings#amp-free\n\
-             Individual credits: $0.33 remaining (set up automatic top-up to avoid running out)\n",
-        )
-        .expect("Amp usage");
+const AMP_DAILY_FIXTURE: &str = "Signed in as user@example.com (example)\n\
+     Amp Free: 61% remaining today (resets daily)\n\
+     Individual credits: $9.86 remaining\n\
+     Workspace example: $5.33 remaining";
 
-    assert_eq!(
-        usage.account_label.as_deref(),
-        Some("person@example.com (handle)")
-    );
-    let now = 1_781_185_560;
-    let buckets = usage.buckets(now);
+const AMP_TWO_WORKSPACE_FIXTURE: &str = "Amp Free: 61% remaining today (resets daily)\n\
+     Individual credits: $9.86 remaining\n\
+     Workspace alpha: $5.33 remaining\n\
+     Workspace beta: $2.25 remaining";
+
+#[test]
+fn amp_daily_display_text_maps_daily_slot_and_reset_description() {
+    let api = AmpUsage::from_api_value(serde_json::json!({
+        "result": { "displayText": AMP_DAILY_FIXTURE }
+    }))
+    .expect("Amp API daily usage");
+    let cli = parse_amp_usage_output(AMP_DAILY_FIXTURE).expect("Amp CLI daily usage");
+
+    // API and CLI delegate to one parser: identical parsed fields.
+    assert_eq!(api.account_label.as_deref(), Some("user@example.com"));
+    assert_eq!(api.account_label, cli.account_label);
+    assert_eq!(api.daily_remaining_percent, Some(61));
+    assert_eq!(api.daily_remaining_percent, cli.daily_remaining_percent);
+    assert_eq!(api.individual_credits, cli.individual_credits);
+    assert_eq!(api.workspace_balances, cli.workspace_balances);
+
+    let buckets = api.buckets();
     assert_eq!(buckets[0].label, "Amp Free");
-    assert_eq!(buckets[0].used_label.as_deref(), Some("$7.58"));
-    assert_eq!(buckets[0].limit_label.as_deref(), Some("$10"));
-    assert_eq!(buckets[0].remaining_percent, Some(24));
+    assert_eq!(buckets[0].status_slot, Some(StatusSlot::Daily));
+    assert_eq!(buckets[0].remaining_percent, Some(61));
+    assert_eq!(buckets[0].reset_label.as_deref(), Some("Resets daily"));
+    assert_eq!(buckets[0].resets_at, None);
+}
+
+#[test]
+fn amp_daily_percentage_clamps_to_protocol_range() {
+    let high = parse_amp_usage_output("Amp Free: 140% remaining today (resets daily)")
+        .expect("high daily");
+    assert_eq!(high.daily_remaining_percent, Some(100));
+    let low =
+        parse_amp_usage_output("Amp Free: -5% remaining today (resets daily)").expect("low daily");
+    assert_eq!(low.daily_remaining_percent, Some(0));
+    // A malformed/non-finite percent yields no Daily bucket.
+    assert!(parse_amp_usage_output("Amp Free: abc% remaining today (resets daily)").is_none());
+}
+
+#[test]
+fn amp_daily_parser_preserves_workspace_balances_in_order() {
+    let usage = parse_amp_usage_output(AMP_TWO_WORKSPACE_FIXTURE).expect("two workspace");
+    assert_eq!(usage.individual_credits, Some(9.86));
     assert_eq!(
-        buckets[0].reset_label.as_deref(),
-        amp_free_reset_label(2.42, 10.0, Some(0.42), now).as_deref()
+        usage.workspace_balances,
+        vec![
+            AmpWorkspaceBalance {
+                name: "alpha".to_owned(),
+                remaining: 5.33,
+            },
+            AmpWorkspaceBalance {
+                name: "beta".to_owned(),
+                remaining: 2.25,
+            },
+        ]
     );
-    assert_eq!(buckets[0].pace_label, None);
-    assert_eq!(buckets[1].label, "Individual credits");
-    assert_eq!(buckets[1].limit_label.as_deref(), Some("$0.33"));
+    let buckets = usage.buckets();
+    let labels: Vec<_> = buckets.iter().map(|bucket| bucket.label.as_str()).collect();
     assert_eq!(
-        buckets[1].pace_label.as_deref(),
-        Some("Individual credits: $0.33")
+        labels,
+        vec![
+            "Amp Free",
+            "Individual credits",
+            "Workspace alpha",
+            "Workspace beta"
+        ]
+    );
+    // Only the Amp Free bucket carries a status slot.
+    assert!(
+        buckets[1..]
+            .iter()
+            .all(|bucket| bucket.status_slot.is_none())
+    );
+}
+
+#[test]
+fn amp_paid_only_balances_do_not_infer_daily_or_plan() {
+    let usage = parse_amp_usage_output(
+        "Signed in as user@example.com (example)\n\
+         Individual credits: $9.86 remaining\n\
+         Workspace example: $5.33 remaining",
+    )
+    .expect("paid-only usage");
+    assert_eq!(usage.plan_label(), None);
+    let buckets = usage.buckets();
+    assert!(
+        buckets
+            .iter()
+            .all(|bucket| bucket.status_slot != Some(StatusSlot::Daily))
+    );
+    assert_eq!(
+        status_bar_headline_for_surface(UsageSurface::Amp, &buckets),
+        None
+    );
+
+    // The Fresh, Authoritative view preserves provenance and has no plan label.
+    for source in [UsageSource::ProviderApi, UsageSource::Cli] {
+        let view = amp_view_from_usage(
+            AmpSuccessContext {
+                agent: "amp",
+                credential_origin: Some("API key · env AMP_API_KEY".to_owned()),
+                source,
+            },
+            usage.clone(),
+            1_781_185_560,
+        );
+        assert_eq!(view.status, UsageSnapshotStatus::Fresh);
+        assert_eq!(view.confidence, UsageConfidence::Authoritative);
+        assert_eq!(view.source, source);
+        assert_eq!(
+            view.account.credential_origin.as_deref(),
+            Some("API key · env AMP_API_KEY")
+        );
+        assert_eq!(view.account.plan_label, None);
+        assert!(
+            view.buckets
+                .iter()
+                .any(|bucket| bucket.label == "Individual credits")
+        );
+    }
+
+    // A Daily bucket beside credits yields the daily headline, never a credit amount.
+    let mut with_daily = usage.clone();
+    with_daily.daily_remaining_percent = Some(61);
+    assert_eq!(
+        status_bar_headline_for_surface(UsageSurface::Amp, &with_daily.buckets()).as_deref(),
+        Some("Free 61%")
+    );
+}
+
+#[test]
+fn amp_legacy_hourly_display_text_is_rejected() {
+    // The retired hourly-dollar line alone parses to nothing.
+    assert!(
+        parse_amp_usage_output("Amp Free: $2.42/$10 remaining (replenishes +$0.42/hour)").is_none()
+    );
+    // Paired with current credit rows it contributes no Amp Free bucket.
+    let usage = parse_amp_usage_output(
+        "Amp Free: $2.42/$10 remaining (replenishes +$0.42/hour)\n\
+         Individual credits: $0.33 remaining",
+    )
+    .expect("credit rows");
+    assert_eq!(usage.daily_remaining_percent, None);
+    assert!(
+        usage
+            .buckets()
+            .iter()
+            .all(|bucket| bucket.status_slot != Some(StatusSlot::Daily))
     );
 }
 
@@ -3115,73 +3346,6 @@ fn usage_cli_output_capture_is_bounded() {
 }
 
 #[test]
-fn amp_api_usage_maps_display_balance_info() {
-    let usage = AmpApiUsage::from_value(serde_json::json!({
-        "result": {
-            "user": { "email": "person@example.com" },
-            "ampFree": {
-                "ampFreeRemaining": 4.94,
-                "ampFreeLimit": 10.0,
-                "hourlyReplenishment": 0.42
-            },
-            "credits": {
-                "individualCredits": 1.25
-            }
-        }
-    }))
-    .expect("Amp API usage");
-
-    assert_eq!(usage.account_label.as_deref(), Some("person@example.com"));
-    let now = 1_781_185_560;
-    let buckets = usage.buckets(now);
-    assert_eq!(buckets[0].label, "Amp Free");
-    assert_eq!(buckets[0].used_label.as_deref(), Some("$5.06"));
-    assert_eq!(buckets[0].limit_label.as_deref(), Some("$10"));
-    assert_eq!(buckets[0].remaining_percent, Some(49));
-    assert_eq!(
-        buckets[0].reset_label.as_deref(),
-        amp_free_reset_label(4.94, 10.0, Some(0.42), now).as_deref()
-    );
-    assert_eq!(buckets[0].pace_label, None);
-    assert_eq!(buckets[1].label, "Individual credits");
-    assert_eq!(buckets[1].limit_label.as_deref(), Some("$1.25"));
-    assert_eq!(
-        buckets[1].pace_label.as_deref(),
-        Some("Individual credits: $1.25")
-    );
-}
-
-#[test]
-fn amp_api_usage_maps_display_text_response() {
-    let usage = AmpApiUsage::from_value(serde_json::json!({
-            "ok": true,
-            "result": {
-                "displayText": "Signed in as person@example.com (handle)\n\
-                    Amp Free: $7.17/$10 remaining (replenishes +$0.42/hour) - https://ampcode.com/settings#amp-free\n\
-                    Individual credits: $4.76 remaining - https://ampcode.com/settings"
-            }
-        }))
-        .expect("Amp API display text usage");
-
-    assert_eq!(
-        usage.account_label.as_deref(),
-        Some("person@example.com (handle)")
-    );
-    let now = 1_781_185_560;
-    let buckets = usage.buckets(now);
-    assert_eq!(buckets[0].label, "Amp Free");
-    assert_eq!(buckets[0].used_label.as_deref(), Some("$2.83"));
-    assert_eq!(buckets[0].limit_label.as_deref(), Some("$10"));
-    assert_eq!(buckets[0].remaining_percent, Some(72));
-    assert_eq!(
-        buckets[0].reset_label.as_deref(),
-        amp_free_reset_label(7.17, 10.0, Some(0.42), now).as_deref()
-    );
-    assert_eq!(buckets[1].label, "Individual credits");
-    assert_eq!(buckets[1].limit_label.as_deref(), Some("$4.76"));
-}
-
-#[test]
 fn amp_secrets_json_provides_api_key() {
     let dir = tempfile::tempdir().expect("tempdir");
     let path = dir.path().join("secrets.json");
@@ -3260,6 +3424,37 @@ fn zai_quota_response_maps_token_session_and_time_limits() {
         buckets[2].pace_label.as_deref(),
         Some("30 / 120 (90 remaining)")
     );
+}
+
+#[test]
+fn zai_plan_label_falls_back_to_level() {
+    let tokens_limit = serde_json::json!({
+        "type": "TOKENS_LIMIT",
+        "unit": 5,
+        "number": 300,
+        "usage": 1000,
+        "currentValue": 250,
+        "remaining": 750,
+        "percentage": 25,
+        "nextResetTime": 1_781_189_520_000_i64
+    });
+    // `level` present, no `planName`: the one plan field observed in the wild.
+    let level_only: ZaiQuotaResponse = serde_json::from_value(serde_json::json!({
+        "code": 200,
+        "success": true,
+        "data": { "level": "pro", "limits": [tokens_limit.clone()] }
+    }))
+    .expect("level-only quota");
+    assert_eq!(level_only.plan_name().as_deref(), Some("pro"));
+
+    // Both present parses without a duplicate-field error; explicit name wins.
+    let both: ZaiQuotaResponse = serde_json::from_value(serde_json::json!({
+        "code": 200,
+        "success": true,
+        "data": { "planName": "Coding Pro", "level": "pro", "limits": [tokens_limit] }
+    }))
+    .expect("planName + level quota");
+    assert_eq!(both.plan_name().as_deref(), Some("Coding Pro"));
 }
 
 #[test]
@@ -3480,6 +3675,80 @@ fn minimax_remains_urls_accept_override_and_api_host_alias() {
             "https://api.minimax.io/v1/token_plan/remains",
             "https://api.minimax.io/v1/api/openplatform/coding_plan/remains"
         ]
+    );
+}
+
+#[test]
+fn minimax_remains_urls_include_documented_host() {
+    assert_eq!(
+        resolve_minimax_remains_urls_from(None, None),
+        vec![
+            "https://api.minimax.io/v1/token_plan/remains",
+            "https://api.minimax.io/v1/api/openplatform/coding_plan/remains",
+            "https://api.minimaxi.com/v1/token_plan/remains",
+            "https://api.minimaxi.com/v1/api/openplatform/coding_plan/remains",
+            "https://www.minimax.io/v1/token_plan/remains",
+        ]
+    );
+}
+
+#[test]
+fn minimax_fanout_reaches_documented_host_after_four_failures() {
+    let mut attempted = Vec::new();
+    let result = first_minimax_usage(resolve_minimax_remains_urls_from(None, None), |url| {
+        attempted.push(url.to_owned());
+        if url == "https://www.minimax.io/v1/token_plan/remains" {
+            Ok("documented")
+        } else {
+            Err(format!("HTTP 500 for {url}"))
+        }
+    });
+    assert_eq!(result, Ok("documented"));
+    assert_eq!(
+        attempted,
+        vec![
+            "https://api.minimax.io/v1/token_plan/remains",
+            "https://api.minimax.io/v1/api/openplatform/coding_plan/remains",
+            "https://api.minimaxi.com/v1/token_plan/remains",
+            "https://api.minimaxi.com/v1/api/openplatform/coding_plan/remains",
+            "https://www.minimax.io/v1/token_plan/remains",
+        ]
+    );
+}
+
+#[test]
+fn minimax_empty_fanout_preserves_unavailable_error() {
+    let mut calls = 0;
+    let result: Result<&str, String> = first_minimax_usage(Vec::new(), |_url| {
+        calls += 1;
+        Ok("unreachable")
+    });
+    assert_eq!(calls, 0);
+    assert_eq!(result, Err("MiniMax usage endpoint unavailable".to_owned()));
+}
+
+#[test]
+fn minimax_operation_path_matches_candidate_path() {
+    assert_eq!(
+        minimax_operation_path("https://api.minimax.io/v1/token_plan/remains"),
+        "/v1/token_plan/remains"
+    );
+    assert_eq!(
+        minimax_operation_path("https://www.minimax.io/v1/token_plan/remains"),
+        "/v1/token_plan/remains"
+    );
+    assert_eq!(
+        minimax_operation_path("https://api.minimax.io/v1/api/openplatform/coding_plan/remains"),
+        "/v1/api/openplatform/coding_plan/remains"
+    );
+    assert_eq!(
+        minimax_operation_path("https://api.minimaxi.com/v1/api/openplatform/coding_plan/remains"),
+        "/v1/api/openplatform/coding_plan/remains"
+    );
+    // An arbitrary override never exposes its real path in telemetry.
+    assert_eq!(
+        minimax_operation_path("https://quota.example/custom/remains?tenant=secret"),
+        "/custom"
     );
 }
 
@@ -3808,4 +4077,695 @@ fn managed_probe_boundaries_export_fixed_private_shapes() {
         assert!(!export.contains_span_text(prohibited));
         assert!(!export.contains_log_text(prohibited));
     }
+}
+
+// ===== Plan 002: Claude Keychain credential source =====
+
+fn keychain_test_scope(is_default: bool) -> jackin_core::ClaudeKeychainScope {
+    jackin_core::ClaudeKeychainScope {
+        normalized_config_dir: PathBuf::from(if is_default {
+            "/home/u/.claude"
+        } else {
+            "/home/u/.claude-work"
+        }),
+        service: if is_default {
+            "Claude Code-credentials".to_owned()
+        } else {
+            "Claude Code-credentials-3342f2c7".to_owned()
+        },
+        is_default,
+    }
+}
+
+const KEYCHAIN_PAYLOAD: &str = r#"{"claudeAiOauth":{"accessToken":"kc-token","subscriptionType":"max","refreshToken":"rt-1"}}"#;
+
+fn empty_file_probe() -> ClaudeFileProbe {
+    ClaudeFileProbe {
+        credential: None,
+        origin: None,
+        account_email: None,
+        organization_type: None,
+    }
+}
+
+#[test]
+fn classify_claude_keychain_status_maps_denial_and_absence() {
+    assert!(matches!(
+        classify_claude_keychain_status(-128),
+        ClaudeKeychainRead::Denied
+    ));
+    assert!(matches!(
+        classify_claude_keychain_status(-25293),
+        ClaudeKeychainRead::Denied
+    ));
+    assert!(matches!(
+        classify_claude_keychain_status(-25300),
+        ClaudeKeychainRead::Missing
+    ));
+    assert!(matches!(
+        classify_claude_keychain_status(-25308),
+        ClaudeKeychainRead::Missing
+    ));
+    assert!(matches!(
+        classify_claude_keychain_status(-1),
+        ClaudeKeychainRead::Missing
+    ));
+}
+
+#[test]
+fn claude_keychain_credential_wins_over_file_paths() {
+    let scope = keychain_test_scope(true);
+    let state = ClaudeKeychainState::default();
+    let resolution = resolve_claude_refresh_wave_with(
+        &scope,
+        &state,
+        |_service| ClaudeKeychainRead::Payload {
+            json: KEYCHAIN_PAYLOAD.to_owned(),
+        },
+        || ClaudeFileProbe {
+            credential: claude_oauth_from_value(
+                &serde_json::json!({"claudeAiOauth":{"accessToken":"file-token"}}),
+            ),
+            origin: Some("OAuth · file".to_owned()),
+            account_email: Some("user@example.com".to_owned()),
+            organization_type: Some("Max".to_owned()),
+        },
+        || Some("env-token".to_owned()),
+    );
+    match resolution {
+        ClaudeWaveResolution::Resolved(resolved) => {
+            assert_eq!(resolved.access_token, "kc-token");
+            assert_eq!(
+                resolved.credential_origin,
+                "OAuth · macOS Keychain (Claude Code-credentials)"
+            );
+            assert!(!resolved.is_anonymous);
+        }
+        _ => panic!("expected Resolved"),
+    }
+    assert_eq!(state.read_count(), 1);
+}
+
+#[test]
+fn claude_keychain_denial_short_circuits_before_file_or_env_read() {
+    let scope = keychain_test_scope(true);
+    let state = ClaudeKeychainState::default();
+    let resolution = resolve_claude_refresh_wave_with(
+        &scope,
+        &state,
+        |_service| ClaudeKeychainRead::Denied,
+        || panic!("file probe must not run after denial"),
+        || panic!("env reader must not run after denial"),
+    );
+    assert!(matches!(resolution, ClaudeWaveResolution::Denied));
+    // Terminal for the service: a later wave whose reader panics still returns
+    // Denied from the process-lifetime cache without re-prompting.
+    let again = resolve_claude_refresh_wave_with(
+        &scope,
+        &state,
+        |_service| panic!("reader must not run after cached denial"),
+        || panic!("no file probe"),
+        || panic!("no env"),
+    );
+    assert!(matches!(again, ClaudeWaveResolution::Denied));
+    assert_eq!(state.read_count(), 1);
+    assert_eq!(claude_wave_policy(&again), ClaudeWavePolicy::LocalDenied);
+}
+
+#[test]
+fn claude_keychain_missing_falls_back_to_file_then_env() {
+    let scope = keychain_test_scope(true);
+    let state = ClaudeKeychainState::default();
+    let with_file = resolve_claude_refresh_wave_with(
+        &scope,
+        &state,
+        |_| ClaudeKeychainRead::Missing,
+        || ClaudeFileProbe {
+            credential: claude_oauth_from_value(
+                &serde_json::json!({"claudeAiOauth":{"accessToken":"file-token","refreshToken":"rt"}}),
+            ),
+            origin: Some("OAuth · file".to_owned()),
+            account_email: None,
+            organization_type: None,
+        },
+        || None,
+    );
+    match with_file {
+        ClaudeWaveResolution::Resolved(r) => assert_eq!(r.access_token, "file-token"),
+        _ => panic!("file fallback"),
+    }
+    let state2 = ClaudeKeychainState::default();
+    let with_env = resolve_claude_refresh_wave_with(
+        &scope,
+        &state2,
+        |_| ClaudeKeychainRead::Missing,
+        empty_file_probe,
+        || Some("env-token".to_owned()),
+    );
+    match &with_env {
+        ClaudeWaveResolution::Resolved(r) => {
+            assert_eq!(r.access_token, "env-token");
+            assert!(r.is_anonymous);
+        }
+        _ => panic!("env fallback"),
+    }
+    assert_eq!(
+        claude_wave_policy(&with_env),
+        ClaudeWavePolicy::LocalAnonymous
+    );
+}
+
+#[test]
+fn claude_keychain_missing_with_no_credential_is_local_missing() {
+    let scope = keychain_test_scope(true);
+    let state = ClaudeKeychainState::default();
+    let resolution = resolve_claude_refresh_wave_with(
+        &scope,
+        &state,
+        |_| ClaudeKeychainRead::Missing,
+        empty_file_probe,
+        || None,
+    );
+    assert!(matches!(resolution, ClaudeWaveResolution::Missing));
+    assert_eq!(
+        claude_wave_policy(&resolution),
+        ClaudeWavePolicy::LocalMissing
+    );
+}
+
+#[test]
+fn claude_keychain_metadata_makes_resolution_shared() {
+    let scope = keychain_test_scope(true);
+    let state = ClaudeKeychainState::default();
+    let resolution = resolve_claude_refresh_wave_with(
+        &scope,
+        &state,
+        |_| ClaudeKeychainRead::Payload {
+            json: r#"{"claudeAiOauth":{"accessToken":"kc"}}"#.to_owned(),
+        },
+        || ClaudeFileProbe {
+            credential: None,
+            origin: None,
+            account_email: Some("id@example.com".to_owned()),
+            organization_type: Some("Max".to_owned()),
+        },
+        || None,
+    );
+    match &resolution {
+        ClaudeWaveResolution::Resolved(r) => {
+            assert!(!r.is_anonymous);
+            assert_eq!(r.account_email.as_deref(), Some("id@example.com"));
+        }
+        _ => panic!("resolved"),
+    }
+    assert_eq!(claude_wave_policy(&resolution), ClaudeWavePolicy::Shared);
+}
+
+#[test]
+fn claude_denied_view_has_no_quota_and_exact_error() {
+    let view = claude_view_from_wave(
+        "claude",
+        Some("Anthropic / Claude"),
+        1_781_185_560,
+        ClaudeWaveResolution::Denied,
+    );
+    assert_eq!(view.status, UsageSnapshotStatus::NeedsLogin);
+    assert!(view.buckets.is_empty());
+    assert!(view.account.account_label.is_empty());
+    assert_eq!(view.account.plan_label, None);
+    assert_eq!(view.account.credential_origin, None);
+    assert_eq!(
+        view.last_error.as_deref(),
+        Some("Claude Keychain access denied")
+    );
+}
+
+// ===== Plan 005 Step 1: shared bucket-presentation formatter =====
+
+fn presentation_bucket(
+    label: &str,
+    remaining: Option<u8>,
+    slot: Option<StatusSlot>,
+    status: UsageSnapshotStatus,
+) -> QuotaBucketView {
+    QuotaBucketView {
+        label: label.to_owned(),
+        used_label: None,
+        limit_label: None,
+        remaining_percent: remaining,
+        reset_label: None,
+        resets_at: None,
+        status_slot: slot,
+        pace_label: None,
+        status,
+        used_money: None,
+        limit_money: None,
+        severity: UsageSeverity::Normal,
+    }
+}
+
+#[test]
+fn usage_bucket_presentation_orders_normal_segments() {
+    let mut bucket = presentation_bucket(
+        "Weekly",
+        Some(57),
+        Some(StatusSlot::Weekly),
+        UsageSnapshotStatus::Fresh,
+    );
+    bucket.pace_label = Some("13% in deficit · Runs out in 2d".to_owned());
+    bucket.reset_label = Some("Resets in 4d".to_owned());
+    let presentation = usage_bucket_presentation(&bucket);
+    assert_eq!(
+        presentation.display_segments,
+        vec![
+            "57% left",
+            "13% in deficit",
+            "Runs out in 2d",
+            "Resets in 4d"
+        ]
+    );
+    assert_eq!(presentation.remaining_label.as_deref(), Some("57% left"));
+    assert_eq!(presentation.meter_percent, Some(57));
+    assert_eq!(
+        presentation.display_label,
+        "57% left · 13% in deficit · Runs out in 2d · Resets in 4d"
+    );
+}
+
+#[test]
+fn usage_bucket_presentation_flattens_runout_composite() {
+    let mut bucket = presentation_bucket(
+        "Weekly",
+        Some(40),
+        Some(StatusSlot::Weekly),
+        UsageSnapshotStatus::Fresh,
+    );
+    bucket.pace_label = Some("On pace · Runs out in 5d".to_owned());
+    let presentation = usage_bucket_presentation(&bucket);
+    assert_eq!(
+        presentation.display_segments,
+        vec!["40% left", "On pace", "Runs out in 5d"]
+    );
+}
+
+#[test]
+fn usage_bucket_presentation_orders_spend_cap() {
+    let mut bucket = presentation_bucket(
+        "Extra usage",
+        Some(70),
+        Some(StatusSlot::Spend),
+        UsageSnapshotStatus::Fresh,
+    );
+    bucket.used_label = Some("SGD 78.49".to_owned());
+    bucket.limit_label = Some("SGD 260.00".to_owned());
+    let presentation = usage_bucket_presentation(&bucket);
+    assert_eq!(
+        presentation.display_segments,
+        vec!["30% used", "Monthly cap: SGD 78.49 / SGD 260.00"]
+    );
+    assert_eq!(presentation.meter_percent, Some(30));
+}
+
+#[test]
+fn usage_bucket_presentation_orders_non_spend_budget() {
+    let mut bucket = presentation_bucket(
+        "Global budget",
+        None,
+        Some(StatusSlot::Weekly),
+        UsageSnapshotStatus::Fresh,
+    );
+    bucket.used_label = Some("$0.00 spent".to_owned());
+    bucket.limit_label = Some("$25,000.00".to_owned());
+    bucket.used_money = Some(Money::new(0, "USD", 2));
+    bucket.limit_money = Some(Money::new(2_500_000, "USD", 2));
+    let presentation = usage_bucket_presentation(&bucket);
+    assert!(
+        presentation
+            .display_segments
+            .contains(&"Budget: $0.00 spent / $25,000.00".to_owned())
+    );
+}
+
+#[test]
+fn usage_bucket_presentation_appends_degraded_status() {
+    let bucket = presentation_bucket(
+        "Weekly",
+        Some(57),
+        Some(StatusSlot::Weekly),
+        UsageSnapshotStatus::Stale,
+    );
+    let presentation = usage_bucket_presentation(&bucket);
+    assert_eq!(presentation.display_segments, vec!["57% left", "stale"]);
+}
+
+#[test]
+fn usage_bucket_presentation_credits_zero_left() {
+    let mut bucket = presentation_bucket("Credits", Some(0), None, UsageSnapshotStatus::Fresh);
+    bucket.limit_label = Some("$4.76".to_owned());
+    let presentation = usage_bucket_presentation(&bucket);
+    assert_eq!(
+        presentation.display_segments.first().map(String::as_str),
+        Some("0 left")
+    );
+    assert!(presentation.display_segments.contains(&"$4.76".to_owned()));
+    assert_eq!(presentation.meter_percent, Some(0));
+}
+
+#[test]
+fn usage_bucket_presentation_limit_only_balance() {
+    let mut bucket = presentation_bucket("Prepaid", None, None, UsageSnapshotStatus::Fresh);
+    bucket.limit_label = Some("$25".to_owned());
+    let presentation = usage_bucket_presentation(&bucket);
+    assert_eq!(presentation.display_segments, vec!["$25"]);
+    assert_eq!(presentation.meter_percent, None);
+    assert_eq!(presentation.remaining_label, None);
+}
+
+// ===== Plan 008: shared detail-presentation producer =====
+
+fn detail_view(
+    buckets: Vec<QuotaBucketView>,
+    last_error: Option<&str>,
+    status: UsageSnapshotStatus,
+) -> FocusedUsageView {
+    FocusedUsageView {
+        focused_agent: Some("codex".to_owned()),
+        focused_provider: Some("OpenAI".to_owned()),
+        account: FocusedAccountHeader {
+            provider_label: "OpenAI".to_owned(),
+            account_label: "operator@example.com".to_owned(),
+            username: Some("operator".to_owned()),
+            plan_label: Some("Pro 20x".to_owned()),
+            credential_origin: Some("OAuth · ~/.codex/auth.json".to_owned()),
+        },
+        buckets,
+        status,
+        updated_label: "Updated 2m ago".to_owned(),
+        last_error: last_error.map(str::to_owned),
+        ..FocusedUsageView::unavailable("seed", 1_781_185_560)
+    }
+}
+
+#[test]
+fn usage_detail_presentation_preserves_exact_capsule_row_order() {
+    let session = presentation_bucket(
+        "Session",
+        Some(97),
+        Some(StatusSlot::Session),
+        UsageSnapshotStatus::Fresh,
+    );
+    let view = detail_view(vec![session], None, UsageSnapshotStatus::Fresh);
+    let presentation = usage_detail_presentation(&view);
+    let ids: Vec<&str> = presentation
+        .rows
+        .iter()
+        .map(|r| r.row_id.as_str())
+        .collect();
+    assert_eq!(
+        ids,
+        vec![
+            "focused", "header", "provider", "account", "status", "updated", "username", "plan",
+            "auth", "bucket:0",
+        ]
+    );
+    // Focused/status wording is the exact Capsule wording, produced in Rust.
+    assert_eq!(
+        presentation.rows[0].display_label,
+        "codex · OpenAI · operator@example.com"
+    );
+    assert_eq!(presentation.rows[4].display_label, "fresh");
+}
+
+#[test]
+fn usage_detail_presentation_flattens_lines_once_in_semantic_order() {
+    let mut bucket = presentation_bucket(
+        "Weekly",
+        Some(40),
+        Some(StatusSlot::Weekly),
+        UsageSnapshotStatus::Fresh,
+    );
+    bucket.pace_label = Some("5% in deficit · Runs out in 3d 1h".to_owned());
+    bucket.reset_label = Some("Resets in 6d 22h".to_owned());
+    let view = detail_view(vec![bucket], None, UsageSnapshotStatus::Fresh);
+    let presentation = usage_detail_presentation(&view);
+    let row = presentation
+        .rows
+        .iter()
+        .find(|r| r.row_id == "bucket:0")
+        .expect("bucket row");
+    // pace then run-out then reset, exactly once, in that order.
+    assert_eq!(
+        row.display_label,
+        "40% left · 5% in deficit · Runs out in 3d 1h · Resets in 6d 22h"
+    );
+    // The reset segment is the trailing column; every other segment is leading.
+    let flattened: Vec<String> = row
+        .layout_lines
+        .iter()
+        .flat_map(|line| {
+            [line.leading.clone(), line.trailing.clone()]
+                .into_iter()
+                .flatten()
+        })
+        .collect();
+    assert_eq!(
+        flattened,
+        vec![
+            "40% left",
+            "5% in deficit",
+            "Runs out in 3d 1h",
+            "Resets in 6d 22h"
+        ]
+    );
+    let reset_line = row.layout_lines.last().expect("reset line");
+    assert_eq!(reset_line.leading, None);
+    assert_eq!(reset_line.trailing.as_deref(), Some("Resets in 6d 22h"));
+}
+
+#[test]
+fn usage_detail_presentation_keeps_duplicate_bucket_labels() {
+    let first = presentation_bucket(
+        "Weekly",
+        Some(80),
+        Some(StatusSlot::Weekly),
+        UsageSnapshotStatus::Fresh,
+    );
+    let second = presentation_bucket(
+        "Weekly",
+        Some(20),
+        Some(StatusSlot::Weekly),
+        UsageSnapshotStatus::Fresh,
+    );
+    let view = detail_view(vec![first, second], None, UsageSnapshotStatus::Fresh);
+    let presentation = usage_detail_presentation(&view);
+    let buckets: Vec<(&str, &str)> = presentation
+        .rows
+        .iter()
+        .filter(|r| r.kind == jackin_protocol::control::UsageDetailRowKind::Bucket)
+        .map(|r| (r.row_id.as_str(), r.label.as_str()))
+        .collect();
+    assert_eq!(
+        buckets,
+        vec![("bucket:0", "Weekly"), ("bucket:1", "Weekly")]
+    );
+    let by_id = |id: &str| {
+        presentation
+            .rows
+            .iter()
+            .find(|r| r.row_id == id)
+            .map(|r| r.display_label.as_str())
+    };
+    assert_eq!(by_id("bucket:0"), Some("80% left"));
+    assert_eq!(by_id("bucket:1"), Some("20% left"));
+}
+
+#[test]
+fn usage_detail_presentation_stale_keeps_buckets_and_one_detail() {
+    let bucket = presentation_bucket(
+        "Weekly",
+        Some(57),
+        Some(StatusSlot::Weekly),
+        UsageSnapshotStatus::Stale,
+    );
+    let view = detail_view(
+        vec![bucket],
+        Some("upstream 503"),
+        UsageSnapshotStatus::Stale,
+    );
+    let presentation = usage_detail_presentation(&view);
+    let detail_rows: Vec<&jackin_protocol::control::UsageDetailRow> = presentation
+        .rows
+        .iter()
+        .filter(|r| r.kind == jackin_protocol::control::UsageDetailRowKind::Detail)
+        .collect();
+    assert_eq!(detail_rows.len(), 1, "exactly one Detail row");
+    assert_eq!(detail_rows[0].display_label, "upstream 503");
+    // The Detail row is last and the last-good bucket survives.
+    assert_eq!(
+        presentation.rows.last().map(|r| r.row_id.as_str()),
+        Some("detail")
+    );
+    assert!(
+        presentation.rows.iter().any(|r| r.row_id == "bucket:0"),
+        "bucket retained under stale"
+    );
+}
+
+#[test]
+fn usage_detail_presentation_amp_daily_and_bounds() {
+    let mut daily = presentation_bucket(
+        "Daily",
+        Some(61),
+        Some(StatusSlot::Daily),
+        UsageSnapshotStatus::Fresh,
+    );
+    daily.reset_label = Some("Resets daily".to_owned());
+    let mut individual = presentation_bucket("Credits", None, None, UsageSnapshotStatus::Fresh);
+    individual.limit_label = Some("$4.76".to_owned());
+    let view = detail_view(vec![daily, individual], None, UsageSnapshotStatus::Fresh);
+    let presentation = usage_detail_presentation(&view);
+    let by_id = |id: &str| {
+        presentation
+            .rows
+            .iter()
+            .find(|r| r.row_id == id)
+            .expect("row")
+    };
+    let daily_row = by_id("bucket:0");
+    assert_eq!(daily_row.display_label, "61% left · Resets daily");
+    // No fabricated exact reset timestamp or paid-plan label.
+    assert!(!daily_row.display_label.contains('('));
+    // Credit bound stays in source order after Daily.
+    assert_eq!(by_id("bucket:1").display_label, "$4.76");
+}
+
+#[test]
+fn usage_detail_presentation_grok_bounds_no_provider_path() {
+    let mut weekly = presentation_bucket(
+        "Weekly",
+        Some(72),
+        Some(StatusSlot::Weekly),
+        UsageSnapshotStatus::Fresh,
+    );
+    weekly.reset_label = Some("Resets in 3d".to_owned());
+    let mut prepaid = presentation_bucket(
+        "Extra usage credits",
+        None,
+        None,
+        UsageSnapshotStatus::Fresh,
+    );
+    prepaid.limit_label = Some("$25.00".to_owned());
+    let view = detail_view(vec![weekly, prepaid], None, UsageSnapshotStatus::Fresh);
+    let view = FocusedUsageView {
+        account: FocusedAccountHeader {
+            plan_label: Some("SuperGrok".to_owned()),
+            ..view.account.clone()
+        },
+        ..view
+    };
+    let presentation = usage_detail_presentation(&view);
+    assert_eq!(presentation.rows[7].display_label, "SuperGrok");
+    assert_eq!(
+        presentation.rows.last().map(|r| r.display_label.as_str()),
+        Some("$25.00")
+    );
+}
+
+// ===== Plan 004: Variant A run-out producer =====
+
+#[test]
+fn quota_pace_label_appends_runout_when_behind_pace() {
+    // time_left=53%, delta=-5; elapsed=470, used=52; 48*470/52=433.85 -> 434s -> "7m"; 434 < 530.
+    assert_eq!(
+        quota_pace_label(Some(48), Some(10_530), Some(1_000), 10_000).expect("pace"),
+        "5% in deficit · Runs out in 7m"
+    );
+    // Weekly-realistic 7-day window: 48*284401/52 = 262524s ~ 3d; 262524 < 320399.
+    assert_eq!(
+        quota_pace_label(Some(48), Some(320_399), Some(604_800), 0).expect("pace"),
+        "5% in deficit · Runs out in 3d"
+    );
+}
+
+#[test]
+fn quota_pace_label_no_runout_when_ahead_of_pace() {
+    // run-out would be 90*400/10 = 3600 >= 600 -> no segment.
+    assert_eq!(
+        quota_pace_label(Some(90), Some(600), Some(1_000), 0).expect("pace"),
+        "30% in reserve"
+    );
+}
+
+#[test]
+fn quota_pace_label_no_runout_when_nothing_used() {
+    // used == 0 -> returns without dividing (no division by zero).
+    assert_eq!(
+        quota_pace_label(Some(100), Some(500), Some(1_000), 0).expect("pace"),
+        "50% in reserve"
+    );
+}
+
+#[test]
+fn quota_pace_label_no_runout_at_window_start() {
+    // elapsed == 0 -> no segment even though delta = -40.
+    assert_eq!(
+        quota_pace_label(Some(60), Some(1_000), Some(1_000), 0).expect("pace"),
+        "40% in deficit"
+    );
+}
+
+#[test]
+fn quota_pace_label_runout_iff_behind_clock_boundary() {
+    // reset_at=500, window=1000, now=0.
+    // delta=0 -> On pace; run-out 50*500/50=500, not strictly < 500 -> bare.
+    assert_eq!(
+        quota_pace_label(Some(50), Some(500), Some(1_000), 0).expect("pace"),
+        "On pace"
+    );
+    // delta=+1 (ahead, in band); 51*500/49=520.4 -> 520 >= 500 -> bare.
+    assert_eq!(
+        quota_pace_label(Some(51), Some(500), Some(1_000), 0).expect("pace"),
+        "On pace"
+    );
+    // delta=-1 (behind, in band); 49*500/51=480.4 -> 480s -> "8m"; 480 < 500.
+    assert_eq!(
+        quota_pace_label(Some(49), Some(500), Some(1_000), 0).expect("pace"),
+        "On pace · Runs out in 8m"
+    );
+    // delta=-2 (band edge); 48*500/52=461.5 -> 462s -> "7m".
+    assert_eq!(
+        quota_pace_label(Some(48), Some(500), Some(1_000), 0).expect("pace"),
+        "On pace · Runs out in 7m"
+    );
+    // delta=-3 (first deficit token); 47*500/53=443.4 -> 443s -> "7m".
+    assert_eq!(
+        quota_pace_label(Some(47), Some(500), Some(1_000), 0).expect("pace"),
+        "3% in deficit · Runs out in 7m"
+    );
+}
+
+#[test]
+fn quota_pace_label_runout_depleted_bucket() {
+    // used=100, elapsed=500, run-out=0 < 500 -> trivially precedes reset.
+    assert_eq!(
+        quota_pace_label(Some(0), Some(500), Some(1_000), 0).expect("pace"),
+        "50% in deficit · Runs out in 0m"
+    );
+}
+
+#[test]
+fn quota_pace_label_exact_projection_precedes_reset_before_rounding() {
+    // Exact 49*536/51 = 514.98… < 515; display rounding is 515 (would fail if
+    // rounded seconds were compared to reset seconds).
+    assert_eq!(
+        quota_pace_label(Some(49), Some(10_515), Some(1_051), 10_000).expect("pace"),
+        "On pace · Runs out in 8m"
+    );
+}
+
+#[test]
+fn quota_pace_label_exact_clock_equality_ignores_float_drift() {
+    // 7*1000 == 70*100 -> projection reaches reset exactly -> no run-out segment.
+    let label = quota_pace_label(Some(7), Some(70), Some(1_000), 0).expect("pace");
+    assert!(!label.contains("Runs out"), "unexpected run-out: {label}");
 }

@@ -271,43 +271,43 @@ struct DesktopParityMatrixHarness {
         }
         let statusItem = read("StatusItemLabel.swift")
         let popover = read("PopoverRoot.swift")
+        let popoverProviderTab = read("Popover/PopoverProviderTab.swift")
         let provider = read("UsageWindow/ProviderCardView.swift")
         let overview = read("UsageWindow/OverviewListView.swift")
         check(
-            "StatusItemLabel renders chips",
-            statusItem.contains("statusItemChips") && statusItem.contains("StatusItemChipView")
+            "StatusItemRendering displays the Rust bar label verbatim",
+            statusItem.contains("StatusItemRendering")
+                && statusItem.contains("barLabel")
+                && statusItem.contains("desktopProviderSystemImage")
         )
         check(
-            "StatusItemLabel CodexBar dual mini bars",
-            statusItem.contains("miniRemainingBar")
-                && statusItem.contains("statusItemRemainingFraction")
-                && statusItem.contains("remainingPerLine")
-                && statusItem.contains("statusItemLineShowsMiniBar")
+            "StatusItemRendering invents no severity tint or percent",
+            !statusItem.contains("severityTint")
+                && !statusItem.contains("miniRemainingBar")
+                && !statusItem.contains("statusItemRemainingFraction")
         )
         check(
-            "Popover agent tile grid",
-            popover.contains("agentTileGrid") && popover.contains("overviewStack")
+            "Popover composes tab grid + Overview/provider tabs + footer",
+            popover.contains("PopoverTabGrid")
+                && popover.contains("PopoverOverviewTab")
+                && popover.contains("PopoverProviderTab")
+                && popover.contains("PopoverFooter")
         )
         check(
-            "Popover dual tile remaining badges",
-            popover.contains("remainingBadgeLines")
-                && popover.contains("tileRemainingBadgeLines")
+            "Popover reads Rust glance rows verbatim (no Swift percent recompute)",
+            popover.contains("providerGlanceRows")
+                && !popover.contains("statusItemPercentToken")
         )
         check(
-            "Popover tile dual mini bars",
-            popover.contains("tileMiniBar") && popover.contains("tileRemainingBarPercents")
-        )
-        check(
-            "Popover multi-account pills",
+            "Popover multi-account selection",
             popover.contains("accountsForSurface") && popover.contains("setSelectedAccount")
         )
         check(
-            "Popover account pill remaining%",
-            popover.contains("remainingPercent") && popover.contains("statusItemPercentToken")
-        )
-        check(
-            "Overview multi-window cap",
-            overview.contains("overviewNumericBucketCap")
+            "Usage Overview renders Rust glance rows verbatim (no bucket synthesis)",
+            overview.contains("model.sidebar")
+                && !overview.contains("overviewNumericBucketCap")
+                && !overview.contains("bucketMiniRow")
+                && !overview.contains("splitPaceLabel")
         )
         // status_slot is machine taxonomy — UI must filter via pure helper, not dump raw.
         check(
@@ -321,43 +321,47 @@ struct DesktopParityMatrixHarness {
             bucketGaugeSecondaryLimitLabel(limitLabel: "100%", remainingPercent: 40) == nil
         )
         check(
-            "Popover uses gauge secondary filter not raw statusSlot Text",
-            popover.contains("bucketGaugeSecondaryLimitLabel")
-                && !popover.contains("Text(slot)")
-                && !popover.contains("Text(bucket.statusSlot")
+            "Popover provider bucket path is generic Rust segments",
+            popoverProviderTab.contains("displaySegments")
+                && !popoverProviderTab.contains("Text(bucket.statusSlot")
         )
         check(
-            "ProviderCard uses gauge secondary filter not raw statusSlot Text",
-            provider.contains("bucketGaugeSecondaryLimitLabel")
-                && !provider.contains("Text(slot)")
-                && !provider.contains("Text(bucket.statusSlot")
+            "ProviderCard renders Rust detail rows mechanically (plan 008)",
+            provider.contains("content.detail.rows")
+                && provider.contains("layoutLines")
+                && provider.contains("row.label")
         )
         check(
-            "ProviderCard primary limit labels",
-            provider.contains("bucketPrimaryPercentLabel") || provider.contains("metricPrimaryLabel")
+            "ProviderCard splits/joins no usage string and invents no field copy",
+            !provider.contains("splitPaceLabel")
+                && !provider.contains("bucketMetricPrimaryLabel")
+                && !provider.contains("statusItemPercentToken")
+                && !provider.contains("surface.buckets")
+                && !provider.contains("\"Auth: \"")
+                && !provider.contains("\"Accounts\"")
+                && !provider.contains("\"— No data\"")
         )
         check(
-            "ProviderCard depleted reset + pace",
-            provider.contains("metricPrimaryLabel") && provider.contains("splitPaceLabel")
+            "ProviderCard bucket identity is Rust rowId, not label",
+            provider.contains("ForEach(content.detail.rows)")
+                && !provider.contains("ForEach(surface.buckets)")
         )
         check(
-            "Overview dual-bucket stack",
-            overview.contains("bucketMiniRow") || overview.contains("remainingPercent")
-        )
-        check(
-            "Overview pace under mini rows",
-            overview.contains("paceLabel") && overview.contains("splitPaceLabel")
+            "Usage detail meter/severity are geometry+style only (no visible text)",
+            provider.contains("meterPercent") && provider.contains("severityTint")
         )
         let usageRoot = read("UsageWindow/UsageWindowRoot.swift")
         check(
-            "Usage sidebar dual remaining subtitle",
-            usageRoot.contains("surfaceRemainingSubtitle")
-                || usageRoot.contains("sidebarSubtitle")
+            "Usage window drives sidebar/detail from UsageWindowModel",
+            usageRoot.contains("UsageWindowModel")
+                && !usageRoot.contains("surfaceRemainingSubtitle")
+                && !usageRoot.contains("sidebarSubtitle")
+                && !usageRoot.contains("openSettings")
         )
         check(
-            "shared metric primary helper wired",
-            popover.contains("bucketMetricPrimaryLabel")
-                && provider.contains("bucketMetricPrimaryLabel")
+            "Usage empty state is the fixed hint (no invented fallback copy)",
+            overview.contains("UsageWindowModel.emptyHint")
+                && !overview.contains("\"No enabled surfaces\"")
         )
         check(
             "no sparkline/donut/trend product UI in status item",

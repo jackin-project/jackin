@@ -180,3 +180,80 @@ fn money_formats_currency_and_credit_labels() {
         "300 credits"
     );
 }
+
+#[test]
+fn status_slot_daily_serializes_as_daily() {
+    // snake_case serde repr, matching the FFI `"daily"` slot projection.
+    assert_eq!(
+        serde_json::to_value(StatusSlot::Daily).unwrap(),
+        serde_json::json!("daily")
+    );
+    assert_eq!(
+        serde_json::from_value::<StatusSlot>(serde_json::json!("daily")).unwrap(),
+        StatusSlot::Daily
+    );
+}
+
+fn placeholder_sample_bucket() -> QuotaBucketView {
+    QuotaBucketView {
+        label: "Weekly".to_owned(),
+        used_label: None,
+        limit_label: None,
+        remaining_percent: Some(57),
+        reset_label: None,
+        resets_at: None,
+        status_slot: Some(StatusSlot::Weekly),
+        pace_label: None,
+        status: UsageSnapshotStatus::Fresh,
+        used_money: None,
+        limit_money: None,
+        severity: UsageSeverity::Normal,
+    }
+}
+
+#[test]
+fn refreshing_placeholder_accepts_constructor_and_surface_decoration() {
+    let mut view = FocusedUsageView::refreshing(Some("Codex"), 0);
+    assert!(view.is_refreshing_placeholder());
+    // Surface decoration (provider/agent/tabs/provider_label) is allowed.
+    view.focused_agent = Some("codex".to_owned());
+    view.focused_provider = Some("OpenAI / Codex".to_owned());
+    view.account.provider_label = "OpenAI / Codex".to_owned();
+    assert!(view.is_refreshing_placeholder());
+}
+
+#[test]
+fn refreshing_placeholder_rejects_state_and_string_lookalikes() {
+    let base = FocusedUsageView::refreshing(Some("Codex"), 0);
+
+    let mut fresh = base.clone();
+    fresh.status = UsageSnapshotStatus::Fresh;
+    let mut stale = base.clone();
+    stale.status = UsageSnapshotStatus::Stale;
+    let mut error = base.clone();
+    error.status = UsageSnapshotStatus::Error;
+    let mut with_bucket = base.clone();
+    with_bucket.buckets.push(placeholder_sample_bucket());
+    let mut with_account = base.clone();
+    with_account.account.account_label = "user@example.com".to_owned();
+    // Single-string lookalikes: a non-placeholder view matching only one field.
+    let mut only_bar = FocusedUsageView::unavailable("other", 0);
+    only_bar.status_bar_label = "refreshing".to_owned();
+    let mut only_updated = FocusedUsageView::unavailable("other", 0);
+    only_updated.updated_label = "Refreshing".to_owned();
+    let mut only_error = FocusedUsageView::unavailable("other", 0);
+    only_error.last_error = Some("refreshing".to_owned());
+
+    for view in [
+        fresh,
+        stale,
+        error,
+        with_bucket,
+        with_account,
+        only_bar,
+        only_updated,
+        only_error,
+    ] {
+        assert!(!view.is_refreshing_placeholder());
+    }
+}

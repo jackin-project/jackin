@@ -334,15 +334,14 @@ pub(crate) fn minimax_usage_count_line(
 
 pub(crate) fn fetch_minimax_usage(token: &str) -> Result<MiniMaxUsageResponse, String> {
     let client = provider_http_client()?;
-    let mut last_error = None;
-    for url in resolve_minimax_remains_urls() {
-        let result = provider_request(
+    first_minimax_usage(resolve_minimax_remains_urls(), |url| {
+        provider_request(
             jackin_telemetry::schema::enums::ProviderName::Minimax,
             "GET",
-            "/v1/api/openplatform/coding_plan/remains",
+            minimax_operation_path(url),
             || {
                 let response = client
-                    .get(&url)
+                    .get(url)
                     .bearer_auth(token)
                     .header(reqwest::header::ACCEPT, "application/json")
                     .header(reqwest::header::CONTENT_TYPE, "application/json")
@@ -359,13 +358,8 @@ pub(crate) fn fetch_minimax_usage(token: &str) -> Result<MiniMaxUsageResponse, S
                 usage.validate()?;
                 Ok(usage)
             },
-        );
-        match result {
-            Ok(usage) => return Ok(usage),
-            Err(error) => last_error = Some(error),
-        }
-    }
-    Err(last_error.unwrap_or_else(|| "MiniMax usage endpoint unavailable".to_owned()))
+        )
+    })
 }
 
 pub(crate) fn resolve_minimax_remains_urls() -> Vec<String> {
@@ -392,8 +386,38 @@ pub(crate) fn resolve_minimax_remains_urls_from(
         urls.push("https://api.minimax.io/v1/api/openplatform/coding_plan/remains".to_owned());
         urls.push("https://api.minimaxi.com/v1/token_plan/remains".to_owned());
         urls.push("https://api.minimaxi.com/v1/api/openplatform/coding_plan/remains".to_owned());
+        urls.push("https://www.minimax.io/v1/token_plan/remains".to_owned());
     }
     urls
+}
+
+/// Iterate URLs in order, returning the first success or the last fetch
+/// error. Extracted so fan-out order is unit-testable without provider I/O.
+pub(crate) fn first_minimax_usage<T, F>(urls: Vec<String>, mut fetch: F) -> Result<T, String>
+where
+    F: FnMut(&str) -> Result<T, String>,
+{
+    let mut last_error = None;
+    for url in urls {
+        match fetch(&url) {
+            Ok(usage) => return Ok(usage),
+            Err(error) => last_error = Some(error),
+        }
+    }
+    Err(last_error.unwrap_or_else(|| "MiniMax usage endpoint unavailable".to_owned()))
+}
+
+/// Governed telemetry path template for a `MiniMax` remains URL. Known
+/// endpoints map to their static path; arbitrary override URLs collapse to
+/// `"/custom"` so operator-provided paths never leak into telemetry.
+pub(crate) fn minimax_operation_path(url: &str) -> &'static str {
+    if url.ends_with("/v1/token_plan/remains") {
+        "/v1/token_plan/remains"
+    } else if url.ends_with("/v1/api/openplatform/coding_plan/remains") {
+        "/v1/api/openplatform/coding_plan/remains"
+    } else {
+        "/custom"
+    }
 }
 
 pub(crate) fn minimax_remains_host(value: &str) -> String {

@@ -35,117 +35,199 @@ pub(crate) fn claude_account_identity() -> Option<String> {
 }
 
 pub(crate) fn claude_snapshot(agent: &str, provider: Option<&str>, now: i64) -> FocusedUsageView {
+    claude_view_from_wave(agent, provider, now, resolve_claude_wave())
+}
+
+/// Production Claude wave resolution: derive the Keychain scope from the
+/// effective `CLAUDE_CONFIG_DIR`, then resolve Keychain-first with
+/// scope-appropriate file/env fallback.
+pub(crate) fn resolve_claude_wave() -> ClaudeWaveResolution {
     let config = env_dir_or_home("CLAUDE_CONFIG_DIR", ".claude");
-    // Resolve the Claude OAuth token, home credentials first (the agent CLI
-    // keeps the live token there and refreshes it in place). `~/.claude.json`
-    // only carries `oauthAccount` metadata, never the token. The runtime-
-    // forwarded handoff at `/jackin/claude/credentials.json` is the last-resort
-    // fallback — mirroring the other providers (Codex/Amp/Kimi/Grok) — so the
-    // snapshot does not silently drop to the impoverished CLI path when the
-    // home copy lacks `claudeAiOauth.accessToken`. Matches CodexBar's order.
-    let oauth_candidates = claude_oauth_candidates(&config);
-    // One home-first walk yields the OAuth token (with its winning path, for
-    // the `Auth:` origin — there is no keychain reader in the capsule, so the
-    // origin names the file), the `oauthAccount` email, and the
-    // `oauthAccount.organizationType` tier label, reading each file once.
-    // account_label is the real email identity — empty when none, never a
-    // fabricated auth-method string; the auth source lives on `credential_origin`.
-    // `organizationType` (e.g. "claude_enterprise", "claude_max") is the account
-    // tier; Enterprise/Team accounts carry a billing-mode `subscriptionType`
-    // ("API Usage Billing") in the credentials file that is useless as a plan label.
-    let (oauth_resolved, account_email, organization_type) = resolve_identity_with_extra(
-        &oauth_candidates,
+    let home = home_path("");
+    let current_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/"));
+    let Some(scope) = jackin_core::claude_keychain_scope(&config, &home, &current_dir) else {
+        // Non-UTF-8 config path: the service is unknowable, so treat as absence.
+        return ClaudeWaveResolution::Missing;
+    };
+    resolve_claude_refresh_wave_with(
+        &scope,
+        claude_keychain_state(),
+        read_claude_keychain_item,
+        || claude_scope_file_probe(&scope, &config),
+        || {
+            std::env::var("ANTHROPIC_API_KEY")
+                .ok()
+                .filter(|value| !value.is_empty())
+                .or_else(|| {
+                    std::env::var("ANTHROPIC_AUTH_TOKEN")
+                        .ok()
+                        .filter(|value| !value.is_empty())
+                })
+        },
+    )
+}
+
+/// One-pass file/metadata probe for a Keychain scope. Default scope keeps
+/// today's home-first candidate order (config dir, `~/.claude`, `~/.claude.json`,
+/// handoff); a custom scope reads only its own normalized dir and never the
+/// default home, default service, or handoff.
+fn claude_scope_file_probe(
+    scope: &jackin_core::ClaudeKeychainScope,
+    config: &Path,
+) -> ClaudeFileProbe {
+    let candidates: Vec<PathBuf> = if scope.is_default {
+        claude_oauth_candidates(config).to_vec()
+    } else {
+        vec![
+            scope.normalized_config_dir.join(".credentials.json"),
+            scope.normalized_config_dir.join(".claude.json"),
+        ]
+    };
+    let (resolved, account_email, organization_type) = resolve_identity_with_extra(
+        &candidates,
         claude_oauth_from_value,
         claude_email_from_value,
         claude_organization_type_from_value,
     );
-    let (oauth_path, oauth) = oauth_resolved.unzip();
-    let api_key = std::env::var("ANTHROPIC_API_KEY")
-        .ok()
-        .filter(|v| !v.is_empty());
-    let auth_token = std::env::var("ANTHROPIC_AUTH_TOKEN")
-        .ok()
-        .filter(|v| !v.is_empty());
-    let has_local_creds = config.join(".credentials.json").exists();
-    let needs_login =
-        api_key.is_none() && auth_token.is_none() && oauth.is_none() && !has_local_creds;
-    let account = account_email.unwrap_or_default();
-    // The displayed numbers come from the OAuth file token (the env keys are
-    // never used for the fetch), so name the OAuth path that won first; fall
-    // back to the env token only when no OAuth credential resolved.
-    let credential_origin = if let Some(path) = oauth_path.as_deref() {
-        Some(oauth_origin(path))
-    } else if api_key.is_some() {
-        Some("API token · env ANTHROPIC_API_KEY".to_owned())
-    } else if auth_token.is_some() {
-        Some("API token · env ANTHROPIC_AUTH_TOKEN".to_owned())
-    } else {
-        None
-    };
-    let (oauth_quota, oauth_error) = split_fetch(
-        oauth
-            .as_ref()
-            .map(|credentials| fetch_claude_oauth_usage(&credentials.access_token)),
-    );
-    let (cli_usage, cli_error) =
-        split_fetch((oauth_quota.is_none() && oauth.is_some()).then(fetch_claude_cli_usage));
+    let (path, credential) = resolved.unzip();
+    ClaudeFileProbe {
+        credential,
+        origin: path.as_deref().map(oauth_origin),
+        account_email,
+        organization_type,
+    }
+}
+
+/// Classify the typed cache/coordination policy for a resolved wave. Denied,
+/// Missing, and anonymous-credential resolutions are local-only.
+pub(crate) fn claude_wave_policy(resolution: &ClaudeWaveResolution) -> ClaudeWavePolicy {
+    match resolution {
+        ClaudeWaveResolution::Denied => ClaudeWavePolicy::LocalDenied,
+        ClaudeWaveResolution::Missing => ClaudeWavePolicy::LocalMissing,
+        ClaudeWaveResolution::Resolved(resolved) if resolved.is_anonymous => {
+            ClaudeWavePolicy::LocalAnonymous
+        }
+        ClaudeWaveResolution::Resolved(_) => ClaudeWavePolicy::Shared,
+    }
+}
+
+/// Typed policy outcome for a Claude wave — the source of the cache/coordination
+/// policy so downstream code never inspects error text.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ClaudeWavePolicy {
+    Shared,
+    LocalDenied,
+    LocalMissing,
+    LocalAnonymous,
+}
+
+/// Build the Claude view for a resolved wave.
+pub(crate) fn claude_view_from_wave(
+    agent: &str,
+    provider: Option<&str>,
+    now: i64,
+    resolution: ClaudeWaveResolution,
+) -> FocusedUsageView {
+    match resolution {
+        ClaudeWaveResolution::Denied => claude_denied_view(agent, provider, now),
+        ClaudeWaveResolution::Missing => claude_missing_view(agent, provider, now),
+        ClaudeWaveResolution::Resolved(resolved) => {
+            claude_resolved_view(agent, provider, now, *resolved)
+        }
+    }
+}
+
+/// Terminal denial view: `NeedsLogin` with no bucket/account/plan/origin and the
+/// exact non-secret error. Cached quota is never restored onto this (the typed
+/// local-only policy blocks preservation in the refresh cache).
+fn claude_denied_view(agent: &str, provider: Option<&str>, now: i64) -> FocusedUsageView {
+    usage_view(UsageViewInput {
+        agent,
+        provider,
+        surface: UsageSurface::Claude,
+        account_label: String::new(),
+        username: None,
+        plan_label: None,
+        credential_origin: None,
+        buckets: Vec::new(),
+        status: UsageSnapshotStatus::NeedsLogin,
+        source: UsageSource::None,
+        confidence: UsageConfidence::None,
+        now,
+        last_error: Some("Claude Keychain access denied".to_owned()),
+    })
+}
+
+fn claude_pending_buckets(
+    status: UsageSnapshotStatus,
+    provider_error: Option<&str>,
+) -> Vec<QuotaBucketView> {
+    ["Session", "Weekly", "Daily Routines"]
+        .into_iter()
+        .map(|label| {
+            bucket(
+                label,
+                None,
+                None,
+                None,
+                None,
+                provider_error.or(Some("provider API pending")),
+                status,
+            )
+        })
+        .collect()
+}
+
+fn claude_missing_view(agent: &str, provider: Option<&str>, now: i64) -> FocusedUsageView {
+    usage_view(UsageViewInput {
+        agent,
+        provider,
+        surface: UsageSurface::Claude,
+        account_label: String::new(),
+        username: None,
+        plan_label: None,
+        credential_origin: None,
+        buckets: claude_pending_buckets(UsageSnapshotStatus::NeedsLogin, None),
+        status: UsageSnapshotStatus::NeedsLogin,
+        source: UsageSource::None,
+        confidence: UsageConfidence::None,
+        now,
+        last_error: Some("Claude credentials not available to Capsule".to_owned()),
+    })
+}
+
+fn claude_resolved_view(
+    agent: &str,
+    provider: Option<&str>,
+    now: i64,
+    resolved: ClaudeResolved,
+) -> FocusedUsageView {
+    let (oauth_quota, oauth_error) =
+        split_fetch(Some(fetch_claude_oauth_usage(&resolved.access_token)));
+    let (cli_usage, cli_error) = split_fetch(oauth_quota.is_none().then(fetch_claude_cli_usage));
     let provider_error = if oauth_quota.is_some() || cli_usage.is_some() {
         None
     } else {
         oauth_error.as_ref().or(cli_error.as_ref()).cloned()
     };
-    let status = if needs_login {
-        UsageSnapshotStatus::NeedsLogin
-    } else if oauth_quota.is_some() || cli_usage.is_some() {
+    let status = if oauth_quota.is_some() || cli_usage.is_some() {
         UsageSnapshotStatus::Fresh
     } else {
         UsageSnapshotStatus::Stale
     };
-    let bucket_status = status;
     let buckets = oauth_quota
         .map(|usage| usage.into_buckets(now))
         .or_else(|| cli_usage.as_ref().map(ClaudeCliUsage::buckets))
         .filter(|buckets| !buckets.is_empty())
-        .unwrap_or_else(|| {
-            vec![
-                bucket(
-                    "Session",
-                    None,
-                    None,
-                    None,
-                    None,
-                    provider_error.as_deref().or(Some("provider API pending")),
-                    bucket_status,
-                ),
-                bucket(
-                    "Weekly",
-                    None,
-                    None,
-                    None,
-                    None,
-                    provider_error.as_deref().or(Some("provider API pending")),
-                    bucket_status,
-                ),
-                bucket(
-                    "Daily Routines",
-                    None,
-                    None,
-                    None,
-                    None,
-                    provider_error.as_deref().or(Some("provider API pending")),
-                    bucket_status,
-                ),
-            ]
-        });
+        .unwrap_or_else(|| claude_pending_buckets(status, provider_error.as_deref()));
     usage_view(UsageViewInput {
         agent,
         provider,
         surface: UsageSurface::Claude,
-        account_label: account,
+        account_label: resolved.account_email.unwrap_or_default(),
         username: None,
-        plan_label: organization_type
-            .or_else(|| oauth.and_then(|credentials| credentials.subscription_type)),
-        credential_origin,
+        plan_label: resolved.organization_type.or(resolved.subscription_type),
+        credential_origin: Some(resolved.credential_origin),
         buckets,
         status,
         source: if status == UsageSnapshotStatus::Fresh {
@@ -158,9 +240,6 @@ pub(crate) fn claude_snapshot(agent: &str, provider: Option<&str>, now: i64) -> 
             UsageSource::None
         },
         confidence: if status == UsageSnapshotStatus::Fresh {
-            // Class fix (P0): the rich OAuth snapshot is authoritative; the CLI
-            // fallback is a reduced snapshot and must be marked degraded
-            // (Estimated) with a reason, never presented as authoritative.
             if cli_usage.is_some() {
                 UsageConfidence::Estimated
             } else {
@@ -171,14 +250,9 @@ pub(crate) fn claude_snapshot(agent: &str, provider: Option<&str>, now: i64) -> 
         },
         now,
         last_error: match status {
-            UsageSnapshotStatus::NeedsLogin => {
-                Some("Claude credentials not available to Capsule".to_owned())
-            }
             UsageSnapshotStatus::Stale => Some(provider_error.unwrap_or_else(|| {
                 "Claude provider usage unavailable; cached quota is stale".to_owned()
             })),
-            // Degraded-but-fresh: the reduced CLI snapshot is showing because
-            // the OAuth fetch failed — surface why, not a confident silence.
             _ if cli_usage.is_some() => Some(oauth_error.clone().unwrap_or_else(|| {
                 "Claude OAuth usage unavailable; showing reduced CLI snapshot".to_owned()
             })),
@@ -187,10 +261,16 @@ pub(crate) fn claude_snapshot(agent: &str, provider: Option<&str>, now: i64) -> 
     })
 }
 
-#[derive(Debug, Clone)]
+// No `Debug`/`Display`: this carries a live access token and (optionally) the
+// stable refresh token, so it must never be formatted into a log or error.
+#[derive(Clone)]
 pub(crate) struct ClaudeOAuthCredentials {
     pub(crate) access_token: String,
     pub(crate) subscription_type: Option<String>,
+    /// Stable rotation-independent identity input. Consumed only inside wave
+    /// resolution to derive the opaque account discriminator, then dropped —
+    /// never carried into a view, log, snapshot, or coordination key raw.
+    pub(crate) refresh_token: Option<String>,
 }
 
 /// Claude account email (F12): `~/.claude.json` carries `oauthAccount` metadata
@@ -250,15 +330,295 @@ pub(crate) fn claude_oauth_from_value(value: &serde_json::Value) -> Option<Claud
         .or_else(|| oauth.get("rate_limit_tier"))
         .and_then(serde_json::Value::as_str)
         .map(humanize_plan_label);
+    // Optional stable refresh token — used only to derive the coordination
+    // discriminator when no `oauthAccount` metadata exists. Never surfaced.
+    let refresh_token = oauth
+        .get("refreshToken")
+        .or_else(|| oauth.get("refresh_token"))
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|token| !token.is_empty())
+        .map(str::to_owned);
     Some(ClaudeOAuthCredentials {
         access_token,
         subscription_type,
+        refresh_token,
     })
 }
 
 #[cfg(test)]
 pub(crate) fn load_claude_oauth_credentials(path: &Path) -> Option<ClaudeOAuthCredentials> {
     claude_oauth_from_value(&read_json_file(path)?)
+}
+
+// ===================================================================
+// macOS Keychain credential source (plan 002)
+//
+// Claude Code on macOS stores its OAuth credential only in the login
+// Keychain (a fresh `/login` deletes the credentials file). The service
+// name is derived from the effective `CLAUDE_CONFIG_DIR` by the shared
+// `jackin_core::claude_keychain_scope` helper, so instance provisioning and
+// this probe never disagree. Rust owns all resolution; Swift is display-only.
+// ===================================================================
+
+/// Raw Keychain lookup outcome for one service. Secret-free in its own labels
+/// (`json` carries the payload but the type is never formatted/logged).
+pub(crate) enum ClaudeKeychainRead {
+    #[cfg(any(target_os = "macos", test))]
+    Payload {
+        json: String,
+    },
+    Denied,
+    Missing,
+}
+
+/// Classify a macOS `OSStatus` from a Keychain lookup. Only an explicit user
+/// cancel (`errSecUserCanceled` = -128) or auth failure (`errSecAuthFailed` =
+/// -25293) is a terminal `Denied`; item-not-found (-25300), headless
+/// interaction-not-allowed (-25308), and any other failure are `Missing`
+/// (absence), so file/env fallback stays available. Pure and cross-platform so
+/// tests never touch the real Keychain.
+#[cfg(any(target_os = "macos", test))]
+pub(crate) fn classify_claude_keychain_status(code: i32) -> ClaudeKeychainRead {
+    match code {
+        -128 | -25293 => ClaudeKeychainRead::Denied,
+        _ => ClaudeKeychainRead::Missing,
+    }
+}
+
+#[cfg(target_os = "macos")]
+pub(crate) fn read_claude_keychain_item(service: &str) -> ClaudeKeychainRead {
+    use security_framework::item::{ItemClass, ItemSearchOptions, SearchResult};
+
+    let mut options = ItemSearchOptions::new();
+    options
+        .class(ItemClass::generic_password())
+        .service(service)
+        .load_data(true)
+        .limit(1);
+    match options.search() {
+        Ok(results) => {
+            for result in results {
+                if let SearchResult::Data(bytes) = result {
+                    return match String::from_utf8(bytes) {
+                        Ok(text) if !text.trim().is_empty() => ClaudeKeychainRead::Payload {
+                            json: text.trim().to_owned(),
+                        },
+                        _ => ClaudeKeychainRead::Missing,
+                    };
+                }
+            }
+            ClaudeKeychainRead::Missing
+        }
+        Err(error) => classify_claude_keychain_status(error.code()),
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+pub(crate) fn read_claude_keychain_item(_service: &str) -> ClaudeKeychainRead {
+    ClaudeKeychainRead::Missing
+}
+
+/// Process-lifetime Keychain coordination: serializes reader I/O so a consent
+/// sheet is prompted at most once per wave, and remembers services the operator
+/// explicitly denied so a denial is terminal for that service for the process
+/// (no retry-prompt storm). A *missing* item is never cached, so a later
+/// `claude /login` is picked up without an app restart (flow W5).
+#[derive(Default)]
+pub(crate) struct ClaudeKeychainState {
+    inner: std::sync::Mutex<ClaudeKeychainInner>,
+}
+
+#[derive(Default)]
+struct ClaudeKeychainInner {
+    denied_services: std::collections::HashSet<String>,
+    /// Count of reader invocations — a test seam proving reads are shared and
+    /// each service is queried at most once per wave.
+    reads: u64,
+}
+
+impl ClaudeKeychainState {
+    /// Resolve one Keychain read for `service` through `reader`, honoring the
+    /// process-terminal denial cache and serializing reader I/O.
+    pub(crate) fn read_with<F>(&self, service: &str, reader: F) -> ClaudeKeychainRead
+    where
+        F: FnOnce(&str) -> ClaudeKeychainRead,
+    {
+        {
+            let inner = self
+                .inner
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            if inner.denied_services.contains(service) {
+                return ClaudeKeychainRead::Denied;
+            }
+        }
+        // Reader runs while holding the serialization lock so concurrent waves
+        // cannot open two consent sheets for the same service at once.
+        let mut inner = self
+            .inner
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if inner.denied_services.contains(service) {
+            return ClaudeKeychainRead::Denied;
+        }
+        inner.reads += 1;
+        let read = reader(service);
+        if matches!(read, ClaudeKeychainRead::Denied) {
+            inner.denied_services.insert(service.to_owned());
+        }
+        read
+    }
+
+    #[cfg(test)]
+    pub(crate) fn read_count(&self) -> u64 {
+        self.inner
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .reads
+    }
+}
+
+/// Production global Keychain state (one per process).
+pub(crate) fn claude_keychain_state() -> &'static ClaudeKeychainState {
+    static STATE: std::sync::OnceLock<ClaudeKeychainState> = std::sync::OnceLock::new();
+    STATE.get_or_init(ClaudeKeychainState::default)
+}
+
+/// Result of resolving the Claude credential for one refresh wave. Secret-safe:
+/// never `Debug`/`Display`. The access token rides in `Resolved` for the fetch;
+/// the opaque `discriminator` is the only identity carried into coordination.
+pub(crate) enum ClaudeWaveResolution {
+    Resolved(Box<ClaudeResolved>),
+    /// Operator denied the Keychain consent for this service — terminal,
+    /// local-only. No file/env read, no cached-quota restoration.
+    Denied,
+    /// No usable credential from Keychain or fallback. Local-only needs-login.
+    Missing,
+}
+
+pub(crate) struct ClaudeResolved {
+    pub(crate) access_token: String,
+    pub(crate) subscription_type: Option<String>,
+    pub(crate) account_email: Option<String>,
+    pub(crate) organization_type: Option<String>,
+    pub(crate) credential_origin: String,
+    /// `true` when the credential carries no proven cross-account identity (no
+    /// account metadata and no refresh token) — a local-only credential.
+    pub(crate) is_anonymous: bool,
+}
+
+/// One credential candidate probe result: the parsed OAuth credential (if any)
+/// plus same-scope account/tier metadata.
+pub(crate) struct ClaudeFileProbe {
+    pub(crate) credential: Option<ClaudeOAuthCredentials>,
+    pub(crate) origin: Option<String>,
+    pub(crate) account_email: Option<String>,
+    pub(crate) organization_type: Option<String>,
+}
+
+/// Resolve the Claude wave for `scope`: Keychain first, then scope-appropriate
+/// file/env fallback. `keychain_reader` performs the real (or test) Keychain
+/// read; `file_probe` returns the scope's file credential + metadata in one
+/// call; `env_reader` yields an env access token. No process-global env
+/// mutation — all inputs are injected so the whole path is unit-testable.
+pub(crate) fn resolve_claude_refresh_wave_with<K, P, E>(
+    scope: &jackin_core::ClaudeKeychainScope,
+    state: &ClaudeKeychainState,
+    keychain_reader: K,
+    file_probe: P,
+    env_reader: E,
+) -> ClaudeWaveResolution
+where
+    K: FnOnce(&str) -> ClaudeKeychainRead,
+    P: FnOnce() -> ClaudeFileProbe,
+    E: FnOnce() -> Option<String>,
+{
+    match state.read_with(&scope.service, keychain_reader) {
+        ClaudeKeychainRead::Denied => ClaudeWaveResolution::Denied,
+        #[cfg(any(target_os = "macos", test))]
+        ClaudeKeychainRead::Payload { json } => {
+            match serde_json::from_str::<serde_json::Value>(&json)
+                .ok()
+                .as_ref()
+                .and_then(claude_oauth_from_value)
+            {
+                Some(credential) => {
+                    // Valid Keychain payload: may still collect account/tier
+                    // metadata from the same-scope file probe, but the file
+                    // credential can never replace the Keychain one.
+                    let probe = file_probe();
+                    let origin = format!("OAuth · macOS Keychain ({})", scope.service);
+                    ClaudeWaveResolution::Resolved(Box::new(claude_resolved(
+                        credential,
+                        origin,
+                        probe.account_email,
+                        probe.organization_type,
+                    )))
+                }
+                None => resolve_claude_fallback(scope, file_probe(), env_reader()),
+            }
+        }
+        ClaudeKeychainRead::Missing => resolve_claude_fallback(scope, file_probe(), env_reader()),
+    }
+}
+
+fn resolve_claude_fallback(
+    scope: &jackin_core::ClaudeKeychainScope,
+    probe: ClaudeFileProbe,
+    env_token: Option<String>,
+) -> ClaudeWaveResolution {
+    if let Some(credential) = probe.credential {
+        let origin = probe
+            .origin
+            .unwrap_or_else(|| "OAuth · credentials file".to_owned());
+        return ClaudeWaveResolution::Resolved(Box::new(claude_resolved(
+            credential,
+            origin,
+            probe.account_email,
+            probe.organization_type,
+        )));
+    }
+    let _ = scope;
+    if let Some(token) = env_token.filter(|value| !value.is_empty()) {
+        return ClaudeWaveResolution::Resolved(Box::new(ClaudeResolved {
+            access_token: token,
+            subscription_type: None,
+            account_email: probe.account_email,
+            organization_type: probe.organization_type,
+            credential_origin: "API token · env ANTHROPIC_API_KEY".to_owned(),
+            is_anonymous: true,
+        }));
+    }
+    ClaudeWaveResolution::Missing
+}
+
+fn claude_resolved(
+    credential: ClaudeOAuthCredentials,
+    origin: String,
+    account_email: Option<String>,
+    organization_type: Option<String>,
+) -> ClaudeResolved {
+    // Identity is proven by same-scope account metadata or the stable refresh
+    // token; a rotating access token is never identity. Without either, the
+    // credential is anonymous (local-only, no cross-account coordination).
+    let is_anonymous = !(account_email
+        .as_deref()
+        .map(str::trim)
+        .is_some_and(|value| !value.is_empty())
+        || credential
+            .refresh_token
+            .as_deref()
+            .map(str::trim)
+            .is_some_and(|value| !value.is_empty()));
+    ClaudeResolved {
+        access_token: credential.access_token,
+        subscription_type: credential.subscription_type,
+        account_email,
+        organization_type,
+        credential_origin: origin,
+        is_anonymous,
+    }
 }
 
 #[derive(Debug, Deserialize)]

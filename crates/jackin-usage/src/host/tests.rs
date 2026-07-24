@@ -386,6 +386,7 @@ fn refresh_floor_skips_non_forced_calls() {
             data_dir: dir.path().to_path_buf(),
             refresh_floor_secs: 60,
             enabled_surface_ids: vec!["codex".to_owned()],
+            probe_policy: HostProbePolicy::Live,
         })
         .expect("open");
     assert!(runtime.refresh_due());
@@ -834,4 +835,451 @@ fn estimate_caption_variants() {
     view.source = UsageSource::Cli;
     view.confidence = UsageConfidence::PresenceOnly;
     assert_eq!(estimate_caption(&view), None);
+}
+
+// ===== Plan 005 Step 2: provider glance rows =====
+
+fn glance_weekly_bucket(remaining: u8) -> QuotaBucketView {
+    QuotaBucketView {
+        label: "Weekly".to_owned(),
+        used_label: None,
+        limit_label: None,
+        remaining_percent: Some(remaining),
+        reset_label: Some("Resets in 3d".to_owned()),
+        resets_at: Some(1_700_200_000),
+        status_slot: Some(StatusSlot::Weekly),
+        pace_label: None,
+        status: UsageSnapshotStatus::Fresh,
+        used_money: None,
+        limit_money: None,
+        severity: UsageSeverity::Normal,
+    }
+}
+
+fn glance_daily_bucket(remaining: u8) -> QuotaBucketView {
+    let mut bucket = glance_weekly_bucket(remaining);
+    bucket.label = "Amp Free".to_owned();
+    bucket.status_slot = Some(StatusSlot::Daily);
+    bucket.reset_label = Some("Resets daily".to_owned());
+    bucket.resets_at = None;
+    bucket
+}
+
+fn glance_view(
+    provider_label: &str,
+    origin: Option<&str>,
+    buckets: Vec<QuotaBucketView>,
+    status: UsageSnapshotStatus,
+) -> FocusedUsageView {
+    FocusedUsageView {
+        focused_agent: None,
+        focused_provider: Some(provider_label.to_owned()),
+        account: FocusedAccountHeader {
+            provider_label: provider_label.to_owned(),
+            account_label: "user@example.com".to_owned(),
+            username: None,
+            plan_label: None,
+            credential_origin: origin.map(str::to_owned),
+        },
+        buckets,
+        status,
+        source: UsageSource::ProviderApi,
+        confidence: UsageConfidence::Authoritative,
+        fetched_at_epoch: 1_699_000_000,
+        updated_label: "just now".to_owned(),
+        status_bar_label: String::new(),
+        tabs: Vec::new(),
+        last_error: None,
+    }
+}
+
+#[test]
+fn provider_glance_rows_use_exact_seven_provider_order() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let mut runtime = open_runtime(dir.path());
+    for id in ["codex", "claude", "amp", "grok", "zai", "kimi", "minimax"] {
+        runtime
+            .inject_snapshot(
+                id,
+                glance_view(
+                    "P",
+                    Some("OAuth · file"),
+                    vec![glance_weekly_bucket(50)],
+                    UsageSnapshotStatus::Fresh,
+                ),
+            )
+            .expect("inject");
+    }
+    let rows = runtime.provider_glance_rows().expect("rows");
+    let ids: Vec<_> = rows.iter().map(|r| r.surface_id.as_str()).collect();
+    assert_eq!(
+        ids,
+        ["codex", "claude", "amp", "grok", "zai", "kimi", "minimax"]
+    );
+}
+
+#[test]
+fn provider_glance_rows_show_three_weekly_labels() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let mut runtime = open_runtime(dir.path());
+    runtime
+        .inject_snapshot(
+            "codex",
+            glance_view(
+                "Codex",
+                Some("OAuth · file"),
+                vec![glance_weekly_bucket(57)],
+                UsageSnapshotStatus::Fresh,
+            ),
+        )
+        .expect("inject");
+    runtime
+        .inject_snapshot(
+            "claude",
+            glance_view(
+                "Claude",
+                Some("OAuth · file"),
+                vec![glance_weekly_bucket(74)],
+                UsageSnapshotStatus::Fresh,
+            ),
+        )
+        .expect("inject");
+    runtime
+        .inject_snapshot(
+            "zai",
+            glance_view(
+                "GLM / Z.AI",
+                Some("API key · env ZAI_API_KEY"),
+                vec![glance_weekly_bucket(31)],
+                UsageSnapshotStatus::Fresh,
+            ),
+        )
+        .expect("inject");
+    let rows = runtime.provider_glance_rows().expect("rows");
+    let bar = |id: &str| {
+        rows.iter()
+            .find(|r| r.surface_id == id)
+            .map(|r| r.bar_label.clone())
+    };
+    assert_eq!(bar("codex").as_deref(), Some("57%"));
+    assert_eq!(bar("claude").as_deref(), Some("74%"));
+    assert_eq!(bar("zai").as_deref(), Some("31%"));
+}
+
+#[test]
+fn provider_glance_rows_select_amp_daily() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let mut runtime = open_runtime(dir.path());
+    runtime
+        .inject_snapshot(
+            "amp",
+            glance_view(
+                "Amp",
+                Some("API key · env AMP_API_KEY"),
+                vec![glance_daily_bucket(61)],
+                UsageSnapshotStatus::Fresh,
+            ),
+        )
+        .expect("inject");
+    let rows = runtime.provider_glance_rows().expect("rows");
+    let amp = rows
+        .iter()
+        .find(|r| r.surface_id == "amp")
+        .expect("amp row");
+    assert_eq!(amp.bar_label, "61%");
+    assert_eq!(amp.glance_remaining_percent, Some(61));
+}
+
+#[test]
+fn provider_glance_rows_show_dash_for_paid_only_amp() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let mut runtime = open_runtime(dir.path());
+    // Credit-bound bucket but no Daily slot → detected but no glance percent.
+    let mut credits = glance_weekly_bucket(40);
+    credits.label = "Individual credits".to_owned();
+    credits.status_slot = None;
+    credits.remaining_percent = None;
+    credits.limit_label = Some("$9.86".to_owned());
+    runtime
+        .inject_snapshot(
+            "amp",
+            glance_view(
+                "Amp",
+                Some("API key · env AMP_API_KEY"),
+                vec![credits],
+                UsageSnapshotStatus::Fresh,
+            ),
+        )
+        .expect("inject");
+    let rows = runtime.provider_glance_rows().expect("rows");
+    let amp = rows
+        .iter()
+        .find(|r| r.surface_id == "amp")
+        .expect("amp row");
+    assert_eq!(amp.bar_label, "–");
+    assert_eq!(amp.glance_remaining_percent, None);
+}
+
+#[test]
+fn provider_glance_rows_show_dash_before_first_success() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let mut runtime = open_runtime(dir.path());
+    runtime
+        .inject_snapshot(
+            "codex",
+            glance_view(
+                "Codex",
+                Some("OAuth · file"),
+                Vec::new(),
+                UsageSnapshotStatus::Fresh,
+            ),
+        )
+        .expect("inject");
+    let rows = runtime.provider_glance_rows().expect("rows");
+    let codex = rows
+        .iter()
+        .find(|r| r.surface_id == "codex")
+        .expect("codex row");
+    assert_eq!(codex.bar_label, "–");
+    assert_eq!(codex.headline, "–");
+}
+
+#[test]
+fn provider_glance_rows_empty_without_credentials() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let mut runtime = open_runtime(dir.path());
+    let rows = runtime.provider_glance_rows().expect("rows");
+    assert!(rows.is_empty());
+}
+
+#[test]
+fn provider_glance_rows_reject_negative_credential_placeholders() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let mut runtime = open_runtime(dir.path());
+    runtime
+        .inject_snapshot(
+            "zai",
+            glance_view(
+                "GLM / Z.AI",
+                Some("needs env ZAI_API_KEY"),
+                Vec::new(),
+                UsageSnapshotStatus::NeedsLogin,
+            ),
+        )
+        .expect("inject");
+    runtime
+        .inject_snapshot(
+            "kimi",
+            glance_view(
+                "Kimi",
+                Some("needs Kimi auth"),
+                Vec::new(),
+                UsageSnapshotStatus::NeedsLogin,
+            ),
+        )
+        .expect("inject");
+    let rows = runtime.provider_glance_rows().expect("rows");
+    assert!(rows.is_empty());
+}
+
+#[test]
+fn provider_glance_rows_accept_affirmative_origin_when_unsupported() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let mut runtime = open_runtime(dir.path());
+    runtime
+        .inject_snapshot(
+            "kimi",
+            glance_view(
+                "Kimi",
+                Some("API key · env KIMI_AUTH_TOKEN"),
+                Vec::new(),
+                UsageSnapshotStatus::Unsupported,
+            ),
+        )
+        .expect("inject");
+    let rows = runtime.provider_glance_rows().expect("rows");
+    let kimi = rows
+        .iter()
+        .find(|r| r.surface_id == "kimi")
+        .expect("kimi detected");
+    assert_eq!(kimi.bar_label, "–");
+}
+
+#[test]
+fn provider_glance_rows_do_not_fallback_to_unrelated_slots() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let mut runtime = open_runtime(dir.path());
+    let mut session = glance_weekly_bucket(80);
+    session.status_slot = Some(StatusSlot::Session);
+    let mut spend = glance_weekly_bucket(20);
+    spend.status_slot = Some(StatusSlot::Spend);
+    runtime
+        .inject_snapshot(
+            "codex",
+            glance_view(
+                "Codex",
+                Some("OAuth · file"),
+                vec![session, spend],
+                UsageSnapshotStatus::Fresh,
+            ),
+        )
+        .expect("inject");
+    let rows = runtime.provider_glance_rows().expect("rows");
+    let codex = rows
+        .iter()
+        .find(|r| r.surface_id == "codex")
+        .expect("codex row");
+    assert_eq!(codex.bar_label, "–");
+    assert_eq!(codex.glance_remaining_percent, None);
+}
+
+#[test]
+fn provider_glance_rows_never_include_opencode() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let mut runtime = open_runtime(dir.path());
+    runtime
+        .inject_snapshot(
+            "opencode",
+            glance_view(
+                "OpenCode",
+                Some("OAuth · file"),
+                vec![glance_weekly_bucket(90)],
+                UsageSnapshotStatus::Fresh,
+            ),
+        )
+        .expect("inject");
+    let rows = runtime.provider_glance_rows().expect("rows");
+    assert!(rows.iter().all(|r| r.surface_id != "opencode"));
+}
+
+#[test]
+fn provider_glance_rows_icon_keys_match_closed_desktop_domain() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let mut runtime = open_runtime(dir.path());
+    runtime
+        .inject_snapshot(
+            "grok",
+            glance_view(
+                "Grok Build",
+                Some("OAuth · file"),
+                vec![glance_weekly_bucket(33)],
+                UsageSnapshotStatus::Fresh,
+            ),
+        )
+        .expect("inject");
+    let rows = runtime.provider_glance_rows().expect("rows");
+    let grok = rows
+        .iter()
+        .find(|r| r.surface_id == "grok")
+        .expect("grok row");
+    assert_eq!(grok.icon_key, "grok");
+    assert_eq!(grok.icon_key, grok.surface_id);
+}
+
+#[test]
+fn provider_glance_rows_preserve_dimmed_last_known() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let mut runtime = open_runtime(dir.path());
+    let mut stale = glance_view(
+        "Codex",
+        Some("OAuth · file"),
+        vec![glance_weekly_bucket(45)],
+        UsageSnapshotStatus::Stale,
+    );
+    stale.buckets[0].status = UsageSnapshotStatus::Stale;
+    runtime.inject_snapshot("codex", stale).expect("inject");
+    let rows = runtime.provider_glance_rows().expect("rows");
+    let codex = rows
+        .iter()
+        .find(|r| r.surface_id == "codex")
+        .expect("codex row");
+    assert_eq!(codex.bar_label, "45%");
+    assert!(codex.dimmed);
+}
+
+#[test]
+fn provider_glance_rows_marks_canonical_placeholder_refreshing() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let mut runtime = open_runtime(dir.path());
+    // A first-ever placeholder without prior evidence is absent.
+    runtime
+        .inject_snapshot("codex", FocusedUsageView::refreshing(Some("Codex"), 0))
+        .expect("inject");
+    assert!(
+        runtime
+            .provider_glance_rows()
+            .expect("rows")
+            .iter()
+            .all(|r| r.surface_id != "codex")
+    );
+    // Establish evidence, then replace with the placeholder → retained + refreshing.
+    runtime
+        .inject_snapshot(
+            "codex",
+            glance_view(
+                "Codex",
+                Some("OAuth · file"),
+                vec![glance_weekly_bucket(50)],
+                UsageSnapshotStatus::Fresh,
+            ),
+        )
+        .expect("inject");
+    assert!(
+        runtime
+            .provider_glance_rows()
+            .expect("rows")
+            .iter()
+            .any(|r| r.surface_id == "codex")
+    );
+    runtime
+        .inject_snapshot("codex", FocusedUsageView::refreshing(Some("Codex"), 0))
+        .expect("inject");
+    let rows = runtime.provider_glance_rows().expect("rows");
+    let codex = rows
+        .iter()
+        .find(|r| r.surface_id == "codex")
+        .expect("retained");
+    assert!(codex.is_refreshing);
+}
+
+#[test]
+fn provider_glance_rows_redetect_new_credentials() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let mut runtime = open_runtime(dir.path());
+    assert!(runtime.provider_glance_rows().expect("rows").is_empty());
+    runtime
+        .inject_snapshot(
+            "grok",
+            glance_view(
+                "Grok Build",
+                Some("OAuth · file"),
+                vec![glance_weekly_bucket(33)],
+                UsageSnapshotStatus::Fresh,
+            ),
+        )
+        .expect("inject");
+    assert!(
+        runtime
+            .provider_glance_rows()
+            .expect("rows")
+            .iter()
+            .any(|r| r.surface_id == "grok")
+    );
+}
+
+#[test]
+fn disabled_probe_policy_skips_dispatch_and_is_never_due() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let mut runtime = HostUsageRuntime::new();
+    runtime
+        .open(HostRuntimeConfig {
+            data_dir: dir.path().to_path_buf(),
+            refresh_floor_secs: 60,
+            enabled_surface_ids: Vec::new(),
+            probe_policy: HostProbePolicy::Disabled,
+        })
+        .expect("open");
+    runtime.refresh(None, false).expect("non-forced refresh");
+    runtime.refresh(None, true).expect("forced refresh");
+    assert!(!runtime.refresh_due());
 }

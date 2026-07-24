@@ -47,74 +47,29 @@ impl Dialog {
         if *selected == UsageDialogTab::Overview {
             return Some(Self::usage_overview_state(view, scroll.clone()));
         }
-        let mut rows = Vec::new();
-        rows.extend([
-            crate::tui::components::container_info_surface::ContainerInfoRow::new(
-                "Focused",
-                Self::usage_focused_label(view),
-            ),
-            crate::tui::components::container_info_surface::ContainerInfoRow::new(
-                "Header",
-                Self::usage_provider_header_label(&view.account.provider_label),
-            ),
-            crate::tui::components::container_info_surface::ContainerInfoRow::new(
-                "Provider",
-                view.account.provider_label.clone(),
-            ),
-            crate::tui::components::container_info_surface::ContainerInfoRow::new(
-                "Account",
-                view.account.account_label.clone(),
-            ),
-            crate::tui::components::container_info_surface::ContainerInfoRow::new(
-                "Status",
-                Self::usage_status_label(view.status),
-            ),
-            crate::tui::components::container_info_surface::ContainerInfoRow::new(
-                "Updated",
-                view.updated_label.clone(),
-            ),
-        ]);
-        if let Some(username) = &view.account.username {
-            rows.push(
+        // Rust owns every provider-card field, string, and order in
+        // `jackin_usage::usage::usage_detail_presentation` so this dialog and the
+        // native Desktop Usage window stay parity-locked. The dialog only maps
+        // each shared row to a `ContainerInfoRow`, prepending its TUI meter glyph
+        // (geometry from `meter_percent`) to a bucket's leading segment.
+        let presentation = jackin_usage::usage::usage_detail_presentation(view);
+        let mut rows = Vec::with_capacity(presentation.rows.len());
+        for row in &presentation.rows {
+            let value = match row.meter_percent {
+                Some(meter_percent) => {
+                    format!("{} {}", Self::usage_meter(meter_percent), row.display_label)
+                }
+                None => row.display_label.clone(),
+            };
+            let mut info_row =
                 crate::tui::components::container_info_surface::ContainerInfoRow::new(
-                    "Username",
-                    username.clone(),
-                ),
-            );
-        }
-        if let Some(plan) = &view.account.plan_label {
-            rows.push(
-                crate::tui::components::container_info_surface::ContainerInfoRow::new(
-                    "Plan",
-                    plan.clone(),
-                ),
-            );
-        }
-        if let Some(origin) = &view.account.credential_origin {
-            rows.push(
-                crate::tui::components::container_info_surface::ContainerInfoRow::new(
-                    "Auth",
-                    origin.clone(),
-                ),
-            );
-        }
-        for bucket in &view.buckets {
-            let mut row = crate::tui::components::container_info_surface::ContainerInfoRow::new(
-                bucket.label.clone(),
-                Self::usage_bucket_value(bucket),
-            );
-            if let Some(accent) = Self::usage_severity_accent(bucket.severity) {
-                row = row.accent(accent);
+                    row.label.clone(),
+                    value,
+                );
+            if let Some(accent) = Self::usage_severity_accent(row.severity) {
+                info_row = info_row.accent(accent);
             }
-            rows.push(row);
-        }
-        if let Some(error) = &view.last_error {
-            rows.push(
-                crate::tui::components::container_info_surface::ContainerInfoRow::new(
-                    "Detail",
-                    error.clone(),
-                ),
-            );
+            rows.push(info_row);
         }
         let mut state =
             crate::tui::components::container_info_surface::ContainerInfoState::new("Usage", rows);
@@ -159,21 +114,6 @@ impl Dialog {
             crate::tui::components::container_info_surface::ContainerInfoState::new("Usage", rows);
         state.scroll = scroll;
         state
-    }
-
-    fn usage_focused_label(view: &jackin_protocol::control::FocusedUsageView) -> String {
-        let account = view.account.account_label.trim();
-        let account = if account.is_empty() {
-            "account unavailable"
-        } else {
-            account
-        };
-        match (&view.focused_agent, &view.focused_provider) {
-            (Some(agent), Some(provider)) => format!("{agent} · {provider} · {account}"),
-            (Some(agent), None) => format!("{agent} · {account}"),
-            (None, Some(provider)) => format!("{provider} · {account}"),
-            (None, None) => format!("no focused agent · {account}"),
-        }
     }
 
     fn usage_provider_header_label(label: &str) -> String {
@@ -246,83 +186,6 @@ impl Dialog {
         Some(*selected)
     }
 
-    /// `<prefix>: <used> / <limit>` when both money labels are present, else
-    /// whichever single label exists, else nothing. Shared by the spend-cap and
-    /// dollar-budget lines so the partial-data rendering can't diverge.
-    fn money_cap_part(used: Option<&str>, limit: Option<&str>, prefix: &str) -> Option<String> {
-        match (used, limit) {
-            (Some(used), Some(limit)) => Some(format!("{prefix}: {used} / {limit}")),
-            (Some(label), None) | (None, Some(label)) => Some(label.to_owned()),
-            (None, None) => None,
-        }
-    }
-
-    fn usage_bucket_value(bucket: &jackin_protocol::control::QuotaBucketView) -> String {
-        let mut parts = Vec::new();
-        // Spend is identified by its semantic slot, not a label string, so a
-        // window rename can't silently change how the cap renders (Bug 7 class:
-        // presentation driven by data, not labels).
-        if bucket.status_slot == Some(jackin_protocol::control::StatusSlot::Spend) {
-            if let Some(remaining) = bucket.remaining_percent {
-                let used = 100u8.saturating_sub(remaining);
-                parts.push(format!("{} {used}% used", Self::usage_meter(used)));
-            }
-            parts.extend(Self::money_cap_part(
-                bucket.used_label.as_deref(),
-                bucket.limit_label.as_deref(),
-                "Monthly cap",
-            ));
-            if parts.is_empty()
-                || bucket.status != jackin_protocol::control::UsageSnapshotStatus::Fresh
-            {
-                parts.push(Self::usage_status_label(bucket.status));
-            }
-            return parts.join(" · ");
-        }
-        if let Some(remaining) = bucket.remaining_percent {
-            if bucket.label == "Credits" && remaining == 0 && bucket.limit_label.is_some() {
-                parts.push(format!("{} 0 left", Self::usage_meter(remaining)));
-            } else {
-                parts.push(format!(
-                    "{} {remaining}% left",
-                    Self::usage_meter(remaining)
-                ));
-            }
-        }
-        // Normal buckets show only `N% left · pace · Resets in …` on the
-        // stats line (the roadmap previews never put a used/limit token there;
-        // only `Extra usage`, handled above, shows a cap).
-        if let Some(pace) = &bucket.pace_label {
-            parts.push(pace.clone());
-        }
-        if let Some(reset) = &bucket.reset_label {
-            parts.push(reset.clone());
-        }
-        // Dollar-bearing windows (Claude codename budgets such as `amber_ladder`,
-        // the enterprise contractual budget) carry used/limit money. Show the
-        // figures from the data — not a label match — so the global budget's
-        // `$0 / $25,000` is visible the way the Extra-usage cap is (Bug 7).
-        if bucket.status_slot != Some(jackin_protocol::control::StatusSlot::Spend)
-            && (bucket.used_money.is_some() || bucket.limit_money.is_some())
-        {
-            parts.extend(Self::money_cap_part(
-                bucket.used_label.as_deref(),
-                bucket.limit_label.as_deref(),
-                "Budget",
-            ));
-        } else if bucket.label == "Credits"
-            && bucket.remaining_percent == Some(0)
-            && let Some(limit) = &bucket.limit_label
-        {
-            parts.push(limit.clone());
-        }
-        if parts.is_empty() || bucket.status != jackin_protocol::control::UsageSnapshotStatus::Fresh
-        {
-            parts.push(Self::usage_status_label(bucket.status));
-        }
-        parts.join(" · ")
-    }
-
     fn usage_meter(remaining_percent: u8) -> String {
         const WIDTH: usize = 32;
         let remaining = usize::from(remaining_percent.min(100));
@@ -336,19 +199,6 @@ impl Dialog {
             "█".repeat(filled),
             "·".repeat(WIDTH.saturating_sub(filled))
         )
-    }
-
-    fn usage_status_label(status: jackin_protocol::control::UsageSnapshotStatus) -> String {
-        match status {
-            jackin_protocol::control::UsageSnapshotStatus::Fresh => "fresh",
-            jackin_protocol::control::UsageSnapshotStatus::Stale => "stale",
-            jackin_protocol::control::UsageSnapshotStatus::NeedsLogin => "needs login",
-            jackin_protocol::control::UsageSnapshotStatus::NeedsSecret => "needs secret",
-            jackin_protocol::control::UsageSnapshotStatus::Unsupported => "unsupported",
-            jackin_protocol::control::UsageSnapshotStatus::Unavailable => "unavailable",
-            jackin_protocol::control::UsageSnapshotStatus::Error => "error",
-        }
-        .to_owned()
     }
 
     pub fn new_usage(view: jackin_protocol::control::FocusedUsageView) -> Self {

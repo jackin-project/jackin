@@ -25,8 +25,27 @@ cargo clippy -p jackin-usage-ffi --all-targets -- -D warnings
 | `overview_rows` → `OverviewRowDto` | Popover + Usage-window overview |
 | `next_refresh_label` | Next refresh countdown / due |
 | `UsageViewDto.estimate_caption` | Honesty caption when estimated |
+| `UsageViewDto.detail_presentation` → `UsageDetailPresentationDto` | Rust-owned Capsule-parity provider-detail card (rows/lines mirror `UsageDetailPresentation`); the Usage window renders it verbatim |
 
 Existing methods (`snapshot`, `compact_status_bar_label`, …) are unchanged.
+
+`QuotaBucketDto.status_slot` projects the protocol `StatusSlot` as an exact
+lowercase string — `"session"`, `"daily"`, `"weekly"`, `"spend"`. `"daily"`
+carries Amp Free's daily-allowance glance; Swift renders it and never re-derives it.
+
+`QuotaBucketDto` also carries the Rust-owned limits-only presentation
+(`remaining_label`, `display_segments`, `display_label`, `meter_percent`), so
+Swift renders the segments verbatim. `provider_glance_rows()` (Swift
+`providerGlanceRows()`) returns `ProviderGlanceRowDto` — the selected-account-aware
+seven-provider Desktop glance rows in canonical order. `OpenConfig.allow_live_probes`
+maps to the Rust `HostProbePolicy` (false = smoke/defense mode, no live probes).
+
+`UsageViewDto.detail_presentation` (`UsageDetailPresentationDto` → Swift
+`detailPresentation`) mirrors the shared Rust `UsageDetailPresentation` — the same
+rows/strings/order the Capsule usage dialog renders. Each `UsageDetailRowDto` carries
+`row_id` (position-based `bucket:<i>` for buckets), `kind` (`metadata`/`bucket`/`detail`),
+`label`, grouped `layout_lines` (`leading`/`trailing`), `display_label`, `meter_percent`,
+and `severity`. Swift renders these verbatim and never splits, joins, or reorders them.
 
 ## Swift bindings
 

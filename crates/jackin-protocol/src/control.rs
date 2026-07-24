@@ -462,6 +462,29 @@ impl FocusedUsageView {
         view.updated_label.push_str("Refreshing");
         view
     }
+
+    /// True only for the exact cold [`Self::refreshing`] placeholder invariant:
+    /// `Unavailable`, `None` source/confidence, empty buckets, empty account
+    /// label, no username/plan/credential origin, and the exact `"refreshing"`
+    /// status-bar/error and `"Refreshing"` updated strings. Surface decoration
+    /// of `focused_provider`/`focused_agent`/`tabs`/`provider_label` is allowed
+    /// and does not make this false. A Fresh/Stale/Error view, any view carrying
+    /// a bucket/account/credential, or a single matching display string is
+    /// false. Host DTO code calls this so no looser host/Swift copy can drift.
+    #[must_use]
+    pub fn is_refreshing_placeholder(&self) -> bool {
+        self.status == UsageSnapshotStatus::Unavailable
+            && self.source == UsageSource::None
+            && self.confidence == UsageConfidence::None
+            && self.buckets.is_empty()
+            && self.account.account_label.is_empty()
+            && self.account.username.is_none()
+            && self.account.plan_label.is_none()
+            && self.account.credential_origin.is_none()
+            && self.status_bar_label == "refreshing"
+            && self.updated_label == "Refreshing"
+            && self.last_error.as_deref() == Some("refreshing")
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -485,15 +508,17 @@ pub struct FocusedAccountHeader {
     pub credential_origin: Option<String>,
 }
 
-/// Which slot of the canonical `Session N% · Weekly N%` status-bar headline a
-/// quota window fills. Set by the provider snapshot that builds the bucket (it
-/// knows the window's role), so the status bar reads this semantic tag instead
-/// of substring-matching free-text labels.
+/// Which semantic glance slot a quota window fills for the status-bar headline
+/// (e.g. `Session N% · Weekly N%`, or Amp's `Daily`). Set by the provider
+/// snapshot that builds the bucket (it knows the window's role), so the status
+/// bar reads this semantic tag instead of substring-matching free-text labels.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum StatusSlot {
     /// `Session` variant.
     Session,
+    /// Daily allowance glance (Amp Free's `N% remaining today`).
+    Daily,
     /// `Weekly` variant.
     Weekly,
     /// Monetary spend against a cap (Claude `extra_usage`/`spend`, Codex credits).
@@ -625,6 +650,69 @@ pub struct QuotaBucketView {
     /// API-reported severity for color-grading the meter / status chip.
     #[serde(default)]
     pub severity: UsageSeverity,
+}
+
+/// One already-grouped visual line of a [`UsageDetailRow`]. `leading` is the
+/// left-column text and `trailing` the right-column text; either may be absent.
+/// Flattening a line is `leading` then `trailing`; flattening a row's lines
+/// preserves vector order. Both strings are finished display data — no consumer
+/// reformats, splits, or reorders them.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct UsagePresentationLine {
+    /// Left-column finished string, when present.
+    pub leading: Option<String>,
+    /// Right-column finished string, when present.
+    pub trailing: Option<String>,
+}
+
+/// Layout kind of a [`UsageDetailRow`]. Pure layout metadata for the renderer;
+/// never prose. `Metadata` is an identity/status field, `Bucket` a quota window
+/// (carries `meter_percent`/`severity`), `Detail` the trailing degradation row.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum UsageDetailRowKind {
+    /// Identity/status metadata field.
+    Metadata,
+    /// A quota/spend window.
+    Bucket,
+    /// The trailing degradation (`last_error`) row.
+    Detail,
+}
+
+/// One row of the shared provider-detail card. `display_label` is the
+/// accessibility/Capsule semantic value and MUST equal the row's non-empty line
+/// fields joined in vector order with `" · "`. `meter_percent`/`severity` are
+/// geometry/style metadata (buckets only); consumers never turn them into text.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct UsageDetailRow {
+    /// Stable identity: fixed slug for metadata/detail rows, `bucket:<index>`
+    /// (zero-based source position) for bucket rows so duplicate provider labels
+    /// stay distinct. Never derived from the visible label.
+    pub row_id: String,
+    /// Layout kind (never prose).
+    pub kind: UsageDetailRowKind,
+    /// Rust-owned row label (left gutter title).
+    pub label: String,
+    /// Already-grouped visual lines in display order.
+    pub layout_lines: Vec<UsagePresentationLine>,
+    /// `layout_lines` non-empty fields joined in order with `" · "`.
+    pub display_label: String,
+    /// Meter geometry (bucket rows): remaining for ordinary/credits, used for
+    /// Spend. Not visible text.
+    pub meter_percent: Option<u8>,
+    /// API severity for meter/chip color-grading. Not visible text.
+    pub severity: UsageSeverity,
+}
+
+/// The complete Rust-owned provider-detail card: rows in the fixed order
+/// `focused`, `header`, `provider`, `account`, `status`, `updated`, optional
+/// `username`/`plan`/`auth`, one `bucket:<index>` per source bucket in source
+/// order, then optional `detail`. Capsule and Desktop render these rows
+/// mechanically without splitting, joining, reordering, or relabeling.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct UsageDetailPresentation {
+    /// Detail rows in canonical order.
+    pub rows: Vec<UsageDetailRow>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

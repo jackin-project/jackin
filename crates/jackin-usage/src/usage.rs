@@ -43,8 +43,8 @@ mod zai;
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]
 pub(crate) use self::amp::{
-    AmpApiUsage, AmpCliUsage, amp_free_reset_label, amp_snapshot, fetch_amp_api_usage,
-    fetch_amp_cli_usage, load_amp_api_key, parse_amp_usage_output,
+    AmpSuccessContext, AmpUsage, AmpWorkspaceBalance, amp_snapshot, amp_view_from_usage,
+    fetch_amp_api_usage, fetch_amp_cli_usage, load_amp_api_key, parse_amp_usage_output,
 };
 pub use self::claude::ClaudeUsageDiagnostic;
 #[expect(
@@ -55,14 +55,18 @@ pub(crate) use self::claude::{
     ClaudeCliUsage, ClaudeOAuthCredentials, ClaudeOAuthExtraUsage, ClaudeOAuthLimit,
     ClaudeOAuthLimitModel, ClaudeOAuthLimitScope, ClaudeOAuthMoney, ClaudeOAuthSpend,
     ClaudeOAuthUsageResponse, ClaudeOAuthUsageWindow, ClaudeQuotaWindow, ClaudeSpend,
-    claude_account_identity, claude_code_user_agent, claude_code_user_agent_with,
-    claude_code_version_from_text, claude_email_from_value, claude_oauth_candidates,
-    claude_oauth_from_value, claude_organization_type_from_value, claude_snapshot,
-    claude_spend_bucket, fetch_claude_cli_usage, fetch_claude_oauth_usage,
-    load_claude_account_email, normalize_claude_spend, push_claude_dollar_windows,
+    ClaudeWavePolicy, ClaudeWaveResolution, claude_account_identity, claude_code_user_agent,
+    claude_code_user_agent_with, claude_code_version_from_text, claude_email_from_value,
+    claude_oauth_candidates, claude_oauth_from_value, claude_organization_type_from_value,
+    claude_snapshot, claude_spend_bucket, claude_view_from_wave, claude_wave_policy,
+    fetch_claude_cli_usage, fetch_claude_oauth_usage, load_claude_account_email,
+    normalize_claude_spend, push_claude_dollar_windows, resolve_claude_wave,
 };
 #[cfg(test)]
-pub(crate) use self::claude::{load_claude_oauth_credentials, load_claude_organization_type};
+pub(crate) use self::claude::{
+    ClaudeFileProbe, ClaudeKeychainRead, ClaudeKeychainState, classify_claude_keychain_status,
+    load_claude_oauth_credentials, load_claude_organization_type, resolve_claude_refresh_wave_with,
+};
 #[cfg(test)]
 pub(crate) use self::codex::load_codex_oauth_credentials;
 #[expect(
@@ -87,13 +91,13 @@ pub(crate) use self::codex::{
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]
 pub(crate) use self::grok::{
-    GrokBillingCycle, GrokBillingResponse, GrokBillingSnapshot, GrokBillingUsage, GrokCent,
+    GrokBillingConfig, GrokBillingResponse, GrokBillingSnapshot, GrokCent, GrokCurrentPeriod,
     GrokWebBillingSnapshot, fetch_grok_billing, fetch_grok_rpc_billing, fetch_grok_web_billing,
     grok_account_label, grok_account_label_or_presence, grok_bearer_token,
     grok_bearer_token_from_entry, grok_binary_path, grok_cycle_label_from_minutes,
-    grok_cycle_label_from_reset, grok_plan_label, grok_rpc_request, grok_rpc_request_payload,
-    grok_snapshot, grok_snapshot_from_rpc_result, grpc_web_data_frames,
-    parse_grok_web_billing_response, scan_protobuf,
+    grok_cycle_label_from_reset, grok_rpc_request, grok_rpc_request_payload, grok_snapshot,
+    grok_snapshot_from_rpc_result, grpc_web_data_frames, parse_grok_web_billing_response,
+    scan_protobuf,
 };
 #[expect(
     unused_imports,
@@ -110,9 +114,10 @@ pub(crate) use self::kimi::{
 )]
 pub(crate) use self::minimax::{
     MiniMaxBaseResponse, MiniMaxComboCard, MiniMaxModelRemain, MiniMaxUsageData,
-    MiniMaxUsageResponse, MiniMaxWindow, fetch_minimax_usage, minimax_bucket, minimax_bucket_label,
-    minimax_is_general_model, minimax_remains_host, minimax_reset_epoch, minimax_snapshot,
-    minimax_usage_count_line, resolve_minimax_remains_urls, resolve_minimax_remains_urls_from,
+    MiniMaxUsageResponse, MiniMaxWindow, fetch_minimax_usage, first_minimax_usage, minimax_bucket,
+    minimax_bucket_label, minimax_is_general_model, minimax_operation_path, minimax_remains_host,
+    minimax_reset_epoch, minimax_snapshot, minimax_usage_count_line, resolve_minimax_remains_urls,
+    resolve_minimax_remains_urls_from,
 };
 #[expect(
     unused_imports,
@@ -136,14 +141,14 @@ pub(crate) use self::refresh::{
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]
 pub(crate) use self::view::{
-    UsageViewInput, account_snapshot_views_from_cache, amp_credit_status_label,
-    amp_status_bar_headline, bucket, cached_refreshing_view, cached_unavailable_view,
-    compact_account_identity, contains_word, decorate_surface_view, enrich_provider_tabs,
-    mark_active_tab, most_constrained_fresh_bucket, preserve_cached_quota_on_failed_refresh,
-    provider_matches_usage_label, provider_tabs, quota_amounts_for_account_snapshot,
-    spend_headline_label, stale_shared_view, status_bar_fresh_or_stale,
-    status_bar_headline_for_surface, status_bar_label, status_bar_quota_labels, surface_from_text,
-    timed_bucket, usage_tab_source_label, usage_tab_status_label, usage_view, with_status_slot,
+    UsageViewInput, account_snapshot_views_from_cache, amp_status_bar_headline, bucket,
+    cached_refreshing_view, cached_unavailable_view, compact_account_identity, contains_word,
+    decorate_surface_view, enrich_provider_tabs, mark_active_tab, most_constrained_fresh_bucket,
+    preserve_cached_quota_on_failed_refresh, provider_matches_usage_label, provider_tabs,
+    quota_amounts_for_account_snapshot, spend_headline_label, stale_shared_view,
+    status_bar_fresh_or_stale, status_bar_headline_for_surface, status_bar_label,
+    status_bar_quota_labels, surface_from_text, timed_bucket, usage_tab_source_label,
+    usage_tab_status_label, usage_view, with_status_slot,
 };
 #[expect(
     unused_imports,
@@ -157,12 +162,11 @@ pub(crate) use self::zai::{
 
 use format::{
     CliOutput, codex_account_from_value, codex_limit_label, compact_count, dollar_amounts,
-    env_value, expiry_label, first_number_key, first_string_key, format_amount_with_unit,
-    format_cents, format_currency, home_path, humanize_plan_label, humanize_words_with,
-    json_number, local_timestamp_label, oauth_origin, parse_iso_epoch, percent_before_used,
-    quota_pace_label, remaining_from_fraction, reset_label, run_cli_with_timeout,
-    run_cli_with_timeout_full, titlecase_ascii, used_percent_from_fraction, used_percent_label,
-    window_minutes_label,
+    env_value, expiry_label, first_string_key, format_amount_with_unit, format_cents,
+    format_currency, home_path, humanize_plan_label, humanize_words_with, json_number,
+    oauth_origin, parse_iso_epoch, percent_before_used, quota_pace_label, remaining_from_fraction,
+    reset_label, run_cli_with_timeout, run_cli_with_timeout_full, titlecase_ascii,
+    used_percent_from_fraction, used_percent_label, window_minutes_label,
 };
 // Crate-visible re-exports for host overview/compact presentation (plan 008).
 pub(crate) use format::{
@@ -203,6 +207,10 @@ pub struct UsageCache {
     accounts_materialize_path: PathBuf,
     telemetry_persist_failed: bool,
     accounts_materialize_failed: bool,
+    /// Per-cache-key typed snapshot policy from the last refresh. Local-only
+    /// entries (Claude Keychain denial/missing/anonymous) are excluded from
+    /// account materialization and host durable/shared history restoration.
+    active_snapshot_policy: HashMap<String, UsageSnapshotPolicy>,
     /// Test seam: count of shared-snapshot JSON reads during seeding.
     #[cfg(test)]
     pub(crate) shared_snapshot_json_reads: u64,
@@ -216,6 +224,7 @@ pub(crate) struct CachedUsage {
 pub(crate) struct UsageRefreshResult {
     pub(crate) target: UsageRefreshTarget,
     pub(crate) view: FocusedUsageView,
+    pub(crate) policy: UsageSnapshotPolicy,
     pub(crate) codex_rpc_gate: ManagedCliLaunchGate,
     pub(crate) grok_rpc_gate: ManagedCliLaunchGate,
 }
@@ -495,7 +504,7 @@ impl UsageCache {
         let results = collect_usage_refresh_results(due_targets, move |target| {
             let mut codex_rpc_gate = codex_rpc_gate.clone();
             let mut grok_rpc_gate = grok_rpc_gate.clone();
-            let view = build_snapshot(
+            let built = build_snapshot(
                 &target.agent,
                 target.provider.as_deref(),
                 &provider_keys,
@@ -504,7 +513,8 @@ impl UsageCache {
             );
             UsageRefreshResult {
                 target,
-                view,
+                view: built.view,
+                policy: built.policy,
                 codex_rpc_gate,
                 grok_rpc_gate,
             }
@@ -514,23 +524,33 @@ impl UsageCache {
             let UsageRefreshResult {
                 target,
                 mut view,
+                policy,
                 codex_rpc_gate,
                 grok_rpc_gate,
             } = result;
             let cache_key = canonical_usage_cache_key(&target.agent, target.provider.as_deref());
-            if let Some(cached) = self.snapshots.get(&cache_key) {
+            // A local-only resolution (Keychain denial, missing credential, or an
+            // anonymous credential with no proven identity) never restores stale
+            // cached quota and never enters shared persistence/materialization.
+            if !policy.is_local_only()
+                && let Some(cached) = self.snapshots.get(&cache_key)
+            {
                 preserve_cached_quota_on_failed_refresh(&mut view, &cached.view);
             }
             enrich_provider_tabs(&mut view, &self.snapshots);
             self.snapshots
                 .insert(cache_key.clone(), CachedUsage { view: view.clone() });
+            self.active_snapshot_policy
+                .insert(cache_key.clone(), policy);
             match resolve_surface(&target.agent, target.provider.as_deref()) {
                 UsageSurface::Codex => self.codex_rpc_gate = codex_rpc_gate,
                 UsageSurface::Grok => self.grok_rpc_gate = grok_rpc_gate,
                 _ => {}
             }
             self.refresh_schedule.mark_refreshed(&target, now, &view);
-            stored_views.push(view);
+            if !policy.is_local_only() {
+                stored_views.push(view);
+            }
         }
         if !stored_views.is_empty() {
             let result = crate::usage_snapshot_store::store_usage_snapshots(
@@ -628,13 +648,38 @@ impl UsageCache {
     }
 
     pub(crate) fn materialize_accounts(&self, generated_at_epoch: i64) -> Result<(), String> {
-        let snapshots: Vec<&FocusedUsageView> =
-            self.snapshots.values().map(|cached| &cached.view).collect();
+        // Local-only entries (Claude Keychain denial/missing/anonymous) carry no
+        // proven cross-account identity, so they never enter account materialization.
+        let snapshots: Vec<&FocusedUsageView> = self
+            .snapshots
+            .iter()
+            .filter(|(cache_key, _)| {
+                !self
+                    .active_snapshot_policy
+                    .get(*cache_key)
+                    .copied()
+                    .unwrap_or(UsageSnapshotPolicy::Shared)
+                    .is_local_only()
+            })
+            .map(|(_, cached)| &cached.view)
+            .collect();
         write_materialized_usage_accounts(
             &self.accounts_materialize_path,
             generated_at_epoch,
             &snapshots,
         )
+    }
+
+    /// Typed active snapshot policy for a surface (defaults to `Shared`).
+    pub(crate) fn active_snapshot_policy(
+        &self,
+        agent: &str,
+        provider: Option<&str>,
+    ) -> UsageSnapshotPolicy {
+        self.active_snapshot_policy
+            .get(&canonical_usage_cache_key(agent, provider))
+            .copied()
+            .unwrap_or(UsageSnapshotPolicy::Shared)
     }
 }
 
@@ -650,6 +695,7 @@ impl Default for UsageCache {
             accounts_materialize_path: PathBuf::from(MATERIALIZED_USAGE_ACCOUNTS_PATH),
             telemetry_persist_failed: false,
             accounts_materialize_failed: false,
+            active_snapshot_policy: HashMap::new(),
             #[cfg(test)]
             shared_snapshot_json_reads: 0,
         }
@@ -851,7 +897,10 @@ pub fn estimate_caption(view: &FocusedUsageView) -> Option<String> {
     }
 }
 
-pub use self::format::{PercentStyle, ResetStyle, UsageFormatPrefs};
+pub use self::format::{
+    PercentStyle, ResetStyle, UsageBucketPresentation, UsageFormatPrefs, usage_bucket_presentation,
+    usage_detail_presentation, usage_display_status_label,
+};
 
 pub fn usage_status_storage_label(status: UsageSnapshotStatus) -> &'static str {
     match status {
@@ -884,15 +933,86 @@ pub fn usage_confidence_storage_label(confidence: UsageConfidence) -> &'static s
     }
 }
 
+/// Why a snapshot must stay local to this process — a typed reason, never
+/// inferred from error text. All three block cached-quota preservation, shared
+/// adoption/coordination, persisted snapshot writes, and account materialization.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum LocalOnlyReason {
+    /// Operator denied the Keychain consent — terminal for the process.
+    Denied,
+    /// No usable credential — needs-login/fallback with no provider I/O.
+    MissingCredential,
+    /// Credential present but no proven cross-account identity.
+    AnonymousCredential,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum UsageSnapshotPolicy {
+    Shared,
+    LocalOnly(LocalOnlyReason),
+}
+
+impl UsageSnapshotPolicy {
+    pub(crate) fn is_local_only(self) -> bool {
+        matches!(self, Self::LocalOnly(_))
+    }
+}
+
+pub(crate) struct BuiltUsageSnapshot {
+    pub(crate) view: FocusedUsageView,
+    pub(crate) policy: UsageSnapshotPolicy,
+}
+
 pub(crate) fn build_snapshot(
     agent: &str,
     provider: Option<&str>,
     provider_keys: &BTreeMap<jackin_protocol::Provider, String>,
     codex_rpc_gate: &mut ManagedCliLaunchGate,
     grok_rpc_gate: &mut ManagedCliLaunchGate,
-) -> FocusedUsageView {
+) -> BuiltUsageSnapshot {
     let surface = resolve_surface(agent, provider);
     let now = now_epoch();
+    if surface == UsageSurface::Claude {
+        let resolution = resolve_claude_wave();
+        let policy = match claude_wave_policy(&resolution) {
+            ClaudeWavePolicy::Shared => UsageSnapshotPolicy::Shared,
+            ClaudeWavePolicy::LocalDenied => {
+                UsageSnapshotPolicy::LocalOnly(LocalOnlyReason::Denied)
+            }
+            ClaudeWavePolicy::LocalMissing => {
+                UsageSnapshotPolicy::LocalOnly(LocalOnlyReason::MissingCredential)
+            }
+            ClaudeWavePolicy::LocalAnonymous => {
+                UsageSnapshotPolicy::LocalOnly(LocalOnlyReason::AnonymousCredential)
+            }
+        };
+        let view = claude_view_from_wave(agent, provider, now, resolution);
+        return BuiltUsageSnapshot { view, policy };
+    }
+    let view = build_provider_view(
+        agent,
+        provider,
+        surface,
+        now,
+        provider_keys,
+        codex_rpc_gate,
+        grok_rpc_gate,
+    );
+    BuiltUsageSnapshot {
+        view,
+        policy: UsageSnapshotPolicy::Shared,
+    }
+}
+
+fn build_provider_view(
+    agent: &str,
+    provider: Option<&str>,
+    surface: UsageSurface,
+    now: i64,
+    provider_keys: &BTreeMap<jackin_protocol::Provider, String>,
+    codex_rpc_gate: &mut ManagedCliLaunchGate,
+    grok_rpc_gate: &mut ManagedCliLaunchGate,
+) -> FocusedUsageView {
     match surface {
         UsageSurface::Claude => claude_snapshot(agent, provider, now),
         UsageSurface::Codex => codex_snapshot(agent, provider, now, codex_rpc_gate),

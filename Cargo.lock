@@ -3061,7 +3061,7 @@ dependencies = [
 
 [[package]]
 name = "jackin-dev"
-version = "0.1.35"
+version = "0.1.36"
 dependencies = [
  "anyhow",
  "clap",
@@ -3451,6 +3451,7 @@ dependencies = [
  "jackin-telemetry",
  "nix 0.31.3",
  "reqwest",
+ "security-framework",
  "serde",
  "serde_json",
  "tempfile",

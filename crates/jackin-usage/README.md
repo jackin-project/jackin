@@ -14,6 +14,12 @@ usage/spend trends as product features.
 - Host orchestration (`host`) — `HostUsageRuntime` for menu bar / CLI without Capsule.
 - Usage snapshot persistence (`usage_snapshot_store`) and token-accounting telemetry (`telemetry`).
 - Usage output shaping (`output`).
+- Provider probes (`usage/<provider>.rs`). Amp's API and CLI paths share one
+  `parse_amp_usage_output` reader for the current `userDisplayBalanceInfo.displayText`
+  contract: the `Amp Free: N% remaining today (resets daily)` line becomes a semantic
+  `StatusSlot::Daily` glance bucket (`Resets daily`, no exact timestamp), while individual
+  and per-workspace credit balances stay detail-only quota bounds — never a glance
+  percentage or plan inference.
 
 ## Architecture tier and allowed dependencies
 
@@ -43,6 +49,12 @@ UniFFI lives in sibling crate `jackin-usage-ffi`.
 Token-monitor and usage-accounting types consumed by `jackin-capsule`.
 `host::HostUsageRuntime` for jackin❯ Desktop and the host CLI.
 
+Claude credential resolution (`usage/claude.rs`) reads the macOS Keychain before any file/env credential, using the shared `jackin_core::claude_keychain_scope` service derivation. Each refresh resolves one Keychain-first wave and classifies a typed `UsageSnapshotPolicy`: `Shared`, or `LocalOnly` for a Keychain denial, missing credential, or anonymous credential. Local-only outcomes never restore stale cached quota, enter shared adoption/coordination, persist snapshots, or materialize accounts, and the host snapshot/account-list boundaries return only the live local view for them. A denial is terminal for the service for the process; a missing item is re-checked every wave.
+
+`quota_pace_label` (`usage/format.rs`) appends the Variant A run-out segment `"<pace> · Runs out in <duration>"` — emitted from Rust only when the linear-from-window-start projection runs out before the reset (exact integer cross-products; the TUI and Swift splitters split on the `" · "` separator unchanged).
+
+Grok billing (`usage/grok.rs`) decodes the current ACP `x.ai/billing` `config` shape: the plan label is the server-resolved `subscription_tier` (no `auth_mode` heuristic), one Weekly headline carries pace when a positive window is derivable (RPC path), and prepaid balance / on-demand cap+used render as quota bounds only (never a price or history).
+
 Host display extensions (plan 008; presentation-time only, not persisted):
 
 | API | Role |
@@ -55,6 +67,10 @@ Host display extensions (plan 008; presentation-time only, not persisted):
 | `HostUsageRuntime::compact_status_bar_strip` | Worst-first multi-surface strip |
 | `HostUsageRuntime::overview_rows` | Overview rows for popover + Usage window |
 | `HostUsageRuntime::next_refresh_label` | `Next update in …` / `Next update due` |
+| `usage::usage_bucket_presentation` / `usage_display_status_label` | Rust-owned limits-only quota-bucket segments (shared by Capsule + Desktop) |
+| `usage::usage_detail_presentation` | Rust-owned Capsule-parity provider-detail card (`UsageDetailPresentation`): fixed row order, position-based `bucket:<i>` ids, grouped `layout_lines`; consumed verbatim by the Capsule dialog and the Desktop Usage window |
+| `host::HostProviderGlanceRow` / `HostUsageRuntime::provider_glance_rows` | Selected-account-aware seven-provider Desktop glance rows (`DESKTOP_PROVIDER_ORDER`) |
+| `host::HostProbePolicy` | `Live` / `Disabled` (smoke-mode probe suppression) |
 
 Avoid cloning full usage views during account materialization — serialize from borrowed views/iterators.
 

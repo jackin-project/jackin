@@ -32,7 +32,46 @@ struct DesktopArchitectureLint {
             fputs("FAIL  JackinDesktop sources not found at \(desktop.path)\n", stderr)
             exit(2)
         }
+        let bridgeRoot = desktop.deletingLastPathComponent()
+            .appendingPathComponent("JackinUsageBridge")
+        checkBridgeSerialization(bridgeRoot: bridgeRoot)
         run(desktopRoot: desktop)
+    }
+
+    /// Plan 002 Step 5: every `UsageMenuBarBridge` access must be serialized off
+    /// the main actor through `RefreshScheduler`, so `PresentationStore` holds no
+    /// bridge reference and makes no direct `bridge.` calls — the only bridge
+    /// access is inside `scheduler.run { … }` closures (whose parameter is named
+    /// `handle`). A stray `bridge.` in code would re-introduce a main-actor
+    /// freeze during a Keychain consent sheet.
+    static func checkBridgeSerialization(bridgeRoot: URL) {
+        let store = bridgeRoot.appendingPathComponent("PresentationStore.swift")
+        guard let text = try? String(contentsOf: store, encoding: .utf8) else {
+            fputs("FAIL  PresentationStore.swift not found for bridge-serialization scan\n", stderr)
+            exit(2)
+        }
+        var offenders: [Int] = []
+        for (index, rawLine) in text.split(separator: "\n", omittingEmptySubsequences: false)
+            .enumerated()
+        {
+            // Strip line/inline comments before scanning for code access.
+            let code = String(rawLine).components(separatedBy: "//").first ?? ""
+            if code.contains("bridge.") || code.contains("UsageMenuBarBridge") {
+                offenders.append(index + 1)
+            }
+        }
+        if offenders.isEmpty && text.contains("scheduler") {
+            print("PASS  PresentationStore.swift serializes all bridge access via RefreshScheduler")
+        } else {
+            for line in offenders {
+                print("FAIL  PresentationStore.swift:\(line) direct bridge access outside RefreshScheduler")
+            }
+            if !text.contains("scheduler") {
+                print("FAIL  PresentationStore.swift does not reference RefreshScheduler")
+            }
+            print("DesktopArchitectureLint: bridge-serialization FAILURE")
+            exit(1)
+        }
     }
 
     static func run(desktopRoot: URL) {

@@ -167,7 +167,8 @@ pub(super) fn quota_pace_label(
     window_seconds: Option<i64>,
     now: i64,
 ) -> Option<String> {
-    let remaining_percent = f64::from(remaining_percent?);
+    let remaining_percent_raw = remaining_percent?;
+    let remaining_percent = f64::from(remaining_percent_raw);
     let reset_in = reset_at?.saturating_sub(now).max(0);
     let window_seconds = window_seconds?.max(1);
     if reset_in > window_seconds {
@@ -181,13 +182,31 @@ pub(super) fn quota_pace_label(
     // carried separately in the bucket's reset label, so the pace token stays a
     // bare phrase exactly as the previews show.
     let delta = remaining_percent - time_left_percent;
-    if delta.abs() <= 2.0 {
-        Some("On pace".to_owned())
+    let pace = if delta.abs() <= 2.0 {
+        "On pace".to_owned()
     } else if delta > 0.0 {
-        Some(format!("{}% in reserve", delta.round() as i64))
+        format!("{}% in reserve", delta.round() as i64)
     } else {
-        Some(format!("{}% in deficit", (-delta).round() as i64))
+        format!("{}% in deficit", (-delta).round() as i64)
+    };
+    // Variant A run-out: append `· Runs out in <duration>` only when the linear
+    // projection from window start runs out before the reset. Compare exact
+    // integer cross-products (float delta is display math and can round a
+    // clock-equality case slightly negative).
+    let used = 100_i128 - i128::from(remaining_percent_raw);
+    let elapsed = window_seconds - reset_in;
+    let behind_clock = i128::from(remaining_percent_raw) * i128::from(window_seconds)
+        < i128::from(reset_in) * 100_i128;
+    if used > 0 && elapsed > 0 && behind_clock {
+        let numerator = i128::from(remaining_percent_raw) * i128::from(elapsed);
+        let display_seconds = (numerator + used / 2) / used;
+        let display_seconds = i64::try_from(display_seconds).ok()?;
+        return Some(format!(
+            "{pace} · Runs out in {}",
+            compact_duration_label(display_seconds)
+        ));
     }
+    Some(pace)
 }
 
 pub(crate) fn compact_duration_label(seconds: i64) -> String {
@@ -475,18 +494,6 @@ pub(super) fn first_string_key(value: &serde_json::Value, needle: &str) -> Optio
     }
 }
 
-pub(super) fn first_number_key(value: &serde_json::Value, needle: &str) -> Option<f64> {
-    match value {
-        serde_json::Value::Object(map) => {
-            if let Some(found) = map.get(needle).and_then(json_number) {
-                return Some(found);
-            }
-            map.values().find_map(|v| first_number_key(v, needle))
-        }
-        serde_json::Value::Array(values) => values.iter().find_map(|v| first_number_key(v, needle)),
-        _ => None,
-    }
-}
 pub(super) fn home_path(rel: &str) -> PathBuf {
     let rel = rel.trim_start_matches('/');
     std::env::var("HOME")
@@ -521,4 +528,264 @@ pub(super) fn compact_count(value: u64) -> String {
     } else {
         value.to_string()
     }
+}
+
+/// Rust-owned, limits-only presentation of one quota bucket. Shared by the
+/// Capsule usage dialog and every native Desktop surface so semantic segment
+/// choice and order live in Rust, never in Swift or a per-surface copy.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UsageBucketPresentation {
+    /// Provider percentage text (segment 0), when the bucket has one.
+    pub remaining_label: Option<String>,
+    /// Complete semantic segments in display order (a Rust pace composite is
+    /// flattened onto the canonical `" · "` separator).
+    pub display_segments: Vec<String>,
+    /// `display_segments` joined with the canonical `" · "` separator.
+    pub display_label: String,
+    /// Percentage usable only as presentation geometry (meter fill): remaining
+    /// for normal/credits buckets, used for the Spend slot.
+    pub meter_percent: Option<u8>,
+}
+
+/// Stable human status label for a snapshot status (limits-only; no price).
+#[must_use]
+pub fn usage_display_status_label(
+    status: jackin_protocol::control::UsageSnapshotStatus,
+) -> &'static str {
+    use jackin_protocol::control::UsageSnapshotStatus as S;
+    match status {
+        S::Fresh => "fresh",
+        S::Stale => "stale",
+        S::NeedsLogin => "needs login",
+        S::NeedsSecret => "needs secret",
+        S::Unsupported => "unsupported",
+        S::Unavailable => "unavailable",
+        S::Error => "error",
+    }
+}
+
+fn usage_money_cap_segment(
+    used: Option<&str>,
+    limit: Option<&str>,
+    prefix: &str,
+) -> Option<String> {
+    match (used, limit) {
+        (Some(used), Some(limit)) => Some(format!("{prefix}: {used} / {limit}")),
+        (Some(label), None) | (None, Some(label)) => Some(label.to_owned()),
+        (None, None) => None,
+    }
+}
+
+/// Build the shared limits-only presentation for one quota bucket. The segment
+/// choice/order matches the Capsule usage dialog exactly; the Capsule meter is
+/// prepended by the caller from [`UsageBucketPresentation::meter_percent`].
+#[must_use]
+pub fn usage_bucket_presentation(
+    bucket: &jackin_protocol::control::QuotaBucketView,
+) -> UsageBucketPresentation {
+    use jackin_protocol::control::{StatusSlot, UsageSnapshotStatus};
+
+    let mut segments: Vec<String> = Vec::new();
+    let mut remaining_label = None;
+    let mut meter_percent = None;
+
+    if bucket.status_slot == Some(StatusSlot::Spend) {
+        if let Some(remaining) = bucket.remaining_percent {
+            let used = 100u8.saturating_sub(remaining);
+            let segment = format!("{used}% used");
+            remaining_label = Some(segment.clone());
+            segments.push(segment);
+            meter_percent = Some(used);
+        }
+        if let Some(cap) = usage_money_cap_segment(
+            bucket.used_label.as_deref(),
+            bucket.limit_label.as_deref(),
+            "Monthly cap",
+        ) {
+            segments.push(cap);
+        }
+        if segments.is_empty() || bucket.status != UsageSnapshotStatus::Fresh {
+            segments.push(usage_display_status_label(bucket.status).to_owned());
+        }
+    } else {
+        if let Some(remaining) = bucket.remaining_percent {
+            let segment =
+                if bucket.label == "Credits" && remaining == 0 && bucket.limit_label.is_some() {
+                    "0 left".to_owned()
+                } else {
+                    format!("{remaining}% left")
+                };
+            remaining_label = Some(segment.clone());
+            segments.push(segment);
+            meter_percent = Some(remaining);
+        }
+        if let Some(pace) = &bucket.pace_label {
+            segments.push(pace.clone());
+        }
+        if let Some(reset) = &bucket.reset_label {
+            segments.push(reset.clone());
+        }
+        if (bucket.used_money.is_some() || bucket.limit_money.is_some())
+            && let Some(budget) = usage_money_cap_segment(
+                bucket.used_label.as_deref(),
+                bucket.limit_label.as_deref(),
+                "Budget",
+            )
+        {
+            segments.push(budget);
+        } else if bucket.label == "Credits"
+            && bucket.remaining_percent == Some(0)
+            && let Some(limit) = &bucket.limit_label
+        {
+            segments.push(limit.clone());
+        }
+        // Balance-only quota (no percent, pace, reset, or money) surfaces its
+        // limit label as the primary segment — the generic seam Grok's prepaid
+        // balance consumes (plan 003). Buckets with any other segment are
+        // unaffected, so existing Capsule output stays byte-identical.
+        if segments.is_empty()
+            && let Some(limit) = &bucket.limit_label
+        {
+            segments.push(limit.clone());
+        }
+        if segments.is_empty() || bucket.status != UsageSnapshotStatus::Fresh {
+            segments.push(usage_display_status_label(bucket.status).to_owned());
+        }
+    }
+
+    // Flatten a Rust pace composite (e.g. `"13% in deficit · Runs out in 2d"`)
+    // onto the canonical separator so every segment is atomic.
+    let display_segments: Vec<String> = segments
+        .iter()
+        .flat_map(|segment| segment.split(" · ").map(str::to_owned))
+        .collect();
+    let display_label = display_segments.join(" · ");
+    UsageBucketPresentation {
+        remaining_label,
+        display_segments,
+        display_label,
+        meter_percent,
+    }
+}
+
+/// The focused-header value line: `<agent> · <provider> · <account>` with the
+/// account falling back to `account unavailable`. Moved here from Capsule so the
+/// Desktop Usage window and the Capsule dialog share one wording (plan 008).
+fn usage_focused_label(view: &jackin_protocol::control::FocusedUsageView) -> String {
+    let account = view.account.account_label.trim();
+    let account = if account.is_empty() {
+        "account unavailable"
+    } else {
+        account
+    };
+    match (&view.focused_agent, &view.focused_provider) {
+        (Some(agent), Some(provider)) => format!("{agent} · {provider} · {account}"),
+        (Some(agent), None) => format!("{agent} · {account}"),
+        (None, Some(provider)) => format!("{provider} · {account}"),
+        (None, None) => format!("no focused agent · {account}"),
+    }
+}
+
+/// One leading-only metadata line plus its `display_label`.
+fn metadata_row(
+    row_id: &str,
+    label: &str,
+    value: String,
+) -> jackin_protocol::control::UsageDetailRow {
+    jackin_protocol::control::UsageDetailRow {
+        row_id: row_id.to_owned(),
+        kind: jackin_protocol::control::UsageDetailRowKind::Metadata,
+        label: label.to_owned(),
+        display_label: value.clone(),
+        layout_lines: vec![jackin_protocol::control::UsagePresentationLine {
+            leading: Some(value),
+            trailing: None,
+        }],
+        meter_percent: None,
+        severity: jackin_protocol::control::UsageSeverity::Normal,
+    }
+}
+
+/// Build the single Rust-owned provider-detail card shared by the Capsule usage
+/// dialog and the native Desktop Usage window. Emits rows in the fixed order
+/// `focused`, `header`, `provider`, `account`, `status`, `updated`, optional
+/// `username`/`plan`/`auth`, one `bucket:<zero-based index>` per source bucket
+/// (so duplicate provider labels stay distinct), then optional `detail`
+/// (`last_error`, appended after the last-good bucket rows — errors never
+/// replace data). Every visible string is produced here; consumers render the
+/// rows mechanically.
+#[must_use]
+pub fn usage_detail_presentation(
+    view: &jackin_protocol::control::FocusedUsageView,
+) -> jackin_protocol::control::UsageDetailPresentation {
+    use jackin_protocol::control::{UsageDetailRow, UsageDetailRowKind, UsagePresentationLine};
+
+    let mut rows = vec![
+        metadata_row("focused", "Focused", usage_focused_label(view)),
+        metadata_row(
+            "header",
+            "Header",
+            super::provider_display_label(&view.account.provider_label).to_owned(),
+        ),
+        metadata_row("provider", "Provider", view.account.provider_label.clone()),
+        metadata_row("account", "Account", view.account.account_label.clone()),
+        metadata_row(
+            "status",
+            "Status",
+            usage_display_status_label(view.status).to_owned(),
+        ),
+        metadata_row("updated", "Updated", view.updated_label.clone()),
+    ];
+    if let Some(username) = &view.account.username {
+        rows.push(metadata_row("username", "Username", username.clone()));
+    }
+    if let Some(plan) = &view.account.plan_label {
+        rows.push(metadata_row("plan", "Plan", plan.clone()));
+    }
+    if let Some(origin) = &view.account.credential_origin {
+        rows.push(metadata_row("auth", "Auth", origin.clone()));
+    }
+
+    for (index, bucket) in view.buckets.iter().enumerate() {
+        let presentation = usage_bucket_presentation(bucket);
+        // Canonical semantic order is already flattened in `display_segments`
+        // (remaining, pace/run-out, reset, quota-bound/status). The reset
+        // segment moves to the trailing column so the window can right-align it;
+        // every other segment is a leading line. Order — and therefore the
+        // joined `display_label` — is preserved either way.
+        let layout_lines: Vec<UsagePresentationLine> = presentation
+            .display_segments
+            .iter()
+            .map(|segment| {
+                if bucket.reset_label.as_deref() == Some(segment.as_str()) {
+                    UsagePresentationLine {
+                        leading: None,
+                        trailing: Some(segment.clone()),
+                    }
+                } else {
+                    UsagePresentationLine {
+                        leading: Some(segment.clone()),
+                        trailing: None,
+                    }
+                }
+            })
+            .collect();
+        rows.push(UsageDetailRow {
+            row_id: format!("bucket:{index}"),
+            kind: UsageDetailRowKind::Bucket,
+            label: bucket.label.clone(),
+            display_label: presentation.display_label,
+            layout_lines,
+            meter_percent: presentation.meter_percent,
+            severity: bucket.severity,
+        });
+    }
+
+    if let Some(error) = &view.last_error {
+        let mut row = metadata_row("detail", "Detail", error.clone());
+        row.kind = UsageDetailRowKind::Detail;
+        rows.push(row);
+    }
+
+    jackin_protocol::control::UsageDetailPresentation { rows }
 }
