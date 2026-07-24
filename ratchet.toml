@@ -57,6 +57,9 @@ mode = "enforce"
 key = "clippy::cast_precision_loss@jackin-launch"
 bound = 2
 [[family.entry]]
+key = "clippy::cast_precision_loss@jackin-usage"
+bound = 1
+[[family.entry]]
 key = "clippy::cast_sign_loss@jackin-capsule"
 bound = 6
 [[family.entry]]
@@ -67,7 +70,7 @@ key = "clippy::cast_sign_loss@jackin-launch"
 bound = 9
 [[family.entry]]
 key = "clippy::cast_sign_loss@jackin-usage"
-bound = 12
+bound = 11
 [[family.entry]]
 key = "clippy::cognitive_complexity@jackin-runtime"
 bound = 1
@@ -415,7 +418,7 @@ key = "clippy::wildcard_imports@jackin-term"
 bound = 2
 [[family.entry]]
 key = "clippy::wildcard_imports@jackin-usage"
-bound = 7
+bound = 6
 [[family.entry]]
 key = "dead_code@jackin"
 bound = 1
@@ -530,7 +533,7 @@ key = "crates/jackin-console/README.md"
 bound = 2553
 [[family.entry]]
 key = "crates/jackin-core/README.md"
-bound = 5351
+bound = 5618
 [[family.entry]]
 key = "crates/jackin-dev/README.md"
 bound = 1199
@@ -575,7 +578,7 @@ key = "crates/jackin-otlp-testbed/README.md"
 bound = 1122
 [[family.entry]]
 key = "crates/jackin-protocol/README.md"
-bound = 1325
+bound = 2275
 [[family.entry]]
 key = "crates/jackin-runtime/README.md"
 bound = 3652
@@ -593,10 +596,10 @@ key = "crates/jackin-tui/README.md"
 bound = 1812
 [[family.entry]]
 key = "crates/jackin-usage/README.md"
-bound = 3365
+bound = 5825
 [[family.entry]]
 key = "crates/jackin-usage-ffi/README.md"
-bound = 1220
+bound = 2652
 [[family.entry]]
 key = "crates/jackin-xtask/README.md"
 bound = 6027
