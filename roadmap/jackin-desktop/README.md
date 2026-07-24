@@ -629,3 +629,18 @@ dialog; numbers come from the same Rust views).
   obsolete OpenUsage Usage-window assertions were updated to the new Rust-detail-row
   model (a required edit to `native/Tools/**` past the plan's Tools-out-of-scope
   note, since they encoded the exact synthesis this plan removes).
+- 2026-07-24 — execution — plan 009 ran the Liquid Glass + limits-only design
+  polish audit and found the confinement invariant already satisfied: every
+  `#available(macOS 26)`, `glassEffect`, and `.…Material` token lives only in
+  `GlassFallbacks.swift`, and each surface already routes chrome→glass /
+  content→standard-material helpers (plans 005–008 built them that way), so no
+  surface file changed. Locked the invariant with three source-confinement
+  XCTests in `ArchitectureTests.swift` and confirmed the runnable
+  `DesktopArchitectureLint` / `DesktopParityMatrixHarness` gates enforce it. The
+  limits-only literal sweep (`$/token`, spend/usage trends, histories,
+  aggregate-spend/rankings) is clean, and the Capsule-design audit found every
+  surface matching (severity tint semantics, Rust-owned field order, dimmed-stale
+  degradation) with zero D7 escalations. Verified via `desktop test` (nextest +
+  all three harnesses ALL PASS) + `desktop build` + `desktop verify` + ephemeral
+  launch smoke. Deviation: the three new XCTests are unrunnable here (no XCTest on
+  the CLT-only host); confinement is enforced by the runnable harnesses + greps.

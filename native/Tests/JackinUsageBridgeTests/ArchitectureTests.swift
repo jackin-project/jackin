@@ -83,6 +83,62 @@ final class ArchitectureTests: XCTestCase {
         }
     }
 
+    func testGlassEffectOnlyInGlassFallbacks() throws {
+        // B2: the Liquid Glass API is chrome-only and confined to the gate file.
+        for file in try handwrittenSwiftFiles() {
+            let text = try String(contentsOf: file, encoding: .utf8)
+            let hasGlass = text.contains("glassEffect")
+            if file.lastPathComponent == "GlassFallbacks.swift" {
+                XCTAssertTrue(hasGlass, "GlassFallbacks.swift must own the glassEffect API")
+            } else {
+                XCTAssertFalse(
+                    hasGlass,
+                    "\(file.lastPathComponent) must not call glassEffect — route via GlassFallbacks"
+                )
+            }
+        }
+    }
+
+    func testSystemMaterialFallbacksOnlyInGlassFallbacks() throws {
+        // Dotted tokens only, so doc comments naming a material stay legal.
+        let regex = try NSRegularExpression(
+            pattern: #"\.(ultraThin|thin|regular|thick|ultraThick)Material"#
+        )
+        for file in try handwrittenSwiftFiles() {
+            let text = try String(contentsOf: file, encoding: .utf8)
+            let range = NSRange(text.startIndex..., in: text)
+            let hits = regex.numberOfMatches(in: text, range: range)
+            if file.lastPathComponent == "GlassFallbacks.swift" {
+                XCTAssertGreaterThan(hits, 0, "GlassFallbacks.swift owns the material fallbacks")
+            } else {
+                XCTAssertEqual(
+                    hits,
+                    0,
+                    "\(file.lastPathComponent) must not use a system material — route via GlassFallbacks"
+                )
+            }
+        }
+    }
+
+    func testDesktopSourcesContainNoForbiddenUsagePresentation() throws {
+        // N3/B4: independent display-literal ban (token prices, spend/usage trends,
+        // histories, aggregate-spend/ranking chrome) across every handwritten source.
+        let forbidden = [
+            "$/token", "$/mtok", "cost of session", "spend over time", "usage trend",
+            "token history", "spend history", "aggregate spend", "top model",
+            "30-day token", "30-day spend",
+        ]
+        for file in try handwrittenSwiftFiles() {
+            let text = try String(contentsOf: file, encoding: .utf8).lowercased()
+            for token in forbidden {
+                XCTAssertFalse(
+                    text.contains(token),
+                    "\(file.lastPathComponent) must not surface \(token) — limits-only (N3/B4)"
+                )
+            }
+        }
+    }
+
     func testNoSwiftPercentArithmeticOnDisplayStrings() throws {
         // Heuristic: handwritten UI must not invent percentages via string
         // interpolation of computed used/remaining math into Text(...).
