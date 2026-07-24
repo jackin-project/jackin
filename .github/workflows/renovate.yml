@@ -32,7 +32,7 @@ jobs:
           sudo chown -R "${renovate_uid:-12021}:0" /tmp/renovate
       - name: Self-hosted Renovate
         if: ${{ env.RENOVATE_TOKEN != '' }}
-        uses: renovatebot/github-action@22e0a16091fc706b04affe6ae53d5e3358ac4023 # v46.1.19
+        uses: renovatebot/github-action@3064367f740a1a91cca218698a63902689cce200 # v46.1.20
         with:
           token: ${{ env.RENOVATE_TOKEN }}
         env:
