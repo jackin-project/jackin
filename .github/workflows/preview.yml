@@ -367,6 +367,33 @@ jobs:
           timings-artifact-name: cargo-timings-preview-jackin-${{ matrix.target.target }}-${{ matrix.config.lane }}
           sccache-stats-artifact-name: sccache-stats-preview-jackin-${{ matrix.target.target }}-${{ matrix.config.lane }}
           sccache-stats-heading: sccache preview jackin ${{ matrix.target.target }} (${{ matrix.config.lane }})
+      - name: Package validator compatibility artifact
+        if: matrix.config.lane == 'GitHub' && contains(matrix.target.target, 'linux')
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target.target }}
+        run: |
+          set -euo pipefail
+          archive="jackin-role-${TARGET}.tar.gz"
+          tar --sort=name \
+            --mtime="@0" \
+            --owner=0 \
+            --group=0 \
+            --numeric-owner \
+            -cf - \
+            -C "target/${TARGET}/release" \
+            jackin-role |
+            gzip -n > "$archive"
+          sha256sum "$archive" > "$archive.sha256"
+      - name: Upload validator compatibility artifact
+        if: matrix.config.lane == 'GitHub' && contains(matrix.target.target, 'linux')
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: jackin-role-${{ matrix.target.target }}
+          path: |
+            jackin-role-${{ matrix.target.target }}.tar.gz
+            jackin-role-${{ matrix.target.target }}.tar.gz.sha256
+          retention-days: 7
 
   build-jackin-capsule:
     name: build preview capsule (${{ matrix.config.lane }}, ${{ matrix.target.target }})
