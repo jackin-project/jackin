@@ -70,6 +70,8 @@ Swift `LSUIElement` menu bar (display only)
 
 Swift must not own HTTP/RPC/OAuth/CLI scrapes or a second provider matrix.
 
+The glance popover is a display-only SwiftUI composition — a tab grid over the Rust glance rows, an Overview tab (one row per provider), a provider tab (header + account chips + a generic `displaySegments` bucket path), and a Refresh-only footer — hosted in the status item's transient `NSPopover`. Every provider, order, label, number, and segment comes from Rust; the `onOpenUsage` header seam is bound by plan 007.
+
 The status bar is one AppKit `NSStatusItem` per auto-detected provider, reconciled from the Rust-owned seven-provider glance list (`provider_glance_rows`): an `@main` AppKit bootstrap + `StatusBarController` create/update/remove items by Rust `surfaceId` in canonical order, show a single jackin❯ fallback item when none is detected, dim stale/error, and host one transient popover. Each item displays the Rust `barLabel` verbatim — no SwiftUI `MenuBarExtra`, severity tint, mini meter, or percent math in Swift.
 
 Rust owns semantic status-bar glance slots via `StatusSlot` (`session`, `daily`, `weekly`, `spend`); `daily` carries Amp Free's daily allowance. Amp's API and CLI paths share one `displayText` parser producing that Daily glance bucket, with individual/workspace credit balances as detail-only quota bounds — never a glance percentage or inferred plan.

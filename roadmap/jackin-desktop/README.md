@@ -589,3 +589,10 @@ dialog; numbers come from the same Rust views).
   a real `desktop build` and ephemeral launch smoke (app comes up as a
   menu-bar accessory without crashing). Legacy membership-toggle removal
   deferred to plan 006 (owns the popover); XCTest suites unavailable here.
+- 2026-07-24 — execution — plan 006 redesigned the glance popover as a
+  display-only Rust-driven composition (tab grid + Overview tab + provider tab
+  with account chips and a generic `displaySegments` bucket path + Refresh
+  footer), with `popoverSelection`/`refreshInProgress` state and an
+  `onOpenUsage` seam for plan 007. Verified via `desktop test` (harnesses ALL
+  PASS) + `desktop build` + launch smoke. SwiftUI PNG render-snapshot tests
+  unavailable on the CLT-only host.
