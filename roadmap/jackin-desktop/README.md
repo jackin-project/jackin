@@ -654,9 +654,13 @@ dialog; numbers come from the same Rust views).
   read-only secrets check found `release-macos` present but with **zero** Apple
   secrets/variables — publish needs operator Path A provisioning
   (`native/README.md`), which must never be created or substituted here. The
-  `mode=validate` dispatch failed on a pre-existing base-branch infra bug
-  (`mise.lock` missing `cosign@3.1.2`) before the cask job ran — unrelated to the
-  plan diff. Also reconciled this program's own accumulated lint drift so
+  `mode=validate` dispatches (2) both failed inside `build-usage-menu-bar` on
+  pre-existing base-branch infra bugs before the cask job ran — unrelated to the
+  plan diff: first the `mise.lock` cosign 3.1.1/3.1.2 drift (fixed here), then a
+  missing `cargo-nextest` in the GitHub-lane app job's mise install_args (fixing
+  that needs a release.yml edit outside the cask heredoc — a plan-010 STOP, out of
+  scope, flagged for the operator). The reconciliation fixtures pass locally.
+  Also reconciled this program's own accumulated lint drift so
   `cargo xtask lint --strict` is green again: regenerated the telemetry
   error-ownership census and updated four README doc-byte budgets + three
   jackin-usage expect budgets in `ratchet.toml`.
