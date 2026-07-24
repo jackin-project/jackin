@@ -153,6 +153,11 @@ public final class PresentationStore: ObservableObject {
     @Published public private(set) var accounts: [AccountRow] = []
     /// Sidebar / detail selection: `nil` = Overview, else surface id.
     @Published public var usageSelection: String?
+    /// Popover tab selection: `nil` = Overview, else provider surface id.
+    @Published public var popoverSelection: String?
+    /// True only while an enqueued refresh request runs its bridge operation —
+    /// drives the popover/footer spinner. Never clears glance rows or surfaces.
+    @Published public private(set) var refreshInProgress = false
     @Published public private(set) var lastError: String?
     @Published public private(set) var isOpen: Bool = false
     /// True from the moment a cold open is submitted until it succeeds/fails, so
@@ -458,12 +463,16 @@ public final class PresentationStore: ObservableObject {
         refreshTask?.cancel()
         let task = Task { [weak self] in
             guard let self else { return }
+            // Refresh-request activity drives the spinner; other bridge commands
+            // (open/poll/settings/account/shutdown) never set it.
+            self.refreshInProgress = true
             do {
                 try await self.scheduler.run { try $0.refresh(surfaceId: nil, force: force) }
             } catch {
                 self.lastError = String(describing: error)
             }
             await self.applySnapshots()
+            self.refreshInProgress = false
         }
         refreshTask = task
         await task.value
@@ -472,12 +481,14 @@ public final class PresentationStore: ObservableObject {
     public func refresh(surfaceId: String) {
         Task { [weak self] in
             guard let self else { return }
+            self.refreshInProgress = true
             do {
                 try await self.scheduler.run { try $0.refresh(surfaceId: surfaceId, force: true) }
                 await self.applySnapshots()
             } catch {
                 self.lastError = String(describing: error)
             }
+            self.refreshInProgress = false
         }
     }
 
