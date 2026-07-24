@@ -20,7 +20,7 @@ plugins = [
   "github@claude-plugins-official",
   "security-guidance@claude-plugins-official",
   "pr-review-toolkit@claude-plugins-official",
-  "tailrocks-skills@tailrocks-marketplace",
+  "tailrocks-skills@tailrocks-skills",
   "caveman@caveman",
 ]
 
@@ -34,7 +34,7 @@ model = "MiniMax-M3[1m]"
 model = "kimi-for-coding"
 
 [[claude.marketplaces]]
-source = "tailrocks/tailrocks-marketplace"
+source = "tailrocks/tailrocks-skills"
 
 [[claude.marketplaces]]
 source = "JuliusBrussee/caveman"

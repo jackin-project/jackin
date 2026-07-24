@@ -2,7 +2,7 @@
 # Fail commit if jackin.role.toml declares a plugin from a marketplace
 # outside the allow-list. Wired to .pre-commit-config.yaml.
 set -euo pipefail
-ALLOW='@(claude-plugins-official|tailrocks-marketplace|caveman)'
+ALLOW='@(claude-plugins-official|tailrocks-skills|caveman)'
 bad=$(grep -E '"[^@]+@[^"]+"' jackin.role.toml | grep -Ev "$ALLOW" || true)
 if [[ -n "$bad" ]]; then
   echo "Plugin from undocumented marketplace:" >&2
