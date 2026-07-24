@@ -1,6 +1,6 @@
 # jackin❯ Desktop — agent usage macOS status bar
 
-- **Status**: IN EXECUTION
+- **Status**: DONE
 - **Slug**: jackin-desktop
 - **Created**: 2026-07-24 · **Updated**: 2026-07-24
 - **Plan**: [`plans/jackin-desktop/`](../../plans/jackin-desktop/README.md)
@@ -668,3 +668,4 @@ dialog; numbers come from the same Rust views).
   jackin-usage expect budgets in `ratchet.toml`.
 - 2026-07-24 — execution reconciliation — plan 010's validate lane is green in run 30092919141 after provisioning the repository-pinned `cargo-nextest` already invoked by its offline reconciliation step. Public notarized Homebrew activation is REJECTED from this program: the `release-macos` environment has no required Apple secret or variable names, and publish, notarization, tap mutation, and tap merge remain explicitly unauthorized. Readiness remains complete; no production artifact or install proof is claimed.
 - 2026-07-24 — execution — plan 011 retired `plans/native-macos-usage-menu-bar/` as superseded history and reconciled the published roadmap, native package README, and operator guide to the shipped per-provider status items, Refresh-only Agent Usage preview, Capsule-parity Usage window, no Settings surface, limits-only contract, and rejected public-activation boundary. Docs build, repository links, roadmap/research audits, TypeScript, and docs tests pass.
+- 2026-07-24 — completion — all implementation-plan rows are terminal (001–009 and 011 DONE; 010 REJECTED because public notarized Homebrew activation requires absent Apple authority and prohibited publish/tap-merge actions). On final current HEAD, `cargo xtask ci --fast` exits 0 with `ci gate OK`; `cargo xtask desktop test` exits 0 with 246/246 Rust tests and all three Swift harnesses passing.

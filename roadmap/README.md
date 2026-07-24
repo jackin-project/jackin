@@ -2,4 +2,4 @@
 
 | Slug | Title | Status | Plan | Updated |
 |------|-------|--------|------|---------|
-| jackin-desktop | jackin❯ Desktop — agent usage macOS status bar | IN EXECUTION | [plan](../plans/jackin-desktop/README.md) | 2026-07-24 |
+| jackin-desktop | jackin❯ Desktop — agent usage macOS status bar | DONE | [plan](../plans/jackin-desktop/README.md) | 2026-07-24 |
