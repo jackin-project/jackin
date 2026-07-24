@@ -596,3 +596,16 @@ dialog; numbers come from the same Rust views).
   `onOpenUsage` seam for plan 007. Verified via `desktop test` (harnesses ALL
   PASS) + `desktop build` + launch smoke. SwiftUI PNG render-snapshot tests
   unavailable on the CLT-only host.
+- 2026-07-24 — execution — plan 007 wired the window entry paths: a pure
+  `StatusItemMenuModel` (static three-row context menu Open Usage Window ·
+  Refresh · Quit) + `StatusItemMenuRouter` in the bridge target, an AppKit
+  `StatusItemMenu` that builds the `NSMenu`, `StatusBarController.handleClick`
+  splitting right-click (context menu) from left-click (popover) via one button
+  action on both mouse-up phases, and a lazy `UsageWindowController` that owns
+  the single Usage `NSWindow` and focuses it through
+  `PresentationStore.selectUsageSurface(_:)`. Provider-header clicks route the
+  006 `onOpenUsage` seam to the window and dismiss the popover; the menu Refresh
+  row calls the same forced `refreshAll()` the footer uses. Verified via
+  `desktop test` (menu-model/router checks added to `StatusItemChipHarness`) +
+  `desktop build` + ephemeral launch smoke. Deviation: model/router XCTest suites
+  replaced by the runnable harness checks — XCTest unavailable on the CLT-only host.

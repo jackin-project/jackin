@@ -97,17 +97,19 @@ Click the status item for a **CodexBar-style Overview** (clean-room layout):
 
 1. **Agent tile grid** at the top — Overview plus every host surface (Claude, Codex, Amp, Grok Build, GLM / Z.AI, Kimi, MiniMax, OpenCode). Enabled tiles can show a short **remaining %** badge under the name; severity underline / tint follows Rust.
 2. **Stacked detail** under the grid — with **Overview** selected, every **enabled** agent’s full quota block is listed (identity, plan/updated, capacity bars, primary **`% left`** / **`% used`**, reset, pace, money when Rust supplies them). Select one agent tile to focus that agent only.
-3. Click an agent header (or Open Usage) to open the **Usage window** on that provider.
+3. Click an agent header to open the **Usage window** focused on that provider; the popover closes as it opens.
 
-Footer actions: **Open Usage…**, **Refresh** (⌘R), **Settings…** (⌘,), **Quit** (⌘Q), plus next-refresh caption. When no surfaces are enabled, the first-run note points you at Settings — there is no credential-harvesting UI.
+Footer: a single **Refresh** (⌘R) row plus the next-refresh caption. When no surfaces are enabled, the first-run note points you at Settings — there is no credential-harvesting UI.
+
+**Status-item clicks.** **Left-click** a provider item toggles the popover on that provider's tab. **Right-click** any provider item opens a static context menu with exactly three rows — **Open Usage Window**, **Refresh**, **Quit jackin❯ Desktop** — and nothing else. Open Usage Window opens/focuses the Usage window on its current selection (Overview when none); Refresh runs the same forced Rust-owned refresh the popover footer does; Quit terminates the app.
 
 ## Usage window
 
-From the glance popover choose **Open Usage…** or click an agent identity header. A normal resizable window opens:
+Click an agent identity header in the popover, or choose **Open Usage Window** from a provider item's right-click menu. A normal resizable window opens:
 
 - **Sidebar** — Overview plus every enabled provider (Capsule tab order) with a severity accent.
 - **Detail** — Overview list shows each agent’s **Session/Weekly remaining stack** (bars + `% left` / `% used` + reset) when Rust has dual buckets; select a provider for the full card (account, plan, auth origin, gauges, pace/money, estimate caption). Settings **Percent style** applies everywhere.
-- **⌘R** refreshes; **Esc** closes; **Settings…** opens Settings. The app stays a status-item process (`LSUIElement` — no Dock icon).
+- **⌘R** refreshes; **Esc** closes. The app stays a status-item process (`LSUIElement` — no Dock icon).
 
 All numbers and labels are the same Rust views the Capsule usage dialog uses. Rust models each provider's semantic Session/Weekly glance slots (Weekly-only where a provider has no Session window), while **Amp Free** uses its exact **Daily** allowance (`N% remaining today`, resets daily). Individual and per-workspace credit balances stay detail-only quota bounds and never become the status headline.
 

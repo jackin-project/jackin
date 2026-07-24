@@ -19,12 +19,29 @@ final class StatusBarController: NSObject {
     private let popover = NSPopover()
     private weak var anchoredButton: NSStatusBarButton?
     private var cancellables: Set<AnyCancellable> = []
+    /// Opens the Usage window focused on a provider (`nil` = Overview).
+    private let onOpenUsage: (String?) -> Void
+    private let menu: NSMenu
 
-    init(store: PresentationStore) {
+    init(
+        store: PresentationStore,
+        menuRouter: StatusItemMenuRouter,
+        onOpenUsage: @escaping (String?) -> Void
+    ) {
         self.store = store
+        self.onOpenUsage = onOpenUsage
+        self.menu = StatusItemMenu(router: menuRouter).build()
         super.init()
         popover.behavior = .transient
-        popover.contentViewController = NSHostingController(rootView: PopoverRoot(store: store))
+        // Provider-header click opens the Usage window focused on that provider
+        // and dismisses the popover (plan 007 binds the seam plan 006 exposed).
+        popover.contentViewController = NSHostingController(
+            rootView: PopoverRoot(store: store) { [weak self] surfaceId in
+                self?.popover.performClose(nil)
+                self?.anchoredButton = nil
+                self?.onOpenUsage(surfaceId)
+            }
+        )
 
         store.$providerGlanceRows
             .receive(on: RunLoop.main)
@@ -63,8 +80,8 @@ final class StatusBarController: NSObject {
         item.autosaveName = "jackin.desktop.status.\(surfaceId)"
         if let button = item.button {
             button.target = self
-            button.action = #selector(togglePopover(_:))
-            button.sendAction(on: [.leftMouseUp])
+            button.action = #selector(handleClick(_:))
+            button.sendAction(on: [.leftMouseUp, .rightMouseUp])
         }
         return item
     }
@@ -86,8 +103,8 @@ final class StatusBarController: NSObject {
         if let button = item.button {
             button.image = StatusItemRendering.fallbackIcon()
             button.target = self
-            button.action = #selector(togglePopover(_:))
-            button.sendAction(on: [.leftMouseUp])
+            button.action = #selector(handleClick(_:))
+            button.sendAction(on: [.leftMouseUp, .rightMouseUp])
             button.setAccessibilityLabel("jackin❯ Desktop usage")
         }
         fallbackItem = item
@@ -126,7 +143,20 @@ final class StatusBarController: NSObject {
         fallbackItem = nil
     }
 
-    @objc private func togglePopover(_ sender: NSStatusBarButton) {
+    @objc private func handleClick(_ sender: NSStatusBarButton) {
+        // Right-click shows the static context menu; left-click toggles the popover.
+        if NSApp.currentEvent?.type == .rightMouseUp {
+            menu.popUp(
+                positioning: nil,
+                at: NSPoint(x: 0, y: sender.bounds.height + 4),
+                in: sender
+            )
+            return
+        }
+        togglePopover(sender)
+    }
+
+    private func togglePopover(_ sender: NSStatusBarButton) {
         // Anchored to the same button → toggle closed.
         if popover.isShown, anchoredButton === sender {
             popover.performClose(sender)
@@ -161,6 +191,7 @@ final class DesktopAppDelegate: NSObject, NSApplicationDelegate {
     let store: PresentationStore
     private let launchConfiguration: PresentationStore.LaunchConfiguration
     private var statusBar: StatusBarController?
+    private var usageWindow: UsageWindowController?
 
     override init() {
         self.launchConfiguration = PresentationStore.LaunchConfiguration.resolve(
@@ -178,7 +209,16 @@ final class DesktopAppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         store.openForLaunch(launchConfiguration)
-        statusBar = StatusBarController(store: store)
+        let usageWindow = UsageWindowController(store: store)
+        self.usageWindow = usageWindow
+        let router = StatusItemMenuRouter(
+            openUsageWindow: { [weak usageWindow] surfaceId in usageWindow?.show(focusOn: surfaceId) },
+            refresh: { [weak store] in store?.refreshAll() },
+            quit: { NSApp.terminate(nil) }
+        )
+        statusBar = StatusBarController(store: store, menuRouter: router) { [weak usageWindow] surfaceId in
+            usageWindow?.show(focusOn: surfaceId)
+        }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
@@ -192,6 +232,8 @@ final class DesktopAppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         statusBar?.invalidate()
         statusBar = nil
+        usageWindow?.invalidate()
+        usageWindow = nil
         store.shutdown()
     }
 }

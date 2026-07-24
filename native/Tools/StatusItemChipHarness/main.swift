@@ -51,6 +51,32 @@ struct StatusItemChipHarness {
             desktopProviderSystemImage(iconKey: "cursor") == nil
         )
 
+        // --- Status-item context menu model + router (plan 007) ---
+        check(
+            "menu rows are Open Usage / Refresh / Quit",
+            StatusItemMenuModel.rows.map(\.action)
+                == [.openUsageWindow, .refresh, .quit]
+        )
+        do {
+            var opened: [String?] = []
+            var refreshed = 0
+            var quit = 0
+            let router = StatusItemMenuRouter(
+                openUsageWindow: { opened.append($0) },
+                refresh: { refreshed += 1 },
+                quit: { quit += 1 }
+            )
+            router.dispatch(.openUsageWindow)
+            router.dispatch(.refresh)
+            router.dispatch(.quit)
+            router.openUsage(focusOn: "codex")
+            check("router dispatches menu actions", refreshed == 1 && quit == 1)
+            check(
+                "router opens usage overview then focused provider",
+                opened == [nil, "codex"]
+            )
+        }
+
         // --- Pure token helpers ---
         check("remaining token default", statusItemPercentToken(remainingPercent: 37) == "37%")
         check(
