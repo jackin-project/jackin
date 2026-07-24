@@ -22,6 +22,9 @@ preconditions first, every verification run, status/roadmap rows updated,
 and the plan's signed/coauthored commit pushed to the resolved active remote
 head. Re-read the hub at every iteration.
 
+Execute the entire 001–011 implementation on one branch. Resolve or create
+that branch once at kickoff; never switch branches or create per-plan branches.
+
 The operator pre-authorizes all routine in-scope reversible implementation
 actions without confirmation: branch creation when starting on main, scoped
 edits, current primary-source lookup, subagents/tools/tests, signed commits,
@@ -60,7 +63,9 @@ roadmap item.
 Re-read plans/jackin-desktop/README.md and continue by its Executor protocol
 and Autonomous execution authority. Reconcile stale statuses against the live
 repository before choosing the next eligible plan. No routine confirmation is
-required. For each undictated decision or blocker, use at least two
+required. Keep all 001–011 work on the single branch resolved at kickoff;
+never switch or create a per-plan branch. For each undictated decision or
+blocker, use at least two
 independent subagents, compare evidence-backed approaches, repair narrow plan
 drift, self-unblock, implement, verify, commit, and push. Mark BLOCKED only at
 the hub's proven hard-limit threshold. Never force-push, merge,
