@@ -40,7 +40,7 @@ jobs:
           MISE_CACHE_DIR: ${{ runner.temp }}/mise-cache
           MISE_CONFIG_DIR: ${{ runner.temp }}/mise-config
         with:
-          version: "2026.7.7"
+          version: "2026.7.12"
           install_args: python uv pipx:reuse
           cache_save: ${{ github.ref == 'refs/heads/main' }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
