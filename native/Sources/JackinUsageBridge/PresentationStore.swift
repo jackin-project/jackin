@@ -80,6 +80,34 @@ public final class PresentationStore: ObservableObject {
         /// Rust money fields (display-only; formatted in the shell).
         public let usedMoney: MoneyDto?
         public let limitMoney: MoneyDto?
+        /// Rust-owned limits-only presentation (rendered verbatim; never recomputed).
+        public let remainingLabel: String?
+        public let displaySegments: [String]
+        public let displayLabel: String
+        public let meterPercent: UInt8?
+    }
+
+    /// One Rust-owned provider glance row projected verbatim (no computed usage
+    /// values in Swift). `id == surfaceId`.
+    public struct GlanceProviderRow: Identifiable, Sendable, Equatable {
+        public var id: String { surfaceId }
+        public let surfaceId: String
+        public let iconKey: String
+        public let displayLabel: String
+        public let accountLabel: String
+        public let planLabel: String?
+        public let glanceRemainingPercent: UInt8?
+        public let barLabel: String
+        public let headline: String
+        public let resetLabel: String?
+        public let exactReset: String?
+        public let statusWord: String
+        public let isRefreshing: Bool
+        public let statusLabel: String
+        public let severity: String
+        public let updatedLabel: String
+        public let lastError: String?
+        public let dimmed: Bool
     }
 
     public struct OverviewRow: Identifiable, Sendable, Equatable {
@@ -115,6 +143,8 @@ public final class PresentationStore: ObservableObject {
     /// Footer / window next-refresh string from Rust.
     @Published public private(set) var nextRefreshLabel: String = ""
     @Published public private(set) var surfaces: [SurfaceRow] = []
+    /// Rust-owned seven-provider glance rows (auto-detected, canonical order).
+    @Published public private(set) var providerGlanceRows: [GlanceProviderRow] = []
     @Published public private(set) var overviewRows: [OverviewRow] = []
     /// Known accounts across surfaces (multi-account host logins / shared snapshots).
     @Published public private(set) var accounts: [AccountRow] = []
@@ -468,13 +498,15 @@ public final class PresentationStore: ObservableObject {
                 }
                 let overview = try handle.overviewRows()
                 let accounts = (try? handle.listAccounts(surfaceId: nil)) ?? []
+                let glanceRows = (try? handle.providerGlanceRows()) ?? []
                 return BridgeProjection(
                     mergedBarLabel: merged,
                     compactBarLabel: compact,
                     nextRefreshLabel: nextRefresh,
                     surfaces: surfaces,
                     overviewRows: overview,
-                    accounts: accounts
+                    accounts: accounts,
+                    glanceRows: glanceRows
                 )
             }
         } catch {
@@ -546,7 +578,11 @@ public final class PresentationStore: ObservableObject {
                         severity: bucket.severity,
                         status: bucket.status,
                         usedMoney: bucket.usedMoney,
-                        limitMoney: bucket.limitMoney
+                        limitMoney: bucket.limitMoney,
+                        remainingLabel: bucket.remainingLabel,
+                        displaySegments: bucket.displaySegments,
+                        displayLabel: bucket.displayLabel,
+                        meterPercent: bucket.meterPercent
                     )
                 },
                 updatedLabel: view.updatedLabel,
@@ -574,6 +610,28 @@ public final class PresentationStore: ObservableObject {
                 selected: row.selected,
                 remainingPercent: row.remainingPercent,
                 statusWord: row.statusWord
+            )
+        }
+        // Rust owns detection, ordering, and every string — project verbatim.
+        providerGlanceRows = projection.glanceRows.map { row in
+            GlanceProviderRow(
+                surfaceId: row.surfaceId,
+                iconKey: row.iconKey,
+                displayLabel: row.displayLabel,
+                accountLabel: row.accountLabel,
+                planLabel: row.planLabel,
+                glanceRemainingPercent: row.glanceRemainingPercent,
+                barLabel: row.barLabel,
+                headline: row.headline,
+                resetLabel: row.resetLabel,
+                exactReset: row.exactReset,
+                statusWord: row.statusWord,
+                isRefreshing: row.isRefreshing,
+                statusLabel: row.statusLabel,
+                severity: row.severity,
+                updatedLabel: row.updatedLabel,
+                lastError: row.lastError,
+                dimmed: row.dimmed
             )
         }
         lastError = nil
@@ -761,4 +819,5 @@ private struct BridgeProjection: Sendable {
     let surfaces: [SurfaceProjection]
     let overviewRows: [OverviewRowDto]
     let accounts: [AccountDescriptorDto]
+    let glanceRows: [ProviderGlanceRowDto]
 }
