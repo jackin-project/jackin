@@ -145,6 +145,9 @@ public final class PresentationStore: ObservableObject {
     @Published public private(set) var surfaces: [SurfaceRow] = []
     /// Rust-owned seven-provider glance rows (auto-detected, canonical order).
     @Published public private(set) var providerGlanceRows: [GlanceProviderRow] = []
+    /// Presentation-only privacy flag: `false` hides the Rust status-bar values
+    /// during screen sharing (it may hide a Rust label, never replace it).
+    @Published public private(set) var statusBarShowsValues = true
     @Published public private(set) var overviewRows: [OverviewRow] = []
     /// Known accounts across surfaces (multi-account host logins / shared snapshots).
     @Published public private(set) var accounts: [AccountRow] = []
@@ -283,10 +286,71 @@ public final class PresentationStore: ObservableObject {
         }
     }
 
+    /// How this launch should open the runtime. Smoke mode is defense-in-depth
+    /// for the isolated launch test: a non-home data root and no live probes.
+    public enum LaunchConfiguration: Sendable, Equatable {
+        case production
+        case ephemeralSmoke(dataDir: String)
+
+        /// Resolve from the environment: an absolute, non-home
+        /// `JACKIN_DESKTOP_SMOKE_DATA_DIR` selects ephemeral smoke; else production.
+        public static func resolve(
+            environment: [String: String],
+            homeDirectory: String
+        ) -> LaunchConfiguration {
+            if let dir = environment["JACKIN_DESKTOP_SMOKE_DATA_DIR"],
+               dir.hasPrefix("/"),
+               !dir.hasPrefix(homeDirectory)
+            {
+                return .ephemeralSmoke(dataDir: dir)
+            }
+            return .production
+        }
+    }
+
+    public func openForLaunch(_ configuration: LaunchConfiguration) {
+        switch configuration {
+        case .production:
+            openDefault()
+        case .ephemeralSmoke(let dataDir):
+            openSmoke(dataDir: dataDir)
+        }
+    }
+
     public func openDefault() {
         let home = FileManager.default.homeDirectoryForCurrentUser
         let dataDir = home.appendingPathComponent(".jackin/data").path
         open(dataDir: dataDir, refreshFloorSecs: 300, enabled: [])
+    }
+
+    /// Ephemeral smoke open: isolated path, live probes disabled, exactly one
+    /// snapshot application, and no initial/manual/periodic refresh or polling.
+    private func openSmoke(dataDir: String) {
+        guard !isOpen, !isOpening else { return }
+        isOpening = true
+        let config = OpenConfig(
+            dataDir: dataDir,
+            refreshFloorSecs: 300,
+            enabledSurfaceIds: [],
+            allowLiveProbes: false
+        )
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                _ = try await self.scheduler.run { handle -> UInt64 in
+                    try handle.openRuntime(config: config)
+                    return try handle.refreshFloorSecs()
+                }
+                self.isOpen = true
+                self.isOpening = false
+                self.lastError = nil
+                await self.applySnapshots()
+            } catch {
+                self.lastError = String(describing: error)
+                self.isOpen = false
+                self.isOpening = false
+            }
+        }
     }
 
     public func open(dataDir: String, refreshFloorSecs: UInt64, enabled: [String]) {
@@ -444,6 +508,7 @@ public final class PresentationStore: ObservableObject {
         } else {
             screenShareActive = false
         }
+        statusBarShowsValues = !(hideWhileScreenSharing && screenShareActive)
         // Always-on: ask Rust to refresh when the floor allows (force: false).
         // Rust no-ops inside the floor so this is poll-safe every 5s. The whole
         // due-check + refresh + event-drain runs as one serialized bridge op off
