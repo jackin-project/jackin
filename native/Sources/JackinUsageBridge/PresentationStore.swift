@@ -122,20 +122,25 @@ public final class PresentationStore: ObservableObject {
     @Published public var usageSelection: String?
     @Published public private(set) var lastError: String?
     @Published public private(set) var isOpen: Bool = false
+    /// True from the moment a cold open is submitted until it succeeds/fails, so
+    /// a second `open`/`openDefault` (e.g. `applicationDidBecomeActive` firing
+    /// while the async open is still in flight) is a no-op rather than a
+    /// duplicate runtime open.
+    @Published public private(set) var isOpening: Bool = false
     /// Refresh floor in seconds (owned by Rust; mirrored for Settings).
     @Published public private(set) var refreshFloorSecs: UInt64 = 300
 
     @Published public var displayMode: StatusItemDisplayMode {
         didSet {
             UserDefaults.standard.set(displayMode.rawValue, forKey: Self.displayModeKey)
-            applyStatusItemText()
+            Task { [weak self] in await self?.applyStatusItemText() }
         }
     }
 
     @Published public var pinnedSurfaceId: String {
         didSet {
             UserDefaults.standard.set(pinnedSurfaceId, forKey: Self.pinnedSurfaceKey)
-            applyStatusItemText()
+            Task { [weak self] in await self?.applyStatusItemText() }
         }
     }
 
@@ -147,7 +152,7 @@ public final class PresentationStore: ObservableObject {
                 return
             }
             UserDefaults.standard.set(stripMax, forKey: Self.stripMaxKey)
-            applyStatusItemText()
+            Task { [weak self] in await self?.applyStatusItemText() }
         }
     }
 
@@ -155,9 +160,10 @@ public final class PresentationStore: ObservableObject {
     @Published public var percentStyle: String {
         didSet {
             UserDefaults.standard.set(percentStyle, forKey: Self.percentStyleKey)
-            pushFormatPrefs()
-            if isOpen {
-                applySnapshots()
+            Task { [weak self] in
+                guard let self else { return }
+                await self.pushFormatPrefs()
+                if self.isOpen { await self.applySnapshots() }
             }
         }
     }
@@ -166,9 +172,10 @@ public final class PresentationStore: ObservableObject {
     @Published public var resetStyle: String {
         didSet {
             UserDefaults.standard.set(resetStyle, forKey: Self.resetStyleKey)
-            pushFormatPrefs()
-            if isOpen {
-                applySnapshots()
+            Task { [weak self] in
+                guard let self else { return }
+                await self.pushFormatPrefs()
+                if self.isOpen { await self.applySnapshots() }
             }
         }
     }
@@ -176,7 +183,7 @@ public final class PresentationStore: ObservableObject {
     @Published public var hideWhileScreenSharing: Bool {
         didSet {
             UserDefaults.standard.set(hideWhileScreenSharing, forKey: Self.hideScreenShareKey)
-            applyStatusItemText()
+            Task { [weak self] in await self?.applyStatusItemText() }
         }
     }
 
@@ -187,12 +194,25 @@ public final class PresentationStore: ObservableObject {
     private static let resetStyleKey = "jackin.desktop.resetStyle"
     private static let hideScreenShareKey = "jackin.desktop.hideWhileScreenSharing"
 
-    private let bridge = UsageMenuBarBridge.create()
+    /// All bridge access is serialized off the main actor through this scheduler
+    /// so a Keychain consent sheet can never freeze the UI. `PresentationStore`
+    /// itself holds no bridge reference and makes no direct `bridge.` calls.
+    private let scheduler: RefreshScheduler
+    /// Per-surface compact status-bar label captured during the last projection,
+    /// so status-item chip building needs no further bridge round-trips on main.
+    private var compactLabelBySurface: [String: String] = [:]
     private var eventCursor: UInt64 = 0
     private var pollTask: Task<Void, Never>?
+    private var refreshTask: Task<Void, Never>?
     private var screenShareActive: Bool = false
 
-    public init() {
+    public convenience init() {
+        self.init(scheduler: RefreshScheduler())
+    }
+
+    /// Designated initializer. Tests inject a scheduler wrapping a fake bridge.
+    public init(scheduler: RefreshScheduler) {
+        self.scheduler = scheduler
         let defaults = UserDefaults.standard
         if let raw = defaults.string(forKey: Self.displayModeKey),
            let mode = StatusItemDisplayMode(rawValue: raw)
@@ -240,54 +260,75 @@ public final class PresentationStore: ObservableObject {
     }
 
     public func open(dataDir: String, refreshFloorSecs: UInt64, enabled: [String]) {
-        do {
-            try bridge.openRuntime(
-                config: OpenConfig(
-                    dataDir: dataDir,
-                    refreshFloorSecs: refreshFloorSecs,
-                    enabledSurfaceIds: enabled
-                )
-            )
-            isOpen = true
-            lastError = nil
-            self.refreshFloorSecs = try bridge.refreshFloorSecs()
-            pushFormatPrefs()
-            // First load forces network so the bar is not stuck on "refreshing".
-            refreshAll(force: true)
-            startPolling()
-        } catch {
-            lastError = String(describing: error)
-            isOpen = false
+        // Coalesce duplicate cold-opens: a second open while one is in flight
+        // (or already open) is a no-op, so `applicationDidBecomeActive` firing
+        // during the async open cannot start a second runtime.
+        guard !isOpen, !isOpening else { return }
+        isOpening = true
+        let config = OpenConfig(
+            dataDir: dataDir,
+            refreshFloorSecs: refreshFloorSecs,
+            enabledSurfaceIds: enabled
+        )
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let floor = try await self.scheduler.run { handle -> UInt64 in
+                    try handle.openRuntime(config: config)
+                    return try handle.refreshFloorSecs()
+                }
+                self.isOpen = true
+                self.isOpening = false
+                self.lastError = nil
+                self.refreshFloorSecs = floor
+                await self.pushFormatPrefs()
+                // First load forces network so the bar is not stuck on "refreshing".
+                await self.refreshAll(force: true)
+                self.startPolling()
+            } catch {
+                self.lastError = String(describing: error)
+                self.isOpen = false
+                self.isOpening = false
+            }
         }
     }
 
     public func shutdown() {
         pollTask?.cancel()
         pollTask = nil
-        do {
-            try bridge.shutdown()
-        } catch {
-            lastError = String(describing: error)
-        }
+        refreshTask?.cancel()
+        refreshTask = nil
+        // Non-blocking: shutdown runs on the serial queue behind any in-flight
+        // bridge op; the main actor never waits on the Rust mutex.
+        scheduler.invalidateAndShutdown()
         isOpen = false
+        isOpening = false
     }
 
     public func setEnabled(surfaceId: String, enabled: Bool) {
-        do {
-            try bridge.setEnabled(surfaceId: surfaceId, enabled: enabled)
-            refreshAll(force: true)
-        } catch {
-            lastError = String(describing: error)
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                try await self.scheduler.run { try $0.setEnabled(surfaceId: surfaceId, enabled: enabled) }
+                await self.refreshAll(force: true)
+            } catch {
+                self.lastError = String(describing: error)
+            }
         }
     }
 
     /// Select multi-account identity for a surface (Rust-persisted).
     public func setSelectedAccount(surfaceId: String, accountKey: String) {
-        do {
-            try bridge.setSelectedAccount(surfaceId: surfaceId, accountKey: accountKey)
-            applySnapshots()
-        } catch {
-            lastError = String(describing: error)
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                try await self.scheduler.run {
+                    try $0.setSelectedAccount(surfaceId: surfaceId, accountKey: accountKey)
+                }
+                await self.applySnapshots()
+            } catch {
+                self.lastError = String(describing: error)
+            }
         }
     }
 
@@ -297,47 +338,59 @@ public final class PresentationStore: ObservableObject {
     }
 
     public func setRefreshFloorSecs(_ secs: UInt64) {
-        do {
-            try bridge.setRefreshFloorSecs(secs: secs)
-            refreshFloorSecs = try bridge.refreshFloorSecs()
-        } catch {
-            lastError = String(describing: error)
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let floor = try await self.scheduler.run { handle -> UInt64 in
+                    try handle.setRefreshFloorSecs(secs: secs)
+                    return try handle.refreshFloorSecs()
+                }
+                self.refreshFloorSecs = floor
+            } catch {
+                self.lastError = String(describing: error)
+            }
         }
     }
 
     /// Manual Refresh button — bypasses floor.
     public func refreshAll() {
-        refreshAll(force: true)
+        Task { [weak self] in await self?.refreshAll(force: true) }
     }
 
-    public func refreshAll(force: Bool) {
-        do {
-            try bridge.refresh(surfaceId: nil, force: force)
-            applySnapshots()
-        } catch {
-            lastError = String(describing: error)
-            applySnapshots()
+    /// Coalesce overlapping refresh requests into one in-flight task so a
+    /// consent sheet cannot build a prompt storm.
+    private func refreshAll(force: Bool) async {
+        refreshTask?.cancel()
+        let task = Task { [weak self] in
+            guard let self else { return }
+            do {
+                try await self.scheduler.run { try $0.refresh(surfaceId: nil, force: force) }
+            } catch {
+                self.lastError = String(describing: error)
+            }
+            await self.applySnapshots()
         }
+        refreshTask = task
+        await task.value
     }
 
     public func refresh(surfaceId: String) {
-        do {
-            try bridge.refresh(surfaceId: surfaceId, force: true)
-            applySnapshots()
-        } catch {
-            lastError = String(describing: error)
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                try await self.scheduler.run { try $0.refresh(surfaceId: surfaceId, force: true) }
+                await self.applySnapshots()
+            } catch {
+                self.lastError = String(describing: error)
+            }
         }
     }
 
-    private func pushFormatPrefs() {
+    private func pushFormatPrefs() async {
         guard isOpen else { return }
+        let prefs = UsageFormatPrefsDto(percentStyle: percentStyle, resetStyle: resetStyle)
         do {
-            try bridge.setFormatPrefs(
-                prefs: UsageFormatPrefsDto(
-                    percentStyle: percentStyle,
-                    resetStyle: resetStyle
-                )
-            )
+            try await scheduler.run { try $0.setFormatPrefs(prefs: prefs) }
         } catch {
             lastError = String(describing: error)
         }
@@ -348,12 +401,12 @@ public final class PresentationStore: ObservableObject {
         pollTask = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 5_000_000_000)
-                self?.pollOnce()
+                await self?.pollOnce()
             }
         }
     }
 
-    private func pollOnce() {
+    private func pollOnce() async {
         guard isOpen else { return }
         if hideWhileScreenSharing {
             screenShareActive = Self.isScreenCurrentlyShared()
@@ -361,29 +414,19 @@ public final class PresentationStore: ObservableObject {
             screenShareActive = false
         }
         // Always-on: ask Rust to refresh when the floor allows (force: false).
-        // Rust no-ops inside the floor so this is poll-safe every 5s.
+        // Rust no-ops inside the floor so this is poll-safe every 5s. The whole
+        // due-check + refresh + event-drain runs as one serialized bridge op off
+        // the main actor, so a consent sheet cannot freeze the UI or queue polls.
+        let cursor = eventCursor
         do {
-            if try bridge.refreshDue() {
-                try bridge.refresh(surfaceId: nil, force: false)
+            let nextCursor = try await scheduler.run { handle -> UInt64 in
+                if try handle.refreshDue() {
+                    try handle.refresh(surfaceId: nil, force: false)
+                }
+                return try handle.nextEvents(cursor: cursor, max: 64).nextCursor
             }
-        } catch {
-            lastError = String(describing: error)
-        }
-        do {
-            let batch = try bridge.nextEvents(cursor: eventCursor, max: 64)
-            if batch.resyncRequired {
-                // Event cursor behind retained log — reset and re-project snapshots.
-                eventCursor = batch.nextCursor
-                applySnapshots()
-                return
-            }
-            eventCursor = batch.nextCursor
-            if !batch.events.isEmpty {
-                applySnapshots()
-            } else {
-                // Still refresh bar labels (relative "updated" text) cheaply.
-                applySnapshots()
-            }
+            eventCursor = nextCursor
+            await applySnapshots()
         } catch {
             lastError = String(describing: error)
         }
@@ -403,114 +446,137 @@ public final class PresentationStore: ObservableObject {
         return false
     }
 
-    private func applySnapshots() {
+    private func applySnapshots() async {
+        let projection: BridgeProjection
         do {
-            mergedBarLabel = try bridge.mergedStatusBarLabel()
-            compactBarLabel = try bridge.compactStatusBarLabel()
-            nextRefreshLabel = try bridge.nextRefreshLabel()
-            let listed = try bridge.listSurfaces()
-            var rows: [SurfaceRow] = []
-            for surface in listed {
-                guard surface.enabled else {
-                    rows.append(
-                        SurfaceRow(
-                            id: surface.id,
-                            label: surface.label,
-                            enabled: false,
-                            statusBarLabel: "",
-                            status: "disabled",
-                            accountLabel: "",
-                            username: nil,
-                            planLabel: nil,
-                            credentialOrigin: nil,
-                            estimateCaption: nil,
-                            buckets: [],
-                            updatedLabel: "",
-                            lastError: nil
-                        )
-                    )
-                    continue
-                }
-                if let view = try? bridge.snapshot(surfaceId: surface.id) {
-                    rows.append(
-                        SurfaceRow(
-                            id: surface.id,
-                            label: surface.label,
-                            enabled: true,
-                            statusBarLabel: view.statusBarLabel,
-                            status: view.status,
-                            accountLabel: view.accountLabel,
-                            username: view.username,
-                            planLabel: view.planLabel,
-                            credentialOrigin: view.credentialOrigin,
-                            estimateCaption: view.estimateCaption,
-                            buckets: view.buckets.map { bucket in
-                                BucketRow(
-                                    label: bucket.label,
-                                    usedLabel: bucket.usedLabel,
-                                    limitLabel: bucket.limitLabel,
-                                    remainingPercent: bucket.remainingPercent,
-                                    resetLabel: bucket.resetLabel,
-                                    paceLabel: bucket.paceLabel,
-                                    statusSlot: bucket.statusSlot,
-                                    severity: bucket.severity,
-                                    status: bucket.status,
-                                    usedMoney: bucket.usedMoney,
-                                    limitMoney: bucket.limitMoney
-                                )
-                            },
-                            updatedLabel: view.updatedLabel,
-                            lastError: view.lastError
-                        )
-                    )
-                } else {
-                    rows.append(
-                        SurfaceRow(
-                            id: surface.id,
-                            label: surface.label,
-                            enabled: true,
-                            statusBarLabel: "unavailable",
-                            status: "unavailable",
-                            accountLabel: "",
-                            username: nil,
-                            planLabel: nil,
-                            credentialOrigin: nil,
-                            estimateCaption: nil,
-                            buckets: [],
-                            updatedLabel: "",
-                            lastError: nil
-                        )
+            projection = try await scheduler.run { handle -> BridgeProjection in
+                let merged = try handle.mergedStatusBarLabel()
+                let compact = try handle.compactStatusBarLabel()
+                let nextRefresh = try handle.nextRefreshLabel()
+                let listed = try handle.listSurfaces()
+                var surfaces: [SurfaceProjection] = []
+                for surface in listed {
+                    let view = surface.enabled ? try? handle.snapshot(surfaceId: surface.id) : nil
+                    let compactFor =
+                        surface.enabled
+                        ? ((try? handle.compactStatusBarLabelFor(surfaceId: surface.id)) ?? "")
+                        : ""
+                    surfaces.append(
+                        SurfaceProjection(info: surface, view: view, compactLabel: compactFor)
                     )
                 }
-            }
-            surfaces = rows
-            overviewRows = try bridge.overviewRows().map { row in
-                OverviewRow(
-                    surfaceId: row.surfaceId,
-                    displayLabel: row.displayLabel,
-                    headline: row.headline,
-                    resetLabel: row.resetLabel,
-                    exactReset: row.exactReset,
-                    statusWord: row.statusWord,
-                    severity: row.severity
+                let overview = try handle.overviewRows()
+                let accounts = (try? handle.listAccounts(surfaceId: nil)) ?? []
+                return BridgeProjection(
+                    mergedBarLabel: merged,
+                    compactBarLabel: compact,
+                    nextRefreshLabel: nextRefresh,
+                    surfaces: surfaces,
+                    overviewRows: overview,
+                    accounts: accounts
                 )
             }
-            accounts = (try? bridge.listAccounts(surfaceId: nil))?.map { row in
-                AccountRow(
-                    surfaceId: row.surfaceId,
-                    accountKey: row.accountKey,
-                    accountLabel: row.accountLabel,
-                    planLabel: row.planLabel,
-                    selected: row.selected,
-                    remainingPercent: row.remainingPercent,
-                    statusWord: row.statusWord
-                )
-            } ?? []
-            applyStatusItemText()
-            lastError = nil
         } catch {
             lastError = String(describing: error)
+            return
         }
+
+        mergedBarLabel = projection.mergedBarLabel
+        compactBarLabel = projection.compactBarLabel
+        nextRefreshLabel = projection.nextRefreshLabel
+        var labelBySurface: [String: String] = [:]
+        surfaces = projection.surfaces.map { entry in
+            let surface = entry.info
+            labelBySurface[surface.id] = entry.compactLabel
+            guard surface.enabled else {
+                return SurfaceRow(
+                    id: surface.id,
+                    label: surface.label,
+                    enabled: false,
+                    statusBarLabel: "",
+                    status: "disabled",
+                    accountLabel: "",
+                    username: nil,
+                    planLabel: nil,
+                    credentialOrigin: nil,
+                    estimateCaption: nil,
+                    buckets: [],
+                    updatedLabel: "",
+                    lastError: nil
+                )
+            }
+            guard let view = entry.view else {
+                return SurfaceRow(
+                    id: surface.id,
+                    label: surface.label,
+                    enabled: true,
+                    statusBarLabel: "unavailable",
+                    status: "unavailable",
+                    accountLabel: "",
+                    username: nil,
+                    planLabel: nil,
+                    credentialOrigin: nil,
+                    estimateCaption: nil,
+                    buckets: [],
+                    updatedLabel: "",
+                    lastError: nil
+                )
+            }
+            return SurfaceRow(
+                id: surface.id,
+                label: surface.label,
+                enabled: true,
+                statusBarLabel: view.statusBarLabel,
+                status: view.status,
+                accountLabel: view.accountLabel,
+                username: view.username,
+                planLabel: view.planLabel,
+                credentialOrigin: view.credentialOrigin,
+                estimateCaption: view.estimateCaption,
+                buckets: view.buckets.map { bucket in
+                    BucketRow(
+                        label: bucket.label,
+                        usedLabel: bucket.usedLabel,
+                        limitLabel: bucket.limitLabel,
+                        remainingPercent: bucket.remainingPercent,
+                        resetLabel: bucket.resetLabel,
+                        paceLabel: bucket.paceLabel,
+                        statusSlot: bucket.statusSlot,
+                        severity: bucket.severity,
+                        status: bucket.status,
+                        usedMoney: bucket.usedMoney,
+                        limitMoney: bucket.limitMoney
+                    )
+                },
+                updatedLabel: view.updatedLabel,
+                lastError: view.lastError
+            )
+        }
+        compactLabelBySurface = labelBySurface
+        overviewRows = projection.overviewRows.map { row in
+            OverviewRow(
+                surfaceId: row.surfaceId,
+                displayLabel: row.displayLabel,
+                headline: row.headline,
+                resetLabel: row.resetLabel,
+                exactReset: row.exactReset,
+                statusWord: row.statusWord,
+                severity: row.severity
+            )
+        }
+        accounts = projection.accounts.map { row in
+            AccountRow(
+                surfaceId: row.surfaceId,
+                accountKey: row.accountKey,
+                accountLabel: row.accountLabel,
+                planLabel: row.planLabel,
+                selected: row.selected,
+                remainingPercent: row.remainingPercent,
+                statusWord: row.statusWord
+            )
+        }
+        lastError = nil
+        await applyStatusItemText()
     }
 
     /// Open the Usage window on Overview or a specific surface.
@@ -518,7 +584,7 @@ public final class PresentationStore: ObservableObject {
         usageSelection = surfaceId
     }
 
-    private func applyStatusItemText() {
+    private func applyStatusItemText() async {
         let selection = statusItemTextSelection(
             mode: displayMode,
             pinnedSurfaceId: pinnedSurfaceId.isEmpty ? nil : pinnedSurfaceId,
@@ -537,15 +603,22 @@ public final class PresentationStore: ObservableObject {
                 statusItemChips = []
             case .focus:
                 // Single worst provider preview (still a per-provider chip).
-                statusItemText = try bridge.compactStatusBarLabel()
-                statusItemChips = try chipsForProviderPreview(maxCount: 1, preferWorstFirst: true)
+                statusItemText = try await scheduler.run { try $0.compactStatusBarLabel() }
+                statusItemChips = chipsForProviderPreview(maxCount: 1, preferWorstFirst: true)
             case .pinned(let surfaceId):
-                statusItemText = try bridge.compactStatusBarLabelFor(surfaceId: surfaceId) ?? ""
-                statusItemChips = try chipsForPinned(surfaceId: surfaceId)
+                if let cached = compactLabelBySurface[surfaceId] {
+                    statusItemText = cached
+                } else {
+                    statusItemText =
+                        (try await scheduler.run {
+                            try $0.compactStatusBarLabelFor(surfaceId: surfaceId)
+                        }) ?? ""
+                }
+                statusItemChips = chipsForPinned(surfaceId: surfaceId)
             case .strip(let max):
                 // CodexBar-style: one chip per provider (catalog order).
-                statusItemText = try bridge.compactStatusBarStrip(max: max)
-                statusItemChips = try chipsForProviderPreview(
+                statusItemText = try await scheduler.run { try $0.compactStatusBarStrip(max: max) }
+                statusItemChips = chipsForProviderPreview(
                     maxCount: Int(max),
                     preferWorstFirst: false
                 )
@@ -557,10 +630,9 @@ public final class PresentationStore: ObservableObject {
         }
     }
 
-    private func chipsForPinned(surfaceId: String) throws -> [StatusItemChip] {
-        guard let label = try bridge.compactStatusBarLabelFor(surfaceId: surfaceId),
-              !label.isEmpty
-        else {
+    private func chipsForPinned(surfaceId: String) -> [StatusItemChip] {
+        let label = compactLabelBySurface[surfaceId] ?? ""
+        guard !label.isEmpty else {
             return []
         }
         guard let row = surfaces.first(where: { $0.id == surfaceId && $0.enabled }) else {
@@ -583,11 +655,12 @@ public final class PresentationStore: ObservableObject {
     /// One status-item chip per enabled provider (OpenUsage strip: icon + remaining %).
     ///
     /// Strip mode includes all enabled hosts (cap `maxCount`); focus mode only those
-    /// with numeric remaining / preview data, worst-first.
-    private func chipsForProviderPreview(maxCount: Int, preferWorstFirst: Bool) throws
+    /// with numeric remaining / preview data, worst-first. Uses the per-surface
+    /// compact labels captured during the last projection — no bridge round-trip.
+    private func chipsForProviderPreview(maxCount: Int, preferWorstFirst: Bool)
         -> [StatusItemChip]
     {
-        let snaps = try surfaceSnapshotsForStatusItem()
+        let snaps = surfaceSnapshotsForStatusItem()
         return buildStatusItemChips(
             surfaces: snaps,
             maxCount: maxCount,
@@ -598,12 +671,10 @@ public final class PresentationStore: ObservableObject {
         )
     }
 
-    private func surfaceSnapshotsForStatusItem() throws -> [StatusItemSurfaceSnapshot] {
+    private func surfaceSnapshotsForStatusItem() -> [StatusItemSurfaceSnapshot] {
         var snaps: [StatusItemSurfaceSnapshot] = []
         for row in surfaces {
-            let compact =
-                (try? bridge.compactStatusBarLabelFor(surfaceId: row.id))
-                ?? ""
+            let compact = compactLabelBySurface[row.id] ?? ""
             let pairs: [(UInt8, String)] = row.buckets.compactMap { bucket in
                 guard let rem = bucket.remainingPercent else { return nil }
                 return (rem, bucket.severity)
@@ -669,4 +740,24 @@ public final class PresentationStore: ObservableObject {
         }
         return numeric.first(where: { $0.0 == best.remaining })?.1
     }
+}
+
+/// One surface's raw bridge projection: descriptor, snapshot (nil when
+/// disabled/unavailable), and its compact status-bar label — all captured in a
+/// single serialized off-main bridge batch.
+private struct SurfaceProjection: Sendable {
+    let info: SurfaceDescriptorDto
+    let view: UsageViewDto?
+    let compactLabel: String
+}
+
+/// The full set of raw bridge outputs `applySnapshots` needs, collected in one
+/// serialized off-main batch so the `@MainActor` mapping does zero bridge work.
+private struct BridgeProjection: Sendable {
+    let mergedBarLabel: String
+    let compactBarLabel: String
+    let nextRefreshLabel: String
+    let surfaces: [SurfaceProjection]
+    let overviewRows: [OverviewRowDto]
+    let accounts: [AccountDescriptorDto]
 }

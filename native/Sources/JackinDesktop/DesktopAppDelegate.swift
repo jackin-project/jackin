@@ -39,8 +39,16 @@ final class DesktopAppDelegate: NSObject, NSApplicationDelegate {
         openRuntimeIfNeeded()
     }
 
+    func applicationWillTerminate(_ notification: Notification) {
+        // Hand off to the non-blocking store shutdown so the main actor never
+        // waits on the Rust runtime mutex during termination.
+        store?.shutdown()
+    }
+
     private func openRuntimeIfNeeded() {
-        guard let store, !store.isOpen else { return }
+        // `isOpening` guards the in-flight async open so activation firing during
+        // a cold open does not start a second runtime.
+        guard let store, !store.isOpen, !store.isOpening else { return }
         store.openDefault()
     }
 }

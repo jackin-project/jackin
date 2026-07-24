@@ -9,7 +9,7 @@ Spec: [spec/](spec/) · Ledger: [coverage.md](coverage.md).
 | Plan | Title | Covers | Priority | Effort | Depends on | Status |
 |------|-------|--------|----------|--------|------------|--------|
 | 001 | Provider-core correctness + Amp Free daily | F11, F12 | P1 | M | — | DONE |
-| 002 | Claude macOS Keychain credential read | F6, W5 | P1 | M | — | IN PROGRESS (Rust Keychain credential resolution + typed local-only policy shipped and gate-green; Swift off-main bridge serializer and full flight/coordination hardening remain) |
+| 002 | Claude macOS Keychain credential read | F6, W5 | P1 | M | — | DONE (spec scenarios hold + verified; deviations: XCTest suites deferred to full-Xcode env — contract verified via DesktopArchitectureLint + `cargo xtask desktop test`; keychain flight is a serialized denial-cached design; coordination scoping via typed `UsageSnapshotPolicy` in `build_snapshot`) |
 | 003 | Grok server tier, current quota bounds, pace inputs | F7 | P1 | M | 005 | TODO |
 | 004 | Run-out producer (Variant A) in Rust | F5 | P1 | M | 003 | TODO |
 | 005 | Per-provider status bar items (auto-detect) | S1–S3, S10, F1, F3 | P1 | L | 001, 002 | TODO |

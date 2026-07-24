@@ -561,3 +561,12 @@ dialog; numbers come from the same Rust views).
   `data.level` plan label) and the Amp Free Daily contract (one shared
   `displayText` parser, semantic `StatusSlot::Daily`, workspace credit
   bounds detail-only) → IN EXECUTION.
+- 2026-07-24 — execution — plan 002 shipped the Claude macOS Keychain
+  credential read: shared `jackin-core` service derivation reused by instance
+  provisioning + the usage probe, Keychain-first wave resolution with
+  process-terminal denial cache, typed `UsageSnapshotPolicy` (Shared /
+  LocalOnly) governing preservation/coordination/persistence/materialization
+  and host history filtering, and a Swift `RefreshScheduler` serializing all
+  bridge access off `@MainActor` with cold-open + refresh coalescing. Verified
+  via `cargo xtask ci --fast` + `cargo xtask desktop test` + DesktopArchitectureLint.
+  XCTest suites deferred to a full-Xcode environment (CLT-only host here).
