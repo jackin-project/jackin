@@ -167,7 +167,8 @@ pub(super) fn quota_pace_label(
     window_seconds: Option<i64>,
     now: i64,
 ) -> Option<String> {
-    let remaining_percent = f64::from(remaining_percent?);
+    let remaining_percent_raw = remaining_percent?;
+    let remaining_percent = f64::from(remaining_percent_raw);
     let reset_in = reset_at?.saturating_sub(now).max(0);
     let window_seconds = window_seconds?.max(1);
     if reset_in > window_seconds {
@@ -181,13 +182,31 @@ pub(super) fn quota_pace_label(
     // carried separately in the bucket's reset label, so the pace token stays a
     // bare phrase exactly as the previews show.
     let delta = remaining_percent - time_left_percent;
-    if delta.abs() <= 2.0 {
-        Some("On pace".to_owned())
+    let pace = if delta.abs() <= 2.0 {
+        "On pace".to_owned()
     } else if delta > 0.0 {
-        Some(format!("{}% in reserve", delta.round() as i64))
+        format!("{}% in reserve", delta.round() as i64)
     } else {
-        Some(format!("{}% in deficit", (-delta).round() as i64))
+        format!("{}% in deficit", (-delta).round() as i64)
+    };
+    // Variant A run-out: append `· Runs out in <duration>` only when the linear
+    // projection from window start runs out before the reset. Compare exact
+    // integer cross-products (float delta is display math and can round a
+    // clock-equality case slightly negative).
+    let used = 100_i128 - i128::from(remaining_percent_raw);
+    let elapsed = window_seconds - reset_in;
+    let behind_clock = i128::from(remaining_percent_raw) * i128::from(window_seconds)
+        < i128::from(reset_in) * 100_i128;
+    if used > 0 && elapsed > 0 && behind_clock {
+        let numerator = i128::from(remaining_percent_raw) * i128::from(elapsed);
+        let display_seconds = (numerator + used / 2) / used;
+        let display_seconds = i64::try_from(display_seconds).ok()?;
+        return Some(format!(
+            "{pace} · Runs out in {}",
+            compact_duration_label(display_seconds)
+        ));
     }
+    Some(pace)
 }
 
 pub(crate) fn compact_duration_label(seconds: i64) -> String {

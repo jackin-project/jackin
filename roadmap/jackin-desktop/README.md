@@ -576,3 +576,6 @@ dialog; numbers come from the same Rust views).
   prepaid-balance / on-demand quota bounds (limits-only). Rust-verified via
   `cargo nextest` + clippy; built on plan 005's shipped Step-1 balance-only
   bucket-presentation contract.
+- 2026-07-24 — execution — plan 004 shipped the Variant A run-out producer:
+  `quota_pace_label` appends `· Runs out in <duration>` from Rust (exact
+  integer cross-products; TUI/Swift splitters unchanged). 9 pace tests.
