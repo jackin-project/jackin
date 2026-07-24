@@ -9,7 +9,7 @@ On **macOS 26+** the glance popover, Usage sidebar/toolbar, and menu-bar chips u
 
 ## What it shows
 
-Only agents jackin❯ provisions (`claude`, `codex`, `amp`, `kimi`, `opencode`, `grok`) plus existing routed usage surfaces (**Z.AI / GLM**, **MiniMax**). It never grows a CodexBar-style provider zoo (no Cursor, Gemini, Copilot, …).
+Only the seven providers jackin❯ supports: **Claude**, **Codex**, **Amp**, **Kimi**, **Grok**, **Z.AI / GLM**, and **MiniMax**. It never grows a CodexBar-style provider zoo (no Cursor, Gemini, Copilot, …).
 
 Numbers come from the same Rust stack Capsule uses (`jackin-usage` + `jackin-protocol` views). Swift is display-only.
 
@@ -72,12 +72,12 @@ Probes read the **same host logins** operators already use for jackin❯ launch 
 |---|---|
 | Claude | macOS Keychain (`Claude Code-credentials`, or a per-`CLAUDE_CONFIG_DIR` service for a custom config), then `~/.claude/.credentials.json`, `ANTHROPIC_*` |
 | Codex | `~/.codex/auth.json` |
-| Amp / Grok / Kimi / OpenCode | respective home secrets |
+| Amp / Grok / Kimi | respective home secrets |
 | Z.AI / MiniMax | `ZAI_API_KEY` / `MINIMAX_*` env |
 
 No passwords are stored by the menu bar app. It reuses local sessions/keys already present for jackin❯.
 
-Grok's plan/tier is read from xAI's billing service (the true subscription tier), not guessed from how you logged in, so a Free-tier browser login is labeled correctly; its prepaid credits and on-demand cap are shown as spending **limits**, never token prices or usage trends.
+Grok's plan/tier is read from xAI's billing service (the true subscription tier), not guessed from how you logged in, so a Free-tier browser login is labeled correctly; its prepaid credits and on-demand cap are shown as spending **limits**, never token prices or historical charts.
 
 On a default macOS install Claude Code keeps its credential only in the login Keychain, so the first read may show a system consent prompt. Choosing **Allow** lets that read complete (macOS may ask again on a later refresh); **Always Allow** makes future reads silent. If you **Deny**, Claude stays disabled until you relaunch jackin❯ Desktop — no repeated prompt storm, and no other provider is affected. Over SSH or another headless session where the Keychain is unavailable, jackin❯ Desktop falls back to the credentials file exactly as before.
 
@@ -95,11 +95,11 @@ This drives `HostUsageRuntime` — the same view fields Capsule renders (`status
 
 Click the status item for a **CodexBar-style Overview** (clean-room layout):
 
-1. **Agent tile grid** at the top — Overview plus every host surface (Claude, Codex, Amp, Grok Build, GLM / Z.AI, Kimi, MiniMax, OpenCode). Enabled tiles can show a short **remaining %** badge under the name; severity underline / tint follows Rust.
-2. **Stacked detail** under the grid — with **Overview** selected, every **enabled** agent’s full quota block is listed (identity, plan/updated, capacity bars, primary **`% left`** / **`% used`**, reset, pace, money when Rust supplies them). Select one agent tile to focus that agent only.
+1. **Provider tab grid** at the top — Overview plus every auto-detected provider in Capsule order. Enabled tabs show the Rust-owned glance percentage; severity underline/tint follows Rust.
+2. **Overview or provider detail** under the grid — Overview shows one compact Rust-owned row per detected provider. Select a provider tab for its account chips, glance bar, quota-window bars, reset/pace lines, and allowed quota-bound credits.
 3. Click an agent header to open the **Usage window** focused on that provider; the popover closes as it opens.
 
-Footer: a single **Refresh** (⌘R) row plus the next-refresh caption. When no surfaces are enabled, the first-run note points you at Settings — there is no credential-harvesting UI.
+Footer: a single **Refresh** (⌘R) row plus the next-refresh caption. When no provider is detected, the preview tells you to sign in to a supported agent; there is no credential-harvesting or Settings UI.
 
 **Status-item clicks.** **Left-click** a provider item toggles the popover on that provider's tab. **Right-click** any provider item opens a static context menu with exactly three rows — **Open Usage Window**, **Refresh**, **Quit jackin❯ Desktop** — and nothing else. Open Usage Window opens/focuses the Usage window on its current selection (Overview when none); Refresh runs the same forced Rust-owned refresh the popover footer does; Quit terminates the app.
 
@@ -124,33 +124,9 @@ jackin❯ Desktop lists **every known account** per provider — the current hos
 
 ## Menu bar appearance
 
-OpenUsage-style **per-provider** menu-bar strip (clean-room): **one chip per enabled agent** — provider icon + **available-token remaining %** (stacked session/weekly when Rust supplies dual buckets). Providers without numeric data yet show the icon with `—` (never invents a percent). Disabled agents stay hidden. Percent text uses per-bucket severity tints.
+jackin❯ Desktop creates **one native status item per auto-detected provider** in Rust's Capsule order. Each item shows the provider's template icon plus one selected-account glance percentage: **Weekly remaining** for Codex, Claude, Grok, Z.AI, Kimi, and MiniMax; **Daily remaining** for Amp Free. Providers without numeric data yet show the icon with `—`; stale or unavailable last-known data stays visible and dimmed. When no provider is detected, one jackin❯ fallback item keeps the preview reachable.
 
-Settings **Display** mode:
-
-- **All providers (icon + remaining %)** (default) — up to N agents (default **8 = full catalog**) in catalog order
-- **Worst provider only** — single chip for the lowest remaining account
-- **Pinned provider** — one surface’s chip only
-- **Icon only** — logomark alone
-
-Also:
-
-- **Percent style** (Rust-resolved, app-wide): **% left (remaining)** / **% used** — compact labels, chip lines, glance tiles, and card primary lines stay consistent.
-- **Reset style**: **Countdown** / **Exact time**. Depleted driving buckets with a known reset show the Rust countdown on the chip (e.g. `resets 1h 21m` next to the glyph) instead of a bare `0%`.
-- **Hide values while screen sharing** collapses the item to the icon while a share/recording is active (off by default).
-- The strip dims when every enabled surface is stale or unavailable — numbers stay honest and never invent a percent.
-
-## Settings
-
-- **Display** — Per-provider strip / Worst provider only / Pinned provider / Icon only (see Menu bar appearance). Not a single “Show percent” toggle.
-- **Providers in menu bar** — strip cap (1–8) when Per-provider strip is selected.
-- **Pinned provider** — which surface the pinned mode tracks.
-- **Percent style** — `% left (remaining)` (default) or `% used`.
-- **Reset style** — Countdown or Exact time.
-- **Hide values while screen sharing** — optional privacy collapse.
-- Enable/disable **Surfaces** (disabled surfaces leave the bar and refresh set).
-- **Launch at login** — optional; off by default. Uses macOS Login Items (`SMAppService`); if macOS requires approval, open System Settings → General → Login Items.
-- Refresh is owned by Rust (cooldown + floor ≥ 60s).
+There is no Settings surface in this release. Provider membership is automatic, the Rust-selected glance label is fixed, and refresh remains Rust-owned with its cooldown and minimum cadence.
 
 ## Privacy
 
