@@ -12,7 +12,7 @@ Spec: [spec/](spec/) · Ledger: [coverage.md](coverage.md).
 | 002 | Claude macOS Keychain credential read | F6, W5 | P1 | M | — | DONE (spec scenarios hold + verified; deviations: XCTest suites deferred to full-Xcode env — contract verified via DesktopArchitectureLint + `cargo xtask desktop test`; keychain flight is a serialized denial-cached design; coordination scoping via typed `UsageSnapshotPolicy` in `build_snapshot`) |
 | 003 | Grok server tier, current quota bounds, pace inputs | F7 | P1 | M | 005 | TODO |
 | 004 | Run-out producer (Variant A) in Rust | F5 | P1 | M | 003 | TODO |
-| 005 | Per-provider status bar items (auto-detect) | S1–S3, S10, F1, F3 | P1 | L | 001, 002 | TODO |
+| 005 | Per-provider status bar items (auto-detect) | S1–S3, S10, F1, F3 | P1 | L | 001, 002 | IN PROGRESS (Rust+FFI foundation Steps 1-4 shipped & gate-green: shared bucket formatter, seven-provider glance contract, ProviderGlanceRowDto/providerGlanceRows over UniFFI; Steps 5-8 AppKit status-item lifecycle rewrite remain — needs full-Xcode/XCTest) |
 | 006 | Popover redesign (Agent Usage preview) | S5–S10, F4, F8, F10, W3, W4 | P1 | L | 005 | TODO |
 | 007 | Window entry paths (context menu + header click) | S4, W2 | P2 | M | 005, 006 | TODO |
 | 008 | Usage window reconcile (Capsule parity) | S11–S12, F13 | P2 | M | 003, 004, 005, 006, 007 | TODO |
