@@ -271,6 +271,7 @@ struct DesktopParityMatrixHarness {
         }
         let statusItem = read("StatusItemLabel.swift")
         let popover = read("PopoverRoot.swift")
+        let popoverProviderTab = read("Popover/PopoverProviderTab.swift")
         let provider = read("UsageWindow/ProviderCardView.swift")
         let overview = read("UsageWindow/OverviewListView.swift")
         check(
@@ -286,25 +287,20 @@ struct DesktopParityMatrixHarness {
                 && !statusItem.contains("statusItemRemainingFraction")
         )
         check(
-            "Popover agent tile grid",
-            popover.contains("agentTileGrid") && popover.contains("overviewStack")
+            "Popover composes tab grid + Overview/provider tabs + footer",
+            popover.contains("PopoverTabGrid")
+                && popover.contains("PopoverOverviewTab")
+                && popover.contains("PopoverProviderTab")
+                && popover.contains("PopoverFooter")
         )
         check(
-            "Popover dual tile remaining badges",
-            popover.contains("remainingBadgeLines")
-                && popover.contains("tileRemainingBadgeLines")
+            "Popover reads Rust glance rows verbatim (no Swift percent recompute)",
+            popover.contains("providerGlanceRows")
+                && !popover.contains("statusItemPercentToken")
         )
         check(
-            "Popover tile dual mini bars",
-            popover.contains("tileMiniBar") && popover.contains("tileRemainingBarPercents")
-        )
-        check(
-            "Popover multi-account pills",
+            "Popover multi-account selection",
             popover.contains("accountsForSurface") && popover.contains("setSelectedAccount")
-        )
-        check(
-            "Popover account pill remaining%",
-            popover.contains("remainingPercent") && popover.contains("statusItemPercentToken")
         )
         check(
             "Overview multi-window cap",
@@ -322,10 +318,9 @@ struct DesktopParityMatrixHarness {
             bucketGaugeSecondaryLimitLabel(limitLabel: "100%", remainingPercent: 40) == nil
         )
         check(
-            "Popover uses gauge secondary filter not raw statusSlot Text",
-            popover.contains("bucketGaugeSecondaryLimitLabel")
-                && !popover.contains("Text(slot)")
-                && !popover.contains("Text(bucket.statusSlot")
+            "Popover provider bucket path is generic Rust segments",
+            popoverProviderTab.contains("displaySegments")
+                && !popoverProviderTab.contains("Text(bucket.statusSlot")
         )
         check(
             "ProviderCard uses gauge secondary filter not raw statusSlot Text",
@@ -356,9 +351,8 @@ struct DesktopParityMatrixHarness {
                 || usageRoot.contains("sidebarSubtitle")
         )
         check(
-            "shared metric primary helper wired",
-            popover.contains("bucketMetricPrimaryLabel")
-                && provider.contains("bucketMetricPrimaryLabel")
+            "shared metric primary helper wired (Usage-window provider card)",
+            provider.contains("bucketMetricPrimaryLabel")
         )
         check(
             "no sparkline/donut/trend product UI in status item",
