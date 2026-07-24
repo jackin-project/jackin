@@ -20,7 +20,7 @@ use jackin_protocol::control::{FocusedUsageView, UsageSeverity};
 use crate::usage::{
     UsageCache, UsageFormatPrefs, UsageRefreshTarget, compact_duration_label, estimate_caption,
     exact_reset_parenthetical, percent_headline, provider_display_label, reset_label_with_prefs,
-    usage_status_storage_label,
+    usage_display_status_label, usage_status_storage_label,
 };
 
 pub use accounts::{
@@ -62,6 +62,18 @@ impl HostSurfaceId {
         Self::Kimi,
         Self::Minimax,
         Self::OpenCode,
+    ];
+
+    /// The canonical seven-provider Desktop glance order (Capsule tab order).
+    /// `OpenCode` is intentionally excluded from the Desktop item contract.
+    pub const DESKTOP_PROVIDER_ORDER: &'static [Self] = &[
+        Self::Codex,
+        Self::Claude,
+        Self::Amp,
+        Self::Grok,
+        Self::Zai,
+        Self::Kimi,
+        Self::Minimax,
     ];
 
     /// Stable machine id (`claude`, `codex`, `zai`, …).
@@ -214,16 +226,31 @@ pub struct HostRuntimeConfig {
     pub refresh_floor_secs: u64,
     /// Initially enabled surface ids; empty → all host surfaces.
     pub enabled_surface_ids: Vec<String>,
+    /// Whether this runtime may dispatch live provider probes. `Disabled` is
+    /// used by the isolated launch smoke test so an accidental refresh cannot
+    /// reach any credential/file/env/CLI/network/Keychain resolution.
+    pub probe_policy: HostProbePolicy,
+}
+
+/// Whether a host runtime may dispatch live provider probes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum HostProbePolicy {
+    /// Normal operation: refreshes dispatch provider probes.
+    #[default]
+    Live,
+    /// Smoke/defense-in-depth: refresh is a no-probe no-op and never due.
+    Disabled,
 }
 
 impl HostRuntimeConfig {
-    /// Default host layout under `data_dir`.
+    /// Default host layout under `data_dir` (live probes).
     #[must_use]
     pub fn under_data_dir(data_dir: impl Into<PathBuf>) -> Self {
         Self {
             data_dir: data_dir.into(),
             refresh_floor_secs: 300,
             enabled_surface_ids: Vec::new(),
+            probe_policy: HostProbePolicy::Live,
         }
     }
 }
@@ -262,6 +289,48 @@ pub struct HostOverviewRow {
     pub severity: String,
 }
 
+/// One selected-account-aware provider projection for native usage surfaces
+/// (the Desktop status bar, popover, and Usage window all consume this same
+/// Rust-owned row rather than choosing providers or formatting quota in Swift).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HostProviderGlanceRow {
+    /// Stable provider machine identifier (`codex`, `claude`, …).
+    pub surface_id: String,
+    /// Stable provider icon key (closed domain, equals `surface_id`).
+    pub icon_key: String,
+    /// Rust-owned provider display name (`OpenAI`, `Anthropic`, …).
+    pub display_label: String,
+    /// Rust-owned selected-account label (empty when none).
+    pub account_label: String,
+    /// Provider plan label when known.
+    pub plan_label: Option<String>,
+    /// Selected semantic glance percentage (Weekly for six, Daily for Amp),
+    /// when the required bucket exists.
+    pub glance_remaining_percent: Option<u8>,
+    /// Verbatim menu-bar value (`57%` or `–`).
+    pub bar_label: String,
+    /// Verbatim detail headline (`57% left` or `–`).
+    pub headline: String,
+    /// Relative reset label when the glance bucket carries a reset.
+    pub reset_label: Option<String>,
+    /// Exact-clock reset parenthetical when the glance bucket carries a reset.
+    pub exact_reset: Option<String>,
+    /// Stable machine status word.
+    pub status_word: String,
+    /// Whether this provider is the cold refreshing placeholder.
+    pub is_refreshing: bool,
+    /// Rust-owned human status label.
+    pub status_label: String,
+    /// Stable presentation-severity key (`normal` | `warn` | `danger`).
+    pub severity: String,
+    /// Rust-owned freshness label.
+    pub updated_label: String,
+    /// Rust-owned last error, when present.
+    pub last_error: Option<String>,
+    /// Whether the native bar value is visually dimmed (stale/error).
+    pub dimmed: bool,
+}
+
 /// Driving bucket for compact/overview labels: min remaining + its reset epoch.
 #[derive(Debug, Clone, Copy)]
 struct DrivingBucket {
@@ -287,6 +356,11 @@ pub struct HostUsageRuntime {
     data_dir: Option<PathBuf>,
     /// Selected account key per surface id (persisted).
     selected_accounts: HashMap<String, String>,
+    /// Whether live probes may dispatch (smoke mode disables them).
+    probe_policy: HostProbePolicy,
+    /// Provider ids currently auto-detected for the Desktop glance list.
+    /// Runtime-only (never persisted); holds ids, never display strings.
+    desktop_detected_surfaces: HashSet<String>,
 }
 
 impl HostUsageRuntime {
@@ -305,6 +379,8 @@ impl HostUsageRuntime {
             open: false,
             data_dir: None,
             selected_accounts: HashMap::new(),
+            probe_policy: HostProbePolicy::Live,
+            desktop_detected_surfaces: HashSet::new(),
         }
     }
 
@@ -343,6 +419,8 @@ impl HostUsageRuntime {
         }
         let selected_path = accounts::selected_accounts_path(&config.data_dir);
         self.selected_accounts = accounts::load_selected_accounts(&selected_path);
+        self.probe_policy = config.probe_policy;
+        self.desktop_detected_surfaces.clear();
         self.data_dir = Some(config.data_dir);
         self.open = true;
         self.push_event("runtime_ready", None, None);
@@ -424,6 +502,17 @@ impl HostUsageRuntime {
     /// Refresh / Settings), the floor is bypassed and targets are marked due.
     pub fn refresh(&mut self, surface_id: Option<&str>, force: bool) -> Result<(), String> {
         self.require_open()?;
+        // Defense in depth: a `Disabled` runtime never dispatches probes, so an
+        // accidental refresh cannot reach any credential/file/env/CLI/network/
+        // Keychain resolution. Return a successful no-probe event.
+        if self.probe_policy == HostProbePolicy::Disabled {
+            self.push_event(
+                "refresh_skipped",
+                surface_id,
+                Some("probes disabled".to_owned()),
+            );
+            return Ok(());
+        }
         if !force && let Some(last) = self.last_refresh {
             let floor = Duration::from_secs(self.refresh_floor_secs);
             if last.elapsed() < floor {
@@ -480,6 +569,9 @@ impl HostUsageRuntime {
     /// Whether a non-forced refresh would hit the network (floor elapsed or never).
     #[must_use]
     pub fn refresh_due(&self) -> bool {
+        if self.probe_policy == HostProbePolicy::Disabled {
+            return false;
+        }
         match self.last_refresh {
             None => true,
             Some(last) => last.elapsed() >= Duration::from_secs(self.refresh_floor_secs),
@@ -849,6 +941,39 @@ impl HostUsageRuntime {
         Ok(rows)
     }
 
+    /// Detected providers in the canonical Desktop model order, each a
+    /// selected-account-aware glance row. Iterates only
+    /// [`HostSurfaceId::DESKTOP_PROVIDER_ORDER`], reads every row through the
+    /// selected-account-aware [`Self::snapshot`], and re-evaluates detection on
+    /// every call: affirmative evidence inserts membership, a non-refreshing
+    /// view without evidence removes it, and the cold refreshing placeholder
+    /// alone reuses prior membership so a refresh cannot drop a detected item.
+    /// Returns an empty vector for zero detected providers.
+    #[must_use = "the glance rows are the Desktop surface source"]
+    pub fn provider_glance_rows(&mut self) -> Result<Vec<HostProviderGlanceRow>, String> {
+        self.require_open()?;
+        let prefs = self.format_prefs;
+        let now = chrono::Utc::now().timestamp();
+        let mut rows = Vec::new();
+        for surface in HostSurfaceId::DESKTOP_PROVIDER_ORDER.iter().copied() {
+            let view = self.snapshot(surface.id())?;
+            let detected = if view_is_auto_detected(&view) {
+                self.desktop_detected_surfaces
+                    .insert(surface.id().to_owned());
+                true
+            } else if view.is_refreshing_placeholder() {
+                self.desktop_detected_surfaces.contains(surface.id())
+            } else {
+                self.desktop_detected_surfaces.remove(surface.id());
+                false
+            };
+            if detected {
+                rows.push(build_provider_glance_row(surface, &view, now, prefs));
+            }
+        }
+        Ok(rows)
+    }
+
     /// Estimate honesty caption for one surface snapshot (presentation-time).
     pub fn estimate_caption_for(&mut self, surface_id: &str) -> Result<Option<String>, String> {
         let view = self.snapshot(surface_id)?;
@@ -1028,6 +1153,104 @@ fn drive_label_prefix(view: &FocusedUsageView, remaining: u8) -> Option<&str> {
         .find(|bucket| bucket.remaining_percent == Some(remaining) && bucket.status_slot.is_none())
         .map(|bucket| bucket.label.as_str())
         .filter(|label| !label.is_empty())
+}
+
+/// A view is auto-detected when it carries affirmative credential evidence (a
+/// non-empty `credential_origin` that is not a `"needs …"` placeholder, even
+/// under `Unsupported` status) or at least one bucket with a numeric/formatted
+/// quota field. Bucket labels, pace/status prose, and non-Fresh status alone
+/// are never evidence.
+fn view_is_auto_detected(view: &FocusedUsageView) -> bool {
+    let origin_affirmative = view
+        .account
+        .credential_origin
+        .as_deref()
+        .map(str::trim)
+        .filter(|origin| !origin.is_empty())
+        .is_some_and(|origin| !origin.to_ascii_lowercase().starts_with("needs "));
+    let bucket_evidence = view.buckets.iter().any(|bucket| {
+        bucket.remaining_percent.is_some()
+            || bucket.used_label.is_some()
+            || bucket.limit_label.is_some()
+            || bucket.used_money.is_some()
+            || bucket.limit_money.is_some()
+            || bucket.reset_label.is_some()
+            || bucket.resets_at.is_some()
+    });
+    origin_affirmative || bucket_evidence
+}
+
+/// Select the required semantic glance bucket: Weekly for the six non-Amp
+/// providers and Daily for Amp. Never a Spend/Session/min-remaining or label
+/// match — one provider's missing slot yields `–`, never a whole-list failure.
+fn glance_bucket(
+    surface: HostSurfaceId,
+    view: &FocusedUsageView,
+) -> Option<&jackin_protocol::control::QuotaBucketView> {
+    let slot = if surface == HostSurfaceId::Amp {
+        jackin_protocol::control::StatusSlot::Daily
+    } else {
+        jackin_protocol::control::StatusSlot::Weekly
+    };
+    view.buckets
+        .iter()
+        .find(|bucket| bucket.status_slot == Some(slot))
+}
+
+fn build_provider_glance_row(
+    surface: HostSurfaceId,
+    view: &FocusedUsageView,
+    now: i64,
+    prefs: UsageFormatPrefs,
+) -> HostProviderGlanceRow {
+    use jackin_protocol::control::UsageSnapshotStatus as Status;
+    let display_label = if view.account.provider_label.is_empty() {
+        provider_display_label(surface.label()).to_owned()
+    } else {
+        provider_display_label(&view.account.provider_label).to_owned()
+    };
+    let glance = glance_bucket(surface, view);
+    let (bar_label, headline, glance_remaining_percent, reset_label, exact_reset) =
+        match glance.and_then(|bucket| bucket.remaining_percent) {
+            Some(percent) => {
+                let (reset_label, exact_reset) =
+                    glance
+                        .and_then(|bucket| bucket.resets_at)
+                        .map_or((None, None), |at| {
+                            (
+                                Some(reset_label_with_prefs(at, now, prefs)),
+                                Some(exact_reset_parenthetical(at)),
+                            )
+                        });
+                (
+                    format!("{percent}%"),
+                    format!("{percent}% left"),
+                    Some(percent),
+                    reset_label,
+                    exact_reset,
+                )
+            }
+            None => ("–".to_owned(), "–".to_owned(), None, None, None),
+        };
+    HostProviderGlanceRow {
+        surface_id: surface.id().to_owned(),
+        icon_key: surface.id().to_owned(),
+        display_label,
+        account_label: view.account.account_label.clone(),
+        plan_label: view.account.plan_label.clone(),
+        glance_remaining_percent,
+        bar_label,
+        headline,
+        reset_label,
+        exact_reset,
+        status_word: usage_status_storage_label(view.status).to_owned(),
+        is_refreshing: view.is_refreshing_placeholder(),
+        status_label: usage_display_status_label(view.status).to_owned(),
+        severity: worst_severity_label(view),
+        updated_label: view.updated_label.clone(),
+        last_error: view.last_error.clone(),
+        dimmed: matches!(view.status, Status::Stale | Status::Error),
+    }
 }
 
 fn worst_severity_label(view: &FocusedUsageView) -> String {

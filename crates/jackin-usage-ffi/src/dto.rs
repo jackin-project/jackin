@@ -287,5 +287,6 @@ pub(crate) fn to_host_config(config: OpenConfig) -> jackin_usage::host::HostRunt
         data_dir: std::path::PathBuf::from(config.data_dir),
         refresh_floor_secs: config.refresh_floor_secs,
         enabled_surface_ids: config.enabled_surface_ids,
+        probe_policy: jackin_usage::host::HostProbePolicy::Live,
     }
 }
