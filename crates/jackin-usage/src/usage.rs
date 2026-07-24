@@ -92,13 +92,13 @@ pub(crate) use self::codex::{
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]
 pub(crate) use self::grok::{
-    GrokBillingCycle, GrokBillingResponse, GrokBillingSnapshot, GrokBillingUsage, GrokCent,
+    GrokBillingConfig, GrokBillingResponse, GrokBillingSnapshot, GrokCent, GrokCurrentPeriod,
     GrokWebBillingSnapshot, fetch_grok_billing, fetch_grok_rpc_billing, fetch_grok_web_billing,
     grok_account_label, grok_account_label_or_presence, grok_bearer_token,
     grok_bearer_token_from_entry, grok_binary_path, grok_cycle_label_from_minutes,
-    grok_cycle_label_from_reset, grok_plan_label, grok_rpc_request, grok_rpc_request_payload,
-    grok_snapshot, grok_snapshot_from_rpc_result, grpc_web_data_frames,
-    parse_grok_web_billing_response, scan_protobuf,
+    grok_cycle_label_from_reset, grok_rpc_request, grok_rpc_request_payload, grok_snapshot,
+    grok_snapshot_from_rpc_result, grpc_web_data_frames, parse_grok_web_billing_response,
+    scan_protobuf,
 };
 #[expect(
     unused_imports,

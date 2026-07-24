@@ -570,3 +570,9 @@ dialog; numbers come from the same Rust views).
   bridge access off `@MainActor` with cold-open + refresh coalescing. Verified
   via `cargo xtask ci --fast` + `cargo xtask desktop test` + DesktopArchitectureLint.
   XCTest suites deferred to a full-Xcode environment (CLT-only host here).
+- 2026-07-24 — execution — plan 003 shipped the current Grok billing decoder:
+  server-resolved `subscription_tier` plan label (auth heuristic retired), one
+  Weekly headline with pace from `currentPeriod`/`billingPeriod` windows, and
+  prepaid-balance / on-demand quota bounds (limits-only). Rust-verified via
+  `cargo nextest` + clippy; built on plan 005's shipped Step-1 balance-only
+  bucket-presentation contract.

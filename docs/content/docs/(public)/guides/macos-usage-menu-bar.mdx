@@ -77,6 +77,8 @@ Probes read the **same host logins** operators already use for jackin❯ launch 
 
 No passwords are stored by the menu bar app. It reuses local sessions/keys already present for jackin❯.
 
+Grok's plan/tier is read from xAI's billing service (the true subscription tier), not guessed from how you logged in, so a Free-tier browser login is labeled correctly; its prepaid credits and on-demand cap are shown as spending **limits**, never token prices or usage trends.
+
 On a default macOS install Claude Code keeps its credential only in the login Keychain, so the first read may show a system consent prompt. Choosing **Allow** lets that read complete (macOS may ask again on a later refresh); **Always Allow** makes future reads silent. If you **Deny**, Claude stays disabled until you relaunch jackin❯ Desktop — no repeated prompt storm, and no other provider is affected. Over SSH or another headless session where the Keychain is unavailable, jackin❯ Desktop falls back to the credentials file exactly as before.
 
 ## Debug CLI (no UI)

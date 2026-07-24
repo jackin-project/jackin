@@ -2512,58 +2512,102 @@ fn provider_matches_usage_label_resolves_canonical_synonyms() {
 }
 
 #[test]
-fn grok_billing_response_maps_monthly_credits() {
+fn grok_billing_config_maps_current_fallback_and_bounds() {
     let usage: GrokBillingResponse = serde_json::from_value(serde_json::json!({
-        "billingCycle": {
-            "billingPeriodStart": "2026-06-01T00:00:00Z",
-            "billingPeriodEnd": "2026-07-01T00:00:00Z"
-        },
-        "monthlyLimit": { "val": 5000 },
-        "onDemandCap": { "val": 2500 },
+        "subscription_tier": "SuperGrok",
         "on_demand_enabled": true,
-        "usage": {
-            "includedUsed": { "val": 1500 },
-            "onDemandUsed": { "val": 300 },
-            "totalUsed": { "val": 1800 }
+        "config": {
+            "monthlyLimit": { "val": 5000 },
+            "used": { "val": 1800 },
+            "billingPeriodStart": "2026-06-01T00:00:00Z",
+            "billingPeriodEnd": "2026-07-01T00:00:00Z",
+            "prepaidBalance": { "val": 2500 },
+            "onDemandCap": { "val": 4000 },
+            "onDemandUsed": { "val": 300 }
         }
     }))
-    .expect("valid Grok billing response");
+    .expect("valid current Grok billing response");
 
+    assert_eq!(usage.plan_label().as_deref(), Some("SuperGrok"));
     let buckets = usage.buckets(1_780_315_200);
 
+    // One headline (Weekly slot), detail rows stay untagged.
     assert_eq!(buckets[0].label, "Monthly");
-    // The RPC/CLI billing path tags its cycle bucket Weekly (no Session); the
-    // detail rows must stay untagged so they never reach the headline.
     assert_eq!(buckets[0].status_slot, Some(StatusSlot::Weekly));
+    assert_eq!(buckets[0].remaining_percent, Some(64));
     assert!(
         buckets[1..]
             .iter()
             .all(|bucket| bucket.status_slot.is_none())
     );
-    assert_eq!(buckets[0].used_label.as_deref(), Some("$18"));
-    assert_eq!(buckets[0].limit_label.as_deref(), Some("$50"));
-    assert_eq!(buckets[0].remaining_percent, Some(64));
-    assert_eq!(
-        buckets[0].reset_label.as_deref(),
-        Some(
-            reset_label(
-                parse_iso_epoch("2026-07-01T00:00:00Z").expect("billing reset"),
-                1_780_315_200,
-            )
-            .as_str()
-        )
-    );
-    assert_eq!(buckets[0].pace_label, None);
-    assert!(
-        buckets.iter().any(|bucket| bucket.label == "Included usage"
-            && bucket.used_label.as_deref() == Some("$15"))
-    );
+
+    let credits = buckets
+        .iter()
+        .find(|bucket| bucket.label == "Extra usage credits")
+        .expect("prepaid balance bound");
+    assert_eq!(credits.limit_label.as_deref(), Some("$25"));
+    assert!(credits.limit_money.is_some());
+    assert_eq!(credits.used_label, None);
+
+    let on_demand = buckets
+        .iter()
+        .find(|bucket| bucket.label == "On-demand usage")
+        .expect("on-demand bound");
+    assert_eq!(on_demand.used_label.as_deref(), Some("$3"));
+    assert_eq!(on_demand.limit_label.as_deref(), Some("$40"));
+    assert!(on_demand.limit_money.is_some());
+}
+
+#[test]
+fn grok_billing_config_preferred_percent_path_has_pace() {
+    let usage: GrokBillingResponse = serde_json::from_value(serde_json::json!({
+        "config": {
+            "creditUsagePercent": 43.0,
+            "currentPeriod": {
+                "type": "USAGE_PERIOD_TYPE_WEEKLY",
+                "start": "2026-06-01T00:00:00Z",
+                "end": "2026-06-08T00:00:00Z"
+            }
+        }
+    }))
+    .expect("valid preferred config");
+    let now = parse_iso_epoch("2026-06-04T00:00:00Z").expect("now");
+    let buckets = usage.buckets(now);
+    assert_eq!(buckets[0].label, "Weekly");
+    assert_eq!(buckets[0].status_slot, Some(StatusSlot::Weekly));
+    assert_eq!(buckets[0].remaining_percent, Some(57));
+    assert!(buckets[0].pace_label.is_some());
+}
+
+#[test]
+fn grok_plan_label_from_server_tier_only() {
+    let free: GrokBillingResponse = serde_json::from_value(serde_json::json!({
+        "config": {},
+        "subscription_tier": "  "
+    }))
+    .expect("blank tier");
+    assert_eq!(free.plan_label(), None);
+    // Web path never guesses a plan (no auth heuristic).
+    let web = GrokBillingSnapshot::Web(GrokWebBillingSnapshot {
+        used_percent: 40.0,
+        reset_at_epoch: Some(1_780_315_200),
+    });
+    assert_eq!(web.plan_label(), None);
+}
+
+#[test]
+fn grok_on_demand_requires_positive_cap() {
+    let usage: GrokBillingResponse = serde_json::from_value(serde_json::json!({
+        "on_demand_enabled": true,
+        "config": { "onDemandUsed": { "val": 500 } }
+    }))
+    .expect("no cap config");
+    let buckets = usage.buckets(1_780_315_200);
+    // Used without a positive provider cap is unbounded spend, not a quota bound.
     assert!(
         buckets
             .iter()
-            .any(|bucket| bucket.label == "On-demand usage"
-                && bucket.used_label.as_deref() == Some("$3")
-                && bucket.limit_label.as_deref() == Some("$25"))
+            .all(|bucket| bucket.label != "On-demand usage")
     );
 }
 
@@ -2613,14 +2657,14 @@ fn grok_account_label_reports_safe_credential_presence() {
 fn grok_snapshot_uses_probe_success_without_local_credential_marker() {
     let missing = Path::new("/tmp/nonexistent-grok-auth-for-test.json");
     let billing: GrokBillingResponse = serde_json::from_value(serde_json::json!({
-        "billingCycle": {
+        "config": {
+            "monthlyLimit": { "val": 5000 },
+            "used": { "val": 1000 },
             "billingPeriodStart": "2026-06-01T00:00:00Z",
             "billingPeriodEnd": "2026-07-01T00:00:00Z"
-        },
-        "monthlyLimit": { "val": 5000 },
-        "usage": { "totalUsed": { "val": 1000 } }
+        }
     }))
-    .expect("valid Grok billing response");
+    .expect("valid current Grok billing response");
 
     let view = grok_snapshot_from_rpc_result(
         "grok",
@@ -2629,7 +2673,7 @@ fn grok_snapshot_uses_probe_success_without_local_credential_marker() {
         false,
         false,
         false,
-        Ok(GrokBillingSnapshot::Rpc(billing)),
+        Ok(GrokBillingSnapshot::Rpc(Box::new(billing))),
     );
 
     assert_eq!(view.status, UsageSnapshotStatus::Fresh);

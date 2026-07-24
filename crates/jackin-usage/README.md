@@ -51,6 +51,8 @@ Token-monitor and usage-accounting types consumed by `jackin-capsule`.
 
 Claude credential resolution (`usage/claude.rs`) reads the macOS Keychain before any file/env credential, using the shared `jackin_core::claude_keychain_scope` service derivation. Each refresh resolves one Keychain-first wave and classifies a typed `UsageSnapshotPolicy`: `Shared`, or `LocalOnly` for a Keychain denial, missing credential, or anonymous credential. Local-only outcomes never restore stale cached quota, enter shared adoption/coordination, persist snapshots, or materialize accounts, and the host snapshot/account-list boundaries return only the live local view for them. A denial is terminal for the service for the process; a missing item is re-checked every wave.
 
+Grok billing (`usage/grok.rs`) decodes the current ACP `x.ai/billing` `config` shape: the plan label is the server-resolved `subscription_tier` (no `auth_mode` heuristic), one Weekly headline carries pace when a positive window is derivable (RPC path), and prepaid balance / on-demand cap+used render as quota bounds only (never a price or history).
+
 Host display extensions (plan 008; presentation-time only, not persisted):
 
 | API | Role |

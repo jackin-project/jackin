@@ -10,7 +10,7 @@ Spec: [spec/](spec/) · Ledger: [coverage.md](coverage.md).
 |------|-------|--------|----------|--------|------------|--------|
 | 001 | Provider-core correctness + Amp Free daily | F11, F12 | P1 | M | — | DONE |
 | 002 | Claude macOS Keychain credential read | F6, W5 | P1 | M | — | DONE (spec scenarios hold + verified; deviations: XCTest suites deferred to full-Xcode env — contract verified via DesktopArchitectureLint + `cargo xtask desktop test`; keychain flight is a serialized denial-cached design; coordination scoping via typed `UsageSnapshotPolicy` in `build_snapshot`) |
-| 003 | Grok server tier, current quota bounds, pace inputs | F7 | P1 | M | 005 | TODO |
+| 003 | Grok server tier, current quota bounds, pace inputs | F7 | P1 | M | 005 | DONE (built on 005's shipped Step-1 balance-only bucket contract; full 005 AppKit remainder not required for this Rust decoder) |
 | 004 | Run-out producer (Variant A) in Rust | F5 | P1 | M | 003 | TODO |
 | 005 | Per-provider status bar items (auto-detect) | S1–S3, S10, F1, F3 | P1 | L | 001, 002 | IN PROGRESS (Rust+FFI foundation Steps 1-4 shipped & gate-green: shared bucket formatter, seven-provider glance contract, ProviderGlanceRowDto/providerGlanceRows over UniFFI; Steps 5-8 AppKit status-item lifecycle rewrite remain — needs full-Xcode/XCTest) |
 | 006 | Popover redesign (Agent Usage preview) | S5–S10, F4, F8, F10, W3, W4 | P1 | L | 005 | TODO |
