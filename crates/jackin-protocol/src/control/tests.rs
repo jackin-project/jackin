@@ -180,3 +180,16 @@ fn money_formats_currency_and_credit_labels() {
         "300 credits"
     );
 }
+
+#[test]
+fn status_slot_daily_serializes_as_daily() {
+    // snake_case serde repr, matching the FFI `"daily"` slot projection.
+    assert_eq!(
+        serde_json::to_value(StatusSlot::Daily).unwrap(),
+        serde_json::json!("daily")
+    );
+    assert_eq!(
+        serde_json::from_value::<StatusSlot>(serde_json::json!("daily")).unwrap(),
+        StatusSlot::Daily
+    );
+}

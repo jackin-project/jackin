@@ -225,42 +225,19 @@ pub(crate) fn status_bar_headline_for_surface(
 }
 
 pub(crate) fn amp_status_bar_headline(buckets: &[QuotaBucketView]) -> Option<String> {
-    let free = buckets
+    // Daily is the only Amp glance headline; credit/workspace bounds stay
+    // detail-only and never leak into the status bar or infer availability
+    // from a bucket title.
+    buckets
         .iter()
-        .find(|bucket| status_bar_fresh_or_stale(bucket) && bucket.label == "Amp Free")
+        .find(|bucket| {
+            status_bar_fresh_or_stale(bucket) && bucket.status_slot == Some(StatusSlot::Daily)
+        })
         .and_then(|bucket| {
             bucket
                 .remaining_percent
                 .map(|remaining| format!("Free {remaining}%"))
-        });
-    let credits = buckets
-        .iter()
-        .find(|bucket| {
-            status_bar_fresh_or_stale(bucket)
-                && matches!(bucket.label.as_str(), "Individual credits" | "Credits")
         })
-        .and_then(amp_credit_status_label);
-    match (free, credits) {
-        (Some(free), Some(credits)) => Some(format!("{free} · {credits}")),
-        (Some(free), None) => Some(free),
-        (None, Some(credits)) => Some(credits),
-        (None, None) => None,
-    }
-}
-
-pub(crate) fn amp_credit_status_label(bucket: &QuotaBucketView) -> Option<String> {
-    bucket
-        .limit_label
-        .as_deref()
-        .or_else(|| {
-            bucket
-                .pace_label
-                .as_deref()
-                .and_then(|label| label.strip_prefix("Individual credits: "))
-        })
-        .map(str::trim)
-        .filter(|label| !label.is_empty())
-        .map(str::to_owned)
 }
 
 pub(crate) fn status_bar_quota_labels(buckets: &[QuotaBucketView]) -> Vec<String> {

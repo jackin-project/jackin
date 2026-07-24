@@ -28,6 +28,10 @@ cargo clippy -p jackin-usage-ffi --all-targets -- -D warnings
 
 Existing methods (`snapshot`, `compact_status_bar_label`, …) are unchanged.
 
+`QuotaBucketDto.status_slot` projects the protocol `StatusSlot` as an exact
+lowercase string — `"session"`, `"daily"`, `"weekly"`, `"spend"`. `"daily"`
+carries Amp Free's daily-allowance glance; Swift renders it and never re-derives it.
+
 ## Swift bindings
 
 ```sh

@@ -242,6 +242,7 @@ fn bucket_dto(bucket: QuotaBucketView) -> QuotaBucketDto {
         status_slot: bucket.status_slot.map(|slot| {
             match slot {
                 jackin_protocol::control::StatusSlot::Session => "session",
+                jackin_protocol::control::StatusSlot::Daily => "daily",
                 jackin_protocol::control::StatusSlot::Weekly => "weekly",
                 jackin_protocol::control::StatusSlot::Spend => "spend",
             }

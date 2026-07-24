@@ -99,6 +99,10 @@ pub(crate) struct ZaiQuotaData {
         alias = "packageName"
     )]
     pub(crate) plan_name: Option<String>,
+    // Separate field, not another `plan_name` alias: serde raises a
+    // duplicate-field error if two aliased keys co-occur, which would fail
+    // the whole parse when a response carries both `planName` and `level`.
+    pub(crate) level: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -161,11 +165,17 @@ impl ZaiQuotaResponse {
     }
 
     pub(crate) fn plan_name(&self) -> Option<String> {
-        self.data
-            .as_ref()
-            .and_then(|data| data.plan_name.as_deref())
+        let data = self.data.as_ref()?;
+        data.plan_name
+            .as_deref()
             .map(str::trim)
             .filter(|value| !value.is_empty())
+            .or_else(|| {
+                data.level
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+            })
             .map(str::to_owned)
     }
 }

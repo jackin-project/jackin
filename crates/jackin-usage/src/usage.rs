@@ -43,8 +43,8 @@ mod zai;
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]
 pub(crate) use self::amp::{
-    AmpApiUsage, AmpCliUsage, amp_free_reset_label, amp_snapshot, fetch_amp_api_usage,
-    fetch_amp_cli_usage, load_amp_api_key, parse_amp_usage_output,
+    AmpSuccessContext, AmpUsage, AmpWorkspaceBalance, amp_snapshot, amp_view_from_usage,
+    fetch_amp_api_usage, fetch_amp_cli_usage, load_amp_api_key, parse_amp_usage_output,
 };
 pub use self::claude::ClaudeUsageDiagnostic;
 #[expect(
@@ -110,9 +110,10 @@ pub(crate) use self::kimi::{
 )]
 pub(crate) use self::minimax::{
     MiniMaxBaseResponse, MiniMaxComboCard, MiniMaxModelRemain, MiniMaxUsageData,
-    MiniMaxUsageResponse, MiniMaxWindow, fetch_minimax_usage, minimax_bucket, minimax_bucket_label,
-    minimax_is_general_model, minimax_remains_host, minimax_reset_epoch, minimax_snapshot,
-    minimax_usage_count_line, resolve_minimax_remains_urls, resolve_minimax_remains_urls_from,
+    MiniMaxUsageResponse, MiniMaxWindow, fetch_minimax_usage, first_minimax_usage, minimax_bucket,
+    minimax_bucket_label, minimax_is_general_model, minimax_operation_path, minimax_remains_host,
+    minimax_reset_epoch, minimax_snapshot, minimax_usage_count_line, resolve_minimax_remains_urls,
+    resolve_minimax_remains_urls_from,
 };
 #[expect(
     unused_imports,
@@ -136,14 +137,14 @@ pub(crate) use self::refresh::{
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]
 pub(crate) use self::view::{
-    UsageViewInput, account_snapshot_views_from_cache, amp_credit_status_label,
-    amp_status_bar_headline, bucket, cached_refreshing_view, cached_unavailable_view,
-    compact_account_identity, contains_word, decorate_surface_view, enrich_provider_tabs,
-    mark_active_tab, most_constrained_fresh_bucket, preserve_cached_quota_on_failed_refresh,
-    provider_matches_usage_label, provider_tabs, quota_amounts_for_account_snapshot,
-    spend_headline_label, stale_shared_view, status_bar_fresh_or_stale,
-    status_bar_headline_for_surface, status_bar_label, status_bar_quota_labels, surface_from_text,
-    timed_bucket, usage_tab_source_label, usage_tab_status_label, usage_view, with_status_slot,
+    UsageViewInput, account_snapshot_views_from_cache, amp_status_bar_headline, bucket,
+    cached_refreshing_view, cached_unavailable_view, compact_account_identity, contains_word,
+    decorate_surface_view, enrich_provider_tabs, mark_active_tab, most_constrained_fresh_bucket,
+    preserve_cached_quota_on_failed_refresh, provider_matches_usage_label, provider_tabs,
+    quota_amounts_for_account_snapshot, spend_headline_label, stale_shared_view,
+    status_bar_fresh_or_stale, status_bar_headline_for_surface, status_bar_label,
+    status_bar_quota_labels, surface_from_text, timed_bucket, usage_tab_source_label,
+    usage_tab_status_label, usage_view, with_status_slot,
 };
 #[expect(
     unused_imports,
@@ -157,12 +158,11 @@ pub(crate) use self::zai::{
 
 use format::{
     CliOutput, codex_account_from_value, codex_limit_label, compact_count, dollar_amounts,
-    env_value, expiry_label, first_number_key, first_string_key, format_amount_with_unit,
-    format_cents, format_currency, home_path, humanize_plan_label, humanize_words_with,
-    json_number, local_timestamp_label, oauth_origin, parse_iso_epoch, percent_before_used,
-    quota_pace_label, remaining_from_fraction, reset_label, run_cli_with_timeout,
-    run_cli_with_timeout_full, titlecase_ascii, used_percent_from_fraction, used_percent_label,
-    window_minutes_label,
+    env_value, expiry_label, first_string_key, format_amount_with_unit, format_cents,
+    format_currency, home_path, humanize_plan_label, humanize_words_with, json_number,
+    oauth_origin, parse_iso_epoch, percent_before_used, quota_pace_label, remaining_from_fraction,
+    reset_label, run_cli_with_timeout, run_cli_with_timeout_full, titlecase_ascii,
+    used_percent_from_fraction, used_percent_label, window_minutes_label,
 };
 // Crate-visible re-exports for host overview/compact presentation (plan 008).
 pub(crate) use format::{

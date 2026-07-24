@@ -700,19 +700,19 @@ fn status_bar_label_drops_tagged_bucket_that_failed() {
 }
 
 #[test]
-fn status_bar_label_uses_amp_free_and_credits() {
+fn status_bar_label_uses_amp_daily_only() {
     let buckets = vec![
         QuotaBucketView {
             used_money: None,
             limit_money: None,
             severity: UsageSeverity::default(),
             label: "Amp Free".to_owned(),
-            used_label: Some("$5.24".to_owned()),
-            limit_label: Some("$10".to_owned()),
+            used_label: None,
+            limit_label: None,
             remaining_percent: Some(48),
-            reset_label: None,
+            reset_label: Some("Resets daily".to_owned()),
             resets_at: None,
-            status_slot: None,
+            status_slot: Some(StatusSlot::Daily),
             pace_label: None,
             status: UsageSnapshotStatus::Fresh,
         },
@@ -732,6 +732,7 @@ fn status_bar_label_uses_amp_free_and_credits() {
         },
     ];
 
+    // Daily is the only glance; credits stay detail-only.
     assert_eq!(
         status_bar_label(
             UsageSurface::Amp,
@@ -739,7 +740,7 @@ fn status_bar_label_uses_amp_free_and_credits() {
             UsageSnapshotStatus::Fresh,
             &buckets
         ),
-        "Free 48% · $4.76"
+        "Free 48%"
     );
 }
 
@@ -750,12 +751,12 @@ fn status_bar_label_uses_stale_amp_cache() {
         limit_money: None,
         severity: UsageSeverity::default(),
         label: "Amp Free".to_owned(),
-        used_label: Some("$9.10".to_owned()),
-        limit_label: Some("$10".to_owned()),
+        used_label: None,
+        limit_label: None,
         remaining_percent: Some(9),
-        reset_label: None,
+        reset_label: Some("Resets daily".to_owned()),
         resets_at: None,
-        status_slot: None,
+        status_slot: Some(StatusSlot::Daily),
         pace_label: None,
         status: UsageSnapshotStatus::Stale,
     }];
@@ -2264,6 +2265,54 @@ fn codex_rpc_response_maps_account_windows_and_credits() {
     assert_eq!(credits.limit_label.as_deref(), Some("12.50 credits"));
 }
 
+fn codex_minimal_limits_value() -> serde_json::Value {
+    serde_json::json!({
+        "rateLimits": {
+            "primary": {
+                "usedPercent": 25.0,
+                "windowDurationMins": 300,
+                "resetsAt": 1_781_189_520_i64
+            }
+        }
+    })
+}
+
+#[test]
+fn codex_rpc_account_api_key_tag_yields_origin_label_and_rate_limits() {
+    let usage = codex::decode_codex_rpc_usage(
+        codex_minimal_limits_value(),
+        Some(serde_json::json!({ "account": { "type": "apiKey" } })),
+    )
+    .expect("Codex RPC decode");
+    assert_eq!(usage.account_label.as_deref(), Some("Codex API key"));
+    let buckets = usage.response.buckets(1_781_185_560);
+    assert!(buckets.iter().any(|bucket| bucket.label == "Session"));
+}
+
+#[test]
+fn codex_rpc_account_amazon_bedrock_tag_decodes_without_label() {
+    let account: CodexRpcAccountResponse = serde_json::from_value(serde_json::json!({
+        "account": { "type": "amazonBedrock", "usesCodexManagedCredentials": true }
+    }))
+    .expect("Codex Bedrock account decodes");
+    let limits: CodexRpcRateLimitsResponse =
+        serde_json::from_value(codex_minimal_limits_value()).expect("limits");
+    let usage = CodexRpcUsage::from_rpc(limits, Some(account));
+    assert_eq!(usage.account_label, None);
+}
+
+#[test]
+fn codex_rpc_account_decode_failure_degrades_to_no_label() {
+    let usage = codex::decode_codex_rpc_usage(
+        codex_minimal_limits_value(),
+        Some(serde_json::json!({ "account": { "type": "someFutureTag" } })),
+    )
+    .expect("unknown account tag still yields usage");
+    assert_eq!(usage.account_label, None);
+    let buckets = usage.response.buckets(1_781_185_560);
+    assert!(buckets.iter().any(|bucket| bucket.label == "Session"));
+}
+
 #[test]
 fn managed_cli_launch_gate_cools_down_after_launch_failure() {
     let mut gate = ManagedCliLaunchGate::default();
@@ -2840,17 +2889,26 @@ fn reset_label_uses_relative_and_local_timestamp() {
     let same_day = parse_iso_epoch("2026-06-11T15:12:00Z").expect("same day");
     assert_eq!(
         reset_label(same_day, now),
-        format!("Resets in 1h 26m ({})", local_timestamp_label(same_day))
+        format!(
+            "Resets in 1h 26m ({})",
+            format::local_timestamp_label(same_day)
+        )
     );
     let tomorrow = parse_iso_epoch("2026-06-12T04:18:00Z").expect("tomorrow");
     assert_eq!(
         reset_label(tomorrow, now),
-        format!("Resets in 14h 32m ({})", local_timestamp_label(tomorrow))
+        format!(
+            "Resets in 14h 32m ({})",
+            format::local_timestamp_label(tomorrow)
+        )
     );
     let future = parse_iso_epoch("2026-07-01T16:31:00Z").expect("future");
     assert_eq!(
         reset_label(future, now),
-        format!("Resets in 20d 2h ({})", local_timestamp_label(future))
+        format!(
+            "Resets in 20d 2h ({})",
+            format::local_timestamp_label(future)
+        )
     );
     assert_eq!(reset_label(now, now), "Resets now");
 }
@@ -2997,35 +3055,161 @@ fn claude_code_user_agent_parses_cli_version() {
     );
 }
 
-#[test]
-fn amp_cli_usage_parser_maps_free_and_credit_rows() {
-    let usage = parse_amp_usage_output(
-            "Signed in as person@example.com (handle)\n\
-             Amp Free: $2.42/$10 remaining (replenishes +$0.42/hour) - https://ampcode.com/settings#amp-free\n\
-             Individual credits: $0.33 remaining (set up automatic top-up to avoid running out)\n",
-        )
-        .expect("Amp usage");
+const AMP_DAILY_FIXTURE: &str = "Signed in as user@example.com (example)\n\
+     Amp Free: 61% remaining today (resets daily)\n\
+     Individual credits: $9.86 remaining\n\
+     Workspace example: $5.33 remaining";
 
-    assert_eq!(
-        usage.account_label.as_deref(),
-        Some("person@example.com (handle)")
-    );
-    let now = 1_781_185_560;
-    let buckets = usage.buckets(now);
+const AMP_TWO_WORKSPACE_FIXTURE: &str = "Amp Free: 61% remaining today (resets daily)\n\
+     Individual credits: $9.86 remaining\n\
+     Workspace alpha: $5.33 remaining\n\
+     Workspace beta: $2.25 remaining";
+
+#[test]
+fn amp_daily_display_text_maps_daily_slot_and_reset_description() {
+    let api = AmpUsage::from_api_value(serde_json::json!({
+        "result": { "displayText": AMP_DAILY_FIXTURE }
+    }))
+    .expect("Amp API daily usage");
+    let cli = parse_amp_usage_output(AMP_DAILY_FIXTURE).expect("Amp CLI daily usage");
+
+    // API and CLI delegate to one parser: identical parsed fields.
+    assert_eq!(api.account_label.as_deref(), Some("user@example.com"));
+    assert_eq!(api.account_label, cli.account_label);
+    assert_eq!(api.daily_remaining_percent, Some(61));
+    assert_eq!(api.daily_remaining_percent, cli.daily_remaining_percent);
+    assert_eq!(api.individual_credits, cli.individual_credits);
+    assert_eq!(api.workspace_balances, cli.workspace_balances);
+
+    let buckets = api.buckets();
     assert_eq!(buckets[0].label, "Amp Free");
-    assert_eq!(buckets[0].used_label.as_deref(), Some("$7.58"));
-    assert_eq!(buckets[0].limit_label.as_deref(), Some("$10"));
-    assert_eq!(buckets[0].remaining_percent, Some(24));
+    assert_eq!(buckets[0].status_slot, Some(StatusSlot::Daily));
+    assert_eq!(buckets[0].remaining_percent, Some(61));
+    assert_eq!(buckets[0].reset_label.as_deref(), Some("Resets daily"));
+    assert_eq!(buckets[0].resets_at, None);
+}
+
+#[test]
+fn amp_daily_percentage_clamps_to_protocol_range() {
+    let high = parse_amp_usage_output("Amp Free: 140% remaining today (resets daily)")
+        .expect("high daily");
+    assert_eq!(high.daily_remaining_percent, Some(100));
+    let low =
+        parse_amp_usage_output("Amp Free: -5% remaining today (resets daily)").expect("low daily");
+    assert_eq!(low.daily_remaining_percent, Some(0));
+    // A malformed/non-finite percent yields no Daily bucket.
+    assert!(parse_amp_usage_output("Amp Free: abc% remaining today (resets daily)").is_none());
+}
+
+#[test]
+fn amp_daily_parser_preserves_workspace_balances_in_order() {
+    let usage = parse_amp_usage_output(AMP_TWO_WORKSPACE_FIXTURE).expect("two workspace");
+    assert_eq!(usage.individual_credits, Some(9.86));
     assert_eq!(
-        buckets[0].reset_label.as_deref(),
-        amp_free_reset_label(2.42, 10.0, Some(0.42), now).as_deref()
+        usage.workspace_balances,
+        vec![
+            AmpWorkspaceBalance {
+                name: "alpha".to_owned(),
+                remaining: 5.33,
+            },
+            AmpWorkspaceBalance {
+                name: "beta".to_owned(),
+                remaining: 2.25,
+            },
+        ]
     );
-    assert_eq!(buckets[0].pace_label, None);
-    assert_eq!(buckets[1].label, "Individual credits");
-    assert_eq!(buckets[1].limit_label.as_deref(), Some("$0.33"));
+    let buckets = usage.buckets();
+    let labels: Vec<_> = buckets.iter().map(|bucket| bucket.label.as_str()).collect();
     assert_eq!(
-        buckets[1].pace_label.as_deref(),
-        Some("Individual credits: $0.33")
+        labels,
+        vec![
+            "Amp Free",
+            "Individual credits",
+            "Workspace alpha",
+            "Workspace beta"
+        ]
+    );
+    // Only the Amp Free bucket carries a status slot.
+    assert!(
+        buckets[1..]
+            .iter()
+            .all(|bucket| bucket.status_slot.is_none())
+    );
+}
+
+#[test]
+fn amp_paid_only_balances_do_not_infer_daily_or_plan() {
+    let usage = parse_amp_usage_output(
+        "Signed in as user@example.com (example)\n\
+         Individual credits: $9.86 remaining\n\
+         Workspace example: $5.33 remaining",
+    )
+    .expect("paid-only usage");
+    assert_eq!(usage.plan_label(), None);
+    let buckets = usage.buckets();
+    assert!(
+        buckets
+            .iter()
+            .all(|bucket| bucket.status_slot != Some(StatusSlot::Daily))
+    );
+    assert_eq!(
+        status_bar_headline_for_surface(UsageSurface::Amp, &buckets),
+        None
+    );
+
+    // The Fresh, Authoritative view preserves provenance and has no plan label.
+    for source in [UsageSource::ProviderApi, UsageSource::Cli] {
+        let view = amp_view_from_usage(
+            AmpSuccessContext {
+                agent: "amp",
+                credential_origin: Some("API key · env AMP_API_KEY".to_owned()),
+                source,
+            },
+            usage.clone(),
+            1_781_185_560,
+        );
+        assert_eq!(view.status, UsageSnapshotStatus::Fresh);
+        assert_eq!(view.confidence, UsageConfidence::Authoritative);
+        assert_eq!(view.source, source);
+        assert_eq!(
+            view.account.credential_origin.as_deref(),
+            Some("API key · env AMP_API_KEY")
+        );
+        assert_eq!(view.account.plan_label, None);
+        assert!(
+            view.buckets
+                .iter()
+                .any(|bucket| bucket.label == "Individual credits")
+        );
+    }
+
+    // A Daily bucket beside credits yields the daily headline, never a credit amount.
+    let mut with_daily = usage.clone();
+    with_daily.daily_remaining_percent = Some(61);
+    assert_eq!(
+        status_bar_headline_for_surface(UsageSurface::Amp, &with_daily.buckets()).as_deref(),
+        Some("Free 61%")
+    );
+}
+
+#[test]
+fn amp_legacy_hourly_display_text_is_rejected() {
+    // The retired hourly-dollar line alone parses to nothing.
+    assert!(
+        parse_amp_usage_output("Amp Free: $2.42/$10 remaining (replenishes +$0.42/hour)").is_none()
+    );
+    // Paired with current credit rows it contributes no Amp Free bucket.
+    let usage = parse_amp_usage_output(
+        "Amp Free: $2.42/$10 remaining (replenishes +$0.42/hour)\n\
+         Individual credits: $0.33 remaining",
+    )
+    .expect("credit rows");
+    assert_eq!(usage.daily_remaining_percent, None);
+    assert!(
+        usage
+            .buckets()
+            .iter()
+            .all(|bucket| bucket.status_slot != Some(StatusSlot::Daily))
     );
 }
 
@@ -3115,73 +3299,6 @@ fn usage_cli_output_capture_is_bounded() {
 }
 
 #[test]
-fn amp_api_usage_maps_display_balance_info() {
-    let usage = AmpApiUsage::from_value(serde_json::json!({
-        "result": {
-            "user": { "email": "person@example.com" },
-            "ampFree": {
-                "ampFreeRemaining": 4.94,
-                "ampFreeLimit": 10.0,
-                "hourlyReplenishment": 0.42
-            },
-            "credits": {
-                "individualCredits": 1.25
-            }
-        }
-    }))
-    .expect("Amp API usage");
-
-    assert_eq!(usage.account_label.as_deref(), Some("person@example.com"));
-    let now = 1_781_185_560;
-    let buckets = usage.buckets(now);
-    assert_eq!(buckets[0].label, "Amp Free");
-    assert_eq!(buckets[0].used_label.as_deref(), Some("$5.06"));
-    assert_eq!(buckets[0].limit_label.as_deref(), Some("$10"));
-    assert_eq!(buckets[0].remaining_percent, Some(49));
-    assert_eq!(
-        buckets[0].reset_label.as_deref(),
-        amp_free_reset_label(4.94, 10.0, Some(0.42), now).as_deref()
-    );
-    assert_eq!(buckets[0].pace_label, None);
-    assert_eq!(buckets[1].label, "Individual credits");
-    assert_eq!(buckets[1].limit_label.as_deref(), Some("$1.25"));
-    assert_eq!(
-        buckets[1].pace_label.as_deref(),
-        Some("Individual credits: $1.25")
-    );
-}
-
-#[test]
-fn amp_api_usage_maps_display_text_response() {
-    let usage = AmpApiUsage::from_value(serde_json::json!({
-            "ok": true,
-            "result": {
-                "displayText": "Signed in as person@example.com (handle)\n\
-                    Amp Free: $7.17/$10 remaining (replenishes +$0.42/hour) - https://ampcode.com/settings#amp-free\n\
-                    Individual credits: $4.76 remaining - https://ampcode.com/settings"
-            }
-        }))
-        .expect("Amp API display text usage");
-
-    assert_eq!(
-        usage.account_label.as_deref(),
-        Some("person@example.com (handle)")
-    );
-    let now = 1_781_185_560;
-    let buckets = usage.buckets(now);
-    assert_eq!(buckets[0].label, "Amp Free");
-    assert_eq!(buckets[0].used_label.as_deref(), Some("$2.83"));
-    assert_eq!(buckets[0].limit_label.as_deref(), Some("$10"));
-    assert_eq!(buckets[0].remaining_percent, Some(72));
-    assert_eq!(
-        buckets[0].reset_label.as_deref(),
-        amp_free_reset_label(7.17, 10.0, Some(0.42), now).as_deref()
-    );
-    assert_eq!(buckets[1].label, "Individual credits");
-    assert_eq!(buckets[1].limit_label.as_deref(), Some("$4.76"));
-}
-
-#[test]
 fn amp_secrets_json_provides_api_key() {
     let dir = tempfile::tempdir().expect("tempdir");
     let path = dir.path().join("secrets.json");
@@ -3260,6 +3377,37 @@ fn zai_quota_response_maps_token_session_and_time_limits() {
         buckets[2].pace_label.as_deref(),
         Some("30 / 120 (90 remaining)")
     );
+}
+
+#[test]
+fn zai_plan_label_falls_back_to_level() {
+    let tokens_limit = serde_json::json!({
+        "type": "TOKENS_LIMIT",
+        "unit": 5,
+        "number": 300,
+        "usage": 1000,
+        "currentValue": 250,
+        "remaining": 750,
+        "percentage": 25,
+        "nextResetTime": 1_781_189_520_000_i64
+    });
+    // `level` present, no `planName`: the one plan field observed in the wild.
+    let level_only: ZaiQuotaResponse = serde_json::from_value(serde_json::json!({
+        "code": 200,
+        "success": true,
+        "data": { "level": "pro", "limits": [tokens_limit.clone()] }
+    }))
+    .expect("level-only quota");
+    assert_eq!(level_only.plan_name().as_deref(), Some("pro"));
+
+    // Both present parses without a duplicate-field error; explicit name wins.
+    let both: ZaiQuotaResponse = serde_json::from_value(serde_json::json!({
+        "code": 200,
+        "success": true,
+        "data": { "planName": "Coding Pro", "level": "pro", "limits": [tokens_limit] }
+    }))
+    .expect("planName + level quota");
+    assert_eq!(both.plan_name().as_deref(), Some("Coding Pro"));
 }
 
 #[test]
@@ -3480,6 +3628,80 @@ fn minimax_remains_urls_accept_override_and_api_host_alias() {
             "https://api.minimax.io/v1/token_plan/remains",
             "https://api.minimax.io/v1/api/openplatform/coding_plan/remains"
         ]
+    );
+}
+
+#[test]
+fn minimax_remains_urls_include_documented_host() {
+    assert_eq!(
+        resolve_minimax_remains_urls_from(None, None),
+        vec![
+            "https://api.minimax.io/v1/token_plan/remains",
+            "https://api.minimax.io/v1/api/openplatform/coding_plan/remains",
+            "https://api.minimaxi.com/v1/token_plan/remains",
+            "https://api.minimaxi.com/v1/api/openplatform/coding_plan/remains",
+            "https://www.minimax.io/v1/token_plan/remains",
+        ]
+    );
+}
+
+#[test]
+fn minimax_fanout_reaches_documented_host_after_four_failures() {
+    let mut attempted = Vec::new();
+    let result = first_minimax_usage(resolve_minimax_remains_urls_from(None, None), |url| {
+        attempted.push(url.to_owned());
+        if url == "https://www.minimax.io/v1/token_plan/remains" {
+            Ok("documented")
+        } else {
+            Err(format!("HTTP 500 for {url}"))
+        }
+    });
+    assert_eq!(result, Ok("documented"));
+    assert_eq!(
+        attempted,
+        vec![
+            "https://api.minimax.io/v1/token_plan/remains",
+            "https://api.minimax.io/v1/api/openplatform/coding_plan/remains",
+            "https://api.minimaxi.com/v1/token_plan/remains",
+            "https://api.minimaxi.com/v1/api/openplatform/coding_plan/remains",
+            "https://www.minimax.io/v1/token_plan/remains",
+        ]
+    );
+}
+
+#[test]
+fn minimax_empty_fanout_preserves_unavailable_error() {
+    let mut calls = 0;
+    let result: Result<&str, String> = first_minimax_usage(Vec::new(), |_url| {
+        calls += 1;
+        Ok("unreachable")
+    });
+    assert_eq!(calls, 0);
+    assert_eq!(result, Err("MiniMax usage endpoint unavailable".to_owned()));
+}
+
+#[test]
+fn minimax_operation_path_matches_candidate_path() {
+    assert_eq!(
+        minimax_operation_path("https://api.minimax.io/v1/token_plan/remains"),
+        "/v1/token_plan/remains"
+    );
+    assert_eq!(
+        minimax_operation_path("https://www.minimax.io/v1/token_plan/remains"),
+        "/v1/token_plan/remains"
+    );
+    assert_eq!(
+        minimax_operation_path("https://api.minimax.io/v1/api/openplatform/coding_plan/remains"),
+        "/v1/api/openplatform/coding_plan/remains"
+    );
+    assert_eq!(
+        minimax_operation_path("https://api.minimaxi.com/v1/api/openplatform/coding_plan/remains"),
+        "/v1/api/openplatform/coding_plan/remains"
+    );
+    // An arbitrary override never exposes its real path in telemetry.
+    assert_eq!(
+        minimax_operation_path("https://quota.example/custom/remains?tenant=secret"),
+        "/custom"
     );
 }
 

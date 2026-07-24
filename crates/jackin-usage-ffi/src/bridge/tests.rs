@@ -50,20 +50,36 @@ fn fixture_snapshot_round_trip_via_bridge() {
                 plan_label: Some("Pro 20x".to_owned()),
                 credential_origin: None,
             },
-            buckets: vec![QuotaBucketView {
-                label: "Session".to_owned(),
-                used_label: Some("63% used".to_owned()),
-                limit_label: Some("100%".to_owned()),
-                remaining_percent: Some(37),
-                reset_label: Some("Resets in 2h".to_owned()),
-                resets_at: Some(99),
-                status_slot: Some(StatusSlot::Session),
-                pace_label: None,
-                status: UsageSnapshotStatus::Fresh,
-                used_money: None,
-                limit_money: None,
-                severity: UsageSeverity::Normal,
-            }],
+            buckets: vec![
+                QuotaBucketView {
+                    label: "Session".to_owned(),
+                    used_label: Some("63% used".to_owned()),
+                    limit_label: Some("100%".to_owned()),
+                    remaining_percent: Some(37),
+                    reset_label: Some("Resets in 2h".to_owned()),
+                    resets_at: Some(99),
+                    status_slot: Some(StatusSlot::Session),
+                    pace_label: None,
+                    status: UsageSnapshotStatus::Fresh,
+                    used_money: None,
+                    limit_money: None,
+                    severity: UsageSeverity::Normal,
+                },
+                QuotaBucketView {
+                    label: "Amp Free".to_owned(),
+                    used_label: None,
+                    limit_label: None,
+                    remaining_percent: Some(61),
+                    reset_label: Some("Resets daily".to_owned()),
+                    resets_at: None,
+                    status_slot: Some(StatusSlot::Daily),
+                    pace_label: None,
+                    status: UsageSnapshotStatus::Fresh,
+                    used_money: None,
+                    limit_money: None,
+                    severity: UsageSeverity::Normal,
+                },
+            ],
             status: UsageSnapshotStatus::Fresh,
             source: UsageSource::ProviderApi,
             confidence: UsageConfidence::Authoritative,
@@ -77,9 +93,11 @@ fn fixture_snapshot_round_trip_via_bridge() {
     }
     let dto = bridge.snapshot("codex".to_owned()).expect("snapshot");
     assert_eq!(dto.status_bar_label, "Codex Session: 63% used · 37% left");
-    assert_eq!(dto.buckets.len(), 1);
+    assert_eq!(dto.buckets.len(), 2);
     assert_eq!(dto.buckets[0].remaining_percent, Some(37));
     assert_eq!(dto.buckets[0].resets_at, Some(99));
+    assert_eq!(dto.buckets[0].status_slot.as_deref(), Some("session"));
+    assert_eq!(dto.buckets[1].status_slot.as_deref(), Some("daily"));
     assert_eq!(dto.status, "fresh");
     assert_eq!(dto.estimate_caption, None);
     let merged = bridge.merged_status_bar_label().expect("merged");

@@ -14,6 +14,12 @@ usage/spend trends as product features.
 - Host orchestration (`host`) — `HostUsageRuntime` for menu bar / CLI without Capsule.
 - Usage snapshot persistence (`usage_snapshot_store`) and token-accounting telemetry (`telemetry`).
 - Usage output shaping (`output`).
+- Provider probes (`usage/<provider>.rs`). Amp's API and CLI paths share one
+  `parse_amp_usage_output` reader for the current `userDisplayBalanceInfo.displayText`
+  contract: the `Amp Free: N% remaining today (resets daily)` line becomes a semantic
+  `StatusSlot::Daily` glance bucket (`Resets daily`, no exact timestamp), while individual
+  and per-workspace credit balances stay detail-only quota bounds — never a glance
+  percentage or plan inference.
 
 ## Architecture tier and allowed dependencies
 

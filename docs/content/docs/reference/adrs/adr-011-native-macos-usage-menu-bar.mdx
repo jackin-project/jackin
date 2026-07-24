@@ -70,6 +70,8 @@ Swift `LSUIElement` menu bar (display only)
 
 Swift must not own HTTP/RPC/OAuth/CLI scrapes or a second provider matrix.
 
+Rust owns semantic status-bar glance slots via `StatusSlot` (`session`, `daily`, `weekly`, `spend`); `daily` carries Amp Free's daily allowance. Amp's API and CLI paths share one `displayText` parser producing that Daily glance bucket, with individual/workspace credit balances as detail-only quota bounds — never a glance percentage or inferred plan.
+
 ## Distribution
 
 Immutable GitHub Release artifact `jackin-desktop-<VERSION>-aarch64-apple-darwin.zip` (exactly `JackinDesktop.app`), produced only after Developer ID codesign (hardened runtime + secure timestamp), notarytool `Accepted`, staple, and Gatekeeper assessment. Supply-chain sidecars match CLI archives: `.sha256`, cosign `.bundle`, CycloneDX `.sbom.json`, plus a separate GitHub build-provenance attestation. Homebrew cask `jackin-desktop` advances with the stable formula in one tap PR; the first cask is never auto-merged. Identity supersession (2026-07-22): product is **jackin❯ Desktop** (`Jackin Desktop` / `com.jackin-project.desktop`); the previous pre-release names `JackinUsageMenuBar` / `jackin-usage-menu-bar` never shipped as a notarized release. Uninstall leaves no root daemon. v1 does **not** require the jackin❯ daemon.

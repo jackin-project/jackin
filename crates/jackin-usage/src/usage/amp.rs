@@ -50,66 +50,65 @@ pub(crate) fn amp_snapshot(agent: &str, now: i64) -> FocusedUsageView {
     } else {
         None
     };
-    let status = if api_usage.is_some() || cli_usage.is_some() {
-        UsageSnapshotStatus::Fresh
-    } else if has_auth {
+
+    // Success path is one shared, credential-free view builder so the plan-label
+    // and detail-only credit contract is executable without provider I/O.
+    if let Some(usage) = api_usage {
+        return amp_view_from_usage(
+            AmpSuccessContext {
+                agent,
+                credential_origin,
+                source: UsageSource::ProviderApi,
+            },
+            usage,
+            now,
+        );
+    }
+    if let Some(usage) = cli_usage {
+        return amp_view_from_usage(
+            AmpSuccessContext {
+                agent,
+                credential_origin,
+                source: UsageSource::Cli,
+            },
+            usage,
+            now,
+        );
+    }
+
+    let status = if has_auth {
         UsageSnapshotStatus::Unsupported
     } else {
         UsageSnapshotStatus::NeedsLogin
     };
-    let account_label = api_usage
-        .as_ref()
-        .and_then(|usage| usage.account_label.clone())
-        .or_else(|| {
-            cli_usage
-                .as_ref()
-                .and_then(|usage| usage.account_label.clone())
-        })
-        .unwrap_or_else(|| {
-            if has_auth {
-                "local Amp auth".to_owned()
-            } else {
-                "needs Amp login".to_owned()
-            }
-        });
-    let buckets = api_usage
-        .as_ref()
-        .map(|usage| usage.buckets(now))
-        .or_else(|| cli_usage.as_ref().map(|usage| usage.buckets(now)))
-        .filter(|buckets| !buckets.is_empty())
-        .unwrap_or_else(|| {
-            vec![bucket(
-                "Amp Free",
-                None,
-                None,
-                None,
-                None,
-                provider_error
-                    .as_deref()
-                    .or(Some("Amp API/CLI usage unavailable")),
-                status,
-            )]
-        });
+    let account_label = if has_auth {
+        "local Amp auth".to_owned()
+    } else {
+        "needs Amp login".to_owned()
+    };
+    let buckets = vec![bucket(
+        "Amp Free",
+        None,
+        None,
+        None,
+        None,
+        provider_error
+            .as_deref()
+            .or(Some("Amp API/CLI usage unavailable")),
+        status,
+    )];
     usage_view(UsageViewInput {
         agent,
         provider: None,
         surface: UsageSurface::Amp,
         account_label,
         username: None,
-        plan_label: (api_usage.is_some() || cli_usage.is_some()).then_some("Amp Free".to_owned()),
+        plan_label: None,
         credential_origin,
         buckets,
         status,
-        source: if api_usage.is_some() {
-            UsageSource::ProviderApi
-        } else if cli_usage.is_some() {
-            UsageSource::Cli
-        } else {
-            UsageSource::None
-        },
-        confidence: if api_usage.is_some() || cli_usage.is_some() {
-            UsageConfidence::Authoritative
-        } else if has_auth {
+        source: UsageSource::None,
+        confidence: if has_auth {
             UsageConfidence::PresenceOnly
         } else {
             UsageConfidence::None
@@ -126,74 +125,52 @@ pub(crate) fn amp_snapshot(agent: &str, now: i64) -> FocusedUsageView {
     })
 }
 
+/// The current Amp `userDisplayBalanceInfo.displayText` contract, shared by the
+/// API and CLI paths through one parser: account identity, the Amp Free daily
+/// remaining percentage, individual credit balance, and per-workspace balances.
 #[derive(Debug, Clone, Default)]
-pub(crate) struct AmpApiUsage {
+pub(crate) struct AmpUsage {
     pub(crate) account_label: Option<String>,
-    pub(crate) free_remaining: Option<f64>,
-    pub(crate) free_limit: Option<f64>,
-    pub(crate) hourly_replenishment: Option<f64>,
+    pub(crate) daily_remaining_percent: Option<u8>,
     pub(crate) individual_credits: Option<f64>,
+    pub(crate) workspace_balances: Vec<AmpWorkspaceBalance>,
 }
 
-impl AmpApiUsage {
-    pub(crate) fn from_value(value: serde_json::Value) -> Option<Self> {
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct AmpWorkspaceBalance {
+    pub(crate) name: String,
+    pub(crate) remaining: f64,
+}
+
+impl AmpUsage {
+    pub(crate) fn from_api_value(value: serde_json::Value) -> Option<Self> {
         let root = value.get("result").unwrap_or(&value);
-        if let Some(display_text) = root.get("displayText").and_then(serde_json::Value::as_str)
-            && let Some(usage) = parse_amp_usage_output(display_text)
-        {
-            return Some(Self::from_cli_usage(usage));
-        }
-        let usage = Self {
-            account_label: first_string_key(root, "email")
-                .or_else(|| first_string_key(root, "accountEmail"))
-                .or_else(|| first_string_key(root, "userEmail")),
-            free_remaining: first_number_key(root, "ampFreeRemaining")
-                .or_else(|| first_number_key(root, "freeRemaining"))
-                .or_else(|| first_number_key(root, "remainingBalance")),
-            free_limit: first_number_key(root, "ampFreeLimit")
-                .or_else(|| first_number_key(root, "freeLimit"))
-                .or_else(|| first_number_key(root, "limitBalance")),
-            hourly_replenishment: first_number_key(root, "hourlyReplenishment")
-                .or_else(|| first_number_key(root, "replenishmentRate")),
-            individual_credits: first_number_key(root, "individualCredits")
-                .or_else(|| first_number_key(root, "individualBalance")),
-        };
-        (usage.free_remaining.is_some()
-            || usage.free_limit.is_some()
-            || usage.individual_credits.is_some())
-        .then_some(usage)
+        let display_text = root
+            .get("displayText")
+            .and_then(serde_json::Value::as_str)?;
+        parse_amp_usage_output(display_text)
     }
 
-    pub(crate) fn from_cli_usage(usage: AmpCliUsage) -> Self {
-        Self {
-            account_label: usage.account_label,
-            free_remaining: usage.free_remaining,
-            free_limit: usage.free_limit,
-            hourly_replenishment: usage.hourly_replenishment,
-            individual_credits: usage.individual_credits,
-        }
+    /// `Amp Free` only when the daily line exists; a paid/credit-only balance
+    /// never infers a plan.
+    pub(crate) fn plan_label(&self) -> Option<String> {
+        self.daily_remaining_percent.map(|_| "Amp Free".to_owned())
     }
 
-    pub(crate) fn buckets(&self, now: i64) -> Vec<QuotaBucketView> {
+    pub(crate) fn buckets(&self) -> Vec<QuotaBucketView> {
         let mut buckets = Vec::new();
-        if let (Some(remaining), Some(limit)) = (self.free_remaining, self.free_limit) {
-            let used = (limit - remaining).max(0.0);
-            let remaining_percent = if limit > 0.0 {
-                #[expect(clippy::cast_sign_loss, reason = "clamped to 0.0..=100.0 above")]
-                {
-                    Some(((remaining / limit) * 100.0).round().clamp(0.0, 100.0) as u8)
-                }
-            } else {
-                None
-            };
-            buckets.push(bucket(
-                "Amp Free",
-                Some(format_currency(used)),
-                Some(format_currency(limit)),
-                remaining_percent,
-                amp_free_reset_label(remaining, limit, self.hourly_replenishment, now),
-                None,
-                UsageSnapshotStatus::Fresh,
+        if let Some(remaining) = self.daily_remaining_percent {
+            buckets.push(with_status_slot(
+                bucket(
+                    "Amp Free",
+                    None,
+                    None,
+                    Some(remaining),
+                    Some("Resets daily".to_owned()),
+                    None,
+                    UsageSnapshotStatus::Fresh,
+                ),
+                Some(StatusSlot::Daily),
             ));
         }
         if let Some(credits) = self.individual_credits {
@@ -207,11 +184,63 @@ impl AmpApiUsage {
                 UsageSnapshotStatus::Fresh,
             ));
         }
+        for balance in &self.workspace_balances {
+            let label = format!("Workspace {}", balance.name);
+            let detail = format!("{label}: {}", format_currency(balance.remaining));
+            buckets.push(bucket(
+                &label,
+                None,
+                Some(format_currency(balance.remaining)),
+                None,
+                None,
+                Some(&detail),
+                UsageSnapshotStatus::Fresh,
+            ));
+        }
         buckets
     }
 }
 
-pub(crate) fn fetch_amp_api_usage(token: &str) -> Result<AmpApiUsage, String> {
+/// Non-usage inputs the shared Amp success view builder needs: the agent, the
+/// resolved credential origin, and which fetch path produced the usage.
+pub(crate) struct AmpSuccessContext<'a> {
+    pub(crate) agent: &'a str,
+    pub(crate) credential_origin: Option<String>,
+    pub(crate) source: UsageSource,
+}
+
+/// Build the Fresh, Authoritative Amp success view from parsed usage without
+/// touching credentials or provider I/O, so the plan-label and detail-only
+/// credit contract is unit-testable.
+pub(crate) fn amp_view_from_usage(
+    context: AmpSuccessContext<'_>,
+    usage: AmpUsage,
+    now: i64,
+) -> FocusedUsageView {
+    let account_label = usage
+        .account_label
+        .clone()
+        .unwrap_or_else(|| "local Amp auth".to_owned());
+    let plan_label = usage.plan_label();
+    let buckets = usage.buckets();
+    usage_view(UsageViewInput {
+        agent: context.agent,
+        provider: None,
+        surface: UsageSurface::Amp,
+        account_label,
+        username: None,
+        plan_label,
+        credential_origin: context.credential_origin,
+        buckets,
+        status: UsageSnapshotStatus::Fresh,
+        source: context.source,
+        confidence: UsageConfidence::Authoritative,
+        now,
+        last_error: None,
+    })
+}
+
+pub(crate) fn fetch_amp_api_usage(token: &str) -> Result<AmpUsage, String> {
     provider_request(
         jackin_telemetry::schema::enums::ProviderName::Amp,
         "POST",
@@ -236,7 +265,7 @@ pub(crate) fn fetch_amp_api_usage(token: &str) -> Result<AmpApiUsage, String> {
             let value = response
                 .json::<serde_json::Value>()
                 .map_err(|err| format!("Amp usage decode failed: {err}"))?;
-            AmpApiUsage::from_value(value)
+            AmpUsage::from_api_value(value)
                 .ok_or_else(|| "Amp usage response did not include balance info".to_owned())
         },
     )
@@ -265,108 +294,72 @@ pub(crate) fn load_amp_api_key(path: &Path) -> Option<String> {
         })
 }
 
-#[derive(Debug, Clone, Default)]
-pub(crate) struct AmpCliUsage {
-    pub(crate) account_label: Option<String>,
-    pub(crate) free_remaining: Option<f64>,
-    pub(crate) free_limit: Option<f64>,
-    pub(crate) hourly_replenishment: Option<f64>,
-    pub(crate) individual_credits: Option<f64>,
-}
-
-impl AmpCliUsage {
-    pub(crate) fn buckets(&self, now: i64) -> Vec<QuotaBucketView> {
-        let mut buckets = Vec::new();
-        if let (Some(remaining), Some(limit)) = (self.free_remaining, self.free_limit) {
-            let used = (limit - remaining).max(0.0);
-            let remaining_percent = if limit > 0.0 {
-                #[expect(clippy::cast_sign_loss, reason = "clamped to 0.0..=100.0 above")]
-                {
-                    Some(((remaining / limit) * 100.0).round().clamp(0.0, 100.0) as u8)
-                }
-            } else {
-                None
-            };
-            buckets.push(bucket(
-                "Amp Free",
-                Some(format_currency(used)),
-                Some(format_currency(limit)),
-                remaining_percent,
-                amp_free_reset_label(remaining, limit, self.hourly_replenishment, now),
-                None,
-                UsageSnapshotStatus::Fresh,
-            ));
-        }
-        if let Some(credits) = self.individual_credits {
-            buckets.push(bucket(
-                "Individual credits",
-                None,
-                Some(format_currency(credits)),
-                None,
-                None,
-                Some(&format!("Individual credits: {}", format_currency(credits))),
-                UsageSnapshotStatus::Fresh,
-            ));
-        }
-        buckets
-    }
-}
-
-pub(crate) fn amp_free_reset_label(
-    remaining: f64,
-    limit: f64,
-    hourly_replenishment: Option<f64>,
-    now: i64,
-) -> Option<String> {
-    let hourly_replenishment = hourly_replenishment?;
-    if !remaining.is_finite()
-        || !limit.is_finite()
-        || !hourly_replenishment.is_finite()
-        || remaining >= limit
-        || hourly_replenishment <= 0.0
-    {
-        return None;
-    }
-    let seconds = (((limit - remaining).max(0.0) / hourly_replenishment) * 3_600.0).ceil() as i64;
-    let reset_at = now.saturating_add(seconds);
-    Some(format!(
-        "Resets in {} ({})",
-        compact_duration_label(seconds),
-        local_timestamp_label(reset_at)
-    ))
-}
-
-pub(crate) fn fetch_amp_cli_usage() -> Result<AmpCliUsage, String> {
+pub(crate) fn fetch_amp_cli_usage() -> Result<AmpUsage, String> {
     let output = run_cli_with_timeout("amp", &["--no-color", "usage"], PROVIDER_CLI_TIMEOUT)?;
     parse_amp_usage_output(&output)
         .ok_or_else(|| "Amp CLI usage output was not recognized".to_owned())
 }
 
-pub(crate) fn parse_amp_usage_output(text: &str) -> Option<AmpCliUsage> {
-    let mut usage = AmpCliUsage::default();
+/// The one parser for the current Amp `displayText`/CLI usage contract. Rejects
+/// the retired `$remaining/$limit (replenishes +$N/hour)` line entirely.
+pub(crate) fn parse_amp_usage_output(text: &str) -> Option<AmpUsage> {
+    let mut usage = AmpUsage::default();
     for line in text.lines().map(str::trim).filter(|line| !line.is_empty()) {
         if let Some(rest) = line.strip_prefix("Signed in as ") {
-            usage.account_label = Some(rest.split(" - ").next().unwrap_or(rest).trim().to_owned());
+            let identity = rest.split(" (").next().unwrap_or(rest).trim();
+            if !identity.is_empty() {
+                usage.account_label = Some(identity.to_owned());
+            }
             continue;
         }
         if let Some(rest) = line.strip_prefix("Amp Free:") {
-            let amounts = dollar_amounts(rest);
-            if amounts.len() >= 2 {
-                usage.free_remaining = Some(amounts[0]);
-                usage.free_limit = Some(amounts[1]);
-            }
-            if let Some(replenishment) = rest
-                .split("replenishes")
-                .nth(1)
-                .and_then(|value| dollar_amounts(value).first().copied())
-            {
-                usage.hourly_replenishment = Some(replenishment);
+            if let Some(percent) = parse_amp_daily_percent(rest) {
+                usage.daily_remaining_percent = Some(percent);
             }
             continue;
         }
         if line.starts_with("Individual credits:") {
             usage.individual_credits = dollar_amounts(line).first().copied();
+            continue;
+        }
+        if let Some(rest) = line.strip_prefix("Workspace ")
+            && let Some(balance) = parse_amp_workspace(rest)
+        {
+            usage.workspace_balances.push(balance);
         }
     }
-    (usage.free_remaining.is_some() || usage.individual_credits.is_some()).then_some(usage)
+    (usage.daily_remaining_percent.is_some()
+        || usage.individual_credits.is_some()
+        || !usage.workspace_balances.is_empty())
+    .then_some(usage)
+}
+
+/// Parse `<N>% remaining today (resets daily)`: round then clamp to `0..=100`.
+/// The retired dollar line carries no `%` and yields `None`.
+fn parse_amp_daily_percent(rest: &str) -> Option<u8> {
+    let (value, _) = rest.trim().split_once('%')?;
+    let percent: f64 = value.trim().parse().ok()?;
+    if !percent.is_finite() {
+        return None;
+    }
+    #[expect(clippy::cast_sign_loss, reason = "clamped to 0.0..=100.0 below")]
+    Some(percent.round().clamp(0.0, 100.0) as u8)
+}
+
+/// Parse `<name>: $<N> remaining` after the `Workspace ` prefix. Requires a
+/// non-empty name and a finite, non-negative amount.
+fn parse_amp_workspace(rest: &str) -> Option<AmpWorkspaceBalance> {
+    let (name, amount_part) = rest.split_once(':')?;
+    let name = name.trim();
+    if name.is_empty() {
+        return None;
+    }
+    let remaining = dollar_amounts(amount_part).first().copied()?;
+    if !remaining.is_finite() || remaining < 0.0 {
+        return None;
+    }
+    Some(AmpWorkspaceBalance {
+        name: name.to_owned(),
+        remaining,
+    })
 }

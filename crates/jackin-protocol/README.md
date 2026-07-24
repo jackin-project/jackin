@@ -15,5 +15,6 @@ Primary entry: [`ClientFrame`](src/attach.rs) (attach-protocol client frames). R
 - `ClientMsg` / `ServerMsg` — control-channel JSON frames
 - `TelemetryContext` — validated W3C trace context propagated across host/Capsule control frames
 - `host_terminal` — the single OSC 10/11 default-color handshake and input-preservation adapter used by both attach clients
+- `StatusSlot` — semantic status-bar glance slot a usage quota window fills (`session`, `daily`, `weekly`, `spend`); `daily` carries Amp Free's `N% remaining today` allowance
 
 `#![deny(missing_docs)]` is on; public surface is rustdoc-complete.

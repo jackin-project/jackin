@@ -1,6 +1,6 @@
 # jackin❯ Desktop — agent usage macOS status bar
 
-- **Status**: PLANNED
+- **Status**: IN EXECUTION
 - **Slug**: jackin-desktop
 - **Created**: 2026-07-24 · **Updated**: 2026-07-24
 - **Plan**: [`plans/jackin-desktop/`](../../plans/jackin-desktop/README.md)
@@ -555,3 +555,9 @@ dialog; numbers come from the same Rust views).
   Claude terminal-local Keychain policy, current Grok billing config,
   AppKit lifecycle, shared Capsule/Desktop detail presentation, verification,
   distribution, and reconciliation are fully planned → PLANNED.
+- 2026-07-24 — execution — plan 001 shipped the provider-core correctness
+  fixes (Codex camelCase/Bedrock account tags with soft decode degrade,
+  MiniMax documented `www.minimax.io` host + tested fan-out helper, z.ai
+  `data.level` plan label) and the Amp Free Daily contract (one shared
+  `displayText` parser, semantic `StatusSlot::Daily`, workspace credit
+  bounds detail-only) → IN EXECUTION.

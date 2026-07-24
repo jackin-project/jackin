@@ -485,15 +485,17 @@ pub struct FocusedAccountHeader {
     pub credential_origin: Option<String>,
 }
 
-/// Which slot of the canonical `Session N% · Weekly N%` status-bar headline a
-/// quota window fills. Set by the provider snapshot that builds the bucket (it
-/// knows the window's role), so the status bar reads this semantic tag instead
-/// of substring-matching free-text labels.
+/// Which semantic glance slot a quota window fills for the status-bar headline
+/// (e.g. `Session N% · Weekly N%`, or Amp's `Daily`). Set by the provider
+/// snapshot that builds the bucket (it knows the window's role), so the status
+/// bar reads this semantic tag instead of substring-matching free-text labels.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum StatusSlot {
     /// `Session` variant.
     Session,
+    /// Daily allowance glance (Amp Free's `N% remaining today`).
+    Daily,
     /// `Weekly` variant.
     Weekly,
     /// Monetary spend against a cap (Claude `extra_usage`/`spend`, Codex credits).

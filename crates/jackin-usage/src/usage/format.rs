@@ -475,18 +475,6 @@ pub(super) fn first_string_key(value: &serde_json::Value, needle: &str) -> Optio
     }
 }
 
-pub(super) fn first_number_key(value: &serde_json::Value, needle: &str) -> Option<f64> {
-    match value {
-        serde_json::Value::Object(map) => {
-            if let Some(found) = map.get(needle).and_then(json_number) {
-                return Some(found);
-            }
-            map.values().find_map(|v| first_number_key(v, needle))
-        }
-        serde_json::Value::Array(values) => values.iter().find_map(|v| first_number_key(v, needle)),
-        _ => None,
-    }
-}
 pub(super) fn home_path(rel: &str) -> PathBuf {
     let rel = rel.trim_start_matches('/');
     std::env::var("HOME")

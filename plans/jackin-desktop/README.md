@@ -8,7 +8,7 @@ Spec: [spec/](spec/) · Ledger: [coverage.md](coverage.md).
 
 | Plan | Title | Covers | Priority | Effort | Depends on | Status |
 |------|-------|--------|----------|--------|------------|--------|
-| 001 | Provider-core correctness + Amp Free daily | F11, F12 | P1 | M | — | TODO |
+| 001 | Provider-core correctness + Amp Free daily | F11, F12 | P1 | M | — | DONE |
 | 002 | Claude macOS Keychain credential read | F6, W5 | P1 | M | — | TODO |
 | 003 | Grok server tier, current quota bounds, pace inputs | F7 | P1 | M | 005 | TODO |
 | 004 | Run-out producer (Variant A) in Rust | F5 | P1 | M | 003 | TODO |
