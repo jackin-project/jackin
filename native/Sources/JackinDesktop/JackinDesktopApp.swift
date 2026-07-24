@@ -2,37 +2,22 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // jackin❯ Desktop — display-only shell over Rust UniFFI.
-// Clean-room Tahoe/CodexBar conventions; no Swift probes.
+// Minimal AppKit menu-agent bootstrap: no SwiftUI App/Scene graph, no window.
+// The delegate owns the store, per-provider status items, and the popover.
 
-import SwiftUI
-import JackinUsageBridge
+import AppKit
 
 @main
-struct JackinDesktopApp: App {
-    @NSApplicationDelegateAdaptor(DesktopAppDelegate.self) private var appDelegate
-    @StateObject private var store = PresentationStore()
-
-    var body: some Scene {
-        MenuBarExtra {
-            PopoverRoot(store: store)
-                .onAppear { appDelegate.store = store }
-        } label: {
-            StatusItemLabel(store: store)
-                .onAppear { appDelegate.store = store }
-        }
-        .menuBarExtraStyle(.window)
-
-        Window("jackin❯ Desktop — Usage", id: "usage") {
-            UsageWindowRoot(store: store)
-        }
-        .defaultSize(width: 920, height: 620)
-        // Tahoe: unified toolbar sits in the Liquid Glass chrome layer.
-        .windowToolbarStyle(.unified)
-        .windowResizability(.contentMinSize)
-
-        Settings {
-            SettingsView(store: store)
-                .formStyle(.grouped)
+enum JackinDesktopMain {
+    static func main() {
+        MainActor.assumeIsolated {
+            let application = NSApplication.shared
+            // Retained for the whole run loop: `NSApplication.delegate` is weak,
+            // and `run()` blocks until termination so this local outlives it.
+            let delegate = DesktopAppDelegate()
+            application.delegate = delegate
+            application.setActivationPolicy(.accessory)
+            application.run()
         }
     }
 }

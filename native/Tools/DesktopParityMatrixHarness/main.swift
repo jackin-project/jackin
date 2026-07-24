@@ -274,15 +274,16 @@ struct DesktopParityMatrixHarness {
         let provider = read("UsageWindow/ProviderCardView.swift")
         let overview = read("UsageWindow/OverviewListView.swift")
         check(
-            "StatusItemLabel renders chips",
-            statusItem.contains("statusItemChips") && statusItem.contains("StatusItemChipView")
+            "StatusItemRendering displays the Rust bar label verbatim",
+            statusItem.contains("StatusItemRendering")
+                && statusItem.contains("barLabel")
+                && statusItem.contains("desktopProviderSystemImage")
         )
         check(
-            "StatusItemLabel CodexBar dual mini bars",
-            statusItem.contains("miniRemainingBar")
-                && statusItem.contains("statusItemRemainingFraction")
-                && statusItem.contains("remainingPerLine")
-                && statusItem.contains("statusItemLineShowsMiniBar")
+            "StatusItemRendering invents no severity tint or percent",
+            !statusItem.contains("severityTint")
+                && !statusItem.contains("miniRemainingBar")
+                && !statusItem.contains("statusItemRemainingFraction")
         )
         check(
             "Popover agent tile grid",
