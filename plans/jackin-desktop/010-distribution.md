@@ -125,6 +125,8 @@ install" scenarios are fully scripted/ready — they physically require
 Apple secrets and a published release, so when secrets are absent this
 plan ends BLOCKED (see "Deferred STOP" in Step 2), never improvised.
 
+Execution reconciliation (2026-07-24): secret-free readiness is complete and validate run 30092919141 proves the current branch. Public activation is REJECTED from this implementation program because it requires absent organization-provisioned Apple authority plus publish and tap-merge actions that the operator explicitly excluded. This is not a claim that a notarized artifact, cask, or clean-host production proof exists; Path A remains the operator runbook if that external authority is granted later.
+
 ## Must NOT
 
 Guardrail inlined verbatim from `plans/jackin-desktop/spec/README.md`
@@ -706,15 +708,17 @@ output, never memory):
 - [ ] Step 2 outcome recorded: either all five `release-macos` secret
       names + both repo variable names verified present (publish path
       READY), or the hub row reads
-      `BLOCKED: Apple secrets absent from release-macos env — bootstrap Path A (native/README.md)`.
+      `REJECTED` with the absent-authority and prohibited-action rationale
+      above.
 - [ ] `cargo xtask ci --fast` → exit 0.
 - [ ] No files outside the in-scope list modified (`git status`) —
       excluding the protocol writes: `plans/jackin-desktop/README.md`
       status rows and the roadmap item + index.
 - [ ] Every commit is signed (`-s`), contains
       `Co-authored-by: Codex <codex@openai.com>`, and is pushed.
-- [ ] `plans/jackin-desktop/README.md` status row 010 updated (DONE, or
-      BLOCKED with the exact line above).
+- [ ] `plans/jackin-desktop/README.md` status row 010 updated (DONE when
+      credentialed proof exists, otherwise REJECTED with the exact
+      authority-boundary rationale above).
 
 ## STOP conditions
 

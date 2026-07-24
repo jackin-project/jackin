@@ -22,6 +22,8 @@ provider's glance availability % in the menu bar (weekly for six
 providers, Amp Free daily for Amp), the CodexBar-style popover glance,
 and the Capsule-parity Usage window, for all seven providers.
 
+Distribution decision (2026-07-24): public notarized Homebrew activation is rejected from this implementation program because required Apple release authority is absent and publish/tap-merge actions are outside the granted authority. Secret-free validation, cask generation, and clean-host proof automation are ready; no notarized production artifact or cask install is claimed.
+
 ## Vocabulary
 
 - **Agent Usage preview**: the popover glance surface opened from the
@@ -664,3 +666,4 @@ dialog; numbers come from the same Rust views).
   `cargo xtask lint --strict` is green again: regenerated the telemetry
   error-ownership census and updated four README doc-byte budgets + three
   jackin-usage expect budgets in `ratchet.toml`.
+- 2026-07-24 — execution reconciliation — plan 010's validate lane is green in run 30092919141 after provisioning the repository-pinned `cargo-nextest` already invoked by its offline reconciliation step. Public notarized Homebrew activation is REJECTED from this program: the `release-macos` environment has no required Apple secret or variable names, and publish, notarization, tap mutation, and tap merge remain explicitly unauthorized. Readiness remains complete; no production artifact or install proof is claimed.

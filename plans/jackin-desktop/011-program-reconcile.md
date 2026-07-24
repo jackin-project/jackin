@@ -11,9 +11,7 @@
 - **Priority**: P3
 - **Effort**: S
 - **Risk**: LOW
-- **Depends on**: plans/jackin-desktop/002 (Claude macOS Keychain
-  credential read), plans/jackin-desktop/010 (Distribution: notarized
-  release + cask)
+- **Depends on**: plans/jackin-desktop/002 (Claude macOS Keychain credential read), plans/jackin-desktop/010 (Distribution readiness; terminal DONE or REJECTED)
 - **Covers**: D14 propagation; documentation portion of "Limits-only usage presentation" (B4); roadmap-freshness + docs-as-source-of-truth PR gates
 - **Guardrails**: N3 (inlined below)
 - **Research basis**: research/jackin-desktop-verification-tooling/01-commands.md
@@ -27,15 +25,13 @@ The repository currently has two plan homes for the same product: the retired-in
 
 All commands run from the repository root `/Users/donbeave/Projects/jackin-project/jackin` unless a `cd` is shown. Any failed precondition is a STOP.
 
-1. **Plans 002 and 010 landed** — hub rows show DONE:
+1. **Plans 002 and 010 are terminal** — 002 shows DONE and 010 shows DONE or REJECTED:
 
    ```sh
    grep -E '^\| (002|010) ' plans/jackin-desktop/README.md
    ```
 
-   Expected: exactly two lines whose final (Status) cell is `DONE` (a
-   trailing annotation after "DONE —" is fine). `TODO`, `IN PROGRESS`,
-   `BLOCKED`, or `STALE` → STOP.
+   Expected: 002's final Status cell is `DONE`; 010's is `DONE` or `REJECTED` with a rationale. `TODO`, `IN PROGRESS`, `BLOCKED`, or `STALE` → STOP.
 
 2. **Re-run the cheapest done criterion of plan 010** (hub protocol). Open `plans/jackin-desktop/010-*.md` and re-run the cheapest command in its Done criteria. If that file's criteria are unavailable for any reason, use the release-state offline fixture check (proven in `native/README.md`, "Offline reconciliation fixtures" section):
 
@@ -271,12 +267,12 @@ Expected: `1`, then `3`, then `0` (no row still carries a live BLOCKED/OPEN stat
 
 ### Step 2: Update the published roadmap page to the D14 state
 
-File: `docs/content/docs/roadmap/(operator-surface)/native-macos-usage-menu-bar.mdx`. Plan 010 is a DONE precondition, so this page must describe the completed program, not preserve the old partially-implemented state. Each replacement is one long line (no hard wrapping).
+File: `docs/content/docs/roadmap/(operator-surface)/native-macos-usage-menu-bar.mdx`. Plan 010 is a terminal precondition. Describe shipped application behavior and distribution readiness accurately; when 010 is REJECTED, never claim a notarized artifact, cask, or clean-host production proof exists. Each replacement is one long line (no hard wrapping).
 
 2a. Replace the line-5 status with:
 
 ```markdown
-**Status**: Implemented — jackin❯ Desktop ships one native status item per auto-detected provider, the tab-grid Agent Usage preview, the Capsule-parity Usage window, and a notarized Homebrew-installable release with production install proof.
+**Status**: Implemented — jackin❯ Desktop ships one native status item per auto-detected provider, the tab-grid Agent Usage preview, and the Capsule-parity Usage window. Secret-free release validation and the cask/install-proof automation are ready; public notarized Homebrew activation remains an operator action requiring Apple release authority.
 ```
 
 2b. Replace the line-7 remaining-phases line with:
@@ -285,9 +281,7 @@ File: `docs/content/docs/roadmap/(operator-surface)/native-macos-usage-menu-bar.
 **Remaining phases**: none for this item. The Amp post-subscription `displayText` parser is a separately triggered deferred follow-up until an operator capture exists; it does not reopen the completed Desktop program.
 ```
 
-If plan 010 is marked DONE without proof of a notarized artifact, merged
-first cask, and production install, STOP: the dependency status contradicts
-its own done criteria and these docs cannot truthfully claim completion.
+If plan 010 is marked DONE without proof of a notarized artifact, merged first cask, and production install, STOP: the dependency status contradicts its own done criteria and these docs cannot truthfully claim completion. If 010 is REJECTED, use the readiness/authority-boundary wording above.
 
 2c. Replace the line-13 implementation-plans line with:
 
@@ -307,11 +301,7 @@ Touch nothing else on the page — the v1 spec body, Capsule reference screens, 
 
 2e. In `docs/content/docs/roadmap/index.mdx`, replace the one
 `jackin❯ Desktop — native macOS usage status bar` bullet with a factual
-completed summary matching the page: per-provider glance status items
-(Weekly for six providers; Amp Free Daily for Amp),
-Agent Usage preview, Capsule-parity Usage window, and notarized
-Homebrew-installable release. Remove the stale v1 display-mode and
-`plan 004 proof` wording. Do not change any neighboring roadmap entry.
+completed summary matching the page: per-provider glance status items (Weekly for six providers; Amp Free Daily for Amp), Agent Usage preview, Capsule-parity Usage window, and secret-free distribution readiness. When 010 is REJECTED, name public notarized Homebrew activation as an operator-only follow-up requiring Apple release authority; do not claim it shipped. Remove the stale v1 display-mode and `plan 004 proof` wording. Do not change any neighboring roadmap entry.
 
 **Verify**:
 

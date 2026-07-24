@@ -33,7 +33,7 @@ Override: none (item READY 2026-07-24).
 | F6 | Claude macOS Keychain read with normalized default/custom isolation; preflight before shared coordination; denial cannot resurrect/share cache; every Desktop bridge access off-main | §Decisions D9 | spec/providers.md | 002 | covered |
 | F7 | Grok resolved server tier; heuristic retired; zero/signed-safe current nested headline/prepaid fields; on-demand only behind a positive enabled cap | §Decisions D11, §Data gaps | spec/providers.md | 003 | covered |
 | F8 | Manual Refresh (⌘R) forces a Rust fetch; automatic refresh keeps the ≥60s floor | §Screens interactions, §Flows W4 | spec/popover.md | 006 | covered |
-| F9 | Distribution: notarized ZIP + Homebrew cask + install proof (headless) | §Capabilities scope | spec/distribution.md | 010, 011 | covered |
+| F9 | Distribution: notarized ZIP + Homebrew cask + install proof (headless) | §Capabilities scope | spec/distribution.md | 010, 011 | rejected for this program — readiness complete; activation requires absent Apple authority and prohibited publish/tap-merge actions |
 | F10 | Design/UX refresh: CodexBar-style popover/status bar under Capsule design supremacy | §Capabilities scope, §Decisions D7/D16 | spec/popover.md, spec/architecture.md | 006, 009 | covered |
 | F11 | Provider-core correctness fixes (Codex account decode tags; MiniMax documented host; z.ai `level` plan field) | §Research link (coverage gaps) | spec/providers.md | 001 | covered |
 | F12 | Current Amp Free daily `displayText`, Daily slot, individual/workspace balances | §Decisions D15; research ch. 11 | spec/providers.md | 001 | covered |
@@ -67,7 +67,7 @@ Override: none (item READY 2026-07-24).
 | B3 | Usage-window number == Capsule dialog number (parity) | spec/usage-window.md | covered |
 | B4 | Limits-only audit (no price/trend string anywhere) | spec/architecture.md "Forbidden reference content is absent"; "Provider quota bounds remain allowed" | covered |
 | B5 | Error never overwrites last-good; stale dimmed with age | spec/popover.md, spec/status-bar.md | covered |
-| B6 | CI green; artifact notarized, stapled, Gatekeeper-accepted | spec/distribution.md | covered |
+| B6 | CI green; artifact notarized, stapled, Gatekeeper-accepted | spec/distribution.md | rejected for this program — CI/validate green; no notarized production artifact claimed |
 
 ## Decisions (constraints)
 
