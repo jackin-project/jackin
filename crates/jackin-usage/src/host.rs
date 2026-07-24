@@ -956,7 +956,11 @@ impl HostUsageRuntime {
         let now = chrono::Utc::now().timestamp();
         let mut rows = Vec::new();
         for surface in HostSurfaceId::DESKTOP_PROVIDER_ORDER.iter().copied() {
-            let view = self.snapshot(surface.id())?;
+            // A disabled surface has no glance row (snapshot rejects it).
+            let Ok(view) = self.snapshot(surface.id()) else {
+                self.desktop_detected_surfaces.remove(surface.id());
+                continue;
+            };
             let detected = if view_is_auto_detected(&view) {
                 self.desktop_detected_surfaces
                     .insert(surface.id().to_owned());

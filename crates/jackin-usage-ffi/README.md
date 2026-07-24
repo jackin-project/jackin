@@ -32,6 +32,13 @@ Existing methods (`snapshot`, `compact_status_bar_label`, …) are unchanged.
 lowercase string — `"session"`, `"daily"`, `"weekly"`, `"spend"`. `"daily"`
 carries Amp Free's daily-allowance glance; Swift renders it and never re-derives it.
 
+`QuotaBucketDto` also carries the Rust-owned limits-only presentation
+(`remaining_label`, `display_segments`, `display_label`, `meter_percent`), so
+Swift renders the segments verbatim. `provider_glance_rows()` (Swift
+`providerGlanceRows()`) returns `ProviderGlanceRowDto` — the selected-account-aware
+seven-provider Desktop glance rows in canonical order. `OpenConfig.allow_live_probes`
+maps to the Rust `HostProbePolicy` (false = smoke/defense mode, no live probes).
+
 ## Swift bindings
 
 ```sh

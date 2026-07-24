@@ -63,6 +63,9 @@ Host display extensions (plan 008; presentation-time only, not persisted):
 | `HostUsageRuntime::compact_status_bar_strip` | Worst-first multi-surface strip |
 | `HostUsageRuntime::overview_rows` | Overview rows for popover + Usage window |
 | `HostUsageRuntime::next_refresh_label` | `Next update in …` / `Next update due` |
+| `usage::usage_bucket_presentation` / `usage_display_status_label` | Rust-owned limits-only quota-bucket segments (shared by Capsule + Desktop) |
+| `host::HostProviderGlanceRow` / `HostUsageRuntime::provider_glance_rows` | Selected-account-aware seven-provider Desktop glance rows (`DESKTOP_PROVIDER_ORDER`) |
+| `host::HostProbePolicy` | `Live` / `Disabled` (smoke-mode probe suppression) |
 
 Avoid cloning full usage views during account materialization — serialize from borrowed views/iterators.
 

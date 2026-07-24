@@ -664,6 +664,13 @@ public protocol UsageMenuBarBridgeProtocol: AnyObject, Sendable {
     func panicProbe() throws 
     
     /**
+     * Selected-account-aware provider glance rows in the canonical Desktop
+     * order (status bar / popover / Usage window). Rust owns detection,
+     * ordering, and every display string.
+     */
+    func providerGlanceRows() throws  -> [ProviderGlanceRowDto]
+    
+    /**
      * Refresh one surface (`surface_id`) or all enabled (`None`).
      *
      * When `force` is false, respects the runtime refresh floor (poll-safe).
@@ -922,6 +929,20 @@ open func panicProbe()throws   {try rustCallWithError(FfiConverterTypeUsageBridg
             self.uniffiCloneHandle(),uniffiCallStatus
     )
 }
+}
+    
+    /**
+     * Selected-account-aware provider glance rows in the canonical Desktop
+     * order (status bar / popover / Usage window). Rust owns detection,
+     * ordering, and every display string.
+     */
+open func providerGlanceRows()throws  -> [ProviderGlanceRowDto]  {
+    return try  FfiConverterSequenceTypeProviderGlanceRowDto.lift(try rustCallWithError(FfiConverterTypeUsageBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_jackin_usage_ffi_fn_method_usagemenubarbridge_provider_glance_rows(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
 }
     
     /**
@@ -1253,6 +1274,11 @@ public struct OpenConfig: Equatable, Hashable {
      * Enabled surface ids; empty = all.
      */
     public var enabledSurfaceIds: [String]
+    /**
+     * Whether live provider probes may dispatch. `false` = smoke/defense mode
+     * (no credential/file/env/CLI/network/Keychain resolution). Not persisted.
+     */
+    public var allowLiveProbes: Bool
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -1265,10 +1291,15 @@ public struct OpenConfig: Equatable, Hashable {
          */refreshFloorSecs: UInt64, 
         /**
          * Enabled surface ids; empty = all.
-         */enabledSurfaceIds: [String]) {
+         */enabledSurfaceIds: [String], 
+        /**
+         * Whether live provider probes may dispatch. `false` = smoke/defense mode
+         * (no credential/file/env/CLI/network/Keychain resolution). Not persisted.
+         */allowLiveProbes: Bool) {
         self.dataDir = dataDir
         self.refreshFloorSecs = refreshFloorSecs
         self.enabledSurfaceIds = enabledSurfaceIds
+        self.allowLiveProbes = allowLiveProbes
     }
 
     
@@ -1289,7 +1320,8 @@ public struct FfiConverterTypeOpenConfig: FfiConverterRustBuffer {
             try OpenConfig(
                 dataDir: FfiConverterString.read(from: &buf), 
                 refreshFloorSecs: FfiConverterUInt64.read(from: &buf), 
-                enabledSurfaceIds: FfiConverterSequenceString.read(from: &buf)
+                enabledSurfaceIds: FfiConverterSequenceString.read(from: &buf), 
+                allowLiveProbes: FfiConverterBool.read(from: &buf)
         )
     }
 
@@ -1297,6 +1329,7 @@ public struct FfiConverterTypeOpenConfig: FfiConverterRustBuffer {
         FfiConverterString.write(value.dataDir, into: &buf)
         FfiConverterUInt64.write(value.refreshFloorSecs, into: &buf)
         FfiConverterSequenceString.write(value.enabledSurfaceIds, into: &buf)
+        FfiConverterBool.write(value.allowLiveProbes, into: &buf)
     }
 }
 
@@ -1394,6 +1427,125 @@ public func FfiConverterTypeOverviewRowDto_lower(_ value: OverviewRowDto) -> Rus
 
 
 /**
+ * One selected-account-aware provider glance row (1:1 mirror of the Rust
+ * `HostProviderGlanceRow`). The Desktop status bar, popover, and Usage window
+ * all consume this same Rust-owned row.
+ */
+public struct ProviderGlanceRowDto: Equatable, Hashable {
+    public var surfaceId: String
+    public var iconKey: String
+    public var displayLabel: String
+    public var accountLabel: String
+    public var planLabel: String?
+    public var glanceRemainingPercent: UInt8?
+    public var barLabel: String
+    public var headline: String
+    public var resetLabel: String?
+    public var exactReset: String?
+    public var statusWord: String
+    public var isRefreshing: Bool
+    public var statusLabel: String
+    public var severity: String
+    public var updatedLabel: String
+    public var lastError: String?
+    public var dimmed: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(surfaceId: String, iconKey: String, displayLabel: String, accountLabel: String, planLabel: String?, glanceRemainingPercent: UInt8?, barLabel: String, headline: String, resetLabel: String?, exactReset: String?, statusWord: String, isRefreshing: Bool, statusLabel: String, severity: String, updatedLabel: String, lastError: String?, dimmed: Bool) {
+        self.surfaceId = surfaceId
+        self.iconKey = iconKey
+        self.displayLabel = displayLabel
+        self.accountLabel = accountLabel
+        self.planLabel = planLabel
+        self.glanceRemainingPercent = glanceRemainingPercent
+        self.barLabel = barLabel
+        self.headline = headline
+        self.resetLabel = resetLabel
+        self.exactReset = exactReset
+        self.statusWord = statusWord
+        self.isRefreshing = isRefreshing
+        self.statusLabel = statusLabel
+        self.severity = severity
+        self.updatedLabel = updatedLabel
+        self.lastError = lastError
+        self.dimmed = dimmed
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension ProviderGlanceRowDto: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeProviderGlanceRowDto: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ProviderGlanceRowDto {
+        return
+            try ProviderGlanceRowDto(
+                surfaceId: FfiConverterString.read(from: &buf), 
+                iconKey: FfiConverterString.read(from: &buf), 
+                displayLabel: FfiConverterString.read(from: &buf), 
+                accountLabel: FfiConverterString.read(from: &buf), 
+                planLabel: FfiConverterOptionString.read(from: &buf), 
+                glanceRemainingPercent: FfiConverterOptionUInt8.read(from: &buf), 
+                barLabel: FfiConverterString.read(from: &buf), 
+                headline: FfiConverterString.read(from: &buf), 
+                resetLabel: FfiConverterOptionString.read(from: &buf), 
+                exactReset: FfiConverterOptionString.read(from: &buf), 
+                statusWord: FfiConverterString.read(from: &buf), 
+                isRefreshing: FfiConverterBool.read(from: &buf), 
+                statusLabel: FfiConverterString.read(from: &buf), 
+                severity: FfiConverterString.read(from: &buf), 
+                updatedLabel: FfiConverterString.read(from: &buf), 
+                lastError: FfiConverterOptionString.read(from: &buf), 
+                dimmed: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: ProviderGlanceRowDto, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.surfaceId, into: &buf)
+        FfiConverterString.write(value.iconKey, into: &buf)
+        FfiConverterString.write(value.displayLabel, into: &buf)
+        FfiConverterString.write(value.accountLabel, into: &buf)
+        FfiConverterOptionString.write(value.planLabel, into: &buf)
+        FfiConverterOptionUInt8.write(value.glanceRemainingPercent, into: &buf)
+        FfiConverterString.write(value.barLabel, into: &buf)
+        FfiConverterString.write(value.headline, into: &buf)
+        FfiConverterOptionString.write(value.resetLabel, into: &buf)
+        FfiConverterOptionString.write(value.exactReset, into: &buf)
+        FfiConverterString.write(value.statusWord, into: &buf)
+        FfiConverterBool.write(value.isRefreshing, into: &buf)
+        FfiConverterString.write(value.statusLabel, into: &buf)
+        FfiConverterString.write(value.severity, into: &buf)
+        FfiConverterString.write(value.updatedLabel, into: &buf)
+        FfiConverterOptionString.write(value.lastError, into: &buf)
+        FfiConverterBool.write(value.dimmed, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeProviderGlanceRowDto_lift(_ buf: RustBuffer) throws -> ProviderGlanceRowDto {
+    return try FfiConverterTypeProviderGlanceRowDto.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeProviderGlanceRowDto_lower(_ value: ProviderGlanceRowDto) -> RustBuffer {
+    return FfiConverterTypeProviderGlanceRowDto.lower(value)
+}
+
+
+/**
  * One quota / spend bucket.
  */
 public struct QuotaBucketDto: Equatable, Hashable {
@@ -1409,10 +1561,38 @@ public struct QuotaBucketDto: Equatable, Hashable {
     public var usedMoney: MoneyDto?
     public var limitMoney: MoneyDto?
     public var severity: String
+    /**
+     * Rust-owned percentage segment text (segment 0), when present.
+     */
+    public var remainingLabel: String?
+    /**
+     * Rust-owned complete semantic segments in display order.
+     */
+    public var displaySegments: [String]
+    /**
+     * `display_segments` joined with the canonical `" · "` separator.
+     */
+    public var displayLabel: String
+    /**
+     * Meter fill geometry only (remaining for normal/credits, used for Spend).
+     */
+    public var meterPercent: UInt8?
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(label: String, usedLabel: String?, limitLabel: String?, remainingPercent: UInt8?, resetLabel: String?, resetsAt: Int64?, statusSlot: String?, paceLabel: String?, status: String, usedMoney: MoneyDto?, limitMoney: MoneyDto?, severity: String) {
+    public init(label: String, usedLabel: String?, limitLabel: String?, remainingPercent: UInt8?, resetLabel: String?, resetsAt: Int64?, statusSlot: String?, paceLabel: String?, status: String, usedMoney: MoneyDto?, limitMoney: MoneyDto?, severity: String, 
+        /**
+         * Rust-owned percentage segment text (segment 0), when present.
+         */remainingLabel: String?, 
+        /**
+         * Rust-owned complete semantic segments in display order.
+         */displaySegments: [String], 
+        /**
+         * `display_segments` joined with the canonical `" · "` separator.
+         */displayLabel: String, 
+        /**
+         * Meter fill geometry only (remaining for normal/credits, used for Spend).
+         */meterPercent: UInt8?) {
         self.label = label
         self.usedLabel = usedLabel
         self.limitLabel = limitLabel
@@ -1425,6 +1605,10 @@ public struct QuotaBucketDto: Equatable, Hashable {
         self.usedMoney = usedMoney
         self.limitMoney = limitMoney
         self.severity = severity
+        self.remainingLabel = remainingLabel
+        self.displaySegments = displaySegments
+        self.displayLabel = displayLabel
+        self.meterPercent = meterPercent
     }
 
     
@@ -1454,7 +1638,11 @@ public struct FfiConverterTypeQuotaBucketDto: FfiConverterRustBuffer {
                 status: FfiConverterString.read(from: &buf), 
                 usedMoney: FfiConverterOptionTypeMoneyDto.read(from: &buf), 
                 limitMoney: FfiConverterOptionTypeMoneyDto.read(from: &buf), 
-                severity: FfiConverterString.read(from: &buf)
+                severity: FfiConverterString.read(from: &buf), 
+                remainingLabel: FfiConverterOptionString.read(from: &buf), 
+                displaySegments: FfiConverterSequenceString.read(from: &buf), 
+                displayLabel: FfiConverterString.read(from: &buf), 
+                meterPercent: FfiConverterOptionUInt8.read(from: &buf)
         )
     }
 
@@ -1471,6 +1659,10 @@ public struct FfiConverterTypeQuotaBucketDto: FfiConverterRustBuffer {
         FfiConverterOptionTypeMoneyDto.write(value.usedMoney, into: &buf)
         FfiConverterOptionTypeMoneyDto.write(value.limitMoney, into: &buf)
         FfiConverterString.write(value.severity, into: &buf)
+        FfiConverterOptionString.write(value.remainingLabel, into: &buf)
+        FfiConverterSequenceString.write(value.displaySegments, into: &buf)
+        FfiConverterString.write(value.displayLabel, into: &buf)
+        FfiConverterOptionUInt8.write(value.meterPercent, into: &buf)
     }
 }
 
@@ -2160,6 +2352,31 @@ fileprivate struct FfiConverterSequenceTypeOverviewRowDto: FfiConverterRustBuffe
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypeProviderGlanceRowDto: FfiConverterRustBuffer {
+    typealias SwiftType = [ProviderGlanceRowDto]
+
+    public static func write(_ value: [ProviderGlanceRowDto], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeProviderGlanceRowDto.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [ProviderGlanceRowDto] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [ProviderGlanceRowDto]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeProviderGlanceRowDto.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeQuotaBucketDto: FfiConverterRustBuffer {
     typealias SwiftType = [QuotaBucketDto]
 
@@ -2278,6 +2495,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_jackin_usage_ffi_checksum_method_usagemenubarbridge_panic_probe() != 5364) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_jackin_usage_ffi_checksum_method_usagemenubarbridge_provider_glance_rows() != 13899) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_jackin_usage_ffi_checksum_method_usagemenubarbridge_refresh() != 32155) {

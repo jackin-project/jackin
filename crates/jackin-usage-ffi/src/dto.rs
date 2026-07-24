@@ -20,6 +20,9 @@ pub struct OpenConfig {
     pub refresh_floor_secs: u64,
     /// Enabled surface ids; empty = all.
     pub enabled_surface_ids: Vec<String>,
+    /// Whether live provider probes may dispatch. `false` = smoke/defense mode
+    /// (no credential/file/env/CLI/network/Keychain resolution). Not persisted.
+    pub allow_live_probes: bool,
 }
 
 /// Surface row for Settings / list.
@@ -55,6 +58,62 @@ pub struct QuotaBucketDto {
     pub used_money: Option<MoneyDto>,
     pub limit_money: Option<MoneyDto>,
     pub severity: String,
+    /// Rust-owned percentage segment text (segment 0), when present.
+    pub remaining_label: Option<String>,
+    /// Rust-owned complete semantic segments in display order.
+    pub display_segments: Vec<String>,
+    /// `display_segments` joined with the canonical `" · "` separator.
+    pub display_label: String,
+    /// Meter fill geometry only (remaining for normal/credits, used for Spend).
+    pub meter_percent: Option<u8>,
+}
+
+/// One selected-account-aware provider glance row (1:1 mirror of the Rust
+/// `HostProviderGlanceRow`). The Desktop status bar, popover, and Usage window
+/// all consume this same Rust-owned row.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct ProviderGlanceRowDto {
+    pub surface_id: String,
+    pub icon_key: String,
+    pub display_label: String,
+    pub account_label: String,
+    pub plan_label: Option<String>,
+    pub glance_remaining_percent: Option<u8>,
+    pub bar_label: String,
+    pub headline: String,
+    pub reset_label: Option<String>,
+    pub exact_reset: Option<String>,
+    pub status_word: String,
+    pub is_refreshing: bool,
+    pub status_label: String,
+    pub severity: String,
+    pub updated_label: String,
+    pub last_error: Option<String>,
+    pub dimmed: bool,
+}
+
+pub(crate) fn provider_glance_row_dto(
+    row: jackin_usage::host::HostProviderGlanceRow,
+) -> ProviderGlanceRowDto {
+    ProviderGlanceRowDto {
+        surface_id: row.surface_id,
+        icon_key: row.icon_key,
+        display_label: row.display_label,
+        account_label: row.account_label,
+        plan_label: row.plan_label,
+        glance_remaining_percent: row.glance_remaining_percent,
+        bar_label: row.bar_label,
+        headline: row.headline,
+        reset_label: row.reset_label,
+        exact_reset: row.exact_reset,
+        status_word: row.status_word,
+        is_refreshing: row.is_refreshing,
+        status_label: row.status_label,
+        severity: row.severity,
+        updated_label: row.updated_label,
+        last_error: row.last_error,
+        dimmed: row.dimmed,
+    }
 }
 
 /// Full focused usage view for one surface.
@@ -232,6 +291,8 @@ pub(crate) fn parse_format_prefs(dto: UsageFormatPrefsDto) -> Result<UsageFormat
 }
 
 fn bucket_dto(bucket: QuotaBucketView) -> QuotaBucketDto {
+    // Rust owns the limits-only segment choice/order; Swift renders it verbatim.
+    let presentation = jackin_usage::usage::usage_bucket_presentation(&bucket);
     QuotaBucketDto {
         label: bucket.label,
         used_label: bucket.used_label,
@@ -258,6 +319,10 @@ fn bucket_dto(bucket: QuotaBucketView) -> QuotaBucketDto {
             jackin_protocol::control::UsageSeverity::Danger => "danger",
         }
         .to_owned(),
+        remaining_label: presentation.remaining_label,
+        display_segments: presentation.display_segments,
+        display_label: presentation.display_label,
+        meter_percent: presentation.meter_percent,
     }
 }
 
@@ -287,6 +352,10 @@ pub(crate) fn to_host_config(config: OpenConfig) -> jackin_usage::host::HostRunt
         data_dir: std::path::PathBuf::from(config.data_dir),
         refresh_floor_secs: config.refresh_floor_secs,
         enabled_surface_ids: config.enabled_surface_ids,
-        probe_policy: jackin_usage::host::HostProbePolicy::Live,
+        probe_policy: if config.allow_live_probes {
+            jackin_usage::host::HostProbePolicy::Live
+        } else {
+            jackin_usage::host::HostProbePolicy::Disabled
+        },
     }
 }

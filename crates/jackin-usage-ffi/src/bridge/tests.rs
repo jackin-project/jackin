@@ -19,6 +19,7 @@ fn open_bridge(dir: &std::path::Path) -> Arc<UsageMenuBarBridge> {
             data_dir: dir.display().to_string(),
             refresh_floor_secs: 120,
             enabled_surface_ids: vec!["codex".to_owned(), "claude".to_owned()],
+            allow_live_probes: true,
         })
         .expect("open");
     bridge
@@ -98,6 +99,14 @@ fn fixture_snapshot_round_trip_via_bridge() {
     assert_eq!(dto.buckets[0].resets_at, Some(99));
     assert_eq!(dto.buckets[0].status_slot.as_deref(), Some("session"));
     assert_eq!(dto.buckets[1].status_slot.as_deref(), Some("daily"));
+    // Rust-owned presentation fields ride on the bucket DTO.
+    assert_eq!(dto.buckets[0].meter_percent, Some(37));
+    assert!(
+        dto.buckets[0]
+            .display_segments
+            .contains(&"37% left".to_owned())
+    );
+    assert!(dto.buckets[0].display_label.contains("37% left"));
     assert_eq!(dto.status, "fresh");
     assert_eq!(dto.estimate_caption, None);
     let merged = bridge.merged_status_bar_label().expect("merged");
@@ -241,4 +250,44 @@ fn bounded_events_and_refresh_floor() {
     let batch = bridge.next_events(0, 50).expect("events");
     assert!(batch.next_cursor >= 1);
     assert!(batch.events.len() <= 256);
+}
+
+#[test]
+fn provider_glance_rows_via_bridge_project_rust_rows() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let bridge = open_bridge(dir.path());
+    {
+        let mut guard = bridge.inner.lock().expect("lock");
+        let mut view = FocusedUsageView::unavailable("seed", 1);
+        view.status = UsageSnapshotStatus::Fresh;
+        view.source = UsageSource::ProviderApi;
+        view.confidence = UsageConfidence::Authoritative;
+        view.account.provider_label = "OpenAI / Codex".to_owned();
+        view.account.account_label = "codex@example.com".to_owned();
+        view.account.credential_origin = Some("OAuth · ~/.codex/auth.json".to_owned());
+        view.buckets = vec![QuotaBucketView {
+            label: "Weekly".to_owned(),
+            used_label: None,
+            limit_label: None,
+            remaining_percent: Some(57),
+            reset_label: Some("Resets in 3d".to_owned()),
+            resets_at: Some(1_700_200_000),
+            status_slot: Some(StatusSlot::Weekly),
+            pace_label: None,
+            status: UsageSnapshotStatus::Fresh,
+            used_money: None,
+            limit_money: None,
+            severity: UsageSeverity::Normal,
+        }];
+        guard.inject_snapshot("codex", view).expect("inject");
+    }
+    let rows = bridge.provider_glance_rows().expect("glance rows");
+    let codex = rows
+        .iter()
+        .find(|row| row.surface_id == "codex")
+        .expect("codex glance row");
+    assert_eq!(codex.icon_key, "codex");
+    assert_eq!(codex.bar_label, "57%");
+    assert_eq!(codex.glance_remaining_percent, Some(57));
+    assert!(!codex.is_refreshing);
 }

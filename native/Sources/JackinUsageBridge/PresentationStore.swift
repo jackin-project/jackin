@@ -268,7 +268,8 @@ public final class PresentationStore: ObservableObject {
         let config = OpenConfig(
             dataDir: dataDir,
             refreshFloorSecs: refreshFloorSecs,
-            enabledSurfaceIds: enabled
+            enabledSurfaceIds: enabled,
+            allowLiveProbes: true
         )
         Task { [weak self] in
             guard let self else { return }
