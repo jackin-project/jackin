@@ -579,3 +579,13 @@ dialog; numbers come from the same Rust views).
 - 2026-07-24 — execution — plan 004 shipped the Variant A run-out producer:
   `quota_pace_label` appends `· Runs out in <duration>` from Rust (exact
   integer cross-products; TUI/Swift splitters unchanged). 9 pace tests.
+- 2026-07-24 — execution — plan 005 shipped the per-provider status bar: the
+  Rust-owned seven-provider glance contract (`provider_glance_rows`) over
+  UniFFI (`ProviderGlanceRowDto`), and an AppKit `@main`/`StatusBarController`
+  that renders one `NSStatusItem` per auto-detected provider (canonical order,
+  in-place reconcile, jackin❯ fallback, stale/error dimming, one transient
+  popover) displaying the Rust `barLabel` verbatim — replacing the SwiftUI
+  `MenuBarExtra`. Verified via `ci --fast` + `desktop test` + `swift build` +
+  a real `desktop build` and ephemeral launch smoke (app comes up as a
+  menu-bar accessory without crashing). Legacy membership-toggle removal
+  deferred to plan 006 (owns the popover); XCTest suites unavailable here.

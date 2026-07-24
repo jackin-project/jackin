@@ -70,6 +70,8 @@ Swift `LSUIElement` menu bar (display only)
 
 Swift must not own HTTP/RPC/OAuth/CLI scrapes or a second provider matrix.
 
+The status bar is one AppKit `NSStatusItem` per auto-detected provider, reconciled from the Rust-owned seven-provider glance list (`provider_glance_rows`): an `@main` AppKit bootstrap + `StatusBarController` create/update/remove items by Rust `surfaceId` in canonical order, show a single jackin❯ fallback item when none is detected, dim stale/error, and host one transient popover. Each item displays the Rust `barLabel` verbatim — no SwiftUI `MenuBarExtra`, severity tint, mini meter, or percent math in Swift.
+
 Rust owns semantic status-bar glance slots via `StatusSlot` (`session`, `daily`, `weekly`, `spend`); `daily` carries Amp Free's daily allowance. Amp's API and CLI paths share one `displayText` parser producing that Daily glance bucket, with individual/workspace credit balances as detail-only quota bounds — never a glance percentage or inferred plan.
 
 The status-bar pace line can carry a Rust-produced Variant A run-out composite (`<pace> · Runs out in <duration>`), emitted only when the linear projection from the window start runs out before the reset; the TUI and Swift splitters split on `" · "` unchanged.
