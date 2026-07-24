@@ -806,8 +806,8 @@ jobs:
             sha256 "${APP_SHA256}"
 
             url "https://github.com/jackin-project/jackin/releases/download/v${VERSION}/jackin-desktop-${VERSION}-aarch64-apple-darwin.zip"
-            name "Jackin Desktop"
-            desc "Native macOS status-bar app for jackin agent usage quotas"
+            name "jackin❯ Desktop"
+            desc "Native macOS menu bar app for AI agent subscription usage limits"
             homepage "https://github.com/jackin-project/jackin"
 
             depends_on macos: ">= :sonoma"
