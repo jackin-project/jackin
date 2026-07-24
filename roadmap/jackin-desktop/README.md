@@ -644,3 +644,19 @@ dialog; numbers come from the same Rust views).
   all three harnesses ALL PASS) + `desktop build` + `desktop verify` + ephemeral
   launch smoke. Deviation: the three new XCTests are unrunnable here (no XCTest on
   the CLT-only host); confinement is enforced by the runnable harnesses + greps.
+- 2026-07-24 — execution — plan 010 landed the secret-free distribution work and
+  ended BLOCKED on operator-provisioned Apple secrets (its designed terminal
+  state). The generated Homebrew cask `name`/`desc` were brand-corrected to
+  `jackin❯ Desktop` + limits-only wording (the only in-scope release.yml edit;
+  cask renders `Syntax OK`, single-file actionlint clean, zero `Jackin Desktop`
+  brand-form), and a new `scripts/desktop-install-proof.sh` (shellcheck + `bash -n`
+  clean, no-arg fails fast) scripts the deferred clean-host install proof. The
+  read-only secrets check found `release-macos` present but with **zero** Apple
+  secrets/variables — publish needs operator Path A provisioning
+  (`native/README.md`), which must never be created or substituted here. The
+  `mode=validate` dispatch failed on a pre-existing base-branch infra bug
+  (`mise.lock` missing `cosign@3.1.2`) before the cask job ran — unrelated to the
+  plan diff. Also reconciled this program's own accumulated lint drift so
+  `cargo xtask lint --strict` is green again: regenerated the telemetry
+  error-ownership census and updated four README doc-byte budgets + three
+  jackin-usage expect budgets in `ratchet.toml`.
