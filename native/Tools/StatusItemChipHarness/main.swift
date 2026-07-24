@@ -31,6 +31,26 @@ struct StatusItemChipHarness {
             }
         }
 
+        // --- Desktop provider icon seam (plan 005 Step 6) ---
+        check(
+            "desktop icon keys are the seven-provider domain",
+            desktopProviderIconKeys == ["codex", "claude", "amp", "grok", "zai", "kimi", "minimax"]
+        )
+        for key in desktopProviderIconKeys {
+            check(
+                "desktop provider icon maps: \(key)",
+                desktopProviderSystemImage(iconKey: key) != nil
+            )
+        }
+        check(
+            "opencode is excluded from desktop provider icons",
+            desktopProviderSystemImage(iconKey: "opencode") == nil
+        )
+        check(
+            "unknown desktop provider icon key is nil",
+            desktopProviderSystemImage(iconKey: "cursor") == nil
+        )
+
         // --- Pure token helpers ---
         check("remaining token default", statusItemPercentToken(remainingPercent: 37) == "37%")
         check(
