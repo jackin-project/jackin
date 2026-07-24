@@ -55,18 +55,17 @@ pub(crate) use self::claude::{
     ClaudeCliUsage, ClaudeOAuthCredentials, ClaudeOAuthExtraUsage, ClaudeOAuthLimit,
     ClaudeOAuthLimitModel, ClaudeOAuthLimitScope, ClaudeOAuthMoney, ClaudeOAuthSpend,
     ClaudeOAuthUsageResponse, ClaudeOAuthUsageWindow, ClaudeQuotaWindow, ClaudeSpend,
-    ClaudeWavePolicy, ClaudeWaveResolution, classify_claude_keychain_status,
-    claude_account_identity, claude_code_user_agent, claude_code_user_agent_with,
-    claude_code_version_from_text, claude_email_from_value, claude_oauth_candidates,
-    claude_oauth_from_value, claude_organization_type_from_value, claude_snapshot,
-    claude_spend_bucket, claude_view_from_wave, claude_wave_policy, fetch_claude_cli_usage,
-    fetch_claude_oauth_usage, load_claude_account_email, normalize_claude_spend,
-    push_claude_dollar_windows, resolve_claude_wave,
+    ClaudeWavePolicy, ClaudeWaveResolution, claude_account_identity, claude_code_user_agent,
+    claude_code_user_agent_with, claude_code_version_from_text, claude_email_from_value,
+    claude_oauth_candidates, claude_oauth_from_value, claude_organization_type_from_value,
+    claude_snapshot, claude_spend_bucket, claude_view_from_wave, claude_wave_policy,
+    fetch_claude_cli_usage, fetch_claude_oauth_usage, load_claude_account_email,
+    normalize_claude_spend, push_claude_dollar_windows, resolve_claude_wave,
 };
 #[cfg(test)]
 pub(crate) use self::claude::{
-    ClaudeFileProbe, ClaudeKeychainRead, ClaudeKeychainState, load_claude_oauth_credentials,
-    load_claude_organization_type, resolve_claude_refresh_wave_with,
+    ClaudeFileProbe, ClaudeKeychainRead, ClaudeKeychainState, classify_claude_keychain_status,
+    load_claude_oauth_credentials, load_claude_organization_type, resolve_claude_refresh_wave_with,
 };
 #[cfg(test)]
 pub(crate) use self::codex::load_codex_oauth_credentials;

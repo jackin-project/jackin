@@ -692,19 +692,19 @@ final class ArchitectureTests: XCTestCase {
         XCTAssertFalse(text.contains("SurfaceCard"), "popover must not reference SurfaceCard")
     }
 
-    /// Cold launch: status item must open the host runtime without a menu click.
-    func testStatusItemLabelOpensRuntimeOnAppear() throws {
-        let status = sourcesRoot
+    /// Cold launch: the AppKit delegate must open the host runtime without a menu click.
+    func testApplicationDelegateOpensRuntimeOnLaunch() throws {
+        let delegate = sourcesRoot
             .appendingPathComponent("JackinDesktop")
-            .appendingPathComponent("StatusItemLabel.swift")
-        let text = try String(contentsOf: status, encoding: .utf8)
+            .appendingPathComponent("DesktopAppDelegate.swift")
+        let text = try String(contentsOf: delegate, encoding: .utf8)
         XCTAssertTrue(
-            text.contains("openDefault"),
-            "StatusItemLabel must call openDefault so focus-percent works on cold launch"
+            text.contains("applicationDidFinishLaunching"),
+            "DesktopAppDelegate must initialize the runtime during application launch"
         )
         XCTAssertTrue(
-            text.contains("onAppear"),
-            "StatusItemLabel must open runtime on appear, not only after popover open"
+            text.contains("store.openForLaunch(launchConfiguration)"),
+            "DesktopAppDelegate must open the configured runtime on cold launch"
         )
     }
 

@@ -364,7 +364,10 @@ pub(crate) fn load_claude_oauth_credentials(path: &Path) -> Option<ClaudeOAuthCr
 /// Raw Keychain lookup outcome for one service. Secret-free in its own labels
 /// (`json` carries the payload but the type is never formatted/logged).
 pub(crate) enum ClaudeKeychainRead {
-    Payload { json: String },
+    #[cfg(any(target_os = "macos", test))]
+    Payload {
+        json: String,
+    },
     Denied,
     Missing,
 }
@@ -375,6 +378,7 @@ pub(crate) enum ClaudeKeychainRead {
 /// interaction-not-allowed (-25308), and any other failure are `Missing`
 /// (absence), so file/env fallback stays available. Pure and cross-platform so
 /// tests never touch the real Keychain.
+#[cfg(any(target_os = "macos", test))]
 pub(crate) fn classify_claude_keychain_status(code: i32) -> ClaudeKeychainRead {
     match code {
         -128 | -25293 => ClaudeKeychainRead::Denied,
@@ -532,6 +536,7 @@ where
 {
     match state.read_with(&scope.service, keychain_reader) {
         ClaudeKeychainRead::Denied => ClaudeWaveResolution::Denied,
+        #[cfg(any(target_os = "macos", test))]
         ClaudeKeychainRead::Payload { json } => {
             match serde_json::from_str::<serde_json::Value>(&json)
                 .ok()
