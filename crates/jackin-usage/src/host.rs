@@ -505,6 +505,16 @@ impl HostUsageRuntime {
             .as_ref()
             .map(|d| host_snapshot_store_path(d))
             .unwrap_or_default();
+        // A local-only Claude resolution (Keychain denial, missing credential,
+        // or an anonymous credential) never restores a durable/shared account
+        // view over the live local result.
+        if self
+            .cache
+            .active_snapshot_policy(surface.agent_slug(), surface.provider_label())
+            .is_local_only()
+        {
+            return Ok(live);
+        }
         let selected = self.selected_accounts.get(surface.id()).map(String::as_str);
         Ok(accounts::resolve_account_view(
             surface,
@@ -541,8 +551,17 @@ impl HostUsageRuntime {
                 .cache
                 .focused_snapshot(Some(surface.agent_slug()), surface.provider_label());
             let live_key = account_key_for_view(&live);
-            let mut account_map =
-                accounts::collect_account_views(surface, Some(&live), &store_path);
+            // Local-only Claude scopes read no durable/shared history: only the
+            // live row (when its identity is non-placeholder) is returned.
+            let mut account_map = if self
+                .cache
+                .active_snapshot_policy(surface.agent_slug(), surface.provider_label())
+                .is_local_only()
+            {
+                HashMap::new()
+            } else {
+                accounts::collect_account_views(surface, Some(&live), &store_path)
+            };
             if !live_key.is_empty() {
                 account_map
                     .entry(live_key.clone())

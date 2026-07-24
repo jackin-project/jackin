@@ -20,6 +20,7 @@ mod account_key;
 mod agent;
 mod auth;
 mod build_log_sink;
+mod claude_keychain;
 mod clock;
 mod constants;
 mod container_id;
@@ -57,6 +58,9 @@ pub use account_key::*;
 pub use agent::{Agent, AgentRuntime, AgentStatePaths, ParseAgentError, agent_runtime_registry};
 pub use auth::*;
 pub use build_log_sink::*;
+pub use claude_keychain::{
+    CLAUDE_KEYCHAIN_SERVICE_BASE, ClaudeKeychainScope, claude_keychain_scope,
+};
 pub use clock::*;
 pub use constants::*;
 pub use container_id::*;

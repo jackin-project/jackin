@@ -3451,6 +3451,7 @@ dependencies = [
  "jackin-telemetry",
  "nix 0.31.3",
  "reqwest",
+ "security-framework",
  "serde",
  "serde_json",
  "tempfile",

@@ -86,6 +86,9 @@ where
             results.push(UsageRefreshResult {
                 target,
                 view,
+                // A timeout is the normal shared policy — it is not a Claude
+                // credential resolution outcome.
+                policy: UsageSnapshotPolicy::Shared,
                 codex_rpc_gate: ManagedCliLaunchGate::default(),
                 grok_rpc_gate: ManagedCliLaunchGate::default(),
             });

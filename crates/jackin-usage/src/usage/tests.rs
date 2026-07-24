@@ -885,6 +885,7 @@ fn usage_refresh_max_active_probes_are_spawned_before_any_join() {
                 UsageRefreshResult {
                     target,
                     view: FocusedUsageView::unavailable("test", now_epoch()),
+                    policy: UsageSnapshotPolicy::Shared,
                     codex_rpc_gate: ManagedCliLaunchGate::default(),
                     grok_rpc_gate: ManagedCliLaunchGate::default(),
                 }
@@ -926,6 +927,7 @@ fn usage_refresh_probe_timeout_returns_fallback_result() {
             UsageRefreshResult {
                 target,
                 view: FocusedUsageView::unavailable("test", now_epoch()),
+                policy: UsageSnapshotPolicy::Shared,
                 codex_rpc_gate: ManagedCliLaunchGate::default(),
                 grok_rpc_gate: ManagedCliLaunchGate::default(),
             }
@@ -4030,4 +4032,225 @@ fn managed_probe_boundaries_export_fixed_private_shapes() {
         assert!(!export.contains_span_text(prohibited));
         assert!(!export.contains_log_text(prohibited));
     }
+}
+
+// ===== Plan 002: Claude Keychain credential source =====
+
+fn keychain_test_scope(is_default: bool) -> jackin_core::ClaudeKeychainScope {
+    jackin_core::ClaudeKeychainScope {
+        normalized_config_dir: PathBuf::from(if is_default {
+            "/home/u/.claude"
+        } else {
+            "/home/u/.claude-work"
+        }),
+        service: if is_default {
+            "Claude Code-credentials".to_owned()
+        } else {
+            "Claude Code-credentials-3342f2c7".to_owned()
+        },
+        is_default,
+    }
+}
+
+const KEYCHAIN_PAYLOAD: &str = r#"{"claudeAiOauth":{"accessToken":"kc-token","subscriptionType":"max","refreshToken":"rt-1"}}"#;
+
+fn empty_file_probe() -> ClaudeFileProbe {
+    ClaudeFileProbe {
+        credential: None,
+        origin: None,
+        account_email: None,
+        organization_type: None,
+    }
+}
+
+#[test]
+fn classify_claude_keychain_status_maps_denial_and_absence() {
+    assert!(matches!(
+        classify_claude_keychain_status(-128),
+        ClaudeKeychainRead::Denied
+    ));
+    assert!(matches!(
+        classify_claude_keychain_status(-25293),
+        ClaudeKeychainRead::Denied
+    ));
+    assert!(matches!(
+        classify_claude_keychain_status(-25300),
+        ClaudeKeychainRead::Missing
+    ));
+    assert!(matches!(
+        classify_claude_keychain_status(-25308),
+        ClaudeKeychainRead::Missing
+    ));
+    assert!(matches!(
+        classify_claude_keychain_status(-1),
+        ClaudeKeychainRead::Missing
+    ));
+}
+
+#[test]
+fn claude_keychain_credential_wins_over_file_paths() {
+    let scope = keychain_test_scope(true);
+    let state = ClaudeKeychainState::default();
+    let resolution = resolve_claude_refresh_wave_with(
+        &scope,
+        &state,
+        |_service| ClaudeKeychainRead::Payload {
+            json: KEYCHAIN_PAYLOAD.to_owned(),
+        },
+        || ClaudeFileProbe {
+            credential: claude_oauth_from_value(
+                &serde_json::json!({"claudeAiOauth":{"accessToken":"file-token"}}),
+            ),
+            origin: Some("OAuth · file".to_owned()),
+            account_email: Some("user@example.com".to_owned()),
+            organization_type: Some("Max".to_owned()),
+        },
+        || Some("env-token".to_owned()),
+    );
+    match resolution {
+        ClaudeWaveResolution::Resolved(resolved) => {
+            assert_eq!(resolved.access_token, "kc-token");
+            assert_eq!(
+                resolved.credential_origin,
+                "OAuth · macOS Keychain (Claude Code-credentials)"
+            );
+            assert!(!resolved.is_anonymous);
+        }
+        _ => panic!("expected Resolved"),
+    }
+    assert_eq!(state.read_count(), 1);
+}
+
+#[test]
+fn claude_keychain_denial_short_circuits_before_file_or_env_read() {
+    let scope = keychain_test_scope(true);
+    let state = ClaudeKeychainState::default();
+    let resolution = resolve_claude_refresh_wave_with(
+        &scope,
+        &state,
+        |_service| ClaudeKeychainRead::Denied,
+        || panic!("file probe must not run after denial"),
+        || panic!("env reader must not run after denial"),
+    );
+    assert!(matches!(resolution, ClaudeWaveResolution::Denied));
+    // Terminal for the service: a later wave whose reader panics still returns
+    // Denied from the process-lifetime cache without re-prompting.
+    let again = resolve_claude_refresh_wave_with(
+        &scope,
+        &state,
+        |_service| panic!("reader must not run after cached denial"),
+        || panic!("no file probe"),
+        || panic!("no env"),
+    );
+    assert!(matches!(again, ClaudeWaveResolution::Denied));
+    assert_eq!(state.read_count(), 1);
+    assert_eq!(claude_wave_policy(&again), ClaudeWavePolicy::LocalDenied);
+}
+
+#[test]
+fn claude_keychain_missing_falls_back_to_file_then_env() {
+    let scope = keychain_test_scope(true);
+    let state = ClaudeKeychainState::default();
+    let with_file = resolve_claude_refresh_wave_with(
+        &scope,
+        &state,
+        |_| ClaudeKeychainRead::Missing,
+        || ClaudeFileProbe {
+            credential: claude_oauth_from_value(
+                &serde_json::json!({"claudeAiOauth":{"accessToken":"file-token","refreshToken":"rt"}}),
+            ),
+            origin: Some("OAuth · file".to_owned()),
+            account_email: None,
+            organization_type: None,
+        },
+        || None,
+    );
+    match with_file {
+        ClaudeWaveResolution::Resolved(r) => assert_eq!(r.access_token, "file-token"),
+        _ => panic!("file fallback"),
+    }
+    let state2 = ClaudeKeychainState::default();
+    let with_env = resolve_claude_refresh_wave_with(
+        &scope,
+        &state2,
+        |_| ClaudeKeychainRead::Missing,
+        empty_file_probe,
+        || Some("env-token".to_owned()),
+    );
+    match &with_env {
+        ClaudeWaveResolution::Resolved(r) => {
+            assert_eq!(r.access_token, "env-token");
+            assert!(r.is_anonymous);
+        }
+        _ => panic!("env fallback"),
+    }
+    assert_eq!(
+        claude_wave_policy(&with_env),
+        ClaudeWavePolicy::LocalAnonymous
+    );
+}
+
+#[test]
+fn claude_keychain_missing_with_no_credential_is_local_missing() {
+    let scope = keychain_test_scope(true);
+    let state = ClaudeKeychainState::default();
+    let resolution = resolve_claude_refresh_wave_with(
+        &scope,
+        &state,
+        |_| ClaudeKeychainRead::Missing,
+        empty_file_probe,
+        || None,
+    );
+    assert!(matches!(resolution, ClaudeWaveResolution::Missing));
+    assert_eq!(
+        claude_wave_policy(&resolution),
+        ClaudeWavePolicy::LocalMissing
+    );
+}
+
+#[test]
+fn claude_keychain_metadata_makes_resolution_shared() {
+    let scope = keychain_test_scope(true);
+    let state = ClaudeKeychainState::default();
+    let resolution = resolve_claude_refresh_wave_with(
+        &scope,
+        &state,
+        |_| ClaudeKeychainRead::Payload {
+            json: r#"{"claudeAiOauth":{"accessToken":"kc"}}"#.to_owned(),
+        },
+        || ClaudeFileProbe {
+            credential: None,
+            origin: None,
+            account_email: Some("id@example.com".to_owned()),
+            organization_type: Some("Max".to_owned()),
+        },
+        || None,
+    );
+    match &resolution {
+        ClaudeWaveResolution::Resolved(r) => {
+            assert!(!r.is_anonymous);
+            assert_eq!(r.account_email.as_deref(), Some("id@example.com"));
+        }
+        _ => panic!("resolved"),
+    }
+    assert_eq!(claude_wave_policy(&resolution), ClaudeWavePolicy::Shared);
+}
+
+#[test]
+fn claude_denied_view_has_no_quota_and_exact_error() {
+    let view = claude_view_from_wave(
+        "claude",
+        Some("Anthropic / Claude"),
+        1_781_185_560,
+        ClaudeWaveResolution::Denied,
+    );
+    assert_eq!(view.status, UsageSnapshotStatus::NeedsLogin);
+    assert!(view.buckets.is_empty());
+    assert!(view.account.account_label.is_empty());
+    assert_eq!(view.account.plan_label, None);
+    assert_eq!(view.account.credential_origin, None);
+    assert_eq!(
+        view.last_error.as_deref(),
+        Some("Claude Keychain access denied")
+    );
 }

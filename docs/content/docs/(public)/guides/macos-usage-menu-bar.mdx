@@ -70,12 +70,14 @@ Probes read the **same host logins** operators already use for jackin❯ launch 
 
 | Surface | Typical host roots |
 |---|---|
-| Claude | `~/.claude/.credentials.json`, `ANTHROPIC_*` |
+| Claude | macOS Keychain (`Claude Code-credentials`, or a per-`CLAUDE_CONFIG_DIR` service for a custom config), then `~/.claude/.credentials.json`, `ANTHROPIC_*` |
 | Codex | `~/.codex/auth.json` |
 | Amp / Grok / Kimi / OpenCode | respective home secrets |
 | Z.AI / MiniMax | `ZAI_API_KEY` / `MINIMAX_*` env |
 
 No passwords are stored by the menu bar app. It reuses local sessions/keys already present for jackin❯.
+
+On a default macOS install Claude Code keeps its credential only in the login Keychain, so the first read may show a system consent prompt. Choosing **Allow** lets that read complete (macOS may ask again on a later refresh); **Always Allow** makes future reads silent. If you **Deny**, Claude stays disabled until you relaunch jackin❯ Desktop — no repeated prompt storm, and no other provider is affected. Over SSH or another headless session where the Keychain is unavailable, jackin❯ Desktop falls back to the credentials file exactly as before.
 
 ## Debug CLI (no UI)
 

@@ -1120,7 +1120,7 @@ fn read_host_credentials(host_home: &Path) -> Option<String> {
     // dirs) while still supporting the Keychain in production.
     #[cfg(target_os = "macos")]
     if host_home_is_real(host_home) {
-        return read_claude_keychain(CLAUDE_KEYCHAIN_SERVICE_BASE);
+        return read_claude_keychain(jackin_core::CLAUDE_KEYCHAIN_SERVICE_BASE);
     }
 
     None
@@ -1152,19 +1152,16 @@ fn read_host_credentials_from_claude_config_dir(
     // out to `security`).
     #[cfg(target_os = "macos")]
     if host_home_is_real(host_home) {
-        let service = claude_keychain_service_for_config_dir(source_dir, host_home);
-        return read_claude_keychain(&service);
+        // Provisioning source dirs are already absolute; the shared core helper
+        // normalizes and hashes the same path so instance and usage never drift.
+        let scope = jackin_core::claude_keychain_scope(source_dir, host_home, source_dir)?;
+        return read_claude_keychain(&scope.service);
     }
 
     #[cfg(not(target_os = "macos"))]
     let _ = host_home;
     None
 }
-
-/// Base macOS Keychain service name Claude Code uses for the default
-/// `~/.claude` config dir.
-#[cfg(target_os = "macos")]
-const CLAUDE_KEYCHAIN_SERVICE_BASE: &str = "Claude Code-credentials";
 
 /// Read a credential blob from the macOS login Keychain under `service`.
 /// Returns `None` on lookup failure or an empty value.
@@ -1182,30 +1179,6 @@ fn read_claude_keychain(service: &str) -> Option<String> {
         }
     }
     None
-}
-
-/// Derive the macOS Keychain service name Claude Code uses for a given
-/// `CLAUDE_CONFIG_DIR`.
-///
-/// Claude Code keys the default `~/.claude` config dir under the bare
-/// `"Claude Code-credentials"` service, and every other config dir under
-/// `"Claude Code-credentials-<suffix>"` where `<suffix>` is the first
-/// eight hex chars (four bytes) of the SHA-256 of the absolute config dir
-/// path. Verified against a live Keychain entry (`~/.claude-work`
-/// → `…-3342f2c7`).
-#[cfg(target_os = "macos")]
-fn claude_keychain_service_for_config_dir(source_dir: &Path, host_home: &Path) -> String {
-    use sha2::{Digest, Sha256};
-
-    // The default config dir uses the bare service name, not a suffix.
-    if source_dir == host_home.join(".claude") {
-        return CLAUDE_KEYCHAIN_SERVICE_BASE.to_owned();
-    }
-
-    let digest = Sha256::digest(source_dir.to_string_lossy().as_bytes());
-    let mut suffix = hex::encode(digest);
-    suffix.truncate(8);
-    format!("{CLAUDE_KEYCHAIN_SERVICE_BASE}-{suffix}")
 }
 
 /// Reject symlinks at `path` to prevent a compromised role from
