@@ -898,7 +898,10 @@ pub fn estimate_caption(view: &FocusedUsageView) -> Option<String> {
     }
 }
 
-pub use self::format::{PercentStyle, ResetStyle, UsageFormatPrefs};
+pub use self::format::{
+    PercentStyle, ResetStyle, UsageBucketPresentation, UsageFormatPrefs, usage_bucket_presentation,
+    usage_display_status_label,
+};
 
 pub fn usage_status_storage_label(status: UsageSnapshotStatus) -> &'static str {
     match status {

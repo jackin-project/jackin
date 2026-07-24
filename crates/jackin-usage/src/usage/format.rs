@@ -510,3 +510,141 @@ pub(super) fn compact_count(value: u64) -> String {
         value.to_string()
     }
 }
+
+/// Rust-owned, limits-only presentation of one quota bucket. Shared by the
+/// Capsule usage dialog and every native Desktop surface so semantic segment
+/// choice and order live in Rust, never in Swift or a per-surface copy.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UsageBucketPresentation {
+    /// Provider percentage text (segment 0), when the bucket has one.
+    pub remaining_label: Option<String>,
+    /// Complete semantic segments in display order (a Rust pace composite is
+    /// flattened onto the canonical `" · "` separator).
+    pub display_segments: Vec<String>,
+    /// `display_segments` joined with the canonical `" · "` separator.
+    pub display_label: String,
+    /// Percentage usable only as presentation geometry (meter fill): remaining
+    /// for normal/credits buckets, used for the Spend slot.
+    pub meter_percent: Option<u8>,
+}
+
+/// Stable human status label for a snapshot status (limits-only; no price).
+#[must_use]
+pub fn usage_display_status_label(
+    status: jackin_protocol::control::UsageSnapshotStatus,
+) -> &'static str {
+    use jackin_protocol::control::UsageSnapshotStatus as S;
+    match status {
+        S::Fresh => "fresh",
+        S::Stale => "stale",
+        S::NeedsLogin => "needs login",
+        S::NeedsSecret => "needs secret",
+        S::Unsupported => "unsupported",
+        S::Unavailable => "unavailable",
+        S::Error => "error",
+    }
+}
+
+fn usage_money_cap_segment(
+    used: Option<&str>,
+    limit: Option<&str>,
+    prefix: &str,
+) -> Option<String> {
+    match (used, limit) {
+        (Some(used), Some(limit)) => Some(format!("{prefix}: {used} / {limit}")),
+        (Some(label), None) | (None, Some(label)) => Some(label.to_owned()),
+        (None, None) => None,
+    }
+}
+
+/// Build the shared limits-only presentation for one quota bucket. The segment
+/// choice/order matches the Capsule usage dialog exactly; the Capsule meter is
+/// prepended by the caller from [`UsageBucketPresentation::meter_percent`].
+#[must_use]
+pub fn usage_bucket_presentation(
+    bucket: &jackin_protocol::control::QuotaBucketView,
+) -> UsageBucketPresentation {
+    use jackin_protocol::control::{StatusSlot, UsageSnapshotStatus};
+
+    let mut segments: Vec<String> = Vec::new();
+    let mut remaining_label = None;
+    let mut meter_percent = None;
+
+    if bucket.status_slot == Some(StatusSlot::Spend) {
+        if let Some(remaining) = bucket.remaining_percent {
+            let used = 100u8.saturating_sub(remaining);
+            let segment = format!("{used}% used");
+            remaining_label = Some(segment.clone());
+            segments.push(segment);
+            meter_percent = Some(used);
+        }
+        if let Some(cap) = usage_money_cap_segment(
+            bucket.used_label.as_deref(),
+            bucket.limit_label.as_deref(),
+            "Monthly cap",
+        ) {
+            segments.push(cap);
+        }
+        if segments.is_empty() || bucket.status != UsageSnapshotStatus::Fresh {
+            segments.push(usage_display_status_label(bucket.status).to_owned());
+        }
+    } else {
+        if let Some(remaining) = bucket.remaining_percent {
+            let segment =
+                if bucket.label == "Credits" && remaining == 0 && bucket.limit_label.is_some() {
+                    "0 left".to_owned()
+                } else {
+                    format!("{remaining}% left")
+                };
+            remaining_label = Some(segment.clone());
+            segments.push(segment);
+            meter_percent = Some(remaining);
+        }
+        if let Some(pace) = &bucket.pace_label {
+            segments.push(pace.clone());
+        }
+        if let Some(reset) = &bucket.reset_label {
+            segments.push(reset.clone());
+        }
+        if (bucket.used_money.is_some() || bucket.limit_money.is_some())
+            && let Some(budget) = usage_money_cap_segment(
+                bucket.used_label.as_deref(),
+                bucket.limit_label.as_deref(),
+                "Budget",
+            )
+        {
+            segments.push(budget);
+        } else if bucket.label == "Credits"
+            && bucket.remaining_percent == Some(0)
+            && let Some(limit) = &bucket.limit_label
+        {
+            segments.push(limit.clone());
+        }
+        // Balance-only quota (no percent, pace, reset, or money) surfaces its
+        // limit label as the primary segment — the generic seam Grok's prepaid
+        // balance consumes (plan 003). Buckets with any other segment are
+        // unaffected, so existing Capsule output stays byte-identical.
+        if segments.is_empty()
+            && let Some(limit) = &bucket.limit_label
+        {
+            segments.push(limit.clone());
+        }
+        if segments.is_empty() || bucket.status != UsageSnapshotStatus::Fresh {
+            segments.push(usage_display_status_label(bucket.status).to_owned());
+        }
+    }
+
+    // Flatten a Rust pace composite (e.g. `"13% in deficit · Runs out in 2d"`)
+    // onto the canonical separator so every segment is atomic.
+    let display_segments: Vec<String> = segments
+        .iter()
+        .flat_map(|segment| segment.split(" · ").map(str::to_owned))
+        .collect();
+    let display_label = display_segments.join(" · ");
+    UsageBucketPresentation {
+        remaining_label,
+        display_segments,
+        display_label,
+        meter_percent,
+    }
+}

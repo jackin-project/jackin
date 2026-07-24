@@ -462,6 +462,29 @@ impl FocusedUsageView {
         view.updated_label.push_str("Refreshing");
         view
     }
+
+    /// True only for the exact cold [`Self::refreshing`] placeholder invariant:
+    /// `Unavailable`, `None` source/confidence, empty buckets, empty account
+    /// label, no username/plan/credential origin, and the exact `"refreshing"`
+    /// status-bar/error and `"Refreshing"` updated strings. Surface decoration
+    /// of `focused_provider`/`focused_agent`/`tabs`/`provider_label` is allowed
+    /// and does not make this false. A Fresh/Stale/Error view, any view carrying
+    /// a bucket/account/credential, or a single matching display string is
+    /// false. Host DTO code calls this so no looser host/Swift copy can drift.
+    #[must_use]
+    pub fn is_refreshing_placeholder(&self) -> bool {
+        self.status == UsageSnapshotStatus::Unavailable
+            && self.source == UsageSource::None
+            && self.confidence == UsageConfidence::None
+            && self.buckets.is_empty()
+            && self.account.account_label.is_empty()
+            && self.account.username.is_none()
+            && self.account.plan_label.is_none()
+            && self.account.credential_origin.is_none()
+            && self.status_bar_label == "refreshing"
+            && self.updated_label == "Refreshing"
+            && self.last_error.as_deref() == Some("refreshing")
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

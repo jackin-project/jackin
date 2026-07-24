@@ -246,81 +246,18 @@ impl Dialog {
         Some(*selected)
     }
 
-    /// `<prefix>: <used> / <limit>` when both money labels are present, else
-    /// whichever single label exists, else nothing. Shared by the spend-cap and
-    /// dollar-budget lines so the partial-data rendering can't diverge.
-    fn money_cap_part(used: Option<&str>, limit: Option<&str>, prefix: &str) -> Option<String> {
-        match (used, limit) {
-            (Some(used), Some(limit)) => Some(format!("{prefix}: {used} / {limit}")),
-            (Some(label), None) | (None, Some(label)) => Some(label.to_owned()),
-            (None, None) => None,
-        }
-    }
-
     fn usage_bucket_value(bucket: &jackin_protocol::control::QuotaBucketView) -> String {
-        let mut parts = Vec::new();
-        // Spend is identified by its semantic slot, not a label string, so a
-        // window rename can't silently change how the cap renders (Bug 7 class:
-        // presentation driven by data, not labels).
-        if bucket.status_slot == Some(jackin_protocol::control::StatusSlot::Spend) {
-            if let Some(remaining) = bucket.remaining_percent {
-                let used = 100u8.saturating_sub(remaining);
-                parts.push(format!("{} {used}% used", Self::usage_meter(used)));
-            }
-            parts.extend(Self::money_cap_part(
-                bucket.used_label.as_deref(),
-                bucket.limit_label.as_deref(),
-                "Monthly cap",
-            ));
-            if parts.is_empty()
-                || bucket.status != jackin_protocol::control::UsageSnapshotStatus::Fresh
-            {
-                parts.push(Self::usage_status_label(bucket.status));
-            }
-            return parts.join(" · ");
-        }
-        if let Some(remaining) = bucket.remaining_percent {
-            if bucket.label == "Credits" && remaining == 0 && bucket.limit_label.is_some() {
-                parts.push(format!("{} 0 left", Self::usage_meter(remaining)));
-            } else {
-                parts.push(format!(
-                    "{} {remaining}% left",
-                    Self::usage_meter(remaining)
-                ));
-            }
-        }
-        // Normal buckets show only `N% left · pace · Resets in …` on the
-        // stats line (the roadmap previews never put a used/limit token there;
-        // only `Extra usage`, handled above, shows a cap).
-        if let Some(pace) = &bucket.pace_label {
-            parts.push(pace.clone());
-        }
-        if let Some(reset) = &bucket.reset_label {
-            parts.push(reset.clone());
-        }
-        // Dollar-bearing windows (Claude codename budgets such as `amber_ladder`,
-        // the enterprise contractual budget) carry used/limit money. Show the
-        // figures from the data — not a label match — so the global budget's
-        // `$0 / $25,000` is visible the way the Extra-usage cap is (Bug 7).
-        if bucket.status_slot != Some(jackin_protocol::control::StatusSlot::Spend)
-            && (bucket.used_money.is_some() || bucket.limit_money.is_some())
+        // Rust owns semantic segment choice and order (limits-only) in
+        // `jackin_usage::usage::usage_bucket_presentation`; the Capsule dialog
+        // only prepends its TUI meter to the first segment.
+        let presentation = jackin_usage::usage::usage_bucket_presentation(bucket);
+        let mut segments = presentation.display_segments;
+        if let Some(meter_percent) = presentation.meter_percent
+            && let Some(first) = segments.first_mut()
         {
-            parts.extend(Self::money_cap_part(
-                bucket.used_label.as_deref(),
-                bucket.limit_label.as_deref(),
-                "Budget",
-            ));
-        } else if bucket.label == "Credits"
-            && bucket.remaining_percent == Some(0)
-            && let Some(limit) = &bucket.limit_label
-        {
-            parts.push(limit.clone());
+            *first = format!("{} {first}", Self::usage_meter(meter_percent));
         }
-        if parts.is_empty() || bucket.status != jackin_protocol::control::UsageSnapshotStatus::Fresh
-        {
-            parts.push(Self::usage_status_label(bucket.status));
-        }
-        parts.join(" · ")
+        segments.join(" · ")
     }
 
     fn usage_meter(remaining_percent: u8) -> String {
