@@ -1,0 +1,11 @@
+[tools]
+actionlint = "1.7.12"
+gitleaks = "8.30.1"
+prek = "0.4.10"
+shellcheck = "0.11.0"
+
+[tasks.actionlint]
+run = "actionlint"
+
+[settings]
+lockfile = true

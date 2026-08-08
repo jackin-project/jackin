@@ -1,13 +1,8 @@
 name: Publish Image
 
 concurrency:
-  # Serialize publishes per branch so simultaneous merges (for example
-  # several Renovate PRs landing within seconds) do not race on the
-  # :latest tag and leave it pointing at an older commit's image. The
-  # newest push wins, keeping :latest current so launches can reuse the
-  # published base instead of rebuilding from the workspace Dockerfile.
   group: publish-image-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 # IMPORTANT: image MUST be private. See AGENTS.md § Hard rules.
 
@@ -16,27 +11,48 @@ on:
     branches: [main]
   workflow_dispatch:
     inputs:
-      lane:
+      lanes:
         description: |
-          Runner lane. Publish mutates registry state, so it runs on one
-          lane only: github (default) or velnor.
+          Which runner(s) to run on. Default velnor; use both for parity runs.
         type: choice
-        default: github
-        options: [github, velnor]
+        default: velnor
+        options: [velnor, github, both]
 
 jobs:
   publish:
-    uses: jackin-project/jackin-role-action/.github/workflows/publish.yml@80a1acd07257a23b441c546e6fcad12239ef7626 # pinned
+    name: Publish (${{ matrix.config.lane }})
+    strategy:
+      fail-fast: false
+      matrix:
+        config: ${{ fromJSON((github.event_name == 'workflow_dispatch' && inputs.lanes == 'both') && '[{"lane":"Velnor","runner-amd64":"velnor-target-mvp","runner-arm64":"velnor-target-mvp","runner-merge":"velnor-target-mvp","writer":true},{"lane":"GitHub","runner-amd64":"ubuntu-26.04","runner-arm64":"ubuntu-26.04-arm","runner-merge":"ubuntu-26.04","writer":false}]' || (github.event_name == 'workflow_dispatch' && inputs.lanes == 'github') && '[{"lane":"GitHub","runner-amd64":"ubuntu-26.04","runner-arm64":"ubuntu-26.04-arm","runner-merge":"ubuntu-26.04","writer":true}]' || '[{"lane":"Velnor","runner-amd64":"velnor-target-mvp","runner-arm64":"velnor-target-mvp","runner-merge":"velnor-target-mvp","writer":true}]') }}
+    uses: jackin-project/jackin-role-action/.github/workflows/publish.yml@889e01e1fec152cc68271385f8976319244d9251 # pinned
     permissions:
       contents: read
       id-token: write
     with:
-      # Use native arm64 runners on the github lane. When both architectures
-      # use the same runner label, the reusable workflow builds arm64 via QEMU.
-      runner-amd64: ${{ (github.event_name == 'workflow_dispatch' && inputs.lane == 'velnor') && 'velnor-target-mvp' || 'ubuntu-24.04' }}
-      runner-arm64: ${{ (github.event_name == 'workflow_dispatch' && inputs.lane == 'velnor') && 'velnor-target-mvp' || 'ubuntu-24.04-arm' }}
-      runner-merge: ${{ (github.event_name == 'workflow_dispatch' && inputs.lane == 'velnor') && 'velnor-target-mvp' || 'ubuntu-24.04' }}
+      runner-amd64: ${{ matrix.config.runner-amd64 }}
+      runner-arm64: ${{ matrix.config.runner-arm64 }}
+      runner-merge: ${{ matrix.config.runner-merge }}
+      publish: ${{ matrix.config.writer }}
     secrets:
       registry-username: ${{ secrets.DOCKERHUB_USERNAME }}
       registry-password: ${{ secrets.DOCKERHUB_TOKEN }}
       github-readonly-token: ${{ secrets.GH_READONLY_TOKEN }}
+
+  publish-required:
+    needs: [publish]
+    if: always()
+    name: Publish required (${{ matrix.config.lane }})
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        config: ${{ fromJSON((github.event_name == 'workflow_dispatch' && inputs.lanes == 'both') && '[{"lane":"Velnor","runner":["self-hosted","velnor-target-mvp"],"writer":true},{"lane":"GitHub","runner":"ubuntu-26.04","writer":false}]' || (github.event_name == 'workflow_dispatch' && inputs.lanes == 'github') && '[{"lane":"GitHub","runner":"ubuntu-26.04","writer":true}]' || '[{"lane":"Velnor","runner":["self-hosted","velnor-target-mvp"],"writer":true}]') }}
+    runs-on: ${{ matrix.config.runner }}
+    steps:
+      - name: Fail on any failed or cancelled need
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: |
+          echo "$NEEDS_JSON" | jq -e 'to_entries | map(.value.result) | any(. == "failure" or . == "cancelled") | not' >/dev/null \
+            || { echo "A required job failed or was cancelled." >&2; exit 1; }

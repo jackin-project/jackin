@@ -4,33 +4,51 @@ on:
   schedule:
     - cron: '0 4 * * 1'
   workflow_dispatch:
+    inputs:
+      lanes:
+        description: velnor (default) | github | both
+        type: choice
+        default: velnor
+        options: [velnor, github, both]
 
 permissions:
   contents: read
 
+concurrency:
+  group: gitleaks-history-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   scan:
-    runs-on: ubuntu-latest
-    env:
-      GITLEAKS_VERSION: 8.30.1
+    name: Gitleaks history (${{ matrix.config.lane }})
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        config: ${{ fromJSON((github.event_name == 'workflow_dispatch' && inputs.lanes == 'both') && '[{"lane":"Velnor","runner":["self-hosted","velnor-target-mvp"],"writer":true},{"lane":"GitHub","runner":"ubuntu-26.04","writer":false}]' || (github.event_name == 'workflow_dispatch' && inputs.lanes == 'github') && '[{"lane":"GitHub","runner":"ubuntu-26.04","writer":true}]' || '[{"lane":"Velnor","runner":["self-hosted","velnor-target-mvp"],"writer":true}]') }}
+    runs-on: ${{ matrix.config.runner }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 0
-      - name: Cache gitleaks
-        id: cache-gitleaks
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+          fetch-depth: 0 # full history is the scanner input
+          persist-credentials: false
+      - uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
         with:
-          path: ~/.local/bin/gitleaks
-          key: gitleaks-${{ env.GITLEAKS_VERSION }}-linux-x64
-      - name: install gitleaks
-        run: |
-          set -euo pipefail
-          mkdir -p "$HOME/.local/bin"
-          if [ ! -x "$HOME/.local/bin/gitleaks" ]; then
-            curl -sSL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
-              | tar -xz -C "$HOME/.local/bin" gitleaks
-          fi
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-          "$HOME/.local/bin/gitleaks" version
+          install_args: gitleaks
+          github_token: ${{ secrets.GITHUB_TOKEN }}
       - run: gitleaks detect --source . --redact --verbose --no-banner
+
+  gitleaks-required:
+    needs: [scan]
+    if: always()
+    name: Gitleaks required (${{ matrix.config.lane }})
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        config: ${{ fromJSON((github.event_name == 'workflow_dispatch' && inputs.lanes == 'both') && '[{"lane":"Velnor","runner":["self-hosted","velnor-target-mvp"],"writer":true},{"lane":"GitHub","runner":"ubuntu-26.04","writer":false}]' || (github.event_name == 'workflow_dispatch' && inputs.lanes == 'github') && '[{"lane":"GitHub","runner":"ubuntu-26.04","writer":true}]' || '[{"lane":"Velnor","runner":["self-hosted","velnor-target-mvp"],"writer":true}]') }}
+    runs-on: ${{ matrix.config.runner }}
+    steps:
+      - env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: echo "$NEEDS_JSON" | jq -e 'to_entries | map(.value.result) | any(. == "failure" or . == "cancelled") | not' >/dev/null

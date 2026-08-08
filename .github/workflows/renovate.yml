@@ -8,30 +8,48 @@ on:
     branches:
       - main
   workflow_dispatch:
+    inputs:
+      lanes:
+        description: velnor (default) | github | both
+        type: choice
+        default: velnor
+        options: [velnor, github, both]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: renovate-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   renovate:
-    runs-on: ubuntu-24.04
+    name: Renovate (${{ matrix.config.lane }})
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        config: ${{ fromJSON((github.event_name == 'workflow_dispatch' && inputs.lanes == 'both') && '[{"lane":"Velnor","runner":["self-hosted","velnor-target-mvp"],"writer":true},{"lane":"GitHub","runner":"ubuntu-26.04","writer":false}]' || (github.event_name == 'workflow_dispatch' && inputs.lanes == 'github') && '[{"lane":"GitHub","runner":"ubuntu-26.04","writer":true}]' || '[{"lane":"Velnor","runner":["self-hosted","velnor-target-mvp"],"writer":true}]') }}
+    runs-on: ${{ matrix.config.runner }}
     env:
       RENOVATE_TOKEN: ${{ secrets.RENOVATE_TOKEN }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Cache Renovate repository cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
-          path: /tmp/renovate/cache
-          key: renovate-${{ runner.os }}-${{ github.run_id }}
+          path: .renovate/cache
+          key: renovate-${{ matrix.config.lane }}-${{ runner.os }}-${{ github.run_id }}
           restore-keys: |
-            renovate-${{ runner.os }}-
-      - name: Fix Renovate cache ownership for run
+            renovate-${{ matrix.config.lane }}-${{ runner.os }}-
+      - name: Prepare workspace-owned Renovate cache
         run: |
-          docker pull ghcr.io/renovatebot/renovate:43
-          renovate_uid="$(docker image inspect ghcr.io/renovatebot/renovate:43 --format '{{ .Config.User }}')"
-          renovate_uid="${renovate_uid%%:*}"
-          sudo mkdir -p /tmp/renovate/cache /tmp/renovate/repos
-          sudo chown -R "${renovate_uid:-12021}:0" /tmp/renovate
+          install -d -m 0777 .renovate .renovate/cache .renovate/repos
+          chmod -R a+rwX .renovate
       - name: Self-hosted Renovate
-        if: ${{ env.RENOVATE_TOKEN != '' }}
+        if: ${{ matrix.config.writer && env.RENOVATE_TOKEN != '' }}
         uses: renovatebot/github-action@316d7cd859606d6039a2182b7d69199e9b036835 # v46.2.1
         with:
           token: ${{ env.RENOVATE_TOKEN }}
@@ -45,10 +63,23 @@ jobs:
           # default author would silently break DCO on every Renovate PR.
           RENOVATE_GIT_AUTHOR: "Renovate Bot <renovate@whitesourcesoftware.com>"
           RENOVATE_REPOSITORY_CACHE: enabled
+          RENOVATE_BASE_DIR: /github/workspace/.renovate
           LOG_LEVEL: debug
-      - name: Skip Renovate without token
-        if: ${{ env.RENOVATE_TOKEN == '' }}
-        run: echo "RENOVATE_TOKEN is not configured; skipping Renovate."
-      - name: Fix Renovate cache ownership for save
-        if: always()
-        run: sudo chown -R "$(whoami)" /tmp/renovate 2>/dev/null || true
+      - name: Explain read-only comparison lane
+        if: ${{ !matrix.config.writer }}
+        run: echo 'Read-only comparison lane; Renovate mutation skipped.'
+
+  renovate-required:
+    needs: [renovate]
+    if: always()
+    name: Renovate required (${{ matrix.config.lane }})
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        config: ${{ fromJSON((github.event_name == 'workflow_dispatch' && inputs.lanes == 'both') && '[{"lane":"Velnor","runner":["self-hosted","velnor-target-mvp"],"writer":true},{"lane":"GitHub","runner":"ubuntu-26.04","writer":false}]' || (github.event_name == 'workflow_dispatch' && inputs.lanes == 'github') && '[{"lane":"GitHub","runner":"ubuntu-26.04","writer":true}]' || '[{"lane":"Velnor","runner":["self-hosted","velnor-target-mvp"],"writer":true}]') }}
+    runs-on: ${{ matrix.config.runner }}
+    steps:
+      - env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: echo "$NEEDS_JSON" | jq -e 'to_entries | map(.value.result) | any(. == "failure" or . == "cancelled") | not' >/dev/null
