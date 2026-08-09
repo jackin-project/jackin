@@ -7,6 +7,16 @@ ARG NODE_VERSION=24.19.0
 ARG JAVA_VERSION=oracle-graalvm-25.0.1
 ARG PROTOC_VERSION=35.1
 ARG CARGO_BINSTALL_VERSION=1.21.1
+# renovate: datasource=crate depName=cargo-nextest
+ARG CARGO_NEXTEST_VERSION=0.9.143
+# renovate: datasource=crate depName=ast-grep
+ARG AST_GREP_VERSION=0.45.1
+# renovate: datasource=crate depName=rust-script
+ARG RUST_SCRIPT_VERSION=0.36.0
+# renovate: datasource=crate depName=just
+ARG JUST_VERSION=1.58.0
+# renovate: datasource=crate depName=bottom
+ARG BOTTOM_VERSION=0.14.7
 ARG CTX7_VERSION=0.5.7
 ARG RTK_VERSION=0.45.0
 ARG UV_VERSION=0.12.3
@@ -73,7 +83,12 @@ RUN --mount=type=secret,id=github_token,uid=1000,required=false \
     GITHUB_TOKEN="$(cat /run/secrets/github_token 2>/dev/null || true)" && \
     export GITHUB_TOKEN && \
     . ~/.profile && \
-    cargo binstall --locked --no-confirm cargo-nextest ast-grep rust-script just bottom
+    cargo binstall --locked --no-confirm \
+    "cargo-nextest@${CARGO_NEXTEST_VERSION}" \
+    "ast-grep@${AST_GREP_VERSION}" \
+    "rust-script@${RUST_SCRIPT_VERSION}" \
+    "just@${JUST_VERSION}" \
+    "bottom@${BOTTOM_VERSION}"
 
 RUN --mount=type=secret,id=github_token,uid=1000,required=false \
     GITHUB_TOKEN=$(cat /run/secrets/github_token 2>/dev/null || true) \
