@@ -25,7 +25,7 @@ jobs:
       fail-fast: false
       matrix:
         config: ${{ fromJSON((github.event_name == 'workflow_dispatch' && inputs.lanes == 'both') && '[{"lane":"Velnor","runner-amd64":"velnor-target-mvp","runner-arm64":"velnor-target-mvp","runner-merge":"velnor-target-mvp","writer":true},{"lane":"GitHub","runner-amd64":"ubuntu-26.04","runner-arm64":"ubuntu-26.04-arm","runner-merge":"ubuntu-26.04","writer":false}]' || (github.event_name == 'workflow_dispatch' && inputs.lanes == 'github') && '[{"lane":"GitHub","runner-amd64":"ubuntu-26.04","runner-arm64":"ubuntu-26.04-arm","runner-merge":"ubuntu-26.04","writer":true}]' || '[{"lane":"Velnor","runner-amd64":"velnor-target-mvp","runner-arm64":"velnor-target-mvp","runner-merge":"velnor-target-mvp","writer":true}]') }}
-    uses: jackin-project/jackin-role-action/.github/workflows/publish.yml@889e01e1fec152cc68271385f8976319244d9251 # pinned
+    uses: jackin-project/jackin-role-action/.github/workflows/publish.yml@041f17a6d32f8fd2a8ef03c2a63be58346993136 # pinned
     permissions:
       contents: read
       id-token: write
