@@ -70,7 +70,8 @@ RUN --mount=type=secret,id=github_token,uid=1000,required=false \
 RUN --mount=type=secret,id=github_token,uid=1000,required=false \
     --mount=type=cache,target=/home/agent/.cargo/registry,uid=1000 \
     --mount=type=cache,target=/home/agent/.cargo/git,uid=1000 \
-    GITHUB_TOKEN=$(cat /run/secrets/github_token 2>/dev/null || true) \
+    GITHUB_TOKEN="$(cat /run/secrets/github_token 2>/dev/null || true)" && \
+    export GITHUB_TOKEN && \
     . ~/.profile && \
     cargo binstall --locked --no-confirm cargo-nextest ast-grep rust-script just bottom
 
