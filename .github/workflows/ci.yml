@@ -12,6 +12,10 @@ run-name: ${{ inputs.recovery_proof_id != '' && format('CI recovery {0}', inputs
 on:
   pull_request:
   push:
+    branches:
+      - main
+    tags:
+      - "**"
   merge_group:
   workflow_dispatch:
     inputs:
@@ -93,7 +97,7 @@ jobs:
       actions: read
       contents: read
       pull-requests: read
-    uses: jackin-project/velnor-actions/.github/workflows/ci-code.yml@1a8e34e21e0d379230feff757451536b40349c8a # 2026.8.17
+    uses: jackin-project/velnor-actions/.github/workflows/ci-code.yml@cd0738bd8c56d400b5724efa857dfd9574b4b24a # 2026.8.18
     with:
       lane: ${{ (github.event_name == 'workflow_dispatch' && inputs.lane != '' && inputs.lane) || (github.repository_owner == 'jackin-project' && 'github') || ((github.repository_owner == 'tailrocks' || github.repository_owner == 'ChainArgos') && 'velnor') || 'invalid' }}
       recovery_proof_id: ${{ inputs.recovery_proof_id || '' }}
@@ -115,7 +119,7 @@ jobs:
       actions: read
       contents: read
       pull-requests: read
-    uses: tailrocks/velnor-actions/.github/workflows/ci-code.yml@36ef486f0cce1728b7fa7372d99c4c03ad1d08e1 # 2026.8.17
+    uses: tailrocks/velnor-actions/.github/workflows/ci-code.yml@f3ae2e43c963ed4034db04902b6233b05f547975 # 2026.8.18
     with:
       lane: ${{ (github.event_name == 'workflow_dispatch' && inputs.lane != '' && inputs.lane) || (github.repository_owner == 'jackin-project' && 'github') || ((github.repository_owner == 'tailrocks' || github.repository_owner == 'ChainArgos') && 'velnor') || 'invalid' }}
       recovery_proof_id: ${{ inputs.recovery_proof_id || '' }}
@@ -137,7 +141,7 @@ jobs:
       actions: read
       contents: read
       pull-requests: read
-    uses: ChainArgos/velnor-actions/.github/workflows/ci-code.yml@7287240503f67b19c24f6035cbf09beba4e15818 # 2026.8.17
+    uses: ChainArgos/velnor-actions/.github/workflows/ci-code.yml@58eb26c2d6882c2240181d9cabc7eac13b5bf184 # 2026.8.18
     with:
       lane: ${{ (github.event_name == 'workflow_dispatch' && inputs.lane != '' && inputs.lane) || (github.repository_owner == 'jackin-project' && 'github') || ((github.repository_owner == 'tailrocks' || github.repository_owner == 'ChainArgos') && 'velnor') || 'invalid' }}
       recovery_proof_id: ${{ inputs.recovery_proof_id || '' }}

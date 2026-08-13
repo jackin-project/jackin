@@ -1,0 +1,32 @@
+name: DCO
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  dco:
+    name: DCO
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Require Signed-off-by on every PR commit
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          failures=0
+          while IFS= read -r commit; do
+            if ! git show -s --format=%B "${commit}" | grep -Eiq '^Signed-off-by: .+ <[^>]+>$'; then
+              echo "::error::${commit} is missing a Signed-off-by trailer"
+              failures=1
+            fi
+          done < <(git rev-list --reverse "${BASE_SHA}..${HEAD_SHA}")
+          exit "${failures}"
