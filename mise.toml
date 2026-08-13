@@ -7,5 +7,17 @@ shellcheck = "0.11.0"
 [tasks.actionlint]
 run = "actionlint"
 
+[tasks.ci]
+run = "prek run --all-files"
+
+[tasks.test]
+run = "prek run --all-files"
+
+[tasks.lint]
+run = "prek run --all-files"
+
+[tasks.fmt]
+run = "prek run --all-files"
+
 [settings]
 lockfile = true
