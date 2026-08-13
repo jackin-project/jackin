@@ -40,14 +40,17 @@ jobs:
       - name: Cache Renovate repository cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
-          path: .renovate/cache
+          # renovatebot/github-action mounts /tmp into its container. Keep the
+          # base directory inside that explicit transport boundary so hosted
+          # and Velnor lanes resolve the same writable path.
+          path: /tmp/renovate/cache
           key: renovate-${{ matrix.config.lane }}-${{ runner.os }}-${{ github.run_id }}
           restore-keys: |
             renovate-${{ matrix.config.lane }}-${{ runner.os }}-
-      - name: Prepare workspace-owned Renovate cache
+      - name: Prepare container-visible Renovate cache
         run: |
-          install -d -m 0777 .renovate .renovate/cache .renovate/repos
-          chmod -R a+rwX .renovate
+          install -d -m 0777 /tmp/renovate /tmp/renovate/cache /tmp/renovate/repos
+          chmod -R a+rwX /tmp/renovate
       - name: Self-hosted Renovate
         if: ${{ matrix.config.writer && env.RENOVATE_TOKEN != '' }}
         uses: renovatebot/github-action@e09d604f8f803bb527bd8321ed5be06c460b8682 # v46.2.2
@@ -63,7 +66,7 @@ jobs:
           # default author would silently break DCO on every Renovate PR.
           RENOVATE_GIT_AUTHOR: "Renovate Bot <renovate@whitesourcesoftware.com>"
           RENOVATE_REPOSITORY_CACHE: enabled
-          RENOVATE_BASE_DIR: /github/workspace/.renovate
+          RENOVATE_BASE_DIR: /tmp/renovate
           LOG_LEVEL: debug
       - name: Explain read-only comparison lane
         if: ${{ !matrix.config.writer }}
