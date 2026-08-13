@@ -442,6 +442,11 @@ fn conformance_wire_public_launch_controller_exports_complete_pipeline() -> anyh
 
     jackin_diagnostics::flush_wire_test_export()?;
     assert!(runtime.block_on(testbed.wait_for_all_signals(std::time::Duration::from_secs(2))));
+    assert!(runtime.block_on(testbed.wait_for_span_count(
+        "launch",
+        1,
+        std::time::Duration::from_secs(2),
+    )));
     let spans = testbed.spans();
     let roots = spans
         .iter()

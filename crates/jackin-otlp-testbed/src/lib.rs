@@ -496,13 +496,38 @@ impl Testbed {
     pub async fn wait_for_all_signals(&self, timeout: std::time::Duration) -> bool {
         tokio::time::timeout(timeout, async {
             loop {
+                let received = self.state.received.notified();
                 if !self.traces().is_empty()
                     && !self.logs().is_empty()
                     && !self.metrics().is_empty()
                 {
                     return;
                 }
-                self.state.received.notified().await;
+                received.await;
+            }
+        })
+        .await
+        .is_ok()
+    }
+
+    /// Wait until at least `count` spans with the exact wire name have arrived.
+    ///
+    /// Signal-level readiness is insufficient when one flush produces multiple
+    /// trace export requests: an earlier child-span batch can arrive before the
+    /// later root-span batch.
+    pub async fn wait_for_span_count(
+        &self,
+        name: &str,
+        count: usize,
+        timeout: std::time::Duration,
+    ) -> bool {
+        tokio::time::timeout(timeout, async {
+            loop {
+                let received = self.state.received.notified();
+                if self.spans().iter().filter(|span| span.name == name).count() >= count {
+                    return;
+                }
+                received.await;
             }
         })
         .await
