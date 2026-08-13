@@ -96,7 +96,7 @@ RUN --mount=type=secret,id=github_token,uid=1000,required=false \
 
 # Tagged release. Keep this ARG at its first use so Caveman-only updates do not
 # invalidate the expensive Rust and Node tool layers above.
-ARG CAVEMAN_VERSION=1.10.0
+ARG CAVEMAN_VERSION=2.0.0
 RUN . ~/.profile && \
     mkdir -p "${HOME}/.claude" "${HOME}/.codex" "${HOME}/.grok" && \
     git clone --depth 1 --branch "v${CAVEMAN_VERSION}" https://github.com/JuliusBrussee/caveman.git /tmp/caveman && \
