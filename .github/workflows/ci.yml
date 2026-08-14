@@ -119,7 +119,7 @@ jobs:
       actions: read
       contents: read
       pull-requests: read
-    uses: tailrocks/velnor-actions/.github/workflows/ci-code.yml@f3ae2e43c963ed4034db04902b6233b05f547975 # 2026.8.18
+    uses: tailrocks/velnor-actions/.github/workflows/ci-code.yml@22fd17a3ab701f84baa11fb28040127d2096b9d3 # 2026.8.19
     with:
       lane: ${{ (github.event_name == 'workflow_dispatch' && inputs.lane != '' && inputs.lane) || (github.repository_owner == 'jackin-project' && 'github') || ((github.repository_owner == 'tailrocks' || github.repository_owner == 'ChainArgos') && 'velnor') || 'invalid' }}
       recovery_proof_id: ${{ inputs.recovery_proof_id || '' }}
