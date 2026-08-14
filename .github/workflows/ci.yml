@@ -97,7 +97,7 @@ jobs:
       actions: read
       contents: read
       pull-requests: read
-    uses: jackin-project/velnor-actions/.github/workflows/ci-code.yml@cd0738bd8c56d400b5724efa857dfd9574b4b24a # 2026.8.18
+    uses: jackin-project/velnor-actions/.github/workflows/ci-code.yml@af77d84623c0ab38c52ba47b3869c597305369e9 # 2026.8.19
     with:
       lane: ${{ (github.event_name == 'workflow_dispatch' && inputs.lane != '' && inputs.lane) || (github.repository_owner == 'jackin-project' && 'github') || ((github.repository_owner == 'tailrocks' || github.repository_owner == 'ChainArgos') && 'velnor') || 'invalid' }}
       recovery_proof_id: ${{ inputs.recovery_proof_id || '' }}
