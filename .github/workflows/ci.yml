@@ -17,6 +17,8 @@ on:
     tags:
       - "**"
   merge_group:
+  schedule:
+    - cron: "23 3 * * 0"
   workflow_dispatch:
     inputs:
       lane:
@@ -97,9 +99,9 @@ jobs:
       actions: read
       contents: read
       pull-requests: read
-    uses: jackin-project/velnor-actions/.github/workflows/ci-code.yml@805d478d82d7d11f95210451465c4031e0d4a4b2 # 2026.8.20
+    uses: jackin-project/velnor-actions/.github/workflows/ci-code.yml@65899a14f0bf9ccb33458f7873ac21812080c7d5 # 2026.8.22
     with:
-      lane: ${{ (github.event_name == 'workflow_dispatch' && inputs.lane != '' && inputs.lane) || (github.repository_owner == 'jackin-project' && 'github') || ((github.repository_owner == 'tailrocks' || github.repository_owner == 'ChainArgos') && 'velnor') || 'invalid' }}
+      lane: ${{ (github.event_name == 'schedule' && 'both') || (github.event_name == 'workflow_dispatch' && inputs.lane != '' && inputs.lane) || (github.repository_owner == 'jackin-project' && 'github') || ((github.repository_owner == 'tailrocks' || github.repository_owner == 'ChainArgos') && 'velnor') || 'invalid' }}
       recovery_proof_id: ${{ inputs.recovery_proof_id || '' }}
       benchmark_campaign: ${{ inputs.benchmark_campaign || '' }}
       benchmark_generation: ${{ inputs.benchmark_generation || '' }}
@@ -119,9 +121,9 @@ jobs:
       actions: read
       contents: read
       pull-requests: read
-    uses: tailrocks/velnor-actions/.github/workflows/ci-code.yml@eeb2696baaf46ecac5da91b5330fd3f1cce145a4 # 2026.8.20
+    uses: tailrocks/velnor-actions/.github/workflows/ci-code.yml@ce26d12afe35cc9f583f50915e13ef0b4e46228b # 2026.8.22
     with:
-      lane: ${{ (github.event_name == 'workflow_dispatch' && inputs.lane != '' && inputs.lane) || (github.repository_owner == 'jackin-project' && 'github') || ((github.repository_owner == 'tailrocks' || github.repository_owner == 'ChainArgos') && 'velnor') || 'invalid' }}
+      lane: ${{ (github.event_name == 'schedule' && 'both') || (github.event_name == 'workflow_dispatch' && inputs.lane != '' && inputs.lane) || (github.repository_owner == 'jackin-project' && 'github') || ((github.repository_owner == 'tailrocks' || github.repository_owner == 'ChainArgos') && 'velnor') || 'invalid' }}
       recovery_proof_id: ${{ inputs.recovery_proof_id || '' }}
       benchmark_campaign: ${{ inputs.benchmark_campaign || '' }}
       benchmark_generation: ${{ inputs.benchmark_generation || '' }}
@@ -141,9 +143,9 @@ jobs:
       actions: read
       contents: read
       pull-requests: read
-    uses: ChainArgos/velnor-actions/.github/workflows/ci-code.yml@1fb847dda8ee41ed3796c0798f58fa62cb2973bb # 2026.8.20
+    uses: ChainArgos/velnor-actions/.github/workflows/ci-code.yml@ef2e99579fc69950ef5bf75e139ec4662c0fa4a5 # 2026.8.22
     with:
-      lane: ${{ (github.event_name == 'workflow_dispatch' && inputs.lane != '' && inputs.lane) || (github.repository_owner == 'jackin-project' && 'github') || ((github.repository_owner == 'tailrocks' || github.repository_owner == 'ChainArgos') && 'velnor') || 'invalid' }}
+      lane: ${{ (github.event_name == 'schedule' && 'both') || (github.event_name == 'workflow_dispatch' && inputs.lane != '' && inputs.lane) || (github.repository_owner == 'jackin-project' && 'github') || ((github.repository_owner == 'tailrocks' || github.repository_owner == 'ChainArgos') && 'velnor') || 'invalid' }}
       recovery_proof_id: ${{ inputs.recovery_proof_id || '' }}
       benchmark_campaign: ${{ inputs.benchmark_campaign || '' }}
       benchmark_generation: ${{ inputs.benchmark_generation || '' }}
@@ -163,7 +165,7 @@ jobs:
       - tailrocks
       - ChainArgos
     if: ${{ always() }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ 'ubuntu-26.04' }}
     timeout-minutes: 10
     permissions:
       contents: read
