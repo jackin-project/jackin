@@ -22,7 +22,7 @@ on:
   workflow_dispatch:
     inputs:
       lane:
-        description: "CI runner: Velnor (default), GitHub, or both. Public unmerged code remains GitHub-hosted."
+        description: "CI runner: Velnor (default), GitHub, or both."
         required: false
         type: choice
         default: velnor
@@ -103,7 +103,7 @@ jobs:
       actions: read
       contents: read
       pull-requests: read
-    uses: jackin-project/velnor-actions/.github/workflows/ci-code.yml@5284c3b23c4873540f75dcf376a802adf3fc9b13 # 2026.8.25
+    uses: jackin-project/velnor-actions/.github/workflows/ci-code.yml@052224913aa7c1b6750b8ed34131ae590dd961b1 # 2026.8.28
     with:
       lane: ${{ github.event_name == 'workflow_dispatch' && inputs.lane || 'velnor' }}
       recovery_proof_id: ${{ inputs.recovery_proof_id || '' }}
@@ -125,7 +125,7 @@ jobs:
       actions: read
       contents: read
       pull-requests: read
-    uses: tailrocks/velnor-actions/.github/workflows/ci-code.yml@d6ebc7863abf5864da0c1a8694d7828d517dbb3b # 2026.8.25
+    uses: tailrocks/velnor-actions/.github/workflows/ci-code.yml@43fc50c6940beac5a14de96f7e7d7ef3fcac568f # 2026.8.28
     with:
       lane: ${{ github.event_name == 'workflow_dispatch' && inputs.lane || 'velnor' }}
       recovery_proof_id: ${{ inputs.recovery_proof_id || '' }}
@@ -147,7 +147,7 @@ jobs:
       actions: read
       contents: read
       pull-requests: read
-    uses: ChainArgos/velnor-actions/.github/workflows/ci-code.yml@a4170e1faad7fe5962d3313968ba1a7e0979c55a # 2026.8.25
+    uses: ChainArgos/velnor-actions/.github/workflows/ci-code.yml@034bb3dfca10f405c1f6b89707aa7bc616b7d4db # 2026.8.28
     with:
       lane: ${{ github.event_name == 'workflow_dispatch' && inputs.lane || 'velnor' }}
       recovery_proof_id: ${{ inputs.recovery_proof_id || '' }}
