@@ -266,8 +266,14 @@ public final class StatusBarController: NSObject {
         )
         store.popoverSelection = StatusPopoverFocus.popoverSelection(for: outcome)
 
+        // A menu-bar click on a secondary display does not reliably activate
+        // an accessory app. Presenting an inactive transient popover can then
+        // fail silently even though the clicked status button is a valid
+        // screen-local anchor.
+        NSApp.activate(ignoringOtherApps: true)
         anchoredButton = sender
         popover.show(relativeTo: sender.bounds, of: sender, preferredEdge: .minY)
+        popover.contentViewController?.view.window?.makeKey()
         resetPopoverScrollAfterPresentation()
     }
 
@@ -414,7 +420,7 @@ public final class DesktopAppDelegate: NSObject, NSApplicationDelegate {
 
     public func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(initialActivationPolicy)
-        applyVisualQAAppearance()
+        enforceDarkAppearance()
         let fixture = applyVisualQAFixtureIfRequested()
         let usageWindow = UsageWindowController(
             store: store,
@@ -596,15 +602,8 @@ public final class DesktopAppDelegate: NSObject, NSApplicationDelegate {
         usageWindow?.show(focusOn: "codex")
     }
 
-    private func applyVisualQAAppearance() {
-        switch visualQALaunchOptions.appearance {
-        case .system:
-            break
-        case .light:
-            NSApp.appearance = NSAppearance(named: .aqua)
-        case .dark:
-            NSApp.appearance = NSAppearance(named: .darkAqua)
-        }
+    private func enforceDarkAppearance() {
+        NSApp.appearance = NSAppearance(named: .darkAqua)
     }
 
     private var initialActivationPolicy: NSApplication.ActivationPolicy {

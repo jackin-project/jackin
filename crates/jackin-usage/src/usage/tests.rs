@@ -103,11 +103,11 @@ fn provider_tabs_follow_usage_overlay_display_order() {
     assert_eq!(
         labels,
         vec![
-            "Codex".to_owned(),
-            "Claude".to_owned(),
+            "OpenAI".to_owned(),
+            "Anthropic".to_owned(),
             "Amp".to_owned(),
-            "Grok Build".to_owned(),
-            "GLM / Z.AI".to_owned(),
+            "xAI".to_owned(),
+            "Z.AI".to_owned(),
             "Kimi".to_owned(),
             "MiniMax".to_owned(),
         ]
@@ -145,7 +145,7 @@ fn provider_tabs_include_cached_account_identity() {
     let codex = view
         .tabs
         .iter()
-        .find(|tab| tab.label == "Codex")
+        .find(|tab| tab.label == "OpenAI")
         .expect("codex tab");
     assert_eq!(codex.account_label, "codex@example.com");
     assert_eq!(codex.plan_label.as_deref(), Some("Pro 20x"));
@@ -153,7 +153,7 @@ fn provider_tabs_include_cached_account_identity() {
     let claude = view
         .tabs
         .iter()
-        .find(|tab| tab.label == "Claude")
+        .find(|tab| tab.label == "Anthropic")
         .expect("claude tab");
     assert_eq!(claude.account_label, "claude@example.com");
     assert_eq!(claude.plan_label.as_deref(), Some("Max"));
@@ -318,7 +318,7 @@ fn usage_snapshot_reads_in_memory_cache() {
         snapshot
             .tabs
             .iter()
-            .any(|tab| tab.label == "Codex" && tab.active)
+            .any(|tab| tab.label == "OpenAI" && tab.active)
     );
 }
 
@@ -419,7 +419,7 @@ fn usage_account_snapshots_use_in_memory_cache() {
     let accounts = cache.account_snapshot_views();
 
     assert_eq!(accounts.len(), 1);
-    assert_eq!(accounts[0].provider, "OpenAI / Codex");
+    assert_eq!(accounts[0].provider, "OpenAI");
     assert_eq!(accounts[0].account_label, "codex@example.com");
     assert_eq!(accounts[0].source, "provider_api");
     assert_eq!(accounts[0].confidence, "authoritative");
@@ -2880,12 +2880,12 @@ fn zai_quota_response_maps_token_session_and_time_limits() {
     let buckets = quota.buckets(1_781_185_560);
 
     assert_eq!(quota.plan_name().as_deref(), Some("Coding Pro"));
-    // render order is 5-hour, Tokens, MCP.
-    assert_eq!(buckets[0].label, "5-hour");
+    // Semantic identity comes from explicit duration, not array position.
+    assert_eq!(buckets[0].label, "Session");
     assert_eq!(buckets[0].status_slot, Some(StatusSlot::Session));
     assert_eq!(buckets[0].remaining_percent, Some(75));
     assert_eq!(buckets[0].pace_label, None);
-    assert_eq!(buckets[1].label, "Tokens");
+    assert_eq!(buckets[1].label, "Weekly");
     assert_eq!(buckets[1].status_slot, Some(StatusSlot::Weekly));
     assert_eq!(buckets[1].remaining_percent, Some(10));
     assert_eq!(buckets[1].pace_label, None);
@@ -2927,6 +2927,118 @@ fn zai_plan_label_falls_back_to_level() {
     }))
     .expect("planName + level quota");
     assert_eq!(both.plan_name().as_deref(), Some("Coding Pro"));
+}
+
+#[test]
+fn zai_duration_classifier_handles_sole_and_reordered_limits() {
+    let quota: ZaiQuotaResponse = serde_json::from_value(serde_json::json!({
+        "code": 200,
+        "success": true,
+        "data": {
+            "limits": [
+                {"type": "CREDIT_LIMIT", "unit": 6, "number": 1, "percentage": 75},
+                {"type": "TOKENS_LIMIT", "unit": 5, "number": 300, "percentage": 10},
+                {"type": "TIME_LIMIT", "unit": 5, "number": 2, "percentage": 20}
+            ]
+        }
+    }))
+    .expect("duration fixture");
+    let buckets = quota.buckets(1_781_185_560);
+    assert_eq!(buckets[0].label, "Weekly");
+    assert_eq!(buckets[1].label, "Session");
+    assert_eq!(buckets[2].label, "MCP");
+
+    let malformed: ZaiQuotaResponse = serde_json::from_value(serde_json::json!({
+        "data": {"limits": [{"type": "TOKENS_LIMIT", "unit": 99, "number": 1, "percentage": 50}]}
+    }))
+    .expect("malformed duration fixture");
+    assert!(malformed.buckets(1_781_185_560).is_empty());
+}
+
+#[test]
+fn codex_duration_classifier_and_individual_limit_are_provider_evidenced() {
+    let response: CodexUsageResponse = serde_json::from_value(serde_json::json!({
+        "rate_limit": {
+            "primary_window": {"used_percent": 10, "limit_window_seconds": 604800, "reset_at": 1782000000},
+            "secondary_window": {"used_percent": 20, "limit_window_seconds": 300, "reset_at": 1781000000}
+        },
+        "spend_control": {"individual_limit": {
+            "limit": 300,
+            "used": 53.31,
+            "remaining_percent": 82,
+            "resets_at": 1783000000
+        }}
+    }))
+    .expect("Codex duration fixture");
+    let buckets = response.buckets(1_781_000_000);
+    assert_eq!(buckets[0].label, "Weekly");
+    assert_eq!(buckets[1].label, "Session");
+    let cap = buckets
+        .iter()
+        .find(|bucket| bucket.label == "Individual limit")
+        .expect("individual cap");
+    assert_eq!(cap.remaining_percent, Some(82));
+    assert_eq!(
+        cap.limit_money.as_ref().map(|money| money.amount_minor),
+        Some(30_000)
+    );
+    assert_eq!(
+        cap.used_money.as_ref().map(|money| money.amount_minor),
+        Some(5_331)
+    );
+}
+
+#[test]
+fn opencode_auth_and_usage_contract_is_typed_without_secret_identity() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("auth.json");
+    fs::write(
+        &path,
+        serde_json::json!({"opencode-go": {"type": "api", "key": "secret-not-output"}}).to_string(),
+    )
+    .expect("auth fixture");
+    assert_eq!(
+        load_opencode_api_key(&path).as_deref(),
+        Ok("secret-not-output")
+    );
+    let quota = parse_opencode_usage(
+        serde_json::json!({
+            "usage": {
+                "rolling": {"status": "ok", "percent": 20, "resetsAt": "2026-08-21T12:00:00Z"},
+                "weekly": {"status": "rate-limited", "percent": 80, "resetsAt": "2026-08-25T12:00:00Z"},
+                "monthly": {"status": "ok", "percent": 5, "resetsAt": "2026-09-01T12:00:00Z"}
+            }
+        }),
+        1_776_000_000,
+    )
+    .expect("OpenCode usage fixture");
+    assert_eq!(quota.buckets.len(), 3);
+    assert_eq!(quota.buckets[0].label, "Rolling");
+    assert_eq!(quota.buckets[1].status, UsageSnapshotStatus::Unavailable);
+    assert!(quota.rate_limited);
+    fs::write(
+        &path,
+        serde_json::json!({"opencode-go": {"type": "oauth", "key": "secret-not-output"}})
+            .to_string(),
+    )
+    .expect("malformed auth fixture");
+    load_opencode_api_key(&path).unwrap_err();
+}
+
+#[test]
+fn grok_rest_contract_accepts_current_and_legacy_top_level_shapes() {
+    let current = serde_json::json!({
+        "creditUsagePercent": 12.5,
+        "currentPeriod": {"type": "WEEKLY", "start": "2026-08-17T00:00:00Z", "end": "2026-08-24T00:00:00Z"}
+    });
+    let response = parse_grok_rest_billing_response(&current).expect("current REST shape");
+    assert_eq!(response.buckets(1_755_000_000)[0].label, "Weekly");
+    let legacy = serde_json::json!({
+        "monthlyLimit": {"val": 30000}, "used": {"val": 5000},
+        "billingPeriodStart": "2026-08-01T00:00:00Z", "billingPeriodEnd": "2026-09-01T00:00:00Z"
+    });
+    let response = parse_grok_rest_billing_response(&legacy).expect("legacy REST shape");
+    assert_eq!(response.buckets(1_754_000_000)[0].label, "Monthly");
 }
 
 #[test]
@@ -3364,6 +3476,19 @@ fn provider_boundary_exports_only_bounded_request_fields() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn conformance_wire_provider_boundary_exports_bounded_private_shapes() {
+    if std::env::var_os("JACKIN_USAGE_WIRE_USAGE_CHILD").is_none() {
+        let status = Command::new(
+            std::env::current_exe().expect("usage test executable must resolve"),
+        )
+        .arg("--exact")
+        .arg("usage::tests::conformance_wire_provider_boundary_exports_bounded_private_shapes")
+        .arg("--nocapture")
+        .env("JACKIN_USAGE_WIRE_USAGE_CHILD", "1")
+        .status()
+        .expect("isolated wire usage test must start");
+        assert!(status.success(), "isolated wire usage test failed");
+        return;
+    }
     let testbed = jackin_otlp_testbed::Testbed::start().expect("start OTLP testbed");
     jackin_diagnostics::init_wire_test_export(
         &testbed.endpoint(),

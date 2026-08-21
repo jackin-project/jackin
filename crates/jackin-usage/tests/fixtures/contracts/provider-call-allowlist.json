@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "calls": [
+    { "path": "crates/jackin-usage/src/usage.rs", "symbol": "claude_view_from_wave", "classification": "adapter_internal" },
+    { "path": "crates/jackin-usage/src/usage.rs", "symbol": "amp_api_key_snapshot", "classification": "adapter_internal" },
+    { "path": "crates/jackin-usage/src/usage.rs", "symbol": "provider_key_snapshot", "classification": "adapter_internal" },
+    { "path": "crates/jackin-usage/src/usage.rs", "symbol": "kimi_snapshot", "classification": "adapter_internal" },
+    { "path": "crates/jackin-usage/src/usage.rs", "symbol": "minimax_snapshot", "classification": "adapter_internal" },
+    { "path": "crates/jackin-usage/src/usage.rs", "symbol": "grok_snapshot_from_rpc_result", "classification": "adapter_internal" },
+    { "path": "crates/jackin-usage/src/usage/grok.rs", "symbol": "fetch_grok_billing", "classification": "adapter_internal" },
+    { "path": "crates/jackin-usage/src/usage/grok.rs", "symbol": "grok_snapshot_from_rpc_result", "classification": "adapter_internal" },
+    { "path": "crates/jackin-usage/src/usage/grok.rs", "symbol": "fetch_grok_rpc_billing", "classification": "adapter_internal" },
+    { "path": "crates/jackin-usage/src/usage/grok.rs", "symbol": "fetch_grok_rest_billing", "classification": "adapter_internal" },
+    { "path": "crates/jackin-usage/src/host/credential_resolver.rs", "symbol": "provider_credential_snapshot", "classification": "broker_executor" },
+    { "path": "crates/jackin-usage/src/usage/claude.rs", "symbol": "claude_view_from_wave", "classification": "adapter_internal" },
+    { "path": "crates/jackin-usage/src/usage/claude.rs", "symbol": "fetch_claude_oauth_usage", "classification": "adapter_internal" },
+    { "path": "crates/jackin-usage/src/usage/claude.rs", "symbol": "run_claude_usage_diagnostic", "classification": "adapter_internal" },
+    { "path": "crates/jackin-usage/src/host/discovery.rs", "symbol": "claude_view_from_wave", "classification": "broker_executor" },
+    { "path": "crates/jackin-usage/src/host/discovery.rs", "symbol": "codex_profile_snapshot", "classification": "broker_executor" },
+    { "path": "crates/jackin-usage/src/host/discovery.rs", "symbol": "amp_api_key_snapshot", "classification": "broker_executor" },
+    { "path": "crates/jackin-usage/src/host/discovery.rs", "symbol": "fetch_grok_rest_billing", "classification": "broker_executor" },
+    { "path": "crates/jackin-usage/src/host/discovery.rs", "symbol": "opencode_profile_snapshot", "classification": "broker_executor" },
+    { "path": "crates/jackin-usage/src/host/discovery.rs", "symbol": "grok_snapshot_from_rpc_result", "classification": "broker_executor" },
+    { "path": "crates/jackin-usage/src/host/discovery.rs", "symbol": "kimi_snapshot", "classification": "broker_executor" },
+    { "path": "crates/jackin-usage/src/usage/amp.rs", "symbol": "fetch_amp_api_usage", "classification": "adapter_internal" },
+    { "path": "crates/jackin-usage/src/usage/codex.rs", "symbol": "fetch_codex_rpc_usage", "classification": "adapter_internal" },
+    { "path": "crates/jackin-usage/src/usage/codex.rs", "symbol": "fetch_codex_oauth_usage_refreshing", "classification": "adapter_internal" },
+    { "path": "crates/jackin-usage/src/usage/codex.rs", "symbol": "fetch_codex_oauth_reset_credits", "classification": "adapter_internal" },
+    { "path": "crates/jackin-usage/src/usage/codex.rs", "symbol": "fetch_codex_oauth_usage", "classification": "adapter_internal" },
+    { "path": "crates/jackin-usage/src/usage/codex.rs", "symbol": "refresh_codex_access_token", "classification": "adapter_internal" }
+  ]
+}

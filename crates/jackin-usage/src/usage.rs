@@ -42,6 +42,7 @@ mod codex;
 mod grok;
 mod kimi;
 mod minimax;
+mod opencode;
 mod refresh;
 mod view;
 mod zai;
@@ -84,18 +85,18 @@ pub(crate) use self::codex::load_codex_oauth_credentials;
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]
 pub(crate) use self::codex::{
-    CodexAdditionalRateLimit, CodexCreditDetails, CodexOAuthCredentials, CodexRateLimitDetails,
-    CodexResetCredit, CodexResetCredits, CodexRpcAccountDetails, CodexRpcAccountResponse,
-    CodexRpcCredits, CodexRpcLimitEntry, CodexRpcRateLimitWindow, CodexRpcRateLimits,
-    CodexRpcRateLimitsResponse, CodexRpcResetCredits, CodexRpcUsage, CodexUsageResponse,
-    CodexWindowSnapshot, codex_access_token_from_response, codex_account_identity,
-    codex_account_label_from_id_token, codex_auth_candidates, codex_oauth_from_value,
-    codex_plan_display_name, codex_plan_exact_display, codex_plan_word_display,
-    codex_profile_snapshot, codex_refresh_request_body, codex_rpc_notification, codex_rpc_request,
-    codex_snapshot, fetch_codex_oauth_reset_credits, fetch_codex_oauth_usage,
-    fetch_codex_oauth_usage_refreshing, fetch_codex_rpc_usage, push_codex_window,
-    refresh_codex_access_token, resolve_codex_base_url, resolve_codex_reset_credits_url,
-    resolve_codex_usage_url,
+    CodexAdditionalRateLimit, CodexCreditDetails, CodexIndividualLimit, CodexOAuthCredentials,
+    CodexRateLimitDetails, CodexResetCredit, CodexResetCredits, CodexRpcAccountDetails,
+    CodexRpcAccountResponse, CodexRpcCredits, CodexRpcLimitEntry, CodexRpcRateLimitWindow,
+    CodexRpcRateLimits, CodexRpcRateLimitsResponse, CodexRpcResetCredits, CodexRpcUsage,
+    CodexSpendControl, CodexUsageResponse, CodexWindowSnapshot, codex_access_token_from_response,
+    codex_account_identity, codex_account_label_from_id_token, codex_auth_candidates,
+    codex_oauth_from_value, codex_plan_display_name, codex_plan_exact_display,
+    codex_plan_word_display, codex_profile_snapshot, codex_refresh_request_body,
+    codex_rpc_notification, codex_rpc_request, codex_snapshot, fetch_codex_oauth_reset_credits,
+    fetch_codex_oauth_usage, fetch_codex_oauth_usage_refreshing, fetch_codex_rpc_usage,
+    push_codex_window, refresh_codex_access_token, resolve_codex_base_url,
+    resolve_codex_reset_credits_url, resolve_codex_usage_url,
 };
 #[expect(
     unused_imports,
@@ -103,12 +104,12 @@ pub(crate) use self::codex::{
 )]
 pub(crate) use self::grok::{
     GrokBillingConfig, GrokBillingResponse, GrokBillingSnapshot, GrokCent, GrokCurrentPeriod,
-    GrokWebBillingSnapshot, fetch_grok_billing, fetch_grok_rpc_billing, fetch_grok_web_billing,
+    GrokWebBillingSnapshot, fetch_grok_billing, fetch_grok_rest_billing, fetch_grok_rpc_billing,
     grok_account_label, grok_account_label_or_presence, grok_bearer_token,
     grok_bearer_token_from_entry, grok_binary_path, grok_cycle_label_from_minutes,
     grok_cycle_label_from_reset, grok_rpc_request, grok_rpc_request_payload, grok_snapshot,
-    grok_snapshot_from_rpc_result, grpc_web_data_frames, parse_grok_web_billing_response,
-    scan_protobuf,
+    grok_snapshot_from_rpc_result, grpc_web_data_frames, parse_grok_rest_billing_response,
+    parse_grok_web_billing_response, scan_protobuf,
 };
 #[expect(
     unused_imports,
@@ -130,6 +131,9 @@ pub(crate) use self::minimax::{
     minimax_reset_epoch, minimax_snapshot, minimax_usage_count_line, resolve_minimax_remains_urls,
     resolve_minimax_remains_urls_from,
 };
+pub(crate) use self::opencode::opencode_profile_snapshot;
+#[cfg(test)]
+pub(crate) use self::opencode::{load_opencode_api_key, parse_opencode_usage};
 #[cfg(test)]
 pub(crate) use self::refresh::MaterializedUsageAccounts;
 #[expect(
@@ -249,11 +253,11 @@ impl UsageSurface {
 
     pub(crate) fn label(self) -> &'static str {
         match self {
-            Self::Claude => "Claude",
-            Self::Codex => "Codex",
+            Self::Claude => "Anthropic",
+            Self::Codex => "OpenAI",
             Self::Amp => "Amp",
-            Self::Grok => "Grok Build",
-            Self::Zai => "GLM / Z.AI",
+            Self::Grok => "xAI",
+            Self::Zai => "Z.AI",
             Self::Kimi => "Kimi",
             Self::Minimax => "MiniMax",
             Self::OpenCode => "OpenCode",
@@ -263,11 +267,11 @@ impl UsageSurface {
 
     pub(crate) fn account_label(self) -> &'static str {
         match self {
-            Self::Claude => "Anthropic / Claude",
-            Self::Codex => "OpenAI / Codex",
+            Self::Claude => "Anthropic",
+            Self::Codex => "OpenAI",
             Self::Amp => "Amp",
-            Self::Grok => "xAI / Grok",
-            Self::Zai => "GLM / Z.AI",
+            Self::Grok => "xAI",
+            Self::Zai => "Z.AI",
             Self::Kimi => "Kimi",
             Self::Minimax => "MiniMax",
             Self::OpenCode => "OpenCode",
@@ -660,7 +664,7 @@ pub(crate) fn opencode_snapshot(agent: &str, provider: Option<&str>, now: i64) -
         agent,
         provider,
         surface: UsageSurface::OpenCode,
-        account_label: "OpenCode stats source pending".to_owned(),
+        account_label: "OpenCode account (unresolved)".to_owned(),
         username: None,
         plan_label: None,
         credential_origin: None,
@@ -670,7 +674,7 @@ pub(crate) fn opencode_snapshot(agent: &str, provider: Option<&str>, now: i64) -
             None,
             None,
             None,
-            Some("opencode stats adapter pending"),
+            Some("OpenCode Go credential is unavailable"),
             UsageSnapshotStatus::Unsupported,
         )],
         status: UsageSnapshotStatus::Unsupported,
@@ -678,7 +682,7 @@ pub(crate) fn opencode_snapshot(agent: &str, provider: Option<&str>, now: i64) -
         confidence: UsageConfidence::None,
         now,
         last_error: Some(
-            "OpenCode usage adapter is not part of this provider priority pass".to_owned(),
+            "OpenCode account identity is provisional until the provider exposes a non-secret identifier".to_owned(),
         ),
     })
 }

@@ -77,16 +77,19 @@ final class UsageWindowToolbar: NSObject, NSToolbarDelegate {
     static let identifier = NSToolbar.Identifier("usage.window-toolbar")
     private weak var sidebarItem: NSSplitViewItem?
     private weak var toolbar: NSToolbar?
+    private let onSidebarStateChange: () -> Void
     private var sidebarObservation: NSKeyValueObservation?
     private var sidebarToggleWidthConstraint: NSLayoutConstraint?
 
-    init(sidebarItem: NSSplitViewItem) {
+    init(sidebarItem: NSSplitViewItem, onSidebarStateChange: @escaping () -> Void) {
         self.sidebarItem = sidebarItem
+        self.onSidebarStateChange = onSidebarStateChange
         super.init()
         sidebarObservation = sidebarItem.observe(\.isCollapsed, options: [.initial, .new]) {
             [weak self] _, _ in
             Task { @MainActor [weak self] in
                 self?.updateSidebarItemLabel()
+                self?.onSidebarStateChange()
             }
         }
     }

@@ -6,9 +6,22 @@
 use serde::{Deserialize, Serialize};
 
 /// Parse error for `MountIsolation`.
-#[derive(Debug, thiserror::Error)]
-#[error("invalid isolation `{0}`; expected one of: shared, worktree, clone")]
+// Hand-written Display/Error: item-level `#[error("...")]` attributes collide
+// with the boltffi source scanner (see jackin-usage-ffi).
+#[derive(Debug)]
 pub struct ParseMountIsolationError(String);
+
+impl std::fmt::Display for ParseMountIsolationError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            formatter,
+            "invalid isolation `{}`; expected one of: shared, worktree, clone",
+            self.0
+        )
+    }
+}
+
+impl std::error::Error for ParseMountIsolationError {}
 
 /// Controls how a workspace mount is isolated between the host and the
 /// container.

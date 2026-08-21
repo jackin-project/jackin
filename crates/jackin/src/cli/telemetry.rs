@@ -51,12 +51,17 @@ pub const fn command_name(command: &Command) -> CliCommandName {
             DiagnosticsCommand::Validate => CliCommandName::DiagnosticsValidate,
         },
         Command::Status(_) => CliCommandName::Status,
-        Command::Usage(args) => match args.scope {
-            UsageScope::Accounts(_) => CliCommandName::UsageAccounts,
-            UsageScope::Verify => CliCommandName::UsageVerify,
-            UsageScope::Snapshot(_) => CliCommandName::UsageSnapshot,
-        },
+        Command::Usage(args) => usage_command_name(args.scope.as_ref()),
         Command::Help { .. } => CliCommandName::Help,
+    }
+}
+
+const fn usage_command_name(scope: Option<&UsageScope>) -> CliCommandName {
+    match scope {
+        None => CliCommandName::Usage,
+        Some(UsageScope::Accounts(_)) => CliCommandName::UsageAccounts,
+        Some(UsageScope::Verify) => CliCommandName::UsageVerify,
+        Some(UsageScope::Snapshot(_)) => CliCommandName::UsageSnapshot,
     }
 }
 

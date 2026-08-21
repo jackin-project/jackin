@@ -342,7 +342,7 @@ fn disc_source_valid_profiles_resolve_without_network_or_fake_presence() {
     let reader = RecordingProfileReader::default();
     let catalog = discover_usage_sources(
         &UsageDiscoveryScope::HostDesktop {
-            config_root,
+            config_root: config_root.clone(),
             operator_home: temp.path().join("home"),
         },
         &NoEnvResolver,
@@ -387,7 +387,7 @@ fn disc_source_missing_and_malformed_profiles_are_isolated_diagnostics() {
     let reader = RecordingProfileReader::default();
     let catalog = discover_usage_sources(
         &UsageDiscoveryScope::HostDesktop {
-            config_root,
+            config_root: config_root.clone(),
             operator_home: temp.path().join("home"),
         },
         &NoEnvResolver,
@@ -480,7 +480,7 @@ fn disc_dedup_repeated_roots_read_once_and_same_identity_merges() {
     let reader = RecordingProfileReader::default();
     let catalog = discover_usage_sources(
         &UsageDiscoveryScope::HostDesktop {
-            config_root,
+            config_root: config_root.clone(),
             operator_home: temp.path().join("home"),
         },
         &NoEnvResolver,
@@ -493,6 +493,33 @@ fn disc_dedup_repeated_roots_read_once_and_same_identity_merges() {
             .filter(|candidate| candidate.surface_id == "codex")
             .count(),
         2
+    );
+    let capability_ids = catalog
+        .candidates
+        .iter()
+        .map(|candidate| candidate.capability_id.clone())
+        .collect::<Vec<_>>();
+    assert!(
+        capability_ids
+            .iter()
+            .all(|capability_id| capability_id.len() == 64),
+        "source capability ids must be stable opaque hashes: {capability_ids:?}"
+    );
+    let rediscovered = discover_usage_sources(
+        &UsageDiscoveryScope::HostDesktop {
+            config_root: config_root.clone(),
+            operator_home: temp.path().join("home"),
+        },
+        &NoEnvResolver,
+    )
+    .unwrap();
+    assert_eq!(
+        capability_ids,
+        rediscovered
+            .candidates
+            .iter()
+            .map(|candidate| candidate.capability_id.clone())
+            .collect::<Vec<_>>()
     );
 
     let validated = validate_usage_sources_with_reader(catalog, &NoEnvResolver, &reader);

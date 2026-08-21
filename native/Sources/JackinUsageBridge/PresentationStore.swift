@@ -3,6 +3,7 @@
 
 import CoreGraphics
 import Foundation
+import JackinUsageBindings
 
 /// Status-item display mode (Settings-selectable; Rust supplies every string).
 public enum StatusItemDisplayMode: String, CaseIterable, Sendable {
@@ -12,7 +13,7 @@ public enum StatusItemDisplayMode: String, CaseIterable, Sendable {
     case strip
 }
 
-/// Thin presentation store: polls Rust UniFFI snapshots; no provider probes.
+/// Thin presentation store: polls Rust boltffi snapshots; no provider probes.
 @MainActor
 public final class PresentationStore: ObservableObject {
     public struct IdentityRow: Sendable, Equatable {
@@ -573,10 +574,7 @@ public final class PresentationStore: ObservableObject {
         Task { [weak self] in
             guard let self else { return }
             do {
-                _ = try await self.scheduler.run { handle -> UInt64 in
-                    try handle.openRuntime(config: config)
-                    return try handle.refreshFloorSecs()
-                }
+                _ = try await self.scheduler.openRuntime(config: config)
                 self.isOpen = true
                 self.isOpening = false
                 self.lastError = nil
@@ -622,10 +620,7 @@ public final class PresentationStore: ObservableObject {
         Task { [weak self] in
             guard let self else { return }
             do {
-                let floor = try await self.scheduler.run { handle -> UInt64 in
-                    try handle.openRuntime(config: config)
-                    return try handle.refreshFloorSecs()
-                }
+                let floor = try await self.scheduler.openRuntime(config: config)
                 self.isOpen = true
                 self.isOpening = false
                 self.lastError = nil
@@ -659,9 +654,7 @@ public final class PresentationStore: ObservableObject {
         Task { [weak self] in
             guard let self else { return }
             do {
-                try await self.scheduler.run {
-                    try $0.setEnabled(surfaceId: surfaceId, enabled: enabled)
-                }
+                try await self.scheduler.setEnabled(surfaceId: surfaceId, enabled: enabled)
                 await self.refreshAll(force: true)
             } catch {
                 self.report(error, userMessage: "Provider setting could not be saved.")
@@ -689,9 +682,8 @@ public final class PresentationStore: ObservableObject {
         Task { [weak self] in
             guard let self else { return }
             do {
-                try await self.scheduler.run {
-                    try $0.setSelectedAccount(surfaceId: surfaceId, accountKey: accountKey)
-                }
+                try await self.scheduler.setSelectedAccount(
+                    surfaceId: surfaceId, accountKey: accountKey)
                 await self.applySnapshots()
             } catch {
                 self.report(error, userMessage: "Account selection could not be saved.")
@@ -760,10 +752,7 @@ public final class PresentationStore: ObservableObject {
         Task { [weak self] in
             guard let self else { return }
             do {
-                let floor = try await self.scheduler.run { handle -> UInt64 in
-                    try handle.setRefreshFloorSecs(secs: secs)
-                    return try handle.refreshFloorSecs()
-                }
+                let floor = try await self.scheduler.setRefreshFloorSecs(secs)
                 self.refreshFloorSecs = floor
             } catch {
                 self.report(error, userMessage: "Refresh interval could not be saved.")
@@ -790,9 +779,7 @@ public final class PresentationStore: ObservableObject {
     private func performRefresh(surfaceId: String?, force: Bool) async {
         var refreshError: Error?
         do {
-            try await scheduler.run { handle in
-                try handle.refresh(surfaceId: surfaceId, force: force)
-            }
+            try await scheduler.refresh(surfaceId: surfaceId, force: force)
         } catch {
             refreshError = error
         }
@@ -817,7 +804,7 @@ public final class PresentationStore: ObservableObject {
         guard !fixtureMode, isOpen else { return }
         let prefs = UsageFormatPrefsDto(percentStyle: percentStyle, resetStyle: resetStyle)
         do {
-            try await scheduler.run { try $0.setFormatPrefs(prefs: prefs) }
+            try await scheduler.setFormatPrefs(prefs)
         } catch {
             report(error, userMessage: "Display setting could not be saved.")
         }
@@ -847,12 +834,7 @@ public final class PresentationStore: ObservableObject {
         // the main actor, so a consent sheet cannot freeze the UI or queue polls.
         let cursor = eventCursor
         do {
-            let nextCursor = try await scheduler.run { handle -> UInt64 in
-                if try handle.refreshDue() {
-                    try handle.refresh(surfaceId: nil, force: false)
-                }
-                return try handle.nextEvents(cursor: cursor, max: 64).nextCursor
-            }
+            let nextCursor = try await scheduler.pollOnce(cursor: cursor)
             eventCursor = nextCursor
             await applySnapshots()
         } catch {
@@ -883,9 +865,7 @@ public final class PresentationStore: ObservableObject {
         let barMax = UInt32(max(1, min(statusBarMaxChips, stripMax)))
         let projection: DesktopProjectionDto
         do {
-            projection = try await scheduler.run { handle in
-                try handle.desktopProjection(statusBarMax: barMax)
-            }
+            projection = try await scheduler.desktopProjection(statusBarMax: barMax)
         } catch {
             retainLastGoodAfterProjectionFailure(error, request: request)
             return

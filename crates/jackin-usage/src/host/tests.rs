@@ -70,6 +70,188 @@ fn codex_fixture_view() -> FocusedUsageView {
     }
 }
 
+fn canonical_discovered_account(
+    surface: HostSurfaceId,
+    account_label: &str,
+) -> DiscoveredAccountDescriptor {
+    let identity = CanonicalAccountIdentity {
+        surface,
+        subject: CanonicalAccountSubject::ProviderStableHandle(account_label.to_owned()),
+    };
+    DiscoveredAccountDescriptor {
+        surface_id: surface.id().to_owned(),
+        account_key: identity.account_key(),
+        account_label: account_label.to_owned(),
+        provenance: vec!["workspace sample".to_owned()],
+        source_ids: vec!["source-0001".to_owned()],
+        identity,
+    }
+}
+
+#[test]
+fn canonical_projection_uses_current_membership_provider_names_and_rust_ranks() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let mut runtime = open_runtime(dir.path());
+    let mut zulu = codex_fixture_view();
+    zulu.account.account_label = "zulu@example.test".to_owned();
+    zulu.status = UsageSnapshotStatus::Stale;
+    zulu.buckets
+        .iter_mut()
+        .for_each(|bucket| bucket.status = UsageSnapshotStatus::Stale);
+    let mut alpha = codex_fixture_view();
+    alpha.account.account_label = "Alpha@example.test".to_owned();
+    alpha.buckets[0].severity = UsageSeverity::Danger;
+    let zulu_account = canonical_discovered_account(HostSurfaceId::Codex, "zulu@example.test");
+    let alpha_account = canonical_discovered_account(HostSurfaceId::Codex, "Alpha@example.test");
+    runtime.discovered_views.insert(
+        (HostSurfaceId::Codex, zulu_account.account_key.clone()),
+        zulu,
+    );
+    runtime.discovered_views.insert(
+        (HostSurfaceId::Codex, alpha_account.account_key.clone()),
+        alpha,
+    );
+    runtime.discovery = Some(ValidatedUsageDiscovery {
+        config_generation: Some("config-generation".to_owned()),
+        accounts: vec![zulu_account, alpha_account],
+        diagnostics: Vec::new(),
+        candidates: Vec::new(),
+        bindings: Vec::new(),
+    });
+
+    let projection = runtime.canonical_projection("en").expect("projection");
+    let repeated = runtime
+        .canonical_projection("en")
+        .expect("repeat projection");
+    assert_eq!(repeated, projection, "reads must not republish generations");
+    assert_eq!(projection.providers.len(), 1);
+    assert_eq!(projection.providers[0].display_name, "OpenAI");
+    assert_eq!(
+        projection.providers[0]
+            .accounts
+            .iter()
+            .map(|account| account.display_label.as_str())
+            .collect::<Vec<_>>(),
+        vec!["Alpha@example.test", "zulu@example.test"]
+    );
+    assert_eq!(projection.providers[0].accounts[0].rank, 0);
+    assert_eq!(projection.providers[0].accounts[1].rank, 1);
+    assert_eq!(projection.providers[0].accounts[0].windows[0].rank, 0);
+    assert_eq!(
+        projection.providers[0].accounts[1].freshness.phase,
+        jackin_protocol::usage_broker::UsageFreshnessPhaseV1::Stale
+    );
+    assert_eq!(projection.providers[0].accounts[1].windows.len(), 2);
+
+    let selected = UsageDestination::Account {
+        provider_id: "openai".to_owned(),
+        canonical_account_id: projection.providers[0].accounts[1]
+            .canonical_account_id
+            .clone(),
+    };
+    assert_eq!(
+        normalize_destination(&projection, &selected).destination,
+        selected
+    );
+    let removed = UsageDestination::Account {
+        provider_id: "openai".to_owned(),
+        canonical_account_id: "removed".to_owned(),
+    };
+    assert_eq!(
+        normalize_destination(&projection, &removed),
+        NormalizedUsageDestination {
+            destination: UsageDestination::Overview,
+            notice: Some("Selected account is no longer available.".to_owned()),
+        }
+    );
+}
+
+#[test]
+fn canonical_projection_keeps_unresolved_capability_out_of_account_rows() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let mut runtime = open_runtime(dir.path());
+    runtime.discovery = Some(ValidatedUsageDiscovery {
+        config_generation: Some("unresolved-generation".to_owned()),
+        accounts: Vec::new(),
+        diagnostics: Vec::new(),
+        candidates: vec![UsageSourceCandidateDescriptor {
+            surface_id: "codex".to_owned(),
+            credential_kind: UsageCredentialKind::ForwardedCapability,
+            source_id: "source-0001".to_owned(),
+            capability_id: "opaque-capability".to_owned(),
+            provenance: vec!["workspace sample".to_owned()],
+        }],
+        bindings: vec![discovery::ValidatedCredentialBinding {
+            surface: HostSurfaceId::Codex,
+            identity: None,
+            source_id: "source-0001".to_owned(),
+            capability_id: "opaque-capability".to_owned(),
+            provenance: std::collections::BTreeSet::from(["workspace sample".to_owned()]),
+            source: discovery::ValidatedCredentialSource::Capability,
+        }],
+    });
+
+    let projection = runtime.canonical_projection("und").expect("projection");
+    assert_eq!(projection.providers.len(), 1);
+    assert!(projection.providers[0].accounts.is_empty());
+    assert_eq!(projection.unresolved.len(), 1);
+    assert_eq!(projection.unresolved[0].provider_id, "openai");
+}
+
+#[test]
+fn canonical_projection_provider_order_is_settled_and_not_agent_named() {
+    assert_eq!(
+        HostSurfaceId::ALL
+            .iter()
+            .map(|surface| surface.label())
+            .collect::<Vec<_>>(),
+        vec![
+            "OpenAI",
+            "Anthropic",
+            "Amp",
+            "xAI",
+            "Z.AI",
+            "Kimi",
+            "MiniMax",
+            "OpenCode"
+        ]
+    );
+}
+
+#[test]
+fn canonical_projection_alias_transition_is_atomic_idempotent_and_fail_closed() {
+    let mut graph = accounts::CanonicalIdentityGraph::default();
+    let first = CanonicalAccountIdentity {
+        surface: HostSurfaceId::Codex,
+        subject: CanonicalAccountSubject::ProviderId("organization-a".to_owned()),
+    };
+    let conflicting = CanonicalAccountIdentity {
+        surface: HostSurfaceId::Codex,
+        subject: CanonicalAccountSubject::ProviderId("organization-b".to_owned()),
+    };
+    let canonical_id = graph
+        .resolve_alias("capability-a", &first)
+        .expect("first alias");
+    assert_eq!(
+        graph
+            .resolve_alias("capability-a", &first)
+            .expect("alias replay"),
+        canonical_id
+    );
+    assert_eq!(
+        graph
+            .resolve_alias("capability-a", &conflicting)
+            .expect_err("conflicting alias"),
+        "canonical account alias collision"
+    );
+    assert_eq!(
+        graph
+            .resolve_alias("capability-a", &first)
+            .expect("failed transaction preserves alias"),
+        canonical_id
+    );
+}
+
 #[test]
 fn host_surfaces_cover_agent_all_plus_routed_providers() {
     let agent_ids: HashSet<_> = Agent::ALL
@@ -301,10 +483,10 @@ fn compact_status_bar_label_tie_keeps_all_order() {
     }
     inject_remaining(&mut runtime, "claude", 40);
     inject_remaining(&mut runtime, "codex", 40);
-    // Claude precedes Codex in HostSurfaceId::ALL; default Left = remaining.
+    // OpenAI precedes Anthropic in the settled host provider order.
     assert_eq!(
         runtime.compact_status_bar_label().expect("compact"),
-        "Cl 40%"
+        "Cx 40%"
     );
 }
 
@@ -776,9 +958,9 @@ fn compact_status_bar_strip_all_eight_host_surfaces() {
         3,
         "SB-3 hard-caps burn-first strip at 3: {strip}"
     );
-    // No reset epochs → highest remaining among ALL ranks first (Claude 90%).
+    // No reset epochs → highest remaining among ALL ranks first (OpenAI 90%).
     assert!(
-        parts[0].starts_with("Cl 90%"),
+        parts[0].starts_with("Cx 90%"),
         "SB-17 higher-remaining first when times tie, got {}",
         parts[0]
     );
@@ -856,6 +1038,36 @@ fn multi_account_list_select_and_snapshot() {
     let snap_b = runtime.snapshot("claude").expect("snapshot B");
     assert_eq!(snap_b.account.account_label, "work@company.com");
     assert_eq!(snap_b.buckets[0].remaining_percent, Some(20));
+}
+
+#[test]
+fn canonical_identity_domain_separates_evidence_and_normalizes_stable_handles() {
+    use crate::host::accounts::{CanonicalAccountIdentity, CanonicalAccountSubject};
+
+    let provider_id = CanonicalAccountIdentity {
+        surface: HostSurfaceId::Codex,
+        subject: CanonicalAccountSubject::ProviderId("Same@Example.Test".to_owned()),
+    };
+    let stable_handle = CanonicalAccountIdentity {
+        surface: HostSurfaceId::Codex,
+        subject: CanonicalAccountSubject::ProviderStableHandle("same@example.test".to_owned()),
+    };
+    assert_ne!(
+        provider_id.canonical_id_v1(),
+        stable_handle.canonical_id_v1()
+    );
+
+    let mut uppercase = FocusedUsageView::unavailable("seed", 1);
+    uppercase.focused_agent = Some("codex".to_owned());
+    uppercase.account.provider_label = "OpenAI".to_owned();
+    uppercase.account.account_label = " Person@Example.Test ".to_owned();
+    uppercase.confidence = UsageConfidence::Authoritative;
+    let mut lowercase = uppercase.clone();
+    lowercase.account.account_label = "person@example.test".to_owned();
+    assert_eq!(
+        canonical_account_id_for_view(&uppercase),
+        canonical_account_id_for_view(&lowercase)
+    );
 }
 
 #[test]

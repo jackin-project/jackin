@@ -1,4 +1,4 @@
-//! jackin-usage-ffi: synchronous UniFFI facade for the macOS usage menu bar.
+//! jackin-usage-ffi: synchronous boltffi facade for the macOS usage menu bar.
 //!
 //! **Architecture Invariant:** T4.
 //! Entry point: [`UsageMenuBarBridge`] — coarse host runtime ops for Swift.
@@ -8,8 +8,6 @@
 
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-
-uniffi::setup_scaffolding!();
 
 mod bridge;
 mod discovery;

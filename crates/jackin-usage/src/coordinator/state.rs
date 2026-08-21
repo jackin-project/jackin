@@ -11,7 +11,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use jackin_protocol::control::FocusedUsageView;
 use jackin_protocol::usage_broker::{
-    UsageAccountCapability, UsageCoordinationError, UsageRefreshPhase,
+    UsageAccountCapability, UsageCoordinationError, UsageProjectionV1, UsageRefreshPhase,
 };
 use nix::fcntl::{OFlag, open, openat, renameat};
 use nix::sys::stat::Mode;
@@ -22,6 +22,7 @@ const ACCOUNT_STATE_SCHEMA_VERSION: u32 = 1;
 const MAX_ACCOUNT_STATE_BYTES: u64 = 512 * 1024;
 const MAX_CLOCK_SKEW_SECS: i64 = 300;
 const MAX_DISPLAY_CHARS: usize = 256;
+const PROJECTION_STATE_SCHEMA_VERSION: u32 = 1;
 static STATE_TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 /// Complete durable state for one canonical account.
@@ -100,6 +101,124 @@ pub trait AccountStateStore: Send + Sync {
     /// Atomically replace one account envelope.
     fn store(&self, envelope: &AccountStateEnvelope, now_epoch: i64)
     -> Result<(), StateStoreError>;
+}
+
+/// One atomic publication envelope for projection and broker metadata.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ProjectionStateEnvelope {
+    /// Persisted schema version.
+    pub schema_version: u32,
+    /// Immutable canonical publication.
+    pub projection: UsageProjectionV1,
+    /// Secret-free alias mappings committed with the publication.
+    pub aliases: Vec<ProjectionAlias>,
+    /// Current discovery catalog revision.
+    pub catalog_revision: String,
+    /// Broker-owned retry deadline.
+    pub retry_deadline_epoch: Option<i64>,
+    /// Broker-owned success/cadence deadline.
+    pub success_deadline_epoch: Option<i64>,
+    /// Process incarnation that published this envelope.
+    pub broker_instance_id: String,
+}
+
+/// One secret-free capability-to-canonical alias transaction entry.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ProjectionAlias {
+    /// Opaque capability identifier.
+    pub capability_id: String,
+    /// Opaque canonical account identifier.
+    pub canonical_account_id: String,
+}
+
+/// Atomic durable store for one canonical projection publication.
+#[derive(Debug, Clone)]
+pub struct FileProjectionStateStore {
+    path: PathBuf,
+}
+
+impl FileProjectionStateStore {
+    /// Construct the projection envelope path under a host data directory.
+    #[must_use]
+    pub fn under_data_dir(data_dir: &Path) -> Self {
+        Self {
+            path: data_dir.join("usage-broker").join("projection.json"),
+        }
+    }
+
+    /// Read one validated envelope. Corrupt bytes are quarantined and treated
+    /// as unavailable rather than being rendered or used for provider work.
+    pub fn load(&self) -> Result<Option<ProjectionStateEnvelope>, StateStoreError> {
+        let bytes = match fs::read(&self.path) {
+            Ok(bytes) => bytes,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(_) => return Err(StateStoreError::Unavailable),
+        };
+        let envelope = match serde_json::from_slice::<ProjectionStateEnvelope>(&bytes) {
+            Ok(envelope) if envelope.schema_version == PROJECTION_STATE_SCHEMA_VERSION => envelope,
+            Ok(_) | Err(_) => {
+                self.quarantine();
+                return Err(StateStoreError::Corrupt);
+            }
+        };
+        envelope
+            .projection
+            .validate()
+            .map_err(|_| StateStoreError::Corrupt)?;
+        Ok(Some(envelope))
+    }
+
+    /// Atomically replace one publication envelope and sync its directory.
+    pub fn store(&self, envelope: &ProjectionStateEnvelope) -> Result<(), StateStoreError> {
+        let mut envelope = envelope.clone();
+        envelope.schema_version = PROJECTION_STATE_SCHEMA_VERSION;
+        envelope
+            .projection
+            .validate()
+            .map_err(|_| StateStoreError::Corrupt)?;
+        let bytes = serde_json::to_vec(&envelope).map_err(|_| StateStoreError::Corrupt)?;
+        let Some(parent) = self.path.parent() else {
+            return Err(StateStoreError::Unavailable);
+        };
+        fs::create_dir_all(parent).map_err(|_| StateStoreError::Unavailable)?;
+        let temporary = format!(
+            ".projection.{}.{}.tmp",
+            std::process::id(),
+            STATE_TMP_COUNTER.fetch_add(1, Ordering::Relaxed)
+        );
+        let directory = open(
+            parent,
+            OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW,
+            Mode::empty(),
+        )
+        .map_err(|_| StateStoreError::Unavailable)?;
+        let directory = File::from(directory);
+        let fd = openat(
+            &directory,
+            temporary.as_str(),
+            OFlag::O_WRONLY | OFlag::O_CREAT | OFlag::O_EXCL | OFlag::O_NOFOLLOW,
+            Mode::from_bits_truncate(0o600),
+        )
+        .map_err(|_| StateStoreError::Unavailable)?;
+        let mut file = File::from(fd);
+        file.write_all(&bytes)
+            .map_err(|_| StateStoreError::Unavailable)?;
+        file.sync_all().map_err(|_| StateStoreError::Unavailable)?;
+        let filename = self
+            .path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .ok_or(StateStoreError::Unavailable)?;
+        renameat(&directory, temporary.as_str(), &directory, filename)
+            .map_err(|_| StateStoreError::Unavailable)?;
+        fsync(&directory).map_err(|_| StateStoreError::Unavailable)
+    }
+
+    fn quarantine(&self) {
+        let suffix = chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default();
+        let quarantined = self.path.with_extension(format!("corrupt.{suffix}"));
+        let _ignored = fs::rename(&self.path, quarantined);
+    }
 }
 
 /// Directory-relative, no-follow host account store.

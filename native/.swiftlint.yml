@@ -7,8 +7,8 @@ included:
 excluded:
   - .build
   - DerivedData
-  - Generated
-  - Sources/JackinUsageBridge/jackin_usage_ffi.swift
+  # Generated boltffi Swift — generator-owned, never linted.
+  - Sources/JackinUsageBindings
 
 analyzer_rules:
   - unused_declaration
@@ -63,27 +63,16 @@ opt_in_rules:
   - yoda_condition
 
 disabled_rules:
-  # swift-format owns brace and closure wrapping; SwiftLint's rules conflict with it.
+  # Formatter-owned: swift-format's checked-in configuration rewrites exactly
+  # what these rules demand, so enabling them makes the two tools fight.
+  # Keep disabled while .swift-format owns the same surface.
   - closure_parameter_position
   - opening_brace
-  # Cohesive presentation stores, fixture catalogs, and architecture tests are data-heavy.
-  # Their behavior and dependency direction are enforced by focused tests and Periphery.
-  - cyclomatic_complexity
-  - file_length
-  - function_body_length
-  - function_parameter_count
-  - type_body_length
-  - line_length
-  - trailing_comma
+  # Conflicts with .swift-format "lineBreakBetweenDeclarationAttributes": false.
   - attributes
-  - closure_end_indentation
-  - closure_spacing
-  - collection_alignment
-  - literal_expression_end_indentation
-  - multiline_arguments
-  - multiline_parameters
-  - operator_usage_whitespace
-  - vertical_parameter_alignment_on_call
+  # Conflicts with .swift-format "multiElementCollectionTrailingCommas": true
+  # (swift-format adds the commas this rule forbids).
+  - trailing_comma
 
 force_cast: error
 force_try: error

@@ -242,9 +242,19 @@ pub fn extract_interpolation_refs(s: &str) -> Vec<&str> {
 /// Returns names ordered so every dependency precedes its dependents.
 ///
 /// Env var dependency graph contains a cycle.
-#[derive(Debug, thiserror::Error)]
-#[error("env var dependency cycle detected")]
+// Hand-written Display/Error: item-level `#[error("...")]` attributes collide
+// with the boltffi source scanner walking the local FFI dependency
+// graph (variant-level thiserror stays fine).
+#[derive(Debug)]
 pub struct EnvCycleError;
+
+impl std::fmt::Display for EnvCycleError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("env var dependency cycle detected")
+    }
+}
+
+impl std::error::Error for EnvCycleError {}
 
 /// # Errors
 /// Returns [`EnvCycleError`] if a dependency cycle is detected.

@@ -4,6 +4,7 @@
 use anyhow::Result;
 use clap::{Args, Subcommand};
 use jackin_protocol::control::AccountUsageSnapshotView;
+use jackin_protocol::usage_broker::{UsageLimitWindowV1, UsageProjectionV1};
 use serde::Serialize;
 use std::sync::Arc;
 use std::time::Duration;
@@ -17,7 +18,7 @@ use jackin_runtime::runtime::snapshot;
 mod store;
 
 #[derive(Default)]
-struct CliUsageSecretSource;
+pub(crate) struct CliUsageSecretSource;
 
 impl jackin_usage::host::ProviderCredentialSecretSource for CliUsageSecretSource {
     fn lookup_declaration(
@@ -84,26 +85,23 @@ impl jackin_usage::host::ProviderCredentialSecretSource for CliUsageSecretSource
     }
 }
 
-type CliUsageCredentialResolver =
+pub(crate) type CliUsageCredentialResolver =
     jackin_usage::host::CachedProviderCredentialResolver<CliUsageSecretSource>;
 
-/// `jackin usage` — Capsule-cached or host-probed usage snapshots.
+/// `jackin usage` — simple host projection output, or explicit instance inspection.
 #[derive(Debug, Args, PartialEq, Eq)]
 #[command(
-    about = "Read usage and quota data from Capsule cache or host probes",
-    long_about = "Read usage and quota data.\n\n\
-        Default path talks to a Capsule daemon instance and renders daemon-cached\n\
-        account snapshots (status bar + overlay). Use `jackin usage cache accounts`\n\
-        for the host-global account cache.\n\n\
-        Host path (menu bar / offline Capsule): `jackin usage host snapshot`\n\
-        requests the jackin-usage host broker — same FocusedUsageView fields\n\
-        as Capsule, from host credentials."
+    about = "Read simple limits-only usage output",
+    long_about = "Read the canonical host usage projection.\n\n\
+        Human output stays intentionally compact for scripts and quick inspection.\n\
+        Use `jackin usage <instance> accounts|verify` for explicit Capsule\n\
+        inspection, or `jackin usage host snapshot` for a provider snapshot."
 )]
 pub struct UsageArgs {
-    /// Container name, short instance id, `cache`, or `host`
-    pub instance: String,
+    /// Container name, short instance id, `cache`, or `host`; omit for host-wide usage
+    pub instance: Option<String>,
     #[command(subcommand)]
-    pub scope: UsageScope,
+    pub scope: Option<UsageScope>,
     /// Output format
     #[arg(long, global = true, value_name = "FORMAT", default_value = "human")]
     pub format: String,
@@ -158,14 +156,26 @@ impl UsageArgs {
 }
 
 pub async fn run(args: &UsageArgs, paths: &JackinPaths) -> Result<()> {
-    if args.instance == "cache" {
+    let Some(instance) = args.instance.as_deref() else {
+        if args.scope.is_some() {
+            anyhow::bail!(
+                "`jackin usage` does not accept an instance scope; use `jackin usage <instance> ...`"
+            );
+        }
+        return run_bare_host(args, paths);
+    };
+    if instance == "cache" {
         return run_cache(args, paths).await;
     }
-    if args.instance == "host" {
+    if instance == "host" {
         return run_host(args, paths);
     }
-    let target = resolve_usage_target(paths, &args.instance)?;
-    match &args.scope {
+    let scope = args
+        .scope
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("missing usage scope; choose `accounts` or `verify`"))?;
+    let target = resolve_usage_target(paths, instance)?;
+    match scope {
         UsageScope::Accounts(scope_args) => run_accounts(args, paths, &target, scope_args).await,
         UsageScope::Verify => run_verify(paths, &target),
         UsageScope::Snapshot(_) => {
@@ -174,8 +184,110 @@ pub async fn run(args: &UsageArgs, paths: &JackinPaths) -> Result<()> {
     }
 }
 
+/// Render one bounded, final-only host projection. This intentionally stays
+/// plainer than the Capsule/Console surfaces: no meters, animation, or
+/// interactive chrome belong in a command intended for pipes and scripts.
+fn run_bare_host(args: &UsageArgs, paths: &JackinPaths) -> Result<()> {
+    use jackin_usage::host::{
+        HostRuntimeConfig, HostUsageRuntime, UsageBrokerConfig, UsageDiscoveryScope,
+        ensure_usage_broker_process, usage_broker_capabilities,
+    };
+
+    let resolver = Arc::new(CliUsageCredentialResolver::default());
+    let discovery_scope = UsageDiscoveryScope::HostDesktop {
+        config_root: paths.config_dir.clone(),
+        operator_home: paths.home_dir.clone(),
+    };
+    let host_config = HostRuntimeConfig {
+        data_dir: paths.data_dir.clone(),
+        refresh_floor_secs: 300,
+        enabled_surface_ids: Vec::new(),
+        probe_policy: jackin_usage::host::HostProbePolicy::Live,
+        discovery_scope: discovery_scope.clone(),
+    };
+    let mut runtime = HostUsageRuntime::new();
+    runtime
+        .open_with_discovery(host_config, resolver.as_ref())
+        .map_err(|error| anyhow::anyhow!(error))?;
+    let discovery = runtime
+        .validated_discovery()
+        .ok_or_else(|| anyhow::anyhow!("host usage discovery unavailable"))?;
+    let client = ensure_usage_broker_process(
+        UsageBrokerConfig::for_data_dir(paths.data_dir.clone()),
+        &discovery_scope,
+    )
+    .map_err(|error| anyhow::anyhow!(error.message))?;
+
+    for capability in usage_broker_capabilities(&discovery) {
+        let current = client
+            .current(capability.clone())
+            .map_err(|error| anyhow::anyhow!(error.message))?;
+        let state = client
+            .refresh(capability.clone(), current.generation, true)
+            .map_err(|error| anyhow::anyhow!(error.message))?;
+        let state = if state.phase.is_active() {
+            client
+                .join(capability, state.generation, Duration::from_secs(30))
+                .map_err(|error| anyhow::anyhow!(error.message))?
+        } else {
+            state
+        };
+        runtime
+            .apply_broker_generation(state)
+            .map_err(|error| anyhow::anyhow!(error))?;
+    }
+
+    let projection = runtime
+        .canonical_projection("und")
+        .map_err(|error| anyhow::anyhow!(error))?;
+    if args.output_format() == OutputFormat::Json {
+        println!("{}", serde_json::to_string_pretty(&projection)?);
+    } else {
+        print_bare_host_projection(&projection);
+    }
+    Ok(())
+}
+
+fn print_bare_host_projection(projection: &UsageProjectionV1) {
+    print!("{BANNER}");
+    println!("usage\n");
+    if projection.providers.is_empty() {
+        println!("no configured accounts");
+    }
+    for provider in &projection.providers {
+        println!("{}", provider.display_name);
+        for account in &provider.accounts {
+            let status = account.status_label.as_deref().unwrap_or("available");
+            println!("  {} · {status}", account.display_label);
+            for window in &account.windows {
+                print_bare_limit(window);
+            }
+        }
+    }
+    for unresolved in &projection.unresolved {
+        println!("{} · {:?}", unresolved.provider_id, unresolved.state);
+    }
+}
+
+fn print_bare_limit(window: &UsageLimitWindowV1) {
+    let value = if window.value_label.is_empty() {
+        "—"
+    } else {
+        window.value_label.as_str()
+    };
+    if window.reset_label.is_empty() {
+        println!("    {}  {}", window.label, value);
+    } else {
+        println!("    {}  {} · {}", window.label, value, window.reset_label);
+    }
+}
+
 fn run_host(args: &UsageArgs, paths: &JackinPaths) -> Result<()> {
-    match &args.scope {
+    let scope = args
+        .scope
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("missing host usage scope; choose `snapshot`"))?;
+    match scope {
         UsageScope::Snapshot(scope) => run_host_snapshot(args, paths, scope),
         UsageScope::Accounts(_) | UsageScope::Verify => {
             anyhow::bail!(
@@ -192,7 +304,7 @@ fn run_host_snapshot(
 ) -> Result<()> {
     use jackin_usage::host::{
         HostProbePolicy, HostRuntimeConfig, HostSurfaceId, HostUsageRuntime, UsageBrokerConfig,
-        UsageDiscoveryScope, ensure_usage_broker,
+        UsageDiscoveryScope, ensure_usage_broker_process, usage_broker_capabilities,
     };
 
     let surface = HostSurfaceId::from_id(&scope.agent).ok_or_else(|| {
@@ -229,24 +341,20 @@ fn run_host_snapshot(
         let discovery = runtime
             .validated_discovery()
             .ok_or_else(|| anyhow::anyhow!("host usage discovery unavailable"))?;
-        let broker = ensure_usage_broker(broker_config, discovery_scope, discovery, resolver)
+        let client = ensure_usage_broker_process(broker_config, &discovery_scope)
             .map_err(|error| anyhow::anyhow!(error.message))?;
-        for capability in broker
-            .capabilities
+        for capability in usage_broker_capabilities(&discovery)
             .into_iter()
             .filter(|capability| capability.surface_id == surface.id())
         {
-            let current = broker
-                .client
+            let current = client
                 .current(capability.clone())
                 .map_err(|error| anyhow::anyhow!(error.message))?;
-            let mut state = broker
-                .client
+            let mut state = client
                 .refresh(capability.clone(), current.generation, true)
                 .map_err(|error| anyhow::anyhow!(error.message))?;
             if state.phase.is_active() {
-                state = broker
-                    .client
+                state = client
                     .join(capability, state.generation, Duration::from_secs(30))
                     .map_err(|error| anyhow::anyhow!(error.message))?;
             }
@@ -295,7 +403,11 @@ fn run_host_snapshot(
 }
 
 async fn run_cache(args: &UsageArgs, paths: &JackinPaths) -> Result<()> {
-    match &args.scope {
+    let scope = args
+        .scope
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("missing cache usage scope; choose `accounts`"))?;
+    match scope {
         UsageScope::Accounts(scope_args) => {
             if scope_args.sync_host_cache {
                 anyhow::bail!(

@@ -8,7 +8,10 @@ use jackin_protocol::control::{
     FocusedUsageView, QuotaBucketView, UsageConfidence, UsageSeverity, UsageSnapshotStatus,
     UsageSource,
 };
-use jackin_protocol::usage_broker::{UsageAccountCapability, UsageRefreshPhase};
+use jackin_protocol::usage_broker::{
+    UsageAccountCapability, UsageProjectionRefreshStateV1, UsageProjectionSchemaV1,
+    UsageProjectionV1, UsageRefreshPhase,
+};
 
 use super::*;
 
@@ -155,4 +158,49 @@ fn atomic_state_sanitizes_control_characters_and_clamps_display_fields() {
     let label = &loaded.last_good.unwrap().account.account_label;
     assert_eq!(label.chars().count(), MAX_DISPLAY_CHARS);
     assert!(!label.chars().any(char::is_control));
+}
+
+fn empty_projection() -> UsageProjectionV1 {
+    UsageProjectionV1 {
+        schema_version: UsageProjectionSchemaV1,
+        projection_id: "projection-1".into(),
+        generated_at_epoch: 1_000,
+        discovery_revision: "catalog-1".into(),
+        broker_instance_id: "instance-1".into(),
+        broker_generation: 1,
+        refresh_state: UsageProjectionRefreshStateV1::Idle,
+        providers: Vec::new(),
+        unresolved: Vec::new(),
+        issues: Vec::new(),
+    }
+}
+
+#[test]
+fn projection_state_is_one_atomic_envelope_and_quarantines_corruption() {
+    let temp = tempfile::tempdir().unwrap();
+    let store = FileProjectionStateStore::under_data_dir(temp.path());
+    let envelope = ProjectionStateEnvelope {
+        schema_version: 1,
+        projection: empty_projection(),
+        aliases: vec![ProjectionAlias {
+            capability_id: "capability-1".into(),
+            canonical_account_id: "account-1".into(),
+        }],
+        catalog_revision: "catalog-1".into(),
+        retry_deadline_epoch: Some(1_030),
+        success_deadline_epoch: Some(1_300),
+        broker_instance_id: "instance-1".into(),
+    };
+    store.store(&envelope).unwrap();
+    assert_eq!(store.load().unwrap(), Some(envelope));
+    let path = temp.path().join("usage-broker/projection.json");
+    fs::write(&path, b"not-json").unwrap();
+    assert_eq!(store.load(), Err(StateStoreError::Corrupt));
+    assert!(!path.exists());
+    assert!(
+        fs::read_dir(path.parent().unwrap())
+            .unwrap()
+            .flatten()
+            .any(|entry| entry.file_name().to_string_lossy().contains("corrupt"))
+    );
 }

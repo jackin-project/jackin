@@ -120,40 +120,37 @@ popover() {
 
 usage usage-dark-active-F02.png F02-catalog-normal dark 920x620
 usage usage-dark-inactive-F02.png F02-catalog-normal dark 920x620 inactive
-usage usage-light-active-F02.png F02-catalog-normal light 920x620
-usage usage-light-inactive-F02.png F02-catalog-normal light 920x620 inactive
-usage usage-light-collapsed-F02.png F02-catalog-normal light 760x500 active yes
-usage usage-light-empty-F00.png F00-no-providers light 760x500
-usage usage-light-single-F01.png F01-single-normal light 920x620
-usage usage-light-multiaccount-F03.png F03-multi-account light 920x620
-usage usage-light-nearly-exhausted-F04.png F04-nearly-exhausted light 920x620
-usage usage-light-exhausted-F05.png F05-exhausted light 920x620
-usage usage-light-stale-F06.png F06-stale-last-good light 920x620
-usage usage-light-refreshing-F07.png F07-refreshing-last-good light 920x620
-usage usage-light-partial-F08.png F08-partial-timeout light 920x620
-usage usage-light-permission-F09.png F09-permission-denied light 920x620
-usage usage-light-offline-F10.png F10-offline-cached light 920x620
-usage usage-light-long-F11.png F11-long-labels light 760x500
-usage usage-light-min-F12.png F12-layout-envelope light 760x500
-usage usage-light-expanded-F12.png F12-layout-envelope light 1200x760
-usage usage-light-loading-F13.png F13-initial-loading light 760x500
-usage usage-light-error-F14.png F14-global-bridge-error light 760x500
+usage usage-dark-collapsed-F02.png F02-catalog-normal dark 800x520 active yes
+usage usage-dark-empty-F00.png F00-no-providers dark 800x520
+usage usage-dark-single-F01.png F01-single-normal dark 1000x680
+usage usage-dark-multiaccount-F03.png F03-multi-account dark 1000x680
+usage usage-dark-nearly-exhausted-F04.png F04-nearly-exhausted dark 1000x680
+usage usage-dark-exhausted-F05.png F05-exhausted dark 1000x680
+usage usage-dark-stale-F06.png F06-stale-last-good dark 1000x680
+usage usage-dark-refreshing-F07.png F07-refreshing-last-good dark 1000x680
+usage usage-dark-partial-F08.png F08-partial-timeout dark 1000x680
+usage usage-dark-permission-F09.png F09-permission-denied dark 1000x680
+usage usage-dark-offline-F10.png F10-offline-cached dark 1000x680
+usage usage-dark-long-F11.png F11-long-labels dark 800x520
+usage usage-dark-min-F12.png F12-layout-envelope dark 800x520
+usage usage-dark-expanded-F12.png F12-layout-envelope dark 1200x760
+usage usage-dark-loading-F13.png F13-initial-loading dark 800x520
+usage usage-dark-error-F14.png F14-global-bridge-error dark 800x520
 
 popover popover-dark-active-F02.png F02-catalog-normal dark
-popover popover-light-active-F02.png F02-catalog-normal light
-popover popover-light-empty-F00.png F00-no-providers light
-popover popover-light-single-F01.png F01-single-normal light
-popover popover-light-multiaccount-F03.png F03-multi-account light
-popover popover-light-nearly-exhausted-F04.png F04-nearly-exhausted light
-popover popover-light-exhausted-F05.png F05-exhausted light
-popover popover-light-stale-F06.png F06-stale-last-good light
-popover popover-light-refreshing-F07.png F07-refreshing-last-good light
-popover popover-light-partial-F08.png F08-partial-timeout light
-popover popover-light-permission-F09.png F09-permission-denied light
-popover popover-light-offline-F10.png F10-offline-cached light
-popover popover-light-long-F11.png F11-long-labels light
-popover popover-light-maximum-F12.png F12-layout-envelope light
-popover popover-light-loading-F13.png F13-initial-loading light
-popover popover-light-error-F14.png F14-global-bridge-error light
+popover popover-dark-empty-F00.png F00-no-providers dark
+popover popover-dark-single-F01.png F01-single-normal dark
+popover popover-dark-multiaccount-F03.png F03-multi-account dark
+popover popover-dark-nearly-exhausted-F04.png F04-nearly-exhausted dark
+popover popover-dark-exhausted-F05.png F05-exhausted dark
+popover popover-dark-stale-F06.png F06-stale-last-good dark
+popover popover-dark-refreshing-F07.png F07-refreshing-last-good dark
+popover popover-dark-partial-F08.png F08-partial-timeout dark
+popover popover-dark-permission-F09.png F09-permission-denied dark
+popover popover-dark-offline-F10.png F10-offline-cached dark
+popover popover-dark-long-F11.png F11-long-labels dark
+popover popover-dark-maximum-F12.png F12-layout-envelope dark
+popover popover-dark-loading-F13.png F13-initial-loading dark
+popover popover-dark-error-F14.png F14-global-bridge-error dark
 
 echo "Final captures regenerated: $output"

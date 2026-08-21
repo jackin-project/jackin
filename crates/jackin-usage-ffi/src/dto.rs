@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! UniFFI-safe mirrors of protocol usage views (string enums, no secrets).
+//! boltffi-safe mirrors of protocol usage views (string enums, no secrets).
 
 use jackin_protocol::control::{
     FocusedUsageView, Money, QuotaBucketView, UsageConfidence, UsageSnapshotStatus, UsageSource,
@@ -14,7 +14,8 @@ use jackin_usage::host::{
 use jackin_usage::usage::{PercentStyle, ResetStyle, UsageFormatPrefs, estimate_caption};
 
 /// Open configuration from Swift (paths only — no credentials).
-#[derive(Debug, Clone, uniffi::Record)]
+#[derive(Debug, Clone)]
+#[boltffi::data]
 pub struct OpenConfig {
     /// Optional data-dir override for hermetic tests/smoke only. Production is `None`.
     pub data_dir_override: Option<String>,
@@ -30,7 +31,8 @@ pub struct OpenConfig {
 }
 
 /// Surface row for Settings / list.
-#[derive(Debug, Clone, uniffi::Record)]
+#[derive(Debug, Clone)]
+#[boltffi::data]
 pub struct SurfaceDescriptorDto {
     pub id: String,
     pub label: String,
@@ -40,7 +42,8 @@ pub struct SurfaceDescriptorDto {
 }
 
 /// Sanitized config/credential discovery failure. Contains no source path or secret.
-#[derive(Debug, Clone, uniffi::Record)]
+#[derive(Debug, Clone)]
+#[boltffi::data]
 pub struct DiscoveryDiagnosticDto {
     pub surface_id: Option<String>,
     pub scope_label: String,
@@ -64,7 +67,8 @@ pub(crate) fn discovery_diagnostic_dto(
 }
 
 /// Monetary amount (minor units).
-#[derive(Debug, Clone, uniffi::Record)]
+#[derive(Debug, Clone)]
+#[boltffi::data]
 pub struct MoneyDto {
     pub amount_minor: i64,
     pub currency: String,
@@ -72,7 +76,8 @@ pub struct MoneyDto {
 }
 
 /// One quota / spend bucket.
-#[derive(Debug, Clone, uniffi::Record)]
+#[derive(Debug, Clone)]
+#[boltffi::data]
 pub struct QuotaBucketDto {
     pub label: String,
     pub used_label: Option<String>,
@@ -98,7 +103,8 @@ pub struct QuotaBucketDto {
 
 /// One already-grouped visual line of a [`UsageDetailRowDto`] (1:1 mirror of the
 /// Rust `UsagePresentationLine`). `leading`/`trailing` are finished strings.
-#[derive(Debug, Clone, uniffi::Record)]
+#[derive(Debug, Clone)]
+#[boltffi::data]
 pub struct UsagePresentationLineDto {
     pub leading: Option<String>,
     pub trailing: Option<String>,
@@ -107,7 +113,8 @@ pub struct UsagePresentationLineDto {
 /// One provider-detail row (1:1 mirror of the Rust `UsageDetailRow`). Every
 /// visible string is Rust-owned; `kind`/`severity` are machine strings and
 /// `meter_percent` is meter geometry only.
-#[derive(Debug, Clone, uniffi::Record)]
+#[derive(Debug, Clone)]
+#[boltffi::data]
 pub struct UsageDetailRowDto {
     pub row_id: String,
     /// `metadata` | `bucket` | `detail`
@@ -122,13 +129,15 @@ pub struct UsageDetailRowDto {
 
 /// The complete Rust-owned provider-detail card (mirror of
 /// `UsageDetailPresentation`). Rows are already in canonical order.
-#[derive(Debug, Clone, uniffi::Record)]
+#[derive(Debug, Clone)]
+#[boltffi::data]
 pub struct UsageDetailPresentationDto {
     pub rows: Vec<UsageDetailRowDto>,
 }
 
 /// Finished provider/account/activity identity copy.
-#[derive(Debug, Clone, uniffi::Record)]
+#[derive(Debug, Clone)]
+#[boltffi::data]
 pub struct UsageIdentityPresentationDto {
     pub provider_title: String,
     pub account_label: String,
@@ -141,7 +150,8 @@ pub struct UsageIdentityPresentationDto {
 /// One selected-account-aware provider glance row (1:1 mirror of the Rust
 /// `HostProviderGlanceRow`). The Desktop status bar, popover, and Usage window
 /// all consume this same Rust-owned row.
-#[derive(Debug, Clone, uniffi::Record)]
+#[derive(Debug, Clone)]
+#[boltffi::data]
 pub struct ProviderGlanceRowDto {
     pub surface_id: String,
     pub icon_key: String,
@@ -199,7 +209,8 @@ pub(crate) fn provider_glance_row_dto(
 }
 
 /// Full focused usage view for one surface.
-#[derive(Debug, Clone, uniffi::Record)]
+#[derive(Debug, Clone)]
+#[boltffi::data]
 pub struct UsageViewDto {
     pub identity: UsageIdentityPresentationDto,
     pub focused_agent: Option<String>,
@@ -225,7 +236,8 @@ pub struct UsageViewDto {
 }
 
 /// Presentation-time format prefs (string enums).
-#[derive(Debug, Clone, uniffi::Record)]
+#[derive(Debug, Clone)]
+#[boltffi::data]
 pub struct UsageFormatPrefsDto {
     /// `left` | `used`
     pub percent_style: String,
@@ -234,7 +246,8 @@ pub struct UsageFormatPrefsDto {
 }
 
 /// Overview row for glance popover / Usage-window sidebar.
-#[derive(Debug, Clone, uniffi::Record)]
+#[derive(Debug, Clone)]
+#[boltffi::data]
 pub struct OverviewRowDto {
     pub surface_id: String,
     pub display_label: String,
@@ -246,7 +259,8 @@ pub struct OverviewRowDto {
 }
 
 /// One known account for a host surface (multi-account Desktop).
-#[derive(Debug, Clone, uniffi::Record)]
+#[derive(Debug, Clone)]
+#[boltffi::data]
 pub struct AccountDescriptorDto {
     pub surface_id: String,
     pub provider_column_label: String,
@@ -304,7 +318,8 @@ pub(crate) fn account_dto(row: HostAccountDescriptor) -> AccountDescriptorDto {
 }
 
 /// Provider state when no stable account identity exists yet.
-#[derive(Debug, Clone, uniffi::Record)]
+#[derive(Debug, Clone)]
+#[boltffi::data]
 pub struct DesktopProviderStateDto {
     pub status_word: String,
     pub status_label: String,
@@ -314,7 +329,8 @@ pub struct DesktopProviderStateDto {
 }
 
 /// One Rust-ordered provider group in the atomic Desktop inventory.
-#[derive(Debug, Clone, uniffi::Record)]
+#[derive(Debug, Clone)]
+#[boltffi::data]
 pub struct DesktopProviderGroupDto {
     pub surface_id: String,
     pub display_label: String,
@@ -331,13 +347,15 @@ pub struct DesktopProviderGroupDto {
 }
 
 /// Atomic Rust-owned Desktop inventory.
-#[derive(Debug, Clone, uniffi::Record)]
+#[derive(Debug, Clone)]
+#[boltffi::data]
 pub struct DesktopInventoryDto {
     pub groups: Vec<DesktopProviderGroupDto>,
 }
 
 /// One grouped provider plus its exact selected account/detail snapshot.
-#[derive(Debug, Clone, uniffi::Record)]
+#[derive(Debug, Clone)]
+#[boltffi::data]
 pub struct DesktopProviderProjectionDto {
     pub group: DesktopProviderGroupDto,
     pub selected_account_key: Option<String>,
@@ -345,7 +363,8 @@ pub struct DesktopProviderProjectionDto {
 }
 
 /// Complete immutable native Desktop state for one runtime generation.
-#[derive(Debug, Clone, uniffi::Record)]
+#[derive(Debug, Clone)]
+#[boltffi::data]
 pub struct DesktopProjectionDto {
     pub generation: u64,
     pub refresh_in_progress: bool,
@@ -447,7 +466,8 @@ fn desktop_provider_state_dto(state: HostDesktopProviderState) -> DesktopProvide
 }
 
 /// One host event.
-#[derive(Debug, Clone, uniffi::Record)]
+#[derive(Debug, Clone)]
+#[boltffi::data]
 pub struct UsageEventDto {
     pub sequence: u64,
     pub kind: String,
@@ -456,7 +476,8 @@ pub struct UsageEventDto {
 }
 
 /// Bounded event batch.
-#[derive(Debug, Clone, uniffi::Record)]
+#[derive(Debug, Clone)]
+#[boltffi::data]
 pub struct UsageEventBatchDto {
     pub next_cursor: u64,
     pub events: Vec<UsageEventDto>,

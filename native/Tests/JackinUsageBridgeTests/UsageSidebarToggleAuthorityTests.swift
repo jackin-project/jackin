@@ -22,24 +22,27 @@ final class UsageSidebarToggleAuthorityTests: XCTestCase {
         let sidebarItem = NSSplitViewItem(
             sidebarWithViewController: NSViewController()
         )
-        let owner = UsageWindowToolbar(sidebarItem: sidebarItem)
+        let owner = UsageWindowToolbar(sidebarItem: sidebarItem, onSidebarStateChange: {})
         let toolbar = owner.makeToolbar()
         let window = NSWindow()
         window.toolbar = toolbar
         owner.installStandardItems(in: toolbar)
 
-        XCTAssertEqual(toolbar.itemIdentifiers, [.toggleSidebar, .sidebarTrackingSeparator])
+        let expected: [NSToolbarItem.Identifier] = [
+            .toggleSidebar, .sidebarTrackingSeparator,
+        ]
+        XCTAssertEqual(toolbar.itemIdentifiers, expected)
         XCTAssertEqual(toolbar.items.map(\.itemIdentifier), toolbar.itemIdentifiers)
         XCTAssertEqual(toolbar.items[0].label, "Hide Sidebar")
         XCTAssertEqual(toolbar.items[0].toolTip, "Hide Sidebar")
         XCTAssertEqual(toolbar.items[0].view?.accessibilityLabel(), "Hide Sidebar")
         XCTAssertEqual(
             owner.toolbarDefaultItemIdentifiers(toolbar),
-            [.toggleSidebar, .sidebarTrackingSeparator]
+            expected
         )
         XCTAssertEqual(
             owner.toolbarAllowedItemIdentifiers(toolbar),
-            [.toggleSidebar, .sidebarTrackingSeparator]
+            expected
         )
 
         sidebarItem.isCollapsed = true

@@ -4,6 +4,7 @@
 /// CLT-safe proof that the status-item consumes finished Rust DTO fields.
 
 import Foundation
+import JackinUsageBindings
 import JackinUsageBridge
 
 @main

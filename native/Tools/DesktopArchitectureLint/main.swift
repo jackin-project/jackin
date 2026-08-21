@@ -41,6 +41,8 @@ struct DesktopArchitectureLint {
         let splitController = read("UsageWindow/UsageWindowSplitController.swift")
         let overview = read("UsageWindow/OverviewListView.swift")
         let provider = read("UsageWindow/ProviderDetailView.swift")
+        let usageController = read("UsageWindowController.swift")
+        let mainMenu = read("AppMainMenu.swift")
 
         require(delegate.contains("NSPopover()"), "real NSPopover host")
         require(
@@ -115,13 +117,13 @@ struct DesktopArchitectureLint {
                 && splitController.contains("accessory.view.setAccessibilityIdentifier")
                 && splitController.contains("sidebarItem.allowsFullHeightLayout = true")
                 && splitController.contains("[.toggleSidebar, .sidebarTrackingSeparator]")
+                && usageController.contains("usage.brand-title")
+                && !usage.contains("Text(\"jackin❯ desktop\")")
                 && !usage.contains(".toolbar(removing: .sidebarToggle)")
                 && !usage.contains("usage.sidebar-toggle")
                 && !usage.contains("UsageWindowNavigationState"),
             "detail accessory owns header and native split owns sidebar visibility"
         )
-        let usageController = read("UsageWindowController.swift")
-        let mainMenu = read("AppMainMenu.swift")
         require(
             usageController.contains(".moveToActiveSpace")
                 && usageController.contains(".canJoinAllSpaces")

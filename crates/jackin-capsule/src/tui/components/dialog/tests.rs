@@ -1051,6 +1051,28 @@ fn usage_view_fixture() -> jackin_protocol::control::FocusedUsageView {
     }
 }
 
+#[test]
+fn usage_projection_empty_inventory_has_no_retry_copy() {
+    let dialog = Dialog::new_usage_with_tab(
+        jackin_protocol::control::FocusedUsageView::unavailable(
+            "No agents configured for this Capsule.",
+            1_781_185_560,
+        ),
+        UsageDialogTab::Overview,
+    );
+    let state = dialog.usage_state().expect("usage state");
+    assert_eq!(
+        state.rows()[0].value(),
+        "No agents configured for this Capsule."
+    );
+    let hints = dialog.footer_hint_spans(None, termrock::scroll::ScrollAxes::none());
+    assert!(
+        !hints
+            .iter()
+            .any(|hint| matches!(hint, termrock::widgets::HintSpan::Key("r")))
+    );
+}
+
 fn usage_status_bucket(
     label: &str,
     status: jackin_protocol::control::UsageSnapshotStatus,

@@ -15,6 +15,8 @@ usage/spend trends as product features.
 - Host broker/coordinator (`host/broker`, `coordinator`) — canonical per-account
   generations, bounded provider dispatch, atomic state, shared retry policy, and
   capability-scoped clients.
+- The process service executable is owned by `jackin-runtime`; this crate exposes
+  the lower-tier broker protocol, coordinator, and client seams only.
 - Rust-owned account discovery (`host/discovery`) — read-only global, workspace,
   role, and workspace-role enumeration; explicit profile/protected-source probes;
   pre-source and post-auth account deduplication; sanitized diagnostics.
@@ -32,7 +34,7 @@ inward dependencies: `jackin-core`, `jackin-config`, `jackin-protocol`, and
 No dependency on `jackin-capsule` (which would be circular), `jackin-tui`,
 `jackin-console`, `jackin-launch`, or any presentation crate.
 
-UniFFI lives in sibling crate `jackin-usage-ffi`.
+boltffi lives in sibling crate `jackin-usage-ffi`.
 
 ## Structure
 
@@ -78,10 +80,9 @@ Host display APIs are presentation-only:
 | `HostUsageRuntime::desktop_inventory` | Atomic canonical provider/account groups with complete display fields |
 | `host::HostProbePolicy` | `Live` / `Disabled` (smoke-mode probe suppression) |
 
-`CanonicalAccountIdentity` uses closed provider aliases; routing slugs never own
-accounts. Presence-only evidence stays provider state. Inventory scans broker state
-and durable history once. `DESKTOP_PROVIDER_ORDER` is the seven-provider boundary;
-OpenCode remains host-only.
+Canonical identity uses typed provider IDs or stable non-secret handles—not source
+ordinals, secrets, agent names, or display labels. Rust publishes current membership
+with ICU4X ranks; unresolved evidence stays separate. Desktop filters OpenCode.
 
 ## Desktop account contract
 
@@ -98,11 +99,9 @@ open and manual Refresh. Background polling reuses the catalog. Only current
 discovery creates membership; history only enriches it. Paths and secrets stay in
 Rust. OpenCode and GitHub are outside the seven-provider Desktop catalog.
 
-Capsule discovery is capability-only. It never scans host config or other host
-accounts. A per-Capsule relay exposes only launch-forwarded capabilities at
-`/jackin/run/usage.sock`; the global broker socket/state tree never enters a
-container. Credentials created only inside a Capsule are excluded pending a secure
-enrollment design.
+Capsule discovery is capability-only. The runtime relay exposes only
+launch-forwarded capabilities; host catalog/state and in-Capsule credentials do
+not cross that boundary.
 
 Each account owns its plan/status, remaining label and geometry, reset phrase
 and exact reset, severity, recency, and error. Native clients render all DTO fields

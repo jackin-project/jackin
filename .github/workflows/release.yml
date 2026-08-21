@@ -160,7 +160,7 @@ jobs:
           fi
 
           # Independent states: formula alone is not enough when menu-bar assets exist.
-          state="$(cargo xtask desktop release-state "$VERSION" --repo "$GITHUB_REPOSITORY" || true)"
+          state="$(mise run desktop-release-state "$VERSION" --repo "$GITHUB_REPOSITORY" || true)"
           echo "$state"
           cask_complete=$(printf '%s\n' "$state" | sed -n 's/^cask_complete=//p')
           app_complete=$(printf '%s\n' "$state" | sed -n 's/^app_file_assets_complete=//p')
@@ -445,7 +445,7 @@ jobs:
           version: "2026.7.12"
           cache_key_prefix: "mise-v2"
           cache_save: ${{ github.ref == 'refs/heads/main' }}
-          install_args: "cargo-binstall rust cosign syft aqua:nextest-rs/nextest/cargo-nextest cargo:uniffi"
+          install_args: "cargo-binstall rust cosign syft aqua:nextest-rs/nextest/cargo-nextest cargo:boltffi_cli"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
 
       - uses: ./.github/actions/cache-cargo-registry
@@ -457,8 +457,8 @@ jobs:
           key: cargo-target-GitHub-${{ runner.os }}-${{ github.job }}-${{ hashFiles('rust-toolchain.toml', '.cargo/config.toml', '**/Cargo.toml', '**/Cargo.lock') }}-${{ github.sha }}
           restore-keys: cargo-target-GitHub-${{ runner.os }}-${{ github.job }}-${{ hashFiles('rust-toolchain.toml', '.cargo/config.toml', '**/Cargo.toml', '**/Cargo.lock') }}-
 
-      - name: Verify mise-managed uniffi-bindgen
-        run: uniffi-bindgen --version
+      - name: Verify mise-managed boltffi
+        run: boltffi --version
 
       - name: Verify Xcode 26.6
         run: xcodebuild -version
@@ -470,13 +470,13 @@ jobs:
         env:
           JACKIN_APP_VERSION: ${{ env.VERSION }}
           JACKIN_APP_BUILD: ${{ env.APP_BUILD }}
-        run: cargo xtask desktop build --version "${JACKIN_APP_VERSION}" --build "${JACKIN_APP_BUILD}"
+        run: mise run desktop-build "${JACKIN_APP_VERSION}" "${JACKIN_APP_BUILD}"
 
       - name: Verify ad-hoc app
         env:
           JACKIN_APP_VERSION: ${{ env.VERSION }}
           JACKIN_APP_BUILD: ${{ env.APP_BUILD }}
-        run: cargo xtask desktop verify native/dist/JackinDesktop.app --version "${JACKIN_APP_VERSION}" --build "${JACKIN_APP_BUILD}"
+        run: mise run desktop-verify native/dist/JackinDesktop.app "${JACKIN_APP_VERSION}" "${JACKIN_APP_BUILD}"
 
       - name: Ad-hoc must fail release-mode verifier
         if: env.MODE == 'validate'
@@ -485,7 +485,7 @@ jobs:
           JACKIN_APP_BUILD: ${{ env.APP_BUILD }}
         run: |
           set -euo pipefail
-          if cargo xtask desktop verify native/dist/JackinDesktop.app --version "${JACKIN_APP_VERSION}" --build "${JACKIN_APP_BUILD}" --release; then
+          if mise run desktop-verify native/dist/JackinDesktop.app "${JACKIN_APP_VERSION}" "${JACKIN_APP_BUILD}" --release; then
             echo "::error::ad-hoc app must not pass --release"
             exit 1
           fi
@@ -499,9 +499,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          cargo xtask desktop release-state "$VERSION" --repo "$GITHUB_REPOSITORY" | tee state.env
+          mise run desktop-release-state "$VERSION" --repo "$GITHUB_REPOSITORY" | tee state.env
           # Second run is identical (no writes).
-          cargo xtask desktop release-state "$VERSION" --repo "$GITHUB_REPOSITORY" | tee state2.env
+          mise run desktop-release-state "$VERSION" --repo "$GITHUB_REPOSITORY" | tee state2.env
           diff -u state.env state2.env
 
       - name: Import Developer ID + notarize (publish only)
@@ -552,8 +552,8 @@ jobs:
           export APP_STORE_CONNECT_KEY_ID="$ASC_KEY_ID"
           export APP_STORE_CONNECT_ISSUER_ID="$ASC_ISSUER_ID"
           OUT_ZIP="${RUNNER_TEMP}/jackin-desktop-${VERSION}-aarch64-apple-darwin.zip"
-          cargo xtask desktop sign-notarize native/dist/JackinDesktop.app "$OUT_ZIP" \
-            --version "${JACKIN_APP_VERSION}" --build "${JACKIN_APP_BUILD}"
+          mise run desktop-sign-notarize native/dist/JackinDesktop.app "$OUT_ZIP" \
+            "${JACKIN_APP_VERSION}" "${JACKIN_APP_BUILD}"
           mkdir -p dist-app
           cp "$OUT_ZIP" "dist-app/jackin-desktop-${VERSION}-aarch64-apple-darwin.zip"
           # Credentials must be gone before supply-chain tooling.
@@ -609,6 +609,23 @@ jobs:
           name: release-GitHub-usage-menu-bar
           path: dist-app/*
           if-no-files-found: error
+
+      - name: Stage release symbols
+        run: |
+          set -euo pipefail
+          mkdir -p dist-symbols
+          ditto native/dist/JackinDesktop.app.dSYM dist-symbols/JackinDesktop.app.dSYM
+          tar -czf dist-symbols/libjackin_usage_ffi.a.tar.gz \
+            -C target/aarch64-apple-darwin/desktop-release libjackin_usage_ffi.a
+          test -s dist-symbols/libjackin_usage_ffi.a.tar.gz
+
+      - name: Upload release symbols
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: symbols-usage-menu-bar
+          path: dist-symbols/**
+          if-no-files-found: error
+          retention-days: 90
 
       - name: Upload notary log (short retention)
         if: env.MODE == 'publish' && always()

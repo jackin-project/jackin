@@ -45,7 +45,7 @@ auth_forward = "ignore"
     .expect("global config");
 }
 
-fn open_bridge(dir: &std::path::Path) -> Arc<UsageMenuBarBridge> {
+fn open_bridge(dir: &std::path::Path) -> UsageMenuBarBridge {
     let config_root = dir.join("config");
     if !config_root.join("config.toml").exists() {
         write_isolated_config(&config_root);

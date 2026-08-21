@@ -7,4 +7,5 @@ pub mod edit_save;
 pub mod editor;
 pub mod form_model;
 pub mod settings;
+pub mod usage;
 pub mod workspaces;

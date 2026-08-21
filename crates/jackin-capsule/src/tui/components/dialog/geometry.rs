@@ -6,7 +6,7 @@
 
 use super::hint::{
     confirm_hint, export_file_hint, info_dialog_hint, palette_hint, picker_hint, provider_hint,
-    read_only_hint, rename_hint, usage_hint,
+    read_only_hint, rename_hint, usage_empty_hint, usage_hint,
 };
 use super::{Dialog, GithubContextView};
 use termrock::widgets::HintSpan;
@@ -175,6 +175,7 @@ impl Dialog {
                     read_only_hint()
                 }
             }
+            Self::Usage { view, .. } if view.tabs.is_empty() => usage_empty_hint(axes),
             Self::Usage { .. } => usage_hint(axes),
             Self::ConfirmAction { .. } => confirm_hint(),
             // No filter input on either: the modal is a fixed choice list and

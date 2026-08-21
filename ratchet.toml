@@ -70,7 +70,7 @@ key = "clippy::cast_sign_loss@jackin-launch"
 bound = 9
 [[family.entry]]
 key = "clippy::cast_sign_loss@jackin-usage"
-bound = 11
+bound = 10
 [[family.entry]]
 key = "clippy::cognitive_complexity@jackin-runtime"
 bound = 1
@@ -524,7 +524,7 @@ key = "crates/jackin-oppicker/README.md"
 bound = 1575
 [[family.entry]]
 key = "crates/jackin-console/README.md"
-bound = 2553
+bound = 2505
 [[family.entry]]
 key = "crates/jackin-core/README.md"
 bound = 5618
@@ -575,7 +575,7 @@ key = "crates/jackin-protocol/README.md"
 bound = 2500
 [[family.entry]]
 key = "crates/jackin-runtime/README.md"
-bound = 3656
+bound = 3545
 [[family.entry]]
 key = "crates/jackin-telemetry/README.md"
 bound = 2149
@@ -590,10 +590,10 @@ key = "crates/jackin-tui/README.md"
 bound = 1826
 [[family.entry]]
 key = "crates/jackin-usage/README.md"
-bound = 6547
+bound = 6514
 [[family.entry]]
 key = "crates/jackin-usage-ffi/README.md"
-bound = 3076
+bound = 3078
 [[family.entry]]
 key = "crates/jackin-xtask/README.md"
 bound = 6112
@@ -793,7 +793,7 @@ mode = "enforce"
 cap = 20
 [[family.entry]]
 key = "jackin"
-bound = 28
+bound = 26
 [[family.entry]]
 key = "jackin-agent-status"
 bound = 26

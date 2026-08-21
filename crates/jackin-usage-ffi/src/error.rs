@@ -4,7 +4,8 @@
 use std::{error::Error, fmt, panic::AssertUnwindSafe};
 
 /// Typed bridge failures. Messages never include credentials or tokens.
-#[derive(Debug, Clone, PartialEq, Eq, uniffi::Error)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[boltffi::error]
 pub enum UsageBridgeError {
     /// Recoverable rejection (validation, unknown surface, closed runtime).
     Rejected { code: String, message: String },

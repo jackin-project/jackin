@@ -1,6 +1,6 @@
 ---
 title: "ADR-011: Native macOS limits app (Rust truth, Swift shell)"
-description: "jackin❯ desktop reuses Rust usage projections through UniFFI and limits Swift to native macOS presentation."
+description: "jackin❯ desktop reuses Rust usage projections through boltffi and limits Swift to native macOS presentation."
 ---
 
 **Status**: Accepted
@@ -9,7 +9,7 @@ description: "jackin❯ desktop reuses Rust usage projections through UniFFI and
 
 jackin❯ desktop is a host process that displays account quota limits without a running Capsule. Rust owns account discovery, config/auth resolution, canonical account identity, deduplication, scheduling, shared cache, single-flight coordination, account selection, quota semantics, severity, provider ordering, and every displayed domain string. Swift owns AppKit/SwiftUI presentation, accessibility, lifecycle, settings, signing, and other macOS integration.
 
-The boundary is a synchronous coarse-grained UniFFI facade compiled as a static library and assembled into an arm64 XCFramework. One `desktopProjection` call returns a complete immutable broker generation under one Rust runtime lock: grouped providers/accounts, selected identities, status-item rows, details/limits, activity, and sanitized diagnostics. Swift obtains it through an off-main-actor scheduler; it never implements HTTP/RPC/OAuth/CLI probes or a second provider matrix.
+The boundary is a synchronous coarse-grained boltffi facade compiled as a static library and assembled into an arm64 XCFramework. One `desktopProjection` call returns a complete immutable broker generation under one Rust runtime lock: grouped providers/accounts, selected identities, status-item rows, details/limits, activity, and sanitized diagnostics. Swift obtains it through an off-main-actor scheduler; it never implements HTTP/RPC/OAuth/CLI probes or a second provider matrix.
 
 ## Product and platform bounds
 

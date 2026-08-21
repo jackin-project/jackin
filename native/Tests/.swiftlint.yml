@@ -1,0 +1,17 @@
+parent_config: ../.swiftlint.yml
+# Unit-test tree policy: force operations are acceptable inside test fixtures
+# and assertions. Mirrors native/UITests/.swiftlint.yml; application sources
+# keep the parent config's error-level force rules untouched.
+#
+# Legacy size debt, this directory only. Owner: Desktop (Alexey Zhokhov).
+# Named files: JackinUsageBridgeTests/ArchitectureTests.swift,
+# JackinUsageBridgeTests/UsageWindowModelTests.swift. Deletion condition: a
+# rule leaves this list when every named file is split under the default
+# threshold; never extend this list for a new file.
+disabled_rules:
+  - force_cast
+  - force_try
+  - force_unwrapping
+  - implicitly_unwrapped_optional
+  - file_length
+  - type_body_length

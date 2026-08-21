@@ -1,6 +1,6 @@
 # jackin-usage-ffi
 
-Synchronous UniFFI facade over `jackin-usage` host runtime for the native macOS
+Synchronous boltffi facade over `jackin-usage` host runtime for the native macOS
 agent-usage menu bar. Mirrors TableRock’s `tablerock-ffi` split: Rust owns all
 truth; Swift is display-only.
 
@@ -15,7 +15,7 @@ cargo nextest run -p jackin-usage-ffi
 cargo clippy -p jackin-usage-ffi --all-targets -- -D warnings
 ```
 
-## UniFFI surface (additive desktop v1)
+## boltffi surface (additive desktop v1)
 
 | Method / type | Role |
 |---|---|

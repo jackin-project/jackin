@@ -1,0 +1,82 @@
+# SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+# SPDX-License-Identifier: Apache-2.0
+
+name: Desktop Cadence
+
+# jackin❯ desktop merge + scheduled cadences. The PR cadence (`desktop-ci`)
+# runs inside the generated ci.yml via the pinned reusable workflow; the two
+# heavier tiers are local to this repository because ci.yml is generated and
+# never hand-edited. Task names are the single source of truth (mise.toml):
+#   merge:     mise run desktop-merge     (PR graph + UI tests + a11y audit)
+#   scheduled: mise run desktop-scheduled (merge graph + dead-code scan)
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "41 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-cadence-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  merge:
+    name: merge cadence (desktop-merge)
+    if: github.event_name != 'schedule'
+    runs-on: macos-26
+    timeout-minutes: 90
+    env:
+      CARGO_TERM_COLOR: always
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+      MACOSX_DEPLOYMENT_TARGET: "26.0"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: jdx/mise-action@7e36c90d9ab29c415a2384db3006f3ec8a8cc654 # v4.2.4
+        with:
+          version: "2026.7.12"
+          cache_key_prefix: "mise-v2"
+          install_args: "cargo-binstall rust aqua:nextest-rs/nextest/cargo-nextest cargo:boltffi_cli xcodegen swiftlint xcbeautify"
+          github_token: ${{ secrets.GH_READONLY_TOKEN }}
+
+      - name: Verify toolchain
+        run: |
+          boltffi --version
+          xcodebuild -version
+          swift --version
+
+      - name: Merge cadence
+        run: mise run desktop-merge
+
+  scheduled:
+    name: scheduled cadence (desktop-scheduled)
+    if: github.event_name == 'schedule'
+    runs-on: macos-26
+    timeout-minutes: 90
+    env:
+      CARGO_TERM_COLOR: always
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+      MACOSX_DEPLOYMENT_TARGET: "26.0"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: jdx/mise-action@7e36c90d9ab29c415a2384db3006f3ec8a8cc654 # v4.2.4
+        with:
+          version: "2026.7.12"
+          cache_key_prefix: "mise-v2"
+          install_args: "cargo-binstall rust aqua:nextest-rs/nextest/cargo-nextest cargo:boltffi_cli xcodegen swiftlint xcbeautify periphery"
+          github_token: ${{ secrets.GH_READONLY_TOKEN }}
+
+      - name: Verify toolchain
+        run: |
+          boltffi --version
+          xcodebuild -version
+          swift --version
+
+      - name: Scheduled cadence
+        run: mise run desktop-scheduled

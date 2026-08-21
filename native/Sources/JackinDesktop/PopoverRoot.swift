@@ -89,29 +89,21 @@ public struct PopoverRoot: View {
     }
 
     private var popoverBrandHeader: some View {
-        HStack(spacing: 8) {
-            if let monogram = JackinBrandIdentity.templateMonogram() {
-                Image(nsImage: monogram)
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 18, height: 18)
-                    .accessibilityHidden(true)
+        JackinBrandSignature(width: 92, height: 24)
+            .accessibilityHidden(false)
+            .accessibilityLabel("jackin❯ desktop")
+            .accessibilityAddTraits(.isHeader)
+            .frame(maxWidth: .infinity)
+            .frame(height: 44)
+            .overlay(alignment: .trailing) {
+                if store.usesFixture {
+                    Text("Fixture")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.primary)
+                        .padding(.trailing, 12)
+                        .accessibilityIdentifier("popover.fixture-badge")
+                }
             }
-            Text("jackin❯ desktop")
-                .font(.headline)
-                .accessibilityAddTraits(.isHeader)
-        }
-        .frame(maxWidth: .infinity)
-        .frame(height: 44)
-        .overlay(alignment: .trailing) {
-            if store.usesFixture {
-                Text("Fixture")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.primary)
-                    .padding(.trailing, 12)
-                    .accessibilityIdentifier("popover.fixture-badge")
-            }
-        }
     }
 
     @ViewBuilder

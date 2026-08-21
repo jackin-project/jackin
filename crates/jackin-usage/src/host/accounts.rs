@@ -21,8 +21,8 @@ use super::HostSurfaceId;
 pub enum CanonicalAccountSubject {
     /// Provider-issued account or organization identifier, when available.
     ProviderId(String),
-    /// Authenticated provider account label when no stronger ID exists.
-    AuthenticatedLabel(String),
+    /// Provider-authenticated stable non-secret handle when no stronger ID exists.
+    ProviderStableHandle(String),
 }
 
 /// Exact account identity. Probe-routing slugs and source paths are excluded.
@@ -32,6 +32,45 @@ pub struct CanonicalAccountIdentity {
     pub surface: HostSurfaceId,
     /// Provider-owned subject.
     pub subject: CanonicalAccountSubject,
+}
+
+/// Proven capability aliases and their complete typed canonical evidence.
+#[derive(Debug, Default, Clone)]
+pub(super) struct CanonicalIdentityGraph {
+    evidence_by_id: BTreeMap<String, CanonicalAccountIdentity>,
+    aliases: BTreeMap<String, String>,
+}
+
+impl CanonicalIdentityGraph {
+    pub(super) fn resolve_alias(
+        &mut self,
+        capability_id: &str,
+        identity: &CanonicalAccountIdentity,
+    ) -> Result<String, String> {
+        let canonical_id = identity.canonical_id_v1();
+        if self
+            .evidence_by_id
+            .get(&canonical_id)
+            .is_some_and(|existing| existing != identity)
+        {
+            return Err("canonical account identity collision".to_owned());
+        }
+        if self
+            .aliases
+            .get(capability_id)
+            .is_some_and(|existing| existing != &canonical_id)
+        {
+            return Err("canonical account alias collision".to_owned());
+        }
+
+        // Commit both sides only after every invariant succeeds. Replays are
+        // idempotent and cannot expose a half-written alias transition.
+        self.evidence_by_id
+            .insert(canonical_id.clone(), identity.clone());
+        self.aliases
+            .insert(capability_id.to_owned(), canonical_id.clone());
+        Ok(canonical_id)
+    }
 }
 
 impl CanonicalAccountIdentity {
@@ -44,17 +83,34 @@ impl CanonicalAccountIdentity {
         let label = stable_account_label(&view.account.account_label)?;
         Some(Self {
             surface,
-            subject: CanonicalAccountSubject::AuthenticatedLabel(label.to_owned()),
+            subject: CanonicalAccountSubject::ProviderStableHandle(label.to_owned()),
         })
     }
 
     pub(super) fn account_key(&self) -> String {
         let subject = match &self.subject {
             CanonicalAccountSubject::ProviderId(id)
-            | CanonicalAccountSubject::AuthenticatedLabel(id) => id,
+            | CanonicalAccountSubject::ProviderStableHandle(id) => id,
         };
         account_key_hash(self.surface.account_provider_label(), subject)
     }
+
+    pub(super) fn canonical_id_v1(&self) -> String {
+        let evidence = match &self.subject {
+            CanonicalAccountSubject::ProviderId(id) => {
+                format!("canonical-account-v1:provider-id:{}", id.trim())
+            }
+            CanonicalAccountSubject::ProviderStableHandle(handle) => format!(
+                "canonical-account-v1:stable-handle:{}",
+                normalize_stable_handle(handle)
+            ),
+        };
+        account_key_hash(self.surface.provider_id(), &evidence)
+    }
+}
+
+fn normalize_stable_handle(handle: &str) -> String {
+    handle.trim().to_lowercase()
 }
 
 /// Account lifecycle is independent from snapshot freshness.
@@ -236,6 +292,13 @@ pub fn account_key_for_view(view: &FocusedUsageView) -> Option<String> {
     CanonicalAccountIdentity::from_view(surface, view).map(|identity| identity.account_key())
 }
 
+/// Canonical V1 identity for a focused usage view.
+#[must_use]
+pub fn canonical_account_id_for_view(view: &FocusedUsageView) -> Option<String> {
+    let surface = surface_for_view(view)?;
+    CanonicalAccountIdentity::from_view(surface, view).map(|identity| identity.canonical_id_v1())
+}
+
 /// Compact identity for status chips (email local-part when possible).
 #[must_use]
 pub fn short_account_identity(account_label: &str) -> String {
@@ -375,13 +438,13 @@ fn membership_identity(
     view: &FocusedUsageView,
 ) -> Option<CanonicalAccountIdentity> {
     let membership = membership?;
-    let label = stable_account_label(&view.account.account_label)?;
+    // Existing snapshots retain their pre-V1 routing key during additive
+    // migration. Only discovery supplies canonical evidence; display-label
+    // comparison never promotes a snapshot into membership.
+    let routing_key = CanonicalAccountIdentity::from_view(surface, view)?.account_key();
     membership
         .iter()
-        .find(|account| {
-            account.surface_id == surface.id()
-                && account.account_label.trim().eq_ignore_ascii_case(label)
-        })
+        .find(|account| account.surface_id == surface.id() && account.account_key == routing_key)
         .map(|account| account.identity.clone())
 }
 

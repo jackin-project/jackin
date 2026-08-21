@@ -16,3 +16,6 @@ pub mod telemetry;
 pub mod token_monitor;
 pub mod usage;
 pub mod usage_snapshot_store;
+
+#[cfg(test)]
+mod tests;

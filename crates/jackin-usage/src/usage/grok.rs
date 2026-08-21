@@ -184,6 +184,7 @@ fn grok_period_label(period_type: Option<&str>, window_seconds: i64) -> &'static
 pub(crate) enum GrokBillingSnapshot {
     // Boxed: the current `config`-bearing RPC response is far larger than Web.
     Rpc(Box<GrokBillingResponse>),
+    Rest(Box<GrokBillingResponse>),
     Web(GrokWebBillingSnapshot),
 }
 
@@ -196,7 +197,7 @@ pub(crate) struct GrokWebBillingSnapshot {
 impl GrokBillingSnapshot {
     pub(crate) fn buckets(&self, now: i64) -> Vec<QuotaBucketView> {
         match self {
-            Self::Rpc(response) => response.buckets(now),
+            Self::Rpc(response) | Self::Rest(response) => response.buckets(now),
             Self::Web(snapshot) => snapshot.buckets(now),
         }
     }
@@ -204,6 +205,7 @@ impl GrokBillingSnapshot {
     pub(crate) fn source(&self) -> UsageSource {
         match self {
             Self::Rpc(_) => UsageSource::Cli,
+            Self::Rest(_) => UsageSource::ProviderApi,
             Self::Web(_) => UsageSource::ProviderApi,
         }
     }
@@ -212,7 +214,7 @@ impl GrokBillingSnapshot {
     /// web-scrape path carries no tier and returns `None` (no auth heuristic).
     pub(crate) fn plan_label(&self) -> Option<String> {
         match self {
-            Self::Rpc(response) => response.plan_label(),
+            Self::Rpc(response) | Self::Rest(response) => response.plan_label(),
             Self::Web(_) => None,
         }
     }
@@ -415,18 +417,93 @@ pub(crate) fn fetch_grok_billing(
     now: i64,
     gate: &mut ManagedCliLaunchGate,
 ) -> Result<GrokBillingSnapshot, String> {
-    match fetch_grok_rpc_billing(gate) {
-        Ok(response) => Ok(GrokBillingSnapshot::Rpc(Box::new(response))),
-        Err(rpc_error) => match fetch_grok_web_billing(auth_path, now) {
-            Ok(snapshot) => {
-                gate.record_success();
-                Ok(GrokBillingSnapshot::Web(snapshot))
-            }
-            Err(web_error) => Err(format!(
-                "{rpc_error}; Grok bearer billing failed: {web_error}"
+    match fetch_grok_rest_billing(auth_path, now) {
+        Ok(response) => Ok(GrokBillingSnapshot::Rest(Box::new(response))),
+        Err(rest_error) => match fetch_grok_rpc_billing(gate) {
+            Ok(response) => Ok(GrokBillingSnapshot::Rpc(Box::new(response))),
+            Err(rpc_error) => Err(format!(
+                "{rest_error}; Grok ACP billing failed: {rpc_error}"
             )),
         },
     }
+}
+
+/// Fetch the supported Grok CLI-proxy REST contract. The ACP adapter remains
+/// a fallback facade, but the direct grpc-web wire scan is not a production
+/// source anymore.
+pub(crate) fn fetch_grok_rest_billing(
+    auth_path: &Path,
+    now: i64,
+) -> Result<GrokBillingResponse, String> {
+    let token = grok_bearer_token(auth_path, now)?;
+    let billing_value = provider_request(
+        jackin_telemetry::schema::enums::ProviderName::Xai,
+        "GET",
+        "/v1/billing",
+        || {
+            let client = provider_http_client()?;
+            let response = client
+                .get("https://cli-chat-proxy.grok.com/v1/billing?format=credits")
+                .bearer_auth(&token)
+                .header(reqwest::header::ACCEPT, "application/json")
+                .header(reqwest::header::USER_AGENT, "jackin-capsule")
+                .send()
+                .map_err(|error| format!("Grok billing request failed: {error}"))?;
+            let status = response.status();
+            if !status.is_success() {
+                return Err(format!("Grok billing HTTP {status}"));
+            }
+            response
+                .json::<serde_json::Value>()
+                .map_err(|error| format!("Grok billing decode failed: {error}"))
+        },
+    )?;
+    let mut response = parse_grok_rest_billing_response(&billing_value)?;
+    if let Ok(settings) = fetch_grok_rest_settings(&token)
+        && let Some(tier) = settings
+            .get("subscriptionTier")
+            .or_else(|| settings.get("subscription_tier"))
+            .and_then(serde_json::Value::as_str)
+            .map(str::trim)
+            .filter(|tier| !tier.is_empty())
+    {
+        response.subscription_tier = Some(tier.to_owned());
+    }
+    Ok(response)
+}
+
+fn fetch_grok_rest_settings(token: &str) -> Result<serde_json::Value, String> {
+    let client = provider_http_client()?;
+    let response = client
+        .get("https://cli-chat-proxy.grok.com/v1/settings")
+        .bearer_auth(token)
+        .header(reqwest::header::ACCEPT, "application/json")
+        .send()
+        .map_err(|error| format!("Grok settings request failed: {error}"))?;
+    if !response.status().is_success() {
+        return Err(format!("Grok settings HTTP {}", response.status()));
+    }
+    response
+        .json::<serde_json::Value>()
+        .map_err(|error| format!("Grok settings decode failed: {error}"))
+}
+
+pub(crate) fn parse_grok_rest_billing_response(
+    value: &serde_json::Value,
+) -> Result<GrokBillingResponse, String> {
+    let payload = value.get("data").unwrap_or(value);
+    if let Ok(response) = serde_json::from_value::<GrokBillingResponse>(payload.clone())
+        && response.config.is_some()
+    {
+        return Ok(response);
+    }
+    let config = serde_json::from_value::<GrokBillingConfig>(payload.clone())
+        .map_err(|error| format!("Grok billing shape unsupported: {error}"))?;
+    Ok(GrokBillingResponse {
+        config: Some(config),
+        on_demand_enabled: None,
+        subscription_tier: None,
+    })
 }
 
 pub(crate) fn fetch_grok_rpc_billing(
@@ -520,65 +597,6 @@ pub(crate) fn grok_binary_path() -> PathBuf {
     } else {
         PathBuf::from("grok")
     }
-}
-
-pub(crate) fn fetch_grok_web_billing(
-    auth_path: &Path,
-    now: i64,
-) -> Result<GrokWebBillingSnapshot, String> {
-    provider_request(
-        jackin_telemetry::schema::enums::ProviderName::Xai,
-        "POST",
-        "/grok_api_v2.GrokBuildBilling/GetGrokCreditsConfig",
-        || fetch_grok_web_billing_request(auth_path, now),
-    )
-}
-
-fn fetch_grok_web_billing_request(
-    auth_path: &Path,
-    now: i64,
-) -> Result<GrokWebBillingSnapshot, String> {
-    let token = grok_bearer_token(auth_path, now)?;
-    let client = provider_http_client()?;
-    let response = client
-        .post("https://grok.com/grok_api_v2.GrokBuildBilling/GetGrokCreditsConfig")
-        .bearer_auth(token)
-        .header(reqwest::header::ORIGIN, "https://grok.com")
-        .header(reqwest::header::REFERER, "https://grok.com/?_s=usage")
-        .header(reqwest::header::ACCEPT, "*/*")
-        .header(reqwest::header::CONTENT_TYPE, "application/grpc-web+proto")
-        .header("x-grpc-web", "1")
-        .header("x-user-agent", "connect-es/2.1.1")
-        .header(reqwest::header::USER_AGENT, "jackin-capsule")
-        .body(vec![0, 0, 0, 0, 0])
-        .send()
-        .map_err(|err| format!("request failed: {err}"))?;
-    let status = response.status();
-    let grpc_status = response
-        .headers()
-        .get("grpc-status")
-        .and_then(|value| value.to_str().ok())
-        .map(str::to_owned);
-    let grpc_message = response
-        .headers()
-        .get("grpc-message")
-        .and_then(|value| value.to_str().ok())
-        .map(str::to_owned);
-    let body = response
-        .bytes()
-        .map_err(|err| format!("body read failed: {err}"))?;
-    if !status.is_success() {
-        return Err(format!("HTTP {status}"));
-    }
-    if let Some(grpc_status) = grpc_status
-        && grpc_status != "0"
-    {
-        return Err(format!(
-            "gRPC status {grpc_status}: {}",
-            grpc_message.unwrap_or_else(|| "unknown".to_owned())
-        ));
-    }
-    parse_grok_web_billing_response(&body, now)
 }
 
 pub(crate) fn grok_bearer_token(auth_path: &Path, now: i64) -> Result<String, String> {

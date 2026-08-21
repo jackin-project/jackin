@@ -7,7 +7,7 @@ version = "0.6.4"
 edition.workspace = true
 rust-version.workspace = true
 authors = ["Alexey Zhokhov <alexey@zhokhov.com>"]
-description = "Synchronous UniFFI facade over jackin-usage host runtime for the macOS menu-bar app"
+description = "Synchronous boltffi facade over jackin-usage host runtime for the macOS menu-bar app"
 license.workspace = true
 repository.workspace = true
 publish = false
@@ -24,13 +24,13 @@ jackin-env = { workspace = true }
 jackin-usage = { workspace = true }
 jackin-protocol = { workspace = true }
 jackin-telemetry = { workspace = true }
-uniffi = { version = "=0.32.0", default-features = false }
+boltffi = "=0.30.1"
 
 [dev-dependencies]
 tempfile = { workspace = true }
 
-# Cannot use lints.workspace = true: UniFFI requires unsafe_code allow, and
-# workspace forbids unsafe. Mirror TableRock-ffi baseline.
+# Cannot use lints.workspace = true: boltffi scaffolding requires unsafe_code
+# allow, and workspace forbids unsafe. Mirror TableRock-ffi baseline.
 [lints.rust]
 unsafe_code = "allow"
 rust_2018_idioms = { level = "deny", priority = -1 }

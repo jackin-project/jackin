@@ -149,11 +149,24 @@ impl fmt::Display for Agent {
 }
 
 /// Error returned when parsing an agent name fails.
-#[derive(Debug, thiserror::Error)]
-#[error("unknown agent: {got:?}; supported: claude, codex, amp, kimi, opencode, grok")]
+// Hand-written Display/Error: item-level `#[error("...")]` attributes collide
+// with the boltffi source scanner (see jackin-usage-ffi).
+#[derive(Debug)]
 pub struct ParseAgentError {
     got: String,
 }
+
+impl fmt::Display for ParseAgentError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            formatter,
+            "unknown agent: {:?}; supported: claude, codex, amp, kimi, opencode, grok",
+            self.got
+        )
+    }
+}
+
+impl std::error::Error for ParseAgentError {}
 
 impl Agent {
     /// Parse a canonical agent slug without allocating. Returns `None` on an

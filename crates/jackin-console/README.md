@@ -1,12 +1,15 @@
 # jackin-console
 
-Canonical host-console product surface. Owns reusable console state, update/input planning, view composition, components, pure product decisions, and effects-as-data for the operator console — the TUI an operator drives via `jackin console`.
+Canonical host-console surface: state, input planning, views, components, and effects-as-data for `jackin console`.
 
 ## What this crate owns
 
 - Console state + planning for workspaces, mounts, and services (`workspace`, `services`, `github_mounts`).
 - Mount diff/info and the mount-info cache (`mount_diff`, `mount_info`, `mount_info_cache`).
-- Console view composition + input (`tui`).
+- Console view composition + input (`tui`), including the Usage route. Usage
+  adapts the Rust-owned projection; it does not discover accounts or refresh
+  providers. See `docs/content/reference/tui/navigation.mdx` for the route
+  contract.
 
 ## Architecture tier and allowed dependencies
 
@@ -30,7 +33,7 @@ Canonical host-console product surface. Owns reusable console state, update/inpu
 
 ## Public API
 
-Console state machine + view models consumed by the `jackin` binary's console entry point. Picker model/planning is split into `jackin-oppicker`; this crate owns only the side-effect adapters.
+State machine and view models consumed by the `jackin` console entry point.
 
 ## How to verify
 

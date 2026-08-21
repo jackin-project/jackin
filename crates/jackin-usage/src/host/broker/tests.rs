@@ -89,11 +89,11 @@ fn forwarded_scope_selects_only_accounts_backed_by_forwarded_sources() {
 
     let profile_identity = CanonicalAccountIdentity {
         surface: HostSurfaceId::Amp,
-        subject: CanonicalAccountSubject::AuthenticatedLabel("profile@example.test".to_owned()),
+        subject: CanonicalAccountSubject::ProviderStableHandle("profile@example.test".to_owned()),
     };
     let env_identity = CanonicalAccountIdentity {
         surface: HostSurfaceId::Amp,
-        subject: CanonicalAccountSubject::AuthenticatedLabel("env@example.test".to_owned()),
+        subject: CanonicalAccountSubject::ProviderStableHandle("env@example.test".to_owned()),
     };
     let scope = "workspace sample role test";
     let discovery = ValidatedUsageDiscovery {
@@ -106,6 +106,7 @@ fn forwarded_scope_selects_only_accounts_backed_by_forwarded_sources() {
                 surface: HostSurfaceId::Amp,
                 identity: Some(profile_identity),
                 source_id: "profile-source".to_owned(),
+                capability_id: "profile-capability".to_owned(),
                 provenance: std::collections::BTreeSet::from([scope.to_owned()]),
                 source: ValidatedCredentialSource::Profile(
                     super::super::discovery::ProfileCredentialMaterial::Amp {
@@ -117,6 +118,7 @@ fn forwarded_scope_selects_only_accounts_backed_by_forwarded_sources() {
                 surface: HostSurfaceId::Amp,
                 identity: Some(env_identity),
                 source_id: "env-source".to_owned(),
+                capability_id: "env-capability".to_owned(),
                 provenance: std::collections::BTreeSet::from([scope.to_owned()]),
                 source: ValidatedCredentialSource::Env {
                     handle: super::super::OpaqueCredentialHandle::new("env-handle"),
@@ -239,6 +241,34 @@ fn usage_broker_recovers_stale_guard_with_private_permissions() {
         0o600
     );
     assert_eq!(fs::metadata(leader).unwrap().mode() & 0o777, 0o600);
+}
+
+#[test]
+fn broker_lease_uses_expiry_and_build_identity_not_pid_reuse() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("lease");
+    let mut live = BrokerLease::new("build");
+    fs::write(&path, serde_json::to_vec(&live).unwrap()).unwrap();
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
+    assert!(
+        claim_leader(&path, "build", Duration::from_secs(30))
+            .unwrap()
+            .is_none()
+    );
+
+    live.renewed_at_epoch -= 31;
+    fs::write(&path, serde_json::to_vec(&live).unwrap()).unwrap();
+    let replacement = claim_leader(&path, "build", Duration::from_secs(30))
+        .unwrap()
+        .expect("expired lease is reclaimable");
+    assert_ne!(replacement.instance_id, live.instance_id);
+
+    fs::write(&path, serde_json::to_vec(&replacement).unwrap()).unwrap();
+    assert!(
+        claim_leader(&path, "other-build", Duration::from_secs(30))
+            .unwrap()
+            .is_none()
+    );
 }
 
 #[test]

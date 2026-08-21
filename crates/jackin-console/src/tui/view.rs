@@ -607,19 +607,25 @@ pub fn render(
         } => {
             let areas = workspace_frame_areas(area);
 
-            render_header(frame, areas.header, workspace_header_title());
+            if state.usage_screen.is_some() {
+                render_usage_surface(frame, area, state);
+            } else {
+                render_header(frame, areas.header, workspace_header_title());
+            }
 
-            if show_list_body {
+            if show_list_body && state.usage_screen.is_none() {
                 crate::tui::screens::workspaces::view::list::render_list_body(
                     frame, areas.body, state, config, cwd,
                 );
             }
 
-            render_footer(
-                frame,
-                areas.footer,
-                &workspace_screen_footer_items_for_state(state, config, cwd, area),
-            );
+            if state.usage_screen.is_none() {
+                render_footer(
+                    frame,
+                    areas.footer,
+                    &workspace_screen_footer_items_for_state(state, config, cwd, area),
+                );
+            }
         }
     }
 
@@ -720,6 +726,25 @@ pub fn render(
         let overlay_area = status_overlay_area(area);
         crate::tui::components::render_status_popup(frame, overlay_area, overlay);
     }
+}
+
+fn render_usage_surface(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    state: &crate::tui::state::ManagerState<'_>,
+) {
+    let areas = workspace_frame_areas(area);
+    render_header(frame, areas.header, "usage");
+    crate::tui::screens::usage::render(frame, area, state);
+    let hints = [
+        termrock::widgets::HintSpan::Key("↑↓"),
+        termrock::widgets::HintSpan::Text(" select  "),
+        termrock::widgets::HintSpan::Key("↵"),
+        termrock::widgets::HintSpan::Text(" detail  "),
+        termrock::widgets::HintSpan::Key("Esc"),
+        termrock::widgets::HintSpan::Text(" back"),
+    ];
+    render_footer(frame, areas.footer, &hints);
 }
 
 /// Rows the current screen reserves for its footer — excluded from the modal

@@ -55,11 +55,6 @@ public struct UsageWindowSidebar: View {
             .listStyle(.sidebar)
             .accessibilityLabel("Usage providers sidebar")
             .accessibilityIdentifier("usage.sidebar")
-
-            JackinBrandSignature()
-                .padding(.horizontal, 16)
-                .padding(.vertical, 10)
-                .frame(maxWidth: .infinity, alignment: .leading)
         }
         .frame(minWidth: 190, idealWidth: 220, maxWidth: 280)
     }
@@ -176,22 +171,15 @@ struct UsageWindowDetailAccessory: View {
     @ObservedObject var store: PresentationStore
 
     var body: some View {
-        ZStack {
-            Text("jackin❯ desktop")
-                .font(.headline)
-                .accessibilityAddTraits(.isHeader)
-                .accessibilityIdentifier("usage.brand-title")
-
-            HStack {
-                if store.usesFixture {
-                    Text("Fixture")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.primary)
-                        .accessibilityIdentifier("usage.fixture-badge")
-                }
-                Spacer()
-                refreshButton
+        HStack {
+            if store.usesFixture {
+                Text("Fixture")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .accessibilityIdentifier("usage.fixture-badge")
             }
+            Spacer()
+            refreshButton
         }
         .frame(minHeight: 40)
     }

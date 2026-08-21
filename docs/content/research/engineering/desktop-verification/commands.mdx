@@ -7,7 +7,7 @@ description: Catalogs build, binding, native-app, verification, and release comm
 
 The desktop CI stack establishes the canonical build, binding, native-app, verification, and release command set.
 Questions: exact build/test/lint/verify commands executor plans may cite for
-crates (`jackin-usage`, `jackin-usage-ffi`), the UniFFI bindings drift gate,
+crates (`jackin-usage`, `jackin-usage-ffi`), the boltffi bindings drift gate,
 the Swift app, and release verification.
 Informs: jackin-desktop
 Method: codebase read (commands proven by CI green usage, not guessed)
@@ -24,11 +24,10 @@ Vetted: 2026-07-24
   `--all-features` — <RepoFile path="TESTING.md" /> (confidence: HIGH)
 
 ### Bindings drift gate
-- `cargo xtask desktop bindings` then
-  `git diff --exit-code -- native/Generated native/Sources/JackinUsageBridge/jackin_usage_ffi.swift`
-  — CI step, <RepoFile path=".github/workflows/ci.yml" /> (around lines 1150–1152); requires
-  `cargo install uniffi --version 0.32.0 --features cli --locked` (CI installs
-  it; mise `cargo:uniffi` provides `uniffi-bindgen` per `native/README.md`)
+- `cargo xtask desktop bindings-check`
+  — CI step, <RepoFile path=".github/workflows/ci.yml" />; requires
+  `cargo install boltffi_cli --version 0.30.1 --locked` (CI installs
+  it; mise `cargo:boltffi_cli` provides `boltffi` per `native/README.md`)
   (confidence: HIGH)
 
 ### App build / verify / run

@@ -7,8 +7,9 @@ Container bootstrap pipeline — the orchestrator that turns a resolved workspac
 - The launch pipeline (`runtime`) and its phase contracts: profile validation, workspace/role materialization, trust/source checks, image materialization, env/auth resolution, Docker run, wait-for-state, teardown, foreground attach, cleanup classification.
 - Backend clients (`apple_container_client`, `host_daemon`) and host-side exec (`exec_host`).
 - Mount isolation integration (`isolation`), the reactive daemon (`reactive_daemon`), and wait-for-state (`spin_wait`).
-- Host usage-broker lifecycle and per-container relay assembly. Docker and Apple
-  backends reuse the container socket directory; neither mounts global usage state.
+- Host usage-broker lifecycle and per-container relay assembly; global usage
+  state never enters a container. The sibling `jackin-usage-broker` executable
+  owns the process service entrypoint.
 
 ## Architecture tier and allowed dependencies
 
@@ -39,11 +40,9 @@ The launch entry points (`launch_role_runtime`, `load_role_with`, `run_launch_co
 live in `runtime/launch/launch_pipeline/tests.rs`; its Criterion scenario is
 `benches/launch_pipeline.rs`.
 
-Each Capsule receives one immutable launch-derived account-capability allowlist. Its
-relay appears at `/jackin/run/usage.sock` and forwards only authorized current/
-refresh/join requests to the host broker. The global broker socket, account catalog,
-credential sources, and atomic state never cross the container boundary. Relay or
-broker failure is a typed no-probe failure.
+Each Capsule receives one immutable launch-derived account-capability allowlist.
+Its `/jackin/run/usage.sock` relay forwards only authorized requests to the host
+broker; credentials, catalog, and atomic state never cross the boundary.
 
 ## How to verify
 

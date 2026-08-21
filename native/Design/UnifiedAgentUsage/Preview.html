@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Unified Agent Usage — Design Selection Preview</title>
+<style>
+  body { font: 14px/1.5 -apple-system, sans-serif; max-width: 960px; margin: 2rem auto; padding: 0 1rem; color: #1d1d1f; }
+  h1 { font-size: 1.6rem; } h2 { font-size: 1.2rem; margin-top: 2.5rem; }
+  pre { background: #f5f5f7; border-radius: 8px; padding: 1rem; overflow-x: auto; font: 12px/1.4 ui-monospace, monospace; }
+  .rec { background: #e8f5e9; border-left: 4px solid #34c759; padding: .75rem 1rem; border-radius: 4px; }
+  .ineligible { opacity: .55; }
+  .tag { display: inline-block; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 10px; vertical-align: middle; }
+  .tag.eligible { background: #34c759; color: #fff; }
+  .tag.remix { background: #0a84ff; color: #fff; }
+  .tag.rejected { background: #8e8e93; color: #fff; }
+</style>
+</head>
+<body>
+<h1>Unified Agent Usage — Design Selection Preview</h1>
+<p>Status: <strong>DRAFT FOR HUMAN SELECTION</strong>. Source: <code>native/Design/UnifiedAgentUsage/Alternatives.md</code>. Eligible ballot: A, B, or G, optionally remixed with H (popover).</p>
+
+<div class="rec">
+<strong>Evidence-led recommendation: A without H.</strong> Removes observed provider-row placeholders, protects account/state columns, preserves incumbent sidebar, overview, provider detail, and complete popover. B moves too many long account labels into navigation; G adds an urgency destination without baseline evidence; H removes complete quota-window detail from a popover whose baseline already passed visual review.
+</div>
+
+<h2>A — Grouped Overview, Provider Detail <span class="tag eligible">ELIGIBLE</span></h2>
+<pre>
+┌──────────────┬─────────────────────────────────────────────────────┐
+│ Overview     │ Provider       Account       Plan   Left  Reset     │
+│              │ ▾ OpenAI                                         │
+│ Providers    │   personal…    Plus          57%    3d             │
+│   OpenAI     │   team…        Plus           0%    3d             │
+│   Anthropic  │ ▸ Anthropic                                      │
+│   Amp        │                                                     │
+│   …          │                                                     │
+└──────────────┴─────────────────────────────────────────────────────┘
+</pre>
+<p><strong>Structure:</strong> Overview and providers stay in the native sidebar. Overview uses provider group rows with canonical account children. Selecting a provider opens one provider page with a native account picker and all quota windows.</p>
+<p><strong>Strengths:</strong> least structural churn; immediate all-provider scan; accounts visibly subordinate to providers; calm provider detail; strong parity with CLI and console grouping.</p>
+<p><strong>Risks:</strong> group rows must span hierarchy instead of placeholder dashes; table contraction must protect state and identity; two routes to provider detail must retain one selection.</p>
+<p><strong>Minimum width:</strong> hide sidebar on request; group labels span the table; secondary plan/reset text contracts before account and state.</p>
+
+<h2>B — Hierarchical Navigation Sidebar <span class="tag eligible">ELIGIBLE</span></h2>
+<pre>
+┌────────────────────┬───────────────────────────────────────────────┐
+│ Overview           │ OpenAI · team@example.test                    │
+│ ▾ OpenAI           │ Plus                                          │
+│   personal@example │ Limits                                        │
+│   team@example     │ Weekly       0% left      Resets in 3d        │
+│   organization@…   │ Status · Depleted                              │
+│ ▸ Amp              │ Status · Updated now                          │
+└────────────────────┴───────────────────────────────────────────────┘
+</pre>
+<p><strong>Structure:</strong> provider and canonical account hierarchy moves entirely into the sidebar. Overview remains the first destination; selecting an account opens its quota detail directly.</p>
+<p><strong>Strengths:</strong> one navigation location; no account picker duplication; exact account context visible while inspecting details; direct keyboard drill-down.</p>
+<p><strong>Risks:</strong> dense sidebar with long account labels; provider-only state needs a stable destination; many accounts crowd navigation; may reduce overview scanability.</p>
+<p><strong>Minimum width:</strong> sidebar user-hideable; labels truncate with complete accessibility values; selection persists when hidden.</p>
+
+<h2>G — Attention Queue plus Complete Inventory <span class="tag eligible">ELIGIBLE</span></h2>
+<pre>
+┌──────────────┬─────────────────────────────────────────────────────┐
+│ Attention    │ Needs attention                                    │
+│ Overview     │ Anthropic · personal@… · 12% left · resets in 1h   │
+│ Providers    │ Kimi · cached · offline                            │
+│   OpenAI     ├─────────────────────────────────────────────────────┤
+│   …          │ Complete inventory                                 │
+└──────────────┴─────────────────────────────────────────────────────┘
+</pre>
+<p><strong>Structure:</strong> a stable Attention destination shows Rust-ranked depleted, stale, or failed accounts before the complete grouped Overview. Provider pages remain.</p>
+<p><strong>Strengths:</strong> fastest route to actionable risk; status-item worst-provider mode and window detail share one urgency model; no client-side ranking if Rust projects the queue.</p>
+<p><strong>Risks:</strong> another navigation concept; can duplicate Overview rows; "attention" must not imply launch blocking or client-owned policy; calm healthy states gain no benefit.</p>
+<p><strong>Minimum width:</strong> queue uses the same row contract as Overview; never cards or banners.</p>
+
+<h2>H — Compact Focused Popover, Deep Window Handoff <span class="tag remix">REMIX ONLY</span></h2>
+<pre>
+Popover                             Usage window
+┌─────────────────────────┐         ┌────────┬──────────────────────┐
+│ OpenAI · team@…      ▾  │         │Overview│ OpenAI · team@…      │
+│ 0% left · resets in 3d  │ Open →  │OpenAI  │ all quota windows    │
+│ Depleted/current state  │         │…       │ metadata and errors  │
+│ Refresh   Open Usage    │         └────────┴──────────────────────┘
+└─────────────────────────┘
+</pre>
+<p><strong>Structure:</strong> popover shows only identity, one Rust-ranked quota summary, explicit state, account picker, handoff actions. Retained Usage window uses A, B, or G for full detail.</p>
+<p><strong>Strengths:</strong> strongest popover scope adherence; fastest glance; complete data one action away with exact provider/account handoff.</p>
+<p><strong>Risks:</strong> hides multi-window quota detail from the glance; operators may expect the current complete popover form; selected window alternative must be recorded with it.</p>
+
+<h2 class="ineligible">C, D, E, F <span class="tag rejected">REJECTED — INELIGIBLE</span></h2>
+<p class="ineligible">Documented counter-directions: remove or add a region to the settled two-pane structure. Cannot be selected this round. Rationale in Alternatives.md.</p>
+
+<h2>Selection record</h2>
+<p>Human selection: <strong>PENDING</strong>. Selector: Alexey Zhokhov.<br>
+To select, record: <em>"Approve ExperienceBrief. Select Alternative A without H. Use the documented recommendation, remix choices, winner/loser rationale, and risks. Selector: Alexey Zhokhov."</em></p>
+</body>
+</html>

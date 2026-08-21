@@ -1,5 +1,14 @@
 name: JackinDesktop
 
+# Platform lanes (recorded contract — see native/AGENTS.md "Platform lanes"):
+#   minimum deployment target: macOS 26.0 (no compatibility branch)
+#   shipping lane: Xcode 26.6, macOS 26.5 SDK, Swift 6 + complete strict concurrency
+#   forward-validation lane: Xcode 27 beta / macOS 27 SDK — nonblocking, scheduled;
+#     dated exception in native/README.md until the runner image exists
+#   post-26.0 API: #available(macOS 27, *) guard + decided native fallback +
+#     recorded minimum-target bump that removes the guard;
+#     UIDesignRequiresCompatibility is never a strategy
+
 options:
   minimumXcodeGenVersion: 2.46.0
   deploymentTarget:
@@ -24,6 +33,22 @@ settings:
     SWIFT_VERSION: "6"
 
 targets:
+  JackinUsageBindings:
+    type: library.static
+    platform: macOS
+    sources:
+      - path: Sources/JackinUsageBindings
+        type: syncedFolder
+    settings:
+      base:
+        DEFINES_MODULE: YES
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_MODULE_NAME: JackinUsageBindings
+        SKIP_INSTALL: YES
+    dependencies:
+      - framework: ../target/xcframework/JackinUsage.xcframework
+        embed: false
+
   JackinUsageBridge:
     type: library.static
     platform: macOS
@@ -37,8 +62,7 @@ targets:
         PRODUCT_MODULE_NAME: JackinUsageBridge
         SKIP_INSTALL: YES
     dependencies:
-      - framework: ../target/xcframework/JackinUsageFFI.xcframework
-        embed: false
+      - target: JackinUsageBindings
 
   JackinDesktopUI:
     type: library.static
@@ -55,6 +79,7 @@ targets:
         PRODUCT_MODULE_NAME: JackinDesktopUI
         SKIP_INSTALL: YES
     dependencies:
+      - target: JackinUsageBindings
       - target: JackinUsageBridge
 
   JackinDesktop:
@@ -95,8 +120,9 @@ targets:
         PRODUCT_NAME: JackinDesktop
     dependencies:
       - target: JackinDesktopUI
+      - target: JackinUsageBindings
       - target: JackinUsageBridge
-      - framework: ../target/xcframework/JackinUsageFFI.xcframework
+      - framework: ../target/xcframework/JackinUsage.xcframework
         embed: false
 
   JackinDesktopTests:
@@ -110,8 +136,9 @@ targets:
         GENERATE_INFOPLIST_FILE: YES
     dependencies:
       - target: JackinDesktopUI
+      - target: JackinUsageBindings
       - target: JackinUsageBridge
-      - framework: ../target/xcframework/JackinUsageFFI.xcframework
+      - framework: ../target/xcframework/JackinUsage.xcframework
         embed: false
 
   JackinDesktopUITests:

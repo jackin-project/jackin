@@ -47,6 +47,7 @@ pub use crate::tui::screens::settings::model::{
     SettingsEnvTextTarget, SettingsGeneralState, SettingsHoverTarget, SettingsTab,
     SettingsTrustRow, SettingsTrustState,
 };
+pub use crate::tui::screens::usage::{UsageAccount, UsageScreenState};
 pub use crate::tui::screens::workspaces::model::{
     ManagerHoverTarget, ManagerListRow, WorkspaceSummary,
 };
@@ -341,6 +342,12 @@ pub struct ManagerState<'a> {
     /// across re-entries to the preview pane so the operator's last
     /// selection survives a `Esc → ↑/↓ → Tab` round-trip.
     pub preview_pane_cursor: HashMap<String, usize>,
+    /// Console-owned focus/scroll state for the Usage route; Some opens it.
+    pub usage_screen: Option<UsageScreenState>,
+    /// Rust-owned usage rows staged before the Usage route is opened.
+    pub usage_accounts: Vec<UsageAccount>,
+    /// Rust-owned usage discovery notice shown by the Usage route.
+    pub usage_notice: Option<String>,
 }
 
 // ── Impls ───────────────────────────────────────────────────────────────────

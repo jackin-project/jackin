@@ -1,6 +1,6 @@
 # jackin❯ desktop
 
-Native macOS limits display over `jackin-usage-ffi` (UniFFI). Product identity is **jackin❯ desktop** (`JackinDesktop.app`, bundle id `com.jackin-project.desktop`). Rust owns probes, provider ordering, accounts, quota semantics, refresh policy, severity, and every domain string. Swift owns AppKit/SwiftUI presentation and OS integration.
+Native macOS limits display over `jackin-usage-ffi` (boltffi). Product identity is **jackin❯ desktop** (`JackinDesktop.app`, bundle id `com.jackin-project.desktop`). Rust owns probes, provider ordering, accounts, quota semantics, refresh policy, severity, and every domain string. Swift owns AppKit/SwiftUI presentation and OS integration.
 
 Production Swift passes no config, home, or data paths. Rust derives canonical host
 paths, loads the global/workspace/role configuration read-only, resolves configured
@@ -22,10 +22,22 @@ Product scope is limits only: remaining/used percentages, resets, plan/status, m
 ## Shipping baseline
 
 - Deployment target and release floor: **macOS 26.0**.
-- Release toolchain: **Xcode 26.6** on GitHub's `macos-26` image.
+- Shipping lane: **Xcode 26.6, macOS 26.5 SDK, Swift 6.3** on GitHub's `macos-26` image, Swift 6 language mode with complete strict concurrency and warnings as errors.
+- Forward-validation lane: **Xcode 27 beta / macOS 27 SDK**, nonblocking and scheduled; never the shipping lane.
 - Architecture: Apple Silicon (`arm64`) static XCFramework assembly.
-- Swift language mode: Swift 6 strict concurrency.
 - No compatibility branch, custom material, explicit `glassEffect`, or `GlassEffectContainer` exists in production UI.
+
+**Forward-lane exception (dated):** the scheduled nonblocking Xcode 27/macOS 27
+build lane does not exist yet. Owner: Release Engineering. Recorded 2026-08-20.
+Shipping remains Xcode 26.6 and forward failures do not gate release. The
+exception exits when an Xcode 27 runner image is available and the lane is added
+at the owning `velnor-actions` native-workflow source (`ci.yml` is generated —
+never hand-edited), then regenerated here.
+
+**Post-26.0 API discipline:** every post-26.0 symbol is guarded with
+`if #available(macOS 27, *)`, ships a decided native fallback, and names the
+minimum-target bump that removes the guard. `UIDesignRequiresCompatibility` is
+never a strategy; an architecture test rejects it.
 
 Liquid Glass is owned by the system hosts and standard functional chrome: `NSPopover`, unified `NSToolbar`, `NSSplitViewController`, sidebar/list/table, menus, pickers, buttons, and window titlebars. Quota content uses ordinary `Form`, `List`, `Section`, `LabeledContent`, `Table`, and `ProgressView` surfaces. The status bar remains template monochrome. jackin❯ phosphor appears only as adaptive identity/healthy-state emphasis; warning and danger retain textual state plus system semantic color.
 
@@ -71,9 +83,9 @@ Settings is a standard titled `NSWindow` containing a grouped `Form`. It owns me
 | Path | Role |
 |---|---|
 | `../crates/jackin-usage` | Host probes and `HostUsageRuntime` |
-| `../crates/jackin-usage-ffi` | Synchronous UniFFI facade |
-| `Generated/` | Generated UniFFI C header/module map |
-| `Sources/JackinUsageBridge` | Generated Swift, `PresentationStore`, pure projections |
+| `../crates/jackin-usage-ffi` | Synchronous boltffi facade |
+| `Sources/JackinUsageBindings` | Generated boltffi Swift only (never handwritten) |
+| `Sources/JackinUsageBridge` | Handwritten sole FFI importer: typed facade, `PresentationStore`, pure projections |
 | `Sources/JackinDesktop` | AppKit hosts and SwiftUI native surfaces |
 | `Sources/JackinDesktop/VisualQAFixtures.swift` | Explicit synthetic F00–F14 visual-QA states |
 | `UITests/JackinDesktopUITests.swift` | Real-host interaction and accessibility audits |
@@ -106,12 +118,15 @@ mise run desktop-deadcode
 mise run desktop-test
 mise run desktop-test-ui
 
-cd native
-swift test -c release
+cargo xtask desktop test-swift
 ```
 
-`desktop-ci` is the required macOS PR contract: generated bindings, formatting,
-SwiftLint, Rust/FFI plus parity harnesses, then the complete SwiftPM XCTest suite.
+`desktop-ci` is the required macOS PR contract: nonmutating bindings drift
+check, Xcode project generation, formatting, SwiftLint, Rust/FFI plus parity
+harnesses, app build, counted SwiftPM tests, then fail-closed app verify.
+`desktop-merge` adds the UI suite on top; `desktop-scheduled` adds the
+dead-code scan. CI and release invoke these exact `mise run desktop-*` task
+names — one definition per command.
 `desktop-test` covers 291 Rust/FFI tests plus native architecture/parity harnesses. SwiftPM tests protect ownership, navigation normalization, native component confinement, brand tokens, and visual-QA fixture isolation. The UI suite runs the real app host and audits popover, Overview, provider detail, sidebar coordinates, commands, scrolling, recovery, and retained context.
 
 Explicit visual-QA launch flags (`--fixture`, `--open-popover`, `--open-usage`, `--selection`, `--window-size`, `--appearance`) never activate unless `--fixture` is present in argv and never call the bridge or real credentials. Fixture runs carry a persistent visible Fixture badge, and their frozen account/refresh projections exercise immediate selection plus `Updating…` → terminal activity. Environment variables cannot enable fabricated data. Moving fixture code into a debug-only target remains a maintenance follow-up.
@@ -129,10 +144,12 @@ The script rebuilds and verifies the canonical branch-head app, then drives dete
 One path builds local, PR, and release apps:
 
 1. `mise install` installs pinned tools.
-2. `cargo xtask desktop xcframework` creates the arm64 static `target/xcframework/JackinUsageFFI.xcframework`.
+2. `cargo xtask desktop xcframework` creates the arm64 static `target/xcframework/JackinUsage.xcframework` (FFI module `JackinUsageFFI`).
 3. `native/Package.swift` consumes it as a binary target.
 4. `mise run desktop-build -- <version> <build>` generates bindings/project, builds `JackinDesktop.app`, and ad-hoc signs local/validation output.
 5. `mise run desktop-verify` proves bundle architecture, metadata, dependency, and signature shape. Release verification additionally requires Developer ID, notarization, staple, and Gatekeeper acceptance.
+
+After an XCFramework rename or FFI module change, delete `native/DerivedData` before rebuilding — Xcode caches clang module resolution and otherwise fails with stale module errors.
 
 ## CI and release contract
 
@@ -142,6 +159,7 @@ One path builds local, PR, and release apps:
 | Secret-free release validation | fixture version, ad-hoc rejection by release verifier, read-only reconciliation |
 | Publication | `main`/tag only, environment `release-macos`, GitHub-hosted macOS only |
 | Artifact | `jackin-desktop-<VERSION>-aarch64-apple-darwin.zip` plus SHA-256, Sigstore bundle, SBOM, attestation |
+| Symbols | `desktop-release` Cargo profile (thin LTO, one codegen unit, line-table debug, no strip); build UUID-checks and archives `native/dist/JackinDesktop.app.dSYM` beside the app, release CI uploads it with the compressed unstripped Rust static library (90-day retention) |
 | Homebrew | formula and `Casks/jackin-desktop.rb` in one independently reviewed tap PR |
 
 Required `release-macos` secret names:
@@ -170,3 +188,58 @@ mise run desktop-sign-notarize
 ```
 
 See the [public macOS guide](<../docs/content/(public)/guides/macos-usage-menu-bar.mdx>) and [ADR-011](../docs/content/reference/adrs/adr-011-native-macos-usage-menu-bar.mdx) for operator behavior, architecture, component ownership, and verification boundaries.
+
+## Xcode agent bridge
+
+Manual host-only integration; never part of CI. Setup on the shipping Xcode:
+
+1. In Xcode 26.6, open Settings → Intelligence and enable external agent access.
+2. Run `mise run desktop-generate`, then open `native/JackinDesktop.xcodeproj`
+   in the running Xcode instance.
+3. From the external agent, enumerate the bridge's actually exposed tools
+   before depending on any command name.
+
+Boundary: the Xcode bridge supplies project-context, build, test, and preview
+operations only. It captures **no** running-app screenshots and drives **no**
+interface automation; `native/Scripts/VisualQA` and XCUITest own those
+capabilities. A preview or bridge result is never running-app visual evidence.
+A headless worker without a running Xcode and open project reports the bridge
+as unavailable — never as passed.
+
+Verification checklist (no secrets; re-probe whenever the shipping Xcode pin
+changes):
+
+- expected project: `native/JackinDesktop.xcodeproj` (generated, never committed)
+- expected scheme: `JackinDesktop`
+- expected Xcode build: 26.6 (`17F113`)
+- observed tool list: enumerate and record in the session log before use
+
+## Agent responsibility ownership
+
+Exactly one owner per responsibility; explicit invocation remains required for
+overlapping aesthetic skills.
+
+| Responsibility | Owner |
+|---|---|
+| Framework correctness (Swift/AppKit/SwiftUI API use) | `tailrocks-swift-best-practices` |
+| Material policy (Liquid Glass ownership rules) | `tailrocks-macos-design` |
+| Visual direction (hierarchy, alternatives, anti-references) | `tailrocks-macos-design` |
+| Rendering and visual verification | `tailrocks-macos-visual-qa` |
+| Project mechanics (generation, pins, gates, lanes) | `tailrocks-swift-project-setup` |
+| Design tokens (brand color/type values) | this repository (`Sources/JackinDesktop/BrandColors.swift`) |
+
+### Apple agent skills export — recorded blocker
+
+`native/Vendor/AppleAgentSkills` is intentionally absent. Probed Xcode 26.6
+(build `17F113`, the shipping lane) on 2026-08-20: the bundle ships agent
+intelligence only as compiled frameworks
+(`Contents/PlugIns/IDEIntelligence*.framework`,
+`Contents/SharedFrameworks/*Intelligence*.framework`) — there are no
+exportable skill documents (`SKILL.md` or equivalent) anywhere in
+`Xcode.app`, so there is nothing reviewable to vendor, hash, or pin. The
+unsupported-export caveat is therefore the standing state: project-local
+agent knowledge comes exclusively from the pinned `tailrocks-*` skills above
+and this repository's own docs. Refresh rule: re-probe on every shipping
+Xcode change; if a future Xcode exposes a documented skills export, vendor it
+read-only with build, export date, and file hashes before use, and never
+execute unreviewed bundled scripts or network steps.

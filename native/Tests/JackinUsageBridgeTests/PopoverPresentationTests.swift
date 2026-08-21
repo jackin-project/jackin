@@ -113,6 +113,23 @@ final class PopoverPresentationTests: XCTestCase {
         XCTAssertTrue(resetBody.contains("popoverPresentationState.beginPresentation()"))
     }
 
+    func testPopoverActivatesBeforePresentingFromSecondaryDisplayStatusItem() throws {
+        let source = try appDelegateSource
+        let toggle = try XCTUnwrap(source.range(of: "private func togglePopover"))
+        let visualQA = try XCTUnwrap(source.range(of: "/// Deterministic visual-QA launch seam"))
+        let body = source[toggle.lowerBound..<visualQA.lowerBound]
+        let activation = try XCTUnwrap(body.range(of: "NSApp.activate(ignoringOtherApps: true)"))
+        let presentation = try XCTUnwrap(
+            body.range(of: "popover.show(relativeTo: sender.bounds, of: sender")
+        )
+        let keying = try XCTUnwrap(
+            body.range(of: "popover.contentViewController?.view.window?.makeKey()")
+        )
+
+        XCTAssertLessThan(activation.lowerBound, presentation.lowerBound)
+        XCTAssertLessThan(presentation.lowerBound, keying.lowerBound)
+    }
+
     @MainActor
     func testSingleAccountIdentityNeedsNoPicker() {
         let fixture = VisualQAFixtures.fixture(id: .singleNormal)

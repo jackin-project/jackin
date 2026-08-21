@@ -418,6 +418,26 @@ pub(crate) struct CodexUsageResponse {
     pub(crate) additional_rate_limits: Option<Vec<CodexAdditionalRateLimit>>,
     #[serde(skip)]
     pub(crate) reset_credits: Option<CodexResetCredits>,
+    #[serde(default)]
+    pub(crate) individual_limit: Option<CodexIndividualLimit>,
+    #[serde(default)]
+    pub(crate) spend_control: Option<CodexSpendControl>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct CodexSpendControl {
+    #[serde(default)]
+    pub(crate) individual_limit: Option<CodexIndividualLimit>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct CodexIndividualLimit {
+    pub(crate) limit: Option<serde_json::Value>,
+    pub(crate) used: Option<serde_json::Value>,
+    #[serde(rename = "remaining_percent")]
+    pub(crate) remaining_percent: Option<u8>,
+    #[serde(rename = "resets_at")]
+    pub(crate) resets_at: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -444,10 +464,8 @@ impl CodexWindowSnapshot {
     pub(crate) fn from_rpc(window: CodexRpcRateLimitWindow) -> Self {
         Self {
             used_percent: {
-                #[expect(clippy::cast_sign_loss, reason = "clamped to 0.0..=100.0 above")]
-                {
-                    Some(window.used_percent.round().clamp(0.0, 100.0) as u8)
-                }
+                let bounded = window.used_percent.round().clamp(0.0, 100.0);
+                Some(bounded.to_string().parse::<u8>().unwrap_or(0))
             },
             reset_at: window.resets_at,
             limit_window_seconds: None,
@@ -465,6 +483,14 @@ impl CodexWindowSnapshot {
     pub(crate) fn window_seconds(&self) -> Option<i64> {
         self.limit_window_seconds
             .or_else(|| self.window_duration_mins.map(|minutes| minutes * 60))
+    }
+
+    fn exact_status_slot(&self) -> Option<StatusSlot> {
+        match self.window_seconds()? {
+            300 => Some(StatusSlot::Session),
+            seconds if seconds == 7 * 24 * 60 * 60 => Some(StatusSlot::Weekly),
+            _ => None,
+        }
     }
 }
 
@@ -635,6 +661,8 @@ impl CodexRpcUsage {
             additional_rate_limits: (!additional_rate_limits.is_empty())
                 .then_some(additional_rate_limits),
             reset_credits,
+            individual_limit: None,
+            spend_control: None,
         };
         Self {
             response,
@@ -644,23 +672,33 @@ impl CodexRpcUsage {
 }
 
 impl CodexUsageResponse {
+    fn individual_limit(&self) -> Option<&CodexIndividualLimit> {
+        self.individual_limit
+            .as_ref()
+            .or_else(|| self.spend_control.as_ref()?.individual_limit.as_ref())
+    }
+
     pub(crate) fn buckets(&self, now: i64) -> Vec<QuotaBucketView> {
         let mut buckets = Vec::new();
         if let Some(rate_limit) = &self.rate_limit {
-            push_codex_window(
-                &mut buckets,
-                "Session",
-                Some(StatusSlot::Session),
-                rate_limit.primary_window.as_ref(),
-                now,
-            );
-            push_codex_window(
-                &mut buckets,
-                "Weekly",
-                Some(StatusSlot::Weekly),
-                rate_limit.secondary_window.as_ref(),
-                now,
-            );
+            let primary = rate_limit.primary_window.as_ref();
+            let secondary = rate_limit.secondary_window.as_ref();
+            let primary_slot = primary.and_then(CodexWindowSnapshot::exact_status_slot);
+            let secondary_slot = secondary
+                .and_then(CodexWindowSnapshot::exact_status_slot)
+                .filter(|slot| Some(*slot) != primary_slot);
+            let primary_slot = primary_slot
+                .or_else(|| preferred_slot(StatusSlot::Session, primary_slot, secondary_slot));
+            let secondary_slot = secondary_slot
+                .or_else(|| preferred_slot(StatusSlot::Weekly, primary_slot, secondary_slot));
+            if let Some(window) = primary {
+                let label = codex_window_display_label(window, primary_slot);
+                push_codex_window(&mut buckets, &label, primary_slot, Some(window), now);
+            }
+            if let Some(window) = secondary {
+                let label = codex_window_display_label(window, secondary_slot);
+                push_codex_window(&mut buckets, &label, secondary_slot, Some(window), now);
+            }
         }
         for limit in self.additional_rate_limits.iter().flatten() {
             let label = limit
@@ -714,8 +752,84 @@ impl CodexUsageResponse {
                 UsageSnapshotStatus::Fresh,
             ));
         }
+        if let Some(limit) = self.individual_limit() {
+            let limit_money = limit.limit.as_ref().and_then(codex_money_value);
+            let used_money = limit.used.as_ref().and_then(codex_money_value);
+            let remaining = limit.remaining_percent.or_else(|| {
+                let used = used_money.as_ref()?.amount_minor;
+                let cap = limit_money.as_ref()?.amount_minor;
+                remaining_from_money(used, cap)
+            });
+            if used_money.is_some() || limit_money.is_some() || remaining.is_some() {
+                let mut view = timed_bucket(
+                    "Individual limit",
+                    used_money.as_ref().map(ToString::to_string),
+                    limit_money.as_ref().map(ToString::to_string),
+                    remaining,
+                    limit.resets_at,
+                    now,
+                    None,
+                    UsageSnapshotStatus::Fresh,
+                );
+                view.status_slot = Some(StatusSlot::Spend);
+                view.used_money = used_money;
+                view.limit_money = limit_money;
+                buckets.push(view);
+            }
+        }
         buckets
     }
+}
+
+fn remaining_from_money(used: i64, cap: i64) -> Option<u8> {
+    if cap <= 0 {
+        return None;
+    }
+    let used = u128::try_from(used).ok()?;
+    let cap = u128::try_from(cap).ok()?;
+    let remaining = cap
+        .saturating_sub(used)
+        .saturating_mul(100)
+        .checked_div(cap)?
+        .min(100);
+    u8::try_from(remaining).ok()
+}
+
+fn preferred_slot(
+    preferred: StatusSlot,
+    primary: Option<StatusSlot>,
+    secondary: Option<StatusSlot>,
+) -> Option<StatusSlot> {
+    if primary != Some(preferred) && secondary != Some(preferred) {
+        return Some(preferred);
+    }
+    let alternate = match preferred {
+        StatusSlot::Session => StatusSlot::Weekly,
+        StatusSlot::Weekly => StatusSlot::Session,
+        _ => preferred,
+    };
+    (primary != Some(alternate) && secondary != Some(alternate)).then_some(alternate)
+}
+
+fn codex_window_display_label(window: &CodexWindowSnapshot, slot: Option<StatusSlot>) -> String {
+    match slot {
+        Some(StatusSlot::Session) => "Session".to_owned(),
+        Some(StatusSlot::Weekly) => "Weekly".to_owned(),
+        _ => window.window_label().unwrap_or_else(|| "Window".to_owned()),
+    }
+}
+
+fn codex_money_value(value: &serde_json::Value) -> Option<Money> {
+    let amount = match value {
+        serde_json::Value::Number(number) => number.as_f64()?,
+        serde_json::Value::String(string) => string.trim().parse::<f64>().ok()?,
+        _ => return None,
+    };
+    if !amount.is_finite() || amount < 0.0 {
+        return None;
+    }
+    let cents = (amount * 100.0).round() as i64;
+    Some(Money::new(cents, "USD", 2))
 }
 
 #[derive(Debug, Deserialize)]

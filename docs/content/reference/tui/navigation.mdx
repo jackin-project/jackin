@@ -5,6 +5,17 @@ description: "Key binding roles, W3C Tabs pattern, navigation hints, focusabilit
 
 ## Navigation conventions
 
+### Console Usage route
+
+The workspace list opens the host-wide Usage route with `u`. Usage keeps the
+shipped `jackin❯ · usage` header, body-only 30/70 master/detail split, and
+footer hints. The left pane contains one selectable row per canonical account;
+multi-account providers are group headers, not selectable provider rows. The
+right pane shows the selected account and Rust-owned limit windows. `↑`/`↓` (or
+`j`/`k`) moves accounts, `Enter` toggles the detail presentation, `PageUp` /
+`PageDown` scrolls, and `Esc` / `q` returns to the workspace list. Human CLI
+output remains intentionally simpler; this route is the rich terminal view.
+
 jackin❯ TUI follows the **W3C ARIA Tabs interaction pattern** for all tabbed interfaces and the corresponding area-scoped arrow-key model everywhere else.
 
 ### Key roles

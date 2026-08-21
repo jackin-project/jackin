@@ -4,3 +4,11 @@ disabled_rules:
   - force_try
   - force_unwrapping
   - implicitly_unwrapped_optional
+  # Legacy size debt, this directory only. Owner: Desktop (Alexey Zhokhov).
+  # Named file: JackinDesktopUITests.swift. Deletion condition: a rule leaves
+  # this list when the drive script is split under the default threshold;
+  # never extend this list for a new file.
+  - cyclomatic_complexity
+  - file_length
+  - function_body_length
+  - type_body_length

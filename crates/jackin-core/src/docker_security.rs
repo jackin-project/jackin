@@ -59,9 +59,22 @@ impl std::str::FromStr for DockerSecurityProfile {
 }
 
 /// Parse error for `DockerSecurityProfile`.
-#[derive(Debug, Clone, thiserror::Error)]
-#[error("unknown docker profile {0:?} - valid values: locked, hardened, standard, compat")]
+// Hand-written Display/Error: item-level `#[error("...")]` attributes collide
+// with the boltffi source scanner (see jackin-usage-ffi).
+#[derive(Debug, Clone)]
 pub struct ParseProfileError(String);
+
+impl std::fmt::Display for ParseProfileError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            formatter,
+            "unknown docker profile {:?} - valid values: locked, hardened, standard, compat",
+            self.0
+        )
+    }
+}
+
+impl std::error::Error for ParseProfileError {}
 
 /// Network egress tier.
 ///

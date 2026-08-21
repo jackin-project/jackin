@@ -46,8 +46,13 @@ public enum JackinBrandIdentity {
 /// Quiet product signature inside the sidebar's system-owned structural plane.
 public struct JackinBrandSignature: View {
     @Environment(\.colorScheme) private var colorScheme
+    private let width: CGFloat
+    private let height: CGFloat
 
-    public init() {}
+    public init(width: CGFloat = 124, height: CGFloat = 34) {
+        self.width = width
+        self.height = height
+    }
 
     public var body: some View {
         Group {
@@ -57,7 +62,7 @@ public struct JackinBrandSignature: View {
                     .scaledToFit()
             }
         }
-        .frame(width: 124, height: 34, alignment: .leading)
+        .frame(width: width, height: height, alignment: .leading)
         .accessibilityHidden(true)
     }
 }

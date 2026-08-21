@@ -66,6 +66,8 @@ fs4 = "1.1.0"
 futures-util = "0.3"
 hyper-util = { version = "0.1", features = ["tokio"] }
 hex = "0.4"
+icu_collator = "2.2"
+icu_locale = "2.2"
 insta = "=1.48.0"
 jackin-build-meta = { version = "0.6.4", path = "crates/jackin-build-meta" }
 jackin-brand = { version = "0.6.4", path = "crates/jackin-brand" }
@@ -295,6 +297,18 @@ strip = "symbols"
 # Use RUST_BACKTRACE=full when launching to get the richest trace.
 [profile.capsule-debug]
 inherits = "release"
+strip = false
+debug = "line-tables-only"
+
+# Desktop static library release lane: symbol-rich for archived triage
+# artifacts. Selected by `cargo xtask desktop` (XCFramework, bindings, app
+# build); release CI archives the unstripped Rust static library and the app
+# dSYM beside the published bytes. The CLI/capsule release profile is
+# deliberately not weakened.
+[profile.desktop-release]
+inherits = "release"
+lto = "thin"
+codegen-units = 1
 strip = false
 debug = "line-tables-only"
 

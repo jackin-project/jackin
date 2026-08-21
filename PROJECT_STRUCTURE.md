@@ -76,6 +76,7 @@ For runtime behavior, see [The Construct Image](https://jackin.tailrocks.com/dev
 | Workflow | Triggers |
 |---|---|
 | `ci.yml` | Runs fmt, clippy, Rust test suite on PRs and pushes |
+| `desktop-cadence.yml` | jackin❯ desktop merge cadence on push to `main` (`desktop-merge`: UI tests + accessibility audit) and scheduled cadence weekly (`desktop-scheduled`: + dead-code scan) |
 | `construct.yml` | Builds and publishes `construct` base Docker image |
 | `docs.yml` | Builds and deploys documentation site |
 | `preview.yml` | Publishes Homebrew preview formula (dispatch-from-main only) |

@@ -23,7 +23,7 @@ use jackin_usage::host::{
     CachedProviderCredentialResolver, ForwardedUsageSources, HostSurfaceId,
     ProviderCredentialSecretOutcome, ProviderCredentialSecretResolution,
     ProviderCredentialSecretSource, UsageBrokerClient, UsageBrokerConfig, discover_usage_sources,
-    ensure_usage_broker, forwarded_usage_capabilities, validate_usage_sources,
+    forwarded_usage_capabilities, validate_usage_sources,
 };
 use tokio::io::{
     AsyncBufRead, AsyncBufReadExt as _, AsyncRead, AsyncReadExt as _, AsyncWrite,
@@ -135,6 +135,29 @@ pub struct UsageRelayLaunch<'a> {
     pub forwarded_sources: ForwardedUsageSources,
     /// Per-container host socket directory already mounted at `/jackin/run`.
     pub socket_dir: PathBuf,
+}
+
+/// Resolved Capsule launch membership used by usage presentation.
+///
+/// This is derived only from the host-validated Capsule configuration. It is
+/// intentionally a closed, deduplicated agent list: usage discovery may enrich
+/// an agent with a forwarded canonical account, but global host discovery or a
+/// capability alone cannot create a Capsule row.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResolvedLaunchUsageInventory {
+    /// Agent slugs in deterministic launch-config order.
+    pub agents: Vec<String>,
+}
+
+/// Project the resolved launch configuration into the Capsule usage boundary.
+#[must_use]
+pub fn resolved_launch_usage_inventory(
+    config: &jackin_protocol::CapsuleConfig,
+) -> ResolvedLaunchUsageInventory {
+    let mut agents = config.agents.clone();
+    agents.sort();
+    agents.dedup();
+    ResolvedLaunchUsageInventory { agents }
 }
 
 /// Session-lifetime relay ownership. Drop revokes the socket task.
@@ -410,11 +433,8 @@ fn prepare_broker_client(
     if capabilities.is_empty() {
         return (fallback, capabilities);
     }
-    let broker_resolver = Arc::clone(&resolver);
-    let broker_resolver: Arc<dyn jackin_usage::host::ProviderCredentialEnvResolver> =
-        broker_resolver;
-    let client = ensure_usage_broker(broker_config, scope, discovery, broker_resolver)
-        .map_or(fallback, |handle| handle.client);
+    let client =
+        jackin_usage::host::ensure_usage_broker_process(broker_config, &scope).unwrap_or(fallback);
     (client, capabilities)
 }
 
@@ -499,45 +519,55 @@ async fn dispatch(
     broker: UsageBrokerClient,
     allowlist: UsageCapabilitySet,
 ) -> UsageBrokerResponse {
-    let authorized =
-        match operation {
-            UsageBrokerOperation::CurrentForSurface { surface_id } => allowlist
+    let authorized = match operation {
+        UsageBrokerOperation::CurrentForSurface { surface_id } => allowlist
+            .resolve_surface(&surface_id)
+            .map(|capability| UsageBrokerOperation::Current { capability }),
+        UsageBrokerOperation::RefreshForSurface {
+            surface_id,
+            observed_generation,
+            force,
+        } => {
+            allowlist
                 .resolve_surface(&surface_id)
-                .map(|capability| UsageBrokerOperation::Current { capability }),
-            UsageBrokerOperation::RefreshForSurface {
-                surface_id,
-                observed_generation,
-                force,
-            } => allowlist.resolve_surface(&surface_id).map(|capability| {
-                UsageBrokerOperation::Refresh {
+                .map(|capability| UsageBrokerOperation::Refresh {
                     capability,
                     observed_generation,
                     force,
-                }
-            }),
-            UsageBrokerOperation::JoinForSurface {
-                surface_id,
+                })
+        }
+        UsageBrokerOperation::JoinForSurface {
+            surface_id,
+            generation,
+            timeout_ms,
+        } => allowlist
+            .resolve_surface(&surface_id)
+            .map(|capability| UsageBrokerOperation::Join {
+                capability,
                 generation,
                 timeout_ms,
-            } => allowlist.resolve_surface(&surface_id).map(|capability| {
-                UsageBrokerOperation::Join {
-                    capability,
-                    generation,
-                    timeout_ms,
-                }
             }),
-            operation @ (UsageBrokerOperation::Current { .. }
-            | UsageBrokerOperation::Refresh { .. }
-            | UsageBrokerOperation::Join { .. }) => {
-                let (UsageBrokerOperation::Current { capability }
-                | UsageBrokerOperation::Refresh { capability, .. }
-                | UsageBrokerOperation::Join { capability, .. }) = &operation
-                else {
-                    unreachable!()
-                };
-                allowlist.authorize(capability).map(|()| operation)
-            }
-        };
+        UsageBrokerOperation::CurrentProjection
+        | UsageBrokerOperation::RequestRefresh { .. }
+        | UsageBrokerOperation::JoinPublication { .. }
+        | UsageBrokerOperation::CurrentProjectionForSurface
+        | UsageBrokerOperation::RequestRefreshForSurface { .. }
+        | UsageBrokerOperation::JoinPublicationForSurface { .. } => Err(UsageCoordinationError {
+            kind: UsageCoordinationErrorKind::Unauthorized,
+            message: "canonical projection requires a scoped relay operation".to_owned(),
+        }),
+        operation @ (UsageBrokerOperation::Current { .. }
+        | UsageBrokerOperation::Refresh { .. }
+        | UsageBrokerOperation::Join { .. }) => {
+            let (UsageBrokerOperation::Current { capability }
+            | UsageBrokerOperation::Refresh { capability, .. }
+            | UsageBrokerOperation::Join { capability, .. }) = &operation
+            else {
+                unreachable!()
+            };
+            allowlist.authorize(capability).map(|()| operation)
+        }
+    };
     let operation = match authorized {
         Ok(operation) => operation,
         Err(error) => return UsageBrokerResponse::Error { error },

@@ -1,0 +1,10 @@
+parent_config: ../../.swiftlint.yml
+# Legacy size debt, this directory only. Owner: Desktop (Alexey Zhokhov).
+# Named file: PresentationStore.swift. Deletion condition: a rule leaves this
+# list when the store is split under the default threshold; never extend this
+# list for a new file.
+disabled_rules:
+  - file_length
+  - function_body_length
+  - function_parameter_count
+  - type_body_length

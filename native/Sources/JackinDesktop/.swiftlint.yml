@@ -1,0 +1,12 @@
+parent_config: ../../.swiftlint.yml
+# Legacy size debt, this directory only. Owner: Desktop (Alexey Zhokhov).
+# Named files: DesktopAppDelegate.swift, PopoverRoot.swift, AppMainMenu.swift,
+# VisualQAFixtures.swift. Deletion condition: a rule leaves this list when
+# every named file is back under the default threshold; never extend this list
+# for a new file.
+disabled_rules:
+  - cyclomatic_complexity
+  - file_length
+  - function_body_length
+  - function_parameter_count
+  - type_body_length

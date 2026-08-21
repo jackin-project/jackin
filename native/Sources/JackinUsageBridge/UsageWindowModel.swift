@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import Foundation
+import JackinUsageBindings
 
 /// Exact provider/account destination carried across popover/window handoff.
 public struct UsageNavigationContext: Equatable, Sendable {
@@ -87,7 +88,7 @@ public struct UsageDetailPresentation: Equatable, Sendable {
     /// No detail (disabled/unavailable surface, or Overview).
     public static let empty = UsageDetailPresentation(rows: [])
 
-    /// Project the generated UniFFI DTO verbatim — no reordering, relabeling, or
+    /// Project the generated boltffi DTO verbatim — no reordering, relabeling, or
     /// string synthesis.
     public init(dto: UsageDetailPresentationDto) {
         rows = dto.rows.map { row in

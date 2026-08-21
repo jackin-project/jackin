@@ -122,44 +122,25 @@ pub(crate) struct ZaiLimitRaw {
 
 impl ZaiQuotaResponse {
     pub(crate) fn buckets(&self, now: i64) -> Vec<QuotaBucketView> {
-        let mut limits = self
+        let limits = self
             .data
             .as_ref()
             .map(|data| data.limits.clone())
             .unwrap_or_default();
-        limits.sort_by_key(|limit| limit.window_minutes().unwrap_or(i64::MAX));
-
-        let mut token_limits = limits
-            .iter()
-            .filter(|limit| limit.limit_type == "TOKENS_LIMIT")
-            .collect::<Vec<_>>();
-        let time_limit = limits.iter().find(|limit| limit.limit_type == "TIME_LIMIT");
         let mut buckets = Vec::new();
-        let mut session_token_limit = None;
-        let mut primary_token_limit = None;
-        if token_limits.len() >= 2 {
-            token_limits.sort_by_key(|limit| limit.window_minutes().unwrap_or(i64::MAX));
-            session_token_limit = token_limits.first().copied();
-            primary_token_limit = token_limits.last().copied();
-        } else if let Some(limit) = token_limits.first() {
-            primary_token_limit = Some(*limit);
-        }
-        // render order is 5-hour (short/active), then Tokens, then MCP — an
-        // operator override of CodexBar's Tokens, MCP, 5-hour order.
-        if let Some(limit) = session_token_limit {
-            buckets.push(with_status_slot(
-                zai_bucket("5-hour", limit, now),
-                Some(StatusSlot::Session),
-            ));
-        }
-        if let Some(limit) = primary_token_limit {
-            buckets.push(with_status_slot(
-                zai_bucket("Tokens", limit, now),
-                Some(StatusSlot::Weekly),
-            ));
-        }
-        if let Some(limit) = time_limit {
-            buckets.push(zai_bucket("MCP", limit, now));
+        for limit in &limits {
+            let Some(slot) = limit.semantic_slot() else {
+                if limit.limit_type == "TIME_LIMIT" {
+                    buckets.push(zai_bucket("MCP", limit, now));
+                }
+                continue;
+            };
+            let label = match slot {
+                StatusSlot::Session => "Session",
+                StatusSlot::Weekly => "Weekly",
+                _ => continue,
+            };
+            buckets.push(with_status_slot(zai_bucket(label, limit, now), Some(slot)));
         }
         buckets
     }
@@ -214,6 +195,17 @@ impl ZaiLimitRaw {
             Some(3) => Some(number * 60),
             Some(1) => Some(number * 24 * 60),
             Some(6) => Some(number * 7 * 24 * 60),
+            _ => None,
+        }
+    }
+
+    fn semantic_slot(&self) -> Option<StatusSlot> {
+        if !matches!(self.limit_type.as_str(), "TOKENS_LIMIT" | "CREDIT_LIMIT") {
+            return None;
+        }
+        match self.window_minutes()? {
+            minutes if minutes < 24 * 60 => Some(StatusSlot::Session),
+            minutes if minutes >= 3 * 24 * 60 => Some(StatusSlot::Weekly),
             _ => None,
         }
     }

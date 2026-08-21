@@ -224,6 +224,10 @@ url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.21.1/ca
 url_api = "https://api.github.com/repos/cargo-bins/cargo-binstall/releases/assets/489425224"
 provenance = "github-attestations"
 
+[[tools."cargo:boltffi_cli"]]
+version = "0.30.1"
+backend = "cargo:boltffi_cli"
+
 [[tools."cargo:cargo-audit"]]
 version = "0.22.2"
 backend = "cargo:cargo-audit"

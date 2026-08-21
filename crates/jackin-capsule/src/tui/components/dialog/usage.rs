@@ -104,10 +104,15 @@ impl Dialog {
     ) -> crate::tui::components::container_info_surface::ContainerInfoState {
         let mut rows = Vec::new();
         if view.tabs.is_empty() {
+            let message = view
+                .last_error
+                .as_deref()
+                .unwrap_or("usage unavailable")
+                .to_owned();
             rows.push(
                 crate::tui::components::container_info_surface::ContainerInfoRow::new(
                     "Providers",
-                    "usage unavailable",
+                    message,
                 ),
             );
         } else {

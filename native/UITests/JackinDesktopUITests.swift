@@ -31,7 +31,9 @@ final class JackinDesktopUITests: XCTestCase {
         XCTAssertEqual(brandTitle.label, "jackin❯ desktop")
         let detailPane = element("usage.detail-pane")
         XCTAssertTrue(detailPane.waitForExistence(timeout: 5))
-        XCTAssertEqual(brandTitle.frame.midX, detailPane.frame.midX, accuracy: 2)
+        // The wordmark belongs to the unified titlebar, so it stays centered in the
+        // whole window even when the native sidebar changes the detail pane midpoint.
+        XCTAssertEqual(brandTitle.frame.midX, usageWindow.frame.midX, accuracy: 2)
         let refresh = element("usage.refresh")
         XCTAssertTrue(refresh.waitForExistence(timeout: 5))
         XCTAssertGreaterThan(refresh.frame.midX, detailPane.frame.midX)
@@ -219,7 +221,10 @@ final class JackinDesktopUITests: XCTestCase {
         defer { application.terminate() }
         guard launchUsage(fixture: "F00-no-providers", selection: "overview", size: "760x500")
         else { return }
-        XCTAssertTrue(element("usage.overview.empty").waitForExistence(timeout: 3))
+        XCTAssertTrue(
+            element("usage.overview.empty").waitForExistence(timeout: 3),
+            application.debugDescription
+        )
     }
 
     func testLoadingUsageStateIsDistinct() {
@@ -642,6 +647,10 @@ final class JackinDesktopUITests: XCTestCase {
     private func ensureUsageWindowVisible(contentIdentifier: String? = nil) -> Bool {
         let usageWindow = application.windows["usage-window"]
         if usageWindow.exists {
+            // A previous fixture/popover process can leave XCTest's application
+            // proxy visible but inactive. Re-activate before returning the
+            // existing window so native toolbar controls are hittable.
+            application.activate()
             guard let contentIdentifier else { return true }
             if element(contentIdentifier).waitForExistence(timeout: 1) {
                 return true

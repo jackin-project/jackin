@@ -57,13 +57,6 @@ exceptions = [
     { crate = "memchr", allow = ["Unlicense", "MIT"] },
     { crate = "miniz_oxide@0.8.9", allow = ["MIT", "Zlib", "Apache-2.0"] },
     { crate = "option-ext@0.2.0", allow = ["MPL-2.0"] },
-    # UniFFI (native macOS usage menu bar) — MPL-2.0 file-level copyleft, same class as TableRock.
-    { crate = "uniffi@0.32.0", allow = ["MPL-2.0"] },
-    { crate = "uniffi_core@0.32.0", allow = ["MPL-2.0"] },
-    { crate = "uniffi_internal_macros@0.32.0", allow = ["MPL-2.0"] },
-    { crate = "uniffi_macros@0.32.0", allow = ["MPL-2.0"] },
-    { crate = "uniffi_meta@0.32.0", allow = ["MPL-2.0"] },
-    { crate = "uniffi_pipeline@0.32.0", allow = ["MPL-2.0"] },
     { crate = "potential_utf@0.1.5", allow = ["Unicode-3.0"] },
     { crate = "r-efi@5.3.0", allow = ["MIT", "Apache-2.0"] },
     { crate = "r-efi@6.0.0", allow = ["MIT", "Apache-2.0"] },
@@ -119,6 +112,7 @@ wildcards = "deny"
 deny = [
     { crate = "openssl", reason = "Prefer rustls/aws-lc-rs-backed TLS in this workspace." },
     { crate = "yaml-rust", reason = "Use serde_yaml_ng for YAML parsing." },
+    { crate = "uniffi", reason = "Native FFI bindings are boltffi-only (jackin-usage-ffi); UniFFI was removed and must not return." },
 ]
 # Duplicate-version detection is enforced. The skip list is the current
 # transitive duplicate allowlist; new duplicates must either be resolved

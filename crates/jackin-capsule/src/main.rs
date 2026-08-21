@@ -93,7 +93,6 @@ SUBCOMMANDS:
     attach-proxy                   Relay attach protocol bytes over stdio
     usage accounts                 Print cached account quota rows as JSON
     usage verify                   Verify all provider quota rows are cached and trusted
-    usage claude-cli               Explicitly run Claude Code /usage diagnostic
     usage-relay-proxy              Internal scoped usage stdio tunnel
     --focus <session_id>           Connect and focus the given session
     exec <command> [args…]         Run a command with operator-approved on-demand credentials
@@ -185,7 +184,7 @@ connecting as a client.",
             }
             Some(other) => {
                 bail!(
-                    "unknown jackin-capsule subcommand {other:?} — known: status, status explain <id>, status capture <id>, snapshot, attach-proxy, usage accounts, usage verify, usage claude-cli, usage-relay-proxy, token-usage <id>, agents [--format json], report-event --event <name> [--payload-stdin], exec <command>, mcp-server, runtime-setup, sudo-provision, firewall-apply, prepare-commit-msg, new <agent>, --focus <session_id>, --version, --help"
+                    "unknown jackin-capsule subcommand {other:?} — known: status, status explain <id>, status capture <id>, snapshot, attach-proxy, usage accounts, usage verify, usage-relay-proxy, token-usage <id>, agents [--format json], report-event --event <name> [--payload-stdin], exec <command>, mcp-server, runtime-setup, sudo-provision, firewall-apply, prepare-commit-msg, new <agent>, --focus <session_id>, --version, --help"
                 )
             }
         }
@@ -196,11 +195,10 @@ async fn run_usage_subcommand(args: &[String]) -> Result<()> {
     match args.get(2).map(String::as_str) {
         Some("accounts") => client::run_usage_accounts().await,
         Some("verify") => client::run_usage_verify().await,
-        Some("claude-cli") => client::run_usage_claude_cli(),
         Some(other) => {
-            bail!("unknown usage subcommand {other:?} — known: accounts, verify, claude-cli")
+            bail!("unknown usage subcommand {other:?} — known: accounts, verify")
         }
-        None => bail!("usage requires a subcommand: accounts, verify, or claude-cli"),
+        None => bail!("usage requires a subcommand: accounts or verify"),
     }
 }
 

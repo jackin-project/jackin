@@ -53,6 +53,13 @@ pub fn handle_list_key(
     cwd: &std::path::Path,
     key: KeyEvent,
 ) -> anyhow::Result<InputOutcome> {
+    if key.code == KeyCode::Char('u') {
+        let mut usage = crate::tui::state::UsageScreenState::default();
+        usage.set_accounts(state.usage_accounts.clone());
+        usage.notice = state.usage_notice.clone();
+        state.usage_screen = Some(usage);
+        return Ok(InputOutcome::Continue);
+    }
     let selected_row = state.selected_row();
     let selected_preview_pane_count =
         selected_instance_container(state, ConcreteInstanceAction::Reconnect)

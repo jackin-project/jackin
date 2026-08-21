@@ -232,6 +232,12 @@ impl Multiplexer {
         provider_label: Option<&str>,
     ) -> jackin_protocol::control::FocusedUsageView {
         let (agent, provider) = self.focused_agent_provider();
+        if agent.is_none() && self.launch_env.available_agents.is_empty() {
+            return jackin_protocol::control::FocusedUsageView::unavailable(
+                "No agents configured for this Capsule.",
+                chrono::Utc::now().timestamp(),
+            );
+        }
         let provider = provider_label
             .map(str::to_owned)
             .or_else(|| provider.as_ref().map(ToOwned::to_owned));

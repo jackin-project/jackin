@@ -52,6 +52,10 @@ pub fn handle_key(
     key: KeyEvent,
     validate_auth_source_folder: &ValidateAuthSourceFolder,
 ) -> anyhow::Result<InputOutcome> {
+    if state.usage_screen.is_some() {
+        crate::tui::screens::usage::handle_key(state, key);
+        return Ok(InputOutcome::Continue);
+    }
     let stage_modal_facts = state.stage.modal_facts();
     let dispatch_plan = console_input_dispatch_plan(ConsoleInputDispatchFacts {
         list_modal_open: state.list_modal.is_some(),

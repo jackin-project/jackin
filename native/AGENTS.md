@@ -1,16 +1,32 @@
 # jackin❯ desktop (native)
 
-Display-only Swift shell over `jackin-usage-ffi` (UniFFI). Product: **jackin❯ desktop**
+Display-only Swift shell over `jackin-usage-ffi` (boltffi). Product: **jackin❯ desktop**
 (`JackinDesktop.app`). Rust owns probes, cache, severity, and every usage number.
 
 > **CLAUDE.md = symlink to AGENTS.md beside it** — recreate: `ln -s AGENTS.md CLAUDE.md`.
+
+## Platform lanes
+
+- **Minimum deployment target: macOS 26.0.** No compatibility branch, no
+  pre-26 availability lane.
+- **Shipping lane: Xcode 26.6, macOS 26.5 SDK, Swift 6 mode with complete
+  strict concurrency and warnings as errors.** This is the only lane that
+  produces release artifacts.
+- **Forward-validation lane: Xcode 27 beta / macOS 27 SDK — nonblocking and
+  scheduled, never the shipping lane.** The runner lane is not yet available;
+  the dated exception is recorded in `README.md` (owner: Release Engineering).
+- **Post-26.0 API discipline:** guard every post-26.0 symbol with
+  `if #available(macOS 27, *)`, ship a decided native fallback beside it, and
+  name the minimum-target bump that removes the guard.
+  `UIDesignRequiresCompatibility` is never a strategy — an architecture test
+  rejects it.
 
 ## Hard rules
 
 - **Display-only Swift.** No HTTP/OAuth/CLI scrapes, no second provider matrix, no
   config/workspace discovery, credential/path resolution, account deduplication, or
   inventing percentages. Numbers, identities, provenance, diagnostics, and limit
-  strings come from UniFFI / Rust only. Production passes no host paths to the bridge.
+  strings come from boltffi / Rust only. Production passes no host paths to the bridge.
 - **Broker client only.** Refresh sends intent once and renders Rust generation/phase.
   Swift never schedules provider work, owns a retry deadline, or treats task
   cancellation as single-flight authority. Active manual/background requests join;
@@ -35,4 +51,5 @@ Display-only Swift shell over `jackin-usage-ffi` (UniFFI). Product: **jackin❯ 
   proving multi-provider remaining % strips, dual-bucket, depleted countdown, and
   displayability of Rust-supplied Desktop catalog fixtures without inventing token
   prices or trends.
-  Full Xcode CI may also run `cd native && swift test -c release`.
+  Full Xcode CI runs `cargo xtask desktop test-swift` — counted proof (nonzero
+  XCTest + Swift Testing totals, zero failures); never bare `swift test`.

@@ -414,19 +414,29 @@ fn coordinator_rate_limit_without_provider_deadline_uses_shared_backoff() {
     executor.wait_started(1);
     executor.release(1);
     let first = join_ok(&coordinator, &account, 1, 1_001);
-    assert_eq!(first.retry_at_epoch, Some(1_300));
+    assert!(
+        first
+            .retry_at_epoch
+            .is_some_and(|deadline| (1_001..=1_031).contains(&deadline))
+    );
+    let first_deadline = first.retry_at_epoch.expect("first retry deadline");
     let suppressed = coordinator
-        .request_refresh(&account, 1, true, 1_100)
+        .request_refresh(&account, 1, true, first_deadline.saturating_sub(1))
         .unwrap();
     assert_eq!(suppressed.generation, 1);
 
+    let second_start = first_deadline.saturating_add(1);
     coordinator
-        .request_refresh(&account, 1, true, 1_301)
+        .request_refresh(&account, 1, true, second_start)
         .unwrap();
     executor.wait_started(2);
     executor.release(1);
-    let second = join_ok(&coordinator, &account, 2, 1_302);
-    assert_eq!(second.retry_at_epoch, Some(1_901));
+    let second = join_ok(&coordinator, &account, 2, second_start.saturating_add(1));
+    assert!(
+        second
+            .retry_at_epoch
+            .is_some_and(|deadline| (second_start..=second_start + 61).contains(&deadline))
+    );
     assert_eq!(
         store
             .states

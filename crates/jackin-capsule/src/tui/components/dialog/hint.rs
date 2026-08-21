@@ -203,6 +203,20 @@ pub(super) fn usage_hint(axes: termrock::scroll::ScrollAxes) -> Vec<HintSpan<'st
     spans
 }
 
+pub(super) fn usage_empty_hint(axes: termrock::scroll::ScrollAxes) -> Vec<HintSpan<'static>> {
+    let mut spans = Vec::new();
+    let scroll = termrock::scroll::scroll_hint_spans(axes);
+    if !scroll.is_empty() {
+        spans.extend(scroll);
+        spans.push(HintSpan::GroupSep);
+    }
+    spans.extend([
+        key_span(READ_ONLY_DISMISS_KEYMAP.glyph_for(ReadOnlyDismissAction::Dismiss)),
+        HintSpan::Text("close"),
+    ]);
+    spans
+}
+
 pub(super) fn read_only_hint() -> Vec<HintSpan<'static>> {
     READ_ONLY_DISMISS_KEYMAP.hint_spans()
 }

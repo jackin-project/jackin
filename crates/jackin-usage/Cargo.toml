@@ -27,6 +27,8 @@ jackin-diagnostics = { workspace = true }
 jackin-telemetry = { workspace = true }
 base64 = { workspace = true }
 chrono = { workspace = true, features = ["clock"] }
+icu_collator = { workspace = true }
+icu_locale = { workspace = true }
 nix = { workspace = true, features = ["fs", "signal", "term", "user"] }
 reqwest = { workspace = true, features = ["blocking", "json", "rustls"] }
 serde = { workspace = true, features = ["derive"] }

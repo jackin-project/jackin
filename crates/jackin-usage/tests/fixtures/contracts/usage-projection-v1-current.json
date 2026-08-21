@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "projection_id": "projection-42",
+  "generated_at_epoch": 1787259600,
+  "discovery_revision": "catalog-7",
+  "broker_instance_id": "broker-incarnation-3",
+  "broker_generation": 42,
+  "refresh_state": "idle",
+  "providers": [
+    {
+      "provider_id": "openai",
+      "display_name": "OpenAI",
+      "rank": 0,
+      "membership_state": "current",
+      "freshness": { "generation": 42, "phase": "current", "is_stale": false },
+      "accounts": [
+        {
+          "canonical_account_id": "openai-account-01",
+          "identity_kind": "provider_account_id",
+          "rank": 0,
+          "display_label": "personal@example.test",
+          "plan_label": "Pro",
+          "status_label": "Available",
+          "lifecycle": "available",
+          "freshness": { "generation": 42, "phase": "current", "last_good_at_epoch": 1787259600, "is_stale": false },
+          "provenance_count": 2,
+          "windows": [
+            {
+              "window_id": "weekly",
+              "rank": 0,
+              "category": "long_range",
+              "label": "Weekly",
+              "value_label": "57% left",
+              "reset_label": "Resets in 3d",
+              "remaining_percent": 57,
+              "reset_at_epoch": 1787518800,
+              "quota_state": "warning"
+            }
+          ],
+          "issues": []
+        }
+      ],
+      "issues": []
+    }
+  ],
+  "unresolved": [],
+  "issues": []
+}

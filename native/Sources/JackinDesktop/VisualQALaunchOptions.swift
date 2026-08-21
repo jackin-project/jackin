@@ -6,12 +6,6 @@ import Foundation
 
 /// Explicit process-local controls for deterministic native visual-QA runs.
 struct VisualQALaunchOptions: Equatable {
-    enum Appearance: String {
-        case system
-        case light
-        case dark
-    }
-
     enum Selection: Equatable {
         case fixtureDefault
         case overview
@@ -24,7 +18,6 @@ struct VisualQALaunchOptions: Equatable {
     let openPopover: Bool
     let selection: Selection
     let windowSize: CGSize?
-    let appearance: Appearance
     let elevatesFixtureWindow: Bool
 
     var usesFixture: Bool { fixtureID != nil || invalidFixtureID != nil }
@@ -45,10 +38,6 @@ struct VisualQALaunchOptions: Equatable {
             selection = .fixtureDefault
         }
         let size = value(after: "--window-size", in: arguments).flatMap(parseSize)
-        let appearance =
-            value(after: "--appearance", in: arguments)
-            .flatMap(Appearance.init(rawValue:)) ?? .system
-
         return VisualQALaunchOptions(
             fixtureID: fixtureID,
             invalidFixtureID: rawFixture != nil && fixtureID == nil ? rawFixture : nil,
@@ -56,7 +45,6 @@ struct VisualQALaunchOptions: Equatable {
             openPopover: arguments.contains("--open-popover"),
             selection: selection,
             windowSize: size,
-            appearance: appearance,
             elevatesFixtureWindow: rawFixture != nil && arguments.contains("--ui-test")
         )
     }
@@ -74,8 +62,8 @@ struct VisualQALaunchOptions: Equatable {
         guard parts.count == 2,
             let width = Double(parts[0]),
             let height = Double(parts[1]),
-            width >= 760,
-            height >= 500
+            width >= UsageWindowMetrics.minimumContentSize.width,
+            height >= UsageWindowMetrics.minimumContentSize.height
         else { return nil }
         return CGSize(width: width, height: height)
     }

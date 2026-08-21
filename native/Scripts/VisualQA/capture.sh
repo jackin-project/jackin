@@ -21,9 +21,9 @@ for argument in "$@"; do
     window-size) window_size=$argument; argument_key=; continue ;;
   esac
   case "$argument" in
-    --fixture) argument_key=fixture ;;
-    --appearance) argument_key=appearance ;;
-    --window-size) argument_key=window-size ;;
+    --fixture | --tr-scenario) argument_key=fixture ;;
+    --appearance | --tr-appearance) argument_key=appearance ;;
+    --window-size | --tr-window) argument_key=window-size ;;
   esac
 done
 

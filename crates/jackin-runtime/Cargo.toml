@@ -17,6 +17,10 @@ repository.workspace = true
 name = "jackin_runtime"
 path = "src/lib.rs"
 
+[[bin]]
+name = "jackin-usage-broker"
+path = "src/bin/usage-broker.rs"
+
 [dependencies]
 jackin-brand = { workspace = true }
 jackin-core = { workspace = true }

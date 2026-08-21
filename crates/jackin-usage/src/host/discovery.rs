@@ -75,7 +75,7 @@ pub fn host_credential_root_matrix() -> Vec<HostCredentialRootRow> {
         },
         HostCredentialRootRow {
             surface: "opencode",
-            host_paths: "OpenCode home (probe-defined)",
+            host_paths: "$XDG_DATA_HOME/opencode/auth.json or ~/.local/share/opencode/auth.json",
             env_vars: "",
             container_handoff: "",
         },
@@ -328,6 +328,8 @@ pub struct UsageSourceCandidateDescriptor {
     pub credential_kind: UsageCredentialKind,
     /// Opaque process-local source identifier.
     pub source_id: String,
+    /// Stable opaque capability identity; never a source ordinal or credential hash.
+    pub capability_id: String,
     /// Every config scope that resolved to this source.
     pub provenance: Vec<String>,
 }
@@ -374,6 +376,29 @@ pub struct ValidatedUsageDiscovery {
     pub(super) bindings: Vec<ValidatedCredentialBinding>,
 }
 
+impl ValidatedUsageDiscovery {
+    pub(super) fn unresolved_capabilities(
+        &self,
+    ) -> impl Iterator<Item = &UsageSourceCandidateDescriptor> {
+        self.candidates.iter().filter(|candidate| {
+            self.bindings.iter().any(|binding| {
+                binding.capability_id == candidate.capability_id && binding.identity.is_none()
+            })
+        })
+    }
+
+    pub(super) fn canonical_aliases(
+        &self,
+    ) -> impl Iterator<Item = (&str, &CanonicalAccountIdentity)> {
+        self.bindings.iter().filter_map(|binding| {
+            binding
+                .identity
+                .as_ref()
+                .map(|identity| (binding.capability_id.as_str(), identity))
+        })
+    }
+}
+
 impl std::fmt::Debug for ValidatedUsageDiscovery {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter
@@ -392,6 +417,7 @@ pub(super) struct ValidatedCredentialBinding {
     pub surface: HostSurfaceId,
     pub identity: Option<CanonicalAccountIdentity>,
     pub source_id: String,
+    pub capability_id: String,
     pub provenance: BTreeSet<String>,
     pub source: ValidatedCredentialSource,
 }
@@ -422,6 +448,9 @@ pub(super) enum ProfileCredentialMaterial {
     Kimi {
         root: PathBuf,
     },
+    OpenCode {
+        auth_path: PathBuf,
+    },
 }
 
 impl std::fmt::Debug for UsageDiscoveryCatalog {
@@ -445,6 +474,7 @@ enum CredentialSourceKey {
     Env {
         surface: HostSurfaceId,
         handle: OpaqueCredentialHandle,
+        key: String,
     },
     Capability {
         surface: HostSurfaceId,
@@ -460,6 +490,7 @@ pub(super) enum DiscoveredCredentialSource {
         root: PathBuf,
         operator_home: PathBuf,
         source_id: String,
+        capability_id: String,
         provenance: BTreeSet<String>,
     },
     Env {
@@ -468,13 +499,14 @@ pub(super) enum DiscoveredCredentialSource {
         key: String,
         kind: UsageCredentialKind,
         source_id: String,
+        capability_id: String,
         provenance: BTreeSet<String>,
     },
     Capability {
         surface: HostSurfaceId,
-        capability_id: String,
         account_label: Option<String>,
         source_id: String,
+        capability_id: String,
     },
 }
 
@@ -610,11 +642,7 @@ fn enumerate_profile_candidates(
     scope: &EffectiveScope,
     candidates: &mut BTreeMap<CredentialSourceKey, CandidateAccumulator>,
 ) {
-    for agent in Agent::ALL
-        .iter()
-        .copied()
-        .filter(|agent| *agent != Agent::Opencode)
-    {
+    for agent in Agent::ALL.iter().copied() {
         let role = scope.role.as_deref().unwrap_or("");
         let mode = jackin_config::resolve_mode(config, agent, scope.workspace.as_ref(), role);
         if mode != AuthForwardMode::Sync {
@@ -623,9 +651,20 @@ fn enumerate_profile_candidates(
         let configured =
             jackin_config::resolve_sync_source_dir(config, agent, scope.workspace.as_ref(), role);
         let root = configured.map_or_else(
-            || operator_home.join(agent.runtime().state_paths().credential_dir),
+            || {
+                if agent == Agent::Opencode {
+                    std::env::var_os("XDG_DATA_HOME")
+                        .map_or_else(|| operator_home.join(".local/share"), PathBuf::from)
+                        .join("opencode")
+                } else {
+                    operator_home.join(agent.runtime().state_paths().credential_dir)
+                }
+            },
             |path| resolve_profile_root(operator_home, &path),
         );
+        if agent == Agent::Opencode && !root.join("auth.json").is_file() {
+            continue;
+        }
         let key = CredentialSourceKey::Profile { agent, root };
         candidates
             .entry(key)
@@ -679,6 +718,7 @@ fn enumerate_env_candidates(
                 let key = CredentialSourceKey::Env {
                     surface,
                     handle: handle.clone(),
+                    key: resolution.key.clone(),
                 };
                 candidates
                     .entry(key)
@@ -817,11 +857,13 @@ fn materialize_catalog(
     let mut sources = Vec::with_capacity(candidates.len());
     for (index, (key, candidate)) in candidates.into_iter().enumerate() {
         let source_id = format!("source-{:04}", index + 1);
+        let capability_id = source_capability_id(candidate.surface, &key);
         let provenance = candidate.provenance.iter().cloned().collect::<Vec<_>>();
         descriptors.push(UsageSourceCandidateDescriptor {
             surface_id: candidate.surface.id().to_owned(),
             credential_kind: candidate.kind,
             source_id: source_id.clone(),
+            capability_id: capability_id.clone(),
             provenance,
         });
         let source = match key {
@@ -831,22 +873,26 @@ fn materialize_catalog(
                 root,
                 operator_home: candidate.operator_home.unwrap_or_default(),
                 source_id,
+                capability_id,
                 provenance: candidate.provenance,
             },
-            CredentialSourceKey::Env { surface, handle } => DiscoveredCredentialSource::Env {
+            CredentialSourceKey::Env {
+                surface, handle, ..
+            } => DiscoveredCredentialSource::Env {
                 surface,
                 handle,
                 key: candidate.env_key.unwrap_or_default(),
                 kind: candidate.kind,
                 source_id,
+                capability_id,
                 provenance: candidate.provenance,
             },
             CredentialSourceKey::Capability { surface, id } => {
                 DiscoveredCredentialSource::Capability {
                     surface,
-                    capability_id: id,
                     account_label: candidate.account_label,
                     source_id,
+                    capability_id: id,
                 }
             }
         };
@@ -858,6 +904,23 @@ fn materialize_catalog(
         diagnostics,
         sources,
     }
+}
+
+fn source_capability_id(surface: HostSurfaceId, key: &CredentialSourceKey) -> String {
+    if let CredentialSourceKey::Capability { id, .. } = key {
+        return id.clone();
+    }
+    let evidence = match key {
+        CredentialSourceKey::Profile { agent, root } => {
+            format!("profile-v1:{}:{}", agent.slug(), root.to_string_lossy())
+        }
+        CredentialSourceKey::Env { surface, key, .. } => {
+            format!("env-v1:{}:{key}", surface.id())
+        }
+        CredentialSourceKey::Capability { .. } => unreachable!("returned above"),
+    };
+    let hashed = jackin_core::account_key_hash(surface.id(), &evidence);
+    hashed.strip_prefix("sha256:").unwrap_or(&hashed).to_owned()
 }
 
 enum ProfileReadOutcome {
@@ -942,7 +1005,7 @@ fn validate_usage_sources_with_reader(
     let mut accounts = BTreeMap::<CanonicalAccountIdentity, AccountAccumulator>::new();
 
     for source in catalog.sources {
-        let (surface, source_id, provenance, source, outcome) =
+        let (surface, source_id, capability_id, provenance, source, outcome) =
             validate_source(source, env_resolver, profile_reader);
 
         match outcome {
@@ -960,7 +1023,9 @@ fn validate_usage_sources_with_reader(
                             .as_ref()
                             .filter(|label| !label.trim().is_empty())
                             .map(|label| {
-                                CanonicalAccountSubject::AuthenticatedLabel(label.trim().to_owned())
+                                CanonicalAccountSubject::ProviderStableHandle(
+                                    label.trim().to_owned(),
+                                )
                             })
                     });
                 let Some(subject) = subject else {
@@ -968,6 +1033,7 @@ fn validate_usage_sources_with_reader(
                         surface,
                         identity: None,
                         source_id,
+                        capability_id,
                         provenance,
                         source,
                     });
@@ -995,6 +1061,7 @@ fn validate_usage_sources_with_reader(
                     surface,
                     identity: Some(identity),
                     source_id,
+                    capability_id,
                     provenance,
                     source,
                 });
@@ -1003,6 +1070,7 @@ fn validate_usage_sources_with_reader(
                 surface,
                 identity: None,
                 source_id,
+                capability_id,
                 provenance,
                 source,
             }),
@@ -1048,6 +1116,7 @@ fn validate_usage_sources_with_reader(
 type ValidatedSourceParts = (
     HostSurfaceId,
     String,
+    String,
     BTreeSet<String>,
     ValidatedCredentialSource,
     ProfileValidation,
@@ -1065,6 +1134,7 @@ fn validate_source(
             root,
             operator_home,
             source_id,
+            capability_id,
             provenance,
         } => {
             let outcome = profile_identity(profile_reader, agent, &root, &operator_home);
@@ -1077,7 +1147,14 @@ fn validate_source(
                     }),
                 _ => ValidatedCredentialSource::Capability,
             };
-            (surface, source_id, provenance, source, outcome)
+            (
+                surface,
+                source_id,
+                capability_id,
+                provenance,
+                source,
+                outcome,
+            )
         }
         DiscoveredCredentialSource::Env {
             surface,
@@ -1085,6 +1162,7 @@ fn validate_source(
             key,
             kind: _,
             source_id,
+            capability_id,
             provenance,
         } => {
             let outcome = match env_resolver.identify_provider_credential(surface, &handle) {
@@ -1104,6 +1182,7 @@ fn validate_source(
             (
                 surface,
                 source_id,
+                capability_id,
                 provenance,
                 ValidatedCredentialSource::Env { handle, key },
                 outcome,
@@ -1111,9 +1190,9 @@ fn validate_source(
         }
         DiscoveredCredentialSource::Capability {
             surface,
-            capability_id: _,
             account_label,
             source_id,
+            capability_id,
         } => {
             let provenance = BTreeSet::from(["forwarded to Capsule".to_owned()]);
             let outcome = account_label.map_or(ProfileValidation::Anonymous(None), |label| {
@@ -1126,6 +1205,7 @@ fn validate_source(
             (
                 surface,
                 source_id,
+                capability_id,
                 provenance,
                 ValidatedCredentialSource::Capability,
                 outcome,
@@ -1166,7 +1246,38 @@ fn profile_identity(
             }
         }
         Agent::Grok => grok_profile_identity(reader, &root.join("auth.json")),
-        Agent::Opencode => ProfileValidation::Missing,
+        Agent::Opencode => opencode_profile_identity(reader, &root.join("auth.json")),
+    }
+}
+
+fn opencode_profile_identity(
+    reader: &dyn ProfileCredentialReader,
+    path: &Path,
+) -> ProfileValidation {
+    match reader.read(path) {
+        ProfileReadOutcome::Missing => ProfileValidation::Missing,
+        ProfileReadOutcome::Denied => ProfileValidation::Denied,
+        ProfileReadOutcome::Bytes(bytes) => {
+            let Ok(value) = serde_json::from_slice::<serde_json::Value>(&bytes) else {
+                return ProfileValidation::Malformed;
+            };
+            let entry = value.get("opencode-go");
+            let Some(entry) = entry else {
+                return ProfileValidation::Missing;
+            };
+            let kind = entry.get("type").and_then(serde_json::Value::as_str);
+            let key = entry
+                .get("key")
+                .and_then(serde_json::Value::as_str)
+                .map(str::trim)
+                .filter(|key| !key.is_empty());
+            if kind != Some("api") || key.is_none() {
+                return ProfileValidation::Malformed;
+            }
+            ProfileValidation::Anonymous(Some(Box::new(ProfileCredentialMaterial::OpenCode {
+                auth_path: path.to_path_buf(),
+            })))
+        }
     }
 }
 
@@ -1412,8 +1523,8 @@ pub(super) fn refresh_credential_binding(
         }
         ValidatedCredentialSource::Profile(ProfileCredentialMaterial::Grok { auth_path }) => {
             let now = chrono::Utc::now().timestamp();
-            let result = crate::usage::fetch_grok_web_billing(auth_path, now)
-                .map(crate::usage::GrokBillingSnapshot::Web);
+            let result = crate::usage::fetch_grok_rest_billing(auth_path, now)
+                .map(|response| crate::usage::GrokBillingSnapshot::Rest(Box::new(response)));
             crate::usage::grok_snapshot_from_rpc_result(
                 binding.surface.agent_slug(),
                 now,
@@ -1428,6 +1539,13 @@ pub(super) fn refresh_credential_binding(
             let now = chrono::Utc::now().timestamp();
             let token = crate::usage::load_kimi_local_token_from_home(root, now);
             crate::usage::kimi_snapshot(binding.surface.agent_slug(), token.as_deref(), now)
+        }
+        ValidatedCredentialSource::Profile(ProfileCredentialMaterial::OpenCode { auth_path }) => {
+            crate::usage::opencode_profile_snapshot(
+                binding.surface.agent_slug(),
+                auth_path,
+                chrono::Utc::now().timestamp(),
+            )
         }
     };
     ProviderCredentialRefreshOutcome::Snapshot(Box::new(view))

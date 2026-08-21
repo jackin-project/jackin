@@ -389,6 +389,17 @@ fn all_subcommand_help_pages_show_banner() {
 }
 
 #[test]
+fn parses_bare_usage() {
+    let cli = Cli::try_parse_from(["jackin", "usage"]).unwrap();
+
+    assert!(matches!(
+        cli.command,
+        Some(Command::Usage(ref args))
+            if args.instance.is_none() && args.scope.is_none() && args.format == "human"
+    ));
+}
+
+#[test]
 fn parses_usage_cache_accounts_json() {
     let cli =
         Cli::try_parse_from(["jackin", "usage", "cache", "accounts", "--format", "json"]).unwrap();
@@ -396,9 +407,9 @@ fn parses_usage_cache_accounts_json() {
     assert!(matches!(
         cli.command,
         Some(Command::Usage(ref args))
-            if args.instance == "cache"
+            if args.instance.as_deref() == Some("cache")
                 && args.format == "json"
-                && matches!(args.scope, usage::UsageScope::Accounts(_))
+                && matches!(args.scope, Some(usage::UsageScope::Accounts(_)))
     ));
 }
 
@@ -409,8 +420,8 @@ fn parses_usage_verify() {
     assert!(matches!(
         cli.command,
         Some(Command::Usage(ref args))
-            if args.instance == "jk-demo-role"
-                && matches!(args.scope, usage::UsageScope::Verify)
+            if args.instance.as_deref() == Some("jk-demo-role")
+                && matches!(args.scope, Some(usage::UsageScope::Verify))
     ));
 }
 

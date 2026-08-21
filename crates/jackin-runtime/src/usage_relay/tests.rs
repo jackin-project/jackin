@@ -17,6 +17,19 @@ use tokio::io::{AsyncBufReadExt as _, AsyncWriteExt as _};
 
 use super::*;
 
+#[test]
+fn resolved_launch_inventory_deduplicates_only_launch_agents() {
+    let config = jackin_protocol::CapsuleConfig {
+        agents: vec!["claude".to_owned(), "codex".to_owned(), "claude".to_owned()],
+        ..jackin_protocol::CapsuleConfig::default()
+    };
+
+    assert_eq!(
+        resolved_launch_usage_inventory(&config).agents,
+        ["claude", "codex"]
+    );
+}
+
 #[tokio::test]
 async fn docker_relay_guard_requests_graceful_shutdown_before_detach() -> Result<()> {
     let (shutdown, shutdown_rx) = oneshot::channel();

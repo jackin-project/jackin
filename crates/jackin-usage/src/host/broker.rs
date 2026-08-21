@@ -9,24 +9,26 @@ use std::io::{BufRead, BufReader, Read, Write};
 use std::os::unix::fs::{MetadataExt as _, PermissionsExt as _};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
 use std::sync::mpsc::{self, TrySendError};
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use jackin_protocol::control::UsageSnapshotStatus;
 use jackin_protocol::usage_broker::{
     USAGE_BROKER_MAX_FRAME_BYTES, USAGE_BROKER_PROTOCOL_VERSION, UsageAccountCapability,
     UsageBrokerOperation, UsageBrokerRequest, UsageBrokerResponse, UsageCoordinationError,
-    UsageCoordinationErrorKind, UsageGenerationView, UsageRefreshPhase,
+    UsageCoordinationErrorKind, UsageGenerationView, UsageProjectionRefreshStateV1,
+    UsageProjectionSchemaV1, UsageProjectionV1, UsageRefreshPhase,
 };
-use nix::fcntl::{OFlag, open, openat};
+use nix::fcntl::{OFlag, open, openat, renameat};
 use nix::sys::signal::kill;
 use nix::sys::stat::{Mode, fchmod, mkdirat};
-use nix::unistd::{Pid, geteuid};
+use nix::unistd::{Pid, UnlinkatFlags, fsync, geteuid, unlinkat};
 
 use crate::coordinator::{
-    FileAccountStateStore, ProviderProbeOutcome, UsageCoordinator, UsageCoordinatorConfig,
-    UsageProviderExecutor,
+    FileAccountStateStore, FileProjectionStateStore, ProjectionStateEnvelope, ProviderProbeOutcome,
+    UsageCoordinator, UsageCoordinatorConfig, UsageProviderExecutor,
 };
 
 use super::discovery::{
@@ -127,10 +129,48 @@ const BROKER_DIR: &str = "usage-broker";
 const BROKER_RUN_DIR: &str = "run";
 const BROKER_SOCKET: &str = "usage-broker.sock";
 const BROKER_LEADER: &str = "leader.pid";
-const CONNECT_RETRY: Duration = Duration::from_secs(2);
+const BROKER_LEASE_DURATION: Duration = Duration::from_secs(30);
+const BROKER_LEASE_RENEWAL: Duration = Duration::from_secs(10);
+const BROKER_IDLE_EXIT: Duration = Duration::from_mins(10);
+const CONNECT_RETRY: Duration = Duration::from_secs(10);
 const CONNECT_RETRY_STEP: Duration = Duration::from_millis(20);
 const BROKER_CONNECTION_WORKERS: usize = 4;
 const BROKER_CONNECTION_QUEUE: usize = 128;
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct BrokerLease {
+    instance_id: String,
+    process_id: u32,
+    protocol_version: String,
+    build_id: String,
+    renewed_at_epoch: i64,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ServePolicy {
+    idle_exit: Duration,
+    lease_duration: Duration,
+    lease_renewal: Duration,
+}
+
+impl BrokerLease {
+    fn new(build_id: &str) -> Self {
+        let now_nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_or(0, |duration| duration.as_nanos());
+        let instance_id = jackin_core::account_key_hash(
+            "usage-broker-instance-v1",
+            &format!("{}:{now_nanos}", std::process::id()),
+        );
+        Self {
+            instance_id,
+            process_id: std::process::id(),
+            protocol_version: USAGE_BROKER_PROTOCOL_VERSION.to_owned(),
+            build_id: build_id.to_owned(),
+            renewed_at_epoch: chrono::Utc::now().timestamp(),
+        }
+    }
+}
 
 /// Host broker filesystem and handshake configuration.
 #[derive(Debug, Clone)]
@@ -141,6 +181,14 @@ pub struct UsageBrokerConfig {
     pub build_id: String,
     /// Bounded refresh scheduling policy.
     pub coordinator: UsageCoordinatorConfig,
+    /// Idle lifetime after the last client while no generation is active.
+    pub idle_exit: Duration,
+    /// Lease lifetime used by the process-independent authority.
+    pub lease_duration: Duration,
+    /// Lease renewal cadence.
+    pub lease_renewal: Duration,
+    /// Optional sibling broker executable used by process activation.
+    pub service_executable: Option<PathBuf>,
 }
 
 impl UsageBrokerConfig {
@@ -151,6 +199,10 @@ impl UsageBrokerConfig {
             data_dir,
             build_id: env!("CARGO_PKG_VERSION").to_owned(),
             coordinator: UsageCoordinatorConfig::default(),
+            idle_exit: BROKER_IDLE_EXIT,
+            lease_duration: BROKER_LEASE_DURATION,
+            lease_renewal: BROKER_LEASE_RENEWAL,
+            service_executable: default_service_executable(),
         }
     }
 
@@ -166,6 +218,17 @@ impl UsageBrokerConfig {
     pub fn client(&self) -> UsageBrokerClient {
         UsageBrokerClient::at(self.socket_path(), self.build_id.clone())
     }
+}
+
+fn default_service_executable() -> Option<PathBuf> {
+    std::env::var_os("JACKIN_USAGE_BROKER_BIN")
+        .map(PathBuf::from)
+        .or_else(|| {
+            std::env::current_exe().ok().and_then(|path| {
+                path.parent()
+                    .map(|parent| parent.join("jackin-usage-broker"))
+            })
+        })
 }
 
 /// Attached broker plus every host-discovered canonical capability.
@@ -400,9 +463,106 @@ impl UsageBrokerClient {
         let response = read_frame::<UsageBrokerResponse>(&mut stream)?;
         match response {
             UsageBrokerResponse::State { state } => Ok(*state),
+            UsageBrokerResponse::Projection { .. } => Err(protocol_error()),
             UsageBrokerResponse::Error { error } => Err(error),
         }
     }
+
+    /// Read the latest canonical publication without dispatching provider work.
+    pub fn current_projection(&self) -> Result<UsageProjectionV1, UsageCoordinationError> {
+        self.execute_projection(UsageBrokerOperation::CurrentProjection)
+    }
+
+    /// Request or join one broker-owned canonical projection refresh.
+    pub fn request_refresh(
+        &self,
+        observed_projection_id: Option<String>,
+        force: bool,
+    ) -> Result<UsageProjectionV1, UsageCoordinationError> {
+        self.execute_projection(UsageBrokerOperation::RequestRefresh {
+            force,
+            observed_projection_id,
+        })
+    }
+
+    /// Join one immutable canonical publication without cancelling shared work.
+    pub fn join_publication(
+        &self,
+        projection_id: String,
+        timeout: Duration,
+    ) -> Result<UsageProjectionV1, UsageCoordinationError> {
+        let timeout_ms = u64::try_from(timeout.as_millis()).unwrap_or(u64::MAX);
+        self.execute_projection(UsageBrokerOperation::JoinPublication {
+            projection_id,
+            timeout_ms,
+        })
+    }
+
+    fn execute_projection(
+        &self,
+        operation: UsageBrokerOperation,
+    ) -> Result<UsageProjectionV1, UsageCoordinationError> {
+        let request = UsageBrokerRequest {
+            protocol_version: USAGE_BROKER_PROTOCOL_VERSION.to_owned(),
+            build_id: self.build_id.clone(),
+            operation,
+        };
+        let mut bytes = serde_json::to_vec(&request).map_err(|_| unavailable())?;
+        if bytes.len() >= USAGE_BROKER_MAX_FRAME_BYTES {
+            return Err(protocol_error());
+        }
+        bytes.push(b'\n');
+        let mut stream = UnixStream::connect(&self.socket_path).map_err(|_| unavailable())?;
+        stream
+            .set_read_timeout(Some(Duration::from_secs(30)))
+            .map_err(|_| unavailable())?;
+        stream.write_all(&bytes).map_err(|_| unavailable())?;
+        stream
+            .shutdown(std::net::Shutdown::Write)
+            .map_err(|_| unavailable())?;
+        match read_frame::<UsageBrokerResponse>(&mut stream)? {
+            UsageBrokerResponse::Projection { projection } => Ok(*projection),
+            UsageBrokerResponse::Error { error } => Err(error),
+            UsageBrokerResponse::State { .. } => Err(protocol_error()),
+        }
+    }
+}
+
+fn empty_projection(build_id: &str) -> UsageProjectionV1 {
+    UsageProjectionV1 {
+        schema_version: UsageProjectionSchemaV1,
+        projection_id: format!("{build_id}:empty"),
+        generated_at_epoch: chrono::Utc::now().timestamp(),
+        discovery_revision: "empty".to_owned(),
+        broker_instance_id: jackin_core::account_key_hash(
+            "usage-broker-instance-v1",
+            &format!("{}:{build_id}", std::process::id()),
+        ),
+        broker_generation: 0,
+        refresh_state: UsageProjectionRefreshStateV1::Idle,
+        providers: Vec::new(),
+        unresolved: Vec::new(),
+        issues: Vec::new(),
+    }
+}
+
+fn load_projection(config: &UsageBrokerConfig) -> Arc<Mutex<UsageProjectionV1>> {
+    let store = FileProjectionStateStore::under_data_dir(&config.data_dir);
+    let projection = store.load().ok().flatten().map_or_else(
+        || empty_projection(&config.build_id),
+        |envelope| envelope.projection,
+    );
+    let envelope = ProjectionStateEnvelope {
+        schema_version: 1,
+        catalog_revision: projection.discovery_revision.clone(),
+        broker_instance_id: projection.broker_instance_id.clone(),
+        projection: projection.clone(),
+        aliases: Vec::new(),
+        retry_deadline_epoch: None,
+        success_deadline_epoch: None,
+    };
+    let _ignored = store.store(&envelope);
+    Arc::new(Mutex::new(projection))
 }
 
 struct DiscoveryProviderExecutor {
@@ -509,13 +669,12 @@ pub fn ensure_usage_broker(
     config: UsageBrokerConfig,
     scope: UsageDiscoveryScope,
     discovery: ValidatedUsageDiscovery,
-    resolver: Arc<dyn ProviderCredentialEnvResolver>,
+    _resolver: Arc<dyn ProviderCredentialEnvResolver>,
 ) -> Result<UsageBrokerHandle, UsageCoordinationError> {
-    let mut bindings = BTreeMap::new();
     let mut scoped_capabilities = BTreeMap::<String, Vec<ScopedCapability>>::new();
-    for binding in discovery.bindings {
-        let capability = capability_for_binding(&binding);
-        let requirement = forwarding_requirement(&binding);
+    for binding in &discovery.bindings {
+        let capability = capability_for_binding(binding);
+        let requirement = forwarding_requirement(binding);
         for provenance in &binding.provenance {
             let scoped = scoped_capabilities.entry(provenance.clone()).or_default();
             scoped.push(ScopedCapability {
@@ -523,20 +682,114 @@ pub fn ensure_usage_broker(
                 requirement: requirement.clone(),
             });
         }
-        bindings.entry(capability).or_insert(binding);
     }
-    let capabilities = bindings.keys().cloned().collect();
-    let executor = Arc::new(DiscoveryProviderExecutor {
-        bindings: Mutex::new(bindings),
-        scope,
-        resolver,
-    });
-    let client = ensure_usage_broker_with_executor(config, executor)?;
+    let capabilities = usage_broker_capabilities(&discovery);
+    let client = ensure_usage_broker_process(config, &scope)?;
     Ok(UsageBrokerHandle {
         client,
         capabilities,
         scoped_capabilities,
     })
+}
+
+/// Activate the independent broker executable and attach a client.
+///
+/// The caller never supplies an executor to this path. The sibling service
+/// performs discovery and provider work in its own process, then survives the
+/// activating client. Tests and legacy in-process seams use the hidden helper
+/// below until their owning consumers migrate.
+pub fn ensure_usage_broker_process(
+    config: UsageBrokerConfig,
+    scope: &UsageDiscoveryScope,
+) -> Result<UsageBrokerClient, UsageCoordinationError> {
+    let client = config.client();
+    if connect_probe(&client) {
+        return Ok(client);
+    }
+    let executable = config.service_executable.clone().ok_or_else(unavailable)?;
+    let mut command = Command::new(executable);
+    command
+        .arg("--data-dir")
+        .arg(&config.data_dir)
+        .arg("--build-id")
+        .arg(&config.build_id)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    match scope {
+        UsageDiscoveryScope::HostDesktop {
+            config_root,
+            operator_home,
+        } => {
+            command
+                .arg("--config-root")
+                .arg(config_root)
+                .arg("--operator-home")
+                .arg(operator_home);
+        }
+        UsageDiscoveryScope::Capsule { .. } => return Err(unavailable()),
+    }
+    command.spawn().map_err(|_| unavailable())?;
+    wait_for_leader(&client)?;
+    Ok(client)
+}
+
+/// Run the process-owned service until its idle lease expires.
+pub fn run_usage_broker_service(
+    config: UsageBrokerConfig,
+    scope: UsageDiscoveryScope,
+    discovery: ValidatedUsageDiscovery,
+    resolver: Arc<dyn ProviderCredentialEnvResolver>,
+) -> Result<(), UsageCoordinationError> {
+    let mut bindings = BTreeMap::new();
+    for binding in discovery.bindings {
+        bindings
+            .entry(capability_for_binding(&binding))
+            .or_insert(binding);
+    }
+    let executor = Arc::new(DiscoveryProviderExecutor {
+        bindings: Mutex::new(bindings),
+        scope,
+        resolver,
+    });
+    run_usage_broker_service_with_executor(config, executor)
+}
+
+/// Process service seam used by the shipped broker binary and process tests.
+pub fn run_usage_broker_service_with_executor(
+    config: UsageBrokerConfig,
+    executor: Arc<dyn UsageProviderExecutor>,
+) -> Result<(), UsageCoordinationError> {
+    let run_dir = secure_run_directory(&config.data_dir)?;
+    let leader_path = run_dir.join(BROKER_LEADER);
+    let Some(lease) = claim_leader(&leader_path, &config.build_id, config.lease_duration)? else {
+        return Ok(());
+    };
+    let socket_path = config.socket_path();
+    if socket_path.exists() {
+        fs::remove_file(&socket_path).map_err(|_| unavailable())?;
+    }
+    let listener = UnixListener::bind(&socket_path).map_err(|_| unavailable())?;
+    fs::set_permissions(&socket_path, fs::Permissions::from_mode(0o600))
+        .map_err(|_| unavailable())?;
+    validate_owned_mode(&socket_path, 0o600)?;
+    let store = Arc::new(FileAccountStateStore::under_data_dir(&config.data_dir));
+    let coordinator = Arc::new(UsageCoordinator::new(executor, store, config.coordinator));
+    let projection = load_projection(&config);
+    serve(
+        listener,
+        coordinator,
+        &config.build_id,
+        &leader_path,
+        lease,
+        ServePolicy {
+            idle_exit: config.idle_exit,
+            lease_duration: config.lease_duration,
+            lease_renewal: config.lease_renewal,
+        },
+        projection,
+    );
+    Ok(())
 }
 
 /// Test/runtime seam that preserves the same process election and transport.
@@ -553,10 +806,10 @@ pub fn ensure_usage_broker_with_executor(
 
     let run_dir = secure_run_directory(&config.data_dir)?;
     let leader_path = run_dir.join(BROKER_LEADER);
-    if !claim_leader(&leader_path)? {
+    let Some(lease) = claim_leader(&leader_path, &config.build_id, config.lease_duration)? else {
         wait_for_leader(&client)?;
         return Ok(client);
-    }
+    };
 
     if socket_path.exists() {
         fs::remove_file(&socket_path).map_err(|_| unavailable())?;
@@ -568,15 +821,40 @@ pub fn ensure_usage_broker_with_executor(
     let store = Arc::new(FileAccountStateStore::under_data_dir(&config.data_dir));
     let coordinator = Arc::new(UsageCoordinator::new(executor, store, config.coordinator));
     let build_id = config.build_id.clone();
+    let idle_exit = config.idle_exit;
+    let lease_duration = config.lease_duration;
+    let lease_renewal = config.lease_renewal;
+    let lease_path = leader_path.clone();
+    let projection = load_projection(&config);
     jackin_telemetry::spawn::thread_joined_named("usage-broker".to_owned(), move || {
-        serve(listener, coordinator, &build_id);
+        serve(
+            listener,
+            coordinator,
+            &build_id,
+            &lease_path,
+            lease,
+            ServePolicy {
+                idle_exit,
+                lease_duration,
+                lease_renewal,
+            },
+            projection,
+        );
     })
     .map_err(|_| unavailable())?;
     wait_for_leader(&client)?;
     Ok(client)
 }
 
-fn serve(listener: UnixListener, coordinator: Arc<UsageCoordinator>, build_id: &str) {
+fn serve(
+    listener: UnixListener,
+    coordinator: Arc<UsageCoordinator>,
+    build_id: &str,
+    lease_path: &Path,
+    mut lease: BrokerLease,
+    policy: ServePolicy,
+    projection: Arc<Mutex<UsageProjectionV1>>,
+) {
     let (connections, receiver) = mpsc::sync_channel(BROKER_CONNECTION_QUEUE);
     let receiver = Arc::new(Mutex::new(receiver));
     let build_id = Arc::<str>::from(build_id);
@@ -585,6 +863,7 @@ fn serve(listener: UnixListener, coordinator: Arc<UsageCoordinator>, build_id: &
         let receiver = Arc::clone(&receiver);
         let coordinator = Arc::clone(&coordinator);
         let build_id = Arc::clone(&build_id);
+        let projection = Arc::clone(&projection);
         let worker = jackin_telemetry::spawn::thread_joined_named(
             format!("usage-broker-connection-{index}"),
             move || loop {
@@ -597,7 +876,7 @@ fn serve(listener: UnixListener, coordinator: Arc<UsageCoordinator>, build_id: &
                 let Ok(stream) = stream else {
                     return;
                 };
-                handle_stream(stream, &coordinator, &build_id);
+                handle_stream(stream, &coordinator, &build_id, &projection);
             },
         );
         match worker {
@@ -608,31 +887,66 @@ fn serve(listener: UnixListener, coordinator: Arc<UsageCoordinator>, build_id: &
     if workers.is_empty() {
         return;
     }
-    for incoming in listener.incoming() {
-        let Ok(stream) = incoming else {
-            continue;
-        };
-        match connections.try_send(stream) {
-            Ok(()) => {}
-            Err(TrySendError::Full(mut stream) | TrySendError::Disconnected(mut stream)) => {
-                write_response(
-                    &mut stream,
-                    UsageBrokerResponse::Error {
-                        error: unavailable(),
-                    },
-                );
+    if listener.set_nonblocking(true).is_err() {
+        drop(connections);
+        for worker in workers {
+            drop(worker.join());
+        }
+        return;
+    }
+    let started = Instant::now();
+    let mut last_activity = started;
+    let mut last_renewal = started;
+    loop {
+        match listener.accept() {
+            Ok((stream, _)) => {
+                last_activity = Instant::now();
+                match connections.try_send(stream) {
+                    Ok(()) => {}
+                    Err(
+                        TrySendError::Full(mut stream) | TrySendError::Disconnected(mut stream),
+                    ) => {
+                        write_response(
+                            &mut stream,
+                            UsageBrokerResponse::Error {
+                                error: unavailable(),
+                            },
+                        );
+                    }
+                }
             }
+            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                let now = Instant::now();
+                if now.duration_since(last_renewal) >= policy.lease_renewal {
+                    if !renew_lease(lease_path, &mut lease, policy.lease_duration) {
+                        break;
+                    }
+                    last_renewal = now;
+                }
+                if now.duration_since(last_activity) >= policy.idle_exit && coordinator.is_idle() {
+                    break;
+                }
+                std::thread::park_timeout(Duration::from_millis(50));
+            }
+            Err(_) => break,
         }
     }
     drop(connections);
     for worker in workers {
         drop(worker.join());
     }
+    let _ignored = remove_lease(lease_path, &lease);
+    let _ignored = fs::remove_file(lease_path.with_file_name(BROKER_SOCKET));
 }
 
-fn handle_stream(mut stream: UnixStream, coordinator: &UsageCoordinator, build_id: &str) {
+fn handle_stream(
+    mut stream: UnixStream,
+    coordinator: &UsageCoordinator,
+    build_id: &str,
+    projection: &Arc<Mutex<UsageProjectionV1>>,
+) {
     let response = match read_frame::<UsageBrokerRequest>(&mut stream) {
-        Ok(request) => dispatch(coordinator, request, build_id),
+        Ok(request) => dispatch(coordinator, request, build_id, projection),
         Err(error) => UsageBrokerResponse::Error { error },
     };
     write_response(&mut stream, response);
@@ -651,14 +965,47 @@ fn dispatch(
     coordinator: &UsageCoordinator,
     request: UsageBrokerRequest,
     build_id: &str,
+    projection: &Arc<Mutex<UsageProjectionV1>>,
 ) -> UsageBrokerResponse {
     if request.protocol_version != USAGE_BROKER_PROTOCOL_VERSION || request.build_id != build_id {
         return UsageBrokerResponse::Error {
             error: protocol_error(),
         };
     }
+    let projection_operation = match &request.operation {
+        UsageBrokerOperation::CurrentProjection
+        | UsageBrokerOperation::RequestRefresh { .. }
+        | UsageBrokerOperation::JoinPublication { .. } => true,
+        UsageBrokerOperation::CurrentProjectionForSurface
+        | UsageBrokerOperation::RequestRefreshForSurface { .. }
+        | UsageBrokerOperation::JoinPublicationForSurface { .. } => {
+            return UsageBrokerResponse::Error {
+                error: UsageCoordinationError {
+                    kind: UsageCoordinationErrorKind::Unauthorized,
+                    message: "scoped projection operation requires a container relay".to_owned(),
+                },
+            };
+        }
+        _ => false,
+    };
+    if projection_operation {
+        return match projection.lock() {
+            Ok(projection) => UsageBrokerResponse::Projection {
+                projection: Box::new(projection.clone()),
+            },
+            Err(_) => UsageBrokerResponse::Error {
+                error: unavailable(),
+            },
+        };
+    }
     let now = chrono::Utc::now().timestamp();
     let result = match request.operation {
+        UsageBrokerOperation::CurrentProjection
+        | UsageBrokerOperation::RequestRefresh { .. }
+        | UsageBrokerOperation::JoinPublication { .. }
+        | UsageBrokerOperation::CurrentProjectionForSurface
+        | UsageBrokerOperation::RequestRefreshForSurface { .. }
+        | UsageBrokerOperation::JoinPublicationForSurface { .. } => Err(protocol_error()),
         UsageBrokerOperation::CurrentForSurface { .. }
         | UsageBrokerOperation::RefreshForSurface { .. }
         | UsageBrokerOperation::JoinForSurface { .. } => Err(UsageCoordinationError {
@@ -771,7 +1118,12 @@ fn validate_owned_mode(path: &Path, mode: u32) -> Result<(), UsageCoordinationEr
     Ok(())
 }
 
-fn claim_leader(path: &Path) -> Result<bool, UsageCoordinationError> {
+fn claim_leader(
+    path: &Path,
+    build_id: &str,
+    lease_duration: Duration,
+) -> Result<Option<BrokerLease>, UsageCoordinationError> {
+    let lease = BrokerLease::new(build_id);
     match open(
         path,
         OFlag::O_WRONLY | OFlag::O_CREAT | OFlag::O_EXCL | OFlag::O_NOFOLLOW,
@@ -779,29 +1131,117 @@ fn claim_leader(path: &Path) -> Result<bool, UsageCoordinationError> {
     ) {
         Ok(fd) => {
             let mut file = File::from(fd);
-            writeln!(file, "{}", std::process::id()).map_err(|_| unavailable())?;
+            let bytes = serde_json::to_vec(&lease).map_err(|_| unavailable())?;
+            file.write_all(&bytes).map_err(|_| unavailable())?;
             file.sync_all().map_err(|_| unavailable())?;
-            Ok(true)
+            Ok(Some(lease))
         }
         Err(nix::errno::Errno::EEXIST) => {
             validate_owned_mode(path, 0o600)?;
-            let pid = fs::read_to_string(path)
-                .ok()
-                .and_then(|value| value.trim().parse::<i32>().ok());
-            if pid.is_none() {
-                // O_EXCL publishes the leader inode before the winner can write
-                // its PID. Treat incomplete metadata as an election in progress;
-                // deleting it here can create two live brokers.
-                return Ok(false);
-            }
-            if pid.is_some_and(|pid| kill(Pid::from_raw(pid), None).is_ok()) {
-                return Ok(false);
+            let bytes = fs::read(path).map_err(|_| unavailable())?;
+            let existing = serde_json::from_slice::<BrokerLease>(&bytes).ok();
+            let now = chrono::Utc::now().timestamp();
+            if let Some(existing) = existing {
+                if existing.protocol_version != USAGE_BROKER_PROTOCOL_VERSION
+                    || existing.build_id != build_id
+                {
+                    // A healthy incompatible endpoint is never replaced by an
+                    // activator; the client will receive protocol_mismatch.
+                    return Ok(None);
+                }
+                if now.saturating_sub(existing.renewed_at_epoch)
+                    < i64::try_from(lease_duration.as_secs()).unwrap_or(i64::MAX)
+                {
+                    return Ok(None);
+                }
+            } else {
+                // Preserve compatibility with pre-lease state only when its PID
+                // is demonstrably gone; a malformed live lease fails closed.
+                let pid = String::from_utf8_lossy(&bytes).trim().parse::<i32>().ok();
+                if pid.is_none_or(|pid| kill(Pid::from_raw(pid), None).is_ok()) {
+                    return Ok(None);
+                }
             }
             fs::remove_file(path).map_err(|_| unavailable())?;
-            claim_leader(path)
+            claim_leader(path, build_id, lease_duration)
         }
         Err(_) => Err(unavailable()),
     }
+}
+
+fn renew_lease(path: &Path, lease: &mut BrokerLease, lease_duration: Duration) -> bool {
+    let Ok(bytes) = fs::read(path) else {
+        return false;
+    };
+    let Ok(mut current) = serde_json::from_slice::<BrokerLease>(&bytes) else {
+        return false;
+    };
+    if current.instance_id != lease.instance_id {
+        return false;
+    }
+    let now = chrono::Utc::now().timestamp();
+    if now.saturating_sub(lease.renewed_at_epoch)
+        > i64::try_from(lease_duration.as_secs()).unwrap_or(i64::MAX)
+    {
+        return false;
+    }
+    current.renewed_at_epoch = now;
+    let Some(parent) = path.parent() else {
+        return false;
+    };
+    let Some(temporary) = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .map(|name| format!(".{name}.renew.tmp"))
+    else {
+        return false;
+    };
+    let Ok(directory) = open(
+        parent,
+        OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW,
+        Mode::empty(),
+    ) else {
+        return false;
+    };
+    let directory = File::from(directory);
+    let Ok(bytes) = serde_json::to_vec(&current) else {
+        return false;
+    };
+    let Ok(fd) = openat(
+        &directory,
+        temporary.as_str(),
+        OFlag::O_WRONLY | OFlag::O_CREAT | OFlag::O_EXCL | OFlag::O_NOFOLLOW,
+        Mode::from_bits_truncate(0o600),
+    ) else {
+        return false;
+    };
+    let mut file = File::from(fd);
+    if file.write_all(&bytes).is_err() || file.sync_all().is_err() {
+        let _ignored = unlinkat(&directory, temporary.as_str(), UnlinkatFlags::NoRemoveDir);
+        return false;
+    }
+    let Some(filename) = path.file_name().and_then(|name| name.to_str()) else {
+        return false;
+    };
+    if renameat(&directory, temporary.as_str(), &directory, filename).is_err() {
+        let _ignored = unlinkat(&directory, temporary.as_str(), UnlinkatFlags::NoRemoveDir);
+        return false;
+    }
+    if fsync(&directory).is_err() {
+        return false;
+    }
+    lease.renewed_at_epoch = now;
+    true
+}
+
+fn remove_lease(path: &Path, lease: &BrokerLease) -> bool {
+    let Ok(bytes) = fs::read(path) else {
+        return false;
+    };
+    let Ok(current) = serde_json::from_slice::<BrokerLease>(&bytes) else {
+        return false;
+    };
+    current.instance_id == lease.instance_id && fs::remove_file(path).is_ok()
 }
 
 fn wait_for_leader(client: &UsageBrokerClient) -> Result<(), UsageCoordinationError> {
@@ -825,7 +1265,7 @@ pub(super) fn capability_for_binding(
     let subject = if let Some(identity) = &binding.identity {
         identity.account_key()
     } else {
-        format!("bootstrap:{}", binding.source_id)
+        format!("provisional-capability-v1:{}", binding.capability_id)
     };
     let hashed = jackin_core::account_key_hash(binding.surface.id(), &subject);
     let account_id = hashed.strip_prefix("sha256:").unwrap_or(&hashed).to_owned();

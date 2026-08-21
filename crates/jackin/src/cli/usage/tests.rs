@@ -4,6 +4,15 @@
 use super::*;
 
 #[test]
+fn canonical_overview() {
+    assert_eq!(
+        normalize_usage_provider_label("OpenAI / Codex"),
+        "openaicodex"
+    );
+    assert_eq!(normalize_usage_provider_label("Z.AI"), "zai");
+}
+
+#[test]
 fn formats_account_usage_with_shared_unit() {
     let account = AccountUsageSnapshotView {
         provider: "codex".to_owned(),

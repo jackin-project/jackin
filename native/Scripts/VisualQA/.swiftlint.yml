@@ -1,0 +1,7 @@
+parent_config: ../../.swiftlint.yml
+# Legacy size debt, this directory only. Owner: Desktop (Alexey Zhokhov).
+# Named file: ax-drive.swift. Deletion condition: the rule leaves this list
+# when the drive script is split under the default threshold; never extend
+# this list for a new file.
+disabled_rules:
+  - line_length

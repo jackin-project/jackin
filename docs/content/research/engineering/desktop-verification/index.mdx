@@ -11,8 +11,7 @@ exact one CI runs green today, method: read of <RepoFile path=".github/workflows
 
 Conclusions: crates gate = `cargo nextest run -p jackin-usage -p
 jackin-usage-ffi --locked`; bindings drift gate = `cargo xtask desktop
-bindings` + `git diff --exit-code -- native/Generated
-native/Sources/JackinUsageBridge/jackin_usage_ffi.swift`; app gate =
+bindings-check`; app gate =
 `cargo xtask desktop build/verify/test` (mise `desktop-*` wrappers); Swift
 suite = `cargo xtask desktop test` (full Xcode: `cd native && swift test -c
 release`); native system-image goldens pin current stable `macos-26` instead

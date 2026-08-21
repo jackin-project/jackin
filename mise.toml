@@ -17,8 +17,8 @@ cargo-binstall = "1.21.1"
 "cargo:cargo-mutants" = "27.1.0"
 "aqua:nextest-rs/nextest/cargo-nextest" = "0.9.140"
 "cargo:cargo-shear" = "1.13.4"
-# Provides `uniffi-bindgen`; pin matches jackin-usage-ffi UniFFI (needs cli feature).
-"cargo:uniffi" = { version = "0.32.0", default-features = true, features = "cli" }
+# Provides `boltffi`; pin matches the jackin-usage-ffi boltffi crate.
+"cargo:boltffi_cli" = "0.30.1"
 "cargo:cargo-zigbuild" = "0.23.0"
 "cargo:codebook-lsp" = { version = "0.3.42", default-features = false }
 "cargo:sccache" = "0.16.0"
@@ -110,8 +110,12 @@ run = "cargo fmt --check"
 #   mise run desktop                # build + verify + run (one shot)
 
 [tasks.desktop-bindings]
-description = "Generate UniFFI Swift bindings for jackin❯ desktop"
+description = "Generate boltffi Swift bindings for jackin❯ desktop"
 run = "cargo xtask desktop bindings"
+
+[tasks.desktop-bindings-check]
+description = "Fail when committed boltffi bindings drift from regeneration"
+run = "cargo xtask desktop bindings-check"
 
 [tasks.desktop-xcframework]
 description = "Build the arm64 static JackinUsageFFI XCFramework"
@@ -123,15 +127,19 @@ run = "xcodegen generate --spec native/project.yml"
 
 [tasks.desktop-format]
 description = "Format handwritten jackin❯ desktop Swift sources"
-run = "cd native && find Sources Tests UITests Tools Scripts -name '*.swift' ! -name 'jackin_usage_ffi.swift' -print0 | xargs -0 xcrun swift-format format --configuration .swift-format --in-place --parallel"
+# Generated boltffi Swift carries swiftlint/swiftformat disable headers, but
+# Apple's swift-format honors no inline disables — exclude the bindings tree.
+run = "cd native && find Sources Tests UITests Tools Scripts -name '*.swift' ! -path '*/JackinUsageBindings/*' -print0 | xargs -0 xcrun swift-format format --configuration .swift-format --in-place --parallel"
 
 [tasks.desktop-format-check]
 description = "Fail on jackin❯ desktop Swift formatting violations"
-run = "cd native && find Sources Tests UITests Tools Scripts -name '*.swift' ! -name 'jackin_usage_ffi.swift' -print0 | xargs -0 xcrun swift-format lint --configuration .swift-format --strict --parallel"
+run = "cd native && find Sources Tests UITests Tools Scripts -name '*.swift' ! -path '*/JackinUsageBindings/*' -print0 | xargs -0 xcrun swift-format lint --configuration .swift-format --strict --parallel"
 
 [tasks.desktop-lint]
 description = "Fail on jackin❯ desktop SwiftLint violations"
-run = "cd native && swiftlint lint --strict --config .swiftlint.yml"
+# No --config flag: an explicit config path disables SwiftLint's nested-config
+# discovery, which the per-directory test-policy and size-debt files rely on.
+run = "cd native && swiftlint lint --strict"
 
 [tasks.desktop-test-ui]
 description = "Run jackin❯ desktop UI tests against the real app host"
@@ -139,7 +147,7 @@ run = "native/Scripts/run-ui-tests.sh"
 
 [tasks.desktop-deadcode]
 description = "Scan jackin❯ desktop for unused declarations"
-run = "cd native && periphery scan --project JackinDesktop.xcodeproj --schemes JackinDesktop --retain-public --retain-objc-accessible --retain-assign-only-properties --report-exclude '**/jackin_usage_ffi.swift' --strict --quiet"
+run = "cd native && periphery scan --project JackinDesktop.xcodeproj --schemes JackinDesktop --retain-public --retain-objc-accessible --retain-assign-only-properties --report-exclude '**/JackinUsageBindings/**' --strict --quiet"
 
 [tasks.desktop-build]
 description = "Build JackinDesktop.app (prints absolute path + how to run)"
@@ -153,23 +161,53 @@ run = 'cargo xtask desktop build --version "$usage_version" --build "$usage_buil
 description = "Fail-closed verify of JackinDesktop.app (prints path + run hint)"
 usage = '''
 arg "<app>" help="Path to JackinDesktop.app" default="native/dist/JackinDesktop.app"
+arg "[version]" help="Expected CFBundleShortVersionString"
+arg "[build]" help="Expected CFBundleVersion numeric build"
+flag "--release" help="Require Developer ID + notarization (Gatekeeper + stapler)"
 '''
-run = 'cargo xtask desktop verify "$usage_app"'
+run = '''
+set -euo pipefail
+args=("$usage_app")
+if [ -n "${usage_version:-}" ]; then args+=(--version "$usage_version"); fi
+if [ -n "${usage_build:-}" ]; then args+=(--build "$usage_build"); fi
+if [ "${usage_release:-false}" = "true" ]; then args+=(--release); fi
+cargo xtask desktop verify "${args[@]}"
+'''
 
 [tasks.desktop-test]
 description = "Host + pure Swift OpenUsage/CodexBar limits-only parity harnesses for Desktop"
 run = "cargo xtask desktop test"
 
+# Canonical cadence graph — one definition per command, CI and release invoke
+# these exact task names (see native/Design/UnifiedAgentUsage/SwiftProjectReadiness.md).
 [tasks.desktop-ci]
-description = "Run the required jackin❯ desktop macOS CI contract"
+description = "PR cadence: full nonmutating jackin❯ desktop gate graph"
 run = '''
 set -euo pipefail
-mise run desktop-bindings
+mise run desktop-bindings-check
+mise run desktop-generate
 mise run desktop-format-check
 mise run desktop-lint
 mise run desktop-test
-cd native
-swift test -c release
+mise run desktop-build
+cargo xtask desktop test-swift
+mise run desktop-verify
+'''
+
+[tasks.desktop-merge]
+description = "Merge cadence: PR graph plus UI tests against the real app host"
+run = '''
+set -euo pipefail
+mise run desktop-ci
+mise run desktop-test-ui
+'''
+
+[tasks.desktop-scheduled]
+description = "Scheduled cadence: merge graph plus dead-code scan"
+run = '''
+set -euo pipefail
+mise run desktop-merge
+mise run desktop-deadcode
 '''
 
 [tasks.desktop-run]
@@ -184,6 +222,66 @@ if [ "${usage_verify:-}" = "true" ]; then
 else
   cargo xtask desktop run "$usage_app"
 fi
+'''
+
+[tasks.desktop-prototype-build]
+description = "Build the Unified Agent Usage native design prototype"
+run = '''
+set -euo pipefail
+package="native/Design/Prototypes/UnifiedAgentUsage"
+swift build --package-path "$package"
+app="$package/.build/UnifiedAgentUsageProto.app"
+mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
+cp "$package/AppInfo.plist" "$app/Contents/Info.plist"
+cp "$package/.build/debug/UnifiedAgentUsageProto" "$app/Contents/MacOS/UnifiedAgentUsageProto"
+ditto "$package/.build/debug/UnifiedAgentUsageProto_UnifiedAgentUsageProto.bundle" \
+  "$app/Contents/Resources/UnifiedAgentUsageProto_UnifiedAgentUsageProto.bundle"
+'''
+
+[tasks.desktop-prototype-run]
+description = "Launch the Unified Agent Usage native design prototype"
+usage = '''
+arg "<scenario>" help="Fixture name (F00–F29 and named variants)" default="F02"
+arg "<window>" help="Window size in WIDTHxHEIGHT form" default="1000x680"
+arg "<appearance>" help="Appearance (dark-only application)" default="dark"
+arg "[reduce]" help="Optional reduction mode: transparency, motion, or transparency,motion"
+arg "[backdrop]" help="Optional harness backdrop hex color"
+flag "--increase-contrast" help="Render the process-local Increased Contrast variant"
+'''
+run = '''
+set -euo pipefail
+app="native/Design/Prototypes/UnifiedAgentUsage/.build/UnifiedAgentUsageProto.app"
+args=(
+  --tr-scenario "$usage_scenario"
+  --tr-window "$usage_window"
+  --tr-appearance "$usage_appearance"
+)
+if [ -n "${usage_reduce:-}" ]; then args+=(--tr-reduce "$usage_reduce"); fi
+if [ -n "${usage_backdrop:-}" ]; then args+=(--tr-backdrop "$usage_backdrop"); fi
+if [ "${usage_increase_contrast:-false}" = "true" ]; then args+=(--tr-increase-contrast); fi
+pkill -f "$PWD/$app/Contents/MacOS/UnifiedAgentUsageProto" 2>/dev/null || true
+launchctl remove com.jackin.prototype.unified-agent-usage 2>/dev/null || true
+open -n "$app" --args "${args[@]}"
+'''
+
+[tasks.desktop-prototype]
+description = "Build + launch the Unified Agent Usage native design prototype"
+usage = '''
+arg "<scenario>" help="Fixture name (F00–F29 and named variants)" default="F02"
+arg "<window>" help="Window size in WIDTHxHEIGHT form" default="1000x680"
+arg "<appearance>" help="Appearance (dark-only application)" default="dark"
+arg "[reduce]" help="Optional reduction mode: transparency, motion, or transparency,motion"
+arg "[backdrop]" help="Optional harness backdrop hex color"
+flag "--increase-contrast" help="Render the process-local Increased Contrast variant"
+'''
+run = '''
+set -euo pipefail
+mise run desktop-prototype-build
+args=("$usage_scenario" "$usage_window" "$usage_appearance")
+if [ -n "${usage_reduce:-}" ]; then args+=("$usage_reduce"); fi
+if [ -n "${usage_backdrop:-}" ]; then args+=("$usage_backdrop"); fi
+if [ "${usage_increase_contrast:-false}" = "true" ]; then args+=(--increase-contrast); fi
+mise run desktop-prototype-run -- "${args[@]}"
 '''
 
 [tasks.desktop]
@@ -204,13 +302,16 @@ description = "Developer ID sign + notarize + staple JackinDesktop.app (requires
 usage = '''
 arg "[app]" help="Path to JackinDesktop.app" default="native/dist/JackinDesktop.app"
 arg "[out_zip]" help="Final post-staple ZIP path"
+arg "[version]" help="Expected CFBundleShortVersionString"
+arg "[build]" help="Expected CFBundleVersion numeric build"
 '''
 run = '''
-if [ -n "${usage_out_zip:-}" ]; then
-  cargo xtask desktop sign-notarize "$usage_app" "$usage_out_zip"
-else
-  cargo xtask desktop sign-notarize "$usage_app"
-fi
+set -euo pipefail
+args=("$usage_app")
+if [ -n "${usage_out_zip:-}" ]; then args+=("$usage_out_zip"); fi
+if [ -n "${usage_version:-}" ]; then args+=(--version "$usage_version"); fi
+if [ -n "${usage_build:-}" ]; then args+=(--build "$usage_build"); fi
+cargo xtask desktop sign-notarize "${args[@]}"
 '''
 
 [tasks.desktop-release-state]
