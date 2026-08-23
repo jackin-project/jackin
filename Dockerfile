@@ -6,7 +6,7 @@ ARG RUST_VERSION=1.97.1
 ARG NODE_VERSION=24.19.0
 ARG JAVA_VERSION=oracle-graalvm-25.0.1
 ARG PROTOC_VERSION=35.1
-ARG CARGO_BINSTALL_VERSION=1.21.1
+ARG CARGO_BINSTALL_VERSION=1.22.0
 # renovate: datasource=crate depName=cargo-nextest
 ARG CARGO_NEXTEST_VERSION=0.9.143
 # renovate: datasource=crate depName=ast-grep
