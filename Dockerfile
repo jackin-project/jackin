@@ -10,7 +10,7 @@ ARG CARGO_BINSTALL_VERSION=1.22.0
 # renovate: datasource=crate depName=cargo-nextest
 ARG CARGO_NEXTEST_VERSION=0.9.143
 # renovate: datasource=crate depName=ast-grep
-ARG AST_GREP_VERSION=0.45.1
+ARG AST_GREP_VERSION=0.45.2
 # renovate: datasource=crate depName=rust-script
 ARG RUST_SCRIPT_VERSION=0.36.0
 # renovate: datasource=crate depName=just
