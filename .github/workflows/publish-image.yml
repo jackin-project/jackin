@@ -1,8 +1,16 @@
+# SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+# SPDX-License-Identifier: Apache-2.0
+
 name: Publish Image
 
 concurrency:
+  # Serialize publishes per branch so simultaneous merges (for example
+  # several Renovate PRs landing within seconds) do not race on the
+  # :latest tag and leave it pointing at an older commit's image. The
+  # newest push wins, keeping :latest current so launches can reuse the
+  # published base instead of rebuilding from the workspace Dockerfile.
   group: publish-image-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 # IMPORTANT: image MUST be private. See AGENTS.md § Hard rules.
 
@@ -12,47 +20,68 @@ on:
   workflow_dispatch:
     inputs:
       lanes:
-        description: |
-          Which runner(s) to run on. Default velnor; use both for parity runs.
+        description: velnor (default) | github | both
         type: choice
         default: velnor
         options: [velnor, github, both]
 
+# Fleet admission rejects post-merge push jobs on Velnor (merged_push_occupancy)
+# so open PRs keep the fleet, therefore push events publish from the GitHub
+# lane; dispatches default to the Velnor lane. Publish mutates registry state,
+# so exactly one lane publishes per run: in "both" mode Velnor is the sole
+# publisher and GitHub performs a read-only parity build.
+
 jobs:
-  publish:
-    name: Publish (${{ matrix.config.lane }})
-    strategy:
-      fail-fast: false
-      matrix:
-        config: ${{ fromJSON((github.event_name == 'workflow_dispatch' && inputs.lanes == 'both') && '[{"lane":"Velnor","runner-amd64":"velnor-target-mvp","runner-arm64":"velnor-target-mvp","runner-merge":"velnor-target-mvp","writer":true},{"lane":"GitHub","runner-amd64":"ubuntu-26.04","runner-arm64":"ubuntu-26.04-arm","runner-merge":"ubuntu-26.04","writer":false}]' || (github.event_name == 'workflow_dispatch' && inputs.lanes == 'github') && '[{"lane":"GitHub","runner-amd64":"ubuntu-26.04","runner-arm64":"ubuntu-26.04-arm","runner-merge":"ubuntu-26.04","writer":true}]' || '[{"lane":"Velnor","runner-amd64":"velnor-target-mvp","runner-arm64":"velnor-target-mvp","runner-merge":"velnor-target-mvp","writer":true}]') }}
-    uses: jackin-project/jackin-role-action/.github/workflows/publish.yml@f5d2f6a1ecae5c450a86b2c2fa3349acbf32a6e0 # pinned
+  publish-velnor:
+    if: github.event_name != 'push' && (github.event_name != 'workflow_dispatch' || inputs.lanes == 'velnor' || inputs.lanes == 'both')
+    uses: jackin-project/jackin-role-action/.github/workflows/publish.yml@b22002ca9fdf315b9596e17faa91077cf248f94e # pinned
     permissions:
       contents: read
       id-token: write
     with:
-      runner-amd64: ${{ matrix.config.runner-amd64 }}
-      runner-arm64: ${{ matrix.config.runner-arm64 }}
-      runner-merge: ${{ matrix.config.runner-merge }}
-      publish: ${{ matrix.config.writer }}
+      # Use native arm64 runners on the github lane. When both architectures
+      # use the same runner label, the reusable workflow builds arm64 via QEMU.
+      runner-amd64: velnor-target-mvp
+      runner-arm64: velnor-target-mvp
+      runner-merge: velnor-target-mvp
+      publish: true
     secrets:
       registry-username: ${{ secrets.DOCKERHUB_USERNAME }}
       registry-password: ${{ secrets.DOCKERHUB_TOKEN }}
       github-readonly-token: ${{ secrets.GH_READONLY_TOKEN }}
 
+  publish-github:
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && (inputs.lanes == 'github' || inputs.lanes == 'both'))
+    uses: jackin-project/jackin-role-action/.github/workflows/publish.yml@b22002ca9fdf315b9596e17faa91077cf248f94e # pinned
+    permissions:
+      contents: read
+      id-token: write
+    with:
+      runner-amd64: ubuntu-26.04
+      runner-arm64: ubuntu-26.04-arm
+      runner-merge: ubuntu-26.04
+      publish: ${{ github.event_name == 'push' || inputs.lanes == 'github' }}
+    secrets:
+      registry-username: ${{ secrets.DOCKERHUB_USERNAME }}
+      registry-password: ${{ secrets.DOCKERHUB_TOKEN }}
+      github-readonly-token: ${{ secrets.GH_READONLY_TOKEN }}
+
+  # Single stable gate over both reusable calls; also gives this workflow a
+  # literal Velnor runs-on so the runner-default audit sees the fleet default.
+  # On push a single GitHub-lane call runs and is itself the check, and
+  # Velnor-labeled jobs must not run on push (merged_push_occupancy), so the
+  # gate skips push.
   publish-required:
-    needs: [publish]
-    if: always()
-    name: Publish required (${{ matrix.config.lane }})
-    timeout-minutes: 5
-    strategy:
-      fail-fast: false
-      matrix:
-        config: ${{ fromJSON((github.event_name == 'workflow_dispatch' && inputs.lanes == 'both') && '[{"lane":"Velnor","runner":["self-hosted","velnor-target-mvp"],"writer":true},{"lane":"GitHub","runner":"ubuntu-26.04","writer":false}]' || (github.event_name == 'workflow_dispatch' && inputs.lanes == 'github') && '[{"lane":"GitHub","runner":"ubuntu-26.04","writer":true}]' || '[{"lane":"Velnor","runner":["self-hosted","velnor-target-mvp"],"writer":true}]') }}
-    runs-on: ${{ matrix.config.runner }}
+    name: Publish required
+    needs: [publish-velnor, publish-github]
+    if: ${{ always() && github.event_name != 'push' }}
+    permissions: {}
+    # Headroom for fleet admission/finalization: the gate itself takes seconds,
+    # but short timeouts previously killed queued jobs while the fleet was
+    # saturated by simultaneous merges.
+    timeout-minutes: 15
+    runs-on: [self-hosted, velnor-target-mvp]
     steps:
-      - name: Fail on any failed or cancelled need
-        env:
+      - env:
           NEEDS_JSON: ${{ toJSON(needs) }}
-        run: |
-          echo "$NEEDS_JSON" | jq -e 'to_entries | map(.value.result) | any(. == "failure" or . == "cancelled") | not' >/dev/null \
-            || { echo "A required job failed or was cancelled." >&2; exit 1; }
+        run: echo "$NEEDS_JSON" | jq -e '[to_entries[].value.result] as $r | ($r | any(. == "failure" or . == "cancelled") | not) and ($r | any(. == "success"))' >/dev/null

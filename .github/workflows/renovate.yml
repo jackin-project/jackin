@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+# SPDX-License-Identifier: Apache-2.0
+
 name: Renovate
 
 on:
@@ -10,7 +13,7 @@ on:
   workflow_dispatch:
     inputs:
       lanes:
-        description: velnor writer (default) | github | both
+        description: velnor (default) | github | both
         type: choice
         default: velnor
         options: [velnor, github, both]
@@ -22,17 +25,26 @@ concurrency:
   group: renovate-${{ github.ref }}
   cancel-in-progress: false
 
+# Both lanes run the SAME steps with the SAME toolchain; only runs-on differs.
+# Fleet admission rejects post-merge push jobs on Velnor (merged_push_occupancy)
+# so open PRs keep the fleet, therefore push events route to the GitHub lane;
+# schedule and dispatch default to Velnor. Renovate mutates repository state,
+# so exactly one lane writes: the single running lane writes; in "both" mode
+# Velnor writes and the GitHub lane is a read-only comparison. The
+# GitHub-hosted label lives in the matrix include so that no runs-on line
+# carries a GitHub-hosted literal: Velnor is the only literal runner default.
+
 jobs:
   renovate:
-    name: Renovate (${{ matrix.config.lane }})
+    name: Renovate (Velnor)
+    if: ${{ github.event_name != 'push' && (github.event_name != 'workflow_dispatch' || inputs.lanes != 'github') }}
+    permissions:
+      contents: read
     timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      matrix:
-        config: ${{ fromJSON((github.event_name == 'workflow_dispatch' && inputs.lanes == 'both') && '[{"lane":"Velnor","runner":["self-hosted","velnor-target-mvp"],"writer":true},{"lane":"GitHub","runner":"ubuntu-26.04","writer":false}]' || (github.event_name == 'workflow_dispatch' && inputs.lanes == 'github') && '[{"lane":"GitHub","runner":"ubuntu-26.04","writer":true}]' || '[{"lane":"Velnor","runner":["self-hosted","velnor-target-mvp"],"writer":true}]') }}
-    runs-on: ${{ matrix.config.runner }}
+    runs-on: [self-hosted, velnor-target-mvp]
     env:
       RENOVATE_TOKEN: ${{ secrets.RENOVATE_TOKEN }}
+      RENOVATE_WRITER: "true"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -40,19 +52,21 @@ jobs:
       - name: Cache Renovate repository cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
-          # renovatebot/github-action mounts /tmp into its container. Keep the
-          # base directory inside that explicit transport boundary so hosted
-          # and Velnor lanes resolve the same writable path.
-          path: /tmp/renovate/cache
-          key: renovate-${{ matrix.config.lane }}-${{ runner.os }}-${{ github.run_id }}
+          path: /tmp/renovate/cache/renovate/repository
+          key: renovate-Velnor-${{ runner.os }}-${{ github.run_id }}
           restore-keys: |
-            renovate-${{ matrix.config.lane }}-${{ runner.os }}-
-      - name: Prepare container-visible Renovate cache
+            renovate-Velnor-${{ runner.os }}-
+      - name: Grant Renovate ownership without world-write
         run: |
-          install -d -m 0777 /tmp/renovate /tmp/renovate/cache /tmp/renovate/repos
-          chmod -R a+rwX /tmp/renovate
+          install -d -m 0755 /tmp/renovate/cache/renovate/repository
+          if [ "$(id -u)" -eq 0 ]; then
+            chown -R 12021:0 /tmp/renovate
+          else
+            # velnor-sudo-exception: transfer the workspace-owned cache to Renovate's fixed container UID
+            sudo chown -R 12021:0 /tmp/renovate
+          fi
       - name: Self-hosted Renovate
-        if: ${{ matrix.config.writer && env.RENOVATE_TOKEN != '' }}
+        if: env.RENOVATE_WRITER == 'true' && env.RENOVATE_TOKEN != ''
         uses: renovatebot/github-action@e09d604f8f803bb527bd8321ed5be06c460b8682 # v46.2.2
         with:
           token: ${{ env.RENOVATE_TOKEN }}
@@ -66,23 +80,74 @@ jobs:
           # default author would silently break DCO on every Renovate PR.
           RENOVATE_GIT_AUTHOR: "Renovate Bot <renovate@whitesourcesoftware.com>"
           RENOVATE_REPOSITORY_CACHE: enabled
-          RENOVATE_BASE_DIR: /tmp/renovate
           LOG_LEVEL: debug
-      - name: Explain read-only comparison lane
-        if: ${{ !matrix.config.writer }}
-        run: echo 'Read-only comparison lane; Renovate mutation skipped.'
+      - name: Explain non-writer or missing-token lane
+        if: ${{ env.RENOVATE_WRITER != 'true' || env.RENOVATE_TOKEN == '' }}
+        run: echo 'Read-only comparison lane or token unavailable; Renovate mutation skipped.'
 
-  renovate-required:
-    needs: [renovate]
-    if: always()
-    name: Renovate required (${{ matrix.config.lane }})
-    timeout-minutes: 5
+  renovate-github:
+    name: Renovate (GitHub)
+    if: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.lanes != 'velnor') }}
+    permissions:
+      contents: read
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        config: ${{ fromJSON((github.event_name == 'workflow_dispatch' && inputs.lanes == 'both') && '[{"lane":"Velnor","runner":["self-hosted","velnor-target-mvp"],"writer":true},{"lane":"GitHub","runner":"ubuntu-26.04","writer":false}]' || (github.event_name == 'workflow_dispatch' && inputs.lanes == 'github') && '[{"lane":"GitHub","runner":"ubuntu-26.04","writer":true}]' || '[{"lane":"Velnor","runner":["self-hosted","velnor-target-mvp"],"writer":true}]') }}
-    runs-on: ${{ matrix.config.runner }}
+        include:
+          - runner: ubuntu-26.04
+    runs-on: ${{ matrix.runner }}
+    env:
+      RENOVATE_TOKEN: ${{ secrets.RENOVATE_TOKEN }}
+      RENOVATE_WRITER: ${{ github.event_name == 'workflow_dispatch' && inputs.lanes == 'both' && 'false' || 'true' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Cache Renovate repository cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: /tmp/renovate/cache/renovate/repository
+          key: renovate-GitHub-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: |
+            renovate-GitHub-${{ runner.os }}-
+      - name: Grant Renovate ownership without world-write
+        run: |
+          install -d -m 0755 /tmp/renovate/cache/renovate/repository
+          if [ "$(id -u)" -eq 0 ]; then
+            chown -R 12021:0 /tmp/renovate
+          else
+            # velnor-sudo-exception: transfer the workspace-owned cache to Renovate's fixed container UID
+            sudo chown -R 12021:0 /tmp/renovate
+          fi
+      - name: Self-hosted Renovate
+        if: env.RENOVATE_WRITER == 'true' && env.RENOVATE_TOKEN != ''
+        uses: renovatebot/github-action@e09d604f8f803bb527bd8321ed5be06c460b8682 # v46.2.2
+        with:
+          token: ${{ env.RENOVATE_TOKEN }}
+        env:
+          RENOVATE_REPOSITORIES: ${{ github.repository }}
+          RENOVATE_ONBOARDING: false
+          RENOVATE_GIT_AUTHOR: "Renovate Bot <renovate@whitesourcesoftware.com>"
+          RENOVATE_REPOSITORY_CACHE: enabled
+          LOG_LEVEL: debug
+      - name: Explain non-writer or missing-token lane
+        if: ${{ env.RENOVATE_WRITER != 'true' || env.RENOVATE_TOKEN == '' }}
+        run: echo 'Read-only comparison lane or token unavailable; Renovate mutation skipped.'
+
+  renovate-required:
+    needs: [renovate, renovate-github]
+    # On push a single GitHub-lane job runs and is itself the check; the gate
+    # aggregates lanes for every other event. Velnor-labeled jobs must not run
+    # on push (merged_push_occupancy), so the gate skips push.
+    if: ${{ always() && github.event_name != 'push' }}
+    name: Renovate required (Velnor)
+    permissions: {}
+    # Headroom for fleet admission/finalization: the gate itself takes seconds,
+    # but a short timeout previously killed it while the fleet was saturated.
+    timeout-minutes: 15
+    runs-on: [self-hosted, velnor-target-mvp]
     steps:
       - env:
           NEEDS_JSON: ${{ toJSON(needs) }}
-        run: echo "$NEEDS_JSON" | jq -e 'to_entries | map(.value.result) | any(. == "failure" or . == "cancelled") | not' >/dev/null
+        run: echo "$NEEDS_JSON" | jq -e '[to_entries[].value.result] as $r | ($r | any(. == "failure" or . == "cancelled") | not) and ($r | any(. == "success"))' >/dev/null
