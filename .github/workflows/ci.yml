@@ -125,7 +125,7 @@ jobs:
       actions: read
       contents: read
       pull-requests: read
-    uses: tailrocks/velnor-actions/.github/workflows/ci-code.yml@43fc50c6940beac5a14de96f7e7d7ef3fcac568f # 2026.8.28
+    uses: tailrocks/velnor-actions/.github/workflows/ci-code.yml@77d323dcfdb176b332edc24bfc92cb625b3ab4c8 # 2026.8.30
     with:
       lane: ${{ github.event_name == 'workflow_dispatch' && inputs.lane || 'velnor' }}
       recovery_proof_id: ${{ inputs.recovery_proof_id || '' }}
