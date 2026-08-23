@@ -2,7 +2,7 @@ FROM projectjackin/construct:0.35-trixie@sha256:d6917f1fc28037a0838e6c02db9b7c83
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
-ARG RUST_VERSION=1.97.1
+ARG RUST_VERSION=1.98.0
 ARG NODE_VERSION=24.19.0
 ARG JAVA_VERSION=oracle-graalvm-25.0.1
 ARG PROTOC_VERSION=35.1
