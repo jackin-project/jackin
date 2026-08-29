@@ -16,7 +16,7 @@ ARG RUST_SCRIPT_VERSION=0.36.0
 # renovate: datasource=crate depName=just
 ARG JUST_VERSION=1.58.0
 # renovate: datasource=crate depName=bottom
-ARG BOTTOM_VERSION=0.14.8
+ARG BOTTOM_VERSION=0.14.9
 ARG CTX7_VERSION=0.5.8
 ARG RTK_VERSION=0.45.0
 ARG UV_VERSION=0.12.6
