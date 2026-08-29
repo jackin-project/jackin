@@ -73,6 +73,9 @@ jobs:
         env:
           RENOVATE_REPOSITORIES: ${{ github.repository }}
           RENOVATE_ONBOARDING: false
+          # Let Renovate run `mise lock` so mise.toml tool bumps refresh
+          # mise.lock in the same PR (CI installs mise tools in locked mode).
+          RENOVATE_ALLOWED_UNSAFE_EXECUTIONS: "mise"
           # Pin the git author identity so the DCO sign-off trailer in
           # renovate.json::commitBody always matches the commit-author
           # email. DCO-2 requires the Signed-off-by email to equal the
