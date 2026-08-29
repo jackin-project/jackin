@@ -24,11 +24,10 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 # Both lanes run the SAME steps with the SAME toolchain; only runs-on differs.
-# Fleet admission rejects post-merge push jobs on Velnor (merged_push_occupancy)
-# so open PRs keep the fleet, therefore push events route to the GitHub lane;
-# every other event defaults to Velnor. The GitHub-hosted label lives in the
-# matrix include so that no runs-on line carries a GitHub-hosted literal:
-# Velnor is the only literal runner default.
+# Fleet admission rejects post-merge push jobs on Velnor (merged_push_occupancy),
+# so push events route to the GitHub lane. pull_request also routes to the
+# GitHub lane (ubuntu-26.04) so PR checks never wait on the self-hosted fleet;
+# workflow_dispatch keeps Velnor as the default lane.
 
 jobs:
   prek:
@@ -37,7 +36,7 @@ jobs:
     permissions:
       contents: read
     timeout-minutes: 15
-    runs-on: [self-hosted, velnor-target-mvp]
+    runs-on: ${{ github.event_name == 'pull_request' && 'ubuntu-26.04' || fromJSON('["self-hosted","velnor-target-mvp"]') }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -85,7 +84,7 @@ jobs:
     # Headroom for fleet admission/finalization: the gate itself takes seconds,
     # but a short timeout previously killed it while the fleet was saturated.
     timeout-minutes: 15
-    runs-on: [self-hosted, velnor-target-mvp]
+    runs-on: ${{ github.event_name == 'pull_request' && 'ubuntu-26.04' || fromJSON('["self-hosted","velnor-target-mvp"]') }}
     steps:
       - env:
           NEEDS_JSON: ${{ toJSON(needs) }}
