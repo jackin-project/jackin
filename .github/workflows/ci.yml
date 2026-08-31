@@ -99,7 +99,7 @@ jobs:
       actions: read
       contents: read
       pull-requests: read
-    uses: jackin-project/velnor-actions/.github/workflows/ci-native.yml@796dfcd26d4110319c8363155d2eae6885114893 # 2026.8.32
+    uses: jackin-project/velnor-actions/.github/workflows/ci-native.yml@851ef541d67f9cabebf2ddb2a2a02f51f6c54130 # 2026.8.33
     with:
       lane: ${{ github.event_name == 'workflow_dispatch' && inputs.lanes || (github.event_name == 'pull_request' || github.event_name == 'merge_group' || github.event_name == 'push') && 'github' || 'velnor' }}
       recovery_proof_id: ${{ inputs.recovery_proof_id || '' }}
