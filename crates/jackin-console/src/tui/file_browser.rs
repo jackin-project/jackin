@@ -396,7 +396,14 @@ fn active_file_browser_commit_facts(
                 return None;
             };
             let auth_kind = if *target == FileBrowserTarget::AuthFormSourceFolder {
-                editor.auth_selected_kind
+                editor
+                    .modal_parents
+                    .iter()
+                    .rev()
+                    .find_map(|modal| match modal {
+                        Modal::AuthForm { state, .. } => Some(state.kind),
+                        _ => None,
+                    })
             } else {
                 None
             };
@@ -565,7 +572,17 @@ fn execute_editor_file_browser_outcome(
             // credential structure. Reject a wrong folder inline and keep
             // the picker open rather than saving an unusable path.
             if target == FileBrowserTarget::AuthFormSourceFolder
-                && let Err(reason) = auth_source_folder_validator(editor.auth_selected_kind, &path)
+                && let Err(reason) = auth_source_folder_validator(
+                    editor
+                        .modal_parents
+                        .iter()
+                        .rev()
+                        .find_map(|modal| match modal {
+                            Modal::AuthForm { state, .. } => Some(state.kind),
+                            _ => None,
+                        }),
+                    &path,
+                )
             {
                 editor.open_sub_modal(Modal::ErrorPopup {
                     state: error_popup::invalid_source_folder_error_popup_state(reason),

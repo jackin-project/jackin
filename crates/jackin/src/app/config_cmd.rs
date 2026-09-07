@@ -98,7 +98,6 @@ pub(super) fn handle(
     match cmd {
         ConfigCommand::Mount(mount_cmd) => handle_mount_cmd(mount_cmd, config, paths),
         ConfigCommand::Trust(trust_cmd) => handle_trust_cmd(trust_cmd, config, paths),
-        ConfigCommand::Auth(auth_cmd) => handle_auth_cmd(auth_cmd, config, paths),
         ConfigCommand::Env(env_cmd) => handle_env_cmd(env_cmd, config, paths),
         ConfigCommand::Git(git_cmd) => handle_git_cmd(git_cmd, paths),
     }
@@ -331,35 +330,6 @@ fn emit_trust_decision(
         &jackin_telemetry::event::TRUST_DECISION,
         jackin_telemetry::FieldSet::new(&attrs, None),
     );
-}
-
-fn handle_auth_cmd(
-    auth_cmd: cli::AuthCommand,
-    config: &AppConfig,
-    paths: &JackinPaths,
-) -> Result<()> {
-    match auth_cmd {
-        cli::AuthCommand::Set { mode, agent } => {
-            let parsed_agent = super::parse_agent_from_cli(&agent)?;
-            let parsed_mode = super::parse_auth_forward_mode_from_cli(&mode)?;
-            if !parsed_agent.supported_modes().contains(&parsed_mode) {
-                anyhow::bail!(
-                    "auth_forward {parsed_mode} is not supported for {parsed_agent}; \
-                         supported modes: {:?}",
-                    parsed_agent.supported_modes()
-                );
-            }
-            let mut editor = jackin_config::ConfigEditor::open(paths)?;
-            editor.set_global_auth_forward(parsed_agent, parsed_mode);
-            editor.save()?;
-            println!("Set global {parsed_agent} auth forwarding to {parsed_mode}.");
-            Ok(())
-        }
-        cli::AuthCommand::Show => {
-            print!("{}", super::render_auth_show(config));
-            Ok(())
-        }
-    }
 }
 
 fn handle_env_cmd(env_cmd: cli::EnvCommand, config: &AppConfig, paths: &JackinPaths) -> Result<()> {

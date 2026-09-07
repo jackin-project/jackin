@@ -2,12 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::collections::BTreeMap;
-use std::path::PathBuf;
 
 use jackin_config::{
-    AgentAuthConfig, AppConfig, AuthForwardMode, EnvScope, EnvValue, GithubAuthConfig,
-    GithubAuthMode, KeepAwakeConfig, MountConfig, MountIsolation, WorkspaceConfig,
-    WorkspaceRoleOverride,
+    AppConfig, EnvScope, EnvValue, GithubAuthConfig, KeepAwakeConfig, MountConfig, MountIsolation,
+    WorkspaceConfig, WorkspaceRoleOverride,
 };
 use jackin_core::{Agent, WorkspaceName};
 
@@ -33,67 +31,51 @@ fn mount(src: &str, dst: &str) -> MountConfig {
 }
 
 #[test]
-fn workspace_save_diff_plan_captures_auth_and_source_dir_changes() {
+fn workspace_save_diff_plan_captures_account_assignments_and_bindings() {
     let original = WorkspaceConfig::default();
-    let mut pending = WorkspaceConfig {
-        claude: Some(AgentAuthConfig {
-            auth_forward: AuthForwardMode::ApiKey,
-            sync_source_dir: Some(PathBuf::from("/host/claude")),
-        }),
-        github: Some(GithubAuthConfig {
-            auth_forward: GithubAuthMode::Token,
-            env: BTreeMap::default(),
-        }),
+    let pending = WorkspaceConfig {
+        accounts: vec!["work".into(), "personal".into()],
+        account_bindings: [(Agent::Claude, "work".into())].into(),
+        roles: [(
+            "smith".into(),
+            WorkspaceRoleOverride {
+                account_bindings: [(Agent::Claude, "personal".into())].into(),
+                ..Default::default()
+            },
+        )]
+        .into(),
         ..Default::default()
     };
-    pending.roles.insert(
-        "smith".into(),
-        WorkspaceRoleOverride {
-            codex: Some(AgentAuthConfig {
-                auth_forward: AuthForwardMode::OAuthToken,
-                sync_source_dir: Some(PathBuf::from("/host/codex")),
-            }),
-            github: Some(GithubAuthConfig {
-                auth_forward: GithubAuthMode::Ignore,
-                env: BTreeMap::default(),
-            }),
-            ..Default::default()
-        },
-    );
-
     let ops = workspace_save_diff_plan(&wn("proj"), &original, &pending);
-
-    assert!(ops.contains(&WorkspaceSaveDiffOp::WorkspaceAuthForward {
-        agent: Agent::Claude,
-        mode: Some(AuthForwardMode::ApiKey),
-    }));
-    assert!(ops.contains(&WorkspaceSaveDiffOp::WorkspaceSyncSourceDir {
-        agent: Agent::Claude,
-        source: Some(PathBuf::from("/host/claude")),
-    }));
+    assert_eq!(
+        ops,
+        vec![
+            WorkspaceSaveDiffOp::WorkspaceAccounts {
+                accounts: pending.accounts.clone()
+            },
+            WorkspaceSaveDiffOp::WorkspaceAccountBinding {
+                agent: Agent::Claude,
+                account: Some("work".into())
+            },
+            WorkspaceSaveDiffOp::WorkspaceRoleAccountBinding {
+                role: "smith".into(),
+                agent: Agent::Claude,
+                account: Some("personal".into())
+            },
+        ]
+    );
+    let removed = workspace_save_diff_plan(&wn("proj"), &pending, &original);
     assert!(
-        ops.contains(&WorkspaceSaveDiffOp::WorkspaceGithubAuthForward {
-            mode: Some(GithubAuthMode::Token),
+        removed.contains(&WorkspaceSaveDiffOp::WorkspaceAccountBinding {
+            agent: Agent::Claude,
+            account: None
         })
     );
     assert!(
-        ops.contains(&WorkspaceSaveDiffOp::WorkspaceRoleAuthForward {
+        removed.contains(&WorkspaceSaveDiffOp::WorkspaceRoleAccountBinding {
             role: "smith".into(),
-            agent: Agent::Codex,
-            mode: Some(AuthForwardMode::OAuthToken),
-        })
-    );
-    assert!(
-        ops.contains(&WorkspaceSaveDiffOp::WorkspaceRoleSyncSourceDir {
-            role: "smith".into(),
-            agent: Agent::Codex,
-            source: Some(PathBuf::from("/host/codex")),
-        })
-    );
-    assert!(
-        ops.contains(&WorkspaceSaveDiffOp::WorkspaceRoleGithubAuthForward {
-            role: "smith".into(),
-            mode: Some(GithubAuthMode::Ignore),
+            agent: Agent::Claude,
+            account: None
         })
     );
 }
@@ -341,4 +323,68 @@ fn validate_settings_env_rejects_empty_and_reserved_keys() {
             .to_string()
             .contains("is reserved by the jackin runtime")
     );
+}
+
+#[test]
+fn settings_save_round_trips_multiple_accounts_and_github_independently() {
+    let temp = tempfile::tempdir().unwrap();
+    let paths = jackin_core::JackinPaths::for_tests(temp.path());
+    paths.ensure_base_dirs().unwrap();
+    let config = jackin_config::ConfigEditor::open(&paths)
+        .unwrap()
+        .save()
+        .unwrap();
+    let mut settings = crate::tui::state::SettingsState::from_config(&config);
+    for id in ["personal", "work"] {
+        settings.auth.pending.insert(
+            id.into(),
+            jackin_config::AccountConfig {
+                enabled: true,
+                name: id.into(),
+                provider: jackin_config::AiProvider::OpenAi,
+                credential: jackin_config::AccountCredential::ApiKey {
+                    value: EnvValue::Plain(format!("secret-{id}")),
+                    base_url: None,
+                    model: None,
+                },
+            },
+        );
+    }
+    settings.auth.github.auth_forward = jackin_config::GithubAuthMode::Token;
+    settings
+        .auth
+        .github
+        .env
+        .insert("GH_TOKEN".into(), EnvValue::Plain("github-secret".into()));
+    let save = |settings: &crate::tui::state::SettingsState<'_>| {
+        super::save_settings(
+            &paths,
+            super::SettingsSaveInput {
+                mounts_original: &settings.mounts.original,
+                mounts_pending: &settings.mounts.pending,
+                env_original: &settings.env.original,
+                env_pending: &settings.env.pending,
+                auth_original: &settings.auth.original,
+                auth_pending: &settings.auth.pending,
+                github: &settings.auth.github,
+                original_github: &settings.auth.original_github,
+                bindings_pending: &settings.auth.bindings,
+                bindings_original: &settings.auth.original_bindings,
+                trust_pending: &settings.trust.pending,
+                git_coauthor_trailer: settings.general.pending_coauthor_trailer,
+                git_dco: settings.general.pending_dco,
+            },
+        )
+        .unwrap()
+    };
+    let saved = save(&settings);
+    assert_eq!(saved.accounts, settings.auth.pending);
+    assert_eq!(saved.github.as_ref(), Some(&settings.auth.github));
+    settings.mark_saved();
+    settings.auth.pending.remove("work");
+    settings.auth.pending.get_mut("personal").unwrap().name = "Renamed personal".into();
+    let saved = save(&settings);
+    assert!(!saved.accounts.contains_key("work"));
+    assert_eq!(saved.accounts["personal"].name, "Renamed personal");
+    assert_eq!(saved.github.as_ref(), Some(&settings.auth.github));
 }

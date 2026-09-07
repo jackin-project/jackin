@@ -21,7 +21,7 @@ pub type ConsoleOutcome = crate::tui::message::ConsoleOutcome<
     RoleSelector,
     jackin_config::ResolvedWorkspace,
     jackin_core::Agent,
-    jackin_protocol::Provider,
+    Option<String>,
 >;
 
 pub fn new_console_state(

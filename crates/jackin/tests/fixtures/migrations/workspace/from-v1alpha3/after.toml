@@ -1,8 +1,8 @@
-version = "v1alpha8"
 # SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 # SPDX-License-Identifier: Apache-2.0
 
 workdir = "/workspace/prod"
+version = "v1alpha3"
 
 [opencode]
 auth_forward = "sync"

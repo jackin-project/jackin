@@ -24,13 +24,19 @@ The split-workspace layout described in [Configuration File](/reference/runtime/
 
 | File | Current version | Owner | Migration mode |
 |---|---|---|---|
-| `~/.config/jackin/config.toml` | `v1alpha9` | jackin❯ | Automatic on startup |
-| `~/.config/jackin/workspaces/<name>.toml` | `v1alpha8` | jackin❯ | Automatic on startup |
-| `jackin.role.toml` | `v1alpha6` | Role repository | Desktop: `jackin role migrate <role-repo-path>`; CI/automation: `jackin-role migrate <role-repo-path>` |
+| `~/.config/jackin/config.toml` | `v1alpha10` | jackin❯ | Automatic on startup |
+| `~/.config/jackin/workspaces/<name>.toml` | `v1alpha9` | jackin❯ | Automatic on startup |
+| `jackin.role.toml` | `v1alpha7` | Role repository | Desktop: `jackin role migrate <role-repo-path>`; CI/automation: `jackin-role migrate <role-repo-path>` |
 
 ## Timeline
 
 Each entry is one upgrade path the current binary applies. <RepoFile path="crates/jackin/tests/migration_fixtures.rs">crates/jackin/tests/migration_fixtures.rs</RepoFile> walks every fixture on every CI run, so a regression breaks here before it breaks on a delayed operator's machine. Newest first; append, never edit.
+
+### Config `v1alpha10` and workspace `v1alpha9` — 2026-09-07
+
+Named accounts replace per-agent authentication-policy tables. Global configuration owns account credentials; workspaces own allowed IDs and agent selections, with optional role selections. Existing agent policy tables are rejected before writing migration output because implicit credential grants cannot be converted into explicit authorization safely.
+
+Remove old per-agent tables, register their sources, and assign accounts through the [account commands](/commands/account/). GitHub authentication remains separate. Earlier timeline entries below describe historical schemas, not supported current configuration.
 
 ### Config `v1alpha9` — 2026-07-06
 
@@ -127,6 +133,8 @@ profile = "hardened"
 
 ### Manifest `v1alpha5` — 2026-06-10
 
+Historical behavior below: provider override tables were removed by the named-account migration. Current manifests reject them; provider models belong to accounts.
+
 | File kind | Predecessor | Migration mode | Fixture |
 |---|---|---|---|
 | Role manifest (`jackin.role.toml`) | `v1alpha4` | Desktop: `jackin role migrate <role-repo-path>`; CI/automation: `jackin-role migrate <role-repo-path>` | <RepoFile path="crates/jackin/tests/fixtures/migrations/manifest/from-v1alpha4/meta.toml">crates/jackin/tests/fixtures/migrations/manifest/from-v1alpha4/meta.toml</RepoFile> |
@@ -202,13 +210,17 @@ auth_forward = "sync"
 sync_source_dir = "/Users/alice/company/.claude"
 ```
 
+### Manifest `v1alpha7` — 2026-09-07
+
+Role provider-model tables (`[claude.providers]`, `[codex.providers]`, and `[opencode.providers]`) are removed. Provider models belong to named API accounts, assigned to workspace agents. Run `jackin role migrate <role-repo-path>` to upgrade. A manifest containing removed tables is left unchanged and migration stops with instructions to move those models into accounts. Manifests without those tables are restamped.
+
 ### Manifest `v1alpha6` — 2026-06-18
 
 | File kind | Predecessor | Migration mode | Fixture |
 |---|---|---|---|
 | Role manifest (`jackin.role.toml`) | `v1alpha5` | Desktop: `jackin role migrate <role-repo-path>`; CI/automation: `jackin-role migrate <role-repo-path>` | <RepoFile path="crates/jackin/tests/fixtures/migrations/manifest/from-v1alpha5/meta.toml" /> |
 
-**Summary**: introduces the optional role `[docker]` security block — `[docker].min_profile` (optional string), `[docker].dind` (optional string), `[docker].allowed_hosts` (optional array of strings), and `[docker].capabilities_add` (optional array of strings). All additive with serde defaults, so existing manifests round-trip cleanly and the migration is a no-op restamp. A manifest stamped older than `v1alpha6` that uses a `[docker]` table is rejected with a `jackin role migrate` hint, the same way the per-provider (`v1alpha5`), OpenCode (`v1alpha3`), and Kimi (`v1alpha4`) fields are gated.
+**Summary**: introduces the optional role `[docker]` security block — `[docker].min_profile` (optional string), `[docker].dind` (optional string), `[docker].allowed_hosts` (optional array of strings), and `[docker].capabilities_add` (optional array of strings). All additive with serde defaults, so existing manifests round-trip cleanly and the migration is a no-op restamp. A manifest stamped older than `v1alpha6` that uses a `[docker]` table is rejected with a `jackin role migrate` hint, the same way the OpenCode (`v1alpha3`) and Kimi (`v1alpha4`) fields are gated.
 
 **Before** (v1alpha5 manifest):
 
@@ -589,7 +601,6 @@ automated migration jobs.
 | `[amp]` | table | No | `legacy` | Empty marker table for Amp support |
 | `[kimi].model` | string | No | `v1alpha4` | Kimi model override passed to `kimi --model` |
 | `[opencode].model` | string | No | `v1alpha3` | `OpenCode` model override in `provider/model` format (e.g. `zai-coding-plan/glm-5.1`) |
-| `[<agent>.providers.<id>].model` | string | No | `v1alpha5` | Per-provider model override for `[claude]`, `[codex]`, and `[opencode]`; map defaults to empty |
 | `[docker].min_profile` | string | No | `v1alpha6` | Lowest security profile the role accepts: `locked`, `hardened`, `standard`, or `compat` |
 | `[docker].dind` | string | No | `v1alpha6` | Inner Docker requirement: `none`, `rootless`, or `privileged` |
 | `[docker].allowed_hosts` | string array | No | `v1alpha6` | Hosts the role needs reachable under an allowlist network profile |

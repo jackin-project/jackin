@@ -89,6 +89,14 @@ def call(operation):
     return json.loads(b"".join(chunks))
 
 mode = os.environ["JACKIN_USAGE_E2E_MODE"]
+if mode == "gated-refresh":
+    with open("/jackin/run/client-ready", "w", encoding="utf-8") as marker:
+        marker.write("ready")
+    deadline = time.monotonic() + 45
+    while not os.path.exists("/jackin/run/client-go"):
+        assert time.monotonic() < deadline, "client launch barrier timed out"
+        time.sleep(0.01)
+    mode = "refresh"
 if mode == "refresh":
     initial = call({
         "operation": "refresh_for_surface",
@@ -419,40 +427,10 @@ async fn assert_desktop_capsule_singleflight(capsules: usize) -> Result<()> {
     let root = temp.path().to_path_buf();
     let calls = Arc::new(AtomicUsize::new(0));
     let broker = broker_with_gate(&root, Arc::clone(&calls), 4)?;
-    if capsules > 2 {
-        let active = broker.refresh(capability(), 0, true).test_result()?;
-        wait_for_async(Duration::from_secs(10), || {
-            entries_with_prefix(&root, "provider-started-") == 1
-        })
-        .await;
-        for index in 0..capsules {
-            let container = start_capsule(&root, index, broker.clone()).await?;
-            let container_name = container.name.clone();
-            let response =
-                tokio::task::spawn_blocking(move || run_capsule(&container_name, "request"))
-                    .await??;
-            let UsageBrokerResponse::State { state } = response else {
-                bail!("Capsule did not join the active Desktop generation");
-            };
-            assert_eq!(state.generation, active.generation);
-            assert!(state.phase.is_active());
-            drop(container);
-        }
-        assert_eq!(
-            broker.current(capability()).test_result()?.phase,
-            UsageRefreshPhase::Updating
-        );
-        fs::write(root.join("release"), b"release\n")?;
-        assert_eq!(
-            broker
-                .join(capability(), active.generation, Duration::from_secs(30))
-                .test_result()?
-                .phase,
-            UsageRefreshPhase::Completed
-        );
-        assert_eq!(calls.load(Ordering::SeqCst), 1);
-        return Ok(());
-    }
+    // Container startup is outside provider execution. Every capsule must be
+    // ready before opening the shared generation, so Docker provisioning cost
+    // cannot consume the provider's timeout or replace concurrent waiters with
+    // a sequence of short-lived clients.
     let mut containers = Vec::new();
     let mut relay_dirs = Vec::new();
     for index in 0..capsules {
@@ -460,18 +438,28 @@ async fn assert_desktop_capsule_singleflight(capsules: usize) -> Result<()> {
         relay_dirs.push(container.relay_dir.clone());
         containers.push(container);
     }
+    let mut tasks = Vec::new();
+    for container in &containers {
+        let container_name = container.name.clone();
+        tasks.push(tokio::task::spawn_blocking(move || {
+            run_capsule(&container_name, "gated-refresh")
+        }));
+    }
+    // docker exec and Python startup are provisioning too. Readiness proves
+    // every client process is already waiting before provider timing starts.
+    wait_for_async(Duration::from_secs(45), || {
+        relay_dirs
+            .iter()
+            .all(|dir| dir.join("client-ready").exists())
+    })
+    .await;
     let active = broker.refresh(capability(), 0, true).test_result()?;
     wait_for_async(Duration::from_secs(10), || {
         entries_with_prefix(&root, "provider-started-") == 1
     })
     .await;
-
-    let mut tasks = Vec::new();
-    for container in &containers {
-        let container_name = container.name.clone();
-        tasks.push(tokio::task::spawn_blocking(move || {
-            run_capsule(&container_name, "refresh")
-        }));
+    for directory in &relay_dirs {
+        fs::write(directory.join("client-go"), b"go\n")?;
     }
     wait_for_async(Duration::from_secs(45), || {
         relay_dirs.iter().all(|dir| dir.join("requested").exists())
@@ -484,6 +472,14 @@ async fn assert_desktop_capsule_singleflight(capsules: usize) -> Result<()> {
     let terminal = broker
         .join(capability(), active.generation, Duration::from_secs(30))
         .test_result()?;
+    assert_eq!(
+        terminal.phase,
+        UsageRefreshPhase::Completed,
+        "shared generation failed for {capsules} capsules: generation={}, error={:?}, provider_calls={}",
+        terminal.generation,
+        terminal.error,
+        calls.load(Ordering::SeqCst)
+    );
     let expected = UsageBrokerResponse::State {
         state: Box::new(terminal),
     };

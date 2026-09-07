@@ -3,43 +3,38 @@
 
 /// `SettingsAuthState` impls + helper fns.
 use super::{
-    AuthKind, AuthMode, BTreeMap, GlobalMountsState, SettingsAuthRestorePendingForm,
-    SettingsAuthRow, SettingsAuthSaveRefs, SettingsAuthSlot, SettingsAuthState, SettingsEnvState,
-    SettingsPanelChangeCount, SettingsPanelDirty, SettingsPanelDiscard, SettingsPanelMarkSaved,
-    SettingsPanelTakeError, SettingsState,
+    AuthKind, BTreeMap, GlobalMountsState, SettingsAuthRestorePendingForm, SettingsAuthSaveRefs,
+    SettingsAuthSlot, SettingsAuthState, SettingsEnvState, SettingsPanelChangeCount,
+    SettingsPanelDirty, SettingsPanelDiscard, SettingsPanelMarkSaved, SettingsPanelTakeError,
+    SettingsState,
 };
 
 impl<EnvValue, Modal, PendingOpCommit> SettingsAuthState<EnvValue, Modal, PendingOpCommit> {
     #[must_use]
-    pub fn from_config(config: &jackin_config::AppConfig) -> Self
-    where
-        EnvValue: Clone + From<jackin_config::EnvValue>,
-    {
-        let github_env = crate::tui::auth_config::app_github_env(config)
-            .into_iter()
-            .map(|(key, value)| (key, EnvValue::from(value)))
-            .collect();
-        let pending = crate::tui::auth_config::settings_auth_rows_from_app_config(config);
-        Self::from_rows_and_github_env(pending, github_env)
+    pub fn from_config(config: &jackin_config::AppConfig) -> Self {
+        let mut state = Self::from_accounts(config.accounts.clone());
+        state.github = config.github.clone().unwrap_or_default();
+        state.original_github = state.github.clone();
+        state.bindings = config.account_bindings.clone();
+        state.original_bindings = state.bindings.clone();
+        state
     }
 
     #[must_use]
-    pub fn from_rows_and_github_env(
-        pending: Vec<SettingsAuthRow<AuthKind, AuthMode>>,
-        github_env: BTreeMap<String, EnvValue>,
-    ) -> Self
-    where
-        EnvValue: Clone,
-    {
+    pub fn from_accounts(pending: BTreeMap<String, jackin_config::AccountConfig>) -> Self {
         Self {
             selected: 0,
             selected_kind: None,
             original: pending.clone(),
             pending,
-            github_env: github_env.clone(),
-            original_github_env: github_env,
+            github: jackin_config::GithubAuthConfig::default(),
+            original_github: jackin_config::GithubAuthConfig::default(),
+            bindings: BTreeMap::new(),
+            original_bindings: BTreeMap::new(),
+            editing_account: None,
+            editing_text: None,
+            value_type: std::marker::PhantomData,
             modals: crate::tui::modal_chain::ModalChain::new(),
-            generating_token: false,
             error: None,
             pending_op_commit: None,
             scroll: crate::tui::scroll_block::console_scroll_area_state(),
@@ -47,36 +42,20 @@ impl<EnvValue, Modal, PendingOpCommit> SettingsAuthState<EnvValue, Modal, Pendin
     }
 
     #[must_use]
-    pub fn is_dirty(&self) -> bool
-    where
-        EnvValue: PartialEq,
-    {
-        self.pending != self.original || self.github_env != self.original_github_env
+    pub fn is_dirty(&self) -> bool {
+        self.pending != self.original
+            || self.github != self.original_github
+            || self.bindings != self.original_bindings
     }
 
     #[must_use]
     pub fn row_count(&self) -> usize {
-        let Some(kind) = self.selected_kind else {
-            return self.pending.len();
-        };
-        let Some(row) = self.pending.iter().find(|row| row.kind == kind) else {
-            return 0;
-        };
-        crate::tui::screens::settings::update::settings_auth_detail_row_count(kind, row.mode)
+        self.pending.len() + ACCOUNT_KINDS.len() + 1
     }
 
     #[must_use]
-    pub fn selected_detail_row_is_focusable(&self) -> bool {
-        let Some(kind) = self.selected_kind else {
-            return true;
-        };
-        let Some(row) = self.pending.iter().find(|row| row.kind == kind) else {
-            return false;
-        };
-        crate::tui::screens::settings::update::settings_auth_detail_rows(kind, row.mode)
-            .get(self.selected)
-            .copied()
-            .is_some_and(crate::tui::screens::settings::update::settings_auth_row_is_focusable)
+    pub const fn selected_detail_row_is_focusable(&self) -> bool {
+        true
     }
 
     #[must_use]
@@ -86,7 +65,7 @@ impl<EnvValue, Modal, PendingOpCommit> SettingsAuthState<EnvValue, Modal, Pendin
 
     #[must_use]
     pub const fn has_selected_kind(&self) -> bool {
-        self.selected_kind.is_some()
+        false
     }
 
     pub fn scroll_state_mut(&mut self) -> &mut termrock::widgets::ScrollAreaState {
@@ -94,11 +73,14 @@ impl<EnvValue, Modal, PendingOpCommit> SettingsAuthState<EnvValue, Modal, Pendin
     }
 
     #[must_use]
-    pub fn save_refs(&self) -> SettingsAuthSaveRefs<'_, EnvValue> {
+    pub fn save_refs(&self) -> SettingsAuthSaveRefs<'_> {
         SettingsAuthSaveRefs {
             pending: &self.pending,
-            original_github_env: &self.original_github_env,
-            github_env: &self.github_env,
+            original: &self.original,
+            github: &self.github,
+            original_github: &self.original_github,
+            bindings: &self.bindings,
+            original_bindings: &self.original_bindings,
         }
     }
 
@@ -107,11 +89,13 @@ impl<EnvValue, Modal, PendingOpCommit> SettingsAuthState<EnvValue, Modal, Pendin
         EnvValue: Clone,
     {
         self.pending = self.original.clone();
-        self.github_env = self.original_github_env.clone();
+        self.github = self.original_github.clone();
+        self.bindings = self.original_bindings.clone();
+        self.editing_account = None;
+        self.editing_text = None;
         self.selected_kind = None;
         self.selected = self.selected.min(self.pending.len().saturating_sub(1));
         self.modals.clear();
-        self.generating_token = false;
         self.error = None;
     }
 
@@ -120,7 +104,8 @@ impl<EnvValue, Modal, PendingOpCommit> SettingsAuthState<EnvValue, Modal, Pendin
         EnvValue: Clone,
     {
         self.original = self.pending.clone();
-        self.original_github_env = self.github_env.clone();
+        self.original_github = self.github.clone();
+        self.original_bindings = self.bindings.clone();
     }
 
     pub fn restore_pending_auth_form(&mut self) {
@@ -161,19 +146,6 @@ impl<EnvValue, Modal, PendingOpCommit> SettingsAuthState<EnvValue, Modal, Pendin
         self.error.take()
     }
 
-    pub const fn start_generating_token(&mut self) {
-        self.generating_token = true;
-    }
-
-    pub const fn finish_generating_token(&mut self) {
-        self.generating_token = false;
-    }
-
-    #[must_use]
-    pub const fn is_generating_token(&self) -> bool {
-        self.generating_token
-    }
-
     pub fn set_pending_op_commit(&mut self, pending: PendingOpCommit) {
         self.pending_op_commit = Some(pending);
     }
@@ -199,30 +171,61 @@ impl<EnvValue, Modal, PendingOpCommit> SettingsAuthState<EnvValue, Modal, Pendin
     }
 
     pub fn enter_selected_kind(&mut self) {
-        if let Some(row) = self.pending.get(self.selected) {
-            self.selected_kind = Some(row.kind);
-            self.selected = 0;
-        }
+        self.selected_kind = self
+            .pending
+            .values()
+            .nth(self.selected)
+            .map(account_kind)
+            .or_else(|| {
+                ACCOUNT_KINDS
+                    .get(self.selected.saturating_sub(self.pending.len()))
+                    .copied()
+                    .or_else(|| (self.selected == self.row_count() - 1).then_some(AuthKind::Github))
+            });
     }
 
     pub fn move_selection(&mut self, delta: isize) {
-        let rows = self
-            .selected_kind
-            .and_then(|kind| {
-                self.pending.iter().find(|row| row.kind == kind).map(|row| {
-                    crate::tui::screens::settings::update::settings_auth_detail_rows(kind, row.mode)
-                })
-            })
-            .unwrap_or_else(|| {
-                (0..self.pending.len())
-                    .map(|_| crate::tui::screens::settings::update::SettingsAuthDetailRow::Mode)
-                    .collect()
-            });
-        self.selected = crate::tui::screens::settings::update::settings_auth_selection_plan(
-            self.selected,
-            &rows,
-            delta,
-        );
+        let count = self.row_count();
+        if count > 0 {
+            self.selected = self.selected.saturating_add_signed(delta).min(count - 1);
+        }
+    }
+
+    pub fn toggle_selected_account_enabled(&mut self) {
+        if let Some((id, account)) = self.pending.iter_mut().nth(self.selected) {
+            account.enabled = !account.enabled;
+            if !account.enabled {
+                self.bindings.retain(|_, value| value != id);
+            }
+        }
+    }
+
+    pub fn toggle_account_default(
+        &mut self,
+        id: &str,
+        agent: jackin_core::Agent,
+    ) -> Result<(), String> {
+        let account = self
+            .pending
+            .get(id)
+            .ok_or_else(|| "Account no longer exists".to_owned())?;
+        if !account.supports_agent(agent) {
+            return Err("Choose an enabled account compatible with this agent".into());
+        }
+        if self.bindings.get(&agent).is_some_and(|value| value == id) {
+            self.bindings.remove(&agent);
+        } else {
+            self.bindings.insert(agent, id.to_owned());
+        }
+        Ok(())
+    }
+
+    pub fn delete_selected_account(&mut self) {
+        if let Some(id) = self.pending.keys().nth(self.selected).cloned() {
+            self.pending.remove(&id);
+            self.bindings.retain(|_, value| value != &id);
+        }
+        self.clamp_selected_row();
     }
 
     pub fn open_child_modal(&mut self, parent_modal: Modal, child_modal: Modal) {
@@ -288,69 +291,6 @@ impl<EnvValue, Modal, PendingOpCommit> SettingsAuthSlot
     }
 }
 
-impl<Modal, PendingOpCommit> SettingsAuthState<jackin_core::EnvValue, Modal, PendingOpCommit> {
-    pub fn open_selected_auth_modal(
-        &mut self,
-        agent_env: &BTreeMap<String, jackin_core::EnvValue>,
-        build: impl FnOnce(
-            AuthKind,
-            &SettingsAuthRow<AuthKind, AuthMode>,
-            Option<jackin_core::EnvValue>,
-        ) -> Modal,
-    ) {
-        let Some(kind) = self.selected_kind else {
-            return;
-        };
-        let Some(row) = self.pending.iter().find(|row| row.kind == kind) else {
-            return;
-        };
-        let existing_credential = crate::tui::auth_config::settings_auth_env_value(
-            kind,
-            row.mode,
-            &self.github_env,
-            agent_env,
-        )
-        .cloned();
-        self.modals.open(build(kind, row, existing_credential));
-    }
-
-    pub fn apply_auth_outcome(
-        &mut self,
-        kind: AuthKind,
-        outcome: crate::tui::components::auth_panel::AuthFormOutcome<jackin_core::EnvValue>,
-        agent_env: &mut BTreeMap<String, jackin_core::EnvValue>,
-    ) {
-        if let Some(row) = self.pending.iter_mut().find(|row| row.kind == kind) {
-            row.mode = outcome.mode;
-            row.sync_source_dir = outcome.source_folder;
-        }
-        crate::tui::auth_config::apply_settings_auth_env_commit(
-            kind,
-            outcome.env_var_name,
-            outcome.env_value,
-            &mut self.github_env,
-            agent_env,
-        );
-        self.clamp_selected_row();
-    }
-
-    pub fn clear_auth_kind(
-        &mut self,
-        kind: AuthKind,
-        agent_env: &mut BTreeMap<String, jackin_core::EnvValue>,
-    ) {
-        if let Some(row) = self.pending.iter_mut().find(|row| row.kind == kind) {
-            row.mode = AuthMode::Sync;
-            row.sync_source_dir = None;
-        }
-        crate::tui::auth_config::clear_settings_auth_env_values(
-            kind,
-            &mut self.github_env,
-            agent_env,
-        );
-    }
-}
-
 impl<
     MountRow,
     MountModal,
@@ -361,7 +301,6 @@ impl<
     PendingOpCommit,
     Trust,
     ErrorPopup,
-    PendingToken,
 > crate::tui::model::ConsoleSettingsModalPresence
     for SettingsState<
         GlobalMountsState<MountRow, MountModal>,
@@ -369,7 +308,6 @@ impl<
         SettingsAuthState<AuthValue, AuthModal, PendingOpCommit>,
         Trust,
         ErrorPopup,
-        PendingToken,
     >
 {
     fn settings_modal_facts(&self) -> crate::tui::model::ConsoleStageModalFacts {
@@ -393,7 +331,6 @@ impl<
     PendingOpCommit,
     Trust,
     ErrorPopup,
-    PendingToken,
 > crate::tui::model::ConsoleSettingsFooterHeight
     for SettingsState<
         GlobalMountsState<MountRow, MountModal>,
@@ -401,7 +338,6 @@ impl<
         SettingsAuthState<AuthValue, AuthModal, PendingOpCommit>,
         Trust,
         ErrorPopup,
-        PendingToken,
     >
 {
     fn settings_cached_footer_height(&self) -> u16 {
@@ -419,7 +355,6 @@ impl<
     PendingOpCommit,
     Trust,
     ErrorPopup,
-    PendingToken,
 > crate::tui::debug::ConsoleSettingsDebugFacts
     for SettingsState<
         GlobalMountsState<MountRow, MountModal>,
@@ -427,7 +362,6 @@ impl<
         SettingsAuthState<AuthValue, AuthModal, PendingOpCommit>,
         Trust,
         ErrorPopup,
-        PendingToken,
     >
 where
     MountModal: crate::tui::debug::ConsoleSettingsMountModalDebugKind,
@@ -461,13 +395,14 @@ where
     EnvValue: PartialEq,
 {
     fn panel_change_count(&self) -> usize {
-        crate::tui::screens::settings::update::settings_vec_change_count(
+        crate::tui::screens::settings::update::settings_map_change_count(
             &self.original,
             &self.pending,
-        ) + crate::tui::screens::settings::update::settings_map_change_count(
-            &self.original_github_env,
-            &self.github_env,
-        )
+        ) + usize::from(self.github != self.original_github)
+            + jackin_core::Agent::ALL
+                .iter()
+                .filter(|agent| self.original_bindings.get(*agent) != self.bindings.get(*agent))
+                .count()
     }
 }
 
@@ -488,5 +423,31 @@ where
 {
     fn panel_mark_saved(&mut self) {
         self.mark_saved();
+    }
+}
+
+/// Each provider can own any number of independently named credentials.
+pub const ACCOUNT_KINDS: &[AuthKind] = &[
+    AuthKind::Claude,
+    AuthKind::Codex,
+    AuthKind::Amp,
+    AuthKind::Kimi,
+    AuthKind::Opencode,
+    AuthKind::Grok,
+    AuthKind::Zai,
+    AuthKind::Minimax,
+];
+
+pub fn account_kind(account: &jackin_config::AccountConfig) -> AuthKind {
+    use jackin_config::AiProvider;
+    match account.provider {
+        AiProvider::Anthropic => AuthKind::Claude,
+        AiProvider::OpenAi => AuthKind::Codex,
+        AiProvider::Amp => AuthKind::Amp,
+        AiProvider::Moonshot => AuthKind::Kimi,
+        AiProvider::Opencode => AuthKind::Opencode,
+        AiProvider::Xai => AuthKind::Grok,
+        AiProvider::Zai => AuthKind::Zai,
+        AiProvider::Minimax => AuthKind::Minimax,
     }
 }

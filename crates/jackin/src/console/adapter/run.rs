@@ -33,8 +33,7 @@ use jackin_console::tui::run::{
     debug_chip_activation_allowed, debug_chip_row, debug_invocation_id_label,
     modal_mouse_layer_plan, quit_confirm_area, quit_intercept_state_for_console,
     should_open_quit_confirm, split_debug_area, startup_error_dismissed,
-    startup_error_modal_active_for_console, token_generate_scope_label_for_console,
-    token_generate_status_message,
+    startup_error_modal_active_for_console,
 };
 
 use jackin_config::AppConfig;
@@ -362,8 +361,8 @@ fn input_outcome_action(
         | InputOutcome::LaunchCurrentDir
         | InputOutcome::LaunchWithAgent(_)
         | InputOutcome::LaunchWithRuntimeAgent(_)
-        | InputOutcome::LaunchWithProvider { .. } => Some(UiActionName::WorkspaceLaunch),
-        InputOutcome::PrewarmNamed(_) | InputOutcome::NewSessionWithProvider { .. } => {
+        | InputOutcome::LaunchWithAccount { .. } => Some(UiActionName::WorkspaceLaunch),
+        InputOutcome::PrewarmNamed(_) | InputOutcome::NewSessionWithAccount { .. } => {
             Some(UiActionName::AgentSpawn)
         }
         InputOutcome::InstanceAction {
@@ -759,28 +758,28 @@ where
                 return Ok(ConsoleLoopFlow::Exit(Some(outcome)));
             }
         }
-        crate::console::adapter::InputOutcome::NewSessionWithProvider {
+        crate::console::adapter::InputOutcome::NewSessionWithAccount {
             container,
             agent,
-            provider,
+            account,
         } => {
             return Ok(ConsoleLoopFlow::Exit(Some(
-                ConsoleOutcome::NewSessionWithProvider {
+                ConsoleOutcome::NewSessionWithAccount {
                     container,
                     agent,
-                    provider,
+                    account,
                 },
             )));
         }
-        crate::console::adapter::InputOutcome::LaunchWithProvider {
+        crate::console::adapter::InputOutcome::LaunchWithAccount {
             selector,
             agent,
-            provider,
+            account,
         } => {
             let Some(input) = take_pending_launch_plan(state) else {
                 return Ok(ConsoleLoopFlow::Exit(None));
             };
-            let workspace = jackin_console::services::launch::resolve_provider_launch_workspace(
+            let workspace = jackin_console::services::launch::resolve_account_launch_workspace(
                 inputs.config,
                 inputs.cwd,
                 &input,
@@ -790,11 +789,11 @@ where
                 return Ok(ConsoleLoopFlow::Exit(None));
             };
             return Ok(ConsoleLoopFlow::Exit(Some(
-                ConsoleOutcome::LaunchWithProvider {
+                ConsoleOutcome::LaunchWithAccount {
                     selector,
                     workspace,
                     agent,
-                    provider,
+                    account,
                 },
             )));
         }
@@ -1122,22 +1121,6 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
         sync_active_screen(&state, &mut screen_tracker, action_parent.as_ref());
         sync_widget_focus(&state, &mut widget_tracker, action_parent.as_ref());
 
-        // Drain a pending token-generate request before render: suspend the
-        // TUI, let the non-TUI effect executor run the interactive mint/write,
-        // then resume. Done at the top of the loop (no live `&mut state.stage`
-        // borrow, `config`/`paths`/`terminal` all in scope) so a request set by
-        // the previous iteration's input is handled before the next frame.
-        if drain_pending_token_generate(
-            &mut state,
-            owned_screen.as_ref().or(options.parent_session),
-            paths,
-            &config,
-            &mut terminal,
-        )? {
-            needs_redraw = true;
-            continue;
-        }
-
         // Drain worker results before render so a fresh result lands
         // this frame instead of a stale Loading one.
         drain_background_messages(&mut state, &mut config, paths, cwd, &mut needs_redraw);
@@ -1238,55 +1221,6 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
     // reload when nothing was written (and still sees in-session mutations
     // that already updated `config` on successful save).
     Ok((result?, config))
-}
-
-fn drain_pending_token_generate<B: ratatui::backend::Backend>(
-    state: &mut ConsoleState,
-    session: Option<&TerminalSession>,
-    paths: &JackinPaths,
-    config: &AppConfig,
-    terminal: &mut ratatui::Terminal<B>,
-) -> anyhow::Result<bool>
-where
-    B::Error: std::error::Error + Send + Sync + 'static,
-{
-    let pending = if let ConsoleStage::Manager(manager) = &mut state.stage {
-        manager.take_pending_token_generate()
-    } else {
-        None
-    };
-    let Some(req) = pending else {
-        return Ok(false);
-    };
-
-    let mint = if let Some(session) = session {
-        session.suspend(|| {
-            println!(
-                "{}",
-                token_generate_status_message(token_generate_scope_label_for_console(&req))
-            );
-            crate::console::effects::execute_token_generate(paths, config, &req)
-        })?
-    } else {
-        println!(
-            "{}",
-            token_generate_status_message(token_generate_scope_label_for_console(&req))
-        );
-        crate::console::effects::execute_token_generate(paths, config, &req)
-    };
-    // Force a full repaint so child output cannot remain in the next frame.
-    invalidate_terminal(terminal);
-    if let ConsoleStage::Manager(manager) = &mut state.stage {
-        crate::console::effects::apply_token_generate_result(manager, mint);
-    }
-    Ok(true)
-}
-
-fn invalidate_terminal<B: ratatui::backend::Backend>(terminal: &mut ratatui::Terminal<B>) {
-    if let Ok(size) = terminal.size() {
-        let rect = ratatui::layout::Rect::new(0, 0, size.width, size.height);
-        drop(terminal.resize(rect));
-    }
 }
 
 #[cfg(test)]

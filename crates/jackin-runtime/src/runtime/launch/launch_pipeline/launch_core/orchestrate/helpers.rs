@@ -37,35 +37,11 @@ pub(super) fn reuse_sentinel<'a>(
 }
 
 pub(super) fn emit_auth_breadcrumbs(
-    paths: &jackin_core::JackinPaths,
     agent: jackin_core::Agent,
     auth_mode: jackin_config::AuthForwardMode,
-    workspace_opt: Option<&WorkspaceName>,
     github_mode: jackin_config::GithubAuthMode,
     github_env_decls: &std::collections::BTreeMap<String, jackin_config::EnvValue>,
 ) {
-    if agent != jackin_core::Agent::Codex {
-        let _expiry_days = workspace_opt
-            .filter(|_| auth_mode == jackin_config::AuthForwardMode::OAuthToken)
-            .and_then(
-                |workspace| match jackin_env::expiry_days_for_launch(paths, workspace) {
-                    Ok(days) => days,
-                    Err(error) => {
-                        if let Some(run) = jackin_diagnostics::active_run() {
-                            run.compact(
-                                "auth",
-                                &format!(
-                                    "token expiry cache for workspace {workspace} is unreadable \
-                                 ({error}); re-run `jackin workspace claude-token setup \
-                                 {workspace}` to refresh"
-                                ),
-                            );
-                        }
-                        None
-                    }
-                },
-            );
-    }
     if let Some(run) = jackin_diagnostics::active_run() {
         run.compact("auth", &format!("{agent} auth resolved via {auth_mode}"));
         let token_key = jackin_core::GH_TOKEN_ENV_NAME;
@@ -104,7 +80,7 @@ pub(super) fn workspace_launch_config(
     materialized: &crate::isolation::materialize::MaterializedWorkspace,
     dirty_exit_policy: &str,
     exec_bindings: Vec<jackin_protocol::ExecBinding>,
-) -> jackin_protocol::CapsuleConfig {
+) -> anyhow::Result<jackin_protocol::CapsuleConfig> {
     let isolated_worktrees = materialized
         .mounts
         .iter()
@@ -115,7 +91,6 @@ pub(super) fn workspace_launch_config(
         selector,
         &workspace.workdir,
         &validated_repo.manifest,
-        opts.initial_provider(),
         dirty_exit_policy,
         isolated_worktrees,
     );
@@ -124,8 +99,15 @@ pub(super) fn workspace_launch_config(
         workspace_name,
         role_key,
         &validated_repo.manifest,
-    );
+    )?;
     launch_config.exec_bindings = exec_bindings;
+    crate::runtime::launch::capsule_setup::apply_account_models(
+        &mut launch_config,
+        config,
+        workspace_name,
+        role_key,
+        &validated_repo.manifest.supported_agents(),
+    )?;
     // A per-launch model overrides the role manifest's `[<agent>].model` for
     // the agent this launch selected. The same value also travels as the
     // Codex role hook's config key, so the daemon that spawns the agent and
@@ -138,5 +120,5 @@ pub(super) fn workspace_launch_config(
                 .insert(agent.slug().to_owned(), model.to_owned());
         }
     }
-    launch_config
+    Ok(launch_config)
 }

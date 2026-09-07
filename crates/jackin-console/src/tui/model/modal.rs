@@ -91,9 +91,6 @@ pub enum ConsoleModal<
     RoleOverridePicker {
         state: RolePickerState,
     },
-    AuthRolePicker {
-        state: RolePickerState,
-    },
     SourcePicker {
         state: SourcePickerState,
         env_key: Option<(SecretsScopeTag, String)>,
@@ -188,7 +185,6 @@ impl<
             Self::AuthSourcePicker { .. } => ModalDebugKind::AuthSourcePicker,
             Self::ScopePicker { .. } => ModalDebugKind::ScopePicker,
             Self::AuthForm { .. } => ModalDebugKind::AuthForm,
-            Self::AuthRolePicker { .. } => ModalDebugKind::AuthRolePicker,
         }
     }
 
@@ -220,9 +216,9 @@ impl<
         use crate::tui::update::SharedModalScrollTarget;
         match self {
             Self::WorkdirPick { .. } => SharedModalScrollTarget::WorkdirPick,
-            Self::RolePicker { .. }
-            | Self::RoleOverridePicker { .. }
-            | Self::AuthRolePicker { .. } => SharedModalScrollTarget::RolePicker,
+            Self::RolePicker { .. } | Self::RoleOverridePicker { .. } => {
+                SharedModalScrollTarget::RolePicker
+            }
             Self::OpPicker { .. } => SharedModalScrollTarget::OpPicker,
             _ => SharedModalScrollTarget::None,
         }
@@ -237,18 +233,6 @@ impl<
                 Self::OpPicker { .. } | Self::RolePicker { .. } | Self::RoleOverridePicker { .. }
             ),
             true,
-        )
-    }
-
-    #[must_use]
-    pub fn auth_form_can_generate_token(&self, editing_existing_workspace: bool) -> bool
-    where
-        AuthFormTarget: crate::tui::auth_config::AuthFormGenerateTarget,
-        AuthForm: crate::tui::auth_config::AuthFormGenerateState,
-    {
-        crate::tui::auth_config::ModalAuthFormGenerate::auth_form_can_generate_token(
-            self,
-            editing_existing_workspace,
         )
     }
 }

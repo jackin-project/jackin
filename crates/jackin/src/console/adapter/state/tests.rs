@@ -501,12 +501,7 @@ fn change_count_agent_env_delta() {
         "agent-x".into(),
         WorkspaceRoleOverride {
             env: role_x_env,
-            claude: None,
-            codex: None,
-            amp: None,
-            kimi: None,
-            opencode: None,
-            grok: None,
+            account_bindings: std::collections::BTreeMap::default(),
             github: None,
         },
     );
@@ -558,12 +553,7 @@ fn is_dirty_from_env_mutation() {
                 m.insert("K".into(), EnvValue::Plain("v".into()));
                 m
             },
-            claude: None,
-            codex: None,
-            amp: None,
-            kimi: None,
-            opencode: None,
-            grok: None,
+            account_bindings: std::collections::BTreeMap::default(),
             github: None,
         },
     );
@@ -760,28 +750,28 @@ fn global_mounts_state_persists_add_edit_remove_rename_scope_readonly() {
 }
 
 #[test]
-fn settings_save_zai_ignore_removes_global_key() {
+fn settings_save_removed_account_revokes_registered_secret() {
     let temp = tempfile::tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
-    paths.ensure_base_dirs().unwrap();
-    std::fs::write(
-        &paths.config_file,
-        r#"[env]
-ZAI_API_KEY = "secret"
-"#,
-    )
-    .unwrap();
-    let config = AppConfig::load_or_init(&paths).unwrap();
+    let mut editor = jackin_config::ConfigEditor::open(&paths).unwrap();
+    editor
+        .upsert_account(
+            "zai-work",
+            &jackin_config::AccountConfig {
+                enabled: true,
+                name: "Zai work".into(),
+                provider: jackin_config::AiProvider::Zai,
+                credential: jackin_config::AccountCredential::ApiKey {
+                    value: EnvValue::Plain("synthetic-zai-key".into()),
+                    base_url: None,
+                    model: None,
+                },
+            },
+        )
+        .unwrap();
+    let config = editor.save().unwrap();
     let mut state = SettingsState::from_config(&config);
-    let row = state
-        .auth
-        .pending
-        .iter_mut()
-        .find(|row| row.kind == AuthKind::Zai)
-        .expect("settings auth rows include Z.AI");
-    row.mode = jackin_console::tui::auth::AuthMode::Ignore;
-
-    state.clear_ignored_env_only_auth_keys();
+    assert!(state.auth.pending.remove("zai-work").is_some());
     let saved = crate::console::services::config::save_settings(
         &paths,
         crate::console::services::config::SettingsSaveInput {
@@ -790,8 +780,11 @@ ZAI_API_KEY = "secret"
             env_original: &state.env.original,
             env_pending: &state.env.pending,
             auth_pending: &state.auth.pending,
-            original_github_env: &state.auth.original_github_env,
-            github_env: &state.auth.github_env,
+            auth_original: &state.auth.original,
+            bindings_pending: &state.auth.bindings,
+            bindings_original: &state.auth.original_bindings,
+            original_github: &state.auth.original_github,
+            github: &state.auth.github,
             trust_pending: &state.trust.pending,
             git_coauthor_trailer: state.general.pending_coauthor_trailer,
             git_dco: state.general.pending_dco,
@@ -799,10 +792,9 @@ ZAI_API_KEY = "secret"
     )
     .unwrap();
     state.mark_saved();
-
-    assert!(!saved.env.contains_key("ZAI_API_KEY"));
+    assert!(!saved.accounts.contains_key("zai-work"));
     let raw = std::fs::read_to_string(&paths.config_file).unwrap();
-    assert!(!raw.contains("ZAI_API_KEY"), "{raw}");
+    assert!(!raw.contains("synthetic-zai-key"));
 }
 
 // ── cycle_isolation_for_selected_mount ─────────────────────────────
@@ -829,12 +821,8 @@ fn editor_with_one_shared_mount() -> EditorState<'static> {
         roles: BTreeMap::default(),
         keep_awake: KeepAwakeConfig::default(),
         docker: None,
-        claude: None,
-        codex: None,
-        amp: None,
-        kimi: None,
-        opencode: None,
-        grok: None,
+        accounts: Vec::new(),
+        account_bindings: BTreeMap::default(),
         github: None,
         git_pull_on_entry: false,
         runtime: jackin_config::WorkspaceRuntimeConfig::default(),

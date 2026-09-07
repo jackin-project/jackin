@@ -168,12 +168,6 @@ pub struct AgentStatePaths {
     /// directory — used as the operator hint in the Source Folder picker
     /// (Defect 46 Phase B).
     pub folder_env_var: Option<&'static str>,
-    /// Standalone durable home *files* the agent persists outside its
-    /// directories (e.g. Claude `.claude.json`). Bind-mounted alongside the
-    /// home dirs so they survive across container recreation. Empty for agents
-    /// that keep all state inside their dirs. Listed here so this struct is the
-    /// single source of truth for everything jackin mounts under the agent home.
-    pub home_files: &'static [&'static str],
 }
 
 impl AgentStatePaths {

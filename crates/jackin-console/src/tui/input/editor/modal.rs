@@ -1,13 +1,10 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Editor modal leaf helpers: secret picker, token generation, and text-input commits.
+//! Editor modal leaf helpers: secret picker and text-input commits.
 
-use crate::tui::components::auth_panel::generated_token_op_item_name;
 use crate::tui::op_picker::OpPickerState;
-use crate::tui::screens::editor::update::{
-    self as editor_update, EditorAuthGenerateScopePlan, editor_auth_generate_scope_plan,
-};
+use crate::tui::screens::editor::update as editor_update;
 use crate::tui::screens::editor::view::{
     secret_empty_key_label, secret_key_input_state_from_pending, secret_source_picker_state,
 };
@@ -15,7 +12,6 @@ use crate::tui::state::{
     EditorState, FieldFocus, Modal, SecretsPickerTarget, SecretsScopeTag, TextInputTarget,
     open_role_input_error,
 };
-use crate::tui::update::{CreateOpPickerPlan, create_op_picker_plan};
 
 pub fn open_secrets_picker_modal(
     editor: &mut EditorState<'_>,
@@ -34,151 +30,6 @@ pub fn open_secrets_picker_modal(
         secrets_target: Some(secrets_target),
         state: Box::new(OpPickerState::new_with_cache(op_cache)),
     });
-}
-
-/// Derive the [`TokenSetupScope`](jackin_env::TokenSetupScope)
-/// from the auth-form generate target and the editor's Edit-mode
-/// workspace name: a per-role override generates for that role, the
-/// workspace form for all roles. Returns `None` when the editor is not
-/// in Edit mode (Create mode has no workspace to wire yet).
-fn generate_scope_for_target(
-    editor: &EditorState<'_>,
-    target: &crate::tui::state::AuthFormTarget,
-) -> Option<jackin_env::TokenSetupScope> {
-    use jackin_env::TokenSetupScope;
-    editor_auth_generate_scope_plan(&editor.mode, target).map(|plan| match plan {
-        EditorAuthGenerateScopePlan::Workspace(workspace) => TokenSetupScope::Workspace(workspace),
-        EditorAuthGenerateScopePlan::WorkspaceRole { workspace, role } => {
-            TokenSetupScope::WorkspaceRole { workspace, role }
-        }
-    })
-}
-
-/// Plain-text generate branch from the source picker: queue a
-/// [`PendingTokenGenerate`] that mints the token. The minted literal is
-/// staged into the stashed auth form (via the re-mount the loop runs on
-/// completion) and persisted only when the operator Saves — the form
-/// modal parent stack survives `clear_modal_chain`.
-pub fn start_plain_token_generate(editor: &mut EditorState<'_>) {
-    let Some(target) = editor.generating_token_target.take() else {
-        super::super::auth::restore_auth_form_after_op_picker_cancel(editor);
-        return;
-    };
-    let Some(scope) = generate_scope_for_target(editor, &target) else {
-        super::super::auth::restore_auth_form_after_op_picker_cancel(editor);
-        return;
-    };
-    editor.pending_token_generate = Some(crate::tui::state::PendingTokenGenerate {
-        scope,
-        args: jackin_env::TokenSetupArgs {
-            plain_text: true,
-            ..Default::default()
-        },
-    });
-    editor.clear_modal_chain();
-}
-
-/// 1Password generate branch from the source picker: re-arm the target
-/// and mount the Create-mode `OpPicker` so the operator chooses where the
-/// freshly minted token lands (this is the pre-source-picker behaviour).
-pub fn open_create_op_picker_for_generate(
-    editor: &mut EditorState<'_>,
-    op_cache: std::rc::Rc<std::cell::RefCell<jackin_env::OpCache>>,
-) {
-    let crate::tui::state::EditorMode::Edit { name } = &editor.mode else {
-        editor.generating_token_target = None;
-        super::super::auth::restore_auth_form_after_op_picker_cancel(editor);
-        return;
-    };
-    let workspace_name = name.clone();
-    // `generating_token_target` stays set so the OpPicker commit routes
-    // back through `handle_token_generate_pick`.
-    editor.modal = Some(Modal::OpPicker {
-        secrets_target: None,
-        state: Box::new(OpPickerState::new_create_with_cache(
-            op_cache,
-            generated_token_op_item_name(jackin_env::DEFAULT_ITEM_TEMPLATE, &workspace_name),
-            jackin_env::DEFAULT_FIELD_LABEL,
-        )),
-    });
-}
-
-/// Translate a Create-mode `OpPicker` commit into a
-/// [`PendingTokenGenerate`] request that the `run_console` loop drains
-/// to mint the token. `Existing` cannot occur in Create mode; a Cancel
-/// (or stray `Existing`) just closes the chain. On `Continue` the picker
-/// is still drilling, so `target` is re-armed and the modal stays open.
-/// The workspace name comes from `editor.mode` Edit.
-pub fn handle_token_generate_pick(
-    editor: &mut EditorState<'_>,
-    target: crate::tui::state::AuthFormTarget,
-    outcome: jackin_oppicker::ModalOutcome<crate::tui::op_picker::OpPickerSelection>,
-) {
-    use crate::tui::op_picker::OpPickerSelection;
-    use jackin_env::{EditExistingTarget, TokenSetupArgs};
-
-    let Some(scope) = generate_scope_for_target(editor, &target) else {
-        super::super::auth::restore_auth_form_after_op_picker_cancel(editor);
-        return;
-    };
-
-    let args = match create_op_picker_plan(outcome) {
-        CreateOpPickerPlan::Commit(OpPickerSelection::NewItem {
-            account,
-            vault,
-            item_name,
-            section,
-            field_label,
-        }) => TokenSetupArgs {
-            vault: Some(vault.id),
-            item_name: Some(item_name),
-            account: account.map(|a| a.id),
-            reuse: None,
-            field_label: Some(field_label),
-            section,
-            edit_existing: None,
-            plain_text: false,
-        },
-        CreateOpPickerPlan::Commit(OpPickerSelection::EditItemField {
-            account,
-            vault,
-            item,
-            section,
-            field,
-        }) => TokenSetupArgs {
-            vault: None,
-            item_name: None,
-            account: account.map(|a| a.id),
-            reuse: None,
-            field_label: None,
-            section: None,
-            edit_existing: Some(EditExistingTarget {
-                vault_id: vault.id,
-                item_id: item.id,
-                field,
-                section,
-            }),
-            plain_text: false,
-        },
-        CreateOpPickerPlan::Commit(OpPickerSelection::Existing(_)) => {
-            unreachable!("create-mode OpPicker plan dismisses Existing selections")
-        }
-        // Still drilling — re-arm the marker the caller took and leave
-        // the picker open.
-        CreateOpPickerPlan::Continue => {
-            editor.generating_token_target = Some(target);
-            return;
-        }
-        // `Existing` is unreachable in Create mode; a Cancel restores
-        // the stashed form. Both just close without minting.
-        CreateOpPickerPlan::Dismiss => {
-            super::super::auth::restore_auth_form_after_op_picker_cancel(editor);
-            return;
-        }
-    };
-
-    editor.pending_token_generate = Some(crate::tui::state::PendingTokenGenerate { scope, args });
-    editor.clear_modal_chain();
 }
 
 /// Centralises `EnvKey` construction so every opener (Enter on

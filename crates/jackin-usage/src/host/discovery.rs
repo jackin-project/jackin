@@ -3,16 +3,17 @@
 
 //! Rust-owned host account-source discovery.
 //!
-//! Config precedence, path roots, provider ownership, and deduplication stay in
+//! Account-registry authority, path roots, provider ownership, and deduplication stay in
 //! this crate. Native clients receive only sanitized descriptors/diagnostics.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Component, Path, PathBuf};
 
-use jackin_config::{AppConfig, ConfigSourceIssue, ReadOnlyConfigSnapshot};
+use jackin_config::{
+    AccountCredential, AiProvider, AppConfig, ConfigSourceIssue, ReadOnlyConfigSnapshot,
+};
 use jackin_core::{
-    Agent, AuthForwardMode, JackinPaths, UsageCredentialEnvName, UsageCredentialOwner,
-    WorkspaceName,
+    Agent, JackinPaths, UsageCredentialEnvName, UsageCredentialOwner, WorkspaceName,
 };
 use jackin_protocol::control::FocusedUsageView;
 
@@ -313,7 +314,7 @@ impl UsageDiscoveryIssue {
 pub struct UsageDiscoveryDiagnostic {
     /// Provider surface when the failure is provider-specific.
     pub surface_id: Option<String>,
-    /// Rust-composed scope label (`default host profile`, `workspace …`).
+    /// Rust-composed scope label (`account …`, `workspace …`).
     pub scope_label: String,
     /// Stable machine-readable category.
     pub issue: UsageDiscoveryIssue,
@@ -446,7 +447,7 @@ pub(super) enum ProfileCredentialMaterial {
         auth_path: PathBuf,
     },
     Kimi {
-        root: PathBuf,
+        token: String,
     },
     OpenCode {
         auth_path: PathBuf,
@@ -519,12 +520,6 @@ struct CandidateAccumulator {
     operator_home: Option<PathBuf>,
 }
 
-struct EffectiveScope {
-    workspace: Option<WorkspaceName>,
-    role: Option<String>,
-    label: String,
-}
-
 /// Discover and pre-deduplicate every source authorized by `scope`.
 pub fn discover_usage_sources(
     scope: &UsageDiscoveryScope,
@@ -550,19 +545,14 @@ fn discover_host_sources(
     let snapshot = jackin_config::load_read_only_config_snapshot(&paths)
         .map_err(|_| "config snapshot unavailable".to_owned())?;
     let mut diagnostics = config_diagnostics(&snapshot);
-    let scopes = effective_scopes(&snapshot.config);
     let mut candidates = BTreeMap::<CredentialSourceKey, CandidateAccumulator>::new();
-
-    for effective in scopes {
-        enumerate_profile_candidates(&snapshot.config, operator_home, &effective, &mut candidates);
-        enumerate_env_candidates(
-            &snapshot.config,
-            &effective,
-            env_resolver,
-            &mut candidates,
-            &mut diagnostics,
-        );
-    }
+    enumerate_registered_accounts(
+        &snapshot.config,
+        operator_home,
+        env_resolver,
+        &mut candidates,
+        &mut diagnostics,
+    );
 
     Ok(materialize_catalog(
         Some(snapshot.generation.as_str().to_owned()),
@@ -597,201 +587,120 @@ fn discover_forwarded_sources(accounts: &[ForwardedUsageAccount]) -> UsageDiscov
     materialize_catalog(None, candidates, Vec::new())
 }
 
-fn effective_scopes(config: &AppConfig) -> Vec<EffectiveScope> {
-    let mut scopes = vec![EffectiveScope {
-        workspace: None,
-        role: None,
-        label: "default host profile".to_owned(),
-    }];
-    for role in config.roles.keys() {
-        scopes.push(EffectiveScope {
-            workspace: None,
-            role: Some(role.clone()),
-            label: format!("role {role}"),
-        });
-    }
-    for (workspace_name, workspace) in &config.workspaces {
-        let Ok(parsed) = WorkspaceName::parse(workspace_name) else {
-            continue;
-        };
-        scopes.push(EffectiveScope {
-            workspace: Some(parsed.clone()),
-            role: None,
-            label: format!("workspace {workspace_name}"),
-        });
-        let mut roles = workspace.roles.keys().cloned().collect::<BTreeSet<_>>();
-        if workspace.allowed_roles.is_empty() {
-            roles.extend(config.roles.keys().cloned());
-        } else {
-            roles.extend(workspace.allowed_roles.iter().cloned());
-        }
-        for role in roles {
-            scopes.push(EffectiveScope {
-                workspace: Some(parsed.clone()),
-                role: Some(role.clone()),
-                label: format!("workspace {workspace_name} role {role}"),
-            });
-        }
-    }
-    scopes
-}
-
-fn enumerate_profile_candidates(
+/// Registry entries are the sole discovery authority. Workspace references add
+/// provenance; they never cause an ambient profile or environment scan.
+fn enumerate_registered_accounts(
     config: &AppConfig,
     operator_home: &Path,
-    scope: &EffectiveScope,
-    candidates: &mut BTreeMap<CredentialSourceKey, CandidateAccumulator>,
-) {
-    for agent in Agent::ALL.iter().copied() {
-        let role = scope.role.as_deref().unwrap_or("");
-        let mode = jackin_config::resolve_mode(config, agent, scope.workspace.as_ref(), role);
-        if mode != AuthForwardMode::Sync {
-            continue;
-        }
-        let configured =
-            jackin_config::resolve_sync_source_dir(config, agent, scope.workspace.as_ref(), role);
-        let root = configured.map_or_else(
-            || {
-                if agent == Agent::Opencode {
-                    std::env::var_os("XDG_DATA_HOME")
-                        .map_or_else(|| operator_home.join(".local/share"), PathBuf::from)
-                        .join("opencode")
-                } else {
-                    operator_home.join(agent.runtime().state_paths().credential_dir)
-                }
-            },
-            |path| resolve_profile_root(operator_home, &path),
-        );
-        if agent == Agent::Opencode && !root.join("auth.json").is_file() {
-            continue;
-        }
-        let key = CredentialSourceKey::Profile { agent, root };
-        candidates
-            .entry(key)
-            .and_modify(|candidate| {
-                candidate.provenance.insert(scope.label.clone());
-            })
-            .or_insert_with(|| CandidateAccumulator {
-                surface: HostSurfaceId::from_agent(agent),
-                kind: UsageCredentialKind::Profile,
-                provenance: BTreeSet::from([scope.label.clone()]),
-                env_key: None,
-                account_label: None,
-                operator_home: Some(operator_home.to_path_buf()),
-            });
-    }
-}
-
-fn enumerate_env_candidates(
-    config: &AppConfig,
-    scope: &EffectiveScope,
     resolver: &dyn ProviderCredentialEnvResolver,
     candidates: &mut BTreeMap<CredentialSourceKey, CandidateAccumulator>,
     diagnostics: &mut Vec<UsageDiscoveryDiagnostic>,
 ) {
-    let governed = jackin_core::USAGE_CREDENTIAL_ENV_REGISTRY
-        .iter()
-        .copied()
-        .filter(|entry| entry.owner != UsageCredentialOwner::OpenCode)
-        .filter(|entry| owner_allowed_in_scope(config, scope, entry.owner))
-        .collect::<Vec<_>>();
-    let resolutions = resolver.resolve_provider_credentials(
-        config,
-        scope.workspace.as_ref(),
-        scope.role.as_deref(),
-        &governed,
-    );
-    for resolution in resolutions {
-        let Some(entry) = governed.iter().find(|entry| entry.name == resolution.key) else {
+    for (id, account) in &config.accounts {
+        if !account.enabled {
             continue;
-        };
-        let Some(surface) = surface_for_owner(entry.owner) else {
-            continue;
-        };
-        match resolution.outcome {
-            ProviderCredentialEnvOutcome::Resolved(handle) => {
-                let kind = if entry.name == jackin_core::CLAUDE_CODE_OAUTH_TOKEN_ENV_NAME {
-                    UsageCredentialKind::OAuthToken
-                } else {
-                    UsageCredentialKind::ApiKey
-                };
-                let key = CredentialSourceKey::Env {
+        }
+        let (surface, owner) = provider_surface(account.provider);
+        let mut provenance = BTreeSet::from([format!("account {id}")]);
+        for (workspace_name, workspace) in &config.workspaces {
+            if workspace.accounts.contains(id) {
+                provenance.insert(format!("workspace {workspace_name}"));
+            }
+        }
+        if let AccountCredential::Profile { agent, directory } = &account.credential {
+            let root = resolve_profile_root(operator_home, directory);
+            candidates
+                .entry(CredentialSourceKey::Profile {
+                    agent: *agent,
+                    root,
+                })
+                .and_modify(|candidate| candidate.provenance.extend(provenance.clone()))
+                .or_insert_with(|| CandidateAccumulator {
                     surface,
-                    handle: handle.clone(),
-                    key: resolution.key.clone(),
-                };
+                    kind: UsageCredentialKind::Profile,
+                    provenance,
+                    env_key: None,
+                    account_label: None,
+                    operator_home: Some(operator_home.to_path_buf()),
+                });
+            continue;
+        }
+        let (value, kind) = match &account.credential {
+            AccountCredential::ApiKey { value, .. } => (value, UsageCredentialKind::ApiKey),
+            AccountCredential::OAuthToken { value, .. } => (value, UsageCredentialKind::OAuthToken),
+            AccountCredential::Profile { .. } => continue,
+        };
+        let entry = jackin_core::USAGE_CREDENTIAL_ENV_REGISTRY
+            .iter()
+            .copied()
+            .find(|entry| {
+                entry.owner == owner
+                    && (entry.name == jackin_core::CLAUDE_CODE_OAUTH_TOKEN_ENV_NAME)
+                        == (kind == UsageCredentialKind::OAuthToken)
+            });
+        let Some(entry) = entry else {
+            diagnostics.push(account_diagnostic(
+                surface,
+                id,
+                UsageDiscoveryIssue::CredentialMalformed,
+            ));
+            continue;
+        };
+        // Reuse protected env/1Password resolution with one explicit declaration.
+        // Global env is retained only for interpolation dependencies; no roles,
+        // workspaces or unrelated provider declarations are enumerated.
+        let mut isolated = AppConfig {
+            env: config.env.clone(),
+            ..AppConfig::default()
+        };
+        isolated.env.insert(entry.name.to_owned(), value.clone());
+        let resolutions = resolver.resolve_provider_credentials(&isolated, None, None, &[entry]);
+        let outcome = resolutions
+            .into_iter()
+            .find(|result| result.key == entry.name)
+            .map_or(ProviderCredentialEnvOutcome::Missing, |result| {
+                result.outcome
+            });
+        let issue = match outcome {
+            ProviderCredentialEnvOutcome::Resolved(handle) => {
                 candidates
-                    .entry(key)
-                    .and_modify(|candidate| {
-                        candidate.provenance.insert(scope.label.clone());
+                    .entry(CredentialSourceKey::Env {
+                        surface,
+                        handle,
+                        key: entry.name.to_owned(),
                     })
+                    .and_modify(|candidate| candidate.provenance.extend(provenance.clone()))
                     .or_insert_with(|| CandidateAccumulator {
                         surface,
                         kind,
-                        provenance: BTreeSet::from([scope.label.clone()]),
-                        env_key: Some(resolution.key.clone()),
+                        provenance,
+                        env_key: Some(entry.name.to_owned()),
                         account_label: None,
                         operator_home: None,
                     });
+                continue;
             }
-            ProviderCredentialEnvOutcome::Missing => diagnostics.push(env_diagnostic(
-                surface,
-                scope,
-                UsageDiscoveryIssue::CredentialMissing,
-            )),
-            ProviderCredentialEnvOutcome::Denied => diagnostics.push(env_diagnostic(
-                surface,
-                scope,
-                UsageDiscoveryIssue::CredentialDenied,
-            )),
-            ProviderCredentialEnvOutcome::Malformed => diagnostics.push(env_diagnostic(
-                surface,
-                scope,
-                UsageDiscoveryIssue::CredentialMalformed,
-            )),
-            ProviderCredentialEnvOutcome::InteractionRequired => diagnostics.push(env_diagnostic(
-                surface,
-                scope,
-                UsageDiscoveryIssue::InteractionRequired,
-            )),
-        }
+            ProviderCredentialEnvOutcome::Missing => UsageDiscoveryIssue::CredentialMissing,
+            ProviderCredentialEnvOutcome::Denied => UsageDiscoveryIssue::CredentialDenied,
+            ProviderCredentialEnvOutcome::Malformed => UsageDiscoveryIssue::CredentialMalformed,
+            ProviderCredentialEnvOutcome::InteractionRequired => {
+                UsageDiscoveryIssue::InteractionRequired
+            }
+        };
+        diagnostics.push(account_diagnostic(surface, id, issue));
     }
 }
 
-fn owner_allowed_in_scope(
-    config: &AppConfig,
-    scope: &EffectiveScope,
-    owner: UsageCredentialOwner,
-) -> bool {
-    let agent = match owner {
-        UsageCredentialOwner::Claude => Some(Agent::Claude),
-        UsageCredentialOwner::Codex => Some(Agent::Codex),
-        UsageCredentialOwner::Amp => Some(Agent::Amp),
-        UsageCredentialOwner::Kimi => Some(Agent::Kimi),
-        UsageCredentialOwner::Grok => Some(Agent::Grok),
-        UsageCredentialOwner::OpenCode => Some(Agent::Opencode),
-        UsageCredentialOwner::Zai | UsageCredentialOwner::Minimax => None,
-    };
-    agent.is_none_or(|agent| {
-        jackin_config::resolve_mode(
-            config,
-            agent,
-            scope.workspace.as_ref(),
-            scope.role.as_deref().unwrap_or(""),
-        ) != AuthForwardMode::Ignore
-    })
-}
-
-fn surface_for_owner(owner: UsageCredentialOwner) -> Option<HostSurfaceId> {
-    match owner {
-        UsageCredentialOwner::Claude => Some(HostSurfaceId::Claude),
-        UsageCredentialOwner::Codex => Some(HostSurfaceId::Codex),
-        UsageCredentialOwner::Amp => Some(HostSurfaceId::Amp),
-        UsageCredentialOwner::Kimi => Some(HostSurfaceId::Kimi),
-        UsageCredentialOwner::Grok => Some(HostSurfaceId::Grok),
-        UsageCredentialOwner::Zai => Some(HostSurfaceId::Zai),
-        UsageCredentialOwner::Minimax => Some(HostSurfaceId::Minimax),
-        UsageCredentialOwner::OpenCode => None,
+fn provider_surface(provider: AiProvider) -> (HostSurfaceId, UsageCredentialOwner) {
+    match provider {
+        AiProvider::Anthropic => (HostSurfaceId::Claude, UsageCredentialOwner::Claude),
+        AiProvider::OpenAi => (HostSurfaceId::Codex, UsageCredentialOwner::Codex),
+        AiProvider::Amp => (HostSurfaceId::Amp, UsageCredentialOwner::Amp),
+        AiProvider::Xai => (HostSurfaceId::Grok, UsageCredentialOwner::Grok),
+        AiProvider::Opencode => (HostSurfaceId::OpenCode, UsageCredentialOwner::OpenCode),
+        AiProvider::Moonshot => (HostSurfaceId::Kimi, UsageCredentialOwner::Kimi),
+        AiProvider::Zai => (HostSurfaceId::Zai, UsageCredentialOwner::Zai),
+        AiProvider::Minimax => (HostSurfaceId::Minimax, UsageCredentialOwner::Minimax),
     }
 }
 
@@ -804,14 +713,14 @@ fn resolve_profile_root(operator_home: &Path, configured: &Path) -> PathBuf {
     }
 }
 
-fn env_diagnostic(
+fn account_diagnostic(
     surface: HostSurfaceId,
-    scope: &EffectiveScope,
+    account_id: &str,
     issue: UsageDiscoveryIssue,
 ) -> UsageDiscoveryDiagnostic {
     UsageDiscoveryDiagnostic {
         surface_id: Some(surface.id().to_owned()),
-        scope_label: scope.label.clone(),
+        scope_label: format!("account {account_id}"),
         issue,
     }
 }
@@ -1235,15 +1144,27 @@ fn profile_identity(
     match agent {
         Agent::Claude => claude_profile_identity(reader, root, operator_home),
         Agent::Codex => codex_profile_identity(reader, &root.join("auth.json")),
-        Agent::Amp => amp_profile_identity(reader, &root.join("secrets.json")),
-        Agent::Kimi => {
-            if reader.exists(root) {
-                ProfileValidation::Anonymous(Some(Box::new(ProfileCredentialMaterial::Kimi {
-                    root: root.to_path_buf(),
-                })))
+        Agent::Amp => {
+            let direct = root.join("secrets.json");
+            let path = if reader.exists(&direct) {
+                direct
             } else {
-                ProfileValidation::Missing
-            }
+                root.join("data/amp/secrets.json")
+            };
+            amp_profile_identity(reader, &path)
+        }
+        Agent::Kimi => {
+            let value = match read_json(reader, &root.join("credentials/kimi-code.json")) {
+                Ok(Some(value)) => value,
+                Ok(None) => return ProfileValidation::Missing,
+                Err(outcome) => return outcome,
+            };
+            crate::usage::kimi_local_token_from_value(&value, chrono::Utc::now().timestamp())
+                .map_or(ProfileValidation::Malformed, |token| {
+                    ProfileValidation::Anonymous(Some(Box::new(ProfileCredentialMaterial::Kimi {
+                        token,
+                    })))
+                })
         }
         Agent::Grok => grok_profile_identity(reader, &root.join("auth.json")),
         Agent::Opencode => opencode_profile_identity(reader, &root.join("auth.json")),
@@ -1535,10 +1456,9 @@ pub(super) fn refresh_credential_binding(
                 result,
             )
         }
-        ValidatedCredentialSource::Profile(ProfileCredentialMaterial::Kimi { root }) => {
+        ValidatedCredentialSource::Profile(ProfileCredentialMaterial::Kimi { token }) => {
             let now = chrono::Utc::now().timestamp();
-            let token = crate::usage::load_kimi_local_token_from_home(root, now);
-            crate::usage::kimi_snapshot(binding.surface.agent_slug(), token.as_deref(), now)
+            crate::usage::kimi_snapshot(binding.surface.agent_slug(), Some(token.as_str()), now)
         }
         ValidatedCredentialSource::Profile(ProfileCredentialMaterial::OpenCode { auth_path }) => {
             crate::usage::opencode_profile_snapshot(

@@ -13,6 +13,7 @@ use crate::runtime::launch::launch_runtime::{
     capsule_otlp_allowlist_host, capsule_otlp_propagation, debug_runtime_envs,
     telemetry_runtime_envs_for,
 };
+use std::path::PathBuf;
 
 #[test]
 fn capsule_otlp_fails_closed_for_network_endpoint_and_auth() {
@@ -133,7 +134,7 @@ fn sensitive_mount_prompt_lists_every_hit_src_and_reason() {
 }
 use crate::isolation::MountIsolation;
 use crate::isolation::materialize::{MaterializedMount, MaterializedWorkspace, WorktreeAuxMounts};
-use jackin_core::ANTHROPIC_API_KEY_ENV_NAME;
+
 use jackin_core::JackinPaths;
 use jackin_core::RoleSelector;
 use std::collections::VecDeque;
@@ -174,6 +175,28 @@ fn write_indexed_manifest(paths: &JackinPaths, manifest: &InstanceManifest) {
         .write(&paths.data_dir.join(&manifest.container_base))
         .unwrap();
     InstanceIndex::update_manifest(&paths.data_dir, manifest).unwrap();
+}
+
+fn provision_restore_account_policy(
+    paths: &JackinPaths,
+    config: &AppConfig,
+    manifest: &InstanceManifest,
+) {
+    std::fs::write(&paths.config_file, toml::to_string(config).unwrap()).unwrap();
+    let workspace = manifest
+        .workspace_name
+        .as_deref()
+        .map(jackin_core::WorkspaceName::parse)
+        .transpose()
+        .unwrap();
+    super::account_identity::record_account_configuration(
+        &paths.data_dir.join(&manifest.container_base),
+        paths,
+        config,
+        workspace.as_ref(),
+        &manifest.role_key,
+    )
+    .unwrap();
 }
 
 fn local_role_base_for_test(selector: &RoleSelector, head_sha: Option<&str>) -> String {
@@ -282,13 +305,14 @@ model = "zai/glm"
 
     let manifest = jackin_manifest::load_role_manifest(temp.path()).unwrap();
     let selector = RoleSelector::new(Some("chainargos"), "the-architect");
-    let config = capsule_config(&selector, "/workspace", &manifest, None, "ask", Vec::new());
+    let config = capsule_config(&selector, "/workspace", &manifest, "ask", Vec::new());
     let auth_modes = super::capsule_setup::capsule_auth_modes(
         &jackin_config::AppConfig::default(),
         None,
         &selector.key(),
         &manifest,
-    );
+    )
+    .unwrap();
 
     assert_eq!(config.role, "chainargos/the-architect");
     assert_eq!(config.workdir, "/workspace");
@@ -302,8 +326,52 @@ model = "zai/glm"
     assert_eq!(config.models.get("opencode").unwrap(), "zai/glm");
     assert!(!config.models.contains_key("amp"));
     assert_eq!(auth_modes.len(), config.agents.len());
-    assert!(auth_modes.values().all(|mode| mode == "sync"));
+    assert!(auth_modes.values().all(|mode| mode == "ignore"));
 }
+#[test]
+fn selected_account_model_overrides_native_role_model_only_when_admitted() {
+    use jackin_core::Agent;
+    let mut config = AppConfig::default();
+    config.accounts.insert(
+        "coding".into(),
+        jackin_config::AccountConfig {
+            enabled: true,
+            name: "Coding".into(),
+            provider: jackin_config::AiProvider::Moonshot,
+            credential: jackin_config::AccountCredential::ApiKey {
+                value: "fixture-key".into(),
+                base_url: None,
+                model: Some("k3-256k".into()),
+            },
+        },
+    );
+    config
+        .account_bindings
+        .insert(Agent::Codex, "coding".into());
+    config
+        .workspaces
+        .insert("isolated".into(), jackin_config::WorkspaceConfig::default());
+    let baseline = jackin_protocol::CapsuleConfig {
+        models: std::collections::BTreeMap::from([("codex".into(), "native-model".into())]),
+        ..Default::default()
+    };
+    let mut launch = baseline.clone();
+    super::capsule_setup::apply_account_models(&mut launch, &config, None, "role", &[Agent::Codex])
+        .unwrap();
+    assert_eq!(launch.models["codex"], "k3-256k");
+    let mut isolated = baseline;
+    let workspace = jackin_core::WorkspaceName::parse("isolated").unwrap();
+    super::capsule_setup::apply_account_models(
+        &mut isolated,
+        &config,
+        Some(&workspace),
+        "role",
+        &[Agent::Codex],
+    )
+    .unwrap();
+    assert_eq!(isolated.models["codex"], "native-model");
+}
+
 #[tokio::test]
 async fn diagnose_premature_exit_returns_none_when_container_running() {
     use jackin_docker::docker_client::ContainerState;
@@ -585,10 +653,10 @@ plugins = []
         "durable Claude home mount missing: {mounts:?}"
     );
     assert!(
-        mounts
+        !mounts
             .iter()
             .any(|m| m.contains(":/home/agent/.claude.json")),
-        "durable Claude account file mount missing: {mounts:?}"
+        "mutable Claude metadata must live within its directory mount: {mounts:?}"
     );
     assert!(
         !mounts.iter().any(|m| m.contains("/jackin/claude/")),
@@ -2642,16 +2710,29 @@ async fn load_agent_launches_codex_from_workspace_agent() {
     paths.ensure_base_dirs().unwrap();
     std::fs::write(
         &paths.config_file,
-        r#"[env]
-OPENAI_API_KEY = "test-openai-key"
-
-[roles.agent-smith]
+        r#"[roles.agent-smith]
 git = "https://github.com/jackin-project/jackin-agent-smith.git"
 trusted = true
 "#,
     )
     .unwrap();
     let mut config = AppConfig::load_or_init(&paths).unwrap();
+    config.accounts.insert(
+        "coding".into(),
+        jackin_config::AccountConfig {
+            enabled: true,
+            name: "Coding".into(),
+            provider: jackin_config::AiProvider::OpenAi,
+            credential: jackin_config::AccountCredential::ApiKey {
+                value: "test-openai-key".into(),
+                base_url: None,
+                model: None,
+            },
+        },
+    );
+    config
+        .account_bindings
+        .insert(jackin_core::Agent::Codex, "coding".into());
     let selector = RoleSelector::new(None, "agent-smith");
     let mut runner = FakeRunner::for_load_agent([String::new()]);
 
@@ -2733,6 +2814,19 @@ model = "gpt-5"
     assert!(run_cmd.contains("/home/agent/.claude"));
     assert!(run_cmd.contains("/home/agent/.codex"));
     let container_name = launched_role_container_name(&runner);
+    let credentials: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(
+            paths
+                .data_dir
+                .join(&container_name)
+                .join("credentials/account-credentials.json"),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(credentials["codex"]["OPENAI_API_KEY"], "test-openai-key");
+    assert!(credentials.get("claude").is_none());
+    assert!(!run_cmd.contains("test-openai-key"));
     let codex_config = std::fs::read_to_string(
         paths
             .data_dir
@@ -4232,7 +4326,7 @@ async fn load_agent_skips_operator_env_resolution_when_no_env_layers_apply() {
 }
 
 #[tokio::test]
-async fn load_agent_skips_non_required_operator_credential_refs() {
+async fn load_agent_skips_unselected_account_credential_refs() {
     struct FailingCredentialOpRunner;
 
     impl jackin_env::OpRunner for FailingCredentialOpRunner {
@@ -4249,14 +4343,23 @@ async fn load_agent_skips_non_required_operator_credential_refs() {
     let paths = JackinPaths::for_tests(temp.path());
     crate::runtime::test_support::install_all_test_stubs(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
-    config.env.insert(
-        "OPENAI_API_KEY".to_owned(),
-        jackin_core::EnvValue::OpRef(jackin_core::OpRef {
-            op: "op://vault/openai/key".to_owned(),
-            path: "Vault/OpenAI/key".to_owned(),
-            account: None,
-            on_demand: false,
-        }),
+    config.accounts.insert(
+        "unused".into(),
+        jackin_config::AccountConfig {
+            enabled: true,
+            name: "Unused".into(),
+            provider: jackin_config::AiProvider::OpenAi,
+            credential: jackin_config::AccountCredential::ApiKey {
+                value: jackin_core::EnvValue::OpRef(jackin_core::OpRef {
+                    op: "op://vault/openai/key".to_owned(),
+                    path: "Vault/OpenAI/key".to_owned(),
+                    account: None,
+                    on_demand: false,
+                }),
+                base_url: None,
+                model: None,
+            },
+        },
     );
     let selector = RoleSelector::new(None, "agent-smith");
     let agent = jackin_core::Agent::Claude;
@@ -4383,50 +4486,6 @@ plugins = []
         "non-selected manifest credential leaked into docker run: {:?}",
         runner.recorded
     );
-}
-
-#[test]
-fn credential_key_filter_resolves_every_supported_agent_credential() {
-    use jackin_core::Agent;
-
-    // Generic operator/manifest vars always resolve.
-    assert!(launch_pipeline::credential_key_needed_for_role(
-        &[Agent::Codex],
-        "OPERATOR_SMOKE"
-    ));
-    // A credential for an agent the role cannot run stays lazy: launching a
-    // Claude-only role never needs Codex's OPENAI_API_KEY.
-    assert!(!launch_pipeline::credential_key_needed_for_role(
-        &[Agent::Claude],
-        "OPENAI_API_KEY"
-    ));
-    // A supported agent's own credential resolves even when that agent's
-    // resolved mode (e.g. Sync) would not read it — the operator declared it
-    // and an ApiKey tab for that agent must find it in the container env.
-    assert!(launch_pipeline::credential_key_needed_for_role(
-        &[Agent::Codex],
-        "OPENAI_API_KEY"
-    ));
-    // Multi-agent role: every supported agent's credential resolves so any tab
-    // can authenticate, not just the initially-selected agent.
-    assert!(launch_pipeline::credential_key_needed_for_role(
-        &[Agent::Claude, Agent::Codex],
-        "OPENAI_API_KEY"
-    ));
-    assert!(launch_pipeline::credential_key_needed_for_role(
-        &[Agent::Claude, Agent::Codex],
-        "ANTHROPIC_API_KEY"
-    ));
-    // Empty slice: no agent can run, so known credential keys are skipped;
-    // generic/unknown keys still pass through.
-    assert!(!launch_pipeline::credential_key_needed_for_role(
-        &[],
-        "ANTHROPIC_API_KEY"
-    ));
-    assert!(launch_pipeline::credential_key_needed_for_role(
-        &[],
-        "MY_CUSTOM_VAR"
-    ));
 }
 
 #[test]
@@ -4979,6 +5038,15 @@ async fn load_agent_attaches_explicit_restore_container_before_role_repo() {
     let selector = RoleSelector::new(None, "agent-smith");
     let cached_repo = jackin_manifest::repo::CachedRepo::new(&paths, &selector);
     let container_name = "jk-k7p9m2xq-workspace-agentsmith";
+    let mut manifest = workspace_manifest(
+        container_name,
+        "agent-smith",
+        "Agent Smith",
+        jackin_core::Agent::Claude,
+    );
+    manifest.workspace_name = None;
+    write_indexed_manifest(&paths, &manifest);
+    provision_restore_account_policy(&paths, &config, &manifest);
     let docker = jackin_test_support::FakeDockerClient {
         inspect_queue: std::cell::RefCell::new(VecDeque::from([
             ContainerState::Running,
@@ -5046,6 +5114,7 @@ async fn load_agent_starts_stopped_current_instance_before_credentials_and_build
         "workspace".to_owned(),
         jackin_config::WorkspaceConfig {
             workdir: "/workspace".to_owned(),
+            mounts: repo_workspace(&cached_repo.repo_dir).mounts,
             default_agent: Some(jackin_core::Agent::Claude),
             ..jackin_config::WorkspaceConfig::default()
         },
@@ -5059,6 +5128,7 @@ async fn load_agent_starts_stopped_current_instance_before_credentials_and_build
     );
     manifest.mark_status(InstanceStatus::Running);
     write_indexed_manifest(&paths, &manifest);
+    provision_restore_account_policy(&paths, &config, &manifest);
     let docker = jackin_test_support::FakeDockerClient {
         inspect_queue: std::cell::RefCell::new(VecDeque::from([
             ContainerState::Stopped {
@@ -5145,6 +5215,7 @@ async fn load_agent_recreates_missing_current_instance_from_valid_image_without_
         "workspace".to_owned(),
         jackin_config::WorkspaceConfig {
             workdir: "/workspace".to_owned(),
+            mounts: repo_workspace(&cached_repo.repo_dir).mounts,
             ..jackin_config::WorkspaceConfig::default()
         },
     );
@@ -5152,6 +5223,7 @@ async fn load_agent_recreates_missing_current_instance_from_valid_image_without_
     let mut manifest = workspace_manifest(container_name, "agent-smith", "Agent Smith", agent);
     manifest.mark_status(InstanceStatus::Running);
     write_indexed_manifest(&paths, &manifest);
+    provision_restore_account_policy(&paths, &config, &manifest);
     let image = crate::runtime::naming::image_name(&selector, None);
     let local_base = local_role_base_for_test(&selector, Some("abc123"));
     let labels = crate::runtime::image::image_recipe_label_map_for_test(
@@ -6946,10 +7018,7 @@ async fn load_agent_keeps_zai_secret_out_of_capsule_config() {
 
     std::fs::write(
         &paths.config_file,
-        r#"[env]
-ZAI_API_KEY = "super-secret-zai-key"
-
-[roles.agent-smith]
+        r#"[roles.agent-smith]
 git = "https://github.com/jackin-project/jackin-agent-smith.git"
 trusted = true
 "#,
@@ -6957,6 +7026,22 @@ trusted = true
     .unwrap();
 
     let mut config = AppConfig::load_or_init(&paths).unwrap();
+    config.accounts.insert(
+        "coding".into(),
+        jackin_config::AccountConfig {
+            enabled: true,
+            name: "Coding".into(),
+            provider: jackin_config::AiProvider::Zai,
+            credential: jackin_config::AccountCredential::ApiKey {
+                value: "super-secret-zai-key".into(),
+                base_url: None,
+                model: Some("glm-5.3".into()),
+            },
+        },
+    );
+    config
+        .account_bindings
+        .insert(jackin_core::Agent::Claude, "coding".into());
     let selector = RoleSelector::new(None, "agent-smith");
     let mut runner = FakeRunner::for_load_agent([
         String::new(),
@@ -6988,7 +7073,6 @@ plugins = []
     let workspace = repo_workspace(&repo_dir);
     let docker = jackin_test_support::FakeDockerClient::default();
     let opts = LoadOptions {
-        provider: Some(jackin_protocol::Provider::Zai),
         ..LoadOptions::default()
     };
     load_role(
@@ -7007,7 +7091,7 @@ plugins = []
     let capsule_config_path = paths
         .jackin_home
         .join("sockets")
-        .join(container_name)
+        .join(&container_name)
         .join(jackin_protocol::CAPSULE_CONFIG_FILENAME);
     let capsule_config = std::fs::read_to_string(capsule_config_path).unwrap();
     assert!(
@@ -7024,24 +7108,36 @@ plugins = []
         .iter()
         .find(|call| call.contains("docker run -d") && call.contains("jackin.kind=role"))
         .unwrap();
-    assert!(
-        run_cmd.contains("--env-file") && !run_cmd.contains("super-secret-zai-key"),
-        "ZAI_API_KEY must reach the env file without entering argv; got: {run_cmd}"
-    );
+    assert!(!run_cmd.contains("super-secret-zai-key"));
     let observed = observed_env.lock().unwrap().clone().unwrap();
-    assert!(
-        observed
-            .contents
-            .lines()
-            .any(|line| line == "ZAI_API_KEY=super-secret-zai-key")
-    );
+    assert!(!observed.contents.contains("super-secret-zai-key"));
     #[cfg(unix)]
     assert_eq!(observed.mode, 0o600);
-    assert_host_env_file_outside_mounts(run_cmd, &observed.path);
-    assert!(
-        !observed.path.exists(),
-        "env file must be removed after run"
+    let credentials_path = paths
+        .data_dir
+        .join(&container_name)
+        .join("credentials/account-credentials.json");
+    let credentials: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&credentials_path).unwrap()).unwrap();
+    assert_eq!(
+        credentials["claude"]["ANTHROPIC_AUTH_TOKEN"],
+        "super-secret-zai-key"
     );
+    assert_eq!(credentials.as_object().unwrap().len(), 1);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        assert_eq!(
+            std::fs::metadata(&credentials_path)
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777,
+            0o600
+        );
+    }
+    assert_host_env_file_outside_mounts(run_cmd, &observed.path);
+    assert!(!observed.path.exists());
 }
 
 #[tokio::test]
@@ -8046,395 +8142,65 @@ async fn format_attach_outcome_names_running_exit_and_oom() {
     );
 }
 
-#[tokio::test]
-async fn verify_credential_sync_returns_ok_regardless() {
-    use jackin_config::AuthForwardMode;
-    use jackin_core::Agent;
-    let merged: std::collections::BTreeMap<String, String> = std::collections::BTreeMap::new();
-    let layers: Vec<(String, EnvLayerState)> = vec![];
-    let r = verify_credential_env_present(
-        Agent::Claude,
-        AuthForwardMode::Sync,
-        &merged,
-        &[],
-        &layers,
-        &WorkspaceName::parse("proj").unwrap(),
+#[test]
+fn unassigned_accounts_never_forward_host_auth() {
+    let cfg = AppConfig::default();
+    let trace = super::capsule_setup::account_auth_selections(
+        &cfg,
+        None,
         "smith",
+        &[jackin_core::Agent::Claude],
+    )
+    .unwrap();
+    assert_eq!(
+        trace[&jackin_core::Agent::Claude],
+        (jackin_config::AuthForwardMode::Ignore, None)
     );
-    r.unwrap();
 }
 
-#[tokio::test]
-async fn verify_credential_ignore_returns_ok_regardless() {
-    use jackin_config::AuthForwardMode;
+#[test]
+fn assigned_account_resolves_mode_and_profile_together() {
+    use jackin_config::{AccountConfig, AccountCredential, AiProvider, WorkspaceConfig};
     use jackin_core::Agent;
-    let merged: std::collections::BTreeMap<String, String> = std::collections::BTreeMap::new();
-    let layers: Vec<(String, EnvLayerState)> = vec![];
-    let r = verify_credential_env_present(
-        Agent::Claude,
-        AuthForwardMode::Ignore,
-        &merged,
-        &[],
-        &layers,
-        &WorkspaceName::parse("proj").unwrap(),
-        "smith",
-    );
-    r.unwrap();
-}
-
-#[tokio::test]
-async fn verify_credential_api_key_present_ok() {
-    use jackin_config::AuthForwardMode;
-    use jackin_core::{ANTHROPIC_API_KEY_ENV_NAME, Agent};
-    let mut merged = std::collections::BTreeMap::new();
-    merged.insert(ANTHROPIC_API_KEY_ENV_NAME.into(), "sk-ant-xxx".into());
-    let layers: Vec<(String, EnvLayerState)> = vec![];
-    let r = verify_credential_env_present(
-        Agent::Claude,
-        AuthForwardMode::ApiKey,
-        &merged,
-        &[],
-        &layers,
-        &WorkspaceName::parse("proj").unwrap(),
-        "smith",
-    );
-    r.unwrap();
-}
-
-#[tokio::test]
-async fn verify_credential_api_key_missing_returns_structured_error() {
-    use jackin_config::AuthForwardMode;
-    use jackin_core::{ANTHROPIC_API_KEY_ENV_NAME, Agent};
-    let mut merged = std::collections::BTreeMap::new();
-    merged.insert(ANTHROPIC_API_KEY_ENV_NAME.into(), String::new());
-    let layers = vec![
-        ("[env]".into(), EnvLayerState::Unset),
-        ("[roles.smith.env]".into(), EnvLayerState::Unset),
-        ("[workspaces.proj.env]".into(), EnvLayerState::Unset),
-        (
-            "[workspaces.proj.roles.smith.env]".into(),
-            EnvLayerState::Unset,
-        ),
-    ];
-    let mode_resolution = vec![
-        (
-            "workspace × role × claude".into(),
-            Some(AuthForwardMode::ApiKey),
-        ),
-        ("workspace × claude".into(), None),
-        ("global × claude".into(), None),
-    ];
-    let r = verify_credential_env_present(
-        Agent::Claude,
-        AuthForwardMode::ApiKey,
-        &merged,
-        &mode_resolution,
-        &layers,
-        &WorkspaceName::parse("proj").unwrap(),
-        "smith",
-    );
-    let err = r.unwrap_err();
-    match err {
-        LaunchError::AuthCredentialMissing {
-            env_var,
-            agent,
-            mode,
-            workspace,
-            role,
-            env_layers,
-            mode_resolution,
-            ..
-        } => {
-            assert_eq!(env_var, ANTHROPIC_API_KEY_ENV_NAME);
-            assert_eq!(agent, Agent::Claude);
-            assert_eq!(mode, AuthForwardMode::ApiKey);
-            assert_eq!(workspace, "proj");
-            assert_eq!(role, "smith");
-            // Helper passes the caller's traces through verbatim.
-            assert_eq!(env_layers.len(), 4);
-            assert_eq!(mode_resolution.len(), 3);
-            assert_eq!(mode_resolution[0].1, Some(AuthForwardMode::ApiKey));
-        }
-    }
-}
-
-#[tokio::test]
-async fn verify_credential_api_key_unset_returns_structured_error() {
-    use jackin_config::AuthForwardMode;
-    use jackin_core::Agent;
-    // ANTHROPIC_API_KEY not in map at all.
-    let merged: std::collections::BTreeMap<String, String> = std::collections::BTreeMap::new();
-    let layers: Vec<(String, EnvLayerState)> = vec![];
-    let r = verify_credential_env_present(
-        Agent::Claude,
-        AuthForwardMode::ApiKey,
-        &merged,
-        &[],
-        &layers,
-        &WorkspaceName::parse("proj").unwrap(),
-        "smith",
-    );
-    assert!(matches!(r, Err(LaunchError::AuthCredentialMissing { .. })));
-}
-
-#[tokio::test]
-async fn verify_credential_oauth_token_missing_for_claude() {
-    use jackin_config::AuthForwardMode;
-    use jackin_core::Agent;
-    let merged: std::collections::BTreeMap<String, String> = std::collections::BTreeMap::new();
-    let layers = vec![("[env]".into(), EnvLayerState::Unset)];
-    let r = verify_credential_env_present(
-        Agent::Claude,
-        AuthForwardMode::OAuthToken,
-        &merged,
-        &[],
-        &layers,
-        &WorkspaceName::parse("proj").unwrap(),
-        "smith",
-    );
-    let err = r.unwrap_err();
-    match err {
-        LaunchError::AuthCredentialMissing { env_var, .. } => {
-            assert_eq!(env_var, "CLAUDE_CODE_OAUTH_TOKEN");
-        }
-    }
-}
-
-#[tokio::test]
-async fn verify_credential_codex_api_key_missing() {
-    use jackin_config::AuthForwardMode;
-    use jackin_core::Agent;
-    let merged: std::collections::BTreeMap<String, String> = std::collections::BTreeMap::new();
-    let layers: Vec<(String, EnvLayerState)> = vec![];
-    let r = verify_credential_env_present(
-        Agent::Codex,
-        AuthForwardMode::ApiKey,
-        &merged,
-        &[],
-        &layers,
-        &WorkspaceName::parse("proj").unwrap(),
-        "smith",
-    );
-    let err = r.unwrap_err();
-    match err {
-        LaunchError::AuthCredentialMissing { env_var, agent, .. } => {
-            assert_eq!(env_var, "OPENAI_API_KEY");
-            assert_eq!(agent, Agent::Codex);
-        }
-    }
-}
-
-#[tokio::test]
-async fn verify_credential_amp_api_key_missing() {
-    use jackin_config::AuthForwardMode;
-    use jackin_core::Agent;
-    let merged: std::collections::BTreeMap<String, String> = std::collections::BTreeMap::new();
-    let layers: Vec<(String, EnvLayerState)> = vec![];
-    let r = verify_credential_env_present(
-        Agent::Amp,
-        AuthForwardMode::ApiKey,
-        &merged,
-        &[],
-        &layers,
-        &WorkspaceName::parse("proj").unwrap(),
-        "smith",
-    );
-    let err = r.unwrap_err();
-    match err {
-        LaunchError::AuthCredentialMissing { env_var, agent, .. } => {
-            assert_eq!(env_var, "AMP_API_KEY");
-            assert_eq!(agent, Agent::Amp);
-        }
-    }
-}
-
-#[tokio::test]
-async fn build_mode_resolution_populates_all_3_layers() {
-    use jackin_config::WorkspaceConfig;
-    use jackin_config::{AgentAuthConfig, AuthForwardMode};
-    use jackin_core::Agent;
-
-    let ws = WorkspaceConfig {
-        claude: Some(AgentAuthConfig {
-            auth_forward: AuthForwardMode::ApiKey,
-            ..Default::default()
-        }),
-        ..WorkspaceConfig::default()
-    };
-    let mut cfg = AppConfig {
-        claude: Some(AgentAuthConfig {
-            auth_forward: AuthForwardMode::Sync,
-            ..Default::default()
-        }),
-        ..AppConfig::default()
-    };
-    cfg.workspaces.insert("proj".into(), ws);
-
-    let proj = jackin_core::WorkspaceName::parse("proj").unwrap();
-    let trace = build_mode_resolution(&cfg, Agent::Claude, Some(&proj), "smith");
-    assert_eq!(trace.len(), 3);
-    // Ordered most-specific first: ws × role × claude (no override),
-    // then ws × claude (api_key), then global × claude (sync).
-    assert_eq!(trace[0].0, "workspace × role × claude");
-    assert_eq!(trace[0].1, None);
-    assert_eq!(trace[1].0, "workspace × claude");
-    assert_eq!(trace[1].1, Some(AuthForwardMode::ApiKey));
-    assert_eq!(trace[2].0, "global × claude");
-    assert_eq!(trace[2].1, Some(AuthForwardMode::Sync));
-}
-
-#[tokio::test]
-async fn build_mode_resolution_role_override_wins() {
-    use jackin_config::{AgentAuthConfig, AuthForwardMode};
-    use jackin_config::{WorkspaceConfig, WorkspaceRoleOverride};
-    use jackin_core::Agent;
-
-    let ro = WorkspaceRoleOverride {
-        claude: Some(AgentAuthConfig {
-            auth_forward: AuthForwardMode::OAuthToken,
-            ..Default::default()
-        }),
-        ..Default::default()
-    };
-    let mut ws = WorkspaceConfig::default();
-    ws.roles.insert("smith".into(), ro);
     let mut cfg = AppConfig::default();
-    cfg.workspaces.insert("proj".into(), ws);
-
-    let proj = jackin_core::WorkspaceName::parse("proj").unwrap();
-    let trace = build_mode_resolution(&cfg, Agent::Claude, Some(&proj), "smith");
-    assert_eq!(trace[0].1, Some(AuthForwardMode::OAuthToken));
-    assert_eq!(trace[1].1, None);
-    assert_eq!(trace[2].1, None);
-}
-
-#[tokio::test]
-async fn sync_source_resolution_uses_workspace_role_scope_per_agent() {
-    use jackin_config::{AgentAuthConfig, WorkspaceConfig, WorkspaceRoleOverride};
-    use jackin_core::Agent;
-    use std::path::PathBuf;
-
-    let mut cfg = AppConfig {
-        codex: Some(AgentAuthConfig {
-            sync_source_dir: Some(PathBuf::from("/global/codex")),
-            ..Default::default()
-        }),
-        amp: Some(AgentAuthConfig {
-            sync_source_dir: Some(PathBuf::from("/global/amp")),
-            ..Default::default()
-        }),
-        ..Default::default()
-    };
-    let mut workspace = WorkspaceConfig {
-        codex: Some(AgentAuthConfig {
-            sync_source_dir: Some(PathBuf::from("/workspace/codex")),
-            ..Default::default()
-        }),
-        amp: Some(AgentAuthConfig {
-            sync_source_dir: Some(PathBuf::from("/workspace/amp")),
-            ..Default::default()
-        }),
-        ..Default::default()
-    };
-    workspace.roles.insert(
-        "architect".to_owned(),
-        WorkspaceRoleOverride {
-            codex: Some(AgentAuthConfig {
-                sync_source_dir: Some(PathBuf::from("/role/architect/codex")),
-                ..Default::default()
-            }),
+    cfg.accounts.insert(
+        "work".to_owned(),
+        AccountConfig {
+            enabled: true,
+            name: "Work".to_owned(),
+            provider: AiProvider::OpenAi,
+            credential: AccountCredential::Profile {
+                agent: Agent::Codex,
+                directory: "/accounts/work".into(),
+            },
+        },
+    );
+    cfg.workspaces.insert(
+        "proj".to_owned(),
+        WorkspaceConfig {
+            accounts: vec!["work".to_owned()],
             ..Default::default()
         },
     );
-    workspace.roles.insert(
-        "builder".to_owned(),
-        WorkspaceRoleOverride {
-            amp: Some(AgentAuthConfig {
-                sync_source_dir: Some(PathBuf::from("/role/builder/amp")),
-                ..Default::default()
-            }),
-            ..Default::default()
-        },
-    );
-    cfg.workspaces.insert("proj".to_owned(), workspace);
-
     let proj = jackin_core::WorkspaceName::parse("proj").unwrap();
-    let architect_source =
-        |agent| jackin_config::resolve_sync_source_dir(&cfg, agent, Some(&proj), "architect");
-    let builder_source =
-        |agent| jackin_config::resolve_sync_source_dir(&cfg, agent, Some(&proj), "builder");
-
+    let selections = super::capsule_setup::account_auth_selections(
+        &cfg,
+        Some(&proj),
+        "builder",
+        &[Agent::Codex, Agent::Claude],
+    )
+    .unwrap();
     assert_eq!(
-        architect_source(Agent::Codex),
-        Some(PathBuf::from("/role/architect/codex"))
-    );
-    assert_eq!(
-        architect_source(Agent::Amp),
-        Some(PathBuf::from("/workspace/amp"))
-    );
-    assert_eq!(
-        builder_source(Agent::Codex),
-        Some(PathBuf::from("/workspace/codex"))
+        selections[&Agent::Codex],
+        (
+            jackin_config::AuthForwardMode::Sync,
+            Some("/accounts/work".into())
+        )
     );
     assert_eq!(
-        builder_source(Agent::Amp),
-        Some(PathBuf::from("/role/builder/amp"))
+        selections[&Agent::Claude],
+        (jackin_config::AuthForwardMode::Ignore, None)
     );
-}
-
-#[tokio::test]
-async fn build_env_layer_states_classifies_present_vs_absent() {
-    use jackin_config::{WorkspaceConfig, WorkspaceRoleOverride};
-    use jackin_core::{EnvValue, OpRef}; // env_model flattened
-
-    let mut ro = WorkspaceRoleOverride::default();
-    ro.env.insert(
-        ANTHROPIC_API_KEY_ENV_NAME.into(),
-        EnvValue::OpRef(OpRef {
-            op: "op://uuid/test/field".into(),
-            path: "Test/api/key".into(),
-            account: None,
-            on_demand: false,
-        }),
-    );
-    let mut ws = WorkspaceConfig::default();
-    ws.roles.insert("smith".into(), ro);
-    let mut cfg = AppConfig::default();
-    cfg.workspaces.insert("proj".into(), ws);
-
-    let proj = jackin_core::WorkspaceName::parse("proj").unwrap();
-    let layers = build_env_layer_states(&cfg, Some(&proj), "smith", ANTHROPIC_API_KEY_ENV_NAME);
-    assert_eq!(layers.len(), 4);
-    assert_eq!(layers[0].0, "[env]");
-    assert_eq!(layers[0].1, EnvLayerState::Unset);
-    assert_eq!(layers[1].0, "[roles.smith.env]");
-    assert_eq!(layers[1].1, EnvLayerState::Unset);
-    assert_eq!(layers[2].0, "[workspaces.proj.env]");
-    assert_eq!(layers[2].1, EnvLayerState::Unset);
-    assert_eq!(layers[3].0, "[workspaces.proj.roles.smith.env]");
-    assert_eq!(layers[3].1, EnvLayerState::ResolvedOpRef);
-}
-
-#[tokio::test]
-async fn build_env_layer_states_classifies_literal_at_global() {
-    use jackin_core::EnvValue; // env_model flattened
-
-    let mut env = std::collections::BTreeMap::new();
-    env.insert(
-        ANTHROPIC_API_KEY_ENV_NAME.into(),
-        EnvValue::Plain(format!("${ANTHROPIC_API_KEY_ENV_NAME}")),
-    );
-    let cfg = AppConfig {
-        env,
-        ..AppConfig::default()
-    };
-
-    let proj = jackin_core::WorkspaceName::parse("proj").unwrap();
-    let layers = build_env_layer_states(&cfg, Some(&proj), "smith", ANTHROPIC_API_KEY_ENV_NAME);
-    assert_eq!(layers[0].1, EnvLayerState::ResolvedLiteral);
-    assert_eq!(layers[1].1, EnvLayerState::Unset);
-    assert_eq!(layers[2].1, EnvLayerState::Unset);
-    assert_eq!(layers[3].1, EnvLayerState::Unset);
 }
 
 #[tokio::test]
@@ -8572,80 +8338,6 @@ async fn inspect_attach_outcome_unknown_status_returns_still_running() {
     let outcome = inspect_attach_outcome(&docker, "jackin-x").await.unwrap();
     assert_eq!(outcome, AttachOutcome::still_running());
 }
-
-#[tokio::test]
-async fn auth_credential_missing_displays_layer_trace() {
-    let err = LaunchError::AuthCredentialMissing {
-        agent: jackin_core::Agent::Claude,
-        mode: jackin_config::AuthForwardMode::ApiKey,
-        env_var: ANTHROPIC_API_KEY_ENV_NAME,
-        workspace: "proj".into(),
-        role: "smith".into(),
-        mode_resolution: vec![
-            (
-                "workspace × role × claude".into(),
-                Some(jackin_config::AuthForwardMode::ApiKey),
-            ),
-            ("workspace × claude".into(), None),
-            (
-                "global × claude".into(),
-                Some(jackin_config::AuthForwardMode::Sync),
-            ),
-        ],
-        env_layers: vec![
-            ("[env]".into(), EnvLayerState::Unset),
-            ("[roles.smith.env]".into(), EnvLayerState::Unset),
-            ("[workspaces.proj.env]".into(), EnvLayerState::Unset),
-            (
-                "[workspaces.proj.roles.smith.env]".into(),
-                EnvLayerState::Unset,
-            ),
-        ],
-    };
-    let s = err.to_string();
-    assert!(s.contains("auth_forward is 'api_key'"), "got: {s}");
-    assert!(s.contains(ANTHROPIC_API_KEY_ENV_NAME), "got: {s}");
-    assert!(
-        s.contains("workspace × role × claude    -> api_key"),
-        "got: {s}"
-    );
-    assert!(s.contains("[workspaces.proj.roles.smith.env]"), "got: {s}");
-    assert!(s.contains("Open the Auth panel"), "got: {s}");
-}
-
-#[tokio::test]
-async fn auth_credential_missing_codex_api_key_renders() {
-    let err = LaunchError::AuthCredentialMissing {
-        agent: jackin_core::Agent::Codex,
-        mode: jackin_config::AuthForwardMode::ApiKey,
-        env_var: "OPENAI_API_KEY",
-        workspace: "proj".into(),
-        role: "smith".into(),
-        mode_resolution: vec![],
-        env_layers: vec![],
-    };
-    let s = err.to_string();
-    assert!(s.contains("codex"), "got: {s}");
-    assert!(s.contains("OPENAI_API_KEY"), "got: {s}");
-}
-
-#[tokio::test]
-async fn auth_credential_missing_amp_api_key_renders() {
-    let err = LaunchError::AuthCredentialMissing {
-        agent: jackin_core::Agent::Amp,
-        mode: jackin_config::AuthForwardMode::ApiKey,
-        env_var: "AMP_API_KEY",
-        workspace: "proj".into(),
-        role: "smith".into(),
-        mode_resolution: vec![],
-        env_layers: vec![],
-    };
-    let s = err.to_string();
-    assert!(s.contains("amp"), "got: {s}");
-    assert!(s.contains("AMP_API_KEY"), "got: {s}");
-}
-
-// ── verify_github_token_present (Token-mode pre-flight) ──────
 
 #[tokio::test]
 async fn verify_github_token_present_ok_when_token_resolves() {
@@ -9307,4 +8999,29 @@ async fn programmatic_launch_refuses_a_role_branch_before_docker() {
             .is_some_and(|e| matches!(e, LoadOptionsError::RoleBranchNotAllowed { .. })),
         "expected the role-branch validation failure, got {error:#}"
     );
+}
+
+#[test]
+fn metadata_file_mount_instances_require_recreation_after_layout_change() {
+    use sha2::{Digest as _, Sha256};
+    use std::fmt::Write as _;
+    let temp = tempdir().unwrap();
+    let config = AppConfig::default();
+    let old_policy = serde_json::to_vec(&serde_json::json!([
+        "account-config-v1",
+        {},
+        {},
+        null,
+        null
+    ]))
+    .unwrap();
+    let mut old_digest = String::with_capacity(64);
+    for byte in Sha256::digest(old_policy) {
+        write!(&mut old_digest, "{byte:02x}").unwrap();
+    }
+    std::fs::write(temp.path().join("account-config.sha256"), old_digest).unwrap();
+    assert!(!super::account_configuration_matches(temp.path(), &config, None, "role").unwrap());
+    let current = super::account_configuration_fingerprint(&config, None, "role").unwrap();
+    std::fs::write(temp.path().join("account-config.sha256"), current).unwrap();
+    assert!(super::account_configuration_matches(temp.path(), &config, None, "role").unwrap());
 }

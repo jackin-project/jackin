@@ -48,19 +48,20 @@ Each file carries its own `version = "v1alpha8"` stamp, so a dotfile-managed set
 
 {/* Machine-checked persisted-field inventory. Keep these markers beside the
 schema reference; `docs_commands` compares them with the serde structs. */}
-{/* config-key: AgentAuthConfig.auth_forward */}
-{/* config-key: AgentAuthConfig.sync_source_dir */}
-{/* config-key: AppConfig.amp */}
-{/* config-key: AppConfig.claude */}
-{/* config-key: AppConfig.codex */}
+{/* config-key: AccountConfig.enabled */}
+{/* config-key: AccountConfig.name */}
+{/* config-key: AccountConfig.provider */}
+{/* config-key: AccountConfig.credential */}
+{/* config-key: AppConfig.accounts */}
+{/* config-key: AppConfig.account_bindings */}
+{/* config-key: WorkspaceConfig.accounts */}
+{/* config-key: WorkspaceConfig.account_bindings */}
+{/* config-key: WorkspaceRoleOverride.account_bindings */}
 {/* config-key: AppConfig.dirty_exit_policy */}
 {/* config-key: AppConfig.docker */}
 {/* config-key: AppConfig.env */}
 {/* config-key: AppConfig.git */}
 {/* config-key: AppConfig.github */}
-{/* config-key: AppConfig.grok */}
-{/* config-key: AppConfig.kimi */}
-{/* config-key: AppConfig.opencode */}
 {/* config-key: AppConfig.role_repo_refresh_ttl_seconds */}
 {/* config-key: AppConfig.roles */}
 {/* config-key: AppConfig.runtime */}
@@ -89,9 +90,6 @@ schema reference; `docs_commands` compares them with the serde structs. */}
 {/* config-key: TelemetryConfig.categories */}
 {/* config-key: TelemetryConfig.level */}
 {/* config-key: WorkspaceConfig.allowed_roles */}
-{/* config-key: WorkspaceConfig.amp */}
-{/* config-key: WorkspaceConfig.claude */}
-{/* config-key: WorkspaceConfig.codex */}
 {/* config-key: WorkspaceConfig.default_agent */}
 {/* config-key: WorkspaceConfig.default_role */}
 {/* config-key: WorkspaceConfig.dirty_exit_policy */}
@@ -99,26 +97,17 @@ schema reference; `docs_commands` compares them with the serde structs. */}
 {/* config-key: WorkspaceConfig.env */}
 {/* config-key: WorkspaceConfig.git_pull_on_entry */}
 {/* config-key: WorkspaceConfig.github */}
-{/* config-key: WorkspaceConfig.grok */}
 {/* config-key: WorkspaceConfig.keep_awake */}
-{/* config-key: WorkspaceConfig.kimi */}
 {/* config-key: WorkspaceConfig.last_role */}
 {/* config-key: WorkspaceConfig.mounts */}
-{/* config-key: WorkspaceConfig.opencode */}
 {/* config-key: WorkspaceConfig.roles */}
 {/* config-key: WorkspaceConfig.runtime */}
 {/* config-key: WorkspaceConfig.version */}
 {/* config-key: WorkspaceConfig.workdir */}
 {/* config-key: WorkspaceDockerConfig.grants */}
 {/* config-key: WorkspaceDockerConfig.profile */}
-{/* config-key: WorkspaceRoleOverride.amp */}
-{/* config-key: WorkspaceRoleOverride.claude */}
-{/* config-key: WorkspaceRoleOverride.codex */}
 {/* config-key: WorkspaceRoleOverride.env */}
 {/* config-key: WorkspaceRoleOverride.github */}
-{/* config-key: WorkspaceRoleOverride.grok */}
-{/* config-key: WorkspaceRoleOverride.kimi */}
-{/* config-key: WorkspaceRoleOverride.opencode */}
 {/* config-key: WorkspaceRuntimeConfig.backend */}
 
 The configuration is TOML. Global settings live at
@@ -166,117 +155,42 @@ role_repo_refresh_ttl_seconds = 60
 
 When the field is absent, jackin❯ uses `60` seconds. Set it to `0` to fetch on every launch, matching the pre-existing behavior. `jackin load --rebuild`, explicit branch overrides, and background image refresh/prewarm paths always fetch rather than using the TTL shortcut.
 
-### Agent auth-forward settings
+### Agent accounts
 
-`auth_forward` is configured per agent (`claude`, `codex`, `amp`, `kimi`, `opencode`, `grok`) at three
-layers, with most-specific wins:
+Global configuration stores named credentials:
 
 ```toml
-version = "v1alpha8"
+[accounts.work]
+name = "Work Codex"
+provider = "openai"
+[accounts.work.credential]
+type = "profile"
+agent = "codex"
+directory = "/Users/operator/.codex-work"
 
-# Layer 1 — global default (per agent)
-[claude]
-auth_forward = "sync"  # "sync" (default), "api_key", "oauth_token", or "ignore"
-sync_source_dir = "/Users/operator/.claude-work"
-
-[codex]
-auth_forward = "sync"  # "sync" (default), "api_key", or "ignore" — Codex rejects "oauth_token"
-
-[amp]
-auth_forward = "sync"  # "sync" (default), "api_key", or "ignore" — Amp rejects "oauth_token"
-
-[kimi]
-auth_forward = "sync"  # "sync" (default), "api_key", or "ignore" — Kimi rejects "oauth_token"
-
-[opencode]
-auth_forward = "sync"  # "sync" (default), "api_key", or "ignore" — OpenCode rejects "oauth_token"
-
-[grok]
-auth_forward = "sync"  # "sync" (default), "api_key", or "ignore" — Grok rejects "oauth_token"
-
-# Layer 2 — workspace-wide override
-[claude]
-auth_forward = "oauth_token"
-
-[codex]
-auth_forward = "api_key"
-
-[amp]
-auth_forward = "api_key"
-
-[kimi]
-auth_forward = "sync"
-
-[opencode]
-auth_forward = "sync"
-
-[grok]
-auth_forward = "sync"
-
-# Layer 3 — most-specific (workspace × role × agent) override
-[roles.agent-smith.claude]
-auth_forward = "ignore"
-sync_source_dir = "/Users/operator/.claude-smith"
-
-[roles.agent-smith.codex]
-auth_forward = "sync"
-
-[roles.agent-smith.amp]
-auth_forward = "ignore"
-
-[roles.agent-smith.kimi]
-auth_forward = "sync"
-
-[roles.agent-smith.opencode]
-auth_forward = "sync"
-
-[roles.agent-smith.grok]
-auth_forward = "api_key"
+[accounts.api]
+name = "OpenAI API"
+provider = "openai"
+[accounts.api.credential]
+type = "api_key"
+value = "$WORK_OPENAI_KEY"
 ```
 
-The layer 2 and 3 examples above belong in
-`~/.config/jackin/workspaces/my-app.toml`; the global defaults belong in
-`config.toml`.
+A workspace file authorizes accounts and selects the account each agent uses:
 
-| Field | Description | Default |
-|---|---|---|
-| `auth_forward` | How the host's agent credentials (or env-supplied keys/tokens) are made available to agent containers. See [Authentication Forwarding](/guides/authentication). | `sync` |
-| `sync_source_dir` | Optional host-side source folder for file-backed `sync` auth. The value is the agent credential/config directory itself, such as `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, or an Amp data directory like `$XDG_DATA_HOME/amp`, and is valid on global, workspace, and workspace-role agent blocks for agents that support file-backed sync. | agent runtime default |
+```toml
+accounts = ["work", "api"]
+[account_bindings]
+codex = "work"
+[roles.agent-smith.account_bindings]
+codex = "api"
+```
 
-Accepted values: `sync` \| `api_key` \| `oauth_token` \| `ignore`.
-`oauth_token` is **Claude only** — setting it under any `[codex]`,
-`[amp]`, `[kimi]`, `[opencode]`, or `[grok]` block is rejected at parse time.
+Role selections must belong to the workspace allowlist. A global `account_bindings` map supplies selections for launches without a workspace and can act as a default only when a workspace already authorizes that account. Multiple compatible assigned accounts require an explicit selection; no account means no forwarded credentials.
 
-Locations the field may appear at, in resolution order
-(most-specific first):
+API credentials can use literal values, environment references, or 1Password `EnvValue` references. Supported cross-provider accounts can set `base_url` and `model`. Credential routing derives from the selected account; ordinary operator environment layers cannot override governed account credentials.
 
-- `[roles.<role>.claude].auth_forward` in `workspaces/<ws>.toml`
-- `[roles.<role>.codex].auth_forward` in `workspaces/<ws>.toml`
-- `[roles.<role>.amp].auth_forward` in `workspaces/<ws>.toml`
-- `[roles.<role>.kimi].auth_forward` in `workspaces/<ws>.toml`
-- `[roles.<role>.opencode].auth_forward` in `workspaces/<ws>.toml`
-- `[roles.<role>.grok].auth_forward` in `workspaces/<ws>.toml`
-- `[claude].auth_forward` in `workspaces/<ws>.toml`
-- `[codex].auth_forward` in `workspaces/<ws>.toml`
-- `[amp].auth_forward` in `workspaces/<ws>.toml`
-- `[kimi].auth_forward` in `workspaces/<ws>.toml`
-- `[opencode].auth_forward` in `workspaces/<ws>.toml`
-- `[grok].auth_forward` in `workspaces/<ws>.toml`
-- `[claude].auth_forward` (global default)
-- `[codex].auth_forward` (global default)
-- `[amp].auth_forward` (global default)
-- `[kimi].auth_forward` (global default)
-- `[opencode].auth_forward` (global default)
-- `[grok].auth_forward` (global default)
-
-Credentials referenced by `api_key` and `oauth_token` live in ordinary
-`[*.env]` blocks under the well-known names `ANTHROPIC_API_KEY`,
-`CLAUDE_CODE_OAUTH_TOKEN`, `OPENAI_API_KEY`, `AMP_API_KEY`, and
-`KIMI_API_KEY`, `OPENCODE_API_KEY`, and `XAI_API_KEY`. Grok `api_key`
-mode also exposes the configured key as `GROK_DEPLOYMENT_KEY` inside the
-container so the Grok CLI can use either personal or deployment-key auth.
-
-The workspace editor stages Auth-tab edits in memory until the operator confirms the workspace save. The save path in <RepoFile path="crates/jackin/src/console/services.rs">crates/jackin/src/console/services.rs</RepoFile> applies separate diff passes for general workspace fields, agent auth modes, agent sync source folders, and credential env values; the sync-source pass writes through `ConfigEditor` setters in <RepoFile path="crates/jackin-config/src/editor.rs">crates/jackin-config/src/editor.rs</RepoFile> for both workspace and role layers. This keeps the dialog staging model consistent: the Auth dialog changes pending state only, and disk writes happen only after the workspace save confirmation.
+`ConfigEditor` owns atomic registry and assignment edits. Account removal prunes references. Profile discovery runs once at first initialization; explicit rescanning is available through `jackin account scan`. See [Agent Accounts](/guides/authentication/agents/) for setup and the breaking migration.
 
 ### GitHub CLI auth-forward settings
 
@@ -480,7 +394,7 @@ Each running role stores state at `~/.jackin/data/<container-name>/`:
 | `kimi-code/device_id` | Synced copy of host `~/.kimi-code/device_id` under `auth_forward = "sync"`, `0600` perms; Kimi includes this device id in OAuth/device headers |
 | `opencode/auth.json` | Synced copy of host `~/.local/share/opencode/auth.json` under `auth_forward = "sync"`, `0600` perms (mounted at `/jackin/opencode/auth.json`; absent when host has no auth.json). OpenCode stores provider credentials in this file — for example, a Z.AI Coding Plan API key |
 | `grok/auth.json` | Synced copy of host `~/.grok/auth.json` under `auth_forward = "sync"`, `0600` perms (mounted at `/jackin/grok/auth.json`; absent when host has no auth.json). Grok stores scoped OIDC credentials and refresh tokens in this file |
-| `home/.claude/` and `home/.claude.json` | Durable Claude Code home state, including conversation history, runtime-local plugins, account metadata, and settings written during the session |
+| `home/.claude/` (including `.claude.json`) | Durable Claude Code home state, including conversation history, runtime-local plugins, account metadata, and settings written during the session |
 | `home/.codex/` | Durable Codex home state, including conversation history, runtime-local config, and login state created inside the session |
 | `home/.local/share/amp/` | Durable Amp data state created inside the session |
 | `home/.kimi-code/` | Durable Kimi home state, including runtime-local config and login state created inside the session |
@@ -488,6 +402,8 @@ Each running role stores state at `~/.jackin/data/<container-name>/`:
 | `home/.grok/` | Durable Grok home state, including runtime-local config, auth files copied from `/jackin/grok/`, and cache written during the session |
 | `state/` | jackin❯ runtime state mounted at `/jackin/state`, including the `setup_once` marker |
 | `.config/gh/` | GitHub CLI authentication and settings (agent-neutral) |
+
+Claude sessions set `CLAUDE_CONFIG_DIR=/home/agent/.claude`, keeping mutable account metadata inside the directory mount. Claude can atomically replace or remove `.claude.json` while its contents remain durable across container recreation.
 
 Host→container auth handoff lives under a single tree (`/jackin/`) the operator can audit at a glance. The agent home directories are bind-mounted from jackin-managed per-instance state, not from the operator's host home. `jackin-capsule runtime-setup` seeds image-baked defaults into that durable home on first launch, then copies the current auth handoff files from `/jackin/` into the durable home before starting the agent. This keeps conversation history and runtime-local plugins recoverable when Docker containers disappear while still letting the current auth mode override stale forwarded credentials.
 

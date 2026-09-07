@@ -10,6 +10,7 @@
 //! Not responsible for: argument parsing (`cli/`), runtime mechanics
 //! (`runtime/`), or TUI rendering (`console/adapter/`). This module is glue.
 
+mod account_cmd;
 mod config_cmd;
 pub(crate) mod context;
 #[cfg(unix)]
@@ -18,7 +19,6 @@ mod helpers;
 mod load_cmd;
 mod prune_cmd;
 mod restore;
-mod token_cmd;
 mod workspace_cmd;
 
 #[cfg(test)]
@@ -33,9 +33,6 @@ pub(crate) use restore::{
     ad_hoc_restore_input_for_moved_path, classify_moved_path_entry,
     mark_instance_restore_available_after_stop, moved_path_browser_choices,
 };
-use token_cmd::handle_claude_token;
-#[cfg(test)]
-pub(crate) use token_cmd::{delete_prior_op_item_with_runner, validate_setup_role_allowed};
 
 use helpers::{
     mount_display, mount_mode, render_workspace_show, resolve_instance_reference,
@@ -56,17 +53,6 @@ use jackin_runtime::instance;
 use jackin_runtime::runtime;
 
 use self::context::prompt_agent_choice_if_needed;
-
-/// Parse an `auth_forward` mode value as it arrived from the CLI.
-fn parse_auth_forward_mode_from_cli(raw: &str) -> Result<jackin_config::AuthForwardMode> {
-    raw.parse().map_err(|e: String| anyhow::anyhow!("{e}"))
-}
-
-/// Parse an agent slug as it arrived from the CLI.
-fn parse_agent_from_cli(raw: &str) -> Result<jackin_core::Agent> {
-    raw.parse()
-        .map_err(|_| anyhow::anyhow!("unknown agent {raw:?}; expected one of: claude, codex, amp"))
-}
 
 fn rich_prelaunch_choice(title: &str, items: Vec<String>) -> Result<usize> {
     runtime::progress::prelaunch_select_choice(
@@ -181,6 +167,7 @@ pub async fn run(cli: Cli, lifecycle: crate::lifecycle::ProductLifecycle) -> Res
                 load_cmd::handle_eject(args, &paths, debug, connect_docker).await
             }
             Command::Exile => load_cmd::handle_exile(&paths, debug, connect_docker).await,
+            Command::Account(command) => account_cmd::handle(command, &config, &paths),
             Command::Config(config_cmd) => {
                 config_cmd::handle(config_cmd, &mut config, &paths, debug)
             }
@@ -424,26 +411,6 @@ const fn hardline_action_options() -> [(&'static str, HardlineAction); 4] {
         ("Inspect state without attaching", HardlineAction::Inspect),
         ("Cancel", HardlineAction::Cancel),
     ]
-}
-
-/// Render the `config auth show` output as a string. Empty workspace + role
-/// names fall through to layer 1 (global), so this prints the global default
-/// for each agent. Printing every built-in agent avoids privileging any one
-/// runtime in the no-context output until/unless an `--agent` flag is added.
-fn render_auth_show(config: &AppConfig) -> String {
-    use std::fmt::Write as _;
-    let claude_mode = jackin_config::resolve_mode(config, jackin_core::Agent::Claude, None, "");
-    let codex_mode = jackin_config::resolve_mode(config, jackin_core::Agent::Codex, None, "");
-    let amp_mode = jackin_config::resolve_mode(config, jackin_core::Agent::Amp, None, "");
-    let kimi_mode = jackin_config::resolve_mode(config, jackin_core::Agent::Kimi, None, "");
-    let opencode_mode = jackin_config::resolve_mode(config, jackin_core::Agent::Opencode, None, "");
-    let mut out = String::new();
-    let _unused = writeln!(out, "claude: {claude_mode}");
-    let _unused = writeln!(out, "codex:  {codex_mode}");
-    let _unused = writeln!(out, "amp:    {amp_mode}");
-    let _unused = writeln!(out, "kimi:   {kimi_mode}");
-    let _unused = writeln!(out, "opencode: {opencode_mode}");
-    out
 }
 
 #[cfg(test)]

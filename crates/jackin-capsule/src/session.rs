@@ -68,25 +68,6 @@ pub const SESSION_ENV_PASSTHROUGH: &[&str] = &[
     "JACKIN_GIT_COAUTHOR_TRAILER",
     "JACKIN_GIT_DCO",
     "TZ",
-    // Per-tab provider injection — Anthropic-compatible backends (Claude Code).
-    // Listed here so env_for_spawn's allowlist accepts them as overrides when the
-    // operator picks an alternative provider in the AgentPicker flow.
-    "ANTHROPIC_AUTH_TOKEN",
-    "ANTHROPIC_BASE_URL",
-    // Model-tier mapping so Claude Code maps its internal tiers to provider model names.
-    "ANTHROPIC_DEFAULT_OPUS_MODEL",
-    "ANTHROPIC_DEFAULT_SONNET_MODEL",
-    "ANTHROPIC_DEFAULT_HAIKU_MODEL",
-    // Provider operational env vars.
-    "API_TIMEOUT_MS",
-    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC",
-    // MiniMax key forwarded into Codex so its config.toml `env_key = "MINIMAX_API_KEY"` resolves.
-    "MINIMAX_API_KEY",
-    // Codex v2 profile name injected by the capsule when the operator picks an
-    // alt provider (e.g. "minimax"). The entrypoint passes it as --profile <name>.
-    "JACKIN_CODEX_PROFILE",
-    // Kimi key — serves both the Kimi Code runtime agent and the Kimi Claude Code provider.
-    "KIMI_CODE_API_KEY",
 ];
 
 /// True when an OSC 8 `URI` payload is safe to forward to the
@@ -1635,8 +1616,18 @@ pub fn build_agent_command(
     for arg in agent_model_args(agent, model) {
         cmd.arg(arg);
     }
+    for name in jackin_core::account_env_names() {
+        cmd.env_remove(name);
+    }
     for (k, v) in env_passthrough {
-        cmd.env(k, v);
+        if !jackin_core::is_account_env(k) {
+            cmd.env(k, v);
+        }
+    }
+    if agent == "claude" {
+        // Claude atomically replaces onboarding metadata; keep it inside the
+        // durable directory mount rather than a file mounted at the home root.
+        cmd.env("CLAUDE_CONFIG_DIR", container_paths::CLAUDE_CONFIG_DIR);
     }
     cmd.env("JACKIN_AGENT", agent);
     if let Some(auth_mode) = auth_mode {
@@ -1670,8 +1661,13 @@ pub fn build_shell_command(
     codename: &str,
 ) -> CommandBuilder {
     let mut cmd = CommandBuilder::new(shell_executable());
+    for name in jackin_core::account_env_names() {
+        cmd.env_remove(name);
+    }
     for (k, v) in env_passthrough {
-        cmd.env(k, v);
+        if !jackin_core::is_account_env(k) {
+            cmd.env(k, v);
+        }
     }
     cmd.env_remove("JACKIN_AGENT");
     cmd.env("JACKIN_AGENT_CODENAME", codename);
@@ -1709,3 +1705,20 @@ fn apply_terminal_env(cmd: &mut CommandBuilder) {
 
 #[cfg(test)]
 mod tests;
+
+/// Inject only the account selected for this pane after ambient credentials were stripped.
+pub(crate) fn apply_account_env(
+    command: &mut CommandBuilder,
+    agent: &str,
+    auth_mode: Option<&str>,
+    credentials: &jackin_protocol::AgentCredentialEnv,
+) {
+    if !matches!(auth_mode, Some("api_key" | "oauth_token")) {
+        return;
+    }
+    if let Some(env) = credentials.for_agent(agent) {
+        for (name, value) in env {
+            command.env(name, value);
+        }
+    }
+}

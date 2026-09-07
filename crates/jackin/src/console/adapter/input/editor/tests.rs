@@ -16,7 +16,7 @@ use crate::console::adapter::state::{
     ManagerState, Modal, PendingRoleLoad, SecretsRow, SecretsScopeTag, TextInputTarget,
 };
 use crossterm::event::KeyCode;
-use jackin_config::{AgentAuthConfig, AppConfig, AuthForwardMode};
+use jackin_config::AppConfig;
 use jackin_config::{MountConfig, WorkspaceConfig};
 use jackin_console::tui::auth::AuthKind;
 use jackin_core::JackinPaths;
@@ -293,211 +293,83 @@ fn edit_mode_enter_on_name_row_still_opens_rename_modal() {
     }
 }
 
-fn auth_cursor_rows() -> Vec<AuthRow> {
-    vec![
+#[test]
+fn account_and_binding_rows_are_all_keyboard_focusable() {
+    let rows = vec![
+        AuthRow::Account { id: "work".into() },
+        AuthRow::Binding {
+            agent: jackin_core::Agent::Codex,
+            role: None,
+        },
         AuthRow::WorkspaceMode {
-            kind: AuthKind::Claude,
-        },
-        AuthRow::WorkspaceSource {
-            kind: AuthKind::Claude,
-        },
-        AuthRow::WorkspaceSourceFolder {
-            kind: AuthKind::Claude,
-        },
-        AuthRow::Spacer,
-        AuthRow::RoleHeader {
-            role: "smith".into(),
-            expanded: true,
+            kind: AuthKind::Github,
         },
         AuthRow::RoleMode {
             role: "smith".into(),
-            kind: AuthKind::Claude,
-        },
-        AuthRow::RoleSource {
-            role: "smith".into(),
-            kind: AuthKind::Claude,
-        },
-        AuthRow::RoleSourceFolder {
-            role: "smith".into(),
-            kind: AuthKind::Claude,
-        },
-        AuthRow::Spacer,
-        AuthRow::AddSentinel { eligible: 1 },
-    ]
-}
-
-#[test]
-fn down_skips_workspace_preview_rows_and_spacer() {
-    let rows = auth_cursor_rows();
-    let skipped = jackin_console::tui::screens::editor::update::auth_skipped_rows(&rows);
-    assert_eq!(
-        jackin_console::tui::screens::editor::update::step_cursor_down(&skipped, 1, rows.len() - 1),
-        4
-    );
-}
-
-#[test]
-fn down_skips_role_preview_rows_and_spacer() {
-    let rows = auth_cursor_rows();
-    let skipped = jackin_console::tui::screens::editor::update::auth_skipped_rows(&rows);
-    assert_eq!(
-        jackin_console::tui::screens::editor::update::step_cursor_down(&skipped, 6, rows.len() - 1),
-        9
-    );
-}
-
-#[test]
-fn down_at_max_with_only_preview_remaining_returns_candidate() {
-    let rows = vec![
-        AuthRow::WorkspaceMode {
-            kind: AuthKind::Claude,
-        },
-        AuthRow::WorkspaceSourceFolder {
-            kind: AuthKind::Claude,
+            kind: AuthKind::Github,
         },
     ];
     let skipped = jackin_console::tui::screens::editor::update::auth_skipped_rows(&rows);
-    assert_eq!(
-        jackin_console::tui::screens::editor::update::step_cursor_down(&skipped, 1, 1),
-        1
-    );
+    assert!(skipped.is_empty());
+    for index in 0..rows.len() {
+        assert_eq!(
+            jackin_console::tui::screens::editor::update::step_cursor_down(
+                &skipped,
+                index,
+                rows.len() - 1
+            ),
+            index
+        );
+        assert_eq!(
+            jackin_console::tui::screens::editor::update::step_cursor_up(&skipped, index),
+            index
+        );
+    }
 }
 
 #[test]
-fn up_skips_workspace_preview_rows_to_workspace_mode() {
-    let rows = auth_cursor_rows();
-    let skipped = jackin_console::tui::screens::editor::update::auth_skipped_rows(&rows);
-    assert_eq!(
-        jackin_console::tui::screens::editor::update::step_cursor_up(&skipped, 3),
-        0
-    );
-}
-
-#[test]
-fn up_skips_role_preview_rows_to_role_mode() {
-    let rows = auth_cursor_rows();
-    let skipped = jackin_console::tui::screens::editor::update::auth_skipped_rows(&rows);
-    assert_eq!(
-        jackin_console::tui::screens::editor::update::step_cursor_up(&skipped, 7),
-        5
-    );
-}
-
-#[test]
-fn up_at_zero_preview_clamps_to_zero() {
-    let rows = vec![
-        AuthRow::WorkspaceSourceFolder {
-            kind: AuthKind::Claude,
-        },
-        AuthRow::WorkspaceMode {
-            kind: AuthKind::Claude,
-        },
-    ];
-    let skipped = jackin_console::tui::screens::editor::update::auth_skipped_rows(&rows);
-    assert_eq!(
-        jackin_console::tui::screens::editor::update::step_cursor_up(&skipped, 0),
-        0
-    );
-}
-
-#[test]
-fn enter_on_auth_workspace_source_preview_row_is_noop() {
-    let tmp = tempfile::tempdir().unwrap();
-    let paths = JackinPaths::for_tests(tmp.path());
-    paths.ensure_base_dirs().unwrap();
+fn account_editor_assignment_revokes_dependent_bindings() {
     let mut config = AppConfig::default();
-    let workspace = WorkspaceConfig {
-        workdir: tmp.path().display().to_string(),
-        claude: Some(AgentAuthConfig {
-            auth_forward: AuthForwardMode::ApiKey,
-            ..Default::default()
-        }),
-        ..Default::default()
-    };
-    config.workspaces.insert("proj".into(), workspace.clone());
-    let mut state = ManagerState::from_config(&config, tmp.path());
-    let mut editor = EditorState::new_edit("proj".into(), workspace);
+    config.accounts.insert(
+        "work".into(),
+        jackin_config::AccountConfig {
+            enabled: true,
+            name: "Work".into(),
+            provider: jackin_config::AiProvider::OpenAi,
+            credential: jackin_config::AccountCredential::Profile {
+                agent: jackin_core::Agent::Codex,
+                directory: "/host/codex-work".into(),
+            },
+        },
+    );
+    let mut editor = EditorState::new_edit("project".into(), WorkspaceConfig::default());
     editor.active_tab = EditorTab::Auth;
-    editor.auth_selected_kind = Some(AuthKind::Claude);
-    let source_idx = editor
+    editor.active_field = FieldFocus::Row(0);
+    editor.edit_account_row(&config, false);
+    assert_eq!(editor.pending.accounts, ["work"]);
+    let binding = editor
         .auth_flat_rows(&config)
         .iter()
         .position(|row| {
             matches!(
                 row,
-                AuthRow::WorkspaceSource {
-                    kind: AuthKind::Claude
+                AuthRow::Binding {
+                    agent: jackin_core::Agent::Codex,
+                    role: None
                 }
             )
         })
-        .expect("api_key mode must render a workspace source preview row");
-    editor.active_field = FieldFocus::Row(source_idx);
-    state.stage = ManagerStage::Editor(editor);
-
-    handle_key(
-        &mut state,
-        &mut config,
-        &paths,
-        tmp.path(),
-        key(KeyCode::Enter),
-    )
-    .unwrap();
-
-    let ManagerStage::Editor(editor) = &state.stage else {
-        panic!("still in editor after Enter on source preview row");
-    };
-    assert!(editor.modal.is_none());
-    assert_eq!(editor.active_field, FieldFocus::Row(source_idx));
-}
-
-#[test]
-fn enter_on_auth_workspace_source_folder_preview_row_is_noop() {
-    let tmp = tempfile::tempdir().unwrap();
-    let paths = JackinPaths::for_tests(tmp.path());
-    paths.ensure_base_dirs().unwrap();
-    let mut config = AppConfig::default();
-    let workspace = WorkspaceConfig {
-        workdir: tmp.path().display().to_string(),
-        claude: Some(AgentAuthConfig {
-            auth_forward: AuthForwardMode::Sync,
-            sync_source_dir: Some(std::path::PathBuf::from("/host/claude")),
-        }),
-        ..Default::default()
-    };
-    config.workspaces.insert("proj".into(), workspace.clone());
-    let mut state = ManagerState::from_config(&config, tmp.path());
-    let mut editor = EditorState::new_edit("proj".into(), workspace);
-    editor.active_tab = EditorTab::Auth;
-    editor.auth_selected_kind = Some(AuthKind::Claude);
-    let source_folder_idx = editor
-        .auth_flat_rows(&config)
-        .iter()
-        .position(|row| {
-            matches!(
-                row,
-                AuthRow::WorkspaceSourceFolder {
-                    kind: AuthKind::Claude
-                }
-            )
-        })
-        .expect("sync mode must render a workspace source-folder preview row");
-    editor.active_field = FieldFocus::Row(source_folder_idx);
-    state.stage = ManagerStage::Editor(editor);
-
-    handle_key(
-        &mut state,
-        &mut config,
-        &paths,
-        tmp.path(),
-        key(KeyCode::Enter),
-    )
-    .unwrap();
-
-    let ManagerStage::Editor(editor) = &state.stage else {
-        panic!("still in editor after Enter on source-folder preview row");
-    };
-    assert!(editor.modal.is_none());
-    assert_eq!(editor.active_field, FieldFocus::Row(source_folder_idx));
+        .unwrap();
+    editor.active_field = FieldFocus::Row(binding);
+    editor.edit_account_row(&config, false);
+    assert_eq!(
+        editor.pending.account_bindings[&jackin_core::Agent::Codex],
+        "work"
+    );
+    editor.active_field = FieldFocus::Row(0);
+    editor.edit_account_row(&config, false);
+    assert!(editor.pending.accounts.is_empty());
+    assert!(editor.pending.account_bindings.is_empty());
 }
 
 // ── Editor FileBrowser → MountDstChoice behavioral tests ────────────
@@ -2011,12 +1883,7 @@ fn enter_on_op_agent_key_row_is_noop() {
         "smith".into(),
         jackin_config::WorkspaceRoleOverride {
             env: ag_env,
-            claude: None,
-            codex: None,
-            amp: None,
-            kimi: None,
-            opencode: None,
-            grok: None,
+            account_bindings: std::collections::BTreeMap::default(),
             github: None,
         },
     );
@@ -2300,12 +2167,7 @@ fn m_on_agent_key_unmasks_only_that_row_in_that_agent_scope() {
         "smith".into(),
         jackin_config::WorkspaceRoleOverride {
             env: ag_env,
-            claude: None,
-            codex: None,
-            amp: None,
-            kimi: None,
-            opencode: None,
-            grok: None,
+            account_bindings: std::collections::BTreeMap::default(),
             github: None,
         },
     );
@@ -2369,12 +2231,7 @@ fn cursor_skips_section_spacer_on_down_arrow() {
         "agent-smith".into(),
         jackin_config::WorkspaceRoleOverride {
             env: ag_env,
-            claude: None,
-            codex: None,
-            amp: None,
-            kimi: None,
-            opencode: None,
-            grok: None,
+            account_bindings: std::collections::BTreeMap::default(),
             github: None,
         },
     );

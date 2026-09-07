@@ -16,7 +16,6 @@ fn editor_tab_move_plan_resets_local_view_state() {
             active_row: 0,
             tab_scroll_x: 0,
             tab_scroll_y: 0,
-            clear_auth_kind: false,
             clear_secret_view_state: true,
         }
     );
@@ -32,7 +31,6 @@ fn editor_tab_move_plan_clears_auth_kind_when_leaving_auth() {
             active_row: 0,
             tab_scroll_x: 0,
             tab_scroll_y: 0,
-            clear_auth_kind: true,
             clear_secret_view_state: false,
         }
     );
@@ -47,7 +45,6 @@ fn editor_tab_select_plan_focuses_tab_and_clears_departed_state() {
             tab_bar_focused: true,
             active_row: 0,
             workspace_mounts_scroll_focused: false,
-            clear_auth_kind: true,
             clear_secret_view_state: true,
         }
     );
@@ -159,32 +156,6 @@ fn editor_general_field_modal_plan_routes_editable_rows() {
 }
 
 #[test]
-fn editor_auth_kind_entry_plan_selects_kind_and_resets_view_state() {
-    assert_eq!(
-        enter_editor_auth_kind_plan(TestAuthKind::Claude),
-        EditorAuthKindPlan {
-            selected_kind: Some(TestAuthKind::Claude),
-            active_row: 0,
-            tab_scroll_x: 0,
-            tab_scroll_y: 0,
-        }
-    );
-}
-
-#[test]
-fn editor_auth_kind_clear_plan_clears_kind_and_resets_view_state() {
-    assert_eq!(
-        clear_editor_auth_kind_plan::<TestAuthKind>(),
-        EditorAuthKindPlan {
-            selected_kind: None,
-            active_row: 0,
-            tab_scroll_x: 0,
-            tab_scroll_y: 0,
-        }
-    );
-}
-
-#[test]
 fn editor_field_selection_plan_skips_rows_and_updates_scroll() {
     let plan = editor_field_selection_plan(1, 1, 4, &[2], 0, 8, 0);
     assert_eq!(plan.active_row, 3);
@@ -208,12 +179,15 @@ fn skipped_row_helpers_mark_inert_editor_rows() {
         AuthRow::WorkspaceMode {
             kind: TestAuthKind::Claude,
         },
-        AuthRow::WorkspaceSource {
-            kind: TestAuthKind::Claude,
+        AuthRow::Account {
+            id: "personal".into(),
         },
-        AuthRow::Spacer,
+        AuthRow::Binding {
+            agent: jackin_core::Agent::Claude,
+            role: None,
+        },
     ];
-    assert_eq!(auth_skipped_rows(&auth), vec![1, 2]);
+    assert!(auth_skipped_rows(&auth).is_empty());
 }
 
 #[test]
@@ -230,10 +204,13 @@ fn editor_selection_bounds_routes_tab_specific_rows() {
         AuthRow::WorkspaceMode {
             kind: TestAuthKind::Claude,
         },
-        AuthRow::WorkspaceSource {
-            kind: TestAuthKind::Claude,
+        AuthRow::Account {
+            id: "personal".into(),
         },
-        AuthRow::Spacer,
+        AuthRow::Binding {
+            agent: jackin_core::Agent::Claude,
+            role: None,
+        },
     ];
 
     assert_eq!(
@@ -242,7 +219,7 @@ fn editor_selection_bounds_routes_tab_specific_rows() {
     );
     assert_eq!(
         editor_selection_bounds(EditorTab::Auth, 9, 8, &secrets, &auth),
-        (2, vec![1, 2])
+        (2, vec![])
     );
     assert_eq!(
         editor_selection_bounds(EditorTab::Mounts, 9, 8, &secrets, &auth),
@@ -271,51 +248,6 @@ fn editor_mount_row_select_plan_focuses_workspace_mounts() {
             active_row: 4,
             workspace_mounts_scroll_focused: true,
         }
-    );
-}
-
-#[test]
-fn editor_auth_generate_scope_plan_routes_edit_mode_targets() {
-    let mode = EditorMode::Edit {
-        name: "workspace".to_owned(),
-    };
-
-    assert_eq!(
-        editor_auth_generate_scope_plan::<TestAuthKind>(
-            &mode,
-            &AuthFormTarget::Workspace {
-                kind: TestAuthKind::Claude,
-            },
-        ),
-        Some(EditorAuthGenerateScopePlan::Workspace(
-            "workspace".to_owned()
-        ))
-    );
-    assert_eq!(
-        editor_auth_generate_scope_plan::<TestAuthKind>(
-            &mode,
-            &AuthFormTarget::WorkspaceRole {
-                role: "role-a".to_owned(),
-                kind: TestAuthKind::Claude,
-            },
-        ),
-        Some(EditorAuthGenerateScopePlan::WorkspaceRole {
-            workspace: "workspace".to_owned(),
-            role: "role-a".to_owned(),
-        })
-    );
-}
-
-#[test]
-fn editor_auth_generate_scope_plan_rejects_create_mode() {
-    assert_eq!(
-        editor_auth_generate_scope_plan::<TestAuthKind>(
-            &EditorMode::Create,
-            &AuthFormTarget::Workspace {
-                kind: TestAuthKind::Claude,
-            },
-        ),
-        None
     );
 }
 
@@ -666,615 +598,37 @@ enum TestAuthKind {
     Github,
 }
 
-struct RoleAuth {
-    override_present: bool,
-    needs_source: bool,
-}
-
 #[test]
-fn auth_flat_rows_root_view_lists_kinds() {
-    let rows = auth_flat_rows(
-        None,
-        [TestAuthKind::Claude, TestAuthKind::Github],
-        &BTreeMap::<String, RoleAuth>::new(),
-        0,
-        &BTreeSet::new(),
-        &AuthFlatRowPredicates {
-            role_override_present: &|_, _| false,
-            effective_mode_needs_credential: &|_, _| false,
-            effective_mode_supports_source_folder: &|_, _| false,
+fn account_rows_are_focusable_and_github_rows_open_forms() {
+    let rows: [AuthRow<TestAuthKind>; 4] = [
+        AuthRow::Account {
+            id: "personal".into(),
         },
-    );
-    assert_eq!(
-        rows,
-        vec![
-            AuthRow::AuthKindRow {
-                kind: TestAuthKind::Claude
-            },
-            AuthRow::AuthKindRow {
-                kind: TestAuthKind::Github
-            },
-        ]
-    );
-}
-
-#[test]
-fn auth_flat_rows_detail_view_expands_role_source_rows() {
-    let roles = BTreeMap::from([(
-        "alpha".to_owned(),
-        RoleAuth {
-            override_present: true,
-            needs_source: true,
-        },
-    )]);
-    let rows = auth_flat_rows(
-        Some(TestAuthKind::Claude),
-        [TestAuthKind::Claude, TestAuthKind::Github],
-        &roles,
-        3,
-        &BTreeSet::from(["alpha".to_owned()]),
-        &AuthFlatRowPredicates {
-            role_override_present: &|_, role: &RoleAuth| role.override_present,
-            effective_mode_needs_credential: &|_, role: &str| {
-                role.is_empty() || roles[role].needs_source
-            },
-            effective_mode_supports_source_folder: &|_, _| false,
-        },
-    );
-    assert_eq!(
-        rows,
-        vec![
-            AuthRow::WorkspaceMode {
-                kind: TestAuthKind::Claude
-            },
-            AuthRow::WorkspaceSource {
-                kind: TestAuthKind::Claude
-            },
-            AuthRow::Spacer,
-            AuthRow::RoleHeader {
-                role: "alpha".to_owned(),
-                expanded: true,
-            },
-            AuthRow::RoleMode {
-                role: "alpha".to_owned(),
-                kind: TestAuthKind::Claude
-            },
-            AuthRow::RoleSource {
-                role: "alpha".to_owned(),
-                kind: TestAuthKind::Claude
-            },
-            AuthRow::Spacer,
-            AuthRow::AddSentinel { eligible: 2 },
-        ]
-    );
-}
-
-#[test]
-fn auth_flat_rows_detail_view_adds_source_folder_rows() {
-    let roles = BTreeMap::from([(
-        "alpha".to_owned(),
-        RoleAuth {
-            override_present: true,
-            needs_source: false,
-        },
-    )]);
-    let rows = auth_flat_rows(
-        Some(TestAuthKind::Claude),
-        [TestAuthKind::Claude, TestAuthKind::Github],
-        &roles,
-        3,
-        &BTreeSet::from(["alpha".to_owned()]),
-        &AuthFlatRowPredicates {
-            role_override_present: &|_, role: &RoleAuth| role.override_present,
-            effective_mode_needs_credential: &|_, _| false,
-            effective_mode_supports_source_folder: &|_, _| true,
-        },
-    );
-
-    assert!(matches!(
-        rows.as_slice(),
-        [
-            AuthRow::WorkspaceMode { .. },
-            AuthRow::WorkspaceSourceFolder { .. },
-            AuthRow::Spacer,
-            AuthRow::RoleHeader { .. },
-            AuthRow::RoleMode { .. },
-            AuthRow::RoleSourceFolder { .. },
-            AuthRow::Spacer,
-            AuthRow::AddSentinel { .. },
-        ]
-    ));
-}
-
-#[test]
-fn auth_row_focusability_marks_preview_rows_inert() {
-    let focusable = [
-        AuthRow::AuthKindRow {
-            kind: TestAuthKind::Claude,
+        AuthRow::Binding {
+            agent: jackin_core::Agent::Claude,
+            role: None,
         },
         AuthRow::WorkspaceMode {
-            kind: TestAuthKind::Claude,
-        },
-        AuthRow::RoleMode {
-            role: "alpha".to_owned(),
-            kind: TestAuthKind::Claude,
-        },
-        AuthRow::RoleHeader {
-            role: "alpha".to_owned(),
-            expanded: true,
-        },
-        AuthRow::AddSentinel { eligible: 1 },
-    ];
-    assert!(focusable.iter().all(auth_row_is_focusable));
-
-    let inert = [
-        AuthRow::Spacer,
-        AuthRow::WorkspaceSource {
-            kind: TestAuthKind::Claude,
-        },
-        AuthRow::WorkspaceSourceFolder {
-            kind: TestAuthKind::Claude,
-        },
-        AuthRow::RoleSource {
-            role: "alpha".to_owned(),
-            kind: TestAuthKind::Claude,
-        },
-        AuthRow::RoleSourceFolder {
-            role: "alpha".to_owned(),
-            kind: TestAuthKind::Claude,
-        },
-    ];
-    assert!(inert.iter().all(|row| !auth_row_is_focusable(row)));
-}
-
-#[test]
-fn auth_focusable_index_at_visual_row_returns_only_focusable_rows() {
-    let rows = [
-        AuthRow::WorkspaceMode {
-            kind: TestAuthKind::Claude,
-        },
-        AuthRow::WorkspaceSource {
-            kind: TestAuthKind::Claude,
-        },
-        AuthRow::RoleHeader {
-            role: "alpha".to_owned(),
-            expanded: false,
-        },
-    ];
-
-    assert_eq!(auth_focusable_index_at_visual_row(&rows, 0), Some(0));
-    assert_eq!(auth_focusable_index_at_visual_row(&rows, 1), None);
-    assert_eq!(auth_focusable_index_at_visual_row(&rows, 2), Some(2));
-    assert_eq!(auth_focusable_index_at_visual_row(&rows, 3), None);
-}
-
-#[test]
-fn editor_auth_row_index_at_position_maps_focusable_rows() {
-    let rows = [
-        AuthRow::WorkspaceMode {
-            kind: TestAuthKind::Claude,
-        },
-        AuthRow::WorkspaceSource {
-            kind: TestAuthKind::Claude,
-        },
-        AuthRow::RoleHeader {
-            role: "alpha".to_owned(),
-            expanded: false,
-        },
-    ];
-    let area = ratatui::layout::Rect::new(0, 4, 80, 8);
-
-    assert_eq!(
-        editor_auth_row_index_at_position(EditorTab::Auth, false, area, 1, 5, 0, &rows),
-        Some(0)
-    );
-    assert_eq!(
-        editor_auth_row_index_at_position(EditorTab::Auth, false, area, 1, 6, 0, &rows),
-        None
-    );
-    assert_eq!(
-        editor_auth_row_index_at_position(EditorTab::Auth, false, area, 1, 7, 0, &rows),
-        Some(2)
-    );
-    assert_eq!(
-        editor_auth_row_index_at_position(EditorTab::General, false, area, 1, 5, 0, &rows),
-        None
-    );
-    assert_eq!(
-        editor_auth_row_index_at_position(EditorTab::Auth, true, area, 1, 5, 0, &rows),
-        None
-    );
-}
-
-#[test]
-fn resolve_auth_form_target_maps_only_mode_rows() {
-    let rows = [
-        AuthRow::WorkspaceMode {
-            kind: TestAuthKind::Claude,
-        },
-        AuthRow::RoleMode {
-            role: "alpha".to_owned(),
             kind: TestAuthKind::Github,
         },
-        AuthRow::WorkspaceSource {
-            kind: TestAuthKind::Claude,
+        AuthRow::RoleMode {
+            role: "dev".into(),
+            kind: TestAuthKind::Github,
         },
     ];
-
+    assert!(rows.iter().all(auth_row_is_focusable));
+    assert_eq!(auth_focusable_index_at_visual_row(&rows, 0), Some(0));
+    assert_eq!(auth_focusable_index_at_visual_row(&rows, 4), None);
+    assert!(resolve_auth_form_target(&rows, 0).is_none());
+    assert!(resolve_auth_form_target(&rows, 1).is_none());
     assert!(matches!(
-        resolve_auth_form_target(&rows, 0),
+        resolve_auth_form_target(&rows, 2),
         Some(AuthFormTarget::Workspace {
-            kind: TestAuthKind::Claude
+            kind: TestAuthKind::Github
         })
     ));
     assert!(matches!(
-        resolve_auth_form_target(&rows, 1),
-        Some(
-            AuthFormTarget::WorkspaceRole {
-                role,
-                kind: TestAuthKind::Github
-            }
-        ) if role == "alpha"
+        resolve_auth_form_target(&rows, 3),
+        Some(AuthFormTarget::WorkspaceRole { .. })
     ));
-    assert_eq!(resolve_auth_form_target(&rows, 2), None);
-}
-
-// Integration tests for `EditorState::auth_flat_rows` and
-// `EditorState::resolve_auth_form_target` using the concrete editor model.
-use jackin_config::{AppConfig, WorkspaceConfig, WorkspaceRoleOverride};
-
-use crate::tui::auth::{AuthKind, AuthMode};
-use crate::tui::auth_config::resolve_panel_mode;
-use crate::tui::state::EditorState;
-
-#[test]
-fn root_view_lists_auth_kinds_in_design_order() {
-    let editor = EditorState::new_edit("ws".into(), WorkspaceConfig::default());
-    let rows = editor.auth_flat_rows(&AppConfig::default());
-    assert_eq!(
-        rows,
-        vec![
-            AuthRow::AuthKindRow {
-                kind: AuthKind::Claude,
-            },
-            AuthRow::AuthKindRow {
-                kind: AuthKind::Codex,
-            },
-            AuthRow::AuthKindRow {
-                kind: AuthKind::Amp,
-            },
-            AuthRow::AuthKindRow {
-                kind: AuthKind::Opencode,
-            },
-            AuthRow::AuthKindRow {
-                kind: AuthKind::Grok,
-            },
-            AuthRow::AuthKindRow {
-                kind: AuthKind::Github,
-            },
-            AuthRow::AuthKindRow {
-                kind: AuthKind::Zai,
-            },
-            AuthRow::AuthKindRow {
-                kind: AuthKind::Minimax,
-            },
-        ],
-        "root view must list Claude / Codex / Amp / Opencode / Grok / Github / Z.AI / MiniMax in this order"
-    );
-}
-
-#[test]
-fn zai_panel_mode_uses_all_operator_env_layers() {
-    let mut cfg = AppConfig::default();
-    cfg.env.insert(
-        "ZAI_API_KEY".into(),
-        jackin_core::EnvValue::Plain("global-key".into()),
-    );
-    cfg.workspaces
-        .insert("global-demo".into(), WorkspaceConfig::default());
-    assert_eq!(
-        resolve_panel_mode(&cfg, AuthKind::Zai, "global-demo", "the-architect"),
-        AuthMode::ApiKey
-    );
-    cfg.env.clear();
-
-    let mut workspace = WorkspaceConfig::default();
-    workspace.env.insert(
-        "ZAI_API_KEY".into(),
-        jackin_core::EnvValue::Plain("workspace-key".into()),
-    );
-    cfg.workspaces.insert("workspace-demo".into(), workspace);
-    assert_eq!(
-        resolve_panel_mode(&cfg, AuthKind::Zai, "workspace-demo", "the-architect"),
-        AuthMode::ApiKey
-    );
-
-    cfg.workspaces.remove("workspace-demo");
-    let mut role = jackin_config::RoleSource::default();
-    role.env.insert(
-        "ZAI_API_KEY".into(),
-        jackin_core::EnvValue::Plain("role-key".into()),
-    );
-    cfg.roles.insert("the-architect".into(), role);
-    cfg.workspaces
-        .insert("role-demo".into(), WorkspaceConfig::default());
-    assert_eq!(
-        resolve_panel_mode(&cfg, AuthKind::Zai, "role-demo", "the-architect"),
-        AuthMode::ApiKey
-    );
-
-    cfg.roles.clear();
-    let mut workspace_role = WorkspaceConfig::default();
-    let mut override_cfg = WorkspaceRoleOverride::default();
-    override_cfg.env.insert(
-        "ZAI_API_KEY".into(),
-        jackin_core::EnvValue::Plain("workspace-role-key".into()),
-    );
-    workspace_role
-        .roles
-        .insert("the-architect".into(), override_cfg);
-    cfg.workspaces
-        .insert("workspace-role-demo".into(), workspace_role);
-    assert_eq!(
-        resolve_panel_mode(&cfg, AuthKind::Zai, "workspace-role-demo", "the-architect"),
-        AuthMode::ApiKey
-    );
-
-    // No ZAI_API_KEY at any layer → Ignore. This is the branch that
-    // suppresses the Source credential row; a regression to ApiKey here
-    // would render a phantom row for every Z.AI panel without a key.
-    assert_eq!(
-        resolve_panel_mode(
-            &AppConfig::default(),
-            AuthKind::Zai,
-            "absent",
-            "the-architect"
-        ),
-        AuthMode::Ignore
-    );
-}
-
-#[test]
-fn role_with_override_renders_collapsed_header_then_sentinel() {
-    use jackin_config::{AgentAuthConfig, AuthForwardMode};
-    let mut ws = WorkspaceConfig {
-        allowed_roles: vec!["the-architect".into(), "agent-smith".into()],
-        ..Default::default()
-    };
-    let over = WorkspaceRoleOverride {
-        claude: Some(AgentAuthConfig {
-            auth_forward: AuthForwardMode::Ignore,
-            ..Default::default()
-        }),
-        ..Default::default()
-    };
-    ws.roles.insert("the-architect".into(), over);
-
-    let mut editor = EditorState::new_edit("ws".into(), ws);
-    editor.auth_selected_kind = Some(AuthKind::Claude);
-    let rows = editor.auth_flat_rows(&AppConfig::default());
-
-    let header_idx = rows
-        .iter()
-        .position(|r| {
-            matches!(
-                r,
-                AuthRow::RoleHeader {
-                    role,
-                    expanded: false
-                } if role == "the-architect"
-            )
-        })
-        .expect("role override header expected");
-    assert!(matches!(
-        rows[header_idx],
-        AuthRow::RoleHeader { ref role, expanded: false } if role == "the-architect"
-    ));
-    assert!(matches!(rows[header_idx + 1], AuthRow::Spacer));
-    assert!(matches!(
-        rows[header_idx + 2],
-        AuthRow::AddSentinel { eligible: 1 }
-    ));
-}
-
-#[test]
-fn role_with_override_when_expanded_emits_kind_rows() {
-    use jackin_config::{AgentAuthConfig, AuthForwardMode};
-    let mut ws = WorkspaceConfig {
-        allowed_roles: vec!["the-architect".into()],
-        ..Default::default()
-    };
-    let over = WorkspaceRoleOverride {
-        claude: Some(AgentAuthConfig {
-            auth_forward: AuthForwardMode::Ignore,
-            ..Default::default()
-        }),
-        codex: Some(AgentAuthConfig {
-            auth_forward: AuthForwardMode::ApiKey,
-            ..Default::default()
-        }),
-        ..Default::default()
-    };
-    ws.roles.insert("the-architect".into(), over);
-
-    let mut editor = EditorState::new_edit("ws".into(), ws);
-    editor.auth_selected_kind = Some(AuthKind::Claude);
-    editor.auth_expanded.insert("the-architect".into());
-    let rows = editor.auth_flat_rows(&AppConfig::default());
-
-    let header_pos = rows
-        .iter()
-        .position(|r| matches!(r, AuthRow::RoleHeader { expanded: true, .. }))
-        .expect("expanded role header missing");
-    assert!(matches!(
-        rows[header_pos + 1],
-        AuthRow::RoleMode { ref role, kind: AuthKind::Claude } if role == "the-architect"
-    ));
-}
-
-#[test]
-fn resolve_auth_row_target_picks_workspace_default_for_workspacedefault_row() {
-    let mut editor = EditorState::new_edit("ws".into(), WorkspaceConfig::default());
-    editor.auth_selected_kind = Some(AuthKind::Claude);
-    let cfg = AppConfig::default();
-    let rows = editor.auth_flat_rows(&cfg);
-    let workspace_claude_idx = rows
-        .iter()
-        .position(|r| {
-            matches!(
-                r,
-                AuthRow::WorkspaceMode {
-                    kind: AuthKind::Claude
-                }
-            )
-        })
-        .unwrap();
-    assert_eq!(
-        editor.resolve_auth_form_target(&cfg, workspace_claude_idx),
-        Some(AuthFormTarget::Workspace {
-            kind: AuthKind::Claude
-        }),
-    );
-}
-
-#[test]
-fn resolve_auth_row_target_returns_none_for_navigation_and_header_rows() {
-    let mut editor = EditorState::new_edit("ws".into(), WorkspaceConfig::default());
-    editor.auth_selected_kind = Some(AuthKind::Claude);
-    let cfg = AppConfig::default();
-    let rows = editor.auth_flat_rows(&cfg);
-    for (idx, row) in rows.iter().enumerate() {
-        match row {
-            AuthRow::AuthKindRow { .. }
-            | AuthRow::AddSentinel { .. }
-            | AuthRow::Spacer
-            | AuthRow::WorkspaceSource { .. }
-            | AuthRow::RoleSource { .. }
-            | AuthRow::WorkspaceSourceFolder { .. }
-            | AuthRow::RoleSourceFolder { .. }
-            | AuthRow::RoleHeader { .. } => assert!(
-                editor.resolve_auth_form_target(&cfg, idx).is_none(),
-                "row {idx} ({row:?}) must not resolve to an editable target"
-            ),
-            _ => {}
-        }
-    }
-}
-
-/// Globally configured `api_key` mode (in `[claude].auth_forward`)
-/// must surface a `WorkspaceSource` row so the operator can set
-/// the credential — even when the workspace has no explicit
-/// `claude` block of its own.
-#[test]
-fn workspace_source_surfaces_when_global_requires_credential() {
-    use jackin_config::{AgentAuthConfig, AuthForwardMode};
-    let config = AppConfig {
-        claude: Some(AgentAuthConfig {
-            auth_forward: AuthForwardMode::ApiKey,
-            ..Default::default()
-        }),
-        ..AppConfig::default()
-    };
-    let mut editor = EditorState::new_edit("ws".into(), WorkspaceConfig::default());
-    editor.auth_selected_kind = Some(AuthKind::Claude);
-
-    let rows = editor.auth_flat_rows(&config);
-    assert!(
-        rows.iter().any(|r| matches!(
-            r,
-            AuthRow::WorkspaceSource {
-                kind: AuthKind::Claude
-            }
-        )),
-        "global claude.auth_forward = api_key must surface WorkspaceSource row; got {rows:?}"
-    );
-}
-
-/// Selecting the GitHub kind opens a detail view that mirrors the
-/// Claude / Codex shape: workspace mode → spacer → add-sentinel.
-/// The agent dimension is intentionally absent (Github has no per-
-/// agent split).
-#[test]
-fn github_detail_view_emits_workspace_mode_then_sentinel() {
-    let mut editor = EditorState::new_edit("ws".into(), WorkspaceConfig::default());
-    editor.auth_selected_kind = Some(AuthKind::Github);
-    let rows = editor.auth_flat_rows(&AppConfig::default());
-    // Sync mode (the global default) requires no credential — no
-    // WorkspaceSource row.
-    assert!(
-        matches!(
-            rows.first(),
-            Some(AuthRow::WorkspaceMode {
-                kind: AuthKind::Github
-            })
-        ),
-        "first row must be the GitHub workspace mode; got {rows:?}"
-    );
-    assert!(
-        rows.iter()
-            .any(|r| matches!(r, AuthRow::AddSentinel { .. })),
-        "+ Override sentinel must be present; got {rows:?}"
-    );
-}
-
-/// Globally configured `token` mode must surface a `WorkspaceSource`
-/// row for `GH_TOKEN` so the operator can set the credential without
-/// chasing an explicit workspace-level `[github]` block.
-#[test]
-fn github_workspace_source_surfaces_for_global_token_mode() {
-    use jackin_config::{GithubAuthConfig, GithubAuthMode};
-    let config = AppConfig {
-        github: Some(GithubAuthConfig {
-            auth_forward: GithubAuthMode::Token,
-            ..Default::default()
-        }),
-        ..AppConfig::default()
-    };
-    let mut editor = EditorState::new_edit("ws".into(), WorkspaceConfig::default());
-    editor.auth_selected_kind = Some(AuthKind::Github);
-
-    let rows = editor.auth_flat_rows(&config);
-    assert!(
-        rows.iter().any(|r| matches!(
-            r,
-            AuthRow::WorkspaceSource {
-                kind: AuthKind::Github
-            }
-        )),
-        "global github.auth_forward = token must surface WorkspaceSource row; got {rows:?}"
-    );
-}
-
-/// A workspace × role override on the Github kind shows up as a
-/// collapsed `RoleHeader` in the detail view, exactly like Claude /
-/// Codex overrides do.
-#[test]
-fn github_role_override_emits_role_header_when_override_present() {
-    use jackin_config::{GithubAuthConfig, GithubAuthMode};
-    let mut ws = WorkspaceConfig {
-        allowed_roles: vec!["the-architect".into()],
-        ..Default::default()
-    };
-    let over = WorkspaceRoleOverride {
-        github: Some(GithubAuthConfig {
-            auth_forward: GithubAuthMode::Ignore,
-            ..Default::default()
-        }),
-        ..Default::default()
-    };
-    ws.roles.insert("the-architect".into(), over);
-
-    let mut editor = EditorState::new_edit("ws".into(), ws);
-    editor.auth_selected_kind = Some(AuthKind::Github);
-    let rows = editor.auth_flat_rows(&AppConfig::default());
-
-    assert!(
-        rows.iter().any(|r| {
-            matches!(
-                r,
-                AuthRow::RoleHeader { role, .. } if role == "the-architect"
-            )
-        }),
-        "github role override must surface a RoleHeader; got {rows:?}"
-    );
 }

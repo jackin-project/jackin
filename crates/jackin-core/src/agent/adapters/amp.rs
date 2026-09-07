@@ -77,7 +77,6 @@ RUN set -euxo pipefail && \\
             config_dir: Some(".config/amp"),
             credential_file: Some(".local/share/amp/secrets.json"),
             folder_env_var: Some("XDG_DATA_HOME"),
-            home_files: &[],
         }
     }
 

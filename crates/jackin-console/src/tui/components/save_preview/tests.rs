@@ -3,22 +3,22 @@
 
 //! Tests for `save_preview`.
 use super::{
-    AuthPreviewRow, MountPreviewRow, SettingsEnvPreview, SettingsGeneralPreview,
-    SettingsGeneralToggles, SettingsSavePreview, TrustPreviewRow, WorkspaceAuthChange,
-    WorkspaceMountDiff, WorkspaceMountPreviewRow, WorkspaceSaveMode, WorkspaceSavePreview,
-    WorkspaceToggleSet, build_workspace_save_lines, settings_save_lines,
-    workspace_create_display_name, workspace_save_lines,
+    MountPreviewRow, SettingsEnvPreview, SettingsGeneralPreview, SettingsGeneralToggles,
+    SettingsSavePreview, TrustPreviewRow, WorkspaceAuthChange, WorkspaceMountDiff,
+    WorkspaceMountPreviewRow, WorkspaceSaveMode, WorkspaceSavePreview, WorkspaceToggleSet,
+    build_workspace_save_lines, settings_save_lines, workspace_create_display_name,
+    workspace_save_lines,
 };
 use crate::mount_info_cache::MountInfoCache;
 use crate::tui::screens::editor::model::EditorState;
 use jackin_config::{
-    AgentAuthConfig, AppConfig, AuthForwardMode, EnvValue, WorkspaceConfig, WorkspaceRoleOverride,
+    AccountConfig, AccountCredential, AiProvider, AppConfig, EnvValue, WorkspaceConfig,
+    WorkspaceRoleOverride,
 };
-use jackin_core::ANTHROPIC_API_KEY_ENV_NAME;
+use jackin_core::Agent;
 use std::collections::BTreeMap;
-use std::path::PathBuf;
 
-type TestEditorState = EditorState<MountInfoCache, (), (), EnvValue, (), (), (), (), (), ()>;
+type TestEditorState = EditorState<MountInfoCache, (), (), EnvValue, (), (), (), ()>;
 
 #[test]
 fn workspace_create_display_name_uses_pending_or_visible_fallback() {
@@ -60,10 +60,12 @@ fn empty_settings_preview() -> SettingsSavePreview {
         mounts_pending: Vec::new(),
         env_original: SettingsEnvPreview::default(),
         env_pending: SettingsEnvPreview::default(),
-        auth_original: Vec::new(),
-        auth_pending: Vec::new(),
-        auth_github_env_original: BTreeMap::default(),
-        auth_github_env_pending: BTreeMap::default(),
+        auth_original: BTreeMap::new(),
+        auth_pending: BTreeMap::new(),
+        github_original: jackin_config::GithubAuthConfig::default(),
+        github_pending: jackin_config::GithubAuthConfig::default(),
+        bindings_original: BTreeMap::new(),
+        bindings_pending: BTreeMap::new(),
         trust_original: Vec::new(),
         trust_pending: Vec::new(),
     }
@@ -93,7 +95,7 @@ fn edit_lines(original: WorkspaceConfig, pending: WorkspaceConfig) -> String {
 fn workspace_save_lines_omits_auth_section_without_auth_changes() {
     let text = line_text(&workspace_save_lines(&empty_workspace_preview()));
 
-    assert!(!text.contains("Auth:"));
+    assert!(!text.contains("Accounts:"));
 }
 
 #[test]
@@ -114,7 +116,7 @@ fn workspace_save_lines_renders_auth_old_new_pairs() {
 
     let text = line_text(&workspace_save_lines(&preview));
 
-    assert!(text.contains("Auth:"));
+    assert!(text.contains("Accounts:"));
     assert!(text.contains("  Claude Code mode"));
     assert!(text.contains("    - sync"));
     assert!(text.contains("    + api_key"));
@@ -124,84 +126,54 @@ fn workspace_save_lines_renders_auth_old_new_pairs() {
 }
 
 #[test]
-fn workspace_save_preview_lists_auth_mode_and_credential_without_secret_value() {
-    let original = WorkspaceConfig {
-        workdir: "/repo".to_owned(),
-        ..Default::default()
-    };
+fn workspace_save_preview_lists_account_assignment_and_binding_changes() {
+    let original = WorkspaceConfig::default();
     let mut pending = original.clone();
-    pending.claude = Some(AgentAuthConfig {
-        auth_forward: AuthForwardMode::ApiKey,
-        ..Default::default()
-    });
-    pending.env.insert(
-        ANTHROPIC_API_KEY_ENV_NAME.to_owned(),
-        EnvValue::Plain("super-secret".to_owned()),
+    pending.accounts.push("work".into());
+    pending
+        .account_bindings
+        .insert(Agent::Claude, "work".into());
+    pending.roles.insert(
+        "smith".into(),
+        WorkspaceRoleOverride {
+            account_bindings: [(Agent::Claude, "work".into())].into(),
+            ..Default::default()
+        },
     );
-
     let text = edit_lines(original, pending);
+    assert!(text.contains("Accounts allowed"));
+    assert!(text.contains("Default claude"));
+    assert!(text.contains("Role smith claude"));
+    assert!(text.contains("work"));
+}
 
-    assert!(text.contains("Auth:"));
-    assert!(text.contains("Claude Code mode"));
-    assert!(text.contains("    - sync"));
-    assert!(text.contains("    + api_key"));
-    assert!(text.contains("Claude Code credential"));
-    assert!(text.contains("    - (unset)"));
-    assert!(text.contains("    + (set)"));
-    assert!(!text.contains("super-secret"), "{text}");
-    assert!(!text.contains("ANTHROPIC_API_KEY ="), "{text}");
+fn account(secret: &str) -> AccountConfig {
+    AccountConfig {
+        enabled: true,
+        name: "Work".into(),
+        provider: AiProvider::Anthropic,
+        credential: AccountCredential::ApiKey {
+            value: EnvValue::Plain(secret.into()),
+            base_url: None,
+            model: None,
+        },
+    }
 }
 
 #[test]
-fn workspace_save_preview_lists_source_folder_reset_to_default() {
-    let original = WorkspaceConfig {
-        workdir: "/repo".to_owned(),
-        claude: Some(AgentAuthConfig {
-            auth_forward: AuthForwardMode::Sync,
-            sync_source_dir: Some(PathBuf::from("/workspace/claude")),
-        }),
-        ..Default::default()
-    };
-    let pending = WorkspaceConfig {
-        workdir: "/repo".to_owned(),
-        ..Default::default()
-    };
-
-    let text = edit_lines(original, pending);
-
-    assert!(text.contains("Claude Code source folder"));
-    assert!(text.contains("    - /workspace/claude"));
-    assert!(text.contains("    + default: ~/.claude"));
-}
-
-#[test]
-fn workspace_save_preview_lists_role_source_folder_change() {
-    let original = WorkspaceConfig {
-        workdir: "/repo".to_owned(),
-        roles: [("smith".to_owned(), WorkspaceRoleOverride::default())].into(),
-        ..Default::default()
-    };
-    let pending = WorkspaceConfig {
-        workdir: "/repo".to_owned(),
-        roles: [(
-            "smith".to_owned(),
-            WorkspaceRoleOverride {
-                codex: Some(AgentAuthConfig {
-                    auth_forward: AuthForwardMode::Sync,
-                    sync_source_dir: Some(PathBuf::from("/role/codex")),
-                }),
-                ..Default::default()
-            },
-        )]
-        .into(),
-        ..Default::default()
-    };
-
-    let text = edit_lines(original, pending);
-
-    assert!(text.contains("Role smith / Codex source folder"));
-    assert!(text.contains("    - default: ~/.codex"));
-    assert!(text.contains("    + /role/codex"));
+fn changed_account_credential_is_reported_without_disclosing_either_secret() {
+    let mut preview = empty_settings_preview();
+    preview
+        .auth_original
+        .insert("work".into(), account("old-secret"));
+    preview
+        .auth_pending
+        .insert("work".into(), account("new-secret"));
+    let text = line_text(&settings_save_lines(&preview));
+    assert!(text.contains("1 changed"));
+    assert!(text.contains("updated; enabled; credential hidden"));
+    assert!(!text.contains("old-secret"));
+    assert!(!text.contains("new-secret"));
 }
 
 #[test]
@@ -268,7 +240,7 @@ fn workspace_save_lines_pin_representative_edit_output() {
             "Env vars:\n",
             "  + FOO = bar\n",
             "\n",
-            "Auth:\n",
+            "Accounts:\n",
             "  Claude Code mode\n",
             "    - sync\n",
             "    + api_key",
@@ -297,14 +269,10 @@ fn settings_save_lines_pin_representative_output() {
     });
     preview.env_original.env.insert("OLD".into(), "1".into());
     preview.env_pending.env.insert("NEW".into(), "2".into());
-    preview.auth_original.push(AuthPreviewRow {
-        label: "Claude Code".to_owned(),
-        mode: "sync".to_owned(),
-    });
-    preview.auth_pending.push(AuthPreviewRow {
-        label: "Claude Code".to_owned(),
-        mode: "api_key".to_owned(),
-    });
+    preview
+        .auth_original
+        .insert("work".into(), account("before"));
+    preview.auth_pending.insert("work".into(), account("after"));
     preview.trust_original.push(TrustPreviewRow {
         role: "architect".to_owned(),
         trusted: false,
@@ -324,7 +292,7 @@ fn settings_save_lines_pin_representative_output() {
             "  General:      1 change\n",
             "  Mounts:       1 added, 1 removed\n",
             "  Environments: 1 added, 1 removed\n",
-            "  Auth:         1 changed\n",
+            "  Accounts:     1 changed\n",
             "  Trust:        1 changed\n",
             "\n",
             "  ─  ─  ─  ─  ─  ─  ─  ─  ─  ─  ─  ─  ─  ─  ─  ─  ─  ─  ─  ─  ─  ─  ─  ─  ─  ─  ─  ─  ─  ─\n",
@@ -340,8 +308,8 @@ fn settings_save_lines_pin_representative_output() {
             "  + NEW = 2\n",
             "  - OLD\n",
             "\n",
-            "Auth:\n",
-            "  ~ Claude Code  sync → api_key\n",
+            "Accounts:\n",
+            "  + Work [work] (updated; enabled; credential hidden)\n",
             "\n",
             "Trust:\n",
             "  + architect  trusted",

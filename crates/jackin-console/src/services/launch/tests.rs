@@ -57,12 +57,8 @@ fn build_workspace_choice_picks_up_default_agent_from_config() {
             env: BTreeMap::new(),
             roles: BTreeMap::new(),
             keep_awake: KeepAwakeConfig::default(),
-            claude: None,
-            codex: None,
-            amp: None,
-            kimi: None,
-            opencode: None,
-            grok: None,
+            accounts: Vec::new(),
+            account_bindings: BTreeMap::new(),
             github: None,
             git_pull_on_entry: false,
             runtime: jackin_config::WorkspaceRuntimeConfig::default(),
@@ -107,12 +103,8 @@ fn launch_workspace(workdir: &std::path::Path, allowed_roles: Vec<&str>) -> Work
         env: BTreeMap::new(),
         roles: BTreeMap::new(),
         keep_awake: KeepAwakeConfig::default(),
-        claude: None,
-        codex: None,
-        amp: None,
-        kimi: None,
-        opencode: None,
-        grok: None,
+        accounts: Vec::new(),
+        account_bindings: BTreeMap::new(),
         github: None,
         git_pull_on_entry: false,
         runtime: jackin_config::WorkspaceRuntimeConfig::default(),
@@ -216,88 +208,37 @@ fn resolve_launch_dispatch_preselects_role_picker() {
 }
 
 #[test]
-fn providers_for_launch_include_all_zai_env_layers() {
-    use jackin_config::WorkspaceRoleOverride;
+fn launch_accounts_require_workspace_assignment_and_agent_support() {
+    use jackin_config::{AccountConfig, AccountCredential, AiProvider};
     use jackin_core::{Agent, EnvValue};
-
     let mut config = AppConfig::default();
-    config
-        .env
-        .insert("ZAI_API_KEY".into(), EnvValue::Plain("global-key".into()));
-    config
-        .workspaces
-        .insert("global-demo".into(), WorkspaceConfig::default());
-    assert_eq!(
-        providers_for_launch(&config, &wn("global-demo"), "the-architect", Agent::Claude).len(),
-        2
-    );
-    config.env.clear();
-
+    for id in ["personal", "work"] {
+        config.accounts.insert(
+            id.into(),
+            AccountConfig {
+                enabled: true,
+                name: id.into(),
+                provider: AiProvider::Anthropic,
+                credential: AccountCredential::Profile {
+                    agent: Agent::Claude,
+                    directory: format!("/profiles/{id}").into(),
+                },
+            },
+        );
+    }
     let mut workspace = WorkspaceConfig::default();
-    workspace.env.insert(
-        "ZAI_API_KEY".into(),
-        EnvValue::Plain("workspace-key".into()),
-    );
-    config.workspaces.insert("workspace-demo".into(), workspace);
-    assert_eq!(
-        providers_for_launch(
-            &config,
-            &wn("workspace-demo"),
-            "the-architect",
-            Agent::Claude
-        )
-        .len(),
-        2
-    );
-
-    config.workspaces.remove("workspace-demo");
-    let mut role = RoleSource::default();
-    role.env
-        .insert("ZAI_API_KEY".into(), EnvValue::Plain("role-key".into()));
-    config.roles.insert("the-architect".into(), role);
-    config
-        .workspaces
-        .insert("role-demo".into(), WorkspaceConfig::default());
-    assert_eq!(
-        providers_for_launch(&config, &wn("role-demo"), "the-architect", Agent::Claude).len(),
-        2
-    );
-
-    config.roles.clear();
-    let mut workspace_role = WorkspaceConfig::default();
-    let mut role_override = WorkspaceRoleOverride::default();
-    role_override.env.insert(
-        "ZAI_API_KEY".into(),
-        EnvValue::Plain("workspace-role-key".into()),
-    );
-    workspace_role
-        .roles
-        .insert("the-architect".into(), role_override);
-    config
-        .workspaces
-        .insert("workspace-role-demo".into(), workspace_role);
-    let providers = providers_for_launch(
-        &config,
-        &wn("workspace-role-demo"),
-        "the-architect",
-        Agent::Claude,
-    );
-    assert_eq!(providers.len(), 2);
-    assert_eq!(providers[1], jackin_protocol::Provider::Zai);
-}
-
-#[test]
-fn providers_for_launch_rejects_non_claude_agents() {
-    use jackin_core::{Agent, EnvValue};
-
-    let mut config = AppConfig::default();
+    workspace.accounts.push("work".into());
+    config.workspaces.insert("demo".into(), workspace);
     config
         .env
-        .insert("ZAI_API_KEY".into(), EnvValue::Plain("global-key".into()));
-    config
-        .workspaces
-        .insert("demo".into(), WorkspaceConfig::default());
-
-    let providers = providers_for_launch(&config, &wn("demo"), "the-architect", Agent::Codex);
-    assert!(providers.is_empty());
+        .insert("ZAI_API_KEY".into(), EnvValue::Plain("unregistered".into()));
+    let choices = accounts_for_launch(&config, Some(&wn("demo")), Agent::Claude);
+    assert_eq!(choices.len(), 1);
+    assert_eq!(choices[0].id, "work");
+    assert!(accounts_for_launch(&config, Some(&wn("demo")), Agent::Codex).is_empty());
+    assert!(accounts_for_launch(&config, Some(&wn("missing")), Agent::Claude).is_empty());
+    assert_eq!(accounts_for_launch(&config, None, Agent::Claude).len(), 2);
+    config.accounts.get_mut("work").unwrap().enabled = false;
+    assert!(accounts_for_launch(&config, Some(&wn("demo")), Agent::Claude).is_empty());
+    assert!(account_choices(&config, Some(&wn("demo"))).is_empty());
 }

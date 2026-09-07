@@ -6,7 +6,7 @@ description: Forward the host's GitHub CLI login (or a scoped token) into agent 
 
 This page is the operator surface for `GitHub CLI` (`gh`) auth forwarding. For the broader pattern jackin❯ applies across every auth axis, see the [Authentication overview](/guides/authentication/).
 
-`gh` auth follows the same three-mode shape as agent auth (`sync` / `token` / `ignore`) at the same three scopes (global default, per-workspace, per-(workspace × role)). One difference: `gh` forwarding has no agent dimension — the same `gh` login is shared by every agent in the container, because `gh` itself doesn't care which runtime is calling it.
+`gh` auth retains three modes (`sync` / `token` / `ignore`) and three scopes (global default, per-workspace, per-(workspace × role)), separately from the coding-agent account registry. `gh` forwarding has no agent dimension — the same `gh` login is shared by every agent in the container, because `gh` itself doesn't care which runtime is calling it.
 
 ## What you get out of the box
 
@@ -48,12 +48,10 @@ through to the container unchanged.
 
 ## Setting non-default modes
 
-`sync` is the default. You only need to do anything here if you want `token` or `ignore` for a specific workspace or role. Manage `gh` modes through the same surface as agent auth: `jackin console` → select the workspace → **Auth** tab — see the [overview](/guides/authentication/#managing-auth--always-through-the-operator-console) for the management story shared across every auth axis.
+`sync` is the default. You only need to do anything here if you want `token` or `ignore` for a specific workspace or role. Manage `gh` modes through the operator console: `jackin console` → select the workspace → **Auth** tab — see the [overview](/guides/authentication/#managing-auth--always-through-the-operator-console) for the management story shared across every auth axis.
 
 The dedicated `GitHub CLI` row in the console's **Auth** tab is wired
-for workspace and per-role modes. A dedicated
-`jackin config auth set --target github` CLI subcommand is still
-planned; use the console for non-default workspace and role settings.
+for workspace and per-role modes. Use the console for non-default workspace and role settings.
 
 ## Launch-time messaging
 
@@ -99,6 +97,6 @@ container state while still receiving their own agent environment.
 
 ## See also
 
-- [Authentication overview](/guides/authentication/) — the shared modes / scopes / defaults pattern jackin❯ applies across every auth axis.
+- [Authentication overview](/guides/authentication/) — coding-agent account authorization and separate GitHub policy.
 - [Agent Authentication](/guides/authentication/agents/) — parallel flow for `Claude Code`, `Codex`, `Amp`, `Kimi`, `OpenCode`, and `Grok` agent auth.
 - [Environment Variables](/guides/environment-variables/) — how the operator env-vars model supplies `GH_TOKEN` for the `token` mode.

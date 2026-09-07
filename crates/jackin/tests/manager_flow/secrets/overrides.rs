@@ -38,12 +38,7 @@ fn seed_override_picker_workspace(
             (*name).into(),
             WorkspaceRoleOverride {
                 env,
-                claude: None,
-                codex: None,
-                amp: None,
-                kimi: None,
-                opencode: None,
-                grok: None,
+                account_bindings: std::collections::BTreeMap::default(),
                 github: None,
             },
         );

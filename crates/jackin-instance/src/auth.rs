@@ -69,7 +69,9 @@ pub fn validate_sync_source_dir(
         Agent::Codex => require_credential_file(source_dir, "auth.json", "Codex"),
         Agent::Grok => require_credential_file(source_dir, "auth.json", "Grok"),
         Agent::Opencode => require_credential_file(source_dir, "auth.json", "OpenCode"),
-        Agent::Amp => require_credential_file(source_dir, "secrets.json", "Amp"),
+        Agent::Amp => {
+            require_credential_file(&amp_credentials_dir(source_dir), "secrets.json", "Amp")
+        }
         // Kimi syncs a directory tree rather than a single file.
         Agent::Kimi => {
             if source_dir.join("config.toml").is_file() && source_dir.join("credentials").is_dir() {
@@ -82,6 +84,15 @@ pub fn validate_sync_source_dir(
                 )))
             }
         }
+    }
+}
+
+pub(super) fn amp_credentials_dir(source: &Path) -> std::path::PathBuf {
+    let nested = source.join("data/amp");
+    if nested.is_dir() {
+        nested
+    } else {
+        source.to_path_buf()
     }
 }
 
@@ -611,7 +622,11 @@ impl RoleState {
         mode: AuthForwardMode,
         source_dir: &Path,
     ) -> anyhow::Result<(AuthProvisionOutcome, Option<std::path::PathBuf>)> {
-        Self::provision_amp_auth_from_path(secrets_json, mode, &source_dir.join("secrets.json"))
+        Self::provision_amp_auth_from_path(
+            secrets_json,
+            mode,
+            &amp_credentials_dir(source_dir).join("secrets.json"),
+        )
     }
 
     fn provision_amp_auth_from_path(

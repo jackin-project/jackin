@@ -92,89 +92,72 @@ impl ProviderCredentialEnvResolver for FakeEnvResolver {
     }
 }
 
-fn write_workspace(path: &Path, claude: &str, codex: &str, amp: &str, ignore_grok: bool) {
-    let grok = if ignore_grok {
-        "\n[grok]\nauth_forward = \"ignore\"\n"
-    } else {
-        ""
-    };
+fn write_registry(config_root: &Path, entries: &[(&str, Agent, &Path)]) {
+    let mut config = AppConfig::default();
+    for (id, agent, directory) in entries {
+        config.accounts.insert(
+            (*id).to_owned(),
+            jackin_config::AccountConfig {
+                enabled: true,
+                name: (*id).to_owned(),
+                provider: AiProvider::for_agent(*agent),
+                credential: AccountCredential::Profile {
+                    agent: *agent,
+                    directory: directory.to_path_buf(),
+                },
+            },
+        );
+    }
+    std::fs::create_dir_all(config_root).unwrap();
     std::fs::write(
-        path,
-        format!(
-            r#"version = "{version}"
-workdir = "/workspace/project"
-allowed_roles = ["reviewer"]
-
-[[mounts]]
-src = "/host/project"
-dst = "/workspace/project"
-
-[claude]
-auth_forward = "sync"
-sync_source_dir = "{claude}"
-
-[codex]
-auth_forward = "sync"
-sync_source_dir = "{codex}"
-
-[amp]
-auth_forward = "sync"
-sync_source_dir = "{amp}"
-
-[roles.reviewer]
-{grok}"#,
-            version = jackin_config::CURRENT_WORKSPACE_VERSION,
-        ),
+        config_root.join("config.toml"),
+        toml::to_string(&config).unwrap(),
     )
     .unwrap();
 }
 
 #[test]
-fn disc_scope_global_workspace_role_matrix_deduplicates_profile_roots() {
+fn disc_registry_enumerates_registered_sources_without_ambient_fallback() {
     let temp = tempfile::tempdir().unwrap();
-    let home = temp.path().join("home");
     let config_root = temp.path().join("config");
-    let workspaces = config_root.join("workspaces");
-    std::fs::create_dir_all(&workspaces).unwrap();
-    std::fs::write(
-        config_root.join("config.toml"),
-        format!(
-            r#"version = "{}"
-
-[claude]
-auth_forward = "sync"
-
-[codex]
-auth_forward = "sync"
-
-[amp]
-auth_forward = "sync"
-
-[roles.reviewer]
-git = "https://example.invalid/reviewer.git"
-trusted = true
-"#,
-            jackin_config::CURRENT_CONFIG_VERSION
-        ),
-    )
-    .unwrap();
-    write_workspace(
-        &workspaces.join("scentbird.toml"),
-        "/profiles/claude-scentbird",
-        "/profiles/codex-shared",
-        "/profiles/amp-shared",
-        false,
+    let home = temp.path().join("home");
+    write_registry(
+        &config_root,
+        &[
+            ("work", Agent::Codex, Path::new("/profiles/codex-work")),
+            (
+                "personal",
+                Agent::Codex,
+                Path::new("/profiles/codex-personal"),
+            ),
+        ],
     );
-    write_workspace(
-        &workspaces.join("scentbird-ai.toml"),
-        "/profiles/claude-scentbird-ai",
-        "/profiles/codex-shared",
-        "/profiles/amp-shared",
-        true,
+    write_codex_auth(
+        &home.join(".codex"),
+        "ambient",
+        "e30",
+        "unregistered-secret",
     );
     let resolver = FakeEnvResolver::default();
-
     let catalog = discover_usage_sources(
+        &UsageDiscoveryScope::HostDesktop {
+            config_root: config_root.clone(),
+            operator_home: home.clone(),
+        },
+        &resolver,
+    )
+    .unwrap();
+    assert!(catalog.diagnostics.is_empty(), "{:?}", catalog.diagnostics);
+    assert_eq!(catalog.candidates.len(), 2);
+    assert!(
+        catalog
+            .candidates
+            .iter()
+            .all(|candidate| candidate.surface_id == "codex")
+    );
+    assert!(resolver.calls.lock().unwrap().is_empty());
+    write_registry(&config_root, &[]);
+    let empty = discover_usage_sources(
         &UsageDiscoveryScope::HostDesktop {
             config_root,
             operator_home: home,
@@ -182,50 +165,56 @@ trusted = true
         &resolver,
     )
     .unwrap();
+    assert!(empty.candidates.is_empty());
+}
 
-    assert!(catalog.diagnostics.is_empty(), "{:?}", catalog.diagnostics);
-    let count = |surface: &str, kind: UsageCredentialKind| {
-        catalog
-            .candidates
-            .iter()
-            .filter(|candidate| {
-                candidate.surface_id == surface && candidate.credential_kind == kind
-            })
-            .count()
-    };
-    assert_eq!(count("claude", UsageCredentialKind::Profile), 3);
-    assert_eq!(count("codex", UsageCredentialKind::Profile), 2);
-    assert_eq!(count("amp", UsageCredentialKind::Profile), 2);
-    assert_eq!(count("kimi", UsageCredentialKind::Profile), 1);
-    assert_eq!(count("grok", UsageCredentialKind::Profile), 1);
-    assert_eq!(count("zai", UsageCredentialKind::ApiKey), 1);
-    assert_eq!(count("minimax", UsageCredentialKind::ApiKey), 1);
-
-    let codex_shared = catalog
-        .candidates
-        .iter()
-        .find(|candidate| {
-            candidate.surface_id == "codex"
-                && candidate
-                    .provenance
-                    .iter()
-                    .any(|value| value == "workspace scentbird")
-        })
-        .unwrap();
-    assert!(
-        codex_shared
-            .provenance
-            .iter()
-            .any(|value| value == "workspace scentbird-ai")
+#[test]
+fn disc_registry_api_sources_are_isolated_from_ambient_env_declarations() {
+    let temp = tempfile::tempdir().unwrap();
+    let config_root = temp.path().join("config");
+    std::fs::create_dir_all(&config_root).unwrap();
+    let mut config = AppConfig::default();
+    config.accounts.insert(
+        "zai-work".to_owned(),
+        jackin_config::AccountConfig {
+            enabled: true,
+            name: "Work".to_owned(),
+            provider: AiProvider::Zai,
+            credential: AccountCredential::ApiKey {
+                value: jackin_config::EnvValue::Plain("fixture-key".to_owned()),
+                base_url: None,
+                model: None,
+            },
+        },
+    );
+    config.env.insert(
+        "MINIMAX_API_KEY".to_owned(),
+        jackin_config::EnvValue::Plain("unregistered".to_owned()),
+    );
+    std::fs::write(
+        config_root.join("config.toml"),
+        toml::to_string(&config).unwrap(),
+    )
+    .unwrap();
+    let resolver = FakeEnvResolver::default();
+    let catalog = discover_usage_sources(
+        &UsageDiscoveryScope::HostDesktop {
+            config_root,
+            operator_home: temp.path().join("home"),
+        },
+        &resolver,
+    )
+    .unwrap();
+    assert_eq!(catalog.candidates.len(), 1);
+    assert_eq!(catalog.candidates[0].surface_id, "zai");
+    assert_eq!(
+        catalog.candidates[0].credential_kind,
+        UsageCredentialKind::ApiKey
     );
     let calls = resolver.calls.lock().unwrap();
-    assert!(calls.iter().any(|(workspace, role, _)| {
-        workspace.as_deref() == Some("scentbird") && role.as_deref() == Some("reviewer")
-    }));
-    assert!(calls.iter().all(|(_, _, keys)| {
-        !keys.iter().any(|key| key == "CONTEXT7_API_KEY")
-            && !keys.iter().any(|key| key == "OPENCODE_API_KEY")
-    }));
+    assert_eq!(calls.len(), 1);
+    assert_eq!(calls[0].2, vec!["ZAI_API_KEY"]);
+    assert!(!format!("{catalog:?}").contains("fixture-key"));
 }
 
 #[test]
@@ -265,52 +254,38 @@ fn disc_scope_capsule_uses_only_forwarded_capabilities() {
 }
 
 fn write_codex_only_global(config_root: &Path, codex_root: &Path) {
-    std::fs::create_dir_all(config_root).unwrap();
-    std::fs::write(
-        config_root.join("config.toml"),
-        format!(
-            r#"version = "{}"
-
-[claude]
-auth_forward = "ignore"
-
-[codex]
-auth_forward = "sync"
-sync_source_dir = "{}"
-
-[amp]
-auth_forward = "ignore"
-
-[kimi]
-auth_forward = "ignore"
-
-[grok]
-auth_forward = "ignore"
-"#,
-            jackin_config::CURRENT_CONFIG_VERSION,
-            codex_root.display()
-        ),
-    )
-    .unwrap();
+    write_registry(config_root, &[("codex", Agent::Codex, codex_root)]);
 }
 
 fn write_codex_workspace(path: &Path, root: &Path) {
+    let id = path.file_stem().unwrap().to_str().unwrap();
+    let config_root = path.parent().unwrap().parent().unwrap();
+    let global = config_root.join("config.toml");
+    let mut config: AppConfig = toml::from_str(&std::fs::read_to_string(&global).unwrap()).unwrap();
+    config.accounts.insert(
+        id.to_owned(),
+        jackin_config::AccountConfig {
+            enabled: true,
+            name: id.to_owned(),
+            provider: AiProvider::OpenAi,
+            credential: AccountCredential::Profile {
+                agent: Agent::Codex,
+                directory: root.to_path_buf(),
+            },
+        },
+    );
+    std::fs::write(global, toml::to_string(&config).unwrap()).unwrap();
     std::fs::write(
         path,
         format!(
             r#"version = "{}"
 workdir = "/workspace/project"
-
+accounts = ["{id}"]
 [[mounts]]
 src = "/host/project"
 dst = "/workspace/project"
-
-[codex]
-auth_forward = "sync"
-sync_source_dir = "{}"
 "#,
-            jackin_config::CURRENT_WORKSPACE_VERSION,
-            root.display()
+            jackin_config::CURRENT_WORKSPACE_VERSION
         ),
     )
     .unwrap();
@@ -411,31 +386,17 @@ fn disc_source_missing_and_malformed_profiles_are_isolated_diagnostics() {
 }
 
 #[test]
-fn disc_source_kimi_profile_requires_no_auth_file() {
+fn disc_source_kimi_profile_requires_credentials_in_selected_root() {
     let temp = tempfile::tempdir().unwrap();
     let config_root = temp.path().join("config");
     let kimi_root = temp.path().join("kimi-profile");
     std::fs::create_dir_all(&kimi_root).unwrap();
     std::fs::create_dir_all(&config_root).unwrap();
+    write_registry(&config_root, &[("kimi", Agent::Kimi, &kimi_root)]);
+    std::fs::create_dir_all(kimi_root.join("credentials")).unwrap();
     std::fs::write(
-        config_root.join("config.toml"),
-        format!(
-            r#"version = "{}"
-[claude]
-auth_forward = "ignore"
-[codex]
-auth_forward = "ignore"
-[amp]
-auth_forward = "ignore"
-[kimi]
-auth_forward = "sync"
-sync_source_dir = "{}"
-[grok]
-auth_forward = "ignore"
-"#,
-            jackin_config::CURRENT_CONFIG_VERSION,
-            kimi_root.display()
-        ),
+        kimi_root.join("credentials/kimi-code.json"),
+        r#"{"access_token":"selected-kimi-token"}"#,
     )
     .unwrap();
     let catalog = discover_usage_sources(
@@ -456,6 +417,71 @@ auth_forward = "ignore"
     );
     assert!(validated.accounts.is_empty());
     assert_eq!(validated.bindings.len(), 1);
+}
+
+#[test]
+fn disc_kimi_missing_selected_credentials_never_uses_other_home_profile() {
+    let temp = tempfile::tempdir().unwrap();
+    let selected = temp.path().join("selected");
+    let home = temp.path().join("home");
+    let ambient = home.join(".kimi/credentials");
+    let config_root = temp.path().join("config");
+    std::fs::create_dir_all(&selected).unwrap();
+    std::fs::create_dir_all(&ambient).unwrap();
+    std::fs::write(
+        ambient.join("kimi-code.json"),
+        r#"{"access_token":"ambient-secret"}"#,
+    )
+    .unwrap();
+    write_registry(&config_root, &[("kimi", Agent::Kimi, &selected)]);
+    let catalog = discover_usage_sources(
+        &UsageDiscoveryScope::HostDesktop {
+            config_root,
+            operator_home: home,
+        },
+        &NoEnvResolver,
+    )
+    .unwrap();
+    let validated = validate_usage_sources(catalog, &NoEnvResolver);
+    assert!(validated.bindings.is_empty());
+    assert!(
+        validated
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.issue == UsageDiscoveryIssue::CredentialMissing)
+    );
+}
+
+#[test]
+fn disc_amp_composite_profile_reads_selected_data_root() {
+    let temp = tempfile::tempdir().unwrap();
+    let selected = temp.path().join("amp-work");
+    let data = selected.join("data/amp");
+    let config_root = temp.path().join("config");
+    std::fs::create_dir_all(&data).unwrap();
+    std::fs::write(
+        data.join("secrets.json"),
+        r#"{"apiKey@work@example.test":"selected-secret"}"#,
+    )
+    .unwrap();
+    write_registry(&config_root, &[("amp-work", Agent::Amp, &selected)]);
+    let catalog = discover_usage_sources(
+        &UsageDiscoveryScope::HostDesktop {
+            config_root,
+            operator_home: temp.path().join("home"),
+        },
+        &NoEnvResolver,
+    )
+    .unwrap();
+    let validated = validate_usage_sources(catalog, &NoEnvResolver);
+    assert!(
+        validated.diagnostics.is_empty(),
+        "{:?}",
+        validated.diagnostics
+    );
+    assert_eq!(validated.accounts.len(), 1);
+    assert_eq!(validated.accounts[0].account_label, "work@example.test");
+    assert!(!format!("{validated:?}").contains("selected-secret"));
 }
 
 #[test]
@@ -538,7 +564,7 @@ fn disc_dedup_repeated_roots_read_once_and_same_identity_merges() {
         validated.accounts[0]
             .provenance
             .iter()
-            .any(|scope| scope == "default host profile")
+            .any(|scope| scope == "account codex")
     );
     assert!(
         validated.accounts[0]

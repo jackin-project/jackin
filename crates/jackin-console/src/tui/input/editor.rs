@@ -11,12 +11,11 @@ pub(super) mod secrets;
 #[cfg(test)]
 mod tests;
 pub use modal::{
-    apply_text_input_to_pending, env_key_input_state, handle_token_generate_pick,
-    open_create_op_picker_for_generate, open_secrets_picker_modal, set_pending_env_op_ref,
-    start_plain_token_generate,
+    apply_text_input_to_pending, env_key_input_state, open_secrets_picker_modal,
+    set_pending_env_op_ref,
 };
 
-use crossterm::event::KeyEvent;
+use crossterm::event::{KeyCode, KeyEvent};
 
 use super::InputOutcome;
 use crate::tui::components::error_popup::no_github_url_error_popup_state;
@@ -139,6 +138,15 @@ pub fn handle_editor_key(
     cwd: &std::path::Path,
     key: KeyEvent,
 ) -> anyhow::Result<InputOutcome> {
+    if let ManagerStage::Editor(editor) = &mut state.stage
+        && editor.active_tab == crate::tui::state::EditorTab::Auth
+        && !editor.tab_bar_focused()
+        && editor.focused_account_row(config)
+        && matches!(key.code, KeyCode::Enter | KeyCode::Char(' ' | 'd' | 'D'))
+    {
+        editor.edit_account_row(config, matches!(key.code, KeyCode::Char('d' | 'D')));
+        return Ok(InputOutcome::Continue);
+    }
     // Capture before the editor borrow (separate fields, but explicit is cleaner).
     let op_cache = std::rc::Rc::clone(&state.op_cache);
     let op_available = state.op_available;
@@ -270,13 +278,6 @@ fn dispatch_editor_escape(
         EditorEscapeKeyPlan::FocusTabBar => {
             dispatch_manager(state, ManagerMessage::FocusEditorTabBar);
         }
-        EditorEscapeKeyPlan::FocusTabBarAndClearAuthKind => {
-            dispatch_manager(state, ManagerMessage::ClearEditorAuthKind);
-            dispatch_manager(state, ManagerMessage::FocusEditorTabBar);
-        }
-        EditorEscapeKeyPlan::ClearAuthKind => {
-            dispatch_manager(state, ManagerMessage::ClearEditorAuthKind);
-        }
         EditorEscapeKeyPlan::OpenSaveDiscard => {
             if let ManagerStage::Editor(editor) = &mut state.stage {
                 editor.open_save_discard_cancel(editor_exit_save_discard_state());
@@ -320,14 +321,6 @@ fn dispatch_editor_enter_key(
             agents::open_role_input(editor, config);
             None
         }
-        EditorEnterKeyPlan::Auth(AuthEnterPlan::AddRoleOverride) => {
-            super::auth::open_auth_role_picker(editor, config);
-            None
-        }
-        EditorEnterKeyPlan::Auth(AuthEnterPlan::ToggleRole(role)) => {
-            super::auth::toggle_role_expand(editor, role);
-            None
-        }
         EditorEnterKeyPlan::Auth(AuthEnterPlan::OpenForm) => {
             super::auth::open_auth_form_modal(editor, config);
             None
@@ -342,9 +335,6 @@ fn dispatch_editor_auth_action(
     plan: EditorAuthActionKeyPlan,
 ) {
     match plan {
-        EditorAuthActionKeyPlan::OpenRolePicker => {
-            super::auth::open_auth_role_picker(editor, config);
-        }
         EditorAuthActionKeyPlan::ClearFocusedRow => {
             super::auth::handle_d_on_auth_row(editor, config);
         }
@@ -499,10 +489,6 @@ fn dispatch_editor_immediate_action(
     plan: EditorImmediateActionKeyPlan,
 ) -> bool {
     match plan {
-        EditorImmediateActionKeyPlan::EnterAuthKind(kind) => {
-            dispatch_manager(state, ManagerMessage::EnterEditorAuthKind { kind });
-            true
-        }
         EditorImmediateActionKeyPlan::ToggleGeneralSelected => {
             dispatch_manager(state, ManagerMessage::ToggleEditorGeneralSelected);
             true
@@ -533,16 +519,8 @@ fn dispatch_editor_role_header_expansion(
                 ManagerMessage::SetEditorSecretsRoleExpanded { role, expanded },
             );
         }
-        EditorRoleHeaderExpansionKeyPlan::Auth(RoleHeaderExpansionPlan::Set { role, expanded }) => {
-            dispatch_manager(
-                state,
-                ManagerMessage::SetEditorAuthRoleExpanded { role, expanded },
-            );
-        }
-        EditorRoleHeaderExpansionKeyPlan::Secrets(RoleHeaderExpansionPlan::HeaderNoop)
-        | EditorRoleHeaderExpansionKeyPlan::Auth(RoleHeaderExpansionPlan::HeaderNoop) => {}
+        EditorRoleHeaderExpansionKeyPlan::Secrets(RoleHeaderExpansionPlan::HeaderNoop) => {}
         EditorRoleHeaderExpansionKeyPlan::Secrets(RoleHeaderExpansionPlan::NotHeader)
-        | EditorRoleHeaderExpansionKeyPlan::Auth(RoleHeaderExpansionPlan::NotHeader)
         | EditorRoleHeaderExpansionKeyPlan::NotRoleHeaderTab => {}
     }
 }
@@ -847,31 +825,6 @@ pub fn handle_editor_modal(
         }
         Modal::AuthSourcePicker { state: source } => {
             let outcome = source.handle_key(key);
-            // Generate wins over the provide dispatch: the `g`/`G` trigger
-            // sets `generating_token_target` (and stashes the form into
-            // the modal parent stack for the post-mint re-mount), so
-            // the generate branch is reachable only on that path and the
-            // provide arms below stay untouched.
-            if editor.generating_token_target.is_some() {
-                match source_picker_plan(outcome) {
-                    SourcePickerPlan::Plain => {
-                        start_plain_token_generate(editor);
-                    }
-                    SourcePickerPlan::Op => {
-                        open_create_op_picker_for_generate(editor, op_cache);
-                    }
-                    // Cancel before minting: restore the stashed form so
-                    // the operator lands back on the Edit-auth dialog
-                    // unchanged (matches the provide-path source-picker
-                    // cancel below).
-                    SourcePickerPlan::Dismiss => {
-                        editor.generating_token_target = None;
-                        super::auth::restore_auth_form_after_op_picker_cancel(editor);
-                    }
-                    SourcePickerPlan::Continue => {}
-                }
-                return EditorModalOutcome::Continue;
-            }
             match source_picker_plan(outcome) {
                 SourcePickerPlan::Plain => {
                     super::auth::apply_plain_source_picker_to_auth_form(editor);
@@ -886,37 +839,7 @@ pub fn handle_editor_modal(
             }
         }
         Modal::AuthForm { .. } => {
-            if matches!(
-                super::auth::handle_auth_form_key(editor, key, op_available),
-                super::auth::AuthFormKeyOutcome::OpenSourceFolderBrowser
-            ) {
-                return EditorModalOutcome::OpenAuthSourceFolderBrowser;
-            }
-        }
-        Modal::AuthRolePicker { state: picker } => {
-            match inline_picker_plan(picker.handle_key(key)) {
-                InlinePickerPlan::Commit(role) => {
-                    if let Some(kind) = editor.auth_selected_kind {
-                        let target = crate::tui::state::AuthFormTarget::WorkspaceRole {
-                            role: role.key(),
-                            kind,
-                        };
-                        let form = crate::tui::state::AuthForm::new(kind);
-                        editor.open_sub_modal(Modal::AuthForm {
-                            target,
-                            state: Box::new(form),
-                            focus: crate::tui::state::AuthFormFocus::Mode,
-                            literal_buffer: String::new(),
-                        });
-                    } else {
-                        editor.pop_modal_chain();
-                    }
-                }
-                InlinePickerPlan::Dismiss => {
-                    editor.pop_modal_chain();
-                }
-                InlinePickerPlan::Continue => {}
-            }
+            let _ = super::auth::handle_auth_form_key(editor, key, op_available);
         }
         Modal::OpPicker {
             secrets_target,
@@ -924,14 +847,6 @@ pub fn handle_editor_modal(
         } => {
             let outcome = picker.handle_key(key);
             let secrets_target = secrets_target.clone();
-            // Token-generate wins over both browse and provide dispatch:
-            // `generating_token_target` is set exactly when the picker was
-            // opened by the auth-form `g`/`G` trigger (Create mode), so the
-            // create variants are reachable only on this path.
-            if let Some(target) = editor.generating_token_target.take() {
-                handle_token_generate_pick(editor, target, outcome);
-                return EditorModalOutcome::Continue;
-            }
             match crate::tui::update::op_picker_inline_plan(outcome) {
                 // Browse-mode caller: only `Existing` is reachable.
                 InlinePickerPlan::Commit(

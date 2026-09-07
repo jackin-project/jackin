@@ -16,7 +16,7 @@ use crate::tui::message::{
     launch_agent_prompt_plan,
 };
 use crate::tui::model::{
-    open_launch_agent_prompt_plan, open_launch_provider_picker_plan, store_pending_launch_plan,
+    open_launch_account_picker_plan, open_launch_agent_prompt_plan, store_pending_launch_plan,
     take_pending_launch_and_role_plan, take_pending_launch_plan,
 };
 use crate::tui::state::update::{ManagerMessage, update_manager};
@@ -165,20 +165,25 @@ pub fn launch_with_committed_agent(
     else {
         return Ok(None);
     };
-    if resolved.providers.is_empty() {
-        return Ok(Some(ConsoleOutcome::Launch(
-            resolved.role,
-            resolved.workspace,
-            Some(agent),
-        )));
+    if resolved.accounts.len() <= 1 {
+        return Ok(Some(ConsoleOutcome::LaunchWithAccount {
+            selector: resolved.role,
+            workspace: resolved.workspace,
+            agent,
+            account: resolved
+                .accounts
+                .into_iter()
+                .next()
+                .map(|account| account.id),
+        }));
     }
 
-    open_launch_provider_picker_plan(
+    open_launch_account_picker_plan(
         state,
         resolved.input,
         resolved.role,
         agent,
-        resolved.providers,
+        resolved.accounts,
     );
     Ok(None)
 }

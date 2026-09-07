@@ -1,16 +1,18 @@
 # SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 # SPDX-License-Identifier: Apache-2.0
 
-version = "v1alpha2"
+version = "v1alpha3"
 # jackin❯ config — top-of-file note
 # keep this across saves
 
-# Layer 1: global agent auth defaults
-[claude]
-auth_forward = "sync"
-
-[codex]
-auth_forward = "sync"
+# Named credentials reused by authorized workspaces
+[accounts.work]
+name = "Work Claude"
+provider = "anthropic"
+[accounts.work.credential]
+type = "profile"
+agent = "claude"
+directory = "/home/operator/.claude-work"
 
 # Our two builtin roles
 [roles.agent-smith]
@@ -31,13 +33,10 @@ trusted = true
 workdir = "/workspace/prod"
 allowed_roles = ["agent-smith"]
 default_agent = "codex"
+accounts = ["work"]
 
-# Layer 2: workspace-level agent auth
-[workspaces.prod.claude]
-auth_forward = "api_key"
-
-[workspaces.prod.codex]
-auth_forward = "api_key"
+[workspaces.prod.account_bindings]
+claude = "work"
 
 [workspaces.prod.env]
 # Rotate quarterly (last: 2026-Q1)
@@ -46,12 +45,9 @@ API_TOKEN = "op://Personal/api/token"
 # Passes through from host
 GITHUB_TOKEN = "$GITHUB_TOKEN"
 
-# Layer 3: per-(workspace × role × agent) most-specific overrides
-[workspaces.prod.roles.agent-smith.claude]
-auth_forward = "oauth_token"
-
-[workspaces.prod.roles.agent-smith.codex]
-auth_forward = "ignore"
+# Role-specific selection still requires workspace authorization
+[workspaces.prod.roles.agent-smith.account_bindings]
+claude = "work"
 
 [workspaces.prod.roles.agent-smith.env]
 # 1Password OpRef shape

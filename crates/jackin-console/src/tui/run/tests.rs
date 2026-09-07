@@ -259,25 +259,6 @@ fn letter_input_state_for_route_assigns_stage_modal_slot() {
 }
 
 #[test]
-fn token_generate_status_message_names_target_scope() {
-    assert_eq!(
-        token_generate_scope_label(TokenGenerateScopeLabel::Workspace("proj")),
-        "workspace \"proj\""
-    );
-    assert_eq!(
-        token_generate_scope_label(TokenGenerateScopeLabel::WorkspaceRole {
-            workspace: "proj",
-            role: "ops",
-        }),
-        "workspace \"proj\" role \"ops\""
-    );
-    assert_eq!(
-        token_generate_status_message(TokenGenerateScopeLabel::Global),
-        "\nGenerating Claude OAuth token for global config -- complete the browser sign-in, then paste the code below.\n"
-    );
-}
-
-#[test]
 fn debug_invocation_id_label_uses_only_the_active_invocation() {
     assert_eq!(
         debug_invocation_id_label(Some("invocation-active")),

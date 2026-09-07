@@ -44,6 +44,7 @@ url = { workspace = true }
 security-framework = { workspace = true }
 
 [dev-dependencies]
+toml = { workspace = true }
 anyhow = { workspace = true }
 criterion = { workspace = true, features = ["html_reports"] }
 jackin-diagnostics = { workspace = true, features = ["test-support"] }

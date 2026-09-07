@@ -171,7 +171,6 @@ pub(super) async fn handle_console_instance_action(
                 &container,
                 Some(&manifest),
                 selected_agent,
-                None,
                 &[],
                 config.git.coauthor_trailer,
                 config.git.dco,
@@ -276,7 +275,7 @@ pub(super) async fn restore_hardline_instance(
     runtime::load_role(paths, config, &class, &workspace, docker, runner, &opts).await
 }
 
-fn resolve_ad_hoc_restore_input(
+pub(super) fn resolve_ad_hoc_restore_input(
     manifest: &instance::InstanceManifest,
     cwd: &std::path::Path,
 ) -> Result<LoadWorkspaceInput> {

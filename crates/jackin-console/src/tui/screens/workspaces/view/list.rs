@@ -14,14 +14,15 @@ use crate::tui::screens::workspaces::view::{
     WorkspaceInstancePane, WorkspaceInstancePaneContent, WorkspaceInstanceSessionRow,
     WorkspaceListDisplayRowsFacts, WorkspaceListNamesRenderFacts, WorkspacePreviewPanePlan,
     WorkspaceSidebarFacts, WorkspaceSidebarPlan, current_directory_workspace_title,
-    global_mounts_title, list_name_lines as workspace_list_name_lines, render_agent_picker_sidebar,
-    render_compact_instances_summary, render_config_mounts_subpanel, render_config_roles_subpanel,
-    render_environments_subpanel, render_general_subpanel, render_global_mount_rows_section,
+    global_mounts_title, list_name_lines as workspace_list_name_lines,
+    render_account_picker_sidebar as render_account_picker_sidebar_view,
+    render_agent_picker_sidebar, render_compact_instances_summary, render_config_mounts_subpanel,
+    render_config_roles_subpanel, render_environments_subpanel, render_general_subpanel,
+    render_global_mount_rows_section,
     render_instance_details_pane as render_workspace_instance_details_pane,
-    render_list_names_block, render_provider_picker_sidebar as render_provider_picker_sidebar_view,
-    render_role_picker_sidebar, render_sentinel_description_pane, role_global_mounts_title,
-    workspace_env_rows, workspace_instance_live_content, workspace_instance_pane,
-    workspace_instance_session_content, workspace_list_display_rows,
+    render_list_names_block, render_role_picker_sidebar, render_sentinel_description_pane,
+    role_global_mounts_title, workspace_env_rows, workspace_instance_live_content,
+    workspace_instance_pane, workspace_instance_session_content, workspace_list_display_rows,
     workspace_list_names_render_plan, workspace_preview_pane_plan, workspace_sidebar_owns_focus,
     workspace_sidebar_plan,
 };
@@ -199,17 +200,17 @@ pub fn render_list_sidebar(frame: &mut Frame<'_>, area: Rect, state: &ManagerSta
     let sidebar_owns_focus =
         workspace_sidebar_owns_focus(state.list_names_focused(), state.list_modal.is_some());
     match workspace_sidebar_plan(WorkspaceSidebarFacts {
-        inline_provider_picker_open: state.inline_provider_picker.is_some(),
-        launch_provider_picker_open: state.launch_provider_picker.is_some(),
+        inline_account_picker_open: state.inline_account_picker.is_some(),
+        launch_account_picker_open: state.launch_account_picker.is_some(),
         inline_new_session_picker_open: state.inline_new_session_picker.is_some(),
         inline_agent_picker_open: state.inline_agent_picker.is_some(),
         inline_role_picker_open: state.inline_role_picker.is_some(),
     }) {
-        WorkspaceSidebarPlan::InlineProviderPicker => {
-            if let Some(picker) = state.inline_provider_picker.as_ref() {
+        WorkspaceSidebarPlan::InlineAccountPicker => {
+            if let Some(picker) = state.inline_account_picker.as_ref() {
                 let short_id = jackin_core::instance_id_from_container_base(&picker.context)
                     .unwrap_or(picker.context.as_str());
-                render_provider_picker_sidebar(
+                render_account_picker_sidebar(
                     frame,
                     area,
                     Some(short_id),
@@ -219,9 +220,9 @@ pub fn render_list_sidebar(frame: &mut Frame<'_>, area: Rect, state: &ManagerSta
                 );
             }
         }
-        WorkspaceSidebarPlan::LaunchProviderPicker => {
-            if let Some(picker) = state.launch_provider_picker.as_ref() {
-                render_provider_picker_sidebar(
+        WorkspaceSidebarPlan::LaunchAccountPicker => {
+            if let Some(picker) = state.launch_account_picker.as_ref() {
+                render_account_picker_sidebar(
                     frame,
                     area,
                     None,
@@ -339,19 +340,19 @@ pub fn render_instance_details_pane(
     render_workspace_instance_details_pane(frame, area, &pane);
 }
 
-pub fn render_provider_picker_sidebar(
+pub fn render_account_picker_sidebar(
     frame: &mut Frame<'_>,
     area: Rect,
     container_id: Option<&str>,
-    providers: &[jackin_protocol::Provider],
+    providers: &[crate::services::launch::AccountChoice],
     selected: usize,
     focused: bool,
 ) {
     let labels = providers
         .iter()
-        .map(|provider| provider.label().to_owned())
+        .map(crate::services::launch::AccountChoice::label)
         .collect();
-    render_provider_picker_sidebar_view(frame, area, container_id, labels, selected, focused);
+    render_account_picker_sidebar_view(frame, area, container_id, labels, selected, focused);
 }
 
 pub fn render_sidebar_body(

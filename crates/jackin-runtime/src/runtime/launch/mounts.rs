@@ -22,13 +22,13 @@ pub(crate) enum AppleContainerMountError {
 
 /// Emit the durable-home bind mounts for `agent`, derived from its
 /// [`AgentStatePaths`](jackin_core::AgentStatePaths) so the
-/// per-agent home layout (data root, paired config root, standalone home files)
+/// per-agent home layout (data root and paired config root)
 /// lives only in the agent enum. Auth-handoff mounts are agent-specific and stay
 /// inline in [`agent_mounts`].
 fn push_agent_home_mounts(mounts: &mut Vec<String>, root: &Path, agent: jackin_core::Agent) {
     let paths = agent.runtime().state_paths();
     let home = root.join("home");
-    for entry in paths.home_dirs().chain(paths.home_files.iter().copied()) {
+    for entry in paths.home_dirs() {
         mounts.push(format!(
             "{}:/home/agent/{entry}",
             home.join(entry).display()
@@ -50,6 +50,11 @@ pub(crate) fn agent_mounts(state: &crate::instance::RoleState) -> Vec<String> {
         "{}:/jackin/state",
         state.root.join("state").display()
     )];
+
+    mounts.push(format!(
+        "{}:/run/jackin:ro",
+        state.root.join("credentials").display()
+    ));
 
     if let Some(claude) = &state.auth.claude {
         push_agent_home_mounts(&mut mounts, &state.root, Agent::Claude);

@@ -18,6 +18,7 @@ name = "jackin_config"
 path = "src/lib.rs"
 
 [dependencies]
+serde_json.workspace = true
 jackin-core = { workspace = true }
 jackin-telemetry = { workspace = true }
 serde = { workspace = true, features = ["derive"] }

@@ -56,7 +56,6 @@ where
         reason = "deferred R4 launch-split field; read once a restore-pin consumer lands"
     )]
     pub restore_pinned_sha: Option<String>,
-    pub operator_env: std::collections::BTreeMap<String, String>,
     pub git_pull_join: Option<super::DeferredGitPull>,
 }
 

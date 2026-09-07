@@ -4,6 +4,9 @@
 //! Phase chain body for `run_launch_core` (typed `#[must_use]` handoffs).
 
 mod helpers;
+mod runtime_dispatch;
+
+use runtime_dispatch::{RuntimeDispatch, complete_docker_launch};
 
 use super::super::launch_phases::{
     CleanupClassified, EnvironmentResolved, GrantsValidated, ImageMaterialized,
@@ -32,8 +35,7 @@ use crate::runtime::attach::{
 use crate::runtime::docker_profile::{DockerSecurityProfile, EffectiveGrants, ProfileSource};
 
 use super::super::super::launch_slot::{
-    github_env_declarations_for_mode, resolve_github_env_map, verify_credential_env_present,
-    verify_github_token_present,
+    github_env_declarations_for_mode, resolve_github_env_map, verify_github_token_present,
 };
 
 async fn poll_sidecar_while<T, F, S>(
@@ -418,11 +420,6 @@ where
     })
 }
 
-enum RuntimeDispatch {
-    AppleContainer(String),
-    Docker(Box<RuntimeLaunched>),
-}
-
 struct LaunchRuntime<'a, D, R> {
     paths: &'a jackin_core::JackinPaths,
     config: &'a jackin_config::AppConfig,
@@ -511,9 +508,6 @@ struct EnvironmentConfigured {
 
 struct ResolveEnvironment<'a, D> {
     config: &'a jackin_config::AppConfig,
-    agent: jackin_core::Agent,
-    auth_mode: jackin_config::AuthForwardMode,
-    operator_env: &'a std::collections::BTreeMap<String, String>,
     opts: &'a super::super::super::LoadOptions,
     role_key: &'a str,
     workspace_name: &'a Option<String>,
@@ -526,9 +520,6 @@ async fn resolve_environment<D: DockerApi>(
 ) -> anyhow::Result<EnvironmentConfigured> {
     let ResolveEnvironment {
         config,
-        agent,
-        auth_mode,
-        operator_env,
         opts,
         role_key,
         workspace_name,
@@ -541,34 +532,6 @@ async fn resolve_environment<D: DockerApi>(
     } else {
         Some(WorkspaceName::parse(workspace_name_str).map_err(anyhow::Error::from)?)
     };
-    let workspace_for_verify = match workspace_opt.as_ref() {
-        Some(workspace) => workspace.clone(),
-        None => WorkspaceName::parse("adhoc").map_err(anyhow::Error::from)?,
-    };
-    let mode_resolution =
-        super::super::super::build_mode_resolution(config, agent, workspace_opt.as_ref(), role_key);
-    let env_layers = agent
-        .required_env_var(auth_mode)
-        .map_or_else(Vec::new, |env_var| {
-            super::super::super::build_env_layer_states(
-                config,
-                workspace_opt.as_ref(),
-                role_key,
-                env_var,
-            )
-        });
-    if let Err(error) = verify_credential_env_present(
-        agent,
-        auth_mode,
-        operator_env,
-        &mode_resolution,
-        &env_layers,
-        &workspace_for_verify,
-        role_key,
-    ) {
-        cleanup.run(docker).await;
-        return Err(error.into());
-    }
     let github_mode = jackin_config::resolve_github_mode(config, workspace_opt.as_ref(), role_key);
     let github_env_decls =
         jackin_config::build_github_env_layers(config, workspace_opt.as_ref(), role_key);
@@ -616,6 +579,9 @@ async fn resolve_environment<D: DockerApi>(
             .get(jackin_core::GH_TOKEN_ENV_NAME)
             .cloned(),
     };
+    let workspace_for_verify = workspace_opt
+        .clone()
+        .unwrap_or(WorkspaceName::parse("adhoc")?);
     if let Err(error) = verify_github_token_present(
         github_mode,
         github_ctx.token.as_deref(),
@@ -685,32 +651,38 @@ where
     let workspace_opt_owned = configured.workspace_opt.clone();
     let role_key_owned = role_key.to_owned();
     let github_ctx_owned = configured.github_ctx.clone();
-    // A programmatic launch pins the account (auth source folder) per launch;
-    // the interactive path resolves it per workspace/role/global config.
-    let account_override = opts.account.clone();
+    let default_runner = jackin_env::OpCli::new();
+    let credentials = jackin_env::resolve_account_env_with(
+        config,
+        &manifest_owned.supported_agents(),
+        configured.workspace_opt.as_ref(),
+        role_key,
+        opts.op_runner.as_deref().unwrap_or(&default_runner),
+        |name| match &opts.host_env {
+            Some(env) => env.get(name).cloned().ok_or(std::env::VarError::NotPresent),
+            None => std::env::var(name),
+        },
+    )?;
     let role_state_future = async move {
         jackin_telemetry::spawn::joined_blocking(move || {
+            let provision_agents = manifest_owned.supported_agents();
+            let selections = super::super::super::capsule_setup::account_auth_selections(
+                &config_owned,
+                workspace_opt_owned.as_ref(),
+                &role_key_owned,
+                &provision_agents,
+            )?;
             let resolve_mode = |candidate| {
-                jackin_config::resolve_mode(
-                    &config_owned,
-                    candidate,
-                    workspace_opt_owned.as_ref(),
-                    &role_key_owned,
-                )
+                selections
+                    .get(&candidate)
+                    .map_or(jackin_config::AuthForwardMode::Ignore, |(mode, _)| *mode)
             };
             let resolve_sync_src = |candidate| {
-                super::super::super::programmatic::resolve_account_source(
-                    account_override.as_deref(),
-                    jackin_config::resolve_sync_source_dir(
-                        &config_owned,
-                        candidate,
-                        workspace_opt_owned.as_ref(),
-                        &role_key_owned,
-                    ),
-                )
+                selections
+                    .get(&candidate)
+                    .and_then(|(_, directory)| directory.clone())
             };
-            let provision_agents = manifest_owned.supported_agents();
-            RoleState::prepare_for_agents(
+            let prepared = RoleState::prepare_for_agents(
                 &paths_owned,
                 &container_name_owned,
                 &manifest_owned,
@@ -722,7 +694,26 @@ where
                 &paths_owned.home_dir,
                 agent,
                 &provision_agents,
-            )
+            )?;
+            super::super::super::account_identity::write_account_credentials(
+                &prepared.0.root,
+                credentials,
+            )?;
+            super::super::super::account_config::configure_accounts(
+                &prepared.0.root,
+                &config_owned,
+                workspace_opt_owned.as_ref(),
+                &role_key_owned,
+                &provision_agents,
+            )?;
+            super::super::super::account_identity::record_account_configuration(
+                &prepared.0.root,
+                &paths_owned,
+                &config_owned,
+                workspace_opt_owned.as_ref(),
+                &role_key_owned,
+            )?;
+            Ok(prepared)
         })
         .await
         .map_err(|error| anyhow::anyhow!("RoleState::prepare task panicked: {error}"))?
@@ -1131,7 +1122,10 @@ where
         container_state,
         mut cleanup,
     } = match launched {
-        RuntimeDispatch::AppleContainer(container_name) => return Ok(container_name),
+        RuntimeDispatch::AppleContainer(container_name)
+        | RuntimeDispatch::Detached(container_name) => {
+            return Ok(container_name);
+        }
         RuntimeDispatch::Docker(launched) => *launched,
     };
     let finalized = finalize_session(FinalizeSession {
@@ -1190,7 +1184,6 @@ struct ActiveLaunch<'a, D, R> {
     selected_refresh_reason: Option<crate::runtime::image::ImageInvalidationReason>,
     resolved_env: jackin_env::ResolvedEnv,
     rebuild: bool,
-    operator_env: std::collections::BTreeMap<String, String>,
     git_pull_join: Option<super::super::DeferredGitPull>,
     initialized: LaunchInitialized,
 }
@@ -1259,9 +1252,6 @@ where
     .await?;
     let configured = resolve_environment(ResolveEnvironment {
         config: launch.config,
-        agent: launch.agent,
-        auth_mode: launch.auth_mode,
-        operator_env: &launch.operator_env,
         opts: launch.opts,
         role_key: &launch.role_key,
         workspace_name: &launch.workspace_name,
@@ -1421,10 +1411,8 @@ where
         trust: TrustSeeded { environment },
     } = input;
     emit_auth_breadcrumbs(
-        paths,
         agent,
         auth_mode,
-        environment.workspace_opt.as_ref(),
         environment.github_mode,
         &environment.github_env_decls,
     );
@@ -1538,7 +1526,7 @@ where
         &materialized,
         dirty_exit_policy.as_str(),
         exec_bindings,
-    );
+    )?;
     Ok(WorkspaceMaterialized {
         materialized,
         launch_config,
@@ -1580,7 +1568,7 @@ where
             InstancePrepared {
                 image,
                 selected_image_reused,
-                mut instance_manifest,
+                instance_manifest,
                 container_state,
                 host_workdir_fingerprint,
             },
@@ -1596,7 +1584,7 @@ where
                         ..
                     },
             },
-        mut cleanup,
+        cleanup,
     } = input;
     if backend == super::super::super::Backend::AppleContainer {
         let mounts = super::super::super::build_workspace_mounts(&materialized)?;
@@ -1680,24 +1668,18 @@ where
         non_interactive: opts.non_interactive,
     };
     let launch_result = super::super::super::launch_role_runtime(&ctx, steps, docker, runner).await;
-    if launch_result.is_err() {
-        handle_launch_failure(
-            paths,
-            &container_state,
-            &mut instance_manifest,
-            container_name,
-            &cleanup,
-            docker,
-        )
-        .await;
-    }
-    launch_result?;
-    cleanup.keep_socket_dir();
-    Ok(RuntimeDispatch::Docker(Box::new(RuntimeLaunched {
-        instance_manifest,
-        container_state,
-        cleanup,
-    })))
+    complete_docker_launch(
+        launch_result,
+        RuntimeLaunched {
+            instance_manifest,
+            container_state,
+            cleanup,
+        },
+        paths,
+        container_name,
+        docker,
+    )
+    .await
 }
 
 pub(super) async fn run_launch_phases<D, R>(ctx: LaunchCore<'_, D, R>) -> anyhow::Result<String>
@@ -1737,7 +1719,6 @@ where
         resolved_env,
         rebuild,
         restore_pinned_sha: _,
-        operator_env,
         git_pull_join,
         ..
     } = ctx;
@@ -1783,7 +1764,6 @@ where
         selected_refresh_reason,
         resolved_env,
         rebuild,
-        operator_env,
         git_pull_join,
         initialized,
     };
@@ -1846,3 +1826,6 @@ where
     let mut sidecar = std::pin::pin!(sidecar);
     run_active_launch(launch, sidecar.as_mut(), sidecar_required).await
 }
+
+#[cfg(test)]
+mod tests;

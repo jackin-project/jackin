@@ -88,8 +88,13 @@ pub const CONFIG_MIGRATIONS: &[MigrationStep] = &[
     // Additive with serde defaults; no transformation needed.
     MigrationStep {
         from: "v1alpha8",
-        to: CURRENT_CONFIG_VERSION,
+        to: "v1alpha9",
         migrate: noop_migration,
+    },
+    MigrationStep {
+        from: "v1alpha9",
+        to: CURRENT_CONFIG_VERSION,
+        migrate: require_account_registry,
     },
 ];
 /// Ordered per-workspace file migration chain from [`LEGACY_VERSION`] to current.
@@ -137,10 +142,39 @@ pub const WORKSPACE_MIGRATIONS: &[MigrationStep] = &[
     // Additive with serde default; no transformation needed.
     MigrationStep {
         from: "v1alpha7",
-        to: CURRENT_WORKSPACE_VERSION,
+        to: "v1alpha8",
         migrate: noop_migration,
     },
+    MigrationStep {
+        from: "v1alpha8",
+        to: CURRENT_WORKSPACE_VERSION,
+        migrate: require_account_registry,
+    },
 ];
+
+/// Refuse obsolete credential policies before changing the schema version.
+/// Account authorization cannot be inferred safely from inherited policies.
+fn require_account_registry(doc: &mut DocumentMut) -> crate::ConfigResult<()> {
+    fn check(table: &dyn toml_edit::TableLike, scope: &str) -> crate::ConfigResult<()> {
+        for agent in jackin_core::Agent::ALL {
+            if table.contains_key(agent.slug()) {
+                return Err(ConfigError::msg(format!(
+                    "{scope}: legacy [{}] authentication policy is unsupported; register credentials with `jackin account add`, assign account IDs with `jackin workspace account assign`, and remove the old agent policy table",
+                    agent.slug()
+                )));
+            }
+        }
+        if let Some(roles) = table.get("roles").and_then(toml_edit::Item::as_table_like) {
+            for (name, role) in roles.iter() {
+                if let Some(role) = role.as_table_like() {
+                    check(role, &format!("{scope}.roles.{name}"))?;
+                }
+            }
+        }
+        Ok(())
+    }
+    check(doc.as_table(), "configuration")
+}
 
 /// v1alpha4 → v1alpha5: the workspace-level `op_account` moves onto each
 /// `op://` env ref as a per-ref `account` key, so a workspace holding

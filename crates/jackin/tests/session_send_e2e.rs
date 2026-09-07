@@ -314,7 +314,16 @@ fn write_config(path: &Path, role_source: &Path) {
     std::fs::write(
         path,
         format!(
-            r#"version = "v1alpha5"
+            r#"version = "v1alpha10"
+
+[accounts.e2e-claude]
+name = "E2E Claude"
+provider = "anthropic"
+[accounts.e2e-claude.credential]
+type = "api_key"
+value = "synthetic-e2e-claude-key"
+[account_bindings]
+claude = "e2e-claude"
 
 [roles."{ROLE_KEY}"]
 git = "{}"

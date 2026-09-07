@@ -48,8 +48,8 @@ pub enum ConsoleInputDispatchPlan {
     KeyboardHelp,
     ListModal,
     InlineNewSessionPicker,
-    InlineProviderPicker,
-    LaunchProviderPicker,
+    InlineAccountPicker,
+    LaunchAccountPicker,
     InlineAgentPicker,
     InlineRolePicker,
     EditorModal,
@@ -75,8 +75,8 @@ pub struct ConsoleInputDispatchFacts {
     pub keyboard_help_open: bool,
     pub list_modal_open: bool,
     pub inline_new_session_picker_open: bool,
-    pub inline_provider_picker_open: bool,
-    pub launch_provider_picker_open: bool,
+    pub inline_account_picker_open: bool,
+    pub launch_account_picker_open: bool,
     pub inline_agent_picker_open: bool,
     pub inline_role_picker_open: bool,
     pub editor_modal_open: bool,
@@ -121,12 +121,6 @@ pub trait ConsoleSettingsModalPresence {
 
 pub trait ConsoleSettingsFooterHeight {
     fn settings_cached_footer_height(&self) -> u16;
-}
-
-pub trait ConsolePendingTokenGenerate {
-    type PendingTokenGenerate;
-
-    fn take_pending_token_generate(&mut self) -> Option<Self::PendingTokenGenerate>;
 }
 
 pub trait ConsolePendingRoleLoad {
@@ -209,11 +203,11 @@ pub const fn console_input_dispatch_plan(
     if facts.inline_new_session_picker_open {
         return ConsoleInputDispatchPlan::InlineNewSessionPicker;
     }
-    if facts.inline_provider_picker_open {
-        return ConsoleInputDispatchPlan::InlineProviderPicker;
+    if facts.inline_account_picker_open {
+        return ConsoleInputDispatchPlan::InlineAccountPicker;
     }
-    if facts.launch_provider_picker_open {
-        return ConsoleInputDispatchPlan::LaunchProviderPicker;
+    if facts.launch_account_picker_open {
+        return ConsoleInputDispatchPlan::LaunchAccountPicker;
     }
     if facts.inline_agent_picker_open {
         return ConsoleInputDispatchPlan::InlineAgentPicker;
@@ -306,24 +300,6 @@ where
                 Self::Settings(settings) => settings.settings_cached_footer_height(),
                 _ => 0,
             },
-        }
-    }
-}
-
-impl<CreatePrelude, Editor, Settings, PendingTokenGenerate>
-    ConsoleManagerStage<CreatePrelude, Editor, Settings>
-where
-    Editor: ConsolePendingTokenGenerate<PendingTokenGenerate = PendingTokenGenerate>,
-    Settings: ConsolePendingTokenGenerate<PendingTokenGenerate = PendingTokenGenerate>,
-{
-    pub fn take_pending_token_generate(&mut self) -> Option<PendingTokenGenerate> {
-        match self {
-            Self::Editor(editor) => editor.take_pending_token_generate(),
-            Self::Settings(settings) => settings.take_pending_token_generate(),
-            Self::List
-            | Self::CreatePrelude(_)
-            | Self::ConfirmDelete { .. }
-            | Self::ConfirmInstancePurge { .. } => None,
         }
     }
 }
@@ -519,7 +495,6 @@ where
             | Self::StatusPopup { .. }
             | Self::RolePicker { .. }
             | Self::RoleOverridePicker { .. }
-            | Self::AuthRolePicker { .. }
             | Self::SourcePicker { .. }
             | Self::AuthSourcePicker { .. }
             | Self::ScopePicker { .. }

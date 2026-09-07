@@ -130,50 +130,8 @@ impl Multiplexer {
                 return;
             }
             DialogAction::SpawnAgent { agent, intent } => {
-                let providers = self.providers_for_agent(agent.as_deref());
-                if providers.len() > 1 {
-                    // Multiple providers available — push ProviderPicker
-                    // on top so the operator chooses before spawning.
-                    let choices = providers
-                        .into_iter()
-                        .map(|provider| {
-                            crate::tui::components::dialog::ProviderChoice::new(provider.label())
-                        })
-                        .collect();
-                    self.dialog_push(Dialog::new_provider_picker(agent, choices, intent));
-                    self.invalidate(FullRedrawReason::DialogChange);
-                    return;
-                }
-                // Zero or one provider — spawn immediately without
-                // a picker step (operator experience unchanged when
-                // Z.AI is not configured).
                 self.dialog_clear();
                 self.dispatch_spawn_intent(agent, intent);
-            }
-            DialogAction::SpawnAgentWithProvider {
-                agent,
-                provider_label,
-                intent,
-            } => {
-                self.dialog_clear();
-                // Token resolved here from the env key captured for the picked
-                // provider — never a fixed provider's key.
-                let env_overrides = jackin_protocol::Provider::from_label(&provider_label)
-                    .map_or_else(
-                        || {
-                            let _warning = jackin_telemetry::record_recovered_degradation();
-                            Vec::new()
-                        },
-                        |provider| {
-                            self.provider_spawn_env(agent.as_deref().unwrap_or_default(), provider)
-                        },
-                    );
-                self.dispatch_spawn_intent_with_provider(
-                    agent,
-                    intent,
-                    &env_overrides,
-                    Some(provider_label.as_str()),
-                );
             }
             DialogAction::RenameTab { tab_idx, label } => {
                 self.dialog_clear();

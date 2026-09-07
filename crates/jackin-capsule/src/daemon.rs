@@ -25,7 +25,7 @@ use chrono::{DateTime, Utc};
 ///     byte: `0x00` → control (length prefix), anything else → attach.
 ///   - Lifecycle: the daemon exits when the last session ends so the
 ///     container reaps cleanly. SIGTERM also triggers shutdown.
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 use std::io;
 #[cfg(test)]
 use std::path::Path;
@@ -412,10 +412,10 @@ pub(super) struct RenderState {
 pub(super) struct LaunchEnv {
     pub(crate) available_agents: Vec<String>,
     pub(crate) launch_config: CapsuleConfig,
+    pub(crate) agent_credentials: jackin_protocol::AgentCredentialEnv,
     pub(crate) env_passthrough: Vec<(String, String)>,
     pub(crate) workdir: PathBuf,
     pub(crate) workdir_context: WorkdirContext,
-    pub(crate) provider_keys: BTreeMap<jackin_protocol::Provider, String>,
 }
 
 #[expect(
@@ -544,16 +544,7 @@ impl Multiplexer {
         let (event_tx, event_rx) = mpsc::unbounded_channel();
         let content_rows = available_content_rows(rows);
         let agents = launch_config.supported_agents();
-        let provider_keys: BTreeMap<jackin_protocol::Provider, String> =
-            jackin_protocol::Provider::ALL
-                .into_iter()
-                .filter_map(|provider| {
-                    let var = provider.key_env_var()?;
-                    let value = std::env::var(var).ok().filter(|v| !v.is_empty())?;
-                    Some((provider, value))
-                })
-                .collect();
-
+        let agent_credentials = crate::config::load_agent_credentials(&launch_config)?;
         let env_passthrough: Vec<(String, String)> = SESSION_ENV_PASSTHROUGH
             .iter()
             .filter_map(|&k| std::env::var(k).ok().map(|v| (k.to_owned(), v)))
@@ -657,10 +648,10 @@ impl Multiplexer {
             launch_env: LaunchEnv {
                 available_agents: agents,
                 launch_config,
+                agent_credentials,
                 env_passthrough,
                 workdir,
                 workdir_context,
-                provider_keys,
             },
             resource_metrics: resource_metrics::ResourceMetricsSampler::default(),
             widget_focus: jackin_telemetry::ui::WidgetFocusTracker::default(),
@@ -1195,8 +1186,7 @@ pub async fn run_daemon(
     let _live_dhat_profiler = crate::alloc_telemetry::init_from_env();
     crate::debug_panic::panic_if_requested_from_env();
 
-    let initial_spawn =
-        initial_spawn_request(&initial_agent, launch_config.initial_provider.as_ref());
+    let initial_spawn = initial_spawn_request(&initial_agent);
     let mut mux = Multiplexer::new(rows, cols, launch_config)?;
     start_git_context_watcher(mux.launch_env.workdir.clone(), mux.control.event_tx.clone());
     // Defer the first pane until the first attach Hello has supplied

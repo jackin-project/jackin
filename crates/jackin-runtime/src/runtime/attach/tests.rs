@@ -23,6 +23,65 @@ fn short_test_paths() -> (TempDir, JackinPaths) {
     (dir, paths)
 }
 
+fn provision_account_admission(paths: &JackinPaths, container_name: &str) {
+    let config = jackin_config::AppConfig::default();
+    write_admission_fixture(paths, container_name, &config, None);
+}
+
+fn write_admission_fixture(
+    paths: &JackinPaths,
+    container_name: &str,
+    config: &jackin_config::AppConfig,
+    workspace: Option<&str>,
+) {
+    std::fs::create_dir_all(&paths.config_dir).unwrap();
+    std::fs::write(
+        paths.config_dir.join("config.toml"),
+        toml::to_string(config).unwrap(),
+    )
+    .unwrap();
+    let snapshot = jackin_config::load_read_only_config_snapshot(paths).unwrap();
+    assert!(
+        snapshot.diagnostics.is_empty(),
+        "invalid admission fixture: {:?}",
+        snapshot.diagnostics
+    );
+    let root = paths.data_dir.join(container_name);
+    std::fs::create_dir_all(&root).unwrap();
+    let manifest = InstanceManifest::new(crate::instance::NewInstanceManifest {
+        container_base: container_name,
+        workspace_name: workspace,
+        workspace_label: "test",
+        workdir: "/workspace",
+        host_workdir_fingerprint: "fixture",
+        role_key: "agent-smith",
+        role_display_name: "Agent Smith",
+        agent_runtime: jackin_core::Agent::Claude,
+        role_source_git: "",
+        role_source_ref: None,
+        image_tag: "fixture",
+        docker: crate::instance::DockerResources {
+            role_container: container_name.into(),
+            dind_container: Some(format!("{container_name}-dind")),
+            network: format!("{container_name}-net"),
+            certs_volume: Some(format!("{container_name}-dind-certs")),
+        },
+        role_git_sha: None,
+        base_image_ref: None,
+        base_image_digest: None,
+        supported_agents: vec![],
+    });
+    manifest.write(&root).unwrap();
+    let workspace = workspace
+        .map(jackin_core::WorkspaceName::parse)
+        .transpose()
+        .unwrap();
+    let digest =
+        super::super::account_configuration_fingerprint(config, workspace.as_ref(), "agent-smith")
+            .unwrap();
+    std::fs::write(root.join("account-admission.sha256"), digest).unwrap();
+}
+
 fn ensure_socket_parent(paths: &JackinPaths, container_name: &str) -> PathBuf {
     let socket_path = super::super::snapshot::socket_path(paths, container_name);
     std::fs::create_dir_all(socket_path.parent().unwrap()).unwrap();
@@ -162,6 +221,7 @@ async fn wait_for_capsule_daemon_uses_direct_socket_without_exec() {
 #[tokio::test]
 async fn hardline_attaches_when_container_is_running() {
     let (_tmp, paths) = test_paths();
+    provision_account_admission(&paths, "jk-agent-smith");
     let docker = FakeDockerClient {
         inspect_queue: std::cell::RefCell::new(VecDeque::from([ContainerState::Running])),
         ..Default::default()
@@ -186,6 +246,7 @@ async fn hardline_attaches_when_container_is_running() {
 #[tokio::test]
 async fn hardline_clean_exit_ejects_runtime_resources() {
     let (_tmp, paths) = test_paths();
+    provision_account_admission(&paths, "jk-agent-smith");
     let docker = FakeDockerClient {
         inspect_queue: std::cell::RefCell::new(VecDeque::from([
             ContainerState::Running,
@@ -232,6 +293,7 @@ async fn hardline_clean_exit_ejects_runtime_resources() {
 #[tokio::test]
 async fn hardline_detach_with_live_sessions_preserves_runtime_resources() {
     let (_tmp, paths) = test_paths();
+    provision_account_admission(&paths, "jk-agent-smith");
     let docker = FakeDockerClient {
         inspect_queue: std::cell::RefCell::new(VecDeque::from([
             ContainerState::Running,
@@ -286,6 +348,7 @@ async fn hardline_new_session_execs_entrypoint_in_running_container() {
         base_image_digest: None,
         supported_agents: vec![],
     });
+    provision_account_admission(&paths, container_name);
     let docker = FakeDockerClient {
         inspect_queue: std::cell::RefCell::new(VecDeque::from([
             ContainerState::Running,
@@ -301,8 +364,7 @@ async fn hardline_new_session_execs_entrypoint_in_running_container() {
         container_name,
         Some(&manifest),
         jackin_core::Agent::Codex,
-        None,
-        &[],
+        &[("EDITOR".into(), "vim".into())],
         false,
         false,
         &docker,
@@ -311,6 +373,12 @@ async fn hardline_new_session_execs_entrypoint_in_running_container() {
     .await
     .unwrap();
 
+    assert!(
+        runner
+            .recorded
+            .iter()
+            .any(|call| call.contains("EDITOR=vim"))
+    );
     assert!(
         runner.recorded.iter().any(|call| {
             call.contains("docker exec")
@@ -353,6 +421,7 @@ async fn hardline_new_session_forwards_coauthor_trailer_env_when_enabled() {
         base_image_digest: None,
         supported_agents: vec![],
     });
+    provision_account_admission(&paths, container_name);
     let docker = FakeDockerClient {
         inspect_queue: std::cell::RefCell::new(VecDeque::from([
             ContainerState::Running,
@@ -368,7 +437,6 @@ async fn hardline_new_session_forwards_coauthor_trailer_env_when_enabled() {
         container_name,
         Some(&manifest),
         jackin_core::Agent::Claude,
-        None,
         &[],
         true,
         false,
@@ -430,6 +498,7 @@ async fn hardline_new_session_forwards_dco_env_when_enabled() {
         base_image_digest: None,
         supported_agents: vec![],
     });
+    provision_account_admission(&paths, container_name);
     let docker = FakeDockerClient {
         inspect_queue: std::cell::RefCell::new(VecDeque::from([
             ContainerState::Running,
@@ -445,7 +514,6 @@ async fn hardline_new_session_forwards_dco_env_when_enabled() {
         container_name,
         Some(&manifest),
         jackin_core::Agent::Claude,
-        None,
         &[],
         false,
         true,
@@ -490,7 +558,6 @@ async fn hardline_new_session_requires_running_container() {
         "jk-agent-smith",
         None,
         jackin_core::Agent::Claude,
-        None,
         &[],
         false,
         false,
@@ -512,6 +579,7 @@ async fn hardline_new_session_requires_running_container() {
 #[tokio::test]
 async fn spawn_shell_session_execs_jackin_capsule_new_in_running_container() {
     let (_tmp, paths) = test_paths();
+    provision_account_admission(&paths, "jk-agent-smith");
     let docker = FakeDockerClient {
         inspect_queue: std::cell::RefCell::new(VecDeque::from([ContainerState::Running])),
         ..Default::default()
@@ -537,6 +605,7 @@ async fn spawn_shell_session_execs_jackin_capsule_new_in_running_container() {
 #[tokio::test]
 async fn spawn_shell_session_does_not_set_tmux_env() {
     let (_tmp, paths) = test_paths();
+    provision_account_admission(&paths, "jk-agent-smith");
     let docker = FakeDockerClient {
         inspect_queue: std::cell::RefCell::new(VecDeque::from([ContainerState::Running])),
         ..Default::default()
@@ -1007,6 +1076,7 @@ async fn wait_for_dind_fails_when_cert_absent() {
 async fn spawn_shell_session_succeeds_when_container_paused_or_restarting() {
     for state in [ContainerState::Paused, ContainerState::Restarting] {
         let (_tmp, paths) = test_paths();
+        provision_account_admission(&paths, "jk-agent-smith");
         let docker = FakeDockerClient {
             inspect_queue: std::cell::RefCell::new(VecDeque::from([state.clone()])),
             ..Default::default()
@@ -1111,4 +1181,189 @@ fn git_policy_env_pairs_encodes_only_enabled_toggles() {
             (JACKIN_GIT_DCO_ENV_NAME, "1"),
         ]
     );
+}
+
+#[tokio::test]
+async fn revoked_account_blocks_focused_attach_agent_and_shell_before_exec() {
+    use jackin_config::{AccountConfig, AccountCredential, AiProvider, AppConfig, WorkspaceConfig};
+    for (route, disable) in ["focus", "agent", "shell"]
+        .into_iter()
+        .flat_map(|route| [false, true].map(|disable| (route, disable)))
+    {
+        let (_tmp, paths) = test_paths();
+        let name = "jk-account-policy";
+        let mut config = AppConfig::default();
+        config.accounts.insert(
+            "work".into(),
+            AccountConfig {
+                enabled: true,
+                name: "Work".into(),
+                provider: AiProvider::Anthropic,
+                credential: AccountCredential::ApiKey {
+                    value: "fixture-key".into(),
+                    base_url: None,
+                    model: None,
+                },
+            },
+        );
+        config.workspaces.insert(
+            "project".into(),
+            WorkspaceConfig {
+                accounts: vec!["work".into()],
+                workdir: "/workspace".into(),
+                mounts: vec![jackin_config::MountConfig {
+                    src: paths.home_dir.display().to_string(),
+                    dst: "/workspace".into(),
+                    readonly: false,
+                    isolation: crate::isolation::MountIsolation::Shared,
+                }],
+                ..WorkspaceConfig::default()
+            },
+        );
+        write_admission_fixture(&paths, name, &config, Some("project"));
+        require_current_account_admission(&paths, name).unwrap();
+        if disable {
+            config.accounts.get_mut("work").unwrap().enabled = false;
+        } else {
+            config
+                .workspaces
+                .get_mut("project")
+                .unwrap()
+                .accounts
+                .clear();
+        }
+        std::fs::write(
+            paths.config_dir.join("config.toml"),
+            toml::to_string(&config).unwrap(),
+        )
+        .unwrap();
+        let docker = FakeDockerClient {
+            inspect_queue: std::cell::RefCell::new(VecDeque::from([ContainerState::Running])),
+            ..Default::default()
+        };
+        let mut runner = FakeRunner::default();
+        let result = match route {
+            "focus" => hardline_agent_with_focus(&paths, name, Some(7), &docker, &mut runner).await,
+            "agent" => {
+                spawn_agent_session(
+                    &paths,
+                    name,
+                    None,
+                    jackin_core::Agent::Claude,
+                    &[],
+                    false,
+                    false,
+                    &docker,
+                    &mut runner,
+                )
+                .await
+            }
+            _ => spawn_shell_session(&paths, name, &docker, &mut runner).await,
+        };
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("account policy changed")
+        );
+        assert!(
+            runner.recorded.is_empty(),
+            "{route} ran commands after account revocation"
+        );
+        assert!(
+            !docker
+                .recorded
+                .borrow()
+                .iter()
+                .any(|call| call.contains("exec") || call.contains("start")),
+            "{route} contacted capsule after account revocation"
+        );
+    }
+}
+
+#[test]
+fn missing_policy_and_changed_binding_deny_reconnect() {
+    use jackin_config::{AccountConfig, AccountCredential, AiProvider, AppConfig};
+    let (_tmp, paths) = test_paths();
+    let name = "jk-account-policy";
+    let mut config = AppConfig::default();
+    for id in ["personal", "work"] {
+        config.accounts.insert(
+            id.into(),
+            AccountConfig {
+                enabled: true,
+                name: id.into(),
+                provider: AiProvider::Anthropic,
+                credential: AccountCredential::ApiKey {
+                    value: format!("{id}-key").into(),
+                    base_url: None,
+                    model: None,
+                },
+            },
+        );
+    }
+    config
+        .account_bindings
+        .insert(jackin_core::Agent::Claude, "personal".into());
+    write_admission_fixture(&paths, name, &config, None);
+    require_current_account_admission(&paths, name).unwrap();
+    config
+        .account_bindings
+        .insert(jackin_core::Agent::Claude, "work".into());
+    std::fs::write(
+        paths.config_dir.join("config.toml"),
+        toml::to_string(&config).unwrap(),
+    )
+    .unwrap();
+    assert!(require_current_account_admission(&paths, name).is_err());
+    write_admission_fixture(&paths, name, &config, None);
+    std::fs::remove_file(paths.data_dir.join(name).join("account-admission.sha256")).unwrap();
+    assert!(require_current_account_admission(&paths, name).is_err());
+}
+
+#[tokio::test]
+async fn agent_session_rejects_account_overrides_before_container_access() {
+    let (_tmp, paths) = test_paths();
+    let docker = FakeDockerClient::default();
+    let mut runner = FakeRunner::default();
+    for name in [
+        "ANTHROPIC_API_KEY",
+        "ANTHROPIC_BASE_URL",
+        "OPENAI_BASE_URL",
+        "KIMI_API_KEY",
+        "CODEX_HOME",
+        "HOME",
+        "OPENCODE_CONFIG_CONTENT",
+    ] {
+        let error = spawn_agent_session(
+            &paths,
+            "jk-agent-smith",
+            None,
+            jackin_core::Agent::Claude,
+            &[(name.into(), "must-not-leak".into())],
+            false,
+            false,
+            &docker,
+            &mut runner,
+        )
+        .await
+        .unwrap_err();
+        assert!(error.to_string().contains("overrides are not allowed"));
+        assert!(!error.to_string().contains("must-not-leak"));
+    }
+    assert!(docker.recorded.borrow().is_empty());
+    assert!(runner.recorded.is_empty());
+}
+
+#[tokio::test]
+async fn apple_backend_reconnect_rejects_unverified_account_admission() {
+    use super::super::backend::ContainerBackend as _;
+    let (_tmp, paths) = test_paths();
+    let mut runner = FakeRunner::default();
+    let error = super::super::backend::AppleContainerBackend::production()
+        .reconnect(&paths, "jk-unverified", Some(9), &mut runner)
+        .await
+        .unwrap_err();
+    assert!(error.to_string().contains("cannot verify"));
+    assert!(runner.recorded.is_empty());
 }

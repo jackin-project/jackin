@@ -33,7 +33,6 @@ fn manifest(plugins: Vec<&str>, marketplaces: Vec<ClaudeMarketplaceConfig>) -> R
             model: None,
             marketplaces,
             plugins: plugins.into_iter().map(str::to_owned).collect(),
-            providers: BTreeMap::new(),
         }),
         codex: None,
         amp: None,

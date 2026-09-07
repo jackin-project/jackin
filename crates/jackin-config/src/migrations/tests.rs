@@ -598,3 +598,32 @@ fn prop_workspace_migration_idempotent() {
         prop_assert_eq!(&first, &second);
     });
 }
+
+#[test]
+fn account_schema_rejects_old_policies_without_rewriting_credentials() {
+    let temp = tempdir().unwrap();
+    let path = temp.path().join("config.toml");
+    let original = "version = \"v1alpha9\"\n[claude]\nauth_forward = \"sync\"\n";
+    std::fs::write(&path, original).unwrap();
+    let error = migrate_config_file_if_needed(&path).unwrap_err();
+    assert!(format!("{:#}", anyhow::Error::new(error)).contains("register credentials"));
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), original);
+}
+
+#[test]
+fn account_schema_rejects_role_policy_without_rewriting_workspace() {
+    let temp = tempdir().unwrap();
+    let path = temp.path().join("workspace.toml");
+    let original = "version = \"v1alpha8\"\nworkdir = \"/workspace\"\n[roles.builder.codex]\nauth_forward = \"sync\"\n";
+    std::fs::write(&path, original).unwrap();
+    let error = migrate_workspace_file_if_needed(&path).unwrap_err();
+    assert!(format!("{:#}", anyhow::Error::new(error)).contains("roles.builder"));
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), original);
+}
+
+#[test]
+fn account_schema_preserves_existing_registry_and_assignments() {
+    let mut doc: DocumentMut = "version = \"v1alpha8\"\nworkdir = \"/workspace\"\naccounts = [\"personal\"]\n[account_bindings]\ncodex = \"personal\"\n".parse().unwrap();
+    require_account_registry(&mut doc).unwrap();
+    assert_eq!(doc["account_bindings"]["codex"].as_str(), Some("personal"));
+}

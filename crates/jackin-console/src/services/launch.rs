@@ -152,7 +152,7 @@ pub fn resolve_committed_role_launch(
     Ok(Some(CommittedRoleLaunch { input, workspace }))
 }
 
-pub fn resolve_provider_launch_workspace(
+pub fn resolve_account_launch_workspace(
     config: &AppConfig,
     cwd: &std::path::Path,
     input: &LoadWorkspaceInput,
@@ -180,13 +180,13 @@ fn resolve_selected_workspace(
 }
 
 /// Resolved committed-agent launch: all inputs needed to either launch
-/// immediately or open the provider picker.
+/// immediately or open the account picker.
 #[derive(Debug)]
 pub struct CommittedAgentLaunch {
     pub input: LoadWorkspaceInput,
     pub role: RoleSelector,
     pub workspace: ResolvedWorkspace,
-    pub providers: Vec<jackin_protocol::Provider>,
+    pub accounts: Vec<AccountChoice>,
 }
 
 /// Resolve a committed (role + agent) launch into a workspace and available
@@ -203,39 +203,76 @@ pub fn resolve_committed_agent_launch(
         return Ok(None);
     };
     let workspace = resolve_selected_workspace(config, cwd, &choice, &role)?;
-    let workspace_name = WorkspaceName::parse(&choice.name).map_err(anyhow::Error::from)?;
-    let providers = providers_for_launch(config, &workspace_name, &role.key(), agent);
+    let workspace_name = match &input {
+        LoadWorkspaceInput::Saved(name) => Some(WorkspaceName::parse(name)?),
+        LoadWorkspaceInput::CurrentDir | LoadWorkspaceInput::Path { .. } => None,
+    };
+    let accounts = accounts_for_launch(config, workspace_name.as_ref(), agent);
     Ok(Some(CommittedAgentLaunch {
         input,
         role,
         workspace,
-        providers,
+        accounts,
     }))
 }
 
-/// Compute the provider list available for launching `agent` in `workspace_name`
-/// under `role_selector`, consulting all env-var layers (global → role → workspace
-/// → workspace-role) via `jackin_env::lookup_operator_env_raw`.
-pub fn providers_for_launch(
-    config: &AppConfig,
-    workspace_name: &WorkspaceName,
-    role_selector: &str,
-    agent: Agent,
-) -> Vec<jackin_protocol::Provider> {
-    let key = |env_var: &str| operator_key_present(config, workspace_name, role_selector, env_var);
-    jackin_protocol::Provider::available_for(agent.slug(), |provider: jackin_protocol::Provider| {
-        provider.key_env_var().is_none_or(&key)
-    })
+/// Secret-free account row used by launch and session pickers.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AccountChoice {
+    pub id: String,
+    pub name: String,
+    pub provider: jackin_config::AiProvider,
+    pub agents: Vec<Agent>,
 }
 
-fn operator_key_present(
+impl AccountChoice {
+    pub fn label(&self) -> String {
+        format!("{} · {} ({})", self.name, self.provider, self.id)
+    }
+}
+
+/// List only registered accounts authorized by the saved workspace.
+/// Ad-hoc launches have no workspace allowlist; choosing a registered account
+/// here is the explicit selection. A missing saved workspace yields no choices.
+pub fn account_choices(
     config: &AppConfig,
-    workspace_name: &WorkspaceName,
-    role_selector: &str,
-    env_var: &str,
-) -> bool {
-    jackin_env::lookup_operator_env_raw(config, Some(role_selector), Some(workspace_name), env_var)
-        .is_some()
+    workspace: Option<&WorkspaceName>,
+) -> Vec<AccountChoice> {
+    config
+        .accounts
+        .iter()
+        .filter(|(id, account)| {
+            account.enabled
+                && workspace.is_none_or(|workspace| {
+                    config
+                        .workspaces
+                        .get(workspace.as_str())
+                        .is_some_and(|workspace| workspace.accounts.contains(id))
+                })
+        })
+        .map(|(id, account)| AccountChoice {
+            id: id.clone(),
+            name: account.name.clone(),
+            provider: account.provider,
+            agents: Agent::ALL
+                .iter()
+                .copied()
+                .filter(|agent| account.supports_agent(*agent))
+                .collect(),
+        })
+        .collect()
+}
+
+/// Filter authorized registered accounts by coding-agent compatibility.
+pub fn accounts_for_launch(
+    config: &AppConfig,
+    workspace: Option<&WorkspaceName>,
+    agent: Agent,
+) -> Vec<AccountChoice> {
+    account_choices(config, workspace)
+        .into_iter()
+        .filter(|account| account.agents.contains(&agent))
+        .collect()
 }
 
 #[cfg(test)]

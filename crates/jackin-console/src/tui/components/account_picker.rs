@@ -1,8 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Provider picker component: keyboard-driven list for selecting a Claude API
-//! provider (e.g. direct Anthropic or Z.AI redirect).
+//! Account picker: choose a registered account without carrying credentials.
 //!
 //! Not responsible for: rendering the list widget (see caller view modules)
 //! or persisting the selection to config.
@@ -10,7 +9,7 @@
 use crossterm::event::{KeyCode, KeyEvent};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ProviderPickerState<C, A, P> {
+pub struct AccountPickerState<C, A, P> {
     pub context: C,
     pub agent: A,
     // Private so the `selected < providers.len()` invariant holds: `selected`
@@ -21,7 +20,7 @@ pub struct ProviderPickerState<C, A, P> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ProviderPickerKey {
+pub enum AccountPickerKey {
     Up,
     Down,
     Commit,
@@ -29,7 +28,7 @@ pub enum ProviderPickerKey {
     Other,
 }
 
-impl From<KeyEvent> for ProviderPickerKey {
+impl From<KeyEvent> for AccountPickerKey {
     fn from(key: KeyEvent) -> Self {
         match key.code {
             KeyCode::Up | KeyCode::Char('k') => Self::Up,
@@ -42,13 +41,13 @@ impl From<KeyEvent> for ProviderPickerKey {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ProviderPickerOutcome<C, A, P> {
+pub enum AccountPickerOutcome<C, A, P> {
     Continue,
     Commit { context: C, agent: A, provider: P },
     Cancel,
 }
 
-impl<C, A, P> ProviderPickerState<C, A, P> {
+impl<C, A, P> AccountPickerState<C, A, P> {
     pub const fn new(context: C, agent: A, providers: Vec<P>) -> Self {
         Self {
             context,
@@ -81,39 +80,39 @@ impl<C, A, P> ProviderPickerState<C, A, P> {
     #[must_use]
     pub fn selected_provider(&self) -> Option<P>
     where
-        P: Copy,
+        P: Clone,
     {
-        self.providers.get(self.selected).copied()
+        self.providers.get(self.selected).cloned()
     }
 
     #[must_use]
-    pub fn handle_key(&mut self, key: ProviderPickerKey) -> ProviderPickerOutcome<C, A, P>
+    pub fn handle_key(&mut self, key: AccountPickerKey) -> AccountPickerOutcome<C, A, P>
     where
         C: Clone,
         A: Copy,
-        P: Copy,
+        P: Clone,
     {
         match key {
-            ProviderPickerKey::Up => {
+            AccountPickerKey::Up => {
                 self.move_up();
-                ProviderPickerOutcome::Continue
+                AccountPickerOutcome::Continue
             }
-            ProviderPickerKey::Down => {
+            AccountPickerKey::Down => {
                 self.move_down();
-                ProviderPickerOutcome::Continue
+                AccountPickerOutcome::Continue
             }
-            ProviderPickerKey::Commit => {
+            AccountPickerKey::Commit => {
                 self.selected_provider()
-                    .map_or(ProviderPickerOutcome::Continue, |provider| {
-                        ProviderPickerOutcome::Commit {
+                    .map_or(AccountPickerOutcome::Continue, |provider| {
+                        AccountPickerOutcome::Commit {
                             context: self.context.clone(),
                             agent: self.agent,
                             provider,
                         }
                     })
             }
-            ProviderPickerKey::Cancel => ProviderPickerOutcome::Cancel,
-            ProviderPickerKey::Other => ProviderPickerOutcome::Continue,
+            AccountPickerKey::Cancel => AccountPickerOutcome::Cancel,
+            AccountPickerKey::Other => AccountPickerOutcome::Continue,
         }
     }
 }

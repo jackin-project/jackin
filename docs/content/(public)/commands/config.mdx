@@ -74,54 +74,10 @@ jackin config mount remove gradle-cache
 jackin config mount remove secrets --scope "chainargos/*"
 ```
 
-## `config auth`
+## Agent accounts
 
-Manage **global** agent auth-forwarding modes. See the
-[Authentication Forwarding](/guides/authentication) guide for the full
-layered model. Workspace and per (workspace × role × agent) overrides
-are configured through the **Auth** tab in the `jackin console`
-workspace editor (or by hand-editing TOML).
-
-### `config auth set`
-
-```bash
-jackin config auth set <MODE>
-```
-
-Set the global auth-forwarding mode. Without `--agent`, this targets
-`Claude Code`; use `--agent codex`, `--agent amp`, `--agent kimi`, or `--agent opencode`
-for the other built-in agents. GitHub CLI auth is managed in `jackin console` today;
-the dedicated `--target github` CLI is still planned.
-
-| Mode | Description |
-|---|---|
-| `sync` | Overwrite from host on each launch when host auth exists; preserve container auth when absent (default) |
-| `api_key` | Inject the selected agent's API-key env var from your operator env vars |
-| `oauth_token` | Claude only: inject `CLAUDE_CODE_OAUTH_TOKEN` from your operator env vars |
-| `ignore` | Never forward; revoke any previously forwarded credentials |
-
-```bash
-jackin config auth set sync
-jackin config auth set ignore
-jackin config auth set oauth_token
-jackin config auth set api_key
-jackin config auth set api_key --agent codex
-jackin config auth set sync --agent amp
-jackin config auth set sync --agent kimi
-```
-
-### `config auth show`
-
-```bash
-jackin config auth show
-```
-
-Show the current global auth-forwarding modes for Claude Code, Codex,
-Amp, Kimi, and OpenCode.
-
-```bash
-jackin config auth show
-```
+Agent credentials are managed with `jackin account` and `jackin workspace account`.
+The old `config auth` policy command has been removed. See [Agent Accounts](/guides/authentication/agents/) for discovery, profile folders, provider keys, and workspace authorization.
 
 ## `config env`
 

@@ -82,7 +82,7 @@ pub(crate) mod input {
         jackin_core::RoleSelector,
         jackin_core::Agent,
         crate::console::ConsoleInstanceAction,
-        jackin_protocol::Provider,
+        Option<String>,
     >;
 
     #[cfg(test)]
@@ -103,8 +103,6 @@ pub mod state {
     // the crate's public API.
     #[cfg(test)]
     use jackin_config::AppConfig;
-    #[cfg(test)]
-    use jackin_console::tui::auth::AuthKind;
     #[cfg(test)]
     use jackin_core::EnvValue;
 

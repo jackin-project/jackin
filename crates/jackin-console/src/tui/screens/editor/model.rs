@@ -43,7 +43,7 @@ impl EditorTab {
             Self::Mounts => "Mounts",
             Self::Roles => "Roles",
             Self::Secrets => "Environments",
-            Self::Auth => "Auth",
+            Self::Auth => "Accounts",
         }
     }
 }
@@ -70,14 +70,11 @@ pub enum RoleHeaderExpansionPlan {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EditorRoleHeaderExpansionKeyPlan {
     Secrets(RoleHeaderExpansionPlan),
-    Auth(RoleHeaderExpansionPlan),
     NotRoleHeaderTab,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AuthEnterPlan {
-    AddRoleOverride,
-    ToggleRole(String),
     OpenForm,
     Noop,
 }
@@ -96,8 +93,6 @@ pub enum EditorEnterKeyPlan {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EditorEscapeKeyPlan {
     FocusTabBar,
-    FocusTabBarAndClearAuthKind,
-    ClearAuthKind,
     OpenSaveDiscard,
     ReloadFromConfig,
 }
@@ -159,7 +154,6 @@ pub enum EditorTopLevelKeyPlan {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EditorImmediateActionKeyPlan {
-    EnterAuthKind(crate::tui::auth::AuthKind),
     ToggleGeneralSelected,
     ToggleMountReadonlySelected,
     ToggleSecretMask { scope: SecretsScopeTag, key: String },
@@ -193,7 +187,6 @@ pub enum EditorSecretsActionKeyPlan {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EditorAuthActionKeyPlan {
-    OpenRolePicker,
     ClearFocusedRow,
     NotAuthAction,
 }
@@ -252,8 +245,6 @@ pub struct EditorState<
     Modal,
     SaveFlow,
     EnvValue,
-    AuthFormTarget,
-    PendingTokenGenerate,
     PendingRoleLoad,
     PendingDriftCheck,
     PendingIsolationCleanup,
@@ -278,15 +269,12 @@ pub struct EditorState<
     /// Secrets tab keys whose value is currently unmasked.
     pub unmasked_rows: BTreeSet<(SecretsScopeTag, String)>,
     pub secrets_expanded: BTreeSet<String>,
-    pub auth_expanded: BTreeSet<String>,
-    pub auth_selected_kind: Option<crate::tui::auth::AuthKind>,
     pub _env_value: PhantomData<fn() -> EnvValue>,
     pub workspace_mounts_scroll: termrock::widgets::ScrollAreaState,
     pub tab_scroll: termrock::widgets::ScrollAreaState,
     pub tab_content_width: usize,
     pub tab_content_height: usize,
-    pub generating_token_target: Option<AuthFormTarget>,
-    pub pending_token_generate: Option<PendingTokenGenerate>,
+
     pub pending_role_load: Option<PendingRoleLoad>,
     pub pending_drift_check: Option<PendingDriftCheck>,
     pub pending_isolation_cleanup: Option<PendingIsolationCleanup>,
@@ -298,8 +286,6 @@ impl<
     Modal,
     SaveFlow,
     EnvValue,
-    AuthFormTarget,
-    PendingTokenGenerate,
     PendingRoleLoad,
     PendingDriftCheck,
     PendingIsolationCleanup,
@@ -310,8 +296,6 @@ impl<
         Modal,
         SaveFlow,
         EnvValue,
-        AuthFormTarget,
-        PendingTokenGenerate,
         PendingRoleLoad,
         PendingDriftCheck,
         PendingIsolationCleanup,
@@ -394,26 +378,20 @@ pub enum SecretsEnterPlan {
 /// Row-shape model for the Auth tab.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AuthRow<K> {
-    /// Root picker row: choose which auth kind to manage.
-    AuthKindRow { kind: K },
-    /// Selected auth kind's workspace-level mode row.
-    WorkspaceMode { kind: K },
-    /// Selected auth kind's workspace credential source row.
-    WorkspaceSource { kind: K },
-    /// Selected auth kind's workspace sync source-folder row.
-    WorkspaceSourceFolder { kind: K },
-    /// Collapsible role override block.
-    RoleHeader { role: String, expanded: bool },
-    /// Mode row inside an expanded `RoleHeader`.
-    RoleMode { role: String, kind: K },
-    /// Credential source row inside an expanded `RoleHeader`.
-    RoleSource { role: String, kind: K },
-    /// Sync source-folder row inside an expanded `RoleHeader`.
-    RoleSourceFolder { role: String, kind: K },
-    /// `+ Override for a role` sentinel.
-    AddSentinel { eligible: usize },
-    /// Visual spacer.
-    Spacer,
+    Account {
+        id: String,
+    },
+    Binding {
+        agent: jackin_core::Agent,
+        role: Option<String>,
+    },
+    WorkspaceMode {
+        kind: K,
+    },
+    RoleMode {
+        role: String,
+        kind: K,
+    },
 }
 
 #[derive(Debug, Clone)]

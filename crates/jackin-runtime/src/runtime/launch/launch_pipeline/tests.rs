@@ -242,7 +242,6 @@ agents = ["codex"]
             resolved_env: ResolvedEnv { vars: vec![] },
             rebuild: false,
             restore_pinned_sha: None,
-            operator_env: BTreeMap::new(),
             git_pull_join: None,
         }
     }

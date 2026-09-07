@@ -160,6 +160,48 @@ impl OperatorEnvKeyResolution {
     }
 }
 
+/// Resolve one explicitly selected account declaration without operator-layer filtering.
+/// Failures are categorized without retaining credential values in diagnostics.
+#[must_use]
+pub fn resolve_account_declaration(key: &str, declaration: &EnvValue) -> OperatorEnvKeyResolution {
+    resolve_account_declaration_with(key, declaration, &OpCli::new_launch_env(), |name| {
+        std::env::var(name)
+    })
+}
+
+/// Injected account-declaration resolution for protected sources and host references.
+#[must_use]
+pub fn resolve_account_declaration_with<R, H>(
+    key: &str,
+    declaration: &EnvValue,
+    runner: &R,
+    host_env: H,
+) -> OperatorEnvKeyResolution
+where
+    R: OpRunner + ?Sized,
+    H: Fn(&str) -> Result<String, std::env::VarError> + Send + Sync,
+{
+    let protected = matches!(declaration, EnvValue::OpRef(_));
+    let (status, value) = if declaration.is_on_demand() {
+        (OperatorEnvKeyStatus::InteractionRequired, None)
+    } else if protected && runner.probe().is_err() {
+        (OperatorEnvKeyStatus::DeniedOrUnavailable, None)
+    } else {
+        match resolve_env_value("selected account", key, declaration, runner, host_env) {
+            Ok(value) if value.trim().is_empty() => (OperatorEnvKeyStatus::Malformed, None),
+            Ok(value) => (OperatorEnvKeyStatus::Resolved, Some(value)),
+            Err(_) if protected => (OperatorEnvKeyStatus::DeniedOrUnavailable, None),
+            Err(_) => (OperatorEnvKeyStatus::Missing, None),
+        }
+    };
+    OperatorEnvKeyResolution {
+        key: key.to_owned(),
+        status,
+        value,
+        detail: None,
+    }
+}
+
 struct OperatorEnvResolutionBatch {
     resolutions: Vec<OperatorEnvKeyResolution>,
     probe_error: Option<anyhow::Error>,
@@ -468,6 +510,8 @@ fn build_attributed_layers(
         }
     }
 
+    // Account credentials are admitted only by the selected account resolver.
+    attributed.retain(|key, _| !crate::is_account_env(key));
     attributed
 }
 

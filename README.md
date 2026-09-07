@@ -43,12 +43,23 @@ That pulls the base image, builds the agent container, mounts your project, and 
 
 See the [Quick Start guide](https://jackin.tailrocks.com/getting-started/quickstart/) for the full walkthrough, and [`jackin console`](https://jackin.tailrocks.com/commands/console/) for the TUI reference.
 
+Register an additional login and grant it to a saved workspace:
+
+```sh
+jackin account add claude-work --agent claude --directory ~/.claude-work
+jackin workspace account assign my-app claude-work
+jackin workspace account select my-app claude-work --agent claude
+```
+
+First start discovers default host logins and provider API-key references. Workspaces explicitly choose which accounts they may use. See [Account commands](https://jackin.tailrocks.com/commands/account/).
+
 ## What It Does
 
 - **Isolates each agent** in its own Docker container with Docker-in-Docker enabled
 - **Gives agents full autonomy** inside the container boundary (whatever full-speed mode the runtime ships — Claude's `--dangerously-skip-permissions`, Codex's YOLO, etc.)
 - **Separates tooling from file access** — roles define the environment, workspaces define which files are visible
 - **Supports multiple agents simultaneously** — different tool profiles against the same or different projects
+- **Manages named accounts** — discover host logins, add profile folders or API keys, and authorize accounts per workspace
 - **Persists agent state** between sessions (conversation history, GitHub CLI auth, plugins)
 
 Learn more: [Why jackin❯?](https://jackin.tailrocks.com/getting-started/why/) · [Core Concepts](https://jackin.tailrocks.com/getting-started/concepts/) · [Security Model](https://jackin.tailrocks.com/guides/security-model/) · [Comparison with Alternatives](https://jackin.tailrocks.com/guides/comparison/)

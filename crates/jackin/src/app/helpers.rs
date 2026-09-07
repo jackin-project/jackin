@@ -55,6 +55,38 @@ pub(super) fn resolve_instance_reference(
     }
 }
 
+#[derive(tabled::Tabled)]
+struct MountRow {
+    #[tabled(rename = "Mount")]
+    mount: String,
+    #[tabled(rename = "Mode")]
+    mode: String,
+    #[tabled(rename = "Isolation")]
+    isolation: String,
+    #[tabled(rename = "Type")]
+    kind: String,
+}
+#[derive(tabled::Tabled)]
+struct GlobalMountRowWithScope {
+    #[tabled(rename = "Scope")]
+    scope: String,
+    #[tabled(rename = "Name")]
+    name: String,
+    #[tabled(rename = "Mount")]
+    mount: String,
+    #[tabled(rename = "Mode")]
+    mode: String,
+}
+#[derive(tabled::Tabled)]
+struct GlobalMountRow {
+    #[tabled(rename = "Name")]
+    name: String,
+    #[tabled(rename = "Mount")]
+    mount: String,
+    #[tabled(rename = "Mode")]
+    mode: String,
+}
+
 /// Render the `workspace show <name>` output as a string. Includes the info
 /// table (name/workdir/allowed/default-role), and, when there are mounts, a
 /// trailing mounts table with one row per mount. The mounts table renders the
@@ -66,40 +98,8 @@ pub(super) fn render_workspace_show(
     workspace: &WorkspaceConfig,
 ) -> String {
     use std::fmt::Write as _;
+    use tabled::Table;
     use tabled::settings::Style;
-    use tabled::{Table, Tabled};
-
-    #[derive(Tabled)]
-    struct MountRow {
-        #[tabled(rename = "Mount")]
-        mount: String,
-        #[tabled(rename = "Mode")]
-        mode: String,
-        #[tabled(rename = "Isolation")]
-        isolation: String,
-        #[tabled(rename = "Type")]
-        kind: String,
-    }
-    #[derive(Tabled)]
-    struct GlobalMountRowWithScope {
-        #[tabled(rename = "Scope")]
-        scope: String,
-        #[tabled(rename = "Name")]
-        name: String,
-        #[tabled(rename = "Mount")]
-        mount: String,
-        #[tabled(rename = "Mode")]
-        mode: String,
-    }
-    #[derive(Tabled)]
-    struct GlobalMountRow {
-        #[tabled(rename = "Name")]
-        name: String,
-        #[tabled(rename = "Mount")]
-        mount: String,
-        #[tabled(rename = "Mode")]
-        mode: String,
-    }
 
     let allowed = if workspace.allowed_roles.is_empty() {
         "any role".to_owned()
@@ -109,6 +109,17 @@ pub(super) fn render_workspace_show(
     let default_role = workspace.default_role.as_deref().unwrap_or("none");
     let agent = workspace.resolved_agent().slug();
 
+    let accounts = if workspace.accounts.is_empty() {
+        "none".to_owned()
+    } else {
+        workspace.accounts.join(", ")
+    };
+    let bindings = workspace
+        .account_bindings
+        .iter()
+        .map(|(agent, id)| format!("{agent}: {id}"))
+        .collect::<Vec<_>>()
+        .join(", ");
     let short_workdir = jackin_core::shorten_home(&workspace.workdir);
     let mut info: Vec<(&str, &str)> = vec![
         ("Name", name),
@@ -116,6 +127,15 @@ pub(super) fn render_workspace_show(
         ("Allowed Roles", allowed.as_str()),
         ("Default Role", default_role),
         ("Agent", agent),
+        ("Accounts", &accounts),
+        (
+            "Account Bindings",
+            if bindings.is_empty() {
+                "automatic"
+            } else {
+                &bindings
+            },
+        ),
     ];
     // Only surface keep_awake when opted in — disabled is the default and
     // shouldn't add noise. When enabled, the operator sees it here so a

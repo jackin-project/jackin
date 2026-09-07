@@ -10,22 +10,78 @@ use jackin_protocol;
 
 const CAPSULE_LITERAL_SOURCE: &str = "literal";
 
+pub(crate) fn account_auth_selections(
+    config: &jackin_config::AppConfig,
+    workspace_name: Option<&jackin_core::WorkspaceName>,
+    role_key: &str,
+    agents: &[jackin_core::Agent],
+) -> anyhow::Result<
+    std::collections::BTreeMap<
+        jackin_core::Agent,
+        (jackin_config::AuthForwardMode, Option<std::path::PathBuf>),
+    >,
+> {
+    agents
+        .iter()
+        .copied()
+        .map(|agent| {
+            let account = jackin_config::resolve_account(config, agent, workspace_name, role_key)?;
+            let selection =
+                account.map_or((jackin_config::AuthForwardMode::Ignore, None), |account| {
+                    (
+                        account.auth_mode(),
+                        account.source_directory().map(Path::to_path_buf),
+                    )
+                });
+            Ok((agent, selection))
+        })
+        .collect()
+}
+
 pub(crate) fn capsule_auth_modes(
     config: &jackin_config::AppConfig,
     workspace_name: Option<&jackin_core::WorkspaceName>,
     role_key: &str,
     manifest: &jackin_manifest::RoleManifest,
-) -> std::collections::BTreeMap<String, String> {
-    manifest
-        .supported_agents()
-        .into_iter()
-        .map(|agent| {
-            (
-                agent.slug().to_owned(),
-                jackin_config::resolve_mode(config, agent, workspace_name, role_key).to_string(),
-            )
-        })
-        .collect()
+) -> anyhow::Result<std::collections::BTreeMap<String, String>> {
+    Ok(account_auth_selections(
+        config,
+        workspace_name,
+        role_key,
+        &manifest.supported_agents(),
+    )?
+    .into_iter()
+    .map(|(agent, (mode, _))| (agent.slug().to_owned(), mode.to_string()))
+    .collect())
+}
+
+/// Account models must override role defaults: a role's native-provider model
+/// may be invalid for the selected account's provider. Explicit launch options
+/// are applied afterwards by the coordinator.
+pub(crate) fn apply_account_models(
+    launch: &mut jackin_protocol::CapsuleConfig,
+    config: &jackin_config::AppConfig,
+    workspace: Option<&jackin_core::WorkspaceName>,
+    role: &str,
+    agents: &[jackin_core::Agent],
+) -> anyhow::Result<()> {
+    for &agent in agents {
+        let Some(account) = jackin_config::resolve_account(config, agent, workspace, role)? else {
+            continue;
+        };
+        if let jackin_config::AccountCredential::ApiKey {
+            model: Some(model), ..
+        } = &account.credential
+        {
+            let model = if agent == jackin_core::Agent::Opencode {
+                super::account_config::opencode_model(account.provider, model)?
+            } else {
+                model.clone()
+            };
+            launch.models.insert(agent.slug().to_owned(), model);
+        }
+    }
+    Ok(())
 }
 
 /// Comma-join the on-demand credential binding names for the
@@ -61,26 +117,16 @@ pub(crate) fn capsule_config(
     selector: &jackin_core::RoleSelector,
     workdir: &str,
     manifest: &jackin_manifest::RoleManifest,
-    initial_provider: Option<jackin_protocol::InitialProvider>,
     dirty_exit_policy: &str,
     isolated_worktrees: Vec<String>,
 ) -> jackin_protocol::CapsuleConfig {
     let mut agents = Vec::new();
     let mut models = std::collections::BTreeMap::new();
-    let mut provider_models = std::collections::BTreeMap::new();
     for agent in manifest.supported_agents() {
         agents.push(agent.slug().to_owned());
         let model = manifest.agent_model(agent);
         if let Some(model) = model {
             models.insert(agent.slug().to_owned(), model.to_owned());
-        }
-        let per_provider = manifest.agent_provider_models(agent);
-        if !per_provider.is_empty() {
-            let inner = per_provider
-                .into_iter()
-                .map(|(id, model)| (id.to_owned(), model.to_owned()))
-                .collect();
-            provider_models.insert(agent.slug().to_owned(), inner);
         }
     }
     jackin_protocol::CapsuleConfig {
@@ -89,8 +135,6 @@ pub(crate) fn capsule_config(
         agents,
         models,
         auth_modes: std::collections::BTreeMap::new(),
-        provider_models,
-        initial_provider,
         claude_marketplaces: Vec::new(),
         claude_plugins: Vec::new(),
         // Populated by the launch pipeline once the operator env is known; the

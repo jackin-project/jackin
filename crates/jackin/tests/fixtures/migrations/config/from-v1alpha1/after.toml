@@ -1,8 +1,7 @@
-version = "v1alpha9"
 # SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 # SPDX-License-Identifier: Apache-2.0
 
-data_dir = "/tmp/jackin"
+version = "v1alpha10"
 
 [roles.agent-smith]
 git = "https://github.com/jackin-project/jackin-agent-smith.git"

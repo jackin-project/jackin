@@ -846,6 +846,8 @@ pub fn ensure_usage_broker_with_executor(
     Ok(client)
 }
 
+mod waits;
+
 fn serve(
     listener: UnixListener,
     coordinator: Arc<UsageCoordinator>,
@@ -858,12 +860,19 @@ fn serve(
     let (connections, receiver) = mpsc::sync_channel(BROKER_CONNECTION_QUEUE);
     let receiver = Arc::new(Mutex::new(receiver));
     let build_id = Arc::<str>::from(build_id);
+    let wait_pool = waits::WaitPool::new(
+        Arc::clone(&coordinator),
+        Arc::clone(&build_id),
+        Arc::clone(&projection),
+    );
+    let wait_pool = Arc::new(wait_pool);
     let mut workers = Vec::with_capacity(BROKER_CONNECTION_WORKERS);
     for index in 0..BROKER_CONNECTION_WORKERS {
         let receiver = Arc::clone(&receiver);
         let coordinator = Arc::clone(&coordinator);
         let build_id = Arc::clone(&build_id);
         let projection = Arc::clone(&projection);
+        let wait_pool = Arc::clone(&wait_pool);
         let worker = jackin_telemetry::spawn::thread_joined_named(
             format!("usage-broker-connection-{index}"),
             move || loop {
@@ -876,7 +885,7 @@ fn serve(
                 let Ok(stream) = stream else {
                     return;
                 };
-                handle_stream(stream, &coordinator, &build_id, &projection);
+                handle_stream(stream, &coordinator, &build_id, &projection, &wait_pool);
             },
         );
         match worker {
@@ -944,8 +953,13 @@ fn handle_stream(
     coordinator: &UsageCoordinator,
     build_id: &str,
     projection: &Arc<Mutex<UsageProjectionV1>>,
+    waits: &waits::WaitPool,
 ) {
-    let response = match read_frame::<UsageBrokerRequest>(&mut stream) {
+    let response = match read_request(&mut stream) {
+        Ok(request) if waits::is_wait(&request.operation) => {
+            waits.enqueue(stream, request);
+            return;
+        }
         Ok(request) => dispatch(coordinator, request, build_id, projection),
         Err(error) => UsageBrokerResponse::Error { error },
     };
@@ -957,8 +971,53 @@ fn write_response(stream: &mut UnixStream, response: UsageBrokerResponse) {
         && bytes.len() < USAGE_BROKER_MAX_FRAME_BYTES
     {
         bytes.push(b'\n');
-        let _write_result = stream.write_all(&bytes);
+        write_with_deadline(stream, &bytes, Duration::from_secs(1));
     }
+}
+
+fn write_with_deadline(stream: &mut UnixStream, mut bytes: &[u8], timeout: Duration) {
+    if stream.set_nonblocking(true).is_err() {
+        return;
+    }
+    let deadline = Instant::now() + timeout;
+    while !bytes.is_empty() && Instant::now() < deadline {
+        match stream.write(bytes) {
+            Ok(0) => return,
+            Ok(written) => bytes = &bytes[written..],
+            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                std::thread::park_timeout(Duration::from_millis(1));
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {}
+            Err(_) => return,
+        }
+    }
+}
+
+fn read_request(stream: &mut UnixStream) -> Result<UsageBrokerRequest, UsageCoordinationError> {
+    stream.set_nonblocking(true).map_err(|_| unavailable())?;
+    let deadline = Instant::now() + Duration::from_secs(2);
+    let mut bytes = Vec::new();
+    let mut chunk = [0_u8; 1024];
+    while Instant::now() < deadline {
+        match stream.read(&mut chunk) {
+            Ok(0) => return Err(protocol_error()),
+            Ok(read) => {
+                bytes.extend_from_slice(&chunk[..read]);
+                if bytes.len() > USAGE_BROKER_MAX_FRAME_BYTES {
+                    return Err(protocol_error());
+                }
+                if bytes.last() == Some(&b'\n') {
+                    return serde_json::from_slice(&bytes).map_err(|_| protocol_error());
+                }
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                std::thread::park_timeout(Duration::from_millis(1));
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {}
+            Err(_) => return Err(unavailable()),
+        }
+    }
+    Err(unavailable())
 }
 
 fn dispatch(

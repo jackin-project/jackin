@@ -216,28 +216,6 @@ impl Multiplexer {
                 self.note_agent_started();
                 Ok(id)
             }
-            SpawnRequest::AgentWithProvider {
-                slug,
-                provider_label,
-            } => {
-                if let Err(reason) =
-                    crate::session::validate_agent_slug(&slug, &self.launch_env.available_agents)
-                {
-                    anyhow::bail!("rejected agent {slug:?}: {reason}");
-                }
-                // Token is resolved container-side (not on the wire) from the
-                // per-provider API key env; the host only sends the label.
-                let resolved_env = if let Some(provider) =
-                    jackin_protocol::Provider::from_label(&provider_label)
-                {
-                    self.provider_spawn_env(&slug, provider)
-                } else {
-                    env_overrides.to_vec()
-                };
-                let id = self.spawn_session(Some(slug), &resolved_env, Some(&provider_label))?;
-                self.note_agent_started();
-                Ok(id)
-            }
             SpawnRequest::Shell => self.spawn_session(None, env_overrides, None),
         }
     }
@@ -262,17 +240,21 @@ impl Multiplexer {
         match agent {
             Some(slug) => {
                 let label = crate::tui::model::visible_agent_label(Some(slug), provider_label);
-                SessionLaunch {
-                    label,
-                    cmd: build_agent_command(
-                        slug,
-                        self.launch_model(slug, provider_label),
-                        self.launch_env.launch_config.auth_mode_for_agent(slug),
-                        env_passthrough,
-                        cwd,
-                        codename,
-                    ),
-                }
+                let mut cmd = build_agent_command(
+                    slug,
+                    self.model_for_agent(slug),
+                    self.launch_env.launch_config.auth_mode_for_agent(slug),
+                    env_passthrough,
+                    cwd,
+                    codename,
+                );
+                crate::session::apply_account_env(
+                    &mut cmd,
+                    slug,
+                    self.launch_env.launch_config.auth_mode_for_agent(slug),
+                    &self.launch_env.agent_credentials,
+                );
+                SessionLaunch { label, cmd }
             }
             None => SessionLaunch {
                 label: crate::tui::model::visible_agent_label(None, None),
@@ -324,30 +306,6 @@ impl Multiplexer {
             PickerIntent::NewTab => self.spawn_session(agent.clone(), &[], None).map(|_| ()),
             PickerIntent::Split(direction) => {
                 self.split_focused_into(direction, agent.clone(), &[], None)
-            }
-        };
-        if let Err(err) = result {
-            let agent_label = spawn_failure_agent_label(agent.as_deref());
-            let _error = jackin_telemetry::record_error(
-                jackin_telemetry::schema::enums::ErrorType::LaunchFailed,
-            );
-            self.open_spawn_failure_dialog(spawn_failure_message(agent_label, &err));
-        }
-    }
-
-    pub(super) fn dispatch_spawn_intent_with_provider(
-        &mut self,
-        agent: Option<String>,
-        intent: PickerIntent,
-        env_overrides: &[(String, String)],
-        provider_label: Option<&str>,
-    ) {
-        let result: Result<()> = match intent {
-            PickerIntent::NewTab => self
-                .spawn_session(agent.clone(), env_overrides, provider_label)
-                .map(|_| ()),
-            PickerIntent::Split(direction) => {
-                self.split_focused_into(direction, agent.clone(), env_overrides, provider_label)
             }
         };
         if let Err(err) = result {

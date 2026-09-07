@@ -5,7 +5,7 @@
 //! coordinator. `box_rect` stays in coordinator per plan.
 
 use super::hint::{
-    confirm_hint, export_file_hint, info_dialog_hint, palette_hint, picker_hint, provider_hint,
+    confirm_hint, export_file_hint, flat_picker_hint, info_dialog_hint, palette_hint, picker_hint,
     read_only_hint, rename_hint, usage_empty_hint, usage_hint,
 };
 use super::{Dialog, GithubContextView};
@@ -147,7 +147,6 @@ impl Dialog {
             | Self::AgentPicker { .. }
             | Self::CloseTargetPicker { .. }
             | Self::ExecPicker(_) => picker_hint(),
-            Self::ProviderPicker { .. } => provider_hint(),
             Self::RenameTab { .. } => rename_hint(),
             Self::ExportFile { .. } => export_file_hint(),
             Self::ContainerInfo { .. } => info_dialog_hint("copy value", axes),
@@ -182,7 +181,7 @@ impl Dialog {
             // Inspect is a read-only scroll list. Reuse the shared no-filter
             // "select" hint and read-only hint rather than the picker's
             // "type filter" / "launch" wording.
-            Self::ExitDirty { .. } => provider_hint(),
+            Self::ExitDirty { .. } => flat_picker_hint(),
             Self::ExitInspect { .. } => read_only_hint(),
         }
     }

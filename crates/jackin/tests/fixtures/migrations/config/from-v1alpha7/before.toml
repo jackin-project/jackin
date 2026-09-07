@@ -2,4 +2,3 @@
 # SPDX-License-Identifier: Apache-2.0
 
 version = "v1alpha7"
-data_dir = "/tmp/jackin"

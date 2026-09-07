@@ -8,18 +8,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 
-use crate::tui::components::editor_rows::{AuthSourceFolderDisplay, AuthSourceFolderKind};
+use crate::tui::auth_config::{env_display_map, env_display_map_without_auth_credentials};
 use crate::tui::screens::editor::model::{EditorMode, EditorState};
 use crate::tui::screens::settings::model::{
     GlobalMountsState, SettingsAuthState, SettingsEnvState, SettingsState, SettingsTrustState,
-};
-use crate::tui::{
-    auth::{AuthKind, AuthMode, auth_mode_supports_source_folder},
-    auth_config::{
-        auth_kind_agent, editor_source_folder_display, env_display_map,
-        env_display_map_without_auth_credentials, panel_auth_source_value, resolve_panel_mode,
-        role_auth_mode_and_credential,
-    },
 };
 
 /// Toggleable workspace settings captured at edit time. Bundled so the parent
@@ -71,8 +63,6 @@ pub fn workspace_create_display_name(pending_name: Option<&str>) -> String {
 pub fn workspace_save_preview<
     Modal,
     SaveFlow,
-    AuthFormTarget,
-    PendingTokenGenerate,
     PendingRoleLoad,
     PendingDriftCheck,
     PendingIsolationCleanup,
@@ -83,8 +73,6 @@ pub fn workspace_save_preview<
         Modal,
         SaveFlow,
         jackin_config::EnvValue,
-        AuthFormTarget,
-        PendingTokenGenerate,
         PendingRoleLoad,
         PendingDriftCheck,
         PendingIsolationCleanup,
@@ -144,8 +132,6 @@ pub fn workspace_save_preview<
 pub fn build_workspace_save_lines<
     Modal,
     SaveFlow,
-    AuthFormTarget,
-    PendingTokenGenerate,
     PendingRoleLoad,
     PendingDriftCheck,
     PendingIsolationCleanup,
@@ -156,8 +142,6 @@ pub fn build_workspace_save_lines<
         Modal,
         SaveFlow,
         jackin_config::EnvValue,
-        AuthFormTarget,
-        PendingTokenGenerate,
         PendingRoleLoad,
         PendingDriftCheck,
         PendingIsolationCleanup,
@@ -172,8 +156,6 @@ pub fn build_workspace_save_lines<
 fn workspace_mount_diffs_preview<
     Modal,
     SaveFlow,
-    AuthFormTarget,
-    PendingTokenGenerate,
     PendingRoleLoad,
     PendingDriftCheck,
     PendingIsolationCleanup,
@@ -184,8 +166,6 @@ fn workspace_mount_diffs_preview<
         Modal,
         SaveFlow,
         jackin_config::EnvValue,
-        AuthFormTarget,
-        PendingTokenGenerate,
         PendingRoleLoad,
         PendingDriftCheck,
         PendingIsolationCleanup,
@@ -272,34 +252,6 @@ pub fn workspace_auth_change(
 }
 
 #[must_use]
-pub fn credential_presence(
-    config: &jackin_config::AppConfig,
-    workspace_name: &str,
-    role: &str,
-    kind: AuthKind,
-    mode: AuthMode,
-) -> bool {
-    let Some(env_name) = kind.required_env_var(mode) else {
-        return false;
-    };
-    panel_auth_source_value(config, workspace_name, role, env_name, kind).is_some()
-}
-
-#[must_use]
-pub const fn credential_label(present: bool) -> &'static str {
-    if present { "(set)" } else { "(unset)" }
-}
-
-#[must_use]
-pub fn source_folder_text(display: &AuthSourceFolderDisplay) -> String {
-    match display.kind {
-        AuthSourceFolderKind::Default => format!("default: {}", display.path),
-        AuthSourceFolderKind::Explicit => display.path.clone(),
-        AuthSourceFolderKind::Inherited => format!("inherited: {}", display.path),
-    }
-}
-
-#[must_use]
 pub fn workspace_env_preview(workspace: &jackin_config::WorkspaceConfig) -> SettingsEnvPreview {
     SettingsEnvPreview {
         env: env_display_map_without_auth_credentials(&workspace.env),
@@ -317,143 +269,60 @@ pub fn workspace_env_preview(workspace: &jackin_config::WorkspaceConfig) -> Sett
 }
 
 #[must_use]
-pub fn role_auth_relevant(
-    original: &jackin_config::WorkspaceConfig,
-    pending: &jackin_config::WorkspaceConfig,
-    role: &str,
-    kind: AuthKind,
-) -> bool {
-    let original_role = original.roles.get(role);
-    let pending_role = pending.roles.get(role);
-    role_auth_mode_and_credential(original_role, kind)
-        != role_auth_mode_and_credential(pending_role, kind)
-        || role_sync_source_dir_text(original_role, kind)
-            != role_sync_source_dir_text(pending_role, kind)
-}
-
-fn role_sync_source_dir_text(
-    role: Option<&jackin_config::WorkspaceRoleOverride>,
-    kind: AuthKind,
-) -> Option<String> {
-    let agent = auth_kind_agent(kind)?;
-    role.and_then(|role| role.sync_source_dir_for(agent))
-        .map(|path| path.display().to_string())
-}
-
-#[must_use]
 pub fn workspace_auth_changes(
-    config: &jackin_config::AppConfig,
-    workspace_name: &str,
+    _config: &jackin_config::AppConfig,
+    _workspace_name: &str,
     original: &jackin_config::WorkspaceConfig,
     pending: &jackin_config::WorkspaceConfig,
 ) -> Vec<WorkspaceAuthChange> {
-    let original_cfg = config_with_workspace(config, workspace_name, original.clone());
-    let pending_cfg = config_with_workspace(config, workspace_name, pending.clone());
     let mut changes = Vec::new();
-
-    for kind in AuthKind::WORKSPACE_PANEL_KINDS {
-        push_auth_layer_changes(
+    if original.accounts != pending.accounts {
+        changes.push(workspace_auth_change(
+            "Accounts",
+            "allowed",
+            &original.accounts.join(", "),
+            &pending.accounts.join(", "),
+        ));
+    }
+    push_binding_changes(
+        &mut changes,
+        "Default",
+        &original.account_bindings,
+        &pending.account_bindings,
+    );
+    let roles: BTreeSet<_> = original.roles.keys().chain(pending.roles.keys()).collect();
+    let empty = BTreeMap::new();
+    for role in roles {
+        push_binding_changes(
             &mut changes,
-            kind.label().to_owned(),
-            &original_cfg,
-            &pending_cfg,
-            workspace_name,
-            "",
-            *kind,
+            &format!("Role {role}"),
+            original
+                .roles
+                .get(role)
+                .map_or(&empty, |r| &r.account_bindings),
+            pending
+                .roles
+                .get(role)
+                .map_or(&empty, |r| &r.account_bindings),
         );
     }
-
-    let role_names: BTreeSet<String> = original
-        .roles
-        .keys()
-        .chain(pending.roles.keys())
-        .cloned()
-        .collect();
-    for role in role_names {
-        for kind in AuthKind::WORKSPACE_PANEL_KINDS {
-            if !role_auth_relevant(original, pending, &role, *kind) {
-                continue;
-            }
-            push_auth_layer_changes(
-                &mut changes,
-                format!("Role {role} / {}", kind.label()),
-                &original_cfg,
-                &pending_cfg,
-                workspace_name,
-                &role,
-                *kind,
-            );
-        }
-    }
-
     changes
 }
 
-fn config_with_workspace(
-    config: &jackin_config::AppConfig,
-    workspace_name: &str,
-    workspace: jackin_config::WorkspaceConfig,
-) -> jackin_config::AppConfig {
-    let mut next = config.clone();
-    next.workspaces.insert(workspace_name.to_owned(), workspace);
-    next
-}
-
-fn push_auth_layer_changes(
+fn push_binding_changes(
     changes: &mut Vec<WorkspaceAuthChange>,
-    label_prefix: String,
-    original_cfg: &jackin_config::AppConfig,
-    pending_cfg: &jackin_config::AppConfig,
-    workspace_name: &str,
-    role: &str,
-    kind: AuthKind,
+    scope: &str,
+    original: &BTreeMap<jackin_core::Agent, String>,
+    pending: &BTreeMap<jackin_core::Agent, String>,
 ) {
-    let original_mode = resolve_panel_mode(original_cfg, kind, workspace_name, role);
-    let pending_mode = resolve_panel_mode(pending_cfg, kind, workspace_name, role);
-    if original_mode != pending_mode {
-        changes.push(workspace_auth_change(
-            &label_prefix,
-            "mode",
-            original_mode.as_str(),
-            pending_mode.as_str(),
-        ));
-    }
-
-    let original_credential =
-        credential_presence(original_cfg, workspace_name, role, kind, original_mode);
-    let pending_credential =
-        credential_presence(pending_cfg, workspace_name, role, kind, pending_mode);
-    if original_credential != pending_credential {
-        changes.push(workspace_auth_change(
-            &label_prefix,
-            "credential",
-            credential_label(original_credential),
-            credential_label(pending_credential),
-        ));
-    }
-
-    if auth_kind_agent(kind).is_some()
-        && (auth_mode_supports_source_folder(kind, original_mode)
-            || auth_mode_supports_source_folder(kind, pending_mode))
-    {
-        let original_source = source_folder_text(&editor_source_folder_display(
-            original_cfg,
-            workspace_name,
-            role,
-            kind,
-        ));
-        let pending_source = source_folder_text(&editor_source_folder_display(
-            pending_cfg,
-            workspace_name,
-            role,
-            kind,
-        ));
-        if original_source != pending_source {
+    let agents: BTreeSet<_> = original.keys().chain(pending.keys()).collect();
+    for agent in agents {
+        if original.get(agent) != pending.get(agent) {
             changes.push(workspace_auth_change(
-                &label_prefix,
-                "source folder",
-                &original_source,
-                &pending_source,
+                scope,
+                agent.slug(),
+                original.get(agent).map_or("(none)", String::as_str),
+                pending.get(agent).map_or("(none)", String::as_str),
             ));
         }
     }
@@ -527,47 +396,28 @@ pub struct SettingsSavePreview {
     pub mounts_pending: Vec<MountPreviewRow>,
     pub env_original: SettingsEnvPreview,
     pub env_pending: SettingsEnvPreview,
-    pub auth_original: Vec<AuthPreviewRow>,
-    pub auth_pending: Vec<AuthPreviewRow>,
-    pub auth_github_env_original: BTreeMap<String, String>,
-    pub auth_github_env_pending: BTreeMap<String, String>,
+    pub auth_original: BTreeMap<String, jackin_config::AccountConfig>,
+    pub auth_pending: BTreeMap<String, jackin_config::AccountConfig>,
+    pub github_original: jackin_config::GithubAuthConfig,
+    pub github_pending: jackin_config::GithubAuthConfig,
+    pub bindings_original: BTreeMap<jackin_core::Agent, String>,
+    pub bindings_pending: BTreeMap<jackin_core::Agent, String>,
     pub trust_original: Vec<TrustPreviewRow>,
     pub trust_pending: Vec<TrustPreviewRow>,
 }
 
-pub type ConsoleSettingsState<
-    MountModal,
-    EnvModal,
-    AuthModal,
-    ErrorPopup,
-    PendingToken,
-    PendingOpCommit,
-> = SettingsState<
-    GlobalMountsState<jackin_config::GlobalMountRow, MountModal>,
-    SettingsEnvState<jackin_config::EnvValue, EnvModal>,
-    SettingsAuthState<jackin_config::EnvValue, AuthModal, PendingOpCommit>,
-    SettingsTrustState,
-    ErrorPopup,
-    PendingToken,
->;
+pub type ConsoleSettingsState<MountModal, EnvModal, AuthModal, ErrorPopup, PendingOpCommit> =
+    SettingsState<
+        GlobalMountsState<jackin_config::GlobalMountRow, MountModal>,
+        SettingsEnvState<jackin_config::EnvValue, EnvModal>,
+        SettingsAuthState<jackin_config::EnvValue, AuthModal, PendingOpCommit>,
+        SettingsTrustState,
+        ErrorPopup,
+    >;
 
 #[must_use]
-pub fn settings_save_preview<
-    MountModal,
-    EnvModal,
-    AuthModal,
-    ErrorPopup,
-    PendingToken,
-    PendingOpCommit,
->(
-    settings: &ConsoleSettingsState<
-        MountModal,
-        EnvModal,
-        AuthModal,
-        ErrorPopup,
-        PendingToken,
-        PendingOpCommit,
-    >,
+pub fn settings_save_preview<MountModal, EnvModal, AuthModal, ErrorPopup, PendingOpCommit>(
+    settings: &ConsoleSettingsState<MountModal, EnvModal, AuthModal, ErrorPopup, PendingOpCommit>,
 ) -> SettingsSavePreview {
     SettingsSavePreview {
         general: SettingsGeneralPreview {
@@ -594,26 +444,12 @@ pub fn settings_save_preview<
             .collect(),
         env_original: settings_env_preview(&settings.env.original),
         env_pending: settings_env_preview(&settings.env.pending),
-        auth_original: settings
-            .auth
-            .original
-            .iter()
-            .map(|row| AuthPreviewRow {
-                label: row.kind.label().to_owned(),
-                mode: row.mode.as_str().to_owned(),
-            })
-            .collect(),
-        auth_pending: settings
-            .auth
-            .pending
-            .iter()
-            .map(|row| AuthPreviewRow {
-                label: row.kind.label().to_owned(),
-                mode: row.mode.as_str().to_owned(),
-            })
-            .collect(),
-        auth_github_env_original: env_display_map(&settings.auth.original_github_env),
-        auth_github_env_pending: env_display_map(&settings.auth.github_env),
+        auth_original: settings.auth.original.clone(),
+        auth_pending: settings.auth.pending.clone(),
+        github_original: settings.auth.original_github.clone(),
+        github_pending: settings.auth.github.clone(),
+        bindings_original: settings.auth.original_bindings.clone(),
+        bindings_pending: settings.auth.bindings.clone(),
         trust_original: settings
             .trust
             .original
@@ -636,22 +472,8 @@ pub fn settings_save_preview<
 }
 
 #[must_use]
-pub fn build_settings_save_lines<
-    MountModal,
-    EnvModal,
-    AuthModal,
-    ErrorPopup,
-    PendingToken,
-    PendingOpCommit,
->(
-    settings: &ConsoleSettingsState<
-        MountModal,
-        EnvModal,
-        AuthModal,
-        ErrorPopup,
-        PendingToken,
-        PendingOpCommit,
-    >,
+pub fn build_settings_save_lines<MountModal, EnvModal, AuthModal, ErrorPopup, PendingOpCommit>(
+    settings: &ConsoleSettingsState<MountModal, EnvModal, AuthModal, ErrorPopup, PendingOpCommit>,
 ) -> Vec<Line<'static>> {
     settings_save_lines(&settings_save_preview(settings))
 }
@@ -716,12 +538,6 @@ pub fn settings_env_preview(
             .map(|(role, env)| (role.clone(), env_display_map(env)))
             .collect(),
     }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AuthPreviewRow {
-    pub label: String,
-    pub mode: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -987,7 +803,7 @@ fn append_workspace_auth_lines(
         return;
     }
     out.push(Line::raw(""));
-    out.push(Line::from(Span::styled("Auth:", heading)));
+    out.push(Line::from(Span::styled("Accounts:", heading)));
     for change in changes {
         out.push(Line::from(Span::styled(
             format!("  {}", change.label),
@@ -1035,12 +851,7 @@ pub fn settings_save_lines(preview: &SettingsSavePreview) -> Vec<Line<'static>> 
     let general_stats = settings_general_stats(preview.general);
     let mount_stats = settings_mount_stats(&preview.mounts_original, &preview.mounts_pending);
     let env_stats = settings_env_stats(&preview.env_original, &preview.env_pending);
-    let auth_stats = settings_auth_stats(
-        &preview.auth_original,
-        &preview.auth_pending,
-        &preview.auth_github_env_original,
-        &preview.auth_github_env_pending,
-    );
+    let auth_stats = settings_auth_stats(&preview.auth_original, &preview.auth_pending);
     let trust_stats = settings_trust_stats(&preview.trust_original, &preview.trust_pending);
 
     if let Some(s) = general_stats.as_deref() {
@@ -1063,7 +874,7 @@ pub fn settings_save_lines(preview: &SettingsSavePreview) -> Vec<Line<'static>> 
     }
     if let Some(s) = auth_stats.as_deref() {
         out.push(Line::from(vec![
-            Span::styled("  Auth:         ", heading),
+            Span::styled("  Accounts:     ", heading),
             Span::styled(s.to_owned(), add_style),
         ]));
     }
@@ -1136,14 +947,26 @@ pub fn settings_save_lines(preview: &SettingsSavePreview) -> Vec<Line<'static>> 
     let auth_lines = settings_auth_diff_lines(
         &preview.auth_original,
         &preview.auth_pending,
-        &preview.auth_github_env_original,
-        &preview.auth_github_env_pending,
         add_style,
         remove_style,
     );
     if !auth_lines.is_empty() {
-        out.push(Line::from(Span::styled("Auth:", heading)));
+        out.push(Line::from(Span::styled("Accounts:", heading)));
         out.extend(auth_lines);
+        out.push(Line::raw(""));
+    }
+
+    out.extend(settings_default_account_lines(preview, heading));
+
+    if preview.github_original != preview.github_pending {
+        out.push(Line::from(Span::styled("GitHub authentication:", heading)));
+        out.push(Line::from(Span::styled(
+            format!(
+                "  mode: {:?} → {:?} (credential hidden)",
+                preview.github_original.auth_forward, preview.github_pending.auth_forward
+            ),
+            add_style,
+        )));
         out.push(Line::raw(""));
     }
 
@@ -1219,23 +1042,15 @@ fn summarize_diff_counts(added: usize, removed: usize, modified: usize) -> Optio
 }
 
 fn settings_auth_stats(
-    original: &[AuthPreviewRow],
-    pending: &[AuthPreviewRow],
-    orig_github_env: &BTreeMap<String, String>,
-    pend_github_env: &BTreeMap<String, String>,
+    original: &BTreeMap<String, jackin_config::AccountConfig>,
+    pending: &BTreeMap<String, jackin_config::AccountConfig>,
 ) -> Option<String> {
-    let row_changes = original
-        .iter()
-        .zip(pending.iter())
-        .filter(|(a, b)| a.mode != b.mode)
+    let ids: BTreeSet<_> = original.keys().chain(pending.keys()).collect();
+    let changed = ids
+        .into_iter()
+        .filter(|id| original.get(*id) != pending.get(*id))
         .count();
-    let (env_added, env_removed, env_modified) =
-        env_map_diff_counts(orig_github_env, pend_github_env);
-    let total = row_changes + env_added + env_removed + env_modified;
-    if total == 0 {
-        return None;
-    }
-    Some(format!("{total} changed"))
+    (changed > 0).then(|| format!("{changed} changed"))
 }
 
 fn settings_trust_stats(
@@ -1426,34 +1241,67 @@ pub fn append_env_map_diff_lines(
     }
 }
 
+fn settings_default_account_lines(
+    preview: &SettingsSavePreview,
+    heading: Style,
+) -> Vec<Line<'static>> {
+    let mut out = Vec::new();
+    if preview.bindings_original != preview.bindings_pending {
+        out.push(Line::from(Span::styled("Default accounts:", heading)));
+        for agent in jackin_core::Agent::ALL {
+            let before = preview.bindings_original.get(agent);
+            let after = preview.bindings_pending.get(agent);
+            if before != after {
+                out.push(Line::from(format!(
+                    "  {}: {} → {}",
+                    agent.label(),
+                    before.map_or("automatic", String::as_str),
+                    after.map_or("automatic", String::as_str)
+                )));
+            }
+        }
+        out.push(Line::raw(""));
+    }
+
+    out
+}
+
 fn settings_auth_diff_lines(
-    original: &[AuthPreviewRow],
-    pending: &[AuthPreviewRow],
-    orig_github_env: &BTreeMap<String, String>,
-    pend_github_env: &BTreeMap<String, String>,
+    original: &BTreeMap<String, jackin_config::AccountConfig>,
+    pending: &BTreeMap<String, jackin_config::AccountConfig>,
     add_style: Style,
     remove_style: Style,
 ) -> Vec<Line<'static>> {
-    let mut out: Vec<Line<'static>> = Vec::new();
-    for (orig_row, pend_row) in original.iter().zip(pending.iter()) {
-        if orig_row.mode != pend_row.mode {
+    let mut out = Vec::new();
+    for (id, account) in pending {
+        if original.get(id) != Some(account) {
+            let verb = if original.contains_key(id) {
+                "updated"
+            } else {
+                "added"
+            };
             out.push(Line::from(Span::styled(
                 format!(
-                    "  ~ {}  {} \u{2192} {}",
-                    pend_row.label, orig_row.mode, pend_row.mode
+                    "  + {} [{id}] ({verb}; {}; credential hidden)",
+                    account.name,
+                    if account.enabled {
+                        "enabled"
+                    } else {
+                        "disabled"
+                    }
                 ),
                 add_style,
             )));
         }
     }
-    append_env_map_diff_lines(
-        &mut out,
-        None,
-        orig_github_env,
-        pend_github_env,
-        add_style,
-        remove_style,
-    );
+    for (id, account) in original {
+        if !pending.contains_key(id) {
+            out.push(Line::from(Span::styled(
+                format!("  - {} [{id}]", account.name),
+                remove_style,
+            )));
+        }
+    }
     out
 }
 

@@ -214,13 +214,30 @@ pub(crate) fn spawn_sibling_auth_prewarm(
     }
 
     Some(jackin_telemetry::spawn::joined_blocking(move || {
-        let resolve_mode = |a: jackin_core::Agent| {
-            let ws = jackin_core::WorkspaceName::parse(&workspace_name).ok();
-            jackin_config::resolve_mode(&config, a, ws.as_ref(), &role_key)
+        let ws = jackin_core::WorkspaceName::parse(&workspace_name).ok();
+        let selections = match super::capsule_setup::account_auth_selections(
+            &config,
+            ws.as_ref(),
+            &role_key,
+            &sibling_agents,
+        ) {
+            Ok(selections) => selections,
+            Err(error) => {
+                if let Some(run) = active_run {
+                    run.compact("sibling_auth_prewarm_failed", &error.to_string());
+                }
+                return;
+            }
         };
-        let resolve_sync_src = |a: jackin_core::Agent| {
-            let ws = jackin_core::WorkspaceName::parse(&workspace_name).ok();
-            jackin_config::resolve_sync_source_dir(&config, a, ws.as_ref(), &role_key)
+        let resolve_mode = |agent| {
+            selections
+                .get(&agent)
+                .map_or(jackin_config::AuthForwardMode::Ignore, |(mode, _)| *mode)
+        };
+        let resolve_sync_src = |agent| {
+            selections
+                .get(&agent)
+                .and_then(|(_, directory)| directory.clone())
         };
         let result = RoleState::prewarm_auth_for_agents(
             &paths_owned,
@@ -264,6 +281,13 @@ pub(crate) fn spawn_sibling_auth_prewarm(
     }))
 }
 
+/// Whether launch returned from a foreground session or handed off a live daemon.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum LaunchOutcome {
+    Detached,
+    ForegroundSessionEnded,
+}
+
 /// Launch the role container after the caller has prepared the private network
 /// and `DinD` sidecar.
 #[expect(
@@ -290,7 +314,7 @@ pub(crate) async fn launch_role_runtime(
     steps: &mut StepCounter,
     docker: &impl DockerApi,
     runner: &mut impl CommandRunner,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<LaunchOutcome> {
     let LaunchContext {
         container_name,
         image,
@@ -1200,10 +1224,10 @@ pub(crate) async fn launch_role_runtime(
     let _sibling_auth_prewarm =
         spawn_sibling_auth_prewarm(paths, container_name, sibling_auth_prewarm, *agent);
     if *non_interactive {
-        // The container is up and the capsule daemon answered its pre-attach
-        // health check above; a programmatic caller reconnects later with
-        // `jackin hardline`, so the launch returns here instead of blocking on
-        // a foreground session it has no terminal for.
+        // The container passed the premature-exit check. A programmatic caller
+        // reconnects later with `jackin hardline`, whose reconnect path waits
+        // for daemon readiness; detached launch does not own a foreground
+        // session or wait for its terminal.
         steps.stage_done(
             crate::runtime::progress::LaunchStage::Hardline,
             "detached (non-interactive launch)",
@@ -1214,7 +1238,7 @@ pub(crate) async fn launch_role_runtime(
         ) {
             crate::runtime::prewarm_trigger::spawn_background_sidecar_prewarm(paths, *debug);
         }
-        return Ok(());
+        return Ok(LaunchOutcome::Detached);
     }
     let session_result = crate::runtime::attach::reconnect_or_create_session_with_focus(
         paths,
@@ -1271,7 +1295,7 @@ pub(crate) async fn launch_role_runtime(
         crate::runtime::prewarm_trigger::spawn_background_sidecar_prewarm(paths, *debug);
     }
 
-    Ok(())
+    Ok(LaunchOutcome::ForegroundSessionEnded)
 }
 
 pub(crate) fn host_runtime_passthrough_env(

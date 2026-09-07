@@ -37,10 +37,6 @@ fn modal_debug_names_match_root_log_vocabulary() {
         modal_debug_name(ModalDebugKind::GithubPicker),
         "GithubPicker"
     );
-    assert_eq!(
-        modal_debug_name(ModalDebugKind::AuthRolePicker),
-        "AuthRolePicker"
-    );
 }
 
 #[test]

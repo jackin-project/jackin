@@ -308,7 +308,7 @@ fn sync_source_dir_copies_claude_config_dir_without_nested_home_layout() {
 /// credentials must NOT fall back to the default host `~/.claude`
 /// credentials. The operator selected a specific config dir (e.g. an
 /// Enterprise account); leaking the default Max account into the capsule
-/// is the bug this guards against. Expect `HostMissing`, not `Synced`.
+/// is the bug this guards against. Reject the invalid selected account.
 #[test]
 fn sync_source_dir_does_not_fall_back_to_default_host_credentials() {
     let temp = tempdir().unwrap();
@@ -330,7 +330,7 @@ fn sync_source_dir_does_not_fall_back_to_default_host_credentials() {
     .unwrap();
     let manifest = simple_manifest(&temp);
 
-    let (state, outcome) = RoleState::prepare(
+    let error = RoleState::prepare(
         &paths,
         "jk-agent-smith",
         &manifest,
@@ -342,16 +342,17 @@ fn sync_source_dir_does_not_fall_back_to_default_host_credentials() {
         temp.path(),
         Agent::Claude,
     )
-    .unwrap();
-
-    // No fallback: the default host account never reaches the capsule.
-    assert_eq!(outcome, AuthProvisionOutcome::HostMissing);
-    let creds = state
-        .claude_credentials_json()
-        .and_then(|p| std::fs::read_to_string(p).ok());
+    .unwrap_err();
+    assert!(error.to_string().contains("Not a Claude config folder"));
+    let written = std::fs::read_to_string(
+        paths
+            .data_dir
+            .join("jk-agent-smith/claude/credentials.json"),
+    )
+    .unwrap_or_default();
     assert!(
-        creds.as_deref() != Some(TEST_CREDENTIALS),
-        "default host credentials must not leak into an explicit source folder"
+        !written.contains("accessToken"),
+        "invalid selected accounts must never copy default host credentials"
     );
 }
 
@@ -428,7 +429,7 @@ fn sync_source_dir_empty_credentials_file_is_not_treated_as_valid() {
     .unwrap();
     let manifest = simple_manifest(&temp);
 
-    let (state, outcome) = RoleState::prepare(
+    let error = RoleState::prepare(
         &paths,
         "jk-agent-smith",
         &manifest,
@@ -440,21 +441,18 @@ fn sync_source_dir_empty_credentials_file_is_not_treated_as_valid() {
         temp.path(),
         Agent::Claude,
     )
-    .unwrap();
-
-    assert_eq!(
-        outcome,
-        AuthProvisionOutcome::HostMissing,
-        "an empty source credentials file must not resolve as Synced"
+    .unwrap_err();
+    assert!(error.to_string().contains("Not a Claude config folder"));
+    let written = std::fs::read_to_string(
+        paths
+            .data_dir
+            .join("jk-agent-smith/claude/credentials.json"),
+    )
+    .unwrap_or_default();
+    assert!(
+        !written.contains("accessToken"),
+        "invalid selected accounts must never copy default host credentials"
     );
-    if let Some(creds_json) = state.claude_credentials_json() {
-        let written = std::fs::read_to_string(creds_json).unwrap_or_default();
-        assert!(
-            !written.contains("accessToken"),
-            "no credentials (default host account included) may be written when \
-             the source file is empty"
-        );
-    }
 }
 
 #[test]
@@ -2903,5 +2901,69 @@ fn credentials_directories_are_chmodded_0700() {
             .mode()
             & 0o777;
         assert_eq!(mode, 0o700, "{rel} must be 0o700, got 0o{mode:o}");
+    }
+}
+
+#[test]
+fn claude_metadata_persists_inside_directory_and_supports_atomic_replacement() {
+    for mode in [
+        AuthForwardMode::Sync,
+        AuthForwardMode::ApiKey,
+        AuthForwardMode::OAuthToken,
+        AuthForwardMode::Ignore,
+    ] {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let manifest = simple_manifest(&temp);
+        let source = temp.path().join("selected-claude");
+        std::fs::create_dir_all(&source).unwrap();
+        std::fs::write(source.join(".credentials.json"), TEST_CREDENTIALS).unwrap();
+        std::fs::write(source.join(".claude.json"), r#"{"account":"selected"}"#).unwrap();
+        let resolvers = PrepareResolvers {
+            auth_modes: &|_| mode,
+            sync_source_dirs: &|_| (mode == AuthForwardMode::Sync).then(|| source.clone()),
+        };
+        let (state, _) = RoleState::prepare(
+            &paths,
+            "jk-metadata",
+            &manifest,
+            &resolvers,
+            &GithubAuthContext::default(),
+            temp.path(),
+            Agent::Claude,
+        )
+        .unwrap();
+        let directory = state.root.join("home/.claude");
+        let metadata = directory.join(".claude.json");
+        if mode == AuthForwardMode::Ignore {
+            // Fresh ignore-mode provisioning deliberately creates no auth home.
+            // The container's directory mount/CLI creates its mutable state later.
+            assert!(!directory.exists());
+            std::fs::create_dir_all(&directory).unwrap();
+        } else {
+            assert!(metadata.is_file(), "{mode} must provision metadata");
+        }
+        assert!(!state.root.join("home/.claude.json").exists());
+        let replacement = directory.join(".claude.json.tmp");
+        std::fs::write(&replacement, r#"{"onboarding":true}"#).unwrap();
+        std::fs::rename(replacement, &metadata).unwrap();
+        RoleState::prepare(
+            &paths,
+            "jk-metadata",
+            &manifest,
+            &resolvers,
+            &GithubAuthContext::default(),
+            temp.path(),
+            Agent::Claude,
+        )
+        .unwrap();
+        assert_eq!(
+            std::fs::read_to_string(metadata).unwrap(),
+            r#"{"onboarding":true}"#
+        );
+        assert_eq!(
+            std::fs::read_to_string(source.join(".claude.json")).unwrap(),
+            r#"{"account":"selected"}"#
+        );
     }
 }

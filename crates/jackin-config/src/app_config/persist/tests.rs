@@ -49,7 +49,7 @@ fn load_rejects_invalid_auth_forward_value() {
 
     std::fs::write(
         &paths.config_file,
-        r#"[claude]
+        r#"[github]
 auth_forward = "bogus"
 
 [roles.agent-smith]
@@ -645,7 +645,7 @@ fn disc_write_tree(paths: &JackinPaths) {
     std::fs::create_dir_all(&paths.workspaces_dir).unwrap();
     std::fs::write(
         &paths.config_file,
-        format!("version = \"{CURRENT_CONFIG_VERSION}\"\n\n[claude]\nauth_forward = \"sync\"\n"),
+        format!("version = \"{CURRENT_CONFIG_VERSION}\"\n\n[github]\nauth_forward = \"sync\"\n"),
     )
     .unwrap();
     std::fs::write(

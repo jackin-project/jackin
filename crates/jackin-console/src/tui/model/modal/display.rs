@@ -139,9 +139,7 @@ impl<
                 fixed_dialog_size(outer, 60, 5)
             }
             Self::OpPicker { .. } => fixed_dialog_size(outer, 80, 22),
-            Self::RolePicker { state }
-            | Self::RoleOverridePicker { state }
-            | Self::AuthRolePicker { state } => {
+            Self::RolePicker { state } | Self::RoleOverridePicker { state } => {
                 let rows = (state.filtered_len() as u16).saturating_add(6).min(15);
                 fixed_dialog_size(outer, 50, rows)
             }
@@ -248,9 +246,7 @@ impl<
             Self::ContainerInfo { .. } => footer_items_for_mode(ModalFooterMode::ContainerInfo),
             Self::StatusPopup { .. } => footer_items_for_mode(ModalFooterMode::StatusPopup),
             Self::OpPicker { state, .. } => footer_items_for_mode(state.footer_mode(true)),
-            Self::RolePicker { .. }
-            | Self::RoleOverridePicker { .. }
-            | Self::AuthRolePicker { .. } => {
+            Self::RolePicker { .. } | Self::RoleOverridePicker { .. } => {
                 footer_items_for_mode(ModalFooterMode::FilteredPicker {
                     include_refresh: false,
                     include_collapse: false,

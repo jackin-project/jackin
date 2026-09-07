@@ -367,7 +367,7 @@ Both the host CLI (<RepoFile path="crates/jackin/src/main.rs">crates/jackin/src/
 
 ## AgentRuntime and Provider registry
 
-Adding a new agent runtime or provider must be one registration, not N call-site edits. This is enforced through two sealed adapter registries.
+Agent runtimes use a sealed adapter registry. Named accounts own provider compatibility, credential resolution, and per-agent routing.
 
 **`AgentRuntime` trait** (<RepoFile path="crates/jackin-core/src/agent/runtime.rs">crates/jackin-core/src/agent/runtime.rs</RepoFile>). Every agent variant (`claude`, `codex`, `amp`, `kimi`, `opencode`) is represented by a zero-sized adapter struct that implements `AgentRuntime`. `Agent::runtime()` returns `&'static dyn AgentRuntime` — a compile-time-known dispatch point. Adding a sixth built-in runtime means adding the enum variant, adapter file, registry entry, and the small number of centralized named-field accessor rows that remain because the public TOML schemas still expose named agent sections.
 
@@ -376,17 +376,13 @@ Key trait methods:
 - `install_block(source)` — generates the Dockerfile `COPY`/`RUN` block for this agent.
 - `required_env_var()` — the env var whose presence signals that the agent is installed.
 - `supported_modes()` — which `AuthForwardMode` values are valid for this agent.
-- `state_paths()` — `AgentStatePaths { credential_dir, credential_file, folder_env_var }` — the per-agent credential location on the host and the environment hint for the operator. Used by provisioning and by `sync_source_dir` resolution.
+- `state_paths()` — `AgentStatePaths { credential_dir, credential_file, folder_env_var }` — the per-agent credential location on the host and the environment hint for the operator. Used by account discovery and profile-folder provisioning.
 - `parse_version(output)` — parses `--version` stdout to extract a semver string, replacing five per-agent branches.
 
-**`ProviderAdapter` trait** (<RepoFile path="crates/jackin-protocol/src/provider_adapter.rs">crates/jackin-protocol/src/provider_adapter.rs</RepoFile>). Same sealed pattern for providers (Anthropic, Zai, MiniMax, Kimi). `Provider::adapter()` returns `&'static dyn ProviderAdapter`. `Provider::available_for(agent_slug, has_key: impl Fn(Provider) -> bool)` replaces the four-positional-bool form.
+**Named accounts** (<RepoFile path="crates/jackin-config/src/accounts.rs">crates/jackin-config/src/accounts.rs</RepoFile>) define provider identity, agent compatibility, profile folders, API keys, OAuth tokens, and account bindings. Workspace agent assignments resolve a named account before launch; the capsule cannot select a different provider from ambient credentials.
 
-Key trait methods:
-- `label()` — display name.
-- `needs_key_for_agent(slug)` — whether an explicit API key is required (Anthropic + claude: no; everything else: yes).
-- `supports_agent(slug)` — whether this provider works with the given agent.
-- `env_overrides(token)` — the env vars to inject at spawn to redirect the agent to this provider.
-- `key_env_var()` — the env var name that holds the provider's API key (`ZAI_API_KEY`, `MINIMAX_API_KEY`, `KIMI_CODE_API_KEY`, or `None` for Anthropic).
-- `opencode_model()` — the `provider/model` string for OpenCode's `-m` flag.
+<RepoFile path="crates/jackin-runtime/src/runtime/launch/account_config.rs">crates/jackin-runtime/src/runtime/launch/account_config.rs</RepoFile> materializes selected-account Codex and OpenCode routing. <RepoFile path="crates/jackin-env/src/accounts.rs">crates/jackin-env/src/accounts.rs</RepoFile> resolves protected credentials per agent. <RepoFile path="crates/jackin-capsule/src/session.rs">crates/jackin-capsule/src/session.rs</RepoFile> strips inherited account variables and injects only that agent's credentials.
 
-**Sealed trait pattern.** Both traits are sealed via a `pub(crate) mod private { pub trait Sealed {} }` guard so external crates cannot add providers or runtimes. The built-in set is the intended complete set; adding one means changing this crate, which triggers a review.
+The protocol `Provider` enum retains display labels. It no longer owns availability, endpoint generation, or credential lookup. Provider models belong to accounts; role schema `v1alpha7` rejects the removed per-provider model tables.
+
+**Sealed runtime trait.** `AgentRuntime` remains sealed so extending the built-in agent set requires changing the registry and reviewing its runtime contract.

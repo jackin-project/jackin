@@ -13,11 +13,6 @@ mod general_impls;
 #[path = "model/trust_impls.rs"]
 mod trust_impls;
 
-#[expect(
-    unused_imports,
-    unreachable_pub,
-    reason = "documented residual allow; prefer expect when site is lint-true"
-)]
 pub use auth_impls::*;
 pub use env_impls::*;
 #[expect(
@@ -33,7 +28,7 @@ pub use trust_impls::*;
 
 use std::collections::BTreeMap;
 
-use crate::tui::auth::{AuthKind, AuthMode};
+use crate::tui::auth::AuthKind;
 use crate::tui::components::footer_hints::{
     ModalAuthFormFooterState, ModalConfirmSaveFooterState, ModalFileBrowserFooterState,
     ModalFooterMode, ModalOpPickerFooterState,
@@ -69,7 +64,7 @@ impl SettingsTab {
             Self::General => "General",
             Self::Mounts => "Mounts",
             Self::Environments => "Environments",
-            Self::Auth => "Auth",
+            Self::Auth => "Accounts",
             Self::Trust => "Trust",
         }
     }
@@ -88,7 +83,7 @@ impl SettingsTab {
 }
 
 #[derive(Debug)]
-pub struct SettingsState<Mounts, Env, Auth, Trust, ErrorPopup, PendingToken> {
+pub struct SettingsState<Mounts, Env, Auth, Trust, ErrorPopup> {
     pub active_tab: SettingsTab,
     /// W3C ARIA Tabs: focus is either on the tab list or the active tab panel.
     pub focus_owner: TabFocus<SettingsTab>,
@@ -101,7 +96,7 @@ pub struct SettingsState<Mounts, Env, Auth, Trust, ErrorPopup, PendingToken> {
     /// Error popup shown on top of all settings content.
     pub error_popup: Option<ErrorPopup>,
     /// Token-generate request drained by the run loop.
-    pub pending_token_generate: Option<PendingToken>,
+
     /// Cached footer height for mouse hit-testing.
     pub cached_footer_h: u16,
 }
@@ -142,9 +137,7 @@ pub enum SettingsHoverTarget {
     TrustRow(usize),
 }
 
-impl<Mounts, Env, Auth, Trust, ErrorPopup, PendingToken>
-    SettingsState<Mounts, Env, Auth, Trust, ErrorPopup, PendingToken>
-{
+impl<Mounts, Env, Auth, Trust, ErrorPopup> SettingsState<Mounts, Env, Auth, Trust, ErrorPopup> {
     pub fn dismiss_error_popup(&mut self)
     where
         Auth: SettingsAuthRestorePendingForm,
@@ -287,7 +280,6 @@ impl<Mounts, Env, Auth, Trust, ErrorPopup, PendingToken>
         self.env.panel_discard();
         self.auth.panel_discard();
         self.trust.panel_discard();
-        self.pending_token_generate = None;
     }
 
     pub fn mark_saved(&mut self)
@@ -306,19 +298,8 @@ impl<Mounts, Env, Auth, Trust, ErrorPopup, PendingToken>
     }
 }
 
-impl<Mounts, Env, Auth, Trust, ErrorPopup, PendingToken>
-    crate::tui::model::ConsolePendingTokenGenerate
-    for SettingsState<Mounts, Env, Auth, Trust, ErrorPopup, PendingToken>
-{
-    type PendingTokenGenerate = PendingToken;
-
-    fn take_pending_token_generate(&mut self) -> Option<Self::PendingTokenGenerate> {
-        self.pending_token_generate.take()
-    }
-}
-
-impl<Mounts, Env, Auth, Trust, PendingToken>
-    SettingsState<Mounts, Env, Auth, Trust, crate::tui::components::ErrorPopupState, PendingToken>
+impl<Mounts, Env, Auth, Trust>
+    SettingsState<Mounts, Env, Auth, Trust, crate::tui::components::ErrorPopupState>
 {
     pub fn open_error_popup(&mut self, title: impl Into<String>, message: impl Into<String>) {
         self.error_popup = Some(crate::tui::components::error_popup::error_popup_state(
@@ -327,8 +308,8 @@ impl<Mounts, Env, Auth, Trust, PendingToken>
     }
 }
 
-impl<Mounts, Env, Auth, Trust, ErrorPopup, PendingToken> crate::tui::model::ConsolePendingOpCommit
-    for SettingsState<Mounts, Env, Auth, Trust, ErrorPopup, PendingToken>
+impl<Mounts, Env, Auth, Trust, ErrorPopup> crate::tui::model::ConsolePendingOpCommit
+    for SettingsState<Mounts, Env, Auth, Trust, ErrorPopup>
 where
     Auth: crate::tui::model::ConsolePendingOpCommit,
 {
@@ -339,8 +320,8 @@ where
     }
 }
 
-impl<Mounts, Env, Auth, Trust, ErrorPopup, PendingToken> crate::tui::model::ConsoleAnimationTick
-    for SettingsState<Mounts, Env, Auth, Trust, ErrorPopup, PendingToken>
+impl<Mounts, Env, Auth, Trust, ErrorPopup> crate::tui::model::ConsoleAnimationTick
+    for SettingsState<Mounts, Env, Auth, Trust, ErrorPopup>
 where
     Env: SettingsModalSlot,
     Env::Modal: crate::tui::model::ConsoleAnimationTick,
@@ -359,8 +340,7 @@ where
     }
 }
 
-impl<Mounts, Env, Auth, Trust, ErrorPopup, PendingToken>
-    SettingsState<Mounts, Env, Auth, Trust, ErrorPopup, PendingToken>
+impl<Mounts, Env, Auth, Trust, ErrorPopup> SettingsState<Mounts, Env, Auth, Trust, ErrorPopup>
 where
     Mounts: SettingsMountsTakeExit + SettingsPanelTakeError,
     Env: SettingsPanelTakeError,
@@ -382,33 +362,8 @@ where
     }
 }
 
-impl<Mounts, EnvModal, AuthModal, PendingOpCommit, Trust, ErrorPopup, PendingToken>
-    SettingsState<
-        Mounts,
-        SettingsEnvState<jackin_config::EnvValue, EnvModal>,
-        SettingsAuthState<jackin_config::EnvValue, AuthModal, PendingOpCommit>,
-        Trust,
-        ErrorPopup,
-        PendingToken,
-    >
-{
-    pub fn clear_ignored_env_only_auth_keys(&mut self) {
-        crate::tui::auth_config::clear_ignored_env_only_settings_auth_keys(
-            &self.auth.pending,
-            &mut self.env.pending.env,
-        );
-    }
-}
-
-impl<Mounts, EnvValue, EnvModal, Auth, Trust, ErrorPopup, PendingToken>
-    SettingsState<
-        Mounts,
-        SettingsEnvState<EnvValue, EnvModal>,
-        Auth,
-        Trust,
-        ErrorPopup,
-        PendingToken,
-    >
+impl<Mounts, EnvValue, EnvModal, Auth, Trust, ErrorPopup>
+    SettingsState<Mounts, SettingsEnvState<EnvValue, EnvModal>, Auth, Trust, ErrorPopup>
 {
     #[must_use]
     pub fn env_flat_rows(&self) -> Vec<SettingsEnvRow> {
@@ -419,14 +374,13 @@ impl<Mounts, EnvValue, EnvModal, Auth, Trust, ErrorPopup, PendingToken>
     }
 }
 
-impl<MountModal, EnvModal, AuthModal, PendingOpCommit, ErrorPopup, PendingToken>
+impl<MountModal, EnvModal, AuthModal, PendingOpCommit, ErrorPopup>
     SettingsState<
         GlobalMountsState<jackin_config::GlobalMountRow, MountModal>,
         SettingsEnvState<jackin_config::EnvValue, EnvModal>,
         SettingsAuthState<jackin_config::EnvValue, AuthModal, PendingOpCommit>,
         SettingsTrustState,
         ErrorPopup,
-        PendingToken,
     >
 {
     #[must_use]
@@ -441,7 +395,7 @@ impl<MountModal, EnvModal, AuthModal, PendingOpCommit, ErrorPopup, PendingToken>
             auth: SettingsAuthState::from_config(config),
             trust: SettingsTrustState::from_config(config),
             error_popup: None,
-            pending_token_generate: None,
+
             cached_footer_h: 1,
         }
     }
@@ -485,14 +439,7 @@ impl<MountModal, EnvModal, AuthModal, PendingOpCommit, ErrorPopup, PendingToken>
 
     #[must_use]
     pub fn auth_content_height(&self) -> usize {
-        crate::tui::screens::settings::view::auth_content_height(
-            self.auth.selected_kind,
-            &self.auth.pending,
-            |kind, mode| {
-                crate::tui::screens::settings::update::settings_auth_detail_row_count(kind, *mode)
-            },
-            self.auth.error.is_some(),
-        )
+        self.auth.row_count() + usize::from(self.auth.error.is_some())
     }
 
     #[must_use]
@@ -543,13 +490,6 @@ impl<K> AuthFormTarget<K> {
             Self::Workspace { kind } | Self::WorkspaceRole { kind, .. } => kind,
         }
     }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SettingsAuthRow<K, M> {
-    pub kind: K,
-    pub mode: M,
-    pub sync_source_dir: Option<std::path::PathBuf>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -1371,18 +1311,29 @@ fn footer_items_for_mode(mode: ModalFooterMode) -> Vec<termrock::widgets::HintSp
     crate::tui::components::footer_hints::modal_footer_items(mode)
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AccountTextField {
+    DefaultAgent,
+    Name,
+    BaseUrl,
+    Model,
+}
+
 #[derive(Debug)]
 pub struct SettingsAuthState<EnvValue, Modal, PendingOpCommit> {
+    pub github: jackin_config::GithubAuthConfig,
+    pub original_github: jackin_config::GithubAuthConfig,
+    pub bindings: BTreeMap<jackin_core::Agent, String>,
+    pub original_bindings: BTreeMap<jackin_core::Agent, String>,
     pub selected: usize,
     pub selected_kind: Option<AuthKind>,
-    pub pending: Vec<SettingsAuthRow<AuthKind, AuthMode>>,
-    pub original: Vec<SettingsAuthRow<AuthKind, AuthMode>>,
-    pub github_env: BTreeMap<String, EnvValue>,
-    pub original_github_env: BTreeMap<String, EnvValue>,
+    pub pending: BTreeMap<String, jackin_config::AccountConfig>,
+    pub original: BTreeMap<String, jackin_config::AccountConfig>,
+    pub editing_account: Option<String>,
+    pub editing_text: Option<AccountTextField>,
+    pub value_type: std::marker::PhantomData<fn() -> EnvValue>,
     /// Atomic modal chain and matching `TermRock` focus scopes.
     pub modals: crate::tui::modal_chain::ModalChain<Modal>,
-    /// Set while the `g`/`G` generate action's Create-mode `OpPicker` is open.
-    pub generating_token: bool,
     pub error: Option<String>,
     /// In-flight 1Password read for an op-picker auth-form commit.
     pub pending_op_commit: Option<PendingOpCommit>,
@@ -1390,10 +1341,13 @@ pub struct SettingsAuthState<EnvValue, Modal, PendingOpCommit> {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct SettingsAuthSaveRefs<'a, EnvValue> {
-    pub pending: &'a [SettingsAuthRow<AuthKind, AuthMode>],
-    pub original_github_env: &'a BTreeMap<String, EnvValue>,
-    pub github_env: &'a BTreeMap<String, EnvValue>,
+pub struct SettingsAuthSaveRefs<'a> {
+    pub pending: &'a BTreeMap<String, jackin_config::AccountConfig>,
+    pub original: &'a BTreeMap<String, jackin_config::AccountConfig>,
+    pub github: &'a jackin_config::GithubAuthConfig,
+    pub original_github: &'a jackin_config::GithubAuthConfig,
+    pub bindings: &'a BTreeMap<jackin_core::Agent, String>,
+    pub original_bindings: &'a BTreeMap<jackin_core::Agent, String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

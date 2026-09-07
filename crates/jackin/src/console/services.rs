@@ -246,9 +246,12 @@ pub(super) mod config {
         pub mounts_pending: Vec<GlobalMountRow>,
         pub env_original: jackin_console::tui::state::SettingsEnvConfig,
         pub env_pending: jackin_console::tui::state::SettingsEnvConfig,
-        pub auth_pending: Vec<jackin_console::tui::state::SettingsAuthRow>,
-        pub original_github_env: std::collections::BTreeMap<String, jackin_core::EnvValue>,
-        pub github_env: std::collections::BTreeMap<String, jackin_core::EnvValue>,
+        pub auth_pending: std::collections::BTreeMap<String, jackin_config::AccountConfig>,
+        pub auth_original: std::collections::BTreeMap<String, jackin_config::AccountConfig>,
+        pub bindings_pending: std::collections::BTreeMap<jackin_core::Agent, String>,
+        pub bindings_original: std::collections::BTreeMap<jackin_core::Agent, String>,
+        pub github: jackin_config::GithubAuthConfig,
+        pub original_github: jackin_config::GithubAuthConfig,
         pub trust_pending: Vec<jackin_console::tui::state::SettingsTrustRow>,
         pub git_coauthor_trailer: bool,
         pub git_dco: bool,
@@ -262,8 +265,11 @@ pub(super) mod config {
                 env_original: &self.env_original,
                 env_pending: &self.env_pending,
                 auth_pending: &self.auth_pending,
-                original_github_env: &self.original_github_env,
-                github_env: &self.github_env,
+                auth_original: &self.auth_original,
+                bindings_pending: &self.bindings_pending,
+                bindings_original: &self.bindings_original,
+                github: &self.github,
+                original_github: &self.original_github,
                 trust_pending: &self.trust_pending,
                 git_coauthor_trailer: self.git_coauthor_trailer,
                 git_dco: self.git_dco,
@@ -291,36 +297,34 @@ pub(super) mod config {
     ) -> anyhow::Result<()> {
         for op in workspace_save_diff_plan(workspace_name, original, pending) {
             match op {
-                WorkspaceSaveDiffOp::WorkspaceAuthForward { agent, mode } => {
-                    editor_doc.set_workspace_auth_forward(workspace_name, agent, mode);
+                WorkspaceSaveDiffOp::WorkspaceAccounts { accounts } => {
+                    editor_doc.set_workspace_accounts(workspace_name, &accounts)?;
+                }
+                WorkspaceSaveDiffOp::WorkspaceAccountBinding { agent, account } => {
+                    editor_doc.set_account_binding(
+                        Some(workspace_name),
+                        None,
+                        agent,
+                        account.as_deref(),
+                    )?;
+                }
+                WorkspaceSaveDiffOp::WorkspaceRoleAccountBinding {
+                    role,
+                    agent,
+                    account,
+                } => {
+                    editor_doc.set_account_binding(
+                        Some(workspace_name),
+                        Some(&role),
+                        agent,
+                        account.as_deref(),
+                    )?;
                 }
                 WorkspaceSaveDiffOp::WorkspaceGithubAuthForward { mode } => {
                     editor_doc.set_workspace_github_auth_forward(workspace_name, mode);
                 }
-                WorkspaceSaveDiffOp::WorkspaceRoleAuthForward { role, agent, mode } => {
-                    editor_doc.set_workspace_role_auth_forward(workspace_name, &role, agent, mode);
-                }
                 WorkspaceSaveDiffOp::WorkspaceRoleGithubAuthForward { role, mode } => {
                     editor_doc.set_workspace_role_github_auth_forward(workspace_name, &role, mode);
-                }
-                WorkspaceSaveDiffOp::WorkspaceSyncSourceDir { agent, source } => {
-                    editor_doc.set_workspace_sync_source_dir(
-                        workspace_name,
-                        agent,
-                        source.as_deref(),
-                    );
-                }
-                WorkspaceSaveDiffOp::WorkspaceRoleSyncSourceDir {
-                    role,
-                    agent,
-                    source,
-                } => {
-                    editor_doc.set_workspace_role_sync_source_dir(
-                        workspace_name,
-                        &role,
-                        agent,
-                        source.as_deref(),
-                    );
                 }
                 WorkspaceSaveDiffOp::EnvSet { scope, key, value } => {
                     editor_doc.set_env_var(&scope, &key, value)?;

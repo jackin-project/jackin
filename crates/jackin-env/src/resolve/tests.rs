@@ -462,11 +462,11 @@ fn prop_operator_env_follows_declared_layer_precedence() {
 fn disc_env_per_key_preserves_success_when_another_source_fails() {
     let mut config = AppConfig::default();
     config.env.insert(
-        "ZAI_API_KEY".to_owned(),
+        "SERVICE_A_TOKEN".to_owned(),
         EnvValue::Plain("resolved-zai".to_owned()),
     );
     config.env.insert(
-        "MINIMAX_API_KEY".to_owned(),
+        "SERVICE_B_TOKEN".to_owned(),
         op_ref("minimax", Some("account-a"), false),
     );
     let runner =
@@ -474,19 +474,19 @@ fn disc_env_per_key_preserves_success_when_another_source_fails() {
 
     let results =
         resolve_operator_env_per_key_with_matching(&config, None, None, &runner, host_env, |key| {
-            matches!(key, "ZAI_API_KEY" | "MINIMAX_API_KEY")
+            matches!(key, "SERVICE_A_TOKEN" | "SERVICE_B_TOKEN")
         });
 
     assert_eq!(results.len(), 2);
     let zai = results
         .iter()
-        .find(|result| result.key() == "ZAI_API_KEY")
+        .find(|result| result.key() == "SERVICE_A_TOKEN")
         .unwrap();
     assert_eq!(zai.status(), OperatorEnvKeyStatus::Resolved);
     assert_eq!(zai.resolved_value(), Some("resolved-zai"));
     let minimax = results
         .iter()
-        .find(|result| result.key() == "MINIMAX_API_KEY")
+        .find(|result| result.key() == "SERVICE_B_TOKEN")
         .unwrap();
     assert_eq!(minimax.status(), OperatorEnvKeyStatus::DeniedOrUnavailable);
     assert_eq!(minimax.resolved_value(), None);
@@ -501,19 +501,65 @@ fn disc_env_per_key_never_resolves_unrelated_or_on_demand_values() {
     );
     config
         .env
-        .insert("ZAI_API_KEY".to_owned(), op_ref("zai", None, true));
+        .insert("SERVICE_A_TOKEN".to_owned(), op_ref("zai", None, true));
     let runner = FakeOpRunner::default();
 
     let results =
         resolve_operator_env_per_key_with_matching(&config, None, None, &runner, host_env, |key| {
-            key == "ZAI_API_KEY"
+            key == "SERVICE_A_TOKEN"
         });
 
     assert_eq!(results.len(), 1);
-    assert_eq!(results[0].key(), "ZAI_API_KEY");
+    assert_eq!(results[0].key(), "SERVICE_A_TOKEN");
     assert_eq!(
         results[0].status(),
         OperatorEnvKeyStatus::InteractionRequired
     );
     assert!(runner.calls().is_empty());
+}
+
+#[test]
+fn account_declaration_resolution_preserves_status_and_redacts_secrets() {
+    let runner = FakeOpRunner::default();
+    for (declaration, expected) in [
+        (
+            EnvValue::from("fixture-account-secret"),
+            OperatorEnvKeyStatus::Resolved,
+        ),
+        (EnvValue::from("   "), OperatorEnvKeyStatus::Malformed),
+        (
+            EnvValue::from("$ABSENT_ACCOUNT_SECRET"),
+            OperatorEnvKeyStatus::Missing,
+        ),
+        (
+            EnvValue::OpRef(OpRef {
+                op: "op://vault/account/key".into(),
+                path: "Account/key".into(),
+                account: None,
+                on_demand: false,
+            }),
+            OperatorEnvKeyStatus::DeniedOrUnavailable,
+        ),
+        (
+            EnvValue::OpRef(OpRef {
+                op: "op://vault/account/key".into(),
+                path: "Account/key".into(),
+                account: None,
+                on_demand: true,
+            }),
+            OperatorEnvKeyStatus::InteractionRequired,
+        ),
+    ] {
+        let resolution =
+            resolve_account_declaration_with("OPENAI_API_KEY", &declaration, &runner, |_| {
+                Err(std::env::VarError::NotPresent)
+            });
+        assert_eq!(resolution.status(), expected);
+        assert!(!format!("{resolution:?}").contains("fixture-account-secret"));
+        if expected == OperatorEnvKeyStatus::Resolved {
+            assert_eq!(resolution.resolved_value(), Some("fixture-account-secret"));
+        } else {
+            assert!(resolution.resolved_value().is_none());
+        }
+    }
 }

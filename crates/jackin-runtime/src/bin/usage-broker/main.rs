@@ -21,32 +21,25 @@ impl ProviderCredentialSecretSource for ServiceSecretSource {
     fn lookup_declaration(
         &self,
         config: &jackin_config::AppConfig,
-        workspace: Option<&jackin_core::WorkspaceName>,
-        role: Option<&str>,
+        _workspace: Option<&jackin_core::WorkspaceName>,
+        _role: Option<&str>,
         entry: jackin_core::UsageCredentialEnvName,
     ) -> Option<jackin_config::EnvValue> {
-        jackin_env::lookup_operator_env_declaration(config, role, workspace, entry.name)
+        config.env.get(entry.name).cloned()
     }
 
     fn resolve_secret(
         &self,
         config: &jackin_config::AppConfig,
-        workspace: Option<&jackin_core::WorkspaceName>,
-        role: Option<&str>,
+        _workspace: Option<&jackin_core::WorkspaceName>,
+        _role: Option<&str>,
         entry: jackin_core::UsageCredentialEnvName,
     ) -> Option<ProviderCredentialSecretResolution> {
-        let declaration =
-            jackin_env::lookup_operator_env_declaration(config, role, workspace, entry.name)?;
-        let result =
-            jackin_env::resolve_operator_env_per_key_matching(config, role, workspace, |key| {
-                key == entry.name
-            })
-            .into_iter()
-            .next()?;
+        let declaration = config.env.get(entry.name).cloned()?;
+        let result = jackin_env::resolve_account_declaration(entry.name, &declaration);
         let outcome = match result.status() {
             jackin_env::OperatorEnvKeyStatus::Resolved => result
                 .resolved_value()
-                .filter(|value| !value.is_empty())
                 .map_or(ProviderCredentialSecretOutcome::Malformed, |value| {
                     ProviderCredentialSecretOutcome::Resolved(value.to_owned())
                 }),
@@ -109,3 +102,6 @@ fn argument(args: &[String], name: &str) -> Result<PathBuf, String> {
         .map(PathBuf::from)
         .ok_or_else(|| format!("missing value for broker argument {name}"))
 }
+
+#[cfg(test)]
+mod tests;

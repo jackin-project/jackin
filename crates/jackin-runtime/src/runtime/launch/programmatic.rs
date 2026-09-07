@@ -17,7 +17,6 @@
 //! through the one shared pipeline the CLI uses — nothing here forks it.
 
 use std::collections::BTreeMap;
-use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use jackin_config::AppConfig;
@@ -84,10 +83,10 @@ pub enum LoadOptionsError {
         /// The branch that was requested.
         branch: String,
     },
-    /// The account source folder does not exist or is not a directory.
-    AccountSourceMissing {
-        /// The path as supplied.
-        path: String,
+    /// The requested account is absent from the registry.
+    AccountMissing {
+        /// Registered account ID requested by the caller.
+        account: String,
     },
     /// An empty model string was supplied.
     EmptyModel,
@@ -128,10 +127,7 @@ impl std::fmt::Display for LoadOptionsError {
                 "role branch {branch:?} cannot be loaded non-interactively; loading an \
                  unreviewed branch requires the branch-trust prompt"
             ),
-            Self::AccountSourceMissing { path } => write!(
-                f,
-                "account source folder {path:?} does not exist or is not a directory"
-            ),
+            Self::AccountMissing { account } => write!(f, "account {account:?} is not registered"),
             Self::EmptyModel => f.write_str("model override cannot be empty"),
             Self::ReservedEnvName { name } => write!(
                 f,
@@ -221,10 +217,10 @@ impl super::LoadOptions {
             return Err(LoadOptionsError::TrustNotGranted { role });
         }
         if let Some(account) = self.account.as_ref()
-            && !account.is_dir()
+            && !config.accounts.contains_key(account)
         {
-            return Err(LoadOptionsError::AccountSourceMissing {
-                path: account.display().to_string(),
+            return Err(LoadOptionsError::AccountMissing {
+                account: account.clone(),
             });
         }
         if self.model.as_ref().is_some_and(|m| m.trim().is_empty()) {
@@ -322,16 +318,46 @@ pub fn lane_agent_env(
     out
 }
 
-/// Resolve the account (auth sync source) folder for `agent`.
+/// Make an ephemeral account binding, preserving workspace admission checks.
 ///
-/// A programmatic launch pins the account per launch; without one the launch
-/// falls back to the per-workspace/role/global config resolution the
-/// interactive path uses.
-pub(crate) fn resolve_account_source(
-    account_override: Option<&Path>,
-    fallback: Option<std::path::PathBuf>,
-) -> Option<std::path::PathBuf> {
-    account_override.map(Path::to_path_buf).or(fallback)
+/// # Errors
+/// Rejects unknown accounts, incompatible agents, and accounts outside the
+/// workspace allowlist. Does not mutate the supplied configuration.
+pub fn with_account_selection(
+    config: &AppConfig,
+    agent: Agent,
+    workspace: Option<&jackin_core::WorkspaceName>,
+    role: &str,
+    id: &str,
+) -> anyhow::Result<AppConfig> {
+    let account = config
+        .accounts
+        .get(id)
+        .ok_or_else(|| anyhow::anyhow!("account {id:?} is not registered"))?;
+    anyhow::ensure!(
+        account.supports_agent(agent),
+        "account {id:?} does not support {agent}"
+    );
+    let mut selected = config.clone();
+    if let Some(workspace) = workspace {
+        let ws = selected
+            .workspaces
+            .get_mut(workspace.as_str())
+            .ok_or_else(|| anyhow::anyhow!("workspace {workspace} is not configured"))?;
+        anyhow::ensure!(
+            ws.accounts.iter().any(|allowed| allowed == id),
+            "account {id:?} is not assigned to workspace {workspace}"
+        );
+        ws.roles
+            .entry(role.to_owned())
+            .or_default()
+            .account_bindings
+            .insert(agent, id.to_owned());
+    } else {
+        selected.account_bindings.insert(agent, id.to_owned());
+    }
+    jackin_config::resolve_account(&selected, agent, workspace, role)?;
+    Ok(selected)
 }
 
 #[cfg(test)]

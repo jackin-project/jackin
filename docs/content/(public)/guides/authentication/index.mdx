@@ -1,57 +1,39 @@
 ---
 title: Authentication
-description: How jackin❯ forwards your host logins into agent containers
+description: Discover named accounts and authorize credentials per workspace
 ---
 
+jackin❯ keeps coding-agent credentials in a named account registry. First start discovers existing default host logins and provider API-key environment references. Workspaces explicitly authorize the accounts they may use.
 
-jackin❯ starts every agent container with the credentials it needs already in place — your `Claude Code` login, your `Codex` login, your `Amp` login, your `Kimi` login, your `OpenCode` login, your `Grok` login, and your `GitHub CLI` login all flow into the container automatically, so the agent runs from the moment it starts and you never see a `/login` prompt or a `gh auth login` device-flow on first launch.
+## Coding-agent and provider accounts
 
-Every authentication axis jackin❯ supports today follows the same pattern. The pages in this group cover the operator surface for each axis:
+An account contains one credential source:
 
-**[Agent Authentication](/guides/authentication/agents/)**  
-`Claude Code`, `Codex`, `Amp`, `Kimi`, `OpenCode`, and `Grok` credentials forwarded into the agent container, with optional API-key alternatives (plus OAuth token for Claude Code).
+- A profile directory for Claude Code, Codex, Amp, Kimi, OpenCode, or Grok.
+- An API key for an AI provider, entered privately or referenced through an environment variable or 1Password.
+- A Claude OAuth token.
 
-**[GitHub CLI Authentication](/guides/authentication/github-cli/)**  
-The host's `gh` login forwarded so `git push`, `gh` commands, and the in-container GitHub MCP tools authenticate without prompts.
+```bash
+jackin account scan
+jackin account list
+jackin account add work --agent claude --directory ~/.claude-work
+jackin workspace account assign my-app work
+jackin workspace account select my-app work --agent claude
+```
 
-**[Z.AI (GLM Coding Plan)](/guides/authentication/zai/)**  
-Configure `ZAI_API_KEY` to unlock Z.AI as a selectable provider for Claude Code sessions — an Anthropic-compatible GLM endpoint that runs alongside Anthropic tabs in the same container.
+Registration and authorization are separate. A workspace with no assigned accounts receives no coding-agent credentials. Select an account explicitly when several assigned accounts support an agent; role bindings can narrow the choice without expanding workspace access.
 
-**[MiniMax (Token Plan)](/guides/authentication/minimax/)**  
-Configure `MINIMAX_API_KEY` to unlock MiniMax as a selectable provider for Claude Code sessions — MiniMax's Anthropic-compatible endpoint backed by MiniMax-M3.
+See [Agent accounts](/guides/authentication/agents/) and [account commands](/commands/account/). Provider examples cover [Z.AI](/guides/authentication/zai/), [MiniMax](/guides/authentication/minimax/), and [Kimi](/guides/authentication/kimi/).
 
-**[Kimi](/guides/authentication/kimi/)**  
-Configure `KIMI_CODE_API_KEY` to unlock Kimi as a selectable provider for Claude Code sessions — Kimi's Anthropic-compatible coding endpoint backed by `kimi-for-coding`.
+## GitHub CLI authentication
 
-## The shape every axis shares
-
-Each axis has the same three knobs:
-
-- **Three modes.** `sync` is the default — forward the host login as-is. `ignore` opts out entirely. The remaining mode supplies a scoped credential through your operator env-vars layer instead of the broad host login (`api_key` or `oauth_token` for agents; `token` for `gh`).
-- **Three configuration scopes.** Global default, per-workspace override, and per-(workspace × role × agent) override. The most-specific scope wins.
-- **Per-agent dimension where it makes sense.** Agent forwarding has an agent dimension (`Claude`, `Codex`, `Amp`, `Kimi`, and `OpenCode` are configured separately because their credentials and runtime expectations differ). `GitHub CLI` forwarding doesn't — `gh` doesn't care which agent is invoking it, so the same `gh` login is shared by every agent in the container.
-
-The default everywhere is `sync` so a freshly installed jackin❯ Just Works on the first launch. You opt into a tighter mode only when you want to bind a specific workspace or role to a scoped, least-privilege credential. The page for each axis explains how to do that and surfaces the launch-summary line that confirms which mode is active on every container start.
-
-## Why `sync` is the default
-
-jackin❯ is a security-first project — see [Design Principles](/getting-started/design-principles/) — but security and simplicity are not at odds here. Forwarding your existing host login is what most operators expect on first run, and the alternative (an empty container that prompts for credentials on every launch) trains operators to bypass safety because the safe default is too inconvenient. So `sync` is the out-of-the-box behaviour, and jackin❯ provides explicit, well-documented paths to tighten the policy when a workspace or role calls for it.
-
-This is the project's default stance on every authentication axis it ever adds: ship something that works on first launch with sane defaults, and supply the tooling to lock it down where the operator needs to.
+[GitHub CLI authentication](/guides/authentication/github-cli/) remains separate from coding-agent accounts. Its `sync`, `token`, and `ignore` settings control the `gh` login used by Git and GitHub tools across the container.
 
 ## Managing auth — always through the operator console
 
-The recommended way to view and edit any authentication setting — agent or `GitHub CLI`, global default or per-workspace or per-role — is the operator console:
+Open `jackin console` to manage named accounts in Settings and authorize accounts for each workspace. The CLI offers the same registry and workspace assignment operations through `jackin account` and `jackin workspace account`.
 
-```bash
-jackin console
-```
-
-…then select your workspace and switch to the **Auth** tab. The same tab covers every authentication axis jackin❯ supports. You pick the mode through a mode-picker; for modes that need a credential, the form opens the same `1Password` / host-env / literal source picker used by the env-vars editor; the form refuses to save until the credential resolves.
-
-You should not need to hand-edit any configuration file. Operators who prefer the CLI for global agent defaults can use `jackin config auth …`; GitHub CLI global defaults and all more-specific settings live in the console's **Auth** tab today.
-
-The per-axis pages in this group (Agent / `GitHub CLI`) describe the modes and the launch-summary line each axis prints, but the *interface* for managing those modes is uniform.
+GitHub CLI policy stays in its dedicated authentication controls; changing a coding-agent account does not change GitHub access.
 
 ## What jackin❯ deliberately does not forward
 
@@ -65,5 +47,5 @@ Authentication forwarding is one of the places where jackin❯ repo-wide *[never
 
 ## See also
 
-- [Environment Variables](/guides/environment-variables/) — how the operator env-vars model supplies credentials for the non-`sync` modes.
+- [Environment Variables](/guides/environment-variables/) — host environment and 1Password references used by account credentials.
 - [Security Model](/guides/security-model/) — the broader container boundary and what authentication forwarding does (and does not) imply.

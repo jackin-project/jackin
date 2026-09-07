@@ -10,13 +10,12 @@ use super::{
     AuthEnterPlan, AuthRow, EditorAuthActionKeyPlan, EditorEnterKeyPlan, EditorEscapeKeyPlan,
     EditorFieldSelectionKeyPlan, EditorFocusTarget, EditorHorizontalScrollKeyPlan,
     EditorImmediateActionKeyPlan, EditorMode, EditorMountActionKeyPlan, EditorMountGithubOpenPlan,
-    EditorNavigationKeyPlan, EditorRoleActionKeyPlan, EditorRoleHeaderExpansionKeyPlan,
-    EditorSaveKeyPlan, EditorSaveModePlan, EditorSecretsActionKeyPlan, EditorState,
-    EditorStatusPopupModal, EditorTab, EditorTabActionKeyPlan, FieldFocus, RoleHeaderExpansionPlan,
-    SecretsRow, editor_save_mode_plan,
+    EditorNavigationKeyPlan, EditorRoleActionKeyPlan, EditorSaveKeyPlan, EditorSaveModePlan,
+    EditorSecretsActionKeyPlan, EditorState, EditorStatusPopupModal, EditorTab,
+    EditorTabActionKeyPlan, FieldFocus, RoleHeaderExpansionPlan, SecretsRow, editor_save_mode_plan,
 };
 
-type TestEditor = EditorState<(), (), (), jackin_config::EnvValue, (), (), (), (), (), ()>;
+type TestEditor = EditorState<(), (), (), jackin_config::EnvValue, (), (), (), ()>;
 #[derive(Debug)]
 enum TestStatusModal {
     Status,
@@ -56,7 +55,7 @@ impl super::EditorErrorPopupModal<u8> for TestStatusModal {
 }
 
 type TestEditorWithStatusModal =
-    EditorState<(), TestStatusModal, (), jackin_config::EnvValue, (), (), (), (), (), ()>;
+    EditorState<(), TestStatusModal, (), jackin_config::EnvValue, (), (), (), ()>;
 #[derive(Debug)]
 enum TestAuthModal {
     Auth {
@@ -87,7 +86,7 @@ impl crate::tui::auth_config::ModalAuthFormParentInspect for TestAuthModal {
 }
 
 type TestEditorWithAuthModal =
-    EditorState<(), TestAuthModal, (), jackin_config::EnvValue, u8, (), (), (), (), ()>;
+    EditorState<(), TestAuthModal, (), jackin_config::EnvValue, (), (), (), ()>;
 type TestEditorWithMountCache = EditorState<
     crate::mount_info_cache::MountInfoCache,
     (),
@@ -97,34 +96,7 @@ type TestEditorWithMountCache = EditorState<
     (),
     (),
     (),
-    (),
-    (),
 >;
-
-#[test]
-fn editor_apply_auth_kind_plan_updates_selection_and_scroll() {
-    let mut editor = TestEditor::new_edit("alpha".into(), WorkspaceConfig::default());
-    editor.active_field = FieldFocus::Row(9);
-    crate::tui::scroll_block::scroll_area_set_x(&mut editor.tab_scroll, 12);
-    crate::tui::scroll_block::scroll_area_set_y(&mut editor.tab_scroll, 4);
-
-    editor.apply_auth_kind_plan(
-        crate::tui::screens::editor::update::enter_editor_auth_kind_plan(
-            crate::tui::auth::AuthKind::Claude,
-        ),
-    );
-
-    assert_eq!(
-        editor.auth_selected_kind,
-        Some(crate::tui::auth::AuthKind::Claude)
-    );
-    assert_eq!(editor.active_field, FieldFocus::Row(0));
-    assert_eq!(editor.tab_scroll.offset_x(), 0);
-    assert_eq!(editor.tab_scroll.offset_y(), 0);
-
-    editor.apply_auth_kind_plan(crate::tui::screens::editor::update::clear_editor_auth_kind_plan());
-    assert_eq!(editor.auth_selected_kind, None);
-}
 
 #[test]
 fn editor_apply_tab_move_plan_resets_departed_tab_state() {
@@ -152,14 +124,12 @@ fn editor_apply_tab_move_plan_resets_departed_tab_state() {
 #[test]
 fn editor_apply_selection_and_scroll_plans_update_focus() {
     let mut editor = TestEditor::new_edit("alpha".into(), WorkspaceConfig::default());
-    editor.auth_selected_kind = Some(crate::tui::auth::AuthKind::Claude);
 
     editor.apply_tab_select_plan(crate::tui::screens::editor::update::editor_tab_select_plan(
         EditorTab::Auth,
         EditorTab::Mounts,
     ));
     assert_eq!(editor.active_tab, EditorTab::Mounts);
-    assert_eq!(editor.auth_selected_kind, None);
     assert_eq!(editor.active_field, FieldFocus::Row(0));
 
     editor.apply_tab_bar_focus_plan(false);
@@ -235,14 +205,10 @@ fn editor_toggles_selected_mount_readonly() {
 fn editor_sets_role_expansion_state() {
     let mut editor = TestEditor::new_edit("alpha".into(), WorkspaceConfig::default());
 
-    editor.set_auth_role_expanded(String::from("dev"), true);
     editor.set_secrets_role_expanded(String::from("ops"), true);
-    assert!(editor.auth_expanded.contains("dev"));
     assert!(editor.secrets_expanded.contains("ops"));
 
-    editor.set_auth_role_expanded(String::from("dev"), false);
     editor.set_secrets_role_expanded(String::from("ops"), false);
-    assert!(!editor.auth_expanded.contains("dev"));
     assert!(!editor.secrets_expanded.contains("ops"));
 }
 
@@ -490,7 +456,6 @@ fn editor_synthesizes_pending_workspace_for_auth_rows() {
         jackin_core::ZAI_API_KEY_ENV_NAME.into(),
         jackin_config::EnvValue::Plain("zai".into()),
     );
-    editor.auth_selected_kind = Some(crate::tui::auth::AuthKind::Zai);
 
     let synthesized = editor.synthesize_app_config_for_auth(&jackin_config::AppConfig::default());
     let rows = editor.auth_flat_rows(&jackin_config::AppConfig::default());
@@ -499,308 +464,9 @@ fn editor_synthesizes_pending_workspace_for_auth_rows() {
     assert!(rows.iter().any(|row| matches!(
         row,
         AuthRow::WorkspaceMode {
-            kind: crate::tui::auth::AuthKind::Zai
+            kind: crate::tui::auth::AuthKind::Github
         }
     )));
-}
-
-#[test]
-fn editor_focused_auth_form_prefills_workspace_layer() {
-    let workspace = WorkspaceConfig {
-        claude: Some(jackin_config::AgentAuthConfig {
-            auth_forward: jackin_config::AuthForwardMode::Sync,
-            sync_source_dir: Some(std::path::PathBuf::from("/host/claude")),
-        }),
-        ..WorkspaceConfig::default()
-    };
-    let mut editor = TestEditor::new_edit("alpha".into(), workspace);
-    editor.auth_selected_kind = Some(crate::tui::auth::AuthKind::Claude);
-
-    let (target, form) = editor
-        .focused_auth_form(&jackin_config::AppConfig::default())
-        .expect("workspace mode row should open auth form");
-
-    assert!(matches!(
-        target,
-        crate::tui::screens::settings::model::AuthFormTarget::Workspace {
-            kind: crate::tui::auth::AuthKind::Claude
-        }
-    ));
-    assert_eq!(form.mode, Some(crate::tui::auth::AuthMode::Sync));
-    assert_eq!(
-        form.source_folder,
-        Some(std::path::PathBuf::from("/host/claude"))
-    );
-    assert!(form.shows_source_folder());
-}
-
-#[test]
-fn editor_focused_auth_form_returns_none_for_non_form_rows() {
-    let mut editor = TestEditor::new_edit("alpha".into(), WorkspaceConfig::default());
-    editor.auth_selected_kind = Some(crate::tui::auth::AuthKind::Claude);
-    editor.active_field = FieldFocus::Row(usize::MAX);
-
-    assert!(
-        editor
-            .focused_auth_form(&jackin_config::AppConfig::default())
-            .is_none()
-    );
-}
-
-#[test]
-fn editor_persist_auth_form_writes_workspace_layer() {
-    let mut editor = TestEditor::new_edit("alpha".into(), WorkspaceConfig::default());
-    let mut form =
-        crate::tui::components::auth_panel::AuthForm::new(crate::tui::auth::AuthKind::Zai);
-    form.set_mode(crate::tui::auth::AuthMode::ApiKey);
-    form.set_literal("zai-key".into());
-
-    editor.persist_auth_form(
-        &crate::tui::screens::settings::model::AuthFormTarget::Workspace {
-            kind: crate::tui::auth::AuthKind::Zai,
-        },
-        &form,
-    );
-
-    assert_eq!(
-        editor.pending.env.get(jackin_core::ZAI_API_KEY_ENV_NAME),
-        Some(&jackin_config::EnvValue::Plain("zai-key".into()))
-    );
-}
-
-#[test]
-fn editor_clear_auth_form_layer_clears_role_source_folder() {
-    let mut workspace = WorkspaceConfig::default();
-    workspace.roles.entry("dev".into()).or_default().claude =
-        Some(jackin_config::AgentAuthConfig {
-            auth_forward: jackin_config::AuthForwardMode::Sync,
-            sync_source_dir: Some(std::path::PathBuf::from("/role/claude")),
-        });
-    let mut editor = TestEditor::new_edit("alpha".into(), workspace);
-
-    editor.clear_auth_form_layer(
-        &crate::tui::screens::settings::model::AuthFormTarget::WorkspaceRole {
-            role: "dev".into(),
-            kind: crate::tui::auth::AuthKind::Claude,
-        },
-    );
-
-    assert_eq!(editor.pending.roles["dev"].claude, None);
-}
-
-#[test]
-fn editor_toggle_auth_role_expanded_flips_role_section() {
-    let mut editor = TestEditor::new_edit("alpha".into(), WorkspaceConfig::default());
-
-    editor.toggle_auth_role_expanded("dev".into());
-    assert!(editor.auth_expanded.contains("dev"));
-
-    editor.toggle_auth_role_expanded("dev".into());
-    assert!(!editor.auth_expanded.contains("dev"));
-}
-
-#[test]
-fn editor_focused_auth_role_expansion_plan_reads_current_row() {
-    let workspace = WorkspaceConfig {
-        roles: std::collections::BTreeMap::from([(
-            "dev".into(),
-            WorkspaceRoleOverride {
-                github: Some(jackin_config::GithubAuthConfig {
-                    auth_forward: jackin_config::GithubAuthMode::Token,
-                    ..Default::default()
-                }),
-                ..Default::default()
-            },
-        )]),
-        ..Default::default()
-    };
-    let mut editor = TestEditor::new_edit("alpha".into(), workspace);
-    editor.auth_selected_kind = Some(crate::tui::auth::AuthKind::Github);
-    let config = jackin_config::AppConfig::default();
-    editor.active_field = FieldFocus::Row(
-        editor
-            .auth_flat_rows(&config)
-            .iter()
-            .position(|row| matches!(row, AuthRow::RoleHeader { role, .. } if role == "dev"))
-            .expect("role header row"),
-    );
-
-    assert_eq!(
-        editor.focused_auth_role_expansion_plan(&config, true),
-        RoleHeaderExpansionPlan::Set {
-            role: "dev".into(),
-            expanded: true
-        }
-    );
-
-    editor.auth_expanded.insert("dev".into());
-    assert_eq!(
-        editor.focused_auth_role_expansion_plan(&config, true),
-        RoleHeaderExpansionPlan::HeaderNoop
-    );
-    assert_eq!(
-        editor.focused_auth_role_expansion_plan(&config, false),
-        RoleHeaderExpansionPlan::Set {
-            role: "dev".into(),
-            expanded: false
-        }
-    );
-}
-
-#[test]
-fn editor_focused_role_header_expansion_key_plan_routes_by_tab() {
-    let mut workspace = WorkspaceConfig::default();
-    workspace
-        .roles
-        .entry("dev".into())
-        .or_default()
-        .env
-        .insert("TOKEN".into(), jackin_config::EnvValue::Plain("one".into()));
-    workspace.roles.entry("dev".into()).or_default().github =
-        Some(jackin_config::GithubAuthConfig {
-            auth_forward: jackin_config::GithubAuthMode::Token,
-            ..Default::default()
-        });
-    let mut editor = TestEditor::new_edit("alpha".into(), workspace);
-    let config = jackin_config::AppConfig::default();
-
-    editor.active_tab = EditorTab::Secrets;
-    editor.active_field = FieldFocus::Row(
-        editor
-            .secrets_flat_rows()
-            .iter()
-            .position(|row| matches!(row, SecretsRow::RoleHeader { role, .. } if role == "dev"))
-            .expect("secrets role header row"),
-    );
-    assert_eq!(
-        editor.focused_role_header_expansion_key_plan(&config, true),
-        EditorRoleHeaderExpansionKeyPlan::Secrets(RoleHeaderExpansionPlan::Set {
-            role: "dev".into(),
-            expanded: true
-        })
-    );
-
-    editor.active_tab = EditorTab::Auth;
-    editor.auth_selected_kind = Some(crate::tui::auth::AuthKind::Github);
-    editor.active_field = FieldFocus::Row(
-        editor
-            .auth_flat_rows(&config)
-            .iter()
-            .position(|row| matches!(row, AuthRow::RoleHeader { role, .. } if role == "dev"))
-            .expect("auth role header row"),
-    );
-    assert_eq!(
-        editor.focused_role_header_expansion_key_plan(&config, true),
-        EditorRoleHeaderExpansionKeyPlan::Auth(RoleHeaderExpansionPlan::Set {
-            role: "dev".into(),
-            expanded: true
-        })
-    );
-
-    editor.active_tab = EditorTab::Roles;
-    assert_eq!(
-        editor.focused_role_header_expansion_key_plan(&config, true),
-        EditorRoleHeaderExpansionKeyPlan::NotRoleHeaderTab
-    );
-}
-
-#[test]
-fn editor_focused_auth_kind_reads_current_row() {
-    let mut editor = TestEditor::new_edit("alpha".into(), WorkspaceConfig::default());
-    let config = jackin_config::AppConfig::default();
-
-    assert_eq!(
-        editor.focused_auth_kind(&config),
-        Some(crate::tui::auth::AuthKind::Claude)
-    );
-
-    editor.auth_selected_kind = Some(crate::tui::auth::AuthKind::Claude);
-    assert_eq!(editor.focused_auth_kind(&config), None);
-}
-
-#[test]
-fn editor_focused_auth_enter_plan_reads_current_row() {
-    let mut workspace = WorkspaceConfig::default();
-    workspace.roles.entry("dev".into()).or_default().github =
-        Some(jackin_config::GithubAuthConfig {
-            auth_forward: jackin_config::GithubAuthMode::Token,
-            ..Default::default()
-        });
-    let mut editor = TestEditor::new_edit("alpha".into(), workspace);
-    let config = jackin_config::AppConfig::default();
-
-    assert_eq!(editor.focused_auth_enter_plan(&config), AuthEnterPlan::Noop);
-
-    editor.auth_selected_kind = Some(crate::tui::auth::AuthKind::Github);
-    assert_eq!(
-        editor.focused_auth_enter_plan(&config),
-        AuthEnterPlan::OpenForm
-    );
-
-    editor.active_field = FieldFocus::Row(
-        editor
-            .auth_flat_rows(&config)
-            .iter()
-            .position(|row| matches!(row, AuthRow::RoleHeader { role, .. } if role == "dev"))
-            .expect("role header row"),
-    );
-    assert_eq!(
-        editor.focused_auth_enter_plan(&config),
-        AuthEnterPlan::ToggleRole("dev".into())
-    );
-
-    editor.active_field = FieldFocus::Row(editor.auth_flat_rows(&config).len() - 1);
-    assert_eq!(
-        editor.focused_auth_enter_plan(&config),
-        AuthEnterPlan::AddRoleOverride
-    );
-}
-
-#[test]
-fn editor_clear_auth_row_at_cursor_clears_workspace_auth_layer() {
-    let workspace = WorkspaceConfig {
-        env: std::collections::BTreeMap::from([(
-            jackin_core::ZAI_API_KEY_ENV_NAME.to_owned(),
-            jackin_config::EnvValue::Plain("zai".into()),
-        )]),
-        ..WorkspaceConfig::default()
-    };
-    let mut editor = TestEditor::new_edit("alpha".into(), workspace);
-    editor.auth_selected_kind = Some(crate::tui::auth::AuthKind::Zai);
-
-    editor.clear_auth_row_at_cursor(&jackin_config::AppConfig::default());
-
-    assert!(
-        !editor
-            .pending
-            .env
-            .contains_key(jackin_core::ZAI_API_KEY_ENV_NAME)
-    );
-}
-
-#[test]
-fn editor_clear_auth_row_at_cursor_clears_role_auth_layer() {
-    let mut workspace = WorkspaceConfig::default();
-    workspace.roles.entry("dev".into()).or_default().env.insert(
-        jackin_core::ZAI_API_KEY_ENV_NAME.to_owned(),
-        jackin_config::EnvValue::Plain("zai".into()),
-    );
-    let mut editor = TestEditor::new_edit("alpha".into(), workspace);
-    editor.auth_selected_kind = Some(crate::tui::auth::AuthKind::Zai);
-
-    let rows = editor.auth_flat_rows(&jackin_config::AppConfig::default());
-    editor.active_field = FieldFocus::Row(
-        rows.iter()
-            .position(|row| matches!(row, AuthRow::RoleHeader { role, .. } if role == "dev"))
-            .expect("role header should be present"),
-    );
-    editor.clear_auth_row_at_cursor(&jackin_config::AppConfig::default());
-
-    assert!(
-        !editor.pending.roles["dev"]
-            .env
-            .contains_key(jackin_core::ZAI_API_KEY_ENV_NAME)
-    );
 }
 
 #[test]
@@ -958,7 +624,7 @@ fn editor_immediate_action_key_plan_routes_tab_actions() {
     editor.active_tab = EditorTab::Auth;
     assert_eq!(
         editor.immediate_action_key_plan(&config, KeyCode::Enter, KeyModifiers::empty()),
-        EditorImmediateActionKeyPlan::EnterAuthKind(crate::tui::auth::AuthKind::Claude)
+        EditorImmediateActionKeyPlan::NotImmediateAction
     );
 
     editor.active_tab = EditorTab::General;
@@ -1112,14 +778,13 @@ fn editor_auth_action_key_plan_routes_auth_tab_actions() {
         EditorAuthActionKeyPlan::NotAuthAction
     );
 
-    editor.auth_selected_kind = Some(crate::tui::auth::AuthKind::Claude);
     assert_eq!(
         editor.auth_action_key_plan(KeyCode::Char('a')),
-        EditorAuthActionKeyPlan::OpenRolePicker
+        EditorAuthActionKeyPlan::NotAuthAction
     );
     assert_eq!(
         editor.auth_action_key_plan(KeyCode::Char('A')),
-        EditorAuthActionKeyPlan::OpenRolePicker
+        EditorAuthActionKeyPlan::NotAuthAction
     );
     assert_eq!(
         editor.auth_action_key_plan(KeyCode::Char('d')),
@@ -1161,10 +826,9 @@ fn editor_tab_action_key_plan_routes_active_tab_precedence() {
     );
 
     editor.active_tab = EditorTab::Auth;
-    editor.auth_selected_kind = Some(crate::tui::auth::AuthKind::Claude);
     assert_eq!(
         editor.tab_action_key_plan(&config, KeyCode::Char('a'), KeyModifiers::empty(), true,),
-        EditorTabActionKeyPlan::Auth(EditorAuthActionKeyPlan::OpenRolePicker)
+        EditorTabActionKeyPlan::Noop
     );
 }
 
@@ -1182,7 +846,6 @@ fn editor_tab_action_key_plan_delegates_enter_after_actions() {
     );
 
     editor.active_tab = EditorTab::Auth;
-    editor.auth_selected_kind = None;
     assert_eq!(
         editor.tab_action_key_plan(&config, KeyCode::Enter, KeyModifiers::empty(), true),
         EditorTabActionKeyPlan::Enter(EditorEnterKeyPlan::Auth(AuthEnterPlan::Noop))
@@ -1259,8 +922,7 @@ fn editor_enter_key_plan_routes_tab_actions() {
     );
 
     editor.active_tab = EditorTab::Auth;
-    editor.auth_selected_kind = Some(crate::tui::auth::AuthKind::Github);
-    editor.active_field = FieldFocus::Row(0);
+    editor.active_field = FieldFocus::Row(jackin_core::Agent::ALL.len());
     assert_eq!(
         editor.enter_key_plan(&config, true),
         EditorEnterKeyPlan::Auth(AuthEnterPlan::OpenForm)
@@ -1276,16 +938,14 @@ fn editor_escape_key_plan_routes_focus_auth_and_dirty_state() {
     assert_eq!(editor.escape_key_plan(), EditorEscapeKeyPlan::FocusTabBar);
 
     editor.active_tab = EditorTab::Auth;
-    editor.auth_selected_kind = Some(crate::tui::auth::AuthKind::Claude);
-    assert_eq!(
-        editor.escape_key_plan(),
-        EditorEscapeKeyPlan::FocusTabBarAndClearAuthKind
-    );
+    assert_eq!(editor.escape_key_plan(), EditorEscapeKeyPlan::FocusTabBar);
 
     editor.set_tab_bar_focused(true);
-    assert_eq!(editor.escape_key_plan(), EditorEscapeKeyPlan::ClearAuthKind);
+    assert_eq!(
+        editor.escape_key_plan(),
+        EditorEscapeKeyPlan::ReloadFromConfig
+    );
 
-    editor.auth_selected_kind = None;
     assert_eq!(
         editor.escape_key_plan(),
         EditorEscapeKeyPlan::ReloadFromConfig
@@ -1503,34 +1163,6 @@ fn editor_delete_env_var_removes_empty_role_override() {
 }
 
 #[test]
-fn editor_delete_env_var_blocks_managed_claude_oauth_token() {
-    let mut editor = TestEditor::new_edit("alpha".into(), WorkspaceConfig::default());
-    editor.pending.claude = Some(jackin_config::AgentAuthConfig {
-        auth_forward: jackin_config::AuthForwardMode::OAuthToken,
-        sync_source_dir: None,
-    });
-    editor.pending.env.insert(
-        jackin_core::CLAUDE_CODE_OAUTH_TOKEN_ENV_NAME.into(),
-        jackin_config::EnvValue::Plain("token".into()),
-    );
-
-    let err = editor
-        .delete_env_var(
-            &super::SecretsScopeTag::Workspace,
-            jackin_core::CLAUDE_CODE_OAUTH_TOKEN_ENV_NAME,
-        )
-        .unwrap_err();
-
-    assert!(err.to_string().contains("claude-token revoke"));
-    assert!(
-        editor
-            .pending
-            .env
-            .contains_key(jackin_core::CLAUDE_CODE_OAUTH_TOKEN_ENV_NAME)
-    );
-}
-
-#[test]
 fn editor_secret_text_editability_rejects_op_refs() {
     let mut editor = TestEditor::new_edit("alpha".into(), WorkspaceConfig::default());
     editor
@@ -1691,7 +1323,7 @@ fn editor_focused_secret_targets_read_current_row() {
 }
 
 #[test]
-fn editor_change_count_tracks_env_and_role_auth() {
+fn editor_change_count_tracks_env_and_role_account_binding() {
     let mut editor = TestEditor::new_edit("alpha".into(), WorkspaceConfig::default());
     assert_eq!(editor.change_count(), 0);
 
@@ -1699,13 +1331,15 @@ fn editor_change_count_tracks_env_and_role_auth() {
         .pending
         .env
         .insert("TOKEN".into(), jackin_config::EnvValue::Plain("one".into()));
-    editor.pending.roles.entry("dev".into()).or_default().github =
-        Some(jackin_config::GithubAuthConfig {
-            auth_forward: jackin_config::GithubAuthMode::Token,
-            ..Default::default()
-        });
+    editor
+        .pending
+        .roles
+        .entry("dev".into())
+        .or_default()
+        .account_bindings
+        .insert(jackin_core::Agent::Claude, "personal".into());
 
-    assert_eq!(editor.change_count(), 4);
+    assert_eq!(editor.change_count(), 2);
 }
 
 #[test]
@@ -1774,41 +1408,6 @@ fn editor_eligible_role_override_selectors_use_workspace_allowed_roles() {
 
     assert_eq!(eligible.len(), 1);
     assert_eq!(eligible[0].name.as_str(), "beta");
-}
-
-#[test]
-fn editor_auth_role_override_selectors_filter_existing_overrides() {
-    let mut workspace = WorkspaceConfig {
-        allowed_roles: vec!["alpha".into(), "beta".into()],
-        ..Default::default()
-    };
-    workspace.roles.entry("alpha".into()).or_default().github =
-        Some(jackin_config::GithubAuthConfig {
-            auth_forward: jackin_config::GithubAuthMode::Token,
-            ..Default::default()
-        });
-    let mut editor = TestEditor::new_edit("alpha".into(), workspace);
-    editor.auth_selected_kind = Some(crate::tui::auth::AuthKind::Github);
-    let registered = ["alpha".to_owned(), "beta".to_owned(), "bad role".to_owned()];
-
-    let eligible = editor
-        .auth_role_override_selectors(registered.iter())
-        .expect("selected kind should produce candidates");
-
-    assert_eq!(eligible.len(), 1);
-    assert_eq!(eligible[0].name.as_str(), "beta");
-}
-
-#[test]
-fn editor_auth_role_override_selectors_require_selected_kind() {
-    let editor = TestEditor::new_edit("alpha".into(), WorkspaceConfig::default());
-    let registered = ["alpha".to_owned()];
-
-    assert!(
-        editor
-            .auth_role_override_selectors(registered.iter())
-            .is_none()
-    );
 }
 
 #[test]
@@ -1897,4 +1496,139 @@ fn trparity_editor_focus_owner_survives_modal_commit() {
         editor.focus_owner(),
         ConsoleFocusTarget::Content(EditorFocusTarget::WorkspaceMounts)
     );
+}
+
+#[test]
+fn account_removal_clears_workspace_and_role_bindings() {
+    let mut config = jackin_config::AppConfig::default();
+    config.accounts.insert(
+        "personal".into(),
+        jackin_config::AccountConfig {
+            enabled: true,
+            name: "Personal".into(),
+            provider: jackin_config::AiProvider::Anthropic,
+            credential: jackin_config::AccountCredential::ApiKey {
+                value: jackin_core::EnvValue::Plain("test".into()),
+                base_url: None,
+                model: None,
+            },
+        },
+    );
+    let mut editor = TestEditor::new_edit("alpha".into(), WorkspaceConfig::default());
+    editor.active_field = FieldFocus::Row(0);
+    editor.edit_account_row(&config, false);
+    editor
+        .pending
+        .account_bindings
+        .insert(jackin_core::Agent::Claude, "personal".into());
+    editor
+        .pending
+        .roles
+        .entry("dev".into())
+        .or_default()
+        .account_bindings
+        .insert(jackin_core::Agent::Claude, "personal".into());
+    editor.edit_account_row(&config, false);
+    assert!(editor.pending.accounts.is_empty());
+    assert!(editor.pending.account_bindings.is_empty());
+    assert!(editor.pending.roles["dev"].account_bindings.is_empty());
+}
+
+#[test]
+fn account_binding_cycles_only_compatible_assigned_accounts() {
+    let mut config = jackin_config::AppConfig::default();
+    for (id, provider) in [
+        ("anthropic", jackin_config::AiProvider::Anthropic),
+        ("openai", jackin_config::AiProvider::OpenAi),
+    ] {
+        config.accounts.insert(
+            id.into(),
+            jackin_config::AccountConfig {
+                enabled: true,
+                name: id.into(),
+                provider,
+                credential: jackin_config::AccountCredential::ApiKey {
+                    value: jackin_core::EnvValue::Plain("test".into()),
+                    base_url: None,
+                    model: None,
+                },
+            },
+        );
+    }
+    let mut editor = TestEditor::new_edit("alpha".into(), WorkspaceConfig::default());
+    editor.pending.accounts = vec!["anthropic".into(), "openai".into()];
+    editor.active_field = FieldFocus::Row(2);
+    editor.edit_account_row(&config, false);
+    assert_eq!(
+        editor.pending.account_bindings[&jackin_core::Agent::Claude],
+        "anthropic"
+    );
+    assert!(editor.change_count() > 0);
+    editor.edit_account_row(&config, false);
+    assert!(editor.pending.account_bindings.is_empty());
+}
+
+#[test]
+fn github_workspace_form_remains_independent_of_agent_accounts() {
+    let mut editor = TestEditor::new_edit("alpha".into(), WorkspaceConfig::default());
+    let target = crate::tui::state::AuthFormTarget::Workspace {
+        kind: crate::tui::auth::AuthKind::Github,
+    };
+    let form = crate::tui::state::AuthForm::from_existing(
+        crate::tui::auth::AuthKind::Github,
+        crate::tui::auth::AuthMode::Token,
+        Some(jackin_core::EnvValue::Plain("gh-test".into())),
+    );
+    editor.persist_auth_form(&target, &form);
+    assert_eq!(
+        editor.pending.github.as_ref().unwrap().auth_forward,
+        jackin_config::GithubAuthMode::Token
+    );
+    assert!(editor.pending.accounts.is_empty());
+    editor.clear_auth_form_layer(&target);
+    assert!(editor.pending.github.is_none());
+}
+
+#[test]
+fn role_binding_uses_assigned_account_and_survives_environment_removal() {
+    let mut config = jackin_config::AppConfig::default();
+    config.roles.insert("dev".into(), RoleSource::default());
+    config.accounts.insert(
+        "personal".into(),
+        jackin_config::AccountConfig {
+            enabled: true,
+            name: "Personal".into(),
+            provider: jackin_config::AiProvider::Anthropic,
+            credential: jackin_config::AccountCredential::ApiKey {
+                value: jackin_core::EnvValue::Plain("test".into()),
+                base_url: None,
+                model: None,
+            },
+        },
+    );
+    let mut workspace = WorkspaceConfig::default();
+    workspace.accounts.push("personal".into());
+    let mut editor = TestEditor::new_edit("alpha".into(), workspace);
+    let rows = editor.auth_flat_rows(&config);
+    let index = rows.iter().position(|row| matches!(row, AuthRow::Binding { agent: jackin_core::Agent::Claude, role: Some(role) } if role == "dev")).unwrap();
+    editor.active_field = FieldFocus::Row(index);
+    editor.edit_account_row(&config, false);
+    editor
+        .pending
+        .roles
+        .get_mut("dev")
+        .unwrap()
+        .env
+        .insert("TOKEN".into(), jackin_core::EnvValue::Plain("value".into()));
+    editor
+        .delete_env_var(
+            &crate::tui::screens::editor::model::SecretsScopeTag::Role("dev".into()),
+            "TOKEN",
+        )
+        .unwrap();
+    assert_eq!(
+        editor.pending.roles["dev"].account_bindings[&jackin_core::Agent::Claude],
+        "personal"
+    );
+    assert!(editor.pending.account_bindings.is_empty());
 }

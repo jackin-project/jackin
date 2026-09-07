@@ -56,6 +56,7 @@ pub(super) async fn handle_load(
         rebuild,
         force,
         agent,
+        account,
         role_branch,
         docker_profile,
         dry_run,
@@ -98,6 +99,39 @@ pub(super) async fn handle_load(
     lifecycle.ready();
 
     if dry_run {
+        let selected_agent = agent
+            .or(resolved_workspace.default_agent)
+            .unwrap_or(jackin_core::Agent::Claude);
+        let workspace_name = saved_workspace_name
+            .as_deref()
+            .map(jackin_core::WorkspaceName::parse)
+            .transpose()?;
+        let scoped;
+        let plan_config = if let Some(id) = &account {
+            scoped = runtime::with_account_selection(
+                config,
+                selected_agent,
+                workspace_name.as_ref(),
+                &class.to_string(),
+                id,
+            )?;
+            &scoped
+        } else {
+            &*config
+        };
+        let selected_account = jackin_config::resolve_account(
+            plan_config,
+            selected_agent,
+            workspace_name.as_ref(),
+            &class.to_string(),
+        )?;
+        let selected_id = selected_account.and_then(|selected| {
+            plan_config
+                .accounts
+                .iter()
+                .find(|(_, account)| std::ptr::eq(*account, selected))
+                .map(|(id, _)| id.clone())
+        });
         // The image half of the plan is only knowable after the role manifest
         // is read: `published_image` is a manifest field and the
         // reuse-vs-build decision derives from it. Resolving it here is what
@@ -115,7 +149,10 @@ pub(super) async fn handle_load(
         return print_dry_run_plan(
             &class,
             &resolved_workspace,
-            agent.as_ref(),
+            DryRunIdentity {
+                agent: selected_agent,
+                account_id: selected_id.as_deref(),
+            },
             role_branch.as_deref(),
             rebuild,
             &format,
@@ -126,6 +163,7 @@ pub(super) async fn handle_load(
     let mut opts = runtime::LoadOptions::for_load(debug, rebuild);
     opts.force = force;
     opts.agent = agent;
+    opts.account = account;
     opts.role_branch = role_branch;
     opts.docker_profile = docker_profile;
     // Pre-launch reconcile: if a previous role in a keep_awake
@@ -287,21 +325,21 @@ async fn dispatch_console_outcome(
         outcome @ console::ConsoleOutcome::InstanceAction { .. } => {
             return console_outcome_instance_action(outcome, &mut ctx, screen).await;
         }
-        console::ConsoleOutcome::NewSessionWithProvider {
+        console::ConsoleOutcome::NewSessionWithAccount {
             container,
             agent,
-            provider,
+            account,
         } => {
-            return console_outcome_new_session(container, agent, provider, &mut ctx).await;
+            return console_outcome_new_session(container, agent, account, &mut ctx).await;
         }
-        console::ConsoleOutcome::LaunchWithProvider {
+        console::ConsoleOutcome::LaunchWithAccount {
             selector,
             workspace,
             agent,
-            provider,
+            account,
         } => {
-            return console_outcome_launch_with_provider(
-                selector, workspace, agent, provider, &mut ctx,
+            return console_outcome_launch_with_account(
+                selector, workspace, agent, account, &mut ctx,
             )
             .await;
         }
@@ -356,7 +394,7 @@ async fn console_outcome_instance_action(
 async fn console_outcome_new_session(
     container: String,
     agent: jackin_core::Agent,
-    provider: jackin_protocol::Provider,
+    account: Option<String>,
     ctx: &mut ConsoleLaunchCtx<'_>,
 ) -> Result<()> {
     let manifest = instance::InstanceManifest::read(&ctx.paths.data_dir.join(&container))
@@ -372,21 +410,67 @@ async fn console_outcome_new_session(
         any_keep_awake_enabled(ctx.config),
     )
     .await;
-    // The token is backfilled inside the container by the
-    // daemon from `ZAI_API_KEY`, so pass overrides without it.
-    let result = runtime::spawn_agent_session(
-        ctx.paths,
-        &container,
-        Some(&manifest),
+    let workspace_name = manifest
+        .workspace_name
+        .as_deref()
+        .map(jackin_core::WorkspaceName::parse)
+        .transpose()?;
+    let scoped;
+    let selected_config = if let Some(id) = &account {
+        scoped = runtime::with_account_selection(
+            ctx.config,
+            agent,
+            workspace_name.as_ref(),
+            &manifest.role_key,
+            id,
+        )?;
+        &scoped
+    } else {
+        &*ctx.config
+    };
+    jackin_config::resolve_account(
+        selected_config,
         agent,
-        Some(provider.label()),
-        &provider.env_overrides(None),
-        ctx.config.git.coauthor_trailer,
-        ctx.config.git.dco,
-        ctx.docker,
-        ctx.runner,
-    )
-    .await;
+        workspace_name.as_ref(),
+        &manifest.role_key,
+    )?;
+    let result = if runtime::account_configuration_matches(
+        &ctx.paths.data_dir.join(&container),
+        selected_config,
+        workspace_name.as_ref(),
+        &manifest.role_key,
+    )? {
+        runtime::spawn_agent_session(
+            ctx.paths,
+            &container,
+            Some(&manifest),
+            agent,
+            &[],
+            ctx.config.git.coauthor_trailer,
+            ctx.config.git.dco,
+            ctx.docker,
+            ctx.runner,
+        )
+        .await
+    } else {
+        let selector = RoleSelector::parse(&manifest.role_key)?;
+        let cwd = std::env::current_dir()?;
+        let input = if let Some(name) = &manifest.workspace_name {
+            LoadWorkspaceInput::Saved(name.clone())
+        } else {
+            super::restore::resolve_ad_hoc_restore_input(&manifest, &cwd)?
+        };
+        let workspace = resolve_load_workspace(ctx.config, &selector, &cwd, input, &[])?;
+        let mut opts = runtime::LoadOptions::for_launch(ctx.debug);
+        opts.agent = Some(agent);
+        opts.account = account;
+        opts.role_branch = manifest.role_source_ref.clone();
+        opts.restore_role_source_git = Some(manifest.role_source_git.clone());
+        runtime::load_role(
+            ctx.paths, ctx.config, &selector, &workspace, ctx.docker, ctx.runner, &opts,
+        )
+        .await
+    };
     runtime::reconcile_keep_awake_when_configured(
         ctx.paths,
         ctx.docker,
@@ -400,16 +484,16 @@ async fn console_outcome_new_session(
     result
 }
 
-async fn console_outcome_launch_with_provider(
+async fn console_outcome_launch_with_account(
     selector: RoleSelector,
     workspace: jackin_config::ResolvedWorkspace,
     agent: jackin_core::Agent,
-    provider: jackin_protocol::Provider,
+    account: Option<String>,
     ctx: &mut ConsoleLaunchCtx<'_>,
 ) -> Result<()> {
     let mut opts = runtime::LoadOptions::for_launch(ctx.debug);
     opts.agent = Some(agent);
-    opts.provider = Some(provider);
+    opts.account = account;
     runtime::reconcile_keep_awake_when_configured(
         ctx.paths,
         ctx.docker,
@@ -592,7 +676,6 @@ pub(super) async fn handle_hardline(
             &container,
             Some(&manifest),
             selected_agent,
-            None,
             &[],
             config.git.coauthor_trailer,
             config.git.dco,
@@ -718,20 +801,23 @@ pub(crate) fn dry_run_plan_json(
     })
 }
 
+struct DryRunIdentity<'a> {
+    agent: jackin_core::Agent,
+    account_id: Option<&'a str>,
+}
+
 /// Print the resolved load plan for `--dry-run` and exit without launching.
 fn print_dry_run_plan(
     class: &RoleSelector,
     workspace: &crate::workspace::ResolvedWorkspace,
-    agent: Option<&jackin_core::Agent>,
+    identity: DryRunIdentity<'_>,
     role_branch: Option<&str>,
     rebuild: bool,
     format: &str,
     image_plan: &runtime::LaunchImagePlan,
 ) -> Result<()> {
-    let agent_slug = agent
-        .map(|a| a.slug().to_owned())
-        .or_else(|| workspace.default_agent.map(|a| a.slug().to_owned()))
-        .unwrap_or_else(|| "claude".to_owned());
+    let agent_slug = identity.agent.slug();
+    let account_id = identity.account_id;
 
     let mount_lines: Vec<String> = workspace
         .mounts
@@ -740,14 +826,15 @@ fn print_dry_run_plan(
         .collect();
 
     if format == "json" {
-        let plan = dry_run_plan_json(
+        let mut plan = dry_run_plan_json(
             class,
             workspace,
-            &agent_slug,
+            agent_slug,
             role_branch,
             rebuild,
             image_plan,
         );
+        plan["data"]["account"] = serde_json::json!(account_id);
         println!("{}", serde_json::to_string_pretty(&plan)?);
     } else {
         println!("Workspace:  {} ({})", workspace.label, workspace.workdir);
@@ -757,6 +844,7 @@ fn print_dry_run_plan(
         );
         println!("Role:       {role_display}");
         println!("Agent:      {agent_slug}");
+        println!("Account:    {}", account_id.unwrap_or("none"));
         println!("Image:      {} ({})", image_plan.image, image_plan.decision);
         if let Some(reason) = image_plan.reason {
             println!("Reason:     {reason}");

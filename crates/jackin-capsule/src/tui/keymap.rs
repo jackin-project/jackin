@@ -264,7 +264,7 @@ pub(crate) static PREFIX_COMMAND_KEYMAP: Keymap<PrefixCommand> =
 // ── Dialog: filterable list ───────────────────────────────────────────────────
 
 /// Actions for the type-to-filter list dialogs (command palette, agent picker,
-/// close-target picker, split-direction picker, provider picker).
+/// close-target picker, split-direction picker, agent picker).
 ///
 /// Printable `Char` input is intentionally absent from the table — it builds the
 /// filter and is handled by the dispatch site's `printable_filter_char`

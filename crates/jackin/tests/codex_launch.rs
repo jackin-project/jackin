@@ -97,8 +97,14 @@ async fn codex_launch_invokes_docker_run_with_codex_agent() {
     install_agent_binary_stubs(&paths);
     std::fs::write(
         &paths.config_file,
-        r#"[env]
-OPENAI_API_KEY = "test-openai-key"
+        r#"[accounts.openai-test]
+name = "OpenAI test"
+provider = "openai"
+[accounts.openai-test.credential]
+type = "api_key"
+value = "test-openai-key"
+[account_bindings]
+codex = "openai-test"
 
 [roles.agent-smith]
 git = "https://github.com/jackin-project/jackin-agent-smith.git"
@@ -183,12 +189,27 @@ model = "gpt-5"
     assert!(run_cmd.contains("--env-file"), "{run_cmd}");
     assert!(!run_cmd.contains("test-openai-key"), "{run_cmd}");
     let (env_path, env_contents) = observed_env.lock().unwrap().clone().unwrap();
-    assert!(
-        env_contents
-            .lines()
-            .any(|line| line == "OPENAI_API_KEY=test-openai-key"),
-        "{env_contents}"
-    );
+    assert!(!env_contents.contains("test-openai-key"), "{env_contents}");
+    let credentials_path = paths
+        .data_dir
+        .join(recorded_role_container_name(run_cmd))
+        .join("credentials/account-credentials.json");
+    let credentials: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&credentials_path).unwrap()).unwrap();
+    assert_eq!(credentials["codex"]["OPENAI_API_KEY"], "test-openai-key");
+    assert_eq!(credentials.as_object().unwrap().len(), 1);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        assert_eq!(
+            std::fs::metadata(&credentials_path)
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777,
+            0o600
+        );
+    }
     assert!(
         !env_path.exists(),
         "host env file must be removed after run"
@@ -236,8 +257,14 @@ async fn codex_launch_cli_agent_override_wins_over_workspace() {
     install_agent_binary_stubs(&paths);
     std::fs::write(
         &paths.config_file,
-        r#"[env]
-OPENAI_API_KEY = "test-openai-key"
+        r#"[accounts.openai-test]
+name = "OpenAI test"
+provider = "openai"
+[accounts.openai-test.credential]
+type = "api_key"
+value = "test-openai-key"
+[account_bindings]
+codex = "openai-test"
 
 [roles.agent-smith]
 git = "https://github.com/jackin-project/jackin-agent-smith.git"

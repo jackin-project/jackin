@@ -63,13 +63,13 @@ where
     );
 }
 
-pub trait LaunchProviderPickerManagerState<RoleSelector, Agent, Provider>
+pub trait LaunchAccountPickerManagerState<RoleSelector, Agent, Provider>
 where
     RoleSelector: crate::tui::components::role_picker::RoleChoice,
 {
-    fn open_launch_provider_picker(
+    fn open_launch_account_picker(
         &mut self,
-        picker: crate::tui::components::provider_picker::ProviderPickerState<
+        picker: crate::tui::components::account_picker::AccountPickerState<
             RoleSelector,
             Agent,
             Provider,
@@ -126,8 +126,8 @@ pub fn store_pending_launch_plan<LaunchInput, RoleSelector>(
     state.store_pending_launch(input);
 }
 
-pub fn open_launch_provider_picker_plan<LaunchInput, RoleSelector, Agent, Provider>(
-    state: &mut impl LaunchProviderPickerState<LaunchInput, RoleSelector, Agent, Provider>,
+pub fn open_launch_account_picker_plan<LaunchInput, RoleSelector, Agent, Provider>(
+    state: &mut impl LaunchAccountPickerState<LaunchInput, RoleSelector, Agent, Provider>,
     input: LaunchInput,
     role: RoleSelector,
     agent: Agent,
@@ -135,7 +135,7 @@ pub fn open_launch_provider_picker_plan<LaunchInput, RoleSelector, Agent, Provid
 ) where
     RoleSelector: crate::tui::components::role_picker::RoleChoice + Clone,
 {
-    state.open_launch_provider_picker(input, role, agent, providers);
+    state.open_launch_account_picker(input, role, agent, providers);
 }
 
 pub trait LaunchRolePromptState<LaunchInput, RoleSelector>
@@ -154,11 +154,11 @@ where
     fn store_pending_launch(&mut self, input: LaunchInput);
 }
 
-pub trait LaunchProviderPickerState<LaunchInput, RoleSelector, Agent, Provider>
+pub trait LaunchAccountPickerState<LaunchInput, RoleSelector, Agent, Provider>
 where
     RoleSelector: crate::tui::components::role_picker::RoleChoice + Clone,
 {
-    fn open_launch_provider_picker(
+    fn open_launch_account_picker(
         &mut self,
         input: LaunchInput,
         role: RoleSelector,
@@ -200,26 +200,26 @@ where
 }
 
 impl<Manager, LaunchInput, RoleSelector, OpCache, Agent, Provider>
-    LaunchProviderPickerState<LaunchInput, RoleSelector, Agent, Provider>
+    LaunchAccountPickerState<LaunchInput, RoleSelector, Agent, Provider>
     for ConsoleApp<Manager, LaunchInput, RoleSelector, OpCache>
 where
-    Manager: LaunchProviderPickerManagerState<RoleSelector, Agent, Provider>,
+    Manager: LaunchAccountPickerManagerState<RoleSelector, Agent, Provider>,
     RoleSelector: crate::tui::components::role_picker::RoleChoice + Clone,
 {
-    fn open_launch_provider_picker(
+    fn open_launch_account_picker(
         &mut self,
         input: LaunchInput,
         role: RoleSelector,
         agent: Agent,
         providers: Vec<Provider>,
     ) {
-        let picker = crate::tui::components::provider_picker::ProviderPickerState::new(
+        let picker = crate::tui::components::account_picker::AccountPickerState::new(
             role.clone(),
             agent,
             providers,
         );
         let ConsoleAppStage::Manager(manager) = &mut self.stage;
-        manager.open_launch_provider_picker(picker);
+        manager.open_launch_account_picker(picker);
         self.pending_launch = Some(input);
         self.pending_launch_role = Some(role);
     }

@@ -1,0 +1,7 @@
+version = "v1alpha10"
+[accounts.personal]
+name = "Personal"
+provider = "anthropic"
+[accounts.personal.credential]
+type = "api_key"
+value = "$ANTHROPIC_API_KEY"

@@ -160,15 +160,6 @@ pub enum SpawnRequest {
     Shell,
     /// `Agent` variant.
     Agent(String),
-    /// Agent spawn where the provider was already selected by the console
-    /// before `docker exec`-ing. The daemon uses `provider_label` directly
-    /// as the tab suffix instead of showing the in-mux `ProviderPicker` dialog.
-    AgentWithProvider {
-        /// `slug` field.
-        slug: String,
-        /// `provider_label` field.
-        provider_label: String,
-    },
 }
 
 impl SpawnRequest {
@@ -184,9 +175,6 @@ impl SpawnRequest {
         Ok(SpawnRequest::Agent(slug))
     }
 }
-
-/// Wire cap for the provider label field in an `AgentWithProvider` Hello frame.
-pub const MAX_HELLO_PROVIDER_LABEL: usize = 64;
 
 /// Terminal identity reported by the currently attached client.
 /// Per-attach, not container-lifetime: the daemon must gate
@@ -945,7 +933,6 @@ pub fn encode_client(frame: ClientFrame) -> Result<Vec<u8>> {
             // Layout:
             //   rows(2) cols(2) spawn_kind(1)
             //   agent_len(2) agent_bytes(N)
-            //   [kind=3 only] provider_label_len(2) provider_label_bytes(M)
             //   env_count(2)
             //   repeated key_len(2) value_len(4) key_bytes value_bytes
             //   focus_kind(1) [focus_session_id(8) if focus_kind == 1]
@@ -954,16 +941,11 @@ pub fn encode_client(frame: ClientFrame) -> Result<Vec<u8>> {
             //   colorterm_len(2) colorterm_bytes
             //   fg_present(1) [fg_r(1) fg_g(1) fg_b(1) if 1]
             //   bg_present(1) [bg_r(1) bg_g(1) bg_b(1) if 1]
-            let (spawn_kind, agent_bytes, provider_label_bytes): (u8, &[u8], &[u8]) =
-                match spawn.as_ref() {
-                    None => (0, b"", b""),
-                    Some(SpawnRequest::Shell) => (1, b"", b""),
-                    Some(SpawnRequest::Agent(agent)) => (2, agent.as_bytes(), b""),
-                    Some(SpawnRequest::AgentWithProvider {
-                        slug,
-                        provider_label,
-                    }) => (3, slug.as_bytes(), provider_label.as_bytes()),
-                };
+            let (spawn_kind, agent_bytes): (u8, &[u8]) = match spawn.as_ref() {
+                None => (0, b""),
+                Some(SpawnRequest::Shell) => (1, b""),
+                Some(SpawnRequest::Agent(agent)) => (2, agent.as_bytes()),
+            };
             if env.len() > MAX_HELLO_ENV {
                 bail!(
                     "hello env count {} exceeds wire cap {MAX_HELLO_ENV}",
@@ -981,19 +963,6 @@ pub fn encode_client(frame: ClientFrame) -> Result<Vec<u8>> {
             payload.push(spawn_kind);
             payload.extend_from_slice(&agent_len.to_be_bytes());
             payload.extend_from_slice(agent_bytes);
-            if spawn_kind == 3 {
-                if provider_label_bytes.len() > MAX_HELLO_PROVIDER_LABEL {
-                    bail!(
-                        "provider label length {} exceeds cap {MAX_HELLO_PROVIDER_LABEL}",
-                        provider_label_bytes.len()
-                    );
-                }
-                let pl_len = u16::try_from(provider_label_bytes.len()).map_err(|_| {
-                    anyhow::anyhow!("provider label exceeds u16::MAX bytes on the wire")
-                })?;
-                payload.extend_from_slice(&pl_len.to_be_bytes());
-                payload.extend_from_slice(provider_label_bytes);
-            }
             payload.extend_from_slice(&env_count.to_be_bytes());
             for (key, value) in env {
                 let key_bytes = key.as_bytes();
@@ -1375,25 +1344,6 @@ fn decode_client_legacy(tag: u8, payload: Vec<u8>) -> Result<ClientFrame> {
                         bail!("hello agent spawn missing slug");
                     }
                     Some(SpawnRequest::Agent(agent))
-                }
-                3 => {
-                    if agent.is_empty() {
-                        bail!("hello agent-with-provider spawn missing slug");
-                    }
-                    let pl_len = cursor.read_u16("provider label length")? as usize;
-                    if pl_len > MAX_HELLO_PROVIDER_LABEL {
-                        bail!(
-                            "hello provider label length {pl_len} exceeds cap {MAX_HELLO_PROVIDER_LABEL}"
-                        );
-                    }
-                    let provider_label = cursor.read_string(pl_len, "provider label")?;
-                    if provider_label.is_empty() {
-                        bail!("hello agent-with-provider spawn missing provider label");
-                    }
-                    Some(SpawnRequest::AgentWithProvider {
-                        slug: agent,
-                        provider_label,
-                    })
                 }
                 other => bail!("unknown hello spawn kind {other}"),
             };

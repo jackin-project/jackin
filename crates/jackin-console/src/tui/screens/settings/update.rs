@@ -14,7 +14,6 @@ use super::model::{
     SettingsEnvEnterPlan, SettingsEnvRow, SettingsEnvScope, SettingsEnvTextTarget,
     SettingsHoverTarget, SettingsTab, SettingsTrustRow, SettingsTrustState,
 };
-use crate::tui::auth::{AuthKind, AuthMode, auth_mode_requires_credential};
 use crate::tui::components::scope_picker::ScopeChoice;
 use crossterm::event::KeyCode;
 use jackin_core::{EnvValue, RoleSelector};
@@ -535,37 +534,6 @@ pub fn settings_tab_at_position(row: u16, col: u16) -> Option<SettingsTab> {
     let labels: Vec<&str> = SettingsTab::ALL.iter().map(|tab| tab.label()).collect();
     let idx = crate::tui::layout::tab_cell_at_position(row, col, &labels)?;
     SettingsTab::ALL.get(idx).copied()
-}
-
-#[must_use]
-pub fn settings_auth_detail_row_count(kind: AuthKind, mode: AuthMode) -> usize {
-    settings_auth_detail_rows(kind, mode).len()
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SettingsAuthDetailRow {
-    Mode,
-    Source,
-    SourceFolder,
-    Spacer,
-}
-
-#[must_use]
-pub fn settings_auth_detail_rows(kind: AuthKind, mode: AuthMode) -> Vec<SettingsAuthDetailRow> {
-    let mut rows = vec![SettingsAuthDetailRow::Mode];
-    if auth_mode_requires_credential(kind, mode) {
-        rows.push(SettingsAuthDetailRow::Source);
-    }
-    if crate::tui::auth::auth_mode_supports_source_folder(kind, mode) {
-        rows.push(SettingsAuthDetailRow::SourceFolder);
-    }
-    rows.push(SettingsAuthDetailRow::Spacer);
-    rows
-}
-
-#[must_use]
-pub const fn settings_auth_row_is_focusable(row: SettingsAuthDetailRow) -> bool {
-    matches!(row, SettingsAuthDetailRow::Mode)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1130,64 +1098,6 @@ pub fn role_picker_open_plan(roles: Vec<RoleSelector>) -> RolePickerOpenPlan {
     } else {
         RolePickerOpenPlan::Open(roles)
     }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct SettingsAuthKindPlan<K> {
-    pub selected_kind: Option<K>,
-    pub selected: usize,
-}
-
-#[must_use]
-pub const fn clear_settings_auth_kind_plan<K>() -> SettingsAuthKindPlan<K> {
-    SettingsAuthKindPlan {
-        selected_kind: None,
-        selected: 0,
-    }
-}
-
-#[must_use]
-pub fn enter_settings_auth_kind_plan<K>(
-    selected_kind: Option<K>,
-) -> Option<SettingsAuthKindPlan<K>> {
-    match selected_kind {
-        Some(kind) => Some(SettingsAuthKindPlan {
-            selected_kind: Some(kind),
-            selected: 0,
-        }),
-        None => None,
-    }
-}
-
-#[must_use]
-pub fn settings_auth_selection_plan(
-    selected: usize,
-    rows: &[SettingsAuthDetailRow],
-    delta: isize,
-) -> usize {
-    if rows.is_empty() {
-        return 0;
-    }
-    let selected = selected.min(rows.len().saturating_sub(1));
-    let focusable: Vec<usize> = rows
-        .iter()
-        .enumerate()
-        .filter_map(|(index, row)| settings_auth_row_is_focusable(*row).then_some(index))
-        .collect();
-    if focusable.is_empty() {
-        return selected;
-    }
-    let pos = focusable
-        .iter()
-        .position(|index| *index == selected)
-        .unwrap_or_else(|| {
-            focusable
-                .iter()
-                .position(|index| *index > selected)
-                .unwrap_or(focusable.len() - 1)
-        });
-    let next = crate::tui::focus::collection_move_index(pos, focusable.len(), delta);
-    focusable[next]
 }
 
 #[must_use]

@@ -493,12 +493,8 @@ fn validate_workspace_config_surfaces_isolation_layout_errors() {
         env: BTreeMap::new(),
         roles: BTreeMap::new(),
         keep_awake: KeepAwakeConfig::default(),
-        claude: None,
-        codex: None,
-        amp: None,
-        kimi: None,
-        opencode: None,
-        grok: None,
+        accounts: Vec::new(),
+        account_bindings: BTreeMap::new(),
         github: None,
         git_pull_on_entry: false,
         runtime: jackin_config::WorkspaceRuntimeConfig::default(),
@@ -511,36 +507,6 @@ fn validate_workspace_config_surfaces_isolation_layout_errors() {
     assert!(
         msg.contains("nested inside"),
         "validate_workspace_config must surface the nested-worktrees error from validate_isolation_layout; got: {msg}",
-    );
-}
-
-#[test]
-fn parse_workspace_with_agent_auth_blocks() {
-    let toml = r#"
-workdir = "/tmp/proj"
-allowed_roles = ["smith"]
-
-[claude]
-auth_forward = "api_key"
-
-[codex]
-auth_forward = "sync"
-
-[amp]
-auth_forward = "api_key"
-"#;
-    let cfg: WorkspaceConfig = toml::from_str(toml).unwrap();
-    assert_eq!(
-        cfg.claude.as_ref().unwrap().auth_forward,
-        jackin_config::AuthForwardMode::ApiKey,
-    );
-    assert_eq!(
-        cfg.codex.as_ref().unwrap().auth_forward,
-        jackin_config::AuthForwardMode::Sync,
-    );
-    assert_eq!(
-        cfg.amp.as_ref().unwrap().auth_forward,
-        jackin_config::AuthForwardMode::ApiKey,
     );
 }
 
@@ -569,159 +535,6 @@ OLD = "op://Vault/Item/Field"
         ws.env.get("OLD").expect("OLD env var present"),
         &jackin_core::EnvValue::Plain("op://Vault/Item/Field".into()),
         "bare op:// scalar must deserialize as Plain, not OpRef",
-    );
-}
-
-#[test]
-fn parse_workspace_role_override_with_agent_auth() {
-    let toml = r#"
-workdir = "/tmp/proj"
-allowed_roles = ["smith"]
-
-[roles.smith]
-[roles.smith.claude]
-auth_forward = "oauth_token"
-[roles.smith.codex]
-auth_forward = "ignore"
-[roles.smith.amp]
-auth_forward = "api_key"
-"#;
-    let cfg: WorkspaceConfig = toml::from_str(toml).unwrap();
-    let smith = cfg.roles.get("smith").expect("smith role must be present");
-    assert_eq!(
-        smith.claude.as_ref().unwrap().auth_forward,
-        jackin_config::AuthForwardMode::OAuthToken,
-    );
-    assert_eq!(
-        smith.codex.as_ref().unwrap().auth_forward,
-        jackin_config::AuthForwardMode::Ignore,
-    );
-    assert_eq!(
-        smith.amp.as_ref().unwrap().auth_forward,
-        jackin_config::AuthForwardMode::ApiKey,
-    );
-}
-
-#[test]
-fn parse_workspace_without_agent_auth_blocks() {
-    let toml = r#"
-workdir = "/tmp/proj"
-allowed_roles = ["smith"]
-"#;
-    let cfg: WorkspaceConfig = toml::from_str(toml).unwrap();
-    assert!(
-        cfg.claude.is_none(),
-        "WorkspaceConfig.claude must default to None"
-    );
-    assert!(
-        cfg.codex.is_none(),
-        "WorkspaceConfig.codex must default to None"
-    );
-    assert!(
-        cfg.amp.is_none(),
-        "WorkspaceConfig.amp must default to None"
-    );
-}
-
-#[test]
-fn reject_codex_oauth_token_in_workspace() {
-    // Phase 3: post-parse validation replaces the serde newtype check.
-    let toml = r#"
-workdir = "/tmp/proj"
-allowed_roles = ["smith"]
-
-[codex]
-auth_forward = "oauth_token"
-"#;
-    let cfg = toml::from_str::<WorkspaceConfig>(toml).expect("parse should succeed");
-    let err = cfg.validate_auth_modes().expect_err("must reject");
-    let msg = err.to_string();
-    assert!(
-        msg.contains("not supported for codex"),
-        "expected codex-rejection message, got: {msg}"
-    );
-}
-
-#[test]
-fn reject_codex_oauth_token_in_workspace_role_override() {
-    // Phase 3: post-parse validation replaces the serde newtype check.
-    let toml = r#"
-workdir = "/tmp/proj"
-allowed_roles = ["smith"]
-
-[roles.smith]
-[roles.smith.codex]
-auth_forward = "oauth_token"
-"#;
-    let cfg = toml::from_str::<WorkspaceConfig>(toml).expect("parse should succeed");
-    let err = cfg.validate_auth_modes().expect_err("must reject");
-    let msg = err.to_string();
-    assert!(
-        msg.contains("not supported for codex"),
-        "expected codex-rejection message, got: {msg}"
-    );
-}
-
-#[test]
-fn reject_amp_oauth_token_in_workspace() {
-    // Phase 3: post-parse validation replaces the serde newtype check.
-    let toml = r#"
-workdir = "/tmp/proj"
-allowed_roles = ["smith"]
-
-[amp]
-auth_forward = "oauth_token"
-"#;
-    let cfg = toml::from_str::<WorkspaceConfig>(toml).expect("parse should succeed");
-    let err = cfg.validate_auth_modes().expect_err("must reject");
-    let msg = err.to_string();
-    assert!(
-        msg.contains("not supported for amp"),
-        "expected amp-rejection message, got: {msg}"
-    );
-}
-
-#[test]
-fn reject_amp_oauth_token_in_workspace_role_override() {
-    // Phase 3: post-parse validation replaces the serde newtype check.
-    let toml = r#"
-workdir = "/tmp/proj"
-allowed_roles = ["smith"]
-
-[roles.smith]
-[roles.smith.amp]
-auth_forward = "oauth_token"
-"#;
-    let cfg = toml::from_str::<WorkspaceConfig>(toml).expect("parse should succeed");
-    let err = cfg.validate_auth_modes().expect_err("must reject");
-    let msg = err.to_string();
-    assert!(
-        msg.contains("not supported for amp"),
-        "expected amp-rejection message, got: {msg}"
-    );
-}
-
-#[test]
-fn parse_workspace_role_override_without_agent_auth() {
-    let toml = r#"
-workdir = "/tmp/proj"
-allowed_roles = ["smith"]
-
-[roles.smith]
-"#;
-    let cfg: WorkspaceConfig = toml::from_str(toml).unwrap();
-    let smith = cfg.roles.get("smith").expect("smith role must be present");
-    assert!(
-        smith.claude.is_none(),
-        "role override claude must default to None"
-    );
-    assert!(
-        smith.codex.is_none(),
-        "role override codex must default to None"
-    );
-    assert!(
-        smith.amp.is_none(),
-        "role override amp must default to None"
     );
 }
 
@@ -782,4 +595,28 @@ fn workspace_op_ref_omits_account_when_none() {
         !s.contains("account"),
         "op ref with no account must not serialize an account key, got:\n{s}"
     );
+}
+
+#[test]
+fn workspace_account_bindings_round_trip() {
+    let value = r#"workdir = "/work"
+accounts = ["work"]
+[account_bindings]
+codex = "work"
+[roles.smith.account_bindings]
+codex = "work"
+"#;
+    let workspace: WorkspaceConfig = toml::from_str(value).unwrap();
+    assert_eq!(workspace.accounts, ["work"]);
+    assert_eq!(
+        workspace.account_bindings[&jackin_core::Agent::Codex],
+        "work"
+    );
+    assert_eq!(
+        workspace.roles["smith"].account_bindings[&jackin_core::Agent::Codex],
+        "work"
+    );
+    let round_trip: WorkspaceConfig =
+        toml::from_str(&toml::to_string(&workspace).unwrap()).unwrap();
+    assert_eq!(workspace, round_trip);
 }

@@ -100,7 +100,7 @@ pub(crate) fn main_view_hint(
 /// Shared footer for the filterable list dialogs. Every key glyph derives from
 /// [`FILTER_LIST_KEYMAP`]; the call site supplies the contextual confirm label
 /// (`"select"` vs `"launch"`) and whether the "type filter" group appears
-/// (`ProviderPicker` has no filter input). Navigate keeps the keymap's own
+/// in the footer. Navigate keeps the keymap's own
 /// `"navigate"` label; cancel keeps its `"cancel"` label.
 fn filter_list_hint(confirm_label: &'static str, type_filter: bool) -> Vec<HintSpan<'static>> {
     let mut spans = Vec::with_capacity(10);
@@ -127,8 +127,7 @@ pub(super) fn picker_hint() -> Vec<HintSpan<'static>> {
     filter_list_hint("launch", true)
 }
 
-/// Provider picker has no filter input — hint without the "type filter" group.
-pub(super) fn provider_hint() -> Vec<HintSpan<'static>> {
+pub(super) fn flat_picker_hint() -> Vec<HintSpan<'static>> {
     filter_list_hint("select", false)
 }
 

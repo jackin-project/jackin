@@ -4,7 +4,7 @@
 //! Tests for `editor`.
 use super::*;
 use crate::RoleSource;
-use jackin_core::WorkspaceName;
+use jackin_core::{Agent, WorkspaceName};
 fn wn(name: &str) -> WorkspaceName {
     WorkspaceName::parse(name).unwrap()
 }
@@ -454,7 +454,7 @@ fn idempotent_save_is_byte_identical() {
 
     let original = r#"version = "v1alpha3"
 # Top-of-file note about this config
-[claude]
+[github]
 auth_forward = "sync"
 
 # Roles we trust
@@ -863,232 +863,6 @@ trusted = true
 
     let out = std::fs::read_to_string(&paths.config_file).unwrap();
     assert!(!out.contains("trusted"), "{out}");
-}
-
-#[test]
-fn set_global_auth_forward_writes_per_agent_table() {
-    for (agent, header) in [
-        (Agent::Claude, "[claude]"),
-        (Agent::Codex, "[codex]"),
-        (Agent::Amp, "[amp]"),
-        (Agent::Grok, "[grok]"),
-    ] {
-        let temp = tempdir().unwrap();
-        let paths = JackinPaths::for_tests(temp.path());
-        paths.ensure_base_dirs().unwrap();
-        std::fs::write(&paths.config_file, "").unwrap();
-
-        let mut editor = ConfigEditor::open(&paths).unwrap();
-        editor.set_global_auth_forward(agent, AuthForwardMode::Sync);
-        editor.save().unwrap();
-
-        let out = std::fs::read_to_string(&paths.config_file).unwrap();
-        assert!(out.contains(header), "expected {header} in:\n{out}");
-        assert!(out.contains(r#"auth_forward = "sync""#), "{out}");
-    }
-}
-
-#[test]
-fn set_global_sync_source_dir_writes_and_removes_agent_field() {
-    let temp = tempdir().unwrap();
-    let paths = JackinPaths::for_tests(temp.path());
-    paths.ensure_base_dirs().unwrap();
-    std::fs::write(&paths.config_file, "").unwrap();
-
-    let mut editor = ConfigEditor::open(&paths).unwrap();
-    editor.set_global_sync_source_dir(Agent::Claude, Some(Path::new("/host/claude")));
-    editor.save().unwrap();
-
-    let out = std::fs::read_to_string(&paths.config_file).unwrap();
-    assert!(out.contains("[claude]"), "{out}");
-    assert!(out.contains(r#"sync_source_dir = "/host/claude""#), "{out}");
-
-    let mut editor = ConfigEditor::open(&paths).unwrap();
-    editor.set_global_sync_source_dir(Agent::Claude, None);
-    editor.save().unwrap();
-
-    let out = std::fs::read_to_string(&paths.config_file).unwrap();
-    assert!(!out.contains("sync_source_dir"), "{out}");
-    assert!(!out.contains("[claude]"), "{out}");
-}
-
-#[test]
-fn set_workspace_auth_forward_writes_workspace_agent_block() {
-    let temp = tempdir().unwrap();
-    let paths = JackinPaths::for_tests(temp.path());
-    paths.ensure_base_dirs().unwrap();
-    std::fs::write(
-        &paths.config_file,
-        r#"
-[workspaces.proj]
-workdir = "/tmp/proj"
-"#,
-    )
-    .unwrap();
-
-    let mut editor = ConfigEditor::open(&paths).unwrap();
-    editor.set_workspace_auth_forward(&wn("proj"), Agent::Claude, Some(AuthForwardMode::ApiKey));
-    editor.save().unwrap();
-
-    let out = workspace_file_contents(&paths, "proj");
-    assert!(out.contains("[claude]"), "{out}");
-    assert!(out.contains(r#"auth_forward = "api_key""#), "{out}");
-}
-
-#[test]
-fn set_workspace_auth_forward_clears_when_mode_none() {
-    let temp = tempdir().unwrap();
-    let paths = JackinPaths::for_tests(temp.path());
-    paths.ensure_base_dirs().unwrap();
-    std::fs::write(
-        &paths.config_file,
-        r#"
-[workspaces.proj]
-workdir = "/tmp/proj"
-
-[workspaces.proj.claude]
-auth_forward = "api_key"
-"#,
-    )
-    .unwrap();
-
-    let mut editor = ConfigEditor::open(&paths).unwrap();
-    editor.set_workspace_auth_forward(&wn("proj"), Agent::Claude, None);
-    editor.save().unwrap();
-
-    let out = workspace_file_contents(&paths, "proj");
-    assert!(
-        !out.contains("[claude]"),
-        "agent block must be removed when mode = None; {out}"
-    );
-    assert!(
-        !out.contains("auth_forward"),
-        "auth_forward field must be cleared; {out}"
-    );
-}
-
-#[test]
-fn set_workspace_sync_source_dir_writes_and_removes_agent_field() {
-    let temp = tempdir().unwrap();
-    let paths = JackinPaths::for_tests(temp.path());
-    paths.ensure_base_dirs().unwrap();
-    std::fs::write(
-        &paths.config_file,
-        r#"
-[workspaces.proj]
-workdir = "/tmp/proj"
-"#,
-    )
-    .unwrap();
-
-    let mut editor = ConfigEditor::open(&paths).unwrap();
-    editor.set_workspace_sync_source_dir(
-        &wn("proj"),
-        Agent::Claude,
-        Some(Path::new("/host/claude")),
-    );
-    editor.save().unwrap();
-
-    let out = workspace_file_contents(&paths, "proj");
-    assert!(out.contains("[claude]"), "{out}");
-    assert!(out.contains(r#"sync_source_dir = "/host/claude""#), "{out}");
-
-    let mut editor = ConfigEditor::open(&paths).unwrap();
-    editor.set_workspace_sync_source_dir(&wn("proj"), Agent::Claude, None);
-    editor.save().unwrap();
-
-    let out = workspace_file_contents(&paths, "proj");
-    assert!(!out.contains("sync_source_dir"), "{out}");
-    assert!(!out.contains("[claude]"), "{out}");
-}
-
-#[test]
-fn set_workspace_role_auth_forward_writes_role_agent_block() {
-    let temp = tempdir().unwrap();
-    let paths = JackinPaths::for_tests(temp.path());
-    paths.ensure_base_dirs().unwrap();
-    std::fs::write(
-        &paths.config_file,
-        r#"
-[workspaces.proj]
-workdir = "/tmp/proj"
-"#,
-    )
-    .unwrap();
-
-    let mut editor = ConfigEditor::open(&paths).unwrap();
-    editor.set_workspace_role_auth_forward(
-        &wn("proj"),
-        "smith",
-        Agent::Codex,
-        Some(AuthForwardMode::ApiKey),
-    );
-    editor.save().unwrap();
-
-    let out = workspace_file_contents(&paths, "proj");
-    assert!(out.contains("[roles.smith.codex]"), "{out}");
-    assert!(out.contains(r#"auth_forward = "api_key""#), "{out}");
-}
-
-#[test]
-fn set_workspace_role_auth_forward_clears_when_mode_none() {
-    let temp = tempdir().unwrap();
-    let paths = JackinPaths::for_tests(temp.path());
-    paths.ensure_base_dirs().unwrap();
-    std::fs::write(
-        &paths.config_file,
-        r#"
-[workspaces.proj]
-workdir = "/tmp/proj"
-
-[workspaces.proj.roles.smith.claude]
-auth_forward = "oauth_token"
-"#,
-    )
-    .unwrap();
-
-    let mut editor = ConfigEditor::open(&paths).unwrap();
-    editor.set_workspace_role_auth_forward(&wn("proj"), "smith", Agent::Claude, None);
-    editor.save().unwrap();
-
-    let out = workspace_file_contents(&paths, "proj");
-    assert!(!out.contains("[roles.smith.claude]"), "{out}");
-}
-
-#[test]
-fn set_workspace_role_sync_source_dir_writes_and_removes_agent_field() {
-    let temp = tempdir().unwrap();
-    let paths = JackinPaths::for_tests(temp.path());
-    paths.ensure_base_dirs().unwrap();
-    std::fs::write(
-        &paths.config_file,
-        r#"
-[workspaces.proj]
-workdir = "/tmp/proj"
-"#,
-    )
-    .unwrap();
-
-    let mut editor = ConfigEditor::open(&paths).unwrap();
-    editor.set_workspace_role_sync_source_dir(
-        &wn("proj"),
-        "smith",
-        Agent::Codex,
-        Some(Path::new("/host/codex")),
-    );
-    editor.save().unwrap();
-
-    let out = workspace_file_contents(&paths, "proj");
-    assert!(out.contains("[roles.smith.codex]"), "{out}");
-    assert!(out.contains(r#"sync_source_dir = "/host/codex""#), "{out}");
-
-    let mut editor = ConfigEditor::open(&paths).unwrap();
-    editor.set_workspace_role_sync_source_dir(&wn("proj"), "smith", Agent::Codex, None);
-    editor.save().unwrap();
-
-    let out = workspace_file_contents(&paths, "proj");
-    assert!(!out.contains("sync_source_dir"), "{out}");
-    assert!(!out.contains("[roles.smith.codex]"), "{out}");
 }
 
 #[test]
@@ -1551,8 +1325,7 @@ workdir = "/workspace/prod"
     );
 }
 
-/// Clearing `[…github] auth_forward` while sibling kinds (`[…claude]` /
-/// `[…codex]`) are still set must NOT cascade-prune the siblings.
+/// Clearing GitHub policy preserves unrelated workspace tables.
 #[test]
 fn clearing_one_kind_preserves_sibling_kinds() {
     let temp = tempdir().unwrap();
@@ -1563,11 +1336,11 @@ fn clearing_one_kind_preserves_sibling_kinds() {
         r#"[workspaces.prod]
 workdir = "/workspace/prod"
 
-[workspaces.prod.claude]
-auth_forward = "ignore"
+[workspaces.prod.env]
+PRESERVED = "yes"
 
-[workspaces.prod.codex]
-auth_forward = "ignore"
+[workspaces.prod.roles.smith.env]
+ALSO_PRESERVED = "yes"
 
 [workspaces.prod.github]
 auth_forward = "ignore"
@@ -1585,12 +1358,12 @@ auth_forward = "ignore"
         "github block should be removed:\n{cleaned}"
     );
     assert!(
-        cleaned.contains("[claude]"),
-        "claude block must survive:\n{cleaned}"
+        cleaned.contains("PRESERVED"),
+        "workspace env must survive:\n{cleaned}"
     );
     assert!(
-        cleaned.contains("[codex]"),
-        "codex block must survive:\n{cleaned}"
+        cleaned.contains("ALSO_PRESERVED"),
+        "role env must survive:\n{cleaned}"
     );
 }
 
@@ -1844,4 +1617,189 @@ fn disabling_one_git_field_preserves_the_other() {
     );
     assert!(!out.contains("coauthor_trailer"), "{out}");
     assert!(out.contains("dco = true"), "{out}");
+}
+
+fn profile_account() -> crate::AccountConfig {
+    crate::AccountConfig {
+        enabled: true,
+        name: "Work".into(),
+        provider: crate::AiProvider::Anthropic,
+        credential: crate::AccountCredential::Profile {
+            agent: Agent::Claude,
+            directory: "/home/operator/.claude-work".into(),
+        },
+    }
+}
+
+#[test]
+fn account_editor_persists_explicit_workspace_and_role_selection() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let mut editor = ConfigEditor::open(&paths).unwrap();
+    editor.upsert_account("work", &profile_account()).unwrap();
+    editor
+        .create_workspace(&wn("project"), account_workspace(temp.path()))
+        .unwrap();
+    assert!(
+        editor
+            .set_account_binding(Some(&wn("project")), None, Agent::Claude, Some("work"))
+            .is_err()
+    );
+    editor
+        .set_workspace_accounts(&wn("project"), &["work".into()])
+        .unwrap();
+    editor
+        .set_account_binding(
+            Some(&wn("project")),
+            Some("smith"),
+            Agent::Claude,
+            Some("work"),
+        )
+        .unwrap();
+    let config = editor.save().unwrap();
+    assert_eq!(config.workspaces["project"].accounts, ["work"]);
+    assert_eq!(
+        config.workspaces["project"].roles["smith"].account_bindings[&Agent::Claude],
+        "work"
+    );
+    let persisted = workspace_file_contents(&paths, "project");
+    assert!(persisted.contains("[roles.smith.account_bindings]"));
+}
+
+#[test]
+fn removing_account_prunes_all_assignments_and_bindings() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let mut editor = ConfigEditor::open(&paths).unwrap();
+    editor.upsert_account("work", &profile_account()).unwrap();
+    editor
+        .create_workspace(&wn("project"), account_workspace(temp.path()))
+        .unwrap();
+    editor
+        .set_workspace_accounts(&wn("project"), &["work".into()])
+        .unwrap();
+    editor
+        .set_account_binding(None, None, Agent::Claude, Some("work"))
+        .unwrap();
+    editor
+        .set_account_binding(Some(&wn("project")), None, Agent::Claude, Some("work"))
+        .unwrap();
+    editor
+        .set_account_binding(
+            Some(&wn("project")),
+            Some("smith"),
+            Agent::Claude,
+            Some("work"),
+        )
+        .unwrap();
+    editor.save().unwrap();
+    let mut editor = ConfigEditor::open(&paths).unwrap();
+    editor.remove_account("work").unwrap();
+    let config = editor.save().unwrap();
+    assert!(!config.accounts.contains_key("work"));
+    assert!(config.account_bindings.is_empty());
+    let workspace = &config.workspaces["project"];
+    assert!(workspace.accounts.is_empty());
+    assert!(workspace.account_bindings.is_empty());
+    assert!(workspace.roles["smith"].account_bindings.is_empty());
+}
+
+fn account_workspace(source: &Path) -> WorkspaceConfig {
+    WorkspaceConfig {
+        workdir: "/workspace/project".into(),
+        mounts: vec![MountConfig {
+            src: source.display().to_string(),
+            dst: "/workspace/project".into(),
+            readonly: false,
+            isolation: crate::MountIsolation::Shared,
+        }],
+        ..Default::default()
+    }
+}
+
+#[test]
+fn account_mutations_reject_duplicate_sources_and_disabled_defaults() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let mut editor = ConfigEditor::open(&paths).unwrap();
+    let mut account = profile_account();
+    editor.upsert_account("work", &account).unwrap();
+    account.name = "Same login, new label".into();
+    assert!(editor.upsert_account("duplicate", &account).is_err());
+    editor.upsert_account("work", &account).unwrap();
+    account.enabled = false;
+    editor.upsert_account("work", &account).unwrap();
+    assert!(
+        editor
+            .set_account_binding(None, None, Agent::Claude, Some("work"))
+            .is_err()
+    );
+    let cfg = editor.save().unwrap();
+    assert!(!cfg.accounts["work"].enabled);
+    assert!(!cfg.accounts.contains_key("duplicate"));
+}
+
+#[test]
+fn clearing_final_role_binding_prunes_empty_override() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let mut editor = ConfigEditor::open(&paths).unwrap();
+    editor.upsert_account("work", &profile_account()).unwrap();
+    editor
+        .create_workspace(&wn("project"), account_workspace(temp.path()))
+        .unwrap();
+    editor
+        .set_workspace_accounts(&wn("project"), &["work".into()])
+        .unwrap();
+    editor
+        .set_account_binding(
+            Some(&wn("project")),
+            Some("smith"),
+            Agent::Claude,
+            Some("work"),
+        )
+        .unwrap();
+    editor
+        .set_account_binding(Some(&wn("project")), Some("smith"), Agent::Claude, None)
+        .unwrap();
+    let cfg = editor.save().unwrap();
+    assert!(cfg.workspaces["project"].roles.is_empty());
+}
+
+#[test]
+fn clearing_role_binding_preserves_nested_environment() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let mut editor = ConfigEditor::open(&paths).unwrap();
+    editor.upsert_account("work", &profile_account()).unwrap();
+    let mut workspace = account_workspace(temp.path());
+    workspace.roles.insert(
+        "smith".into(),
+        crate::WorkspaceRoleOverride {
+            env: [("PROJECT_KEY".into(), EnvValue::Plain("fixture".into()))]
+                .into_iter()
+                .collect(),
+            ..Default::default()
+        },
+    );
+    editor.create_workspace(&wn("project"), workspace).unwrap();
+    editor
+        .set_workspace_accounts(&wn("project"), &["work".into()])
+        .unwrap();
+    editor
+        .set_account_binding(
+            Some(&wn("project")),
+            Some("smith"),
+            Agent::Claude,
+            Some("work"),
+        )
+        .unwrap();
+    editor
+        .set_account_binding(Some(&wn("project")), Some("smith"), Agent::Claude, None)
+        .unwrap();
+    let cfg = editor.save().unwrap();
+    assert_eq!(
+        cfg.workspaces["project"].roles["smith"].env["PROJECT_KEY"],
+        EnvValue::Plain("fixture".into())
+    );
 }

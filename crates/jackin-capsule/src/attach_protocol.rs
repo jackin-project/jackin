@@ -440,17 +440,9 @@ async fn gracefully_detach_attached_task_with_reason(
     }
 }
 
-pub(crate) fn initial_spawn_request(
-    initial_agent: &str,
-    initial_provider: Option<&jackin_protocol::InitialProvider>,
-) -> SpawnRequest {
+pub(crate) fn initial_spawn_request(initial_agent: &str) -> SpawnRequest {
     if initial_agent.is_empty() {
         SpawnRequest::Shell
-    } else if let Some(provider) = initial_provider {
-        SpawnRequest::AgentWithProvider {
-            slug: initial_agent.to_owned(),
-            provider_label: provider.label.clone(),
-        }
     } else {
         SpawnRequest::Agent(initial_agent.to_owned())
     }
@@ -459,12 +451,6 @@ pub(crate) fn initial_spawn_request(
 pub(crate) fn spawn_request_label(request: &SpawnRequest) -> String {
     match request {
         SpawnRequest::Agent(agent) => format!("agent {agent:?}"),
-        SpawnRequest::AgentWithProvider {
-            slug,
-            provider_label,
-        } => {
-            format!("agent {slug:?} (provider: {provider_label})")
-        }
         SpawnRequest::Shell => "shell".to_owned(),
     }
 }

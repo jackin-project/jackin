@@ -21,9 +21,10 @@ use std::time::{Duration, Instant};
 use jackin_image::derived_image::shell_quote;
 
 use super::common::apply_host_docker_config;
-use super::diagnostics::{diagnostics_snapshot, tail_text};
+use super::diagnostics::{diagnostics_snapshot, transcript_excerpt};
 use super::transcript::{
-    buffer_bytes, spawn_pipe_collector, transcript_contains, wait_for_transcript_text,
+    buffer_bytes, spawn_logged_pipe_collector, spawn_pipe_collector, transcript_contains,
+    wait_for_transcript_text,
 };
 
 pub(super) fn pty_command(
@@ -94,8 +95,10 @@ pub(super) fn run_in_pty_until_file(
     let stdout = child.stdout.take().expect("script stdout must be piped");
     let stderr = child.stderr.take().expect("script stderr must be piped");
     let done = Arc::new(AtomicBool::new(false));
-    let (stdout_buf, stdout_reader) = spawn_pipe_collector(stdout);
-    let (stderr_buf, stderr_reader) = spawn_pipe_collector(stderr);
+    let (stdout_buf, stdout_reader) =
+        spawn_logged_pipe_collector(stdout, &cwd.join("e2e-launch-stdout.log"));
+    let (stderr_buf, stderr_reader) =
+        spawn_logged_pipe_collector(stderr, &cwd.join("e2e-launch-stderr.log"));
     let stdout_for_writer = Arc::clone(&stdout_buf);
     let done_for_writer = Arc::clone(&done);
     let script = script.to_vec();
@@ -156,8 +159,8 @@ pub(super) fn run_in_pty_until_file(
             assert!(
                 status.success() || fault_expected,
                 "script exited before sentinel file appeared\nstdout:\n{}\nstderr:\n{}",
-                String::from_utf8_lossy(&output.stdout),
-                String::from_utf8_lossy(&output.stderr),
+                transcript_excerpt(&String::from_utf8_lossy(&output.stdout)),
+                transcript_excerpt(&String::from_utf8_lossy(&output.stderr)),
             );
             return output;
         }
@@ -180,8 +183,8 @@ pub(super) fn run_in_pty_until_file(
         "timed out waiting for sentinel file {}\ndiagnostics:\n{}\nstdout tail:\n{}\nstderr tail:\n{}",
         sentinel.path.display(),
         diagnostics,
-        tail_text(&String::from_utf8_lossy(&output.stdout)),
-        tail_text(&String::from_utf8_lossy(&output.stderr)),
+        transcript_excerpt(&String::from_utf8_lossy(&output.stdout)),
+        transcript_excerpt(&String::from_utf8_lossy(&output.stderr)),
     );
 }
 
@@ -213,8 +216,8 @@ pub(super) fn run_in_pty_until_quick_exit_after_input(
                 "PTY command exited before transcript reached {:?} with status {status}\ndiagnostics:\n{}\nstdout tail:\n{}\nstderr tail:\n{}",
                 exit.wait_for,
                 diagnostics_snapshot(home),
-                tail_text(&String::from_utf8_lossy(&buffer_bytes(&stdout_buf))),
-                tail_text(&String::from_utf8_lossy(&buffer_bytes(&stderr_buf))),
+                transcript_excerpt(&String::from_utf8_lossy(&buffer_bytes(&stdout_buf))),
+                transcript_excerpt(&String::from_utf8_lossy(&buffer_bytes(&stderr_buf))),
             );
         }
         if Instant::now() >= wait_deadline {
@@ -226,8 +229,8 @@ pub(super) fn run_in_pty_until_quick_exit_after_input(
                 "PTY transcript never reached {:?}\ndiagnostics:\n{}\nstdout tail:\n{}\nstderr tail:\n{}",
                 exit.wait_for,
                 diagnostics_snapshot(home),
-                tail_text(&String::from_utf8_lossy(&buffer_bytes(&stdout_buf))),
-                tail_text(&String::from_utf8_lossy(&buffer_bytes(&stderr_buf))),
+                transcript_excerpt(&String::from_utf8_lossy(&buffer_bytes(&stdout_buf))),
+                transcript_excerpt(&String::from_utf8_lossy(&buffer_bytes(&stderr_buf))),
             );
         }
         std::thread::sleep(Duration::from_millis(100));
@@ -266,8 +269,8 @@ pub(super) fn run_in_pty_until_quick_exit_after_input(
     panic!(
         "PTY command did not exit within {}ms after input\nstdout tail:\n{}\nstderr tail:\n{}",
         exit.max_exit_after_input.as_millis(),
-        tail_text(&String::from_utf8_lossy(&output.stdout)),
-        tail_text(&String::from_utf8_lossy(&output.stderr)),
+        transcript_excerpt(&String::from_utf8_lossy(&output.stdout)),
+        transcript_excerpt(&String::from_utf8_lossy(&output.stderr)),
     );
 }
 
@@ -284,8 +287,8 @@ pub(super) fn assert_restored_terminal(output: &std::process::Output) {
     assert!(
         stdout.contains("\x1b[?1049l") && stdout.contains("\x1b[?25h"),
         "hard exit did not visibly restore the terminal\nstdout tail:\n{}\nstderr tail:\n{}",
-        tail_text(stdout.as_ref()),
-        tail_text(stderr.as_ref()),
+        transcript_excerpt(stdout.as_ref()),
+        transcript_excerpt(stderr.as_ref()),
     );
 }
 

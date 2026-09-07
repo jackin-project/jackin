@@ -38,7 +38,6 @@ struct InlineOperatorEnv<'a> {
     workspace_key: Option<String>,
     op_runner: &'a dyn jackin_env::OpRunner,
     host_env: Option<&'a std::collections::BTreeMap<String, String>>,
-    credential_agents: Vec<jackin_core::Agent>,
 }
 
 pub(super) async fn finish_deferred_git_pull(
@@ -88,16 +87,9 @@ fn defer_operator_env<'a>(
     selector: &RoleSelector,
     workspace_name: Option<&str>,
     opts: &'a super::LoadOptions,
-    credential_agents: Vec<jackin_core::Agent>,
 ) -> DeferredOperatorEnv<'a> {
-    let operator_env_needed = |key: &str| credential_key_needed_for_role(&credential_agents, key);
     let workspace_typed = workspace_name.and_then(|n| WorkspaceName::parse(n).ok());
-    if !jackin_env::has_operator_env_matching(
-        config,
-        Some(&selector.key()),
-        workspace_typed.as_ref(),
-        operator_env_needed,
-    ) {
+    if !jackin_env::has_operator_env(config, Some(&selector.key()), workspace_typed.as_ref()) {
         jackin_diagnostics::active_timing_started(
             jackin_diagnostics::DiagnosticStage::Credentials,
             "operator_env",
@@ -125,14 +117,12 @@ fn defer_operator_env<'a>(
             workspace_key,
             op_runner,
             host_env: opts.host_env.as_ref(),
-            credential_agents,
         });
     }
 
     let config_clone = config.clone();
     let host_env = opts.host_env.clone();
     DeferredOperatorEnv::Spawned(jackin_telemetry::spawn::joined_blocking(move || {
-        let needed_agents = credential_agents;
         if let Some(host_env) = host_env {
             let default_runner = jackin_env::OpCli::new();
             let host_env_fn = |name: &str| -> Result<String, std::env::VarError> {
@@ -144,24 +134,18 @@ fn defer_operator_env<'a>(
             let ws = workspace_key
                 .as_deref()
                 .and_then(|n| WorkspaceName::parse(n).ok());
-            jackin_env::resolve_operator_env_with_matching(
+            jackin_env::resolve_operator_env_with(
                 &config_clone,
                 Some(&selector_key),
                 ws.as_ref(),
                 &default_runner,
                 host_env_fn,
-                |key| credential_key_needed_for_role(&needed_agents, key),
             )
         } else {
             let ws = workspace_key
                 .as_deref()
                 .and_then(|n| WorkspaceName::parse(n).ok());
-            jackin_env::resolve_operator_env_matching(
-                &config_clone,
-                Some(&selector_key),
-                ws.as_ref(),
-                |key| credential_key_needed_for_role(&needed_agents, key),
-            )
+            jackin_env::resolve_operator_env(&config_clone, Some(&selector_key), ws.as_ref())
         }
     }))
 }
@@ -184,13 +168,12 @@ async fn await_operator_env(
                 .workspace_key
                 .as_deref()
                 .and_then(|n| WorkspaceName::parse(n).ok());
-            jackin_env::resolve_operator_env_with_matching(
+            jackin_env::resolve_operator_env_with(
                 inline.config,
                 Some(&inline.selector_key),
                 ws.as_ref(),
                 inline.op_runner,
                 host_env_fn,
-                |key| credential_key_needed_for_role(&inline.credential_agents, key),
             )
         }
         DeferredOperatorEnv::Ready(env) => return Ok(env),
@@ -761,6 +744,30 @@ pub(crate) async fn load_role_with(
         &str,
     ) -> anyhow::Result<()>,
 ) -> anyhow::Result<()> {
+    let selected_workspace = config
+        .workspaces
+        .contains_key(workspace.name.as_str())
+        .then(|| WorkspaceName::parse(&workspace.name))
+        .transpose()?;
+    let mut account_config = opts
+        .account
+        .as_deref()
+        .map(|id| {
+            let agent = opts
+                .agent
+                .or(workspace.default_agent)
+                .ok_or_else(|| anyhow::anyhow!("select an agent when selecting an account"))?;
+            super::programmatic::with_account_selection(
+                config,
+                agent,
+                selected_workspace.as_ref(),
+                &selector.key(),
+                id,
+            )
+        })
+        .transpose()?;
+    let config = account_config.as_mut().unwrap_or(config);
+
     // Pre-launch garbage collection is independent from git identity probes.
     let ((), git) = tokio::join!(
         crate::runtime::cleanup::gc_orphaned_resources(paths, docker),
@@ -815,118 +822,152 @@ pub(crate) async fn load_role_with(
     // session is left intact (a fresh, rebuilt instance is created alongside
     // it), while a stopped/crashed/missing container is reclaimed and recreated
     // from the rebuilt image.
-    let early_restore_container =
-        if opts.restore_container_base.is_none() && opts.role_branch.is_none() && !opts.rebuild {
-            if let Some(agent) = selected_agent_before_role {
-                match super::resolve_current_restore_candidate_timed(
-                    paths,
-                    workspace_name.as_deref(),
-                    workspace.label.as_str(),
-                    &workspace.workdir,
+    let early_restore_container = if opts.restore_container_base.is_none()
+        && opts.role_branch.is_none()
+        && !opts.rebuild
+        && opts.account.is_none()
+    {
+        if let Some(agent) = selected_agent_before_role {
+            match super::resolve_current_restore_candidate_timed(
+                paths,
+                workspace_name.as_deref(),
+                workspace.label.as_str(),
+                &workspace.workdir,
+                &role_key,
+                agent,
+                docker,
+            )
+            .await?
+            .map(|candidate| {
+                super::account_identity::admit_restore(
+                    candidate,
+                    &paths.data_dir,
+                    config,
+                    selected_workspace.as_ref(),
                     &role_key,
-                    agent,
-                    docker,
                 )
-                .await?
-                {
-                    Some(super::RestoreResolution::StartCurrentRole(container)) => {
-                        opts.record_launched_instance(&container);
-                        return restore_current_role_now(
-                            paths, &container, docker, runner, &mut steps, true,
-                        )
-                        .await;
-                    }
-                    Some(super::RestoreResolution::RecreateCurrentRole(container)) => {
-                        early_current_scan = super::EarlyCurrentRestoreScan::Scanned {
-                            agent,
-                            current: Some(super::RestoreResolution::RecreateCurrentRole(
-                                container.clone(),
-                            )),
-                        };
-                        Some(container)
-                    }
-                    Some(other) => {
-                        early_current_scan = super::EarlyCurrentRestoreScan::Scanned {
-                            agent,
-                            current: Some(other),
-                        };
-                        None
-                    }
-                    None => {
-                        early_current_scan = super::EarlyCurrentRestoreScan::Scanned {
-                            agent,
-                            current: None,
-                        };
-                        None
-                    }
+            })
+            .transpose()?
+            {
+                Some(super::RestoreResolution::StartCurrentRole(container)) => {
+                    opts.record_launched_instance(&container);
+                    return restore_current_role_now(
+                        paths, &container, docker, runner, &mut steps, true,
+                    )
+                    .await;
                 }
-            } else {
-                match super::resolve_unselected_current_restore_candidate_with_agent_timed(
-                    paths,
-                    workspace_name.as_deref(),
-                    workspace.label.as_str(),
-                    &workspace.workdir,
-                    &role_key,
-                    docker,
-                )
-                .await?
-                {
-                    Some(super::UnselectedCurrentRestoreResolution {
-                        resolution: super::RestoreResolution::StartCurrentRole(container),
-                        ..
-                    }) => {
-                        opts.record_launched_instance(&container);
-                        return restore_current_role_now(
-                            paths, &container, docker, runner, &mut steps, true,
-                        )
-                        .await;
-                    }
-                    Some(super::UnselectedCurrentRestoreResolution {
-                        resolution: super::RestoreResolution::RecreateCurrentRole(container),
+                Some(super::RestoreResolution::RecreateCurrentRole(container)) => {
+                    early_current_scan = super::EarlyCurrentRestoreScan::Scanned {
                         agent,
-                    }) => {
-                        early_restore_agent = Some(agent);
-                        early_current_scan = super::EarlyCurrentRestoreScan::Scanned {
-                            agent,
-                            current: Some(super::RestoreResolution::RecreateCurrentRole(
-                                container.clone(),
-                            )),
-                        };
-                        Some(container)
-                    }
-                    Some(super::UnselectedCurrentRestoreResolution { resolution, agent }) => {
-                        early_current_scan = super::EarlyCurrentRestoreScan::Scanned {
-                            agent,
-                            current: Some(resolution),
-                        };
-                        None
-                    }
-                    None => {
-                        // Unselected scan found no single-agent hit. When the role
-                        // also has no is_restore_candidate manifests, stash
-                        // ScannedUnselectedEmpty so a later selected agent skips a
-                        // pure-waste current-role re-inspect (008c residual).
-                        let role_empty = !super::restore::matching_current_role_manifests(
-                            paths,
-                            workspace_name.as_deref(),
-                            workspace.label.as_str(),
-                            &workspace.workdir,
-                            &role_key,
-                        )?
-                        .into_iter()
-                        .any(|m| m.is_restore_candidate());
-                        if role_empty {
-                            early_current_scan =
-                                super::EarlyCurrentRestoreScan::ScannedUnselectedEmpty;
-                        }
-                        None
-                    }
+                        current: Some(super::RestoreResolution::RecreateCurrentRole(
+                            container.clone(),
+                        )),
+                    };
+                    Some(container)
+                }
+                Some(other) => {
+                    early_current_scan = super::EarlyCurrentRestoreScan::Scanned {
+                        agent,
+                        current: Some(other),
+                    };
+                    None
+                }
+                None => {
+                    early_current_scan = super::EarlyCurrentRestoreScan::Scanned {
+                        agent,
+                        current: None,
+                    };
+                    None
                 }
             }
         } else {
-            None
-        };
+            match super::resolve_unselected_current_restore_candidate_with_agent_timed(
+                paths,
+                workspace_name.as_deref(),
+                workspace.label.as_str(),
+                &workspace.workdir,
+                &role_key,
+                docker,
+            )
+            .await?
+            .map(|mut candidate| -> anyhow::Result<_> {
+                candidate.resolution = super::account_identity::admit_restore(
+                    candidate.resolution,
+                    &paths.data_dir,
+                    config,
+                    selected_workspace.as_ref(),
+                    &role_key,
+                )?;
+                Ok(candidate)
+            })
+            .transpose()?
+            {
+                Some(super::UnselectedCurrentRestoreResolution {
+                    resolution: super::RestoreResolution::StartCurrentRole(container),
+                    ..
+                }) => {
+                    opts.record_launched_instance(&container);
+                    return restore_current_role_now(
+                        paths, &container, docker, runner, &mut steps, true,
+                    )
+                    .await;
+                }
+                Some(super::UnselectedCurrentRestoreResolution {
+                    resolution: super::RestoreResolution::RecreateCurrentRole(container),
+                    agent,
+                }) => {
+                    early_restore_agent = Some(agent);
+                    early_current_scan = super::EarlyCurrentRestoreScan::Scanned {
+                        agent,
+                        current: Some(super::RestoreResolution::RecreateCurrentRole(
+                            container.clone(),
+                        )),
+                    };
+                    Some(container)
+                }
+                Some(super::UnselectedCurrentRestoreResolution { resolution, agent }) => {
+                    early_current_scan = super::EarlyCurrentRestoreScan::Scanned {
+                        agent,
+                        current: Some(resolution),
+                    };
+                    None
+                }
+                None => {
+                    // Unselected scan found no single-agent hit. When the role
+                    // also has no is_restore_candidate manifests, stash
+                    // ScannedUnselectedEmpty so a later selected agent skips a
+                    // pure-waste current-role re-inspect (008c residual).
+                    let role_empty = !super::restore::matching_current_role_manifests(
+                        paths,
+                        workspace_name.as_deref(),
+                        workspace.label.as_str(),
+                        &workspace.workdir,
+                        &role_key,
+                    )?
+                    .into_iter()
+                    .any(|m| m.is_restore_candidate());
+                    if role_empty {
+                        early_current_scan = super::EarlyCurrentRestoreScan::ScannedUnselectedEmpty;
+                    }
+                    None
+                }
+            }
+        }
+    } else {
+        None
+    };
 
+    if let Some(container) = opts.restore_container_base.as_ref() {
+        anyhow::ensure!(
+            super::account_identity::account_configuration_matches(
+                &paths.data_dir.join(container),
+                config,
+                selected_workspace.as_ref(),
+                &selector.key()
+            )?,
+            "instance account policy changed; launch a new instance"
+        );
+    }
     if restore_explicit_container(
         paths,
         opts.restore_container_base.as_ref(),
@@ -1044,8 +1085,8 @@ pub(crate) async fn load_role_with(
         early_restore_container
     } else if let Some(container) = opts.restore_container_base.as_ref() {
         Some(container.clone())
-    } else if opts.rebuild {
-        // `--rebuild` skips the early gate above (it is `&& !opts.rebuild`), so
+    } else if opts.rebuild || opts.account.is_some() {
+        // `--rebuild` skips the early gate above (it is `&& !opts.rebuild && opts.account.is_none()`), so
         // a forced rebuild actually falls through to *this* resolution. Without
         // the same guard here, `resolve_restore_candidate` would still return
         // `StartCurrentRole`/`RecreateCurrentRole` and `return` straight into the
@@ -1055,19 +1096,24 @@ pub(crate) async fn load_role_with(
         // `claim_container_name` reconciles any name collision downstream.
         None
     } else {
-        match super::resolve_restore_candidate_reusing_early(
-            paths,
-            workspace_name.as_deref(),
-            workspace.label.as_str(),
-            &workspace.workdir,
+        match super::account_identity::admit_restore(
+            super::resolve_restore_candidate_reusing_early(
+                paths,
+                workspace_name.as_deref(),
+                workspace.label.as_str(),
+                &workspace.workdir,
+                &role_key,
+                agent,
+                docker,
+                steps.progress_mut(),
+                &early_current_scan,
+            )
+            .await?,
+            &paths.data_dir,
+            config,
+            selected_workspace.as_ref(),
             &role_key,
-            agent,
-            docker,
-            steps.progress_mut(),
-            &early_current_scan,
-        )
-        .await?
-        {
+        )? {
             super::RestoreResolution::StartFresh => None,
             super::RestoreResolution::StartCurrentRole(container) => {
                 opts.record_launched_instance(&container);
@@ -1249,20 +1295,9 @@ pub(crate) async fn load_role_with(
         "trusted source",
     );
 
-    // Resolve every credential any agent the role can run might read from the
-    // container env, plus generic operator vars. The selected agent is one of
-    // these; sibling agents share the same container env and an ApiKey/OAuth
-    // tab reads its key from that env at `docker run`, so gating a supported
-    // agent's key out would start that tab without auth. Only credentials for
-    // agents the role cannot launch are skipped.
-    let credential_agents = supported_agents.clone();
-    let operator_env = defer_operator_env(
-        config,
-        selector,
-        workspace_name.as_deref(),
-        opts,
-        credential_agents.clone(),
-    );
+    // Generic operator values can resolve concurrently. Account credentials
+    // have their own per-agent resolver and never enter the container-wide env.
+    let operator_env = defer_operator_env(config, selector, workspace_name.as_deref(), opts);
 
     // Decide whether the selected image is already runnable before touching
     // manifest/GitHub env. Operator-env reads are already running in the
@@ -1310,7 +1345,11 @@ pub(crate) async fn load_role_with(
     let auth_workspace = workspace_name
         .as_deref()
         .and_then(|n| WorkspaceName::parse(n).ok());
-    let auth_mode = jackin_config::resolve_mode(config, agent, auth_workspace.as_ref(), &role_key);
+    let auth_mode =
+        jackin_config::resolve_account(config, agent, auth_workspace.as_ref(), &role_key)?.map_or(
+            jackin_config::AuthForwardMode::Ignore,
+            jackin_config::AccountConfig::auth_mode,
+        );
     let operator_env = await_operator_env(operator_env).await?;
 
     // Resolve env vars (interactive prompts happen here, before build)
@@ -1323,7 +1362,7 @@ pub(crate) async fn load_role_with(
         .manifest
         .env
         .iter()
-        .filter(|(key, _)| credential_key_needed_for_role(&credential_agents, key))
+        .filter(|(key, _)| !jackin_env::is_account_env(key))
         .map(|(key, decl)| (key.clone(), decl.clone()))
         .collect();
     let manifest_env_skipped = manifest_env.is_empty();
@@ -1372,6 +1411,10 @@ pub(crate) async fn load_role_with(
     // of answering a prompt, so it outranks both the manifest default and the
     // operator layer (validation already rejected reserved names).
     for (k, v) in &opts.env {
+        anyhow::ensure!(
+            !jackin_env::is_account_env(k),
+            "credential {k} must come from an assigned account"
+        );
         if let Some(slot) = merged_vars.iter_mut().find(|(mk, _)| mk == k) {
             slot.1.clone_from(v);
         } else {
@@ -1403,6 +1446,11 @@ pub(crate) async fn load_role_with(
     // binding is approved (D-082). A caller-supplied binding replaces the
     // config-collected one of the same name.
     for binding in &opts.on_demand_bindings {
+        anyhow::ensure!(
+            !jackin_env::is_account_env(&binding.name),
+            "credential {} must come from an assigned account",
+            binding.name
+        );
         exec_bindings.retain(|existing| existing.name != binding.name);
         exec_bindings.push(binding.clone());
     }
@@ -1485,7 +1533,6 @@ pub(crate) async fn load_role_with(
             resolved_env,
             rebuild,
             restore_pinned_sha,
-            operator_env,
             git_pull_join,
         })
         .await;
@@ -1553,46 +1600,6 @@ pub(crate) fn manifest_env_timing_detail(skipped: bool, vars: usize) -> String {
     } else {
         format!("{vars} vars")
     }
-}
-
-/// Whether a credential env key must be resolved before launch.
-///
-/// Resolves a key when it is a generic operator/manifest variable, or when any
-/// agent the role can run could read it from the container env in one of its
-/// auth modes. The container env is set once at `docker run` and shared by
-/// every agent tab; an `ApiKey`/`OAuthToken` tab reads its key from that env,
-/// so a credential needed by *any* supported agent is resolved up front rather
-/// than gated to the initially-selected agent — otherwise switching tabs would
-/// start that agent without its key. Only credentials belonging solely to
-/// agents this role cannot launch are skipped. Used for both operator-env and
-/// manifest-env refs so the two call sites cannot drift.
-pub(crate) fn credential_key_needed_for_role(
-    supported_agents: &[jackin_core::Agent],
-    key: &str,
-) -> bool {
-    if !known_agent_credential_env(key) {
-        return true;
-    }
-    supported_agents.iter().copied().any(|agent| {
-        agent
-            .supported_modes()
-            .iter()
-            .filter_map(|mode| agent.required_env_var(*mode))
-            .any(|credential_key| credential_key == key)
-    })
-}
-
-fn known_agent_credential_env(key: &str) -> bool {
-    jackin_core::Agent::ALL
-        .iter()
-        .copied()
-        .flat_map(|agent| {
-            agent
-                .supported_modes()
-                .iter()
-                .filter_map(move |mode| agent.required_env_var(*mode))
-        })
-        .any(|credential_key| credential_key == key)
 }
 
 /// D9: purge per-instance data, the name-claim lock, and the index row inline on

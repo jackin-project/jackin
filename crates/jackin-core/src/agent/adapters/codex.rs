@@ -79,7 +79,6 @@ RUN set -euxo pipefail && \\
             config_dir: None, // all durable state under ~/.codex
             credential_file: Some(".codex/auth.json"),
             folder_env_var: Some("CODEX_HOME"),
-            home_files: &[],
         }
     }
 

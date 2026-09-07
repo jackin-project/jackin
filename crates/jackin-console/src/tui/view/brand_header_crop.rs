@@ -22,7 +22,10 @@
 
 #![cfg(test)]
 
-use std::{fs, path::PathBuf};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
 use ratatui::{buffer::Buffer, layout::Rect};
 use termrock::style::RolePalette;
@@ -93,3 +96,13 @@ fn check_crop(case: &BaselineCase, bless: bool, rendered: &[u8]) -> Result<(), S
 
 #[cfg(test)]
 mod tests;
+
+/// Export unapproved brand candidates alongside full-screen review frames.
+pub(super) fn export_review_crops(directory: &Path) {
+    let target = directory.join("brand");
+    fs::create_dir(&target).expect("new review crop directory");
+    for case in non_modal_cases() {
+        fs::write(target.join(format!("{}.png", case.id)), render_crop(&case))
+            .expect("write candidate brand crop");
+    }
+}

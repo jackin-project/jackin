@@ -79,7 +79,7 @@ key = "clippy::disallowed_methods@jackin"
 bound = 13
 [[family.entry]]
 key = "clippy::disallowed_methods@jackin-capsule"
-bound = 8
+bound = 6
 [[family.entry]]
 key = "clippy::disallowed_methods@jackin-config"
 bound = 2
@@ -151,7 +151,7 @@ key = "clippy::exit@jackin-capsule"
 bound = 1
 [[family.entry]]
 key = "clippy::expect_used@jackin"
-bound = 12
+bound = 10
 [[family.entry]]
 key = "clippy::expect_used@jackin-capsule"
 bound = 1
@@ -196,9 +196,6 @@ key = "clippy::let_underscore_must_use@jackin-core"
 bound = 1
 [[family.entry]]
 key = "clippy::map_unwrap_or@jackin"
-bound = 1
-[[family.entry]]
-key = "clippy::missing_const_for_fn@jackin-console"
 bound = 1
 [[family.entry]]
 key = "clippy::missing_const_for_fn@jackin-oppicker"
@@ -292,7 +289,7 @@ key = "clippy::struct_excessive_bools@jackin-capsule"
 bound = 4
 [[family.entry]]
 key = "clippy::struct_excessive_bools@jackin-console"
-bound = 14
+bound = 13
 [[family.entry]]
 key = "clippy::struct_excessive_bools@jackin-oppicker"
 bound = 3
@@ -319,10 +316,7 @@ key = "clippy::too_many_arguments@jackin-capsule"
 bound = 5
 [[family.entry]]
 key = "clippy::too_many_arguments@jackin-console"
-bound = 5
-[[family.entry]]
-key = "clippy::too_many_arguments@jackin-env"
-bound = 2
+bound = 4
 [[family.entry]]
 key = "clippy::too_many_arguments@jackin-image"
 bound = 1
@@ -346,7 +340,7 @@ key = "clippy::too_many_lines@jackin-capsule"
 bound = 7
 [[family.entry]]
 key = "clippy::too_many_lines@jackin-console"
-bound = 7
+bound = 6
 [[family.entry]]
 key = "clippy::too_many_lines@jackin-launch"
 bound = 2
@@ -442,9 +436,6 @@ bound = 1
 key = "private_bounds@jackin-core"
 bound = 1
 [[family.entry]]
-key = "private_bounds@jackin-protocol"
-bound = 1
-[[family.entry]]
 key = "private_interfaces@jackin-runtime"
 bound = 1
 [[family.entry]]
@@ -452,13 +443,13 @@ key = "unreachable_pub@jackin"
 bound = 1
 [[family.entry]]
 key = "unreachable_pub@jackin-console"
-bound = 2
+bound = 1
 [[family.entry]]
 key = "unused_imports@jackin-capsule"
 bound = 2
 [[family.entry]]
 key = "unused_imports@jackin-console"
-bound = 11
+bound = 10
 [[family.entry]]
 key = "unused_imports@jackin-runtime"
 bound = 2
@@ -658,9 +649,6 @@ bound = 15
 key = "jackin-docker"
 bound = 3
 [[family.entry]]
-key = "jackin-env"
-bound = 1
-[[family.entry]]
 key = "jackin-host"
 bound = 5
 [[family.entry]]
@@ -680,7 +668,7 @@ key = "jackin-manifest"
 bound = 5
 [[family.entry]]
 key = "jackin-protocol"
-bound = 8
+bound = 7
 [[family.entry]]
 key = "jackin-runtime"
 bound = 8
@@ -772,13 +760,13 @@ key = "jackin-agent-status"
 bound = 26
 [[family.entry]]
 key = "jackin-capsule"
-bound = 85
+bound = 79
 [[family.entry]]
 key = "jackin-config"
 bound = 22
 [[family.entry]]
 key = "jackin-console"
-bound = 73
+bound = 70
 [[family.entry]]
 key = "jackin-diagnostics"
 bound = 24
@@ -802,7 +790,7 @@ key = "jackin-lints"
 bound = 27
 [[family.entry]]
 key = "jackin-protocol"
-bound = 80
+bound = 74
 [[family.entry]]
 key = "jackin-runtime"
 bound = 92

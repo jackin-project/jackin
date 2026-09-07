@@ -7,12 +7,12 @@
 use crossterm::event::{KeyCode, KeyEvent};
 
 use super::InputOutcome;
+use crate::tui::components::account_picker::AccountPickerOutcome;
 use crate::tui::components::error_popup::{
     instance_unavailable_error_message, instance_unavailable_error_title, no_instance_error_title,
     no_purgeable_instance_for_workspace_message, no_recoverable_instance_selected_message,
 };
 use crate::tui::components::github_picker::GithubOpenPlan;
-use crate::tui::components::provider_picker::ProviderPickerOutcome;
 use crate::tui::layout::list_body_area;
 use crate::tui::message::ConsoleInstanceAction;
 use crate::tui::screens::workspaces::update::{
@@ -34,11 +34,11 @@ use crate::tui::state::{
     AgentChoiceState, EditorState, ManagerEffect, ManagerState, Modal, SettingsState,
 };
 use crate::tui::update::{
-    DismissibleModalPlan, InlinePickerDismissal, InlinePickerPlan, InlinePickerShellPlan,
-    InlineProviderFollowupPlan, ListGithubPickerPlan, ListModalKeyTarget, ListRolePickerPlan,
-    apply_inline_new_session_picker_plan, apply_inline_picker_dismissal_plan,
-    apply_inline_provider_picker_plan, dismissible_modal_plan, inline_picker_dismissal_plan,
-    inline_picker_plan, inline_picker_shell_plan, inline_provider_followup_plan,
+    DismissibleModalPlan, InlineAccountFollowupPlan, InlinePickerDismissal, InlinePickerPlan,
+    InlinePickerShellPlan, ListGithubPickerPlan, ListModalKeyTarget, ListRolePickerPlan,
+    apply_inline_account_picker_plan, apply_inline_new_session_picker_plan,
+    apply_inline_picker_dismissal_plan, dismissible_modal_plan, inline_account_followup_plan,
+    inline_picker_dismissal_plan, inline_picker_plan, inline_picker_shell_plan,
     list_github_picker_plan, list_role_picker_plan,
 };
 use jackin_config::AppConfig;
@@ -152,11 +152,21 @@ pub fn handle_list_key(
             ) {
                 WorkspaceListNewSessionOpenPlan::OpenPicker { container } => {
                     let picker = AgentChoiceState::with_choices(jackin_core::Agent::ALL.to_vec());
-                    // The host config does not prove what env the already-running
-                    // Capsule daemon captured. Offer provider choices only from
-                    // daemon-owned flows that know `ZAI_API_KEY` exists there.
-                    let providers = Vec::new();
-                    apply_inline_new_session_picker_plan(state, container, picker, providers);
+                    let accounts = if let Some(instance) = state
+                        .instances
+                        .iter()
+                        .find(|instance| instance.container_base == container)
+                    {
+                        let workspace = instance
+                            .workspace_name
+                            .as_deref()
+                            .map(jackin_core::WorkspaceName::parse)
+                            .transpose()?;
+                        crate::services::launch::account_choices(config, workspace.as_ref())
+                    } else {
+                        Vec::new()
+                    };
+                    apply_inline_new_session_picker_plan(state, container, picker, accounts);
                 }
                 WorkspaceListNewSessionOpenPlan::OpenCreateWorkspace => {
                     state.request_effect(ManagerEffect::OpenCreatePreludeFileBrowser);
@@ -653,7 +663,7 @@ pub fn handle_inline_agent_picker(state: &mut ManagerState<'_>, key: KeyEvent) -
 }
 
 /// Handle key events while the new-session agent picker is open in the left
-/// sidebar. Commit runs `inline_provider_followup_plan`; the running-container
+/// sidebar. Commit runs `inline_account_followup_plan`; the running-container
 /// path always supplies an empty provider list (the daemon, not host config,
 /// owns the captured env), so in practice this dispatches `NewSessionWithAgent`
 /// directly and the provider picker never opens here. Cancel/Esc dismisses.
@@ -665,17 +675,25 @@ pub fn handle_new_session_picker(state: &mut ManagerState<'_>, key: KeyEvent) ->
         InlinePickerPlan::Commit(agent) => {
             let container = container.clone();
             // Running-container path passes an empty list → no provider picker.
-            let plan = inline_provider_followup_plan(container, agent, providers.clone());
+            let accounts = providers
+                .iter()
+                .filter(|account| account.agents.contains(&agent))
+                .cloned()
+                .collect();
+            let plan = inline_account_followup_plan(container, agent, accounts);
             dispatch_manager(state, ManagerMessage::DismissInlineSessionPicker);
             match plan {
-                InlineProviderFollowupPlan::StartSession { context, agent } => {
-                    InputOutcome::InstanceAction {
-                        container: context,
-                        action: ConcreteInstanceAction::NewSessionWithAgent(agent),
-                    }
-                }
-                InlineProviderFollowupPlan::OpenProviderPicker(picker) => {
-                    apply_inline_provider_picker_plan(state, picker);
+                InlineAccountFollowupPlan::StartSession {
+                    context,
+                    agent,
+                    account,
+                } => InputOutcome::NewSessionWithAccount {
+                    container: context,
+                    agent,
+                    account: account.map(|account| account.id),
+                },
+                InlineAccountFollowupPlan::OpenAccountPicker(picker) => {
+                    apply_inline_account_picker_plan(state, picker);
                     InputOutcome::Continue
                 }
             }
@@ -691,56 +709,56 @@ pub fn handle_new_session_picker(state: &mut ManagerState<'_>, key: KeyEvent) ->
 /// Handle key events while the inline provider picker is open (shown after
 /// agent selection when multiple providers are available). Enter commits;
 /// Esc cancels; Up/Down navigate.
-pub fn handle_inline_provider_picker(state: &mut ManagerState<'_>, key: KeyEvent) -> InputOutcome {
-    let Some(picker) = state.inline_provider_picker.as_mut() else {
+pub fn handle_inline_account_picker(state: &mut ManagerState<'_>, key: KeyEvent) -> InputOutcome {
+    let Some(picker) = state.inline_account_picker.as_mut() else {
         return InputOutcome::Continue;
     };
     match picker.handle_key(key.into()) {
-        ProviderPickerOutcome::Commit {
+        AccountPickerOutcome::Commit {
             context,
             agent,
             provider,
         } => {
-            dispatch_manager(state, ManagerMessage::DismissInlineProviderPicker);
-            InputOutcome::NewSessionWithProvider {
+            dispatch_manager(state, ManagerMessage::DismissInlineAccountPicker);
+            InputOutcome::NewSessionWithAccount {
                 container: context,
                 agent,
-                provider,
+                account: Some(provider.id),
             }
         }
-        ProviderPickerOutcome::Cancel => {
-            dispatch_manager(state, ManagerMessage::DismissInlineProviderPicker);
+        AccountPickerOutcome::Cancel => {
+            dispatch_manager(state, ManagerMessage::DismissInlineAccountPicker);
             InputOutcome::Continue
         }
-        ProviderPickerOutcome::Continue => InputOutcome::Continue,
+        AccountPickerOutcome::Continue => InputOutcome::Continue,
     }
 }
 
-pub fn handle_launch_provider_picker(state: &mut ManagerState<'_>, key: KeyEvent) -> InputOutcome {
-    let Some(picker) = state.launch_provider_picker.as_mut() else {
+pub fn handle_launch_account_picker(state: &mut ManagerState<'_>, key: KeyEvent) -> InputOutcome {
+    let Some(picker) = state.launch_account_picker.as_mut() else {
         return InputOutcome::Continue;
     };
     match picker.handle_key(key.into()) {
-        ProviderPickerOutcome::Commit {
+        AccountPickerOutcome::Commit {
             context,
             agent,
             provider,
         } => {
             apply_inline_picker_dismissal_plan(
                 state,
-                inline_picker_dismissal_plan(InlinePickerDismissal::LaunchProvider),
+                inline_picker_dismissal_plan(InlinePickerDismissal::LaunchAccount),
             );
-            InputOutcome::LaunchWithProvider {
+            InputOutcome::LaunchWithAccount {
                 selector: context,
                 agent,
-                provider,
+                account: Some(provider.id),
             }
         }
-        ProviderPickerOutcome::Cancel => {
-            dispatch_manager(state, ManagerMessage::DismissLaunchProviderPicker);
+        AccountPickerOutcome::Cancel => {
+            dispatch_manager(state, ManagerMessage::DismissLaunchAccountPicker);
             InputOutcome::Continue
         }
-        ProviderPickerOutcome::Continue => InputOutcome::Continue,
+        AccountPickerOutcome::Continue => InputOutcome::Continue,
     }
 }
 

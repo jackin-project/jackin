@@ -11,9 +11,9 @@ use super::*;
 fn png_baselines_inventory_count_guard() {
     let count = inventory().len();
     assert!(
-        count >= MIN_INVENTORY,
-        "console PNG inventory rotted: {count} baselines enumerated, >= {MIN_INVENTORY} expected \
-         (6 stage-derived view groups, create-prelude wizard steps, 19 ConsoleModal variants)"
+        count == EXPECTED_INVENTORY,
+        "console PNG inventory rotted: {count} baselines enumerated, {EXPECTED_INVENTORY} expected \
+         (stage views, account management cases, create-prelude wizard steps, 18 ConsoleModal variants)"
     );
 }
 
@@ -25,7 +25,7 @@ fn png_baselines_screens_match() {
     }
 
     let cases = inventory();
-    assert!(cases.len() >= MIN_INVENTORY, "inventory rot guard");
+    assert!(cases.len() == EXPECTED_INVENTORY, "inventory rot guard");
 
     let mut drifted = Vec::new();
     for case in &cases {
@@ -77,4 +77,28 @@ fn png_baselines_compare_mode_never_writes() {
         fs::read_dir(dir.path()).unwrap().next().is_none(),
         "compare mode must never write"
     );
+}
+
+/// Export candidate frames to an isolated review directory; never bless baselines.
+#[test]
+#[ignore = "manual review artifact export"]
+fn export_account_review_frames() {
+    let target = std::env::var_os("JACKIN_REVIEW_DIR").expect("JACKIN_REVIEW_DIR required");
+    let target = PathBuf::from(target);
+    fs::create_dir(&target).expect("review directory must be new");
+    for case in inventory() {
+        let rendered = render_case(&case);
+        fs::write(target.join(format!("{}.png", case.id)), &rendered).unwrap();
+        let (mut state, config, cwd) = (case.build)();
+        let buffer = render_manager_buffer(&mut state, &config, &cwd, case.width, case.height);
+        let mut text = String::new();
+        for y in 0..case.height {
+            for x in 0..case.width {
+                text.push_str(buffer[(x, y)].symbol());
+            }
+            text.push('\n');
+        }
+        fs::write(target.join(format!("{}.txt", case.id)), text).unwrap();
+    }
+    crate::tui::view::brand_header_crop::export_review_crops(&target);
 }

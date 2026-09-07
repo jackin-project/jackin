@@ -13,7 +13,7 @@ use std::path::Path;
 use anyhow::bail;
 use toml_edit::DocumentMut;
 
-/// Current role-manifest schema version string (e.g. `"v1alpha6"`).
+/// Current role-manifest schema version string (e.g. `"v1alpha7"`).
 pub use jackin_core::CURRENT_MANIFEST_VERSION;
 
 const MANIFEST_MIGRATIONS: &[jackin_config::MigrationStep] = &[
@@ -48,10 +48,30 @@ const MANIFEST_MIGRATIONS: &[jackin_config::MigrationStep] = &[
     // Additive with serde defaults; no transformation needed.
     jackin_config::MigrationStep {
         from: "v1alpha5",
-        to: CURRENT_MANIFEST_VERSION,
+        to: "v1alpha6",
         migrate: jackin_config::noop_migration,
     },
+    jackin_config::MigrationStep {
+        from: "v1alpha6",
+        to: CURRENT_MANIFEST_VERSION,
+        migrate: reject_removed_provider_models,
+    },
 ];
+
+fn reject_removed_provider_models(doc: &mut DocumentMut) -> jackin_config::ConfigResult<()> {
+    for agent in ["claude", "codex", "opencode"] {
+        if doc
+            .get(agent)
+            .and_then(|table| table.get("providers"))
+            .is_some()
+        {
+            return Err(jackin_config::ConfigError::Message(format!(
+                "removed [{agent}.providers] role settings: move provider models into named API accounts, assign those accounts to workspace agents, then remove the providers table and rerun jackin role migrate"
+            )));
+        }
+    }
+    Ok(())
+}
 
 /// Serde-default helper returning [`CURRENT_MANIFEST_VERSION`] as a `String`.
 pub use jackin_core::current_manifest_version;

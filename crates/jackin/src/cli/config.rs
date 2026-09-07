@@ -18,9 +18,6 @@ pub enum ConfigCommand {
     /// Manage trust for third-party role sources
     #[command(subcommand, before_help = BANNER, styles = HELP_STYLES, disable_help_subcommand = true)]
     Trust(TrustCommand),
-    /// Manage Claude Code authentication forwarding from host
-    #[command(subcommand, before_help = BANNER, styles = HELP_STYLES, disable_help_subcommand = true)]
-    Auth(AuthCommand),
     /// Manage operator env vars at global and per-role scope
     #[command(subcommand, before_help = BANNER, styles = HELP_STYLES, disable_help_subcommand = true)]
     Env(EnvCommand),
@@ -70,7 +67,7 @@ pub enum EnvCommand {
     /// Without `--role`, writes the env var globally. With
     /// `--role <SELECTOR>`, scopes it to that role only. The role
     /// selector is not pre-validated — the value is recorded regardless
-    /// of whether that role is registered, matching `config auth set`.
+    /// of whether that role is registered, even if the role is not registered.
     #[command(
         before_help = BANNER,
         styles = HELP_STYLES,
@@ -131,53 +128,6 @@ Examples:
         #[arg(long)]
         role: Option<String>,
     },
-}
-
-#[derive(Debug, Subcommand, PartialEq, Eq)]
-pub enum AuthCommand {
-    /// Set the global authentication forwarding mode for an agent
-    ///
-    /// Controls how the host's agent authentication is made available to
-    /// role containers at the global layer. Defaults to `claude` when
-    /// `--agent` is omitted. GitHub CLI auth is configured through the
-    /// operator console's Auth tab today, not this CLI verb.
-    ///
-    /// Modes: sync (default — overwrite container auth from host on each
-    /// launch when host auth exists; preserve container auth when host auth
-    /// is absent), ignore (revoke and never forward), `oauth_token` (Claude
-    /// only — long-lived `CLAUDE_CODE_OAUTH_TOKEN` resolved from the operator
-    /// env), `api_key` (short-lived `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` /
-    /// `AMP_API_KEY` from the operator env). Tokens and keys are never
-    /// written to disk. Modes unsupported by the chosen agent are rejected
-    /// — see `jackin` docs on auth forwarding for setup.
-    #[command(
-        before_help = BANNER,
-        styles = HELP_STYLES,
-        after_long_help = "\
-Examples:
-  jackin config auth set sync
-  jackin config auth set ignore
-  jackin config auth set oauth_token
-  jackin config auth set api_key
-  jackin config auth set api_key --agent codex
-  jackin config auth set sync --agent amp"
-    )]
-    Set {
-        /// Authentication forwarding mode: sync, ignore, `api_key`, or `oauth_token`
-        mode: String,
-        /// Agent to configure: `claude` (default), `codex`, or `amp`.
-        #[arg(long, default_value = "claude")]
-        agent: String,
-    },
-    /// Show the current authentication forwarding mode
-    #[command(
-        before_help = BANNER,
-        styles = HELP_STYLES,
-        after_long_help = "\
-Examples:
-  jackin config auth show"
-    )]
-    Show,
 }
 
 #[derive(Debug, Subcommand, PartialEq, Eq)]

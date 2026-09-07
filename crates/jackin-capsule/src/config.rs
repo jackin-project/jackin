@@ -83,3 +83,64 @@ fn validate(config: &CapsuleConfig) -> Result<()> {
 
 #[cfg(test)]
 mod tests;
+
+/// Load protected account data without including file contents in diagnostics.
+pub(crate) fn load_agent_credentials(
+    config: &CapsuleConfig,
+) -> std::io::Result<jackin_protocol::AgentCredentialEnv> {
+    let raw = match std::fs::read(jackin_core::container_paths::ACCOUNT_CREDENTIALS) {
+        Ok(raw) => raw,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            let credentials = jackin_protocol::AgentCredentialEnv::default();
+            validate_agent_credentials(config, &credentials)?;
+            return Ok(credentials);
+        }
+        Err(error) => return Err(error),
+    };
+    let credentials: jackin_protocol::AgentCredentialEnv =
+        serde_json::from_slice(&raw).map_err(|_| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "invalid protected account credentials",
+            )
+        })?;
+    validate_agent_credentials(config, &credentials)?;
+    Ok(credentials)
+}
+
+fn validate_agent_credentials(
+    config: &CapsuleConfig,
+    credentials: &jackin_protocol::AgentCredentialEnv,
+) -> std::io::Result<()> {
+    for agent in &config.agents {
+        if matches!(
+            config.auth_mode_for_agent(agent),
+            Some("api_key" | "oauth_token")
+        ) && credentials
+            .for_agent(agent)
+            .is_none_or(std::collections::BTreeMap::is_empty)
+        {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "missing protected credentials for configured account",
+            ));
+        }
+    }
+    for (agent, env) in credentials.iter() {
+        if !config.agents.contains(agent)
+            || !matches!(
+                config.auth_mode_for_agent(agent),
+                Some("api_key" | "oauth_token")
+            )
+            || env
+                .iter()
+                .any(|(name, value)| !jackin_core::is_account_env(name) || value.trim().is_empty())
+        {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "protected account credentials violate agent admission",
+            ));
+        }
+    }
+    Ok(())
+}

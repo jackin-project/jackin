@@ -16,8 +16,8 @@ use super::global_mounts::{
     handle_settings_confirm_modal, handle_settings_env_modal, handle_settings_key_with_effects,
 };
 use super::list::{
-    handle_inline_agent_picker, handle_inline_provider_picker, handle_inline_role_picker,
-    handle_launch_provider_picker, handle_list_key, handle_list_modal, handle_new_session_picker,
+    handle_inline_account_picker, handle_inline_agent_picker, handle_inline_role_picker,
+    handle_launch_account_picker, handle_list_key, handle_list_modal, handle_new_session_picker,
 };
 use super::prelude::{PreludeModalOutcome, handle_prelude_key, handle_prelude_modal};
 use super::save::begin_editor_save;
@@ -61,8 +61,8 @@ pub fn handle_key(
         keyboard_help_open: state.keyboard_help.is_some(),
         list_modal_open: state.list_modal.is_some(),
         inline_new_session_picker_open: state.inline_new_session_picker.is_some(),
-        inline_provider_picker_open: state.inline_provider_picker.is_some(),
-        launch_provider_picker_open: state.launch_provider_picker.is_some(),
+        inline_account_picker_open: state.inline_account_picker.is_some(),
+        launch_account_picker_open: state.launch_account_picker.is_some(),
         inline_agent_picker_open: state.inline_agent_picker.is_some(),
         inline_role_picker_open: state.inline_role_picker.is_some(),
         editor_modal_open: stage_modal_facts.editor_modal_open,
@@ -80,11 +80,11 @@ pub fn handle_key(
         ConsoleInputDispatchPlan::InlineNewSessionPicker => {
             return Ok(handle_new_session_picker(state, key));
         }
-        ConsoleInputDispatchPlan::InlineProviderPicker => {
-            return Ok(handle_inline_provider_picker(state, key));
+        ConsoleInputDispatchPlan::InlineAccountPicker => {
+            return Ok(handle_inline_account_picker(state, key));
         }
-        ConsoleInputDispatchPlan::LaunchProviderPicker => {
-            return Ok(handle_launch_provider_picker(state, key));
+        ConsoleInputDispatchPlan::LaunchAccountPicker => {
+            return Ok(handle_launch_account_picker(state, key));
         }
         ConsoleInputDispatchPlan::InlineAgentPicker => {
             return Ok(handle_inline_agent_picker(state, key));
@@ -284,7 +284,6 @@ pub fn handle_key(
         let auth_outcome = handle_settings_auth_modal(
             &mut settings.auth,
             &mut settings.env,
-            &mut settings.pending_token_generate,
             key,
             op_available,
             op_cache,

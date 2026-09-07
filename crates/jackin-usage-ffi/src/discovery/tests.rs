@@ -96,3 +96,47 @@ fn disc_source_manual_retry_evicts_only_failed_resolution() {
 
     assert_eq!(resolver.cached_resolution_count(), 1);
 }
+
+#[test]
+fn registered_api_account_resolves_without_importing_ambient_credentials() {
+    let temp = tempfile::tempdir().unwrap();
+    std::fs::write(
+        temp.path().join("config.toml"),
+        format!(
+            r#"
+version = "{}"
+[env]
+MINIMAX_API_KEY = "ambient-test-secret"
+[accounts.work]
+name = "Work"
+provider = "zai"
+[accounts.work.credential]
+type = "api_key"
+value = "registered-test-secret"
+[accounts.disabled]
+name = "Disabled"
+provider = "minimax"
+enabled = false
+[accounts.disabled.credential]
+type = "api_key"
+value = "disabled-test-secret"
+"#,
+            jackin_config::CURRENT_CONFIG_VERSION
+        ),
+    )
+    .unwrap();
+    let resolver = DesktopCredentialResolver::default();
+    let catalog = jackin_usage::host::discover_usage_sources(
+        &jackin_usage::host::UsageDiscoveryScope::HostDesktop {
+            config_root: temp.path().to_path_buf(),
+            operator_home: temp.path().join("home"),
+        },
+        &resolver,
+    )
+    .unwrap();
+    assert_eq!(catalog.candidates.len(), 1);
+    assert_eq!(catalog.candidates[0].surface_id, "zai");
+    assert!(catalog.diagnostics.is_empty());
+    assert_eq!(resolver.cached_resolution_count(), 1);
+    assert!(!format!("{catalog:?}").contains("test-secret"));
+}

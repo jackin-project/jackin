@@ -425,28 +425,28 @@ fn workspace_preview_pane_plan_routes_all_row_kinds() {
 fn workspace_sidebar_plan_routes_picker_precedence() {
     assert_eq!(
         workspace_sidebar_plan(WorkspaceSidebarFacts {
-            inline_provider_picker_open: true,
-            launch_provider_picker_open: true,
+            inline_account_picker_open: true,
+            launch_account_picker_open: true,
             inline_new_session_picker_open: true,
             inline_agent_picker_open: true,
             inline_role_picker_open: true,
         }),
-        WorkspaceSidebarPlan::InlineProviderPicker
+        WorkspaceSidebarPlan::InlineAccountPicker
     );
     assert_eq!(
         workspace_sidebar_plan(WorkspaceSidebarFacts {
-            inline_provider_picker_open: false,
-            launch_provider_picker_open: true,
+            inline_account_picker_open: false,
+            launch_account_picker_open: true,
             inline_new_session_picker_open: true,
             inline_agent_picker_open: true,
             inline_role_picker_open: true,
         }),
-        WorkspaceSidebarPlan::LaunchProviderPicker
+        WorkspaceSidebarPlan::LaunchAccountPicker
     );
     assert_eq!(
         workspace_sidebar_plan(WorkspaceSidebarFacts {
-            inline_provider_picker_open: false,
-            launch_provider_picker_open: false,
+            inline_account_picker_open: false,
+            launch_account_picker_open: false,
             inline_new_session_picker_open: true,
             inline_agent_picker_open: true,
             inline_role_picker_open: true,
@@ -455,8 +455,8 @@ fn workspace_sidebar_plan_routes_picker_precedence() {
     );
     assert_eq!(
         workspace_sidebar_plan(WorkspaceSidebarFacts {
-            inline_provider_picker_open: false,
-            launch_provider_picker_open: false,
+            inline_account_picker_open: false,
+            launch_account_picker_open: false,
             inline_new_session_picker_open: false,
             inline_agent_picker_open: true,
             inline_role_picker_open: true,
@@ -465,8 +465,8 @@ fn workspace_sidebar_plan_routes_picker_precedence() {
     );
     assert_eq!(
         workspace_sidebar_plan(WorkspaceSidebarFacts {
-            inline_provider_picker_open: false,
-            launch_provider_picker_open: false,
+            inline_account_picker_open: false,
+            launch_account_picker_open: false,
             inline_new_session_picker_open: false,
             inline_agent_picker_open: false,
             inline_role_picker_open: true,
@@ -475,8 +475,8 @@ fn workspace_sidebar_plan_routes_picker_precedence() {
     );
     assert_eq!(
         workspace_sidebar_plan(WorkspaceSidebarFacts {
-            inline_provider_picker_open: false,
-            launch_provider_picker_open: false,
+            inline_account_picker_open: false,
+            launch_account_picker_open: false,
             inline_new_session_picker_open: false,
             inline_agent_picker_open: false,
             inline_role_picker_open: false,
@@ -579,22 +579,22 @@ fn workspace_list_names_window_matches_literal_visible_indices() {
 }
 
 #[test]
-fn launch_provider_picker_uses_single_word_title() {
-    assert_eq!(provider_picker_title(None), " Provider ");
+fn launch_account_picker_uses_single_word_title() {
+    assert_eq!(account_picker_title(None), " Account ");
 }
 
 #[test]
-fn inline_provider_picker_keeps_instance_context() {
-    assert_eq!(provider_picker_title(Some("abc123")), " abc123 — Provider ");
+fn inline_account_picker_keeps_instance_context() {
+    assert_eq!(account_picker_title(Some("abc123")), " abc123 — Account ");
 }
 
 #[test]
-fn provider_picker_sidebar_wraps_title_labels_and_selection() {
+fn account_picker_sidebar_wraps_title_labels_and_selection() {
     let backend = TestBackend::new(32, 6);
     let mut terminal = Terminal::new(backend).expect("terminal");
     terminal
         .draw(|frame| {
-            render_provider_picker_sidebar(
+            render_account_picker_sidebar(
                 frame,
                 Rect::new(0, 0, 32, 6),
                 Some("abc123"),
@@ -613,7 +613,7 @@ fn provider_picker_sidebar_wraps_title_labels_and_selection() {
         .collect();
 
     assert!(text.contains("abc123"));
-    assert!(text.contains("Provider"));
+    assert!(text.contains("Account"));
     assert!(text.contains("Anthropic"));
     assert!(text.contains("Kimi"));
 }
