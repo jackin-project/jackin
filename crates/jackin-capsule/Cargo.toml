@@ -51,9 +51,9 @@ tokio = { workspace = true, features = ["rt", "io-util", "io-std", "sync", "macr
 crossterm = { workspace = true }
 portable-pty = { workspace = true }
 nix = { workspace = true, features = ["term", "signal", "process", "inotify"] }
-# jackin-term: the owned terminal model. `DamageGrid` is the sole VT parser /
-# screen / scrollback / passthrough model.
-jackin-term = { workspace = true }
+# termpane: the owned terminal model (extracted from crates/jackin-term).
+# `DamageGrid` is the sole VT parser / screen / scrollback / passthrough model.
+termpane = { workspace = true }
 url = { workspace = true }
 unicode-width = { workspace = true }
 chrono = { workspace = true, features = ["clock"] }

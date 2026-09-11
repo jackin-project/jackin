@@ -4,13 +4,13 @@ title: "jackin❯ Capsule: In-Container Control Plane"
 
 **Status**: Partially implemented
 
-**Current state**: Phases 1–3 are shipped in full: `jackin-capsule` is the PID 1 in-container PTY multiplexer (built on jackin-term `DamageGrid`), tmux is fully removed from the derived image and the host CLI, and every terminal-fidelity item once tracked as "remaining" (resize, mouse, focus events, OSC/CSI passthrough, prefix-key input, git-context-driven title/branch bar) is live. Phase 4 (host daemon integration and Desktop Agent Hub bridge) remains open, alongside a smaller set of real control-channel and passthrough gaps below.
+**Current state**: Phases 1–3 are shipped in full: `jackin-capsule` is the PID 1 in-container PTY multiplexer (built on termpane `DamageGrid`), tmux is fully removed from the derived image and the host CLI, and every terminal-fidelity item once tracked as "remaining" (resize, mouse, focus events, OSC/CSI passthrough, prefix-key input, git-context-driven title/branch bar) is live. Phase 4 (host daemon integration and Desktop Agent Hub bridge) remains open, alongside a smaller set of real control-channel and passthrough gaps below.
 
 The canonical description of Capsule's current architecture and behaviour lives in:
 
 - [jackin❯ Capsule](/reference/capsule/) — architecture, process model, wire protocol, distribution, input routing.
 - [Multiplexer design rules](/reference/capsule/multiplexer-design-rules/) — the passthrough contract and per-feature verification checklist.
-- [Capsule Terminal Model](/reference/capsule/terminal-model/) — why the VT emulator was replaced twice (hand-rolled → `vt100` fork → `jackin-term`).
+- [Capsule Terminal Model](/reference/capsule/terminal-model/) — why the VT emulator was replaced twice (hand-rolled → `vt100` fork → `termpane`).
 - [`jackin console`](/commands/console/) and [`jackin hardline`](/commands/hardline/) — operator-facing prefix keys, palette, tabs.
 - Research: [Multiplexer rewrite design history](/research/agents/orchestration/jackin-capsule-multiplexer-rewrite/) — why the Phase 3 rewrite happened (the five defects in the first attempt), the Zellij and Herdr borrows, and the tmux/Ghostty compatibility rationale, kept for the design-history record now that this page is lean.
 
@@ -26,7 +26,7 @@ The control channel today is request/reply only (`Status`, `Snapshot`, `Agents`,
 
 1. **Control-channel API surface.** Add structured `session.kill` / `session.title` control methods and a streaming event channel (`EventsSubscribe`-shaped: `AgentStateChanged`, `SessionSpawned`, `SessionExited`, `TokenUsageChanged`, `WorkspaceStatusChanged`) so the host and the future daemon can react to state changes instead of polling `Snapshot`. This is the one piece of the original Phase 3 API sketch that never shipped, and it is the concrete blocker for [Agent attention prompts](/roadmap/agent-attention-prompts/) and for Phase 4 below.
 2. **Host-side per-instance status roll-up.** <RepoFile path="crates/jackin-agent-status/src/arbitrate.rs">crates/jackin-agent-status/src/arbitrate.rs</RepoFile> already exposes a `roll_up_states` helper (`blocked > done > working > idle > unknown`) with unit tests but no production caller. The console currently shows per-pane state inside an expanded instance's pane list; wire the roll-up into the workspace list row itself so a blocked pane in a collapsed instance is visible without expanding it.
-3. **Kitty graphics (APC) and Sixel passthrough.** Designed to forward unchanged for the focused pane (same rule as OSC passthrough) but never implemented — `jackin-term` has no `PassthroughEvent` variant for APC or Sixel, so both fall under the default-deny CSI/APC policy and are silently dropped today. An agent that emits inline images or Sixel output loses that output.
+3. **Kitty graphics (APC) and Sixel passthrough.** Designed to forward unchanged for the focused pane (same rule as OSC passthrough) but never implemented — `termpane` has no `PassthroughEvent` variant for APC or Sixel, so both fall under the default-deny CSI/APC policy and are silently dropped today. An agent that emits inline images or Sixel output loses that output.
 4. **Phase 4 — host daemon integration and Desktop Agent Hub bridge (deferred).** The daemon connects to each running container's socket and maintains a live session index across containers; the desktop app reads from that aggregated view. Both are gated on item 1 above (there is nothing to aggregate without an event stream) and on [jackin❯ daemon](/roadmap/jackin-daemon/) shipping its own lifecycle first.
 
 ## Out of scope

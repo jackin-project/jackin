@@ -28,7 +28,7 @@ pub(crate) type DialogFrameSnapshot = (DialogRatatuiSnapshot, (u16, u16, u16, u1
 
 #[derive(Debug)]
 pub(crate) enum PaneScreen<'a> {
-    View(jackin_term::GridView<'a>),
+    View(termpane::GridView<'a>),
 }
 
 #[expect(

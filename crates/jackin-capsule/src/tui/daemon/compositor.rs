@@ -588,8 +588,8 @@ fn pane_cell_runs<T>(
     panes: &[crate::tui::model::VisiblePane],
     pane_screens: &[(u64, crate::tui::view::PaneScreen<'_>)],
     allow_pane: impl Fn(u64) -> bool,
-    probe: impl Fn(&jackin_term::Cell) -> Option<T>,
-    same_run: impl Fn(&jackin_term::Cell, &T) -> bool,
+    probe: impl Fn(&termpane::Cell) -> Option<T>,
+    same_run: impl Fn(&termpane::Cell, &T) -> bool,
 ) -> Vec<(ratatui::layout::Rect, T)> {
     let mut regions = Vec::new();
     for pane in panes {
@@ -637,7 +637,7 @@ fn pane_cell_runs<T>(
 /// The cell's hyperlink target if it carries one that passes the OSC 8 safety
 /// filter. Borrows from the cell — no allocation — so run extension can compare
 /// targets without owning a `String` per cell.
-fn cell_safe_uri(cell: &jackin_term::Cell) -> Option<&str> {
+fn cell_safe_uri(cell: &termpane::Cell) -> Option<&str> {
     cell.hyperlink
         .as_ref()
         .map(|link| link.uri.as_str())
@@ -678,10 +678,10 @@ pub(super) fn pane_sgr_regions(
     )
 }
 
-fn cell_sgr_metadata(cell: &jackin_term::Cell) -> SgrMetadata {
+fn cell_sgr_metadata(cell: &termpane::Cell) -> SgrMetadata {
     SgrMetadata {
         underline_style: match cell.attrs.underline_style {
-            jackin_term::UnderlineStyle::Single => jackin_term::UnderlineStyle::None,
+            termpane::UnderlineStyle::Single => termpane::UnderlineStyle::None,
             other => other,
         },
         underline_color: cell.attrs.underline_color,

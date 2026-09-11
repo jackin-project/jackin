@@ -405,7 +405,7 @@ pub(super) struct RenderState {
     pub(crate) drag: Option<DragState>,
     pub(crate) last_tab_click: Option<(usize, Instant)>,
     pub(crate) ratatui_terminal: ratatui::Terminal<crate::tui::socket_backend::SocketBackend>,
-    pub(crate) terminal_row_arena: jackin_term::RowArena,
+    pub(crate) terminal_row_arena: termpane::RowArena,
 }
 
 /// Static launch configuration at daemon construction.
@@ -652,7 +652,7 @@ impl Multiplexer {
                 drag: None,
                 last_tab_click: None,
                 ratatui_terminal,
-                terminal_row_arena: jackin_term::RowArena::default(),
+                terminal_row_arena: termpane::RowArena::default(),
             },
             launch_env: LaunchEnv {
                 available_agents: agents,

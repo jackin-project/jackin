@@ -215,7 +215,7 @@ pub struct ClientTerminal {
 /// Backend-side capabilities for the currently attached terminal.
 ///
 /// These are host-adaptive and may change on every attach. They must not
-/// change agent-visible `jackin-term` profile semantics.
+/// change agent-visible `termpane` profile semantics.
 ///
 /// Consumption status: only `pointer_shapes` currently gates behavior. The
 /// remaining fields (and `sources`) are derived and logged on attach but do

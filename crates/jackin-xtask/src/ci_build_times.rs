@@ -19,7 +19,6 @@ const DEFAULT_PACKAGES: &[&str] = &[
     "jackin-runtime",
     "jackin-capsule",
     "jackin-console",
-    "jackin-term",
     "jackin-config",
 ];
 

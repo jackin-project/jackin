@@ -3069,7 +3069,6 @@ dependencies = [
  "jackin-process",
  "jackin-protocol",
  "jackin-telemetry",
- "jackin-term",
  "jackin-tui",
  "jackin-usage",
  "nix 0.31.3",
@@ -3082,6 +3081,7 @@ dependencies = [
  "serde_json",
  "sha2 0.11.0",
  "tempfile",
+ "termpane",
  "termrock",
  "tokio",
  "toml",
@@ -3499,22 +3499,6 @@ dependencies = [
  "tracing-opentelemetry",
  "tracing-subscriber",
  "uuid",
-]
-
-[[package]]
-name = "jackin-term"
-version = "0.6.4"
-dependencies = [
- "compact_str 0.10.0",
- "criterion",
- "dhat",
- "jackin-core",
- "jackin-diagnostics",
- "ratatui-core",
- "serde_json",
- "smallvec",
- "unicode-width 0.2.2",
- "vte 0.15.0",
 ]
 
 [[package]]
@@ -6847,6 +6831,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "411c5bf740737c7918b8b1fe232dca4dc9f8e754b8ad5e20966814001ed0ac6b"
 dependencies = [
  "libc",
+]
+
+[[package]]
+name = "termpane"
+version = "0.6.4"
+source = "git+https://github.com/tailrocks/termpane.git?tag=v0.6.4#af85fce4e3041f96f0f14e8afac61f29b311b012"
+dependencies = [
+ "compact_str 0.10.0",
+ "smallvec",
+ "unicode-width 0.2.2",
+ "vte 0.15.0",
 ]
 
 [[package]]

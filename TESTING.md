@@ -162,7 +162,7 @@ latest-target pointer; it does not duplicate the target archive.
 | Cross-crate Rust | `cargo xtask ci --fast` | before PR |
 | Full non-Docker gate | `cargo xtask ci` | merge readiness |
 | One CI partition | `cargo xtask ci --only <lint\|policy\|tests\|snapshots\|docs\|powerset>` | inner loop mirroring a CI lane |
-| Scoped feature powerset | `cargo hack check -p jackin -p jackin-diagnostics -p jackin-capsule -p jackin-agent-status -p jackin-term -p jackin-runtime --feature-powerset --all-targets --locked` | optional-feature crates (PR gate) |
+| Scoped feature powerset | `cargo hack check -p jackin -p jackin-diagnostics -p jackin-capsule -p jackin-agent-status -p jackin-runtime --feature-powerset --all-targets --locked` | optional-feature crates (PR gate) |
 | Container/runtime behavior | `cargo xtask ci --e2e` (Docker running) | capsule/runtime PRs |
 | Desktop / native Swift | `mise run desktop-ci` (PR cadence); `mise run desktop-merge` adds `desktop-test-ui` on a logged-in macOS host; `mise run desktop-scheduled` adds `desktop-deadcode` | Desktop UI, bridge, or usage projection changes; PR gate: `native-usage-menu-bar` |
 | Docs/roadmap | `cargo xtask roadmap audit && cargo xtask docs repo-links && cargo xtask research check` | any docs edit |
@@ -339,9 +339,12 @@ owning job instead of launching nested Cargo commands.
 
 ### Fuzz targets
 
+The terminal model's fuzz and nextest suites (`damage_grid_process`,
+conformance replay, allocation) live in the
+[termpane](https://github.com/tailrocks/termpane) repo, not here.
+
 | Target | Crate path | Smoke (PR / ci.yml) | Long (hygiene) |
 |---|---|---|---|
-| `damage_grid_process` | `crates/jackin-term/fuzz` | 5s `--sanitizer none` | 300s; ASan 300s |
 | `config_migrate` | `crates/jackin-config/fuzz` | 5s | 120s |
 | `workspace_migrate` | `crates/jackin-config/fuzz` | 5s | 120s |
 | `manifest_migrate` | `crates/jackin-manifest/fuzz` | 5s | 120s |
@@ -352,7 +355,6 @@ owning job instead of launching nested Cargo commands.
 Local smoke (nightly + cargo-fuzz via mise):
 
 ```sh
-cd crates/jackin-term && cargo fuzz run --sanitizer none damage_grid_process -- -max_total_time=30
 cd crates/jackin-config && cargo fuzz run --sanitizer none config_migrate -- -max_total_time=30
 ```
 
@@ -370,7 +372,7 @@ Default seed is fixed (`0xc4a0_55eed`); `workflow_dispatch` input `chaos_seed` o
 
 ## Allocation lane (dhat) — static budget policy (plan 026)
 
-The `dhat-heap` allocation suites in `jackin-term` and `jackin-capsule` run on
+The `dhat-heap` allocation suite in `jackin-capsule` runs on
 the scheduled Hygiene workflow (`dhat-allocation` job, advisory /
 `continue-on-error`). **Ratchet decision:** keep `perf_dhat_budgets` fed from
 the static ceilings in [`crates/jackin-capsule/src/perf_budgets.rs`](crates/jackin-capsule/src/perf_budgets.rs) (in-test

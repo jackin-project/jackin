@@ -442,7 +442,7 @@ fn feed_pty_does_not_accumulate_scroll_ops() {
     // Guard against a vacuous pass: confirm the burst genuinely records scroll
     // ops, so the clear assertion below would fail if recording ever stopped or
     // the clear ran before process().
-    let mut probe = jackin_term::DamageGrid::new(24, 80, 100);
+    let mut probe = termpane::DamageGrid::new(24, 80, 100);
     probe.process(&burst);
     assert!(
         !probe.drain_scroll_ops().is_empty(),
@@ -1286,7 +1286,7 @@ async fn conformance_wire_real_pty_spawn_stream_and_exit_exclude_private_content
     let terminal = SessionTerminal {
         rows: 24,
         cols: 80,
-        row_arena: jackin_term::RowArena::default(),
+        row_arena: termpane::RowArena::default(),
         default_fg: None,
         default_bg: None,
     };

@@ -76,7 +76,6 @@ fn contract_for(package: &str) -> Option<FuzzContract> {
             &["manifest_migrate", "manifest_validate"],
         ),
         "jackin-protocol" => ("crates/jackin-protocol", &["decode_frames"]),
-        "jackin-term" => ("crates/jackin-term", &["damage_grid_process"]),
         _ => return None,
     };
     Some(FuzzContract { directory, targets })

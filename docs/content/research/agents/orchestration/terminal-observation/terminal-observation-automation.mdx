@@ -19,7 +19,7 @@ The research trigger was [kitlangton/cellshot](https://github.com/kitlangton/cel
 
 Borrow the product and protocol ideas from `cellshot` and adjacent terminal-recorder/test tools, but implement them natively inside `jackin-capsule`. Do **not** run `cellshot` as a nested daemon inside role containers and do **not** make it a core runtime dependency.
 
-The reason is simple: `cellshot` builds a PTY daemon because it needs one; jackin❯ already has one. Capsule already owns PTYs, sessions, pane layout, attach takeover, OSC passthrough, jackin-term `DamageGrid` screen state, and the control socket. A nested runtime would create this bad layering:
+The reason is simple: `cellshot` builds a PTY daemon because it needs one; jackin❯ already has one. Capsule already owns PTYs, sessions, pane layout, attach takeover, OSC passthrough, termpane `DamageGrid` screen state, and the control socket. A nested runtime would create this bad layering:
 
 ```text
 jackin host
@@ -240,7 +240,7 @@ Delivery sequencing belongs to the [jackin❯ Capsule control-plane roadmap](/ro
 | Should visible-text waits support regex immediately? | Yes, but keep the engine simple, bounded, and tested. Regex should run over visible rows or a caller-selected recent window, not unbounded scrollback. |
 | Should snapshots include scrollback? | Not in the first frame API. Start with visible viewport; add explicit recent/scrollback export later with size limits. |
 | Should SVG/PNG rendering be in Capsule or host CLI? | Prefer host CLI for file rendering so Capsule stays focused on runtime state and protocol. Capsule should return text/frame/ANSI; host code renders artifacts. |
-| Should `asciinema/avt` replace jackin-term? | Not now. `avt` is attractive for offline replay and dump/diff APIs, but the jackin❯ live path depends on typed passthrough events, dirty patches, and capsule control semantics. |
+| Should `asciinema/avt` replace termpane? | Not now. `avt` is attractive for offline replay and dump/diff APIs, but the jackin❯ live path depends on typed passthrough events, dirty patches, and capsule control semantics. |
 | Should waits be event-driven or polling? | Event-driven when waiting on status markers or session revisions; bounded polling is acceptable for visible-text regex in the first version if it wakes on PTY output rather than fixed tight loops. |
 | How does this interact with operator hijack? | Any automation should record when the operator attaches, types, pauses, or resumes. The terminal remains visible and hijackable; automation is a client of the session, not its owner. |
 | Is a shell an agent? | For API consistency, yes: represent shell sessions as `kind = shell` or a reserved shell agent with no provider. The operator-visible UI can still label it `Shell`; automation should not need a separate resource type. |

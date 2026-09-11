@@ -466,9 +466,9 @@ fn conformance_clipboard_continuations_validate_correlation_and_start_identity()
     )));
 }
 use crate::tui::socket_backend::SgrMetadata;
-use jackin_term::DamageGrid;
 use std::io;
 use std::sync::{Arc, Mutex};
+use termpane::DamageGrid;
 
 use crate::pr_context::{command_output_or_lookup_error, command_stdout_trimmed};
 use crate::protocol::attach::read_server_frame;
@@ -500,7 +500,7 @@ fn pane_sgr_regions_coalesces_one_styled_run_and_skips_default() {
     assert_eq!(regions.len(), 1, "got {regions:?}");
     let (rect, metadata) = regions[0];
     assert_eq!((rect.x, rect.y, rect.width, rect.height), (3, 2, 2, 1));
-    assert_eq!(metadata.underline_style, jackin_term::UnderlineStyle::Curly);
+    assert_eq!(metadata.underline_style, termpane::UnderlineStyle::Curly);
 }
 
 #[test]
@@ -510,12 +510,12 @@ fn pane_sgr_regions_splits_adjacent_differing_runs() {
     assert_eq!((regions[0].0.x, regions[0].0.width), (3, 2));
     assert_eq!(
         regions[0].1.underline_style,
-        jackin_term::UnderlineStyle::Curly
+        termpane::UnderlineStyle::Curly
     );
     assert_eq!((regions[1].0.x, regions[1].0.width), (5, 2));
     assert_eq!(
         regions[1].1.underline_style,
-        jackin_term::UnderlineStyle::Double
+        termpane::UnderlineStyle::Double
     );
 }
 
@@ -531,7 +531,7 @@ fn pane_sgr_regions_clamps_run_to_inner_width() {
     assert_eq!(regions[0].0.width, 4, "run must clamp to inner cols");
     assert_eq!(
         regions[0].1.underline_style,
-        jackin_term::UnderlineStyle::Curly
+        termpane::UnderlineStyle::Curly
     );
 }
 
@@ -3412,12 +3412,11 @@ fn kitty_escape_in_agent_picker_returns_to_menu() {
 #[test]
 fn mouse_sgr_encoding_preserves_press_and_release() {
     assert_eq!(
-        encode_mouse_for_protocol(0, 12, 3, true, jackin_term::MouseProtocolEncoding::Sgr).unwrap(),
+        encode_mouse_for_protocol(0, 12, 3, true, termpane::MouseProtocolEncoding::Sgr).unwrap(),
         b"\x1b[<0;12;3M"
     );
     assert_eq!(
-        encode_mouse_for_protocol(0, 12, 3, false, jackin_term::MouseProtocolEncoding::Sgr)
-            .unwrap(),
+        encode_mouse_for_protocol(0, 12, 3, false, termpane::MouseProtocolEncoding::Sgr).unwrap(),
         b"\x1b[<0;12;3m"
     );
 }
@@ -3425,12 +3424,12 @@ fn mouse_sgr_encoding_preserves_press_and_release() {
 #[test]
 fn mouse_default_encoding_uses_xterm_fields() {
     assert_eq!(
-        encode_mouse_for_protocol(0, 12, 3, true, jackin_term::MouseProtocolEncoding::Default)
+        encode_mouse_for_protocol(0, 12, 3, true, termpane::MouseProtocolEncoding::Default)
             .unwrap(),
         b"\x1b[M ,#"
     );
     assert_eq!(
-        encode_mouse_for_protocol(0, 12, 3, false, jackin_term::MouseProtocolEncoding::Default)
+        encode_mouse_for_protocol(0, 12, 3, false, termpane::MouseProtocolEncoding::Default)
             .unwrap(),
         b"\x1b[M#,#"
     );
@@ -3438,7 +3437,7 @@ fn mouse_default_encoding_uses_xterm_fields() {
 
 #[test]
 fn mouse_mode_filter_respects_tracking_granularity() {
-    use jackin_term::MouseProtocolMode;
+    use termpane::MouseProtocolMode;
 
     assert!(!mouse_event_allowed_for_mode(
         MouseProtocolMode::None,
@@ -7703,7 +7702,7 @@ fn reattach_updates_capabilities_without_resetting_model_palette() {
 // CLI/TUI output captured outside the unit test process.
 
 use crate::tui::model::{CursorVisibilityState, cursor_visible_for_state};
-use jackin_term::Cell;
+use termpane::Cell;
 
 /// The outer terminal: a second `DamageGrid` sized to the attach client.
 /// `apply` is `process()`; the capsule's own `?2026` brackets and mode
@@ -8209,7 +8208,7 @@ fn selection_residue_cleared_after_copy_click() {
 
 // ---------------------------------------------------------------------------
 // Model-expectation cases (PR 4): these assert the *correct* terminal-model
-// semantics. They are red against the current jackin-term model and flip
+// semantics. They are red against the current termpane model and flip
 // green when PR 4 lands; the echo-back equality above cannot catch them
 // because the virtual client shares the model's bugs.
 // ---------------------------------------------------------------------------

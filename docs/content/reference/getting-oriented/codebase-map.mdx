@@ -44,7 +44,6 @@ the rendered crate page and its source README.
 | [jackin-core](/reference/crates/jackin-core/) | 0 | <RepoFile path="crates/jackin-core/README.md">README</RepoFile> |
 | [jackin-dev](/reference/crates/jackin-dev/) | 0 | <RepoFile path="crates/jackin-dev/README.md">README</RepoFile> |
 | [jackin-process](/reference/crates/jackin-process/) | 0 | <RepoFile path="crates/jackin-process/README.md">README</RepoFile> |
-| [jackin-term](/reference/crates/jackin-term/) | 0 | <RepoFile path="crates/jackin-term/README.md">README</RepoFile> |
 | [jackin-build-meta](/reference/crates/jackin-build-meta/) | 1 | <RepoFile path="crates/jackin-build-meta/README.md">README</RepoFile> |
 | [jackin-pr-trailers](/reference/crates/jackin-pr-trailers/) | 1 | <RepoFile path="crates/jackin-pr-trailers/README.md">README</RepoFile> |
 | [jackin-xtask](/reference/crates/jackin-xtask/) | 1 | <RepoFile path="crates/jackin-xtask/README.md">README</RepoFile> |
@@ -115,7 +114,6 @@ Tier 4  jackin-image       derived_image + agent_binary + capsule_binary +
         jackin-capsule     in-container TUI (its own binary)      → core, tui, protocol, usage
         jackin-agent-status pure status detection/arbitration      → core, protocol
         jackin-usage       in-container usage/pricing/telemetry + token monitors → core, protocol, diagnostics
-        jackin-term        owned terminal model (vte parser + DamageGrid + GridSnapshot) → (no workspace deps)
         jackin-process     shared subprocess transport (capture/timeout/retry/status; no redaction) → (no workspace deps)
         jackin-xtask       workspace automation binary (cargo xtask; construct image + dev fixtures)
                            → jackin-process (see Workspace Automation page)
@@ -292,18 +290,18 @@ Pure pull-request render snapshots live in <RepoFile path="crates/jackin-capsule
 - Capsule attach-spawn, spawn-capacity, and spawn-failure agent-label wording lives with visible spawn-failure formatting in <RepoFile path="crates/jackin-capsule/src/tui/view.rs">crates/jackin-capsule/src/tui/view.rs</RepoFile>. The daemon still enforces the tab/session limits, allocates PTYs, and surfaces spawn failures by pushing the shared ErrorPopup dialog.
 - Capsule branch-context bar rendering, hit-testing, and default-branch visibility filtering live in <RepoFile path="crates/jackin-capsule/src/tui/components/branch_context_bar.rs">crates/jackin-capsule/src/tui/components/branch_context_bar.rs</RepoFile>. The daemon supplies Git/default-branch facts and executes GitHub/container actions.
 
-`crates/jackin-term/` is the **owned terminal model** used by `jackin-capsule`. It implements the `vte → DamageGrid → GridView/GridSnapshot → PaneBodyWidget → Ratatui → SocketBackend → ClientWriter` pipeline. Dirty rows tell the capsule that a frame is needed and give tests/future tooling an observation API; they do not form a second client emit path:
+[termpane](https://github.com/tailrocks/termpane) is the **owned terminal model** used by `jackin-capsule`, consumed as a pinned git dependency (tag `v0.6.4`). It was extracted from this workspace with history preserved. It implements the `vte → DamageGrid → GridView/GridSnapshot → PaneBodyWidget → Ratatui → SocketBackend → ClientWriter` pipeline. Dirty rows tell the capsule that a frame is needed and give tests/future tooling an observation API; they do not form a second client emit path:
 
-- <RepoFile path="crates/jackin-term/src/grid.rs">crates/jackin-term/src/grid.rs</RepoFile> — `DamageGrid`: `vte::Perform` implementation backed by ring-style row stores and a shared `RowArena`; cells use `CompactString` for inline storage (no heap alloc for ≤24 byte graphemes). The grid exposes jackin❯ terminal-model API: `process(bytes)`, `cell(row, col)`, `size()`/`set_size()`, `alternate_screen()`, `set_scrollback()`, `dirty_spans()`, `dump_dirty_patch()` for observation, `clear_scrollback()`, mouse-mode enums.
-- <RepoFile path="crates/jackin-term/src/damage.rs">crates/jackin-term/src/damage.rs</RepoFile> — `DirtyTracker` + `DirtySpans`: records which rows changed during `process()` calls. Concept from Zellij's `OutputBuffer` (MIT).
-- <RepoFile path="crates/jackin-term/src/cell.rs">crates/jackin-term/src/cell.rs</RepoFile> — `Cell`, `Attrs`, `Color`: the coupling-surface cell type.
-- <RepoFile path="crates/jackin-term/src/passthrough.rs">crates/jackin-term/src/passthrough.rs</RepoFile> — `PassthroughBuffer` + `PassthroughEvent`: captures OSC/title/clipboard/CWD events so the capsule can forward them.
-- <RepoFile path="crates/jackin-term/src/snapshot.rs">crates/jackin-term/src/snapshot.rs</RepoFile> — `GridPatch`, `GridView`, `GridSnapshot`, and `SnapCell`: borrowed dirty-row patches for observation and test assertions, borrowed scrollback/live views for Ratatui body rendering, and owned dumps for acceptance tests and terminal observation.
-- <RepoFile path="crates/jackin-term/tests/conformance.rs">crates/jackin-term/tests/conformance.rs</RepoFile> — conformance replay harness comparing one-shot and byte-split `DamageGrid` processing over the committed corpus.
-- <RepoFile path="crates/jackin-term/fuzz/src/damage_grid_process.rs">crates/jackin-term/fuzz/src/damage_grid_process.rs</RepoFile> — `cargo-fuzz` target for zero-panic and one-shot/byte-split determinism on arbitrary byte input.
-- <RepoFile path="crates/jackin-term/README.md">crates/jackin-term/README.md</RepoFile> — the required self-contained engineering record (problem → analysis → build rationale → borrow ledger → correctness strategy).
+- [src/grid.rs](https://github.com/tailrocks/termpane/blob/v0.6.4/src/grid.rs) — `DamageGrid`: `vte::Perform` implementation backed by ring-style row stores and a shared `RowArena`; cells use `CompactString` for inline storage (no heap alloc for ≤24 byte graphemes). The grid exposes jackin❯ terminal-model API: `process(bytes)`, `cell(row, col)`, `size()`/`set_size()`, `alternate_screen()`, `set_scrollback()`, `dirty_spans()`, `dump_dirty_patch()` for observation, `clear_scrollback()`, mouse-mode enums.
+- [src/damage.rs](https://github.com/tailrocks/termpane/blob/v0.6.4/src/damage.rs) — `DirtyTracker` + `DirtySpans`: records which rows changed during `process()` calls. Concept from Zellij's `OutputBuffer` (MIT).
+- [src/cell.rs](https://github.com/tailrocks/termpane/blob/v0.6.4/src/cell.rs) — `Cell`, `Attrs`, `Color`: the coupling-surface cell type.
+- [src/passthrough.rs](https://github.com/tailrocks/termpane/blob/v0.6.4/src/passthrough.rs) — `PassthroughBuffer` + `PassthroughEvent`: captures OSC/title/clipboard/CWD events so the capsule can forward them.
+- [src/snapshot.rs](https://github.com/tailrocks/termpane/blob/v0.6.4/src/snapshot.rs) — `GridPatch`, `GridView`, `GridSnapshot`, and `SnapCell`: borrowed dirty-row patches for observation and test assertions, borrowed scrollback/live views for Ratatui body rendering, and owned dumps for acceptance tests and terminal observation.
+- [tests/conformance.rs](https://github.com/tailrocks/termpane/blob/v0.6.4/tests/conformance.rs) — conformance replay harness comparing one-shot and byte-split `DamageGrid` processing over the committed corpus.
+- [fuzz/src/damage_grid_process.rs](https://github.com/tailrocks/termpane/blob/v0.6.4/fuzz/src/damage_grid_process.rs) — `cargo-fuzz` target for zero-panic and one-shot/byte-split determinism on arbitrary byte input.
+- [README.md](https://github.com/tailrocks/termpane/blob/v0.6.4/README.md) — the required self-contained engineering record (problem → analysis → build rationale → borrow ledger → correctness strategy).
 
-`jackin-term` has no workspace dependencies — it is a pure-Rust library with `vte`, `compact_str`, and `unicode-width` as its only production dependencies.
+`termpane` has no workspace dependencies — it is a pure-Rust library with `vte`, `compact_str`, and `unicode-width` as its only production dependencies.
 
 General terminal-UI helpers (palette, intro/outro animation, prompt
 helpers) are split out into `src/tui/`.

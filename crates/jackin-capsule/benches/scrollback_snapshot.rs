@@ -16,7 +16,7 @@ use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_m
 use jackin_capsule::tui::pane_snapshot::{
     pane_content_from_damagegrid, pane_content_range_from_damagegrid,
 };
-use jackin_term::DamageGrid;
+use termpane::DamageGrid;
 
 const SCREEN_ROWS: u16 = 40;
 const SCREEN_COLS: u16 = 120;

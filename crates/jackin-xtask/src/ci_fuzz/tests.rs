@@ -22,11 +22,6 @@ fn maps_each_fuzzing_crate_to_its_complete_contract() {
             "crates/jackin-protocol",
             &["decode_frames"][..],
         ),
-        (
-            "jackin-term",
-            "crates/jackin-term",
-            &["damage_grid_process"][..],
-        ),
     ];
 
     for (package, directory, targets) in cases {

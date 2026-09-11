@@ -191,7 +191,7 @@ pub struct Session {
     /// inside an otherwise empty rectangle.
     pub received_output: bool,
     /// Terminal model: `DamageGrid` is the sole renderer.
-    pub shadow_grid: Box<jackin_term::DamageGrid>,
+    pub shadow_grid: Box<termpane::DamageGrid>,
     /// OSC passthrough policy captured at spawn from the environment.
     /// A backgrounded pane cannot flip the gate at runtime.
     osc_policy: OscPolicy,
@@ -395,7 +395,7 @@ pub enum PullRequestLookupOutcome {
 pub struct SessionTerminal {
     pub rows: u16,
     pub cols: u16,
-    pub row_arena: jackin_term::RowArena,
+    pub row_arena: termpane::RowArena,
     /// Attach client's terminal default colors; the grid reports these to
     /// agent OSC 10/11 queries. `None` leaves the grid's dark-theme default.
     pub default_fg: Option<(u8, u8, u8)>,
@@ -623,7 +623,7 @@ impl Session {
                 last_input_at: std::time::Instant::now(),
                 received_output: false,
                 shadow_grid: {
-                    let mut grid = Box::new(jackin_term::DamageGrid::with_row_arena(
+                    let mut grid = Box::new(termpane::DamageGrid::with_row_arena(
                         rows,
                         cols,
                         SCROLLBACK_LEN,
@@ -1058,15 +1058,15 @@ impl Session {
     pub fn mouse_enabled(&self) -> bool {
         !matches!(
             self.shadow_grid.mouse_protocol_mode(),
-            jackin_term::MouseProtocolMode::None
+            termpane::MouseProtocolMode::None
         )
     }
 
-    pub fn mouse_protocol_encoding(&self) -> jackin_term::MouseProtocolEncoding {
+    pub fn mouse_protocol_encoding(&self) -> termpane::MouseProtocolEncoding {
         self.shadow_grid.mouse_protocol_encoding()
     }
 
-    pub fn mouse_protocol_mode(&self) -> jackin_term::MouseProtocolMode {
+    pub fn mouse_protocol_mode(&self) -> termpane::MouseProtocolMode {
         self.shadow_grid.mouse_protocol_mode()
     }
 
@@ -1194,7 +1194,7 @@ impl Session {
     /// `osc8_uri_is_safe` so a compromised agent cannot smuggle a
     /// `javascript:` or `file://` URI to the host terminal.
     fn apply_passthrough_policy(&mut self) {
-        use jackin_term::PassthroughEvent;
+        use termpane::PassthroughEvent;
         let events = self.shadow_grid.drain_passthrough();
         for event in events {
             match event {
@@ -1234,7 +1234,7 @@ impl Session {
                 PassthroughEvent::Notification(_) => {
                     // Plain OSC 9 desktop notification is forwarded to the host
                     // per policy. OSC 9;4 progress is decoded separately from the
-                    // raw stream in `feed_pty` — jackin-term does not surface it
+                    // raw stream in `feed_pty` — termpane does not surface it
                     // here.
                     if self.osc_policy.allow_notify()
                         && let Some(bytes) = event.encode()
@@ -1526,7 +1526,7 @@ impl Session {
             last_output_at: std::time::Instant::now(),
             last_input_at: std::time::Instant::now(),
             received_output: true,
-            shadow_grid: Box::new(jackin_term::DamageGrid::new(size.0, size.1, scrollback_len)),
+            shadow_grid: Box::new(termpane::DamageGrid::new(size.0, size.1, scrollback_len)),
             osc_policy: OscPolicy::default(),
             title: None,
             icon_name: None,

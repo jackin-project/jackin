@@ -5,9 +5,9 @@
 
 use jackin_capsule::tui::components::pane::PaneBodyWidget;
 use jackin_capsule::tui::socket_backend::SocketBackend;
-use jackin_term::DamageGrid;
 use ratatui::{Terminal, layout::Rect};
 use std::sync::Mutex;
+use termpane::DamageGrid;
 
 #[global_allocator]
 static ALLOC: dhat::Alloc = dhat::Alloc;

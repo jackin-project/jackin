@@ -23,7 +23,6 @@ members = [
     "crates/jackin-protocol",
     "crates/jackin-launch",
     "crates/jackin-runtime",
-    "crates/jackin-term",
     "crates/jackin-telemetry",
     "crates/jackin-tui",
     "crates/jackin-xtask",
@@ -90,7 +89,6 @@ jackin-process = { version = "0.6.4", path = "crates/jackin-process" }
 jackin-protocol = { version = "0.6.4", path = "crates/jackin-protocol" }
 jackin-runtime = { version = "0.6.4", path = "crates/jackin-runtime" }
 jackin-telemetry = { version = "0.6.4", path = "crates/jackin-telemetry" }
-jackin-term = { version = "0.6.4", path = "crates/jackin-term" }
 jackin-tui = { version = "0.6.4", path = "crates/jackin-tui" }
 jackin-test-support = { version = "0.6.4", path = "crates/jackin-test-support" }
 jackin-usage = { version = "0.6.4", path = "crates/jackin-usage" }
@@ -114,6 +112,9 @@ ratatui = "0.30"
 # Must stay lockstep-compatible with ratatui 0.30; pinned when workspace was
 # virtualized (#532/#713). Candidate: relax to "0.1" — needs lockfile-refresh PR.
 ratatui-core = "=0.1.2"
+# The owned terminal model (vte → DamageGrid → snapshots/damage). Extracted
+# from crates/jackin-term; pinned to the termpane v0.6.4 tag.
+termpane = { version = "0.6.4", git = "https://github.com/tailrocks/termpane.git", tag = "v0.6.4" }
 # Enable the full public feature matrix TermRock ships: Crossterm session/input
 # adapters plus serde for persistable widget state (DialogScroll, ListState, …).
 # Pin latest reviewed TermRock main; follow migrations sequentially (currently through 0331).

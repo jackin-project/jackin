@@ -140,8 +140,8 @@ fn frame_sgr_output(metadata: SgrMetadata, span: Span<'_>) -> Vec<u8> {
 fn backend_emits_frame_sgr_metadata() {
     let output = frame_sgr_output(
         SgrMetadata {
-            underline_style: jackin_term::UnderlineStyle::Curly,
-            underline_color: jackin_term::Color::Rgb(12, 34, 56),
+            underline_style: termpane::UnderlineStyle::Curly,
+            underline_color: termpane::Color::Rgb(12, 34, 56),
             overline: true,
         },
         Span::raw("x"),
@@ -163,7 +163,7 @@ fn backend_emits_indexed_color_sgr() {
     // assert the `38;5;`/`48;5;`/`58;5;` forms emit.
     let output = frame_sgr_output(
         SgrMetadata {
-            underline_color: jackin_term::Color::Idx(200),
+            underline_color: termpane::Color::Idx(200),
             ..SgrMetadata::default()
         },
         Span::styled(
