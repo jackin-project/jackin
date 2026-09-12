@@ -12,7 +12,7 @@ This is the umbrella item for jackin❯ authentication reliability: **auth that 
 
 **Phase 0 — new-tab credential overwrite.** Fixed. `jackin-capsule`'s durable-agent-home first-seed gate stops later `jackin-capsule new` invocations from overwriting credentials the agent already refreshed in-container. See [Auth overwrite on new tab](/roadmap/auth-overwrite-on-new-tab/).
 
-**Phase 1 — multi-company auth isolation.** Fixed. The optional `sync_source_dir` field on `AgentAuthConfig` resolves through the workspace-role → workspace → global chain; the console Auth tab exposes a Source-folder row per sync-mode agent, validated against the selected agent's credential structure. See [Agent Authentication → Choosing a sync source folder](/guides/authentication/agents/#choosing-a-sync-source-folder/) and [Schema Versions](/reference/runtime/schema-versions/).
+**Phase 1 — multi-company auth isolation.** Fixed. The optional `sync_source_dir` field on `AgentAuthConfig` resolves through the workspace-role → workspace → global chain; the console Auth tab exposes a Source-folder row per sync-mode agent, validated against the selected agent's credential structure. See [Agent Accounts → Credential sources](/guides/authentication/agents/#credential-sources) and [Schema Versions](/reference/runtime/schema-versions/).
 
 **Phase 2 — auth health baseline.** Capsule exposes session-local usage/account status surfaces, launch records per-agent auth provisioning outcomes, `jackin doctor` has a coarse `gh_auth` check, and `jackin config auth show` prints global modes. The pre-launch credential probe, `jackin auth status`, and console Auth-tab health glyphs are not shipped. See [Auth health and operator visibility](/roadmap/auth-health-and-visibility/).
 
