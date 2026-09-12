@@ -1,11 +1,8 @@
 # SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 # SPDX-License-Identifier: Apache-2.0
 
-version = "v1alpha5"
+version = "v1alpha9"
 workdir = "/workspace/prod"
-
-[claude]
-auth_forward = "sync"
 
 [[mounts]]
 src = "/home/operator/projects/prod"

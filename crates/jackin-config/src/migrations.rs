@@ -94,7 +94,7 @@ pub const CONFIG_MIGRATIONS: &[MigrationStep] = &[
     MigrationStep {
         from: "v1alpha9",
         to: CURRENT_CONFIG_VERSION,
-        migrate: require_account_registry,
+        migrate: strip_legacy_agent_tables,
     },
 ];
 /// Ordered per-workspace file migration chain from [`LEGACY_VERSION`] to current.
@@ -148,32 +148,28 @@ pub const WORKSPACE_MIGRATIONS: &[MigrationStep] = &[
     MigrationStep {
         from: "v1alpha8",
         to: CURRENT_WORKSPACE_VERSION,
-        migrate: require_account_registry,
+        migrate: strip_legacy_agent_tables,
     },
 ];
 
-/// Refuse obsolete credential policies before changing the schema version.
-/// Account authorization cannot be inferred safely from inherited policies.
-fn require_account_registry(doc: &mut DocumentMut) -> crate::ConfigResult<()> {
-    fn check(table: &dyn toml_edit::TableLike, scope: &str) -> crate::ConfigResult<()> {
-        for agent in jackin_core::Agent::ALL {
-            if table.contains_key(agent.slug()) {
-                return Err(ConfigError::msg(format!(
-                    "{scope}: legacy [{}] authentication policy is unsupported; register credentials with `jackin account add`, assign account IDs with `jackin workspace account assign`, and remove the old agent policy table",
-                    agent.slug()
-                )));
-            }
-        }
-        if let Some(roles) = table.get("roles").and_then(toml_edit::Item::as_table_like) {
-            for (name, role) in roles.iter() {
-                if let Some(role) = role.as_table_like() {
-                    check(role, &format!("{scope}.roles.{name}"))?;
+/// Strip legacy agent authentication tables from top-level and roles tables.
+pub(crate) fn strip_legacy_agent_tables(doc: &mut DocumentMut) -> crate::ConfigResult<()> {
+    for agent in jackin_core::Agent::ALL {
+        doc.remove(agent.slug());
+    }
+    if let Some(roles) = doc
+        .get_mut("roles")
+        .and_then(toml_edit::Item::as_table_like_mut)
+    {
+        for (_, role) in roles.iter_mut() {
+            if let Some(role_tbl) = role.as_table_like_mut() {
+                for agent in jackin_core::Agent::ALL {
+                    role_tbl.remove(agent.slug());
                 }
             }
         }
-        Ok(())
     }
-    check(doc.as_table(), "configuration")
+    Ok(())
 }
 
 /// v1alpha4 → v1alpha5: the workspace-level `op_account` moves onto each

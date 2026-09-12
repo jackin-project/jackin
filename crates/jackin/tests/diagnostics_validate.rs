@@ -19,6 +19,7 @@ fn diagnostics_validate_confirms_live_otlp_and_rejects_stopped_endpoint() -> any
         .timeout(std::time::Duration::from_secs(20))
         .args(["diagnostics", "validate"])
         .env("JACKIN_HOME_DIR", home.path())
+        .env("JACKIN_CONFIG_DIR", home.path().join(".config/jackin"))
         .env("OTEL_EXPORTER_OTLP_ENDPOINT", &endpoint)
         .env("OTEL_EXPORTER_OTLP_PROTOCOL", "grpc")
         .output()
@@ -47,6 +48,7 @@ fn diagnostics_validate_confirms_live_otlp_and_rejects_stopped_endpoint() -> any
     Command::cargo_bin("jackin")?
         .args(["diagnostics", "validate"])
         .env("JACKIN_HOME_DIR", home.path())
+        .env("JACKIN_CONFIG_DIR", home.path().join(".config/jackin"))
         .env("OTEL_EXPORTER_OTLP_ENDPOINT", &endpoint)
         .env("OTEL_EXPORTER_OTLP_PROTOCOL", "grpc")
         .assert()
