@@ -4,7 +4,7 @@
 import XCTest
 
 /// Platform-lane contract: both SDK lanes are recorded in the manifest and
-/// agent instructions, `UIDesignRequiresCompatibility` never ships, and any
+/// the native README, `UIDesignRequiresCompatibility` never ships, and any
 /// post-26.0 symbol the component map lists is reachable only behind a guard.
 final class PlatformLaneTests: XCTestCase {
     private var nativeRoot: URL {
@@ -21,10 +21,10 @@ final class PlatformLaneTests: XCTestCase {
         )
     }
 
-    func testManifestAndAgentInstructionsRecordBothLanes() throws {
+    func testManifestAndReadmeRecordBothLanes() throws {
         let project = try text("project.yml")
-        let agents = try text("AGENTS.md")
-        for (name, content) in [("project.yml", project), ("AGENTS.md", agents)] {
+        let readme = try text("README.md")
+        for (name, content) in [("project.yml", project), ("README.md", readme)] {
             XCTAssertTrue(
                 content.contains("26.0"),
                 "\(name) must record the macOS 26.0 minimum deployment target"
