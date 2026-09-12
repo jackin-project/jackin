@@ -490,6 +490,7 @@ pub(super) enum DiscoveredCredentialSource {
         agent: Agent,
         root: PathBuf,
         operator_home: PathBuf,
+        account_label: Option<String>,
         source_id: String,
         capability_id: String,
         provenance: BTreeSet<String>,
@@ -499,6 +500,7 @@ pub(super) enum DiscoveredCredentialSource {
         handle: OpaqueCredentialHandle,
         key: String,
         kind: UsageCredentialKind,
+        account_label: Option<String>,
         source_id: String,
         capability_id: String,
         provenance: BTreeSet<String>,
@@ -607,6 +609,13 @@ fn enumerate_registered_accounts(
                 provenance.insert(format!("workspace {workspace_name}"));
             }
         }
+        let label = if !account.name.trim().is_empty() {
+            Some(account.name.trim().to_owned())
+        } else if !id.trim().is_empty() {
+            Some(id.trim().to_owned())
+        } else {
+            None
+        };
         if let AccountCredential::Profile { agent, directory } = &account.credential {
             let root = resolve_profile_root(operator_home, directory);
             candidates
@@ -614,13 +623,18 @@ fn enumerate_registered_accounts(
                     agent: *agent,
                     root,
                 })
-                .and_modify(|candidate| candidate.provenance.extend(provenance.clone()))
+                .and_modify(|candidate| {
+                    candidate.provenance.extend(provenance.clone());
+                    if candidate.account_label.is_none() {
+                        candidate.account_label = label.clone();
+                    }
+                })
                 .or_insert_with(|| CandidateAccumulator {
                     surface,
                     kind: UsageCredentialKind::Profile,
                     provenance,
                     env_key: None,
-                    account_label: None,
+                    account_label: label.clone(),
                     operator_home: Some(operator_home.to_path_buf()),
                 });
             continue;
@@ -669,13 +683,18 @@ fn enumerate_registered_accounts(
                         handle,
                         key: entry.name.to_owned(),
                     })
-                    .and_modify(|candidate| candidate.provenance.extend(provenance.clone()))
+                    .and_modify(|candidate| {
+                        candidate.provenance.extend(provenance.clone());
+                        if candidate.account_label.is_none() {
+                            candidate.account_label = label.clone();
+                        }
+                    })
                     .or_insert_with(|| CandidateAccumulator {
                         surface,
                         kind,
                         provenance,
                         env_key: Some(entry.name.to_owned()),
-                        account_label: None,
+                        account_label: label.clone(),
                         operator_home: None,
                     });
                 continue;
@@ -781,6 +800,7 @@ fn materialize_catalog(
                 agent,
                 root,
                 operator_home: candidate.operator_home.unwrap_or_default(),
+                account_label: candidate.account_label,
                 source_id,
                 capability_id,
                 provenance: candidate.provenance,
@@ -792,6 +812,7 @@ fn materialize_catalog(
                 handle,
                 key: candidate.env_key.unwrap_or_default(),
                 kind: candidate.kind,
+                account_label: candidate.account_label,
                 source_id,
                 capability_id,
                 provenance: candidate.provenance,
@@ -1042,6 +1063,7 @@ fn validate_source(
             agent,
             root,
             operator_home,
+            account_label,
             source_id,
             capability_id,
             provenance,
@@ -1055,6 +1077,29 @@ fn validate_source(
                         ValidatedCredentialSource::Profile(*material)
                     }),
                 _ => ValidatedCredentialSource::Capability,
+            };
+            let outcome = match outcome {
+                ProfileValidation::Authenticated {
+                    provider_id,
+                    account_label: auth_label,
+                    material,
+                } => ProfileValidation::Authenticated {
+                    provider_id,
+                    account_label: auth_label.or(account_label),
+                    material,
+                },
+                ProfileValidation::Anonymous(_) => {
+                    if let Some(label) = account_label {
+                        ProfileValidation::Authenticated {
+                            account_label: Some(label),
+                            provider_id: None,
+                            material: None,
+                        }
+                    } else {
+                        outcome
+                    }
+                }
+                other => other,
             };
             (
                 surface,
@@ -1070,6 +1115,7 @@ fn validate_source(
             handle,
             key,
             kind: _,
+            account_label,
             source_id,
             capability_id,
             provenance,
@@ -1077,13 +1123,23 @@ fn validate_source(
             let outcome = match env_resolver.identify_provider_credential(surface, &handle) {
                 ProviderCredentialIdentityOutcome::Authenticated {
                     provider_id,
-                    account_label,
+                    account_label: auth_label,
                 } => ProfileValidation::Authenticated {
                     provider_id,
-                    account_label,
+                    account_label: auth_label.or(account_label),
                     material: None,
                 },
-                ProviderCredentialIdentityOutcome::Anonymous => ProfileValidation::Anonymous(None),
+                ProviderCredentialIdentityOutcome::Anonymous => {
+                    if let Some(label) = account_label {
+                        ProfileValidation::Authenticated {
+                            account_label: Some(label),
+                            provider_id: None,
+                            material: None,
+                        }
+                    } else {
+                        ProfileValidation::Anonymous(None)
+                    }
+                }
                 ProviderCredentialIdentityOutcome::Missing => ProfileValidation::Missing,
                 ProviderCredentialIdentityOutcome::Denied => ProfileValidation::Denied,
                 ProviderCredentialIdentityOutcome::Malformed => ProfileValidation::Malformed,

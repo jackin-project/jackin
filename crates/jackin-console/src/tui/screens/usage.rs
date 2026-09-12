@@ -79,6 +79,46 @@ impl UsageScreenState {
             }
         }
 
+        for unresolved in &projection.unresolved {
+            let provider_name = projection
+                .providers
+                .iter()
+                .find(|p| p.provider_id == unresolved.provider_id)
+                .map_or_else(
+                    || well_known_provider_name(&unresolved.provider_id),
+                    |p| p.display_name.clone(),
+                );
+            let account_label = format!("Unresolved ({})", unresolved.capability_id);
+            let mut status = lifecycle_label(unresolved.state).to_owned();
+            if let Some(issue) = unresolved
+                .issues
+                .first()
+                .filter(|issue| !issue.message.trim().is_empty())
+            {
+                status.push_str(" · ");
+                status.push_str(issue.message.trim());
+            }
+            accounts.push(UsageAccount {
+                provider: provider_name,
+                account: account_label,
+                status,
+                windows: Vec::new(),
+            });
+        }
+
+        let mut provider_order = Vec::new();
+        for account in &accounts {
+            if !provider_order.contains(&account.provider) {
+                provider_order.push(account.provider.clone());
+            }
+        }
+        accounts.sort_by_key(|account| {
+            provider_order
+                .iter()
+                .position(|p| p == &account.provider)
+                .unwrap_or(usize::MAX)
+        });
+
         let notice = if projection.unresolved.is_empty() {
             None
         } else {
@@ -133,6 +173,20 @@ fn lifecycle_label(lifecycle: jackin_protocol::usage_broker::UsageLifecycleV1) -
         UsageLifecycleV1::Unsupported => "unsupported",
         UsageLifecycleV1::Unavailable => "unavailable",
         UsageLifecycleV1::Error => "error",
+    }
+}
+
+fn well_known_provider_name(provider_id: &str) -> String {
+    match provider_id.to_ascii_lowercase().as_str() {
+        "anthropic" | "claude" => "Anthropic / Claude".to_owned(),
+        "openai" | "codex" => "OpenAI".to_owned(),
+        "opencode" => "OpenCode".to_owned(),
+        "kimi" | "moonshot" => "Kimi".to_owned(),
+        "grok" | "xai" => "Grok".to_owned(),
+        "amp" => "Amp".to_owned(),
+        "zai" => "Z.AI".to_owned(),
+        "minimax" => "MiniMax".to_owned(),
+        other => other.to_owned(),
     }
 }
 
@@ -258,26 +312,20 @@ fn render_detail(frame: &mut Frame<'_>, area: Rect, state: &ManagerState<'_>) {
             return;
         }
         let mut lines = vec![Line::from("Status    available"), Line::from("")];
+        let width = area.width.saturating_sub(8).max(8) as usize;
         for account in &screen.accounts {
+            append_overview_account(&mut lines, account, width);
+        }
+        if let Some(notice) = &screen.notice {
             lines.push(Line::from(Span::styled(
-                format!("{} · {}", account.provider, account.account),
-                Style::default().fg(Color::White),
+                notice.clone(),
+                Style::default().fg(Color::Yellow),
             )));
-            if let Some(window) = account.windows.first() {
-                let width = area.width.saturating_sub(8).max(8) as usize;
-                lines.push(Line::from(Span::styled(
-                    meter_line(width, window.remaining_percent),
-                    meter_style(window.remaining_percent),
-                )));
-                lines.push(Line::from(format!("  {} · {}", window.value, window.reset)));
-            } else {
-                lines.push(Line::from(format!("  {}", account.status)));
-            }
-            lines.push(Line::from(""));
         }
         frame.render_widget(
             Paragraph::new(lines)
                 .block(panel("Overview"))
+                .scroll((screen.scroll, 0))
                 .wrap(Wrap { trim: false }),
             area,
         );
@@ -324,6 +372,40 @@ fn render_detail(frame: &mut Frame<'_>, area: Rect, state: &ManagerState<'_>) {
             .wrap(Wrap { trim: false }),
         area,
     );
+}
+
+fn append_overview_window(lines: &mut Vec<Line<'static>>, window: &UsageWindow, width: usize) {
+    if !window.label.is_empty() {
+        lines.push(Line::from(Span::styled(
+            format!("  {}", window.label),
+            Style::default().fg(Color::DarkGray),
+        )));
+    }
+    lines.push(Line::from(Span::styled(
+        meter_line(width, window.remaining_percent),
+        meter_style(window.remaining_percent),
+    )));
+    let detail = if window.reset.is_empty() {
+        format!("  {}", window.value)
+    } else {
+        format!("  {} · {}", window.value, window.reset)
+    };
+    lines.push(Line::from(detail));
+}
+
+fn append_overview_account(lines: &mut Vec<Line<'static>>, account: &UsageAccount, width: usize) {
+    lines.push(Line::from(Span::styled(
+        format!("{} · {}", account.provider, account.account),
+        Style::default().fg(Color::White),
+    )));
+    if account.windows.is_empty() {
+        lines.push(Line::from(format!("  {}", account.status)));
+    } else {
+        for window in &account.windows {
+            append_overview_window(lines, window, width);
+        }
+    }
+    lines.push(Line::from(""));
 }
 
 fn panel(title: &'static str) -> Block<'static> {

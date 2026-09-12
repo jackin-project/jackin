@@ -52,11 +52,13 @@ pub struct ConsoleRunOptions<'a> {
 /// work. Refresh remains broker-owned and is requested by the route later.
 fn load_console_usage_state(
     paths: &JackinPaths,
+    force_refresh: bool,
 ) -> anyhow::Result<jackin_console::tui::state::UsageScreenState> {
     use jackin_usage::host::{
         HostProbePolicy, HostRuntimeConfig, HostUsageRuntime, UsageBrokerConfig,
         UsageDiscoveryScope, ensure_usage_broker_process, usage_broker_capabilities,
     };
+    use std::time::Duration;
 
     let discovery_scope = UsageDiscoveryScope::HostDesktop {
         config_root: paths.config_dir.clone(),
@@ -86,9 +88,25 @@ fn load_console_usage_state(
     )
     .map_err(|error| anyhow::anyhow!(error.message))?;
     for capability in usage_broker_capabilities(&discovery) {
-        let state = client
-            .current(capability)
-            .map_err(|error| anyhow::anyhow!(error.message))?;
+        let state = if force_refresh {
+            let current = client
+                .current(capability.clone())
+                .map_err(|error| anyhow::anyhow!(error.message))?;
+            let state = client
+                .refresh(capability.clone(), current.generation, true)
+                .map_err(|error| anyhow::anyhow!(error.message))?;
+            if state.phase.is_active() {
+                client
+                    .join(capability, state.generation, Duration::from_secs(10))
+                    .map_err(|error| anyhow::anyhow!(error.message))?
+            } else {
+                state
+            }
+        } else {
+            client
+                .current(capability)
+                .map_err(|error| anyhow::anyhow!(error.message))?
+        };
         runtime
             .apply_broker_generation(state)
             .map_err(anyhow::Error::msg)?;
@@ -116,7 +134,7 @@ fn refresh_console_usage_on_key(
         return Ok(());
     };
 
-    match load_console_usage_state(paths) {
+    match load_console_usage_state(paths, true) {
         Ok(usage) => {
             manager.usage_accounts = usage.accounts.clone();
             manager.usage_notice = usage.notice.clone();
@@ -1075,7 +1093,7 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
         options.startup_error,
     )?;
     if let ConsoleStage::Manager(manager) = &mut state.stage {
-        match load_console_usage_state(paths) {
+        match load_console_usage_state(paths, false) {
             Ok(usage) => {
                 manager.usage_accounts = usage.accounts;
                 manager.usage_notice = usage.notice;
