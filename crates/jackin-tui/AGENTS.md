@@ -1,3 +1,0 @@
-- Keep this crate product-specific: neutral UI primitives and exact visual tests belong in TermRock.
-- Shared code requires at least two jackin❯ surface consumers; otherwise keep it under the owning surface's `src/tui/`.
-- Do not add terminal lifecycle, run loops, external effects, or a generic theme facade here.

@@ -1,2 +1,0 @@
-- The extension registry is closed; adding a key requires a roadmap-contract change first.
-- Generated schema files are never hand-edited; change the registry and regenerate them.

@@ -501,13 +501,10 @@ mode = "enforce"
 cap = 0
 [[family.entry]]
 key = "AGENTS.md"
-bound = 7364
+bound = 1026
 [[family.entry]]
 key = "CLAUDE.md"
-bound = 7364
-[[family.entry]]
-key = "crates/AGENTS.md"
-bound = 14740
+bound = 1026
 [[family.entry]]
 key = "crates/jackin-agent-status/README.md"
 bound = 2129
