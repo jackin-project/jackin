@@ -1254,6 +1254,11 @@ impl Session {
                     self.handle_unhandled_csi(raw);
                 }
                 PassthroughEvent::DroppedCsi(_) => {}
+                // BEL is deliberately absorbed: the grid never forwarded a
+                // byte for it before the event became typed (it was
+                // swallowed), and the capsule owns every byte that reaches
+                // the outer terminal. Tests assert on the event instead.
+                PassthroughEvent::Bell => {}
                 // Device/mode query the emulator answered itself. The reply
                 // goes back to the agent's own PTY stdin — never the outer
                 // terminal — so the agent's capability detection reflects the

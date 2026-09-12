@@ -47,7 +47,7 @@ SVG goldens must still be made deterministic at the source: a fixed render size,
 
 ## What "visual" means here — capture the full styled cell
 
-The single source of truth for "what the user sees" in a ratatui surface is the `Buffer` of `Cell`s, where each cell carries `symbol`, `fg`, `bg`, `underline_color`, and a `Modifier` bitset. The live in-container terminal has the equivalent in `termpane`'s `GridSnapshot` (`SnapCell` already records `fg`, `bg`, `bold`, `italic`, `underline`, `inverse`, `dim` — see [termpane src/snapshot.rs](https://github.com/tailrocks/termpane/blob/v0.6.4/src/snapshot.rs)). The canonical artifact for this program must encode all of it, and the SVG encoder must map every modifier to an SVG attribute:
+The single source of truth for "what the user sees" in a ratatui surface is the `Buffer` of `Cell`s, where each cell carries `symbol`, `fg`, `bg`, `underline_color`, and a `Modifier` bitset. The live in-container terminal has the equivalent in `termpane`'s `GridSnapshot` (`SnapCell` already records `fg`, `bg`, `bold`, `italic`, `underline`, `inverse`, `dim` — see [termpane src/snapshot.rs](https://github.com/tailrocks/termpane/blob/v0.1.0/src/snapshot.rs)). The canonical artifact for this program must encode all of it, and the SVG encoder must map every modifier to an SVG attribute:
 
 | Modifier | SVG encoding |
 |---|---|
