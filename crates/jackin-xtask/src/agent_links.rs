@@ -1,12 +1,11 @@
 //! No-cross-reference gate for `README.md` and `AGENTS.md`.
 //!
-//! An `AGENTS.md` is per-folder and **self-contained** — the agents.md
-//! nearest-file-wins rule means an agent editing a file reads the closest
-//! `AGENTS.md`, so that file must stand alone and explain only from its own
-//! level. It must never point at another `AGENTS.md`, in any form — not a link,
-//! not a prose "see `../AGENTS.md` / `.github/AGENTS.md`". A `README.md`
-//! likewise never links to any `AGENTS.md`. Either file may still reference any
-//! other markdown or source file (a design doc, a spec) as needed.
+//! The repo carries a single consolidated `AGENTS.md` at the root (per-folder
+//! files were removed in #956). It is **self-contained** — it must never point
+//! at another `AGENTS.md`, in any form — not a link, not a prose
+//! "see `../AGENTS.md` / `.github/AGENTS.md`". A `README.md` likewise never
+//! links to any `AGENTS.md`. Either file may still reference any other markdown
+//! or source file (a design doc, a spec) as needed.
 //!
 //! This gate scans every `README.md` and `AGENTS.md` in the repo (skipping
 //! fenced code blocks, where the convention doc shows template examples) and
@@ -15,8 +14,8 @@
 //! - any markdown link — inline `[t](path)` or reference `[id]: path` — whose
 //!   target is an `AGENTS.md` (in any `README.md` or `AGENTS.md`); and
 //! - any path-reference to another `AGENTS.md` (a `…/AGENTS.md` mention) inside
-//!   an `AGENTS.md`, except the convention doc `crates/AGENTS.md` that defines
-//!   this very rule.
+//!   an `AGENTS.md`, except the convention doc `AGENTS.md` (repo root) that
+//!   defines this very rule.
 //!
 //! ```sh
 //! cargo xtask lint agent-links
@@ -35,7 +34,7 @@ const TARGET_BASENAME: &str = "AGENTS.md";
 const SKIP_DIRS: &[&str] = &[".git", "target", "node_modules"];
 /// The convention doc that defines this rule references `AGENTS.md` files (and
 /// shows templates in code fences); exempt it from the path-mention check.
-const CONVENTION_DOC: &str = "crates/AGENTS.md";
+const CONVENTION_DOC: &str = "AGENTS.md";
 
 #[derive(Args, Debug)]
 pub(crate) struct LintAgentLinksArgs {
