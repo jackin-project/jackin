@@ -14,14 +14,23 @@ use jackin_core::JackinPaths;
 use tempfile::TempDir;
 
 const SAMPLE: &str = r#"
-version = "v1alpha9"
+version = "v1alpha10"
+
+[accounts.default-claude]
+name = "Default Claude"
+provider = "anthropic"
+
+[accounts.default-claude.credential]
+type = "profile"
+agent = "claude"
+directory = "/home/operator/.claude"
+
+[account_bindings]
+claude = "default-claude"
 
 [roles.agent-smith]
 git = "https://github.com/jackin-project/jackin-agent-smith.git"
 trusted = true
-
-[claude]
-auth_forward = "sync"
 
 [env]
 OPERATOR_ORG = "acme"

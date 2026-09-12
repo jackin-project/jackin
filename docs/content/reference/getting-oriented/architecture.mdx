@@ -245,19 +245,19 @@ The same finalizer runs after `hardline` attaches, so the cleanup decision is in
 ├── data/
 │   ├── instances.json             # Rebuildable index of all known instances
 │   └── <container-base>/          # Persisted state per instance
-│       ├── claude/                # Claude auth handoff (provisioned when Claude is a supported agent)
-│       │   ├── credentials.json   # Forwarded OAuth credentials under auth_forward=sync
-│       │   └── account.json       # Forwarded Claude Code account metadata under sync/token modes
-│       ├── codex/                 # Codex auth handoff (provisioned when Codex is a supported agent)
-│       │   └── auth.json          # ChatGPT OAuth tokens (synced from host ~/.codex/auth.json under auth_forward=sync)
-│       ├── amp/                   # Amp auth handoff (provisioned when Amp is a supported agent)
-│       │   └── secrets.json       # Amp API key or OAuth token (synced from host ~/.local/share/amp/secrets.json under auth_forward=sync)
-│       ├── kimi-code/             # Kimi auth handoff (provisioned when Kimi is a supported agent)
-│       │   ├── config.toml        # Kimi config (synced from host ~/.kimi-code/config.toml under auth_forward=sync)
-│       │   ├── credentials/       # Kimi credentials (synced from host ~/.kimi-code/credentials under auth_forward=sync)
-│       │   └── device_id          # Kimi device id (synced from host ~/.kimi-code/device_id under auth_forward=sync)
-│       ├── opencode/              # OpenCode auth handoff (provisioned when OpenCode is a supported agent)
-│       │   └── auth.json          # OpenCode provider credentials (synced from host ~/.local/share/opencode/auth.json under auth_forward=sync)
+│       ├── claude/                # Claude auth handoff (provisioned when Claude is the active agent)
+│       │   ├── credentials.json   # Forwarded OAuth credentials under a profile account
+│       │   └── account.json       # Forwarded Claude Code account metadata under a profile account
+│       ├── codex/                 # Codex auth handoff (provisioned when Codex is the active agent)
+│       │   └── auth.json          # ChatGPT OAuth tokens (synced from host ~/.codex/auth.json under a profile account)
+│       ├── amp/                   # Amp auth handoff (provisioned when Amp is the active agent)
+│       │   └── secrets.json       # Amp API key or OAuth token (synced from host ~/.local/share/amp/secrets.json under a profile account)
+│       ├── kimi-code/             # Kimi auth handoff (provisioned when Kimi is the active agent)
+│       │   ├── config.toml        # Kimi config (synced from host ~/.kimi-code/config.toml under a profile account)
+│       │   ├── credentials/       # Kimi credentials (synced from host ~/.kimi-code/credentials under a profile account)
+│       │   └── device_id          # Kimi device id (synced from host ~/.kimi-code/device_id under a profile account)
+│       ├── opencode/              # OpenCode auth handoff (provisioned when OpenCode is the active agent)
+│       │   └── auth.json          # OpenCode provider credentials (synced from host ~/.local/share/opencode/auth.json under a profile account)
 │       ├── home/                  # Durable agent home state mounted into the container
 │       │   ├── .claude/           # Claude Code conversation history, runtime-local plugins, settings
 │       │   ├── .claude.json       # Claude Code account metadata inside the durable home
