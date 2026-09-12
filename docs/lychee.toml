@@ -80,6 +80,12 @@ exclude = [
   "https://xtermjs\\.org/",
   # Reddit returns 403 to automated clients for this curated Clippy lint list.
   "https://www\\.reddit\\.com/r/rust/comments/1rxbygj/curated_list_of_clippy_lints_worth_adding_to_the/",
+  # Upstream moved these files (verified 404 via gh api contents on 2026-09-12):
+  # nguyenphutrong/quotio moved GLMQuotaFetcher.swift; xai-org/grok-build moved
+  # crates/codegen/xai-grok-shell/src/auth/model.rs. Keep the citations as
+  # historical evidence; exclude until the new upstream paths are known.
+  "https://raw\\.githubusercontent\\.com/nguyenphutrong/quotio/HEAD/Quotio/Services/GLMQuotaFetcher\\.swift",
+  "https://github\\.com/xai-org/grok-build/blob/main/crates/codegen/xai-grok-shell/src/auth/model\\.rs",
 ]
 exclude_all_private = true
 exclude_path = ["(^|/)404\\.html$"]

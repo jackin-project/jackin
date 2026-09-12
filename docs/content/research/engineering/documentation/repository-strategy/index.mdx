@@ -166,7 +166,7 @@ Doing this without breaking anything is the primary risk.
 - Switch the GitHub Actions deploy workflow.
 - Delete `docs/` from this repo in the same release cut, and update
   every reference (<RepoFile path="PROJECT_STRUCTURE.md">PROJECT_STRUCTURE.md</RepoFile>,
-  <RepoFile path="AGENTS.md">AGENTS.md</RepoFile>, <RepoFile path="docs/AGENTS.md">docs/AGENTS.md</RepoFile>,
+  <RepoFile path="AGENTS.md">AGENTS.md</RepoFile>, `docs/AGENTS.md` (removed in #956; consolidated into root AGENTS.md),
   and the docs cross-reference table).
 
 Per <RepoFile path="AGENTS.md">AGENTS.md</RepoFile> ("Project status: pre-release"), the
@@ -207,7 +207,7 @@ When this lands, the following should all be true:
    the reviewer.
 4. <RepoFile path="PROJECT_STRUCTURE.md">PROJECT_STRUCTURE.md</RepoFile> and the cross-reference table are updated to
    point at the new repo and explain the new flow.
-5. The freshness check from the docs site's own <RepoFile path="docs/AGENTS.md">docs/AGENTS.md</RepoFile>
+5. The freshness check from the docs site's own `docs/AGENTS.md` (removed in #956; consolidated into root AGENTS.md)
    ("Roadmap sidebar discipline", `<RepoFile />` validation, lychee
    link checks) is preserved or improved.
 

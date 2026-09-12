@@ -58,7 +58,8 @@ fn flags_readme_linking_agents() {
 #[test]
 fn flags_agents_mentioning_another_agents() {
     let temp = tempfile::tempdir().unwrap();
-    let agents = temp.path().join("AGENTS.md");
+    let agents = temp.path().join("docs").join("AGENTS.md");
+    fs::create_dir_all(agents.parent().unwrap()).unwrap();
     fs::write(&agents, "see .github/AGENTS.md for PR rules\n").unwrap();
     let mut problems = Vec::new();
     check_file(temp.path(), &agents, &mut problems).unwrap();
@@ -70,12 +71,11 @@ fn flags_agents_mentioning_another_agents() {
     );
 }
 
-/// The convention doc crates/AGENTS.md is exempt from the mention check.
+/// The convention doc AGENTS.md (repo root) is exempt from the mention check.
 #[test]
 fn exempts_convention_doc_from_mention_check() {
     let temp = tempfile::tempdir().unwrap();
-    let conv = temp.path().join("crates").join("AGENTS.md");
-    fs::create_dir_all(conv.parent().unwrap()).unwrap();
+    let conv = temp.path().join("AGENTS.md");
     fs::write(
         &conv,
         "every crate has AGENTS.md; see crates/AGENTS.md rules\n",
@@ -90,7 +90,8 @@ fn exempts_convention_doc_from_mention_check() {
 #[test]
 fn ignores_links_inside_code_fence() {
     let temp = tempfile::tempdir().unwrap();
-    let agents = temp.path().join("AGENTS.md");
+    let agents = temp.path().join("docs").join("AGENTS.md");
+    fs::create_dir_all(agents.parent().unwrap()).unwrap();
     fs::write(
         &agents,
         "text\n\n```markdown\nWorkspace rules: [../AGENTS.md](../AGENTS.md)\n```\n",
