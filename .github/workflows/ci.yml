@@ -143,7 +143,7 @@ jobs:
       actions: read
       contents: read
       pull-requests: read
-    uses: ChainArgos/velnor-actions/.github/workflows/ci-native.yml@77173e8e71aa18e60d21f9f0d1ae57c0695d0233 # 2026.8.32
+    uses: ChainArgos/velnor-actions/.github/workflows/ci-native.yml@76a459854130953c67fd2c8d33cce8b843732be7 # 2026.8.33
     with:
       lane: ${{ github.event_name == 'workflow_dispatch' && inputs.lanes || (github.event_name == 'pull_request' || github.event_name == 'merge_group' || github.event_name == 'push') && 'github' || 'velnor' }}
       recovery_proof_id: ${{ inputs.recovery_proof_id || '' }}
