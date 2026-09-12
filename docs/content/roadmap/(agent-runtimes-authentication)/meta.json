@@ -3,7 +3,6 @@
   "defaultOpen": false,
   "pages": [
     "multi-runtime-support",
-    "alternative-llm-providers",
     "auth-reliability-program",
     "auth-overwrite-on-new-tab",
     "auth-health-and-visibility",
