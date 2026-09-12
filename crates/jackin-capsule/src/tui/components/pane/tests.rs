@@ -4,7 +4,6 @@
 //! Tests for `pane`.
 use super::*;
 use crate::tui::socket_backend::term_color;
-use jackin_term::DamageGrid;
 use ratatui::{
     Terminal,
     backend::TestBackend,
@@ -13,6 +12,7 @@ use ratatui::{
     style::{Color, Modifier},
 };
 use std::num::NonZeroU16;
+use termpane::DamageGrid;
 
 #[test]
 fn pane_widget_renders_text_into_buffer() {
@@ -60,19 +60,19 @@ fn pane_widget_renders_borrowed_view_into_buffer() {
 
 #[test]
 fn pane_widget_maps_color_reset() {
-    let color = term_color(jackin_term::Color::Default);
+    let color = term_color(termpane::Color::Default);
     assert_eq!(color, Color::Reset);
 }
 
 #[test]
 fn pane_widget_maps_indexed_color() {
-    let color = term_color(jackin_term::Color::Idx(196));
+    let color = term_color(termpane::Color::Idx(196));
     assert_eq!(color, Color::Indexed(196));
 }
 
 #[test]
 fn pane_widget_maps_rgb_color() {
-    let color = term_color(jackin_term::Color::Rgb(0, 255, 65));
+    let color = term_color(termpane::Color::Rgb(0, 255, 65));
     assert_eq!(color, Color::Rgb(0, 255, 65));
 }
 

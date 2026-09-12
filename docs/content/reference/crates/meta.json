@@ -27,7 +27,6 @@
     "jackin-protocol",
     "jackin-runtime",
     "jackin-telemetry",
-    "jackin-term",
     "jackin-tui",
     "jackin-test-support",
     "jackin-usage",

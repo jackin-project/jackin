@@ -13,7 +13,7 @@ on:
       packages-json:
         description: JSON array of exact affected workspace crate names.
         required: false
-        default: '["jackin","jackin-agent-status","jackin-brand","jackin-build-meta","jackin-capsule","jackin-config","jackin-console","jackin-core","jackin-dev","jackin-diagnostics","jackin-docker","jackin-env","jackin-host","jackin-image","jackin-instance","jackin-isolation","jackin-launch","jackin-manifest","jackin-oppicker","jackin-pr-trailers","jackin-process","jackin-protocol","jackin-runtime","jackin-term","jackin-test-support","jackin-tui","jackin-usage","jackin-xtask"]'
+        default: '["jackin","jackin-agent-status","jackin-brand","jackin-build-meta","jackin-capsule","jackin-config","jackin-console","jackin-core","jackin-dev","jackin-diagnostics","jackin-docker","jackin-env","jackin-host","jackin-image","jackin-instance","jackin-isolation","jackin-launch","jackin-manifest","jackin-oppicker","jackin-pr-trailers","jackin-process","jackin-protocol","jackin-runtime","jackin-test-support","jackin-tui","jackin-usage","jackin-xtask"]'
         type: string
       package-cache-keys-json:
         description: JSON object mapping each affected crate to its exact source-closure key.
@@ -298,12 +298,12 @@ jobs:
       - name: Check crate feature powerset
         if: >-
           steps.crate-result.outputs.hit != 'true' &&
-          contains(fromJSON('["jackin","jackin-agent-status","jackin-capsule","jackin-diagnostics","jackin-runtime","jackin-term"]'), matrix.package)
+          contains(fromJSON('["jackin","jackin-agent-status","jackin-capsule","jackin-diagnostics","jackin-runtime"]'), matrix.package)
         run: cargo hack check -p "${{ matrix.package }}" --feature-powerset --all-targets --locked
       - name: Build crate benchmarks
         if: >-
           steps.crate-result.outputs.hit != 'true' &&
-          contains(fromJSON('["jackin","jackin-capsule","jackin-config","jackin-diagnostics","jackin-manifest","jackin-runtime","jackin-term","jackin-usage"]'), matrix.package)
+          contains(fromJSON('["jackin","jackin-capsule","jackin-config","jackin-diagnostics","jackin-manifest","jackin-runtime","jackin-usage"]'), matrix.package)
         run: cargo build --benches -p "${{ matrix.package }}" --locked --offline
       - name: Run bounded crate fuzz targets
         if: steps.crate-result.outputs.hit != 'true'

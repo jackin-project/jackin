@@ -1457,7 +1457,6 @@ mod otlp {
         "jackin_protocol",
         "jackin_telemetry",
         "jackin_runtime",
-        "jackin_term",
         jackin_telemetry::TELEMETRY_TARGET,
         "termrock",
         "termrock_lookbook",

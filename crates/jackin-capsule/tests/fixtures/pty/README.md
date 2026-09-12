@@ -16,7 +16,7 @@ render-conformance fixtures" section in the repository's `TESTING.md`.
 Committed fixtures:
 
 - `codex-version.bin` — real Codex CLI version output, extracted through `cargo xtask pty-fixture` from
-  `crates/jackin-term/tests/fixtures/real/codex-version.vt`.
+  `tests/fixtures/real/codex-version.vt` in the [termpane](https://github.com/tailrocks/termpane) repo.
 - `vim-tiny-open-edit-quit.bin` — real Vim alt-screen redraw/edit/quit PTY capture, extracted through
   `cargo xtask pty-fixture` from
-  `crates/jackin-term/tests/fixtures/real/vim-tiny-open-edit-quit.bin`.
+  `tests/fixtures/real/vim-tiny-open-edit-quit.bin` in the [termpane](https://github.com/tailrocks/termpane) repo.

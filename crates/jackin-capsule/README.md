@@ -17,7 +17,7 @@ Not responsible for: protocol encoding (`jackin-protocol`), host-side launch orc
 
 ## Architecture tier and allowed dependencies
 
-**L4 entry/glue (binary + lib).** Dependencies include `jackin-brand`, `jackin-core`, `jackin-diagnostics` (OTLP), `jackin-protocol`, `jackin-usage`, `jackin-term`, `jackin-tui`, TermRock, `jackin-agent-status`, and `jackin-build-meta` (build.rs). Must **not** depend on host runtime (`jackin-runtime`) or other host binaries — the capsule is a different process tree.
+**L4 entry/glue (binary + lib).** Dependencies include `jackin-brand`, `jackin-core`, `jackin-diagnostics` (OTLP), `jackin-protocol`, `jackin-usage`, `termpane`, `jackin-tui`, TermRock, `jackin-agent-status`, and `jackin-build-meta` (build.rs). Must **not** depend on host runtime (`jackin-runtime`) or other host binaries — the capsule is a different process tree.
 
 ## Structure
 

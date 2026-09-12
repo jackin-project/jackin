@@ -130,10 +130,6 @@ jobs:
       - run: cargo deny check advisories
       - run: cargo hack check --workspace --feature-powerset --all-targets --locked
       - run: shellcheck docker/runtime/entrypoint.sh docker/runtime/agent-status/hooks/*/report-hook.sh scripts/*.sh
-      - name: Long jackin-term fuzz run
-        run: |
-          cd crates/jackin-term
-          cargo fuzz run --sanitizer none --target x86_64-unknown-linux-gnu damage_grid_process -- -max_total_time=300
       - name: Long config/manifest fuzz runs
         run: |
           cd crates/jackin-config
@@ -152,12 +148,6 @@ jobs:
         run: |
           cd crates/jackin-protocol
           cargo fuzz run --sanitizer none --target x86_64-unknown-linux-gnu decode_frames -- -max_total_time=120
-
-      - name: ASan jackin-term fuzz run
-        run: |
-          rustup toolchain install nightly --profile minimal
-          cd crates/jackin-term
-          cargo +nightly fuzz run --sanitizer address --target x86_64-unknown-linux-gnu damage_grid_process -- -max_total_time=300
 
   # Scheduled workspace Rust smoke only. Governed PR CI runs the complete Desktop
   # gate in the generated native-usage-menu-bar lane.
@@ -347,7 +337,7 @@ jobs:
       - name: Run dhat-heap allocation tests
         run: |
           set -euo pipefail
-          cargo nextest run -p jackin-term -p jackin-capsule --features dhat-heap --locked --no-capture 2>&1 | tee dhat-allocation.txt
+          cargo nextest run -p jackin-capsule --features dhat-heap --locked --no-capture 2>&1 | tee dhat-allocation.txt
       - name: Upload dhat allocation log
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -682,7 +672,7 @@ jobs:
       - name: llvm-cov nextest
         run: |
           cargo llvm-cov nextest \
-            -p jackin-term -p jackin-core -p jackin-config -p jackin-manifest \
+            -p jackin-core -p jackin-config -p jackin-manifest \
             -p jackin-protocol -p jackin-env \
             --lcov --output-path coverage.lcov
           cargo llvm-cov report --summary-only >> "$GITHUB_STEP_SUMMARY"
@@ -701,7 +691,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        crate: [jackin-core, jackin-config, jackin-manifest, jackin-term]
+        crate: [jackin-core, jackin-config, jackin-manifest]
     env:
       CARGO_INCREMENTAL: "0"
       CARGO_TERM_COLOR: always

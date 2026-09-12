@@ -152,7 +152,7 @@ pub fn draw_scrollbar(
 /// Snapshot a single row from a `DamageGrid` into a `RowSnapshot`.
 #[must_use]
 pub fn snapshot_damagegrid_row(
-    grid: &jackin_term::DamageGrid,
+    grid: &termpane::DamageGrid,
     row: u16,
     cols_to_draw: u16,
 ) -> RowSnapshot {
@@ -184,7 +184,7 @@ pub fn snapshot_damagegrid_row(
 /// span outside the currently visible viewport.
 #[must_use]
 pub fn pane_content_from_damagegrid(
-    grid: &jackin_term::DamageGrid,
+    grid: &termpane::DamageGrid,
     viewport_cols: u16,
 ) -> Vec<RowSnapshot> {
     let (screen_rows, _screen_cols) = grid.size();
@@ -203,7 +203,7 @@ pub fn pane_content_from_damagegrid(
 /// materialize the entire retained scrollback (up to the 10k-row bound).
 #[must_use]
 pub fn pane_content_range_from_damagegrid(
-    grid: &jackin_term::DamageGrid,
+    grid: &termpane::DamageGrid,
     viewport_cols: u16,
     content_rows: Range<usize>,
 ) -> Vec<RowSnapshot> {
@@ -248,8 +248,8 @@ pub fn pane_content_range_from_damagegrid(
     snapshot
 }
 
-/// Build a `RowSnapshot` from a raw slice of `jackin_term::Cell`s.
-fn snapshot_damagegrid_cells(cells: &[jackin_term::Cell], cols_to_draw: u16) -> RowSnapshot {
+/// Build a `RowSnapshot` from a raw slice of `termpane::Cell`s.
+fn snapshot_damagegrid_cells(cells: &[termpane::Cell], cols_to_draw: u16) -> RowSnapshot {
     let mut out = Vec::with_capacity(cols_to_draw as usize);
     let mut col = 0u16;
     for cell in cells {

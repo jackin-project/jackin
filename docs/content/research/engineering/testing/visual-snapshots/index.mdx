@@ -47,7 +47,7 @@ SVG goldens must still be made deterministic at the source: a fixed render size,
 
 ## What "visual" means here — capture the full styled cell
 
-The single source of truth for "what the user sees" in a ratatui surface is the `Buffer` of `Cell`s, where each cell carries `symbol`, `fg`, `bg`, `underline_color`, and a `Modifier` bitset. The live in-container terminal has the equivalent in `jackin-term`'s `GridSnapshot` (`SnapCell` already records `fg`, `bg`, `bold`, `italic`, `underline`, `inverse`, `dim` — see <RepoFile path="crates/jackin-term/src/snapshot.rs">crates/jackin-term/src/snapshot.rs</RepoFile>). The canonical artifact for this program must encode all of it, and the SVG encoder must map every modifier to an SVG attribute:
+The single source of truth for "what the user sees" in a ratatui surface is the `Buffer` of `Cell`s, where each cell carries `symbol`, `fg`, `bg`, `underline_color`, and a `Modifier` bitset. The live in-container terminal has the equivalent in `termpane`'s `GridSnapshot` (`SnapCell` already records `fg`, `bg`, `bold`, `italic`, `underline`, `inverse`, `dim` — see [termpane src/snapshot.rs](https://github.com/tailrocks/termpane/blob/v0.1.0/src/snapshot.rs)). The canonical artifact for this program must encode all of it, and the SVG encoder must map every modifier to an SVG attribute:
 
 | Modifier | SVG encoding |
 |---|---|
@@ -71,7 +71,7 @@ Two further classes of test pin **intent** independently of pixel output, so a "
 |---|---|---|
 | Shared components (`jackin-tui`) | `buffer_to_svg` over a `TestBackend` buffer | SVG lookbook with a `--check` drift gate shipped (colour only) |
 | Composite TUI screens (console list/editor/settings, capsule chrome/pane/branch bar, launch TUI) | ratatui `Buffer` | text-only `insta` for four console views; no full-screen SVG |
-| Live in-container session screens | `jackin-term` `GridSnapshot` | snapshot model exists; few committed fixtures |
+| Live in-container session screens | `termpane` `GridSnapshot` | snapshot model exists; few committed fixtures |
 | CLI stdout / stderr (`help`, `status`, `doctor`, `--format json`, `E0xx` errors) | captured process output (with ANSI) | functional `assert_cmd` checks only; no visual goldens |
 
 ## Tool research — Rust-only options
@@ -98,7 +98,7 @@ Multi-source, adversarially-verified external research (primary sources: crates.
 
 ## Decision
 
-- **TUI, composite, and live surfaces: render the styled `Buffer` / `GridSnapshot` to SVG with our own encoder.** This is the correct layer because ANSI-stream tools drop cursor/CSI movement and cannot faithfully capture a full-screen cursor-addressed TUI. ratatui's own default `TestBackend` text dump is itself style-blind — it drops colour and modifiers (ratatui issue [#1402](https://github.com/ratatui/ratatui/issues/1402)) — so the encoder must read the `Buffer` cells directly rather than reuse that path. Make `buffer_to_svg` modifier-complete and extract it into a small reusable crate alongside [`jackin-test-support`](/reference/crates/jackin-test-support/), or into a focused `jackin-term-svg` crate, so the console, capsule, launch TUI, and lookbook all emit one identical artifact format.
+- **TUI, composite, and live surfaces: render the styled `Buffer` / `GridSnapshot` to SVG with our own encoder.** This is the correct layer because ANSI-stream tools drop cursor/CSI movement and cannot faithfully capture a full-screen cursor-addressed TUI. ratatui's own default `TestBackend` text dump is itself style-blind — it drops colour and modifiers (ratatui issue [#1402](https://github.com/ratatui/ratatui/issues/1402)) — so the encoder must read the `Buffer` cells directly rather than reuse that path. Make `buffer_to_svg` modifier-complete and extract it into a small reusable crate alongside [`jackin-test-support`](/reference/crates/jackin-test-support/), or into a focused `termpane-svg` crate, so the console, capsule, launch TUI, and lookbook all emit one identical artifact format.
 - **CLI line output: capture stdout/stderr (with ANSI) and render to the same SVG.** Evaluate `term-transcript` as adopt-or-borrow for this surface; if its SGR-only limitation or its rendering shape does not fit, feed the captured bytes through a small ANSI→cell parser into the *same* SVG encoder, so every surface in the project shares one golden format. For purely *functional* CLI checks — exit codes, `--format json`, must-contain assertions — where style is not what is under test, prefer `snapbox` / `trycmd` over hand-rolled assertions and skip the SVG entirely; reserve the styled-SVG golden for output whose *appearance* is the regression target (the `E0xx` error blocks, the coloured `status` and `doctor` summaries).
 - **Build our own crate where needed.** No off-the-shelf Rust tool covers full-screen TUI render regression; `term-transcript` is CLI-only and `termframe`/`cellshot` are screenshot/PTY tools, not render-regression libraries. The smallest correct path is to harden and extract the encoder we already have, reusing `term-transcript` for the CLI surface where it fits and borrowing SVG-rendering ideas from `termframe`/`cellshot`. The result is mostly first-party, fully Rust.
 - **Review and gate in the PR.** Commit `.svg` goldens; gate drift with the existing lookbook `--check` pattern extended across all surfaces (and/or `insta` review for the same SVG strings). GitHub renders the committed SVG inline, so the PR shows the before/after image and the attribute-level diff together. An optional static gallery page (the lookbook already exports one) gives a Storybook-style browse surface.
@@ -109,7 +109,7 @@ Multi-source, adversarially-verified external research (primary sources: crates.
 - **Component SVG lookbook** — `jackin-tui-lookbook` renders every shared component to SVG via `buffer_to_svg`, with `--check` drift detection and an exported gallery under `docs/public/tui-lookbook`. Colour is captured; modifiers are not yet.
 - **Text-only console snapshots** — four `insta` snapshots (list, settings, editor-general, editor-mounts) in <RepoFile path="crates/jackin-console/src/tui/view/tests.rs">crates/jackin-console/src/tui/view/tests.rs</RepoFile> with committed `.snap` files, generated with `INSTA_UPDATE=new`. These capture glyphs only.
 - **Capsule render tests** — `insta` and buffer assertions exist for capsule chrome and the branch-context bar.
-- **Live screen model** — `jackin-term`'s `GridSnapshot::dump()` already serialises a complete styled screen, ready to be a golden source for in-container session fixtures.
+- **Live screen model** — `termpane`'s `GridSnapshot::dump()` already serialises a complete styled screen, ready to be a golden source for in-container session fixtures.
 
 ## Design implications
 
@@ -131,7 +131,7 @@ Multi-source, adversarially-verified external research (primary sources: crates.
 These unresolved harness contracts must be settled before broad golden adoption:
 
 - **Deterministic cell geometry.** The encoder emits per-cell `x` / `y` coordinates, so glyph advance width must come from a fixed source — a bundled monospace metrics constant, or a vendored font parsed with `ttf-parser` / `swash` / `fontdue` — never a system-font lookup, or goldens diverge across CI hosts.
-- **Encoder input contract.** The encoder should take a styled *cell grid*, not raw bytes: the console and launch TUI hand it a ratatui `Buffer`; the live container surface hands it a `jackin-term` `GridSnapshot`. Any raw-ANSI input (captured CLI bytes) must first be parsed into that grid by a VT crate (`vt100` / `vte` / `avt`) so all four surfaces converge on one encoder.
+- **Encoder input contract.** The encoder should take a styled *cell grid*, not raw bytes: the console and launch TUI hand it a ratatui `Buffer`; the live container surface hands it a `termpane` `GridSnapshot`. Any raw-ANSI input (captured CLI bytes) must first be parsed into that grid by a VT crate (`vt100` / `vte` / `avt`) so all four surfaces converge on one encoder.
 - **Borrow vs reference for `termframe` / `cellshot`.** Both are Rust and MIT, but neither is verified as a full-screen-CSI-faithful regression harness; decide per-tool whether to lift SVG-rendering code or keep them as design references only.
 - **One harness home.** Confirm the determinism bundle (fixed size, frozen clock, resolved theme, `insta` filters/redactions) lives once in the shared test crate so the console, capsule, launch TUI, and CLI goldens cannot drift apart.
 

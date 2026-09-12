@@ -14,13 +14,13 @@
 
 use std::io;
 
-use jackin_term::{Color as TermColor, UnderlineStyle};
 use ratatui::{
     backend::{Backend, ClearType},
     buffer::Cell,
     layout::{Position, Size},
     style::{Color, Modifier},
 };
+use termpane::{Color as TermColor, UnderlineStyle};
 
 /// Ratatui backend that buffers output for delivery to the attach socket.
 #[derive(Debug)]

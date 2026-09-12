@@ -1,6 +1,6 @@
 //! Equivalence tests: ranged content snapshots match slices of the full snapshot.
 
-use jackin_term::DamageGrid;
+use termpane::DamageGrid;
 
 use super::{pane_content_from_damagegrid, pane_content_range_from_damagegrid};
 

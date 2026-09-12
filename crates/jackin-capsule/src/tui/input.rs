@@ -68,11 +68,11 @@ pub(crate) fn is_wheel_button(button: u8) -> bool {
 }
 
 pub(crate) fn mouse_event_allowed_for_mode(
-    mode: jackin_term::MouseProtocolMode,
+    mode: termpane::MouseProtocolMode,
     button: u8,
     press: bool,
 ) -> bool {
-    if mode == jackin_term::MouseProtocolMode::None {
+    if mode == termpane::MouseProtocolMode::None {
         return false;
     }
     if is_wheel_button(button) {
@@ -82,25 +82,23 @@ pub(crate) fn mouse_event_allowed_for_mode(
     let motion = button & 0b100000 != 0;
     let passive_motion = motion && button & 0b11 == 3;
     match mode {
-        jackin_term::MouseProtocolMode::None => false,
-        jackin_term::MouseProtocolMode::Press => press && !motion,
+        termpane::MouseProtocolMode::None => false,
+        termpane::MouseProtocolMode::Press => press && !motion,
         // PressRelease = mode 1001: press + release events, no motion.
-        jackin_term::MouseProtocolMode::PressRelease => !motion,
+        termpane::MouseProtocolMode::PressRelease => !motion,
         // ButtonMotion = mode 1002: press + release + button-held motion, no passive motion.
-        jackin_term::MouseProtocolMode::ButtonMotion => !passive_motion,
+        termpane::MouseProtocolMode::ButtonMotion => !passive_motion,
         // AnyEvent and AnyMotion are aliases for mode 1003: all events.
-        jackin_term::MouseProtocolMode::AnyEvent | jackin_term::MouseProtocolMode::AnyMotion => {
-            true
-        }
+        termpane::MouseProtocolMode::AnyEvent | termpane::MouseProtocolMode::AnyMotion => true,
     }
 }
 
 pub(crate) fn mouse_event_encoding_for_mode(
-    mode: jackin_term::MouseProtocolMode,
-    encoding: jackin_term::MouseProtocolEncoding,
+    mode: termpane::MouseProtocolMode,
+    encoding: termpane::MouseProtocolEncoding,
     button: u8,
     press: bool,
-) -> Option<jackin_term::MouseProtocolEncoding> {
+) -> Option<termpane::MouseProtocolEncoding> {
     if mouse_event_allowed_for_mode(mode, button, press) {
         return Some(encoding);
     }
@@ -112,17 +110,17 @@ pub(crate) fn encode_mouse_for_protocol(
     col: u16,
     row: u16,
     press: bool,
-    encoding: jackin_term::MouseProtocolEncoding,
+    encoding: termpane::MouseProtocolEncoding,
 ) -> Option<Vec<u8>> {
     match encoding {
-        jackin_term::MouseProtocolEncoding::Sgr => {
+        termpane::MouseProtocolEncoding::Sgr => {
             let final_byte = if press { 'M' } else { 'm' };
             Some(format!("\x1b[<{button};{col};{row}{final_byte}").into_bytes())
         }
-        jackin_term::MouseProtocolEncoding::Default
-        | jackin_term::MouseProtocolEncoding::Utf8
+        termpane::MouseProtocolEncoding::Default
+        | termpane::MouseProtocolEncoding::Utf8
         // Urxvt uses decimal coordinates but the same CSI M prefix — treat as Default.
-        | jackin_term::MouseProtocolEncoding::Urxvt => {
+        | termpane::MouseProtocolEncoding::Urxvt => {
             let release_button = (button & !0b11) | 3;
             let button_code = if press { button } else { release_button };
             let mut out = b"\x1b[M".to_vec();
@@ -163,18 +161,18 @@ pub(crate) fn encode_wheel_cursor_fallback(
 pub(crate) fn push_xterm_mouse_number(
     out: &mut Vec<u8>,
     value: u32,
-    encoding: jackin_term::MouseProtocolEncoding,
+    encoding: termpane::MouseProtocolEncoding,
 ) -> Option<()> {
     match encoding {
-        jackin_term::MouseProtocolEncoding::Default | jackin_term::MouseProtocolEncoding::Urxvt => {
+        termpane::MouseProtocolEncoding::Default | termpane::MouseProtocolEncoding::Urxvt => {
             out.push(u8::try_from(value).ok()?);
         }
-        jackin_term::MouseProtocolEncoding::Utf8 => {
+        termpane::MouseProtocolEncoding::Utf8 => {
             let ch = char::from_u32(value)?;
             let mut buf = [0u8; 4];
             out.extend_from_slice(ch.encode_utf8(&mut buf).as_bytes());
         }
-        jackin_term::MouseProtocolEncoding::Sgr => unreachable!("SGR does not use xterm fields"),
+        termpane::MouseProtocolEncoding::Sgr => unreachable!("SGR does not use xterm fields"),
     }
     Some(())
 }

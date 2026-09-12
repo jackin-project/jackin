@@ -19,7 +19,7 @@ cap = 1850
 mode = "enforce"
 [[family.entry]]
 key = "crates/jackin-diagnostics/src/observability.rs"
-bound = 2013
+bound = 2012
 [[family.entry]]
 key = "crates/jackin-xtask/src/telemetry_registry.rs"
 bound = 2008
@@ -105,9 +105,6 @@ bound = 3
 key = "clippy::disallowed_methods@jackin-runtime"
 bound = 6
 [[family.entry]]
-key = "clippy::disallowed_methods@jackin-term"
-bound = 1
-[[family.entry]]
 key = "clippy::disallowed_methods@jackin-usage"
 bound = 2
 [[family.entry]]
@@ -142,9 +139,6 @@ key = "clippy::excessive_nesting@jackin-launch"
 bound = 5
 [[family.entry]]
 key = "clippy::excessive_nesting@jackin-runtime"
-bound = 1
-[[family.entry]]
-key = "clippy::excessive_nesting@jackin-term"
 bound = 1
 [[family.entry]]
 key = "clippy::excessive_nesting@jackin-xtask"
@@ -187,9 +181,6 @@ key = "clippy::fn_params_excessive_bools@jackin-host"
 bound = 1
 [[family.entry]]
 key = "clippy::items_after_statements@jackin-image"
-bound = 1
-[[family.entry]]
-key = "clippy::large_enum_variant@jackin-term"
 bound = 1
 [[family.entry]]
 key = "clippy::large_futures@jackin-docker"
@@ -243,9 +234,6 @@ bound = 2
 key = "clippy::panic@jackin-manifest"
 bound = 1
 [[family.entry]]
-key = "clippy::panic@jackin-term"
-bound = 4
-[[family.entry]]
 key = "clippy::panic@jackin-usage"
 bound = 3
 [[family.entry]]
@@ -285,9 +273,6 @@ bound = 1
 key = "clippy::print_stdout@jackin-pr-trailers"
 bound = 1
 [[family.entry]]
-key = "clippy::print_stdout@jackin-term"
-bound = 1
-[[family.entry]]
 key = "clippy::print_stdout@jackin-xtask"
 bound = 26
 [[family.entry]]
@@ -323,9 +308,6 @@ bound = 3
 [[family.entry]]
 key = "clippy::struct_excessive_bools@jackin-runtime"
 bound = 2
-[[family.entry]]
-key = "clippy::struct_excessive_bools@jackin-term"
-bound = 3
 [[family.entry]]
 key = "clippy::struct_excessive_bools@jackin-xtask"
 bound = 2
@@ -375,9 +357,6 @@ bound = 1
 key = "clippy::too_many_lines@jackin-runtime"
 bound = 6
 [[family.entry]]
-key = "clippy::too_many_lines@jackin-term"
-bound = 1
-[[family.entry]]
 key = "clippy::trivially_copy_pass_by_ref@jackin-config"
 bound = 1
 [[family.entry]]
@@ -410,9 +389,6 @@ bound = 1
 [[family.entry]]
 key = "clippy::useless_let_if_seq@jackin"
 bound = 1
-[[family.entry]]
-key = "clippy::wildcard_imports@jackin-term"
-bound = 2
 [[family.entry]]
 key = "clippy::wildcard_imports@jackin-usage"
 bound = 6
@@ -516,7 +492,7 @@ key = "crates/jackin-build-meta/README.md"
 bound = 628
 [[family.entry]]
 key = "crates/jackin-capsule/README.md"
-bound = 6342
+bound = 6339
 [[family.entry]]
 key = "crates/jackin-config/README.md"
 bound = 2229
@@ -580,9 +556,6 @@ bound = 3545
 [[family.entry]]
 key = "crates/jackin-telemetry/README.md"
 bound = 2149
-[[family.entry]]
-key = "crates/jackin-term/README.md"
-bound = 2905
 [[family.entry]]
 key = "crates/jackin-test-support/README.md"
 bound = 2633
@@ -712,9 +685,6 @@ bound = 8
 key = "jackin-runtime"
 bound = 8
 [[family.entry]]
-key = "jackin-term"
-bound = 6
-[[family.entry]]
 key = "jackin-tui"
 bound = 3
 [[family.entry]]
@@ -778,12 +748,6 @@ bound = 62
 key = "jackin-console.incremental_s"
 bound = 6
 [[family.entry]]
-key = "jackin-term.clean_s"
-bound = 2
-[[family.entry]]
-key = "jackin-term.incremental_s"
-bound = 2
-[[family.entry]]
 key = "jackin-config.clean_s"
 bound = 14
 [[family.entry]]
@@ -845,9 +809,6 @@ bound = 92
 [[family.entry]]
 key = "jackin-telemetry"
 bound = 24
-[[family.entry]]
-key = "jackin-term"
-bound = 66
 [[family.entry]]
 key = "jackin-usage"
 bound = 29

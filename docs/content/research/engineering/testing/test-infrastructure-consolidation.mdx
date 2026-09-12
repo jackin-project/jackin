@@ -15,7 +15,7 @@ Three testing gaps increase the risk of silent regressions and make source-file 
 
 **Behavioral specs are incomplete.** Specs exist for `runtime/launch.rs` and the console `op_picker`, but not for `jackin-capsule`'s daemon (<RepoFile path="crates/jackin-capsule/src/daemon.rs">crates/jackin-capsule/src/daemon.rs</RepoFile> — the in-container PID 1 control plane) or for the operator console's TUI state machine. Behavioral specs should be a general practice for every major component, not a one-off exercise per refactor.
 
-**No property-based or fuzz testing for parser surfaces.** <RepoFile path="crates/jackin-manifest/src/validate.rs">crates/jackin-manifest/src/validate.rs</RepoFile>, <RepoFile path="crates/jackin-env/src/env_resolver.rs">crates/jackin-env/src/env_resolver.rs</RepoFile>, and the migration chains (<RepoFile path="crates/jackin-config/src/migrations.rs">crates/jackin-config/src/migrations.rs</RepoFile>, <RepoFile path="crates/jackin-manifest/src/migrations.rs">crates/jackin-manifest/src/migrations.rs</RepoFile>) all parse operator- or role-author-supplied input, and are tested only by example-based unit tests. An input the developer didn't think of isn't covered. `cargo-fuzz` already exists for `jackin-term` (the `damage_grid_process` target, scheduled nightly in <RepoFile path=".github/workflows/hygiene.yml">.github/workflows/hygiene.yml</RepoFile>); no equivalent exists for any parser crate, and `proptest` is not part of the dependency graph at all.
+**No property-based or fuzz testing for parser surfaces.** <RepoFile path="crates/jackin-manifest/src/validate.rs">crates/jackin-manifest/src/validate.rs</RepoFile>, <RepoFile path="crates/jackin-env/src/env_resolver.rs">crates/jackin-env/src/env_resolver.rs</RepoFile>, and the migration chains (<RepoFile path="crates/jackin-config/src/migrations.rs">crates/jackin-config/src/migrations.rs</RepoFile>, <RepoFile path="crates/jackin-manifest/src/migrations.rs">crates/jackin-manifest/src/migrations.rs</RepoFile>) all parse operator- or role-author-supplied input, and are tested only by example-based unit tests. An input the developer didn't think of isn't covered. `cargo-fuzz` already exists for the terminal model (the `damage_grid_process` target, now run in the [termpane](https://github.com/tailrocks/termpane) repo); no equivalent exists for any parser crate, and `proptest` is not part of the dependency graph at all.
 
 ## Findings and current evidence
 
@@ -45,7 +45,7 @@ Two testing layers, neither of which exists today for the parser crates:
 - `manifest::validate`: a manifest that parses successfully always round-trips through serialize to parse unchanged.
 - Migration chain: any input that parses at version N migrates successfully to N+1 and the resulting output parses at N+1.
 
-**`cargo-fuzz` targets**, run alongside the existing `jackin-term` nightly job:
+**`cargo-fuzz` targets**, run alongside the existing terminal-model job in the termpane repo:
 - `manifest::validate` (TOML input, expect no panic).
 - `env_resolver::resolve` (any Unicode env string).
 - Each migration step (any input that parses at version N).
@@ -65,7 +65,7 @@ Two testing layers, neither of which exists today for the parser crates:
 ## Limitations and open questions
 
 1. Which remaining helpers have truly identical semantics across consumers?
-2. What nightly CI time budget should parser fuzz targets share with the existing `jackin-term` target?
+2. What nightly CI time budget should parser fuzz targets share, given the terminal-model target now runs in the termpane repo?
 
 ## Related work
 

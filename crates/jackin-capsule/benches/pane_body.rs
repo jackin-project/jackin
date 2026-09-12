@@ -17,8 +17,8 @@
 use std::hint::black_box;
 
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
-use jackin_term::{Color as TermColor, DamageGrid};
 use ratatui::{Terminal, backend::TestBackend, buffer::Buffer, layout::Rect, widgets::Widget};
+use termpane::{Color as TermColor, DamageGrid};
 
 const BENCH_COLS: u16 = 200;
 const BENCH_ROWS: u16 = 50;

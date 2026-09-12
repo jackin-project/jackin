@@ -9,13 +9,13 @@
 use crate::tui::socket_backend::term_color;
 use std::num::NonZeroU16;
 
-use jackin_term::{Cell as TermCell, Color as TermColor, GridSnapshot, GridView, SnapCell};
 use ratatui::{
     buffer::{Buffer, CellDiffOption},
     layout::Rect,
     style::Modifier,
     widgets::Widget,
 };
+use termpane::{Cell as TermCell, Color as TermColor, GridSnapshot, GridView, SnapCell};
 
 #[derive(Debug)]
 pub(crate) enum PaneBodyContent<'a> {
