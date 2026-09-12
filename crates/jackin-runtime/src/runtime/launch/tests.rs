@@ -5271,6 +5271,12 @@ async fn load_agent_starts_stopped_current_instance_before_credentials_and_build
             String::new(),
             "Sessions: 1\n".to_owned(),
         ])),
+        inspect_network_queue: std::cell::RefCell::new(VecDeque::from([Some(
+            jackin_docker::docker_client::NetworkRow {
+                name: manifest.docker.network.clone(),
+                labels: std::collections::HashMap::default(),
+            },
+        )])),
         ..Default::default()
     };
     let mut runner = FakeRunner::for_load_agent([
@@ -7934,12 +7940,18 @@ async fn stopped_matching_instance_starts_current_role() {
     );
     write_indexed_manifest(&paths, &manifest);
     // Stopped current-role containers can be started and reconnected without
-    // rebuilding or resolving launch credentials.
+    // rebuilding or resolving launch credentials, as long as network exists.
     let docker = jackin_test_support::FakeDockerClient {
         inspect_queue: std::cell::RefCell::new(VecDeque::from([ContainerState::Stopped {
             exit_code: 137,
             oom_killed: false,
         }])),
+        inspect_network_queue: std::cell::RefCell::new(VecDeque::from([Some(
+            jackin_docker::docker_client::NetworkRow {
+                name: manifest.docker.network.clone(),
+                labels: std::collections::HashMap::default(),
+            },
+        )])),
         ..Default::default()
     };
 
@@ -7950,6 +7962,40 @@ async fn stopped_matching_instance_starts_current_role() {
     assert_eq!(
         candidate,
         RestoreResolution::StartCurrentRole(container_name.to_owned())
+    );
+}
+
+#[tokio::test]
+async fn stopped_matching_instance_with_missing_network_recreates_current_role() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
+    let container_name = "jk-k7p9m2xq-workspace-agentsmith";
+    let manifest = workspace_manifest(
+        container_name,
+        "agent-smith",
+        "Agent Smith",
+        jackin_core::Agent::Claude,
+    );
+    write_indexed_manifest(&paths, &manifest);
+    // When the network is missing, StartCurrentRole cannot succeed via docker start,
+    // so candidate resolution must downgrade to RecreateCurrentRole.
+    let docker = jackin_test_support::FakeDockerClient {
+        inspect_queue: std::cell::RefCell::new(VecDeque::from([ContainerState::Stopped {
+            exit_code: 137,
+            oom_killed: false,
+        }])),
+        inspect_network_queue: std::cell::RefCell::new(VecDeque::from([None])),
+        ..Default::default()
+    };
+
+    let candidate = resolve_workspace_restore(&paths, "agent-smith", &docker)
+        .await
+        .unwrap();
+
+    assert_eq!(
+        candidate,
+        RestoreResolution::RecreateCurrentRole(container_name.to_owned())
     );
 }
 

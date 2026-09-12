@@ -1367,3 +1367,36 @@ async fn apple_backend_reconnect_rejects_unverified_account_admission() {
     assert!(error.to_string().contains("cannot verify"));
     assert!(runner.recorded.is_empty());
 }
+
+#[tokio::test]
+async fn start_stopped_container_errors_clearly_when_network_missing() {
+    let (_tmp, paths) = test_paths();
+    let container_name = "jk-agent-smith";
+    provision_account_admission(&paths, container_name);
+    let docker = FakeDockerClient {
+        inspect_queue: std::cell::RefCell::new(VecDeque::from([
+            ContainerState::Stopped {
+                exit_code: 0,
+                oom_killed: false,
+            },
+            ContainerState::NotFound, // for dind check
+        ])),
+        inspect_network_queue: std::cell::RefCell::new(VecDeque::from([None])),
+        fail_with: vec![("start_container".to_owned(), "network not found".to_owned())],
+        ..Default::default()
+    };
+    let mut runner = FakeRunner::default();
+
+    let err = start_or_reconnect_capsule_client(&paths, container_name, &docker, &mut runner)
+        .await
+        .unwrap_err();
+
+    assert!(
+        err.to_string()
+            .contains("cannot be started because its Docker network")
+    );
+    assert!(
+        err.to_string()
+            .contains("run `jackin load` to recreate the instance")
+    );
+}

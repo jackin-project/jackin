@@ -331,6 +331,19 @@ async fn restore_current_role_now(
     load_result
 }
 
+async fn teardown_recreate_container(
+    paths: &JackinPaths,
+    container: &str,
+    docker: &impl DockerApi,
+) {
+    let resources = crate::runtime::cleanup::docker_resources_for_state(paths, container);
+    drop(docker.remove_container(container).await);
+    if let Some(dind) = resources.dind_container.as_deref() {
+        drop(docker.remove_container(dind).await);
+    }
+    drop(docker.remove_network(&resources.network).await);
+}
+
 pub async fn resolve_supported_agents_for_console(
     paths: &JackinPaths,
     config: &AppConfig,
@@ -1129,6 +1142,7 @@ pub(crate) async fn load_role_with(
                 if let Ok(Some(stored)) = InstanceManifest::read_optional(&container_state) {
                     restore_pinned_sha = stored.role_git_sha;
                 }
+                teardown_recreate_container(paths, &container, docker).await;
                 Some(container)
             }
             super::RestoreResolution::RestoreCurrentRole(container) => {
@@ -1137,6 +1151,7 @@ pub(crate) async fn load_role_with(
                 if let Ok(Some(stored)) = InstanceManifest::read_optional(&container_state) {
                     restore_pinned_sha = stored.role_git_sha;
                 }
+                teardown_recreate_container(paths, &container, docker).await;
                 Some(container)
             }
             super::RestoreResolution::RecoverRelatedRole(container) => {

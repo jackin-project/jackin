@@ -489,6 +489,17 @@ pub(super) async fn start_or_reconnect_capsule_client(
     match inspect {
         ContainerState::Running | ContainerState::Paused | ContainerState::Restarting => {}
         ContainerState::Stopped { .. } | ContainerState::Created => {
+            let resources =
+                crate::runtime::cleanup::docker_resources_for_state(paths, container_name);
+            if let Some(dind_name) = resources.dind_container.as_deref() {
+                match docker.inspect_container_state(dind_name).await {
+                    ContainerState::Stopped { .. } | ContainerState::Created => {
+                        drop(docker.start_container(dind_name).await);
+                    }
+                    _ => {}
+                }
+            }
+
             jackin_diagnostics::active_timing_started(
                 jackin_diagnostics::DiagnosticStage::Capsule,
                 "restore_start_container",
@@ -507,7 +518,24 @@ pub(super) async fn start_or_reconnect_capsule_client(
                     Some("error")
                 },
             );
-            start_result?;
+            if let Err(start_err) = start_result {
+                let net_missing = if let Ok(None) = docker.inspect_network(&resources.network).await
+                {
+                    true
+                } else {
+                    let err_msg = start_err.to_string();
+                    err_msg.contains("network")
+                        && (err_msg.contains("not found") || err_msg.contains("404"))
+                };
+                if net_missing {
+                    anyhow::bail!(
+                        "role container '{container_name}' cannot be started because its Docker network '{}' no longer exists; \
+                         run `jackin load` to recreate the instance, or `jackin eject {container_name}` to discard it",
+                        resources.network
+                    );
+                }
+                return Err(start_err);
+            }
         }
         ContainerState::NotFound => {
             if let Some(message) = missing_restore_message(paths, container_name)? {

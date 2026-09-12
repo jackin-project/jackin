@@ -496,6 +496,38 @@ async fn gc_skips_dind_when_agent_is_running() {
 }
 
 #[tokio::test]
+async fn gc_skips_dind_when_agent_is_stopped() {
+    let mut labels = HashMap::new();
+    labels.insert(LABEL_ROLE_KEY.to_owned(), "jk-agent-smith".to_owned());
+    let docker = FakeDockerClient {
+        list_containers_queue: std::cell::RefCell::new(VecDeque::from([
+            // collect_labeled_dind: DinD sidecar present
+            vec![ContainerRow {
+                name: "jk-agent-smith-dind".to_owned(),
+                labels: labels.clone(),
+            }],
+            // list_role_names (including stopped): role container exists (stopped)
+            vec![ContainerRow {
+                name: "jk-agent-smith".to_owned(),
+                labels: HashMap::default(),
+            }],
+        ])),
+        list_networks_queue: std::cell::RefCell::new(VecDeque::from([vec![]])), // gc_orphaned_networks: no networks
+        ..Default::default()
+    };
+
+    gc_orphaned_resources(&gc_test_paths(), &docker).await;
+
+    assert!(
+        !docker
+            .recorded
+            .borrow()
+            .iter()
+            .any(|c| c.contains("docker rm -f jk-agent-smith-dind"))
+    );
+}
+
+#[tokio::test]
 async fn gc_keeps_state_owned_prewarm_dind_resources() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
@@ -624,6 +656,40 @@ async fn gc_removes_orphaned_network_without_dind() {
 
     assert!(
         docker
+            .recorded
+            .borrow()
+            .iter()
+            .any(|c| c.contains("docker network rm jk-agent-smith-net"))
+    );
+}
+
+#[tokio::test]
+async fn gc_preserves_network_when_role_container_is_stopped() {
+    let mut net_labels = HashMap::new();
+    net_labels.insert(LABEL_ROLE_KEY.to_owned(), "jk-agent-smith".to_owned());
+    let docker = FakeDockerClient {
+        list_containers_queue: std::cell::RefCell::new(VecDeque::from([
+            vec![], // collect_labeled_dind: no DinD sidecars
+            // list_role_names (including stopped): role container exists (stopped)
+            vec![ContainerRow {
+                name: "jk-agent-smith".to_owned(),
+                labels: HashMap::default(),
+            }],
+        ])),
+        list_networks_queue: std::cell::RefCell::new(VecDeque::from([
+            // gc_orphaned_networks: has a network with jackin.role label
+            vec![NetworkRow {
+                name: "jk-agent-smith-net".to_owned(),
+                labels: net_labels,
+            }],
+        ])),
+        ..Default::default()
+    };
+
+    gc_orphaned_resources(&gc_test_paths(), &docker).await;
+
+    assert!(
+        !docker
             .recorded
             .borrow()
             .iter()
