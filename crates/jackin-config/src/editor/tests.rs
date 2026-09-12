@@ -1803,3 +1803,89 @@ fn clearing_role_binding_preserves_nested_environment() {
         EnvValue::Plain("fixture".into())
     );
 }
+
+#[test]
+fn prune_account_bindings_removes_bindings_across_all_scopes() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let mut editor = ConfigEditor::open(&paths).unwrap();
+    editor.upsert_account("work", &profile_account()).unwrap();
+    editor
+        .create_workspace(&wn("project"), account_workspace(temp.path()))
+        .unwrap();
+    editor
+        .set_workspace_accounts(&wn("project"), &["work".into()])
+        .unwrap();
+    editor
+        .set_account_binding(None, None, Agent::Claude, Some("work"))
+        .unwrap();
+    editor
+        .set_account_binding(Some(&wn("project")), None, Agent::Claude, Some("work"))
+        .unwrap();
+    editor
+        .set_account_binding(
+            Some(&wn("project")),
+            Some("smith"),
+            Agent::Claude,
+            Some("work"),
+        )
+        .unwrap();
+    editor.save().unwrap();
+
+    let mut editor = ConfigEditor::open(&paths).unwrap();
+    editor.prune_account_bindings("work").unwrap();
+    let config = editor.save().unwrap();
+
+    assert!(config.account_bindings.is_empty());
+    assert!(config.workspaces["project"].account_bindings.is_empty());
+    assert!(
+        config.workspaces["project"].roles["smith"]
+            .account_bindings
+            .is_empty()
+    );
+    assert!(config.accounts["work"].enabled);
+}
+
+#[test]
+fn disabling_account_via_upsert_prunes_bindings_across_all_scopes() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let mut editor = ConfigEditor::open(&paths).unwrap();
+    editor.upsert_account("work", &profile_account()).unwrap();
+    editor
+        .create_workspace(&wn("project"), account_workspace(temp.path()))
+        .unwrap();
+    editor
+        .set_workspace_accounts(&wn("project"), &["work".into()])
+        .unwrap();
+    editor
+        .set_account_binding(None, None, Agent::Claude, Some("work"))
+        .unwrap();
+    editor
+        .set_account_binding(Some(&wn("project")), None, Agent::Claude, Some("work"))
+        .unwrap();
+    editor
+        .set_account_binding(
+            Some(&wn("project")),
+            Some("smith"),
+            Agent::Claude,
+            Some("work"),
+        )
+        .unwrap();
+    editor.save().unwrap();
+
+    let mut editor = ConfigEditor::open(&paths).unwrap();
+    let mut disabled = profile_account();
+    disabled.enabled = false;
+    editor.upsert_account("work", &disabled).unwrap();
+    let config = editor.save().unwrap();
+
+    assert!(!config.accounts["work"].enabled);
+    assert!(config.account_bindings.is_empty());
+    assert!(config.workspaces["project"].account_bindings.is_empty());
+    assert!(
+        config.workspaces["project"].roles["smith"]
+            .account_bindings
+            .is_empty()
+    );
+}

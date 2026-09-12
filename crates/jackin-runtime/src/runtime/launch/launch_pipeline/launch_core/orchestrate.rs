@@ -654,7 +654,7 @@ where
     let default_runner = jackin_env::OpCli::new();
     let credentials = jackin_env::resolve_account_env_with(
         config,
-        &manifest_owned.supported_agents(),
+        &[agent],
         configured.workspace_opt.as_ref(),
         role_key,
         opts.op_runner.as_deref().unwrap_or(&default_runner),
@@ -665,7 +665,7 @@ where
     )?;
     let role_state_future = async move {
         jackin_telemetry::spawn::joined_blocking(move || {
-            let provision_agents = manifest_owned.supported_agents();
+            let provision_agents = [agent];
             let selections = super::super::super::capsule_setup::account_auth_selections(
                 &config_owned,
                 workspace_opt_owned.as_ref(),
@@ -1521,6 +1521,7 @@ where
         workspace,
         environment.workspace_opt.as_ref(),
         role_key,
+        agent,
         validated_repo,
         opts,
         &materialized,

@@ -26,8 +26,34 @@ impl ConfigEditor {
         let encoded: DocumentMut = toml::to_string(account)?.parse()?;
         table_path_mut(&mut candidate, &["accounts".into()])
             .insert(id, Item::Table(encoded.as_table().clone()));
-        validate_candidate(&candidate.to_string(), &self.workspace_docs)?;
+        let mut workspaces = self.workspace_docs.clone();
+        if !account.enabled {
+            remove_bindings(candidate.as_table_mut(), id);
+            for doc in workspaces.values_mut() {
+                remove_bindings(doc.as_table_mut(), id);
+                remove_role_bindings(doc, id);
+            }
+        }
+        validate_candidate(&candidate.to_string(), &workspaces)?;
         self.doc = candidate;
+        self.workspace_docs = workspaces;
+        Ok(())
+    }
+    /// Prune bindings to the given account ID across global, workspace, and role scopes.
+    ///
+    /// # Errors
+    /// Returns an error if the candidate configuration is invalid.
+    pub fn prune_account_bindings(&mut self, id: &str) -> ConfigResult<()> {
+        let mut candidate = self.doc.clone();
+        remove_bindings(candidate.as_table_mut(), id);
+        let mut workspaces = self.workspace_docs.clone();
+        for doc in workspaces.values_mut() {
+            remove_bindings(doc.as_table_mut(), id);
+            remove_role_bindings(doc, id);
+        }
+        validate_candidate(&candidate.to_string(), &workspaces)?;
+        self.doc = candidate;
+        self.workspace_docs = workspaces;
         Ok(())
     }
     /// Remove an account and every assignment/binding referring to it.

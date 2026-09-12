@@ -307,7 +307,7 @@ impl AccountConfig {
                 base_url,
                 model,
             } => {
-                if matches!(agent, Agent::Claude | Agent::Codex)
+                if matches!(agent, Agent::Claude | Agent::Codex | Agent::Opencode)
                     && self.provider != AiProvider::for_agent(agent)
                     && model.as_deref().is_none_or(|model| model.trim().is_empty())
                 {
@@ -439,7 +439,7 @@ impl AppConfig {
     /// Validate registry credentials and all account references.
     ///
     /// # Errors
-    /// Rejects invalid credentials, unknown IDs, incompatible bindings and workspace authorization violations.
+    /// Rejects invalid credentials, unknown IDs, disabled or incompatible bindings, and workspace authorization violations.
     pub fn validate_accounts(&self) -> ConfigResult<()> {
         for (id, account) in &self.accounts {
             account.validate(id)?;
@@ -452,8 +452,7 @@ impl AppConfig {
                     .accounts
                     .get(id)
                     .ok_or_else(|| ConfigError::msg(format!("unknown account {id:?}")))?;
-                if !account.compatible_agent(*agent) || allowed.is_some_and(|ids| !ids.contains(id))
-                {
+                if !account.supports_agent(*agent) || allowed.is_some_and(|ids| !ids.contains(id)) {
                     return Err(ConfigError::msg(format!(
                         "account {id:?} is not authorized for {agent}"
                     )));
@@ -477,6 +476,17 @@ impl AppConfig {
             }
         }
         Ok(())
+    }
+
+    /// Prune bindings to the given account ID across global, workspace, and role scopes.
+    pub fn prune_account_bindings(&mut self, id: &str) {
+        self.account_bindings.retain(|_, selected| selected != id);
+        for ws in self.workspaces.values_mut() {
+            ws.account_bindings.retain(|_, selected| selected != id);
+            for role in ws.roles.values_mut() {
+                role.account_bindings.retain(|_, selected| selected != id);
+            }
+        }
     }
 }
 

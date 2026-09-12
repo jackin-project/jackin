@@ -75,6 +75,7 @@ pub(super) fn workspace_launch_config(
     workspace: &jackin_config::ResolvedWorkspace,
     workspace_name: Option<&WorkspaceName>,
     role_key: &str,
+    agent: jackin_core::Agent,
     validated_repo: &jackin_manifest::repo::ValidatedRoleRepo,
     opts: &crate::runtime::launch::LoadOptions,
     materialized: &crate::isolation::materialize::MaterializedWorkspace,
@@ -99,6 +100,7 @@ pub(super) fn workspace_launch_config(
         workspace_name,
         role_key,
         &validated_repo.manifest,
+        Some(agent),
     )?;
     launch_config.exec_bindings = exec_bindings;
     crate::runtime::launch::capsule_setup::apply_account_models(
@@ -106,7 +108,7 @@ pub(super) fn workspace_launch_config(
         config,
         workspace_name,
         role_key,
-        &validated_repo.manifest.supported_agents(),
+        &[agent],
     )?;
     // A per-launch model overrides the role manifest's `[<agent>].model` for
     // the agent this launch selected. The same value also travels as the

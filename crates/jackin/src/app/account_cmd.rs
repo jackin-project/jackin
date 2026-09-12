@@ -68,14 +68,10 @@ fn set_enabled(config: &AppConfig, paths: &JackinPaths, id: &str, enabled: bool)
         .clone();
     account.enabled = enabled;
     let mut editor = ConfigEditor::open(paths)?;
-    editor.upsert_account(id, &account)?;
     if !enabled {
-        for (agent, selected) in &config.account_bindings {
-            if selected == id {
-                editor.set_account_binding(None, None, *agent, None)?;
-            }
-        }
+        editor.prune_account_bindings(id)?;
     }
+    editor.upsert_account(id, &account)?;
     editor.save()?;
     println!("{} {id}.", if enabled { "Enabled" } else { "Disabled" });
     Ok(())

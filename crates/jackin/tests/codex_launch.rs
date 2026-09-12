@@ -231,10 +231,8 @@ model = "gpt-5"
     assert_eq!(capsule_config.models.get("codex").unwrap(), "gpt-5");
     assert!(!capsule_config.models.contains_key("claude"));
     // Multi-agent role (`agents = ["claude", "codex"]`) provisions
-    // every supported agent's home state so `hardline --new --agent
-    // claude` can switch agents without re-authentication. Both
-    // agents' mount blocks must appear; the selected agent is Codex.
-    assert!(run_cmd.contains("/home/agent/.claude"), "{run_cmd}");
+    // credentials only for the actively selected agent (Codex).
+    assert!(!run_cmd.contains("/home/agent/.claude"), "{run_cmd}");
     assert!(run_cmd.contains("/home/agent/.codex"), "{run_cmd}");
     assert!(!run_cmd.contains("/home/agent/.jackin"), "{run_cmd}");
     let codex_config = std::fs::read_to_string(

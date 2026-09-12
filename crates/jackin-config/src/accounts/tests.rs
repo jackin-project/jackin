@@ -186,6 +186,66 @@ fn minimax_codex_account_routes_its_key_and_requires_a_model() {
 }
 
 #[test]
+fn cross_provider_opencode_account_requires_model_and_native_does_not() {
+    let mut account = AccountConfig {
+        enabled: true,
+        name: "Anthropic for OpenCode".into(),
+        provider: AiProvider::Anthropic,
+        credential: AccountCredential::ApiKey {
+            value: EnvValue::from("fixture-anthropic-key"),
+            base_url: None,
+            model: Some("claude-3-7-sonnet".into()),
+        },
+    };
+    assert!(account.supports_agent(Agent::Opencode));
+    let env = account.credential_env(Agent::Opencode).unwrap();
+    assert_eq!(
+        env.get("ANTHROPIC_API_KEY"),
+        Some(&EnvValue::from("fixture-anthropic-key"))
+    );
+    // OpenCode endpoints are written to its private configuration, not env
+    assert_eq!(env.len(), 1);
+
+    // Cross-provider account with None model must fail
+    if let AccountCredential::ApiKey { model, .. } = &mut account.credential {
+        *model = None;
+    }
+    let err = account.credential_env(Agent::Opencode).unwrap_err();
+    assert!(
+        err.to_string()
+            .contains("requires an explicit model for opencode")
+    );
+
+    // Cross-provider account with empty model must also fail
+    if let AccountCredential::ApiKey { model, .. } = &mut account.credential {
+        *model = Some("   ".into());
+    }
+    let err = account.credential_env(Agent::Opencode).unwrap_err();
+    assert!(
+        err.to_string()
+            .contains("requires an explicit model for opencode")
+    );
+
+    // Native OpenCode account does not require an explicit model
+    let native_account = AccountConfig {
+        enabled: true,
+        name: "Native OpenCode".into(),
+        provider: AiProvider::Opencode,
+        credential: AccountCredential::ApiKey {
+            value: EnvValue::from("fixture-opencode-key"),
+            base_url: None,
+            model: None,
+        },
+    };
+    assert!(native_account.supports_agent(Agent::Opencode));
+    let env = native_account.credential_env(Agent::Opencode).unwrap();
+    assert_eq!(
+        env.get("OPENCODE_API_KEY"),
+        Some(&EnvValue::from("fixture-opencode-key"))
+    );
+}
+
+#[test]
 fn disabled_accounts_keep_configuration_but_cannot_authenticate() {
     let (mut cfg, ws) = config();
     cfg.workspaces
@@ -209,8 +269,15 @@ fn disabled_accounts_keep_configuration_but_cannot_authenticate() {
         .unwrap()
         .account_bindings
         .insert(Agent::Claude, "work".into());
-    cfg.validate_accounts().unwrap();
+    assert!(cfg.validate_accounts().is_err());
     resolve_account(&cfg, Agent::Claude, Some(&ws), "smith").unwrap_err();
+    cfg.prune_account_bindings("work");
+    cfg.validate_accounts().unwrap();
+    assert!(
+        resolve_account(&cfg, Agent::Claude, Some(&ws), "smith")
+            .unwrap()
+            .is_none()
+    );
     let serialized = toml::to_string(&cfg.accounts["work"]).unwrap();
     assert!(serialized.contains("enabled = false"));
     let restored: AccountConfig = toml::from_str(&serialized).unwrap();
@@ -220,4 +287,91 @@ fn disabled_accounts_keep_configuration_but_cannot_authenticate() {
             .unwrap()
             .enabled
     );
+}
+
+#[test]
+fn validate_accounts_rejects_disabled_bindings_at_all_scopes() {
+    let (mut cfg, ws) = config();
+    cfg.accounts.get_mut("work").unwrap().enabled = false;
+    cfg.workspaces
+        .get_mut(ws.as_str())
+        .unwrap()
+        .accounts
+        .push("work".into());
+
+    // Global binding to disabled account is rejected
+    cfg.account_bindings.insert(Agent::Claude, "work".into());
+    assert!(cfg.validate_accounts().is_err());
+    cfg.account_bindings.clear();
+    cfg.validate_accounts().unwrap();
+
+    // Workspace binding to disabled account is rejected
+    cfg.workspaces
+        .get_mut(ws.as_str())
+        .unwrap()
+        .account_bindings
+        .insert(Agent::Claude, "work".into());
+    assert!(cfg.validate_accounts().is_err());
+    cfg.workspaces
+        .get_mut(ws.as_str())
+        .unwrap()
+        .account_bindings
+        .clear();
+    cfg.validate_accounts().unwrap();
+
+    // Workspace-role binding to disabled account is rejected
+    cfg.workspaces.get_mut(ws.as_str()).unwrap().roles.insert(
+        "smith".into(),
+        WorkspaceRoleOverride {
+            account_bindings: BTreeMap::from([(Agent::Claude, "work".into())]),
+            ..Default::default()
+        },
+    );
+    assert!(cfg.validate_accounts().is_err());
+    cfg.workspaces.get_mut(ws.as_str()).unwrap().roles.clear();
+    cfg.validate_accounts().unwrap();
+}
+
+#[test]
+fn prune_account_bindings_clears_all_scopes_and_enables_fallback() {
+    let (mut cfg, ws) = config();
+    // Allow personal and work in workspace
+    cfg.workspaces.get_mut(ws.as_str()).unwrap().accounts = vec!["personal".into(), "work".into()];
+
+    // Bind work at global, workspace, and role scopes
+    cfg.account_bindings.insert(Agent::Claude, "work".into());
+    cfg.workspaces
+        .get_mut(ws.as_str())
+        .unwrap()
+        .account_bindings
+        .insert(Agent::Claude, "work".into());
+    cfg.workspaces.get_mut(ws.as_str()).unwrap().roles.insert(
+        "smith".into(),
+        WorkspaceRoleOverride {
+            account_bindings: BTreeMap::from([(Agent::Claude, "work".into())]),
+            ..Default::default()
+        },
+    );
+
+    // Disable work
+    cfg.accounts.get_mut("work").unwrap().enabled = false;
+    assert!(cfg.validate_accounts().is_err());
+
+    // Prune disabled bindings across all scopes
+    cfg.prune_account_bindings("work");
+    cfg.validate_accounts().unwrap();
+
+    assert!(cfg.account_bindings.is_empty());
+    assert!(cfg.workspaces[ws.as_str()].account_bindings.is_empty());
+    assert!(
+        cfg.workspaces[ws.as_str()].roles["smith"]
+            .account_bindings
+            .is_empty()
+    );
+
+    // Fallback to the sole enabled account in workspace (personal)
+    let resolved = resolve_account(&cfg, Agent::Claude, Some(&ws), "smith")
+        .unwrap()
+        .unwrap();
+    assert_eq!(resolved.name, "Personal");
 }

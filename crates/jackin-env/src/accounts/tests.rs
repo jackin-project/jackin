@@ -11,7 +11,7 @@ impl OpRunner for NoSecrets {
         anyhow::bail!("unexpected secret lookup")
     }
 }
-fn account(value: &str) -> AccountConfig {
+fn account_with_model(value: &str, model: Option<&str>) -> AccountConfig {
     AccountConfig {
         enabled: true,
         name: "Test".into(),
@@ -19,9 +19,13 @@ fn account(value: &str) -> AccountConfig {
         credential: AccountCredential::ApiKey {
             value: EnvValue::from(value),
             base_url: None,
-            model: None,
+            model: model.map(str::to_owned),
         },
     }
+}
+
+fn account(value: &str) -> AccountConfig {
+    account_with_model(value, None)
 }
 #[test]
 fn workspace_does_not_inherit_global_credentials() {
@@ -61,7 +65,10 @@ fn assigned_key_resolves_host_reference_without_reading_other_accounts() {
 fn different_accounts_resolve_into_separate_agent_environments() {
     let mut cfg = AppConfig::default();
     cfg.accounts.insert("codex".into(), account("test-one"));
-    cfg.accounts.insert("opencode".into(), account("test-two"));
+    cfg.accounts.insert(
+        "opencode".into(),
+        account_with_model("test-two", Some("gpt-4o")),
+    );
     cfg.account_bindings.insert(Agent::Codex, "codex".into());
     cfg.account_bindings
         .insert(Agent::Opencode, "opencode".into());

@@ -311,6 +311,7 @@ model = "zai/glm"
         None,
         &selector.key(),
         &manifest,
+        None,
     )
     .unwrap();
 
@@ -2808,10 +2809,8 @@ model = "gpt-5"
     );
     assert!(!run_cmd.contains("/jackin/codex/config.toml"));
     // Multi-agent role `agents = ["claude", "codex"]` provisions and mounts
-    // every supported agent's home state at `docker run`, so a later
-    // `hardline --new --agent claude` tab finds its auth without relaunching.
-    // Both mounts must be present; the initially-selected agent is Codex.
-    assert!(run_cmd.contains("/home/agent/.claude"));
+    // credentials only for the actively selected agent (Codex).
+    assert!(!run_cmd.contains("/home/agent/.claude"));
     assert!(run_cmd.contains("/home/agent/.codex"));
     let container_name = launched_role_container_name(&runner);
     let credentials: serde_json::Value = serde_json::from_slice(
@@ -2836,6 +2835,132 @@ model = "gpt-5"
     .unwrap();
     assert!(codex_config.contains("[projects.\"/workspace\"]"));
     assert!(codex_config.contains("trust_level = \"trusted\""));
+}
+
+#[tokio::test]
+async fn load_agent_succeeds_when_sibling_agent_has_multiple_accounts() {
+    use jackin_core::Agent;
+
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
+    paths.ensure_base_dirs().unwrap();
+    std::fs::write(
+        &paths.config_file,
+        r#"[roles.multi-agent-role]
+git = "https://github.com/jackin-project/jackin-agent-smith.git"
+trusted = true
+
+[accounts.codex-1]
+name = "Codex 1"
+provider = "openai"
+[accounts.codex-1.credential]
+type = "api_key"
+value = "key-1"
+
+[accounts.codex-2]
+name = "Codex 2"
+provider = "openai"
+[accounts.codex-2.credential]
+type = "api_key"
+value = "key-2"
+
+[accounts.claude-main]
+name = "Claude Main"
+provider = "anthropic"
+[accounts.claude-main.credential]
+type = "api_key"
+value = "claude-key"
+
+[workspaces.my-workspace]
+workdir = "/workspace"
+accounts = ["codex-1", "codex-2", "claude-main"]
+[workspaces.my-workspace.account_bindings]
+claude = "claude-main"
+
+[[workspaces.my-workspace.mounts]]
+src = "/tmp"
+dst = "/workspace"
+"#,
+    )
+    .unwrap();
+    let mut config = AppConfig::load_or_init(&paths).unwrap();
+
+    let selector = RoleSelector::new(None, "multi-agent-role");
+    let mut runner = FakeRunner::for_load_agent([String::new()]);
+
+    let repo_dir = jackin_manifest::repo::CachedRepo::new(&paths, &selector).repo_dir;
+    std::fs::create_dir_all(&repo_dir).unwrap();
+    std::fs::write(
+        repo_dir.join("Dockerfile"),
+        "FROM projectjackin/construct:0.1-trixie\n",
+    )
+    .unwrap();
+    std::fs::write(
+        repo_dir.join("jackin.role.toml"),
+        r#"version = "v1alpha3"
+dockerfile = "Dockerfile"
+agents = ["claude", "codex"]
+
+[claude]
+plugins = []
+
+[codex]
+model = "gpt-5"
+"#,
+    )
+    .unwrap();
+
+    let mut workspace = repo_workspace(&repo_dir);
+    workspace.name = "my-workspace".into();
+    workspace.default_agent = Some(Agent::Claude);
+    let docker = jackin_test_support::FakeDockerClient::default();
+    load_role(
+        &paths,
+        &mut config,
+        &selector,
+        &workspace,
+        &docker,
+        &mut runner,
+        &LoadOptions::default(),
+    )
+    .await
+    .unwrap();
+
+    let run_cmd = runner
+        .recorded
+        .iter()
+        .find(|call| call.contains("docker run -d") && call.contains("jackin.kind=role"))
+        .unwrap();
+
+    // Only the selected agent (Claude) is provisioned and mounted into the container.
+    assert!(run_cmd.contains("/home/agent/.claude"));
+    assert!(!run_cmd.contains("/home/agent/.codex"));
+
+    let container_name = launched_role_container_name(&runner);
+    let credentials: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(
+            paths
+                .data_dir
+                .join(&container_name)
+                .join("credentials/account-credentials.json"),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(credentials["claude"]["ANTHROPIC_API_KEY"], "claude-key");
+    assert!(credentials.get("codex").is_none());
+
+    let capsule_config_path = paths
+        .jackin_home
+        .join("sockets")
+        .join(&container_name)
+        .join(jackin_protocol::CAPSULE_CONFIG_FILENAME);
+    let capsule_config: jackin_protocol::CapsuleConfig =
+        toml::from_str(&std::fs::read_to_string(capsule_config_path).unwrap()).unwrap();
+    assert_eq!(capsule_config.agents, vec!["claude", "codex"]);
+    assert_eq!(capsule_config.auth_modes.get("claude").unwrap(), "api_key");
+    assert_eq!(capsule_config.auth_modes.get("codex").unwrap(), "ignore");
 }
 
 /// Codex CLI drives interactive `ChatGPT` login when no API key is

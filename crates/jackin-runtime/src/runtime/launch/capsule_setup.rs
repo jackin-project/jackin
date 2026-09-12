@@ -43,16 +43,29 @@ pub(crate) fn capsule_auth_modes(
     workspace_name: Option<&jackin_core::WorkspaceName>,
     role_key: &str,
     manifest: &jackin_manifest::RoleManifest,
+    selected_agent: Option<jackin_core::Agent>,
 ) -> anyhow::Result<std::collections::BTreeMap<String, String>> {
-    Ok(account_auth_selections(
-        config,
-        workspace_name,
-        role_key,
-        &manifest.supported_agents(),
-    )?
-    .into_iter()
-    .map(|(agent, (mode, _))| (agent.slug().to_owned(), mode.to_string()))
-    .collect())
+    let supported = manifest.supported_agents();
+    let mut auth_modes = std::collections::BTreeMap::new();
+    if let Some(selected) = selected_agent {
+        let selections = account_auth_selections(config, workspace_name, role_key, &[selected])?;
+        for agent in supported {
+            let mode = if agent == selected {
+                selections
+                    .get(&agent)
+                    .map_or(jackin_config::AuthForwardMode::Ignore, |(mode, _)| *mode)
+            } else {
+                jackin_config::AuthForwardMode::Ignore
+            };
+            auth_modes.insert(agent.slug().to_owned(), mode.to_string());
+        }
+    } else {
+        let selections = account_auth_selections(config, workspace_name, role_key, &supported)?;
+        for (agent, (mode, _)) in selections {
+            auth_modes.insert(agent.slug().to_owned(), mode.to_string());
+        }
+    }
+    Ok(auth_modes)
 }
 
 /// Account models must override role defaults: a role's native-provider model
