@@ -3,13 +3,13 @@ title: Agent Accounts
 description: Register agent profiles and provider API keys, then authorize accounts per workspace
 ---
 
-jackin stores reusable accounts globally. Each account identifies a provider and a credential source. Workspaces explicitly assign the accounts their agents may use.
+jackin❯ stores reusable accounts globally. Each account identifies a provider and a credential source. Workspaces explicitly assign the accounts their agents may use.
 
 Providers and agents are separate. Anthropic, OpenAI, Amp, xAI, OpenCode, Moonshot, Z.ai, and MiniMax identify credential issuers. Claude Code, Codex, Amp, Kimi, OpenCode, and Grok identify coding agents. A provider API key can support more than one compatible agent.
 
 ## Discover existing logins
 
-On first initialization, jackin scans each supported agent's default credential location and registers discovered sources. Discovery checks credential evidence; it does not prove that a token is current or that a provider will accept it. Invalid files produce diagnostics without exposing their contents.
+On first initialization, jackin❯ scans each supported agent's default credential location and registers discovered sources. Discovery checks credential evidence; it does not prove that a token is current or that a provider will accept it. Invalid files produce diagnostics without exposing their contents.
 
 Discovery does not execute shell configuration or aliases. Alternate profiles are registered explicitly by selecting their configuration folder. Claude folders correspond to `CLAUDE_CONFIG_DIR`; Codex folders correspond to `CODEX_HOME`. Amp also supports a profile root containing separate `data/amp` and `config/amp` directories.
 
@@ -17,7 +17,7 @@ A discovered account is available for assignment. Discovery alone does not grant
 
 ## Credential sources
 
-- **Profile:** an agent-managed login in a selected folder. jackin reads that exact profile when provisioning.
+- **Profile:** an agent-managed login in a selected folder. jackin❯ reads that exact profile when provisioning.
 - **API key:** a provider key, supplied as a secret value or an environment/1Password reference, with an optional supported endpoint override.
 - **OAuth token:** an explicitly registered Claude subscription token.
 
@@ -29,7 +29,7 @@ Assign account IDs to a workspace, then select an account for each agent when mu
 
 The resolver uses the role selection, then the workspace selection, then an authorized global selection. With no explicit selection, exactly one compatible assigned account can be selected automatically. Multiple candidates require a selection. No assigned account means no forwarded credentials.
 
-A launch-time account choice must also belong to the workspace. Missing or invalid selected credentials must fail explicitly; jackin must not substitute an unrelated host account.
+A launch-time account choice must also belong to the workspace. Missing or invalid selected credentials must fail explicitly; jackin❯ must not substitute an unrelated host account.
 
 ## Breaking configuration change
 

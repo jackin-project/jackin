@@ -438,6 +438,8 @@ fn create_prelude_name_input() -> (ManagerState<'static>, AppConfig, PathBuf) {
     })
 }
 
+// ── Account constructors ───────────────────────────────────────────────────
+
 fn account_config() -> AppConfig {
     use jackin_config::{AccountConfig, AccountCredential, AiProvider};
     use jackin_core::{Agent, EnvValue};
@@ -570,108 +572,130 @@ const LIST: (u16, u16) = (80, 24);
 const SCREEN: (u16, u16) = (90, 20);
 const MODAL: (u16, u16) = (90, 24);
 
+fn case(
+    id: &'static str,
+    size: (u16, u16),
+    build: fn() -> (ManagerState<'static>, AppConfig, PathBuf),
+) -> BaselineCase {
+    BaselineCase {
+        id,
+        width: size.0,
+        height: size.1,
+        build,
+    }
+}
+
+pub(super) fn stage_views() -> Vec<BaselineCase> {
+    vec![
+        case("workspaces-list-empty", LIST, workspaces_list_empty),
+        case("workspaces-list-populated", LIST, workspaces_list_populated),
+        case("editor-general", SCREEN, editor_general),
+        case("editor-mounts", SCREEN, editor_mounts),
+        case("editor-roles", SCREEN, editor_roles),
+        case("editor-secrets", SCREEN, editor_secrets),
+        case("editor-auth", SCREEN, editor_auth),
+        case("settings-general", SCREEN, settings_general),
+        case("settings-mounts", SCREEN, settings_mounts),
+        case("settings-environments", SCREEN, settings_environments),
+        case("settings-auth", SCREEN, settings_auth),
+        case("settings-trust", SCREEN, settings_trust),
+        case("create-prelude", MODAL, create_prelude),
+        case("confirm-delete", MODAL, confirm_delete),
+        case("confirm-instance-purge", MODAL, confirm_instance_purge),
+        case("keyboard-help", LIST, keyboard_help),
+    ]
+}
+
+// ── Account cases ──
+
+pub(super) fn account_cases() -> Vec<BaselineCase> {
+    vec![
+        case("account-picker", LIST, account_picker),
+        case(
+            "settings-accounts-populated",
+            SCREEN,
+            settings_accounts_populated,
+        ),
+        case(
+            "workspace-accounts-assigned",
+            SCREEN,
+            workspace_accounts_assigned,
+        ),
+        case(
+            "settings-account-api-form",
+            MODAL,
+            settings_account_api_form,
+        ),
+        case(
+            "settings-account-profile-form",
+            MODAL,
+            settings_account_profile_form,
+        ),
+    ]
+}
+
+pub(super) fn create_prelude_wizard_cases() -> Vec<BaselineCase> {
+    vec![
+        case(
+            "create-prelude-workdir-pick",
+            MODAL,
+            create_prelude_workdir_pick,
+        ),
+        case(
+            "create-prelude-file-browser",
+            MODAL,
+            create_prelude_file_browser,
+        ),
+        case(
+            "create-prelude-mount-dst-choice",
+            MODAL,
+            create_prelude_mount_dst_choice,
+        ),
+        case(
+            "create-prelude-name-input",
+            MODAL,
+            create_prelude_name_input,
+        ),
+    ]
+}
+
+pub(super) fn modal_cases() -> Vec<BaselineCase> {
+    vec![
+        case("modal-text-input", MODAL, modal_text_input),
+        case("modal-file-browser", MODAL, modal_file_browser),
+        case("modal-mount-dst-choice", MODAL, modal_mount_dst_choice),
+        case("modal-workdir-pick", MODAL, modal_workdir_pick),
+        case("modal-confirm", MODAL, modal_confirm),
+        case(
+            "modal-save-discard-cancel",
+            MODAL,
+            modal_save_discard_cancel,
+        ),
+        case("modal-github-picker", MODAL, modal_github_picker),
+        case("modal-confirm-save", MODAL, modal_confirm_save),
+        case("modal-error-popup", MODAL, modal_error_popup),
+        case("modal-container-info", MODAL, modal_container_info),
+        case("modal-status-popup", MODAL, modal_status_popup),
+        case("modal-op-picker", MODAL, modal_op_picker),
+        case("modal-role-picker", MODAL, modal_role_picker),
+        case(
+            "modal-role-override-picker",
+            MODAL,
+            modal_role_override_picker,
+        ),
+        case("modal-source-picker", MODAL, modal_source_picker),
+        case("modal-auth-source-picker", MODAL, modal_auth_source_picker),
+        case("modal-scope-picker", MODAL, modal_scope_picker),
+        case("modal-auth-form", MODAL, modal_auth_form),
+    ]
+}
+
 pub(super) fn inventory() -> Vec<BaselineCase> {
-    let mut cases = Vec::new();
-    let mut push = |id: &'static str,
-                    size: (u16, u16),
-                    build: fn() -> (ManagerState<'static>, AppConfig, PathBuf)| {
-        cases.push(BaselineCase {
-            id,
-            width: size.0,
-            height: size.1,
-            build,
-        });
-    };
-
-    // Stage views.
-    push("workspaces-list-empty", LIST, workspaces_list_empty);
-    push("workspaces-list-populated", LIST, workspaces_list_populated);
-    push("editor-general", SCREEN, editor_general);
-    push("editor-mounts", SCREEN, editor_mounts);
-    push("editor-roles", SCREEN, editor_roles);
-    push("editor-secrets", SCREEN, editor_secrets);
-    push("editor-auth", SCREEN, editor_auth);
-    push("settings-general", SCREEN, settings_general);
-    push("settings-mounts", SCREEN, settings_mounts);
-    push("settings-environments", SCREEN, settings_environments);
-    push("settings-auth", SCREEN, settings_auth);
-    push("settings-trust", SCREEN, settings_trust);
-    push("create-prelude", MODAL, create_prelude);
-    push("confirm-delete", MODAL, confirm_delete);
-    push("confirm-instance-purge", MODAL, confirm_instance_purge);
-    push("keyboard-help", LIST, keyboard_help);
-    push("account-picker", MODAL, account_picker);
-    push(
-        "settings-accounts-populated",
-        MODAL,
-        settings_accounts_populated,
-    );
-    push(
-        "workspace-accounts-assigned",
-        MODAL,
-        workspace_accounts_assigned,
-    );
-    push(
-        "settings-account-api-form",
-        MODAL,
-        settings_account_api_form,
-    );
-    push(
-        "settings-account-profile-form",
-        MODAL,
-        settings_account_profile_form,
-    );
-
-    // Create-prelude wizard modal steps.
-    push(
-        "create-prelude-workdir-pick",
-        MODAL,
-        create_prelude_workdir_pick,
-    );
-    push(
-        "create-prelude-file-browser",
-        MODAL,
-        create_prelude_file_browser,
-    );
-    push(
-        "create-prelude-mount-dst-choice",
-        MODAL,
-        create_prelude_mount_dst_choice,
-    );
-    push(
-        "create-prelude-name-input",
-        MODAL,
-        create_prelude_name_input,
-    );
-
-    // All 18 ConsoleModal variants.
-    push("modal-text-input", MODAL, modal_text_input);
-    push("modal-file-browser", MODAL, modal_file_browser);
-    push("modal-mount-dst-choice", MODAL, modal_mount_dst_choice);
-    push("modal-workdir-pick", MODAL, modal_workdir_pick);
-    push("modal-confirm", MODAL, modal_confirm);
-    push(
-        "modal-save-discard-cancel",
-        MODAL,
-        modal_save_discard_cancel,
-    );
-    push("modal-github-picker", MODAL, modal_github_picker);
-    push("modal-confirm-save", MODAL, modal_confirm_save);
-    push("modal-error-popup", MODAL, modal_error_popup);
-    push("modal-container-info", MODAL, modal_container_info);
-    push("modal-status-popup", MODAL, modal_status_popup);
-    push("modal-op-picker", MODAL, modal_op_picker);
-    push("modal-role-picker", MODAL, modal_role_picker);
-    push(
-        "modal-role-override-picker",
-        MODAL,
-        modal_role_override_picker,
-    );
-    push("modal-source-picker", MODAL, modal_source_picker);
-    push("modal-auth-source-picker", MODAL, modal_auth_source_picker);
-    push("modal-scope-picker", MODAL, modal_scope_picker);
-    push("modal-auth-form", MODAL, modal_auth_form);
-
+    let mut cases = Vec::with_capacity(EXPECTED_INVENTORY);
+    cases.extend(stage_views());
+    cases.extend(account_cases());
+    cases.extend(create_prelude_wizard_cases());
+    cases.extend(modal_cases());
     cases
 }
 

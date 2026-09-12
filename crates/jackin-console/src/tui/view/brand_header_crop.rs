@@ -30,7 +30,7 @@ use std::{
 use ratatui::{buffer::Buffer, layout::Rect};
 use termrock::style::RolePalette;
 
-use super::png_baselines::{BaselineCase, baselines_dir, inventory, render_manager_buffer};
+use super::png_baselines::{BaselineCase, baselines_dir, render_manager_buffer, stage_views};
 use crate::tui::view::{modal_overlay_state_for_route, modal_overlay_visible};
 
 /// The brand bless env var — deliberately distinct from the full-screen
@@ -49,7 +49,7 @@ fn is_non_modal(case: &BaselineCase) -> bool {
 }
 
 fn non_modal_cases() -> Vec<BaselineCase> {
-    inventory().into_iter().filter(is_non_modal).collect()
+    stage_views().into_iter().filter(is_non_modal).collect()
 }
 
 fn crop_dir() -> PathBuf {

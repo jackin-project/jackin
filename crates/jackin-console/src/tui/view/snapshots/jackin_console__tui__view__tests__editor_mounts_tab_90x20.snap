@@ -1,12 +1,11 @@
 ---
 source: crates/jackin-console/src/tui/view/tests.rs
-assertion_line: 839
 expression: rendered
 ---
  jackin❯  · edit workspace · ws                                                           
                                                                                           
                                                                                           
- General   Mounts   Roles   Environments   Auth                                           
+ General   Mounts   Roles   Environments   Accounts                                       
           ────────                                                                        
 ┌────────────────────────────────────────────────────────────────────────────────────────┐
 │    Destination  Mode  Isolation  Type                                                  │
