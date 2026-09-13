@@ -91,11 +91,11 @@ jobs:
           persist-credentials: false
       - name: Set up Velnor workflow runtime
         if: ${{ runner.environment == 'github-hosted' }}
-        uses: tailrocks/velnor/.github/actions/setup-velnor-workflow@061df0fa39bed6e198fc3e069bc914c05e527f92
+        uses: tailrocks/velnor/.github/actions/setup-velnor-workflow@e14db9e94796f1b69c31328a21b697fdd61e740c
         with:
-          rev: 061df0fa39bed6e198fc3e069bc914c05e527f92
+          rev: e14db9e94796f1b69c31328a21b697fdd61e740c
       - name: Set trusted workflow policy revision
-        run: echo "VELNOR_WORKFLOW_POLICY_REVISION=061df0fa39bed6e198fc3e069bc914c05e527f92" >> "$GITHUB_ENV"
+        run: echo "VELNOR_WORKFLOW_POLICY_REVISION=e14db9e94796f1b69c31328a21b697fdd61e740c" >> "$GITHUB_ENV"
       - name: Select affected units
         id: plan
         env:
@@ -109,7 +109,7 @@ jobs:
       - name: Prepare Velnor workflow runtime
         shell: bash
         env:
-          EXPECTED_REVISION: 061df0fa39bed6e198fc3e069bc914c05e527f92
+          EXPECTED_REVISION: e14db9e94796f1b69c31328a21b697fdd61e740c
         run: |
           set -euo pipefail
           stage="$RUNNER_TEMP/velnor-workflow-runtime"
@@ -121,7 +121,7 @@ jobs:
       - name: Publish Velnor workflow runtime
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: velnor-workflow-runtime-061df0fa39bed6e198fc3e069bc914c05e527f92-${{ runner.os }}-${{ runner.arch }}
+          name: velnor-workflow-runtime-e14db9e94796f1b69c31328a21b697fdd61e740c-${{ runner.os }}-${{ runner.arch }}
           path: ${{ runner.temp }}/velnor-workflow-runtime
           if-no-files-found: error
           retention-days: 7
@@ -157,7 +157,7 @@ jobs:
         with:
           backend: github
           version: 1.8.3
-          cache-key: velnor-policy-mbx-1.8.3-${{ runner.os }}-${{ runner.arch }}-061df0fa39bed6e198fc3e069bc914c05e527f92
+          cache-key: velnor-policy-mbx-1.8.3-${{ runner.os }}-${{ runner.arch }}-e14db9e94796f1b69c31328a21b697fdd61e740c
           restore-keys: |
             velnor-policy-mbx-1.8.3-${{ runner.os }}-${{ runner.arch }}-
       - name: Install pinned Velnor workflow runtime
@@ -176,7 +176,7 @@ jobs:
           cargo install \
             --locked \
             --git https://github.com/tailrocks/velnor \
-            --rev 061df0fa39bed6e198fc3e069bc914c05e527f92 \
+            --rev e14db9e94796f1b69c31328a21b697fdd61e740c \
             --root "$VELNOR_WORKFLOW_ROOT" \
             velnor-workflow \
             --bin velnor-workflow
@@ -184,7 +184,7 @@ jobs:
       - name: Enforce workflow policy
         env:
           WORKFLOW_ROOT: ${{ github.workspace }}/policy-checkout
-          VELNOR_WORKFLOW_POLICY_REVISION: 061df0fa39bed6e198fc3e069bc914c05e527f92
+          VELNOR_WORKFLOW_POLICY_REVISION: e14db9e94796f1b69c31328a21b697fdd61e740c
         run: velnor-workflow policy --workflow-root "$WORKFLOW_ROOT"
   group-bun:
     name: ${{ matrix.label }}
