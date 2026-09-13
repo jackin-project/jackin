@@ -2,11 +2,11 @@
 schema = 2
 [inputs]
 config	32b6f8b0b948a15e
-scan	366869d978907e3b
-generator	17
+scan	b9d3ad6a734ce809
+generator	19
 [outputs]
 .github/actionlint.yaml	2c1dbf178fa8baa1
-.github/ci/project.toml	a2070ead5ac475b6
+.github/ci/project.toml	74abcdbe5a07891a
 .github/ci/workflow-templates/cache-cleanup.yml	eba8efe1071b8b05
 .github/ci/workflow-templates/ci.yml	c0cfc18afc2612c1
 .github/ci/workflow-templates/construct.yml	0a419875a0aeaf85
@@ -20,21 +20,21 @@ generator	17
 .github/ci/workflow-templates/renovate.yml	1c2ee0ece25fd18b
 .github/ci/workflow-templates/reuse-compliance.yml	6553fdb461d26d41
 .github/workflows/cache-cleanup.yml	eba8efe1071b8b05
-.github/workflows/ci-main.yml	220bf341d636455a
-.github/workflows/ci-policy.yml	0686fe7bd71a422f
-.github/workflows/ci-pr.yml	a4bbb15072af547c
-.github/workflows/ci-unit-bun.yml	106875314b66af84
-.github/workflows/ci-unit-docker.yml	94637cb8343a0023
-.github/workflows/ci-unit-rust.yml	12c0df67b207e845
-.github/workflows/ci-unit-swift.yml	98180648aabb063e
+.github/workflows/ci-main.yml	81b050114cf4dc83
+.github/workflows/ci-policy.yml	19c01c0792a140d0
+.github/workflows/ci-pr.yml	cc24a20a05dc3f00
+.github/workflows/ci-unit-bun.yml	fb6f9151b825f3da
+.github/workflows/ci-unit-docker.yml	90d63aee8341b4f9
+.github/workflows/ci-unit-rust.yml	77bb4cfb32b75722
+.github/workflows/ci-unit-swift.yml	c96ef8d8f11ce736
 .github/workflows/ci.yml	c0cfc18afc2612c1
 .github/workflows/construct.yml	0a419875a0aeaf85
 .github/workflows/desktop-cadence.yml	df32593cbd07b8c5
 .github/workflows/docs.yml	e456cea8f6415c3b
 .github/workflows/hygiene.yml	f246a0d51ce1d891
 .github/workflows/jackin-dev.yml	f5709912b9831683
-.github/workflows/maintenance.yml	3c836090b5656eb5
-.github/workflows/nightly.yml	9de8b6e6d7b82ff5
+.github/workflows/maintenance.yml	0023a4b748258482
+.github/workflows/nightly.yml	9f0a62575775d6e6
 .github/workflows/preview.yml	41c2aaf94f52e561
 .github/workflows/release.yml	4f850e1242c32210
 .github/workflows/renovate-validate.yml	4742f3cd3f75672d

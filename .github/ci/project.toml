@@ -8,7 +8,7 @@ runners = "both"
 
 [analysis]
 method = "static-filesystem-and-manifest-inspection"
-detected = ["cargo-audit-policy", "cargo-deny-policy", "cargo-lockfile", "cargo-nextest-policy", "mise-present", "package-manager:bun:docs", "package-script:docs:build", "package-script:docs:test", "renovate-configuration", "rust-binaries:jackin-capsule:1", "rust-binaries:jackin-config-fuzz:2", "rust-binaries:jackin-dev:1", "rust-binaries:jackin-env-fuzz:1", "rust-binaries:jackin-manifest-fuzz:2", "rust-binaries:jackin-protocol-fuzz:1", "rust-binaries:jackin-runtime:1", "rust-binaries:jackin-xtask:1", "rust-binaries:jackin:3", "rust-build-script:jackin", "rust-build-script:jackin-capsule", "rust-build-script:jackin-diagnostics", "rust-build-script:jackin-docker", "rust-build-script:jackin-image", "rust-build-script:jackin-launch", "rust-build-script:jackin-runtime", "rust-features:jackin-agent-status:2", "rust-features:jackin-capsule:3", "rust-features:jackin-config:1", "rust-features:jackin-console:1", "rust-features:jackin-diagnostics:2", "rust-features:jackin-instance:1", "rust-features:jackin-isolation:1", "rust-features:jackin-runtime:1", "rust-features:jackin-usage:1", "rust-features:jackin:2", "rust-test-targets:jackin-capsule:1", "rust-test-targets:jackin-config:1", "rust-test-targets:jackin-diagnostics:17", "rust-test-targets:jackin-manifest:1", "rust-test-targets:jackin-protocol:1", "rust-test-targets:jackin-runtime:1", "rust-test-targets:jackin-telemetry:1", "rust-test-targets:jackin-usage:1", "rust-test-targets:jackin:1", "rust-workspace-members:36", "swift-package:native", "swift-package:native/Design/Prototypes/UnifiedAgentUsage"]
+detected = ["cargo-audit-policy", "cargo-deny-policy", "cargo-lockfile", "cargo-nextest-policy", "mise-present", "package-manager:bun:docs", "package-script:docs:build", "package-script:docs:test", "renovate-configuration", "rust-binaries:jackin-capsule:1", "rust-binaries:jackin-config-fuzz:2", "rust-binaries:jackin-dev:1", "rust-binaries:jackin-env-fuzz:1", "rust-binaries:jackin-manifest-fuzz:2", "rust-binaries:jackin-protocol-fuzz:1", "rust-binaries:jackin-runtime:1", "rust-binaries:jackin-xtask:1", "rust-binaries:jackin:3", "rust-build-script:jackin", "rust-build-script:jackin-capsule", "rust-build-script:jackin-diagnostics", "rust-build-script:jackin-docker", "rust-build-script:jackin-image", "rust-build-script:jackin-launch", "rust-build-script:jackin-runtime", "rust-features:jackin-agent-status:2", "rust-features:jackin-capsule:3", "rust-features:jackin-config:1", "rust-features:jackin-console:1", "rust-features:jackin-diagnostics:2", "rust-features:jackin-instance:1", "rust-features:jackin-isolation:1", "rust-features:jackin-runtime:1", "rust-features:jackin-usage:1", "rust-features:jackin:2", "rust-test-targets:jackin-capsule:1", "rust-test-targets:jackin-config:1", "rust-test-targets:jackin-diagnostics:17", "rust-test-targets:jackin-manifest:1", "rust-test-targets:jackin-protocol:1", "rust-test-targets:jackin-runtime:1", "rust-test-targets:jackin-telemetry:1", "rust-test-targets:jackin-usage:1", "rust-test-targets:jackin:1", "rust-workspace-members:34", "swift-package:native", "swift-package:native/Design/Prototypes/UnifiedAgentUsage"]
 limitations = ["Manifests nested under tests/ or benches/ directories are treated as test fixtures and ignored.", "Project code, build scripts, task runners, and commands are never executed during analysis.", "Release, signing, registry, deployment, branch-protection, and runner-capability contracts remain explicit manual inputs.", "Renovate credentials, runner placement, and write permissions cannot be inferred from repository files.", "Rust build scripts are watched but their system dependencies and generated outputs are not inferred."]
 
 [workflow]
@@ -46,20 +46,6 @@ github_pr_commands = ["source 'docker/construct/versions.env' && docker build --
 github_full_commands = ["source 'docker/construct/versions.env' && docker build --file 'docker/construct/Dockerfile' --build-arg SHELLFIRM_VERSION=\"$SHELLFIRM_VERSION\" --build-arg TIRITH_VERSION=\"$TIRITH_VERSION\" --build-arg MISE_VERSION=\"$MISE_VERSION\" --tag local-ci:docker-construct-dockerfile 'docker/construct'"]
 velnor_pr_commands = ["source 'docker/construct/versions.env' && docker build --file 'docker/construct/Dockerfile' --build-arg SHELLFIRM_VERSION=\"$SHELLFIRM_VERSION\" --build-arg TIRITH_VERSION=\"$TIRITH_VERSION\" --build-arg MISE_VERSION=\"$MISE_VERSION\" --tag local-ci:docker-construct-dockerfile 'docker/construct'"]
 velnor_full_commands = ["source 'docker/construct/versions.env' && docker build --file 'docker/construct/Dockerfile' --build-arg SHELLFIRM_VERSION=\"$SHELLFIRM_VERSION\" --build-arg TIRITH_VERSION=\"$TIRITH_VERSION\" --build-arg MISE_VERSION=\"$MISE_VERSION\" --tag local-ci:docker-construct-dockerfile 'docker/construct'"]
-
-[[unit]]
-id = "rust-arrayref"
-label = "Rust crate (arrayref)"
-kind = "rust"
-root = "vendor/arrayref"
-watch = [".cargo/**", "Cargo.lock", "Cargo.toml", "mise.lock", "mise.toml", "rust-toolchain", "rust-toolchain.toml", "vendor/arrayref/**/*.rs", "vendor/arrayref/Cargo.toml", "vendor/arrayref/benches/**", "vendor/arrayref/examples/**", "vendor/arrayref/src/**", "vendor/arrayref/tests/**"]
-github_pr_commands = ["cd -- 'vendor/arrayref' && mbx fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'vendor/arrayref' && mbx clippy --locked --all-targets --all-features --package 'arrayref' -- -D warnings", "cd -- 'vendor/arrayref' && mbx nextest run --locked --all-features --package 'arrayref' --no-tests pass"]
-github_full_commands = ["cd -- 'vendor/arrayref' && mbx fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'vendor/arrayref' && mbx clippy --locked --all-targets --all-features --package 'arrayref' -- -D warnings", "cd -- 'vendor/arrayref' && mbx nextest run --locked --all-features --package 'arrayref' --no-tests pass"]
-velnor_pr_commands = ["cd -- 'vendor/arrayref' && mbx fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'vendor/arrayref' && mbx clippy --locked --all-targets --all-features --package 'arrayref' -- -D warnings", "cd -- 'vendor/arrayref' && mbx nextest run --locked --all-features --package 'arrayref' --no-tests pass"]
-velnor_full_commands = ["cd -- 'vendor/arrayref' && mbx fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'vendor/arrayref' && mbx clippy --locked --all-targets --all-features --package 'arrayref' -- -D warnings", "cd -- 'vendor/arrayref' && mbx nextest run --locked --all-features --package 'arrayref' --no-tests pass"]
-[unit.cache]
-key_files = [".cargo/**", "Cargo.toml", "vendor/arrayref/Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "rust-toolchain"]
-paths = ["~/.cargo/registry", "~/.cargo/git"]
 
 [[unit]]
 id = "rust-jackin"
@@ -341,20 +327,6 @@ velnor_full_commands = ["cd -- 'crates/jackin-launch' && mbx fmt --manifest-path
 depends_on = ["rust-jackin-brand", "rust-jackin-build-meta", "rust-jackin-core", "rust-jackin-diagnostics", "rust-jackin-telemetry", "rust-jackin-tui"]
 [unit.cache]
 key_files = [".cargo/**", "Cargo.toml", "crates/jackin-launch/Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "rust-toolchain"]
-paths = ["~/.cargo/registry", "~/.cargo/git"]
-
-[[unit]]
-id = "rust-jackin-lints"
-label = "Rust crate (jackin_lints)"
-kind = "rust"
-root = "crates/jackin-lints"
-watch = [".cargo/**", "Cargo.lock", "Cargo.toml", "crates/jackin-lints/**/*.rs", "crates/jackin-lints/Cargo.toml", "crates/jackin-lints/benches/**", "crates/jackin-lints/examples/**", "crates/jackin-lints/src/**", "crates/jackin-lints/tests/**", "mise.lock", "mise.toml", "rust-toolchain", "rust-toolchain.toml"]
-github_pr_commands = ["cd -- 'crates/jackin-lints' && mbx fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin-lints' && mbx clippy --locked --all-targets --all-features --package 'jackin_lints' -- -D warnings", "cd -- 'crates/jackin-lints' && mbx nextest run --locked --all-features --package 'jackin_lints' --no-tests pass"]
-github_full_commands = ["cd -- 'crates/jackin-lints' && mbx fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin-lints' && mbx clippy --locked --all-targets --all-features --package 'jackin_lints' -- -D warnings", "cd -- 'crates/jackin-lints' && mbx nextest run --locked --all-features --package 'jackin_lints' --no-tests pass"]
-velnor_pr_commands = ["cd -- 'crates/jackin-lints' && mbx fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin-lints' && mbx clippy --locked --all-targets --all-features --package 'jackin_lints' -- -D warnings", "cd -- 'crates/jackin-lints' && mbx nextest run --locked --all-features --package 'jackin_lints' --no-tests pass"]
-velnor_full_commands = ["cd -- 'crates/jackin-lints' && mbx fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin-lints' && mbx clippy --locked --all-targets --all-features --package 'jackin_lints' -- -D warnings", "cd -- 'crates/jackin-lints' && mbx nextest run --locked --all-features --package 'jackin_lints' --no-tests pass"]
-[unit.cache]
-key_files = [".cargo/**", "Cargo.toml", "crates/jackin-lints/Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "rust-toolchain"]
 paths = ["~/.cargo/registry", "~/.cargo/git"]
 
 [[unit]]
