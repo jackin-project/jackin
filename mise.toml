@@ -85,9 +85,23 @@ run = "cargo xtask construct publish-manifest"
 description = "Print the resolved construct Bake configuration"
 run = "cargo xtask construct inspect"
 
+# Canonical gate contract (native class). The generated ci.yml gates map to
+# exactly these commands; keep the names stable because ci.yml is generated
+# and never hand-edited:
+#   install → `mise install --locked`   (direct command, no task by design)
+#   build   → `mise run ci`             (depends-only aggregate over `build`)
+#   test    → `mise run desktop-ci`     (platform-only gate, macOS lane)
+#   lint    → `mise run lint`
+#   format  → `mise run fmt`
+# `lint` and `fmt` stay out of the `ci` aggregate: the generated workflow
+# runs them as separate gates, so aggregating them here would re-run them.
+[tasks.build]
+description = "Build gate: policy, docs, and snapshot partitions of the unified CI graph"
+run = "git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main && cargo xtask ci --only policy --only docs --only snapshots"
+
 [tasks.ci]
-description = "Run unified build and policy gates"
-run = "git fetch --no-tags origin main:refs/remotes/origin/main && cargo xtask ci --only policy --only docs --only snapshots"
+description = "Depends-only aggregate of the build gate (the generated CI build gate)"
+depends = ["build"]
 
 [tasks.test]
 description = "Run the unified test gate"
@@ -181,6 +195,14 @@ run = "cargo xtask desktop test"
 
 # Canonical cadence graph — one definition per command, CI and release invoke
 # these exact task names (see native/Design/UnifiedAgentUsage/SwiftProjectReadiness.md).
+#
+# Planned seam (execution-capsules research; deliberately NOT implemented in
+# the workflow-level refactor): the PR validation lane (`desktop-ci`) will
+# split from the merge/scheduled resilience lane. The split lands between
+# `desktop-ci` and the heavier tiers below — `desktop-merge`/`desktop-
+# scheduled` will stop re-running this full PR graph and gain the resilience
+# profile (clean-build ratchet, fault campaigns) instead. Until then, keep
+# resilience probes out of `desktop-ci`.
 [tasks.desktop-ci]
 description = "PR cadence: full nonmutating jackin❯ desktop gate graph"
 run = '''
