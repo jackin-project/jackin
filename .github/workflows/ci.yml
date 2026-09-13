@@ -99,7 +99,7 @@ jobs:
       actions: read
       contents: read
       pull-requests: read
-    uses: jackin-project/velnor-actions/.github/workflows/ci-native.yml@796dfcd26d4110319c8363155d2eae6885114893 # 2026.8.32
+    uses: jackin-project/velnor-actions/.github/workflows/ci-native.yml@851ef541d67f9cabebf2ddb2a2a02f51f6c54130 # 2026.8.33
     with:
       lane: ${{ github.event_name == 'workflow_dispatch' && inputs.lanes || (github.event_name == 'pull_request' || github.event_name == 'merge_group' || github.event_name == 'push') && 'github' || 'velnor' }}
       recovery_proof_id: ${{ inputs.recovery_proof_id || '' }}
@@ -182,45 +182,34 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # Positive truth table: accept ONLY a recognized owner whose selected call
-          # succeeded with an explicit contract=success output, and whose two other owner
-          # calls skipped with empty outputs. No "no failure found" logic; skipped-success
-          # is never acceptance.
+          # Positive truth table: accept only one recognized owner with an explicit contract=success output; non-selected owners must be skipped with empty outputs. The selected owner must be 'success'; non-selected owners must be expected both 'skipped' and expected empty.
           case "${OWNER}" in
-            jackin-project)
-              sel_result="${JACKIN_PROJECT_RESULT}"; sel_contract="${JACKIN_PROJECT_CONTRACT}"
-              a_result="${TAILROCKS_RESULT}"; a_contract="${TAILROCKS_CONTRACT}"
-              b_result="${CHAINARGOS_RESULT}"; b_contract="${CHAINARGOS_CONTRACT}"
-              ;;
-            tailrocks)
-              sel_result="${TAILROCKS_RESULT}"; sel_contract="${TAILROCKS_CONTRACT}"
-              a_result="${JACKIN_PROJECT_RESULT}"; a_contract="${JACKIN_PROJECT_CONTRACT}"
-              b_result="${CHAINARGOS_RESULT}"; b_contract="${CHAINARGOS_CONTRACT}"
-              ;;
-            ChainArgos)
-              sel_result="${CHAINARGOS_RESULT}"; sel_contract="${CHAINARGOS_CONTRACT}"
-              a_result="${JACKIN_PROJECT_RESULT}"; a_contract="${JACKIN_PROJECT_CONTRACT}"
-              b_result="${TAILROCKS_RESULT}"; b_contract="${TAILROCKS_CONTRACT}"
-              ;;
+            jackin-project) selected_result="${JACKIN_PROJECT_RESULT}"; selected_contract="${JACKIN_PROJECT_CONTRACT}" ;;
+            tailrocks) selected_result="${TAILROCKS_RESULT}"; selected_contract="${TAILROCKS_CONTRACT}" ;;
+            ChainArgos) selected_result="${CHAINARGOS_RESULT}"; selected_contract="${CHAINARGOS_CONTRACT}" ;;
             *)
               echo "ci-required: unrecognized owner '${OWNER}'" >&2
               exit 1
               ;;
           esac
-          if [ "${sel_result}" != "success" ]; then
-            echo "ci-required: selected owner result is '${sel_result}', expected 'success'" >&2
+          if [ "${selected_result}" != "success" ]; then
+            echo "ci-required: selected owner result is '${selected_result}', expected 'success'" >&2
             exit 1
           fi
-          if [ "${sel_contract}" != "success" ]; then
-            echo "ci-required: selected owner contract is '${sel_contract}', expected 'success'" >&2
+          if [ "${selected_contract}" != "success" ]; then
+            echo "ci-required: selected owner contract is '${selected_contract}', expected 'success'" >&2
             exit 1
           fi
-          if [ "${a_result}" != "skipped" ] || [ "${b_result}" != "skipped" ]; then
-            echo "ci-required: a non-selected owner ran (results '${a_result}', '${b_result}'), expected both 'skipped'" >&2
-            exit 1
+          if [ "${OWNER}" != "jackin-project" ]; then
+            if [ "${JACKIN_PROJECT_RESULT}" != "skipped" ]; then echo "ci-required: non-selected owner jackin-project ran, expected both 'skipped'" >&2; exit 1; fi
+            if [ -n "${JACKIN_PROJECT_CONTRACT}" ]; then echo "ci-required: non-selected owner jackin-project produced a contract output, expected empty" >&2; exit 1; fi
           fi
-          if [ -n "${a_contract}" ] || [ -n "${b_contract}" ]; then
-            echo "ci-required: a non-selected owner produced a contract output, expected empty" >&2
-            exit 1
+          if [ "${OWNER}" != "tailrocks" ]; then
+            if [ "${TAILROCKS_RESULT}" != "skipped" ]; then echo "ci-required: non-selected owner tailrocks ran, expected both 'skipped'" >&2; exit 1; fi
+            if [ -n "${TAILROCKS_CONTRACT}" ]; then echo "ci-required: non-selected owner tailrocks produced a contract output, expected empty" >&2; exit 1; fi
+          fi
+          if [ "${OWNER}" != "ChainArgos" ]; then
+            if [ "${CHAINARGOS_RESULT}" != "skipped" ]; then echo "ci-required: non-selected owner ChainArgos ran, expected both 'skipped'" >&2; exit 1; fi
+            if [ -n "${CHAINARGOS_CONTRACT}" ]; then echo "ci-required: non-selected owner ChainArgos produced a contract output, expected empty" >&2; exit 1; fi
           fi
           echo "ci-required: fleet contract satisfied for owner '${OWNER}'"
