@@ -292,7 +292,7 @@ jobs:
 
   velnor-rust-arrayref:
     name: "Velnor / rust-arrayref"
-    if: ${{ inputs.unit == 'rust-arrayref' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-arrayref' && ((github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
     runs-on: [self-hosted, velnor-target-mvp]
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -737,7 +737,7 @@ jobs:
 
   velnor-rust-jackin:
     name: "Velnor / rust-jackin"
-    if: ${{ inputs.unit == 'rust-jackin' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-jackin' && ((github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
     runs-on: [self-hosted, velnor-target-mvp]
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -1182,7 +1182,7 @@ jobs:
 
   velnor-rust-jackin-agent-status:
     name: "Velnor / rust-jackin-agent-status"
-    if: ${{ inputs.unit == 'rust-jackin-agent-status' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-jackin-agent-status' && ((github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
     runs-on: [self-hosted, velnor-target-mvp]
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -1627,7 +1627,7 @@ jobs:
 
   velnor-rust-jackin-brand:
     name: "Velnor / rust-jackin-brand"
-    if: ${{ inputs.unit == 'rust-jackin-brand' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-jackin-brand' && ((github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
     runs-on: [self-hosted, velnor-target-mvp]
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -2072,7 +2072,7 @@ jobs:
 
   velnor-rust-jackin-build-meta:
     name: "Velnor / rust-jackin-build-meta"
-    if: ${{ inputs.unit == 'rust-jackin-build-meta' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-jackin-build-meta' && ((github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
     runs-on: [self-hosted, velnor-target-mvp]
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -2517,7 +2517,7 @@ jobs:
 
   velnor-rust-jackin-capsule:
     name: "Velnor / rust-jackin-capsule"
-    if: ${{ inputs.unit == 'rust-jackin-capsule' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-jackin-capsule' && ((github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
     runs-on: [self-hosted, velnor-target-mvp]
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -2962,7 +2962,7 @@ jobs:
 
   velnor-rust-jackin-config:
     name: "Velnor / rust-jackin-config"
-    if: ${{ inputs.unit == 'rust-jackin-config' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-jackin-config' && ((github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
     runs-on: [self-hosted, velnor-target-mvp]
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -3407,7 +3407,7 @@ jobs:
 
   velnor-rust-jackin-config-fuzz:
     name: "Velnor / rust-jackin-config-fuzz"
-    if: ${{ inputs.unit == 'rust-jackin-config-fuzz' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-jackin-config-fuzz' && ((github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
     runs-on: [self-hosted, velnor-target-mvp]
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -3852,7 +3852,7 @@ jobs:
 
   velnor-rust-jackin-console:
     name: "Velnor / rust-jackin-console"
-    if: ${{ inputs.unit == 'rust-jackin-console' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-jackin-console' && ((github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
     runs-on: [self-hosted, velnor-target-mvp]
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -4297,7 +4297,7 @@ jobs:
 
   velnor-rust-jackin-core:
     name: "Velnor / rust-jackin-core"
-    if: ${{ inputs.unit == 'rust-jackin-core' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-jackin-core' && ((github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
     runs-on: [self-hosted, velnor-target-mvp]
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -4742,7 +4742,7 @@ jobs:
 
   velnor-rust-jackin-dev:
     name: "Velnor / rust-jackin-dev"
-    if: ${{ inputs.unit == 'rust-jackin-dev' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-jackin-dev' && ((github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
     runs-on: [self-hosted, velnor-target-mvp]
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -5187,7 +5187,7 @@ jobs:
 
   velnor-rust-jackin-diagnostics:
     name: "Velnor / rust-jackin-diagnostics"
-    if: ${{ inputs.unit == 'rust-jackin-diagnostics' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-jackin-diagnostics' && ((github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
     runs-on: [self-hosted, velnor-target-mvp]
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -5632,7 +5632,7 @@ jobs:
 
   velnor-rust-jackin-docker:
     name: "Velnor / rust-jackin-docker"
-    if: ${{ inputs.unit == 'rust-jackin-docker' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-jackin-docker' && ((github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
     runs-on: [self-hosted, velnor-target-mvp]
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -6077,7 +6077,7 @@ jobs:
 
   velnor-rust-jackin-env:
     name: "Velnor / rust-jackin-env"
-    if: ${{ inputs.unit == 'rust-jackin-env' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-jackin-env' && ((github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
     runs-on: [self-hosted, velnor-target-mvp]
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -6522,7 +6522,7 @@ jobs:
 
   velnor-rust-jackin-env-fuzz:
     name: "Velnor / rust-jackin-env-fuzz"
-    if: ${{ inputs.unit == 'rust-jackin-env-fuzz' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-jackin-env-fuzz' && ((github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
     runs-on: [self-hosted, velnor-target-mvp]
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -6967,7 +6967,7 @@ jobs:
 
   velnor-rust-jackin-host:
     name: "Velnor / rust-jackin-host"
-    if: ${{ inputs.unit == 'rust-jackin-host' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-jackin-host' && ((github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
     runs-on: [self-hosted, velnor-target-mvp]
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -7412,7 +7412,7 @@ jobs:
 
   velnor-rust-jackin-image:
     name: "Velnor / rust-jackin-image"
-    if: ${{ inputs.unit == 'rust-jackin-image' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-jackin-image' && ((github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
     runs-on: [self-hosted, velnor-target-mvp]
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -7857,7 +7857,7 @@ jobs:
 
   velnor-rust-jackin-instance:
     name: "Velnor / rust-jackin-instance"
-    if: ${{ inputs.unit == 'rust-jackin-instance' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-jackin-instance' && ((github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
     runs-on: [self-hosted, velnor-target-mvp]
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -8302,7 +8302,7 @@ jobs:
 
   velnor-rust-jackin-isolation:
     name: "Velnor / rust-jackin-isolation"
-    if: ${{ inputs.unit == 'rust-jackin-isolation' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-jackin-isolation' && ((github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
     runs-on: [self-hosted, velnor-target-mvp]
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -8747,7 +8747,7 @@ jobs:
 
   velnor-rust-jackin-launch:
     name: "Velnor / rust-jackin-launch"
-    if: ${{ inputs.unit == 'rust-jackin-launch' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-jackin-launch' && ((github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
     runs-on: [self-hosted, velnor-target-mvp]
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -9192,7 +9192,7 @@ jobs:
 
   velnor-rust-jackin-lints:
     name: "Velnor / rust-jackin-lints"
-    if: ${{ inputs.unit == 'rust-jackin-lints' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-jackin-lints' && ((github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
     runs-on: [self-hosted, velnor-target-mvp]
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -9637,7 +9637,7 @@ jobs:
 
   velnor-rust-jackin-manifest:
     name: "Velnor / rust-jackin-manifest"
-    if: ${{ inputs.unit == 'rust-jackin-manifest' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-jackin-manifest' && ((github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
     runs-on: [self-hosted, velnor-target-mvp]
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -10082,7 +10082,7 @@ jobs:
 
   velnor-rust-jackin-manifest-fuzz:
     name: "Velnor / rust-jackin-manifest-fuzz"
-    if: ${{ inputs.unit == 'rust-jackin-manifest-fuzz' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-jackin-manifest-fuzz' && ((github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
     runs-on: [self-hosted, velnor-target-mvp]
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -10527,7 +10527,7 @@ jobs:
 
   velnor-rust-jackin-oppicker:
     name: "Velnor / rust-jackin-oppicker"
-    if: ${{ inputs.unit == 'rust-jackin-oppicker' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-jackin-oppicker' && ((github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
     runs-on: [self-hosted, velnor-target-mvp]
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -10972,7 +10972,7 @@ jobs:
 
   velnor-rust-jackin-otlp-testbed:
     name: "Velnor / rust-jackin-otlp-testbed"
-    if: ${{ inputs.unit == 'rust-jackin-otlp-testbed' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-jackin-otlp-testbed' && ((github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
     runs-on: [self-hosted, velnor-target-mvp]
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -11417,7 +11417,7 @@ jobs:
 
   velnor-rust-jackin-pr-trailers:
     name: "Velnor / rust-jackin-pr-trailers"
-    if: ${{ inputs.unit == 'rust-jackin-pr-trailers' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-jackin-pr-trailers' && ((github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
     runs-on: [self-hosted, velnor-target-mvp]
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -11862,7 +11862,7 @@ jobs:
 
   velnor-rust-jackin-process:
     name: "Velnor / rust-jackin-process"
-    if: ${{ inputs.unit == 'rust-jackin-process' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-jackin-process' && ((github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
     runs-on: [self-hosted, velnor-target-mvp]
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -12307,7 +12307,7 @@ jobs:
 
   velnor-rust-jackin-protocol:
     name: "Velnor / rust-jackin-protocol"
-    if: ${{ inputs.unit == 'rust-jackin-protocol' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-jackin-protocol' && ((github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
     runs-on: [self-hosted, velnor-target-mvp]
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -12752,7 +12752,7 @@ jobs:
 
   velnor-rust-jackin-protocol-fuzz:
     name: "Velnor / rust-jackin-protocol-fuzz"
-    if: ${{ inputs.unit == 'rust-jackin-protocol-fuzz' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-jackin-protocol-fuzz' && ((github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
     runs-on: [self-hosted, velnor-target-mvp]
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -13197,7 +13197,7 @@ jobs:
 
   velnor-rust-jackin-runtime:
     name: "Velnor / rust-jackin-runtime"
-    if: ${{ inputs.unit == 'rust-jackin-runtime' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-jackin-runtime' && ((github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
     runs-on: [self-hosted, velnor-target-mvp]
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -13642,7 +13642,7 @@ jobs:
 
   velnor-rust-jackin-telemetry:
     name: "Velnor / rust-jackin-telemetry"
-    if: ${{ inputs.unit == 'rust-jackin-telemetry' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-jackin-telemetry' && ((github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
     runs-on: [self-hosted, velnor-target-mvp]
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -14087,7 +14087,7 @@ jobs:
 
   velnor-rust-jackin-test-support:
     name: "Velnor / rust-jackin-test-support"
-    if: ${{ inputs.unit == 'rust-jackin-test-support' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-jackin-test-support' && ((github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
     runs-on: [self-hosted, velnor-target-mvp]
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -14532,7 +14532,7 @@ jobs:
 
   velnor-rust-jackin-tui:
     name: "Velnor / rust-jackin-tui"
-    if: ${{ inputs.unit == 'rust-jackin-tui' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-jackin-tui' && ((github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
     runs-on: [self-hosted, velnor-target-mvp]
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -14977,7 +14977,7 @@ jobs:
 
   velnor-rust-jackin-usage:
     name: "Velnor / rust-jackin-usage"
-    if: ${{ inputs.unit == 'rust-jackin-usage' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-jackin-usage' && ((github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
     runs-on: [self-hosted, velnor-target-mvp]
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -15422,7 +15422,7 @@ jobs:
 
   velnor-rust-jackin-usage-ffi:
     name: "Velnor / rust-jackin-usage-ffi"
-    if: ${{ inputs.unit == 'rust-jackin-usage-ffi' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-jackin-usage-ffi' && ((github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
     runs-on: [self-hosted, velnor-target-mvp]
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -15867,7 +15867,7 @@ jobs:
 
   velnor-rust-jackin-xtask:
     name: "Velnor / rust-jackin-xtask"
-    if: ${{ inputs.unit == 'rust-jackin-xtask' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-jackin-xtask' && ((github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
     runs-on: [self-hosted, velnor-target-mvp]
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -16308,7 +16308,7 @@ jobs:
 
   velnor-rust-policy:
     name: "Velnor / rust-policy"
-    if: ${{ inputs.unit == 'rust-policy' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-policy' && ((github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
     runs-on: [self-hosted, velnor-target-mvp]
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"

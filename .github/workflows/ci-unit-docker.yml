@@ -188,7 +188,7 @@ jobs:
 
   velnor-docker-docker-construct:
     name: "Velnor / docker-docker-construct"
-    if: ${{ inputs.unit == 'docker-docker-construct' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'docker-docker-construct' && ((github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
     runs-on: [self-hosted, velnor-target-mvp]
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
