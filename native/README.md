@@ -31,7 +31,7 @@ Product scope is limits only: remaining/used percentages, resets, plan/status, m
 build lane does not exist yet. Owner: Release Engineering. Recorded 2026-08-20.
 Shipping remains Xcode 26.6 and forward failures do not gate release. The
 exception exits when an Xcode 27 runner image is available and the lane is added
-at the owning `velnor-actions` native-workflow source (`ci.yml` is generated —
+at the owning `velnor-actions` native-workflow source (`ci-pr.yml` is generated —
 never hand-edited), then regenerated here.
 
 **Post-26.0 API discipline:** every post-26.0 symbol is guarded with

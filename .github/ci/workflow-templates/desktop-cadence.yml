@@ -4,9 +4,9 @@
 
 name: Desktop Cadence
 
-# jackin❯ desktop merge + scheduled cadences. The PR cadence (`desktop-ci`)
-# runs inside the generated ci.yml via the pinned reusable workflow; the two
-# heavier tiers are local to this repository because ci.yml is generated and
+# jackin❯ desktop merge + scheduled cadences. The PR cadence runs as the
+# Swift units dispatched from ci-pr.yml; the two heavier tiers are local
+# to this repository because the CI workflows are generated and
 # never hand-edited. Task names are the single source of truth (mise.toml):
 #   merge:     mise run desktop-merge     (PR graph + UI tests + a11y audit)
 #   scheduled: mise run desktop-scheduled (merge graph + dead-code scan)

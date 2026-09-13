@@ -85,8 +85,8 @@ run = "cargo xtask construct publish-manifest"
 description = "Print the resolved construct Bake configuration"
 run = "cargo xtask construct inspect"
 
-# Canonical gate contract (native class). The generated ci.yml gates map to
-# exactly these commands; keep the names stable because ci.yml is generated
+# Canonical gate contract (native class). The generated ci-pr.yml gates map to
+# exactly these commands; keep the names stable because ci-pr.yml is generated
 # and never hand-edited:
 #   install → `mise install --locked`   (direct command, no task by design)
 #   build   → `mise run ci`             (depends-only aggregate over `build`)
