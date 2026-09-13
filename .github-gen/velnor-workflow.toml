@@ -27,6 +27,14 @@ full_commands = ["source 'docker/construct/versions.env' && docker build --file 
 id = "rust-jackin-xtask"
 mise_tools = ["github:open-telemetry/weaver"]
 
+# The Swift package links a local XCFramework the Rust FFI build produces;
+# generate it first (the same sanctioned task the desktop flows use) so
+# `swift build` resolves its binary target.
+[[units]]
+id = "swift-package-native"
+pr_commands = ["cargo xtask desktop xcframework", "cd -- 'native' && swift build", "cd -- 'native' && swift test --parallel"]
+full_commands = ["cargo xtask desktop xcframework", "cd -- 'native' && swift build", "cd -- 'native' && swift test --parallel"]
+
 # Bespoke release-side files the generator must not replace with its default
 # family renders: jackin's reviewed Homebrew-preview publisher is declared
 # verbatim (pins/commands still refreshed at generation time).

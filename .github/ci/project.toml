@@ -572,10 +572,10 @@ label = "Swift package (native)"
 kind = "swift"
 root = "native"
 watch = ["native/**/*.swift", "native/.swiftpm/Package.resolved", "native/Package.resolved", "native/Package.swift", "native/Sources/**", "native/Tests/**"]
-github_pr_commands = ["cd -- 'native' && swift build", "cd -- 'native' && swift test --parallel"]
-github_full_commands = ["cd -- 'native' && swift build", "cd -- 'native' && swift test --parallel"]
-velnor_pr_commands = ["cd -- 'native' && swift build", "cd -- 'native' && swift test --parallel"]
-velnor_full_commands = ["cd -- 'native' && swift build", "cd -- 'native' && swift test --parallel"]
+github_pr_commands = ["cargo xtask desktop xcframework", "cd -- 'native' && swift build", "cd -- 'native' && swift test --parallel"]
+github_full_commands = ["cargo xtask desktop xcframework", "cd -- 'native' && swift build", "cd -- 'native' && swift test --parallel"]
+velnor_pr_commands = ["cargo xtask desktop xcframework", "cd -- 'native' && swift build", "cd -- 'native' && swift test --parallel"]
+velnor_full_commands = ["cargo xtask desktop xcframework", "cd -- 'native' && swift build", "cd -- 'native' && swift test --parallel"]
 [unit.cache]
 key_files = ["native/Package.swift", "native/Package.resolved", "native/.swiftpm/Package.resolved"]
 paths = ["~/.swiftpm"]

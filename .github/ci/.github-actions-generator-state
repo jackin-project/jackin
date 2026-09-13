@@ -1,12 +1,12 @@
 # Generated ownership state; do not edit.
 schema = 2
 [inputs]
-config	32b6f8b0b948a15e
+config	906d051059dcaa51
 scan	b9d3ad6a734ce809
 generator	19
 [outputs]
 .github/actionlint.yaml	2c1dbf178fa8baa1
-.github/ci/project.toml	74abcdbe5a07891a
+.github/ci/project.toml	93a7a27ba9d5b92c
 .github/ci/workflow-templates/cache-cleanup.yml	eba8efe1071b8b05
 .github/ci/workflow-templates/ci.yml	c0cfc18afc2612c1
 .github/ci/workflow-templates/construct.yml	0a419875a0aeaf85
