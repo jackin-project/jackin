@@ -15,7 +15,7 @@ limitations = ["Manifests nested under tests/ or benches/ directories are treate
 github_runner = "ubuntu-26.04"
 macos_runner = "macos-26"
 velnor_labels = ["self-hosted", "velnor-target-mvp"]
-files = ["cache-cleanup.yml", "ci-main.yml", "ci-policy.yml", "ci-pr.yml", "ci-unit-bun.yml", "ci-unit-docker.yml", "ci-unit-rust.yml", "ci-unit-swift.yml", "ci.yml", "construct.yml", "desktop-cadence.yml", "docs.yml", "hygiene.yml", "jackin-dev.yml", "maintenance.yml", "nightly.yml", "preview.yml", "release.yml", "renovate-validate.yml", "renovate.yml", "reuse-compliance.yml"]
+files = ["cache-cleanup.yml", "ci-main.yml", "ci-policy.yml", "ci-pr.yml", "ci-unit-bun.yml", "ci-unit-docker.yml", "ci-unit-rust.yml", "ci-unit-swift.yml", "construct.yml", "desktop-cadence.yml", "docs.yml", "hygiene.yml", "jackin-dev.yml", "maintenance.yml", "nightly.yml", "preview.yml", "release.yml", "renovate-validate.yml", "renovate.yml", "reuse-compliance.yml"]
 notes = ["Rust verification uses Mr. Boxington 1.8.3 by default on both lanes. GitHub-hosted jobs use its GitHub cache backend with bounded snapshot keys (a key names the toolchain/image/linker compatibility class and the hashed source state, so a new source state saves a new snapshot and retention keeps generations bounded). Velnor jobs use an explicit local-backend setup step against the image/runner-provided local store."]
 
 [release]

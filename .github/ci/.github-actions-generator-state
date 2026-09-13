@@ -6,9 +6,8 @@ scan	b9d3ad6a734ce809
 generator	21
 [outputs]
 .github/actionlint.yaml	2c1dbf178fa8baa1
-.github/ci/project.toml	93a7a27ba9d5b92c
+.github/ci/project.toml	c1d55846ca3d4108
 .github/ci/workflow-templates/cache-cleanup.yml	eba8efe1071b8b05
-.github/ci/workflow-templates/ci.yml	c0cfc18afc2612c1
 .github/ci/workflow-templates/construct.yml	0a419875a0aeaf85
 .github/ci/workflow-templates/desktop-cadence.yml	df32593cbd07b8c5
 .github/ci/workflow-templates/docs.yml	e456cea8f6415c3b
@@ -27,7 +26,6 @@ generator	21
 .github/workflows/ci-unit-docker.yml	90d63aee8341b4f9
 .github/workflows/ci-unit-rust.yml	77bb4cfb32b75722
 .github/workflows/ci-unit-swift.yml	3076aa30e62805aa
-.github/workflows/ci.yml	c0cfc18afc2612c1
 .github/workflows/construct.yml	0a419875a0aeaf85
 .github/workflows/desktop-cadence.yml	df32593cbd07b8c5
 .github/workflows/docs.yml	e456cea8f6415c3b
