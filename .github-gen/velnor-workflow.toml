@@ -34,6 +34,7 @@ mise_tools = ["github:open-telemetry/weaver"]
 id = "swift-package-native"
 pr_commands = ["cargo xtask desktop xcframework", "cd -- 'native' && swift build", "cd -- 'native' && swift test --parallel"]
 full_commands = ["cargo xtask desktop xcframework", "cd -- 'native' && swift build", "cd -- 'native' && swift test --parallel"]
+mise_tools = ["cargo:boltffi_cli"]
 
 # Bespoke release-side files the generator must not replace with its default
 # family renders: jackin's reviewed Homebrew-preview publisher is declared
