@@ -112,10 +112,7 @@ jobs:
           version: "2026.7.12"
           cache_key_prefix: "mise-v2"
           cache_save: ${{ github.ref == 'refs/heads/main' }}
-          install_args: >-
-            rust shellcheck
-            ${{ env.CI_TOOLS_HIT != 'true' &&
-                'cargo-binstall cargo:cargo-deny cargo:cargo-fuzz cargo:cargo-hack' || '' }}
+          install_args: "rust shellcheck cargo-binstall cargo:cargo-deny cargo:cargo-fuzz cargo:cargo-hack"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - name: Bind Cargo cache actions into admitted closure
         if: github.event_name == 'velnor-admission-closure'
@@ -705,10 +702,7 @@ jobs:
           version: "2026.7.12"
           cache_key_prefix: "mise-v2"
           cache_save: ${{ github.ref == 'refs/heads/main' }}
-          install_args: >-
-            rust
-            ${{ env.CI_TOOLS_HIT != 'true' &&
-                'cargo-binstall cargo:cargo-llvm-cov aqua:nextest-rs/nextest/cargo-nextest' || '' }}
+          install_args: "rust cargo-binstall cargo:cargo-llvm-cov aqua:nextest-rs/nextest/cargo-nextest"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - name: Bind Cargo cache actions into admitted closure
         if: github.event_name == 'velnor-admission-closure'
@@ -835,10 +829,7 @@ jobs:
           version: "2026.7.12"
           cache_key_prefix: "mise-v2"
           cache_save: ${{ github.ref == 'refs/heads/main' }}
-          install_args: >-
-            rust
-            ${{ env.CI_TOOLS_HIT != 'true' &&
-                'cargo-binstall cargo:cargo-mutants' || '' }}
+          install_args: "rust cargo-binstall cargo:cargo-mutants"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - name: Bind Cargo cache actions into admitted closure
         if: github.event_name == 'velnor-admission-closure'
@@ -923,10 +914,7 @@ jobs:
           version: "2026.7.12"
           cache_key_prefix: "mise-v2"
           cache_save: ${{ github.ref == 'refs/heads/main' }}
-          install_args: >-
-            rust
-            ${{ env.CI_TOOLS_HIT != 'true' &&
-                'cargo-binstall cargo:cargo-hakari' || '' }}
+          install_args: "rust cargo-binstall cargo:cargo-hakari"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - name: Bind Cargo cache actions into admitted closure
         if: github.event_name == 'velnor-admission-closure'
@@ -1049,10 +1037,7 @@ jobs:
           version: "2026.7.12"
           cache_key_prefix: "mise-v2"
           cache_save: ${{ github.ref == 'refs/heads/main' }}
-          install_args: >-
-            rust
-            ${{ env.CI_TOOLS_HIT != 'true' &&
-                'cargo-binstall cargo:cargo-dylint cargo:dylint-link' || '' }}
+          install_args: "rust cargo-binstall cargo:cargo-dylint cargo:dylint-link"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - name: Bind Cargo cache actions into admitted closure
         if: github.event_name == 'velnor-admission-closure'
@@ -1143,10 +1128,7 @@ jobs:
           version: "2026.7.12"
           cache_key_prefix: "mise-v2"
           cache_save: ${{ github.ref == 'refs/heads/main' }}
-          install_args: >-
-            rust zig
-            ${{ env.CI_TOOLS_HIT != 'true' &&
-                'cargo-binstall aqua:nextest-rs/nextest/cargo-nextest cargo:cargo-zigbuild' || '' }}
+          install_args: "rust zig cargo-binstall aqua:nextest-rs/nextest/cargo-nextest cargo:cargo-zigbuild"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - name: Bind Cargo cache actions into admitted closure
         if: github.event_name == 'velnor-admission-closure'

@@ -224,7 +224,7 @@ jobs:
           version: "2026.7.12"
           cache_key_prefix: "mise-v2"
           cache_save: false
-          install_args: "cargo-binstall rust aqua:nextest-rs/nextest/cargo-nextest github:open-telemetry/weaver@0.24.2"
+          install_args: "cargo-binstall rust aqua:nextest-rs/nextest/cargo-nextest github:open-telemetry/weaver"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - name: Bind Cargo cache actions into admitted closure
         if: github.event_name == 'velnor-admission-closure'
