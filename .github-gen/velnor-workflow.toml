@@ -14,6 +14,19 @@ github_runner = "ubuntu-26.04"
 macos_runner = "macos-26"
 velnor_labels = ["self-hosted", "velnor-target-mvp"]
 
+# Unit contracts the scan cannot derive: the construct image build reads its
+# tool versions from the checked-in versions file (main sources it the same
+# way), and the xtask test suite shells out to the Weaver registry resolver
+# at runtime, so its jobs install the pinned tool beside nextest.
+[[units]]
+id = "docker-docker-construct"
+pr_commands = ["source 'docker/construct/versions.env' && docker build --file 'docker/construct/Dockerfile' --build-arg SHELLFIRM_VERSION=\"$SHELLFIRM_VERSION\" --build-arg TIRITH_VERSION=\"$TIRITH_VERSION\" --build-arg MISE_VERSION=\"$MISE_VERSION\" --tag local-ci:docker-construct-dockerfile 'docker/construct'"]
+full_commands = ["source 'docker/construct/versions.env' && docker build --file 'docker/construct/Dockerfile' --build-arg SHELLFIRM_VERSION=\"$SHELLFIRM_VERSION\" --build-arg TIRITH_VERSION=\"$TIRITH_VERSION\" --build-arg MISE_VERSION=\"$MISE_VERSION\" --tag local-ci:docker-construct-dockerfile 'docker/construct'"]
+
+[[units]]
+id = "rust-jackin-xtask"
+mise_tools = ["github:open-telemetry/weaver"]
+
 # Bespoke release-side files the generator must not replace with its default
 # family renders: jackin's reviewed Homebrew-preview publisher is declared
 # verbatim (pins/commands still refreshed at generation time).

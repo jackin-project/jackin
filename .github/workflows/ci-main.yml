@@ -77,7 +77,6 @@ jobs:
       bun_matrix: ${{ steps.plan.outputs.bun_matrix }}
       swift_matrix: ${{ steps.plan.outputs.swift_matrix }}
       docker_matrix: ${{ steps.plan.outputs.docker_matrix }}
-      docs_matrix: ${{ steps.plan.outputs.docs_matrix }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -207,19 +206,6 @@ jobs:
       unit: ${{ matrix.unit }}
       scope: ${{ needs.plan.outputs.scope }}
       selection-artifact: velnor-ci-selection
-  group-docs:
-    name: ${{ matrix.label }}
-    if: ${{ always() && needs.plan.result == 'success' && needs.policy.result == 'success' && needs.plan.outputs.docs_matrix != '[]' }}
-    needs: [plan, policy]
-    strategy:
-      fail-fast: false
-      matrix:
-        include: ${{ fromJSON(needs.plan.outputs.docs_matrix) }}
-    uses: ./.github/workflows/ci-unit-docs.yml
-    with:
-      unit: ${{ matrix.unit }}
-      scope: ${{ needs.plan.outputs.scope }}
-      selection-artifact: velnor-ci-selection
   group-rust:
     name: ${{ matrix.label }}
     if: ${{ always() && needs.plan.result == 'success' && needs.policy.result == 'success' && needs.plan.outputs.rust_matrix != '[]' }}
@@ -249,7 +235,7 @@ jobs:
   ci-required:
     name: ci-required
     if: ${{ always() }}
-    needs: [plan, policy, group-bun, group-docker, group-docs, group-rust, group-swift]
+    needs: [plan, policy, group-bun, group-docker, group-rust, group-swift]
     runs-on: ubuntu-26.04
     timeout-minutes: 5
     steps:
@@ -298,19 +284,6 @@ jobs:
             case "$result" in
               success|skipped) ;;
               *) echo "unselected CI unit docker-docker-construct failed unexpectedly: $result" >&2; exit 1 ;;
-            esac
-          fi
-          if [[ "$selected" == *",docs,"* ]]; then
-            result="$(result_for_job group-docs)"
-            case "$result" in
-              success) ;;
-              *) echo "selected CI unit docs did not pass: $result" >&2; exit 1 ;;
-            esac
-          else
-            result="$(result_for_job group-docs)"
-            case "$result" in
-              success|skipped) ;;
-              *) echo "unselected CI unit docs failed unexpectedly: $result" >&2; exit 1 ;;
             esac
           fi
           if [[ "$selected" == *",rust-arrayref,"* ]]; then

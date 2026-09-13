@@ -26,28 +26,13 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Download Velnor workflow runtime
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - name: Set up Velnor workflow runtime
+        if: ${{ runner.environment == 'github-hosted' }}
+        uses: tailrocks/velnor/.github/actions/setup-velnor-workflow@e14db9e94796f1b69c31328a21b697fdd61e740c
         with:
-          name: velnor-workflow-runtime-e14db9e94796f1b69c31328a21b697fdd61e740c-${{ runner.os }}-${{ runner.arch }}
-          path: .velnor-workflow-runtime
-      - name: Verify Velnor workflow runtime
-        shell: bash
-        env:
-          EXPECTED_REVISION: e14db9e94796f1b69c31328a21b697fdd61e740c
-        run: |
-          set -euo pipefail
-          manifest=.velnor-workflow-runtime/manifest.json
-          jq -e --arg revision "$EXPECTED_REVISION" --arg repository "$GITHUB_REPOSITORY" --arg platform "${RUNNER_OS}-${RUNNER_ARCH}" --arg run_id "$GITHUB_RUN_ID" '.revision == $revision and .repository == $repository and .platform == $platform and .run_id == $run_id and (.run_id | test("^[0-9]+$")) and .job_id != "" and (.binary_sha256 | test("^[0-9a-f]{64}$"))' "$manifest" >/dev/null
-          expected="$(jq -er '.binary_sha256' "$manifest")"
-          actual="$(sha256sum .velnor-workflow-runtime/velnor-workflow | awk '{print $1}')"
-          [[ "$actual" == "$expected" ]] || { echo "::error::runtime digest mismatch" >&2; exit 1; }
-      - name: Add Velnor workflow runtime to PATH
-        shell: bash
-        run: |
-          set -euo pipefail
-          install -Dm0755 .velnor-workflow-runtime/velnor-workflow "$HOME/.cargo/bin/velnor-workflow"
-          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          rev: e14db9e94796f1b69c31328a21b697fdd61e740c
+      - name: Set trusted workflow policy revision
+        run: echo "VELNOR_WORKFLOW_POLICY_REVISION=e14db9e94796f1b69c31328a21b697fdd61e740c" >> "$GITHUB_ENV"
       - name: Download Velnor CI selection
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
@@ -210,28 +195,13 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Download Velnor workflow runtime
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - name: Set up Velnor workflow runtime
+        if: ${{ runner.environment == 'github-hosted' }}
+        uses: tailrocks/velnor/.github/actions/setup-velnor-workflow@e14db9e94796f1b69c31328a21b697fdd61e740c
         with:
-          name: velnor-workflow-runtime-e14db9e94796f1b69c31328a21b697fdd61e740c-${{ runner.os }}-${{ runner.arch }}
-          path: .velnor-workflow-runtime
-      - name: Verify Velnor workflow runtime
-        shell: bash
-        env:
-          EXPECTED_REVISION: e14db9e94796f1b69c31328a21b697fdd61e740c
-        run: |
-          set -euo pipefail
-          manifest=.velnor-workflow-runtime/manifest.json
-          jq -e --arg revision "$EXPECTED_REVISION" --arg repository "$GITHUB_REPOSITORY" --arg platform "${RUNNER_OS}-${RUNNER_ARCH}" --arg run_id "$GITHUB_RUN_ID" '.revision == $revision and .repository == $repository and .platform == $platform and .run_id == $run_id and (.run_id | test("^[0-9]+$")) and .job_id != "" and (.binary_sha256 | test("^[0-9a-f]{64}$"))' "$manifest" >/dev/null
-          expected="$(jq -er '.binary_sha256' "$manifest")"
-          actual="$(sha256sum .velnor-workflow-runtime/velnor-workflow | awk '{print $1}')"
-          [[ "$actual" == "$expected" ]] || { echo "::error::runtime digest mismatch" >&2; exit 1; }
-      - name: Add Velnor workflow runtime to PATH
-        shell: bash
-        run: |
-          set -euo pipefail
-          install -Dm0755 .velnor-workflow-runtime/velnor-workflow "$HOME/.cargo/bin/velnor-workflow"
-          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          rev: e14db9e94796f1b69c31328a21b697fdd61e740c
+      - name: Set trusted workflow policy revision
+        run: echo "VELNOR_WORKFLOW_POLICY_REVISION=e14db9e94796f1b69c31328a21b697fdd61e740c" >> "$GITHUB_ENV"
       - name: Download Velnor CI selection
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
