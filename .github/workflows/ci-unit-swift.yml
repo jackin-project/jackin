@@ -39,7 +39,7 @@ jobs:
       - name: Set up Mise tools
         uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
-          install_args: cargo:boltffi_cli
+          install_args: cargo-binstall cargo:boltffi_cli
           cache: true
       - name: Restore "Swift package (native)" cache
         id: cache
