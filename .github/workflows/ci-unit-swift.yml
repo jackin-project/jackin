@@ -18,8 +18,6 @@ jobs:
     name: "GitHub / swift-package-native"
     if: ${{ inputs.unit == 'swift-package-native' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'github' || github.event.inputs.lanes == 'both'))) }}
     runs-on: macos-26
-    env:
-      RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
     timeout-minutes: 45
     steps:
       - name: Checkout
@@ -187,8 +185,6 @@ jobs:
     name: "GitHub / swift-package-native-design-prototypes-unifiedagentusage"
     if: ${{ inputs.unit == 'swift-package-native-design-prototypes-unifiedagentusage' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'github' || github.event.inputs.lanes == 'both'))) }}
     runs-on: macos-26
-    env:
-      RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
     timeout-minutes: 45
     steps:
       - name: Checkout
