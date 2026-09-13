@@ -127,8 +127,9 @@ Implementation:
    - unavailable forward API behavior: guard every post-26.0 symbol, ship a
      decided native fallback, and name the minimum-target bump that removes it.
 2. Preserve the repository rule that `.github/workflows/ci-pr.yml` is generated.
-   Add the forward lane at the owning `velnor-actions` native-workflow source,
-   regenerate the consumer, and do not hand-edit the generated workflow.
+   Add the forward lane at the owning `velnor-workflow` source
+   (`.github/workflows/ci-unit-swift.yml`), regenerate the consumer, and do
+   not hand-edit the generated workflow.
 3. Until that runner lane exists, record a dated exception in `native/README.md`
    owned by Release Engineering: shipping remains Xcode 26.6; forward failures
    do not gate release; the exception exits when the Xcode 27 runner image is
