@@ -15,8 +15,6 @@ impl<
     Modal,
     SaveFlow,
     EnvValue,
-    AuthFormTarget,
-    PendingTokenGenerate,
     PendingRoleLoad,
     PendingDriftCheck,
     PendingIsolationCleanup,
@@ -27,8 +25,6 @@ impl<
         Modal,
         SaveFlow,
         EnvValue,
-        AuthFormTarget,
-        PendingTokenGenerate,
         PendingRoleLoad,
         PendingDriftCheck,
         PendingIsolationCleanup,
@@ -55,8 +51,6 @@ impl<
     Modal,
     SaveFlow,
     EnvValue,
-    AuthFormTarget,
-    PendingTokenGenerate,
     PendingRoleLoad,
     PendingDriftCheck,
     PendingIsolationCleanup,
@@ -67,8 +61,6 @@ impl<
         Modal,
         SaveFlow,
         EnvValue,
-        AuthFormTarget,
-        PendingTokenGenerate,
         PendingRoleLoad,
         PendingDriftCheck,
         PendingIsolationCleanup,
@@ -97,15 +89,12 @@ impl<
             save_flow: SaveFlow::default(),
             unmasked_rows: BTreeSet::default(),
             secrets_expanded: BTreeSet::default(),
-            auth_expanded: BTreeSet::default(),
-            auth_selected_kind: None,
             _env_value: PhantomData,
             workspace_mounts_scroll: crate::tui::scroll_block::console_scroll_area_state(),
             tab_scroll: crate::tui::scroll_block::console_scroll_area_state(),
             tab_content_width: 0,
             tab_content_height: 0,
-            generating_token_target: None,
-            pending_token_generate: None,
+
             pending_role_load: None,
             pending_drift_check: None,
             pending_isolation_cleanup: None,
@@ -126,16 +115,6 @@ impl<
         }
     }
 
-    pub fn apply_auth_kind_plan(
-        &mut self,
-        plan: crate::tui::screens::editor::update::EditorAuthKindPlan<crate::tui::auth::AuthKind>,
-    ) {
-        self.auth_selected_kind = plan.selected_kind;
-        self.active_field = FieldFocus::Row(plan.active_row);
-        crate::tui::scroll_block::scroll_area_set_x(&mut self.tab_scroll, plan.tab_scroll_x);
-        crate::tui::scroll_block::scroll_area_set_y(&mut self.tab_scroll, plan.tab_scroll_y);
-    }
-
     pub fn apply_tab_move_plan(
         &mut self,
         plan: crate::tui::screens::editor::update::EditorTabMovePlan,
@@ -148,9 +127,6 @@ impl<
         if plan.tab_bar_focused {
             self.set_workspace_mounts_scroll_focused(false);
             self.set_tab_content_scroll_focused(false);
-        }
-        if plan.clear_auth_kind {
-            self.auth_selected_kind = None;
         }
         if plan.clear_secret_view_state {
             self.unmasked_rows.clear();
@@ -166,9 +142,6 @@ impl<
         self.set_tab_bar_focused(plan.tab_bar_focused);
         self.active_field = FieldFocus::Row(plan.active_row);
         self.set_workspace_mounts_scroll_focused(plan.workspace_mounts_scroll_focused);
-        if plan.clear_auth_kind {
-            self.auth_selected_kind = None;
-        }
         if plan.clear_secret_view_state {
             self.unmasked_rows.clear();
             self.secrets_expanded.clear();
@@ -437,17 +410,6 @@ impl<
     }
 
     #[must_use]
-    pub fn auth_form_can_generate_token(&self) -> bool
-    where
-        Modal: crate::tui::auth_config::ModalAuthFormGenerate,
-    {
-        let editing_existing_workspace = matches!(self.mode, EditorMode::Edit { .. });
-        self.modal
-            .as_ref()
-            .is_some_and(|modal| modal.auth_form_can_generate_token(editing_existing_workspace))
-    }
-
-    #[must_use]
     pub fn active_auth_form_focus(
         &self,
     ) -> Option<crate::tui::screens::settings::model::AuthFormFocus>
@@ -469,28 +431,5 @@ impl<
         self.modal_parents
             .last()
             .is_some_and(crate::tui::auth_config::ModalAuthFormParentInspect::is_auth_form_parent)
-    }
-
-    pub fn start_auth_token_generate<SourcePickerState>(
-        &mut self,
-        source_picker_state: SourcePickerState,
-    ) -> bool
-    where
-        Modal: crate::tui::auth_config::ModalAuthFormGenerate
-            + crate::tui::auth_config::ModalAuthTokenGenerateStart<AuthFormTarget, SourcePickerState>,
-        AuthFormTarget: Clone,
-    {
-        if !self.auth_form_can_generate_token() {
-            return false;
-        }
-        let Some(generate_target) = Modal::open_auth_generate_source_picker(
-            &mut self.modal,
-            &mut self.modal_parents,
-            source_picker_state,
-        ) else {
-            return false;
-        };
-        self.generating_token_target = Some(generate_target);
-        true
     }
 }

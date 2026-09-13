@@ -14,7 +14,6 @@
 )]
 #![expect(
     clippy::unwrap_used,
-    clippy::expect_used,
     reason = "primary CLI crate still carries state-machine invariants under the strict lint transition"
 )]
 

@@ -513,10 +513,7 @@ async fn attach_protocol_sends_hello_with_spawn_focus_env_and_terminal() {
     let (client_reader, client_writer) = tokio::io::split(client);
     let mut output = Vec::new();
     let request = HostAttachRequest {
-        spawn_request: Some(SpawnRequest::AgentWithProvider {
-            slug: "codex".to_owned(),
-            provider_label: "MiniMax".to_owned(),
-        }),
+        spawn_request: Some(SpawnRequest::Agent("codex".to_owned())),
         focus_session: Some(42),
         env: vec![("JACKIN_GIT_DCO".to_owned(), "1".to_owned())],
         terminal: ClientTerminal {
@@ -579,10 +576,7 @@ async fn attach_protocol_sends_hello_with_spawn_focus_env_and_terminal() {
             context: Some(Box::new(jackin_protocol::TelemetryContext::v1())),
             rows: 30,
             cols: 100,
-            spawn: Some(SpawnRequest::AgentWithProvider {
-                slug: "codex".to_owned(),
-                provider_label: "MiniMax".to_owned(),
-            }),
+            spawn: Some(SpawnRequest::Agent("codex".to_owned())),
             env: vec![("JACKIN_GIT_DCO".to_owned(), "1".to_owned())],
             focus_session: Some(42),
             terminal: ClientTerminal {

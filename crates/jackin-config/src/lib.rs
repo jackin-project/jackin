@@ -22,6 +22,7 @@
 )]
 
 // Plan 019: private implementation modules + curated root re-exports (env pilot).
+mod accounts;
 mod app_config;
 mod auth;
 mod editor;
@@ -38,6 +39,14 @@ mod telemetry;
 mod validation;
 mod versions;
 
+pub use accounts::discovery::{
+    CredentialEvidence, DiscoveredAccount, DiscoveryError, DiscoveryIssue, DiscoveryReport,
+    discover_account_directory, discover_default_accounts, discover_environment_accounts,
+    discover_environment_oauth_accounts,
+};
+pub use accounts::{
+    AccountConfig, AccountCredential, AiProvider, resolve_account, validate_account_id,
+};
 pub use error::{ConfigError, ConfigResult};
 
 #[cfg(any(test, feature = "test-support"))]
@@ -51,11 +60,8 @@ pub use app_config::persist::{
     ReadOnlyConfigSnapshot, config_needs_split_migration, load_read_only_config_snapshot,
     load_split_config, load_workspace_files, validate_reserved_env_names,
 };
-pub use app_config::roles::{
-    BUILTIN_ROLES, build_github_env_layers, resolve_github_mode, resolve_mode,
-    resolve_mode_with_trace, resolve_sync_source_dir,
-};
-pub use auth::{AgentAuthConfig, GithubAuthConfig, GithubAuthMode};
+pub use app_config::roles::{BUILTIN_ROLES, build_github_env_layers, resolve_github_mode};
+pub use auth::{GithubAuthConfig, GithubAuthMode};
 pub use editor::{ConfigEditor, EnvScope};
 pub use jackin_core::{AuthForwardMode, EnvValue, FieldTarget, MountIsolation, OpRef};
 pub use migrations::{

@@ -6,8 +6,8 @@
 use crossterm::event::{KeyEvent, KeyModifiers, MouseEventKind};
 
 use crate::tui::components::{
+    account_picker::AccountPickerState,
     agent_choice::{AgentChoice, AgentChoiceState},
-    provider_picker::ProviderPickerState,
 };
 use crate::tui::sidebar_layout::{SidebarScrollAreas, focused_mount_scroll_area_still_scrollable};
 
@@ -64,15 +64,15 @@ pub enum InlinePickerDismissal {
     Role,
     Agent,
     Provider,
-    LaunchProvider,
+    LaunchAccount,
 }
 
 pub trait InlinePickerDismissalState {
     fn clear_inline_new_session_picker(&mut self);
     fn clear_inline_role_picker(&mut self);
     fn clear_inline_agent_picker(&mut self);
-    fn clear_inline_provider_picker(&mut self);
-    fn clear_launch_provider_picker(&mut self);
+    fn clear_inline_account_picker(&mut self);
+    fn clear_launch_account_picker(&mut self);
 }
 
 pub fn apply_inline_picker_dismissal_plan(
@@ -83,8 +83,8 @@ pub fn apply_inline_picker_dismissal_plan(
         InlinePickerDismissal::NewSession => state.clear_inline_new_session_picker(),
         InlinePickerDismissal::Role => state.clear_inline_role_picker(),
         InlinePickerDismissal::Agent => state.clear_inline_agent_picker(),
-        InlinePickerDismissal::Provider => state.clear_inline_provider_picker(),
-        InlinePickerDismissal::LaunchProvider => state.clear_launch_provider_picker(),
+        InlinePickerDismissal::Provider => state.clear_inline_account_picker(),
+        InlinePickerDismissal::LaunchAccount => state.clear_launch_account_picker(),
     }
 }
 
@@ -282,9 +282,13 @@ pub struct ListPreRenderPlan {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum InlineProviderFollowupPlan<C, A, P> {
-    StartSession { context: C, agent: A },
-    OpenProviderPicker(ProviderPickerState<C, A, P>),
+pub enum InlineAccountFollowupPlan<C, A, P> {
+    StartSession {
+        context: C,
+        agent: A,
+        account: Option<P>,
+    },
+    OpenAccountPicker(AccountPickerState<C, A, P>),
 }
 
 pub trait InlineNewSessionPickerState<C, A: AgentChoice, P> {
@@ -305,15 +309,15 @@ pub fn apply_inline_new_session_picker_plan<C, A: AgentChoice, P>(
     state.set_inline_new_session_picker(context, picker, providers);
 }
 
-pub trait InlineProviderPickerState<C, A, P> {
-    fn set_inline_provider_picker(&mut self, picker: ProviderPickerState<C, A, P>);
+pub trait InlineAccountPickerState<C, A, P> {
+    fn set_inline_account_picker(&mut self, picker: AccountPickerState<C, A, P>);
 }
 
-pub fn apply_inline_provider_picker_plan<C, A, P>(
-    state: &mut impl InlineProviderPickerState<C, A, P>,
-    picker: ProviderPickerState<C, A, P>,
+pub fn apply_inline_account_picker_plan<C, A, P>(
+    state: &mut impl InlineAccountPickerState<C, A, P>,
+    picker: AccountPickerState<C, A, P>,
 ) {
-    state.set_inline_provider_picker(picker);
+    state.set_inline_account_picker(picker);
 }
 
 #[must_use]
@@ -566,20 +570,24 @@ pub fn list_pre_render_facts_from_scroll_areas(
 }
 
 #[must_use]
-pub fn inline_provider_followup_plan<C, A, P>(
+pub fn inline_account_followup_plan<C, A, P>(
     context: C,
     agent: A,
     providers: Vec<P>,
-) -> InlineProviderFollowupPlan<C, A, P> {
+) -> InlineAccountFollowupPlan<C, A, P> {
     // Open the picker only when the operator has a real choice. A list of 0
     // or 1 means the caller collapsed out the agent's native auth (or never
     // passed any) — dispatch directly instead of presenting a one-item modal.
     if providers.len() >= 2 {
-        InlineProviderFollowupPlan::OpenProviderPicker(ProviderPickerState::new(
+        InlineAccountFollowupPlan::OpenAccountPicker(AccountPickerState::new(
             context, agent, providers,
         ))
     } else {
-        InlineProviderFollowupPlan::StartSession { context, agent }
+        InlineAccountFollowupPlan::StartSession {
+            context,
+            agent,
+            account: providers.into_iter().next(),
+        }
     }
 }
 

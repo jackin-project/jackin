@@ -497,17 +497,7 @@ fn execute_trusted_role_source_persist(
     state.begin_config_save(rx);
 }
 
-pub(crate) fn execute_token_generate(
-    paths: &jackin_core::JackinPaths,
-    config: &AppConfig,
-    req: &crate::console::adapter::state::PendingTokenGenerate,
-) -> anyhow::Result<jackin_core::EnvValue> {
-    jackin_env::mint_token_value(paths, config, &req.scope, &req.args)
-}
-
-pub(crate) use jackin_console::tui::state::update::{
-    apply_token_generate_result, execute_open_url,
-};
+pub(crate) use jackin_console::tui::state::update::execute_open_url;
 
 fn execute_role_registration_start(
     state: &mut ManagerState<'_>,
@@ -727,9 +717,12 @@ fn execute_settings_save(
             mounts_pending: mounts_save.pending.to_vec(),
             env_original: env_save.original.clone(),
             env_pending: env_save.pending.clone(),
-            auth_pending: auth_save.pending.to_vec(),
-            original_github_env: auth_save.original_github_env.clone(),
-            github_env: auth_save.github_env.clone(),
+            auth_pending: auth_save.pending.clone(),
+            auth_original: auth_save.original.clone(),
+            bindings_pending: auth_save.bindings.clone(),
+            bindings_original: auth_save.original_bindings.clone(),
+            github: auth_save.github.clone(),
+            original_github: auth_save.original_github.clone(),
             trust_pending: trust_save.pending.to_vec(),
             git_coauthor_trailer: general_save.git_coauthor_trailer,
             git_dco: general_save.git_dco,

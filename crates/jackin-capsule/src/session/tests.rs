@@ -1680,3 +1680,90 @@ fn bare_claude_notification_payload_authors_authority() {
     assert!(a.pending_permission);
     assert_eq!(a.grade, AuthorityGrade::Partial);
 }
+
+#[test]
+fn account_credentials_are_scoped_to_selected_agent_and_mode() {
+    let credentials = jackin_protocol::AgentCredentialEnv::new(std::collections::BTreeMap::from([
+        (
+            "opencode".into(),
+            std::collections::BTreeMap::from([(
+                "ANTHROPIC_API_KEY".into(),
+                "personal-secret".into(),
+            )]),
+        ),
+        (
+            "claude".into(),
+            std::collections::BTreeMap::from([("ANTHROPIC_API_KEY".into(), "work-secret".into())]),
+        ),
+    ]));
+    let hostile_passthrough = vec![("ANTHROPIC_API_KEY".into(), "wrong-secret".into())];
+    for mode in ["sync", "ignore"] {
+        let mut cmd = build_agent_command(
+            "claude",
+            None,
+            Some(mode),
+            &hostile_passthrough,
+            Path::new("/workspace"),
+            "test",
+        );
+        super::apply_account_env(&mut cmd, "claude", Some(mode), &credentials);
+        assert!(cmd.get_env("ANTHROPIC_API_KEY").is_none());
+    }
+    let mut cmd = build_agent_command(
+        "claude",
+        None,
+        Some("api_key"),
+        &hostile_passthrough,
+        Path::new("/workspace"),
+        "test",
+    );
+    super::apply_account_env(&mut cmd, "claude", Some("api_key"), &credentials);
+    assert_eq!(
+        cmd.get_env("ANTHROPIC_API_KEY").and_then(|v| v.to_str()),
+        Some("work-secret")
+    );
+    assert!(cmd.get_env("OPENAI_API_KEY").is_none());
+    let shell = build_shell_command(&hostile_passthrough, Path::new("/workspace"), "test");
+    assert!(shell.get_env("ANTHROPIC_API_KEY").is_none());
+}
+
+#[test]
+fn unassigned_agent_cannot_inherit_another_agents_provider_key() {
+    let credentials =
+        jackin_protocol::AgentCredentialEnv::new(std::collections::BTreeMap::from([(
+            "opencode".into(),
+            std::collections::BTreeMap::from([("OPENAI_API_KEY".into(), "opencode-secret".into())]),
+        )]));
+    let mut cmd = build_agent_command(
+        "codex",
+        None,
+        Some("ignore"),
+        &[],
+        Path::new("/workspace"),
+        "test",
+    );
+    super::apply_account_env(&mut cmd, "codex", Some("ignore"), &credentials);
+    assert!(cmd.get_env("OPENAI_API_KEY").is_none());
+    assert!(!format!("{credentials:?}").contains("opencode-secret"));
+}
+
+#[test]
+fn claude_session_owns_its_durable_config_directory_for_every_auth_mode() {
+    let passthrough = vec![("CLAUDE_CONFIG_DIR".to_owned(), "/stale-profile".to_owned())];
+    for mode in ["sync", "api_key", "oauth_token", "ignore"] {
+        let command = build_agent_command(
+            "claude",
+            None,
+            Some(mode),
+            &passthrough,
+            Path::new("/workspace"),
+            "test",
+        );
+        assert_eq!(
+            command.get_env("CLAUDE_CONFIG_DIR"),
+            Some(std::ffi::OsStr::new(
+                jackin_core::container_paths::CLAUDE_CONFIG_DIR
+            ))
+        );
+    }
+}

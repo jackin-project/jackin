@@ -467,9 +467,7 @@ pub fn render_modal(frame: &mut Frame<'_>, modal: &crate::tui::state::Modal<'_>)
         Modal::OpPicker { state, .. } => {
             crate::tui::components::op_picker::render_picker(frame, modal_area, state.as_ref());
         }
-        Modal::RolePicker { state }
-        | Modal::RoleOverridePicker { state }
-        | Modal::AuthRolePicker { state } => {
+        Modal::RolePicker { state } | Modal::RoleOverridePicker { state } => {
             crate::tui::components::role_picker::render(frame, modal_area, state);
         }
         Modal::SourcePicker { state, .. } | Modal::AuthSourcePicker { state } => {

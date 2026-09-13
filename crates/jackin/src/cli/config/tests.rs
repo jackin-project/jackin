@@ -123,12 +123,6 @@ fn parses_config_trust_list() {
 // ── help subcommand disabled ────────────────────────────────────────
 
 #[test]
-fn config_auth_rejects_help_subcommand() {
-    let err = Cli::try_parse_from(["jackin", "config", "auth", "help"]).unwrap_err();
-    assert_eq!(err.kind(), clap::error::ErrorKind::InvalidSubcommand);
-}
-
-#[test]
 fn config_mount_rejects_help_subcommand() {
     let err = Cli::try_parse_from(["jackin", "config", "mount", "help"]).unwrap_err();
     assert_eq!(err.kind(), clap::error::ErrorKind::InvalidSubcommand);
@@ -152,80 +146,3 @@ fn config_mount_remove_help_shows_examples() {
 }
 
 // ── Config auth help ─────────────────────────────────────────────────
-
-#[test]
-fn config_auth_set_help_shows_examples() {
-    let help = help_text(&["jackin", "config", "auth", "set", "--help"]);
-    assert!(help.contains("Examples:"));
-    assert!(help.contains("jackin config auth set sync"));
-    assert!(help.contains("jackin config auth set oauth_token"));
-    assert!(help.contains("jackin config auth set api_key"));
-}
-
-#[test]
-fn config_auth_set_help_lists_token_as_accepted_mode() {
-    let help = help_text(&["jackin", "config", "auth", "set", "--help"]);
-    // Modes are listed in the subcommand doc comment.
-    assert!(help.contains("sync"));
-    assert!(help.contains("ignore"));
-    assert!(
-        help.contains("oauth_token"),
-        "help text must advertise the oauth_token mode; got:\n{help}"
-    );
-    assert!(
-        help.contains("api_key"),
-        "help text must advertise the api_key mode; got:\n{help}"
-    );
-}
-
-#[test]
-fn config_auth_show_help_shows_examples() {
-    let help = help_text(&["jackin", "config", "auth", "show", "--help"]);
-    assert!(help.contains("Examples:"));
-    assert!(help.contains("jackin config auth show"));
-}
-
-#[test]
-fn parses_config_auth_set_global_defaults_to_claude() {
-    let cli = Cli::try_parse_from(["jackin", "config", "auth", "set", "sync"]).unwrap();
-    assert!(matches!(
-        cli.command,
-        Some(Command::Config(ConfigCommand::Auth(AuthCommand::Set {
-                    ref mode, ref agent,
-                }))) if mode == "sync" && agent == "claude"
-    ));
-}
-
-#[test]
-fn parses_config_auth_set_oauth_token_global() {
-    let cli = Cli::try_parse_from(["jackin", "config", "auth", "set", "oauth_token"]).unwrap();
-    assert!(matches!(
-        cli.command,
-        Some(Command::Config(ConfigCommand::Auth(AuthCommand::Set {
-                    ref mode, ..
-                }))) if mode == "oauth_token"
-    ));
-}
-
-#[test]
-fn parses_config_auth_set_with_agent_flag() {
-    let cli = Cli::try_parse_from([
-        "jackin", "config", "auth", "set", "api_key", "--agent", "codex",
-    ])
-    .unwrap();
-    assert!(matches!(
-        cli.command,
-        Some(Command::Config(ConfigCommand::Auth(AuthCommand::Set {
-                    ref mode, ref agent,
-                }))) if mode == "api_key" && agent == "codex"
-    ));
-}
-
-#[test]
-fn parses_config_auth_show() {
-    let cli = Cli::try_parse_from(["jackin", "config", "auth", "show"]).unwrap();
-    assert!(matches!(
-        cli.command,
-        Some(Command::Config(ConfigCommand::Auth(AuthCommand::Show)))
-    ));
-}

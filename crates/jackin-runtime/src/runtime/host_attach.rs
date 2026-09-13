@@ -8,6 +8,8 @@
 //! shared attach protocol over either the bind-mounted Capsule socket
 //! or a stdio `attach-proxy` running inside the container.
 
+mod terminal_input;
+
 use std::collections::HashMap;
 use std::fs::{self, File};
 use std::io::{Seek, SeekFrom, Write};
@@ -195,7 +197,7 @@ where
     let mut stdout = std::io::stdout();
     let _cleanup = enter_host_attach_terminal(&mut stdout)?;
     let _session = jackin_telemetry::identity::SessionGuard::begin_attachment()?;
-    let mut stdin = tokio::io::stdin();
+    let mut stdin = terminal_input::TerminalInput::stdin().context("opening terminal input")?;
     let host_colors =
         query_host_terminal_colors(request.terminal.term.as_deref(), &mut stdin, &mut stdout).await;
     request.terminal.default_fg = host_colors.fg;

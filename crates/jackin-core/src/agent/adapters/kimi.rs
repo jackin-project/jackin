@@ -78,7 +78,6 @@ RUN set -euxo pipefail && \\
             config_dir: None,      // all durable state under ~/.kimi-code
             credential_file: None, // directory-based provisioning
             folder_env_var: None,  // no standard folder env var
-            home_files: &[],
         }
     }
 

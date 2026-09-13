@@ -44,8 +44,8 @@ fn handle_key(
         keyboard_help_open: state.keyboard_help.is_some(),
         list_modal_open: state.list_modal.is_some(),
         inline_new_session_picker_open: state.inline_new_session_picker.is_some(),
-        inline_provider_picker_open: state.inline_provider_picker.is_some(),
-        launch_provider_picker_open: state.launch_provider_picker.is_some(),
+        inline_account_picker_open: state.inline_account_picker.is_some(),
+        launch_account_picker_open: state.launch_account_picker.is_some(),
         inline_agent_picker_open: state.inline_agent_picker.is_some(),
         inline_role_picker_open: state.inline_role_picker.is_some(),
         editor_modal_open: stage_modal_facts.editor_modal_open,
@@ -61,11 +61,11 @@ fn handle_key(
         ConsoleInputDispatchPlan::InlineNewSessionPicker => {
             return Ok(handle_new_session_picker(state, key));
         }
-        ConsoleInputDispatchPlan::InlineProviderPicker => {
-            return Ok(handle_inline_provider_picker(state, key));
+        ConsoleInputDispatchPlan::InlineAccountPicker => {
+            return Ok(handle_inline_account_picker(state, key));
         }
-        ConsoleInputDispatchPlan::LaunchProviderPicker => {
-            return Ok(handle_launch_provider_picker(state, key));
+        ConsoleInputDispatchPlan::LaunchAccountPicker => {
+            return Ok(handle_launch_account_picker(state, key));
         }
         ConsoleInputDispatchPlan::InlineAgentPicker => {
             return Ok(handle_inline_agent_picker(state, key));
@@ -197,12 +197,30 @@ fn commit_new_session_picker(
 ) -> InputOutcome {
     let mut picker = AgentChoiceState::with_choices(vec![agent]);
     picker.focused = agent;
-    state.inline_new_session_picker = Some(("jackin-demo-architect".into(), picker, providers));
+    let accounts = providers
+        .into_iter()
+        .map(|provider| {
+            let provider = match provider {
+                jackin_protocol::Provider::Anthropic => jackin_config::AiProvider::Anthropic,
+                jackin_protocol::Provider::Openai => jackin_config::AiProvider::OpenAi,
+                jackin_protocol::Provider::Zai => jackin_config::AiProvider::Zai,
+                jackin_protocol::Provider::Minimax => jackin_config::AiProvider::Minimax,
+                jackin_protocol::Provider::Kimi => panic!("unexpected test provider"),
+            };
+            crate::services::launch::AccountChoice {
+                id: provider.slug().to_owned(),
+                name: provider.slug().to_owned(),
+                provider,
+                agents: vec![agent],
+            }
+        })
+        .collect();
+    state.inline_new_session_picker = Some(("jackin-demo-architect".into(), picker, accounts));
     handle_new_session_picker(state, key(KeyCode::Enter))
 }
 
 #[test]
-fn new_session_provider_picker_skips_when_no_choice() {
+fn new_session_account_picker_skips_when_no_choice() {
     // Single-provider Codex must dispatch directly, mirroring Claude.
     let config = AppConfig::default();
     let tmp = tempfile::tempdir().unwrap();
@@ -214,23 +232,25 @@ fn new_session_provider_picker_skips_when_no_choice() {
     );
 
     match outcome {
-        InputOutcome::InstanceAction { container, action } => {
+        InputOutcome::NewSessionWithAccount {
+            container,
+            agent,
+            account,
+        } => {
             assert_eq!(container, "jackin-demo-architect");
-            assert_eq!(
-                action,
-                ConsoleInstanceAction::NewSessionWithAgent(jackin_core::Agent::Codex,)
-            );
+            assert_eq!(agent, jackin_core::Agent::Codex);
+            assert_eq!(account.as_deref(), Some("openai"));
         }
         other => panic!("expected direct new-session dispatch; got {other:?}"),
     }
     assert!(
-        state.inline_provider_picker.is_none(),
+        state.inline_account_picker.is_none(),
         "single-provider Codex must not open the provider picker"
     );
 }
 
 #[test]
-fn new_session_provider_picker_opens_for_claude() {
+fn new_session_account_picker_opens_for_claude() {
     let config = AppConfig::default();
     let tmp = tempfile::tempdir().unwrap();
     let mut state = ManagerState::from_config(&config, tmp.path());
@@ -238,7 +258,7 @@ fn new_session_provider_picker_opens_for_claude() {
         commit_new_session_picker(&mut state, jackin_core::Agent::Claude, provider_choices());
 
     assert!(matches!(outcome, InputOutcome::Continue));
-    let Some(picker) = state.inline_provider_picker else {
+    let Some(picker) = state.inline_account_picker else {
         panic!("Claude with providers must open provider picker");
     };
     assert_eq!(picker.context, "jackin-demo-architect");
@@ -248,7 +268,7 @@ fn new_session_provider_picker_opens_for_claude() {
 }
 
 #[test]
-fn new_session_provider_picker_opens_for_codex_with_multiple_providers() {
+fn new_session_account_picker_opens_for_codex_with_multiple_providers() {
     // Codex with two providers configured opens the picker.
     let config = AppConfig::default();
     let tmp = tempfile::tempdir().unwrap();
@@ -260,14 +280,20 @@ fn new_session_provider_picker_opens_for_codex_with_multiple_providers() {
     );
 
     assert!(matches!(outcome, InputOutcome::Continue));
-    let Some(picker) = state.inline_provider_picker else {
+    let Some(picker) = state.inline_account_picker else {
         panic!("Codex with multiple providers must open the provider picker");
     };
     assert_eq!(picker.context, "jackin-demo-architect");
     assert_eq!(picker.agent, jackin_core::Agent::Codex);
     assert_eq!(picker.providers().len(), 2);
-    assert_eq!(picker.providers()[0], jackin_protocol::Provider::Openai);
-    assert_eq!(picker.providers()[1], jackin_protocol::Provider::Minimax);
+    assert_eq!(
+        picker.providers()[0].provider,
+        jackin_config::AiProvider::OpenAi
+    );
+    assert_eq!(
+        picker.providers()[1].provider,
+        jackin_config::AiProvider::Minimax
+    );
 }
 
 #[test]

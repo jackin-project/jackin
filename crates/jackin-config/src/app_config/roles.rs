@@ -10,7 +10,7 @@
 use crate::ConfigError;
 use std::collections::BTreeMap;
 
-use jackin_core::{Agent, AuthForwardMode, EnvValue, RoleSelector, WorkspaceName};
+use jackin_core::{EnvValue, RoleSelector, WorkspaceName};
 
 use super::AppConfig;
 use crate::auth::GithubAuthMode;
@@ -19,64 +19,6 @@ use crate::schema::RoleSource;
 /// Map key for workspace-scoped lookups. `None` = global-only (empty map key).
 fn workspace_key(workspace: Option<&WorkspaceName>) -> &str {
     workspace.map_or("", WorkspaceName::as_str)
-}
-
-/// Resolve the effective auth-forward mode for an agent in a (workspace, role) scope.
-///
-/// Walks three layers, most-specific wins:
-///
-/// 1. `workspaces[ws].roles[role].<agent>.auth_forward`
-/// 2. `workspaces[ws].<agent>.auth_forward`
-/// 3. `<agent>.auth_forward` (global)
-///
-/// Returns [`AuthForwardMode::Sync`] if no layer is set. The `<agent>`
-/// selector picks the matching per-agent field at each layer.
-///
-/// Passing `workspace = None` (or a name not present in the config)
-/// naturally falls through to the global layer; this is the supported
-/// way for non-workspace-scoped callers (e.g. `jackin config auth show`)
-/// to read the global default through the same code path.
-pub fn resolve_mode(
-    cfg: &AppConfig,
-    agent: Agent,
-    workspace: Option<&WorkspaceName>,
-    role: &str,
-) -> AuthForwardMode {
-    resolve_mode_with_trace(cfg, agent, workspace, role).0
-}
-
-/// Like [`resolve_mode`] but also returns the resolution trace.
-///
-/// The trace is a vector of `(layer_label, value_at_layer)` pairs, lowest
-/// precedence last. Used by `runtime::launch` to build error messages that
-/// show the operator exactly which config layer resolved the credential mode.
-pub fn resolve_mode_with_trace(
-    cfg: &AppConfig,
-    agent: Agent,
-    workspace: Option<&WorkspaceName>,
-    role: &str,
-) -> (AuthForwardMode, Vec<(String, Option<AuthForwardMode>)>) {
-    let ws = workspace_key(workspace);
-    let agent_at_global = cfg.auth_forward_for(agent);
-    let agent_at_workspace = cfg
-        .workspaces
-        .get(ws)
-        .and_then(|w| w.auth_forward_for(agent));
-    let agent_at_ws_role = cfg
-        .workspaces
-        .get(ws)
-        .and_then(|w| w.roles.get(role))
-        .and_then(|ro| ro.auth_forward_for(agent));
-    let winning = agent_at_ws_role
-        .or(agent_at_workspace)
-        .or(agent_at_global)
-        .unwrap_or_default();
-    let trace = vec![
-        (format!("workspace × role × {agent}"), agent_at_ws_role),
-        (format!("workspace × {agent}"), agent_at_workspace),
-        (format!("global × {agent}"), agent_at_global),
-    ];
-    (winning, trace)
 }
 
 /// Resolve the effective GitHub CLI auth-forward mode for a
@@ -117,41 +59,6 @@ pub fn resolve_github_mode(
     cfg.github
         .as_ref()
         .map_or_else(GithubAuthMode::default, |g| g.auth_forward)
-}
-
-/// Resolve the effective sync source folder override for an agent in a
-/// (workspace, role) scope — the parallel axis to `resolve_mode`.
-///
-/// Walks three layers, most-specific wins:
-///
-/// 1. `workspaces[ws].roles[role].<agent>.sync_source_dir`
-/// 2. `workspaces[ws].<agent>.sync_source_dir`
-/// 3. `<agent>.sync_source_dir` (global)
-///
-/// Returns `None` when no layer is set — caller falls back to the per-agent
-/// hardcoded default folder from `AgentRuntime::state_paths().credential_dir`.
-///
-/// Resolves the optional source folder override for sync-mode credentials.
-pub fn resolve_sync_source_dir(
-    cfg: &AppConfig,
-    agent: Agent,
-    workspace: Option<&WorkspaceName>,
-    role: &str,
-) -> Option<std::path::PathBuf> {
-    let ws = cfg.workspaces.get(workspace_key(workspace));
-    // Most-specific first: workspace × role override.
-    if let Some(dir) = ws
-        .and_then(|ws| ws.roles.get(role))
-        .and_then(|ro| ro.sync_source_dir_for(agent))
-    {
-        return Some(dir);
-    }
-    // Workspace-level.
-    if let Some(dir) = ws.and_then(|ws| ws.sync_source_dir_for(agent)) {
-        return Some(dir);
-    }
-    // Global level.
-    cfg.sync_source_dir_for(agent)
 }
 
 /// Walk the three `[…github.env]` layers for the given pair.

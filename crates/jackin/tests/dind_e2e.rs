@@ -447,20 +447,38 @@ fn chaos_launch_until_report(
     )
 }
 
-fn wait_for_report_marker(path: &std::path::Path, marker: &str, timeout: Duration) {
+fn wait_for_report_marker(
+    path: &std::path::Path,
+    marker: &str,
+    timeout: Duration,
+    launcher: &std::thread::JoinHandle<std::process::Output>,
+) {
     let start = std::time::Instant::now();
-    while start.elapsed() < timeout {
+    loop {
         if std::fs::read_to_string(path).is_ok_and(|contents| contents.contains(marker)) {
             return;
+        }
+        if start.elapsed() >= timeout || launcher.is_finished() {
+            break;
         }
         std::thread::sleep(Duration::from_millis(250));
     }
     let contents = std::fs::read_to_string(path).unwrap_or_default();
     panic!(
-        "timed out waiting for report marker {marker:?} in {}\nreport:\n{}",
+        "launch ended or timed out before report marker {marker:?} in {}\nreport:\n{}\nlauncher:\n{}",
         path.display(),
-        contents
+        contents,
+        live_launch_transcript(path.parent().unwrap())
     );
+}
+
+fn live_launch_transcript(workspace: &std::path::Path) -> String {
+    ["e2e-launch-stdout.log", "e2e-launch-stderr.log"]
+        .map(|name| {
+            let contents = std::fs::read_to_string(workspace.join(name)).unwrap_or_default();
+            format!("{name}:\n{}", diagnostics::transcript_excerpt(&contents))
+        })
+        .join("\n")
 }
 
 #[test]
@@ -501,8 +519,9 @@ fn chaos_kill_container_mid_session() {
             break name;
         }
         assert!(
-            start.elapsed() <= Duration::from_mins(6),
-            "chaos_kill: no container appeared for {ROLE_KEY}"
+            start.elapsed() <= Duration::from_mins(6) && !handle.is_finished(),
+            "chaos_kill: no container appeared for {ROLE_KEY}\n{}",
+            live_launch_transcript(&workspace_dir)
         );
         std::thread::sleep(Duration::from_millis(500));
     };
@@ -510,6 +529,7 @@ fn chaos_kill_container_mid_session() {
         &workspace_dir.join("jackin-e2e-report.txt"),
         REPORT_END,
         Duration::from_mins(3),
+        &handle,
     );
     std::thread::sleep(planned.delay);
     fault_started.store(true, Ordering::Release);

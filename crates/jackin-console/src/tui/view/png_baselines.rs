@@ -1,13 +1,11 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! PNG baselines over the full console screen inventory (plan 005, spec
-//! `png-baselines.md`): 6 stage-derived view groups (list empty + populated,
-//! editor's 5 tabs, settings' 5 tabs, create-prelude + its 4 wizard modal
-//! steps, confirm-delete, confirm-instance-purge) and all 19 `ConsoleModal`
-//! variants — plus the plan-012 `keyboard-help` overlay, 39 baselines total
-//! at this writing (re-derive from the enums;
-//! the rot guard below pins the floor).
+//! PNG baselines over the complete console screen inventory: 16 stage and
+//! overlay views, five account-management cases, four create-prelude wizard
+//! steps, and all 18 `ConsoleModal` variants — 43 full frames total.
+//! The inventory guard requires that exact count. Brand-header crops derive
+//! their separate non-modal inventory from the same cases.
 //!
 //! Compare mode (default) is zero-tolerance on decoded pixels and NEVER
 //! writes; bless mode (`JACKIN_BLESS_PNGS=1`) rewrites every baseline from an
@@ -214,7 +212,7 @@ fn keyboard_help() -> (ManagerState<'static>, AppConfig, PathBuf) {
     (state, config, cwd)
 }
 
-// ── Modal constructors (all 19 `ConsoleModal` variants) ────────────────────
+// ── Modal constructors (all 18 `ConsoleModal` variants) ────────────────────
 
 fn with_list_modal(modal: Modal<'static>) -> (ManagerState<'static>, AppConfig, PathBuf) {
     let config = populated_config();
@@ -364,12 +362,6 @@ fn modal_role_override_picker() -> (ManagerState<'static>, AppConfig, PathBuf) {
     })
 }
 
-fn modal_auth_role_picker() -> (ManagerState<'static>, AppConfig, PathBuf) {
-    with_editor_modal(Modal::AuthRolePicker {
-        state: role_picker_state(),
-    })
-}
-
 fn modal_source_picker() -> (ManagerState<'static>, AppConfig, PathBuf) {
     with_list_modal(Modal::SourcePicker {
         state: crate::tui::components::source_picker::SourcePickerState::new("TOKEN".into(), true),
@@ -446,102 +438,270 @@ fn create_prelude_name_input() -> (ManagerState<'static>, AppConfig, PathBuf) {
     })
 }
 
+// ── Account constructors ───────────────────────────────────────────────────
+
+fn account_config() -> AppConfig {
+    use jackin_config::{AccountConfig, AccountCredential, AiProvider};
+    use jackin_core::{Agent, EnvValue};
+    let mut config = populated_config();
+    for (id, name, credential) in [
+        (
+            "anthropic-personal",
+            "Personal Claude",
+            AccountCredential::Profile {
+                agent: Agent::Claude,
+                directory: "/profiles/claude-personal".into(),
+            },
+        ),
+        (
+            "anthropic-work",
+            "Work Claude",
+            AccountCredential::Profile {
+                agent: Agent::Claude,
+                directory: "/profiles/claude-work".into(),
+            },
+        ),
+        (
+            "anthropic-api",
+            "Team API",
+            AccountCredential::ApiKey {
+                value: EnvValue::Plain("synthetic-review-key".into()),
+                base_url: Some("https://api.example.invalid".into()),
+                model: Some("team-model".into()),
+            },
+        ),
+    ] {
+        config.accounts.insert(
+            id.into(),
+            AccountConfig {
+                enabled: true,
+                name: name.into(),
+                provider: AiProvider::Anthropic,
+                credential,
+            },
+        );
+    }
+    config
+        .accounts
+        .get_mut("anthropic-personal")
+        .unwrap()
+        .enabled = false;
+    config
+        .account_bindings
+        .insert(Agent::Claude, "anthropic-work".into());
+    let workspace = config.workspaces.get_mut("alpha").unwrap();
+    workspace.accounts = vec!["anthropic-work".into(), "anthropic-api".into()];
+    workspace
+        .account_bindings
+        .insert(Agent::Claude, "anthropic-work".into());
+    config
+}
+
+fn settings_accounts_populated() -> (ManagerState<'static>, AppConfig, PathBuf) {
+    let config = account_config();
+    let cwd = test_cwd();
+    let mut state = ManagerState::from_config(&config, &cwd);
+    let mut settings = SettingsState::from_config(&config);
+    settings.active_tab = crate::tui::state::SettingsTab::Auth;
+    state.stage = ManagerStage::Settings(settings);
+    (state, config, cwd)
+}
+
+fn workspace_accounts_assigned() -> (ManagerState<'static>, AppConfig, PathBuf) {
+    let config = account_config();
+    let cwd = test_cwd();
+    let mut state = ManagerState::from_config(&config, &cwd);
+    let mut editor = EditorState::new_edit("alpha".into(), config.workspaces["alpha"].clone());
+    editor.active_tab = EditorTab::Auth;
+    state.stage = ManagerStage::Editor(editor);
+    (state, config, cwd)
+}
+
+fn settings_account_form(api: bool) -> (ManagerState<'static>, AppConfig, PathBuf) {
+    let (mut state, config, cwd) = settings_accounts_populated();
+    let ManagerStage::Settings(settings) = &mut state.stage else {
+        unreachable!()
+    };
+    let kind = crate::tui::auth::AuthKind::Claude;
+    let form = if api {
+        crate::tui::state::AuthForm::from_existing(
+            kind,
+            crate::tui::auth::AuthMode::ApiKey,
+            Some(jackin_core::EnvValue::Plain("synthetic-review-key".into())),
+        )
+    } else {
+        crate::tui::state::AuthForm::from_existing(kind, crate::tui::auth::AuthMode::Sync, None)
+            .with_source_folder(Some("/profiles/claude-work".into()), None)
+    };
+    settings
+        .auth
+        .set_modal(crate::tui::state::SettingsModal::AuthForm {
+            target: crate::tui::state::AuthFormTarget::Workspace { kind },
+            state: Box::new(form),
+            focus: crate::tui::state::AuthFormFocus::Save,
+            literal_buffer: String::new(),
+        });
+    (state, config, cwd)
+}
+
+fn settings_account_api_form() -> (ManagerState<'static>, AppConfig, PathBuf) {
+    settings_account_form(true)
+}
+fn settings_account_profile_form() -> (ManagerState<'static>, AppConfig, PathBuf) {
+    settings_account_form(false)
+}
+
+fn account_picker() -> (ManagerState<'static>, AppConfig, PathBuf) {
+    let (mut state, config, cwd) = populated_then();
+    state.inline_account_picker = Some(crate::tui::state::AccountPickerState::new(
+        "jackin-alpha".into(),
+        jackin_core::Agent::Claude,
+        vec![crate::services::launch::AccountChoice {
+            id: "anthropic-work".into(),
+            name: "Work".into(),
+            provider: jackin_config::AiProvider::Anthropic,
+            agents: vec![jackin_core::Agent::Claude],
+        }],
+    ));
+    (state, config, cwd)
+}
+
 // ── Inventory ──────────────────────────────────────────────────────────────
 
 const LIST: (u16, u16) = (80, 24);
 const SCREEN: (u16, u16) = (90, 20);
 const MODAL: (u16, u16) = (90, 24);
 
+fn case(
+    id: &'static str,
+    size: (u16, u16),
+    build: fn() -> (ManagerState<'static>, AppConfig, PathBuf),
+) -> BaselineCase {
+    BaselineCase {
+        id,
+        width: size.0,
+        height: size.1,
+        build,
+    }
+}
+
+pub(super) fn stage_views() -> Vec<BaselineCase> {
+    vec![
+        case("workspaces-list-empty", LIST, workspaces_list_empty),
+        case("workspaces-list-populated", LIST, workspaces_list_populated),
+        case("editor-general", SCREEN, editor_general),
+        case("editor-mounts", SCREEN, editor_mounts),
+        case("editor-roles", SCREEN, editor_roles),
+        case("editor-secrets", SCREEN, editor_secrets),
+        case("editor-auth", SCREEN, editor_auth),
+        case("settings-general", SCREEN, settings_general),
+        case("settings-mounts", SCREEN, settings_mounts),
+        case("settings-environments", SCREEN, settings_environments),
+        case("settings-auth", SCREEN, settings_auth),
+        case("settings-trust", SCREEN, settings_trust),
+        case("create-prelude", MODAL, create_prelude),
+        case("confirm-delete", MODAL, confirm_delete),
+        case("confirm-instance-purge", MODAL, confirm_instance_purge),
+        case("keyboard-help", LIST, keyboard_help),
+    ]
+}
+
+// ── Account cases ──
+
+pub(super) fn account_cases() -> Vec<BaselineCase> {
+    vec![
+        case("account-picker", LIST, account_picker),
+        case(
+            "settings-accounts-populated",
+            SCREEN,
+            settings_accounts_populated,
+        ),
+        case(
+            "workspace-accounts-assigned",
+            SCREEN,
+            workspace_accounts_assigned,
+        ),
+        case(
+            "settings-account-api-form",
+            MODAL,
+            settings_account_api_form,
+        ),
+        case(
+            "settings-account-profile-form",
+            MODAL,
+            settings_account_profile_form,
+        ),
+    ]
+}
+
+pub(super) fn create_prelude_wizard_cases() -> Vec<BaselineCase> {
+    vec![
+        case(
+            "create-prelude-workdir-pick",
+            MODAL,
+            create_prelude_workdir_pick,
+        ),
+        case(
+            "create-prelude-file-browser",
+            MODAL,
+            create_prelude_file_browser,
+        ),
+        case(
+            "create-prelude-mount-dst-choice",
+            MODAL,
+            create_prelude_mount_dst_choice,
+        ),
+        case(
+            "create-prelude-name-input",
+            MODAL,
+            create_prelude_name_input,
+        ),
+    ]
+}
+
+pub(super) fn modal_cases() -> Vec<BaselineCase> {
+    vec![
+        case("modal-text-input", MODAL, modal_text_input),
+        case("modal-file-browser", MODAL, modal_file_browser),
+        case("modal-mount-dst-choice", MODAL, modal_mount_dst_choice),
+        case("modal-workdir-pick", MODAL, modal_workdir_pick),
+        case("modal-confirm", MODAL, modal_confirm),
+        case(
+            "modal-save-discard-cancel",
+            MODAL,
+            modal_save_discard_cancel,
+        ),
+        case("modal-github-picker", MODAL, modal_github_picker),
+        case("modal-confirm-save", MODAL, modal_confirm_save),
+        case("modal-error-popup", MODAL, modal_error_popup),
+        case("modal-container-info", MODAL, modal_container_info),
+        case("modal-status-popup", MODAL, modal_status_popup),
+        case("modal-op-picker", MODAL, modal_op_picker),
+        case("modal-role-picker", MODAL, modal_role_picker),
+        case(
+            "modal-role-override-picker",
+            MODAL,
+            modal_role_override_picker,
+        ),
+        case("modal-source-picker", MODAL, modal_source_picker),
+        case("modal-auth-source-picker", MODAL, modal_auth_source_picker),
+        case("modal-scope-picker", MODAL, modal_scope_picker),
+        case("modal-auth-form", MODAL, modal_auth_form),
+    ]
+}
+
 pub(super) fn inventory() -> Vec<BaselineCase> {
-    let mut cases = Vec::new();
-    let mut push = |id: &'static str,
-                    size: (u16, u16),
-                    build: fn() -> (ManagerState<'static>, AppConfig, PathBuf)| {
-        cases.push(BaselineCase {
-            id,
-            width: size.0,
-            height: size.1,
-            build,
-        });
-    };
-
-    // Stage views.
-    push("workspaces-list-empty", LIST, workspaces_list_empty);
-    push("workspaces-list-populated", LIST, workspaces_list_populated);
-    push("editor-general", SCREEN, editor_general);
-    push("editor-mounts", SCREEN, editor_mounts);
-    push("editor-roles", SCREEN, editor_roles);
-    push("editor-secrets", SCREEN, editor_secrets);
-    push("editor-auth", SCREEN, editor_auth);
-    push("settings-general", SCREEN, settings_general);
-    push("settings-mounts", SCREEN, settings_mounts);
-    push("settings-environments", SCREEN, settings_environments);
-    push("settings-auth", SCREEN, settings_auth);
-    push("settings-trust", SCREEN, settings_trust);
-    push("create-prelude", MODAL, create_prelude);
-    push("confirm-delete", MODAL, confirm_delete);
-    push("confirm-instance-purge", MODAL, confirm_instance_purge);
-    push("keyboard-help", LIST, keyboard_help);
-
-    // Create-prelude wizard modal steps.
-    push(
-        "create-prelude-workdir-pick",
-        MODAL,
-        create_prelude_workdir_pick,
-    );
-    push(
-        "create-prelude-file-browser",
-        MODAL,
-        create_prelude_file_browser,
-    );
-    push(
-        "create-prelude-mount-dst-choice",
-        MODAL,
-        create_prelude_mount_dst_choice,
-    );
-    push(
-        "create-prelude-name-input",
-        MODAL,
-        create_prelude_name_input,
-    );
-
-    // All 19 ConsoleModal variants.
-    push("modal-text-input", MODAL, modal_text_input);
-    push("modal-file-browser", MODAL, modal_file_browser);
-    push("modal-mount-dst-choice", MODAL, modal_mount_dst_choice);
-    push("modal-workdir-pick", MODAL, modal_workdir_pick);
-    push("modal-confirm", MODAL, modal_confirm);
-    push(
-        "modal-save-discard-cancel",
-        MODAL,
-        modal_save_discard_cancel,
-    );
-    push("modal-github-picker", MODAL, modal_github_picker);
-    push("modal-confirm-save", MODAL, modal_confirm_save);
-    push("modal-error-popup", MODAL, modal_error_popup);
-    push("modal-container-info", MODAL, modal_container_info);
-    push("modal-status-popup", MODAL, modal_status_popup);
-    push("modal-op-picker", MODAL, modal_op_picker);
-    push("modal-role-picker", MODAL, modal_role_picker);
-    push(
-        "modal-role-override-picker",
-        MODAL,
-        modal_role_override_picker,
-    );
-    push("modal-auth-role-picker", MODAL, modal_auth_role_picker);
-    push("modal-source-picker", MODAL, modal_source_picker);
-    push("modal-auth-source-picker", MODAL, modal_auth_source_picker);
-    push("modal-scope-picker", MODAL, modal_scope_picker);
-    push("modal-auth-form", MODAL, modal_auth_form);
-
+    let mut cases = Vec::with_capacity(EXPECTED_INVENTORY);
+    cases.extend(stage_views());
+    cases.extend(account_cases());
+    cases.extend(create_prelude_wizard_cases());
+    cases.extend(modal_cases());
     cases
 }
 
-/// Rot guard floor, freshly derived at plan-005 execution (2026-08-20):
-/// 15 stage-derived views + 4 create-prelude wizard steps + 19 `ConsoleModal`
-/// variants = 38. Plan 012 step 6 added the `keyboard-help` overlay (39).
-/// A new screen/variant added without a baseline trips this.
-const MIN_INVENTORY: usize = 39;
+/// Complete account-era corpus: 16 stage/overlay views, five account cases,
+/// four create-prelude wizard steps, and 18 `ConsoleModal` variants.
+const EXPECTED_INVENTORY: usize = 43;
 
 pub(super) fn baselines_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("src/tui/view/baselines/png")

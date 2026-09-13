@@ -1,48 +1,21 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Auth-tab input handling: open the form modal, route keystrokes to
-//! the form, and persist commits back to `editor.pending`.
-//!
-//! Mirrors the Secrets tab's pattern of "form mutates `editor.pending`
-//! in memory; the editor's existing save flow (`edit_workspace`)
-//! serializes the whole `WorkspaceConfig` block back to disk on save".
-//!
-//! Kind-keyed: Claude / Codex / Github route through the same shared
-//! [`AuthForm`] widget, with the kind dispatching the persistence path
-//! (Claude/Codex write `[workspaces.<ws>(.roles.<role>)?].<agent>`;
-//! Github writes `[workspaces.<ws>(.roles.<role>)?].github`).
+//! Workspace account assignment and shared credential picker round trips.
 
 use crossterm::event::{KeyCode, KeyEvent};
 use std::path::PathBuf;
 
-#[cfg(test)]
-use crate::tui::auth::AuthMode;
 use crate::tui::components::auth_panel::{
     AuthFormKeyPlan, auth_credential_input_state, auth_form_key_plan_with_source_folder,
-    auth_source_picker_state, generated_token_source_picker_state,
+    auth_source_picker_state,
 };
 use crate::tui::op_picker::OpPickerState;
-use crate::tui::state::RolePickerState;
 use crate::tui::state::{
     AuthForm, AuthFormFocus, EditorState, FileBrowserTarget, Modal, TextInputTarget,
 };
 use jackin_config::AppConfig;
 use jackin_env::OpCache;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AuthFormKeyOutcome {
-    Continue,
-    Changed,
-    OpenSourceFolderBrowser,
-}
-
-impl AuthFormKeyOutcome {
-    #[cfg(test)]
-    pub const fn is_dirty(self) -> bool {
-        !matches!(self, Self::Continue)
-    }
-}
 
 /// Open the auth-edit form modal for the row currently under the
 /// cursor on the Auth tab. Pre-populates the form from the row's
@@ -61,29 +34,6 @@ pub fn open_auth_form_modal(editor: &mut EditorState<'_>, config: &AppConfig) {
     });
 }
 
-/// Mount the Auth-tab role picker for the "+ Add per-role override"
-/// flow. Filters `eligible_agents_for_override` down to roles that
-/// don't yet carry an override for the focused kind — re-mounting the
-/// picker for an already-overridden role would just duplicate the
-/// existing rows. Silent no-op when no candidates remain (the row is
-/// rendered dimmed in that state).
-pub fn open_auth_role_picker(editor: &mut EditorState<'_>, config: &AppConfig) {
-    let Some(candidates) = editor.auth_role_override_selectors(config.roles.keys()) else {
-        return;
-    };
-    if candidates.is_empty() {
-        return;
-    }
-    let state = RolePickerState::new(candidates);
-    editor.modal = Some(Modal::AuthRolePicker { state });
-}
-
-/// Toggle the expanded/collapsed state of a role section on the Auth tab.
-/// If the role is currently expanded, collapse it; otherwise expand it.
-pub fn toggle_role_expand(editor: &mut EditorState<'_>, role: String) {
-    editor.toggle_auth_role_expanded(role);
-}
-
 /// Handle `D`/`d` on the Auth tab.
 ///
 /// - `RoleHeader` → clear the selected auth kind's role override.
@@ -92,116 +42,6 @@ pub fn toggle_role_expand(editor: &mut EditorState<'_>, role: String) {
 /// - Anything else (`AuthKindRow`, `AddSentinel`, `Spacer`) → no-op.
 pub fn handle_d_on_auth_row(editor: &mut EditorState<'_>, config: &AppConfig) {
     editor.clear_auth_row_at_cursor(config);
-}
-
-/// Drive a single keystroke into an open `Modal::AuthForm`. Returns
-/// `true` when the modal was closed (committed, cancelled, or
-/// transitioned away from the form via `Modal::AuthSourcePicker`).
-///
-/// `op_available` gates the 1Password choice rendered inside
-/// `Modal::AuthSourcePicker` — passed through from `EditorState` so
-/// the form doesn't reprobe the `op` binary on every keypress.
-///
-/// The `g`/`G` generate trigger opens the shared source picker (which
-/// needs only `op_available` to dim the disabled 1Password choice); the
-/// Create-mode `OpPicker` for the 1Password generate branch is mounted
-/// later from the source-picker commit handler in `editor.rs`, which
-/// owns `op_cache`.
-pub fn handle_auth_form_key(
-    editor: &mut EditorState<'_>,
-    key: KeyEvent,
-    op_available: bool,
-) -> AuthFormKeyOutcome {
-    let Some(current_focus) = editor.active_auth_form_focus() else {
-        return AuthFormKeyOutcome::Continue;
-    };
-
-    // Esc cancels at every focus. Drain the auth-form return stash too so
-    // a stale OpPicker round-trip can't be re-applied to a future modal —
-    // every other exit path (Save / Cancel / Reset commit, OpPicker
-    // commit/cancel) drains it explicitly; Esc must too.
-    if key.code == KeyCode::Esc {
-        editor.clear_modal_chain();
-        return AuthFormKeyOutcome::Changed;
-    }
-
-    // `g`/`G` at any focus mints a Claude OAuth token. It opens the
-    // shared source picker (plain literal vs. 1Password) as the first
-    // step. Gated to the workspace-level Claude oauth_token slot in Edit
-    // mode; a no-op everywhere else.
-    if matches!(key.code, KeyCode::Char('g' | 'G'))
-        && try_start_token_generate(editor, op_available)
-    {
-        return AuthFormKeyOutcome::Changed;
-    }
-
-    let Some(Modal::AuthForm { state, .. }) = editor.modal.as_ref() else {
-        return AuthFormKeyOutcome::Continue;
-    };
-    let plan = auth_form_key_plan_with_source_folder(
-        current_focus,
-        key.code,
-        state.shows_source_folder(),
-        state.shows_credential_block(),
-        state.can_save(),
-    );
-
-    match plan {
-        AuthFormKeyPlan::Stay => AuthFormKeyOutcome::Continue,
-        AuthFormKeyPlan::Focus(next) => {
-            if let Some(Modal::AuthForm { focus, .. }) = editor.modal.as_mut() {
-                *focus = next;
-            }
-            AuthFormKeyOutcome::Changed
-        }
-        AuthFormKeyPlan::CycleMode => {
-            if let Some(Modal::AuthForm { state, focus, .. }) = editor.modal.as_mut() {
-                state.cycle_mode();
-                if *focus == AuthFormFocus::SourceFolder && !state.shows_source_folder() {
-                    *focus = AuthFormFocus::Mode;
-                }
-            }
-            AuthFormKeyOutcome::Changed
-        }
-        AuthFormKeyPlan::OpenSourceFolderBrowser => AuthFormKeyOutcome::OpenSourceFolderBrowser,
-        AuthFormKeyPlan::OpenCredentialSource => {
-            if open_auth_source_picker_from_form(editor, op_available) {
-                AuthFormKeyOutcome::Changed
-            } else {
-                AuthFormKeyOutcome::Continue
-            }
-        }
-        AuthFormKeyPlan::Save => {
-            if commit_auth_form_save(editor) {
-                AuthFormKeyOutcome::Changed
-            } else {
-                AuthFormKeyOutcome::Continue
-            }
-        }
-        AuthFormKeyPlan::Cancel => {
-            editor.clear_modal_chain();
-            AuthFormKeyOutcome::Changed
-        }
-        AuthFormKeyPlan::Reset => {
-            if reset_auth_form_layer(editor) {
-                AuthFormKeyOutcome::Changed
-            } else {
-                AuthFormKeyOutcome::Continue
-            }
-        }
-    }
-}
-
-/// Mint-path trigger: when the gate holds, stash the open form (so the
-/// post-mint re-mount lands the operator back on the same Edit-auth
-/// dialog with the minted credential staged, focus Save — exactly like
-/// the provide path) and mount the shared source picker so the operator
-/// first chooses where the freshly minted token is stored (plain
-/// literal vs. 1Password). The source picker's commit (in `editor.rs`)
-/// routes to GENERATE because `generating_token_target` is set. Returns
-/// `false` (a no-op) when the gate fails.
-fn try_start_token_generate(editor: &mut EditorState<'_>, op_available: bool) -> bool {
-    editor.start_auth_token_generate(generated_token_source_picker_state(op_available))
 }
 
 pub fn open_auth_source_folder_browser_from_form_with_state(
@@ -221,23 +61,6 @@ pub fn open_auth_source_folder_browser_from_form_with_state(
             match error {}
         }
     }
-}
-
-/// Push the open `Modal::AuthForm` onto the modal parent stack
-/// and mount a `Modal::AuthSourcePicker` for the form's required env
-/// var. Returns `true` when the swap happened (the picker took over).
-///
-/// Three early-returns put the form back unchanged when the swap
-/// can't proceed: no form open, mode not yet picked, or selected
-/// mode requires no credential. The form is restored verbatim so
-/// the operator's keypress on the credential row is a quiet no-op
-/// rather than a state desync.
-fn open_auth_source_picker_from_form(editor: &mut EditorState<'_>, op_available: bool) -> bool {
-    crate::tui::auth_config::ModalAuthSourcePickerOpen::open_auth_source_picker(
-        &mut editor.modal,
-        &mut editor.modal_parents,
-        |env_var| auth_source_picker_state(env_var, op_available),
-    )
 }
 
 fn record_missing_return_path() {
@@ -353,37 +176,101 @@ pub fn restore_auth_form_after_op_picker_cancel(editor: &mut EditorState<'_>) {
     }
 }
 
-/// Inner helper split out so tests can inject a fake `OpRunner`
-/// without touching the real `op` binary.
-#[cfg(test)]
-fn apply_op_picker_to_auth_form_with_runner<R: jackin_env::OpRunner + ?Sized>(
-    editor: &mut EditorState<'_>,
-    op_ref: jackin_core::OpRef,
-    runner: &R,
-) {
-    apply_op_picker_to_auth_form_with_validator(editor, op_ref, |op_ref| {
-        runner.read(&op_ref.op).map(|_| ())
-    });
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AuthFormKeyOutcome {
+    Continue,
+    Changed,
+    OpenSourceFolderBrowser,
 }
 
-#[cfg(test)]
-fn apply_op_picker_to_auth_form_with_validator(
+impl AuthFormKeyOutcome {
+    #[cfg(test)]
+    pub const fn is_dirty(self) -> bool {
+        !matches!(self, Self::Continue)
+    }
+}
+
+pub fn handle_auth_form_key(
     editor: &mut EditorState<'_>,
-    op_ref: jackin_core::OpRef,
-    validate: impl FnOnce(&jackin_core::OpRef) -> anyhow::Result<()>,
-) {
-    if !editor.has_auth_form_parent() {
-        record_missing_return_path();
-        return;
+    key: KeyEvent,
+    op_available: bool,
+) -> AuthFormKeyOutcome {
+    let Some(current_focus) = editor.active_auth_form_focus() else {
+        return AuthFormKeyOutcome::Continue;
+    };
+
+    // Esc cancels at every focus. Drain the auth-form return stash too so
+    // a stale OpPicker round-trip can't be re-applied to a future modal —
+    // every other exit path (Save / Cancel / Reset commit, OpPicker
+    // commit/cancel) drains it explicitly; Esc must too.
+    if key.code == KeyCode::Esc {
+        editor.clear_modal_chain();
+        return AuthFormKeyOutcome::Changed;
     }
-    let read_result = validate(&op_ref);
-    if let Err(e) = read_result {
-        editor.open_error_popup(
-            crate::tui::components::error_popup::op_read_failed_error_popup_state(e),
-        );
-        return;
+
+    let Some(Modal::AuthForm { state, .. }) = editor.modal.as_ref() else {
+        return AuthFormKeyOutcome::Continue;
+    };
+    let plan = auth_form_key_plan_with_source_folder(
+        current_focus,
+        key.code,
+        state.shows_source_folder(),
+        state.shows_credential_block(),
+        state.can_save(),
+    );
+
+    match plan {
+        AuthFormKeyPlan::Stay => AuthFormKeyOutcome::Continue,
+        AuthFormKeyPlan::Focus(next) => {
+            if let Some(Modal::AuthForm { focus, .. }) = editor.modal.as_mut() {
+                *focus = next;
+            }
+            AuthFormKeyOutcome::Changed
+        }
+        AuthFormKeyPlan::CycleMode => {
+            if let Some(Modal::AuthForm { state, focus, .. }) = editor.modal.as_mut() {
+                state.cycle_mode();
+                if *focus == AuthFormFocus::SourceFolder && !state.shows_source_folder() {
+                    *focus = AuthFormFocus::Mode;
+                }
+            }
+            AuthFormKeyOutcome::Changed
+        }
+        AuthFormKeyPlan::OpenSourceFolderBrowser => AuthFormKeyOutcome::OpenSourceFolderBrowser,
+        AuthFormKeyPlan::OpenCredentialSource => {
+            if open_auth_source_picker_from_form(editor, op_available) {
+                AuthFormKeyOutcome::Changed
+            } else {
+                AuthFormKeyOutcome::Continue
+            }
+        }
+        AuthFormKeyPlan::Save => {
+            if commit_auth_form_save(editor) {
+                AuthFormKeyOutcome::Changed
+            } else {
+                AuthFormKeyOutcome::Continue
+            }
+        }
+        AuthFormKeyPlan::Cancel => {
+            editor.clear_modal_chain();
+            AuthFormKeyOutcome::Changed
+        }
+        AuthFormKeyPlan::Reset => {
+            if reset_auth_form_layer(editor) {
+                AuthFormKeyOutcome::Changed
+            } else {
+                AuthFormKeyOutcome::Continue
+            }
+        }
     }
-    apply_op_picker_to_auth_form_committed(editor, op_ref);
+}
+
+fn open_auth_source_picker_from_form(editor: &mut EditorState<'_>, op_available: bool) -> bool {
+    crate::tui::auth_config::ModalAuthSourcePickerOpen::open_auth_source_picker(
+        &mut editor.modal,
+        &mut editor.modal_parents,
+        |env_var| auth_source_picker_state(env_var, op_available),
+    )
 }
 
 fn commit_auth_form_save(editor: &mut EditorState<'_>) -> bool {
@@ -407,6 +294,3 @@ fn reset_auth_form_layer(editor: &mut EditorState<'_>) -> bool {
     editor.clear_auth_form_layer(&committed_target);
     true
 }
-
-#[cfg(test)]
-mod tests;

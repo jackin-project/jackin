@@ -240,12 +240,7 @@ fn secrets_agent_section_expand_collapse() -> Result<()> {
         "agent-smith".into(),
         WorkspaceRoleOverride {
             env: role_env,
-            claude: None,
-            codex: None,
-            amp: None,
-            kimi: None,
-            opencode: None,
-            grok: None,
+            account_bindings: std::collections::BTreeMap::default(),
             github: None,
         },
     );

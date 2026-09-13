@@ -829,7 +829,7 @@ pub fn selected_index(selected: usize, row_count: usize) -> usize {
 #[expect(
     clippy::struct_excessive_bools,
     reason = "Five orthogonal inline-picker clear flags on the list-selection \
-              plan (role / agent / new_session / provider / launch_provider) — \
+              plan (role / agent / new_session / provider / launch_account) — \
               each tracks an independent clear-mutation the plan applies to the \
               state. Named-field reads match the per-trait-method dispatch this \
               plan parallelizes."
@@ -841,16 +841,16 @@ pub struct WorkspaceListSelectionPlan {
     pub clear_inline_role_picker: bool,
     pub clear_inline_agent_picker: bool,
     pub clear_inline_new_session_picker: bool,
-    pub clear_inline_provider_picker: bool,
-    pub clear_launch_provider_picker: bool,
+    pub clear_inline_account_picker: bool,
+    pub clear_launch_account_picker: bool,
 }
 
 pub trait WorkspaceListSelectionState {
     fn clear_inline_role_picker(&mut self);
     fn clear_inline_agent_picker(&mut self);
     fn clear_inline_new_session_picker(&mut self);
-    fn clear_inline_provider_picker(&mut self);
-    fn clear_launch_provider_picker(&mut self);
+    fn clear_inline_account_picker(&mut self);
+    fn clear_launch_account_picker(&mut self);
     fn reset_list_scroll(&mut self);
     fn set_selected(&mut self, selected: usize);
 }
@@ -868,11 +868,11 @@ pub fn apply_workspace_list_selection_plan(
     if plan.clear_inline_new_session_picker {
         state.clear_inline_new_session_picker();
     }
-    if plan.clear_inline_provider_picker {
-        state.clear_inline_provider_picker();
+    if plan.clear_inline_account_picker {
+        state.clear_inline_account_picker();
     }
-    if plan.clear_launch_provider_picker {
-        state.clear_launch_provider_picker();
+    if plan.clear_launch_account_picker {
+        state.clear_launch_account_picker();
     }
     if plan.changed {
         state.reset_list_scroll();
@@ -1113,8 +1113,8 @@ pub fn workspace_list_move_selection_plan(
         clear_inline_role_picker: true,
         clear_inline_agent_picker: true,
         clear_inline_new_session_picker: true,
-        clear_inline_provider_picker: false,
-        clear_launch_provider_picker: false,
+        clear_inline_account_picker: false,
+        clear_launch_account_picker: false,
     }
 }
 
@@ -1132,8 +1132,8 @@ pub fn workspace_list_select_row_plan(
         clear_inline_role_picker: true,
         clear_inline_agent_picker: changed,
         clear_inline_new_session_picker: changed,
-        clear_inline_provider_picker: changed,
-        clear_launch_provider_picker: changed,
+        clear_inline_account_picker: changed,
+        clear_launch_account_picker: changed,
     }
 }
 

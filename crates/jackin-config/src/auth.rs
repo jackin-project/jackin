@@ -8,38 +8,13 @@
 //! do not hold credential values — only the *policy* for how credentials
 //! are forwarded.
 
-use jackin_core::{AuthForwardMode, EnvValue};
+use jackin_core::EnvValue;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
-use std::path::PathBuf;
-
-/// Per-agent auth configuration wrapper.
-///
-/// Carries `auth_forward` mode and optional sync source folder at any layer
-/// of the resolver.
-#[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
-pub struct AgentAuthConfig {
-    /// How host credentials are forwarded for this agent at this layer.
-    #[serde(default)]
-    pub auth_forward: AuthForwardMode,
-    /// Optional override for the host folder `sync` reads credentials from.
-    ///
-    /// `None` = inherit from the next lower layer → global → per-agent hardcoded
-    /// default.  The folder path is stored as the operator chose it; when set,
-    /// provisioning treats it as the agent's credential/config directory itself
-    /// (for example a `CODEX_HOME` or `CLAUDE_CONFIG_DIR` value), not as a
-    /// replacement home directory.
-    ///
-    /// **Precedence** (most-specific wins): workspace-role → workspace → global →
-    /// per-agent hardcoded.  An absent value at a layer means "inherit from below."
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub sync_source_dir: Option<PathBuf>,
-}
 
 /// Controls how the host's `gh` auth state reaches role containers.
 ///
-/// Distinct from [`AuthForwardMode`] because GitHub has no `api_key` /
+/// Distinct from [`jackin_core::AuthForwardMode`] because GitHub has no `api_key` /
 /// `oauth_token` distinction — all PATs are uniform.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum GithubAuthMode {

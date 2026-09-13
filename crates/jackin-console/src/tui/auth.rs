@@ -62,17 +62,12 @@ impl AuthKind {
     #[must_use]
     pub const fn supported_modes(self) -> &'static [AuthMode] {
         match self {
-            Self::Claude => &[
-                AuthMode::Sync,
-                AuthMode::ApiKey,
-                AuthMode::OAuthToken,
-                AuthMode::Ignore,
-            ],
+            Self::Claude => &[AuthMode::Sync, AuthMode::ApiKey, AuthMode::OAuthToken],
             Self::Codex | Self::Amp | Self::Kimi | Self::Opencode | Self::Grok => {
-                &[AuthMode::Sync, AuthMode::ApiKey, AuthMode::Ignore]
+                &[AuthMode::Sync, AuthMode::ApiKey]
             }
             Self::Github => &[AuthMode::Sync, AuthMode::Token, AuthMode::Ignore],
-            Self::Zai | Self::Minimax => &[AuthMode::ApiKey, AuthMode::Ignore],
+            Self::Zai | Self::Minimax => &[AuthMode::ApiKey],
         }
     }
 
@@ -110,7 +105,7 @@ impl AuthMode {
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
-            Self::Sync => "sync",
+            Self::Sync => "profile",
             Self::ApiKey => "api_key",
             Self::OAuthToken => "oauth_token",
             Self::Token => "token",
@@ -134,12 +129,8 @@ pub const fn auth_mode_supports_source_folder(kind: AuthKind, mode: AuthMode) ->
                 | AuthKind::Amp
                 | AuthKind::Kimi
                 | AuthKind::Opencode
+                | AuthKind::Grok
         )
-}
-
-#[must_use]
-pub const fn can_generate_claude_oauth_token(kind: AuthKind, mode: Option<AuthMode>) -> bool {
-    matches!((kind, mode), (AuthKind::Claude, Some(AuthMode::OAuthToken)))
 }
 
 #[cfg(test)]

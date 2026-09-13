@@ -22,12 +22,15 @@
 
 #![cfg(test)]
 
-use std::{fs, path::PathBuf};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
 use ratatui::{buffer::Buffer, layout::Rect};
 use termrock::style::RolePalette;
 
-use super::png_baselines::{BaselineCase, baselines_dir, inventory, render_manager_buffer};
+use super::png_baselines::{BaselineCase, baselines_dir, render_manager_buffer, stage_views};
 use crate::tui::view::{modal_overlay_state_for_route, modal_overlay_visible};
 
 /// The brand bless env var — deliberately distinct from the full-screen
@@ -46,7 +49,7 @@ fn is_non_modal(case: &BaselineCase) -> bool {
 }
 
 fn non_modal_cases() -> Vec<BaselineCase> {
-    inventory().into_iter().filter(is_non_modal).collect()
+    stage_views().into_iter().filter(is_non_modal).collect()
 }
 
 fn crop_dir() -> PathBuf {
@@ -93,3 +96,13 @@ fn check_crop(case: &BaselineCase, bless: bool, rendered: &[u8]) -> Result<(), S
 
 #[cfg(test)]
 mod tests;
+
+/// Export unapproved brand candidates alongside full-screen review frames.
+pub(super) fn export_review_crops(directory: &Path) {
+    let target = directory.join("brand");
+    fs::create_dir(&target).expect("new review crop directory");
+    for case in non_modal_cases() {
+        fs::write(target.join(format!("{}.png", case.id)), render_crop(&case))
+            .expect("write candidate brand crop");
+    }
+}

@@ -662,6 +662,7 @@ fn config_reference_matches_public_schema_fields() -> anyhow::Result<()> {
         manifest.join("../jackin-config/src/schema.rs"),
         manifest.join("../jackin-config/src/app_config.rs"),
         manifest.join("../jackin-config/src/auth.rs"),
+        manifest.join("../jackin-config/src/accounts.rs"),
     ];
     let docs_path = manifest.join("../../docs/content/reference/runtime/configuration.mdx");
     let mut schema = BTreeSet::new();

@@ -109,11 +109,6 @@ impl SplitDirection {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ProviderChoice {
-    pub label: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SpawnFailureState {
     pub title: String,
     pub message: String,
@@ -125,14 +120,6 @@ impl SpawnFailureState {
         Self {
             title: title.into(),
             message: message.into(),
-        }
-    }
-}
-
-impl ProviderChoice {
-    pub fn new(label: impl Into<String>) -> Self {
-        Self {
-            label: label.into(),
         }
     }
 }
@@ -250,15 +237,6 @@ pub enum Dialog {
         kind: ConfirmKind,
         selected_yes: bool,
     },
-    /// Two-step provider picker shown after agent selection when multiple
-    /// providers (e.g. Anthropic and Z.AI) are available. The daemon keeps
-    /// the provider enum/env mapping; the dialog owns only visible labels.
-    ProviderPicker {
-        agent: Option<String>,
-        providers: Vec<ProviderChoice>,
-        selected: usize,
-        intent: PickerIntent,
-    },
     /// Operator credential picker for a `jackin-exec` invocation. The daemon
     /// builds it from the workspace's on-demand bindings, stashes the control
     /// reply channel, and drives confirm/cancel through `DialogAction`. Space
@@ -368,13 +346,6 @@ pub enum DialogAction {
     /// daemon whether to spawn it as a tab or as a split pane.
     SpawnAgent {
         agent: Option<String>,
-        intent: PickerIntent,
-    },
-    /// User confirmed a provider in the `ProviderPicker` — the daemon maps
-    /// the chosen visible label back to provider/env facts.
-    SpawnAgentWithProvider {
-        agent: Option<String>,
-        provider_label: String,
         intent: PickerIntent,
     },
     /// Operator typed a new tab label and pressed Enter. Empty
@@ -689,11 +660,6 @@ impl Dialog {
                         let visible = picker_filtered_rows(agents, filter);
                         *selected = step_selectable(&visible, *selected, false);
                     }
-                    Self::ProviderPicker { selected, .. } => {
-                        if *selected > 0 {
-                            *selected -= 1;
-                        }
-                    }
                     Self::RenameTab { .. }
                     | Self::ExportFile { .. }
                     | Self::ContainerInfo { .. }
@@ -747,15 +713,6 @@ impl Dialog {
                     } => {
                         let visible = picker_filtered_rows(agents, filter);
                         *selected = step_selectable(&visible, *selected, true);
-                    }
-                    Self::ProviderPicker {
-                        selected,
-                        providers,
-                        ..
-                    } => {
-                        if *selected + 1 < providers.len() {
-                            *selected += 1;
-                        }
                     }
                     Self::RenameTab { .. }
                     | Self::ExportFile { .. }
@@ -853,19 +810,6 @@ impl Dialog {
                         Some(PickerRow::Section(_)) | None => DialogAction::Redraw,
                     }
                 }
-                Self::ProviderPicker {
-                    agent,
-                    providers,
-                    selected,
-                    intent,
-                } => match providers.get(*selected) {
-                    Some(provider) => DialogAction::SpawnAgentWithProvider {
-                        agent: agent.clone(),
-                        provider_label: provider.label.clone(),
-                        intent: *intent,
-                    },
-                    None => DialogAction::Redraw,
-                },
                 // Enter on the dirty-exit modal emits the focused row's action.
                 Self::ExitDirty { selected, .. } => match EXIT_DIRTY_ROWS.get(*selected) {
                     Some((row, _)) => DialogAction::ExitDirty(*row),
@@ -1068,30 +1012,6 @@ impl Dialog {
                 _ => DialogAction::Consume,
             };
         }
-        // ProviderPicker: flat list, no filter row. Items start at box_row + 1.
-        if let Self::ProviderPicker {
-            agent,
-            providers,
-            selected,
-            intent,
-        } = self
-        {
-            let first_item_row = box_row + 1;
-            let count = providers.len() as u16;
-            if row < first_item_row || row >= first_item_row + count {
-                return DialogAction::Consume;
-            }
-            let idx = (row - first_item_row) as usize;
-            let Some(provider) = providers.get(idx) else {
-                return DialogAction::Consume;
-            };
-            *selected = idx;
-            return DialogAction::SpawnAgentWithProvider {
-                agent: agent.clone(),
-                provider_label: provider.label.clone(),
-                intent: *intent,
-            };
-        }
         // Row layout inside the box for filterable dialogs:
         //   box_row + 0:  top border (decorative)
         //   box_row + 1:  blank pad row
@@ -1127,7 +1047,6 @@ impl Dialog {
             | Self::Usage { .. }
             | Self::SpawnFailure(_)
             | Self::ConfirmAction { .. }
-            | Self::ProviderPicker { .. }
             | Self::ExecPicker(_)
             | Self::ExitDirty { .. }
             | Self::ExitInspect { .. } => 0,
@@ -1193,7 +1112,7 @@ impl Dialog {
                     }
                 }
             }
-            // Text-input, ContainerInfo, ConfirmAction, and ProviderPicker
+            // Text-input, ContainerInfo, and ConfirmAction
             // clicks were already handled by early returns above.
             Self::RenameTab { .. }
             | Self::ExportFile { .. }
@@ -1201,7 +1120,6 @@ impl Dialog {
             | Self::GitHubContext { .. }
             | Self::Usage { .. }
             | Self::ConfirmAction { .. }
-            | Self::ProviderPicker { .. }
             | Self::ExecPicker(_)
             | Self::ExitDirty { .. }
             | Self::ExitInspect { .. }
@@ -1303,10 +1221,6 @@ impl Dialog {
                     PickerRow::Agent(_) | PickerRow::Shell
                 )
             }
-            Self::ProviderPicker { providers, .. } => {
-                let first_item_row = box_row + 1;
-                row >= first_item_row && row < first_item_row + providers.len() as u16
-            }
             // Keyboard-only modals — no click targets.
             Self::ExitDirty { .. } | Self::ExitInspect { .. } => false,
         }
@@ -1382,7 +1296,6 @@ impl Dialog {
                 ConfirmKind::ClosePane | ConfirmKind::CloseTab => 9,
             },
             // No filter row: top border + items + bottom border.
-            Self::ProviderPicker { providers, .. } => providers.len() as u16 + 2,
             // Top border + command line + separator + one row per credential +
             // hint + bottom border.
             Self::ExecPicker(state) => state.items.len() as u16 + 5,

@@ -25,6 +25,7 @@ pub(super) const HELP_STYLES: Styles = Styles::styled()
 // The canonical jackin❯ logo, shared with the host and capsule status bars.
 pub(super) const BANNER: &str = crate::brand_output::BRAND_BANNER;
 
+pub mod account;
 pub mod cleanup;
 pub mod config;
 #[cfg(unix)]
@@ -43,8 +44,8 @@ pub mod usage;
 pub mod workspace;
 
 pub use config::{
-    AuthCommand, CoauthorTrailerCommand, ConfigCommand, DcoCommand, EnvCommand, GitCommand,
-    MountCommand, TrustCommand,
+    CoauthorTrailerCommand, ConfigCommand, DcoCommand, EnvCommand, GitCommand, MountCommand,
+    TrustCommand,
 };
 #[cfg(unix)]
 pub use daemon::DaemonCommand;
@@ -53,8 +54,7 @@ pub use prewarm::PrewarmArgs;
 pub use prune::PruneCommand;
 pub use telemetry::command_name;
 pub use workspace::{
-    WorkspaceClaudeTokenCommand, WorkspaceCommand, WorkspaceEnvCommand, WorkspaceFormatArgs,
-    WorkspaceShowArgs,
+    WorkspaceCommand, WorkspaceEnvCommand, WorkspaceFormatArgs, WorkspaceShowArgs,
 };
 
 /// Operator's CLI for orchestrating AI coding roles in isolated containers
@@ -134,6 +134,9 @@ pub enum Command {
     /// Manage saved workspaces
     #[command(subcommand, before_help = BANNER, styles = HELP_STYLES, disable_help_subcommand = true)]
     Workspace(WorkspaceCommand),
+    /// Manage coding-agent and AI-provider accounts
+    #[command(subcommand, before_help = BANNER, styles = HELP_STYLES, disable_help_subcommand = true)]
+    Account(account::AccountCommand),
     /// View and modify operator configuration
     #[command(subcommand, before_help = BANNER, styles = HELP_STYLES, disable_help_subcommand = true)]
     Config(ConfigCommand),
@@ -159,10 +162,10 @@ pub enum Command {
     /// With a command name, displays the manual for that command:
     ///
     ///   jackin help config
-    ///   jackin help config auth
+    ///   jackin help account
     #[command(before_help = BANNER, styles = HELP_STYLES)]
     Help {
-        /// Command path to get help for (e.g. `config auth`)
+        /// Command path to get help for (e.g. `account`)
         #[arg(trailing_var_arg = true, num_args = 0..)]
         command: Vec<String>,
     },

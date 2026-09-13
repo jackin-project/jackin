@@ -344,6 +344,20 @@ fn emit_agent_auth_provision(
         jackin_telemetry::emit_event(&event::AUTH_PROVISION, FieldSet::new(&attrs, None));
 }
 
+fn validate_selected_account_sources(
+    selections: &[(jackin_core::Agent, AuthForwardMode, Option<PathBuf>)],
+    host_home: &Path,
+) -> anyhow::Result<()> {
+    for (agent, mode, source) in selections {
+        if *mode == AuthForwardMode::Sync
+            && let Some(source) = source
+        {
+            validate_sync_source_dir(*agent, source, host_home)?;
+        }
+    }
+    Ok(())
+}
+
 #[derive(Debug, Clone)]
 pub struct RoleState {
     pub root: PathBuf,
@@ -559,6 +573,8 @@ impl RoleState {
 
         let hosts_yml = gh_config_dir.join("hosts.yml");
         let github_context = github.clone();
+        validate_selected_account_sources(&supported_auth, host_home)?;
+
         let host_home_path = host_home.to_path_buf();
         let root_path = root.clone();
         let home_path = home_dir.clone();
@@ -742,6 +758,8 @@ impl RoleState {
             })
             .collect();
 
+        validate_selected_account_sources(&supported_auth, host_home)?;
+
         let host_home_path = host_home.to_path_buf();
         let root_path = root.clone();
         let home_path = home_dir.clone();
@@ -875,6 +893,12 @@ impl RoleState {
             Some(&timing_detail),
         );
         let (slot, outcome) = provision_result?;
+        anyhow::ensure!(
+            !(mode == AuthForwardMode::Sync
+                && sync_src.is_some()
+                && outcome == AuthProvisionOutcome::HostMissing),
+            "selected {supported} account credentials disappeared during provisioning"
+        );
         Ok(AgentAuthProvision {
             agent: supported,
             slot,
@@ -895,7 +919,7 @@ impl RoleState {
         std::fs::create_dir_all(&claude_home_dir)?;
         // 0o600 because the Claude CLI may later persist OAuth state
         // into this file once the container runs.
-        let claude_account_home = home_dir.join(".claude.json");
+        let claude_account_home = claude_home_dir.join(".claude.json");
         auth::create_private_file_if_absent(&claude_account_home, b"{}")?;
         let account_json = claude_dir.join("account.json");
         let credentials_json = claude_dir.join("credentials.json");
@@ -952,6 +976,14 @@ impl RoleState {
         std::fs::create_dir_all(&amp_dir)?;
         std::fs::create_dir_all(&amp_home_dir)?;
         std::fs::create_dir_all(home_dir.join(".config/amp"))?;
+        if mode == AuthForwardMode::Sync
+            && let Some(source) = sync_source_dir
+        {
+            let settings = source.join("config/amp/settings.json");
+            if settings.is_file() {
+                std::fs::copy(settings, home_dir.join(".config/amp/settings.json"))?;
+            }
+        }
         let secrets_json_path = amp_dir.join("secrets.json");
         let (outcome, secrets_json) = if let Some(source_dir) = sync_source_dir {
             Self::provision_amp_auth_from_source_dir(&secrets_json_path, mode, source_dir)?

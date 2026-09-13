@@ -23,7 +23,6 @@ pub enum ModalDebugKind {
     AuthSourcePicker,
     ScopePicker,
     AuthForm,
-    AuthRolePicker,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -60,7 +59,6 @@ pub const fn modal_debug_name(kind: ModalDebugKind) -> &'static str {
         ModalDebugKind::AuthSourcePicker => "AuthSourcePicker",
         ModalDebugKind::ScopePicker => "ScopePicker",
         ModalDebugKind::AuthForm => "AuthForm",
-        ModalDebugKind::AuthRolePicker => "AuthRolePicker",
     }
 }
 

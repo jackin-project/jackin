@@ -80,7 +80,6 @@ RUN set -euxo pipefail && \\
             config_dir: None, // all durable state under ~/.grok
             credential_file: Some(".grok/auth.json"),
             folder_env_var: None,
-            home_files: &[],
         }
     }
 

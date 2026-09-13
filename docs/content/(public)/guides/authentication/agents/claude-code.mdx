@@ -1,82 +1,66 @@
 ---
 title: Claude Code
-description: How jackin❯ forwards your Claude Code login into agent containers
+description: Register Claude Code accounts and authorize them for workspaces
 ---
 
+Claude Code profiles use `~/.claude` by default. jackin❯ scans that location on first start and imports an account only when it finds credentials in `.credentials.json or the matching macOS Keychain entry`. Importing an account does not grant it to a workspace.
 
-Claude Code authenticates via a credentials file on your host machine. On macOS it uses the Keychain; on Linux it writes to `~/.claude/.credentials.json`. In `sync` mode (the default), jackin❯ copies your host login into the container on every launch — Claude Code inside the container picks up the same account and model access you have locally.
+## Register and assign a profile
 
-## Logging in on the host
-
-Before sync can forward anything, you need a working Claude Code login on your host:
+Complete the agent's login flow on the host, then scan and list the imported accounts:
 
 ```bash
-claude login
+jackin account scan
+jackin account list
 ```
 
-Follow the browser-based OAuth flow. Once it completes, `claude` is ready on your host and jackin❯ will forward that login into every container launch.
+To register a specific profile explicitly:
 
-<Aside type="tip">
-To verify the host login is active, run `claude` briefly on the host — if it starts a session without prompting for credentials, you're good.
-</Aside>
+```bash
+jackin account add claude-work --agent claude --directory ~/.claude
+jackin workspace account assign my-app claude-work
+jackin workspace account select my-app claude-work --agent claude
+```
+
+For an additional login, select the same directory that your host alias uses. A custom profile stays separate from the default profile. jackin❯ validates credential evidence inside the selected directory before registration.
+
+## API-key account
+
+Register a provider key with the masked prompt, then authorize and select it:
+
+```bash
+jackin account add anthropic-key --provider anthropic --api-key
+jackin workspace account assign my-app anthropic-key
+jackin workspace account select my-app anthropic-key --agent claude
+```
+
+Use `--secret-ref '$ANTHROPIC_API_KEY'` to reference a host environment variable, or `--secret-ref 'op://Work/Claude Code/api-key'` for a 1Password reference. The account stores the reference; jackin❯ resolves it when launching an authorized workspace.
+
+## Claude OAuth-token account
+
+Register an existing Claude OAuth token through the masked prompt or a secret reference:
+
+```bash
+jackin account add claude-token --agent claude --oauth-token \
+  --secret-ref 'op://Work/Claude/oauth-token'
+jackin workspace account assign my-app claude-token
+jackin workspace account select my-app claude-token --agent claude
+```
+
+To rotate, update the referenced secret or replace the named account. To revoke workspace access, use `jackin workspace account unassign my-app claude-token`. Removing an account does not revoke its upstream token.
+
+Claude custom directories use their own Keychain service on macOS. A missing custom login never falls back to the default Claude account.
 
 ## Runtime trust prompts
 
 jackin❯ launches Claude Code with its bypass-permissions warning already accepted inside the container, so workspace-backed launches do not stop on Claude Code's trust or bypass warning dialogs. This applies only inside the jackin❯ container runtime; jackin❯ does not mark host directories trusted or write to your host Claude Code settings.
 
-## Subscription
-
-Claude Code is included with an Anthropic Max plan subscription, or you can use pay-as-you-go API credits.
-
-**[Get an Anthropic subscription](https://claude.com/pricing)**
-
-A Max plan subscription gives you a fixed monthly rate with generous usage included — typically much cheaper than pay-as-you-go API credits for heavy agent use. If you run agents regularly through jackin❯, a subscription is usually the more cost-effective option.
-
-The plan you have on the host is the one the container sees — jackin❯ forwards the same credentials, so model access and rate limits travel with them.
-
-## Alternative providers
-
-Claude Code sessions can also run against Anthropic-compatible providers. [Z.AI (GLM Coding Plan)](/guides/authentication/zai/) is the provider jackin❯ supports today; once you configure a `ZAI_API_KEY` in jackin❯ Auth settings, Claude Code launches can choose Z.AI instead of Anthropic.
-
-Z.AI works with Claude Code because Claude Code already honors Anthropic-compatible endpoint settings. jackin❯ keeps that provider setup inside its own Auth settings and the selected container process, so you do not edit host Claude Code settings to use Z.AI through jackin❯.
-
-For subscription, API-key, and provider-picker details, see [Z.AI authentication](/guides/authentication/zai/). Z.AI is a provider choice at session launch time; it does not change the Claude Code auth modes below.
-
-## Modes available
-
-| Mode | Supported |
-|---|---|
-| `sync` (default) | Yes — forwards host credentials file |
-| `api_key` | Yes — injects `ANTHROPIC_API_KEY` |
-| `oauth_token` | Yes — injects `CLAUDE_CODE_OAUTH_TOKEN` |
-| `ignore` | Yes — no forwarding |
-
-See [Agent Authentication](/guides/authentication/agents/) for what each mode does and how to switch between them.
-
-### oauth_token (Claude Code only)
-
-`oauth_token` is a Claude-specific mode designed for long-lived and concurrent jackin❯ sessions. Instead of forwarding the host's credentials file, jackin❯ injects a long-lived OAuth token into the container's process environment.
-
-The recommended setup path:
+## Check workspace access
 
 ```bash
-jackin workspace claude-token setup my-app --vault Personal
+jackin workspace account list my-app
 ```
 
-This drives `claude setup-token` interactively, captures the token, stores it in 1Password, and switches the workspace's Claude auth to OAuth-token mode.
+The account must be assigned and support `claude`. When several assigned accounts support the same agent, select one explicitly; role-specific selection uses `--role <ROLE>`. An empty account allowlist forwards no coding-agent credentials.
 
-Subsequent operations:
-
-- `jackin workspace claude-token rotate my-app` — capture a fresh token.
-- `jackin workspace claude-token revoke my-app` — clear the token and switch back to `ignore`.
-- `jackin workspace claude-token doctor my-app` — verify the token resolves through `op`.
-
-See the [`workspace claude-token` command reference](/commands/workspace/#workspace-claude-token) for full option coverage.
-
-## Troubleshooting
-
-If Claude Code inside the container shows "Not logged in" or falls back to a lower model tier:
-
-1. Check that the host login is active — run `claude` briefly on the host.
-2. Open the **Auth** tab in `jackin console` and verify the effective mode for the (workspace × role × Claude) cell.
-3. If the container has stale credentials and the host has fresh ones, restart: `jackin eject <role> && jackin load <role>`.
+See [Account commands](/commands/account/) and [Agent authentication](/guides/authentication/agents/) for the registry and authorization rules.

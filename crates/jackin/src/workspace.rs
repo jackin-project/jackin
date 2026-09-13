@@ -19,7 +19,6 @@ pub mod paths;
 pub(crate) mod planner;
 pub mod resolve;
 pub mod sensitive;
-pub mod token_setup;
 
 pub use jackin_config::{
     validate_isolation_layout, validate_mount_paths, validate_mount_specs, validate_mounts,

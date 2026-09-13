@@ -7,10 +7,7 @@
 
 use ratatui::text::Line;
 
-use crate::tui::components::editor_rows::{
-    AuthLineRow, AuthSourceDisplay, AuthSourceValue, auth_line_width, auth_lines,
-    auth_source_display_for_required_env,
-};
+use crate::tui::components::editor_rows::{AuthLineRow, auth_line_width, auth_lines};
 use crate::tui::screens::editor::model::{AuthRow, FieldFocus};
 
 use super::WorkspaceEditorState;
@@ -26,64 +23,71 @@ pub(crate) fn auth_display_row(
     synthesized: &jackin_config::AppConfig,
     workspace_name: &str,
 ) -> EditorAuthLineRow {
-    match row {
-        AuthRow::AuthKindRow { kind } => AuthLineRow::AuthKind {
-            label: kind.label().to_owned(),
-        },
-        AuthRow::WorkspaceMode { kind } => {
-            let ws = synthesized.workspaces.get(workspace_name);
-            let explicit =
-                ws.and_then(|ws| crate::tui::auth_config::explicit_workspace_auth_mode(ws, *kind));
-            let mode = explicit.unwrap_or_else(|| {
-                crate::tui::auth_config::resolve_panel_mode(synthesized, *kind, workspace_name, "")
-            });
-            AuthLineRow::WorkspaceMode {
-                mode_label: crate::tui::components::auth_panel::mode_str(mode).to_owned(),
-                inherited: explicit.is_none(),
-            }
-        }
-        AuthRow::WorkspaceSource { kind } => AuthLineRow::WorkspaceSource {
-            display: editor_auth_source_display(synthesized, workspace_name, "", *kind),
-        },
-        AuthRow::WorkspaceSourceFolder { kind } => AuthLineRow::WorkspaceSourceFolder {
-            display: crate::tui::auth_config::editor_source_folder_display(
-                synthesized,
-                workspace_name,
-                "",
-                *kind,
-            ),
-        },
-        AuthRow::RoleHeader { role, expanded } => AuthLineRow::RoleHeader {
-            role: role.clone(),
-            expanded: *expanded,
-        },
-        AuthRow::RoleMode { role, kind } => {
-            let mode = crate::tui::auth_config::resolve_panel_mode(
-                synthesized,
-                *kind,
-                workspace_name,
-                role,
+    let workspace = synthesized.workspaces.get(workspace_name);
+    let label = match row {
+        AuthRow::Account { id } => {
+            let enabled = workspace.is_some_and(|ws| ws.accounts.contains(id));
+            let detail = synthesized.accounts.get(id).map_or_else(
+                || id.clone(),
+                |account| {
+                    format!(
+                        "{} ({id}, {}){}",
+                        account.name,
+                        account.provider.slug(),
+                        if account.enabled { "" } else { " · disabled" }
+                    )
+                },
             );
-            AuthLineRow::RoleMode {
-                mode_label: crate::tui::components::auth_panel::mode_str(mode).to_owned(),
-            }
+            format!("[{}] {detail}", if enabled { "x" } else { " " })
         }
-        AuthRow::RoleSource { role, kind } => AuthLineRow::RoleSource {
-            display: editor_auth_source_display(synthesized, workspace_name, role, *kind),
-        },
-        AuthRow::RoleSourceFolder { role, kind } => AuthLineRow::RoleSourceFolder {
-            display: crate::tui::auth_config::editor_source_folder_display(
-                synthesized,
-                workspace_name,
-                role,
-                *kind,
-            ),
-        },
-        AuthRow::AddSentinel { eligible } => AuthLineRow::AddSentinel {
-            eligible: *eligible,
-        },
-        AuthRow::Spacer => AuthLineRow::Spacer,
-    }
+        AuthRow::Binding { agent, role } => {
+            let binding = workspace.and_then(|ws| match role {
+                Some(role) => ws
+                    .roles
+                    .get(role)
+                    .and_then(|entry| entry.account_bindings.get(agent)),
+                None => ws.account_bindings.get(agent),
+            });
+            let scope = role.as_deref().unwrap_or("Workspace");
+            format!(
+                "{scope} / {}: {}",
+                agent.label(),
+                binding.map_or("automatic", String::as_str)
+            )
+        }
+        AuthRow::WorkspaceMode {
+            kind: crate::tui::auth::AuthKind::Github,
+        } => {
+            let mode = workspace
+                .and_then(|ws| ws.github.as_ref())
+                .map(|github| github.auth_forward);
+            format!(
+                "Workspace / GitHub: {}",
+                mode.map_or_else(
+                    || "inherited".to_owned(),
+                    |mode| format!("{mode:?}").to_lowercase()
+                )
+            )
+        }
+        AuthRow::RoleMode {
+            role,
+            kind: crate::tui::auth::AuthKind::Github,
+        } => {
+            let mode = workspace
+                .and_then(|ws| ws.roles.get(role))
+                .and_then(|entry| entry.github.as_ref())
+                .map(|github| github.auth_forward);
+            format!(
+                "{role} / GitHub: {}",
+                mode.map_or_else(
+                    || "inherited".to_owned(),
+                    |mode| format!("{mode:?}").to_lowercase()
+                )
+            )
+        }
+        _ => String::new(),
+    };
+    AuthLineRow::AuthKind { label }
 }
 
 #[must_use]
@@ -91,8 +95,6 @@ pub(crate) fn auth_state_lines<
     Modal,
     SaveFlow,
     EnvValue,
-    AuthFormTarget,
-    PendingTokenGenerate,
     PendingRoleLoad,
     PendingDriftCheck,
     PendingIsolationCleanup,
@@ -102,8 +104,6 @@ pub(crate) fn auth_state_lines<
         Modal,
         SaveFlow,
         EnvValue,
-        AuthFormTarget,
-        PendingTokenGenerate,
         PendingRoleLoad,
         PendingDriftCheck,
         PendingIsolationCleanup,
@@ -132,8 +132,6 @@ pub(crate) fn auth_state_geometry<
     Modal,
     SaveFlow,
     EnvValue,
-    AuthFormTarget,
-    PendingTokenGenerate,
     PendingRoleLoad,
     PendingDriftCheck,
     PendingIsolationCleanup,
@@ -143,8 +141,6 @@ pub(crate) fn auth_state_geometry<
         Modal,
         SaveFlow,
         EnvValue,
-        AuthFormTarget,
-        PendingTokenGenerate,
         PendingRoleLoad,
         PendingDriftCheck,
         PendingIsolationCleanup,
@@ -167,38 +163,6 @@ pub(crate) fn auth_state_geometry<
         content_width,
         content_height: rows.len(),
     }
-}
-
-fn editor_auth_source_display(
-    synthesized: &jackin_config::AppConfig,
-    workspace_name: &str,
-    role: &str,
-    kind: crate::tui::auth::AuthKind,
-) -> AuthSourceDisplay {
-    let mode = crate::tui::auth_config::resolve_panel_mode(synthesized, kind, workspace_name, role);
-    let env_name = kind.required_env_var(mode);
-
-    let value = env_name
-        .and_then(|env_name| {
-            crate::tui::auth_config::panel_auth_source_value(
-                synthesized,
-                workspace_name,
-                role,
-                env_name,
-                kind,
-            )
-        })
-        .map(|value| match value {
-            jackin_core::EnvValue::OpRef(r) => AuthSourceValue::OpRefPath(r.path.clone()),
-            jackin_core::EnvValue::Plain(s) => AuthSourceValue::Plain(s.clone()),
-            jackin_core::EnvValue::Extended(e) => AuthSourceValue::Plain(e.value.clone()),
-        });
-
-    auth_source_display_for_required_env(
-        env_name,
-        value,
-        crate::tui::components::auth_panel::mode_str(mode),
-    )
 }
 
 #[must_use]

@@ -28,24 +28,11 @@ serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 anyhow = { workspace = true }
 thiserror = { workspace = true }
-secrecy = { workspace = true }
-portable-pty = { workspace = true }
-sha2 = { workspace = true }
-crossterm = { workspace = true }
-chrono = { workspace = true, features = ["clock"] }
 
 [dev-dependencies]
 jackin-diagnostics = { workspace = true, features = ["test-support"] }
 proptest = { workspace = true }
-tempfile = { workspace = true }
-toml = { workspace = true }
 tracing = { workspace = true }
-
-[features]
-# Exposes `jackin_env::test_support::*` helpers to consumers that enable
-# `jackin-env/test-support` from their own test-support feature (mirrors
-# the pattern in `jackin-config` and `jackin-runtime`).
-test-support = []
 
 [lints]
 workspace = true

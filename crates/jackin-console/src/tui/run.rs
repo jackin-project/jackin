@@ -82,33 +82,6 @@ pub struct QuitInterceptState {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TokenGenerateScopeLabel<'a> {
-    Workspace(&'a str),
-    WorkspaceRole { workspace: &'a str, role: &'a str },
-    Global,
-}
-
-#[must_use]
-pub fn token_generate_scope_label(scope: TokenGenerateScopeLabel<'_>) -> String {
-    match scope {
-        TokenGenerateScopeLabel::Workspace(name) => format!("workspace {name:?}"),
-        TokenGenerateScopeLabel::WorkspaceRole { workspace, role } => {
-            format!("workspace {workspace:?} role {role:?}")
-        }
-        TokenGenerateScopeLabel::Global => "global config".to_owned(),
-    }
-}
-
-#[must_use]
-pub fn token_generate_status_message(scope: TokenGenerateScopeLabel<'_>) -> String {
-    let label = token_generate_scope_label(scope);
-    format!(
-        "\nGenerating Claude OAuth token for {label} -- complete the browser \
-         sign-in, then paste the code below.\n"
-    )
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LetterInputModalKind {
     TextInput,
     FilterPicker,
@@ -620,19 +593,6 @@ pub fn startup_error_modal_active_for_console(
             Some(crate::tui::state::Modal::ErrorPopup { .. })
         ),
     )
-}
-
-pub fn token_generate_scope_label_for_console(
-    req: &crate::tui::state::PendingTokenGenerate,
-) -> TokenGenerateScopeLabel<'_> {
-    use jackin_env::TokenSetupScope;
-    match &req.scope {
-        TokenSetupScope::Workspace(name) => TokenGenerateScopeLabel::Workspace(name),
-        TokenSetupScope::WorkspaceRole { workspace, role } => {
-            TokenGenerateScopeLabel::WorkspaceRole { workspace, role }
-        }
-        TokenSetupScope::Global => TokenGenerateScopeLabel::Global,
-    }
 }
 
 #[cfg(test)]

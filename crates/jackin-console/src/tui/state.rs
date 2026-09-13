@@ -23,12 +23,12 @@ use jackin_core::EnvValue;
 use jackin_env::OpCache;
 
 use crate::tui::auth::AuthKind;
+use crate::tui::components::account_picker::AccountPickerState as GenericAccountPickerState;
 use crate::tui::components::confirm_save::ConfirmSaveState;
 use crate::tui::components::container_info_surface::ContainerInfoState;
 use crate::tui::components::file_browser::FileBrowserState;
 use crate::tui::components::github_picker::GithubPickerState;
 use crate::tui::components::mount_dst_choice::MountDstChoiceState;
-use crate::tui::components::provider_picker::ProviderPickerState as GenericProviderPickerState;
 use crate::tui::components::scope_picker::ScopePickerState;
 use crate::tui::components::source_picker::SourcePickerState;
 use crate::tui::components::workdir_pick::WorkdirPickState;
@@ -97,8 +97,8 @@ pub type ManagerConfigSaveResult =
 /// cannot reference a provider/env pair that drifted from its label; the
 /// index is clamped by `move_up` / `move_down` and read back through
 /// `selected_provider`.
-pub type ProviderPickerState<C> =
-    GenericProviderPickerState<C, jackin_core::Agent, jackin_protocol::Provider>;
+pub type AccountPickerState<C> =
+    GenericAccountPickerState<C, jackin_core::Agent, crate::services::launch::AccountChoice>;
 pub type AgentChoiceState =
     crate::tui::components::agent_choice::AgentChoiceState<jackin_core::Agent>;
 pub type RolePickerState =
@@ -121,7 +121,6 @@ pub type SettingsState<'a> = crate::tui::screens::settings::model::SettingsState
     SettingsAuthState,
     SettingsTrustState,
     ErrorPopupState,
-    PendingTokenGenerate,
 >;
 
 pub type SettingsEnvConfig = crate::tui::screens::settings::model::SettingsEnvConfig<EnvValue>;
@@ -132,8 +131,6 @@ pub type AuthFormTarget = crate::tui::screens::settings::model::AuthFormTarget<A
 
 pub type AuthForm = crate::tui::components::auth_panel::AuthForm<EnvValue>;
 pub type AuthRow = GenericAuthRow<AuthKind>;
-pub type SettingsAuthRow =
-    crate::tui::screens::settings::model::SettingsAuthRow<AuthKind, crate::tui::auth::AuthMode>;
 pub type ConfirmTarget =
     crate::tui::screens::editor::model::ConfirmTarget<jackin_config::RoleSource, PendingSaveCommit>;
 
@@ -162,18 +159,11 @@ pub type SettingsAuthState = crate::tui::screens::settings::model::SettingsAuthS
     PendingOpCommit,
 >;
 
-pub type PendingTokenGenerate = crate::tui::subscriptions::PendingTokenGenerate<
-    jackin_env::TokenSetupScope,
-    jackin_env::TokenSetupArgs,
->;
-
 pub type EditorState<'a> = crate::tui::screens::editor::model::EditorState<
     MountInfoCache,
     Modal<'a>,
     EditorSaveFlow,
     EnvValue,
-    AuthFormTarget,
-    PendingTokenGenerate,
     PendingRoleLoad,
     PendingDriftCheck,
     PendingIsolationCleanup,
@@ -254,17 +244,20 @@ pub struct ManagerState<'a> {
     /// the already-running daemon captured, so provider choice for a running
     /// container is made in the multiplexer (daemon-owned), not here. The
     /// field stays so a future daemon-queried list can populate it.
-    pub inline_new_session_picker:
-        Option<(String, AgentChoiceState, Vec<jackin_protocol::Provider>)>,
+    pub inline_new_session_picker: Option<(
+        String,
+        AgentChoiceState,
+        Vec<crate::services::launch::AccountChoice>,
+    )>,
     /// Provider picker shown after the agent is committed in
     /// `inline_new_session_picker` when its provider list has 2+ entries.
     /// Dormant while that list is always empty (see above); kept wired for
     /// the future daemon-queried flow. Context is the target `container`.
-    pub inline_provider_picker: Option<ProviderPickerState<String>>,
+    pub inline_account_picker: Option<AccountPickerState<String>>,
     /// Provider picker for the initial workspace launch (before the container
     /// exists). Shown after the operator commits an agent choice and
     /// `ZAI_API_KEY` is configured. Context is the `RoleSelector`.
-    pub launch_provider_picker: Option<ProviderPickerState<jackin_core::RoleSelector>>,
+    pub launch_account_picker: Option<AccountPickerState<jackin_core::RoleSelector>>,
     pub list_mounts_scroll: termrock::widgets::ScrollAreaState,
     pub list_global_mounts_scroll: termrock::widgets::ScrollAreaState,
     pub list_role_global_mounts_scroll: termrock::widgets::ScrollAreaState,

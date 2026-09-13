@@ -95,14 +95,6 @@ fn dialog_action_frame_plan_keeps_copy_feedback_overlay_scoped() {
         DialogActionFramePlan::Full(FullRedrawReason::LayoutChange)
     );
     assert_eq!(
-        dialog_action_frame_plan(&DialogAction::SpawnAgentWithProvider {
-            agent: Some("claude".into()),
-            provider_label: "Z.AI".into(),
-            intent: PickerIntent::NewTab,
-        }),
-        DialogActionFramePlan::Full(FullRedrawReason::TabSwitch)
-    );
-    assert_eq!(
         dialog_action_frame_plan(&DialogAction::ConfirmedAction(ConfirmKind::ClosePane)),
         DialogActionFramePlan::Full(FullRedrawReason::SplitClose)
     );
@@ -355,11 +347,6 @@ fn frame_plans_keep_diff_tier_reasons_out_of_full_redraws() {
         DialogAction::SpawnAgent {
             agent: Some("claude".into()),
             intent: PickerIntent::Split(SplitDirection::Right),
-        },
-        DialogAction::SpawnAgentWithProvider {
-            agent: Some("claude".into()),
-            provider_label: "Z.AI".into(),
-            intent: PickerIntent::NewTab,
         },
         DialogAction::RenameTab {
             tab_idx: 0,

@@ -19,7 +19,7 @@ path = "src/lib.rs"
 
 [[bin]]
 name = "jackin-usage-broker"
-path = "src/bin/usage-broker.rs"
+path = "src/bin/usage-broker/main.rs"
 
 [dependencies]
 jackin-brand = { workspace = true }
@@ -57,7 +57,7 @@ tempfile = { workspace = true }
 tracing.workspace = true
 
 [target.'cfg(unix)'.dependencies]
-nix = { workspace = true, features = ["user", "socket"] }
+nix = { workspace = true, features = ["user", "socket", "poll"] }
 
 [dev-dependencies]
 jackin-diagnostics = { workspace = true, features = ["test-support"] }

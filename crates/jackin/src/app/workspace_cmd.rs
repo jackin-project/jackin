@@ -153,7 +153,9 @@ pub(super) async fn handle(
         }
         WorkspaceCommand::Remove { name } => handle_workspace_remove(paths, name),
         WorkspaceCommand::Env(env_cmd) => handle_workspace_env(config, paths, env_cmd),
-        WorkspaceCommand::ClaudeToken(action) => super::handle_claude_token(paths, config, action),
+        WorkspaceCommand::Account(action) => {
+            super::account_cmd::handle_workspace(action, config, paths)
+        }
     }
 }
 
@@ -206,12 +208,8 @@ fn handle_workspace_create(paths: &JackinPaths, params: WorkspaceCreateParams) -
         keep_awake: workspace::KeepAwakeConfig {
             enabled: keep_awake,
         },
-        claude: None,
-        codex: None,
-        amp: None,
-        kimi: None,
-        opencode: None,
-        grok: None,
+        accounts: Vec::new(),
+        account_bindings: std::collections::BTreeMap::new(),
         github: None,
         git_pull_on_entry: git_pull,
         runtime: jackin_config::WorkspaceRuntimeConfig::default(),
@@ -773,24 +771,9 @@ fn handle_workspace_env(
             if key.is_empty() {
                 anyhow::bail!("env var key cannot be empty");
             }
-            let ws = config.require_workspace(
+            config.require_workspace(
                 &WorkspaceName::parse(&workspace).map_err(anyhow::Error::from)?,
             )?;
-            // CLAUDE_CODE_OAUTH_TOKEN under oauth_token mode is owned
-            // by the claude-token orchestrator; an unset here would
-            // silently break auth at the next launch.
-            if key == jackin_env::CLAUDE_OAUTH_TOKEN_ENV
-                && role.is_none()
-                && ws.claude.as_ref().map(|c| c.auth_forward)
-                    == Some(jackin_config::AuthForwardMode::OAuthToken)
-            {
-                anyhow::bail!(
-                    "CLAUDE_CODE_OAUTH_TOKEN is managed by \
-                         `jackin workspace claude-token` — use \
-                         `jackin workspace claude-token revoke {workspace}` \
-                         to clear it"
-                );
-            }
             let scope = super::workspace_env_scope(workspace, role);
             let mut editor = jackin_config::ConfigEditor::open(paths)?;
             if editor.remove_env_var(&scope, &key) {

@@ -7,6 +7,7 @@
     clippy::unwrap_used,
     reason = "integration tests: fail-fast fixtures and host-side blocking helpers"
 )]
+use std::fmt::Write as _;
 use std::path::Path;
 use std::time::Instant;
 
@@ -66,13 +67,29 @@ sparse = ["plugins"]
     );
 }
 
+// Fake agents exercise credential selection without using host credentials.
+fn synthetic_accounts() -> String {
+    let mut config = String::from("[account_bindings]\n");
+    for agent in jackin_core::Agent::ALL {
+        writeln!(config, "{agent} = \"e2e-{agent}\"").unwrap();
+    }
+    for agent in jackin_core::Agent::ALL {
+        let provider = jackin_config::AiProvider::for_agent(*agent);
+        write!(config,
+            "\n[accounts.e2e-{agent}]\nname = \"E2E {agent}\"\nprovider = \"{provider}\"\n[accounts.e2e-{agent}.credential]\ntype = \"api_key\"\nvalue = \"synthetic-e2e-{agent}-key\"\n"
+        ).unwrap();
+    }
+    config
+}
+
 pub(super) fn write_config(path: &Path, role_source: &Path) {
     let role_key = super::ROLE_KEY;
     std::fs::write(
         path,
         format!(
-            r#"version = "v1alpha5"
+            r#"version = "v1alpha10"
 
+{accounts}
 [roles."{role_key}"]
 git = "{}"
 trusted = true
@@ -82,7 +99,8 @@ HTTPS_PROXY = "http://127.0.0.1:9"
 https_proxy = "http://127.0.0.1:9"
 NO_PROXY = "localhost,127.0.0.1"
 "#,
-            role_source.display()
+            role_source.display(),
+            accounts = synthetic_accounts(),
         ),
     )
     .unwrap();
@@ -138,13 +156,15 @@ pub(super) fn write_sentinel_config(path: &Path, role_source: &Path) {
     std::fs::write(
         path,
         format!(
-            r#"version = "v1alpha5"
+            r#"version = "v1alpha10"
 
+{accounts}
 [roles."{sentinel_key}"]
 git = "{}"
 trusted = true
 "#,
-            role_source.display()
+            role_source.display(),
+            accounts = synthetic_accounts(),
         ),
     )
     .unwrap();
@@ -193,13 +213,15 @@ pub(super) fn write_slow_exit_config(path: &Path, role_source: &Path) {
     std::fs::write(
         path,
         format!(
-            r#"version = "v1alpha5"
+            r#"version = "v1alpha10"
 
+{accounts}
 [roles."{slow_exit_key}"]
 git = "{}"
 trusted = true
 "#,
-            role_source.display()
+            role_source.display(),
+            accounts = synthetic_accounts(),
         ),
     )
     .unwrap();

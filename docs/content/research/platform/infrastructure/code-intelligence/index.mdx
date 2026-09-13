@@ -29,7 +29,7 @@ The comparison separates four jobs: lexical discovery, structural matching, sema
 |---|---|---|---|
 | [`fff`](https://github.com/dmtrKovalenko/fff) | File, path, and literal-content discovery | Warm in-memory index with frecency and Git-aware ranking | Default lexical search |
 | [`codedb`](https://github.com/justrach/codedb) | Symbols, callers, dependencies, outlines, and task context | In-memory code index exposed through MCP | Default relationship layer |
-| [`ast-grep`](https://astgrep.com/) | Syntax-shape search and deterministic rewrite | tree-sitter AST patterns | Default structural tool |
+| [`ast-grep`](https://ast-grep.github.io/) | Syntax-shape search and deterministic rewrite | tree-sitter AST patterns | Default structural tool |
 | [`rust-analyzer`](https://rust-analyzer.github.io/) | Definitions, references, types, and trait implementations | Rust language server | Semantic correctness floor where native LSP exists |
 | Cargo `nextest`, `clippy`, and `rustfmt` | Tests, lint, and formatting | Rust toolchain CLIs | Verification gates |
 | [`ast-index`](https://github.com/defendend/Claude-ast-index-search) | SQLite/FTS code index | Persistent index and shell-out MCP wrapper | Not selected; overlaps codedb on Rust workspaces |
@@ -101,7 +101,7 @@ The copies must remain content-identical. Amp's global path is `~/.config/amp/AG
 - [AGENTS.md](https://agents.md/) — cross-tool agent-instructions convention.
 - [Current retrieval-tools comparison](/research/context/tools/06-combining/) — mechanisms and evaluation boundary.
 - [Current release register](/research/context/tools/08-current-release-register/) — verified tool versions.
-- [ast-grep](https://astgrep.com/) and its official [agent skill](https://github.com/ast-grep/agent-skill).
+- [ast-grep](https://ast-grep.github.io/) and its official [agent skill](https://github.com/ast-grep/agent-skill).
 - [rust-analyzer](https://rust-analyzer.github.io/).
 - [fff](https://github.com/dmtrKovalenko/fff).
 - [fff installer](https://dmtrkovalenko.dev/install-fff-mcp.sh) — convenience installer excluded from the pinned-artifact contract.

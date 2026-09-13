@@ -57,6 +57,9 @@ pub struct LoadArgs {
     /// neither is set, defaults to claude.
     #[arg(long, value_parser = parse_agent)]
     pub agent: Option<jackin_core::Agent>,
+    /// Registered account ID assigned to this workspace; overrides its agent binding
+    #[arg(long)]
+    pub account: Option<String>,
     /// Check out a specific branch of the role repository for local testing.
     /// The published image is ignored and the image is built from the branch's
     /// Dockerfile using Docker's layer cache. Useful for verifying a PR before

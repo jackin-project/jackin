@@ -1,25 +1,24 @@
 ---
 source: crates/jackin-console/src/tui/view/tests.rs
-assertion_line: 1459
 expression: rendered
 ---
  jackin❯  · edit workspace · ws                                                           
                                                                                           
                                                                                           
- General   Mounts   Roles   Environments   Auth                                           
-                                          ──────                                          
+ General   Mounts   Roles   Environments   Accounts                                       
+                                          ──────────                                      
 ┌────────────────────────────────────────────────────────────────────────────────────────┐
-│  ▸ Claude Code                                                                         │
-│    Codex                                                                               │
-│    Amp                                                                                 │
-│    OpenCode                                                                            │
-│    Grok                                                                                │
-│    GitHub CLI                                                                          │
-│    Z.AI                                                                                │
-│    MiniMax                                                                             │
+│  ▸ Workspace / Claude: automatic                                                       │
+│    Workspace / Codex: automatic                                                        │
+│    Workspace / Amp: automatic                                                          │
+│    Workspace / Kimi: automatic                                                         │
+│    Workspace / OpenCode: automatic                                                     │
+│    Workspace / Grok: automatic                                                         │
+│    Workspace / GitHub: inherited                                                       │
+│                                                                                        │
 │                                                                                        │
 │                                                                                        │
 └────────────────────────────────────────────────────────────────────────────────────────┘
                                                                                           
-    ↑↓ navigate   ↵ manage auth   ⇤ tab bar   S save workspace   Esc back · Ctrl-Q quit   
-                                          ? help
+   ↑↓ navigate   ↵/Space toggle / next account · D clear   ⇤ tab bar   S save workspace   
+                              Esc back · Ctrl-Q quit · ? help

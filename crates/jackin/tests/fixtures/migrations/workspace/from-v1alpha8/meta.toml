@@ -1,0 +1,4 @@
+from_version = "v1alpha8"
+target_version = "v1alpha9"
+target_version_shipped = "2026-09-07"
+summary = "Preserve named accounts and explicit assignments while upgrading the account schema."

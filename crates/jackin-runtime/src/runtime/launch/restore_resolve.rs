@@ -373,6 +373,28 @@ fn emit_launch_plan_scoped(
     }
 }
 
+async fn check_container_network_exists(
+    docker: &impl DockerApi,
+    manifest: &InstanceManifest,
+) -> anyhow::Result<bool> {
+    let network_name = if manifest.docker.network.is_empty() {
+        crate::instance::naming::role_network_name(&manifest.container_base)
+    } else {
+        manifest.docker.network.clone()
+    };
+    match docker.inspect_network(&network_name).await {
+        Ok(Some(_)) => Ok(true),
+        Ok(None) => Ok(false),
+        Err(e) => anyhow::bail!(
+            "{}",
+            crate::runtime::attach::docker_unavailable_msg(
+                &format!("inspect network `{network_name}`"),
+                &e.to_string(),
+            )
+        ),
+    }
+}
+
 async fn resolve_unselected_current_restore_candidate_with_agent(
     paths: &JackinPaths,
     workspace_name: Option<&str>,
@@ -444,10 +466,28 @@ async fn resolve_unselected_current_restore_candidate_with_agent(
                 );
             }
             ContainerState::Stopped { .. } | ContainerState::Created => {
-                runnable.push(UnselectedCurrentRestoreResolution {
-                    resolution: RestoreResolution::StartCurrentRole(manifest.container_base),
-                    agent,
-                });
+                if check_container_network_exists(docker, &manifest).await? {
+                    runnable.push(UnselectedCurrentRestoreResolution {
+                        resolution: RestoreResolution::StartCurrentRole(manifest.container_base),
+                        agent,
+                    });
+                } else {
+                    emit_rejected_launch_plan_scoped(
+                        active_run.as_deref(),
+                        LaunchPlan::StartStopped,
+                        if multiple_candidates {
+                            "current_role_agent_network_missing"
+                        } else {
+                            "single_current_role_agent_network_missing"
+                        },
+                        Some(&manifest.container_base),
+                        Some("network_missing"),
+                    );
+                    recreatable.push(UnselectedCurrentRestoreResolution {
+                        resolution: RestoreResolution::RecreateCurrentRole(manifest.container_base),
+                        agent,
+                    });
+                }
             }
             ContainerState::NotFound => {
                 emit_rejected_launch_plan_scoped(
@@ -624,6 +664,19 @@ pub(crate) async fn resolve_current_restore_candidate(
                 );
             }
             ContainerState::Stopped { .. } | ContainerState::Created => {
+                if !check_container_network_exists(docker, &manifest).await? {
+                    emit_rejected_launch_plan_scoped(
+                        active_run.as_deref(),
+                        LaunchPlan::StartStopped,
+                        "current_role_container_network_missing",
+                        Some(&manifest.container_base),
+                        Some("network_missing"),
+                    );
+                    return Ok(Some(RestoreResolution::RecreateCurrentRole(
+                        manifest.container_base.clone(),
+                    )));
+                }
+
                 emit_launch_plan_scoped(
                     active_run.as_deref(),
                     LaunchPlan::StartStopped,

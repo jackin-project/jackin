@@ -97,6 +97,6 @@ pub type ConsoleOutcome = jackin_console::tui::message::ConsoleOutcome<
     jackin_core::RoleSelector,
     jackin_config::ResolvedWorkspace,
     jackin_core::Agent,
-    jackin_protocol::Provider,
+    Option<String>,
 >;
 pub use jackin_console::tui::message::InstanceActionHandler;

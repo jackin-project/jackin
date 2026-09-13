@@ -1164,18 +1164,6 @@ fn host_console_modal_states_project_visible_focus() {
     editor_role_override.stage = ManagerStage::Editor(editor);
     cases.push(("editor role override picker", editor_role_override));
 
-    let mut editor_auth_role = ManagerState::from_config(&config, &cwd);
-    let mut editor = EditorState::new_edit("ws".into(), WorkspaceConfig::default());
-    editor.set_tab_bar_focused(false);
-    editor.modal = Some(Modal::AuthRolePicker {
-        state: crate::tui::state::RolePickerState::new(vec![
-            jackin_core::RoleSelector::parse("chainargos/agent-smith")
-                .expect("valid role selector"),
-        ]),
-    });
-    editor_auth_role.stage = ManagerStage::Editor(editor);
-    cases.push(("editor auth role picker", editor_auth_role));
-
     let mut editor_auth_source = ManagerState::from_config(&config, &cwd);
     let mut editor = EditorState::new_edit("ws".into(), WorkspaceConfig::default());
     editor.set_tab_bar_focused(false);

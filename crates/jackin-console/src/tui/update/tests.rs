@@ -164,11 +164,11 @@ impl InlinePickerDismissalState for TestInlinePickers {
         self.cleared.push("agent");
     }
 
-    fn clear_inline_provider_picker(&mut self) {
+    fn clear_inline_account_picker(&mut self) {
         self.cleared.push("provider");
     }
 
-    fn clear_launch_provider_picker(&mut self) {
+    fn clear_launch_account_picker(&mut self) {
         self.cleared.push("launch-provider");
     }
 }
@@ -182,7 +182,7 @@ fn apply_inline_picker_dismissal_plan_clears_requested_picker() {
         InlinePickerDismissal::Role,
         InlinePickerDismissal::Agent,
         InlinePickerDismissal::Provider,
-        InlinePickerDismissal::LaunchProvider,
+        InlinePickerDismissal::LaunchAccount,
     ] {
         apply_inline_picker_dismissal_plan(&mut state, dismissal);
     }
@@ -516,10 +516,10 @@ fn list_pre_render_facts_derive_sidebar_availability_from_scroll_areas() {
 }
 
 #[test]
-fn inline_provider_followup_plan_opens_picker_only_when_supported() {
+fn inline_account_followup_plan_opens_picker_only_when_supported() {
     assert_eq!(
-        inline_provider_followup_plan("container", "claude", vec!["anthropic", "zai"]),
-        InlineProviderFollowupPlan::OpenProviderPicker(ProviderPickerState::new(
+        inline_account_followup_plan("container", "claude", vec!["anthropic", "zai"]),
+        InlineAccountFollowupPlan::OpenAccountPicker(AccountPickerState::new(
             "container",
             "claude",
             vec!["anthropic", "zai"]
@@ -527,8 +527,8 @@ fn inline_provider_followup_plan_opens_picker_only_when_supported() {
     );
     // Codex with two providers opens the picker.
     assert_eq!(
-        inline_provider_followup_plan("container", "codex", vec!["openai", "minimax"]),
-        InlineProviderFollowupPlan::OpenProviderPicker(ProviderPickerState::new(
+        inline_account_followup_plan("container", "codex", vec!["openai", "minimax"]),
+        InlineAccountFollowupPlan::OpenAccountPicker(AccountPickerState::new(
             "container",
             "codex",
             vec!["openai", "minimax"]
@@ -536,17 +536,19 @@ fn inline_provider_followup_plan_opens_picker_only_when_supported() {
     );
     // Single-provider choice collapses to a direct start.
     assert_eq!(
-        inline_provider_followup_plan("container", "codex", vec!["openai"]),
-        InlineProviderFollowupPlan::StartSession {
+        inline_account_followup_plan("container", "codex", vec!["openai"]),
+        InlineAccountFollowupPlan::StartSession {
             context: "container",
             agent: "codex",
+            account: Some("openai"),
         }
     );
     assert_eq!(
-        inline_provider_followup_plan::<_, _, &str>("container", "claude", Vec::new()),
-        InlineProviderFollowupPlan::StartSession {
+        inline_account_followup_plan::<_, _, &str>("container", "claude", Vec::new()),
+        InlineAccountFollowupPlan::StartSession {
             context: "container",
             agent: "claude",
+            account: None,
         }
     );
 }
@@ -584,22 +586,22 @@ fn inline_new_session_picker_plan_application_opens_picker() {
 }
 
 #[derive(Default)]
-struct TestInlineProviderPicker<C, A, P> {
-    picker: Option<ProviderPickerState<C, A, P>>,
+struct TestInlineAccountPicker<C, A, P> {
+    picker: Option<AccountPickerState<C, A, P>>,
 }
 
-impl<C, A, P> InlineProviderPickerState<C, A, P> for TestInlineProviderPicker<C, A, P> {
-    fn set_inline_provider_picker(&mut self, picker: ProviderPickerState<C, A, P>) {
+impl<C, A, P> InlineAccountPickerState<C, A, P> for TestInlineAccountPicker<C, A, P> {
+    fn set_inline_account_picker(&mut self, picker: AccountPickerState<C, A, P>) {
         self.picker = Some(picker);
     }
 }
 
 #[test]
-fn inline_provider_picker_plan_application_opens_picker() {
-    let mut state = TestInlineProviderPicker::default();
-    let picker = ProviderPickerState::new("container", "claude", vec!["anthropic", "zai"]);
+fn inline_account_picker_plan_application_opens_picker() {
+    let mut state = TestInlineAccountPicker::default();
+    let picker = AccountPickerState::new("container", "claude", vec!["anthropic", "zai"]);
 
-    apply_inline_provider_picker_plan(&mut state, picker.clone());
+    apply_inline_account_picker_plan(&mut state, picker.clone());
     assert_eq!(state.picker, Some(picker));
 }
 

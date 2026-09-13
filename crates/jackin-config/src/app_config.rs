@@ -8,7 +8,6 @@
 //! resolution) lives in the child modules `mounts`, `persist`,
 //! `roles`, and `workspaces`.
 
-use crate::ConfigError;
 use std::collections::BTreeMap;
 
 use jackin_core::EnvValue;
@@ -16,9 +15,7 @@ use serde::{Deserialize, Serialize};
 
 use jackin_core::Agent;
 
-use jackin_core::AuthForwardMode;
-
-use crate::auth::{AgentAuthConfig, GithubAuthConfig};
+use crate::auth::GithubAuthConfig;
 use crate::schema::{
     DirtyExitPolicy, DockerConfig, GitConfig, RoleSource, RuntimeConfig, TelemetryConfig,
     WorkspaceConfig,
@@ -30,31 +27,20 @@ pub const DEFAULT_ROLE_REPO_REFRESH_TTL_SECONDS: u64 = 60;
 
 /// Top-level operator configuration (`~/.config/jackin/config.toml`).
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct AppConfig {
+    /// Named agent and provider credentials.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub accounts: BTreeMap<String, crate::AccountConfig>,
+    /// Global explicit account selections by agent.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub account_bindings: BTreeMap<Agent, String>,
     /// On-disk schema version (`version` key in `config.toml`).
     #[serde(
         default = "crate::versions::current_config_version",
         rename = "version"
     )]
     pub version: String,
-    /// Global Claude auth-forward policy.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub claude: Option<AgentAuthConfig>,
-    /// Global Codex auth-forward policy.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub codex: Option<AgentAuthConfig>,
-    /// Global Amp auth-forward policy.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub amp: Option<AgentAuthConfig>,
-    /// Global Kimi auth-forward policy.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub kimi: Option<AgentAuthConfig>,
-    /// Global `OpenCode` auth-forward policy.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub opencode: Option<AgentAuthConfig>,
-    /// Global Grok auth-forward policy.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub grok: Option<AgentAuthConfig>,
     /// Global GitHub (`gh`) auth-forward policy and token env.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub github: Option<GithubAuthConfig>,
@@ -90,60 +76,6 @@ pub struct AppConfig {
 }
 
 impl AppConfig {
-    /// Validates that no configured agent uses an auth mode unsupported by that agent.
-    ///
-    /// Drives the complete agent catalog so new agents cannot bypass validation.
-    pub fn validate_auth_modes(&self) -> crate::ConfigResult<()> {
-        for agent in Agent::ALL.iter().copied() {
-            if let Some(mode) = self.auth_forward_for(agent)
-                && !agent.supported_modes().contains(&mode)
-            {
-                return Err(ConfigError::msg(format!(
-                    "auth_forward '{mode}' is not supported for {}",
-                    agent.slug(),
-                )));
-            }
-        }
-        Ok(())
-    }
-
-    /// Auth-forward mode for `agent` at the global (top-level) config layer.
-    ///
-    /// Keep this match parallel with `WorkspaceConfig` and
-    /// `WorkspaceRoleOverride`: these are versioned TOML structs with named
-    /// agent fields, so the dispatch stays as one accessor per layer until a
-    /// schema-bumped map migration.
-    pub fn auth_forward_for(&self, agent: Agent) -> Option<AuthForwardMode> {
-        match agent {
-            Agent::Claude => self.claude.as_ref().map(|c| c.auth_forward),
-            Agent::Codex => self.codex.as_ref().map(|c| c.auth_forward),
-            Agent::Amp => self.amp.as_ref().map(|c| c.auth_forward),
-            Agent::Kimi => self.kimi.as_ref().map(|c| c.auth_forward),
-            Agent::Opencode => self.opencode.as_ref().map(|c| c.auth_forward),
-            Agent::Grok => self.grok.as_ref().map(|c| c.auth_forward),
-        }
-    }
-
-    /// Sync source dir override for `agent` at the global config layer.
-    ///
-    /// Returns `None` when the field is absent at this layer — caller inherits
-    /// from the per-agent hardcoded default.
-    /// Same named-field exception as `auth_forward_for`; callers must use this
-    /// accessor rather than matching over `Agent` themselves.
-    pub fn sync_source_dir_for(&self, agent: Agent) -> Option<std::path::PathBuf> {
-        match agent {
-            Agent::Claude => self.claude.as_ref().and_then(|c| c.sync_source_dir.clone()),
-            Agent::Codex => self.codex.as_ref().and_then(|c| c.sync_source_dir.clone()),
-            Agent::Amp => self.amp.as_ref().and_then(|c| c.sync_source_dir.clone()),
-            Agent::Kimi => self.kimi.as_ref().and_then(|c| c.sync_source_dir.clone()),
-            Agent::Opencode => self
-                .opencode
-                .as_ref()
-                .and_then(|c| c.sync_source_dir.clone()),
-            Agent::Grok => self.grok.as_ref().and_then(|c| c.sync_source_dir.clone()),
-        }
-    }
-
     /// Resolved dirty-exit policy for a session.
     ///
     /// Per-workspace `dirty_exit_policy` wins over the global setting; both
@@ -171,12 +103,8 @@ impl Default for AppConfig {
     fn default() -> Self {
         Self {
             version: CURRENT_CONFIG_VERSION.to_owned(),
-            claude: None,
-            codex: None,
-            amp: None,
-            kimi: None,
-            opencode: None,
-            grok: None,
+            accounts: BTreeMap::new(),
+            account_bindings: BTreeMap::new(),
             github: None,
             env: BTreeMap::new(),
             roles: BTreeMap::new(),

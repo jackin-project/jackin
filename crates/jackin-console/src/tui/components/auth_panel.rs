@@ -86,18 +86,8 @@ pub fn auth_source_picker_state(
 }
 
 #[must_use]
-pub fn generated_token_source_picker_state(op_available: bool) -> SourcePickerState {
-    auth_source_picker_state("generated token", op_available)
-}
-
-#[must_use]
-pub fn generated_token_op_item_name(item_template: &str, scope_label: &str) -> String {
-    item_template.replace("{ws}", scope_label)
-}
-
-#[must_use]
 pub fn auth_credential_input_state<'a>(literal: impl Into<String>) -> TextInputState<'a> {
-    TextInputState::new("Credential", literal)
+    TextInputState::new_secret("Credential", literal)
 }
 
 #[must_use]
@@ -313,8 +303,7 @@ impl<V: AuthCredential> AuthForm<V> {
 
     /// Whether the source-folder row should be shown.
     pub fn shows_source_folder(&self) -> bool {
-        (self.source_folder.is_some() || self.source_folder_fallback.is_some())
-            && matches!(self.mode, Some(mode) if auth_mode_supports_source_folder(self.kind, mode))
+        matches!(self.mode, Some(mode) if auth_mode_supports_source_folder(self.kind, mode))
     }
 
     /// Whether the credential input block should be shown.
@@ -352,12 +341,21 @@ impl<V: AuthCredential> AuthForm<V> {
     /// Save invariant: mode is committed and, if needed, a non-empty credential.
     pub fn can_save(&self) -> bool {
         let Some(mode) = self.mode else { return false };
+        if !self.available_modes().contains(&mode) {
+            return false;
+        }
+        if auth_mode_supports_source_folder(self.kind, mode) {
+            return self
+                .source_folder
+                .as_ref()
+                .is_some_and(|path| !path.as_os_str().is_empty());
+        }
         if !mode_requires_credential(self.kind, mode) {
-            return true;
+            return self.kind == AuthKind::Github;
         }
         match &self.credential {
             CredentialInput::None => false,
-            CredentialInput::Literal(value) => !value.is_empty(),
+            CredentialInput::Literal(value) => !value.trim().is_empty(),
             CredentialInput::OpRef(value) => !value.is_empty(),
         }
     }
@@ -469,7 +467,11 @@ fn build_form_lines<V: AuthCredential>(form: &AuthForm<V>, focus: AuthFormFocus)
 
     lines.push(FormLine::left(Line::from("")));
 
-    let mode_text = form.mode.map_or("(unset)", mode_str);
+    let mode_text = if form.kind == AuthKind::Github && form.mode == Some(AuthMode::Sync) {
+        "sync"
+    } else {
+        form.mode.map_or("(unset)", mode_str)
+    };
     lines.push(FormLine::left(Line::from(vec![
         cursor_span(focus == AuthFormFocus::Mode),
         Span::styled(
@@ -504,6 +506,7 @@ fn build_form_lines<V: AuthCredential>(form: &AuthForm<V>, focus: AuthFormFocus)
     lines.push(FormLine::centered(action_buttons_line(
         form.can_save(),
         focus,
+        form.kind == AuthKind::Github,
     )));
     lines.push(FormLine::left(Line::from("")));
     lines
@@ -594,7 +597,7 @@ fn credential_env_line<R: AuthCredentialRef>(
     Line::from(spans)
 }
 
-fn action_buttons_line(can_save: bool, focus: AuthFormFocus) -> Line<'static> {
+fn action_buttons_line(can_save: bool, focus: AuthFormFocus, github: bool) -> Line<'static> {
     let save_style = if can_save {
         Style::default()
             .fg(termrock::style::DesignSystem::default()
@@ -625,7 +628,12 @@ fn action_buttons_line(can_save: bool, focus: AuthFormFocus) -> Line<'static> {
         ),
         Span::raw("    "),
         Span::styled(
-            "  Reset  ".to_owned(),
+            (if github {
+                "  Reset  "
+            } else {
+                "  Delete account  "
+            })
+            .to_owned(),
             selected_button_style(
                 focus == AuthFormFocus::Reset,
                 termrock::style::DesignSystem::default().style(termrock::style::Role::TextStrong),

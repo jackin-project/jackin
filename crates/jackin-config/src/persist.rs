@@ -165,6 +165,14 @@ where
     }
 }
 
+/// Bounded read for synchronous config and credential discovery callers.
+/// Callers choose a limit and interpret truncation for their format.
+pub(crate) fn read_bounded_file(path: &Path, limit: u64) -> std::io::Result<Vec<u8>> {
+    let mut bytes = Vec::new();
+    File::open(path)?.take(limit).read_to_end(&mut bytes)?;
+    Ok(bytes)
+}
+
 #[cfg(test)]
 fn acquire_lock_with_timing<N, W>(
     config_file: &Path,

@@ -1,0 +1,73 @@
+---
+title: account
+description: Discover, register, and remove coding-agent and AI-provider accounts
+---
+
+Named accounts hold a profile directory, provider API key, or Claude OAuth token. Workspaces must explicitly authorize them with [`workspace account`](/commands/workspace/#workspace-account).
+
+## `account list` and `account scan`
+
+```bash
+jackin account list
+jackin account scan
+```
+
+The first start scans all supported agents' default credential locations and nonempty provider API-key environment variables. `scan` repeats discovery and imports newly found sources, including `CLAUDE_CODE_OAUTH_TOKEN` subscription references. Kimi also checks `~/.kimi` when `~/.kimi-code` has no credentials. API-key discovery accepts the supported coding-plan aliases, including `KIMI_CODE_API_KEY`, `Z_AI_API_KEY`, and `MINIMAX_CODING_API_KEY`. Neither command prints credential values. Empty directories and configuration files without credential evidence are not accounts.
+
+## `account add`
+
+```bash
+jackin account add claude-work --name "Work Claude" \
+  --agent claude --directory ~/.claude-work
+jackin account add openai-work --provider openai --api-key
+jackin account add zai-work --provider zai --api-key \
+  --secret-ref '$ZAI_API_KEY' --model glm-5.1
+jackin account add claude-token --agent claude --oauth-token \
+  --secret-ref 'op://Work/Claude/oauth-token'
+```
+
+Choose exactly one credential source:
+
+| Option | Meaning |
+|---|---|
+| `--directory <PATH>` | Existing profile directory; requires `--agent`. |
+| `--api-key` | Provider API key; requires `--provider`. |
+| `--oauth-token` | Claude OAuth token; requires `--agent claude`. |
+| `--name <LABEL>` | Human-readable label; defaults to the account ID. |
+| `--secret-ref <REFERENCE>` | `$VAR`, `${VAR}`, or `op://...`; no literal secret in arguments. |
+| `--stdin` | Read a key/token from standard input; mutually exclusive with `--secret-ref`. |
+| `--base-url <URL>` | API-key provider endpoint override. |
+| `--model <ID>` | API-key model selection; required when redirecting Claude/Codex to a different provider. |
+
+Without `--stdin` or `--secret-ref`, key/token input uses a masked prompt. Supported providers are `anthropic`, `openai`, `amp`, `xai`, `opencode`, `moonshot`, `zai`, and `minimax`. Profile agents are `claude`, `codex`, `amp`, `kimi`, `opencode`, and `grok`.
+
+The account ID uses lowercase letters, digits, and hyphens. Keep aliases pointing at different logins as distinct account IDs. Amp accepts either its credential directory or an alias root containing `data/amp/secrets.json` and `config/amp/settings.json`.
+
+## Authorize the account
+
+```bash
+jackin workspace account assign my-app claude-work
+jackin workspace account select my-app claude-work --agent claude
+```
+
+Registering credentials alone grants no workspace access.
+
+## Enable, disable, and choose defaults
+
+```bash
+jackin account disable claude-work
+jackin account enable claude-work
+jackin account default claude-work --agent claude
+```
+
+Disabled accounts remain registered but cannot authenticate new launches or supply usage credentials. A default selects an account for one agent; it never grants workspace access. Workspaces must still authorize the account ID. Duplicate credential sources are rejected when adding or editing an account.
+
+In Settings → Accounts, select an account and press **E** to toggle it, or **F** to choose the agent whose default should change.
+
+## `account remove`
+
+```bash
+jackin account remove claude-work
+```
+
+Removes the registry entry and every assignment and binding referring to it. The underlying profile directory and provider credential remain untouched. Revoke the upstream key/token through its provider when that is also required.

@@ -13,8 +13,6 @@ impl<
     Modal,
     SaveFlow,
     EnvValue,
-    AuthFormTarget,
-    PendingTokenGenerate,
     PendingRoleLoad,
     PendingDriftCheck,
     PendingIsolationCleanup,
@@ -25,8 +23,6 @@ impl<
         Modal,
         SaveFlow,
         EnvValue,
-        AuthFormTarget,
-        PendingTokenGenerate,
         PendingRoleLoad,
         PendingDriftCheck,
         PendingIsolationCleanup,
@@ -85,13 +81,13 @@ impl<
         if self.pending.git_pull_on_entry != self.original.git_pull_on_entry {
             n += 1;
         }
-        if self.pending.claude != self.original.claude {
-            n += 1;
-        }
-        if self.pending.codex != self.original.codex {
-            n += 1;
-        }
         if self.pending.github != self.original.github {
+            n += 1;
+        }
+        if self.pending.accounts != self.original.accounts {
+            n += 1;
+        }
+        if self.pending.account_bindings != self.original.account_bindings {
             n += 1;
         }
         if let EditorMode::Edit { name } = &self.mode
@@ -123,13 +119,13 @@ impl<
             n += crate::tui::screens::settings::update::settings_map_change_count(
                 orig_env, pend_env,
             );
-            if orig.map(|o| &o.claude) != pend.map(|p| &p.claude) {
+            if orig.and_then(|o| o.github.as_ref()) != pend.and_then(|p| p.github.as_ref()) {
                 n += 1;
             }
-            if orig.map(|o| &o.codex) != pend.map(|p| &p.codex) {
-                n += 1;
-            }
-            if orig.map(|o| &o.github) != pend.map(|p| &p.github) {
+            let empty_bindings = BTreeMap::new();
+            if orig.map_or(&empty_bindings, |o| &o.account_bindings)
+                != pend.map_or(&empty_bindings, |p| &p.account_bindings)
+            {
                 n += 1;
             }
         }
@@ -187,31 +183,6 @@ impl<
             .collect()
     }
 
-    #[must_use]
-    pub fn auth_role_override_selectors<'a>(
-        &self,
-        registered_roles: impl Iterator<Item = &'a String> + 'a,
-    ) -> Option<Vec<jackin_core::RoleSelector>> {
-        let kind = self.auth_selected_kind?;
-        let already_overridden: BTreeSet<String> = self
-            .pending
-            .roles
-            .iter()
-            .filter(|(_, role_override)| {
-                crate::tui::auth_config::role_override_present(kind, role_override)
-            })
-            .map(|(name, _)| name.clone())
-            .collect();
-
-        let candidates =
-            crate::workspace::eligible_role_keys_for_override(registered_roles, &self.pending)
-                .into_iter()
-                .filter(|role| !already_overridden.contains(role))
-                .filter_map(|role| jackin_core::RoleSelector::parse(&role).ok())
-                .collect();
-        Some(candidates)
-    }
-
     pub fn toggle_allowed_role_at_cursor(&mut self, role_names: &[String]) {
         let FieldFocus::Row(n) = self.active_field;
         crate::tui::screens::editor::update::toggle_allowed_role_at(
@@ -232,20 +203,6 @@ impl<
         );
     }
 
-    pub fn toggle_auth_role_expanded(&mut self, role: String) {
-        if !self.auth_expanded.remove(&role) {
-            self.auth_expanded.insert(role);
-        }
-    }
-
-    pub fn set_auth_role_expanded(&mut self, role: String, expanded: bool) {
-        if expanded {
-            self.auth_expanded.insert(role);
-        } else {
-            self.auth_expanded.remove(&role);
-        }
-    }
-
     pub fn set_secrets_role_expanded(&mut self, role: String, expanded: bool) {
         if expanded {
             self.secrets_expanded.insert(role);
@@ -262,21 +219,8 @@ impl<
     }
 
     /// Delete an environment key from the draft workspace or role override.
-    ///
-    /// Claude OAuth-token mode owns its token through the token-setup flow, so
-    /// the editor must not silently remove that managed slot.
+    /// Preserve a role override while it still owns account or GitHub bindings.
     pub fn delete_env_var(&mut self, scope: &SecretsScopeTag, key: &str) -> anyhow::Result<()> {
-        let protected = key == jackin_core::CLAUDE_CODE_OAUTH_TOKEN_ENV_NAME
-            && matches!(scope, SecretsScopeTag::Workspace)
-            && self.pending.claude.as_ref().map(|c| c.auth_forward)
-                == Some(jackin_config::AuthForwardMode::OAuthToken);
-        if protected {
-            anyhow::bail!(
-                "CLAUDE_CODE_OAUTH_TOKEN is managed by `jackin workspace claude-token` \
-                 — use `jackin workspace claude-token revoke <workspace>` to clear it"
-            );
-        }
-
         match scope {
             SecretsScopeTag::Workspace => {
                 self.pending.env.remove(key);
@@ -285,7 +229,8 @@ impl<
                 let mut drop_role = false;
                 if let Some(override_config) = self.pending.roles.get_mut(role) {
                     override_config.env.remove(key);
-                    drop_role = override_config.env.is_empty();
+                    drop_role = override_config.env.is_empty()
+                        && override_config.account_bindings.is_empty();
                 }
                 if drop_role {
                     self.pending.roles.remove(role);
@@ -296,45 +241,79 @@ impl<
         Ok(())
     }
 
-    #[must_use]
-    pub fn focused_auth_role_expansion_plan(
-        &self,
-        config: &jackin_config::AppConfig,
-        expanded: bool,
-    ) -> RoleHeaderExpansionPlan {
-        let FieldFocus::Row(n) = self.active_field;
+    /// Toggle assignment or cycle an explicit binding through compatible assigned accounts.
+    pub fn edit_account_row(&mut self, config: &jackin_config::AppConfig, clear: bool) {
+        let FieldFocus::Row(index) = self.active_field;
         let rows = self.auth_flat_rows(config);
-        let Some(AuthRow::RoleHeader {
-            role,
-            expanded: current,
-        }) = rows.get(n).cloned()
-        else {
-            return RoleHeaderExpansionPlan::NotHeader;
-        };
-        if current == expanded {
-            RoleHeaderExpansionPlan::HeaderNoop
-        } else {
-            RoleHeaderExpansionPlan::Set { role, expanded }
-        }
-    }
-
-    pub fn clear_auth_row_at_cursor(&mut self, config: &jackin_config::AppConfig) {
-        let FieldFocus::Row(n) = self.active_field;
-        let rows = self.auth_flat_rows(config);
-        match rows.get(n).cloned() {
-            Some(AuthRow::RoleHeader { role, .. }) => {
-                if let Some(kind) = self.auth_selected_kind {
-                    self.clear_role_auth_kind(&role, kind);
+        match rows.get(index) {
+            Some(AuthRow::Account { id }) => {
+                if clear || self.pending.accounts.contains(id) {
+                    self.pending.accounts.retain(|value| value != id);
+                    self.pending.account_bindings.retain(|_, value| value != id);
+                    for role in self.pending.roles.values_mut() {
+                        role.account_bindings.retain(|_, value| value != id);
+                    }
+                } else if config
+                    .accounts
+                    .get(id)
+                    .is_some_and(|account| account.enabled)
+                {
+                    self.pending.accounts.push(id.clone());
                 }
             }
-            Some(AuthRow::RoleMode { role, kind }) => {
-                self.clear_role_auth_kind(&role, kind);
-            }
-            Some(AuthRow::WorkspaceMode { kind }) => {
-                crate::tui::auth_config::clear_workspace_auth_layer(&mut self.pending, kind);
+            Some(AuthRow::Binding { agent, role }) => {
+                let candidates: Vec<_> = self
+                    .pending
+                    .accounts
+                    .iter()
+                    .filter(|id| {
+                        config
+                            .accounts
+                            .get(*id)
+                            .is_some_and(|account| account.supports_agent(*agent))
+                    })
+                    .cloned()
+                    .collect();
+                let bindings = match role {
+                    Some(role) => {
+                        &mut self
+                            .pending
+                            .roles
+                            .entry(role.clone())
+                            .or_default()
+                            .account_bindings
+                    }
+                    None => &mut self.pending.account_bindings,
+                };
+                let next = if clear {
+                    None
+                } else {
+                    match bindings.get(agent) {
+                        Some(current) => candidates
+                            .iter()
+                            .position(|id| id == current)
+                            .and_then(|index| candidates.get(index + 1))
+                            .cloned(),
+                        None => candidates.first().cloned(),
+                    }
+                };
+                if let Some(id) = next {
+                    bindings.insert(*agent, id);
+                } else {
+                    bindings.remove(agent);
+                }
             }
             _ => {}
         }
+    }
+
+    #[must_use]
+    pub fn focused_account_row(&self, config: &jackin_config::AppConfig) -> bool {
+        let FieldFocus::Row(index) = self.active_field;
+        matches!(
+            self.auth_flat_rows(config).get(index),
+            Some(AuthRow::Account { .. } | AuthRow::Binding { .. })
+        )
     }
 
     #[must_use]
@@ -342,163 +321,93 @@ impl<
         &self,
         config: &jackin_config::AppConfig,
     ) -> Option<(
-        crate::tui::screens::settings::model::AuthFormTarget<crate::tui::auth::AuthKind>,
-        crate::tui::components::auth_panel::AuthForm<jackin_core::EnvValue>,
+        crate::tui::state::AuthFormTarget,
+        crate::tui::state::AuthForm,
     )> {
-        let FieldFocus::Row(n) = self.active_field;
-        let target = self.resolve_auth_form_target(config, n)?;
-        let kind = *target.kind();
-        let (existing_mode, existing_credential) = self.auth_form_mode_and_credential(&target);
-        let form = existing_mode
-            .map_or_else(
-                || crate::tui::components::auth_panel::AuthForm::new(kind),
-                |mode| {
-                    crate::tui::components::auth_panel::AuthForm::from_existing(
-                        kind,
-                        mode,
-                        existing_credential,
-                    )
-                },
-            )
-            .with_source_folder(
-                self.auth_form_source_folder(&target),
-                self.auth_form_source_folder_fallback(config, &target),
-            );
+        let FieldFocus::Row(index) = self.active_field;
+        let target = self.resolve_auth_form_target(config, index)?;
+        if *target.kind() != crate::tui::auth::AuthKind::Github {
+            return None;
+        }
+        let existing = match &target {
+            crate::tui::state::AuthFormTarget::Workspace { .. } => self.pending.github.as_ref(),
+            crate::tui::state::AuthFormTarget::WorkspaceRole { role, .. } => self
+                .pending
+                .roles
+                .get(role)
+                .and_then(|role| role.github.as_ref()),
+        };
+        let form = existing.map_or_else(
+            || crate::tui::state::AuthForm::new(crate::tui::auth::AuthKind::Github),
+            |github| {
+                let mode = match github.auth_forward {
+                    jackin_config::GithubAuthMode::Sync => crate::tui::auth::AuthMode::Sync,
+                    jackin_config::GithubAuthMode::Token => crate::tui::auth::AuthMode::Token,
+                    jackin_config::GithubAuthMode::Ignore => crate::tui::auth::AuthMode::Ignore,
+                };
+                crate::tui::state::AuthForm::from_existing(
+                    crate::tui::auth::AuthKind::Github,
+                    mode,
+                    github.env.get("GH_TOKEN").cloned(),
+                )
+            },
+        );
         Some((target, form))
     }
 
-    /// Apply a successful auth-form commit to the draft workspace config.
-    ///
-    /// Writes both the kind block (`auth_forward`) and the credential env var
-    /// when the form outcome includes one.
     pub fn persist_auth_form(
         &mut self,
-        target: &crate::tui::screens::settings::model::AuthFormTarget<crate::tui::auth::AuthKind>,
-        form: &crate::tui::components::auth_panel::AuthForm<jackin_core::EnvValue>,
+        target: &crate::tui::state::AuthFormTarget,
+        form: &crate::tui::state::AuthForm,
     ) {
+        if *target.kind() != crate::tui::auth::AuthKind::Github {
+            return;
+        }
         let Some(outcome) = form.commit() else {
             return;
         };
-        match target {
-            crate::tui::screens::settings::model::AuthFormTarget::Workspace { kind } => {
-                crate::tui::auth_config::apply_workspace_auth_commit(
-                    &mut self.pending,
-                    *kind,
-                    outcome.mode,
-                    outcome.env_var_name,
-                    outcome.env_value.clone(),
-                );
-                crate::tui::auth_config::set_workspace_sync_source_dir(
-                    &mut self.pending,
-                    *kind,
-                    outcome.source_folder,
-                );
+        let mode = match outcome.mode {
+            crate::tui::auth::AuthMode::Sync => jackin_config::GithubAuthMode::Sync,
+            crate::tui::auth::AuthMode::Token => jackin_config::GithubAuthMode::Token,
+            crate::tui::auth::AuthMode::Ignore => jackin_config::GithubAuthMode::Ignore,
+            _ => return,
+        };
+        let slot = match target {
+            crate::tui::state::AuthFormTarget::Workspace { .. } => &mut self.pending.github,
+            crate::tui::state::AuthFormTarget::WorkspaceRole { role, .. } => {
+                &mut self.pending.roles.entry(role.clone()).or_default().github
             }
-            crate::tui::screens::settings::model::AuthFormTarget::WorkspaceRole { role, kind } => {
-                let entry = self.pending.roles.entry(role.clone()).or_default();
-                crate::tui::auth_config::apply_role_auth_commit(
-                    entry,
-                    *kind,
-                    outcome.mode,
-                    outcome.env_var_name,
-                    outcome.env_value.clone(),
-                );
-                crate::tui::auth_config::set_role_sync_source_dir(
-                    entry,
-                    *kind,
-                    outcome.source_folder,
-                );
-            }
+        };
+        let github = slot.get_or_insert_with(Default::default);
+        github.auth_forward = mode;
+        github.env.remove("GH_TOKEN");
+        if let Some(value) = outcome.env_value {
+            github.env.insert("GH_TOKEN".into(), value);
         }
     }
 
-    /// Clear the auth layer and source-folder override for the form target.
-    pub fn clear_auth_form_layer(
-        &mut self,
-        target: &crate::tui::screens::settings::model::AuthFormTarget<crate::tui::auth::AuthKind>,
-    ) {
+    pub fn clear_auth_form_layer(&mut self, target: &crate::tui::state::AuthFormTarget) {
+        if *target.kind() != crate::tui::auth::AuthKind::Github {
+            return;
+        }
         match target {
-            crate::tui::screens::settings::model::AuthFormTarget::Workspace { kind } => {
-                crate::tui::auth_config::clear_workspace_auth_layer(&mut self.pending, *kind);
-                crate::tui::auth_config::set_workspace_sync_source_dir(
-                    &mut self.pending,
-                    *kind,
-                    None,
-                );
-            }
-            crate::tui::screens::settings::model::AuthFormTarget::WorkspaceRole { role, kind } => {
-                if let Some(entry) = self.pending.roles.get_mut(role) {
-                    crate::tui::auth_config::clear_role_auth_layer(entry, *kind);
-                    crate::tui::auth_config::set_role_sync_source_dir(entry, *kind, None);
+            crate::tui::state::AuthFormTarget::Workspace { .. } => self.pending.github = None,
+            crate::tui::state::AuthFormTarget::WorkspaceRole { role, .. } => {
+                if let Some(role) = self.pending.roles.get_mut(role) {
+                    role.github = None;
                 }
             }
         }
     }
 
-    fn auth_form_mode_and_credential(
-        &self,
-        target: &crate::tui::screens::settings::model::AuthFormTarget<crate::tui::auth::AuthKind>,
-    ) -> (
-        Option<crate::tui::auth::AuthMode>,
-        Option<jackin_core::EnvValue>,
-    ) {
-        match target {
-            crate::tui::screens::settings::model::AuthFormTarget::Workspace { kind } => {
-                crate::tui::auth_config::workspace_auth_mode_and_credential(&self.pending, *kind)
+    pub fn clear_auth_row_at_cursor(&mut self, config: &jackin_config::AppConfig) {
+        if self.focused_account_row(config) {
+            self.edit_account_row(config, true);
+        } else {
+            let FieldFocus::Row(index) = self.active_field;
+            if let Some(target) = self.resolve_auth_form_target(config, index) {
+                self.clear_auth_form_layer(&target);
             }
-            crate::tui::screens::settings::model::AuthFormTarget::WorkspaceRole { role, kind } => {
-                crate::tui::auth_config::role_auth_mode_and_credential(
-                    self.pending.roles.get(role),
-                    *kind,
-                )
-            }
-        }
-    }
-
-    fn auth_form_source_folder(
-        &self,
-        target: &crate::tui::screens::settings::model::AuthFormTarget<crate::tui::auth::AuthKind>,
-    ) -> Option<std::path::PathBuf> {
-        let agent = crate::tui::auth_config::auth_kind_agent(*target.kind())?;
-        match target {
-            crate::tui::screens::settings::model::AuthFormTarget::Workspace { .. } => {
-                self.pending.sync_source_dir_for(agent)
-            }
-            crate::tui::screens::settings::model::AuthFormTarget::WorkspaceRole {
-                role, ..
-            } => self
-                .pending
-                .roles
-                .get(role)
-                .and_then(|role| role.sync_source_dir_for(agent)),
-        }
-    }
-
-    fn auth_form_source_folder_fallback(
-        &self,
-        config: &jackin_config::AppConfig,
-        target: &crate::tui::screens::settings::model::AuthFormTarget<crate::tui::auth::AuthKind>,
-    ) -> Option<crate::tui::components::editor_rows::AuthSourceFolderDisplay> {
-        crate::tui::auth_config::auth_kind_agent(*target.kind())?;
-        let synthesized = self.synthesize_app_config_for_auth(config);
-        let workspace_name = self.workspace_name_for_panel();
-        let role = match target {
-            crate::tui::screens::settings::model::AuthFormTarget::Workspace { .. } => "",
-            crate::tui::screens::settings::model::AuthFormTarget::WorkspaceRole {
-                role, ..
-            } => role.as_str(),
-        };
-        Some(crate::tui::auth_config::editor_source_folder_display(
-            &synthesized,
-            &workspace_name,
-            role,
-            *target.kind(),
-        ))
-    }
-
-    fn clear_role_auth_kind(&mut self, role: &str, kind: crate::tui::auth::AuthKind) {
-        if let Some(role_override) = self.pending.roles.get_mut(role) {
-            crate::tui::auth_config::clear_role_auth_layer(role_override, kind);
         }
     }
 
@@ -602,11 +511,11 @@ impl<
         &self,
         config: &jackin_config::AppConfig,
     ) -> jackin_config::AppConfig {
-        crate::tui::auth_config::synthesize_app_config_for_workspace_auth(
-            config,
-            self.workspace_name_for_panel(),
-            self.pending.clone(),
-        )
+        let mut result = config.clone();
+        result
+            .workspaces
+            .insert(self.workspace_name_for_panel(), self.pending.clone());
+        result
     }
 
     #[must_use]
@@ -624,52 +533,30 @@ impl<
         &self,
         config: &jackin_config::AppConfig,
     ) -> Vec<AuthRow<crate::tui::auth::AuthKind>> {
-        let synthesized = self.synthesize_app_config_for_auth(config);
-        let ws_name = self.workspace_name_for_panel();
-        crate::tui::screens::editor::update::auth_flat_rows(
-            self.auth_selected_kind,
-            crate::tui::auth::AuthKind::WORKSPACE_PANEL_KINDS
-                .iter()
-                .copied(),
-            &self.pending.roles,
-            self.pending.allowed_roles.len(),
-            &self.auth_expanded,
-            &crate::tui::screens::editor::update::AuthFlatRowPredicates {
-                role_override_present: &|kind, role| {
-                    crate::tui::auth_config::role_override_present(*kind, role)
-                },
-                effective_mode_needs_credential: &|kind, role| {
-                    crate::tui::auth_config::panel_mode_requires_credential(
-                        &synthesized,
-                        &ws_name,
-                        role,
-                        *kind,
-                    )
-                },
-                effective_mode_supports_source_folder: &|kind, role| {
-                    let mode = crate::tui::auth_config::resolve_panel_mode(
-                        &synthesized,
-                        *kind,
-                        &ws_name,
-                        role,
-                    );
-                    crate::tui::auth::auth_mode_supports_source_folder(*kind, mode)
-                },
-            },
-        )
-    }
-
-    #[must_use]
-    pub fn focused_auth_kind(
-        &self,
-        config: &jackin_config::AppConfig,
-    ) -> Option<crate::tui::auth::AuthKind> {
-        let FieldFocus::Row(n) = self.active_field;
-        let rows = self.auth_flat_rows(config);
-        match rows.get(n) {
-            Some(AuthRow::AuthKindRow { kind }) => Some(*kind),
-            _ => None,
+        let mut rows: Vec<_> = config
+            .accounts
+            .keys()
+            .map(|id| AuthRow::Account { id: id.clone() })
+            .collect();
+        for &agent in jackin_core::Agent::ALL {
+            rows.push(AuthRow::Binding { agent, role: None });
         }
+        rows.push(AuthRow::WorkspaceMode {
+            kind: crate::tui::auth::AuthKind::Github,
+        });
+        for role in self.eligible_role_override_selectors(config.roles.keys()) {
+            rows.push(AuthRow::RoleMode {
+                role: role.key(),
+                kind: crate::tui::auth::AuthKind::Github,
+            });
+            for &agent in jackin_core::Agent::ALL {
+                rows.push(AuthRow::Binding {
+                    agent,
+                    role: Some(role.key()),
+                });
+            }
+        }
+        rows
     }
 
     #[must_use]
@@ -677,8 +564,6 @@ impl<
         let FieldFocus::Row(n) = self.active_field;
         let rows = self.auth_flat_rows(config);
         match rows.get(n) {
-            Some(AuthRow::AddSentinel { .. }) => AuthEnterPlan::AddRoleOverride,
-            Some(AuthRow::RoleHeader { role, .. }) => AuthEnterPlan::ToggleRole(role.clone()),
             Some(AuthRow::WorkspaceMode { .. } | AuthRow::RoleMode { .. }) => {
                 AuthEnterPlan::OpenForm
             }
@@ -713,22 +598,13 @@ impl<
     #[must_use]
     pub fn escape_key_plan(&self) -> EditorEscapeKeyPlan {
         if !self.tab_bar_focused() {
-            return if self.active_tab == EditorTab::Auth && self.auth_selected_kind.is_some() {
-                EditorEscapeKeyPlan::FocusTabBarAndClearAuthKind
-            } else {
-                EditorEscapeKeyPlan::FocusTabBar
-            };
+            return EditorEscapeKeyPlan::FocusTabBar;
         }
-
-        if self.active_tab == EditorTab::Auth && self.auth_selected_kind.is_some() {
-            EditorEscapeKeyPlan::ClearAuthKind
-        } else {
-            use crate::tui::screens::edit_save::{EditSaveDisposition, plan_leave_when_dirty};
-            match plan_leave_when_dirty(self.is_dirty()) {
-                EditSaveDisposition::ConfirmDiscard => EditorEscapeKeyPlan::OpenSaveDiscard,
-                EditSaveDisposition::Noop | EditSaveDisposition::SaveNow => {
-                    EditorEscapeKeyPlan::ReloadFromConfig
-                }
+        use crate::tui::screens::edit_save::{EditSaveDisposition, plan_leave_when_dirty};
+        match plan_leave_when_dirty(self.is_dirty()) {
+            EditSaveDisposition::ConfirmDiscard => EditorEscapeKeyPlan::OpenSaveDiscard,
+            EditSaveDisposition::Noop | EditSaveDisposition::SaveNow => {
+                EditorEscapeKeyPlan::ReloadFromConfig
             }
         }
     }
@@ -747,17 +623,14 @@ impl<
     #[must_use]
     pub fn focused_role_header_expansion_key_plan(
         &self,
-        config: &jackin_config::AppConfig,
+        _config: &jackin_config::AppConfig,
         expanded: bool,
     ) -> EditorRoleHeaderExpansionKeyPlan {
         match self.active_tab {
             EditorTab::Secrets => EditorRoleHeaderExpansionKeyPlan::Secrets(
                 self.focused_secrets_role_expansion_plan(expanded),
             ),
-            EditorTab::Auth => EditorRoleHeaderExpansionKeyPlan::Auth(
-                self.focused_auth_role_expansion_plan(config, expanded),
-            ),
-            EditorTab::General | EditorTab::Mounts | EditorTab::Roles => {
+            EditorTab::Auth | EditorTab::General | EditorTab::Mounts | EditorTab::Roles => {
                 EditorRoleHeaderExpansionKeyPlan::NotRoleHeaderTab
             }
         }
@@ -811,18 +684,13 @@ impl<
     #[must_use]
     pub fn immediate_action_key_plan(
         &self,
-        config: &jackin_config::AppConfig,
+        _config: &jackin_config::AppConfig,
         key_code: crossterm::event::KeyCode,
         modifiers: crossterm::event::KeyModifiers,
     ) -> EditorImmediateActionKeyPlan {
         use crossterm::event::{KeyCode, KeyModifiers};
 
         match key_code {
-            KeyCode::Enter if self.active_tab == EditorTab::Auth => self
-                .focused_auth_kind(config)
-                .map_or(EditorImmediateActionKeyPlan::NotImmediateAction, |kind| {
-                    EditorImmediateActionKeyPlan::EnterAuthKind(kind)
-                }),
             KeyCode::Char(' ') if self.active_tab == EditorTab::General => {
                 EditorImmediateActionKeyPlan::ToggleGeneralSelected
             }
@@ -914,9 +782,6 @@ impl<
         }
 
         match key_code {
-            KeyCode::Char('a' | 'A') if self.auth_selected_kind.is_some() => {
-                EditorAuthActionKeyPlan::OpenRolePicker
-            }
             KeyCode::Char('d' | 'D') => EditorAuthActionKeyPlan::ClearFocusedRow,
             _ => EditorAuthActionKeyPlan::NotAuthAction,
         }

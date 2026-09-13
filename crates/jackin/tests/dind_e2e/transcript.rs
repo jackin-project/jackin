@@ -7,7 +7,7 @@
     clippy::disallowed_methods,
     reason = "integration tests: fail-fast fixtures and host-side blocking helpers"
 )]
-use std::io::Read;
+use std::io::{Read, Write as _};
 use std::sync::{
     Arc, Mutex,
     atomic::{AtomicBool, Ordering},
@@ -15,7 +15,28 @@ use std::sync::{
 use std::time::{Duration, Instant};
 
 pub(super) fn spawn_pipe_collector<R>(
+    reader: R,
+) -> (Arc<Mutex<Vec<u8>>>, std::thread::JoinHandle<()>)
+where
+    R: Read + Send + 'static,
+{
+    collect_pipe(reader, None)
+}
+
+pub(super) fn spawn_logged_pipe_collector<R>(
+    reader: R,
+    path: &std::path::Path,
+) -> (Arc<Mutex<Vec<u8>>>, std::thread::JoinHandle<()>)
+where
+    R: Read + Send + 'static,
+{
+    let log = std::fs::File::create(path).expect("create live launch transcript");
+    collect_pipe(reader, Some(log))
+}
+
+fn collect_pipe<R>(
     mut reader: R,
+    mut log: Option<std::fs::File>,
 ) -> (Arc<Mutex<Vec<u8>>>, std::thread::JoinHandle<()>)
 where
     R: Read + Send + 'static,
@@ -27,10 +48,16 @@ where
         loop {
             match reader.read(&mut chunk) {
                 Ok(0) | Err(_) => break,
-                Ok(n) => thread_buffer
-                    .lock()
-                    .expect("pty output buffer mutex must not be poisoned")
-                    .extend_from_slice(&chunk[..n]),
+                Ok(n) => {
+                    if let Some(log) = &mut log {
+                        log.write_all(&chunk[..n])
+                            .expect("write live launch transcript");
+                    }
+                    thread_buffer
+                        .lock()
+                        .expect("pty output buffer mutex must not be poisoned")
+                        .extend_from_slice(&chunk[..n]);
+                }
             }
         }
     });

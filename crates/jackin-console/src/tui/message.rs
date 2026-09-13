@@ -14,7 +14,6 @@ use ratatui::layout::Rect;
 
 #[derive(Debug)]
 pub enum ConsoleManagerMessage<
-    AuthKind,
     CreatePrelude,
     Editor,
     Settings,
@@ -34,7 +33,6 @@ pub enum ConsoleManagerMessage<
     GithubPickerState,
 > {
     CollapseSelectedTree,
-    ClearEditorAuthKind,
     EnterPreview,
     EnterConfirmDelete {
         name: String,
@@ -49,9 +47,6 @@ pub enum ConsoleManagerMessage<
     },
     EnterCreatePrelude(CreatePrelude),
     EnterEditor(Editor),
-    EnterEditorAuthKind {
-        kind: AuthKind,
-    },
     EnterSettings(Settings),
     FileBrowserCommitValidated(FileBrowserCommit),
     FileBrowserListingLoaded(FileBrowserListing),
@@ -142,10 +137,6 @@ pub enum ConsoleManagerMessage<
         role: String,
         expanded: bool,
     },
-    SetEditorAuthRoleExpanded {
-        role: String,
-        expanded: bool,
-    },
     SetEditorSecretsRoleExpanded {
         role: String,
         expanded: bool,
@@ -194,8 +185,8 @@ pub enum ConsoleManagerMessage<
     DismissInlineSessionPicker,
     DismissInlineRolePicker,
     DismissInlineAgentPicker,
-    DismissInlineProviderPicker,
-    DismissLaunchProviderPicker,
+    DismissInlineAccountPicker,
+    DismissLaunchAccountPicker,
 }
 
 #[derive(Debug)]
@@ -229,15 +220,15 @@ pub enum ConsoleInputOutcome<RoleSelector, Agent, InstanceAction, Provider> {
         container: String,
         action: InstanceAction,
     },
-    NewSessionWithProvider {
+    NewSessionWithAccount {
         container: String,
         agent: Agent,
-        provider: Provider,
+        account: Provider,
     },
-    LaunchWithProvider {
+    LaunchWithAccount {
         selector: RoleSelector,
         agent: Agent,
-        provider: Provider,
+        account: Provider,
     },
 }
 
@@ -286,17 +277,17 @@ pub enum ConsoleOutcome<RoleSelector, Workspace, Agent, Provider> {
         action: ConsoleInstanceAction<Agent>,
     },
     /// Operator selected an agent and a provider in the console picker.
-    NewSessionWithProvider {
+    NewSessionWithAccount {
         container: String,
         agent: Agent,
-        provider: Provider,
+        account: Provider,
     },
     /// Initial launch with a provider selected before the container exists.
-    LaunchWithProvider {
+    LaunchWithAccount {
         selector: RoleSelector,
         workspace: Workspace,
         agent: Agent,
-        provider: Provider,
+        account: Provider,
     },
 }
 

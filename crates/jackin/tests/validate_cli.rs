@@ -11,7 +11,7 @@ fn write_role_repo(temp: &tempfile::TempDir, dockerfile: &str, manifest: &str) {
     std::fs::write(temp.path().join("jackin.role.toml"), manifest).unwrap();
 }
 
-const VALID_MANIFEST: &str = r#"version = "v1alpha6"
+const VALID_MANIFEST: &str = r#"version = "v1alpha7"
 dockerfile = "Dockerfile"
 
 [claude]
@@ -114,7 +114,7 @@ fn validate_fails_for_invalid_manifest() {
     std::fs::write(temp.path().join("Dockerfile"), VERSIONED_FROM).unwrap();
     std::fs::write(
         temp.path().join("jackin.role.toml"),
-        r#"version = "v1alpha6"
+        r#"version = "v1alpha7"
 dockerfile = "Dockerfile"
 unknown_field = true
 
@@ -145,7 +145,7 @@ fn validate_passes_when_manifest_uses_dockerfile_in_subdirectory() {
     .unwrap();
     std::fs::write(
         temp.path().join("jackin.role.toml"),
-        r#"version = "v1alpha6"
+        r#"version = "v1alpha7"
 dockerfile = "docker/role.Dockerfile"
 
 [claude]
@@ -168,7 +168,7 @@ fn validate_fails_for_invalid_preflight_hook() {
     write_role_repo(
         &temp,
         VERSIONED_FROM,
-        r#"version = "v1alpha6"
+        r#"version = "v1alpha7"
 dockerfile = "Dockerfile"
 
 [hooks]
@@ -228,12 +228,12 @@ fn migrate_updates_legacy_manifest() {
         .assert()
         .success()
         .stdout(predicate::str::contains(
-            "Migrated manifest legacy -> v1alpha6",
+            "Migrated manifest legacy -> v1alpha7",
         ))
         .stdout(predicate::str::contains("Role repository is valid"));
 
     let out = std::fs::read_to_string(temp.path().join("jackin.role.toml")).unwrap();
-    assert!(out.contains(r#"version = "v1alpha6""#), "{out}");
+    assert!(out.contains(r#"version = "v1alpha7""#), "{out}");
 }
 
 #[test]
@@ -250,7 +250,7 @@ fn migrate_rejects_newer_manifest_version() {
         .args(["migrate", temp.path().to_str().unwrap()])
         .assert()
         .failure()
-        .stderr(predicate::str::contains("only understands up to v1alpha6"));
+        .stderr(predicate::str::contains("only understands up to v1alpha7"));
 }
 
 #[test]

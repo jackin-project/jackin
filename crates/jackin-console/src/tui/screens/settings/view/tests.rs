@@ -3,14 +3,9 @@
 
 //! Tests for `view`.
 use super::*;
+use crate::tui::components::editor_rows::AuthSourceDisplay;
 use crate::tui::components::editor_rows::{AuthSourceFolderDisplay, AuthSourceFolderKind};
 use crate::tui::state::SettingsTab;
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Kind {
-    Plain,
-    Credential,
-}
 
 #[test]
 fn general_lines_highlight_selected_setting() {
@@ -671,42 +666,12 @@ fn shared_auth_rows_render_settings_and_editor_rows_identically() {
 }
 
 #[test]
-fn auth_content_height_lists_all_kinds_before_drill_in() {
-    let rows = vec![
-        SettingsAuthRow {
-            kind: Kind::Plain,
-            mode: false,
-            sync_source_dir: None,
-        },
-        SettingsAuthRow {
-            kind: Kind::Credential,
-            mode: true,
-            sync_source_dir: None,
-        },
-    ];
-
+fn accounts_height_includes_registry_add_actions_and_github() {
+    let config = jackin_config::AppConfig::default();
+    let settings = crate::tui::state::SettingsAuthState::from_config(&config);
     assert_eq!(
-        auth_content_height(None, &rows, |_, mode| usize::from(*mode) + 1, false),
-        2
-    );
-}
-
-#[test]
-fn auth_content_height_drill_in_tracks_credential_row_and_error() {
-    let rows = vec![SettingsAuthRow {
-        kind: Kind::Credential,
-        mode: true,
-        sync_source_dir: None,
-    }];
-
-    assert_eq!(
-        auth_content_height(
-            Some(Kind::Credential),
-            &rows,
-            |_, mode| usize::from(*mode) + 1,
-            true
-        ),
-        5
+        settings.row_count(),
+        super::super::model::ACCOUNT_KINDS.len() + 1
     );
 }
 

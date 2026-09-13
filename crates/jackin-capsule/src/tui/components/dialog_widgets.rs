@@ -66,11 +66,8 @@ pub(crate) enum DialogRatatuiSnapshot {
         /// quitting force-stops the container) instead of the plain prompt.
         data_loss: bool,
     },
-    /// List picker (`CommandPalette`, `AgentPicker`, `SplitPicker`, `ClosePicker`,
-    /// `ProviderPicker`). `show_filter` draws the type-to-filter input + gap
-    /// above the items; `ProviderPicker` is a flat list and clears it so its
-    /// `box_rect` (border + items + border) is not under-allocated by the
-    /// two reserved filter rows, which clipped the list.
+    /// List picker. `show_filter` reserves rows for a type-to-filter input;
+    /// flat lists use the entire inner area for their items.
     FilterPicker {
         title: String,
         filter: String,
@@ -276,29 +273,6 @@ impl Dialog {
                     items,
                     selected: *selected,
                     show_filter: true,
-                }
-            }
-
-            Dialog::ProviderPicker {
-                agent,
-                providers,
-                selected,
-                ..
-            } => {
-                let title = agent
-                    .as_deref()
-                    .and_then(crate::tui::components::agent_display_name)
-                    .map_or_else(|| "Provider".into(), |n| format!("Provider: {n}"));
-                let items: Vec<PickerItem> = providers
-                    .iter()
-                    .map(|p| PickerItem::Item(p.label.clone()))
-                    .collect();
-                DialogRatatuiSnapshot::FilterPicker {
-                    title,
-                    filter: String::new(),
-                    items,
-                    selected: *selected,
-                    show_filter: false,
                 }
             }
 
@@ -632,7 +606,7 @@ fn render_filter_picker(
         return;
     }
 
-    // A flat list (ProviderPicker) fills the whole inner area from row 0; a
+    // A flat list fills the whole inner area from row 0; a
     // filterable picker reserves row 0 for the input and row 1 as a gap, so
     // its items start at row 2. box_rect mirrors this: +2 rows flat, +4 with
     // the filter — keep the two in lockstep or the list clips.

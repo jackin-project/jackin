@@ -82,22 +82,6 @@ fn telemetry_command_mapper_covers_every_nested_leaf() {
             Name::WorkspaceEnvList,
         ),
         (
-            &["workspace", "claude-token", "setup", "sample", "--plain"],
-            Name::WorkspaceClaudeTokenSetup,
-        ),
-        (
-            &["workspace", "claude-token", "rotate", "sample"],
-            Name::WorkspaceClaudeTokenRotate,
-        ),
-        (
-            &["workspace", "claude-token", "revoke", "sample"],
-            Name::WorkspaceClaudeTokenRevoke,
-        ),
-        (
-            &["workspace", "claude-token", "doctor", "sample"],
-            Name::WorkspaceClaudeTokenDoctor,
-        ),
-        (
             &[
                 "config", "mount", "add", "cache", "--src", "/a", "--dst", "/b",
             ],
@@ -117,8 +101,6 @@ fn telemetry_command_mapper_covers_every_nested_leaf() {
             Name::ConfigTrustRevoke,
         ),
         (&["config", "trust", "list"], Name::ConfigTrustList),
-        (&["config", "auth", "set", "sync"], Name::ConfigAuthSet),
-        (&["config", "auth", "show"], Name::ConfigAuthShow),
         (
             &["config", "env", "set", "KEY", "value"],
             Name::ConfigEnvSet,
@@ -164,6 +146,63 @@ fn telemetry_command_mapper_covers_every_nested_leaf() {
         ),
     ];
 
+    assert_command_names(cases);
+}
+
+#[test]
+fn telemetry_command_mapper_covers_account_leaves() {
+    use jackin_telemetry::schema::enums::CliCommandName as Name;
+    let cases: &[(&[&str], Name)] = &[
+        (&["account", "list"], Name::AccountList),
+        (&["account", "scan"], Name::AccountScan),
+        (
+            &[
+                "account",
+                "add",
+                "work",
+                "--provider",
+                "openai",
+                "--api-key",
+                "--stdin",
+            ],
+            Name::AccountAdd,
+        ),
+        (&["account", "remove", "work"], Name::AccountRemove),
+        (&["account", "enable", "work"], Name::AccountEnable),
+        (&["account", "disable", "work"], Name::AccountDisable),
+        (
+            &["account", "default", "work", "--agent", "claude"],
+            Name::AccountDefault,
+        ),
+        (
+            &["workspace", "account", "list", "sample"],
+            Name::WorkspaceAccountList,
+        ),
+        (
+            &["workspace", "account", "assign", "sample", "work"],
+            Name::WorkspaceAccountAssign,
+        ),
+        (
+            &["workspace", "account", "unassign", "sample", "work"],
+            Name::WorkspaceAccountUnassign,
+        ),
+        (
+            &[
+                "workspace",
+                "account",
+                "select",
+                "sample",
+                "work",
+                "--agent",
+                "codex",
+            ],
+            Name::WorkspaceAccountSelect,
+        ),
+    ];
+    assert_command_names(cases);
+}
+
+fn assert_command_names(cases: &[(&[&str], jackin_telemetry::schema::enums::CliCommandName)]) {
     for (args, expected) in cases {
         let parsed = Cli::try_parse_from(std::iter::once("jackin").chain(args.iter().copied()))
             .unwrap_or_else(|error| panic!("failed to parse {args:?}: {error}"));
@@ -339,10 +378,10 @@ fn parses_help_with_single_subcommand() {
 
 #[test]
 fn parses_help_with_nested_subcommand() {
-    let cli = Cli::try_parse_from(["jackin", "help", "config", "auth"]).unwrap();
+    let cli = Cli::try_parse_from(["jackin", "help", "workspace", "account"]).unwrap();
     assert!(matches!(
         cli.command,
-        Some(Command::Help { ref command }) if command == &["config", "auth"]
+        Some(Command::Help { ref command }) if command == &["workspace", "account"]
     ));
 }
 
@@ -371,8 +410,17 @@ fn all_subcommand_help_pages_show_banner() {
         vec!["jackin", "config", "mount", "add", "--help"],
         vec!["jackin", "config", "mount", "remove", "--help"],
         vec!["jackin", "config", "mount", "list", "--help"],
-        vec!["jackin", "config", "auth", "set", "--help"],
-        vec!["jackin", "config", "auth", "show", "--help"],
+        vec!["jackin", "account", "add", "--help"],
+        vec!["jackin", "account", "list", "--help"],
+        vec!["jackin", "account", "scan", "--help"],
+        vec!["jackin", "account", "remove", "--help"],
+        vec!["jackin", "account", "enable", "--help"],
+        vec!["jackin", "account", "disable", "--help"],
+        vec!["jackin", "account", "default", "--help"],
+        vec!["jackin", "workspace", "account", "list", "--help"],
+        vec!["jackin", "workspace", "account", "unassign", "--help"],
+        vec!["jackin", "workspace", "account", "select", "--help"],
+        vec!["jackin", "workspace", "account", "assign", "--help"],
         vec!["jackin", "usage", "--help"],
         vec!["jackin", "usage", "cache", "accounts", "--help"],
         vec!["jackin", "usage", "jk-demo-role", "accounts", "--help"],

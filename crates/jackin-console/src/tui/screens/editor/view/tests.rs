@@ -6,6 +6,7 @@
 use super::*;
 #[cfg(any(test, feature = "test-support"))]
 use jackin_config::test_support::config_with_agents;
+use std::collections::BTreeMap;
 
 fn hint_labels(items: Vec<HintSpan<'static>>) -> Vec<String> {
     items
@@ -33,7 +34,7 @@ fn general_lines_highlight_selected_row() {
 
 #[test]
 fn editor_contextual_footer_items_detect_op_refs() {
-    type TestEditor = WorkspaceEditorState<(), (), jackin_core::EnvValue, (), (), (), (), (), ()>;
+    type TestEditor = WorkspaceEditorState<(), (), jackin_core::EnvValue, (), (), (), ()>;
     let mut state = TestEditor::new_edit("ws".into(), WorkspaceConfig::default());
     state.active_tab = EditorTab::Secrets;
     state.pending.env.insert(
@@ -207,17 +208,17 @@ fn secret_key_input_state_marks_scope_duplicates() {
 fn secret_key_input_state_from_pending_marks_scope_duplicates() {
     #[derive(Default)]
     struct Role {
-        env: std::collections::BTreeMap<String, String>,
+        env: BTreeMap<String, String>,
     }
 
-    let mut roles = std::collections::BTreeMap::new();
+    let mut roles = BTreeMap::new();
     roles.insert(
         "alpha".to_owned(),
         Role {
-            env: std::collections::BTreeMap::from([("TOKEN".to_owned(), "x".to_owned())]),
+            env: BTreeMap::from([("TOKEN".to_owned(), "x".to_owned())]),
         },
     );
-    let workspace = std::collections::BTreeMap::from([("WORKSPACE".to_owned(), "x".to_owned())]);
+    let workspace = BTreeMap::from([("WORKSPACE".to_owned(), "x".to_owned())]);
 
     let state = secret_key_input_state_from_pending(
         &workspace,
@@ -942,7 +943,7 @@ use jackin_config::WorkspaceRoleOverride;
 /// Build an editor sitting on the Secrets tab with a single
 /// workspace-level env key (`DB_URL = postgres://localhost/db`).
 fn editor_with_workspace_env() -> EditorState<'static> {
-    let mut env = std::collections::BTreeMap::new();
+    let mut env = BTreeMap::new();
     env.insert("DB_URL".into(), "postgres://localhost/db".into());
     let ws = WorkspaceConfig {
         env,
@@ -957,19 +958,14 @@ fn editor_with_workspace_env() -> EditorState<'static> {
 /// Build an editor sitting on the Secrets tab with one role override
 /// carrying a single env key (`agent-smith`: `LOG_LEVEL = debug`).
 fn editor_with_agent_override() -> EditorState<'static> {
-    let mut role_env = std::collections::BTreeMap::new();
+    let mut role_env = BTreeMap::new();
     role_env.insert("LOG_LEVEL".into(), "debug".into());
-    let mut roles = std::collections::BTreeMap::new();
+    let mut roles = BTreeMap::new();
     roles.insert(
         "agent-smith".into(),
         WorkspaceRoleOverride {
+            account_bindings: BTreeMap::new(),
             env: role_env,
-            claude: None,
-            codex: None,
-            amp: None,
-            kimi: None,
-            opencode: None,
-            grok: None,
             github: None,
         },
     );
@@ -1101,37 +1097,27 @@ fn secrets_tab_cursor_skips_workspace_header_label() {
 fn secrets_flat_rows_sequence_is_canonical() {
     use jackin_config::WorkspaceRoleOverride;
 
-    let mut env = std::collections::BTreeMap::new();
+    let mut env = BTreeMap::new();
     env.insert("ALPHA".into(), "1".into());
     env.insert("BETA".into(), "2".into());
 
-    let mut role_env = std::collections::BTreeMap::new();
+    let mut role_env = BTreeMap::new();
     role_env.insert("KEY".into(), "v".into());
 
-    let mut roles = std::collections::BTreeMap::new();
+    let mut roles = BTreeMap::new();
     roles.insert(
         "agent-a".into(),
         WorkspaceRoleOverride {
+            account_bindings: BTreeMap::new(),
             env: role_env,
-            claude: None,
-            codex: None,
-            amp: None,
-            kimi: None,
-            opencode: None,
-            grok: None,
             github: None,
         },
     );
     roles.insert(
         "agent-b".into(),
         WorkspaceRoleOverride {
-            env: std::collections::BTreeMap::new(),
-            claude: None,
-            codex: None,
-            amp: None,
-            kimi: None,
-            opencode: None,
-            grok: None,
+            account_bindings: BTreeMap::new(),
+            env: BTreeMap::new(),
             github: None,
         },
     );
@@ -1203,7 +1189,7 @@ fn secrets_tab_empty_renders_only_sentinel() {
 
 #[test]
 fn op_row_breadcrumb_render_three_segment() {
-    let mut env = std::collections::BTreeMap::new();
+    let mut env = BTreeMap::new();
     env.insert(
         "DB_URL".into(),
         jackin_core::EnvValue::OpRef(jackin_core::OpRef {
@@ -1258,7 +1244,7 @@ fn op_row_breadcrumb_render_three_segment() {
 /// syntax — not the earlier `account/vault/item/field` reading.
 #[test]
 fn op_row_breadcrumb_render_four_segment_with_section() {
-    let mut env = std::collections::BTreeMap::new();
+    let mut env = BTreeMap::new();
     env.insert(
         "API_KEY".into(),
         jackin_core::EnvValue::OpRef(jackin_core::OpRef {
@@ -1308,7 +1294,7 @@ fn op_row_breadcrumb_render_four_segment_with_section() {
 /// terminals; `[op]` reads as "1Password" at a glance.
 #[test]
 fn op_row_renders_with_op_text_marker() {
-    let mut env = std::collections::BTreeMap::new();
+    let mut env = BTreeMap::new();
     env.insert(
         "DB_URL".into(),
         jackin_core::EnvValue::OpRef(jackin_core::OpRef {
@@ -1339,7 +1325,7 @@ fn op_row_renders_with_op_text_marker() {
 
 #[test]
 fn plain_row_renders_without_op_marker() {
-    let mut env = std::collections::BTreeMap::new();
+    let mut env = BTreeMap::new();
     env.insert("DEBUG".into(), "1".into());
     let ws = WorkspaceConfig {
         env,
@@ -1358,7 +1344,7 @@ fn plain_row_renders_without_op_marker() {
 
 #[test]
 fn op_row_marker_column_is_5_chars_wide_with_brackets() {
-    let mut env = std::collections::BTreeMap::new();
+    let mut env = BTreeMap::new();
     env.insert(
         "DB_URL".into(),
         jackin_core::EnvValue::OpRef(jackin_core::OpRef {
@@ -1386,7 +1372,7 @@ fn op_row_marker_column_is_5_chars_wide_with_brackets() {
 
 #[test]
 fn plain_row_marker_column_is_5_blank_chars_for_alignment() {
-    let mut env = std::collections::BTreeMap::new();
+    let mut env = BTreeMap::new();
     env.insert("DEBUG".into(), "1".into());
     let ws = WorkspaceConfig {
         env,
@@ -1419,7 +1405,7 @@ fn plain_row_marker_column_is_5_blank_chars_for_alignment() {
 
 #[test]
 fn secrets_tab_renders_keys_in_alphabetical_order() {
-    let mut env = std::collections::BTreeMap::new();
+    let mut env = BTreeMap::new();
     env.insert("ZULU".into(), "z".into());
     env.insert("ALPHA".into(), "a".into());
     env.insert("MIKE".into(), "m".into());
@@ -1443,21 +1429,16 @@ fn secrets_tab_renders_keys_in_alphabetical_order() {
 
 #[test]
 fn section_spacer_appears_between_workspace_and_first_agent_section() {
-    let mut env = std::collections::BTreeMap::new();
+    let mut env = BTreeMap::new();
     env.insert("DB_URL".into(), "postgres://localhost/db".into());
-    let mut role_env = std::collections::BTreeMap::new();
+    let mut role_env = BTreeMap::new();
     role_env.insert("LOG_LEVEL".into(), "debug".into());
-    let mut roles = std::collections::BTreeMap::new();
+    let mut roles = BTreeMap::new();
     roles.insert(
         "agent-smith".into(),
         WorkspaceRoleOverride {
+            account_bindings: BTreeMap::new(),
             env: role_env,
-            claude: None,
-            codex: None,
-            amp: None,
-            kimi: None,
-            opencode: None,
-            grok: None,
             github: None,
         },
     );
@@ -1484,34 +1465,24 @@ fn section_spacer_appears_between_workspace_and_first_agent_section() {
 
 #[test]
 fn section_spacer_appears_between_consecutive_agent_sections() {
-    let mut a_env = std::collections::BTreeMap::new();
+    let mut a_env = BTreeMap::new();
     a_env.insert("LEVEL_A".into(), "1".into());
-    let mut b_env = std::collections::BTreeMap::new();
+    let mut b_env = BTreeMap::new();
     b_env.insert("LEVEL_B".into(), "2".into());
-    let mut roles = std::collections::BTreeMap::new();
+    let mut roles = BTreeMap::new();
     roles.insert(
         "agent-architect".into(),
         WorkspaceRoleOverride {
+            account_bindings: BTreeMap::new(),
             env: a_env,
-            claude: None,
-            codex: None,
-            amp: None,
-            kimi: None,
-            opencode: None,
-            grok: None,
             github: None,
         },
     );
     roles.insert(
         "agent-smith".into(),
         WorkspaceRoleOverride {
+            account_bindings: BTreeMap::new(),
             env: b_env,
-            claude: None,
-            codex: None,
-            amp: None,
-            kimi: None,
-            opencode: None,
-            grok: None,
             github: None,
         },
     );
@@ -1561,7 +1532,7 @@ fn render_to_dump_wide(editor: &EditorState<'_>) -> String {
 /// name and the next " / " separator.
 #[test]
 fn renderer_op_ref_with_subtitle_renders_text() {
-    let mut env = std::collections::BTreeMap::new();
+    let mut env = BTreeMap::new();
     env.insert(
         "TOKEN".into(),
         jackin_core::EnvValue::OpRef(jackin_core::OpRef {
@@ -1611,7 +1582,7 @@ fn renderer_op_ref_with_subtitle_renders_text() {
 /// query must appear in the rendered output after the field name.
 #[test]
 fn renderer_op_ref_with_attribute_query_renders_text() {
-    let mut env = std::collections::BTreeMap::new();
+    let mut env = BTreeMap::new();
     env.insert(
         "OTP".into(),
         jackin_core::EnvValue::OpRef(jackin_core::OpRef {
@@ -1654,7 +1625,7 @@ fn renderer_op_ref_with_attribute_query_renders_text() {
 /// field → query.
 #[test]
 fn renderer_op_ref_with_subtitle_section_and_query_renders_all() {
-    let mut env = std::collections::BTreeMap::new();
+    let mut env = BTreeMap::new();
     env.insert(
         "TOKEN".into(),
         jackin_core::EnvValue::OpRef(jackin_core::OpRef {
@@ -1695,7 +1666,7 @@ fn renderer_op_ref_with_subtitle_section_and_query_renders_all() {
 /// that the operator needs to re-pick it.
 #[test]
 fn renderer_plain_with_bare_op_uri_renders_as_literal_no_breadcrumb() {
-    let mut env = std::collections::BTreeMap::new();
+    let mut env = BTreeMap::new();
     env.insert("DB_URL".into(), "op://Vault/Item/Field".into());
     let ws = WorkspaceConfig {
         env,
@@ -1730,7 +1701,7 @@ fn renderer_plain_with_bare_op_uri_renders_as_literal_no_breadcrumb() {
 /// recurs.
 #[test]
 fn renderer_key_value_separator_always_at_least_two_spaces() {
-    let mut env = std::collections::BTreeMap::new();
+    let mut env = BTreeMap::new();
     env.insert(
         "CLAUDE_CODE_OAUTH_TOKEN".into(),
         jackin_core::EnvValue::OpRef(jackin_core::OpRef {
@@ -1765,7 +1736,7 @@ fn renderer_key_value_separator_always_at_least_two_spaces() {
 /// value column without the `[op]` marker, and must NOT leak the UUID URI.
 #[test]
 fn renderer_op_ref_with_malformed_path_renders_repick_placeholder_no_panic() {
-    let mut env = std::collections::BTreeMap::new();
+    let mut env = BTreeMap::new();
     env.insert(
         "TOKEN".into(),
         jackin_core::EnvValue::OpRef(jackin_core::OpRef {

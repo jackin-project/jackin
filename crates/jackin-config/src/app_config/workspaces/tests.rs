@@ -16,6 +16,8 @@ fn edit_workspace_leaves_original_value_when_validation_fails() {
     let temp = tempdir().unwrap();
     let mut config = AppConfig::default();
     let original = WorkspaceConfig {
+        accounts: Vec::new(),
+        account_bindings: std::collections::BTreeMap::new(),
         version: CURRENT_WORKSPACE_VERSION.to_owned(),
         workdir: "/workspace/project".to_owned(),
         mounts: vec![MountConfig {
@@ -31,12 +33,7 @@ fn edit_workspace_leaves_original_value_when_validation_fails() {
         env: std::collections::BTreeMap::new(),
         roles: std::collections::BTreeMap::new(),
         keep_awake: KeepAwakeConfig::default(),
-        claude: None,
-        codex: None,
-        amp: None,
-        kimi: None,
-        opencode: None,
-        grok: None,
+
         github: None,
         git_pull_on_entry: false,
         runtime: crate::WorkspaceRuntimeConfig::default(),
@@ -198,6 +195,8 @@ fn create_workspace_rejects_duplicate_name_and_preserves_existing_value() {
     let temp = tempdir().unwrap();
     let mut config = AppConfig::default();
     let original = WorkspaceConfig {
+        accounts: Vec::new(),
+        account_bindings: std::collections::BTreeMap::new(),
         version: CURRENT_WORKSPACE_VERSION.to_owned(),
         workdir: "/workspace/project".to_owned(),
         mounts: vec![MountConfig {
@@ -250,6 +249,8 @@ fn edit_workspace_rejects_duplicate_upsert_destinations() {
 
     let mut config = AppConfig::default();
     let original = WorkspaceConfig {
+        accounts: Vec::new(),
+        account_bindings: std::collections::BTreeMap::new(),
         version: CURRENT_WORKSPACE_VERSION.to_owned(),
         workdir: "/workspace/project".to_owned(),
         mounts: vec![MountConfig {
@@ -305,6 +306,8 @@ fn edit_workspace_rejects_missing_remove_destination() {
 
     let mut config = AppConfig::default();
     let original = WorkspaceConfig {
+        accounts: Vec::new(),
+        account_bindings: std::collections::BTreeMap::new(),
         version: CURRENT_WORKSPACE_VERSION.to_owned(),
         workdir: "/workspace/project".to_owned(),
         mounts: vec![MountConfig {

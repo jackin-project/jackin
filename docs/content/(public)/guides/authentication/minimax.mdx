@@ -1,94 +1,50 @@
 ---
-title: MiniMax (Token Plan)
-description: Use MiniMax as an alternative provider for Claude Code and Codex sessions
+title: MiniMax
+description: Register a MiniMax provider account for Claude Code or Codex
 ---
 
-[MiniMax's Token Plan](https://platform.minimax.io/subscribe/token-plan) is available as an alternative provider for both Claude Code and Codex sessions, backed by the MiniMax-M3 model. Claude Code reaches it through MiniMax's Anthropic-compatible endpoint (`https://api.minimax.io/anthropic`); Codex reaches it through MiniMax's OpenAI-compatible endpoint. In both cases jackin❯ wires the redirect into the container at session-spawn time and never touches your host agent settings.
+Register the provider key as a named account, then grant it to each workspace that may use it. Provider credentials follow the same account allowlist as native agent profiles.
 
-When `MINIMAX_API_KEY` is configured, opening a new Claude or Codex tab presents a provider picker with **MiniMax** as one of the options. Operators without a MiniMax key see no change: MiniMax does not appear in the picker.
+## Register the key
 
-<Aside type="tip">
-MiniMax is configured in the **Auth** tab of `jackin console`, not by hand-editing any config file.
-</Aside>
+The following command reads the key from a masked prompt and records the selected model:
 
-<Aside type="note">
-MiniMax's international endpoint (`api.minimax.io`) is the one jackin❯ uses. The China-only endpoint (`api.minimaxi.com`) is not supported and is out of scope.
-</Aside>
+```bash
+jackin account add minimax-work --provider minimax --api-key \
+  --model MiniMax-M3
+```
 
-## Subscribe and get an API key
+Use `--secret-ref '$MINIMAX_API_KEY'` to reference an existing environment variable, or `--secret-ref 'op://Work/MiniMax/api-key'` for a 1Password reference. Use the endpoint and model appropriate to your provider account.
 
-1. Open [MiniMax's Token Plan page](https://platform.minimax.io/subscribe/token-plan), sign in, and choose a plan (Plus $20, Max $50, or Ultra $120 per month).
-2. After the plan is active, open [Platform → Plan Details](https://platform.minimax.io/console/plan) and look for **Subscription Key** under the plan summary. The key starts with `sk-cp-`.
-3. Keep that key private. In jackin❯, store it as `MINIMAX_API_KEY` through the Auth settings below; do not paste it into Claude Code's host settings.
+## Authorize a workspace
 
-<Aside type="note">
-The Subscription Key (`sk-cp-…`) is scoped to the Token Plan and cannot be used for pay-as-you-go API calls. It is distinct from any platform API key you may have from your general MiniMax account. Use the one from the Plan Details page.
-</Aside>
+```bash
+jackin workspace account assign my-app minimax-work
+jackin workspace account select my-app minimax-work --agent claude
+```
 
-## Configure your MiniMax API key in jackin❯
+For one role, add `--role agent-smith` to `select`. The role still uses the workspace's allowlist. A key registered globally is not automatically available in every workspace.
 
-1. Open `jackin console`, select your workspace, and switch to the **Auth** tab.
-2. Scroll to the **MiniMax** row and press `Enter` or `Space` to open the auth form.
-3. Set the mode to **API Key** (press `Space` to cycle).
-4. Enter your `MINIMAX_API_KEY` — either a literal key or a 1Password reference resolved at launch time.
-5. Save the form.
+At launch, jackin❯ resolves the selected account and configures the agent's provider endpoint and model. Host agent configuration stays separate from this account selection.
 
-The key is written to the `[env]` map in your config file at the scope you chose (global or per-workspace). A workspace-level key overrides the global one.
+## Use Codex
 
-To remove MiniMax, open the same row, cycle the mode back to **Ignore**, and save.
+The same account can authenticate Codex. Select it for a role supporting Codex:
 
-## Using the provider picker
+```bash
+jackin workspace account select my-app minimax-work --agent codex
+```
 
-With `MINIMAX_API_KEY` configured:
+With no custom `--base-url`, jackin❯ chooses the endpoint for each agent: Claude Code uses the Anthropic-compatible endpoint; Codex uses `https://api.minimax.io/v1` with the Responses protocol. Codex receives the selected key through its protected account environment. The generated configuration references that environment variable and contains no key.
 
-**At workspace launch** — launch a workspace and choose the Claude or Codex agent. Before the container starts, a provider picker appears. Use arrow keys and `Enter` to pick. `Escape` cancels back to the agent picker.
+For `MiniMax-M3`, jackin❯ installs a model catalog with the documented 1,000,000-token context window, text and image input, and thinking on/off options. Other explicit model IDs use Codex's available metadata. These settings follow [MiniMax's official Codex guide](https://platform.minimax.io/docs/token-plan/codex).
 
-**In the multiplexer** — press `N` inside a running container to open a new agent tab. When you pick Claude or Codex, the same provider picker appears if multiple providers are available.
+## Remove workspace access
 
-## Tab labels
+```bash
+jackin workspace account unassign my-app minimax-work
+```
 
-The tab strip label reflects the agent and its active provider:
+This clears workspace and role selections referring to the account. `jackin account remove minimax-work` removes the account from every workspace. Neither operation revokes the provider key itself.
 
-| Agent | Active provider | Tab label |
-|---|---|---|
-| Claude | Anthropic | `Claude (Anthropic)` |
-| Claude | MiniMax | `Claude (MiniMax)` |
-| Codex | OpenAI | `Codex (OpenAI)` |
-| Codex | MiniMax | `Codex (MiniMax)` |
-
-When only the agent's native provider is configured (Anthropic for Claude, OpenAI for Codex), the bare `Claude` / `Codex` label is used — no suffix.
-
-## Scopes
-
-`MINIMAX_API_KEY` follows the standard 4-layer env resolution — most-specific wins:
-
-**per-(workspace × role) > per-workspace > global > absent**
-
-Set a global key to have MiniMax available in every workspace, or set a per-workspace key to restrict it to specific projects.
-
-## How the redirect works
-
-When you select MiniMax for a **Claude Code** session, jackin❯ injects environment variables into the spawned Claude Code process at launch time — not into any shared config file:
-
-- `ANTHROPIC_AUTH_TOKEN` — set to your `MINIMAX_API_KEY` value
-- `ANTHROPIC_BASE_URL` — set to `https://api.minimax.io/anthropic`
-- `ANTHROPIC_DEFAULT_OPUS_MODEL` — set to `MiniMax-M3`
-- `ANTHROPIC_DEFAULT_SONNET_MODEL` — set to `MiniMax-M3`
-- `ANTHROPIC_DEFAULT_HAIKU_MODEL` — set to `MiniMax-M3`
-- `API_TIMEOUT_MS` — set to `3000000` (50-minute timeout for long-running operations)
-- `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` — set to `1`
-
-MiniMax-M3 is the single model served by the Token Plan, so all three Claude tier slots map to the same model. The timeout prevents premature disconnection on long agent runs through the proxy.
-
-When you select MiniMax for a **Codex** session, jackin❯ instead activates MiniMax through Codex's own provider configuration inside the container, since Codex reaches MiniMax over its OpenAI-compatible endpoint. As with Claude, the setup lives only in the container — your host Codex config is never modified.
-
-**No other tabs or sessions in the container are affected.** A session on the agent's native provider continues to use the container's own credentials.
-
-Your `MINIMAX_API_KEY` is never written to the logs, including `--debug` output.
-
-## See also
-
-- [Authentication overview](/guides/authentication/) — the shared modes / scopes / defaults pattern jackin❯ applies across every auth axis.
-- [Z.AI (GLM Coding Plan)](/guides/authentication/zai/) — the other Anthropic-compatible alternative provider.
-- [Kimi](/guides/authentication/kimi/) — Kimi's Anthropic-compatible coding endpoint.
-- [Environment Variables](/guides/environment-variables/) — how the operator env-vars model supplies credentials at global and per-workspace scope.
+See [Account commands](/commands/account/) and [Agent authentication](/guides/authentication/agents/).

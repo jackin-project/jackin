@@ -4,8 +4,7 @@
 //! Tests for `config`.
 use super::*;
 use crate::{
-    GithubAuthMode, MountConfig, MountEntry, WorkspaceRoleOverride, resolve_github_mode,
-    resolve_mode, validate_workspace_config,
+    GithubAuthMode, MountConfig, MountEntry, resolve_github_mode, validate_workspace_config,
 };
 use jackin_core::JackinPaths;
 use jackin_core::WorkspaceName;
@@ -226,220 +225,6 @@ dst = "/workspace/src"
 
     let err = AppConfig::load_or_init(&paths).unwrap_err();
     assert!(err.to_string().contains("workspace \"broken\" workdir must be equal to, inside, or a parent of one of the workspace mount destinations"));
-}
-
-#[test]
-fn existing_config_without_claude_section_deserializes_with_defaults() {
-    let toml_str = r#"
-[roles.agent-smith]
-git = "https://github.com/jackin-project/jackin-agent-smith.git"
-trusted = true
-"#;
-    let config: AppConfig = toml::from_str(toml_str).unwrap();
-    assert!(
-        config.claude.is_none(),
-        "absent [claude] block must deserialize to None"
-    );
-    assert_eq!(
-        resolve_mode(&config, Agent::Claude, None, "agent-smith",),
-        AuthForwardMode::Sync
-    );
-}
-
-#[test]
-fn auth_forward_mode_from_str_accepts_oauth_token() {
-    use std::str::FromStr;
-    assert_eq!(
-        AuthForwardMode::from_str("oauth_token").unwrap(),
-        AuthForwardMode::OAuthToken
-    );
-}
-
-#[test]
-fn auth_forward_mode_display_emits_oauth_token() {
-    assert_eq!(AuthForwardMode::OAuthToken.to_string(), "oauth_token");
-}
-
-#[test]
-fn auth_forward_mode_deserializes_oauth_token() {
-    let toml_str = r#"
-[claude]
-auth_forward = "oauth_token"
-"#;
-    let config: AppConfig = toml::from_str(toml_str).unwrap();
-    assert_eq!(
-        config.claude.as_ref().unwrap().auth_forward,
-        AuthForwardMode::OAuthToken
-    );
-}
-
-#[test]
-fn parse_app_config_agent_auth_blocks() {
-    let toml = r#"
-[claude]
-auth_forward = "sync"
-
-[codex]
-auth_forward = "api_key"
-
-[amp]
-auth_forward = "ignore"
-"#;
-    let cfg: AppConfig = toml::from_str(toml).unwrap();
-    assert_eq!(
-        cfg.claude.as_ref().unwrap().auth_forward,
-        AuthForwardMode::Sync
-    );
-    assert_eq!(
-        cfg.codex.as_ref().unwrap().auth_forward,
-        AuthForwardMode::ApiKey
-    );
-    assert_eq!(
-        cfg.amp.as_ref().unwrap().auth_forward,
-        AuthForwardMode::Ignore
-    );
-}
-
-#[test]
-fn parse_app_config_no_agent_blocks() {
-    let toml = "";
-    let cfg: AppConfig = toml::from_str(toml).unwrap();
-    assert!(
-        cfg.claude.is_none(),
-        "claude must be None when [claude] absent"
-    );
-    assert!(
-        cfg.codex.is_none(),
-        "codex must be None when [codex] absent"
-    );
-    assert!(cfg.amp.is_none(), "amp must be None when [amp] absent");
-    assert!(
-        cfg.opencode.is_none(),
-        "opencode must be None when [opencode] absent"
-    );
-}
-
-#[test]
-fn reject_codex_oauth_token_global() {
-    // Phase 3: oauth_token is now rejected by validate_auth_modes() after
-    // parse (not at serde time) since the newtype validator is gone.
-    let toml = r#"
-[codex]
-auth_forward = "oauth_token"
-"#;
-    let cfg = toml::from_str::<AppConfig>(toml).expect("parse should succeed");
-    let err = cfg.validate_auth_modes().expect_err("must reject");
-    let msg = err.to_string();
-    assert!(
-        msg.contains("not supported for codex"),
-        "expected codex-rejection message, got: {msg}"
-    );
-}
-
-#[test]
-fn reject_amp_oauth_token_global() {
-    // Phase 3: same as codex — post-parse validation replaces serde newtype check.
-    let toml = r#"
-[amp]
-auth_forward = "oauth_token"
-"#;
-    let cfg = toml::from_str::<AppConfig>(toml).expect("parse should succeed");
-    let err = cfg.validate_auth_modes().expect_err("must reject");
-    let msg = err.to_string();
-    assert!(
-        msg.contains("not supported for amp"),
-        "expected amp-rejection message, got: {msg}"
-    );
-}
-
-#[test]
-fn auth_mode_validation_covers_every_agent_at_every_scope() {
-    let modes = [
-        AuthForwardMode::Sync,
-        AuthForwardMode::ApiKey,
-        AuthForwardMode::OAuthToken,
-        AuthForwardMode::Ignore,
-    ];
-    for agent in Agent::ALL.iter().copied() {
-        for mode in modes {
-            if agent.supported_modes().contains(&mode) {
-                continue;
-            }
-            let auth = AgentAuthConfig {
-                auth_forward: mode,
-                sync_source_dir: None,
-            };
-
-            let mut global = AppConfig::default();
-            set_global_agent_auth(&mut global, agent, auth.clone());
-            assert!(
-                global.validate_auth_modes().is_err(),
-                "global {} must reject {mode}",
-                agent.slug()
-            );
-
-            let mut workspace = WorkspaceConfig::default();
-            set_workspace_agent_auth(&mut workspace, agent, auth.clone());
-            assert!(
-                workspace.validate_auth_modes().is_err(),
-                "workspace {} must reject {mode}",
-                agent.slug()
-            );
-
-            let mut role = WorkspaceRoleOverride::default();
-            set_role_agent_auth(&mut role, agent, auth);
-            workspace = WorkspaceConfig::default();
-            workspace.roles.insert("smith".to_owned(), role);
-            assert!(
-                workspace.validate_auth_modes().is_err(),
-                "workspace role {} must reject {mode}",
-                agent.slug()
-            );
-        }
-    }
-}
-
-fn set_global_agent_auth(config: &mut AppConfig, agent: Agent, auth: AgentAuthConfig) {
-    match agent {
-        Agent::Claude => config.claude = Some(auth),
-        Agent::Codex => config.codex = Some(auth),
-        Agent::Amp => config.amp = Some(auth),
-        Agent::Kimi => config.kimi = Some(auth),
-        Agent::Opencode => config.opencode = Some(auth),
-        Agent::Grok => config.grok = Some(auth),
-    }
-}
-
-fn set_workspace_agent_auth(config: &mut WorkspaceConfig, agent: Agent, auth: AgentAuthConfig) {
-    match agent {
-        Agent::Claude => config.claude = Some(auth),
-        Agent::Codex => config.codex = Some(auth),
-        Agent::Amp => config.amp = Some(auth),
-        Agent::Kimi => config.kimi = Some(auth),
-        Agent::Opencode => config.opencode = Some(auth),
-        Agent::Grok => config.grok = Some(auth),
-    }
-}
-
-fn set_role_agent_auth(config: &mut WorkspaceRoleOverride, agent: Agent, auth: AgentAuthConfig) {
-    match agent {
-        Agent::Claude => config.claude = Some(auth),
-        Agent::Codex => config.codex = Some(auth),
-        Agent::Amp => config.amp = Some(auth),
-        Agent::Kimi => config.kimi = Some(auth),
-        Agent::Opencode => config.opencode = Some(auth),
-        Agent::Grok => config.grok = Some(auth),
-    }
-}
-
-#[test]
-fn auth_forward_mode_from_str_error_lists_oauth_token() {
-    use std::str::FromStr;
-    let err = AuthForwardMode::from_str("nope").unwrap_err();
-    assert!(
-        err.contains("oauth_token"),
-        "error message should advertise the oauth_token mode; got: {err}"
-    );
 }
 
 #[test]
@@ -720,135 +505,6 @@ fn create_workspace_accepts_already_collapsed_mount_set() {
 }
 
 #[test]
-fn auth_forward_mode_default_is_sync() {
-    assert_eq!(AuthForwardMode::default(), AuthForwardMode::Sync);
-}
-
-#[test]
-fn auth_forward_mode_from_str_accepts_sync_and_ignore() {
-    use std::str::FromStr;
-    assert_eq!(
-        AuthForwardMode::from_str("sync").unwrap(),
-        AuthForwardMode::Sync
-    );
-    assert_eq!(
-        AuthForwardMode::from_str("ignore").unwrap(),
-        AuthForwardMode::Ignore
-    );
-}
-
-#[test]
-fn auth_forward_mode_from_str_rejects_unknown_values() {
-    use std::str::FromStr;
-    AuthForwardMode::from_str("bogus").unwrap_err();
-}
-
-#[test]
-fn auth_forward_mode_display_emits_canonical_names() {
-    assert_eq!(AuthForwardMode::Sync.to_string(), "sync");
-    assert_eq!(AuthForwardMode::Ignore.to_string(), "ignore");
-    assert_eq!(AuthForwardMode::ApiKey.to_string(), "api_key");
-    assert_eq!(AuthForwardMode::OAuthToken.to_string(), "oauth_token");
-}
-
-#[test]
-fn parse_agent_auth_config_sync() {
-    let toml = r#"auth_forward = "sync""#;
-    let cfg: AgentAuthConfig = toml::from_str(toml).unwrap();
-    assert_eq!(cfg.auth_forward, AuthForwardMode::Sync);
-}
-
-#[test]
-fn parse_agent_auth_config_api_key() {
-    let toml = r#"auth_forward = "api_key""#;
-    let cfg: AgentAuthConfig = toml::from_str(toml).unwrap();
-    assert_eq!(cfg.auth_forward, AuthForwardMode::ApiKey);
-}
-
-#[test]
-fn parse_agent_auth_config_oauth_token() {
-    let toml = r#"auth_forward = "oauth_token""#;
-    let cfg: AgentAuthConfig = toml::from_str(toml).unwrap();
-    assert_eq!(cfg.auth_forward, AuthForwardMode::OAuthToken);
-}
-
-#[test]
-fn parse_agent_auth_config_ignore() {
-    let toml = r#"auth_forward = "ignore""#;
-    let cfg: AgentAuthConfig = toml::from_str(toml).unwrap();
-    assert_eq!(cfg.auth_forward, AuthForwardMode::Ignore);
-}
-
-#[test]
-fn agent_auth_config_serializes_canonical_names() {
-    for (mode, expected) in [
-        (AuthForwardMode::Sync, "sync"),
-        (AuthForwardMode::ApiKey, "api_key"),
-        (AuthForwardMode::OAuthToken, "oauth_token"),
-        (AuthForwardMode::Ignore, "ignore"),
-    ] {
-        let cfg = AgentAuthConfig {
-            auth_forward: mode,
-            ..Default::default()
-        };
-        let s = toml::to_string(&cfg).expect("serialize must succeed");
-        assert!(
-            s.contains(&format!("auth_forward = \"{expected}\"")),
-            "mode {mode:?} must serialize as auth_forward = \"{expected}\", got: {s}"
-        );
-    }
-}
-
-#[test]
-fn agent_auth_config_rejects_unknown_field() {
-    let toml = "auth_forward = \"sync\"\nbogus = true";
-    let err = toml::from_str::<AgentAuthConfig>(toml).expect_err("must reject");
-    let msg = err.to_string();
-    assert!(
-        msg.contains("unknown field `bogus`") || msg.contains("unknown field \"bogus\""),
-        "expected unknown-field error, got: {msg}"
-    );
-}
-
-/// `oauth_token` is no longer a field on `AgentAuthConfig` — credentials
-/// live in the `[env]` block. Configs that still carry the old field
-/// are rejected by `deny_unknown_fields`.
-#[test]
-fn agent_auth_config_rejects_legacy_oauth_token_field() {
-    let toml = "auth_forward = \"oauth_token\"\noauth_token = \"sk-ant-oat01-literal\"";
-    let err = toml::from_str::<AgentAuthConfig>(toml).expect_err("must reject");
-    let msg = err.to_string();
-    assert!(
-        msg.contains("unknown field"),
-        "expected unknown-field rejection, got: {msg}"
-    );
-}
-
-/// `oauth_token` is not a field on `AgentAuthConfig` — unknown fields are rejected.
-#[test]
-fn codex_auth_config_rejects_oauth_token_field() {
-    let toml = "auth_forward = \"api_key\"\noauth_token = \"doesnt-belong\"";
-    let err = toml::from_str::<AgentAuthConfig>(toml).expect_err("must reject");
-    let msg = err.to_string();
-    assert!(
-        msg.contains("unknown field"),
-        "expected unknown-field rejection, got: {msg}"
-    );
-}
-
-/// Same rejection through the top-level `AppConfig` parse path.
-#[test]
-fn reject_codex_oauth_token_field_at_app_config_layer() {
-    let toml = "[codex]\nauth_forward = \"api_key\"\noauth_token = \"wrong-place\"";
-    let err = toml::from_str::<AppConfig>(toml).expect_err("must reject");
-    let msg = err.to_string();
-    assert!(
-        msg.contains("unknown field"),
-        "expected unknown-field rejection at AppConfig layer, got: {msg}"
-    );
-}
-
-#[test]
 fn app_config_role_repo_refresh_ttl_defaults_when_absent() {
     let cfg: AppConfig = toml::from_str("").unwrap();
 
@@ -865,19 +521,6 @@ fn app_config_role_repo_refresh_ttl_accepts_zero() {
 
     assert_eq!(cfg.role_repo_refresh_ttl_seconds, Some(0));
     assert_eq!(cfg.role_repo_refresh_ttl(), std::time::Duration::ZERO);
-}
-
-#[test]
-fn agent_auth_config_serializes_without_extraneous_fields() {
-    let cfg = AgentAuthConfig {
-        auth_forward: AuthForwardMode::Sync,
-        ..Default::default()
-    };
-    let s = toml::to_string(&cfg).unwrap();
-    assert!(
-        !s.contains("oauth_token"),
-        "serialized config must not contain oauth_token, got:\n{s}"
-    );
 }
 
 #[test]
@@ -1254,4 +897,64 @@ fn git_config_default_omits_git_table_from_serialized_output() {
     assert!(!serialized.contains("[git]"), "{serialized}");
     assert!(!serialized.contains("coauthor_trailer"), "{serialized}");
     assert!(!serialized.contains("dco"), "{serialized}");
+}
+
+#[test]
+fn named_account_roundtrip_retains_workspace_authorization() {
+    let text = r#"
+[accounts.work]
+name = "Work"
+provider = "anthropic"
+[accounts.work.credential]
+type = "profile"
+agent = "claude"
+directory = "/home/operator/.claude-work"
+[workspaces.project]
+workdir = "/workspace/project"
+accounts = ["work"]
+[workspaces.project.account_bindings]
+claude = "work"
+"#;
+    let config: AppConfig = toml::from_str(text).unwrap();
+    config.validate_accounts().unwrap();
+    let serialized = toml::to_string(&config).unwrap();
+    let restored: AppConfig = toml::from_str(&serialized).unwrap();
+    assert_eq!(restored.accounts, config.accounts);
+    assert_eq!(restored.workspaces["project"].accounts, ["work"]);
+    assert_eq!(
+        restored.workspaces["project"].account_bindings[&Agent::Claude],
+        "work"
+    );
+}
+
+#[test]
+fn new_config_has_no_implicit_account_grants() {
+    let config = AppConfig::default();
+    assert!(config.accounts.is_empty());
+    assert!(WorkspaceConfig::default().accounts.is_empty());
+    assert!(
+        crate::resolve_account(&config, Agent::Claude, None, "smith")
+            .unwrap()
+            .is_none()
+    );
+}
+
+#[test]
+fn workspace_cannot_bind_unassigned_global_account() {
+    let text = r#"
+[accounts.work]
+name = "Work"
+provider = "anthropic"
+[accounts.work.credential]
+type = "profile"
+agent = "claude"
+directory = "/home/operator/.claude-work"
+[workspaces.project]
+workdir = "/workspace/project"
+[workspaces.project.account_bindings]
+claude = "work"
+"#;
+    let config: AppConfig = toml::from_str(text).unwrap();
+    assert!(config.validate_accounts().is_err());
+    crate::resolve_account(&config, Agent::Claude, Some(&wn("project")), "smith").unwrap_err();
 }

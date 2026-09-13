@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: Apache-2.0
 
 version = "v1alpha5"
-data_dir = "/tmp/jackin"
 
 [claude]
 auth_forward = "sync"

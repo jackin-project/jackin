@@ -24,6 +24,8 @@
     reason = "launch flow emits operator-visible pull and spacing diagnostics"
 )]
 
+mod account_config;
+mod account_identity;
 mod launch_dind;
 pub use launch_dind::DIND_IMAGE;
 pub(super) use launch_dind::create_role_network;
@@ -38,8 +40,7 @@ pub(crate) use launch_dind::{prewarmed_dind_state_is_live, try_lock_prewarmed_di
 mod launch_slot;
 #[cfg(test)]
 pub(crate) use launch_slot::{
-    claim_container_name, resolve_github_env_map, verify_credential_env_present,
-    verify_github_token_present,
+    claim_container_name, resolve_github_env_map, verify_github_token_present,
 };
 
 mod trust;
@@ -53,9 +54,12 @@ mod image_plan;
 pub use image_plan::{LaunchImagePlan, resolve_launch_image_plan};
 
 mod programmatic;
+pub use account_identity::{
+    account_admission_matches, account_configuration_fingerprint, account_configuration_matches,
+};
 pub use programmatic::{
     CLAUDE_EFFORT_ENV, CLAUDE_MODEL_ENV, CODEX_LANE_EFFORT_ENV, CODEX_LANE_MODEL_ENV, IdentitySink,
-    LaunchedInstance, LoadOptionsError, lane_agent_env,
+    LaunchedInstance, LoadOptionsError, lane_agent_env, with_account_selection,
 };
 
 mod launch_pipeline;
@@ -86,7 +90,6 @@ pub(crate) use launch_pipeline::load_role_with;
 #[cfg(test)]
 pub(crate) use launch_pipeline::manifest_env_timing_detail;
 pub use launch_pipeline::{load_role, resolve_supported_agents_for_console};
-use std::path::PathBuf;
 
 #[expect(
     missing_debug_implementations,
@@ -137,21 +140,15 @@ pub struct LoadOptions {
 
     /// Role source URL captured in the instance manifest for restore paths.
     pub restore_role_source_git: Option<String>,
-    /// Provider selected for the initial session (e.g. Z.AI's Anthropic
-    /// redirect). When set, the first attach carries the provider's env
-    /// overrides and label into the capsule's initial spawn.
-    pub provider: Option<jackin_protocol::Provider>,
-
     /// Non-TTY programmatic launch: every decision the interactive path would
     /// prompt for is pre-supplied, no dialog may be drawn, and the launch does
     /// not attach a foreground session. A missing decision is a validation
     /// error (see `LoadOptions::validate_programmatic`), never a prompt.
     pub non_interactive: bool,
 
-    /// Account source folder (e.g. `~/.codex-chainargos`) whose auth state is
-    /// staged into the container, overriding the per-workspace/role/global
-    /// `sync_source_dir` resolution for this launch only.
-    pub account: Option<PathBuf>,
+    /// Registered account ID selected for this launch. A workspace must allow
+    /// the account; the override applies only to the selected agent.
+    pub account: Option<String>,
 
     /// Exact model id for the launched agent, overriding the role manifest's
     /// `[<agent>].model`. Also passed to the in-container Codex role hook so
@@ -183,19 +180,10 @@ pub struct LoadOptions {
     /// Test seam for workspace `git pull` so fast-restore tests can prove the
     /// pull path did not run without mutating process-wide PATH.
     #[cfg(test)]
-    pub git_program: Option<PathBuf>,
+    pub git_program: Option<std::path::PathBuf>,
 }
 
 impl LoadOptions {
-    pub fn initial_provider(&self) -> Option<jackin_protocol::InitialProvider> {
-        // Label only: the daemon re-derives the env redirection from it and
-        // backfills the token from the container's provider key env var.
-        self.provider
-            .map(|provider| jackin_protocol::InitialProvider {
-                label: provider.label().to_owned(),
-            })
-    }
-
     /// Build options for `jackin load`.
     pub fn for_load(debug: bool, rebuild: bool) -> Self {
         Self {
@@ -328,14 +316,8 @@ pub(in crate::runtime) use restore::{
 
 mod auth_error;
 #[cfg(test)]
-use auth_error::LaunchError;
-#[cfg(not(test))]
-use auth_error::LaunchError;
-#[cfg(test)]
 pub(crate) use auth_error::append_no_proxy_host;
-use auth_error::{
-    EnvLayerState, auth_token_source_reference, build_env_layer_states, build_mode_resolution,
-};
+use auth_error::auth_token_source_reference;
 
 #[cfg(test)]
 mod tests;

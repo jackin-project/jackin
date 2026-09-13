@@ -1,4 +1,4 @@
-version = "v1alpha9"
+version = "v1alpha10"
 # SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 # SPDX-License-Identifier: Apache-2.0
 
@@ -7,9 +7,6 @@ version = "v1alpha9"
 [roles.agent-smith]
 git = "https://github.com/jackin-project/jackin-agent-smith.git"
 trusted = true
-
-[claude]
-auth_forward = "sync"
 
 [env]
 OPERATOR_ORG = "acme"

@@ -18,10 +18,8 @@ use jackin_core::{Agent, EnvValue, MountIsolation};
 use jackin_core::{DockerGrants, DockerSecurityProfile};
 use serde::{Deserialize, Serialize};
 
-use jackin_core::AuthForwardMode;
-
 use crate::ConfigError;
-use crate::auth::{AgentAuthConfig, GithubAuthConfig};
+use crate::auth::GithubAuthConfig;
 use crate::versions::current_workspace_version;
 
 // ─── Serde helper ────────────────────────────────────────────────────────────
@@ -31,8 +29,8 @@ use crate::versions::current_workspace_version;
     clippy::trivially_copy_pass_by_ref,
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]
-const fn is_false(v: &bool) -> bool {
-    !*v
+pub(crate) const fn bool_matches<const EXPECTED: bool>(v: &bool) -> bool {
+    *v == EXPECTED
 }
 
 // ─── DirtyExitPolicy ─────────────────────────────────────────────────────────
@@ -111,67 +109,18 @@ impl KeepAwakeConfig {
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct WorkspaceRoleOverride {
+    /// Role-specific selections from the workspace account allowlist.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub account_bindings: BTreeMap<Agent, String>,
     /// Role-layer operator env (most specific env merge layer).
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub env: BTreeMap<String, EnvValue>,
-    /// Claude auth override for this workspace×role.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub claude: Option<AgentAuthConfig>,
-    /// Codex auth override for this workspace×role.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub codex: Option<AgentAuthConfig>,
-    /// Amp auth override for this workspace×role.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub amp: Option<AgentAuthConfig>,
-    /// Kimi auth override for this workspace×role.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub kimi: Option<AgentAuthConfig>,
-    /// `OpenCode` auth override for this workspace×role.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub opencode: Option<AgentAuthConfig>,
-    /// Grok auth override for this workspace×role.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub grok: Option<AgentAuthConfig>,
     /// GitHub auth override for this workspace×role.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub github: Option<GithubAuthConfig>,
 }
 
-impl WorkspaceRoleOverride {
-    /// Auth-forward mode for `agent` at the workspace×role override layer.
-    ///
-    /// Keep this match parallel with `WorkspaceConfig` and `AppConfig`: these
-    /// are versioned TOML structs with named agent fields, so the dispatch
-    /// stays as one accessor per layer until a schema-bumped map migration.
-    pub fn auth_forward_for(&self, agent: Agent) -> Option<AuthForwardMode> {
-        match agent {
-            Agent::Claude => self.claude.as_ref().map(|c| c.auth_forward),
-            Agent::Codex => self.codex.as_ref().map(|c| c.auth_forward),
-            Agent::Amp => self.amp.as_ref().map(|c| c.auth_forward),
-            Agent::Kimi => self.kimi.as_ref().map(|c| c.auth_forward),
-            Agent::Opencode => self.opencode.as_ref().map(|c| c.auth_forward),
-            Agent::Grok => self.grok.as_ref().map(|c| c.auth_forward),
-        }
-    }
-
-    /// Sync source dir override for `agent` at the workspace×role layer.
-    ///
-    /// Same named-field exception as `auth_forward_for`: centralizing the match
-    /// here prevents call-site fan-out without changing the persisted schema.
-    pub fn sync_source_dir_for(&self, agent: Agent) -> Option<std::path::PathBuf> {
-        match agent {
-            Agent::Claude => self.claude.as_ref().and_then(|c| c.sync_source_dir.clone()),
-            Agent::Codex => self.codex.as_ref().and_then(|c| c.sync_source_dir.clone()),
-            Agent::Amp => self.amp.as_ref().and_then(|c| c.sync_source_dir.clone()),
-            Agent::Kimi => self.kimi.as_ref().and_then(|c| c.sync_source_dir.clone()),
-            Agent::Opencode => self
-                .opencode
-                .as_ref()
-                .and_then(|c| c.sync_source_dir.clone()),
-            Agent::Grok => self.grok.as_ref().and_then(|c| c.sync_source_dir.clone()),
-        }
-    }
-}
+impl WorkspaceRoleOverride {}
 
 // ─── Runtime backend selection ───────────────────────────────────────────────
 
@@ -259,9 +208,16 @@ impl WorkspaceRuntimeConfig {
 
 // ─── WorkspaceConfig ─────────────────────────────────────────────────────────
 
-/// A saved workspace: the workdir, mounts, and per-agent auth config.
+/// A saved workspace: the workdir, mounts, and account authorization.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct WorkspaceConfig {
+    /// Accounts this workspace may use. Empty means no credentials.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub accounts: Vec<String>,
+    /// Preferred account per agent within the allowed accounts.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub account_bindings: BTreeMap<Agent, String>,
     /// On-disk schema version for this workspace file.
     #[serde(default = "current_workspace_version", rename = "version")]
     pub version: String,
@@ -291,29 +247,11 @@ pub struct WorkspaceConfig {
     /// Keep-awake (power management) opt-in for this workspace.
     #[serde(default, skip_serializing_if = "KeepAwakeConfig::is_default")]
     pub keep_awake: KeepAwakeConfig,
-    /// Workspace-layer Claude auth policy.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub claude: Option<AgentAuthConfig>,
-    /// Workspace-layer Codex auth policy.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub codex: Option<AgentAuthConfig>,
-    /// Workspace-layer Amp auth policy.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub amp: Option<AgentAuthConfig>,
-    /// Workspace-layer Kimi auth policy.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub kimi: Option<AgentAuthConfig>,
-    /// Workspace-layer `OpenCode` auth policy.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub opencode: Option<AgentAuthConfig>,
-    /// Workspace-layer Grok auth policy.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub grok: Option<AgentAuthConfig>,
     /// Workspace-layer GitHub auth policy.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub github: Option<GithubAuthConfig>,
     /// When true, pull git remotes on workspace entry.
-    #[serde(default, skip_serializing_if = "is_false")]
+    #[serde(default, skip_serializing_if = "bool_matches::<false>")]
     pub git_pull_on_entry: bool,
     /// Per-workspace container backend override.
     #[serde(default, skip_serializing_if = "WorkspaceRuntimeConfig::is_default")]
@@ -343,6 +281,8 @@ impl Default for WorkspaceConfig {
     fn default() -> Self {
         Self {
             version: current_workspace_version(),
+            accounts: Vec::new(),
+            account_bindings: BTreeMap::new(),
             workdir: String::new(),
             mounts: Vec::new(),
             allowed_roles: Vec::new(),
@@ -352,12 +292,6 @@ impl Default for WorkspaceConfig {
             env: BTreeMap::new(),
             roles: BTreeMap::new(),
             keep_awake: KeepAwakeConfig::default(),
-            claude: None,
-            codex: None,
-            amp: None,
-            kimi: None,
-            opencode: None,
-            grok: None,
             github: None,
             git_pull_on_entry: false,
             runtime: WorkspaceRuntimeConfig::default(),
@@ -372,71 +306,6 @@ impl WorkspaceConfig {
     pub fn resolved_agent(&self) -> Agent {
         self.default_agent.unwrap_or(Agent::Claude)
     }
-
-    /// Auth-forward mode for `agent` at the workspace layer.
-    ///
-    /// Keep this match parallel with `WorkspaceRoleOverride` and `AppConfig`:
-    /// the persisted schema exposes named agent fields, so this accessor is the
-    /// single allowed dispatch point for this layer until a schema-bumped map.
-    pub fn auth_forward_for(&self, agent: Agent) -> Option<AuthForwardMode> {
-        match agent {
-            Agent::Claude => self.claude.as_ref().map(|c| c.auth_forward),
-            Agent::Codex => self.codex.as_ref().map(|c| c.auth_forward),
-            Agent::Amp => self.amp.as_ref().map(|c| c.auth_forward),
-            Agent::Kimi => self.kimi.as_ref().map(|c| c.auth_forward),
-            Agent::Opencode => self.opencode.as_ref().map(|c| c.auth_forward),
-            Agent::Grok => self.grok.as_ref().map(|c| c.auth_forward),
-        }
-    }
-
-    /// Sync source dir override for `agent` at the workspace layer.
-    ///
-    /// Same named-field exception as `auth_forward_for`; callers must use this
-    /// accessor rather than matching over `Agent` themselves.
-    pub fn sync_source_dir_for(&self, agent: Agent) -> Option<std::path::PathBuf> {
-        match agent {
-            Agent::Claude => self.claude.as_ref().and_then(|c| c.sync_source_dir.clone()),
-            Agent::Codex => self.codex.as_ref().and_then(|c| c.sync_source_dir.clone()),
-            Agent::Amp => self.amp.as_ref().and_then(|c| c.sync_source_dir.clone()),
-            Agent::Kimi => self.kimi.as_ref().and_then(|c| c.sync_source_dir.clone()),
-            Agent::Opencode => self
-                .opencode
-                .as_ref()
-                .and_then(|c| c.sync_source_dir.clone()),
-            Agent::Grok => self.grok.as_ref().and_then(|c| c.sync_source_dir.clone()),
-        }
-    }
-
-    /// Validates that no configured agent uses an auth mode unsupported by that agent.
-    ///
-    /// Mirrors `AppConfig::validate_auth_modes` for the workspace layer.
-    /// Checks both the workspace-level config and every per-role override.
-    pub fn validate_auth_modes(&self) -> crate::ConfigResult<()> {
-        for agent in Agent::ALL.iter().copied() {
-            if let Some(mode) = self.auth_forward_for(agent)
-                && !agent.supported_modes().contains(&mode)
-            {
-                return Err(ConfigError::msg(format!(
-                    "auth_forward '{mode}' is not supported for {}",
-                    agent.slug(),
-                )));
-            }
-        }
-        for (role, override_cfg) in &self.roles {
-            for agent in Agent::ALL.iter().copied() {
-                if let Some(mode) = override_cfg.auth_forward_for(agent)
-                    && !agent.supported_modes().contains(&mode)
-                {
-                    return Err(ConfigError::msg(format!(
-                        "auth_forward '{mode}' is not supported for {} in role {}",
-                        agent.slug(),
-                        role,
-                    )));
-                }
-            }
-        }
-        Ok(())
-    }
 }
 
 // ─── Role source ─────────────────────────────────────────────────────────────
@@ -448,7 +317,7 @@ pub struct RoleSource {
     /// Git URL for the role repository.
     pub git: String,
     /// Whether the operator has marked this role source as trusted.
-    #[serde(default, skip_serializing_if = "is_false")]
+    #[serde(default, skip_serializing_if = "bool_matches::<false>")]
     pub trusted: bool,
     /// Role-layer operator env map. Merged on top of the global `[env]` map.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
@@ -691,10 +560,10 @@ pub struct WorkspaceEdit {
 #[serde(deny_unknown_fields)]
 pub struct GitConfig {
     /// Append a co-author trailer on agent commits when true.
-    #[serde(default, skip_serializing_if = "is_false")]
+    #[serde(default, skip_serializing_if = "bool_matches::<false>")]
     pub coauthor_trailer: bool,
     /// Require a DCO sign-off trailer when true.
-    #[serde(default, skip_serializing_if = "is_false")]
+    #[serde(default, skip_serializing_if = "bool_matches::<false>")]
     pub dco: bool,
 }
 

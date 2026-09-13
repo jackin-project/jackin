@@ -43,11 +43,14 @@ async fn amp_launch_invokes_docker_run_with_amp_agent() {
     install_agent_binary_stubs(&paths);
     std::fs::write(
         &paths.config_file,
-        r#"[env]
-AMP_API_KEY = "test-amp-key"
-
-[amp]
-auth_forward = "api_key"
+        r#"[accounts.amp-test]
+name = "Amp test"
+provider = "amp"
+[accounts.amp-test.credential]
+type = "api_key"
+value = "test-amp-key"
+[account_bindings]
+amp = "amp-test"
 
 [roles.the-architect]
 git = "https://github.com/jackin-project/jackin-the-architect.git"
@@ -137,12 +140,27 @@ agents = ["amp"]
     assert!(run_cmd.contains("--env-file"), "{run_cmd}");
     assert!(!run_cmd.contains("test-amp-key"), "{run_cmd}");
     let (env_path, env_contents) = observed_env.lock().unwrap().clone().unwrap();
-    assert!(
-        env_contents
-            .lines()
-            .any(|line| line == "AMP_API_KEY=test-amp-key"),
-        "{env_contents}"
-    );
+    assert!(!env_contents.contains("test-amp-key"), "{env_contents}");
+    let credentials_path = paths
+        .data_dir
+        .join(recorded_role_container_name(run_cmd))
+        .join("credentials/account-credentials.json");
+    let credentials: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&credentials_path).unwrap()).unwrap();
+    assert_eq!(credentials["amp"]["AMP_API_KEY"], "test-amp-key");
+    assert_eq!(credentials.as_object().unwrap().len(), 1);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        assert_eq!(
+            std::fs::metadata(&credentials_path)
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777,
+            0o600
+        );
+    }
     assert!(
         !env_path.exists(),
         "host env file must be removed after run"
@@ -164,7 +182,7 @@ agents = ["amp"]
 }
 
 #[tokio::test]
-async fn amp_launch_under_sync_mounts_secrets_json_in_docker_run() {
+async fn amp_launch_profile_account_mounts_secrets_json_in_docker_run() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     paths.ensure_base_dirs().unwrap();
@@ -185,10 +203,7 @@ async fn amp_launch_under_sync_mounts_secrets_json_in_docker_run() {
 
     std::fs::write(
         &paths.config_file,
-        r#"[amp]
-auth_forward = "sync"
-
-[roles.the-architect]
+        r#"[roles.the-architect]
 git = "https://github.com/jackin-project/jackin-the-architect.git"
 trusted = true
 "#,
@@ -215,6 +230,21 @@ agents = ["amp"]
     .unwrap();
 
     let mut config = AppConfig::load_or_init(&paths).unwrap();
+    config.accounts.insert(
+        "amp-profile".into(),
+        jackin_config::AccountConfig {
+            enabled: true,
+            name: "Amp profile".into(),
+            provider: jackin_config::AiProvider::Amp,
+            credential: jackin_config::AccountCredential::Profile {
+                agent: Agent::Amp,
+                directory: amp_dir,
+            },
+        },
+    );
+    config
+        .account_bindings
+        .insert(Agent::Amp, "amp-profile".into());
     let workspace = ResolvedWorkspace {
         name: String::new(),
         label: repo_dir.display().to_string(),

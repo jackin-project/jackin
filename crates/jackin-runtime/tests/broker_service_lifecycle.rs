@@ -21,10 +21,7 @@ fn broker_service_lifecycle() {
     fs::create_dir_all(&operator_home).expect("operator home");
     fs::write(
         config_root.join("config.toml"),
-        format!(
-            "version = \"{}\"\n[claude]\nauth_forward = \"ignore\"\n[codex]\nauth_forward = \"ignore\"\n[amp]\nauth_forward = \"ignore\"\n[kimi]\nauth_forward = \"ignore\"\n[grok]\nauth_forward = \"ignore\"\n[opencode]\nauth_forward = \"ignore\"\n",
-            jackin_config::CURRENT_CONFIG_VERSION
-        ),
+        format!("version = \"{}\"\n", jackin_config::CURRENT_CONFIG_VERSION),
     )
     .expect("config");
 

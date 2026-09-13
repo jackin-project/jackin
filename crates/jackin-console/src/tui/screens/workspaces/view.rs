@@ -132,8 +132,8 @@ pub enum WorkspacePreviewPanePlan {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WorkspaceSidebarPlan {
-    InlineProviderPicker,
-    LaunchProviderPicker,
+    InlineAccountPicker,
+    LaunchAccountPicker,
     InlineNewSessionPicker,
     InlineAgentPicker,
     InlineRolePicker,
@@ -143,15 +143,15 @@ pub enum WorkspaceSidebarPlan {
 #[expect(
     clippy::struct_excessive_bools,
     reason = "Five orthogonal sidebar-picker visibility flags (provider, \
-              launch_provider, new_session, agent, role) — each tracks an \
+              launch_account, new_session, agent, role) — each tracks an \
               independent inline-picker open state consumed individually by the \
               sidebar planner to pick its `WorkspaceSidebarPlan` variant. Named- \
               field reads match the per-picker detection idiom."
 )]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct WorkspaceSidebarFacts {
-    pub inline_provider_picker_open: bool,
-    pub launch_provider_picker_open: bool,
+    pub inline_account_picker_open: bool,
+    pub launch_account_picker_open: bool,
     pub inline_new_session_picker_open: bool,
     pub inline_agent_picker_open: bool,
     pub inline_role_picker_open: bool,
@@ -194,11 +194,11 @@ pub const fn workspace_preview_pane_plan(row: ManagerListRow) -> WorkspacePrevie
 
 #[must_use]
 pub const fn workspace_sidebar_plan(facts: WorkspaceSidebarFacts) -> WorkspaceSidebarPlan {
-    if facts.inline_provider_picker_open {
-        return WorkspaceSidebarPlan::InlineProviderPicker;
+    if facts.inline_account_picker_open {
+        return WorkspaceSidebarPlan::InlineAccountPicker;
     }
-    if facts.launch_provider_picker_open {
-        return WorkspaceSidebarPlan::LaunchProviderPicker;
+    if facts.launch_account_picker_open {
+        return WorkspaceSidebarPlan::LaunchAccountPicker;
     }
     if facts.inline_new_session_picker_open {
         return WorkspaceSidebarPlan::InlineNewSessionPicker;
@@ -880,10 +880,10 @@ pub fn render_sentinel_description_pane(frame: &mut Frame<'_>, area: Rect) {
 }
 
 #[must_use]
-pub fn provider_picker_title(container_id: Option<&str>) -> String {
+pub fn account_picker_title(container_id: Option<&str>) -> String {
     container_id.map_or_else(
-        || " Provider ".to_owned(),
-        |container_id| format!(" {container_id} — Provider "),
+        || " Account ".to_owned(),
+        |container_id| format!(" {container_id} — Account "),
     )
 }
 
@@ -911,7 +911,7 @@ pub fn render_picker_sidebar(
     );
 }
 
-pub fn render_provider_picker_sidebar(
+pub fn render_account_picker_sidebar(
     frame: &mut Frame<'_>,
     area: Rect,
     container_id: Option<&str>,
@@ -919,7 +919,7 @@ pub fn render_provider_picker_sidebar(
     selected: usize,
     focused: bool,
 ) {
-    let title = provider_picker_title(container_id);
+    let title = account_picker_title(container_id);
     render_picker_sidebar(frame, area, &title, labels, Some(selected), focused);
 }
 

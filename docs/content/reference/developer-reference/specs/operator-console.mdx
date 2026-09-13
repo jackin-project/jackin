@@ -22,7 +22,7 @@ Covers the console's stage/modal stack, service-poll → state handoff, launch p
 | INV-C2 | Opening a launch-agent prompt updates both app state and manager stage together | launch prompt plan helpers | `jackin_console::tui::model::tests::open_launch_agent_prompt_plan_updates_app_and_manager` |
 | INV-C3 | Opening a launch-role prompt updates app + manager; clearing pending launch clears launch input only where intended | launch role plan helpers | `jackin_console::tui::model::tests::open_launch_role_prompt_plan_updates_app_and_manager` `jackin_console::tui::model::tests::clear_pending_launch_plan_clears_launch_state` `jackin_console::tui::model::tests::clear_pending_launch_role_plan_clears_only_role` |
 | INV-C4 | Taking a pending launch plan removes it from manager state (one-shot consume) | `take_pending_launch_plan` / pair take | `jackin_console::tui::model::tests::take_pending_launch_plan_takes_input` `jackin_console::tui::model::tests::take_pending_launch_and_role_plan_takes_pair` |
-| INV-C5 | Opening a launch provider picker updates app + manager | provider picker plan | `jackin_console::tui::model::tests::open_launch_provider_picker_plan_updates_app_and_manager` |
+| INV-C5 | Opening a launch account picker updates app + manager | account picker plan | `jackin_console::tui::model::tests::open_launch_account_picker_plan_updates_app_and_manager` |
 
 ### Modal / blocker policy
 
@@ -52,7 +52,7 @@ Covers the console's stage/modal stack, service-poll → state handoff, launch p
 | INV | Description | Verify by | Tests |
 |---|---|---|---|
 | INV-C14 | Settings and editor expose stage-debug and footer-height facts through the same manager-facing traits | `settings_stage_debug` / `editor_stage_debug` | `jackin_console::tui::model::tests::console_manager_stage_reports_debug_stage` `jackin_console::tui::model::tests::console_manager_stage_reports_footer_height_facts` |
-| INV-C15 | Auth config editing goes through dialog-only flows (no free-form inline mutation of live config without a save plan) | auth editor update paths | `jackin_console::tui::input::auth::tests::auth_form_cancel_does_not_mutate_pending` `jackin_console::tui::input::auth::tests::auth_form_save_persists_workspace_layer_into_pending` |
+| INV-C15 | Auth config editing goes through dialog-only flows (no free-form inline mutation of live config without a save plan) | auth editor update paths | `jackin_console::tui::input::global_mounts::auth::tests::cancelling_profile_folder_picker_restores_account_form` `jackin_console::tui::input::global_mounts::auth::tests::editing_api_key_preserves_identity_and_endpoint_settings` `jackin_console::tui::components::auth_panel::tests::auth_form_key_plan_routes_shared_focus_model` |
 
 ## Test seams
 

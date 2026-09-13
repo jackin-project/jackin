@@ -5,22 +5,18 @@
 
 #![deny(missing_docs)]
 
+mod accounts;
 mod env_layer;
 mod env_resolver;
-mod host_claude;
 mod op_cli;
 mod op_runner;
 mod op_struct;
-mod output;
 mod parse_helpers;
 mod picker;
 mod process_telemetry;
 mod resolve;
-mod token_setup;
 
-#[cfg(any(test, feature = "test-support"))]
-pub mod test_support;
-
+pub use accounts::{is_account_env, resolve_account_env_with};
 pub use env_resolver::{
     EnvPrompter, PromptResult, ResolveEnvError, ResolvedEnv, resolve_env,
     resolve_env_with_overrides,
@@ -34,13 +30,8 @@ pub use resolve::{
     CLAUDE_OAUTH_TOKEN_ENV, OperatorEnvError, OperatorEnvKeyResolution, OperatorEnvKeyStatus,
     collect_on_demand_bindings, has_operator_env, has_operator_env_matching,
     lookup_operator_env_declaration, lookup_operator_env_raw, print_launch_diagnostic,
-    resolve_op_uri_to_ref, resolve_operator_env, resolve_operator_env_matching,
-    resolve_operator_env_per_key_matching, resolve_operator_env_per_key_with_matching,
-    resolve_operator_env_with, resolve_operator_env_with_matching, validate_reserved_names,
-};
-pub use token_setup::{
-    DEFAULT_FIELD_LABEL, DEFAULT_ITEM_TEMPLATE, DoctorReport, EditExistingTarget, JACKIN_TAG,
-    RevokeReport, TokenSetupArgs, TokenSetupReport, TokenSetupScope, expiry_days_for_launch,
-    mint_token_value, prior_token_slot, run_doctor, run_revoke, run_setup,
-    tags_indicate_jackin_owned, vault_for_rotate,
+    resolve_account_declaration, resolve_account_declaration_with, resolve_op_uri_to_ref,
+    resolve_operator_env, resolve_operator_env_matching, resolve_operator_env_per_key_matching,
+    resolve_operator_env_per_key_with_matching, resolve_operator_env_with,
+    resolve_operator_env_with_matching, validate_reserved_names,
 };

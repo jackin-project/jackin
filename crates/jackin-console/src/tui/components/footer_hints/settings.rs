@@ -78,7 +78,28 @@ pub fn settings_contextual_row_footer_items(
         SettingsContextFooterMode::EnvAddRow => secret_add_row_footer_items(op_available),
         SettingsContextFooterMode::Empty => Vec::new(),
         SettingsContextFooterMode::AuthManage => {
-            super::editor::auth_row_footer_items(super::editor::AuthRowFooterMode::ManageAuth)
+            vec![
+                super::key_span("↵"),
+                HintSpan::Text("add/edit"),
+                HintSpan::Sep,
+                super::key_span("D"),
+                HintSpan::Text("remove"),
+                HintSpan::Sep,
+                super::key_span("E"),
+                HintSpan::Text("enable/disable"),
+                HintSpan::Sep,
+                super::key_span("F"),
+                HintSpan::Text("default for agent"),
+                HintSpan::Sep,
+                super::key_span("R"),
+                HintSpan::Text("rename"),
+                HintSpan::Sep,
+                super::key_span("B"),
+                HintSpan::Text("base URL"),
+                HintSpan::Sep,
+                super::key_span("M"),
+                HintSpan::Text("model"),
+            ]
         }
         SettingsContextFooterMode::AuthEditMode => {
             super::editor::auth_row_footer_items(super::editor::AuthRowFooterMode::EditMode)

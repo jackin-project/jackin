@@ -6,13 +6,13 @@
 use jackin_telemetry::schema::enums::CliCommandName;
 
 use super::{
-    AuthCommand, CoauthorTrailerCommand, Command, ConfigCommand, DcoCommand, DiagnosticsCommand,
-    EnvCommand, GitCommand, MountCommand, PruneCommand, TrustCommand, WorkspaceClaudeTokenCommand,
-    WorkspaceCommand, WorkspaceEnvCommand,
+    CoauthorTrailerCommand, Command, ConfigCommand, DcoCommand, DiagnosticsCommand, EnvCommand,
+    GitCommand, MountCommand, PruneCommand, TrustCommand, WorkspaceCommand, WorkspaceEnvCommand,
 };
 
 #[cfg(unix)]
 use super::DaemonCommand;
+use super::account::AccountCommand;
 use super::role::RoleCommand;
 use super::usage::UsageScope;
 
@@ -25,16 +25,11 @@ pub const fn command_name(command: &Command) -> CliCommandName {
         Command::Exile => CliCommandName::Exile,
         Command::Purge(_) => CliCommandName::Purge,
         Command::Prewarm(_) => CliCommandName::Prewarm,
-        Command::Prune(command) => match command {
-            PruneCommand::Roles => CliCommandName::PruneRoles,
-            PruneCommand::Cache => CliCommandName::PruneCache,
-            PruneCommand::Images => CliCommandName::PruneImages,
-            PruneCommand::Instances(_) => CliCommandName::PruneInstances,
-            PruneCommand::System(_) => CliCommandName::PruneSystem,
-        },
+        Command::Prune(command) => prune_command_name(command),
         Command::Console(_) => CliCommandName::Console,
         Command::Role(command) => role_command_name(command),
         Command::Workspace(command) => workspace_command_name(command),
+        Command::Account(command) => account_command_name(command),
         Command::Config(command) => config_command_name(command),
         #[cfg(unix)]
         Command::Daemon(command) => match command {
@@ -53,6 +48,28 @@ pub const fn command_name(command: &Command) -> CliCommandName {
         Command::Status(_) => CliCommandName::Status,
         Command::Usage(args) => usage_command_name(args.scope.as_ref()),
         Command::Help { .. } => CliCommandName::Help,
+    }
+}
+
+const fn prune_command_name(command: &PruneCommand) -> CliCommandName {
+    match command {
+        PruneCommand::Roles => CliCommandName::PruneRoles,
+        PruneCommand::Cache => CliCommandName::PruneCache,
+        PruneCommand::Images => CliCommandName::PruneImages,
+        PruneCommand::Instances(_) => CliCommandName::PruneInstances,
+        PruneCommand::System(_) => CliCommandName::PruneSystem,
+    }
+}
+
+const fn account_command_name(command: &AccountCommand) -> CliCommandName {
+    match command {
+        AccountCommand::List => CliCommandName::AccountList,
+        AccountCommand::Scan => CliCommandName::AccountScan,
+        AccountCommand::Add(_) => CliCommandName::AccountAdd,
+        AccountCommand::Remove { .. } => CliCommandName::AccountRemove,
+        AccountCommand::Enable { .. } => CliCommandName::AccountEnable,
+        AccountCommand::Disable { .. } => CliCommandName::AccountDisable,
+        AccountCommand::Default { .. } => CliCommandName::AccountDefault,
     }
 }
 
@@ -91,16 +108,18 @@ const fn workspace_command_name(command: &WorkspaceCommand) -> CliCommandName {
             WorkspaceEnvCommand::Unset { .. } => CliCommandName::WorkspaceEnvUnset,
             WorkspaceEnvCommand::List { .. } => CliCommandName::WorkspaceEnvList,
         },
-        WorkspaceCommand::ClaudeToken(command) => match command {
-            WorkspaceClaudeTokenCommand::Setup { .. } => CliCommandName::WorkspaceClaudeTokenSetup,
-            WorkspaceClaudeTokenCommand::Rotate { .. } => {
-                CliCommandName::WorkspaceClaudeTokenRotate
+        WorkspaceCommand::Account(command) => match command {
+            super::account::WorkspaceAccountCommand::List { .. } => {
+                CliCommandName::WorkspaceAccountList
             }
-            WorkspaceClaudeTokenCommand::Revoke { .. } => {
-                CliCommandName::WorkspaceClaudeTokenRevoke
+            super::account::WorkspaceAccountCommand::Assign { .. } => {
+                CliCommandName::WorkspaceAccountAssign
             }
-            WorkspaceClaudeTokenCommand::Doctor { .. } => {
-                CliCommandName::WorkspaceClaudeTokenDoctor
+            super::account::WorkspaceAccountCommand::Unassign { .. } => {
+                CliCommandName::WorkspaceAccountUnassign
+            }
+            super::account::WorkspaceAccountCommand::Select { .. } => {
+                CliCommandName::WorkspaceAccountSelect
             }
         },
     }
@@ -117,10 +136,6 @@ const fn config_command_name(command: &ConfigCommand) -> CliCommandName {
             TrustCommand::Grant { .. } => CliCommandName::ConfigTrustGrant,
             TrustCommand::Revoke { .. } => CliCommandName::ConfigTrustRevoke,
             TrustCommand::List => CliCommandName::ConfigTrustList,
-        },
-        ConfigCommand::Auth(command) => match command {
-            AuthCommand::Set { .. } => CliCommandName::ConfigAuthSet,
-            AuthCommand::Show => CliCommandName::ConfigAuthShow,
         },
         ConfigCommand::Env(command) => match command {
             EnvCommand::Set { .. } => CliCommandName::ConfigEnvSet,

@@ -376,6 +376,7 @@ dependencies = [
  "jackin-core",
  "jackin-telemetry",
  "serde",
+ "serde_json",
  "sha2",
  "thiserror",
  "toml",

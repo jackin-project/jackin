@@ -20,7 +20,7 @@ jackin❯ enforces **strict parsing** — unknown fields are rejected with an er
 ## Full schema
 
 ```toml title="jackin.role.toml"
-version = "v1alpha6"
+version = "v1alpha7"
 dockerfile = "Dockerfile"
 agents = ["claude", "codex", "amp", "kimi", "opencode"]
 
@@ -183,7 +183,7 @@ The `[kimi]` table is required when `"kimi"` appears in `agents`.
 |---|---|---|
 | `model` | No | Optional Kimi model passed to `kimi --model` at launch |
 
-Kimi authenticates via host `~/.kimi-code` state in `sync` mode. jackin❯ forwards `~/.kimi-code/config.toml`, files under `~/.kimi-code/credentials/`, and `~/.kimi-code/device_id` into the container before Kimi starts. jackin❯ launches Kimi with `--yolo` by default; `model` is appended as `kimi --model <model>` when set. `api_key` mode uses `KIMI_API_KEY`; `oauth_token` is not supported.
+Kimi profile accounts authenticate using their selected host profile directory (default discovery: `~/.kimi-code`). jackin❯ forwards `~/.kimi-code/config.toml`, files under `~/.kimi-code/credentials/`, and `~/.kimi-code/device_id` into the container before Kimi starts. jackin❯ launches Kimi with `--yolo` by default; `model` is appended as `kimi --model <model>` when set. Moonshot API-key accounts supply `KIMI_API_KEY`; standalone OAuth-token accounts are Claude-specific.
 
 ```toml title="jackin.role.toml"
 version = "v1alpha4"
@@ -213,35 +213,11 @@ agents = ["opencode"]
 model = "zai-coding-plan/glm-5.1"
 ```
 
-## `[<agent>.providers.<provider>]`
+## Account models
 
-Claude Code, Codex, and OpenCode can run against alternative providers chosen from the provider picker at session launch. By default each provider uses jackin❯ built-in model for that agent. A `[<agent>.providers.<provider>]` table overrides the model used **when that provider is the selected provider**, without changing the agent's own `model` default. This matters most for OpenCode, which has no model of its own and resolves its model entirely from the selected provider.
+Provider routing and provider-specific models belong to named accounts. Set the API account's `model` when adding or editing the account, then assign that account to the workspace agent. The selected account model overrides the role's agent model; an explicit launch `--model` overrides both.
 
-| Field | Required | Description |
-|---|---|---|
-| `model` | No | Model used when this provider is selected for the agent. For OpenCode, the `provider/model` string passed to `opencode -m`; for Claude and Codex, the provider's model name |
-
-`<provider>` is the provider's lowercase id: `anthropic`, `openai`, `zai`, `minimax`, or `kimi`. Resolution order when a provider is picked: the `[<agent>.providers.<provider>]` model, then jackin❯ built-in default for that pair, then the agent's own `model`.
-
-```toml title="jackin.role.toml"
-[claude]
-model = "claude-sonnet-4-6"
-
-# Pin a different model when MiniMax is picked for Claude.
-[claude.providers.minimax]
-model = "MiniMax-M3"
-
-[opencode]
-model = "zai-coding-plan/glm-5.1"
-
-# OpenCode routes through the selected provider's block, so the model names
-# its provider id as well.
-[opencode.providers.minimax]
-model = "minimax/MiniMax-M3"
-
-[opencode.providers.zai]
-model = "zai-coding-plan/glm-5.1"
-```
+Role `[<agent>.providers.<provider>]` tables are removed and rejected. Keep `[claude].model`, `[codex].model`, or `[opencode].model` only for role defaults.
 
 ### `[[claude.marketplaces]]`
 
@@ -346,7 +322,7 @@ Declare Docker security requirements for this role. All fields are optional — 
 **Practical use:**
 
 ```toml title="jackin.role.toml — role that needs DinD and ptrace"
-version = "v1alpha6"
+version = "v1alpha7"
 dockerfile = "Dockerfile"
 
 [docker]
@@ -357,7 +333,7 @@ allowed_hosts = ["registry.npmjs.org", "crates.io", "static.crates.io"]
 ```
 
 ```toml title="jackin.role.toml — pure read-only analysis role"
-version = "v1alpha6"
+version = "v1alpha7"
 dockerfile = "Dockerfile"
 
 [docker]
@@ -366,7 +342,7 @@ dind = "none"  # skip DinD sidecar
 ```
 
 ```toml title="jackin.role.toml — role that doesn't need DinD under any profile"
-version = "v1alpha6"
+version = "v1alpha7"
 dockerfile = "Dockerfile"
 
 [docker]
@@ -502,7 +478,7 @@ Interactive prompts happen before the Docker image build, so you won't wait thro
 The smallest valid manifest:
 
 ```toml title="jackin.role.toml"
-version = "v1alpha6"
+version = "v1alpha7"
 dockerfile = "Dockerfile"
 
 [claude]
@@ -512,7 +488,7 @@ plugins = []
 ## Complete example
 
 ```toml title="jackin.role.toml"
-version = "v1alpha6"
+version = "v1alpha7"
 dockerfile = "docker/Dockerfile.agent"
 
 [identity]

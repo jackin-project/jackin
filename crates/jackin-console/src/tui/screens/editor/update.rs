@@ -12,7 +12,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use super::model::{
     AuthRow, EditorHoverTarget, EditorTab, SecretsEnterPlan, SecretsRow, SecretsScopeTag,
 };
-use crate::tui::screens::editor::model::EditorMode;
 use crate::tui::screens::settings::model::AuthFormTarget;
 use jackin_config::MountConfig;
 
@@ -45,7 +44,6 @@ pub struct EditorTabMovePlan {
     pub active_row: usize,
     pub tab_scroll_x: u16,
     pub tab_scroll_y: u16,
-    pub clear_auth_kind: bool,
     pub clear_secret_view_state: bool,
 }
 
@@ -127,54 +125,16 @@ pub const fn editor_tab_move_plan(
         active_row: 0,
         tab_scroll_x: 0,
         tab_scroll_y: 0,
-        clear_auth_kind: !matches!(next, EditorTab::Auth),
         clear_secret_view_state: matches!(active_tab, EditorTab::Secrets),
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct EditorAuthKindPlan<K> {
-    pub selected_kind: Option<K>,
-    pub active_row: usize,
-    pub tab_scroll_x: u16,
-    pub tab_scroll_y: u16,
-}
-
-#[must_use]
-pub const fn clear_editor_auth_kind_plan<K>() -> EditorAuthKindPlan<K> {
-    EditorAuthKindPlan {
-        selected_kind: None,
-        active_row: 0,
-        tab_scroll_x: 0,
-        tab_scroll_y: 0,
-    }
-}
-
-#[must_use]
-pub fn enter_editor_auth_kind_plan<K>(kind: K) -> EditorAuthKindPlan<K> {
-    EditorAuthKindPlan {
-        selected_kind: Some(kind),
-        active_row: 0,
-        tab_scroll_x: 0,
-        tab_scroll_y: 0,
-    }
-}
-
-#[expect(
-    clippy::struct_excessive_bools,
-    reason = "Four orthogonal UI state flags on the tab-select plan \
-              (tab_bar_focused, workspace_mounts_scroll_focused, clear_auth_kind, \
-              clear_secret_view_state) — each is an independent state update that \
-              the screen-model applies when the operator switches tabs. Named-field \
-              reads match the direct model-update idiom this plan parallelizes."
-)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct EditorTabSelectPlan {
     pub active_tab: EditorTab,
     pub tab_bar_focused: bool,
     pub active_row: usize,
     pub workspace_mounts_scroll_focused: bool,
-    pub clear_auth_kind: bool,
     pub clear_secret_view_state: bool,
 }
 
@@ -188,7 +148,6 @@ pub const fn editor_tab_select_plan(
         tab_bar_focused: true,
         active_row: 0,
         workspace_mounts_scroll_focused: false,
-        clear_auth_kind: !matches!(selected_tab, EditorTab::Auth),
         clear_secret_view_state: matches!(previous_tab, EditorTab::Secrets)
             && !matches!(selected_tab, EditorTab::Secrets),
     }
@@ -446,29 +405,6 @@ pub enum EditorGeneralFieldModalPlan {
     RenameWorkspace,
     PickWorkdir,
     None,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum EditorAuthGenerateScopePlan {
-    Workspace(String),
-    WorkspaceRole { workspace: String, role: String },
-}
-
-#[must_use]
-pub fn editor_auth_generate_scope_plan<K>(
-    mode: &EditorMode,
-    target: &AuthFormTarget<K>,
-) -> Option<EditorAuthGenerateScopePlan> {
-    let EditorMode::Edit { name } = mode else {
-        return None;
-    };
-    Some(match target {
-        AuthFormTarget::Workspace { .. } => EditorAuthGenerateScopePlan::Workspace(name.clone()),
-        AuthFormTarget::WorkspaceRole { role, .. } => EditorAuthGenerateScopePlan::WorkspaceRole {
-            workspace: name.clone(),
-            role: role.clone(),
-        },
-    })
 }
 
 #[must_use]
@@ -760,96 +696,14 @@ pub fn set_secret_value<R, V>(
     }
 }
 
-pub struct AuthFlatRowPredicates<'a, K, R> {
-    pub role_override_present: &'a dyn Fn(&K, &R) -> bool,
-    pub effective_mode_needs_credential: &'a dyn Fn(&K, &str) -> bool,
-    pub effective_mode_supports_source_folder: &'a dyn Fn(&K, &str) -> bool,
-}
-
-impl<K, R> std::fmt::Debug for AuthFlatRowPredicates<'_, K, R> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("AuthFlatRowPredicates")
-            .finish_non_exhaustive()
-    }
-}
-
-#[must_use]
-pub fn auth_flat_rows<K, R>(
-    selected_kind: Option<K>,
-    root_kinds: impl IntoIterator<Item = K>,
-    roles: &BTreeMap<String, R>,
-    allowed_role_count: usize,
-    expanded_roles: &BTreeSet<String>,
-    predicates: &AuthFlatRowPredicates<'_, K, R>,
-) -> Vec<AuthRow<K>>
-where
-    K: Clone,
-{
-    let Some(kind) = selected_kind else {
-        return root_kinds
-            .into_iter()
-            .map(|kind| AuthRow::AuthKindRow { kind })
-            .collect();
-    };
-
-    let override_roles: Vec<String> = roles
-        .iter()
-        .filter(|(_, role)| (predicates.role_override_present)(&kind, role))
-        .map(|(name, _)| name.clone())
-        .collect();
-
-    let mut rows = vec![AuthRow::WorkspaceMode { kind: kind.clone() }];
-    if (predicates.effective_mode_needs_credential)(&kind, "") {
-        rows.push(AuthRow::WorkspaceSource { kind: kind.clone() });
-    }
-    if (predicates.effective_mode_supports_source_folder)(&kind, "") {
-        rows.push(AuthRow::WorkspaceSourceFolder { kind: kind.clone() });
-    }
-    rows.push(AuthRow::Spacer);
-    for role in &override_roles {
-        let expanded = expanded_roles.contains(role);
-        rows.push(AuthRow::RoleHeader {
-            role: role.clone(),
-            expanded,
-        });
-        if expanded {
-            rows.push(AuthRow::RoleMode {
-                role: role.clone(),
-                kind: kind.clone(),
-            });
-            if (predicates.effective_mode_needs_credential)(&kind, role) {
-                rows.push(AuthRow::RoleSource {
-                    role: role.clone(),
-                    kind: kind.clone(),
-                });
-            }
-            if (predicates.effective_mode_supports_source_folder)(&kind, role) {
-                rows.push(AuthRow::RoleSourceFolder {
-                    role: role.clone(),
-                    kind: kind.clone(),
-                });
-            }
-        }
-    }
-    let eligible_remaining = allowed_role_count.saturating_sub(override_roles.len());
-    if !override_roles.is_empty() {
-        rows.push(AuthRow::Spacer);
-    }
-    rows.push(AuthRow::AddSentinel {
-        eligible: eligible_remaining,
-    });
-    rows
-}
-
 #[must_use]
 pub const fn auth_row_is_focusable<K>(row: &AuthRow<K>) -> bool {
     matches!(
         row,
-        AuthRow::AuthKindRow { .. }
+        AuthRow::Account { .. }
+            | AuthRow::Binding { .. }
             | AuthRow::WorkspaceMode { .. }
             | AuthRow::RoleMode { .. }
-            | AuthRow::RoleHeader { .. }
-            | AuthRow::AddSentinel { .. }
     )
 }
 

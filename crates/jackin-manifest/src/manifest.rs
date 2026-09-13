@@ -91,7 +91,6 @@ fn validate_feature_versions(
 ) -> anyhow::Result<()> {
     let v1alpha3 = jackin_config::parse_version("v1alpha3")?;
     let v1alpha4 = jackin_config::parse_version("v1alpha4")?;
-    let v1alpha5 = jackin_config::parse_version("v1alpha5")?;
     let v1alpha6 = jackin_config::parse_version("v1alpha6")?;
     if manifest_version < &v1alpha3
         && (manifest
@@ -113,24 +112,6 @@ fn validate_feature_versions(
     {
         anyhow::bail!(
             "role \"{role_name}\" manifest is at {manifest_version} but uses v1alpha4 agent fields, which requires v1alpha4; run \"jackin role migrate <role-repo-path>\" to upgrade the local copy"
-        );
-    }
-    if manifest_version < &v1alpha5
-        && (manifest
-            .claude
-            .as_ref()
-            .is_some_and(|c| !c.providers.is_empty())
-            || manifest
-                .codex
-                .as_ref()
-                .is_some_and(|c| !c.providers.is_empty())
-            || manifest
-                .opencode
-                .as_ref()
-                .is_some_and(|c| !c.providers.is_empty()))
-    {
-        anyhow::bail!(
-            "role \"{role_name}\" manifest is at {manifest_version} but uses v1alpha5 per-provider model overrides ([<agent>.providers]), which requires v1alpha5; run \"jackin role migrate <role-repo-path>\" to upgrade the local copy"
         );
     }
     if manifest_version < &v1alpha6 && manifest.docker.is_some() {

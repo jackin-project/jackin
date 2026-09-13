@@ -294,10 +294,10 @@ async fn collect_labeled_dind(docker: &impl DockerApi) -> anyhow::Result<Vec<Din
 /// Return `DinD` sidecar containers whose corresponding role container is no
 /// longer running.  These are leftovers from hard kills, terminal closures,
 /// or startup failures.
-fn filter_orphaned_dind(sidecars: Vec<DindInfo>, running: &[String]) -> Vec<DindInfo> {
+fn filter_orphaned_dind(sidecars: Vec<DindInfo>, existing: &[String]) -> Vec<DindInfo> {
     sidecars
         .into_iter()
-        .filter(|info| !running.contains(&info.role))
+        .filter(|info| !existing.contains(&info.role))
         .collect()
 }
 
@@ -325,19 +325,19 @@ pub(super) async fn gc_orphaned_resources(paths: &JackinPaths, docker: &impl Doc
         return;
     }
 
-    // Fetch running roles once; reuse for both orphan detection and network GC.
-    let running = match list_role_names(docker, false).await {
+    // Fetch existing roles once; reuse for both orphan detection and network GC.
+    let existing = match list_role_names(docker, true).await {
         Ok(v) => v,
         Err(err) => {
             eprintln!(
-                "  {} GC: could not list running role containers: {err}",
+                "  {} GC: could not list role containers: {err}",
                 "warning:".yellow().bold()
             );
             return;
         }
     };
 
-    let orphaned = filter_orphaned_dind(sidecars, &running);
+    let orphaned = filter_orphaned_dind(sidecars, &existing);
 
     for info in &orphaned {
         let certs_volume = dind_certs_volume(&info.role);
@@ -375,7 +375,8 @@ pub(super) async fn gc_orphaned_resources(paths: &JackinPaths, docker: &impl Doc
         }
     }
 
-    gc_orphaned_networks(docker, Some(&running)).await;
+    let existing_set: std::collections::HashSet<String> = existing.into_iter().collect();
+    gc_orphaned_networks(docker, Some(&existing_set)).await;
     gc_orphaned_prewarm_dind(paths, docker).await;
 }
 
@@ -425,10 +426,13 @@ async fn gc_orphaned_prewarm_dind(paths: &JackinPaths, docker: &impl DockerApi) 
 }
 
 /// Remove jackin-managed Docker networks whose owning role container no longer
-/// exists. Pass `Some(running)` to reuse an already-fetched list of running
+/// exists. Pass `Some(existing)` to reuse an already-fetched set of existing
 /// role names; pass `None` to fetch fresh (used when no `DinD` sidecars were
 /// found and the list was never retrieved).
-async fn gc_orphaned_networks(docker: &impl DockerApi, running: Option<&[String]>) {
+async fn gc_orphaned_networks(
+    docker: &impl DockerApi,
+    existing: Option<&std::collections::HashSet<String>>,
+) {
     let _timing = cleanup_timing("orphaned_networks");
     let net_rows = match docker.list_networks(&[LABEL_MANAGED]).await {
         Ok(v) => v,
@@ -457,25 +461,25 @@ async fn gc_orphaned_networks(docker: &impl DockerApi, running: Option<&[String]
         return;
     }
 
-    let fetched;
-    let running = if let Some(r) = running {
-        r
+    let fetched: std::collections::HashSet<String>;
+    let existing_set = if let Some(s) = existing {
+        std::borrow::Cow::Borrowed(s)
     } else {
-        fetched = match list_role_names(docker, false).await {
-            Ok(v) => v,
+        fetched = match list_role_names(docker, true).await {
+            Ok(v) => v.into_iter().collect(),
             Err(err) => {
                 eprintln!(
-                    "  {} GC: could not list running role containers: {err}",
+                    "  {} GC: could not list role containers: {err}",
                     "warning:".yellow().bold()
                 );
                 return;
             }
         };
-        &fetched
+        std::borrow::Cow::Owned(fetched)
     };
 
     for (net_name, role) in networks {
-        if running.iter().any(|r| r == &role) {
+        if existing_set.contains(&role) {
             continue;
         }
         if let Err(err) = docker.remove_network(&net_name).await {

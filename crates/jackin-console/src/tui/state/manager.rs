@@ -13,8 +13,8 @@ use jackin_config::AppConfig;
 
 use crate::tui::message::{MountInfoRefreshSourceFacts, mount_info_refresh_source_plan};
 use crate::tui::model::{
-    ConsoleAnimationTick, ConsoleManagerStageState, LaunchAgentPromptManagerState,
-    LaunchProviderPickerManagerState, LaunchRolePromptManagerState,
+    ConsoleAnimationTick, ConsoleManagerStageState, LaunchAccountPickerManagerState,
+    LaunchAgentPromptManagerState, LaunchRolePromptManagerState,
 };
 use crate::tui::screens::workspaces::model::hovered_list_row;
 use crate::tui::screens::workspaces::update::{
@@ -31,7 +31,7 @@ use crate::tui::subscriptions::{
     instance_refresh_throttle_plan,
 };
 use crate::tui::update::{
-    InlineNewSessionPickerState, InlinePickerDismissalState, InlineProviderPickerState,
+    InlineAccountPickerState, InlineNewSessionPickerState, InlinePickerDismissalState,
     ListModalState, ListShellState, StatusOverlayState,
 };
 use jackin_env::OpCache;
@@ -40,8 +40,8 @@ use super::{
     DEFAULT_SPLIT_PCT, ManagerConfigSaveResult, ManagerEffect, ManagerInstanceRefreshSnapshot,
     ManagerListRow, ManagerStage, ManagerState, Modal, MountInfoCache, MountInfoRefreshTarget,
     MountScrollFocus, PendingDriftCheck, PendingFileBrowserCommit, PendingFileBrowserListing,
-    PendingIsolationCleanup, PendingMountInfoRefresh, PendingRoleLoad, PendingTokenGenerate,
-    WorkspaceSummary, active_instances_matching,
+    PendingIsolationCleanup, PendingMountInfoRefresh, PendingRoleLoad, WorkspaceSummary,
+    active_instances_matching,
 };
 
 impl ManagerState<'_> {
@@ -135,8 +135,8 @@ impl ManagerState<'_> {
             inline_role_picker: None,
             inline_agent_picker: None,
             inline_new_session_picker: None,
-            inline_provider_picker: None,
-            launch_provider_picker: None,
+            inline_account_picker: None,
+            launch_account_picker: None,
             list_mounts_scroll: crate::tui::scroll_block::console_scroll_area_state(),
             list_global_mounts_scroll: crate::tui::scroll_block::console_scroll_area_state(),
             list_role_global_mounts_scroll: crate::tui::scroll_block::console_scroll_area_state(),
@@ -185,10 +185,6 @@ impl ManagerState<'_> {
 
     pub fn drain_effects(&mut self) -> Vec<ManagerEffect> {
         std::mem::take(&mut self.pending_effects)
-    }
-
-    pub fn take_pending_token_generate(&mut self) -> Option<PendingTokenGenerate> {
-        self.stage.take_pending_token_generate()
     }
 
     // ── Tree navigation helpers ────────────────────────────────────
@@ -941,12 +937,12 @@ impl WorkspaceListSelectionState for ManagerState<'_> {
         self.inline_new_session_picker = None;
     }
 
-    fn clear_inline_provider_picker(&mut self) {
-        self.inline_provider_picker = None;
+    fn clear_inline_account_picker(&mut self) {
+        self.inline_account_picker = None;
     }
 
-    fn clear_launch_provider_picker(&mut self) {
-        self.launch_provider_picker = None;
+    fn clear_launch_account_picker(&mut self) {
+        self.launch_account_picker = None;
     }
 
     fn reset_list_scroll(&mut self) {
@@ -990,21 +986,21 @@ impl LaunchRolePromptManagerState<jackin_core::RoleSelector> for ManagerState<'_
 }
 
 impl
-    LaunchProviderPickerManagerState<
+    LaunchAccountPickerManagerState<
         jackin_core::RoleSelector,
         jackin_core::Agent,
-        jackin_protocol::Provider,
+        crate::services::launch::AccountChoice,
     > for ManagerState<'_>
 {
-    fn open_launch_provider_picker(
+    fn open_launch_account_picker(
         &mut self,
-        picker: crate::tui::components::provider_picker::ProviderPickerState<
+        picker: crate::tui::components::account_picker::AccountPickerState<
             jackin_core::RoleSelector,
             jackin_core::Agent,
-            jackin_protocol::Provider,
+            crate::services::launch::AccountChoice,
         >,
     ) {
-        self.launch_provider_picker = Some(picker);
+        self.launch_account_picker = Some(picker);
     }
 }
 
@@ -1057,40 +1053,40 @@ impl InlinePickerDismissalState for ManagerState<'_> {
         self.inline_agent_picker = None;
     }
 
-    fn clear_inline_provider_picker(&mut self) {
-        self.inline_provider_picker = None;
+    fn clear_inline_account_picker(&mut self) {
+        self.inline_account_picker = None;
     }
 
-    fn clear_launch_provider_picker(&mut self) {
-        self.launch_provider_picker = None;
+    fn clear_launch_account_picker(&mut self) {
+        self.launch_account_picker = None;
     }
 }
 
-impl InlineNewSessionPickerState<String, jackin_core::Agent, jackin_protocol::Provider>
+impl InlineNewSessionPickerState<String, jackin_core::Agent, crate::services::launch::AccountChoice>
     for ManagerState<'_>
 {
     fn set_inline_new_session_picker(
         &mut self,
         context: String,
         picker: crate::tui::components::agent_choice::AgentChoiceState<jackin_core::Agent>,
-        providers: Vec<jackin_protocol::Provider>,
+        providers: Vec<crate::services::launch::AccountChoice>,
     ) {
         self.inline_new_session_picker = Some((context, picker, providers));
     }
 }
 
-impl InlineProviderPickerState<String, jackin_core::Agent, jackin_protocol::Provider>
+impl InlineAccountPickerState<String, jackin_core::Agent, crate::services::launch::AccountChoice>
     for ManagerState<'_>
 {
-    fn set_inline_provider_picker(
+    fn set_inline_account_picker(
         &mut self,
-        picker: crate::tui::components::provider_picker::ProviderPickerState<
+        picker: crate::tui::components::account_picker::AccountPickerState<
             String,
             jackin_core::Agent,
-            jackin_protocol::Provider,
+            crate::services::launch::AccountChoice,
         >,
     ) {
-        self.inline_provider_picker = Some(picker);
+        self.inline_account_picker = Some(picker);
     }
 }
 

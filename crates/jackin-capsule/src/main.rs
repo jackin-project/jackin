@@ -150,25 +150,17 @@ connecting as a client.",
                 let supported_agents = config::load_optional()
                     .map(|config| config.supported_agents())
                     .unwrap_or_default();
-                let provider_label = parse_provider_flag(&args);
                 let spawn = match args.get(2) {
                     None => Some(SpawnRequest::Shell),
                     Some(raw) => match validate_agent_slug(raw, &supported_agents) {
                         Ok(slug) => {
-                            let req = if let Some(label) = provider_label {
-                                SpawnRequest::AgentWithProvider {
-                                    slug: slug.to_owned(),
-                                    provider_label: label,
-                                }
-                            } else {
-                                match SpawnRequest::agent(slug) {
-                                    Ok(req) => req,
-                                    Err(reason) => {
-                                        output::stderr_line(format_args!(
-                                            "[jackin-capsule] rejecting agent argv {raw:?}: {reason}; no new session will be spawned"
-                                        ));
-                                        return client::run_client(None, focus_session).await;
-                                    }
+                            let req = match SpawnRequest::agent(slug) {
+                                Ok(req) => req,
+                                Err(reason) => {
+                                    output::stderr_line(format_args!(
+                                        "[jackin-capsule] rejecting agent argv {raw:?}: {reason}; no new session will be spawned"
+                                    ));
+                                    return client::run_client(None, focus_session).await;
                                 }
                             };
                             Some(req)
@@ -328,16 +320,6 @@ fn parse_focus_flag(args: &[String]) -> Option<u64> {
         }
     }
     None
-}
-
-/// Extract the `--provider=<label>` flag from a `new <agent> --provider=…`
-/// argv. Scans past the subcommand (index 1) and its agent positional
-/// (index 2). An empty `--provider=` yields `Some("")`, which the daemon
-/// routes through its unknown-provider fallback (no env redirect).
-fn parse_provider_flag(args: &[String]) -> Option<String> {
-    args.get(3..)?
-        .iter()
-        .find_map(|arg| arg.strip_prefix("--provider=").map(str::to_owned))
 }
 
 /// Resolve the initial agent slug for PID-1 daemon mode. The host launcher

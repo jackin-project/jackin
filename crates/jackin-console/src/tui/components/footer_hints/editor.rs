@@ -84,7 +84,7 @@ pub fn editor_footer_items(
 ) -> Vec<HintSpan<'static>> {
     if let Some(modal) = &state.modal {
         return editor_screen_footer_items(EditorScreenFooterFacts::Modal {
-            items: modal.footer_items(state.auth_form_can_generate_token()),
+            items: modal.footer_items(false),
         });
     }
     if state.tab_bar_focused() {
@@ -156,6 +156,7 @@ pub enum EditorContextFooterMode {
     SecretPlainRow,
     SecretRoleHeader,
     SecretAddRow,
+    Accounts,
     AuthManage,
     AuthEditMode,
     AuthRoleHeader,
@@ -185,6 +186,13 @@ pub fn editor_contextual_row_footer_items(
         EditorContextFooterMode::SecretPlainRow => secret_plain_row_footer_items(op_available),
         EditorContextFooterMode::SecretRoleHeader => secret_role_header_footer_items(),
         EditorContextFooterMode::SecretAddRow => secret_add_row_footer_items(op_available),
+        EditorContextFooterMode::Accounts => vec![
+            super::key_span("↵/Space"),
+            HintSpan::Text("toggle / next account"),
+            HintSpan::Sep,
+            super::key_span("D"),
+            HintSpan::Text("clear"),
+        ],
         EditorContextFooterMode::AuthManage => auth_row_footer_items(AuthRowFooterMode::ManageAuth),
         EditorContextFooterMode::AuthEditMode => auth_row_footer_items(AuthRowFooterMode::EditMode),
         EditorContextFooterMode::AuthRoleHeader => {

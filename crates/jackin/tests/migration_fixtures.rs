@@ -28,6 +28,8 @@ struct FixtureMeta {
     target_version: String,
     target_version_shipped: String,
     summary: String,
+    #[serde(default)]
+    expected_error: Option<String>,
 }
 
 type MigrateFn = fn(&Path) -> anyhow::Result<()>;
@@ -54,17 +56,15 @@ fn manifest_fixtures_round_trip_to_current() {
 }
 
 #[test]
-fn config_unknown_field_policy_is_preserve() {
-    // AppConfig deliberately does NOT use deny_unknown_fields (forward-compat).
-    assert_unknown_field_policy("config", UnknownFieldPolicy::Preserve, |p| {
+fn config_unknown_field_policy_is_deny() {
+    assert_unknown_field_policy("config", UnknownFieldPolicy::Deny, |p| {
         Ok(jackin_config::migrate_config_file_if_needed(p).map(|_| ())?)
     });
 }
 
 #[test]
-fn workspace_unknown_field_policy_is_preserve() {
-    // WorkspaceConfig deliberately does NOT use deny_unknown_fields (forward-compat).
-    assert_unknown_field_policy("workspace", UnknownFieldPolicy::Preserve, |p| {
+fn workspace_unknown_field_policy_is_deny() {
+    assert_unknown_field_policy("workspace", UnknownFieldPolicy::Deny, |p| {
         Ok(jackin_config::migrate_workspace_file_if_needed(p).map(|_| ())?)
     });
 }
@@ -78,8 +78,6 @@ fn manifest_unknown_field_policy_is_deny() {
 
 #[derive(Clone, Copy)]
 enum UnknownFieldPolicy {
-    /// Unknown keys may survive migration and still parse (`AppConfig`).
-    Preserve,
     /// Unknown keys must be rejected by parse if they survive migration.
     Deny,
 }
@@ -90,7 +88,11 @@ fn assert_unknown_field_policy(file_kind: &str, policy: UnknownFieldPolicy, migr
     let entry = fs::read_dir(&file_kind_dir)
         .unwrap()
         .filter_map(Result::ok)
-        .find(|e| e.file_type().is_ok_and(|t| t.is_dir()))
+        .find(|e| {
+            e.file_type().is_ok_and(|t| t.is_dir())
+                && fs::read_to_string(e.path().join("meta.toml"))
+                    .is_ok_and(|text| !text.contains("expected_error"))
+        })
         .unwrap_or_else(|| panic!("no fixtures under {}", file_kind_dir.display()));
     let dir = entry.path();
     let name = dir.file_name().unwrap().to_string_lossy().into_owned();
@@ -125,12 +127,6 @@ fn assert_unknown_field_policy(file_kind: &str, policy: UnknownFieldPolicy, migr
                 other => panic!("unknown file_kind {other:?}"),
             };
             match policy {
-                UnknownFieldPolicy::Preserve => {
-                    assert!(
-                        parse_err.is_none(),
-                        "fixture {name}: AppConfig preserve policy expects parse success, got {parse_err:?}"
-                    );
-                }
                 UnknownFieldPolicy::Deny => {
                     if after.contains("x_unknown_probe") {
                         assert!(
@@ -193,6 +189,20 @@ fn walk_fixtures(file_kind: &str, migrate: MigrateFn) {
         let temp = tempfile::tempdir().unwrap();
         let target = temp.path().join(filename_for(file_kind));
         fs::write(&target, &before).unwrap();
+        if let Some(expected_error) = &meta.expected_error {
+            let error = migrate(&target).unwrap_err();
+            assert!(
+                format!("{error:#}").contains(expected_error),
+                "{name}: {error:#}"
+            );
+            assert_eq!(
+                fs::read_to_string(&target).unwrap(),
+                before,
+                "rejected migration must preserve operator data"
+            );
+            assert_eq!(expected_after, before);
+            continue;
+        }
         migrate(&target).unwrap_or_else(|e| panic!("migrating {name}: {e:#}"));
         let actual_after = fs::read_to_string(&target).unwrap();
 

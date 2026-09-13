@@ -18,6 +18,9 @@ pub const STATE_DIR: &str = "/jackin/state";
 /// Ephemeral runtime sockets, clipboard staging, usage handoff JSON.
 pub const RUN_DIR: &str = "/jackin/run";
 
+/// Protected host-resolved account credentials, mounted read-only.
+pub const ACCOUNT_CREDENTIALS: &str = "/run/jackin/account-credentials.json";
+
 /// Host-repo mount points inside the container (`/jackin/host/...`).
 pub const HOST_DIR: &str = "/jackin/host";
 
@@ -71,6 +74,8 @@ pub const AGENT_STATUS_CAPTURES_DIR: &str = "/jackin/state/agent-status/captures
 pub const CONTAINER_INIT_MARKER: &str = "/jackin/state/container-init.done";
 /// Cached git DCO identity.
 pub const GIT_DCO_IDENTITY_CACHE: &str = "/jackin/state/git-dco-identity";
+/// Claude persistent configuration directory, including mutable account metadata.
+pub const CLAUDE_CONFIG_DIR: &str = "/home/agent/.claude";
 /// Claude credentials handoff file.
 pub const CLAUDE_CREDENTIALS: &str = "/jackin/claude/credentials.json";
 /// Claude account handoff file.

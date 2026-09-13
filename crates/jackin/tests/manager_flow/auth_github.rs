@@ -39,7 +39,7 @@ fn github_auth_form_save_persists_token_mode_and_gh_token_to_disk() -> Result<()
         .clone();
     let mut ed = EditorState::new_edit("big-monorepo".into(), ws);
     ed.active_tab = EditorTab::Auth;
-    ed.auth_selected_kind = Some(AuthKind::Github);
+    ed.set_tab_bar_focused(false);
     let ws_github_idx = auth_common::auth_row_idx(&ed, &config, |r| {
         matches!(
             r,
@@ -186,12 +186,12 @@ fn github_auth_form_save_persists_token_mode_and_gh_token_to_disk() -> Result<()
     Ok(())
 }
 
-/// `D` on a Github `RoleHeader` clears the role's
+/// `D` on a Github `RoleMode` clears the role's
 /// `[roles.<role>.github]` override end-to-end through
 /// the input dispatcher (in addition to the unit-level coverage in
 /// `src/console/manager/input/auth.rs`).
 #[test]
-fn github_role_header_d_clears_github_role_override() -> Result<()> {
+fn github_role_mode_d_clears_github_role_override() -> Result<()> {
     let temp = tempdir()?;
     let paths = JackinPaths::for_tests(temp.path());
     let mut config = seed_config(&paths, temp.path())?;
@@ -210,11 +210,11 @@ fn github_role_header_d_clears_github_role_override() -> Result<()> {
     let mut state = ManagerState::from_config(&config, cwd);
     let mut ed = EditorState::new_edit("big-monorepo".into(), ws);
     ed.active_tab = EditorTab::Auth;
-    ed.auth_selected_kind = Some(AuthKind::Github);
+    ed.set_tab_bar_focused(false);
     let header_idx = auth_common::auth_row_idx(&ed, &config, |r| {
         matches!(
             r,
-            AuthRow::RoleHeader { role, .. } if role == "the-architect"
+            AuthRow::RoleMode { role, .. } if role == "the-architect"
         )
     });
     ed.active_field = FieldFocus::Row(header_idx);
@@ -234,25 +234,18 @@ fn github_role_header_d_clears_github_role_override() -> Result<()> {
         .expect("override entry must remain after D");
     assert!(
         role_entry.github.is_none(),
-        "D on github RoleHeader must clear the role's github override"
+        "D on github RoleMode must clear the role's github override"
     );
     Ok(())
 }
 
-/// Integration counterpart for the unit-level
-/// `github_role_override_picker_filters_already_overridden_roles` —
-/// drives the picker open through the keystroke dispatcher with the
-/// github kind selected and asserts the candidate list filters out a
-/// role that already carries a `[…github]` override.
+/// Role auth rows are always available, including roles with existing overrides.
 #[test]
-fn github_role_override_picker_filters_already_overridden_roles_via_dispatcher() -> Result<()> {
+fn github_role_override_opens_directly_from_role_row() -> Result<()> {
     let temp = tempdir()?;
     let paths = JackinPaths::for_tests(temp.path());
     let mut config = seed_config(&paths, temp.path())?;
     let cwd = temp.path();
-
-    // Pre-seed a workspace × role × github override on `the-architect`
-    // so the picker should filter it out and only offer other roles.
     let mut ws = config.workspaces.get("big-monorepo").unwrap().clone();
     ws.roles.insert(
         "the-architect".into(),
@@ -264,31 +257,28 @@ fn github_role_override_picker_filters_already_overridden_roles_via_dispatcher()
             ..Default::default()
         },
     );
-
     let mut state = ManagerState::from_config(&config, cwd);
     let mut ed = EditorState::new_edit("big-monorepo".into(), ws);
     ed.active_tab = EditorTab::Auth;
-    ed.auth_selected_kind = Some(AuthKind::Github);
-    let sentinel_idx =
-        auth_common::auth_row_idx(&ed, &config, |r| matches!(r, AuthRow::AddSentinel { .. }));
-    ed.active_field = FieldFocus::Row(sentinel_idx);
+    ed.set_tab_bar_focused(false);
+    let role_idx = auth_common::auth_row_idx(&ed, &config, |row| {
+        matches!(
+            row, AuthRow::RoleMode { role, kind: AuthKind::Github } if role == "the-architect"
+        )
+    });
+    ed.active_field = FieldFocus::Row(role_idx);
     state.stage = ManagerStage::Editor(ed);
-
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
-    let Some(Modal::AuthRolePicker { state: picker }) = &editor(&state).modal else {
-        panic!(
-            "Enter on AddSentinel must open AuthRolePicker for github kind; got {:?}",
-            editor(&state).modal
-        );
-    };
-    let labels: Vec<String> = picker
-        .roles
-        .iter()
-        .map(jackin_core::RoleSelector::key)
-        .collect();
-    assert!(
-        !labels.iter().any(|s| s == "the-architect"),
-        "the-architect already has a github override and must be filtered out; got {labels:?}"
+    assert!(matches!(editor(&state).modal, Some(Modal::AuthForm { .. })));
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Esc))?;
+    assert_eq!(
+        editor(&state).pending.roles["the-architect"]
+            .github
+            .as_ref()
+            .unwrap()
+            .auth_forward,
+        jackin_config::GithubAuthMode::Ignore
     );
+    assert!(editor(&state).modal.is_none());
     Ok(())
 }

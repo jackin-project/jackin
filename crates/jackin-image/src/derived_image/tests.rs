@@ -753,7 +753,6 @@ fn claude_plugins_render_one_readable_run_layer() {
             sparse: vec!["pkg/a".to_owned()],
         }],
         plugins: vec!["caveman".to_owned(), "rtk".to_owned()],
-        providers: BTreeMap::new(),
     };
     let dockerfile = render_derived_dockerfile(
         "FROM projectjackin/construct:0.1-trixie\n",

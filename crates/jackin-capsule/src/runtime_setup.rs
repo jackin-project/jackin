@@ -8,13 +8,11 @@
 use std::ffi::{OsStr, OsString};
 use std::fs;
 use std::io;
-use std::io::Write as _;
 use std::os::unix::fs::PermissionsExt as _;
 use std::os::unix::fs::symlink;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
-use serde_json::json;
 use tempfile::Builder as TempfileBuilder;
 
 use jackin_core::container_paths;
@@ -34,8 +32,7 @@ const GROK_AUTH_PATH: &str = "/home/agent/.grok/auth.json";
 
 // Each resolver pairs a thin env-reading wrapper with a pure `_from` core, so
 // path composition is unit-tested without mutating process-global env (which is
-// racy across parallel tests and `unsafe` under Rust 2024). Same split as
-// `write_codex_provider_config` / `write_codex_provider_config_inner`.
+// racy across parallel tests and `unsafe` under Rust 2024).
 
 /// Resolve a path under `AGENT_HOME` honoring an optional env override.
 /// When `env` is set, its value is used verbatim; otherwise falls back to
@@ -722,9 +719,6 @@ fn apply_forwarded_credential(
 }
 
 fn setup_codex(mode: AuthMode) -> Result<AuthMaterialization> {
-    // Provider config is idempotent and runs every start; the credential seed
-    // (last, fallible step) handles first-seed vs re-seed uniformly.
-    write_codex_provider_config(&codex_home())?;
     seed_forwarded_credential(
         jackin_core::Agent::Codex,
         mode,
@@ -735,238 +729,6 @@ fn setup_codex(mode: AuthMode) -> Result<AuthMaterialization> {
             api_key_envs: &["OPENAI_API_KEY"],
         },
     )
-}
-
-/// Appends the `[model_providers.minimax]` block to `config.toml` and writes
-/// the v2 profile file `minimax.config.toml` under `codex_dir`. `MiniMax` is
-/// the only deliverable Codex cell (Responses-API compatible); GLM and Kimi
-/// are deferred. Both writes are idempotent across repeated setup invocations.
-fn write_codex_provider_config(codex_dir: &Path) -> Result<()> {
-    write_codex_provider_config_inner(
-        codex_dir,
-        nonempty_env("MINIMAX_API_KEY").is_some(),
-        &codex_minimax_model(),
-    )
-}
-
-/// `MiniMax` model Codex routes to: the role's `[codex.providers.minimax].model`
-/// override (carried in the capsule config) when set, else the built-in default.
-fn codex_minimax_model() -> String {
-    crate::config::load_optional()
-        .and_then(|config| config.provider_model("codex", "minimax").map(str::to_owned))
-        .unwrap_or_else(|| jackin_protocol::MINIMAX_DEFAULT_MODEL.to_owned())
-}
-
-/// Core of [`write_codex_provider_config`] with env reading lifted out so tests
-/// drive the MiniMax-present decision and the model directly (no process-global
-/// env or config mutation).
-fn write_codex_provider_config_inner(
-    codex_dir: &Path,
-    minimax_present: bool,
-    model: &str,
-) -> Result<()> {
-    if !minimax_present {
-        return Ok(());
-    }
-    fs::create_dir_all(codex_dir)
-        .with_context(|| format!("failed to create {}", codex_dir.display()))?;
-
-    // ── config.toml: append [model_providers.minimax] if not already present ──
-    // Duplicate TOML table keys are a parse error, so we guard with a
-    // substring check before appending.
-    let config_path = codex_dir.join("config.toml");
-    let provider_block_missing = !config_path.exists()
-        || !fs::read_to_string(&config_path)
-            .with_context(|| {
-                format!(
-                    "failed to read {} for idempotency check",
-                    config_path.display()
-                )
-            })?
-            .contains("[model_providers.minimax]");
-    if provider_block_missing {
-        let provider_block = codex_minimax_provider_toml()?;
-        #[expect(
-            clippy::disallowed_methods,
-            reason = "capsule runtime setup runs before entering the multiplexer render loop"
-        )]
-        let mut file = fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&config_path)
-            .with_context(|| {
-                format!(
-                    "failed to open {} for provider config",
-                    config_path.display()
-                )
-            })?;
-        file.write_all(provider_block.as_bytes()).with_context(|| {
-            format!(
-                "failed to write MiniMax provider block to {}",
-                config_path.display()
-            )
-        })?;
-        crate::output::stdout_line(format_args!(
-            "[entrypoint] codex: wrote MiniMax provider block to {}",
-            config_path.display()
-        ));
-    }
-
-    // ── minimax.config.toml: Codex v2 profile file, loaded by `--profile minimax` ──
-    // Do NOT also write `[profiles.minimax]` into config.toml: Codex errors when
-    // `--profile` is passed alongside a legacy v1 profiles table.
-    let profile_path = codex_dir.join("minimax.config.toml");
-    if !profile_path.exists() {
-        let profile = codex_minimax_profile_toml(model)?;
-        fs::write(&profile_path, profile.as_bytes()).with_context(|| {
-            format!(
-                "failed to write MiniMax profile config to {}",
-                profile_path.display()
-            )
-        })?;
-        crate::output::stdout_line(format_args!(
-            "[entrypoint] codex: wrote MiniMax profile config to {}",
-            profile_path.display()
-        ));
-    }
-
-    // ── minimax.models.json: model catalog so the MiniMax model has real metadata ─
-    write_codex_minimax_catalog(codex_dir, model)?;
-
-    Ok(())
-}
-
-/// Serializes the `[model_providers.minimax]` block for `config.toml` via the
-/// `toml` crate. A leading newline separates it from any existing content.
-fn codex_minimax_provider_toml() -> Result<String> {
-    #[derive(serde::Serialize)]
-    struct ProviderEntry {
-        name: &'static str,
-        base_url: &'static str,
-        env_key: &'static str,
-        wire_api: &'static str,
-    }
-    #[derive(serde::Serialize)]
-    struct CodexBlock {
-        model_providers: std::collections::BTreeMap<&'static str, ProviderEntry>,
-    }
-    let block = CodexBlock {
-        model_providers: [(
-            "minimax",
-            ProviderEntry {
-                name: "MiniMax",
-                base_url: jackin_protocol::MINIMAX_OPENAI_BASE_URL,
-                env_key: "MINIMAX_API_KEY",
-                wire_api: "responses",
-            },
-        )]
-        .into_iter()
-        .collect(),
-    };
-    let body =
-        toml::to_string(&block).context("failed to serialize Codex MiniMax provider block")?;
-    Ok(format!("\n{body}"))
-}
-
-/// Serializes the Codex v2 profile file content (`minimax.config.toml`).
-/// Loaded by `codex --profile minimax`; sets `model_provider` for that session.
-/// The context window is NOT set here: a profile-scoped `model_context_window`
-/// is clamped to the active model's fallback cap (~272k), so it can never raise
-/// the window for a custom model. `minimax.models.json` carries the real 512k
-/// window instead (see [`write_codex_minimax_catalog`]).
-fn codex_minimax_profile_toml(model: &str) -> Result<String> {
-    #[derive(serde::Serialize)]
-    struct ProfileConfig<'a> {
-        model_provider: &'static str,
-        model: &'a str,
-    }
-    let config = ProfileConfig {
-        model_provider: "minimax",
-        model,
-    };
-    toml::to_string(&config).context("failed to serialize Codex MiniMax profile config")
-}
-
-/// Writes `minimax.models.json` — a Codex model catalog giving `MiniMax-M3` real
-/// metadata (a 512k context window). MiniMax-M3 is absent from Codex's bundled
-/// catalog, so without this Codex uses generic fallback metadata: a ~272k window
-/// plus a "metadata not found, can degrade performance" warning on every turn,
-/// and it clamps any `model_context_window` override to that fallback cap. A
-/// catalog entry is the only mechanism that lifts the window. The entry is
-/// derived at runtime from the installed Codex's own catalog (`codex debug
-/// models`) so it always matches the running binary's `ModelInfo` schema rather
-/// than a snapshot that drifts as Codex evolves. The entrypoint activates it
-/// with `-c model_catalog_json=<file>` alongside `--profile minimax` (a
-/// profile-file `model_catalog_json` key trips a Codex config-parse bug).
-///
-/// Best-effort: if Codex is missing or its output won't parse, the catalog is
-/// skipped and Codex falls back to its generic metadata — the model still runs.
-fn write_codex_minimax_catalog(codex_dir: &Path, model: &str) -> Result<()> {
-    let catalog_path = codex_dir.join("minimax.models.json");
-    if catalog_path.exists() {
-        return Ok(());
-    }
-    let Some(template) = codex_catalog_template_entry() else {
-        return Ok(());
-    };
-    let catalog = build_minimax_catalog(&template, model);
-    let body = serde_json::to_string_pretty(&catalog)
-        .context("failed to serialize MiniMax model catalog")?;
-    fs::write(&catalog_path, body.as_bytes()).with_context(|| {
-        format!(
-            "failed to write MiniMax model catalog to {}",
-            catalog_path.display()
-        )
-    })?;
-    crate::output::stdout_line(format_args!(
-        "[entrypoint] codex: wrote MiniMax model catalog to {}",
-        catalog_path.display()
-    ));
-    Ok(())
-}
-
-/// First entry of the installed Codex's model catalog as an object map, used as a
-/// schema-correct template. Any entry works: [`build_minimax_catalog`] overwrites
-/// the identity and window fields and leaves the rest (tool config, capability
-/// flags, base instructions) as the running binary already shaped them. `None`
-/// when Codex is absent, fails, or its output has no model object to template.
-fn codex_catalog_template_entry() -> Option<serde_json::Map<String, serde_json::Value>> {
-    let output = runtime_setup_output("codex", ["debug", "models"]).ok()?;
-    if !output.success {
-        return None;
-    }
-    let json: serde_json::Value = serde_json::from_slice(&output.stdout).ok()?;
-    json.get("models")?
-        .as_array()?
-        .first()?
-        .as_object()
-        .cloned()
-}
-
-/// Patches a Codex catalog entry into the `MiniMax-M3` entry: real identity and
-/// the `MiniMax` context window, with the template model's promo fields cleared.
-fn build_minimax_catalog(
-    template: &serde_json::Map<String, serde_json::Value>,
-    model: &str,
-) -> serde_json::Value {
-    let mut entry = template.clone();
-    entry.insert("slug".to_owned(), json!(model));
-    entry.insert("display_name".to_owned(), json!(model));
-    entry.insert(
-        "description".to_owned(),
-        json!("MiniMax Token Plan model (served via jackin)."),
-    );
-    let window = jackin_protocol::MINIMAX_CONTEXT_WINDOW;
-    entry.insert("context_window".to_owned(), json!(window));
-    entry.insert("max_context_window".to_owned(), json!(window));
-    // Compact at 90% of the window so Codex compacts before truncating near the limit.
-    entry.insert(
-        "auto_compact_token_limit".to_owned(),
-        json!(window * 9 / 10),
-    );
-    entry.insert("availability_nux".to_owned(), serde_json::Value::Null);
-    entry.insert("upgrade".to_owned(), serde_json::Value::Null);
-    json!({ "models": [entry] })
 }
 
 fn setup_amp(mode: AuthMode) -> Result<AuthMaterialization> {
@@ -1056,17 +818,6 @@ fn setup_kimi(mode: AuthMode) -> Result<AuthMaterialization> {
 }
 
 fn setup_opencode(mode: AuthMode) -> Result<AuthMaterialization> {
-    // Runtime provider config is written every start, layered on top of the
-    // seeded `.config/opencode` defaults: it embeds live API keys from container
-    // env, so it is never baked into default-home. Written before the credential
-    // seed, which (as in setup_codex) is the last fallible step.
-    use std::os::unix::fs::DirBuilderExt as _;
-    fs::DirBuilder::new()
-        .recursive(true)
-        .mode(0o700)
-        .create("/home/agent/.config/opencode")
-        .context("failed to create /home/agent/.config/opencode")?;
-    write_opencode_config(Path::new("/home/agent/.config/opencode/opencode.json"))?;
     seed_forwarded_credential(
         jackin_core::Agent::Opencode,
         mode,
@@ -1090,127 +841,6 @@ fn setup_grok(mode: AuthMode) -> Result<AuthMaterialization> {
             api_key_envs: &["XAI_API_KEY", "GROK_DEPLOYMENT_KEY"],
         },
     )
-}
-
-/// Writes `opencode.json` with `"permission":"allow"` plus a `provider` block
-/// for every alt provider whose API key is present in the container env.
-fn write_opencode_config(config: &Path) -> Result<()> {
-    let cfg = build_opencode_config(
-        nonempty_env("ZAI_API_KEY"),
-        nonempty_env("MINIMAX_API_KEY"),
-        nonempty_env("KIMI_CODE_API_KEY"),
-    );
-    write_opencode_json(config, &cfg)
-}
-
-/// Serializes `cfg` to `config` with mode 0o600 — the file embeds live API keys,
-/// so it must never be group/world-readable. Env reading is lifted to the caller
-/// so tests can assert the permission without process-global env mutation.
-fn write_opencode_json(config: &Path, cfg: &serde_json::Value) -> Result<()> {
-    use std::os::unix::fs::OpenOptionsExt as _;
-    let mut content = serde_json::to_vec(cfg).context("failed to serialize opencode.json")?;
-    content.push(b'\n');
-    #[expect(
-        clippy::disallowed_methods,
-        reason = "capsule runtime setup runs before entering the multiplexer render loop"
-    )]
-    let mut f = fs::OpenOptions::new()
-        .create(true)
-        .write(true)
-        .truncate(true)
-        .mode(0o600)
-        .open(config)
-        .context("failed to open opencode.json for writing")?;
-    f.write_all(&content)
-        .context("failed to write opencode.json")?;
-    Ok(())
-}
-
-/// Builds the `opencode.json` value: base `"permission":"allow"` plus a
-/// self-contained `provider` block for each alt provider whose key is present.
-///
-/// Each block fully defines the provider (npm SDK, baseURL, apiKey, the one
-/// model id) instead of relying on `OpenCode`'s bundled models.dev registry. Two
-/// reasons it must be self-contained: the registry keys Z.AI's credential off
-/// `ZHIPU_API_KEY` (a name jackin never sets — so an apiKey-less block would
-/// fail to authenticate), and the registry has no `kimi` provider at all (its
-/// entry is `kimi-for-coding`), so a bare `{baseURL}` block leaves `OpenCode`
-/// with no SDK or model list to resolve `-m kimi/kimi-for-coding`. The model id
-/// is the suffix [`jackin_protocol::Provider::opencode_model`] emits for the
-/// `-m <provider>/<model>` flag; the test binds the two so they cannot drift.
-fn build_opencode_config(
-    zai_key: Option<String>,
-    minimax_key: Option<String>,
-    kimi_key: Option<String>,
-) -> serde_json::Value {
-    let mut providers = serde_json::Map::new();
-    if let Some(key) = zai_key {
-        providers.insert(
-            "zai".to_owned(),
-            opencode_provider_block(
-                "Z.AI",
-                "@ai-sdk/openai-compatible",
-                jackin_protocol::ZAI_OPENAI_BASE_URL,
-                &key,
-                jackin_protocol::ZAI_DEFAULT_OPUS_MODEL,
-            ),
-        );
-    }
-    if let Some(key) = minimax_key {
-        providers.insert(
-            "minimax".to_owned(),
-            opencode_provider_block(
-                "MiniMax",
-                "@ai-sdk/anthropic",
-                // `@ai-sdk/anthropic` appends `/messages` to baseURL (its default
-                // is `…/v1`), whereas Claude Code's SDK appends `/v1/messages`.
-                // So the OpenCode block needs the `/v1` the Claude-path constant omits.
-                &format!("{}/v1", jackin_protocol::MINIMAX_BASE_URL),
-                &key,
-                jackin_protocol::MINIMAX_DEFAULT_MODEL,
-            ),
-        );
-    }
-    if let Some(key) = kimi_key {
-        providers.insert(
-            "kimi".to_owned(),
-            opencode_provider_block(
-                "Kimi",
-                "@ai-sdk/anthropic",
-                // See MiniMax note: `@ai-sdk/anthropic` needs `/v1` in baseURL.
-                &format!("{}/v1", jackin_protocol::KIMI_BASE_URL),
-                &key,
-                jackin_protocol::KIMI_DEFAULT_MODEL,
-            ),
-        );
-    }
-    let mut cfg = json!({"permission": "allow"});
-    if !providers.is_empty() {
-        cfg["provider"] = serde_json::Value::Object(providers);
-    }
-    cfg
-}
-
-/// One `OpenCode` custom-provider block. `model_id` is both the sole entry in the
-/// `models` map and the suffix `OpenCode` matches after the provider id in
-/// `-m <provider>/<model_id>`. `MiniMax` and Kimi speak the Anthropic wire format
-/// (npm `@ai-sdk/anthropic`), but with a `/v1`-suffixed baseURL since that SDK
-/// appends only `/messages`; Z.AI's coding-plan endpoint is OpenAI-compatible.
-fn opencode_provider_block(
-    name: &str,
-    npm: &str,
-    base_url: &str,
-    api_key: &str,
-    model_id: &str,
-) -> serde_json::Value {
-    let mut models = serde_json::Map::new();
-    models.insert(model_id.to_owned(), json!({ "name": model_id }));
-    json!({
-        "name": name,
-        "npm": npm,
-        "options": { "baseURL": base_url, "apiKey": api_key },
-        "models": serde_json::Value::Object(models),
-    })
 }
 
 /// Whether a durable home was empty and got seeded on this start. Named instead

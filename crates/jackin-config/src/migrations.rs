@@ -88,8 +88,13 @@ pub const CONFIG_MIGRATIONS: &[MigrationStep] = &[
     // Additive with serde defaults; no transformation needed.
     MigrationStep {
         from: "v1alpha8",
-        to: CURRENT_CONFIG_VERSION,
+        to: "v1alpha9",
         migrate: noop_migration,
+    },
+    MigrationStep {
+        from: "v1alpha9",
+        to: CURRENT_CONFIG_VERSION,
+        migrate: strip_legacy_agent_tables,
     },
 ];
 /// Ordered per-workspace file migration chain from [`LEGACY_VERSION`] to current.
@@ -137,10 +142,35 @@ pub const WORKSPACE_MIGRATIONS: &[MigrationStep] = &[
     // Additive with serde default; no transformation needed.
     MigrationStep {
         from: "v1alpha7",
-        to: CURRENT_WORKSPACE_VERSION,
+        to: "v1alpha8",
         migrate: noop_migration,
     },
+    MigrationStep {
+        from: "v1alpha8",
+        to: CURRENT_WORKSPACE_VERSION,
+        migrate: strip_legacy_agent_tables,
+    },
 ];
+
+/// Strip legacy agent authentication tables from top-level and roles tables.
+pub(crate) fn strip_legacy_agent_tables(doc: &mut DocumentMut) -> crate::ConfigResult<()> {
+    for agent in jackin_core::Agent::ALL {
+        doc.remove(agent.slug());
+    }
+    if let Some(roles) = doc
+        .get_mut("roles")
+        .and_then(toml_edit::Item::as_table_like_mut)
+    {
+        for (_, role) in roles.iter_mut() {
+            if let Some(role_tbl) = role.as_table_like_mut() {
+                for agent in jackin_core::Agent::ALL {
+                    role_tbl.remove(agent.slug());
+                }
+            }
+        }
+    }
+    Ok(())
+}
 
 /// v1alpha4 → v1alpha5: the workspace-level `op_account` moves onto each
 /// `op://` env ref as a per-ref `account` key, so a workspace holding

@@ -4,6 +4,7 @@
 //! Unit tests for `jackin-capsule` daemon: input dispatch, session management,
 //! tab lifecycle, git context, status-bar rendering, and PTY session behavior.
 use super::*;
+use std::collections::BTreeMap;
 
 #[test]
 fn provider_probe_noop_tick_exports_no_span() {
@@ -715,8 +716,6 @@ fn test_mux(rows: u16, cols: u16) -> Multiplexer {
             agents: Vec::new(),
             models: BTreeMap::new(),
             auth_modes: BTreeMap::new(),
-            provider_models: BTreeMap::new(),
-            initial_provider: None,
             claude_marketplaces: Vec::new(),
             claude_plugins: Vec::new(),
             exec_bindings: Vec::new(),
@@ -1651,7 +1650,7 @@ fn test_provider_session(
     let (mut session, input_rx) = test_session_with_agent(24, 80, Some("claude".to_owned()));
     session.provider = Some(crate::session::SessionProvider {
         label: provider.label().to_owned(),
-        env_overrides: provider.env_overrides(Some("zai-test-token")),
+        env_overrides: vec![("ANTHROPIC_AUTH_TOKEN".into(), "zai-test-token".into())],
     });
     (session, input_rx)
 }
@@ -2153,29 +2152,10 @@ fn resize_shrink_then_grow_does_not_panic() {
 #[test]
 fn initial_spawn_request_is_data_only_agent_or_shell() {
     assert_eq!(
-        initial_spawn_request("codex", None),
+        initial_spawn_request("codex"),
         SpawnRequest::Agent("codex".to_owned())
     );
-    assert_eq!(initial_spawn_request("", None), SpawnRequest::Shell);
-}
-
-#[test]
-fn initial_spawn_request_carries_provider_when_selected() {
-    let provider = jackin_protocol::InitialProvider {
-        label: jackin_protocol::Provider::Zai.label().to_owned(),
-    };
-    assert_eq!(
-        initial_spawn_request("claude", Some(&provider)),
-        SpawnRequest::AgentWithProvider {
-            slug: "claude".to_owned(),
-            provider_label: "Z.AI".to_owned(),
-        }
-    );
-    // An empty agent still degrades to a shell even with a provider.
-    assert_eq!(
-        initial_spawn_request("", Some(&provider)),
-        SpawnRequest::Shell
-    );
+    assert_eq!(initial_spawn_request(""), SpawnRequest::Shell);
 }
 
 #[test]
@@ -5371,171 +5351,25 @@ fn apply_action_dialog_consume_keeps_dialog_open() {
 }
 
 #[test]
-fn apply_dialog_spawn_agent_provider_picker_uses_overlay_frame_without_screen_erase() {
-    let mut mux = single_pane_tab_mux();
-    mux.launch_env.provider_keys.insert(
-        jackin_protocol::Provider::Anthropic,
-        "anthropic-test-token".to_owned(),
-    );
-    mux.launch_env
-        .provider_keys
-        .insert(jackin_protocol::Provider::Zai, "zai-test-token".to_owned());
-    mux.open_command_palette();
-    drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
-
-    let frame = apply_action_frame(
-        &mut mux,
-        Action::Dialog(DialogAction::SpawnAgent {
-            agent: Some("claude".to_owned()),
-            intent: PickerIntent::NewTab,
-        }),
-    )
-    .expect("provider picker should redraw");
-
-    assert!(matches!(
-        mux.dialog_top(),
-        Some(Dialog::ProviderPicker {
-            agent: Some(agent),
-            providers,
-            intent: PickerIntent::NewTab,
-            ..
-        }) if agent == "claude" && providers.len() >= 2
-    ));
-    assert!(
-        !frame_contains_screen_erase(&frame),
-        "provider picker must not clear the full terminal screen"
-    );
-}
-
-#[test]
-fn provider_spawn_env_injects_codex_profile_only_for_codex_with_key() {
+fn account_model_is_used_for_agent_launch() {
     let mut mux = test_mux(24, 80);
     mux.launch_env
-        .provider_keys
-        .insert(jackin_protocol::Provider::Minimax, "mk".to_owned());
-
-    // codex + MiniMax + resolved key → activate the v2 profile.
-    let env = mux.provider_spawn_env("codex", jackin_protocol::Provider::Minimax);
-    assert!(
-        env.iter()
-            .any(|(k, v)| k == "JACKIN_CODEX_PROFILE" && v == "minimax"),
-        "codex+MiniMax with a key must activate the minimax profile"
-    );
-
-    // codex + OpenAI (native, no codex_profile) → no profile env.
-    let env = mux.provider_spawn_env("codex", jackin_protocol::Provider::Openai);
-    assert!(
-        !env.iter().any(|(k, _)| k == "JACKIN_CODEX_PROFILE"),
-        "native OpenAI must not set a Codex profile"
-    );
-
-    // claude + MiniMax → slug guard suppresses the Codex profile.
-    let env = mux.provider_spawn_env("claude", jackin_protocol::Provider::Minimax);
-    assert!(
-        !env.iter().any(|(k, _)| k == "JACKIN_CODEX_PROFILE"),
-        "non-codex agents must not set a Codex profile"
-    );
-}
-
-#[test]
-fn launch_model_uses_picked_provider_for_opencode() {
-    // OpenCode has no model of its own: the picked provider supplies the `-m`
-    // model. test_mux has no role-manifest model, so a wrong wiring shows as None.
-    let mux = test_mux(24, 80);
-    assert_eq!(
-        mux.launch_model("opencode", Some("MiniMax")),
-        Some("minimax/MiniMax-M3")
-    );
-    assert_eq!(
-        mux.launch_model("opencode", Some("Z.AI")),
-        Some("zai/glm-5.1")
-    );
-    assert_eq!(
-        mux.launch_model("opencode", Some("Kimi")),
-        Some("kimi/kimi-for-coding")
-    );
-    // Non-opencode agents ignore the provider for model selection (auth env only).
-    assert_eq!(mux.launch_model("codex", Some("MiniMax")), None);
-    // A provider with no opencode model falls back to the role-manifest model.
-    assert_eq!(mux.launch_model("opencode", Some("Anthropic")), None);
-}
-
-#[test]
-fn launch_model_prefers_manifest_provider_override_for_opencode() {
-    let mut mux = test_mux(24, 80);
-    mux.launch_env.launch_config.provider_models.insert(
-        "opencode".to_owned(),
-        BTreeMap::from([("minimax".to_owned(), "minimax/custom".to_owned())]),
-    );
-    // The role's [opencode.providers.minimax].model override beats the built-in default.
-    assert_eq!(
-        mux.launch_model("opencode", Some("MiniMax")),
-        Some("minimax/custom")
-    );
-    // A provider with no override still uses the built-in default.
-    assert_eq!(
-        mux.launch_model("opencode", Some("Z.AI")),
-        Some("zai/glm-5.1")
-    );
-}
-
-#[test]
-fn provider_spawn_env_applies_claude_manifest_model_override() {
-    let mut mux = test_mux(24, 80);
-    mux.launch_env
-        .provider_keys
-        .insert(jackin_protocol::Provider::Minimax, "mk".to_owned());
-    mux.launch_env.launch_config.provider_models.insert(
-        "claude".to_owned(),
-        BTreeMap::from([("minimax".to_owned(), "MiniMax-Pro".to_owned())]),
-    );
-    let env = mux.provider_spawn_env("claude", jackin_protocol::Provider::Minimax);
-    let model_vars: Vec<_> = env
-        .iter()
-        .filter(|(k, _)| k.starts_with("ANTHROPIC_DEFAULT_") && k.ends_with("_MODEL"))
-        .collect();
-    assert!(
-        !model_vars.is_empty(),
-        "claude+MiniMax must set ANTHROPIC_DEFAULT_*_MODEL"
-    );
-    for (key, value) in model_vars {
-        assert_eq!(
-            value, "MiniMax-Pro",
-            "{key} must carry the manifest override"
-        );
-    }
-}
-
-#[test]
-fn provider_spawn_env_skips_codex_profile_when_key_unresolved() {
-    // No MiniMax key captured → token unresolved. runtime-setup only writes the
-    // profile file when the key is present, so the flag must NOT be pushed:
-    // forcing `codex --profile minimax` against a missing file would hard-fail
-    // instead of falling back to native auth.
-    let mut mux = test_mux(24, 80);
-    // Multiplexer::new seeds provider_keys from the ambient env; drop the
-    // MiniMax key so the "unresolved" case holds regardless of MINIMAX_API_KEY.
-    mux.launch_env
-        .provider_keys
-        .remove(&jackin_protocol::Provider::Minimax);
-    let env = mux.provider_spawn_env("codex", jackin_protocol::Provider::Minimax);
-    assert!(
-        !env.iter().any(|(k, _)| k == "JACKIN_CODEX_PROFILE"),
-        "without a resolved key, codex must fall back to native auth, not force --profile"
-    );
+        .launch_config
+        .models
+        .insert("opencode".to_owned(), "minimax/custom".to_owned());
+    assert_eq!(mux.model_for_agent("opencode"), Some("minimax/custom"));
 }
 
 #[test]
 fn env_for_spawn_keeps_allowlisted_drops_unknown() {
     let mux = test_mux(24, 80);
     let env = mux.env_for_spawn(&[
-        ("JACKIN_CODEX_PROFILE".to_owned(), "minimax".to_owned()),
+        ("TZ".to_owned(), "UTC".to_owned()),
         ("TOTALLY_NOT_ALLOWLISTED".to_owned(), "x".to_owned()),
     ]);
     assert!(
-        env.iter()
-            .any(|(k, v)| k == "JACKIN_CODEX_PROFILE" && v == "minimax"),
-        "JACKIN_CODEX_PROFILE must survive the passthrough allowlist"
+        env.iter().any(|(k, v)| k == "TZ" && v == "UTC"),
+        "TZ must survive the passthrough allowlist"
     );
     assert!(
         !env.iter().any(|(k, _)| k == "TOTALLY_NOT_ALLOWLISTED"),
@@ -9159,5 +8993,44 @@ fn session_send_then_status_tick_is_observable_end_to_end_in_process() {
     assert!(
         event.last_input_ms.is_some(),
         "the record must carry input recency from the send"
+    );
+}
+
+#[test]
+fn daemon_session_boundary_keeps_account_credentials_per_agent() {
+    let mut mux = test_mux(24, 80);
+    mux.launch_env.launch_config.auth_modes = BTreeMap::from([
+        ("claude".into(), "sync".into()),
+        ("codex".into(), "ignore".into()),
+        ("opencode".into(), "api_key".into()),
+    ]);
+    mux.launch_env.agent_credentials =
+        jackin_protocol::AgentCredentialEnv::new(BTreeMap::from([(
+            "opencode".into(),
+            BTreeMap::from([
+                ("ANTHROPIC_API_KEY".into(), "opencode-anthropic".into()),
+                ("OPENAI_API_KEY".into(), "opencode-openai".into()),
+            ]),
+        )]));
+    let ambient = vec![("ANTHROPIC_API_KEY".into(), "ambient-secret".into())];
+    for agent in [Some("claude"), Some("codex"), None] {
+        let launch = mux.session_launch(agent, None, &ambient, "test");
+        assert!(launch.cmd.get_env("ANTHROPIC_API_KEY").is_none());
+        assert!(launch.cmd.get_env("OPENAI_API_KEY").is_none());
+    }
+    let launch = mux.session_launch(Some("opencode"), None, &ambient, "test");
+    assert_eq!(
+        launch
+            .cmd
+            .get_env("ANTHROPIC_API_KEY")
+            .and_then(|v| v.to_str()),
+        Some("opencode-anthropic")
+    );
+    assert_eq!(
+        launch
+            .cmd
+            .get_env("OPENAI_API_KEY")
+            .and_then(|v| v.to_str()),
+        Some("opencode-openai")
     );
 }

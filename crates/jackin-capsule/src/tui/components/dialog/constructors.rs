@@ -12,7 +12,6 @@ use termrock::widgets::TextInputState;
 use super::input::{first_selectable_idx, picker_filtered_rows};
 use super::{
     ConfirmKind, Dialog, InspectRow, MAX_CUSTOM_LABEL_LEN, PaletteCloseLabel, PickerIntent,
-    ProviderChoice,
 };
 
 impl Dialog {
@@ -70,19 +69,6 @@ impl Dialog {
         Self::ConfirmAction {
             kind,
             selected_yes: false,
-        }
-    }
-
-    pub fn new_provider_picker(
-        agent: Option<String>,
-        providers: Vec<ProviderChoice>,
-        intent: PickerIntent,
-    ) -> Self {
-        Self::ProviderPicker {
-            agent,
-            providers,
-            selected: 0,
-            intent,
         }
     }
 

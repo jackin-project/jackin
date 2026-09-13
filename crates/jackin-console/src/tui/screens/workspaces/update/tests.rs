@@ -146,8 +146,8 @@ fn workspace_list_selection_plans_clear_expected_pickers() {
             clear_inline_role_picker: true,
             clear_inline_agent_picker: true,
             clear_inline_new_session_picker: true,
-            clear_inline_provider_picker: false,
-            clear_launch_provider_picker: false,
+            clear_inline_account_picker: false,
+            clear_launch_account_picker: false,
         }
     );
     assert_eq!(
@@ -158,8 +158,8 @@ fn workspace_list_selection_plans_clear_expected_pickers() {
             clear_inline_role_picker: true,
             clear_inline_agent_picker: true,
             clear_inline_new_session_picker: true,
-            clear_inline_provider_picker: true,
-            clear_launch_provider_picker: true,
+            clear_inline_account_picker: true,
+            clear_launch_account_picker: true,
         }
     );
 }
@@ -224,7 +224,7 @@ fn apply_workspace_tree_disclosure_plan_routes_mutations() {
     clippy::struct_excessive_bools,
     reason = "Bundled 5 inline-picker clear flags carried by the test fixture — \
               each tracks one of role / agent / new_session / provider / \
-              launch_provider independently, and named-field reads match the \
+              launch_account independently, and named-field reads match the \
               trait-method names this struct records."
 )]
 #[derive(Debug, Default, PartialEq, Eq)]
@@ -233,7 +233,7 @@ struct ClearedPickers {
     agent: bool,
     new_session: bool,
     provider: bool,
-    launch_provider: bool,
+    launch_account: bool,
 }
 
 #[derive(Default)]
@@ -256,12 +256,12 @@ impl WorkspaceListSelectionState for TestListSelection {
         self.cleared.new_session = true;
     }
 
-    fn clear_inline_provider_picker(&mut self) {
+    fn clear_inline_account_picker(&mut self) {
         self.cleared.provider = true;
     }
 
-    fn clear_launch_provider_picker(&mut self) {
-        self.cleared.launch_provider = true;
+    fn clear_launch_account_picker(&mut self) {
+        self.cleared.launch_account = true;
     }
 
     fn reset_list_scroll(&mut self) {
@@ -285,8 +285,8 @@ fn apply_workspace_list_selection_plan_clears_and_selects() {
             clear_inline_role_picker: true,
             clear_inline_agent_picker: true,
             clear_inline_new_session_picker: true,
-            clear_inline_provider_picker: true,
-            clear_launch_provider_picker: true,
+            clear_inline_account_picker: true,
+            clear_launch_account_picker: true,
         },
     );
 
@@ -294,7 +294,7 @@ fn apply_workspace_list_selection_plan_clears_and_selects() {
     assert!(state.cleared.agent);
     assert!(state.cleared.new_session);
     assert!(state.cleared.provider);
-    assert!(state.cleared.launch_provider);
+    assert!(state.cleared.launch_account);
     assert!(state.reset_scroll);
     assert_eq!(state.selected, Some(4));
 }
@@ -311,8 +311,8 @@ fn apply_workspace_list_selection_plan_keeps_selection_when_unchanged() {
             clear_inline_role_picker: true,
             clear_inline_agent_picker: false,
             clear_inline_new_session_picker: false,
-            clear_inline_provider_picker: false,
-            clear_launch_provider_picker: false,
+            clear_inline_account_picker: false,
+            clear_launch_account_picker: false,
         },
     );
 

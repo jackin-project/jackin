@@ -2,6 +2,6 @@
 # SPDX-License-Identifier: Apache-2.0
 
 from_version = "v1alpha2"
-target_version = "v1alpha6"
-target_version_shipped = "2026-06-18"
-summary = "Restamps role manifest from v1alpha2 through v1alpha3 (OpenCode), v1alpha4 (Kimi), v1alpha5 (per-provider model overrides), to v1alpha6 (role Docker security settings). All steps are no-op restamps."
+target_version = "v1alpha7"
+target_version_shipped = "2026-09-07"
+summary = "Migrates to role schema v1alpha7. Historical additive steps preserve settings; the account migration rejects removed provider model tables with guidance to move those models to named accounts."

@@ -8,13 +8,11 @@
 
 use ratatui::layout::Rect;
 
-use crate::tui::auth::AuthKind;
 use crate::tui::model::apply_manager_stage;
 use crate::tui::screens::editor::update::{
-    clear_editor_auth_kind_plan, editor_field_selection_plan, editor_mount_row_select_plan,
-    editor_tab_bar_focus_plan, editor_tab_horizontal_scroll_plan, editor_tab_move_plan,
-    editor_tab_select_plan, editor_workspace_mounts_horizontal_scroll_plan,
-    enter_editor_auth_kind_plan,
+    editor_field_selection_plan, editor_mount_row_select_plan, editor_tab_bar_focus_plan,
+    editor_tab_horizontal_scroll_plan, editor_tab_move_plan, editor_tab_select_plan,
+    editor_workspace_mounts_horizontal_scroll_plan,
 };
 use crate::tui::screens::settings::update::{
     settings_env_selection_plan, settings_global_mounts_selection_plan,
@@ -51,7 +49,6 @@ use super::{
 // ── Concrete type aliases ──────────────────────────────────────────────────
 
 pub type ManagerMessage = crate::tui::message::ConsoleManagerMessage<
-    AuthKind,
     super::CreatePreludeState<'static>,
     EditorState<'static>,
     SettingsState<'static>,
@@ -94,7 +91,6 @@ pub fn update_manager(state: &mut ManagerState<'_>, message: ManagerMessage) {
     let action_span = action_guard.as_ref().map(|guard| guard.span().enter());
     match message {
         ManagerMessage::CollapseSelectedTree => collapse_selected_tree(state),
-        ManagerMessage::ClearEditorAuthKind => clear_editor_auth_kind(state),
         ManagerMessage::EnterPreview => apply_preview_focus_plan(state, enter_preview_focus_plan()),
         ManagerMessage::EnterConfirmDelete { name } => enter_confirm_delete(state, name),
         ManagerMessage::EnterConfirmInstancePurge { container, label } => {
@@ -109,7 +105,6 @@ pub fn update_manager(state: &mut ManagerState<'_>, message: ManagerMessage) {
         ManagerMessage::EnterEditor(editor) => {
             apply_manager_stage(state, ManagerStage::Editor(editor));
         }
-        ManagerMessage::EnterEditorAuthKind { kind } => enter_editor_auth_kind(state, kind),
         ManagerMessage::EnterSettings(settings) => {
             apply_manager_stage(state, ManagerStage::Settings(settings));
         }
@@ -207,9 +202,6 @@ pub fn update_manager(state: &mut ManagerState<'_>, message: ManagerMessage) {
         ManagerMessage::SetSettingsEnvRoleExpanded { role, expanded } => {
             set_settings_env_role_expanded(state, role, expanded);
         }
-        ManagerMessage::SetEditorAuthRoleExpanded { role, expanded } => {
-            set_editor_auth_role_expanded(state, role, expanded);
-        }
         ManagerMessage::SetEditorSecretsRoleExpanded { role, expanded } => {
             set_editor_secrets_role_expanded(state, role, expanded);
         }
@@ -285,16 +277,16 @@ pub fn update_manager(state: &mut ManagerState<'_>, message: ManagerMessage) {
                 inline_picker_dismissal_plan(InlinePickerDismissal::Agent),
             );
         }
-        ManagerMessage::DismissInlineProviderPicker => {
+        ManagerMessage::DismissInlineAccountPicker => {
             apply_inline_picker_dismissal_plan(
                 state,
                 inline_picker_dismissal_plan(InlinePickerDismissal::Provider),
             );
         }
-        ManagerMessage::DismissLaunchProviderPicker => {
+        ManagerMessage::DismissLaunchAccountPicker => {
             apply_inline_picker_dismissal_plan(
                 state,
-                inline_picker_dismissal_plan(InlinePickerDismissal::LaunchProvider),
+                inline_picker_dismissal_plan(InlinePickerDismissal::LaunchAccount),
             );
         }
     }
@@ -380,15 +372,13 @@ pub(crate) const fn action_of(
         | ManagerMessage::DismissInlineSessionPicker
         | ManagerMessage::DismissInlineRolePicker
         | ManagerMessage::DismissInlineAgentPicker
-        | ManagerMessage::DismissInlineProviderPicker
-        | ManagerMessage::DismissLaunchProviderPicker => Some(UiActionName::DialogCancel),
+        | ManagerMessage::DismissInlineAccountPicker
+        | ManagerMessage::DismissLaunchAccountPicker => Some(UiActionName::DialogCancel),
         ManagerMessage::CollapseSelectedTree
-        | ManagerMessage::ClearEditorAuthKind
         | ManagerMessage::EnterPreview
         | ManagerMessage::EnterConfirmDelete { .. }
         | ManagerMessage::EnterConfirmInstancePurge { .. }
         | ManagerMessage::EnterCreateEditor { .. }
-        | ManagerMessage::EnterEditorAuthKind { .. }
         | ManagerMessage::FileBrowserCommitValidated(_)
         | ManagerMessage::FileBrowserListingLoaded(_)
         | ManagerMessage::InstancesRefreshed(_)
@@ -419,7 +409,6 @@ pub(crate) const fn action_of(
         | ManagerMessage::MoveSettingsGeneralSelection { .. }
         | ManagerMessage::MoveSettingsAuthSelection { .. }
         | ManagerMessage::SetSettingsEnvRoleExpanded { .. }
-        | ManagerMessage::SetEditorAuthRoleExpanded { .. }
         | ManagerMessage::SetEditorSecretsRoleExpanded { .. }
         | ManagerMessage::ToggleSettingsGlobalMountReadonly
         | ManagerMessage::ToggleEditorGeneralSelected
@@ -457,22 +446,6 @@ fn set_settings_tab_bar_focus(state: &mut ManagerState<'_>, focused: bool) {
         return;
     };
     settings.apply_tab_bar_focus_plan(settings_tab_bar_focus_plan(focused));
-}
-
-fn clear_editor_auth_kind(state: &mut ManagerState<'_>) {
-    let ManagerStage::Editor(editor) = &mut state.stage else {
-        return;
-    };
-    let plan = clear_editor_auth_kind_plan();
-    editor.apply_auth_kind_plan(plan);
-}
-
-fn enter_editor_auth_kind(state: &mut ManagerState<'_>, kind: AuthKind) {
-    let ManagerStage::Editor(editor) = &mut state.stage else {
-        return;
-    };
-    let plan = enter_editor_auth_kind_plan(kind);
-    editor.apply_auth_kind_plan(plan);
 }
 
 fn enter_confirm_delete(state: &mut ManagerState<'_>, name: String) {
@@ -620,13 +593,6 @@ fn toggle_settings_general_selected(state: &mut ManagerState<'_>) {
         return;
     };
     settings.general.toggle_selected();
-}
-
-fn set_editor_auth_role_expanded(state: &mut ManagerState<'_>, role: String, expanded: bool) {
-    let ManagerStage::Editor(editor) = &mut state.stage else {
-        return;
-    };
-    editor.set_auth_role_expanded(role, expanded);
 }
 
 fn set_editor_secrets_role_expanded(state: &mut ManagerState<'_>, role: String, expanded: bool) {
@@ -914,79 +880,6 @@ pub fn execute_op_commit_validation(
         }
     } else if let ManagerStage::Editor(editor) = &mut state.stage {
         editor.pending_op_commit = Some(super::PendingOpCommit::new(op_ref, rx));
-    }
-}
-
-/// Apply an async token-generate result (success or failure) to manager state.
-pub fn apply_token_generate_result(
-    state: &mut ManagerState<'_>,
-    result: anyhow::Result<jackin_core::EnvValue>,
-) {
-    match result {
-        Ok(env_value) => apply_generated_token(state, env_value),
-        Err(error) => report_token_generate_error(state, error),
-    }
-}
-
-fn apply_generated_token(state: &mut ManagerState<'_>, env_value: jackin_core::EnvValue) {
-    if let jackin_core::EnvValue::OpRef(op_ref) = &env_value {
-        crate::tui::op_picker::invalidate_cache_for_ref(&state.op_cache, op_ref);
-    }
-
-    match &mut state.stage {
-        ManagerStage::Editor(editor) => match env_value {
-            jackin_core::EnvValue::OpRef(op_ref) => {
-                crate::tui::input::auth::apply_op_picker_to_auth_form_committed(editor, op_ref);
-            }
-            jackin_core::EnvValue::Plain(value) => {
-                crate::tui::input::auth::apply_plain_text_to_auth_form(editor, &value);
-            }
-            jackin_core::EnvValue::Extended(e) => {
-                crate::tui::input::auth::apply_plain_text_to_auth_form(editor, &e.value);
-            }
-        },
-        ManagerStage::Settings(settings) => match env_value {
-            jackin_core::EnvValue::OpRef(op_ref) => {
-                crate::tui::input::apply_op_picker_to_settings_auth_form_committed(
-                    &mut settings.auth,
-                    op_ref,
-                );
-            }
-            jackin_core::EnvValue::Plain(value) => {
-                crate::tui::input::apply_plain_text_to_settings_auth_form(
-                    &mut settings.auth,
-                    &value,
-                );
-            }
-            jackin_core::EnvValue::Extended(e) => {
-                crate::tui::input::apply_plain_text_to_settings_auth_form(
-                    &mut settings.auth,
-                    &e.value,
-                );
-            }
-        },
-        _ => {}
-    }
-}
-
-fn report_token_generate_error(state: &mut ManagerState<'_>, error: anyhow::Error) {
-    use crate::tui::components::error_popup;
-    match &mut state.stage {
-        ManagerStage::Editor(editor) => {
-            editor.modal = Some(Modal::ErrorPopup {
-                state: error_popup::token_generation_failed_error_popup_state(error),
-            });
-        }
-        ManagerStage::Settings(_) => {
-            update_manager(
-                state,
-                ManagerMessage::OpenSettingsErrorPopup {
-                    title: error_popup::token_generation_failed_error_title().into(),
-                    message: error.to_string(),
-                },
-            );
-        }
-        _ => {}
     }
 }
 

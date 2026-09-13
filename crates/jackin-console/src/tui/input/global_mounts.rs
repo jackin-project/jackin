@@ -16,7 +16,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::tui::components::auth_panel::{
     AuthFormKeyPlan, auth_credential_input_state, auth_form_key_plan_with_source_folder,
-    auth_source_picker_state, generated_token_op_item_name, generated_token_source_picker_state,
+    auth_source_picker_state,
 };
 use crate::tui::components::file_browser::page_rows_for_modal;
 use crate::tui::keymap::{
@@ -430,12 +430,9 @@ mod auth;
 pub(crate) use auth::apply_source_folder_to_settings_auth_form;
 use auth::handle_auth_key;
 pub use auth::handle_settings_auth_modal;
-pub use auth::settings_auth_can_generate_token;
 pub use auth::{
     apply_op_picker_to_settings_auth_form_committed, apply_plain_text_to_settings_auth_form,
 };
-#[cfg(test)]
-use auth::{apply_op_picker_to_settings_auth_form_with_runner, open_settings_auth_form};
 fn handle_general_key(state: &mut ManagerState<'_>, key: KeyEvent) {
     let ManagerStage::Settings(settings) = &state.stage else {
         return;
@@ -983,9 +980,8 @@ fn commit_settings_confirm(
 }
 
 fn request_settings_save(
-    settings: &mut crate::tui::state::SettingsState<'_>,
+    _settings: &mut crate::tui::state::SettingsState<'_>,
 ) -> SettingsModalOutcome {
-    settings.clear_ignored_env_only_auth_keys();
     SettingsModalOutcome::SaveSettings
 }
 

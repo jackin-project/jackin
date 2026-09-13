@@ -13,7 +13,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use anyhow::Context as _;
-use jackin_core::{Agent, AuthForwardMode, EnvValue, JackinPaths, WorkspaceName};
+use jackin_core::{EnvValue, JackinPaths, WorkspaceName};
 use toml_edit::{DocumentMut, Item, Table};
 
 use crate::app_config::AppConfig;
@@ -83,6 +83,56 @@ impl ConfigEditor {
         if !paths.config_file.exists() {
             let mut initial = AppConfig::default();
             initial.sync_builtin_agents();
+            for discovered in crate::discover_default_accounts(&paths.home_dir).accounts {
+                let id = format!("default-{}", discovered.agent.slug());
+                initial.accounts.insert(
+                    id,
+                    crate::AccountConfig {
+                        enabled: true,
+                        name: format!("{} default", discovered.agent.label()),
+                        provider: crate::AiProvider::for_agent(discovered.agent),
+                        credential: crate::AccountCredential::Profile {
+                            agent: discovered.agent,
+                            directory: discovered.directory,
+                        },
+                    },
+                );
+            }
+            let environment = std::env::vars_os()
+                .filter_map(|(name, value)| {
+                    Some((name.into_string().ok()?, value.into_string().ok()?))
+                })
+                .collect();
+            for (provider, variable) in crate::discover_environment_accounts(&environment) {
+                initial.accounts.insert(
+                    format!("{}-api-key", provider.slug()),
+                    crate::AccountConfig {
+                        enabled: true,
+                        name: format!("{provider} API key"),
+                        provider,
+                        credential: crate::AccountCredential::ApiKey {
+                            value: EnvValue::from(format!("${variable}")),
+                            base_url: None,
+                            model: None,
+                        },
+                    },
+                );
+            }
+            for (agent, variable) in crate::discover_environment_oauth_accounts(&environment) {
+                initial.accounts.insert(
+                    format!("{agent}-oauth-token"),
+                    crate::AccountConfig {
+                        enabled: true,
+                        name: format!("{agent} subscription token"),
+                        provider: crate::AiProvider::for_agent(agent),
+                        credential: crate::AccountCredential::OAuthToken {
+                            agent,
+                            value: EnvValue::from(format!("${variable}")),
+                        },
+                    },
+                );
+            }
+            initial.validate_accounts()?;
             atomic_write(&paths.config_file, &toml::to_string_pretty(&initial)?)?;
         }
         migrations::migrate_config_file_if_needed(&paths.config_file)?;
@@ -334,18 +384,6 @@ impl ConfigEditor {
         }
     }
 
-    /// Write `[<agent.slug>].auth_forward = <mode>` at the global layer.
-    pub fn set_global_auth_forward(&mut self, agent: Agent, mode: AuthForwardMode) {
-        let table = table_path_mut(&mut self.doc, &[agent.slug().to_owned()]);
-        table.insert("auth_forward", toml_edit::value(auth_forward_str(mode)));
-    }
-
-    /// Write or clear `[<agent.slug>].sync_source_dir` at the global layer.
-    pub fn set_global_sync_source_dir(&mut self, agent: Agent, source: Option<&Path>) {
-        let agent_path = vec![agent.slug().to_owned()];
-        set_sync_source_dir_field(&mut self.doc, &agent_path, source);
-    }
-
     /// Write `[github].auth_forward = <mode>` at the global layer.
     pub fn set_global_github_auth_forward(&mut self, mode: GithubAuthMode) {
         let table = table_path_mut(&mut self.doc, &["github".to_owned()]);
@@ -394,78 +432,6 @@ impl ConfigEditor {
         }
     }
 
-    /// Write or clear `[<agent>].auth_forward` inside the workspace file.
-    ///
-    /// `mode = Some(m)` writes the named mode; `mode = None` removes the
-    /// `auth_forward` field (and the agent block if it becomes empty),
-    /// dropping that layer of the resolver back to the workspace's
-    /// inheritance from the global default.
-    ///
-    /// The agent block is keyed by `agent.slug()`, keeping the on-disk
-    /// shape parallel to `set_global_auth_forward`.
-    pub fn set_workspace_auth_forward(
-        &mut self,
-        workspace: &WorkspaceName,
-        agent: Agent,
-        mode: Option<AuthForwardMode>,
-    ) {
-        let agent_path = vec![agent.slug().to_owned()];
-        let doc = self.workspace_doc_mut(workspace.as_str());
-        if let Some(m) = mode {
-            let table = table_path_mut(doc, &agent_path);
-            table.insert("auth_forward", toml_edit::value(auth_forward_str(m)));
-        } else {
-            clear_auth_forward_field(doc, &agent_path);
-        }
-    }
-
-    /// Write or clear `[<agent>].sync_source_dir` inside the workspace file.
-    pub fn set_workspace_sync_source_dir(
-        &mut self,
-        workspace: &WorkspaceName,
-        agent: Agent,
-        source: Option<&Path>,
-    ) {
-        let agent_path = vec![agent.slug().to_owned()];
-        let doc = self.workspace_doc_mut(workspace.as_str());
-        set_sync_source_dir_field(doc, &agent_path, source);
-    }
-
-    /// Write or clear `[roles.<role>.<agent>].auth_forward` inside the workspace file.
-    ///
-    /// Mirrors [`Self::set_workspace_auth_forward`] one layer deeper.
-    /// Used by the workspace-manager's Auth tab when the operator commits
-    /// the auth-edit form on a (role × agent) row.
-    pub fn set_workspace_role_auth_forward(
-        &mut self,
-        workspace: &WorkspaceName,
-        role: &str,
-        agent: Agent,
-        mode: Option<AuthForwardMode>,
-    ) {
-        let agent_path = vec!["roles".to_owned(), role.to_owned(), agent.slug().to_owned()];
-        let doc = self.workspace_doc_mut(workspace.as_str());
-        if let Some(m) = mode {
-            let table = table_path_mut(doc, &agent_path);
-            table.insert("auth_forward", toml_edit::value(auth_forward_str(m)));
-        } else {
-            clear_auth_forward_field(doc, &agent_path);
-        }
-    }
-
-    /// Write or clear `[roles.<role>.<agent>].sync_source_dir` inside the workspace file.
-    pub fn set_workspace_role_sync_source_dir(
-        &mut self,
-        workspace: &WorkspaceName,
-        role: &str,
-        agent: Agent,
-        source: Option<&Path>,
-    ) {
-        let agent_path = vec!["roles".to_owned(), role.to_owned(), agent.slug().to_owned()];
-        let doc = self.workspace_doc_mut(workspace.as_str());
-        set_sync_source_dir_field(doc, &agent_path, source);
-    }
-
     /// Write or clear `[github].auth_forward` inside the workspace file.
     ///
     /// Mirrors [`Self::set_workspace_auth_forward`] but threads the
@@ -490,7 +456,7 @@ impl ConfigEditor {
 
     /// Write or clear `[roles.<role>.github].auth_forward` inside the workspace file.
     ///
-    /// Mirrors [`Self::set_workspace_role_auth_forward`] one kind
+    /// Persists GitHub policy in the role layer; one kind
     /// dimension wider — `github` lives at the same three layers as
     /// `claude` / `codex`, but with no per-agent split.
     pub fn set_workspace_role_github_auth_forward(
@@ -726,17 +692,6 @@ impl ConfigEditor {
     }
 }
 
-const fn auth_forward_str(mode: AuthForwardMode) -> &'static str {
-    match mode {
-        AuthForwardMode::Ignore => "ignore",
-        AuthForwardMode::Sync => "sync",
-        // Tasks 10/11 will split per-mode behavior; today both env-driven
-        // modes serialize to their canonical snake_case names.
-        AuthForwardMode::ApiKey => "api_key",
-        AuthForwardMode::OAuthToken => "oauth_token",
-    }
-}
-
 const fn github_mode_str(mode: GithubAuthMode) -> &'static str {
     match mode {
         GithubAuthMode::Sync => "sync",
@@ -793,11 +748,11 @@ fn validate_candidate(
         validate_workspace_file_stem(name)?;
         let workspace: WorkspaceConfig = toml::from_str(&doc.to_string())
             .with_context(|| format!("deserializing candidate workspace {name:?}"))?;
-        workspace.validate_auth_modes()?;
+
         config.workspaces.insert(name.clone(), workspace);
     }
     validate_reserved_env_names(&config)?;
-    config.validate_auth_modes()?;
+    config.validate_accounts()?;
     Ok(config)
 }
 
@@ -853,29 +808,6 @@ fn clear_auth_forward_field(doc: &mut DocumentMut, kind_path: &[String]) {
     // Caller passes `max_prune = 1` to bound the walk so a workspace
     // or role identifier — even one literally named "github" /
     // "claude" / "codex" / "env" — is never reached.
-    prune_empty_trailing_tables(doc, kind_path, 1);
-}
-
-fn set_sync_source_dir_field(doc: &mut DocumentMut, kind_path: &[String], source: Option<&Path>) {
-    if let Some(source) = source {
-        let table = table_path_mut(doc, kind_path);
-        table.insert(
-            "sync_source_dir",
-            toml_edit::value(source.display().to_string()),
-        );
-        return;
-    }
-
-    let mut current: &mut Item = doc.as_item_mut();
-    for segment in kind_path {
-        match current.as_table_mut().and_then(|t| t.get_mut(segment)) {
-            Some(next) => current = next,
-            None => return,
-        }
-    }
-    if let Some(table) = current.as_table_mut() {
-        table.remove("sync_source_dir");
-    }
     prune_empty_trailing_tables(doc, kind_path, 1);
 }
 
@@ -947,3 +879,5 @@ fn table_path_mut<'a>(doc: &'a mut DocumentMut, path: &[String]) -> &'a mut Tabl
 
 #[cfg(test)]
 mod tests;
+
+mod accounts;

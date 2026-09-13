@@ -124,64 +124,11 @@ fn hello_with_spawn_agent_and_env_roundtrips() {
 }
 
 #[test]
-fn hello_with_agent_and_provider_roundtrips() {
-    // spawn_kind=3 carries both the slug and the provider label.
-    // A regression dropping the label bytes from the encoder while
-    // the decoder still reads them would only surface at a real
-    // console-initiated provider launch — pin the round-trip here.
-    let spawn = Some(SpawnRequest::AgentWithProvider {
-        slug: "claude".to_owned(),
-        provider_label: "Z.AI".to_owned(),
-    });
-    let bytes = encode_client(ClientFrame::Hello {
-        rows: 50,
-        cols: 200,
-        spawn: spawn.clone(),
-        env: Vec::new(),
-        terminal: ClientTerminal::default(),
-        focus_session: None,
-        context: None,
-    })
-    .unwrap();
-    let payload = bytes[5..].to_vec();
-    match decode_client(TAG_HELLO, payload).unwrap() {
-        ClientFrame::Hello { spawn: out, .. } => assert_eq!(out, spawn),
-        other => panic!("expected Hello, got {other:?}"),
-    }
-}
-
-#[test]
-fn hello_rejects_oversized_provider_label_at_encode() {
-    let err = encode_client(ClientFrame::Hello {
-        rows: 24,
-        cols: 80,
-        spawn: Some(SpawnRequest::AgentWithProvider {
-            slug: "claude".to_owned(),
-            provider_label: "p".repeat(MAX_HELLO_PROVIDER_LABEL + 1),
-        }),
-        env: Vec::new(),
-        terminal: ClientTerminal::default(),
-        focus_session: None,
-        context: None,
-    })
-    .expect_err("over-cap provider label must be rejected at encode");
-    let msg = format!("{err:#}");
-    assert!(msg.contains("provider label"), "got: {msg}");
-    assert!(
-        msg.contains(&MAX_HELLO_PROVIDER_LABEL.to_string()),
-        "got: {msg}"
-    );
-}
-
-#[test]
-fn hello_rejects_empty_provider_label_at_decode() {
-    // spawn_kind=3, slug="claude", provider_label_len=0. The decoder
-    // must reject an AgentWithProvider frame with no label rather than
-    // construct one the daemon would route as an unknown provider.
+fn hello_rejects_removed_provider_spawn_kind() {
     let mut payload = vec![0, 24, 0, 80, 3, 0, 6];
     payload.extend(b"claude");
-    payload.extend_from_slice(&0u16.to_be_bytes()); // provider_label_len = 0
-    decode_client(TAG_HELLO, payload).unwrap_err();
+    let error = decode_client(TAG_HELLO, payload).unwrap_err();
+    assert!(error.to_string().contains("unknown hello spawn kind 3"));
 }
 
 #[test]

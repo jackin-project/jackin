@@ -1,75 +1,40 @@
 ---
 title: Grok
-description: How jackin❯ forwards your Grok Build CLI login into agent containers
+description: Register Grok accounts and authorize them for workspaces
 ---
 
+Grok profiles use `~/.grok` by default. jackin❯ scans that location on first start and imports an account only when it finds credentials in `auth.json`. Importing an account does not grant it to a workspace.
 
-Grok Build authenticates via `~/.grok/auth.json` on your host. In `sync` mode (the default), jackin❯ copies this entire file into the container on every launch — the Grok CLI inside the container uses the same credential lookup as on the host.
+## Register and assign a profile
 
-The file is a JSON object mapping scope URLs to credential records. A typical entry (from `grok login`) looks like:
-
-```json
-{
-  "https://auth.x.ai::b1a00492-073a-47ea-816f-4c329264a828": {
-    "key": "<JWT>",
-    "auth_mode": "oidc",
-    "refresh_token": "<refresh>",
-    "email": "you@example.com",
-    "user_id": "...",
-    "team_id": "...",
-    "expires_at": "...",
-    ...
-  }
-}
-```
-
-The CLI (both on host and inside jackin❯) prefers a `GROK_DEPLOYMENT_KEY` environment variable when present; otherwise it reads the appropriate scope entry from `auth.json`.
-
-The standard way to authenticate Grok on the host with an API key (non-browser) is:
+Complete the agent's login flow on the host, then scan and list the imported accounts:
 
 ```bash
-export XAI_API_KEY="xai-..."
-grok
+jackin account scan
+jackin account list
 ```
 
-(See the Grok docs for details.)
-
-In jackin❯, when you select `api_key` mode for Grok (in the Auth tab or via `jackin config auth set api_key --agent grok`), jackin❯ will inject the configured value into the container under *both* `XAI_API_KEY` and `GROK_DEPLOYMENT_KEY`. This lets the in-container Grok CLI use whichever the deployment or personal key expects.
-
-The CLI (and installer) prefers `GROK_DEPLOYMENT_KEY` when present (enterprise/managed setups can also deliver managed config and requirements); otherwise falls back to `XAI_API_KEY` or auth.json.
-
-## Logging in on the host
-
-Before sync can forward anything, you need a working Grok login on your host:
+To register a specific profile explicitly:
 
 ```bash
-grok
+jackin account add grok-work --agent grok --directory ~/.grok
+jackin workspace account assign my-app grok-work
+jackin workspace account select my-app grok-work --agent grok
 ```
 
-The first run opens a browser for authentication (SuperGrok or X Premium+ required). Alternatively, set the API key directly:
+For an additional login, select the same directory that your host alias uses. A custom profile stays separate from the default profile. jackin❯ validates credential evidence inside the selected directory before registration.
+
+## API-key account
+
+Register a provider key with the masked prompt, then authorize and select it:
 
 ```bash
-export XAI_API_KEY="xai-..."
-grok
+jackin account add xai-key --provider xai --api-key
+jackin workspace account assign my-app xai-key
+jackin workspace account select my-app xai-key --agent grok
 ```
 
-<Aside type="tip">
-To verify the host login is active, run `grok` briefly on the host — if it starts a session without prompting for credentials, you're good. For the key path, `echo $XAI_API_KEY` should be non-empty.
-</Aside>
-
-Running the installer or `grok` for the first time creates `~/.grok/auth.json` (the scoped credential store) along with `~/.grok/bin/grok` (and the `agent` symlink), `config.toml`, downloads cache, and shell completions. Only `auth.json` carries the authentication material that jackin❯ forwards.
-
-## Binary in the container
-
-Grok Build is not pre-installed in the base construct image. Your role's Dockerfile (or the role's `jackin.role.toml` construct steps) must install the CLI, typically with the same command used on the host:
-
-```dockerfile
-RUN curl -fsSL https://x.ai/cli/install.sh | bash
-```
-
-Or vendor a pinned Linux binary for the target architecture and ensure it (and the `agent` symlink) is on `PATH` inside `/home/agent/.grok/bin` or `/home/agent/.local/bin`.
-
-Once the binary is present, jackin❯ handles auth forwarding for `sync` and `api_key` modes.
+Use `--secret-ref '$XAI_API_KEY'` to reference a host environment variable, or `--secret-ref 'op://Work/Grok/api-key'` for a 1Password reference. The account stores the reference; jackin❯ resolves it when launching an authorized workspace.
 
 ## Runtime approvals
 
@@ -85,29 +50,12 @@ If the role manifest declares a model for Grok (under `[grok] model = "..."`), j
 
 Models are not written into `~/.grok/config.toml`; the CLI flag is used exclusively.
 
-## Subscription
+## Check workspace access
 
-Grok Build is available to SuperGrok and X Premium+ subscribers.
+```bash
+jackin workspace account list my-app
+```
 
-**[Get SuperGrok or X Premium+](https://grok.com/supergrok)**
+The account must be assigned and support `grok`. When several assigned accounts support the same agent, select one explicitly; role-specific selection uses `--role <ROLE>`. An empty account allowlist forwards no coding-agent credentials.
 
-## Modes available
-
-| Mode | Supported |
-|---|---|
-| `sync` (default) | Yes — forwards the entire `~/.grok/auth.json` (OIDC tokens, refresh tokens, profile info) |
-| `api_key` | Yes — injects `XAI_API_KEY` |
-| `oauth_token` | No — rejected at config time |
-| `ignore` | Yes — no forwarding |
-
-See [Agent Authentication](/guides/authentication/agents/) for what each mode does and how to switch between them.
-
-## Troubleshooting
-
-If Grok inside the container shows it is not authenticated:
-
-1. Check that the host login is active — run `grok` briefly on the host, or confirm `XAI_API_KEY` or `GROK_DEPLOYMENT_KEY` is configured for the Grok agent (in api_key mode or explicit env) in the Auth tab / config. You can also inspect `cat ~/.grok/auth.json`.
-2. Open the **Auth** tab in `jackin console` and verify the effective mode for the (workspace × role × Grok) cell.
-3. If the container has stale credentials and the host has fresh ones, restart: `jackin eject <role> && jackin load <role>`.
-
-When using api_key mode for Grok, the configured value is injected under both env var names so the CLI can use personal or deployment-key auth as needed. For managed setups, `GROK_DEPLOYMENT_KEY` also enables fetching of deployment-specific managed_config/requirements.
+See [Account commands](/commands/account/) and [Agent authentication](/guides/authentication/agents/) for the registry and authorization rules.

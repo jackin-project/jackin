@@ -112,8 +112,7 @@ pub(crate) fn dialog_action_frame_plan(action: &DialogAction) -> DialogActionFra
             }
             ConfirmKind::Exit => DialogActionFramePlan::Full(FullRedrawReason::SessionExit),
         },
-        DialogAction::SpawnAgent { intent, .. }
-        | DialogAction::SpawnAgentWithProvider { intent, .. } => match intent {
+        DialogAction::SpawnAgent { intent, .. } => match intent {
             PickerIntent::NewTab => DialogActionFramePlan::Full(FullRedrawReason::TabSwitch),
             PickerIntent::Split(_) => DialogActionFramePlan::Full(FullRedrawReason::LayoutChange),
         },

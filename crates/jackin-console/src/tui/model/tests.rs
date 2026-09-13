@@ -31,7 +31,7 @@ use super::{
     create_prelude_mount_dst_choice_plan, create_prelude_text_input_dst_plan,
     create_prelude_text_input_name_plan, create_prelude_wizard_state,
     create_prelude_workdir_cancel_plan, create_prelude_workdir_pick_plan,
-    open_launch_agent_prompt_plan, open_launch_provider_picker_plan, open_launch_role_prompt_plan,
+    open_launch_account_picker_plan, open_launch_agent_prompt_plan, open_launch_role_prompt_plan,
     store_pending_launch_plan, take_pending_launch_and_role_plan, take_pending_launch_plan,
 };
 
@@ -89,18 +89,6 @@ impl ConsoleSettingsDebugFacts for TestSettings {
             selected: 2,
             modal: None,
         }
-    }
-}
-
-struct TestTokenDrain {
-    pending: Option<u8>,
-}
-
-impl super::ConsolePendingTokenGenerate for TestTokenDrain {
-    type PendingTokenGenerate = u8;
-
-    fn take_pending_token_generate(&mut self) -> Option<Self::PendingTokenGenerate> {
-        self.pending.take()
     }
 }
 
@@ -194,9 +182,9 @@ struct TestLaunchPromptManager {
     role_picker_keys: Vec<&'static str>,
     role_picker_selected: Option<usize>,
     role_picker_confirm_label: String,
-    provider_picker_role: Option<TestPromptRole>,
-    provider_picker_agent: Option<jackin_core::Agent>,
-    provider_picker_providers: Vec<&'static str>,
+    account_picker_role: Option<TestPromptRole>,
+    account_picker_agent: Option<jackin_core::Agent>,
+    account_picker_providers: Vec<&'static str>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -236,21 +224,21 @@ impl super::LaunchRolePromptManagerState<TestPromptRole> for TestLaunchPromptMan
     }
 }
 
-impl super::LaunchProviderPickerManagerState<TestPromptRole, jackin_core::Agent, &'static str>
+impl super::LaunchAccountPickerManagerState<TestPromptRole, jackin_core::Agent, &'static str>
     for TestLaunchPromptManager
 {
-    fn open_launch_provider_picker(
+    fn open_launch_account_picker(
         &mut self,
-        picker: crate::tui::components::provider_picker::ProviderPickerState<
+        picker: crate::tui::components::account_picker::AccountPickerState<
             TestPromptRole,
             jackin_core::Agent,
             &'static str,
         >,
     ) {
         let providers = picker.providers().to_vec();
-        self.provider_picker_role = Some(picker.context);
-        self.provider_picker_agent = Some(picker.agent);
-        self.provider_picker_providers = providers;
+        self.account_picker_role = Some(picker.context);
+        self.account_picker_agent = Some(picker.agent);
+        self.account_picker_providers = providers;
     }
 }
 
@@ -377,7 +365,7 @@ fn take_pending_launch_and_role_plan_takes_pair() {
 }
 
 #[test]
-fn open_launch_provider_picker_plan_updates_app_and_manager() {
+fn open_launch_account_picker_plan_updates_app_and_manager() {
     let mut app: ConsoleApp<TestLaunchPromptManager, &'static str, TestPromptRole, ()> =
         ConsoleApp::new(
             ConsoleAppStage::Manager(TestLaunchPromptManager::default()),
@@ -385,7 +373,7 @@ fn open_launch_provider_picker_plan_updates_app_and_manager() {
             false,
         );
 
-    open_launch_provider_picker_plan(
+    open_launch_account_picker_plan(
         &mut app,
         "workspace-input",
         TestPromptRole("architect"),
@@ -397,14 +385,14 @@ fn open_launch_provider_picker_plan_updates_app_and_manager() {
     assert_eq!(app.pending_launch_role, Some(TestPromptRole("architect")));
     let ConsoleAppStage::Manager(manager) = app.stage;
     assert_eq!(
-        manager.provider_picker_role,
+        manager.account_picker_role,
         Some(TestPromptRole("architect"))
     );
     assert_eq!(
-        manager.provider_picker_agent,
+        manager.account_picker_agent,
         Some(jackin_core::Agent::Claude)
     );
-    assert_eq!(manager.provider_picker_providers, vec!["anthropic", "zai"]);
+    assert_eq!(manager.account_picker_providers, vec!["anthropic", "zai"]);
 }
 
 impl ModalConfirmState for TestConfirm {
@@ -634,38 +622,6 @@ fn console_manager_stage_reports_footer_height_facts() {
 }
 
 #[test]
-fn console_manager_stage_takes_pending_token_generate_from_editor_or_settings() {
-    type Stage = ConsoleManagerStage<(), TestTokenDrain, TestTokenDrain>;
-
-    let mut editor = Stage::Editor(TestTokenDrain { pending: Some(7) });
-    assert_eq!(editor.take_pending_token_generate(), Some(7));
-    assert_eq!(editor.take_pending_token_generate(), None);
-
-    let mut settings = Stage::Settings(TestTokenDrain { pending: Some(9) });
-    assert_eq!(settings.take_pending_token_generate(), Some(9));
-    assert_eq!(settings.take_pending_token_generate(), None);
-
-    let mut list = Stage::List;
-    assert_eq!(list.take_pending_token_generate(), None);
-
-    let mut create = Stage::CreatePrelude(());
-    assert_eq!(create.take_pending_token_generate(), None);
-
-    let mut delete = Stage::ConfirmDelete {
-        name: "workspace".to_owned(),
-        state: crate::tui::components::ConfirmState::new("Delete?"),
-    };
-    assert_eq!(delete.take_pending_token_generate(), None);
-
-    let mut purge = Stage::ConfirmInstancePurge {
-        container: "container".to_owned(),
-        label: "label".to_owned(),
-        state: crate::tui::components::ConfirmState::new("Purge?"),
-    };
-    assert_eq!(purge.take_pending_token_generate(), None);
-}
-
-#[test]
 fn console_manager_stage_polls_pending_role_load_from_editor_only() {
     type Stage = ConsoleManagerStage<(), TestRoleLoad, ()>;
 
@@ -891,8 +847,8 @@ fn console_input_dispatch_plan_routes_modal_precedence_before_stage() {
         keyboard_help_open: false,
         list_modal_open: false,
         inline_new_session_picker_open: false,
-        inline_provider_picker_open: false,
-        launch_provider_picker_open: false,
+        inline_account_picker_open: false,
+        launch_account_picker_open: false,
         inline_agent_picker_open: false,
         inline_role_picker_open: false,
         editor_modal_open: false,
@@ -936,19 +892,19 @@ fn console_input_dispatch_plan_routes_modal_precedence_before_stage() {
     );
     assert_eq!(
         console_input_dispatch_plan(ConsoleInputDispatchFacts {
-            inline_provider_picker_open: true,
-            launch_provider_picker_open: true,
+            inline_account_picker_open: true,
+            launch_account_picker_open: true,
             ..base
         }),
-        ConsoleInputDispatchPlan::InlineProviderPicker
+        ConsoleInputDispatchPlan::InlineAccountPicker
     );
     assert_eq!(
         console_input_dispatch_plan(ConsoleInputDispatchFacts {
-            launch_provider_picker_open: true,
+            launch_account_picker_open: true,
             inline_agent_picker_open: true,
             ..base
         }),
-        ConsoleInputDispatchPlan::LaunchProviderPicker
+        ConsoleInputDispatchPlan::LaunchAccountPicker
     );
     assert_eq!(
         console_input_dispatch_plan(ConsoleInputDispatchFacts {
@@ -974,8 +930,8 @@ fn console_input_dispatch_plan_routes_stage_modal_precedence() {
         keyboard_help_open: false,
         list_modal_open: false,
         inline_new_session_picker_open: false,
-        inline_provider_picker_open: false,
-        launch_provider_picker_open: false,
+        inline_account_picker_open: false,
+        launch_account_picker_open: false,
         inline_agent_picker_open: false,
         inline_role_picker_open: false,
         editor_modal_open: false,
@@ -1440,7 +1396,7 @@ fn console_modal_shared_scroll_target_maps_reused_picker_modals() {
         crate::tui::update::SharedModalScrollTarget::RolePicker
     );
     assert_eq!(
-        RectTestModal::AuthRolePicker {
+        RectTestModal::RoleOverridePicker {
             state: TestRolePicker(2)
         }
         .shared_scroll_target(),
@@ -1612,106 +1568,6 @@ fn console_modal_reports_debug_kind() {
     };
 
     assert_eq!(modal.debug_kind(), ModalDebugKind::TextInput);
-}
-
-#[test]
-fn console_modal_reports_auth_form_generate_eligibility() {
-    type TestModal = ConsoleModal<
-        (),
-        (),
-        (),
-        (),
-        (),
-        (),
-        (),
-        (),
-        (),
-        (),
-        (),
-        (),
-        (),
-        (),
-        (),
-        (),
-        (),
-        (),
-        crate::tui::screens::settings::model::AuthFormTarget<crate::tui::auth::AuthKind>,
-        crate::tui::components::auth_panel::AuthForm<jackin_core::EnvValue>,
-        crate::tui::screens::settings::model::AuthFormFocus,
-        (),
-    >;
-
-    let mut form =
-        crate::tui::components::auth_panel::AuthForm::new(crate::tui::auth::AuthKind::Claude);
-    form.set_mode(crate::tui::auth::AuthMode::OAuthToken);
-    let modal = TestModal::AuthForm {
-        target: crate::tui::screens::settings::model::AuthFormTarget::Workspace {
-            kind: crate::tui::auth::AuthKind::Claude,
-        },
-        state: Box::new(form),
-        focus: crate::tui::screens::settings::model::AuthFormFocus::Mode,
-        literal_buffer: String::new(),
-    };
-
-    assert!(modal.auth_form_can_generate_token(true));
-    assert!(!modal.auth_form_can_generate_token(false));
-}
-
-#[test]
-fn console_modal_opens_auth_generate_source_picker() {
-    type TestModal = ConsoleModal<
-        (),
-        (),
-        (),
-        (),
-        (),
-        (),
-        (),
-        (),
-        (),
-        (),
-        (),
-        (),
-        (),
-        (),
-        (),
-        (),
-        &'static str,
-        (),
-        crate::tui::screens::settings::model::AuthFormTarget<crate::tui::auth::AuthKind>,
-        crate::tui::components::auth_panel::AuthForm<jackin_core::EnvValue>,
-        crate::tui::screens::settings::model::AuthFormFocus,
-        (),
-    >;
-
-    let mut modal = Some(TestModal::AuthForm {
-        target: crate::tui::screens::settings::model::AuthFormTarget::Workspace {
-            kind: crate::tui::auth::AuthKind::Claude,
-        },
-        state: Box::new(crate::tui::components::auth_panel::AuthForm::new(
-            crate::tui::auth::AuthKind::Claude,
-        )),
-        focus: crate::tui::screens::settings::model::AuthFormFocus::Mode,
-        literal_buffer: String::new(),
-    });
-    let mut parents = Vec::new();
-
-    let target =
-        crate::tui::auth_config::ModalAuthTokenGenerateStart::open_auth_generate_source_picker(
-            &mut modal,
-            &mut parents,
-            "source-picker",
-        )
-        .expect("open auth form should move to source picker");
-
-    assert!(matches!(
-        target,
-        crate::tui::screens::settings::model::AuthFormTarget::Workspace {
-            kind: crate::tui::auth::AuthKind::Claude
-        }
-    ));
-    assert_eq!(parents.len(), 1);
-    assert!(matches!(modal, Some(TestModal::AuthSourcePicker { .. })));
 }
 
 #[test]
@@ -2252,7 +2108,7 @@ fn console_modal_dismiss_policy_matches_pre_cutover_behavior() {
             DismissAction::Dismiss,
         ),
         (
-            RectTestModal::AuthRolePicker {
+            RectTestModal::RoleOverridePicker {
                 state: TestRolePicker(2),
             },
             DismissAction::Dismiss,

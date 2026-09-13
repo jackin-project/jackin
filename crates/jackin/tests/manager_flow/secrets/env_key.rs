@@ -83,12 +83,7 @@ fn env_key_modal_blocks_duplicate_agent_key() -> Result<()> {
         "agent-smith".into(),
         WorkspaceRoleOverride {
             env: role_env,
-            claude: None,
-            codex: None,
-            amp: None,
-            kimi: None,
-            opencode: None,
-            grok: None,
+            account_bindings: std::collections::BTreeMap::default(),
             github: None,
         },
     );

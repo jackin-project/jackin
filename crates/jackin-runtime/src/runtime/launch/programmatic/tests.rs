@@ -137,25 +137,56 @@ fn a_role_branch_cannot_be_loaded_without_a_tty() {
 }
 
 #[test]
-fn a_missing_account_source_folder_is_a_validation_failure() {
+fn a_missing_registered_account_is_a_validation_failure() {
     let mut options = opts();
-    options.account = Some(std::path::PathBuf::from("/nonexistent/.codex-chainargos"));
+    options.account = Some("missing".to_owned());
     assert_eq!(
         options.validate_programmatic(&trusted_config(), &selector()),
-        Err(LoadOptionsError::AccountSourceMissing {
-            path: "/nonexistent/.codex-chainargos".to_owned()
+        Err(LoadOptionsError::AccountMissing {
+            account: "missing".to_owned()
         })
     );
 }
 
 #[test]
-fn an_existing_account_source_folder_validates() {
-    let dir = tempfile::tempdir().expect("tempdir");
-    let mut options = opts();
-    options.account = Some(dir.path().to_path_buf());
-    assert_eq!(
-        options.validate_programmatic(&trusted_config(), &selector()),
-        Ok(())
+fn launch_selection_rejects_accounts_outside_workspace_allowlist() {
+    use jackin_config::{AccountConfig, AccountCredential, AiProvider, WorkspaceConfig};
+    let mut config = trusted_config();
+    config.accounts.insert(
+        "private".to_owned(),
+        AccountConfig {
+            enabled: true,
+            name: "Private".to_owned(),
+            provider: AiProvider::OpenAi,
+            credential: AccountCredential::Profile {
+                agent: Agent::Codex,
+                directory: "/private/codex".into(),
+            },
+        },
+    );
+    config
+        .workspaces
+        .insert("work".to_owned(), WorkspaceConfig::default());
+    let workspace = jackin_core::WorkspaceName::parse("work").unwrap();
+    with_account_selection(&config, Agent::Codex, Some(&workspace), "codex", "private")
+        .unwrap_err();
+    config
+        .workspaces
+        .get_mut("work")
+        .unwrap()
+        .accounts
+        .push("private".to_owned());
+    let selected =
+        with_account_selection(&config, Agent::Codex, Some(&workspace), "codex", "private")
+            .unwrap();
+    assert!(
+        jackin_config::resolve_account(&selected, Agent::Codex, Some(&workspace), "codex")
+            .unwrap()
+            .is_some()
+    );
+    assert!(
+        config.workspaces["work"].roles.is_empty(),
+        "per-launch binding must not mutate persistent config"
     );
 }
 

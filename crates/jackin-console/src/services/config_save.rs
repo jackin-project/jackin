@@ -8,52 +8,36 @@
 //! live with the console crate.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::PathBuf;
 
 use jackin_config::{
-    AppConfig, AuthForwardMode, EnvScope, EnvValue, GithubAuthMode, MountConfig, Removal,
-    WorkspaceConfig, WorkspaceEdit, WorkspaceRoleOverride, plan_create, plan_edit,
+    AppConfig, EnvScope, EnvValue, GithubAuthMode, MountConfig, Removal, WorkspaceConfig,
+    WorkspaceEdit, plan_create, plan_edit,
 };
 use jackin_core::shorten_home;
 use jackin_core::{Agent, WorkspaceName, is_reserved};
 
 use crate::tui::screens::settings::model::{SettingsEnvConfig, SettingsTrustRow};
 
-const WORKSPACE_AUTH_AGENTS: [Agent; 6] = [
-    Agent::Claude,
-    Agent::Codex,
-    Agent::Amp,
-    Agent::Kimi,
-    Agent::Opencode,
-    Agent::Grok,
-];
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WorkspaceSaveDiffOp {
-    WorkspaceAuthForward {
+    WorkspaceAccounts {
+        accounts: Vec<String>,
+    },
+    WorkspaceAccountBinding {
         agent: Agent,
-        mode: Option<AuthForwardMode>,
+        account: Option<String>,
+    },
+    WorkspaceRoleAccountBinding {
+        role: String,
+        agent: Agent,
+        account: Option<String>,
     },
     WorkspaceGithubAuthForward {
         mode: Option<GithubAuthMode>,
     },
-    WorkspaceRoleAuthForward {
-        role: String,
-        agent: Agent,
-        mode: Option<AuthForwardMode>,
-    },
     WorkspaceRoleGithubAuthForward {
         role: String,
         mode: Option<GithubAuthMode>,
-    },
-    WorkspaceSyncSourceDir {
-        agent: Agent,
-        source: Option<PathBuf>,
-    },
-    WorkspaceRoleSyncSourceDir {
-        role: String,
-        agent: Agent,
-        source: Option<PathBuf>,
     },
     EnvSet {
         scope: EnvScope,
@@ -74,7 +58,6 @@ pub fn workspace_save_diff_plan(
 ) -> Vec<WorkspaceSaveDiffOp> {
     let mut ops = Vec::new();
     push_auth_forward_diff(&mut ops, original, pending);
-    push_sync_source_dir_diff(&mut ops, original, pending);
     push_env_diff(&mut ops, workspace_name, original, pending);
     ops
 }
@@ -272,13 +255,16 @@ fn push_auth_forward_diff(
     original: &WorkspaceConfig,
     pending: &WorkspaceConfig,
 ) {
-    for agent in WORKSPACE_AUTH_AGENTS {
-        let original_mode = original.auth_forward_for(agent);
-        let pending_mode = pending.auth_forward_for(agent);
-        if original_mode != pending_mode {
-            ops.push(WorkspaceSaveDiffOp::WorkspaceAuthForward {
-                agent,
-                mode: pending_mode,
+    if original.accounts != pending.accounts {
+        ops.push(WorkspaceSaveDiffOp::WorkspaceAccounts {
+            accounts: pending.accounts.clone(),
+        });
+    }
+    for agent in Agent::ALL {
+        if original.account_bindings.get(agent) != pending.account_bindings.get(agent) {
+            ops.push(WorkspaceSaveDiffOp::WorkspaceAccountBinding {
+                agent: *agent,
+                account: pending.account_bindings.get(agent).cloned(),
             });
         }
     }
@@ -294,14 +280,14 @@ fn push_auth_forward_diff(
     for role in role_keys {
         let orig_override = original.roles.get(role);
         let pend_override = pending.roles.get(role);
-        for agent in WORKSPACE_AUTH_AGENTS {
-            let original_mode = role_auth_forward_for(orig_override, agent);
-            let pending_mode = role_auth_forward_for(pend_override, agent);
-            if original_mode != pending_mode {
-                ops.push(WorkspaceSaveDiffOp::WorkspaceRoleAuthForward {
+        for agent in Agent::ALL {
+            let before = orig_override.and_then(|r| r.account_bindings.get(agent));
+            let after = pend_override.and_then(|r| r.account_bindings.get(agent));
+            if before != after {
+                ops.push(WorkspaceSaveDiffOp::WorkspaceRoleAccountBinding {
                     role: role.clone(),
-                    agent,
-                    mode: pending_mode,
+                    agent: *agent,
+                    account: after.cloned(),
                 });
             }
         }
@@ -316,40 +302,6 @@ fn push_auth_forward_diff(
                 role: role.clone(),
                 mode: pend_github,
             });
-        }
-    }
-}
-
-fn push_sync_source_dir_diff(
-    ops: &mut Vec<WorkspaceSaveDiffOp>,
-    original: &WorkspaceConfig,
-    pending: &WorkspaceConfig,
-) {
-    for agent in WORKSPACE_AUTH_AGENTS {
-        let original_source = original.sync_source_dir_for(agent);
-        let pending_source = pending.sync_source_dir_for(agent);
-        if original_source != pending_source {
-            ops.push(WorkspaceSaveDiffOp::WorkspaceSyncSourceDir {
-                agent,
-                source: pending_source,
-            });
-        }
-    }
-
-    let role_keys: BTreeSet<&String> = original.roles.keys().chain(pending.roles.keys()).collect();
-    for role in role_keys {
-        let orig_override = original.roles.get(role);
-        let pend_override = pending.roles.get(role);
-        for agent in WORKSPACE_AUTH_AGENTS {
-            let original_source = role_sync_source_dir_for(orig_override, agent);
-            let pending_source = role_sync_source_dir_for(pend_override, agent);
-            if original_source != pending_source {
-                ops.push(WorkspaceSaveDiffOp::WorkspaceRoleSyncSourceDir {
-                    role: role.clone(),
-                    agent,
-                    source: pending_source,
-                });
-            }
         }
     }
 }
@@ -431,17 +383,6 @@ fn push_env_map_diff(
     }
 }
 
-fn role_auth_forward_for(
-    role: Option<&WorkspaceRoleOverride>,
-    agent: Agent,
-) -> Option<AuthForwardMode> {
-    role.and_then(|r| r.auth_forward_for(agent))
-}
-
-fn role_sync_source_dir_for(role: Option<&WorkspaceRoleOverride>, agent: Agent) -> Option<PathBuf> {
-    role.and_then(|r| r.sync_source_dir_for(agent))
-}
-
 /// Input bundle for a settings-screen save operation.
 #[derive(Debug)]
 pub struct SettingsSaveInput<'a> {
@@ -449,9 +390,12 @@ pub struct SettingsSaveInput<'a> {
     pub mounts_pending: &'a [jackin_config::GlobalMountRow],
     pub env_original: &'a crate::tui::state::SettingsEnvConfig,
     pub env_pending: &'a crate::tui::state::SettingsEnvConfig,
-    pub auth_pending: &'a [crate::tui::state::SettingsAuthRow],
-    pub original_github_env: &'a BTreeMap<String, EnvValue>,
-    pub github_env: &'a BTreeMap<String, EnvValue>,
+    pub auth_pending: &'a BTreeMap<String, jackin_config::AccountConfig>,
+    pub auth_original: &'a BTreeMap<String, jackin_config::AccountConfig>,
+    pub github: &'a jackin_config::GithubAuthConfig,
+    pub original_github: &'a jackin_config::GithubAuthConfig,
+    pub bindings_pending: &'a BTreeMap<Agent, String>,
+    pub bindings_original: &'a BTreeMap<Agent, String>,
     pub trust_pending: &'a [SettingsTrustRow],
     pub git_coauthor_trailer: bool,
     pub git_dco: bool,
@@ -494,53 +438,38 @@ pub fn save_settings(
         }
     }
 
-    for row in input.auth_pending {
-        match row.kind {
-            crate::tui::auth::AuthKind::Claude
-            | crate::tui::auth::AuthKind::Codex
-            | crate::tui::auth::AuthKind::Amp
-            | crate::tui::auth::AuthKind::Kimi
-            | crate::tui::auth::AuthKind::Opencode
-            | crate::tui::auth::AuthKind::Grok => {
-                let Some(agent) = crate::tui::auth_config::auth_kind_agent(row.kind) else {
-                    continue;
-                };
-                if !row.kind.supported_modes().contains(&row.mode) {
-                    anyhow::bail!(
-                        "auth mode {} is not supported for {}",
-                        row.mode.as_str(),
-                        row.kind.label()
-                    );
-                }
-                let Some(mode) = crate::tui::auth_config::auth_mode_to_auth_forward(row.mode)
-                else {
-                    anyhow::bail!(
-                        "auth mode {} is not supported for {}",
-                        row.mode.as_str(),
-                        row.kind.label()
-                    );
-                };
-                editor_doc.set_global_auth_forward(agent, mode);
-                editor_doc.set_global_sync_source_dir(agent, row.sync_source_dir.as_deref());
-            }
-            crate::tui::auth::AuthKind::Github => {
-                let Some(mode) = crate::tui::auth_config::auth_mode_to_github(row.mode) else {
-                    anyhow::bail!(
-                        "auth mode {} is not supported for {}",
-                        row.mode.as_str(),
-                        row.kind.label()
-                    );
-                };
-                editor_doc.set_global_github_auth_forward(mode);
-            }
-            crate::tui::auth::AuthKind::Zai | crate::tui::auth::AuthKind::Minimax => {}
+    for id in input
+        .auth_original
+        .keys()
+        .filter(|id| !input.auth_pending.contains_key(*id))
+    {
+        editor_doc.remove_account(id)?;
+    }
+    for (id, account) in input.auth_pending {
+        if input.auth_original.get(id) != Some(account) {
+            editor_doc.upsert_account(id, account)?;
         }
     }
-    for key in input.original_github_env.keys() {
-        editor_doc.remove_global_github_env_var(key);
+
+    for agent in Agent::ALL {
+        if input.bindings_original.get(agent) != input.bindings_pending.get(agent) {
+            editor_doc.set_account_binding(
+                None,
+                None,
+                *agent,
+                input.bindings_pending.get(agent).map(String::as_str),
+            )?;
+        }
     }
-    for (key, value) in input.github_env {
-        editor_doc.set_global_github_env_var(key, value.clone())?;
+
+    if input.github != input.original_github {
+        editor_doc.set_global_github_auth_forward(input.github.auth_forward);
+        for key in input.original_github.env.keys() {
+            editor_doc.remove_global_github_env_var(key);
+        }
+        for (key, value) in &input.github.env {
+            editor_doc.set_global_github_env_var(key, value.clone())?;
+        }
     }
 
     for row in input.trust_pending {

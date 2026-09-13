@@ -1,12 +1,11 @@
 ---
 source: crates/jackin-console/src/tui/view/tests.rs
-assertion_line: 796
 expression: rendered
 ---
  jackin❯  · settings                                                                      
                                                                                           
                                                                                           
- General   Mounts   Environments   Auth   Trust                                           
+ General   Mounts   Environments   Accounts   Trust                                       
 ─────────                                                                                 
 ┌────────────────────────────────────────────────────────────────────────────────────────┐
 │    Co-author trailer         disabled                                                  │

@@ -1,11 +1,8 @@
-version = "v1alpha8"
+version = "v1alpha9"
 # SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 # SPDX-License-Identifier: Apache-2.0
 
 workdir = "/workspace/prod"
-
-[opencode]
-auth_forward = "sync"
 
 [[mounts]]
 src = "/tmp/proj"

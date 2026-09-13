@@ -363,6 +363,38 @@ fn git_policy_env_pairs(coauthor_trailer: bool, dco: bool) -> Vec<(&'static str,
     pairs
 }
 
+/// Existing containers retain credential material: every attach route must
+/// recheck their recorded admission against current host policy before use.
+pub(crate) fn require_current_account_admission(
+    paths: &JackinPaths,
+    container_name: &str,
+) -> anyhow::Result<()> {
+    let root = paths.data_dir.join(container_name);
+    let manifest = InstanceManifest::read(&root)
+        .context("cannot verify this container's account policy; recreate it with `jackin load`")?;
+    let snapshot = jackin_config::load_read_only_config_snapshot(paths)
+        .context("cannot read current account policy")?;
+    anyhow::ensure!(
+        snapshot.diagnostics.is_empty(),
+        "current account configuration is unavailable or invalid; reconnect denied"
+    );
+    let workspace = manifest
+        .workspace_name
+        .as_deref()
+        .map(jackin_core::WorkspaceName::parse)
+        .transpose()?;
+    anyhow::ensure!(
+        super::account_admission_matches(
+            &root,
+            &snapshot.config,
+            workspace.as_ref(),
+            &manifest.role_key
+        )?,
+        "container account policy changed or cannot be verified; recreate it with `jackin load`"
+    );
+    Ok(())
+}
+
 pub(super) async fn reconnect_or_create_session_with_focus(
     paths: &JackinPaths,
     container_name: &str,
@@ -370,6 +402,7 @@ pub(super) async fn reconnect_or_create_session_with_focus(
     docker: &impl DockerApi,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<()> {
+    require_current_account_admission(paths, container_name)?;
     set_role_terminal_title(paths, container_name);
     wait_for_capsule_daemon(paths, container_name, docker).await?;
     if super::host_attach::host_attach_enabled(paths) {
@@ -440,6 +473,7 @@ pub(super) async fn start_or_reconnect_capsule_client(
     docker: &impl DockerApi,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<()> {
+    require_current_account_admission(paths, container_name)?;
     jackin_diagnostics::active_timing_started(
         jackin_diagnostics::DiagnosticStage::Capsule,
         "restore_inspect",
@@ -455,6 +489,17 @@ pub(super) async fn start_or_reconnect_capsule_client(
     match inspect {
         ContainerState::Running | ContainerState::Paused | ContainerState::Restarting => {}
         ContainerState::Stopped { .. } | ContainerState::Created => {
+            let resources =
+                crate::runtime::cleanup::docker_resources_for_state(paths, container_name);
+            if let Some(dind_name) = resources.dind_container.as_deref() {
+                match docker.inspect_container_state(dind_name).await {
+                    ContainerState::Stopped { .. } | ContainerState::Created => {
+                        drop(docker.start_container(dind_name).await);
+                    }
+                    _ => {}
+                }
+            }
+
             jackin_diagnostics::active_timing_started(
                 jackin_diagnostics::DiagnosticStage::Capsule,
                 "restore_start_container",
@@ -473,7 +518,24 @@ pub(super) async fn start_or_reconnect_capsule_client(
                     Some("error")
                 },
             );
-            start_result?;
+            if let Err(start_err) = start_result {
+                let net_missing = if let Ok(None) = docker.inspect_network(&resources.network).await
+                {
+                    true
+                } else {
+                    let err_msg = start_err.to_string();
+                    err_msg.contains("network")
+                        && (err_msg.contains("not found") || err_msg.contains("404"))
+                };
+                if net_missing {
+                    anyhow::bail!(
+                        "role container '{container_name}' cannot be started because its Docker network '{}' no longer exists; \
+                         run `jackin load` to recreate the instance, or `jackin eject {container_name}` to discard it",
+                        resources.network
+                    );
+                }
+                return Err(start_err);
+            }
         }
         ContainerState::NotFound => {
             if let Some(message) = missing_restore_message(paths, container_name)? {
@@ -534,7 +596,9 @@ async fn require_container_reachable(
     stopped_hint: &str,
 ) -> anyhow::Result<()> {
     match docker.inspect_container_state(container_name).await {
-        ContainerState::Running | ContainerState::Paused | ContainerState::Restarting => Ok(()),
+        ContainerState::Running | ContainerState::Paused | ContainerState::Restarting => {
+            require_current_account_admission(paths, container_name)
+        }
         ContainerState::NotFound => {
             if let Some(message) = missing_restore_message(paths, container_name)? {
                 anyhow::bail!("{message}");
@@ -646,7 +710,7 @@ pub async fn spawn_shell_session(
 #[expect(
     clippy::too_many_arguments,
     reason = "Spawning a single agent session requires every caller-supplied \
-              parameter (paths, container_name, manifest, agent, provider_label, \
+              parameter (paths, container_name, manifest, agent, \
               env_overrides, git config, docker, runner, ...) to flow through to \
               the container bring-up path; bundling into a config struct would be \
               a parallel pass that requires restructuring the spawn path. Named- \
@@ -657,13 +721,18 @@ pub async fn spawn_agent_session(
     container_name: &str,
     manifest: Option<&InstanceManifest>,
     agent: jackin_core::Agent,
-    provider_label: Option<&str>,
     env_overrides: &[(String, String)],
     git_coauthor_trailer: bool,
     git_dco: bool,
     docker: &impl DockerApi,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        !env_overrides
+            .iter()
+            .any(|(name, _)| jackin_env::is_account_env(name)),
+        "account credential and routing overrides are not allowed; select an assigned account and recreate the container"
+    );
     require_container_reachable(
         paths,
         container_name,
@@ -686,14 +755,7 @@ pub async fn spawn_agent_session(
                 .map(|(name, value)| (name.to_owned(), value.to_owned()))
                 .collect();
         session_env_overrides.extend(env_overrides.iter().cloned());
-        let spawn_request = if let Some(provider_label) = provider_label {
-            SpawnRequest::AgentWithProvider {
-                slug: agent.slug().to_owned(),
-                provider_label: provider_label.to_owned(),
-            }
-        } else {
-            SpawnRequest::agent(agent.slug())?
-        };
+        let spawn_request = SpawnRequest::agent(agent.slug())?;
         let result = super::host_attach::run_host_attach_session(
             paths,
             container_name,
@@ -712,9 +774,7 @@ pub async fn spawn_agent_session(
     let run_as_user = crate::runtime::identity::host_run_as_user();
     let mut exec_args = vec!["exec", "--workdir", workdir, "-it"];
     insert_run_as_user(&mut exec_args, run_as_user.as_deref());
-    // git policy toggles then provider env overrides (e.g. ANTHROPIC_AUTH_TOKEN +
-    // ANTHROPIC_BASE_URL for Z.AI) as docker `-e` flags. Owned so they outlive
-    // `exec_args`.
+    // Git policy and non-account session environment outlive `exec_args`.
     let env_flags: Vec<String> = git_policy_env_pairs(git_coauthor_trailer, git_dco)
         .into_iter()
         .map(|(name, value)| format!("-e={name}={value}"))
@@ -725,12 +785,6 @@ pub async fn spawn_agent_session(
     }
     exec_args.push(container_name);
     exec_args.extend_from_slice(&[container_paths::CAPSULE_BIN, "new", agent.slug()]);
-    // When a provider was selected in the console, pass it as a flag so the
-    // daemon receives SpawnRequest::AgentWithProvider and labels the tab correctly.
-    let provider_flag = provider_label.map(|label| format!("--provider={label}"));
-    if let Some(ref flag) = provider_flag {
-        exec_args.push(flag.as_str());
-    }
     if let Some(flag) = host_alt_screen_exec_flag() {
         exec_args.insert(1, flag);
     }
@@ -836,6 +890,7 @@ pub(crate) async fn hardline_docker_agent_with_focus(
     );
     let attach_outcome = match container_state {
         ContainerState::Running | ContainerState::Paused | ContainerState::Restarting => {
+            require_current_account_admission(paths, container_name)?;
             jackin_host::caffeinate::reconcile(paths, docker, runner).await;
             reconnect_or_create_session_with_focus(
                 paths,

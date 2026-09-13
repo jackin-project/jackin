@@ -294,6 +294,12 @@ fn parse_raw_config_tree(tree: &RawConfigTree) -> ReadOnlyConfigSnapshot {
         }
     }
     config.workspaces = split;
+    if config.validate_accounts().is_err() {
+        diagnostics.push(ConfigSourceDiagnostic {
+            scope: ConfigSourceScope::Workspaces,
+            issue: ConfigSourceIssue::Invalid,
+        });
+    }
     diagnostics.sort_by(|left, right| diagnostic_sort_key(left).cmp(&diagnostic_sort_key(right)));
 
     ReadOnlyConfigSnapshot {
@@ -309,12 +315,13 @@ fn parse_global_config(
     let raw = std::str::from_utf8(bytes).map_err(|_| ConfigSourceIssue::Malformed)?;
     let legacy_op_accounts =
         legacy_workspace_op_accounts(raw).map_err(|_| ConfigSourceIssue::Malformed)?;
-    let doc = migrate_document_in_memory(
+    let mut doc = migrate_document_in_memory(
         raw,
         "config",
         CURRENT_CONFIG_VERSION,
         migrations::CONFIG_MIGRATIONS,
     )?;
+    migrate_embedded_op_accounts(&mut doc).map_err(|_| ConfigSourceIssue::Malformed)?;
     let mut config: AppConfig =
         toml::from_str(&doc.to_string()).map_err(|_| ConfigSourceIssue::Malformed)?;
     let raw_embedded = std::mem::take(&mut config.workspaces);
@@ -331,7 +338,7 @@ fn parse_global_config(
     }
     validate_reserved_env_names(&config).map_err(|_| ConfigSourceIssue::Invalid)?;
     config
-        .validate_auth_modes()
+        .validate_accounts()
         .map_err(|_| ConfigSourceIssue::Invalid)?;
     config.version = CURRENT_CONFIG_VERSION.to_owned();
     Ok((config, embedded))
@@ -418,7 +425,13 @@ pub fn load_split_config(
     };
 
     let mut config: AppConfig = match contents_opt {
-        Some(c) => toml::from_str(&c)?,
+        Some(c) => {
+            let mut doc: DocumentMut = c
+                .parse()
+                .context("parsing embedded workspace configuration")?;
+            migrate_embedded_op_accounts(&mut doc)?;
+            toml::from_str(&doc.to_string())?
+        }
         None => AppConfig::default(),
     };
 
@@ -429,6 +442,29 @@ pub fn load_split_config(
 
     config.workspaces = load_workspace_files(&paths.workspaces_dir)?;
     Ok(config)
+}
+
+/// Upgrade embedded legacy fields before strict `WorkspaceConfig` deserialization.
+fn migrate_embedded_op_accounts(doc: &mut DocumentMut) -> crate::ConfigResult<()> {
+    let Some(workspaces) = doc
+        .get_mut("workspaces")
+        .and_then(toml_edit::Item::as_table_mut)
+    else {
+        return Ok(());
+    };
+    for (_, item) in workspaces.iter_mut() {
+        let Some(table) = item.as_table_mut() else {
+            continue;
+        };
+        if !table.contains_key("op_account") {
+            continue;
+        }
+        let mut workspace = DocumentMut::new();
+        *workspace.as_table_mut() = table.clone();
+        migrations::migrate_workspace_op_account_to_refs(&mut workspace)?;
+        *table = workspace.as_table().clone();
+    }
+    Ok(())
 }
 
 /// Read and migrate every `*.toml` workspace file under `workspaces_dir`.
@@ -692,7 +728,7 @@ impl AppConfig {
             jackin_telemetry::schema::enums::ConfigOperation::Validate,
             (|| {
                 validate_reserved_env_names(&config)?;
-                config.validate_auth_modes()
+                config.validate_accounts()
             })(),
         )?;
 

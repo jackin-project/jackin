@@ -238,42 +238,6 @@ fn move_editor_tab_resets_tab_local_view_state() {
 }
 
 #[test]
-fn editor_auth_kind_messages_reset_local_view_state() {
-    let mut state = state_with_saved_count(0);
-    let mut editor = EditorState::new_edit(
-        "workspace".into(),
-        jackin_config::WorkspaceConfig::default(),
-    );
-    editor.active_field = FieldFocus::Row(5);
-    crate::tui::scroll_block::scroll_area_set_x(&mut editor.tab_scroll, 9);
-    crate::tui::scroll_block::scroll_area_set_y(&mut editor.tab_scroll, 7);
-    state.stage = ManagerStage::Editor(editor);
-
-    update_manager(
-        &mut state,
-        ManagerMessage::EnterEditorAuthKind {
-            kind: AuthKind::Claude,
-        },
-    );
-
-    let ManagerStage::Editor(editor) = &state.stage else {
-        panic!("expected editor stage");
-    };
-    assert_eq!(editor.auth_selected_kind, Some(AuthKind::Claude));
-    assert_eq!(editor.active_field, FieldFocus::Row(0));
-    assert_eq!(editor.tab_scroll.offset_x(), 0);
-    assert_eq!(editor.tab_scroll.offset_y(), 0);
-
-    update_manager(&mut state, ManagerMessage::ClearEditorAuthKind);
-
-    let ManagerStage::Editor(editor) = state.stage else {
-        panic!("expected editor stage");
-    };
-    assert!(editor.auth_selected_kind.is_none());
-    assert_eq!(editor.active_field, FieldFocus::Row(0));
-}
-
-#[test]
 fn editor_role_header_messages_set_expansion() {
     let mut state = state_with_saved_count(0);
     state.stage = ManagerStage::Editor(EditorState::new_edit(
@@ -288,19 +252,11 @@ fn editor_role_header_messages_set_expansion() {
             expanded: true,
         },
     );
-    update_manager(
-        &mut state,
-        ManagerMessage::SetEditorAuthRoleExpanded {
-            role: "smith".into(),
-            expanded: true,
-        },
-    );
 
     let ManagerStage::Editor(editor) = state.stage else {
         panic!("expected editor stage");
     };
     assert!(editor.secrets_expanded.contains("smith"));
-    assert!(editor.auth_expanded.contains("smith"));
 }
 
 #[test]
@@ -436,8 +392,8 @@ fn settings_auth_selection_and_kind_entry_update_state() {
     let ManagerStage::Settings(settings) = &state.stage else {
         panic!("expected settings stage");
     };
-    assert_eq!(settings.auth.selected, 0);
-    assert!(settings.auth.selected_kind.is_some());
+    assert_eq!(settings.auth.selected, settings.auth.row_count() - 1);
+    assert_eq!(settings.auth.selected_kind, Some(AuthKind::Github));
 
     update_manager(&mut state, ManagerMessage::ClearSettingsAuthKind);
 

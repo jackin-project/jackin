@@ -115,28 +115,8 @@ fn minimax_required_env_var_matches_constant() {
 }
 
 #[test]
-fn minimax_supported_modes_are_api_key_and_ignore() {
-    assert_eq!(
-        AuthKind::Minimax.supported_modes(),
-        &[AuthMode::ApiKey, AuthMode::Ignore]
-    );
-}
-
-#[test]
-fn token_generation_gate_is_claude_oauth_only() {
-    assert!(can_generate_claude_oauth_token(
-        AuthKind::Claude,
-        Some(AuthMode::OAuthToken),
-    ));
-    assert!(!can_generate_claude_oauth_token(
-        AuthKind::Claude,
-        Some(AuthMode::ApiKey),
-    ));
-    assert!(!can_generate_claude_oauth_token(
-        AuthKind::Github,
-        Some(AuthMode::Token),
-    ));
-    assert!(!can_generate_claude_oauth_token(AuthKind::Claude, None));
+fn minimax_supported_modes_are_api_key_only() {
+    assert_eq!(AuthKind::Minimax.supported_modes(), &[AuthMode::ApiKey]);
 }
 
 #[test]
@@ -185,4 +165,14 @@ fn source_folder_gate_is_sync_agent_only() {
         AuthKind::Minimax,
         AuthMode::ApiKey,
     ));
+}
+
+#[test]
+fn provider_account_modes_never_allow_ignore() {
+    for kind in AuthKind::SETTINGS_KINDS
+        .iter()
+        .filter(|kind| **kind != AuthKind::Github)
+    {
+        assert!(!kind.supported_modes().contains(&AuthMode::Ignore));
+    }
 }

@@ -185,10 +185,6 @@ pub fn scroll_modal_selection(modal: Option<&mut Modal<'_>>, delta: i16) -> bool
             let _changed = state.scroll_selection(delta);
             true
         }
-        (SharedModalScrollTarget::RolePicker, Modal::AuthRolePicker { state }) => {
-            let _changed = state.scroll_selection(delta);
-            true
-        }
         (SharedModalScrollTarget::OpPicker, Modal::OpPicker { state, .. }) => {
             let _changed = state.scroll_selection(delta);
             true

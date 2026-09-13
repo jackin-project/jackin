@@ -77,7 +77,6 @@ RUN set -euxo pipefail && \\
             config_dir: Some(".config/opencode"),
             credential_file: Some(".local/share/opencode/auth.json"),
             folder_env_var: Some("XDG_DATA_HOME"),
-            home_files: &[],
         }
     }
 

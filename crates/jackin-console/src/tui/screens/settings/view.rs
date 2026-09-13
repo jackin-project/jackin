@@ -23,7 +23,6 @@
 use super::model::GlobalMountConfirm;
 use super::model::GlobalMountTextTarget;
 use super::model::GlobalMountsState;
-use super::model::SettingsAuthRow;
 use super::model::SettingsAuthState;
 use super::model::SettingsEnvConfig;
 use super::model::SettingsEnvRow;
@@ -46,9 +45,8 @@ use std::collections::BTreeMap;
 use termrock::widgets::HintSpan;
 
 use crate::tui::components::editor_rows::{
-    AuthLineRow, AuthSourceDisplay, AuthSourceValue, SecretEnvLineFrame, SecretLineRow,
-    SecretValueDisplay, action_row_style, auth_lines as shared_auth_lines, auth_source_display,
-    render_tab_strip, secret_env_lines,
+    AuthLineRow, SecretEnvLineFrame, SecretLineRow, SecretValueDisplay, action_row_style,
+    auth_lines as shared_auth_lines, render_tab_strip, secret_env_lines,
 };
 use crate::tui::components::footer_hints::{
     SettingsContextFooterMode, SettingsScreenFooterFacts, content_footer_items,
@@ -56,7 +54,6 @@ use crate::tui::components::footer_hints::{
     tab_bar_footer_items,
 };
 use crate::tui::components::mount_rows::{MOUNT_MODE_COL_WIDTH, render_global_mount_header};
-use crate::tui::input::settings_auth_can_generate_token;
 use crate::tui::mount_display::{
     MountDisplayRow, format_config_mount_rows_with_cache, mount_path_width,
 };
@@ -82,21 +79,14 @@ pub enum SettingsModalRenderPlan {
     None,
 }
 
-pub type ConsoleSettingsState<
-    MountModal,
-    EnvModal,
-    AuthModal,
-    ErrorPopup,
-    PendingToken,
-    PendingOpCommit,
-> = SettingsState<
-    GlobalMountsState<jackin_config::GlobalMountRow, MountModal>,
-    SettingsEnvState<jackin_core::EnvValue, EnvModal>,
-    SettingsAuthState<jackin_core::EnvValue, AuthModal, PendingOpCommit>,
-    SettingsTrustState,
-    ErrorPopup,
-    PendingToken,
->;
+pub type ConsoleSettingsState<MountModal, EnvModal, AuthModal, ErrorPopup, PendingOpCommit> =
+    SettingsState<
+        GlobalMountsState<jackin_config::GlobalMountRow, MountModal>,
+        SettingsEnvState<jackin_core::EnvValue, EnvModal>,
+        SettingsAuthState<jackin_core::EnvValue, AuthModal, PendingOpCommit>,
+        SettingsTrustState,
+        ErrorPopup,
+    >;
 
 pub fn settings_frame_areas(area: Rect, footer_h: u16) -> SettingsFrameAreas {
     let chunks = Layout::default()
@@ -151,31 +141,16 @@ pub fn render_settings_screen<
     EnvModal,
     AuthModal,
     ErrorPopup,
-    PendingToken,
     PendingOpCommit,
     FooterItems,
 >(
     frame: &mut Frame<'_>,
     area: Rect,
-    state: &ConsoleSettingsState<
-        MountModal,
-        EnvModal,
-        AuthModal,
-        ErrorPopup,
-        PendingToken,
-        PendingOpCommit,
-    >,
+    state: &ConsoleSettingsState<MountModal, EnvModal, AuthModal, ErrorPopup, PendingOpCommit>,
     mut footer_items: FooterItems,
 ) where
     FooterItems: FnMut(
-        &ConsoleSettingsState<
-            MountModal,
-            EnvModal,
-            AuthModal,
-            ErrorPopup,
-            PendingToken,
-            PendingOpCommit,
-        >,
+        &ConsoleSettingsState<MountModal, EnvModal, AuthModal, ErrorPopup, PendingOpCommit>,
         Rect,
     ) -> Vec<HintSpan<'static>>,
 {
@@ -211,23 +186,9 @@ pub fn render_settings_screen<
     render_footer(frame, areas.footer, &footer);
 }
 
-pub fn render_general_tab<
-    MountModal,
-    EnvModal,
-    AuthModal,
-    ErrorPopup,
-    PendingToken,
-    PendingOpCommit,
->(
+pub fn render_general_tab<MountModal, EnvModal, AuthModal, ErrorPopup, PendingOpCommit>(
     frame: &mut Frame<'_>,
-    state: &ConsoleSettingsState<
-        MountModal,
-        EnvModal,
-        AuthModal,
-        ErrorPopup,
-        PendingToken,
-        PendingOpCommit,
-    >,
+    state: &ConsoleSettingsState<MountModal, EnvModal, AuthModal, ErrorPopup, PendingOpCommit>,
     area: Rect,
 ) {
     let focused = !state.tab_bar_focused() && state.error_popup.is_none();
@@ -235,23 +196,9 @@ pub fn render_general_tab<
     crate::tui::scroll_block::render_scrollable_block_at(frame, area, lines, 0, 0, focused, None);
 }
 
-pub fn render_mounts_tab<
-    MountModal,
-    EnvModal,
-    AuthModal,
-    ErrorPopup,
-    PendingToken,
-    PendingOpCommit,
->(
+pub fn render_mounts_tab<MountModal, EnvModal, AuthModal, ErrorPopup, PendingOpCommit>(
     frame: &mut Frame<'_>,
-    state: &ConsoleSettingsState<
-        MountModal,
-        EnvModal,
-        AuthModal,
-        ErrorPopup,
-        PendingToken,
-        PendingOpCommit,
-    >,
+    state: &ConsoleSettingsState<MountModal, EnvModal, AuthModal, ErrorPopup, PendingOpCommit>,
     area: Rect,
 ) {
     let focused = state.content_focused(SettingsTab::Mounts) && !state.mounts.modals.is_open();
@@ -272,23 +219,9 @@ pub fn render_mounts_tab<
     );
 }
 
-pub fn render_env_tab<
-    MountModal,
-    EnvModal,
-    AuthModal,
-    ErrorPopup,
-    PendingToken,
-    PendingOpCommit,
->(
+pub fn render_env_tab<MountModal, EnvModal, AuthModal, ErrorPopup, PendingOpCommit>(
     frame: &mut Frame<'_>,
-    state: &ConsoleSettingsState<
-        MountModal,
-        EnvModal,
-        AuthModal,
-        ErrorPopup,
-        PendingToken,
-        PendingOpCommit,
-    >,
+    state: &ConsoleSettingsState<MountModal, EnvModal, AuthModal, ErrorPopup, PendingOpCommit>,
     area: Rect,
 ) {
     let focused = state.content_focused(SettingsTab::Environments) && !state.env.modals.is_open();
@@ -304,29 +237,12 @@ pub fn render_env_tab<
     );
 }
 
-pub fn render_auth_tab<
-    MountModal,
-    EnvModal,
-    AuthModal,
-    ErrorPopup,
-    PendingToken,
-    PendingOpCommit,
->(
+pub fn render_auth_tab<MountModal, EnvModal, AuthModal, ErrorPopup, PendingOpCommit>(
     frame: &mut Frame<'_>,
-    state: &ConsoleSettingsState<
-        MountModal,
-        EnvModal,
-        AuthModal,
-        ErrorPopup,
-        PendingToken,
-        PendingOpCommit,
-    >,
+    state: &ConsoleSettingsState<MountModal, EnvModal, AuthModal, ErrorPopup, PendingOpCommit>,
     area: Rect,
 ) {
-    let title = state
-        .auth
-        .selected_kind
-        .map(|kind| crate::tui::components::auth_panel::auth_panel_title(kind.label()));
+    let title = Some("Accounts");
     let focused = state.content_focused(SettingsTab::Auth) && !state.auth.modals.is_open();
     let lines = auth_state_lines(&state.auth, &state.env, focused);
     crate::tui::scroll_block::render_scrollable_block_at(
@@ -336,27 +252,13 @@ pub fn render_auth_tab<
         0,
         state.auth.scroll.offset_y(),
         focused,
-        title.as_deref(),
+        title,
     );
 }
 
-pub fn render_trust_tab<
-    MountModal,
-    EnvModal,
-    AuthModal,
-    ErrorPopup,
-    PendingToken,
-    PendingOpCommit,
->(
+pub fn render_trust_tab<MountModal, EnvModal, AuthModal, ErrorPopup, PendingOpCommit>(
     frame: &mut Frame<'_>,
-    state: &ConsoleSettingsState<
-        MountModal,
-        EnvModal,
-        AuthModal,
-        ErrorPopup,
-        PendingToken,
-        PendingOpCommit,
-    >,
+    state: &ConsoleSettingsState<MountModal, EnvModal, AuthModal, ErrorPopup, PendingOpCommit>,
     area: Rect,
 ) {
     let lines = settings_trust_lines_for_state(state);
@@ -372,22 +274,8 @@ pub fn render_trust_tab<
     );
 }
 
-pub fn settings_footer_items<
-    MountModal,
-    EnvModal,
-    AuthModal,
-    ErrorPopup,
-    PendingToken,
-    PendingOpCommit,
->(
-    state: &ConsoleSettingsState<
-        MountModal,
-        EnvModal,
-        AuthModal,
-        ErrorPopup,
-        PendingToken,
-        PendingOpCommit,
-    >,
+pub fn settings_footer_items<MountModal, EnvModal, AuthModal, ErrorPopup, PendingOpCommit>(
+    state: &ConsoleSettingsState<MountModal, EnvModal, AuthModal, ErrorPopup, PendingOpCommit>,
     op_available: bool,
     body_area: Rect,
 ) -> Vec<HintSpan<'static>> {
@@ -410,22 +298,8 @@ pub fn settings_footer_items<
     )
 }
 
-fn settings_context_footer_mode<
-    MountModal,
-    EnvModal,
-    AuthModal,
-    ErrorPopup,
-    PendingToken,
-    PendingOpCommit,
->(
-    state: &ConsoleSettingsState<
-        MountModal,
-        EnvModal,
-        AuthModal,
-        ErrorPopup,
-        PendingToken,
-        PendingOpCommit,
-    >,
+fn settings_context_footer_mode<MountModal, EnvModal, AuthModal, ErrorPopup, PendingOpCommit>(
+    state: &ConsoleSettingsState<MountModal, EnvModal, AuthModal, ErrorPopup, PendingOpCommit>,
     body_area: Rect,
 ) -> SettingsContextFooterMode {
     match state.active_tab {
@@ -465,15 +339,7 @@ fn settings_context_footer_mode<
                 Some(SettingsEnvRow::SectionSpacer) | None => SettingsContextFooterMode::Empty,
             }
         }
-        SettingsTab::Auth => {
-            if state.auth.selected_kind.is_none() {
-                SettingsContextFooterMode::AuthManage
-            } else if state.auth.selected_detail_row_is_focusable() {
-                SettingsContextFooterMode::AuthEditMode
-            } else {
-                SettingsContextFooterMode::Empty
-            }
-        }
+        SettingsTab::Auth => SettingsContextFooterMode::AuthManage,
         SettingsTab::Trust => SettingsContextFooterMode::Trust {
             has_roles: !state.trust.pending.is_empty(),
             scroll_axes: trust_scroll_axes(state, body_area),
@@ -481,15 +347,8 @@ fn settings_context_footer_mode<
     }
 }
 
-fn trust_scroll_axes<MountModal, EnvModal, AuthModal, ErrorPopup, PendingToken, PendingOpCommit>(
-    state: &ConsoleSettingsState<
-        MountModal,
-        EnvModal,
-        AuthModal,
-        ErrorPopup,
-        PendingToken,
-        PendingOpCommit,
-    >,
+fn trust_scroll_axes<MountModal, EnvModal, AuthModal, ErrorPopup, PendingOpCommit>(
+    state: &ConsoleSettingsState<MountModal, EnvModal, AuthModal, ErrorPopup, PendingOpCommit>,
     body_area: Rect,
 ) -> termrock::scroll::ScrollAxes {
     let content = crate::tui::screens::settings::update::trust_content_width(&state.trust);
@@ -500,22 +359,8 @@ fn trust_scroll_axes<MountModal, EnvModal, AuthModal, ErrorPopup, PendingToken, 
     )
 }
 
-fn global_mount_scroll_axes<
-    MountModal,
-    EnvModal,
-    AuthModal,
-    ErrorPopup,
-    PendingToken,
-    PendingOpCommit,
->(
-    state: &ConsoleSettingsState<
-        MountModal,
-        EnvModal,
-        AuthModal,
-        ErrorPopup,
-        PendingToken,
-        PendingOpCommit,
-    >,
+fn global_mount_scroll_axes<MountModal, EnvModal, AuthModal, ErrorPopup, PendingOpCommit>(
+    state: &ConsoleSettingsState<MountModal, EnvModal, AuthModal, ErrorPopup, PendingOpCommit>,
     body_area: Rect,
 ) -> termrock::scroll::ScrollAxes {
     let content_width =
@@ -530,22 +375,8 @@ fn global_mount_scroll_axes<
     )
 }
 
-fn settings_env_value_is_op_ref<
-    MountModal,
-    EnvModal,
-    AuthModal,
-    ErrorPopup,
-    PendingToken,
-    PendingOpCommit,
->(
-    state: &ConsoleSettingsState<
-        MountModal,
-        EnvModal,
-        AuthModal,
-        ErrorPopup,
-        PendingToken,
-        PendingOpCommit,
-    >,
+fn settings_env_value_is_op_ref<MountModal, EnvModal, AuthModal, ErrorPopup, PendingOpCommit>(
+    state: &ConsoleSettingsState<MountModal, EnvModal, AuthModal, ErrorPopup, PendingOpCommit>,
     scope: &SettingsEnvScope,
     key: &str,
 ) -> bool {
@@ -635,17 +466,9 @@ pub fn settings_env_lines_for_state<
     EnvModal,
     AuthModal,
     ErrorPopup,
-    PendingToken,
     PendingOpCommit,
 >(
-    state: &ConsoleSettingsState<
-        MountModal,
-        EnvModal,
-        AuthModal,
-        ErrorPopup,
-        PendingToken,
-        PendingOpCommit,
-    >,
+    state: &ConsoleSettingsState<MountModal, EnvModal, AuthModal, ErrorPopup, PendingOpCommit>,
     area_width: u16,
 ) -> Vec<Line<'static>> {
     let show_cursor =
@@ -658,17 +481,9 @@ pub fn settings_trust_lines_for_state<
     EnvModal,
     AuthModal,
     ErrorPopup,
-    PendingToken,
     PendingOpCommit,
 >(
-    state: &ConsoleSettingsState<
-        MountModal,
-        EnvModal,
-        AuthModal,
-        ErrorPopup,
-        PendingToken,
-        PendingOpCommit,
-    >,
+    state: &ConsoleSettingsState<MountModal, EnvModal, AuthModal, ErrorPopup, PendingOpCommit>,
 ) -> Vec<Line<'static>> {
     trust_state_lines(
         &state.trust,
@@ -677,22 +492,8 @@ pub fn settings_trust_lines_for_state<
     )
 }
 
-fn settings_trust_focused<
-    MountModal,
-    EnvModal,
-    AuthModal,
-    ErrorPopup,
-    PendingToken,
-    PendingOpCommit,
->(
-    state: &ConsoleSettingsState<
-        MountModal,
-        EnvModal,
-        AuthModal,
-        ErrorPopup,
-        PendingToken,
-        PendingOpCommit,
-    >,
+fn settings_trust_focused<MountModal, EnvModal, AuthModal, ErrorPopup, PendingOpCommit>(
+    state: &ConsoleSettingsState<MountModal, EnvModal, AuthModal, ErrorPopup, PendingOpCommit>,
 ) -> bool {
     state.content_focused(SettingsTab::Trust)
         && !state.auth.modals.is_open()
@@ -912,64 +713,59 @@ pub fn auth_state_lines<AuthModal, EnvModal, PendingOpCommit>(
     env: &SettingsEnvState<jackin_core::EnvValue, EnvModal>,
     show_cursor: bool,
 ) -> Vec<Line<'static>> {
-    let Some(kind) = auth.selected_kind else {
-        let rows: Vec<AuthLineRow> = auth
-            .pending
+    let _ = env;
+    let mut rows: Vec<AuthLineRow> = auth
+        .pending
+        .iter()
+        .map(|(id, account)| {
+            let source = match &account.credential {
+                jackin_config::AccountCredential::Profile { directory, .. } => {
+                    format!(
+                        "profile: {}",
+                        jackin_core::shorten_home(&directory.to_string_lossy())
+                    )
+                }
+                jackin_config::AccountCredential::ApiKey { .. } => "API key: ••••••••".to_owned(),
+                jackin_config::AccountCredential::OAuthToken { .. } => {
+                    "OAuth token: ••••••••".to_owned()
+                }
+            };
+            let defaults = auth
+                .bindings
+                .iter()
+                .filter(|(_, value)| *value == id)
+                .map(|(agent, _)| agent.slug())
+                .collect::<Vec<_>>()
+                .join(", ");
+            let state = if account.enabled {
+                "enabled"
+            } else {
+                "disabled"
+            };
+            let default_label = if defaults.is_empty() {
+                String::new()
+            } else {
+                format!(" · default: {defaults}")
+            };
+            AuthLineRow::AuthKind {
+                label: format!(
+                    "{} [{}] · {state}{default_label} · {} · {source}",
+                    account.name, id, account.provider
+                ),
+            }
+        })
+        .collect();
+    rows.extend(
+        super::model::ACCOUNT_KINDS
             .iter()
-            .map(|row| AuthLineRow::AuthKind {
-                label: row.kind.label().to_owned(),
-            })
-            .collect();
-        return auth_lines(&rows, auth.selected, show_cursor);
-    };
-
-    let Some(row) = auth.pending.iter().find(|row| row.kind == kind) else {
-        return Vec::new();
-    };
-
-    let mut rows = vec![AuthLineRow::WorkspaceMode {
-        mode_label: crate::tui::components::auth_panel::mode_str(row.mode).to_owned(),
-        inherited: false,
-    }];
-    if let Some(env_name) = kind.required_env_var(row.mode) {
-        rows.push(AuthLineRow::WorkspaceSource {
-            display: settings_auth_source_display(auth, env, kind, row.mode, env_name),
-        });
-    }
-    if crate::tui::auth::auth_mode_supports_source_folder(kind, row.mode) {
-        rows.push(AuthLineRow::WorkspaceSourceFolder {
-            display: crate::tui::auth_config::settings_source_folder_display(row),
-        });
-    }
-    rows.push(AuthLineRow::Spacer);
+            .map(|kind| AuthLineRow::AuthKind {
+                label: format!("+ Add {} account", kind.label()),
+            }),
+    );
+    rows.push(AuthLineRow::AuthKind {
+        label: format!("GitHub CLI · {}", auth.github.auth_forward),
+    });
     auth_lines(&rows, auth.selected, show_cursor)
-}
-
-fn settings_auth_source_display<AuthModal, EnvModal, PendingOpCommit>(
-    auth: &SettingsAuthState<jackin_core::EnvValue, AuthModal, PendingOpCommit>,
-    env: &SettingsEnvState<jackin_core::EnvValue, EnvModal>,
-    kind: crate::tui::auth::AuthKind,
-    mode: crate::tui::auth::AuthMode,
-    env_name: &str,
-) -> AuthSourceDisplay {
-    auth_source_display(
-        settings_auth_source_value(auth, env, kind, mode).map(|value| match value {
-            jackin_core::EnvValue::Plain(value) => AuthSourceValue::Plain(value.clone()),
-            jackin_core::EnvValue::Extended(e) => AuthSourceValue::Plain(e.value.clone()),
-            jackin_core::EnvValue::OpRef(op_ref) => AuthSourceValue::OpRefPath(op_ref.path.clone()),
-        }),
-        env_name,
-        crate::tui::components::auth_panel::mode_str(mode),
-    )
-}
-
-fn settings_auth_source_value<'a, AuthModal, EnvModal, PendingOpCommit>(
-    auth: &'a SettingsAuthState<jackin_core::EnvValue, AuthModal, PendingOpCommit>,
-    env: &'a SettingsEnvState<jackin_core::EnvValue, EnvModal>,
-    kind: crate::tui::auth::AuthKind,
-    mode: crate::tui::auth::AuthMode,
-) -> Option<&'a jackin_core::EnvValue> {
-    crate::tui::auth_config::settings_auth_env_value(kind, mode, &auth.github_env, &env.pending.env)
 }
 
 #[must_use]
@@ -1086,26 +882,6 @@ pub fn clamp_mounts_scroll_x_for_frame(
     scroll.clamp();
 }
 
-#[must_use]
-pub fn auth_content_height<K, M>(
-    selected_kind: Option<K>,
-    rows: &[SettingsAuthRow<K, M>],
-    detail_row_count: impl Fn(K, &M) -> usize,
-    has_error: bool,
-) -> usize
-where
-    K: Copy + PartialEq,
-{
-    let height = match selected_kind {
-        None => rows.len(),
-        Some(kind) => rows
-            .iter()
-            .find(|row| row.kind == kind)
-            .map_or(0, |row| 1 + detail_row_count(kind, &row.mode)),
-    };
-    content_height_with_error_rows(height, has_error)
-}
-
 /// Concrete adapter: render the settings screen for a concrete `SettingsState`.
 pub fn render_settings_with_footer(
     frame: &mut Frame<'_>,
@@ -1133,7 +909,7 @@ pub fn settings_screen_footer_for_state(
         auth_modal_items: state
             .auth
             .modal_ref()
-            .map(|modal| modal.auth_footer_items(settings_auth_can_generate_token(&state.auth))),
+            .map(|modal| modal.auth_footer_items(false)),
         env_modal_items: state
             .env
             .modals

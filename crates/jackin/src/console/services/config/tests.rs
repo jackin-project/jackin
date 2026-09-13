@@ -1,21 +1,19 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use std::path::PathBuf;
-
 use super::{WorkspaceSaveInput, WorkspaceSaveMode, save_workspace};
 use jackin_config::{
-    AgentAuthConfig, AppConfig, CURRENT_WORKSPACE_VERSION, MountConfig, MountIsolation,
-    WorkspaceConfig, WorkspaceRoleOverride,
+    AccountConfig, AccountCredential, AiProvider, AppConfig, CURRENT_WORKSPACE_VERSION, EnvValue,
+    MountConfig, MountIsolation, WorkspaceConfig, WorkspaceRoleOverride,
 };
-use jackin_core::JackinPaths;
+use jackin_core::{Agent, JackinPaths};
 
 fn workspace_file_contents(paths: &JackinPaths, name: &str) -> String {
     std::fs::read_to_string(paths.workspaces_dir.join(format!("{name}.toml"))).unwrap()
 }
 
 #[test]
-fn save_workspace_persists_and_clears_workspace_and_role_sync_source_dirs() {
+fn save_workspace_persists_and_clears_account_assignments_and_bindings() {
     let tmp = tempfile::tempdir().unwrap();
     let mount_src = tmp.path().join("repo");
     std::fs::create_dir(&mount_src).unwrap();
@@ -36,22 +34,30 @@ fn save_workspace_persists_and_clears_workspace_and_role_sync_source_dirs() {
     config
         .workspaces
         .insert("proj".to_owned(), original.clone());
+    config.accounts.insert(
+        "work".into(),
+        AccountConfig {
+            enabled: true,
+            name: "Work".into(),
+            provider: AiProvider::Anthropic,
+            credential: AccountCredential::ApiKey {
+                value: EnvValue::Plain("test-key".into()),
+                base_url: None,
+                model: None,
+            },
+        },
+    );
     std::fs::write(&paths.config_file, toml::to_string(&config).unwrap()).unwrap();
 
-    let workspace_source = PathBuf::from("/host/claude");
-    let role_source = PathBuf::from("/host/codex");
     let mut pending = original.clone();
-    pending.claude = Some(AgentAuthConfig {
-        sync_source_dir: Some(workspace_source.clone()),
-        ..Default::default()
-    });
+    pending.accounts.push("work".into());
+    pending
+        .account_bindings
+        .insert(Agent::Claude, "work".into());
     pending.roles.insert(
-        "smith".to_owned(),
+        "smith".into(),
         WorkspaceRoleOverride {
-            codex: Some(AgentAuthConfig {
-                sync_source_dir: Some(role_source.clone()),
-                ..Default::default()
-            }),
+            account_bindings: [(Agent::Claude, "work".into())].into(),
             ..Default::default()
         },
     );
@@ -71,24 +77,24 @@ fn save_workspace_persists_and_clears_workspace_and_role_sync_source_dirs() {
     .unwrap();
 
     let reloaded = saved.config.workspaces.get("proj").unwrap();
+    assert_eq!(reloaded.accounts, ["work"]);
     assert_eq!(
         reloaded
-            .claude
-            .as_ref()
-            .and_then(|c| c.sync_source_dir.clone()),
-        Some(workspace_source)
+            .account_bindings
+            .get(&Agent::Claude)
+            .map(String::as_str),
+        Some("work")
     );
     assert_eq!(
-        reloaded
-            .roles
-            .get("smith")
-            .and_then(|r| r.codex.as_ref())
-            .and_then(|c| c.sync_source_dir.clone()),
-        Some(role_source)
+        reloaded.roles["smith"]
+            .account_bindings
+            .get(&Agent::Claude)
+            .map(String::as_str),
+        Some("work")
     );
-
     let mut cleared = reloaded.clone();
-    cleared.claude = None;
+    cleared.accounts.clear();
+    cleared.account_bindings.clear();
     cleared.roles.clear();
     save_workspace(
         &paths,
@@ -106,9 +112,10 @@ fn save_workspace_persists_and_clears_workspace_and_role_sync_source_dirs() {
 
     let reloaded = AppConfig::load_or_init(&paths).unwrap();
     let workspace = reloaded.workspaces.get("proj").unwrap();
-    assert!(workspace.claude.is_none());
+    assert!(workspace.accounts.is_empty());
+    assert!(workspace.account_bindings.is_empty());
     assert!(workspace.roles.is_empty());
 
     let out = workspace_file_contents(&paths, "proj");
-    assert!(!out.contains("sync_source_dir"), "{out}");
+    assert!(!out.contains("work\""), "{out}");
 }

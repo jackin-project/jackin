@@ -598,3 +598,80 @@ fn prop_workspace_migration_idempotent() {
         prop_assert_eq!(&first, &second);
     });
 }
+
+#[test]
+fn account_schema_strips_old_policies_from_config() {
+    let temp = tempdir().unwrap();
+    let path = temp.path().join("config.toml");
+    let original = "version = \"v1alpha9\"\n[claude]\nauth_forward = \"sync\"\n";
+    std::fs::write(&path, original).unwrap();
+    assert!(migrate_config_file_if_needed(&path).unwrap());
+    let out = std::fs::read_to_string(&path).unwrap();
+    let parsed: toml::Value = toml::from_str(&out).unwrap();
+    assert_eq!(parsed["version"].as_str().unwrap(), CURRENT_CONFIG_VERSION);
+    assert!(
+        !out.contains("claude"),
+        "claude table must be stripped: {out}"
+    );
+}
+
+#[test]
+fn account_schema_strips_role_policy_from_workspace() {
+    let temp = tempdir().unwrap();
+    let path = temp.path().join("workspace.toml");
+    let original = "version = \"v1alpha8\"\nworkdir = \"/workspace\"\n[roles.builder.codex]\nauth_forward = \"sync\"\n";
+    std::fs::write(&path, original).unwrap();
+    assert!(migrate_workspace_file_if_needed(&path).unwrap());
+    let out = std::fs::read_to_string(&path).unwrap();
+    let parsed: toml::Value = toml::from_str(&out).unwrap();
+    assert_eq!(
+        parsed["version"].as_str().unwrap(),
+        CURRENT_WORKSPACE_VERSION
+    );
+    assert!(
+        !out.contains("codex"),
+        "role codex table must be stripped: {out}"
+    );
+    assert!(out.contains("workdir = \"/workspace\""), "{out}");
+}
+
+#[test]
+fn account_schema_preserves_existing_registry_and_assignments() {
+    let mut doc: DocumentMut = "version = \"v1alpha8\"\nworkdir = \"/workspace\"\naccounts = [\"personal\"]\n[account_bindings]\ncodex = \"personal\"\n".parse().unwrap();
+    strip_legacy_agent_tables(&mut doc).unwrap();
+    assert_eq!(doc["account_bindings"]["codex"].as_str(), Some("personal"));
+}
+
+#[test]
+fn migrates_config_with_top_level_and_role_legacy_agent_tables_to_v1alpha10() {
+    let temp = tempdir().unwrap();
+    let path = temp.path().join("config.toml");
+    let original = r#"version = "v1alpha9"
+
+[claude]
+auth_forward = "sync"
+
+[roles.builder]
+git = "https://example.test/builder.git"
+
+[roles.builder.codex]
+auth_forward = "sync"
+"#;
+    std::fs::write(&path, original).unwrap();
+    assert!(migrate_config_file_if_needed(&path).unwrap());
+    let out = std::fs::read_to_string(&path).unwrap();
+    let parsed: toml::Value = toml::from_str(&out).unwrap();
+    assert_eq!(parsed["version"].as_str().unwrap(), "v1alpha10");
+    assert!(
+        !out.contains("claude"),
+        "top-level [claude] must be stripped:\n{out}"
+    );
+    assert!(
+        !out.contains("codex"),
+        "role [codex] must be stripped:\n{out}"
+    );
+    assert!(
+        out.contains("builder.git"),
+        "role git url must be preserved:\n{out}"
+    );
+}

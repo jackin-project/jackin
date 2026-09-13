@@ -16,9 +16,9 @@ fn migrates_missing_manifest_version() {
     let parsed: toml::Value = toml::from_str(&out).unwrap();
 
     assert_eq!(old, "legacy");
-    assert_eq!(new, "v1alpha6");
-    assert_eq!(parsed["version"].as_str().unwrap(), "v1alpha6");
-    assert!(out.starts_with("version = \"v1alpha6\""), "{out}");
+    assert_eq!(new, "v1alpha7");
+    assert_eq!(parsed["version"].as_str().unwrap(), "v1alpha7");
+    assert!(out.starts_with("version = \"v1alpha7\""), "{out}");
     assert!(out.contains("# keep me"), "{out}");
 }
 
@@ -36,15 +36,15 @@ fn migrates_v1alpha1_manifest_to_current() {
     let out = std::fs::read_to_string(&path).unwrap();
 
     assert_eq!(old, "v1alpha1");
-    assert_eq!(new, "v1alpha6");
-    assert!(out.starts_with("version = \"v1alpha6\""), "{out}");
+    assert_eq!(new, "v1alpha7");
+    assert!(out.starts_with("version = \"v1alpha7\""), "{out}");
 }
 
 #[test]
 fn current_manifest_migration_is_noop() {
     let temp = tempdir().unwrap();
     let path = temp.path().join("jackin.role.toml");
-    let manifest = "version = \"v1alpha6\"\ndockerfile = \"Dockerfile\"\n";
+    let manifest = "version = \"v1alpha7\"\ndockerfile = \"Dockerfile\"\n";
     std::fs::write(&path, manifest).unwrap();
 
     assert!(migrate_manifest_file(&path).unwrap().is_none());
@@ -63,14 +63,14 @@ fn rejects_newer_manifest_version() {
 
     let err = migrate_manifest_file(&path).unwrap_err();
     assert!(
-        err.to_string().contains("only understands up to v1alpha6"),
+        err.to_string().contains("only understands up to v1alpha7"),
         "{err}"
     );
 }
 
 #[test]
 fn validate_manifest_version_accepts_current() {
-    let doc: DocumentMut = "version = \"v1alpha6\"\n".parse().unwrap();
+    let doc: DocumentMut = "version = \"v1alpha7\"\n".parse().unwrap();
     validate_manifest_version(&doc).unwrap();
 }
 
@@ -86,7 +86,7 @@ fn validate_manifest_version_rejects_newer() {
     let doc: DocumentMut = "version = \"v2alpha1\"\n".parse().unwrap();
     let err = validate_manifest_version(&doc).unwrap_err();
     let msg = err.to_string();
-    assert!(msg.contains("only understands up to v1alpha6"), "{msg}");
+    assert!(msg.contains("only understands up to v1alpha7"), "{msg}");
 }
 
 #[test]
@@ -104,7 +104,7 @@ fn prop_manifest_migration_idempotent() {
     use proptest::prelude::*;
 
     let versions = [
-        "v1alpha1", "v1alpha2", "v1alpha3", "v1alpha4", "v1alpha5", "v1alpha6",
+        "v1alpha1", "v1alpha2", "v1alpha3", "v1alpha4", "v1alpha5", "v1alpha6", "v1alpha7",
     ];
     proptest!(|(idx in 0usize..versions.len())| {
         let version = versions[idx];
@@ -130,4 +130,18 @@ fn prop_manifest_migration_idempotent() {
         let parsed: Result<crate::RoleManifest, _> = toml::from_str(&second);
         prop_assert!(parsed.is_ok(), "migrated manifest must parse: {:?}", parsed.err());
     });
+}
+
+#[test]
+fn removed_provider_models_stop_migration_without_rewriting_source() {
+    for agent in ["claude", "codex", "opencode"] {
+        let temp = tempdir().unwrap();
+        let path = temp.path().join("jackin.role.toml");
+        let source =
+            format!("version = \"v1alpha6\"\n[{agent}.providers.work]\nmodel = \"custom\"\n");
+        std::fs::write(&path, &source).unwrap();
+        let error = migrate_manifest_file(&path).unwrap_err();
+        assert!(format!("{error:#}").contains("named API accounts"));
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), source);
+    }
 }

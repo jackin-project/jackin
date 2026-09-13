@@ -1,21 +1,16 @@
-#![expect(
-    clippy::too_many_lines,
-    reason = "documented residual allow; prefer expect when site is lint-true"
-)]
 //! Settings Auth tab key and modal handlers.
 
 use super::{
     AuthForm, AuthFormFocus, AuthFormKeyPlan, AuthFormTarget, GlobalMountConfirm, KeyCode,
     KeyEvent, ManagerMessage, ManagerStage, ManagerState, SettingsAuthKeyPlan, SettingsAuthOutcome,
     SettingsModal, auth_credential_input_state, auth_form_key_plan_with_source_folder,
-    auth_source_picker_state, confirm_modal, dispatch_manager, generated_token_op_item_name,
-    generated_token_source_picker_state, open_settings_save_preview, settings_update,
+    auth_source_picker_state, confirm_modal, dispatch_manager, open_settings_save_preview,
+    settings_update,
 };
-use crate::tui::auth_config::settings_auth_form_can_generate_token;
 use crate::tui::components::file_browser::page_rows_for_modal;
 use crate::tui::update::{
-    AuthSourceFolderPickerPlan, CreateOpPickerPlan, InlinePickerPlan, SourcePickerPlan,
-    auth_source_folder_picker_plan, create_op_picker_plan, inline_picker_plan, source_picker_plan,
+    AuthSourceFolderPickerPlan, InlinePickerPlan, SourcePickerPlan, auth_source_folder_picker_plan,
+    inline_picker_plan, source_picker_plan,
 };
 
 fn record_missing_auth_return_path() {
@@ -28,12 +23,65 @@ pub(super) fn handle_auth_key(state: &mut ManagerState<'_>, key: KeyEvent) {
     let ManagerStage::Settings(settings) = &state.stage else {
         return;
     };
-    let plan = settings_update::settings_auth_key_plan(
-        key.code,
-        settings.is_dirty(),
-        settings.auth.has_selected_kind(),
-        settings.auth.selected_detail_row_is_focusable(),
-    );
+    if matches!(key.code, KeyCode::Delete | KeyCode::Char('d' | 'D')) {
+        if let ManagerStage::Settings(settings) = &mut state.stage {
+            settings.auth.delete_selected_account();
+        }
+        return;
+    }
+    if matches!(key.code, KeyCode::Char('e' | 'E')) {
+        if let ManagerStage::Settings(settings) = &mut state.stage {
+            settings.auth.toggle_selected_account_enabled();
+        }
+        return;
+    }
+    use crate::tui::screens::settings::model::AccountTextField;
+    let text_field = match key.code {
+        KeyCode::Char('f' | 'F') => Some(AccountTextField::DefaultAgent),
+        KeyCode::Char('r' | 'R') => Some(AccountTextField::Name),
+        KeyCode::Char('b' | 'B') => Some(AccountTextField::BaseUrl),
+        KeyCode::Char('m' | 'M') => Some(AccountTextField::Model),
+        _ => None,
+    };
+    if let Some(field) = text_field {
+        if let ManagerStage::Settings(settings) = &mut state.stage
+            && let Some((id, account)) = settings.auth.pending.iter().nth(settings.auth.selected)
+        {
+            let (label, value) = match (field, &account.credential) {
+                (AccountTextField::DefaultAgent, _) if account.enabled => (
+                    "Toggle default for agent (claude/codex/amp/kimi/opencode/grok)",
+                    jackin_core::Agent::ALL
+                        .iter()
+                        .copied()
+                        .find(|agent| account.supports_agent(*agent))
+                        .map_or_else(String::new, |agent| agent.slug().to_owned()),
+                ),
+                (AccountTextField::Name, _) => ("Account name", account.name.clone()),
+                (
+                    AccountTextField::BaseUrl,
+                    jackin_config::AccountCredential::ApiKey { base_url, .. },
+                ) => (
+                    "API base URL (empty for default)",
+                    base_url.clone().unwrap_or_default(),
+                ),
+                (
+                    AccountTextField::Model,
+                    jackin_config::AccountCredential::ApiKey { model, .. },
+                ) => (
+                    "Model (empty for agent default)",
+                    model.clone().unwrap_or_default(),
+                ),
+                _ => return,
+            };
+            settings.auth.editing_account = Some(id.clone());
+            settings.auth.editing_text = Some(field);
+            settings.auth.set_modal(SettingsModal::AuthTextInput {
+                state: Box::new(crate::tui::components::TextInputState::new(label, value)),
+            });
+        }
+        return;
+    }
+    let plan = settings_update::settings_auth_key_plan(key.code, settings.is_dirty(), false, true);
     match plan {
         SettingsAuthKeyPlan::ClearKind => {
             dispatch_manager(state, ManagerMessage::ClearSettingsAuthKind);
@@ -42,7 +90,9 @@ pub(super) fn handle_auth_key(state: &mut ManagerState<'_>, key: KeyEvent) {
             dispatch_manager(state, ManagerMessage::MoveSettingsAuthSelection { delta });
         }
         SettingsAuthKeyPlan::EnterKind => {
-            dispatch_manager(state, ManagerMessage::EnterSettingsAuthKind);
+            if let ManagerStage::Settings(settings) = &mut state.stage {
+                open_settings_auth_form(&mut settings.auth, &settings.env);
+            }
         }
         SettingsAuthKeyPlan::ConfirmDiscard => {
             let ManagerStage::Settings(settings) = &mut state.stage else {
@@ -78,47 +128,93 @@ pub(crate) fn open_settings_auth_form(
     auth: &mut crate::tui::state::SettingsAuthState,
     env: &crate::tui::state::SettingsEnvState<'_>,
 ) {
-    auth.open_selected_auth_modal(&env.pending.env, |kind, row, existing_credential| {
-        let form = AuthForm::from_existing(kind, row.mode, existing_credential).with_source_folder(
-            row.sync_source_dir.clone(),
-            Some(crate::tui::auth_config::settings_source_folder_display(row)),
-        );
-        let literal_buffer = form.literal_buffer();
-        SettingsModal::AuthForm {
-            target: AuthFormTarget::Workspace { kind },
-            state: Box::new(form),
-            focus: AuthFormFocus::Mode,
-            literal_buffer,
+    let _ = env;
+    use jackin_config::AccountCredential;
+    auth.editing_text = None;
+    let existing = auth
+        .pending
+        .iter()
+        .nth(auth.selected)
+        .map(|(id, account)| (id.clone(), account.clone()));
+    let (kind, mode, credential, folder) = if auth.selected
+        == auth.pending.len() + crate::tui::screens::settings::model::ACCOUNT_KINDS.len()
+    {
+        auth.editing_account = None;
+        let mode = match auth.github.auth_forward {
+            jackin_config::GithubAuthMode::Sync => crate::tui::auth::AuthMode::Sync,
+            jackin_config::GithubAuthMode::Token => crate::tui::auth::AuthMode::Token,
+            jackin_config::GithubAuthMode::Ignore => crate::tui::auth::AuthMode::Ignore,
+        };
+        (
+            crate::tui::auth::AuthKind::Github,
+            mode,
+            auth.github.env.get("GH_TOKEN").cloned(),
+            None,
+        )
+    } else if let Some((id, account)) = existing {
+        auth.editing_account = Some(id);
+        let kind = crate::tui::screens::settings::model::account_kind(&account);
+        match account.credential {
+            AccountCredential::Profile { directory, .. } => (
+                kind,
+                crate::tui::auth::AuthMode::Sync,
+                None,
+                Some(directory),
+            ),
+            AccountCredential::ApiKey { value, .. } => {
+                (kind, crate::tui::auth::AuthMode::ApiKey, Some(value), None)
+            }
+            AccountCredential::OAuthToken { value, .. } => (
+                kind,
+                crate::tui::auth::AuthMode::OAuthToken,
+                Some(value),
+                None,
+            ),
         }
+    } else {
+        auth.editing_account = None;
+        let Some(kind) = crate::tui::screens::settings::model::ACCOUNT_KINDS
+            .get(auth.selected.saturating_sub(auth.pending.len()))
+            .copied()
+        else {
+            return;
+        };
+        let mode = if matches!(
+            kind,
+            crate::tui::auth::AuthKind::Zai | crate::tui::auth::AuthKind::Minimax
+        ) {
+            crate::tui::auth::AuthMode::ApiKey
+        } else {
+            crate::tui::auth::AuthMode::Sync
+        };
+        (kind, mode, None, None)
+    };
+    auth.selected_kind = Some(kind);
+    let form = AuthForm::from_existing(kind, mode, credential).with_source_folder(
+        folder,
+        Some(
+            crate::tui::components::editor_rows::AuthSourceFolderDisplay {
+                kind: crate::tui::components::editor_rows::AuthSourceFolderKind::Explicit,
+                path: "Select a profile folder".to_owned(),
+            },
+        ),
+    );
+    let literal_buffer = form.literal_buffer();
+    auth.set_modal(SettingsModal::AuthForm {
+        target: AuthFormTarget::Workspace { kind },
+        state: Box::new(form),
+        focus: AuthFormFocus::Mode,
+        literal_buffer,
     });
-}
-
-/// Whether the open settings Auth modal is eligible for the `g`/`G`
-/// generate trigger: an `AuthForm` showing the global Claude
-/// `oauth_token` slot. Settings generate is always global Claude, so —
-/// unlike the workspace editor — there is no per-target gate.
-pub fn settings_auth_can_generate_token(auth: &crate::tui::state::SettingsAuthState) -> bool {
-    matches!(
-        auth.modal_ref(),
-        Some(SettingsModal::AuthForm { state, .. })
-            if settings_auth_form_can_generate_token(state.kind, state.mode)
-    )
 }
 
 /// Source-folder validation callback used by the settings auth modal.
 type SourceFolderValidator =
     dyn Fn(Option<crate::tui::auth::AuthKind>, &std::path::Path) -> Result<(), String>;
 
-#[expect(
-    clippy::too_many_arguments,
-    reason = "Settings-auth-modal key handler carries every per-binding input the \
-              dispatch needs: auth state, env state, key event, palette key. \
-              Same justification as the too_many_lines allow."
-)]
 pub fn handle_settings_auth_modal(
     auth: &mut crate::tui::state::SettingsAuthState,
     env: &mut crate::tui::state::SettingsEnvState<'_>,
-    pending_token_generate: &mut Option<crate::tui::state::PendingTokenGenerate>,
     key: KeyEvent,
     op_available: bool,
     op_cache: std::rc::Rc<std::cell::RefCell<jackin_env::OpCache>>,
@@ -136,29 +232,6 @@ pub fn handle_settings_auth_modal(
             literal_buffer: _,
         } => {
             if key.code == KeyCode::Esc {
-                return SettingsAuthOutcome::Continue;
-            }
-            // `g`/`G` at any focus mints a global Claude OAuth token. It
-            // opens the shared source picker (plain literal vs. 1Password)
-            // first. Gated to the global Claude `oauth_token` slot; a
-            // no-op for any other kind/mode. The open form is stashed so
-            // the post-mint re-mount lands the operator back on the same
-            // Edit-auth dialog with the minted credential staged, focus
-            // Save — exactly like the provide path. Generate vs. provide
-            // is disambiguated by the `generating_token` flag, which the
-            // source-picker / op-picker commit arms check first.
-            if matches!(key.code, KeyCode::Char('g' | 'G'))
-                && settings_auth_form_can_generate_token(state.kind, state.mode)
-            {
-                auth.start_generating_token();
-                // modal was taken from auth.modal at the start of this fn;
-                // push it directly to preserve the in-progress form state.
-                auth.open_child_modal(
-                    modal,
-                    SettingsModal::AuthSourcePicker {
-                        state: generated_token_source_picker_state(op_available),
-                    },
-                );
                 return SettingsAuthOutcome::Continue;
             }
             let plan = auth_form_key_plan_with_source_folder(
@@ -204,51 +277,6 @@ pub fn handle_settings_auth_modal(
         }
         SettingsModal::AuthSourcePicker { state } => {
             let outcome = state.handle_key(key);
-            // Generate wins over the provide dispatch: the `g`/`G` trigger
-            // sets `generating_token` (and stashes the form into
-            // the modal parent stack for the post-mint re-mount), so
-            // the generate branch is reachable only on that path and the
-            // provide arms below stay untouched.
-            if auth.is_generating_token() {
-                match source_picker_plan(outcome) {
-                    SourcePickerPlan::Plain => {
-                        auth.finish_generating_token();
-                        *pending_token_generate = Some(crate::tui::state::PendingTokenGenerate {
-                            scope: jackin_env::TokenSetupScope::Global,
-                            args: jackin_env::TokenSetupArgs {
-                                plain_text: true,
-                                ..Default::default()
-                            },
-                        });
-                    }
-                    SourcePickerPlan::Op => {
-                        // `generating_token` stays set so the Create-mode
-                        // OpPicker commit routes through
-                        // `handle_settings_token_generate_pick`.
-                        auth.set_modal(SettingsModal::AuthOpPicker {
-                            state: Box::new(
-                                crate::tui::op_picker::OpPickerState::new_create_with_cache(
-                                    op_cache,
-                                    generated_token_op_item_name(
-                                        jackin_env::DEFAULT_ITEM_TEMPLATE,
-                                        "global",
-                                    ),
-                                    jackin_env::DEFAULT_FIELD_LABEL,
-                                ),
-                            ),
-                        });
-                    }
-                    // Cancel before minting: restore the stashed form so
-                    // the operator lands back on the Edit-auth dialog
-                    // unchanged (matches the provide-path cancel below).
-                    SourcePickerPlan::Dismiss => {
-                        auth.finish_generating_token();
-                        restore_settings_auth_form(auth);
-                    }
-                    SourcePickerPlan::Continue => auth.set_modal(modal),
-                }
-                return SettingsAuthOutcome::Continue;
-            }
             match source_picker_plan(outcome) {
                 SourcePickerPlan::Plain => {
                     let literal = auth
@@ -281,7 +309,10 @@ pub fn handle_settings_auth_modal(
         SettingsModal::AuthTextInput { state } => {
             match inline_picker_plan(state.handle_key(key.into())) {
                 InlinePickerPlan::Commit(value) => {
-                    apply_plain_text_to_settings_auth_form(auth, &value);
+                    if let Err(error) = commit_settings_auth_text(auth, value) {
+                        auth.set_error(error);
+                        auth.set_modal(modal);
+                    }
                 }
                 InlinePickerPlan::Dismiss => restore_settings_auth_form(auth),
                 InlinePickerPlan::Continue => auth.set_modal(modal),
@@ -313,7 +344,7 @@ pub fn handle_settings_auth_modal(
                                 }
                             }
                         }
-                        AuthSourceFolderPickerPlan::Close => {}
+                        AuthSourceFolderPickerPlan::Close => restore_settings_auth_form(auth),
                         AuthSourceFolderPickerPlan::KeepModal => {
                             auth.set_modal(modal);
                         }
@@ -323,14 +354,6 @@ pub fn handle_settings_auth_modal(
         }
         SettingsModal::AuthOpPicker { state } => {
             let outcome = state.handle_key(key);
-            // Token-generate wins over the browse/provide dispatch:
-            // `generating_token` is set exactly when the picker was opened
-            // by the auth-form `g`/`G` trigger (Create mode), so the create
-            // variants are reachable only on this path.
-            if auth.is_generating_token() {
-                handle_settings_token_generate_pick(auth, pending_token_generate, outcome, modal);
-                return SettingsAuthOutcome::Continue;
-            }
             match crate::tui::update::op_picker_inline_plan(outcome) {
                 // Browse-mode caller: only `Existing` is reachable.
                 InlinePickerPlan::Commit(
@@ -342,7 +365,8 @@ pub fn handle_settings_auth_modal(
                 )) => {
                     // Close the OpPicker — the auth form stays stashed on
                     // modal_parents so the _committed / _failed helpers find it.
-                    auth.clear_modal();
+                    // Dispatch already took the current picker. Preserve its
+                    // parent until asynchronous validation completes.
                     return SettingsAuthOutcome::ValidateOpRef(op_ref);
                 }
                 InlinePickerPlan::Dismiss => restore_settings_auth_form(auth),
@@ -354,92 +378,68 @@ pub fn handle_settings_auth_modal(
     SettingsAuthOutcome::Continue
 }
 
+fn commit_settings_auth_text(
+    auth: &mut crate::tui::state::SettingsAuthState,
+    value: String,
+) -> Result<(), String> {
+    use crate::tui::screens::settings::model::AccountTextField;
+    let Some(field) = auth.editing_text else {
+        apply_plain_text_to_settings_auth_form(auth, &value);
+        return Ok(());
+    };
+    let id = auth
+        .editing_account
+        .clone()
+        .ok_or_else(|| "Account no longer exists".to_owned())?;
+    if field == AccountTextField::DefaultAgent {
+        let agent = jackin_core::Agent::from_slug(value.trim())
+            .ok_or_else(|| "Unknown coding agent".to_owned())?;
+        auth.toggle_account_default(&id, agent)?;
+        auth.editing_text = None;
+        return Ok(());
+    }
+    let account = auth
+        .pending
+        .get_mut(&id)
+        .ok_or_else(|| "Account no longer exists".to_owned())?;
+    match field {
+        AccountTextField::DefaultAgent => unreachable!("default handled before metadata"),
+        AccountTextField::Name => {
+            if value.trim().is_empty() {
+                return Err("Account name cannot be empty".into());
+            }
+            account.name = value;
+        }
+        AccountTextField::BaseUrl | AccountTextField::Model => {
+            let jackin_config::AccountCredential::ApiKey {
+                base_url, model, ..
+            } = &mut account.credential
+            else {
+                return Err("Endpoint and model require an API account".into());
+            };
+            let target = if field == AccountTextField::BaseUrl {
+                base_url
+            } else {
+                model
+            };
+            *target = (!value.trim().is_empty()).then(|| value.trim().to_owned());
+        }
+    }
+    auth.editing_text = None;
+    Ok(())
+}
+
 /// Translate a Create-mode `OpPicker` commit into a global
 /// [`PendingTokenGenerate`](crate::tui::state::PendingTokenGenerate)
 /// request that the `run_console` loop drains to mint the token.
 /// `Existing` cannot occur in Create mode; a Cancel (or stray
 /// `Existing`) just closes the chain. On `Continue` the picker is still
 /// drilling, so the marker stays armed and the modal stays open.
-fn handle_settings_token_generate_pick(
-    auth: &mut crate::tui::state::SettingsAuthState,
-    pending_token_generate: &mut Option<crate::tui::state::PendingTokenGenerate>,
-    outcome: jackin_oppicker::ModalOutcome<crate::tui::op_picker::OpPickerSelection>,
-    modal: SettingsModal<'static>,
-) {
-    use crate::tui::op_picker::OpPickerSelection;
-    use jackin_env::{EditExistingTarget, TokenSetupArgs};
-
-    let args = match create_op_picker_plan(outcome) {
-        CreateOpPickerPlan::Commit(OpPickerSelection::NewItem {
-            account,
-            vault,
-            item_name,
-            section,
-            field_label,
-        }) => TokenSetupArgs {
-            vault: Some(vault.id),
-            item_name: Some(item_name),
-            account: account.map(|a| a.id),
-            reuse: None,
-            field_label: Some(field_label),
-            section,
-            edit_existing: None,
-            plain_text: false,
-        },
-        CreateOpPickerPlan::Commit(OpPickerSelection::EditItemField {
-            account,
-            vault,
-            item,
-            section,
-            field,
-        }) => TokenSetupArgs {
-            vault: None,
-            item_name: None,
-            account: account.map(|a| a.id),
-            reuse: None,
-            field_label: None,
-            section: None,
-            edit_existing: Some(EditExistingTarget {
-                vault_id: vault.id,
-                item_id: item.id,
-                field,
-                section,
-            }),
-            plain_text: false,
-        },
-        CreateOpPickerPlan::Commit(OpPickerSelection::Existing(_)) => {
-            unreachable!("create-mode OpPicker plan dismisses Existing selections")
-        }
-        // Still drilling — leave the picker open and stay armed.
-        CreateOpPickerPlan::Continue => {
-            auth.set_modal(modal);
-            return;
-        }
-        // `Existing` is unreachable in Create mode; a Cancel restores the
-        // stashed form. Both close without minting and disarm the marker.
-        CreateOpPickerPlan::Dismiss => {
-            auth.finish_generating_token();
-            restore_settings_auth_form(auth);
-            return;
-        }
-    };
-
-    auth.finish_generating_token();
-    *pending_token_generate = Some(crate::tui::state::PendingTokenGenerate {
-        scope: jackin_env::TokenSetupScope::Global,
-        args,
-    });
-}
-
 fn restore_settings_auth_form(auth: &mut crate::tui::state::SettingsAuthState) {
     auth.restore_pending_auth_form();
 }
 
-/// Lift the stashed settings auth form, apply a literal credential, and
-/// re-mount it with focus on Save. Shared by the provide-path
-/// `TextInput` commit and the post-mint plain-text generate re-mount in
-/// the `run_console` loop — both stage a literal and drop the operator
-/// onto Save so the editor's normal save persists it.
+/// Restore the account form with the supplied credential staged for save.
 pub fn apply_plain_text_to_settings_auth_form(
     auth: &mut crate::tui::state::SettingsAuthState,
     value: &str,
@@ -483,74 +483,6 @@ pub(crate) fn apply_source_folder_to_settings_auth_form(
     });
 }
 
-/// Lift the stashed settings auth form, read-back-validate a picked
-/// `OpRef` against the account it carries, and re-mount the form with
-/// focus on Save. On a read failure the form is re-stashed and the
-/// error surfaced through the auth error slot so the operator can retry. Shared
-/// by the provide-path `OpPicker` commit and the post-mint op generate
-/// re-mount in the `run_console` loop.
-/// Inner helper split out so tests can inject a fake `OpRunner` without
-/// touching the real `op` binary (mirrors
-/// `auth::apply_op_picker_to_auth_form_with_runner`).
-#[cfg(test)]
-pub(crate) fn apply_op_picker_to_settings_auth_form_with_runner<
-    R: jackin_env::OpRunner + ?Sized,
->(
-    auth: &mut crate::tui::state::SettingsAuthState,
-    op_ref: jackin_core::OpRef,
-    runner: &R,
-) {
-    apply_op_picker_to_settings_auth_form_with_validator(auth, op_ref, |op_ref| {
-        runner.read(&op_ref.op).map(|_| ())
-    });
-}
-
-#[cfg(test)]
-fn apply_op_picker_to_settings_auth_form_with_validator(
-    auth: &mut crate::tui::state::SettingsAuthState,
-    op_ref: jackin_core::OpRef,
-    validate: impl FnOnce(&jackin_core::OpRef) -> anyhow::Result<()>,
-) {
-    let Some(SettingsModal::AuthForm {
-        target,
-        mut state,
-        focus,
-        literal_buffer,
-    }) = auth.pop_parent_modal()
-    else {
-        // Mirrors the editor twin's missing-stash breadcrumb: a minted
-        // global token with no form to return to would otherwise vanish
-        // silently. Should be unreachable (the `g`/`G` trigger always
-        // stashes), so a hit here means a broken stash invariant.
-        record_missing_auth_return_path();
-        return;
-    };
-    match validate(&op_ref) {
-        Ok(()) => {
-            state.set_op_ref(op_ref);
-            auth.set_modal(SettingsModal::AuthForm {
-                target,
-                state,
-                focus: AuthFormFocus::Save,
-                literal_buffer,
-            });
-        }
-        Err(err) => {
-            // The form is only mutated after a successful read; re-stash so a
-            // later restore lands the operator back on the prior value.
-            auth.push_auth_modal(SettingsModal::AuthForm {
-                target,
-                state,
-                focus,
-                literal_buffer,
-            });
-            auth.set_error(
-                crate::tui::screens::settings::view::settings_auth_op_read_failed_message(err),
-            );
-        }
-    }
-}
-
 /// Apply a committed op picker selection to the settings auth form after the
 /// 1Password read has already succeeded on the `spawn_blocking` thread. Called
 /// from the `run_console` poll loop — the read was verified asynchronously so
@@ -590,7 +522,123 @@ fn persist_settings_auth_form(
     let Some(outcome) = form.commit() else {
         return;
     };
-    auth.apply_auth_outcome(form.kind, outcome, &mut env.pending.env);
+    let _ = env;
+    use crate::tui::auth::{AuthKind, AuthMode};
+    use jackin_config::{AccountConfig, AccountCredential, AiProvider};
+    if form.kind == AuthKind::Github {
+        auth.github.auth_forward = match outcome.mode {
+            AuthMode::Sync => jackin_config::GithubAuthMode::Sync,
+            AuthMode::Token => jackin_config::GithubAuthMode::Token,
+            AuthMode::Ignore => jackin_config::GithubAuthMode::Ignore,
+            _ => {
+                auth.set_error("Unsupported GitHub authentication");
+                return;
+            }
+        };
+        auth.github.env.remove("GH_TOKEN");
+        if let Some(value) = outcome.env_value {
+            auth.github.env.insert("GH_TOKEN".into(), value);
+        }
+        auth.selected_kind = None;
+        return;
+    }
+    let provider = match form.kind {
+        AuthKind::Claude => AiProvider::Anthropic,
+        AuthKind::Codex => AiProvider::OpenAi,
+        AuthKind::Amp => AiProvider::Amp,
+        AuthKind::Kimi => AiProvider::Moonshot,
+        AuthKind::Opencode => AiProvider::Opencode,
+        AuthKind::Grok => AiProvider::Xai,
+        AuthKind::Zai => AiProvider::Zai,
+        AuthKind::Minimax => AiProvider::Minimax,
+        AuthKind::Github => {
+            auth.set_error("GitHub is not an AI provider");
+            return;
+        }
+    };
+    let credential = match outcome.mode {
+        AuthMode::Sync => {
+            let Some(directory) = outcome.source_folder else {
+                auth.set_error("Select a profile folder");
+                return;
+            };
+            let Some(agent) = crate::tui::auth_config::auth_kind_agent(form.kind) else {
+                return;
+            };
+            AccountCredential::Profile { agent, directory }
+        }
+        AuthMode::ApiKey => {
+            let Some(value) = outcome.env_value else {
+                return;
+            };
+            let base_url = auth
+                .editing_account
+                .as_ref()
+                .and_then(|id| auth.pending.get(id))
+                .and_then(|a| {
+                    if let AccountCredential::ApiKey { base_url, .. } = &a.credential {
+                        base_url.clone()
+                    } else {
+                        None
+                    }
+                });
+            let model = auth
+                .editing_account
+                .as_ref()
+                .and_then(|id| auth.pending.get(id))
+                .and_then(|a| {
+                    if let AccountCredential::ApiKey { model, .. } = &a.credential {
+                        model.clone()
+                    } else {
+                        None
+                    }
+                });
+            AccountCredential::ApiKey {
+                value,
+                base_url,
+                model,
+            }
+        }
+        AuthMode::OAuthToken => {
+            let Some(value) = outcome.env_value else {
+                return;
+            };
+            AccountCredential::OAuthToken {
+                agent: jackin_core::Agent::Claude,
+                value,
+            }
+        }
+        _ => {
+            auth.set_error("Choose a profile, API key, or OAuth token");
+            return;
+        }
+    };
+    let id = auth.editing_account.clone().unwrap_or_else(|| {
+        let mut suffix = 1;
+        loop {
+            let id = format!("{}-{suffix}", provider.slug());
+            if !auth.pending.contains_key(&id) {
+                break id;
+            }
+            suffix += 1;
+        }
+    });
+    let name = auth
+        .pending
+        .get(&id)
+        .map_or_else(|| id.clone(), |a| a.name.clone());
+    let enabled = auth.pending.get(&id).is_none_or(|account| account.enabled);
+    auth.pending.insert(
+        id.clone(),
+        AccountConfig {
+            enabled,
+            name,
+            provider,
+            credential,
+        },
+    );
+    auth.selected = auth.pending.keys().position(|key| key == &id).unwrap_or(0);
+    auth.selected_kind = None;
 }
 
 fn clear_settings_auth_kind(
@@ -601,7 +649,15 @@ fn clear_settings_auth_kind(
     let AuthFormTarget::Workspace { kind } = target else {
         return;
     };
-    auth.clear_auth_kind(*kind, &mut env.pending.env);
+    let _ = env;
+    if *kind == crate::tui::auth::AuthKind::Github {
+        auth.github = jackin_config::GithubAuthConfig::default();
+    }
+    if let Some(id) = auth.editing_account.take() {
+        auth.pending.remove(&id);
+        auth.bindings.retain(|_, value| value != &id);
+    }
+    auth.clamp_selected_row();
 }
 
 #[cfg(test)]

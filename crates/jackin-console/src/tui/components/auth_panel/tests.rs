@@ -79,21 +79,6 @@ fn auth_source_picker_state_keeps_env_label() {
 }
 
 #[test]
-fn generated_token_source_picker_state_uses_component_label() {
-    let state = generated_token_source_picker_state(true);
-
-    assert_eq!(state.key, "generated token");
-}
-
-#[test]
-fn generated_token_op_item_name_applies_scope_label() {
-    assert_eq!(
-        generated_token_op_item_name("Claude ({ws})", "global"),
-        "Claude (global)"
-    );
-}
-
-#[test]
 fn auth_panel_title_pads_kind_label_for_panel() {
     assert_eq!(auth_panel_title("Claude"), " Claude ");
 }
@@ -105,9 +90,14 @@ fn save_disabled_when_mode_unset() {
 }
 
 #[test]
-fn save_enabled_for_sync() {
+fn profile_save_requires_an_explicit_nonempty_directory() {
     let mut form = TestForm::new(AuthKind::Claude);
     form.set_mode(AuthMode::Sync);
+    assert!(!form.can_save());
+    assert!(form.commit().is_none());
+    form.set_source_folder(PathBuf::new());
+    assert!(!form.can_save());
+    form.set_source_folder(PathBuf::from("/accounts/claude-work"));
     assert!(form.can_save());
 }
 
@@ -189,8 +179,8 @@ fn source_folder_row_requires_form_source_state_and_supported_mode() {
     let mut form = TestForm::new(AuthKind::Claude);
     form.set_mode(AuthMode::Sync);
     assert!(
-        !form.shows_source_folder(),
-        "settings forms opt in during their own phase"
+        form.shows_source_folder(),
+        "profile accounts always require an explicit folder"
     );
 
     let form = form.with_source_folder(
@@ -377,4 +367,40 @@ fn form_with_op_ref_credential_shows_path() {
     });
     let output = dump_form(&form);
     assert!(output.contains("Work / Anthropic → api-key"));
+}
+
+#[test]
+fn github_sync_and_ignore_do_not_require_profile_folders() {
+    for mode in [AuthMode::Sync, AuthMode::Ignore] {
+        let form = TestForm::from_existing(AuthKind::Github, mode, None);
+        assert!(form.can_save());
+        assert!(form.commit().is_some());
+    }
+}
+
+#[test]
+fn unsupported_account_modes_cannot_be_committed() {
+    let form = TestForm::from_existing(AuthKind::Claude, AuthMode::Ignore, None);
+    assert!(!form.can_save());
+    assert!(form.commit().is_none());
+}
+
+#[test]
+fn credential_input_redacts_debug_and_paint() {
+    let input = auth_credential_input_state("never-render-this-token");
+    assert!(!format!("{input:?}").contains("never-render-this-token"));
+    let mut terminal = Terminal::new(TestBackend::new(80, 8)).unwrap();
+    terminal
+        .draw(|frame| crate::tui::components::render_text_input(frame, frame.area(), &input))
+        .unwrap();
+    let text: String = terminal
+        .backend()
+        .buffer()
+        .content
+        .iter()
+        .map(ratatui::buffer::Cell::symbol)
+        .collect();
+    assert!(!text.contains("never-render-this-token"));
+    assert!(text.contains('*'));
+    assert_eq!(input.value(), "never-render-this-token");
 }
