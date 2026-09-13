@@ -29,7 +29,7 @@ jobs:
     if: >-
       github.ref == 'refs/heads/main' &&
       (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
-    runs-on: ${{ (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.lanes != 'velnor')) && 'ubuntu-26.04' || fromJSON('["self-hosted","velnor-target-mvp"]') }}
+    runs-on: ${{ ((github.event_name == 'workflow_dispatch' && inputs.lanes != 'velnor') || github.event_name == 'pull_request' || github.event_name == 'push') && 'ubuntu-26.04' || fromJSON('["self-hosted","velnor-target-mvp"]') }}
     timeout-minutes: 5
     outputs:
       source: ${{ steps.filter.outputs.source }}
@@ -443,7 +443,7 @@ jobs:
     if: >-
       github.ref == 'refs/heads/main' &&
       needs.source-changed.outputs.source == 'true'
-    runs-on: ${{ (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.lanes != 'velnor')) && 'ubuntu-26.04' || fromJSON('["self-hosted","velnor-target-mvp"]') }}
+    runs-on: ${{ ((github.event_name == 'workflow_dispatch' && inputs.lanes != 'velnor') || github.event_name == 'pull_request' || github.event_name == 'push') && 'ubuntu-26.04' || fromJSON('["self-hosted","velnor-target-mvp"]') }}
     timeout-minutes: 45
     outputs:
       ci_ok: ${{ steps.ci.outputs.ok }}
@@ -472,7 +472,7 @@ jobs:
       github.ref == 'refs/heads/main' &&
       needs.source-changed.outputs.source == 'true' &&
       needs.publish-gate.outputs.ci_ok == 'true'
-    runs-on: ${{ (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.lanes != 'velnor')) && 'ubuntu-26.04' || fromJSON('["self-hosted","velnor-target-mvp"]') }}
+    runs-on: ${{ ((github.event_name == 'workflow_dispatch' && inputs.lanes != 'velnor') || github.event_name == 'pull_request' || github.event_name == 'push') && 'ubuntu-26.04' || fromJSON('["self-hosted","velnor-target-mvp"]') }}
     timeout-minutes: 60
     concurrency:
       group: homebrew-tap-publish
