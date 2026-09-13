@@ -3,6 +3,11 @@ schema = 1
 [generator]
 repository = "jackin-project/jackin"
 
+# Vendored generator inputs are never scan evidence: the download-ci-xtask
+# runtime ships package.json manifests that must not select a Node unit.
+[scan]
+exclude = [".github-gen/sources/**"]
+
 # Runner placement: the hosted image the GitHub lane pins, and the self-hosted
 # labels the trust-gated Velnor lane selects by. Both lanes render; manual
 # dispatch defaults to the Velnor lane (generator Both-mode lane admission)
@@ -623,3 +628,67 @@ jobs:
           --sha "$SHA"
           --assets artifacts
 '''
+
+# Composite actions the generated workflows reference: the repository owns the
+# bytes under .github-gen/sources, the generator owns the write into
+# .github/actions.
+
+[[static_files]]
+file = ".github/actions/aggregate-needs/action.yml"
+source = ".github-gen/sources/actions/aggregate-needs/action.yml"
+
+[[static_files]]
+file = ".github/actions/build-release-archive/action.yml"
+source = ".github-gen/sources/actions/build-release-archive/action.yml"
+
+[[static_files]]
+file = ".github/actions/cache-cargo-registry/action.yml"
+source = ".github-gen/sources/actions/cache-cargo-registry/action.yml"
+
+[[static_files]]
+file = ".github/actions/check-deployed-docs/action.yml"
+source = ".github-gen/sources/actions/check-deployed-docs/action.yml"
+
+[[static_files]]
+file = ".github/actions/download-ci-xtask/action.yml"
+source = ".github-gen/sources/actions/download-ci-xtask/action.yml"
+
+[[static_files]]
+file = ".github/actions/download-ci-xtask/runtime/.gitignore"
+source = ".github-gen/sources/actions/download-ci-xtask/runtime/.gitignore"
+
+[[static_files]]
+file = ".github/actions/download-ci-xtask/runtime/dist/index.js"
+source = ".github-gen/sources/actions/download-ci-xtask/runtime/dist/index.js"
+
+[[static_files]]
+file = ".github/actions/download-ci-xtask/runtime/dist/package.json"
+source = ".github-gen/sources/actions/download-ci-xtask/runtime/dist/package.json"
+
+[[static_files]]
+file = ".github/actions/download-ci-xtask/runtime/package-lock.json"
+source = ".github-gen/sources/actions/download-ci-xtask/runtime/package-lock.json"
+
+[[static_files]]
+file = ".github/actions/download-ci-xtask/runtime/package.json"
+source = ".github-gen/sources/actions/download-ci-xtask/runtime/package.json"
+
+[[static_files]]
+file = ".github/actions/download-ci-xtask/runtime/src/index.js"
+source = ".github-gen/sources/actions/download-ci-xtask/runtime/src/index.js"
+
+[[static_files]]
+file = ".github/actions/download-ci-xtask/runtime/test/index.test.js"
+source = ".github-gen/sources/actions/download-ci-xtask/runtime/test/index.test.js"
+
+[[static_files]]
+file = ".github/actions/download-codebook/action.yml"
+source = ".github-gen/sources/actions/download-codebook/action.yml"
+
+[[static_files]]
+file = ".github/actions/sign-and-attest-archive/action.yml"
+source = ".github-gen/sources/actions/sign-and-attest-archive/action.yml"
+
+[[static_files]]
+file = ".github/actions/sign-capsule-manifest/action.yml"
+source = ".github-gen/sources/actions/sign-capsule-manifest/action.yml"

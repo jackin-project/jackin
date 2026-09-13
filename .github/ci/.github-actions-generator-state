@@ -1,11 +1,26 @@
 # Generated ownership state; do not edit.
 schema = 2
 [inputs]
-config	971a5e6d74ee958c
+config	d42f437eb072148d
 scan	b9d3ad6a734ce809
 generator	21
 [outputs]
 .github/actionlint.yaml	2c1dbf178fa8baa1
+.github/actions/aggregate-needs/action.yml	27737a2d2a84b908
+.github/actions/build-release-archive/action.yml	729e1871e6651f2c
+.github/actions/cache-cargo-registry/action.yml	0df92be8f088ce2a
+.github/actions/check-deployed-docs/action.yml	553815fb960c874a
+.github/actions/download-ci-xtask/action.yml	645feb6c67619b54
+.github/actions/download-ci-xtask/runtime/.gitignore	9e2c50a8e83101aa
+.github/actions/download-ci-xtask/runtime/dist/index.js	5ffb24618d063986
+.github/actions/download-ci-xtask/runtime/dist/package.json	baa9053f7d67fcbf
+.github/actions/download-ci-xtask/runtime/package-lock.json	4e6b74eea655d581
+.github/actions/download-ci-xtask/runtime/package.json	a520602617a97720
+.github/actions/download-ci-xtask/runtime/src/index.js	b2c65cc3696abb98
+.github/actions/download-ci-xtask/runtime/test/index.test.js	4dc6676878e31315
+.github/actions/download-codebook/action.yml	a8ee1a071ee3d394
+.github/actions/sign-and-attest-archive/action.yml	bd4e49cdfe9bc910
+.github/actions/sign-capsule-manifest/action.yml	bcc6b1e304cc95c4
 .github/ci/project.toml	c1d55846ca3d4108
 .github/ci/workflow-templates/cache-cleanup.yml	eba8efe1071b8b05
 .github/ci/workflow-templates/construct.yml	0a419875a0aeaf85
