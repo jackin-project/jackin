@@ -77,12 +77,13 @@ For runtime behavior, see [The Construct Image](https://jackin.tailrocks.com/dev
 |---|---|
 | `ci.yml` | Runs fmt, clippy, Rust test suite on PRs and pushes |
 | `desktop-cadence.yml` | jackin❯ desktop merge cadence on push to `main` (`desktop-merge`: UI tests + accessibility audit) and scheduled cadence weekly (`desktop-scheduled`: + dead-code scan) |
-| `construct.yml` | Builds and publishes `construct` base Docker image |
-| `docs.yml` | Builds and deploys documentation site |
+| `construct.yml` | Builds and publishes `construct` base Docker image on push to `main`; PR rehearsal builds without publishing |
+| `docs.yml` | Builds and deploys documentation site on push to `main`; link and spell checks on PRs |
 | `preview.yml` | Publishes Homebrew preview formula (dispatch-from-main only) |
 | `release.yml` | Creates release artifacts |
 | `renovate.yml` | Self-hosted Renovate dependency update runner |
-| `renovate-validate.yml` | Verifies upstream sources Renovate's `customManagers` point at still resolve |
+| `renovate-validate.yml` | Verifies upstream sources Renovate's `customManagers` point at still resolve (push and PR) |
+| `reuse-compliance.yml` | REUSE license-compliance lint (push and PR) |
 
 ## Code ↔ docs cross-reference
 

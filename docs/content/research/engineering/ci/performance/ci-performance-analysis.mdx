@@ -135,7 +135,7 @@ All package shards started ~18:08:07, right after `construct E2E image` finished
 
 ### Root cause of the unit/E2E coupling
 
-In <RepoFile path=".github/workflows/ci.yml">.github/workflows/ci.yml</RepoFile> the single `test` job depends on `construct-e2e-image` and calls the reusable workflow in <RepoFile path=".github/workflows/rust-nextest.yml">.github/workflows/rust-nextest.yml</RepoFile>, which contains six jobs: five pure-Rust shards (`jackin`, `jackin-capsule`, `jackin-runtime`, `jackin-tui`, `small-crates`) and one `docker-e2e`. Only `docker-e2e` downloads the construct image, but GitHub Actions treats the reusable-workflow call as a single dependency-graph node, so all five package shards inherit the caller's `needs: construct-e2e-image` gate.
+In <RepoFile path=".github/workflows/ci.yml">.github/workflows/ci.yml</RepoFile> the single `test` job depended on `construct-e2e-image` and called the reusable workflow `.github/workflows/rust-nextest.yml` (since deleted as an uncalled orphan; the per-crate fan-out moves into the generated ci.yml under the fleet restructuring plan), which contained six jobs: five pure-Rust shards (`jackin`, `jackin-capsule`, `jackin-runtime`, `jackin-tui`, `small-crates`) and one `docker-e2e`. Only `docker-e2e` downloads the construct image, but GitHub Actions treats the reusable-workflow call as a single dependency-graph node, so all five package shards inherit the caller's `needs: construct-e2e-image` gate.
 
 ### Cold-cache variance (run [28254775151](https://github.com/jackin-project/jackin/actions/runs/28254775151), ~14m02s)
 
@@ -202,4 +202,4 @@ Two caveats from the same source: sccache can slow release builds up to 50% (wra
 
 ## Host-side effects
 
-None on the operator's machine. All work is CI configuration plus root tool/config files such as <RepoFile path=".github/workflows/ci.yml">.github/workflows/ci.yml</RepoFile>, <RepoFile path=".github/workflows/rust-nextest.yml">.github/workflows/rust-nextest.yml</RepoFile>, and <RepoFile path=".cargo/config.toml">.cargo/config.toml</RepoFile>. Any remote `sccache` backend or third-party runner is an opt-in infrastructure decision with its own credentials.
+None on the operator's machine. All work is CI configuration plus root tool/config files such as <RepoFile path=".github/workflows/ci.yml">.github/workflows/ci.yml</RepoFile> and <RepoFile path=".cargo/config.toml">.cargo/config.toml</RepoFile>. Any remote `sccache` backend or third-party runner is an opt-in infrastructure decision with its own credentials.
