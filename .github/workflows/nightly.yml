@@ -171,7 +171,7 @@ jobs:
       fail-fast: false
       matrix:
         include: ${{ fromJSON(needs.plan.outputs.bun_matrix) }}
-    uses: ./.github/workflows/ci-unit-bun.yml
+    uses: ./.github/workflows/${{ matrix.workflow }}
     with:
       unit: ${{ matrix.unit }}
       scope: ${{ needs.plan.outputs.scope }}
@@ -184,7 +184,7 @@ jobs:
       fail-fast: false
       matrix:
         include: ${{ fromJSON(needs.plan.outputs.docker_matrix) }}
-    uses: ./.github/workflows/ci-unit-docker.yml
+    uses: ./.github/workflows/${{ matrix.workflow }}
     with:
       unit: ${{ matrix.unit }}
       scope: ${{ needs.plan.outputs.scope }}
@@ -197,7 +197,7 @@ jobs:
       fail-fast: false
       matrix:
         include: ${{ fromJSON(needs.plan.outputs.rust_matrix) }}
-    uses: ./.github/workflows/ci-unit-rust.yml
+    uses: ./.github/workflows/${{ matrix.workflow }}
     with:
       unit: ${{ matrix.unit }}
       scope: ${{ needs.plan.outputs.scope }}
@@ -210,7 +210,7 @@ jobs:
       fail-fast: false
       matrix:
         include: ${{ fromJSON(needs.plan.outputs.swift_matrix) }}
-    uses: ./.github/workflows/ci-unit-swift.yml
+    uses: ./.github/workflows/${{ matrix.workflow }}
     with:
       unit: ${{ matrix.unit }}
       scope: ${{ needs.plan.outputs.scope }}

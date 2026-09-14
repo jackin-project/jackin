@@ -15,7 +15,7 @@ limitations = ["Manifests nested under tests/ or benches/ directories are treate
 github_runner = "ubuntu-26.04"
 macos_runner = "macos-26"
 velnor_labels = ["self-hosted", "velnor-target-mvp"]
-files = ["cache-cleanup.yml", "ci-main.yml", "ci-policy.yml", "ci-pr.yml", "ci-unit-bun.yml", "ci-unit-docker.yml", "ci-unit-rust.yml", "ci-unit-swift.yml", "construct.yml", "desktop-cadence.yml", "docs.yml", "hygiene.yml", "jackin-dev.yml", "maintenance.yml", "nightly.yml", "preview.yml", "release.yml", "renovate-validate.yml", "renovate.yml", "reuse-compliance.yml"]
+files = ["cache-cleanup.yml", "ci-main.yml", "ci-policy.yml", "ci-pr.yml", "ci-unit-bun.yml", "ci-unit-docker.yml", "ci-unit-rust-2.yml", "ci-unit-rust.yml", "ci-unit-swift.yml", "construct.yml", "desktop-cadence.yml", "docs.yml", "hygiene.yml", "jackin-dev.yml", "maintenance.yml", "nightly.yml", "preview.yml", "release.yml", "renovate-validate.yml", "renovate.yml", "reuse-compliance.yml"]
 notes = ["Rust verification uses Mr. Boxington 1.8.3 by default on both lanes. GitHub-hosted jobs use its GitHub cache backend with bounded snapshot keys (a key names the toolchain/image/linker compatibility class and the hashed source state, so a new source state saves a new snapshot and retention keeps generations bounded). Velnor jobs use an explicit local-backend setup step against the image/runner-provided local store."]
 
 [release]
@@ -35,6 +35,7 @@ velnor_full_commands = ["cd -- 'docs' && bun install --frozen-lockfile", "cd -- 
 [unit.cache]
 key_files = ["docs/package.json", "docs/bun.lock"]
 paths = ["~/.bun/install/cache"]
+workflow_file = "ci-unit-bun.yml"
 
 [[unit]]
 id = "docker-docker-construct"
@@ -46,6 +47,7 @@ github_pr_commands = ["source 'docker/construct/versions.env' && docker build --
 github_full_commands = ["source 'docker/construct/versions.env' && docker build --file 'docker/construct/Dockerfile' --build-arg SHELLFIRM_VERSION=\"$SHELLFIRM_VERSION\" --build-arg TIRITH_VERSION=\"$TIRITH_VERSION\" --build-arg MISE_VERSION=\"$MISE_VERSION\" --build-arg STARSHIP_VERSION=\"$STARSHIP_VERSION\" --tag local-ci:docker-construct-dockerfile 'docker/construct'"]
 velnor_pr_commands = ["source 'docker/construct/versions.env' && docker build --file 'docker/construct/Dockerfile' --build-arg SHELLFIRM_VERSION=\"$SHELLFIRM_VERSION\" --build-arg TIRITH_VERSION=\"$TIRITH_VERSION\" --build-arg MISE_VERSION=\"$MISE_VERSION\" --build-arg STARSHIP_VERSION=\"$STARSHIP_VERSION\" --tag local-ci:docker-construct-dockerfile 'docker/construct'"]
 velnor_full_commands = ["source 'docker/construct/versions.env' && docker build --file 'docker/construct/Dockerfile' --build-arg SHELLFIRM_VERSION=\"$SHELLFIRM_VERSION\" --build-arg TIRITH_VERSION=\"$TIRITH_VERSION\" --build-arg MISE_VERSION=\"$MISE_VERSION\" --build-arg STARSHIP_VERSION=\"$STARSHIP_VERSION\" --tag local-ci:docker-construct-dockerfile 'docker/construct'"]
+workflow_file = "ci-unit-docker.yml"
 
 [[unit]]
 id = "rust-arrayref"
@@ -60,6 +62,7 @@ velnor_full_commands = ["cd -- 'vendor/arrayref' && mbx fmt --manifest-path 'Car
 [unit.cache]
 key_files = [".cargo/**", "Cargo.toml", "vendor/arrayref/Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "rust-toolchain"]
 paths = ["~/.cargo/registry", "~/.cargo/git"]
+workflow_file = "ci-unit-rust.yml"
 
 [[unit]]
 id = "rust-jackin"
@@ -75,6 +78,7 @@ depends_on = ["rust-jackin-brand", "rust-jackin-build-meta", "rust-jackin-config
 [unit.cache]
 key_files = [".cargo/**", "Cargo.toml", "crates/jackin/Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "rust-toolchain"]
 paths = ["~/.cargo/registry", "~/.cargo/git"]
+workflow_file = "ci-unit-rust.yml"
 
 [[unit]]
 id = "rust-jackin-agent-status"
@@ -90,6 +94,7 @@ depends_on = ["rust-jackin-core", "rust-jackin-protocol"]
 [unit.cache]
 key_files = [".cargo/**", "Cargo.toml", "crates/jackin-agent-status/Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "rust-toolchain"]
 paths = ["~/.cargo/registry", "~/.cargo/git"]
+workflow_file = "ci-unit-rust.yml"
 
 [[unit]]
 id = "rust-jackin-brand"
@@ -104,6 +109,7 @@ velnor_full_commands = ["cd -- 'crates/jackin-brand' && mbx fmt --manifest-path 
 [unit.cache]
 key_files = [".cargo/**", "Cargo.toml", "crates/jackin-brand/Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "rust-toolchain"]
 paths = ["~/.cargo/registry", "~/.cargo/git"]
+workflow_file = "ci-unit-rust.yml"
 
 [[unit]]
 id = "rust-jackin-build-meta"
@@ -119,6 +125,7 @@ depends_on = ["rust-jackin-process"]
 [unit.cache]
 key_files = [".cargo/**", "Cargo.toml", "crates/jackin-build-meta/Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "rust-toolchain"]
 paths = ["~/.cargo/registry", "~/.cargo/git"]
+workflow_file = "ci-unit-rust.yml"
 
 [[unit]]
 id = "rust-jackin-capsule"
@@ -134,6 +141,7 @@ depends_on = ["rust-jackin-agent-status", "rust-jackin-brand", "rust-jackin-buil
 [unit.cache]
 key_files = [".cargo/**", "Cargo.toml", "crates/jackin-capsule/Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "rust-toolchain"]
 paths = ["~/.cargo/registry", "~/.cargo/git"]
+workflow_file = "ci-unit-rust.yml"
 
 [[unit]]
 id = "rust-jackin-config"
@@ -149,6 +157,7 @@ depends_on = ["rust-jackin-core", "rust-jackin-diagnostics", "rust-jackin-otlp-t
 [unit.cache]
 key_files = [".cargo/**", "Cargo.toml", "crates/jackin-config/Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "rust-toolchain"]
 paths = ["~/.cargo/registry", "~/.cargo/git"]
+workflow_file = "ci-unit-rust.yml"
 
 [[unit]]
 id = "rust-jackin-config-fuzz"
@@ -164,6 +173,7 @@ depends_on = ["rust-jackin-config"]
 [unit.cache]
 key_files = [".cargo/**", "Cargo.toml", "crates/jackin-config/fuzz/Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "rust-toolchain"]
 paths = ["~/.cargo/registry", "~/.cargo/git"]
+workflow_file = "ci-unit-rust.yml"
 
 [[unit]]
 id = "rust-jackin-console"
@@ -179,6 +189,7 @@ depends_on = ["rust-jackin-config", "rust-jackin-core", "rust-jackin-diagnostics
 [unit.cache]
 key_files = [".cargo/**", "Cargo.toml", "crates/jackin-console/Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "rust-toolchain"]
 paths = ["~/.cargo/registry", "~/.cargo/git"]
+workflow_file = "ci-unit-rust.yml"
 
 [[unit]]
 id = "rust-jackin-core"
@@ -193,6 +204,7 @@ velnor_full_commands = ["cd -- 'crates/jackin-core' && mbx fmt --manifest-path '
 [unit.cache]
 key_files = [".cargo/**", "Cargo.toml", "crates/jackin-core/Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "rust-toolchain"]
 paths = ["~/.cargo/registry", "~/.cargo/git"]
+workflow_file = "ci-unit-rust.yml"
 
 [[unit]]
 id = "rust-jackin-dev"
@@ -207,6 +219,7 @@ velnor_full_commands = ["cd -- 'crates/jackin-dev' && mbx fmt --manifest-path 'C
 [unit.cache]
 key_files = [".cargo/**", "Cargo.toml", "crates/jackin-dev/Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "rust-toolchain"]
 paths = ["~/.cargo/registry", "~/.cargo/git"]
+workflow_file = "ci-unit-rust.yml"
 
 [[unit]]
 id = "rust-jackin-diagnostics"
@@ -222,6 +235,7 @@ depends_on = ["rust-jackin-core", "rust-jackin-otlp-testbed", "rust-jackin-telem
 [unit.cache]
 key_files = [".cargo/**", "Cargo.toml", "crates/jackin-diagnostics/Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "rust-toolchain"]
 paths = ["~/.cargo/registry", "~/.cargo/git"]
+workflow_file = "ci-unit-rust.yml"
 
 [[unit]]
 id = "rust-jackin-docker"
@@ -237,6 +251,7 @@ depends_on = ["rust-jackin-build-meta", "rust-jackin-core", "rust-jackin-diagnos
 [unit.cache]
 key_files = [".cargo/**", "Cargo.toml", "crates/jackin-docker/Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "rust-toolchain"]
 paths = ["~/.cargo/registry", "~/.cargo/git"]
+workflow_file = "ci-unit-rust.yml"
 
 [[unit]]
 id = "rust-jackin-env"
@@ -252,6 +267,7 @@ depends_on = ["rust-jackin-config", "rust-jackin-core", "rust-jackin-diagnostics
 [unit.cache]
 key_files = [".cargo/**", "Cargo.toml", "crates/jackin-env/Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "rust-toolchain"]
 paths = ["~/.cargo/registry", "~/.cargo/git"]
+workflow_file = "ci-unit-rust.yml"
 
 [[unit]]
 id = "rust-jackin-env-fuzz"
@@ -267,6 +283,7 @@ depends_on = ["rust-jackin-config", "rust-jackin-core", "rust-jackin-env"]
 [unit.cache]
 key_files = [".cargo/**", "Cargo.toml", "crates/jackin-env/fuzz/Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "rust-toolchain"]
 paths = ["~/.cargo/registry", "~/.cargo/git"]
+workflow_file = "ci-unit-rust.yml"
 
 [[unit]]
 id = "rust-jackin-host"
@@ -282,6 +299,7 @@ depends_on = ["rust-jackin-core", "rust-jackin-diagnostics", "rust-jackin-docker
 [unit.cache]
 key_files = [".cargo/**", "Cargo.toml", "crates/jackin-host/Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "rust-toolchain"]
 paths = ["~/.cargo/registry", "~/.cargo/git"]
+workflow_file = "ci-unit-rust.yml"
 
 [[unit]]
 id = "rust-jackin-image"
@@ -297,6 +315,7 @@ depends_on = ["rust-jackin-build-meta", "rust-jackin-core", "rust-jackin-diagnos
 [unit.cache]
 key_files = [".cargo/**", "Cargo.toml", "crates/jackin-image/Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "rust-toolchain"]
 paths = ["~/.cargo/registry", "~/.cargo/git"]
+workflow_file = "ci-unit-rust.yml"
 
 [[unit]]
 id = "rust-jackin-instance"
@@ -312,6 +331,7 @@ depends_on = ["rust-jackin-config", "rust-jackin-core", "rust-jackin-diagnostics
 [unit.cache]
 key_files = [".cargo/**", "Cargo.toml", "crates/jackin-instance/Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "rust-toolchain"]
 paths = ["~/.cargo/registry", "~/.cargo/git"]
+workflow_file = "ci-unit-rust.yml"
 
 [[unit]]
 id = "rust-jackin-isolation"
@@ -327,6 +347,7 @@ depends_on = ["rust-jackin-config", "rust-jackin-core", "rust-jackin-diagnostics
 [unit.cache]
 key_files = [".cargo/**", "Cargo.toml", "crates/jackin-isolation/Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "rust-toolchain"]
 paths = ["~/.cargo/registry", "~/.cargo/git"]
+workflow_file = "ci-unit-rust-2.yml"
 
 [[unit]]
 id = "rust-jackin-launch"
@@ -342,6 +363,7 @@ depends_on = ["rust-jackin-brand", "rust-jackin-build-meta", "rust-jackin-core",
 [unit.cache]
 key_files = [".cargo/**", "Cargo.toml", "crates/jackin-launch/Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "rust-toolchain"]
 paths = ["~/.cargo/registry", "~/.cargo/git"]
+workflow_file = "ci-unit-rust-2.yml"
 
 [[unit]]
 id = "rust-jackin-lints"
@@ -356,6 +378,7 @@ velnor_full_commands = ["cd -- 'crates/jackin-lints' && mbx fmt --manifest-path 
 [unit.cache]
 key_files = [".cargo/**", "Cargo.toml", "crates/jackin-lints/Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "rust-toolchain"]
 paths = ["~/.cargo/registry", "~/.cargo/git"]
+workflow_file = "ci-unit-rust-2.yml"
 
 [[unit]]
 id = "rust-jackin-manifest"
@@ -371,6 +394,7 @@ depends_on = ["rust-jackin-config", "rust-jackin-core"]
 [unit.cache]
 key_files = [".cargo/**", "Cargo.toml", "crates/jackin-manifest/Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "rust-toolchain"]
 paths = ["~/.cargo/registry", "~/.cargo/git"]
+workflow_file = "ci-unit-rust-2.yml"
 
 [[unit]]
 id = "rust-jackin-manifest-fuzz"
@@ -386,6 +410,7 @@ depends_on = ["rust-jackin-manifest"]
 [unit.cache]
 key_files = [".cargo/**", "Cargo.toml", "crates/jackin-manifest/fuzz/Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "rust-toolchain"]
 paths = ["~/.cargo/registry", "~/.cargo/git"]
+workflow_file = "ci-unit-rust-2.yml"
 
 [[unit]]
 id = "rust-jackin-oppicker"
@@ -401,6 +426,7 @@ depends_on = ["rust-jackin-core", "rust-jackin-telemetry"]
 [unit.cache]
 key_files = [".cargo/**", "Cargo.toml", "crates/jackin-oppicker/Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "rust-toolchain"]
 paths = ["~/.cargo/registry", "~/.cargo/git"]
+workflow_file = "ci-unit-rust-2.yml"
 
 [[unit]]
 id = "rust-jackin-otlp-testbed"
@@ -416,6 +442,7 @@ depends_on = ["rust-jackin-telemetry"]
 [unit.cache]
 key_files = [".cargo/**", "Cargo.toml", "crates/jackin-otlp-testbed/Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "rust-toolchain"]
 paths = ["~/.cargo/registry", "~/.cargo/git"]
+workflow_file = "ci-unit-rust-2.yml"
 
 [[unit]]
 id = "rust-jackin-pr-trailers"
@@ -431,6 +458,7 @@ depends_on = ["rust-jackin-process"]
 [unit.cache]
 key_files = [".cargo/**", "Cargo.toml", "crates/jackin-pr-trailers/Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "rust-toolchain"]
 paths = ["~/.cargo/registry", "~/.cargo/git"]
+workflow_file = "ci-unit-rust-2.yml"
 
 [[unit]]
 id = "rust-jackin-process"
@@ -445,6 +473,7 @@ velnor_full_commands = ["cd -- 'crates/jackin-process' && mbx fmt --manifest-pat
 [unit.cache]
 key_files = [".cargo/**", "Cargo.toml", "crates/jackin-process/Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "rust-toolchain"]
 paths = ["~/.cargo/registry", "~/.cargo/git"]
+workflow_file = "ci-unit-rust-2.yml"
 
 [[unit]]
 id = "rust-jackin-protocol"
@@ -460,6 +489,7 @@ depends_on = ["rust-jackin-core", "rust-jackin-telemetry"]
 [unit.cache]
 key_files = [".cargo/**", "Cargo.toml", "crates/jackin-protocol/Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "rust-toolchain"]
 paths = ["~/.cargo/registry", "~/.cargo/git"]
+workflow_file = "ci-unit-rust-2.yml"
 
 [[unit]]
 id = "rust-jackin-protocol-fuzz"
@@ -475,6 +505,7 @@ depends_on = ["rust-jackin-protocol"]
 [unit.cache]
 key_files = [".cargo/**", "Cargo.toml", "crates/jackin-protocol/fuzz/Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "rust-toolchain"]
 paths = ["~/.cargo/registry", "~/.cargo/git"]
+workflow_file = "ci-unit-rust-2.yml"
 
 [[unit]]
 id = "rust-jackin-runtime"
@@ -490,6 +521,7 @@ depends_on = ["rust-jackin-brand", "rust-jackin-build-meta", "rust-jackin-config
 [unit.cache]
 key_files = [".cargo/**", "Cargo.toml", "crates/jackin-runtime/Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "rust-toolchain"]
 paths = ["~/.cargo/registry", "~/.cargo/git"]
+workflow_file = "ci-unit-rust-2.yml"
 
 [[unit]]
 id = "rust-jackin-telemetry"
@@ -504,6 +536,7 @@ velnor_full_commands = ["cd -- 'crates/jackin-telemetry' && mbx fmt --manifest-p
 [unit.cache]
 key_files = [".cargo/**", "Cargo.toml", "crates/jackin-telemetry/Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "rust-toolchain"]
 paths = ["~/.cargo/registry", "~/.cargo/git"]
+workflow_file = "ci-unit-rust-2.yml"
 
 [[unit]]
 id = "rust-jackin-test-support"
@@ -519,6 +552,7 @@ depends_on = ["rust-jackin-core", "rust-jackin-manifest"]
 [unit.cache]
 key_files = [".cargo/**", "Cargo.toml", "crates/jackin-test-support/Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "rust-toolchain"]
 paths = ["~/.cargo/registry", "~/.cargo/git"]
+workflow_file = "ci-unit-rust-2.yml"
 
 [[unit]]
 id = "rust-jackin-tui"
@@ -534,6 +568,7 @@ depends_on = ["rust-jackin-brand"]
 [unit.cache]
 key_files = [".cargo/**", "Cargo.toml", "crates/jackin-tui/Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "rust-toolchain"]
 paths = ["~/.cargo/registry", "~/.cargo/git"]
+workflow_file = "ci-unit-rust-2.yml"
 
 [[unit]]
 id = "rust-jackin-usage"
@@ -549,6 +584,7 @@ depends_on = ["rust-jackin-config", "rust-jackin-core", "rust-jackin-diagnostics
 [unit.cache]
 key_files = [".cargo/**", "Cargo.toml", "crates/jackin-usage/Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "rust-toolchain"]
 paths = ["~/.cargo/registry", "~/.cargo/git"]
+workflow_file = "ci-unit-rust-2.yml"
 
 [[unit]]
 id = "rust-jackin-usage-ffi"
@@ -564,6 +600,7 @@ depends_on = ["rust-jackin-config", "rust-jackin-core", "rust-jackin-env", "rust
 [unit.cache]
 key_files = [".cargo/**", "Cargo.toml", "crates/jackin-usage-ffi/Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "rust-toolchain"]
 paths = ["~/.cargo/registry", "~/.cargo/git"]
+workflow_file = "ci-unit-rust-2.yml"
 
 [[unit]]
 id = "rust-jackin-xtask"
@@ -579,6 +616,7 @@ depends_on = ["rust-jackin-process"]
 [unit.cache]
 key_files = [".cargo/**", "Cargo.toml", "crates/jackin-xtask/Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "rust-toolchain"]
 paths = ["~/.cargo/registry", "~/.cargo/git"]
+workflow_file = "ci-unit-rust-2.yml"
 
 [[unit]]
 id = "rust-policy"
@@ -593,6 +631,7 @@ velnor_full_commands = ["mbx deny check", "mbx audit"]
 [unit.cache]
 key_files = [".cargo/**", "Cargo.toml", "Cargo.lock"]
 paths = ["~/.cargo/registry", "~/.cargo/git"]
+workflow_file = "ci-unit-rust-2.yml"
 
 [[unit]]
 id = "swift-package-native"
@@ -607,6 +646,7 @@ velnor_full_commands = ["cargo xtask desktop xcframework", "cd -- 'native' && sw
 [unit.cache]
 key_files = ["native/Package.swift", "native/Package.resolved", "native/.swiftpm/Package.resolved"]
 paths = ["~/.swiftpm"]
+workflow_file = "ci-unit-swift.yml"
 
 [[unit]]
 id = "swift-package-native-design-prototypes-unifiedagentusage"
@@ -621,3 +661,4 @@ velnor_full_commands = ["cd -- 'native/Design/Prototypes/UnifiedAgentUsage' && s
 [unit.cache]
 key_files = ["native/Design/Prototypes/UnifiedAgentUsage/Package.swift", "native/Design/Prototypes/UnifiedAgentUsage/Package.resolved", "native/Design/Prototypes/UnifiedAgentUsage/.swiftpm/Package.resolved"]
 paths = ["~/.swiftpm"]
+workflow_file = "ci-unit-swift.yml"
