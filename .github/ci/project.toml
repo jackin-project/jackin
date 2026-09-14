@@ -32,10 +32,10 @@ github_pr_commands = ["cd -- 'docs' && bun install --frozen-lockfile", "cd -- 'd
 github_full_commands = ["cd -- 'docs' && bun install --frozen-lockfile", "cd -- 'docs' && bun run build", "cd -- 'docs' && bun run test"]
 velnor_pr_commands = ["cd -- 'docs' && bun install --frozen-lockfile", "cd -- 'docs' && bun run build", "cd -- 'docs' && bun run test"]
 velnor_full_commands = ["cd -- 'docs' && bun install --frozen-lockfile", "cd -- 'docs' && bun run build", "cd -- 'docs' && bun run test"]
+workflow_file = "ci-unit-bun.yml"
 [unit.cache]
 key_files = ["docs/package.json", "docs/bun.lock"]
 paths = ["~/.bun/install/cache"]
-workflow_file = "ci-unit-bun.yml"
 
 [[unit]]
 id = "docker-docker-construct"
@@ -59,10 +59,10 @@ github_pr_commands = ["cd -- 'vendor/arrayref' && mbx fmt --manifest-path 'Cargo
 github_full_commands = ["cd -- 'vendor/arrayref' && mbx fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'vendor/arrayref' && mbx clippy --locked --all-targets --all-features --package 'arrayref' -- -D warnings", "cd -- 'vendor/arrayref' && mbx nextest run --locked --all-features --package 'arrayref' --no-tests pass"]
 velnor_pr_commands = ["cd -- 'vendor/arrayref' && mbx fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'vendor/arrayref' && mbx clippy --locked --all-targets --all-features --package 'arrayref' -- -D warnings", "cd -- 'vendor/arrayref' && mbx nextest run --locked --all-features --package 'arrayref' --no-tests pass"]
 velnor_full_commands = ["cd -- 'vendor/arrayref' && mbx fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'vendor/arrayref' && mbx clippy --locked --all-targets --all-features --package 'arrayref' -- -D warnings", "cd -- 'vendor/arrayref' && mbx nextest run --locked --all-features --package 'arrayref' --no-tests pass"]
+workflow_file = "ci-unit-rust.yml"
 [unit.cache]
 key_files = [".cargo/**", "Cargo.toml", "vendor/arrayref/Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "rust-toolchain"]
 paths = ["~/.cargo/registry", "~/.cargo/git"]
-workflow_file = "ci-unit-rust.yml"
 
 [[unit]]
 id = "rust-jackin"
@@ -75,10 +75,10 @@ github_full_commands = ["cd -- 'crates/jackin' && mbx fmt --manifest-path 'Cargo
 velnor_pr_commands = ["cd -- 'crates/jackin' && mbx fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin' && mbx clippy --locked --all-targets --all-features --package 'jackin' -- -D warnings", "cd -- 'crates/jackin' && mbx nextest run --locked --all-features --package 'jackin' --no-tests pass"]
 velnor_full_commands = ["cd -- 'crates/jackin' && mbx fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin' && mbx clippy --locked --all-targets --all-features --package 'jackin' -- -D warnings", "cd -- 'crates/jackin' && mbx nextest run --locked --all-features --package 'jackin' --no-tests pass"]
 depends_on = ["rust-jackin-brand", "rust-jackin-build-meta", "rust-jackin-config", "rust-jackin-console", "rust-jackin-core", "rust-jackin-diagnostics", "rust-jackin-docker", "rust-jackin-env", "rust-jackin-image", "rust-jackin-launch", "rust-jackin-manifest", "rust-jackin-otlp-testbed", "rust-jackin-process", "rust-jackin-protocol", "rust-jackin-runtime", "rust-jackin-telemetry", "rust-jackin-test-support", "rust-jackin-tui", "rust-jackin-usage"]
+workflow_file = "ci-unit-rust.yml"
 [unit.cache]
 key_files = [".cargo/**", "Cargo.toml", "crates/jackin/Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "rust-toolchain"]
 paths = ["~/.cargo/registry", "~/.cargo/git"]
-workflow_file = "ci-unit-rust.yml"
 
 [[unit]]
 id = "rust-jackin-agent-status"
@@ -91,10 +91,10 @@ github_full_commands = ["cd -- 'crates/jackin-agent-status' && mbx fmt --manifes
 velnor_pr_commands = ["cd -- 'crates/jackin-agent-status' && mbx fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin-agent-status' && mbx clippy --locked --all-targets --all-features --package 'jackin-agent-status' -- -D warnings", "cd -- 'crates/jackin-agent-status' && mbx nextest run --locked --all-features --package 'jackin-agent-status' --no-tests pass"]
 velnor_full_commands = ["cd -- 'crates/jackin-agent-status' && mbx fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin-agent-status' && mbx clippy --locked --all-targets --all-features --package 'jackin-agent-status' -- -D warnings", "cd -- 'crates/jackin-agent-status' && mbx nextest run --locked --all-features --package 'jackin-agent-status' --no-tests pass"]
 depends_on = ["rust-jackin-core", "rust-jackin-protocol"]
+workflow_file = "ci-unit-rust.yml"
 [unit.cache]
 key_files = [".cargo/**", "Cargo.toml", "crates/jackin-agent-status/Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "rust-toolchain"]
 paths = ["~/.cargo/registry", "~/.cargo/git"]
-workflow_file = "ci-unit-rust.yml"
 
 [[unit]]
 id = "rust-jackin-brand"
@@ -106,10 +106,10 @@ github_pr_commands = ["cd -- 'crates/jackin-brand' && mbx fmt --manifest-path 'C
 github_full_commands = ["cd -- 'crates/jackin-brand' && mbx fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin-brand' && mbx clippy --locked --all-targets --all-features --package 'jackin-brand' -- -D warnings", "cd -- 'crates/jackin-brand' && mbx nextest run --locked --all-features --package 'jackin-brand' --no-tests pass"]
 velnor_pr_commands = ["cd -- 'crates/jackin-brand' && mbx fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin-brand' && mbx clippy --locked --all-targets --all-features --package 'jackin-brand' -- -D warnings", "cd -- 'crates/jackin-brand' && mbx nextest run --locked --all-features --package 'jackin-brand' --no-tests pass"]
 velnor_full_commands = ["cd -- 'crates/jackin-brand' && mbx fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin-brand' && mbx clippy --locked --all-targets --all-features --package 'jackin-brand' -- -D warnings", "cd -- 'crates/jackin-brand' && mbx nextest run --locked --all-features --package 'jackin-brand' --no-tests pass"]
+workflow_file = "ci-unit-rust.yml"
 [unit.cache]
 key_files = [".cargo/**", "Cargo.toml", "crates/jackin-brand/Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "rust-toolchain"]
 paths = ["~/.cargo/registry", "~/.cargo/git"]
-workflow_file = "ci-unit-rust.yml"
 
 [[unit]]
 id = "rust-jackin-build-meta"
@@ -122,10 +122,10 @@ github_full_commands = ["cd -- 'crates/jackin-build-meta' && mbx fmt --manifest-
 velnor_pr_commands = ["cd -- 'crates/jackin-build-meta' && mbx fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin-build-meta' && mbx clippy --locked --all-targets --all-features --package 'jackin-build-meta' -- -D warnings", "cd -- 'crates/jackin-build-meta' && mbx nextest run --locked --all-features --package 'jackin-build-meta' --no-tests pass"]
 velnor_full_commands = ["cd -- 'crates/jackin-build-meta' && mbx fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin-build-meta' && mbx clippy --locked --all-targets --all-features --package 'jackin-build-meta' -- -D warnings", "cd -- 'crates/jackin-build-meta' && mbx nextest run --locked --all-features --package 'jackin-build-meta' --no-tests pass"]
 depends_on = ["rust-jackin-process"]
+workflow_file = "ci-unit-rust.yml"
 [unit.cache]
 key_files = [".cargo/**", "Cargo.toml", "crates/jackin-build-meta/Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "rust-toolchain"]
 paths = ["~/.cargo/registry", "~/.cargo/git"]
-workflow_file = "ci-unit-rust.yml"
 
 [[unit]]
 id = "rust-jackin-capsule"
@@ -138,10 +138,10 @@ github_full_commands = ["cd -- 'crates/jackin-capsule' && mbx fmt --manifest-pat
 velnor_pr_commands = ["cd -- 'crates/jackin-capsule' && mbx fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin-capsule' && mbx clippy --locked --all-targets --all-features --package 'jackin-capsule' -- -D warnings", "cd -- 'crates/jackin-capsule' && mbx nextest run --locked --all-features --package 'jackin-capsule' --no-tests pass"]
 velnor_full_commands = ["cd -- 'crates/jackin-capsule' && mbx fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin-capsule' && mbx clippy --locked --all-targets --all-features --package 'jackin-capsule' -- -D warnings", "cd -- 'crates/jackin-capsule' && mbx nextest run --locked --all-features --package 'jackin-capsule' --no-tests pass"]
 depends_on = ["rust-jackin-agent-status", "rust-jackin-brand", "rust-jackin-build-meta", "rust-jackin-core", "rust-jackin-diagnostics", "rust-jackin-otlp-testbed", "rust-jackin-process", "rust-jackin-protocol", "rust-jackin-telemetry", "rust-jackin-tui", "rust-jackin-usage"]
+workflow_file = "ci-unit-rust.yml"
 [unit.cache]
 key_files = [".cargo/**", "Cargo.toml", "crates/jackin-capsule/Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "rust-toolchain"]
 paths = ["~/.cargo/registry", "~/.cargo/git"]
-workflow_file = "ci-unit-rust.yml"
 
 [[unit]]
 id = "rust-jackin-config"
@@ -154,10 +154,10 @@ github_full_commands = ["cd -- 'crates/jackin-config' && mbx fmt --manifest-path
 velnor_pr_commands = ["cd -- 'crates/jackin-config' && mbx fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin-config' && mbx clippy --locked --all-targets --all-features --package 'jackin-config' -- -D warnings", "cd -- 'crates/jackin-config' && mbx nextest run --locked --all-features --package 'jackin-config' --no-tests pass"]
 velnor_full_commands = ["cd -- 'crates/jackin-config' && mbx fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin-config' && mbx clippy --locked --all-targets --all-features --package 'jackin-config' -- -D warnings", "cd -- 'crates/jackin-config' && mbx nextest run --locked --all-features --package 'jackin-config' --no-tests pass"]
 depends_on = ["rust-jackin-core", "rust-jackin-diagnostics", "rust-jackin-otlp-testbed", "rust-jackin-telemetry"]
+workflow_file = "ci-unit-rust.yml"
 [unit.cache]
 key_files = [".cargo/**", "Cargo.toml", "crates/jackin-config/Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "rust-toolchain"]
 paths = ["~/.cargo/registry", "~/.cargo/git"]
-workflow_file = "ci-unit-rust.yml"
 
 [[unit]]
 id = "rust-jackin-config-fuzz"
@@ -170,10 +170,10 @@ github_full_commands = ["cd -- 'crates/jackin-config/fuzz' && mbx fmt --manifest
 velnor_pr_commands = ["cd -- 'crates/jackin-config/fuzz' && mbx fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin-config/fuzz' && mbx clippy --locked --all-targets --all-features --package 'jackin-config-fuzz' -- -D warnings", "cd -- 'crates/jackin-config/fuzz' && mbx nextest run --locked --all-features --package 'jackin-config-fuzz' --no-tests pass"]
 velnor_full_commands = ["cd -- 'crates/jackin-config/fuzz' && mbx fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin-config/fuzz' && mbx clippy --locked --all-targets --all-features --package 'jackin-config-fuzz' -- -D warnings", "cd -- 'crates/jackin-config/fuzz' && mbx nextest run --locked --all-features --package 'jackin-config-fuzz' --no-tests pass"]
 depends_on = ["rust-jackin-config"]
+workflow_file = "ci-unit-rust.yml"
 [unit.cache]
 key_files = [".cargo/**", "Cargo.toml", "crates/jackin-config/fuzz/Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "rust-toolchain"]
 paths = ["~/.cargo/registry", "~/.cargo/git"]
-workflow_file = "ci-unit-rust.yml"
 
 [[unit]]
 id = "rust-jackin-console"
@@ -186,10 +186,10 @@ github_full_commands = ["cd -- 'crates/jackin-console' && mbx fmt --manifest-pat
 velnor_pr_commands = ["cd -- 'crates/jackin-console' && mbx fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin-console' && mbx clippy --locked --all-targets --all-features --package 'jackin-console' -- -D warnings", "cd -- 'crates/jackin-console' && mbx nextest run --locked --all-features --package 'jackin-console' --no-tests pass"]
 velnor_full_commands = ["cd -- 'crates/jackin-console' && mbx fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin-console' && mbx clippy --locked --all-targets --all-features --package 'jackin-console' -- -D warnings", "cd -- 'crates/jackin-console' && mbx nextest run --locked --all-features --package 'jackin-console' --no-tests pass"]
 depends_on = ["rust-jackin-config", "rust-jackin-core", "rust-jackin-diagnostics", "rust-jackin-env", "rust-jackin-oppicker", "rust-jackin-otlp-testbed", "rust-jackin-protocol", "rust-jackin-telemetry", "rust-jackin-tui"]
+workflow_file = "ci-unit-rust.yml"
 [unit.cache]
 key_files = [".cargo/**", "Cargo.toml", "crates/jackin-console/Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "rust-toolchain"]
 paths = ["~/.cargo/registry", "~/.cargo/git"]
-workflow_file = "ci-unit-rust.yml"
 
 [[unit]]
 id = "rust-jackin-core"
@@ -201,10 +201,10 @@ github_pr_commands = ["cd -- 'crates/jackin-core' && mbx fmt --manifest-path 'Ca
 github_full_commands = ["cd -- 'crates/jackin-core' && mbx fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin-core' && mbx clippy --locked --all-targets --all-features --package 'jackin-core' -- -D warnings", "cd -- 'crates/jackin-core' && mbx nextest run --locked --all-features --package 'jackin-core' --no-tests pass"]
 velnor_pr_commands = ["cd -- 'crates/jackin-core' && mbx fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin-core' && mbx clippy --locked --all-targets --all-features --package 'jackin-core' -- -D warnings", "cd -- 'crates/jackin-core' && mbx nextest run --locked --all-features --package 'jackin-core' --no-tests pass"]
 velnor_full_commands = ["cd -- 'crates/jackin-core' && mbx fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin-core' && mbx clippy --locked --all-targets --all-features --package 'jackin-core' -- -D warnings", "cd -- 'crates/jackin-core' && mbx nextest run --locked --all-features --package 'jackin-core' --no-tests pass"]
+workflow_file = "ci-unit-rust.yml"
 [unit.cache]
 key_files = [".cargo/**", "Cargo.toml", "crates/jackin-core/Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "rust-toolchain"]
 paths = ["~/.cargo/registry", "~/.cargo/git"]
-workflow_file = "ci-unit-rust.yml"
 
 [[unit]]
 id = "rust-jackin-dev"
@@ -216,10 +216,10 @@ github_pr_commands = ["cd -- 'crates/jackin-dev' && mbx fmt --manifest-path 'Car
 github_full_commands = ["cd -- 'crates/jackin-dev' && mbx fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin-dev' && mbx clippy --locked --all-targets --all-features --package 'jackin-dev' -- -D warnings", "cd -- 'crates/jackin-dev' && mbx nextest run --locked --all-features --package 'jackin-dev' --no-tests pass"]
 velnor_pr_commands = ["cd -- 'crates/jackin-dev' && mbx fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin-dev' && mbx clippy --locked --all-targets --all-features --package 'jackin-dev' -- -D warnings", "cd -- 'crates/jackin-dev' && mbx nextest run --locked --all-features --package 'jackin-dev' --no-tests pass"]
 velnor_full_commands = ["cd -- 'crates/jackin-dev' && mbx fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin-dev' && mbx clippy --locked --all-targets --all-features --package 'jackin-dev' -- -D warnings", "cd -- 'crates/jackin-dev' && mbx nextest run --locked --all-features --package 'jackin-dev' --no-tests pass"]
+workflow_file = "ci-unit-rust.yml"
 [unit.cache]
 key_files = [".cargo/**", "Cargo.toml", "crates/jackin-dev/Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "rust-toolchain"]
 paths = ["~/.cargo/registry", "~/.cargo/git"]
-workflow_file = "ci-unit-rust.yml"
 
 [[unit]]
 id = "rust-jackin-diagnostics"
@@ -232,10 +232,10 @@ github_full_commands = ["cd -- 'crates/jackin-diagnostics' && mbx fmt --manifest
 velnor_pr_commands = ["cd -- 'crates/jackin-diagnostics' && mbx fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin-diagnostics' && mbx clippy --locked --all-targets --all-features --package 'jackin-diagnostics' -- -D warnings", "cd -- 'crates/jackin-diagnostics' && mbx nextest run --locked --all-features --package 'jackin-diagnostics' --no-tests pass"]
 velnor_full_commands = ["cd -- 'crates/jackin-diagnostics' && mbx fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin-diagnostics' && mbx clippy --locked --all-targets --all-features --package 'jackin-diagnostics' -- -D warnings", "cd -- 'crates/jackin-diagnostics' && mbx nextest run --locked --all-features --package 'jackin-diagnostics' --no-tests pass"]
 depends_on = ["rust-jackin-core", "rust-jackin-otlp-testbed", "rust-jackin-telemetry"]
+workflow_file = "ci-unit-rust.yml"
 [unit.cache]
 key_files = [".cargo/**", "Cargo.toml", "crates/jackin-diagnostics/Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "rust-toolchain"]
 paths = ["~/.cargo/registry", "~/.cargo/git"]
-workflow_file = "ci-unit-rust.yml"
 
 [[unit]]
 id = "rust-jackin-docker"
@@ -248,10 +248,10 @@ github_full_commands = ["cd -- 'crates/jackin-docker' && mbx fmt --manifest-path
 velnor_pr_commands = ["cd -- 'crates/jackin-docker' && mbx fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin-docker' && mbx clippy --locked --all-targets --all-features --package 'jackin-docker' -- -D warnings", "cd -- 'crates/jackin-docker' && mbx nextest run --locked --all-features --package 'jackin-docker' --no-tests pass"]
 velnor_full_commands = ["cd -- 'crates/jackin-docker' && mbx fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin-docker' && mbx clippy --locked --all-targets --all-features --package 'jackin-docker' -- -D warnings", "cd -- 'crates/jackin-docker' && mbx nextest run --locked --all-features --package 'jackin-docker' --no-tests pass"]
 depends_on = ["rust-jackin-build-meta", "rust-jackin-core", "rust-jackin-diagnostics", "rust-jackin-otlp-testbed", "rust-jackin-process", "rust-jackin-telemetry"]
+workflow_file = "ci-unit-rust.yml"
 [unit.cache]
 key_files = [".cargo/**", "Cargo.toml", "crates/jackin-docker/Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "rust-toolchain"]
 paths = ["~/.cargo/registry", "~/.cargo/git"]
-workflow_file = "ci-unit-rust.yml"
 
 [[unit]]
 id = "rust-jackin-env"
@@ -264,10 +264,10 @@ github_full_commands = ["cd -- 'crates/jackin-env' && mbx fmt --manifest-path 'C
 velnor_pr_commands = ["cd -- 'crates/jackin-env' && mbx fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin-env' && mbx clippy --locked --all-targets --all-features --package 'jackin-env' -- -D warnings", "cd -- 'crates/jackin-env' && mbx nextest run --locked --all-features --package 'jackin-env' --no-tests pass"]
 velnor_full_commands = ["cd -- 'crates/jackin-env' && mbx fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin-env' && mbx clippy --locked --all-targets --all-features --package 'jackin-env' -- -D warnings", "cd -- 'crates/jackin-env' && mbx nextest run --locked --all-features --package 'jackin-env' --no-tests pass"]
 depends_on = ["rust-jackin-config", "rust-jackin-core", "rust-jackin-diagnostics", "rust-jackin-process", "rust-jackin-protocol", "rust-jackin-telemetry"]
+workflow_file = "ci-unit-rust.yml"
 [unit.cache]
 key_files = [".cargo/**", "Cargo.toml", "crates/jackin-env/Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "rust-toolchain"]
 paths = ["~/.cargo/registry", "~/.cargo/git"]
-workflow_file = "ci-unit-rust.yml"
 
 [[unit]]
 id = "rust-jackin-env-fuzz"
@@ -280,10 +280,10 @@ github_full_commands = ["cd -- 'crates/jackin-env/fuzz' && mbx fmt --manifest-pa
 velnor_pr_commands = ["cd -- 'crates/jackin-env/fuzz' && mbx fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin-env/fuzz' && mbx clippy --locked --all-targets --all-features --package 'jackin-env-fuzz' -- -D warnings", "cd -- 'crates/jackin-env/fuzz' && mbx nextest run --locked --all-features --package 'jackin-env-fuzz' --no-tests pass"]
 velnor_full_commands = ["cd -- 'crates/jackin-env/fuzz' && mbx fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin-env/fuzz' && mbx clippy --locked --all-targets --all-features --package 'jackin-env-fuzz' -- -D warnings", "cd -- 'crates/jackin-env/fuzz' && mbx nextest run --locked --all-features --package 'jackin-env-fuzz' --no-tests pass"]
 depends_on = ["rust-jackin-config", "rust-jackin-core", "rust-jackin-env"]
+workflow_file = "ci-unit-rust.yml"
 [unit.cache]
 key_files = [".cargo/**", "Cargo.toml", "crates/jackin-env/fuzz/Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "rust-toolchain"]
 paths = ["~/.cargo/registry", "~/.cargo/git"]
-workflow_file = "ci-unit-rust.yml"
 
 [[unit]]
 id = "rust-jackin-host"
@@ -296,10 +296,10 @@ github_full_commands = ["cd -- 'crates/jackin-host' && mbx fmt --manifest-path '
 velnor_pr_commands = ["cd -- 'crates/jackin-host' && mbx fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin-host' && mbx clippy --locked --all-targets --all-features --package 'jackin-host' -- -D warnings", "cd -- 'crates/jackin-host' && mbx nextest run --locked --all-features --package 'jackin-host' --no-tests pass"]
 velnor_full_commands = ["cd -- 'crates/jackin-host' && mbx fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin-host' && mbx clippy --locked --all-targets --all-features --package 'jackin-host' -- -D warnings", "cd -- 'crates/jackin-host' && mbx nextest run --locked --all-features --package 'jackin-host' --no-tests pass"]
 depends_on = ["rust-jackin-core", "rust-jackin-diagnostics", "rust-jackin-docker", "rust-jackin-process", "rust-jackin-protocol", "rust-jackin-telemetry", "rust-jackin-test-support"]
+workflow_file = "ci-unit-rust.yml"
 [unit.cache]
 key_files = [".cargo/**", "Cargo.toml", "crates/jackin-host/Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "rust-toolchain"]
 paths = ["~/.cargo/registry", "~/.cargo/git"]
-workflow_file = "ci-unit-rust.yml"
 
 [[unit]]
 id = "rust-jackin-image"
@@ -312,10 +312,10 @@ github_full_commands = ["cd -- 'crates/jackin-image' && mbx fmt --manifest-path 
 velnor_pr_commands = ["cd -- 'crates/jackin-image' && mbx fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin-image' && mbx clippy --locked --all-targets --all-features --package 'jackin-image' -- -D warnings", "cd -- 'crates/jackin-image' && mbx nextest run --locked --all-features --package 'jackin-image' --no-tests pass"]
 velnor_full_commands = ["cd -- 'crates/jackin-image' && mbx fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin-image' && mbx clippy --locked --all-targets --all-features --package 'jackin-image' -- -D warnings", "cd -- 'crates/jackin-image' && mbx nextest run --locked --all-features --package 'jackin-image' --no-tests pass"]
 depends_on = ["rust-jackin-build-meta", "rust-jackin-core", "rust-jackin-diagnostics", "rust-jackin-docker", "rust-jackin-manifest", "rust-jackin-otlp-testbed", "rust-jackin-process", "rust-jackin-telemetry"]
+workflow_file = "ci-unit-rust.yml"
 [unit.cache]
 key_files = [".cargo/**", "Cargo.toml", "crates/jackin-image/Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "rust-toolchain"]
 paths = ["~/.cargo/registry", "~/.cargo/git"]
-workflow_file = "ci-unit-rust.yml"
 
 [[unit]]
 id = "rust-jackin-instance"
@@ -328,10 +328,10 @@ github_full_commands = ["cd -- 'crates/jackin-instance' && mbx fmt --manifest-pa
 velnor_pr_commands = ["cd -- 'crates/jackin-instance' && mbx fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin-instance' && mbx clippy --locked --all-targets --all-features --package 'jackin-instance' -- -D warnings", "cd -- 'crates/jackin-instance' && mbx nextest run --locked --all-features --package 'jackin-instance' --no-tests pass"]
 velnor_full_commands = ["cd -- 'crates/jackin-instance' && mbx fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin-instance' && mbx clippy --locked --all-targets --all-features --package 'jackin-instance' -- -D warnings", "cd -- 'crates/jackin-instance' && mbx nextest run --locked --all-features --package 'jackin-instance' --no-tests pass"]
 depends_on = ["rust-jackin-config", "rust-jackin-core", "rust-jackin-diagnostics", "rust-jackin-manifest", "rust-jackin-process", "rust-jackin-telemetry"]
+workflow_file = "ci-unit-rust.yml"
 [unit.cache]
 key_files = [".cargo/**", "Cargo.toml", "crates/jackin-instance/Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "rust-toolchain"]
 paths = ["~/.cargo/registry", "~/.cargo/git"]
-workflow_file = "ci-unit-rust.yml"
 
 [[unit]]
 id = "rust-jackin-isolation"
@@ -344,10 +344,10 @@ github_full_commands = ["cd -- 'crates/jackin-isolation' && mbx fmt --manifest-p
 velnor_pr_commands = ["cd -- 'crates/jackin-isolation' && mbx fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin-isolation' && mbx clippy --locked --all-targets --all-features --package 'jackin-isolation' -- -D warnings", "cd -- 'crates/jackin-isolation' && mbx nextest run --locked --all-features --package 'jackin-isolation' --no-tests pass"]
 velnor_full_commands = ["cd -- 'crates/jackin-isolation' && mbx fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin-isolation' && mbx clippy --locked --all-targets --all-features --package 'jackin-isolation' -- -D warnings", "cd -- 'crates/jackin-isolation' && mbx nextest run --locked --all-features --package 'jackin-isolation' --no-tests pass"]
 depends_on = ["rust-jackin-config", "rust-jackin-core", "rust-jackin-diagnostics", "rust-jackin-docker", "rust-jackin-process", "rust-jackin-protocol", "rust-jackin-telemetry", "rust-jackin-test-support"]
+workflow_file = "ci-unit-rust-2.yml"
 [unit.cache]
 key_files = [".cargo/**", "Cargo.toml", "crates/jackin-isolation/Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "rust-toolchain"]
 paths = ["~/.cargo/registry", "~/.cargo/git"]
-workflow_file = "ci-unit-rust-2.yml"
 
 [[unit]]
 id = "rust-jackin-launch"
@@ -360,10 +360,10 @@ github_full_commands = ["cd -- 'crates/jackin-launch' && mbx fmt --manifest-path
 velnor_pr_commands = ["cd -- 'crates/jackin-launch' && mbx fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin-launch' && mbx clippy --locked --all-targets --all-features --package 'jackin-launch' -- -D warnings", "cd -- 'crates/jackin-launch' && mbx nextest run --locked --all-features --package 'jackin-launch' --no-tests pass"]
 velnor_full_commands = ["cd -- 'crates/jackin-launch' && mbx fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin-launch' && mbx clippy --locked --all-targets --all-features --package 'jackin-launch' -- -D warnings", "cd -- 'crates/jackin-launch' && mbx nextest run --locked --all-features --package 'jackin-launch' --no-tests pass"]
 depends_on = ["rust-jackin-brand", "rust-jackin-build-meta", "rust-jackin-core", "rust-jackin-diagnostics", "rust-jackin-telemetry", "rust-jackin-tui"]
+workflow_file = "ci-unit-rust-2.yml"
 [unit.cache]
 key_files = [".cargo/**", "Cargo.toml", "crates/jackin-launch/Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "rust-toolchain"]
 paths = ["~/.cargo/registry", "~/.cargo/git"]
-workflow_file = "ci-unit-rust-2.yml"
 
 [[unit]]
 id = "rust-jackin-lints"
@@ -375,10 +375,10 @@ github_pr_commands = ["cd -- 'crates/jackin-lints' && mbx fmt --manifest-path 'C
 github_full_commands = ["cd -- 'crates/jackin-lints' && mbx fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin-lints' && mbx clippy --locked --all-targets --all-features --package 'jackin_lints' -- -D warnings", "cd -- 'crates/jackin-lints' && mbx nextest run --locked --all-features --package 'jackin_lints' --no-tests pass"]
 velnor_pr_commands = ["cd -- 'crates/jackin-lints' && mbx fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin-lints' && mbx clippy --locked --all-targets --all-features --package 'jackin_lints' -- -D warnings", "cd -- 'crates/jackin-lints' && mbx nextest run --locked --all-features --package 'jackin_lints' --no-tests pass"]
 velnor_full_commands = ["cd -- 'crates/jackin-lints' && mbx fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin-lints' && mbx clippy --locked --all-targets --all-features --package 'jackin_lints' -- -D warnings", "cd -- 'crates/jackin-lints' && mbx nextest run --locked --all-features --package 'jackin_lints' --no-tests pass"]
+workflow_file = "ci-unit-rust-2.yml"
 [unit.cache]
 key_files = [".cargo/**", "Cargo.toml", "crates/jackin-lints/Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "rust-toolchain"]
 paths = ["~/.cargo/registry", "~/.cargo/git"]
-workflow_file = "ci-unit-rust-2.yml"
 
 [[unit]]
 id = "rust-jackin-manifest"
@@ -391,10 +391,10 @@ github_full_commands = ["cd -- 'crates/jackin-manifest' && mbx fmt --manifest-pa
 velnor_pr_commands = ["cd -- 'crates/jackin-manifest' && mbx fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin-manifest' && mbx clippy --locked --all-targets --all-features --package 'jackin-manifest' -- -D warnings", "cd -- 'crates/jackin-manifest' && mbx nextest run --locked --all-features --package 'jackin-manifest' --no-tests pass"]
 velnor_full_commands = ["cd -- 'crates/jackin-manifest' && mbx fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin-manifest' && mbx clippy --locked --all-targets --all-features --package 'jackin-manifest' -- -D warnings", "cd -- 'crates/jackin-manifest' && mbx nextest run --locked --all-features --package 'jackin-manifest' --no-tests pass"]
 depends_on = ["rust-jackin-config", "rust-jackin-core"]
+workflow_file = "ci-unit-rust-2.yml"
 [unit.cache]
 key_files = [".cargo/**", "Cargo.toml", "crates/jackin-manifest/Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "rust-toolchain"]
 paths = ["~/.cargo/registry", "~/.cargo/git"]
-workflow_file = "ci-unit-rust-2.yml"
 
 [[unit]]
 id = "rust-jackin-manifest-fuzz"
@@ -407,10 +407,10 @@ github_full_commands = ["cd -- 'crates/jackin-manifest/fuzz' && mbx fmt --manife
 velnor_pr_commands = ["cd -- 'crates/jackin-manifest/fuzz' && mbx fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin-manifest/fuzz' && mbx clippy --locked --all-targets --all-features --package 'jackin-manifest-fuzz' -- -D warnings", "cd -- 'crates/jackin-manifest/fuzz' && mbx nextest run --locked --all-features --package 'jackin-manifest-fuzz' --no-tests pass"]
 velnor_full_commands = ["cd -- 'crates/jackin-manifest/fuzz' && mbx fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin-manifest/fuzz' && mbx clippy --locked --all-targets --all-features --package 'jackin-manifest-fuzz' -- -D warnings", "cd -- 'crates/jackin-manifest/fuzz' && mbx nextest run --locked --all-features --package 'jackin-manifest-fuzz' --no-tests pass"]
 depends_on = ["rust-jackin-manifest"]
+workflow_file = "ci-unit-rust-2.yml"
 [unit.cache]
 key_files = [".cargo/**", "Cargo.toml", "crates/jackin-manifest/fuzz/Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "rust-toolchain"]
 paths = ["~/.cargo/registry", "~/.cargo/git"]
-workflow_file = "ci-unit-rust-2.yml"
 
 [[unit]]
 id = "rust-jackin-oppicker"
@@ -423,10 +423,10 @@ github_full_commands = ["cd -- 'crates/jackin-oppicker' && mbx fmt --manifest-pa
 velnor_pr_commands = ["cd -- 'crates/jackin-oppicker' && mbx fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin-oppicker' && mbx clippy --locked --all-targets --all-features --package 'jackin-oppicker' -- -D warnings", "cd -- 'crates/jackin-oppicker' && mbx nextest run --locked --all-features --package 'jackin-oppicker' --no-tests pass"]
 velnor_full_commands = ["cd -- 'crates/jackin-oppicker' && mbx fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin-oppicker' && mbx clippy --locked --all-targets --all-features --package 'jackin-oppicker' -- -D warnings", "cd -- 'crates/jackin-oppicker' && mbx nextest run --locked --all-features --package 'jackin-oppicker' --no-tests pass"]
 depends_on = ["rust-jackin-core", "rust-jackin-telemetry"]
+workflow_file = "ci-unit-rust-2.yml"
 [unit.cache]
 key_files = [".cargo/**", "Cargo.toml", "crates/jackin-oppicker/Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "rust-toolchain"]
 paths = ["~/.cargo/registry", "~/.cargo/git"]
-workflow_file = "ci-unit-rust-2.yml"
 
 [[unit]]
 id = "rust-jackin-otlp-testbed"
@@ -439,10 +439,10 @@ github_full_commands = ["cd -- 'crates/jackin-otlp-testbed' && mbx fmt --manifes
 velnor_pr_commands = ["cd -- 'crates/jackin-otlp-testbed' && mbx fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin-otlp-testbed' && mbx clippy --locked --all-targets --all-features --package 'jackin-otlp-testbed' -- -D warnings", "cd -- 'crates/jackin-otlp-testbed' && mbx nextest run --locked --all-features --package 'jackin-otlp-testbed' --no-tests pass"]
 velnor_full_commands = ["cd -- 'crates/jackin-otlp-testbed' && mbx fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin-otlp-testbed' && mbx clippy --locked --all-targets --all-features --package 'jackin-otlp-testbed' -- -D warnings", "cd -- 'crates/jackin-otlp-testbed' && mbx nextest run --locked --all-features --package 'jackin-otlp-testbed' --no-tests pass"]
 depends_on = ["rust-jackin-telemetry"]
+workflow_file = "ci-unit-rust-2.yml"
 [unit.cache]
 key_files = [".cargo/**", "Cargo.toml", "crates/jackin-otlp-testbed/Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "rust-toolchain"]
 paths = ["~/.cargo/registry", "~/.cargo/git"]
-workflow_file = "ci-unit-rust-2.yml"
 
 [[unit]]
 id = "rust-jackin-pr-trailers"
@@ -455,10 +455,10 @@ github_full_commands = ["cd -- 'crates/jackin-pr-trailers' && mbx fmt --manifest
 velnor_pr_commands = ["cd -- 'crates/jackin-pr-trailers' && mbx fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin-pr-trailers' && mbx clippy --locked --all-targets --all-features --package 'jackin-pr-trailers' -- -D warnings", "cd -- 'crates/jackin-pr-trailers' && mbx nextest run --locked --all-features --package 'jackin-pr-trailers' --no-tests pass"]
 velnor_full_commands = ["cd -- 'crates/jackin-pr-trailers' && mbx fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin-pr-trailers' && mbx clippy --locked --all-targets --all-features --package 'jackin-pr-trailers' -- -D warnings", "cd -- 'crates/jackin-pr-trailers' && mbx nextest run --locked --all-features --package 'jackin-pr-trailers' --no-tests pass"]
 depends_on = ["rust-jackin-process"]
+workflow_file = "ci-unit-rust-2.yml"
 [unit.cache]
 key_files = [".cargo/**", "Cargo.toml", "crates/jackin-pr-trailers/Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "rust-toolchain"]
 paths = ["~/.cargo/registry", "~/.cargo/git"]
-workflow_file = "ci-unit-rust-2.yml"
 
 [[unit]]
 id = "rust-jackin-process"
@@ -470,10 +470,10 @@ github_pr_commands = ["cd -- 'crates/jackin-process' && mbx fmt --manifest-path 
 github_full_commands = ["cd -- 'crates/jackin-process' && mbx fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin-process' && mbx clippy --locked --all-targets --all-features --package 'jackin-process' -- -D warnings", "cd -- 'crates/jackin-process' && mbx nextest run --locked --all-features --package 'jackin-process' --no-tests pass"]
 velnor_pr_commands = ["cd -- 'crates/jackin-process' && mbx fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin-process' && mbx clippy --locked --all-targets --all-features --package 'jackin-process' -- -D warnings", "cd -- 'crates/jackin-process' && mbx nextest run --locked --all-features --package 'jackin-process' --no-tests pass"]
 velnor_full_commands = ["cd -- 'crates/jackin-process' && mbx fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin-process' && mbx clippy --locked --all-targets --all-features --package 'jackin-process' -- -D warnings", "cd -- 'crates/jackin-process' && mbx nextest run --locked --all-features --package 'jackin-process' --no-tests pass"]
+workflow_file = "ci-unit-rust-2.yml"
 [unit.cache]
 key_files = [".cargo/**", "Cargo.toml", "crates/jackin-process/Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "rust-toolchain"]
 paths = ["~/.cargo/registry", "~/.cargo/git"]
-workflow_file = "ci-unit-rust-2.yml"
 
 [[unit]]
 id = "rust-jackin-protocol"
@@ -486,10 +486,10 @@ github_full_commands = ["cd -- 'crates/jackin-protocol' && mbx fmt --manifest-pa
 velnor_pr_commands = ["cd -- 'crates/jackin-protocol' && mbx fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin-protocol' && mbx clippy --locked --all-targets --all-features --package 'jackin-protocol' -- -D warnings", "cd -- 'crates/jackin-protocol' && mbx nextest run --locked --all-features --package 'jackin-protocol' --no-tests pass"]
 velnor_full_commands = ["cd -- 'crates/jackin-protocol' && mbx fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin-protocol' && mbx clippy --locked --all-targets --all-features --package 'jackin-protocol' -- -D warnings", "cd -- 'crates/jackin-protocol' && mbx nextest run --locked --all-features --package 'jackin-protocol' --no-tests pass"]
 depends_on = ["rust-jackin-core", "rust-jackin-telemetry"]
+workflow_file = "ci-unit-rust-2.yml"
 [unit.cache]
 key_files = [".cargo/**", "Cargo.toml", "crates/jackin-protocol/Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "rust-toolchain"]
 paths = ["~/.cargo/registry", "~/.cargo/git"]
-workflow_file = "ci-unit-rust-2.yml"
 
 [[unit]]
 id = "rust-jackin-protocol-fuzz"
@@ -502,10 +502,10 @@ github_full_commands = ["cd -- 'crates/jackin-protocol/fuzz' && mbx fmt --manife
 velnor_pr_commands = ["cd -- 'crates/jackin-protocol/fuzz' && mbx fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin-protocol/fuzz' && mbx clippy --locked --all-targets --all-features --package 'jackin-protocol-fuzz' -- -D warnings", "cd -- 'crates/jackin-protocol/fuzz' && mbx nextest run --locked --all-features --package 'jackin-protocol-fuzz' --no-tests pass"]
 velnor_full_commands = ["cd -- 'crates/jackin-protocol/fuzz' && mbx fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin-protocol/fuzz' && mbx clippy --locked --all-targets --all-features --package 'jackin-protocol-fuzz' -- -D warnings", "cd -- 'crates/jackin-protocol/fuzz' && mbx nextest run --locked --all-features --package 'jackin-protocol-fuzz' --no-tests pass"]
 depends_on = ["rust-jackin-protocol"]
+workflow_file = "ci-unit-rust-2.yml"
 [unit.cache]
 key_files = [".cargo/**", "Cargo.toml", "crates/jackin-protocol/fuzz/Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "rust-toolchain"]
 paths = ["~/.cargo/registry", "~/.cargo/git"]
-workflow_file = "ci-unit-rust-2.yml"
 
 [[unit]]
 id = "rust-jackin-runtime"
@@ -518,10 +518,10 @@ github_full_commands = ["cd -- 'crates/jackin-runtime' && mbx fmt --manifest-pat
 velnor_pr_commands = ["cd -- 'crates/jackin-runtime' && mbx fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin-runtime' && mbx clippy --locked --all-targets --all-features --package 'jackin-runtime' -- -D warnings", "cd -- 'crates/jackin-runtime' && mbx nextest run --locked --all-features --package 'jackin-runtime' --no-tests pass"]
 velnor_full_commands = ["cd -- 'crates/jackin-runtime' && mbx fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin-runtime' && mbx clippy --locked --all-targets --all-features --package 'jackin-runtime' -- -D warnings", "cd -- 'crates/jackin-runtime' && mbx nextest run --locked --all-features --package 'jackin-runtime' --no-tests pass"]
 depends_on = ["rust-jackin-brand", "rust-jackin-build-meta", "rust-jackin-config", "rust-jackin-core", "rust-jackin-diagnostics", "rust-jackin-docker", "rust-jackin-env", "rust-jackin-host", "rust-jackin-image", "rust-jackin-instance", "rust-jackin-isolation", "rust-jackin-launch", "rust-jackin-manifest", "rust-jackin-otlp-testbed", "rust-jackin-process", "rust-jackin-protocol", "rust-jackin-telemetry", "rust-jackin-test-support", "rust-jackin-usage"]
+workflow_file = "ci-unit-rust-2.yml"
 [unit.cache]
 key_files = [".cargo/**", "Cargo.toml", "crates/jackin-runtime/Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "rust-toolchain"]
 paths = ["~/.cargo/registry", "~/.cargo/git"]
-workflow_file = "ci-unit-rust-2.yml"
 
 [[unit]]
 id = "rust-jackin-telemetry"
@@ -533,10 +533,10 @@ github_pr_commands = ["cd -- 'crates/jackin-telemetry' && mbx fmt --manifest-pat
 github_full_commands = ["cd -- 'crates/jackin-telemetry' && mbx fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin-telemetry' && mbx clippy --locked --all-targets --all-features --package 'jackin-telemetry' -- -D warnings", "cd -- 'crates/jackin-telemetry' && mbx nextest run --locked --all-features --package 'jackin-telemetry' --no-tests pass"]
 velnor_pr_commands = ["cd -- 'crates/jackin-telemetry' && mbx fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin-telemetry' && mbx clippy --locked --all-targets --all-features --package 'jackin-telemetry' -- -D warnings", "cd -- 'crates/jackin-telemetry' && mbx nextest run --locked --all-features --package 'jackin-telemetry' --no-tests pass"]
 velnor_full_commands = ["cd -- 'crates/jackin-telemetry' && mbx fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin-telemetry' && mbx clippy --locked --all-targets --all-features --package 'jackin-telemetry' -- -D warnings", "cd -- 'crates/jackin-telemetry' && mbx nextest run --locked --all-features --package 'jackin-telemetry' --no-tests pass"]
+workflow_file = "ci-unit-rust-2.yml"
 [unit.cache]
 key_files = [".cargo/**", "Cargo.toml", "crates/jackin-telemetry/Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "rust-toolchain"]
 paths = ["~/.cargo/registry", "~/.cargo/git"]
-workflow_file = "ci-unit-rust-2.yml"
 
 [[unit]]
 id = "rust-jackin-test-support"
@@ -549,10 +549,10 @@ github_full_commands = ["cd -- 'crates/jackin-test-support' && mbx fmt --manifes
 velnor_pr_commands = ["cd -- 'crates/jackin-test-support' && mbx fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin-test-support' && mbx clippy --locked --all-targets --all-features --package 'jackin-test-support' -- -D warnings", "cd -- 'crates/jackin-test-support' && mbx nextest run --locked --all-features --package 'jackin-test-support' --no-tests pass"]
 velnor_full_commands = ["cd -- 'crates/jackin-test-support' && mbx fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin-test-support' && mbx clippy --locked --all-targets --all-features --package 'jackin-test-support' -- -D warnings", "cd -- 'crates/jackin-test-support' && mbx nextest run --locked --all-features --package 'jackin-test-support' --no-tests pass"]
 depends_on = ["rust-jackin-core", "rust-jackin-manifest"]
+workflow_file = "ci-unit-rust-2.yml"
 [unit.cache]
 key_files = [".cargo/**", "Cargo.toml", "crates/jackin-test-support/Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "rust-toolchain"]
 paths = ["~/.cargo/registry", "~/.cargo/git"]
-workflow_file = "ci-unit-rust-2.yml"
 
 [[unit]]
 id = "rust-jackin-tui"
@@ -565,10 +565,10 @@ github_full_commands = ["cd -- 'crates/jackin-tui' && mbx fmt --manifest-path 'C
 velnor_pr_commands = ["cd -- 'crates/jackin-tui' && mbx fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin-tui' && mbx clippy --locked --all-targets --all-features --package 'jackin-tui' -- -D warnings", "cd -- 'crates/jackin-tui' && mbx nextest run --locked --all-features --package 'jackin-tui' --no-tests pass"]
 velnor_full_commands = ["cd -- 'crates/jackin-tui' && mbx fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin-tui' && mbx clippy --locked --all-targets --all-features --package 'jackin-tui' -- -D warnings", "cd -- 'crates/jackin-tui' && mbx nextest run --locked --all-features --package 'jackin-tui' --no-tests pass"]
 depends_on = ["rust-jackin-brand"]
+workflow_file = "ci-unit-rust-2.yml"
 [unit.cache]
 key_files = [".cargo/**", "Cargo.toml", "crates/jackin-tui/Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "rust-toolchain"]
 paths = ["~/.cargo/registry", "~/.cargo/git"]
-workflow_file = "ci-unit-rust-2.yml"
 
 [[unit]]
 id = "rust-jackin-usage"
@@ -581,10 +581,10 @@ github_full_commands = ["cd -- 'crates/jackin-usage' && mbx fmt --manifest-path 
 velnor_pr_commands = ["cd -- 'crates/jackin-usage' && mbx fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin-usage' && mbx clippy --locked --all-targets --all-features --package 'jackin-usage' -- -D warnings", "cd -- 'crates/jackin-usage' && mbx nextest run --locked --all-features --package 'jackin-usage' --no-tests pass"]
 velnor_full_commands = ["cd -- 'crates/jackin-usage' && mbx fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin-usage' && mbx clippy --locked --all-targets --all-features --package 'jackin-usage' -- -D warnings", "cd -- 'crates/jackin-usage' && mbx nextest run --locked --all-features --package 'jackin-usage' --no-tests pass"]
 depends_on = ["rust-jackin-config", "rust-jackin-core", "rust-jackin-diagnostics", "rust-jackin-otlp-testbed", "rust-jackin-protocol", "rust-jackin-telemetry"]
+workflow_file = "ci-unit-rust-2.yml"
 [unit.cache]
 key_files = [".cargo/**", "Cargo.toml", "crates/jackin-usage/Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "rust-toolchain"]
 paths = ["~/.cargo/registry", "~/.cargo/git"]
-workflow_file = "ci-unit-rust-2.yml"
 
 [[unit]]
 id = "rust-jackin-usage-ffi"
@@ -597,10 +597,10 @@ github_full_commands = ["cd -- 'crates/jackin-usage-ffi' && mbx fmt --manifest-p
 velnor_pr_commands = ["cd -- 'crates/jackin-usage-ffi' && mbx fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin-usage-ffi' && mbx clippy --locked --all-targets --all-features --package 'jackin-usage-ffi' -- -D warnings", "cd -- 'crates/jackin-usage-ffi' && mbx nextest run --locked --all-features --package 'jackin-usage-ffi' --no-tests pass"]
 velnor_full_commands = ["cd -- 'crates/jackin-usage-ffi' && mbx fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin-usage-ffi' && mbx clippy --locked --all-targets --all-features --package 'jackin-usage-ffi' -- -D warnings", "cd -- 'crates/jackin-usage-ffi' && mbx nextest run --locked --all-features --package 'jackin-usage-ffi' --no-tests pass"]
 depends_on = ["rust-jackin-config", "rust-jackin-core", "rust-jackin-env", "rust-jackin-protocol", "rust-jackin-telemetry", "rust-jackin-usage"]
+workflow_file = "ci-unit-rust-2.yml"
 [unit.cache]
 key_files = [".cargo/**", "Cargo.toml", "crates/jackin-usage-ffi/Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "rust-toolchain"]
 paths = ["~/.cargo/registry", "~/.cargo/git"]
-workflow_file = "ci-unit-rust-2.yml"
 
 [[unit]]
 id = "rust-jackin-xtask"
@@ -613,10 +613,10 @@ github_full_commands = ["cd -- 'crates/jackin-xtask' && mbx fmt --manifest-path 
 velnor_pr_commands = ["cd -- 'crates/jackin-xtask' && mbx fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin-xtask' && mbx clippy --locked --all-targets --all-features --package 'jackin-xtask' -- -D warnings", "cd -- 'crates/jackin-xtask' && mbx nextest run --locked --all-features --package 'jackin-xtask' --no-tests pass"]
 velnor_full_commands = ["cd -- 'crates/jackin-xtask' && mbx fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin-xtask' && mbx clippy --locked --all-targets --all-features --package 'jackin-xtask' -- -D warnings", "cd -- 'crates/jackin-xtask' && mbx nextest run --locked --all-features --package 'jackin-xtask' --no-tests pass"]
 depends_on = ["rust-jackin-process"]
+workflow_file = "ci-unit-rust-2.yml"
 [unit.cache]
 key_files = [".cargo/**", "Cargo.toml", "crates/jackin-xtask/Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "rust-toolchain"]
 paths = ["~/.cargo/registry", "~/.cargo/git"]
-workflow_file = "ci-unit-rust-2.yml"
 
 [[unit]]
 id = "rust-policy"
@@ -628,10 +628,10 @@ github_pr_commands = ["mbx deny check", "mbx audit"]
 github_full_commands = ["mbx deny check", "mbx audit"]
 velnor_pr_commands = ["mbx deny check", "mbx audit"]
 velnor_full_commands = ["mbx deny check", "mbx audit"]
+workflow_file = "ci-unit-rust-2.yml"
 [unit.cache]
 key_files = [".cargo/**", "Cargo.toml", "Cargo.lock"]
 paths = ["~/.cargo/registry", "~/.cargo/git"]
-workflow_file = "ci-unit-rust-2.yml"
 
 [[unit]]
 id = "swift-package-native"
@@ -643,10 +643,10 @@ github_pr_commands = ["cargo xtask desktop xcframework", "cd -- 'native' && swif
 github_full_commands = ["cargo xtask desktop xcframework", "cd -- 'native' && swift build", "cd -- 'native' && swift test --parallel"]
 velnor_pr_commands = ["cargo xtask desktop xcframework", "cd -- 'native' && swift build", "cd -- 'native' && swift test --parallel"]
 velnor_full_commands = ["cargo xtask desktop xcframework", "cd -- 'native' && swift build", "cd -- 'native' && swift test --parallel"]
+workflow_file = "ci-unit-swift.yml"
 [unit.cache]
 key_files = ["native/Package.swift", "native/Package.resolved", "native/.swiftpm/Package.resolved"]
 paths = ["~/.swiftpm"]
-workflow_file = "ci-unit-swift.yml"
 
 [[unit]]
 id = "swift-package-native-design-prototypes-unifiedagentusage"
@@ -658,7 +658,7 @@ github_pr_commands = ["cd -- 'native/Design/Prototypes/UnifiedAgentUsage' && swi
 github_full_commands = ["cd -- 'native/Design/Prototypes/UnifiedAgentUsage' && swift build", "cd -- 'native/Design/Prototypes/UnifiedAgentUsage' && swift test --parallel"]
 velnor_pr_commands = ["cd -- 'native/Design/Prototypes/UnifiedAgentUsage' && swift build", "cd -- 'native/Design/Prototypes/UnifiedAgentUsage' && swift test --parallel"]
 velnor_full_commands = ["cd -- 'native/Design/Prototypes/UnifiedAgentUsage' && swift build", "cd -- 'native/Design/Prototypes/UnifiedAgentUsage' && swift test --parallel"]
+workflow_file = "ci-unit-swift.yml"
 [unit.cache]
 key_files = ["native/Design/Prototypes/UnifiedAgentUsage/Package.swift", "native/Design/Prototypes/UnifiedAgentUsage/Package.resolved", "native/Design/Prototypes/UnifiedAgentUsage/.swiftpm/Package.resolved"]
 paths = ["~/.swiftpm"]
-workflow_file = "ci-unit-swift.yml"
