@@ -47,7 +47,7 @@ mise_tools = ["cargo-binstall", "rust", "cargo:sccache", "cargo:boltffi_cli"]
 # `dylint-link` wrapper declared in crates/jackin-lints/.cargo/config.toml.
 [[units]]
 id = "rust-jackin-lints"
-mise_tools = ["cargo:dylint-link"]
+mise_tools = ["cargo-binstall", "cargo:dylint-link"]
 github_pr_commands = ["cd -- 'crates/jackin-lints' && cargo fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin-lints' && cargo clippy --locked --all-targets --all-features --package 'jackin_lints' -- -D warnings", "cd -- 'crates/jackin-lints' && cargo nextest run --locked --all-features --package 'jackin_lints' --no-tests pass"]
 github_full_commands = ["cd -- 'crates/jackin-lints' && cargo fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin-lints' && cargo clippy --locked --all-targets --all-features --package 'jackin_lints' -- -D warnings", "cd -- 'crates/jackin-lints' && cargo nextest run --locked --all-features --package 'jackin_lints' --no-tests pass"]
 velnor_pr_commands = ["cd -- 'crates/jackin-lints' && cargo fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin-lints' && cargo clippy --locked --all-targets --all-features --package 'jackin_lints' -- -D warnings", "cd -- 'crates/jackin-lints' && cargo nextest run --locked --all-features --package 'jackin_lints' --no-tests pass"]
