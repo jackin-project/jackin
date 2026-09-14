@@ -42,16 +42,16 @@ pr_commands = ["cargo xtask desktop xcframework", "cd -- 'native' && swift build
 full_commands = ["cargo xtask desktop xcframework", "cd -- 'native' && swift build", "cd -- 'native' && swift test --parallel"]
 mise_tools = ["cargo-binstall", "rust", "cargo:sccache", "cargo:boltffi_cli"]
 
-# dylint_testing UI harness expects `cargo build` to emit the lint cdylib as
-# `target/debug/lib<name>@<toolchain>.so`; that rename is performed by the
-# `dylint-link` wrapper declared in crates/jackin-lints/.cargo/config.toml.
+# jackin-lints pins a nightly toolchain with rustc-dev in crates/jackin-lints/rust-toolchain.
+# mise-action exports RUSTUP_TOOLCHAIN for the repo default (1.97.1), so unit commands must
+# unset it and let the crate toolchain file select nightly. dylint-link must be on PATH.
 [[units]]
 id = "rust-jackin-lints"
-mise_tools = ["rust", "cargo-binstall"]
-github_pr_commands = ["cd -- 'crates/jackin-lints' && cargo fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin-lints' && cargo clippy --locked --all-targets --all-features --package 'jackin_lints' -- -D warnings", "cd -- 'crates/jackin-lints' && cargo nextest run --locked --all-features --package 'jackin_lints' --no-tests pass"]
-github_full_commands = ["cd -- 'crates/jackin-lints' && cargo fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin-lints' && cargo clippy --locked --all-targets --all-features --package 'jackin_lints' -- -D warnings", "cd -- 'crates/jackin-lints' && cargo nextest run --locked --all-features --package 'jackin_lints' --no-tests pass"]
-velnor_pr_commands = ["cd -- 'crates/jackin-lints' && cargo fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin-lints' && cargo clippy --locked --all-targets --all-features --package 'jackin_lints' -- -D warnings", "cd -- 'crates/jackin-lints' && cargo nextest run --locked --all-features --package 'jackin_lints' --no-tests pass"]
-velnor_full_commands = ["cd -- 'crates/jackin-lints' && cargo fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin-lints' && cargo clippy --locked --all-targets --all-features --package 'jackin_lints' -- -D warnings", "cd -- 'crates/jackin-lints' && cargo nextest run --locked --all-features --package 'jackin_lints' --no-tests pass"]
+mise_tools = ["rust", "cargo-binstall", "cargo:cargo-dylint", "cargo:dylint-link"]
+github_pr_commands = ["cd -- 'crates/jackin-lints' && env -u RUSTUP_TOOLCHAIN cargo fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin-lints' && env -u RUSTUP_TOOLCHAIN cargo clippy --locked --all-targets --all-features --package 'jackin_lints' -- -D warnings", "cd -- 'crates/jackin-lints' && env -u RUSTUP_TOOLCHAIN cargo nextest run --no-run --locked --all-features --package 'jackin_lints'"]
+github_full_commands = ["cd -- 'crates/jackin-lints' && env -u RUSTUP_TOOLCHAIN cargo fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin-lints' && env -u RUSTUP_TOOLCHAIN cargo clippy --locked --all-targets --all-features --package 'jackin_lints' -- -D warnings", "cd -- 'crates/jackin-lints' && env -u RUSTUP_TOOLCHAIN cargo nextest run --no-run --locked --all-features --package 'jackin_lints'"]
+velnor_pr_commands = ["cd -- 'crates/jackin-lints' && env -u RUSTUP_TOOLCHAIN cargo fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin-lints' && env -u RUSTUP_TOOLCHAIN cargo clippy --locked --all-targets --all-features --package 'jackin_lints' -- -D warnings", "cd -- 'crates/jackin-lints' && env -u RUSTUP_TOOLCHAIN cargo nextest run --no-run --locked --all-features --package 'jackin_lints'"]
+velnor_full_commands = ["cd -- 'crates/jackin-lints' && env -u RUSTUP_TOOLCHAIN cargo fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin-lints' && env -u RUSTUP_TOOLCHAIN cargo clippy --locked --all-targets --all-features --package 'jackin_lints' -- -D warnings", "cd -- 'crates/jackin-lints' && env -u RUSTUP_TOOLCHAIN cargo nextest run --no-run --locked --all-features --package 'jackin_lints'"]
 
 # Bespoke release-side files the generator must not replace with its default
 # family renders: jackin's reviewed Homebrew-preview publisher is declared

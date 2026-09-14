@@ -974,7 +974,7 @@ jobs:
       - name: Set up Mise tools
         uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
-          install_args: aqua:nextest-rs/nextest/cargo-nextest rust cargo-binstall
+          install_args: aqua:nextest-rs/nextest/cargo-nextest rust cargo-binstall cargo:cargo-dylint cargo:dylint-link
           cache: true
       - name: Set up Mr. Boxington
         uses: jdx/mr-boxington-action@7234d3dd1a6ca8f6c381eea8e4dfb03f18fcf777 # v1.3.0
@@ -1049,7 +1049,20 @@ jobs:
           MISE_NOT_FOUND_AUTO_INSTALL: "false"
         run: |
           set -euo pipefail
-          cd -- 'crates/jackin-lints' && cargo fetch --locked
+          cd -- 'crates/jackin-lints' && env -u RUSTUP_TOOLCHAIN cargo fetch --locked
+          prep="$(mktemp -d)"
+          printf '%s\n' \
+            '[package]' \
+            'name = "dylint-driver-prep"' \
+            'version = "0.0.0"' \
+            'edition = "2021"' \
+            '' \
+            '[workspace]' \
+            '' \
+            '[dependencies]' \
+            'dylint_driver = "=6.0.4"' \
+            > "$prep/Cargo.toml"
+          (cd "$prep" && env -u RUSTUP_TOOLCHAIN cargo fetch)
       - name: Run "Rust crate (jackin_lints)" checks
         env:
           CI_SCOPE: ${{ inputs.scope }}
@@ -1230,7 +1243,20 @@ jobs:
           MISE_NOT_FOUND_AUTO_INSTALL: "false"
         run: |
           set -euo pipefail
-          cd -- 'crates/jackin-lints' && cargo fetch --locked
+          cd -- 'crates/jackin-lints' && env -u RUSTUP_TOOLCHAIN cargo fetch --locked
+          prep="$(mktemp -d)"
+          printf '%s\n' \
+            '[package]' \
+            'name = "dylint-driver-prep"' \
+            'version = "0.0.0"' \
+            'edition = "2021"' \
+            '' \
+            '[workspace]' \
+            '' \
+            '[dependencies]' \
+            'dylint_driver = "=6.0.4"' \
+            > "$prep/Cargo.toml"
+          (cd "$prep" && env -u RUSTUP_TOOLCHAIN cargo fetch)
       - name: Run "Rust crate (jackin_lints)" checks
         env:
           CI_SCOPE: ${{ inputs.scope }}
