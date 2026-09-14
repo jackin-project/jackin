@@ -2,7 +2,7 @@
 schema = 2
 [inputs]
 config	4c2bc44f6f23f735
-scan	366869d978907e3b
+scan	0bc8628422a3287d
 generator	22
 [outputs]
 .github/actionlint.yaml	2c1dbf178fa8baa1
@@ -40,7 +40,7 @@ generator	22
 .github/workflows/ci-unit-bun.yml	471151e4f7733109
 .github/workflows/ci-unit-docker.yml	eb049d8456a152fe
 .github/workflows/ci-unit-rust.yml	30397af0ff8e1582
-.github/workflows/ci-unit-swift.yml	ae677e1886458012
+.github/workflows/ci-unit-swift.yml	ad3fe5d3d4bfa71a
 .github/workflows/construct.yml	0a419875a0aeaf85
 .github/workflows/desktop-cadence.yml	dce7101a5292aad0
 .github/workflows/docs.yml	d5a030227cf39621

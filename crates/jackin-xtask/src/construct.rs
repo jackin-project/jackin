@@ -111,8 +111,7 @@ impl Config {
         let shellfirm_version =
             env_or("SHELLFIRM_VERSION", versions_env_value("SHELLFIRM_VERSION"));
         let mise_version = env_or("MISE_VERSION", versions_env_value("MISE_VERSION"));
-        let starship_version =
-            env_or("STARSHIP_VERSION", versions_env_value("STARSHIP_VERSION"));
+        let starship_version = env_or("STARSHIP_VERSION", versions_env_value("STARSHIP_VERSION"));
         let buildx_builder = env_or("BUILDX_BUILDER", "jackin-construct");
         let digest_dir = env_or("DIGEST_DIR", "/tmp/jackin-construct-digests");
         Ok(Self {
