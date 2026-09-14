@@ -13,6 +13,7 @@ crate-type = ["cdylib"]
 dylint_linting = "6.0.4"
 
 [dev-dependencies]
+dylint_driver = "=6.0.4"
 dylint_testing = "6.0.4"
 
 [package.metadata.rust-analyzer]
