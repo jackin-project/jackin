@@ -1056,6 +1056,19 @@ jobs:
         run: |
           set -euo pipefail
           cd -- 'crates/jackin-lints' && cargo fetch --locked
+          prep="$(mktemp -d)"
+          cat > "$prep/Cargo.toml" <<'EOF'
+          [package]
+          name = "dylint-driver-prep"
+          version = "0.0.0"
+          edition = "2021"
+
+          [workspace]
+
+          [dependencies]
+          dylint_driver = "=6.0.4"
+          EOF
+          (cd "$prep" && cargo fetch)
       - name: Run "Rust crate (jackin_lints)" checks
         env:
           CI_SCOPE: ${{ inputs.scope }}
