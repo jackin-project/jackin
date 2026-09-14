@@ -47,7 +47,7 @@ mise_tools = ["cargo-binstall", "rust", "cargo:sccache", "cargo:boltffi_cli"]
 # unset it and let the crate toolchain file select nightly. dylint-link must be on PATH.
 [[units]]
 id = "rust-jackin-lints"
-mise_tools = ["rust", "cargo-binstall", "cargo:cargo-dylint", "cargo:dylint-link"]
+mise_tools = ["rust", "cargo-binstall"]
 github_pr_commands = ["cd -- 'crates/jackin-lints' && env -u RUSTUP_TOOLCHAIN cargo fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin-lints' && env -u RUSTUP_TOOLCHAIN cargo clippy --locked --all-targets --all-features --package 'jackin_lints' -- -D warnings", "cd -- 'crates/jackin-lints' && env -u RUSTUP_TOOLCHAIN cargo nextest run --no-run --locked --all-features --package 'jackin_lints'"]
 github_full_commands = ["cd -- 'crates/jackin-lints' && env -u RUSTUP_TOOLCHAIN cargo fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin-lints' && env -u RUSTUP_TOOLCHAIN cargo clippy --locked --all-targets --all-features --package 'jackin_lints' -- -D warnings", "cd -- 'crates/jackin-lints' && env -u RUSTUP_TOOLCHAIN cargo nextest run --no-run --locked --all-features --package 'jackin_lints'"]
 velnor_pr_commands = ["cd -- 'crates/jackin-lints' && env -u RUSTUP_TOOLCHAIN cargo fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin-lints' && env -u RUSTUP_TOOLCHAIN cargo clippy --locked --all-targets --all-features --package 'jackin_lints' -- -D warnings", "cd -- 'crates/jackin-lints' && env -u RUSTUP_TOOLCHAIN cargo nextest run --no-run --locked --all-features --package 'jackin_lints'"]

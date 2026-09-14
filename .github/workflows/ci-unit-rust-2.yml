@@ -974,8 +974,12 @@ jobs:
       - name: Set up Mise tools
         uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
-          install_args: aqua:nextest-rs/nextest/cargo-nextest rust cargo-binstall cargo:cargo-dylint cargo:dylint-link
+          install_args: aqua:nextest-rs/nextest/cargo-nextest rust cargo-binstall
           cache: true
+      - name: Install dylint-link
+        env:
+          RUSTFLAGS: ""
+        run: cargo binstall --no-confirm --disable-telemetry dylint-link@6.0.4
       - name: Set up Mr. Boxington
         uses: jdx/mr-boxington-action@7234d3dd1a6ca8f6c381eea8e4dfb03f18fcf777 # v1.3.0
         with:
