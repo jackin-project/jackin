@@ -49,6 +49,7 @@ const MAX_DEPTH: usize = 5;
 const RENDER_ROOT_NAMES: &[&str] = &["render", "compose_pending_frame", "compose_ratatui_frame"];
 
 impl<'tcx> LateLintPass<'tcx> for RenderThreadPurity {
+    #[allow(clippy::too_many_arguments)]
     fn check_fn(
         &mut self,
         cx: &LateContext<'tcx>,
