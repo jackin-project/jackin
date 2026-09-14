@@ -225,6 +225,7 @@ fn typeck_for_fn<'tcx>(
     Some(cx.tcx.typeck(fn_def))
 }
 
+#[allow(clippy::too_many_arguments)]
 fn check_callee<'tcx>(
     cx: &LateContext<'tcx>,
     callee: &'tcx Expr<'tcx>,
