@@ -28,6 +28,7 @@ mod docs;
 mod frame_timing;
 mod fs_util;
 mod github;
+mod preview;
 mod headers;
 mod health;
 mod lint;

@@ -1,7 +1,7 @@
 # Generated ownership state; do not edit.
 schema = 2
 [inputs]
-config	b28e7f6cd1b18447
+config	4c2bc44f6f23f735
 scan	366869d978907e3b
 generator	22
 [outputs]
@@ -48,7 +48,7 @@ generator	22
 .github/workflows/jackin-dev.yml	f5709912b9831683
 .github/workflows/maintenance.yml	bb9a907500c87f1b
 .github/workflows/nightly.yml	6759b2ba58b573fb
-.github/workflows/preview.yml	9a4793348bb468f9
+.github/workflows/preview.yml	f599fd0ee4d77bcf
 .github/workflows/release.yml	51a13b612eab128c
 .github/workflows/renovate-validate.yml	4742f3cd3f75672d
 .github/workflows/renovate.yml	1c2ee0ece25fd18b
