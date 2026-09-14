@@ -2,7 +2,7 @@
 schema = 2
 [inputs]
 config	4c2bc44f6f23f735
-scan	0bc8628422a3287d
+scan	1706bf207d31feaa
 generator	22
 [outputs]
 .github/actionlint.yaml	2c1dbf178fa8baa1
@@ -34,9 +34,9 @@ generator	22
 .github/ci/workflow-templates/renovate.yml	1c2ee0ece25fd18b
 .github/ci/workflow-templates/reuse-compliance.yml	6553fdb461d26d41
 .github/workflows/cache-cleanup.yml	eba8efe1071b8b05
-.github/workflows/ci-main.yml	0710329c5a389cc6
+.github/workflows/ci-main.yml	87f042bedc86b88a
 .github/workflows/ci-policy.yml	6775538e208399e4
-.github/workflows/ci-pr.yml	ea7d8bfdc9702c61
+.github/workflows/ci-pr.yml	4e719deb27bb68d4
 .github/workflows/ci-unit-bun.yml	471151e4f7733109
 .github/workflows/ci-unit-docker.yml	eb049d8456a152fe
 .github/workflows/ci-unit-rust-2.yml	5de2a58b35530cae
@@ -48,7 +48,7 @@ generator	22
 .github/workflows/hygiene.yml	83a22f8e5bd6dc9f
 .github/workflows/jackin-dev.yml	f5709912b9831683
 .github/workflows/maintenance.yml	bb9a907500c87f1b
-.github/workflows/nightly.yml	d959c74fcbf0a045
+.github/workflows/nightly.yml	3600ed7a0ec9ade1
 .github/workflows/preview.yml	f599fd0ee4d77bcf
 .github/workflows/release.yml	51a13b612eab128c
 .github/workflows/renovate-validate.yml	4742f3cd3f75672d

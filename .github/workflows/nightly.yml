@@ -52,10 +52,11 @@ jobs:
       scope: ${{ steps.plan.outputs.scope }}
       units: ${{ steps.plan.outputs.units }}
       full_units: ${{ steps.plan.outputs.full_units }}
-      rust_matrix: ${{ steps.plan.outputs.rust_matrix }}
       bun_matrix: ${{ steps.plan.outputs.bun_matrix }}
-      swift_matrix: ${{ steps.plan.outputs.swift_matrix }}
       docker_matrix: ${{ steps.plan.outputs.docker_matrix }}
+      rust-2_matrix: ${{ steps.plan.outputs.rust-2_matrix }}
+      rust_matrix: ${{ steps.plan.outputs.rust_matrix }}
+      swift_matrix: ${{ steps.plan.outputs.swift_matrix }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -171,7 +172,7 @@ jobs:
       fail-fast: false
       matrix:
         include: ${{ fromJSON(needs.plan.outputs.bun_matrix) }}
-    uses: ./.github/workflows/${{ matrix.workflow }}
+    uses: ./.github/workflows/ci-unit-bun.yml
     with:
       unit: ${{ matrix.unit }}
       scope: ${{ needs.plan.outputs.scope }}
@@ -184,7 +185,7 @@ jobs:
       fail-fast: false
       matrix:
         include: ${{ fromJSON(needs.plan.outputs.docker_matrix) }}
-    uses: ./.github/workflows/${{ matrix.workflow }}
+    uses: ./.github/workflows/ci-unit-docker.yml
     with:
       unit: ${{ matrix.unit }}
       scope: ${{ needs.plan.outputs.scope }}
@@ -197,7 +198,20 @@ jobs:
       fail-fast: false
       matrix:
         include: ${{ fromJSON(needs.plan.outputs.rust_matrix) }}
-    uses: ./.github/workflows/${{ matrix.workflow }}
+    uses: ./.github/workflows/ci-unit-rust.yml
+    with:
+      unit: ${{ matrix.unit }}
+      scope: ${{ needs.plan.outputs.scope }}
+      selection-artifact: velnor-ci-selection
+  group-rust-2:
+    name: ${{ matrix.label }}
+    if: ${{ always() && needs.plan.result == 'success' && needs.policy.result == 'success' && needs.plan.outputs.rust-2_matrix != '[]' }}
+    needs: [plan, policy]
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.plan.outputs.rust-2_matrix) }}
+    uses: ./.github/workflows/ci-unit-rust-2.yml
     with:
       unit: ${{ matrix.unit }}
       scope: ${{ needs.plan.outputs.scope }}
@@ -210,7 +224,7 @@ jobs:
       fail-fast: false
       matrix:
         include: ${{ fromJSON(needs.plan.outputs.swift_matrix) }}
-    uses: ./.github/workflows/${{ matrix.workflow }}
+    uses: ./.github/workflows/ci-unit-swift.yml
     with:
       unit: ${{ matrix.unit }}
       scope: ${{ needs.plan.outputs.scope }}
@@ -218,7 +232,7 @@ jobs:
   nightly-required:
     name: nightly-required
     if: ${{ always() }}
-    needs: [plan, policy, group-bun, group-docker, group-rust, group-swift]
+    needs: [plan, policy, group-bun, group-docker, group-rust, group-rust-2, group-swift]
     runs-on: ubuntu-26.04
     timeout-minutes: 5
     steps:
@@ -509,247 +523,247 @@ jobs:
             esac
           fi
           if [[ "$selected" == *",rust-jackin-isolation,"* ]]; then
-            result="$(result_for_job group-rust)"
+            result="$(result_for_job group-rust-2)"
             case "$result" in
               success) ;;
               *) echo "selected CI unit rust-jackin-isolation did not pass: $result" >&2; exit 1 ;;
             esac
           else
-            result="$(result_for_job group-rust)"
+            result="$(result_for_job group-rust-2)"
             case "$result" in
               success|skipped) ;;
               *) echo "unselected CI unit rust-jackin-isolation failed unexpectedly: $result" >&2; exit 1 ;;
             esac
           fi
           if [[ "$selected" == *",rust-jackin-launch,"* ]]; then
-            result="$(result_for_job group-rust)"
+            result="$(result_for_job group-rust-2)"
             case "$result" in
               success) ;;
               *) echo "selected CI unit rust-jackin-launch did not pass: $result" >&2; exit 1 ;;
             esac
           else
-            result="$(result_for_job group-rust)"
+            result="$(result_for_job group-rust-2)"
             case "$result" in
               success|skipped) ;;
               *) echo "unselected CI unit rust-jackin-launch failed unexpectedly: $result" >&2; exit 1 ;;
             esac
           fi
           if [[ "$selected" == *",rust-jackin-lints,"* ]]; then
-            result="$(result_for_job group-rust)"
+            result="$(result_for_job group-rust-2)"
             case "$result" in
               success) ;;
               *) echo "selected CI unit rust-jackin-lints did not pass: $result" >&2; exit 1 ;;
             esac
           else
-            result="$(result_for_job group-rust)"
+            result="$(result_for_job group-rust-2)"
             case "$result" in
               success|skipped) ;;
               *) echo "unselected CI unit rust-jackin-lints failed unexpectedly: $result" >&2; exit 1 ;;
             esac
           fi
           if [[ "$selected" == *",rust-jackin-manifest,"* ]]; then
-            result="$(result_for_job group-rust)"
+            result="$(result_for_job group-rust-2)"
             case "$result" in
               success) ;;
               *) echo "selected CI unit rust-jackin-manifest did not pass: $result" >&2; exit 1 ;;
             esac
           else
-            result="$(result_for_job group-rust)"
+            result="$(result_for_job group-rust-2)"
             case "$result" in
               success|skipped) ;;
               *) echo "unselected CI unit rust-jackin-manifest failed unexpectedly: $result" >&2; exit 1 ;;
             esac
           fi
           if [[ "$selected" == *",rust-jackin-manifest-fuzz,"* ]]; then
-            result="$(result_for_job group-rust)"
+            result="$(result_for_job group-rust-2)"
             case "$result" in
               success) ;;
               *) echo "selected CI unit rust-jackin-manifest-fuzz did not pass: $result" >&2; exit 1 ;;
             esac
           else
-            result="$(result_for_job group-rust)"
+            result="$(result_for_job group-rust-2)"
             case "$result" in
               success|skipped) ;;
               *) echo "unselected CI unit rust-jackin-manifest-fuzz failed unexpectedly: $result" >&2; exit 1 ;;
             esac
           fi
           if [[ "$selected" == *",rust-jackin-oppicker,"* ]]; then
-            result="$(result_for_job group-rust)"
+            result="$(result_for_job group-rust-2)"
             case "$result" in
               success) ;;
               *) echo "selected CI unit rust-jackin-oppicker did not pass: $result" >&2; exit 1 ;;
             esac
           else
-            result="$(result_for_job group-rust)"
+            result="$(result_for_job group-rust-2)"
             case "$result" in
               success|skipped) ;;
               *) echo "unselected CI unit rust-jackin-oppicker failed unexpectedly: $result" >&2; exit 1 ;;
             esac
           fi
           if [[ "$selected" == *",rust-jackin-otlp-testbed,"* ]]; then
-            result="$(result_for_job group-rust)"
+            result="$(result_for_job group-rust-2)"
             case "$result" in
               success) ;;
               *) echo "selected CI unit rust-jackin-otlp-testbed did not pass: $result" >&2; exit 1 ;;
             esac
           else
-            result="$(result_for_job group-rust)"
+            result="$(result_for_job group-rust-2)"
             case "$result" in
               success|skipped) ;;
               *) echo "unselected CI unit rust-jackin-otlp-testbed failed unexpectedly: $result" >&2; exit 1 ;;
             esac
           fi
           if [[ "$selected" == *",rust-jackin-pr-trailers,"* ]]; then
-            result="$(result_for_job group-rust)"
+            result="$(result_for_job group-rust-2)"
             case "$result" in
               success) ;;
               *) echo "selected CI unit rust-jackin-pr-trailers did not pass: $result" >&2; exit 1 ;;
             esac
           else
-            result="$(result_for_job group-rust)"
+            result="$(result_for_job group-rust-2)"
             case "$result" in
               success|skipped) ;;
               *) echo "unselected CI unit rust-jackin-pr-trailers failed unexpectedly: $result" >&2; exit 1 ;;
             esac
           fi
           if [[ "$selected" == *",rust-jackin-process,"* ]]; then
-            result="$(result_for_job group-rust)"
+            result="$(result_for_job group-rust-2)"
             case "$result" in
               success) ;;
               *) echo "selected CI unit rust-jackin-process did not pass: $result" >&2; exit 1 ;;
             esac
           else
-            result="$(result_for_job group-rust)"
+            result="$(result_for_job group-rust-2)"
             case "$result" in
               success|skipped) ;;
               *) echo "unselected CI unit rust-jackin-process failed unexpectedly: $result" >&2; exit 1 ;;
             esac
           fi
           if [[ "$selected" == *",rust-jackin-protocol,"* ]]; then
-            result="$(result_for_job group-rust)"
+            result="$(result_for_job group-rust-2)"
             case "$result" in
               success) ;;
               *) echo "selected CI unit rust-jackin-protocol did not pass: $result" >&2; exit 1 ;;
             esac
           else
-            result="$(result_for_job group-rust)"
+            result="$(result_for_job group-rust-2)"
             case "$result" in
               success|skipped) ;;
               *) echo "unselected CI unit rust-jackin-protocol failed unexpectedly: $result" >&2; exit 1 ;;
             esac
           fi
           if [[ "$selected" == *",rust-jackin-protocol-fuzz,"* ]]; then
-            result="$(result_for_job group-rust)"
+            result="$(result_for_job group-rust-2)"
             case "$result" in
               success) ;;
               *) echo "selected CI unit rust-jackin-protocol-fuzz did not pass: $result" >&2; exit 1 ;;
             esac
           else
-            result="$(result_for_job group-rust)"
+            result="$(result_for_job group-rust-2)"
             case "$result" in
               success|skipped) ;;
               *) echo "unselected CI unit rust-jackin-protocol-fuzz failed unexpectedly: $result" >&2; exit 1 ;;
             esac
           fi
           if [[ "$selected" == *",rust-jackin-runtime,"* ]]; then
-            result="$(result_for_job group-rust)"
+            result="$(result_for_job group-rust-2)"
             case "$result" in
               success) ;;
               *) echo "selected CI unit rust-jackin-runtime did not pass: $result" >&2; exit 1 ;;
             esac
           else
-            result="$(result_for_job group-rust)"
+            result="$(result_for_job group-rust-2)"
             case "$result" in
               success|skipped) ;;
               *) echo "unselected CI unit rust-jackin-runtime failed unexpectedly: $result" >&2; exit 1 ;;
             esac
           fi
           if [[ "$selected" == *",rust-jackin-telemetry,"* ]]; then
-            result="$(result_for_job group-rust)"
+            result="$(result_for_job group-rust-2)"
             case "$result" in
               success) ;;
               *) echo "selected CI unit rust-jackin-telemetry did not pass: $result" >&2; exit 1 ;;
             esac
           else
-            result="$(result_for_job group-rust)"
+            result="$(result_for_job group-rust-2)"
             case "$result" in
               success|skipped) ;;
               *) echo "unselected CI unit rust-jackin-telemetry failed unexpectedly: $result" >&2; exit 1 ;;
             esac
           fi
           if [[ "$selected" == *",rust-jackin-test-support,"* ]]; then
-            result="$(result_for_job group-rust)"
+            result="$(result_for_job group-rust-2)"
             case "$result" in
               success) ;;
               *) echo "selected CI unit rust-jackin-test-support did not pass: $result" >&2; exit 1 ;;
             esac
           else
-            result="$(result_for_job group-rust)"
+            result="$(result_for_job group-rust-2)"
             case "$result" in
               success|skipped) ;;
               *) echo "unselected CI unit rust-jackin-test-support failed unexpectedly: $result" >&2; exit 1 ;;
             esac
           fi
           if [[ "$selected" == *",rust-jackin-tui,"* ]]; then
-            result="$(result_for_job group-rust)"
+            result="$(result_for_job group-rust-2)"
             case "$result" in
               success) ;;
               *) echo "selected CI unit rust-jackin-tui did not pass: $result" >&2; exit 1 ;;
             esac
           else
-            result="$(result_for_job group-rust)"
+            result="$(result_for_job group-rust-2)"
             case "$result" in
               success|skipped) ;;
               *) echo "unselected CI unit rust-jackin-tui failed unexpectedly: $result" >&2; exit 1 ;;
             esac
           fi
           if [[ "$selected" == *",rust-jackin-usage,"* ]]; then
-            result="$(result_for_job group-rust)"
+            result="$(result_for_job group-rust-2)"
             case "$result" in
               success) ;;
               *) echo "selected CI unit rust-jackin-usage did not pass: $result" >&2; exit 1 ;;
             esac
           else
-            result="$(result_for_job group-rust)"
+            result="$(result_for_job group-rust-2)"
             case "$result" in
               success|skipped) ;;
               *) echo "unselected CI unit rust-jackin-usage failed unexpectedly: $result" >&2; exit 1 ;;
             esac
           fi
           if [[ "$selected" == *",rust-jackin-usage-ffi,"* ]]; then
-            result="$(result_for_job group-rust)"
+            result="$(result_for_job group-rust-2)"
             case "$result" in
               success) ;;
               *) echo "selected CI unit rust-jackin-usage-ffi did not pass: $result" >&2; exit 1 ;;
             esac
           else
-            result="$(result_for_job group-rust)"
+            result="$(result_for_job group-rust-2)"
             case "$result" in
               success|skipped) ;;
               *) echo "unselected CI unit rust-jackin-usage-ffi failed unexpectedly: $result" >&2; exit 1 ;;
             esac
           fi
           if [[ "$selected" == *",rust-jackin-xtask,"* ]]; then
-            result="$(result_for_job group-rust)"
+            result="$(result_for_job group-rust-2)"
             case "$result" in
               success) ;;
               *) echo "selected CI unit rust-jackin-xtask did not pass: $result" >&2; exit 1 ;;
             esac
           else
-            result="$(result_for_job group-rust)"
+            result="$(result_for_job group-rust-2)"
             case "$result" in
               success|skipped) ;;
               *) echo "unselected CI unit rust-jackin-xtask failed unexpectedly: $result" >&2; exit 1 ;;
             esac
           fi
           if [[ "$selected" == *",rust-policy,"* ]]; then
-            result="$(result_for_job group-rust)"
+            result="$(result_for_job group-rust-2)"
             case "$result" in
               success) ;;
               *) echo "selected CI unit rust-policy did not pass: $result" >&2; exit 1 ;;
             esac
           else
-            result="$(result_for_job group-rust)"
+            result="$(result_for_job group-rust-2)"
             case "$result" in
               success|skipped) ;;
               *) echo "unselected CI unit rust-policy failed unexpectedly: $result" >&2; exit 1 ;;
