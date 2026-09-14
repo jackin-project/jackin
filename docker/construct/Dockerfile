@@ -163,20 +163,19 @@ ENV BASH_ENV=/etc/jackin-build-env
 ARG STARSHIP_VERSION
 RUN test -n "${STARSHIP_VERSION}" || { echo "STARSHIP_VERSION build arg is required" >&2; exit 1; } && \
     case "${TARGETARCH}" in \
-      amd64) starship_arch=x86_64 ;; \
-      arm64) starship_arch=aarch64 ;; \
+      amd64) starship_triple=x86_64-unknown-linux-gnu ;; \
+      arm64) starship_triple=aarch64-unknown-linux-musl ;; \
       *) printf 'unsupported TARGETARCH for starship: %s\n' "${TARGETARCH}" >&2 && exit 1 ;; \
     esac && \
-    archive="starship-${starship_arch}-unknown-linux-gnu.tar.gz" && \
+    archive="starship-${starship_triple}.tar.gz" && \
     base="https://github.com/starship/starship/releases/download/v${STARSHIP_VERSION}" && \
     workdir="$(mktemp -d)" && \
     cd "${workdir}" && \
     curl --fail --location --show-error --retry 3 --retry-all-errors --connect-timeout 10 --max-time 120 \
       --output "${archive}" "${base}/${archive}" && \
     curl --fail --location --show-error --retry 3 --retry-all-errors --connect-timeout 10 --max-time 120 \
-      --output SHASUMS256.txt "${base}/SHASUMS256.txt" && \
-    grep "  ./${archive}$" SHASUMS256.txt | sed 's#  \./#  #' > checksums-starship.txt && \
-    sha256sum -c checksums-starship.txt && \
+      --output "${archive}.sha256" "${base}/${archive}.sha256" && \
+    printf '%s  %s\n' "$(tr -d '\n' < "${archive}.sha256")" "${archive}" | sha256sum -c - && \
     tar -xzf "${archive}" -C /usr/local/bin starship && \
     chmod 0755 /usr/local/bin/starship && \
     cd / && \
