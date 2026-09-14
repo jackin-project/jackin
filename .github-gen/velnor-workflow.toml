@@ -38,8 +38,8 @@ mise_tools = ["github:open-telemetry/weaver"]
 # `swift build` resolves its binary target.
 [[units]]
 id = "swift-package-native"
-pr_commands = ["mise install --yes cargo-binstall cargo:boltffi_cli", "cargo xtask desktop xcframework", "cd -- 'native' && swift build", "cd -- 'native' && swift test --parallel"]
-full_commands = ["mise install --yes cargo-binstall cargo:boltffi_cli", "cargo xtask desktop xcframework", "cd -- 'native' && swift build", "cd -- 'native' && swift test --parallel"]
+pr_commands = ["cargo xtask desktop xcframework", "cd -- 'native' && swift build", "cd -- 'native' && swift test --parallel"]
+full_commands = ["cargo xtask desktop xcframework", "cd -- 'native' && swift build", "cd -- 'native' && swift test --parallel"]
 mise_tools = ["cargo-binstall", "rust", "cargo:sccache", "cargo:boltffi_cli"]
 
 # Bespoke release-side files the generator must not replace with its default

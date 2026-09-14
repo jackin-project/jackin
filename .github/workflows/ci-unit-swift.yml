@@ -36,6 +36,11 @@ jobs:
         with:
           name: ${{ inputs.selection-artifact }}
           path: .velnor-ci-selection
+      - name: Set up Mise tools
+        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        with:
+          install_args: cargo-binstall cargo:boltffi_cli
+          cache: true
       - name: Restore "Swift package (native)" cache
         id: cache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
