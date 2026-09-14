@@ -8,13 +8,14 @@ repository = "jackin-project/jackin"
 [scan]
 exclude = [".github-gen/sources/**"]
 
-# Runner placement: the hosted image the GitHub lane pins, and the self-hosted
-# labels the trust-gated Velnor lane selects by. Both lanes render; manual
-# dispatch defaults to the Velnor lane (generator Both-mode lane admission)
-# while GitHub stays manually selectable, automatic GitHub triggers stay
-# ungated, and the Velnor lane stays main-gated.
+# Runner placement: GitHub-hosted is the default for automatic CI and manual
+# dispatch. Velnor remains opt-in via workflow_dispatch runner=velnor, and
+# cross-runner verification uses runner=both. The Velnor lane stays main-gated
+# on automatic events so PRs never depend on fleet availability.
 [workflow]
 runners = "both"
+default_dispatch_runner = "github"
+automatic_lanes = "github"
 github_runner = "ubuntu-26.04"
 macos_runner = "macos-26"
 velnor_labels = ["self-hosted", "velnor-target-mvp"]
@@ -25,8 +26,8 @@ velnor_labels = ["self-hosted", "velnor-target-mvp"]
 # at runtime, so its jobs install the pinned tool beside nextest.
 [[units]]
 id = "docker-docker-construct"
-pr_commands = ["source 'docker/construct/versions.env' && docker build --file 'docker/construct/Dockerfile' --build-arg SHELLFIRM_VERSION=\"$SHELLFIRM_VERSION\" --build-arg TIRITH_VERSION=\"$TIRITH_VERSION\" --build-arg MISE_VERSION=\"$MISE_VERSION\" --tag local-ci:docker-construct-dockerfile 'docker/construct'"]
-full_commands = ["source 'docker/construct/versions.env' && docker build --file 'docker/construct/Dockerfile' --build-arg SHELLFIRM_VERSION=\"$SHELLFIRM_VERSION\" --build-arg TIRITH_VERSION=\"$TIRITH_VERSION\" --build-arg MISE_VERSION=\"$MISE_VERSION\" --tag local-ci:docker-construct-dockerfile 'docker/construct'"]
+pr_commands = ["source 'docker/construct/versions.env' && docker build --file 'docker/construct/Dockerfile' --build-arg SHELLFIRM_VERSION=\"$SHELLFIRM_VERSION\" --build-arg TIRITH_VERSION=\"$TIRITH_VERSION\" --build-arg MISE_VERSION=\"$MISE_VERSION\" --build-arg STARSHIP_VERSION=\"$STARSHIP_VERSION\" --tag local-ci:docker-construct-dockerfile 'docker/construct'"]
+full_commands = ["source 'docker/construct/versions.env' && docker build --file 'docker/construct/Dockerfile' --build-arg SHELLFIRM_VERSION=\"$SHELLFIRM_VERSION\" --build-arg TIRITH_VERSION=\"$TIRITH_VERSION\" --build-arg MISE_VERSION=\"$MISE_VERSION\" --build-arg STARSHIP_VERSION=\"$STARSHIP_VERSION\" --tag local-ci:docker-construct-dockerfile 'docker/construct'"]
 
 [[units]]
 id = "rust-jackin-xtask"
@@ -61,10 +62,10 @@ on:
   workflow_dispatch:
     inputs:
       lanes:
-        description: velnor (default) | github | both
+        description: github (default) | velnor | both
         type: choice
-        default: velnor
-        options: [velnor, github, both]
+        default: github
+        options: [github, velnor, both]
 
 permissions:
   actions: read

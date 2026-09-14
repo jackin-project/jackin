@@ -1,9 +1,9 @@
 # Generated ownership state; do not edit.
 schema = 2
 [inputs]
-config	e73203b569d3a534
-scan	b9d3ad6a734ce809
-generator	21
+config	b28e7f6cd1b18447
+scan	366869d978907e3b
+generator	22
 [outputs]
 .github/actionlint.yaml	2c1dbf178fa8baa1
 .github/actions/aggregate-needs/action.yml	27737a2d2a84b908
@@ -21,7 +21,7 @@ generator	21
 .github/actions/download-codebook/action.yml	a8ee1a071ee3d394
 .github/actions/sign-and-attest-archive/action.yml	bd4e49cdfe9bc910
 .github/actions/sign-capsule-manifest/action.yml	bcc6b1e304cc95c4
-.github/ci/project.toml	c1d55846ca3d4108
+.github/ci/project.toml	f093b389f1a98512
 .github/ci/workflow-templates/cache-cleanup.yml	eba8efe1071b8b05
 .github/ci/workflow-templates/construct.yml	0a419875a0aeaf85
 .github/ci/workflow-templates/desktop-cadence.yml	dce7101a5292aad0
@@ -34,21 +34,21 @@ generator	21
 .github/ci/workflow-templates/renovate.yml	1c2ee0ece25fd18b
 .github/ci/workflow-templates/reuse-compliance.yml	6553fdb461d26d41
 .github/workflows/cache-cleanup.yml	eba8efe1071b8b05
-.github/workflows/ci-main.yml	81b050114cf4dc83
-.github/workflows/ci-policy.yml	19c01c0792a140d0
-.github/workflows/ci-pr.yml	cc24a20a05dc3f00
-.github/workflows/ci-unit-bun.yml	fb6f9151b825f3da
-.github/workflows/ci-unit-docker.yml	90d63aee8341b4f9
-.github/workflows/ci-unit-rust.yml	77bb4cfb32b75722
-.github/workflows/ci-unit-swift.yml	3076aa30e62805aa
+.github/workflows/ci-main.yml	f312af8f29ca45c8
+.github/workflows/ci-policy.yml	6775538e208399e4
+.github/workflows/ci-pr.yml	d7cd50050694ffe5
+.github/workflows/ci-unit-bun.yml	471151e4f7733109
+.github/workflows/ci-unit-docker.yml	eb049d8456a152fe
+.github/workflows/ci-unit-rust.yml	30397af0ff8e1582
+.github/workflows/ci-unit-swift.yml	ae677e1886458012
 .github/workflows/construct.yml	0a419875a0aeaf85
 .github/workflows/desktop-cadence.yml	dce7101a5292aad0
 .github/workflows/docs.yml	d5a030227cf39621
 .github/workflows/hygiene.yml	83a22f8e5bd6dc9f
 .github/workflows/jackin-dev.yml	f5709912b9831683
-.github/workflows/maintenance.yml	0023a4b748258482
-.github/workflows/nightly.yml	9f0a62575775d6e6
-.github/workflows/preview.yml	bc84384cc47fc81c
+.github/workflows/maintenance.yml	bb9a907500c87f1b
+.github/workflows/nightly.yml	6759b2ba58b573fb
+.github/workflows/preview.yml	9a4793348bb468f9
 .github/workflows/release.yml	51a13b612eab128c
 .github/workflows/renovate-validate.yml	4742f3cd3f75672d
 .github/workflows/renovate.yml	1c2ee0ece25fd18b

@@ -16,7 +16,7 @@ on:
 jobs:
   github-docker-docker-construct:
     name: "GitHub / docker-docker-construct"
-    if: ${{ inputs.unit == 'docker-docker-construct' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'github' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'docker-docker-construct' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || github.event_name == 'merge_group' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both'))) }}
     runs-on: ubuntu-26.04
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -29,12 +29,12 @@ jobs:
       - name: Download Velnor workflow runtime
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: velnor-workflow-runtime-02651ef94ee689994106f7893801f74b808eb828-${{ runner.os }}-${{ runner.arch }}
+          name: velnor-workflow-runtime-6017727759da543800c90be401c60c7f0d42092b-${{ runner.os }}-${{ runner.arch }}
           path: .velnor-workflow-runtime
       - name: Verify Velnor workflow runtime
         shell: bash
         env:
-          EXPECTED_REVISION: 02651ef94ee689994106f7893801f74b808eb828
+          EXPECTED_REVISION: 6017727759da543800c90be401c60c7f0d42092b
         run: |
           set -euo pipefail
           manifest=.velnor-workflow-runtime/manifest.json
@@ -188,7 +188,7 @@ jobs:
 
   velnor-docker-docker-construct:
     name: "Velnor / docker-docker-construct"
-    if: ${{ inputs.unit == 'docker-docker-construct' && ((github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'docker-docker-construct' && (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'velnor' || github.event.inputs.runner == 'both')))) }}
     runs-on: [self-hosted, velnor-target-mvp]
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -203,6 +203,10 @@ jobs:
         with:
           name: ${{ inputs.selection-artifact }}
           path: .velnor-ci-selection
+      - name: Install declared Mise tools
+        run: |
+          set -euo pipefail
+          mise --yes install
       - name: Run "Docker (docker/construct)" checks
         env:
           CI_SCOPE: ${{ inputs.scope }}

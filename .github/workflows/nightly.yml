@@ -7,10 +7,10 @@ on:
     - cron: '17 3 * * *'
   workflow_dispatch:
     inputs:
-      lanes:
-        description: velnor (default) | github | both
+      runner:
+        description: Execution backend
         required: true
-        default: velnor
+        default: github
         type: choice
         options:
           - velnor
@@ -45,34 +45,8 @@ permissions:
   contents: read
 
 jobs:
-  lane-admission:
-    name: Resolve CI lanes
-    runs-on: ubuntu-26.04
-    timeout-minutes: 5
-    permissions:
-      contents: read
-    outputs:
-      lanes: ${{ steps.route.outputs.lanes }}
-    steps:
-      - name: Validate requested lanes
-        id: route
-        env:
-          REQUESTED_LANES: ${{ github.event_name == 'workflow_dispatch' && inputs.lanes || vars.VELNOR_AUTOMATIC_LANES || 'both' }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          case "$REQUESTED_LANES" in
-            velnor|github|both)
-              echo "lanes=$REQUESTED_LANES" >> "$GITHUB_OUTPUT"
-              ;;
-            *)
-              echo "::error::invalid CI lane '$REQUESTED_LANES'; expected velnor, github, or both" >&2
-              exit 1
-              ;;
-          esac
   plan:
     name: Planning
-    needs: [lane-admission]
     runs-on: ubuntu-26.04
     outputs:
       scope: ${{ steps.plan.outputs.scope }}
@@ -90,11 +64,11 @@ jobs:
           persist-credentials: false
       - name: Set up Velnor workflow runtime
         if: ${{ runner.environment == 'github-hosted' }}
-        uses: tailrocks/velnor/.github/actions/setup-velnor-workflow@02651ef94ee689994106f7893801f74b808eb828
+        uses: tailrocks/velnor/.github/actions/setup-velnor-workflow@6017727759da543800c90be401c60c7f0d42092b
         with:
-          rev: 02651ef94ee689994106f7893801f74b808eb828
+          rev: 6017727759da543800c90be401c60c7f0d42092b
       - name: Set trusted workflow policy revision
-        run: echo "VELNOR_WORKFLOW_POLICY_REVISION=02651ef94ee689994106f7893801f74b808eb828" >> "$GITHUB_ENV"
+        run: echo "VELNOR_WORKFLOW_POLICY_REVISION=6017727759da543800c90be401c60c7f0d42092b" >> "$GITHUB_ENV"
       - name: Select affected units
         id: plan
         env:
@@ -103,12 +77,16 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.inputs.base_sha || github.event.before || 'refs/heads/main' }}
           HEAD_SHA: ${{ github.sha }}
           VELNOR_SELECTION_FILE: ${{ runner.temp }}/velnor-ci-selection
-        run: velnor-workflow plan --config .github/ci/project.toml
+          VELNOR_RUNNER: ${{ github.event.inputs.runner || '' }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${CI_SCOPE_OVERRIDE:-}" ]]; then unset CI_SCOPE_OVERRIDE; fi
+          velnor-workflow plan --config .github/ci/project.toml
 
       - name: Prepare Velnor workflow runtime
         shell: bash
         env:
-          EXPECTED_REVISION: 02651ef94ee689994106f7893801f74b808eb828
+          EXPECTED_REVISION: 6017727759da543800c90be401c60c7f0d42092b
         run: |
           set -euo pipefail
           stage="$RUNNER_TEMP/velnor-workflow-runtime"
@@ -120,7 +98,7 @@ jobs:
       - name: Publish Velnor workflow runtime
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: velnor-workflow-runtime-02651ef94ee689994106f7893801f74b808eb828-${{ runner.os }}-${{ runner.arch }}
+          name: velnor-workflow-runtime-6017727759da543800c90be401c60c7f0d42092b-${{ runner.os }}-${{ runner.arch }}
           path: ${{ runner.temp }}/velnor-workflow-runtime
           if-no-files-found: error
           retention-days: 7
@@ -156,7 +134,7 @@ jobs:
         with:
           backend: github
           version: 1.8.3
-          cache-key: velnor-policy-mbx-1.8.3-${{ runner.os }}-${{ runner.arch }}-02651ef94ee689994106f7893801f74b808eb828
+          cache-key: velnor-policy-mbx-1.8.3-${{ runner.os }}-${{ runner.arch }}-6017727759da543800c90be401c60c7f0d42092b
           restore-keys: |
             velnor-policy-mbx-1.8.3-${{ runner.os }}-${{ runner.arch }}-
       - name: Install pinned Velnor workflow runtime
@@ -175,7 +153,7 @@ jobs:
           cargo install \
             --locked \
             --git https://github.com/tailrocks/velnor \
-            --rev 02651ef94ee689994106f7893801f74b808eb828 \
+            --rev 6017727759da543800c90be401c60c7f0d42092b \
             --root "$VELNOR_WORKFLOW_ROOT" \
             velnor-workflow \
             --bin velnor-workflow
@@ -183,7 +161,7 @@ jobs:
       - name: Enforce workflow policy
         env:
           WORKFLOW_ROOT: ${{ github.workspace }}/policy-checkout
-          VELNOR_WORKFLOW_POLICY_REVISION: 02651ef94ee689994106f7893801f74b808eb828
+          VELNOR_WORKFLOW_POLICY_REVISION: 6017727759da543800c90be401c60c7f0d42092b
         run: velnor-workflow policy --workflow-root "$WORKFLOW_ROOT"
   group-bun:
     name: ${{ matrix.label }}
@@ -294,6 +272,19 @@ jobs:
             case "$result" in
               success|skipped) ;;
               *) echo "unselected CI unit docker-docker-construct failed unexpectedly: $result" >&2; exit 1 ;;
+            esac
+          fi
+          if [[ "$selected" == *",rust-arrayref,"* ]]; then
+            result="$(result_for_job group-rust)"
+            case "$result" in
+              success) ;;
+              *) echo "selected CI unit rust-arrayref did not pass: $result" >&2; exit 1 ;;
+            esac
+          else
+            result="$(result_for_job group-rust)"
+            case "$result" in
+              success|skipped) ;;
+              *) echo "unselected CI unit rust-arrayref failed unexpectedly: $result" >&2; exit 1 ;;
             esac
           fi
           if [[ "$selected" == *",rust-jackin,"* ]]; then
@@ -541,6 +532,19 @@ jobs:
             case "$result" in
               success|skipped) ;;
               *) echo "unselected CI unit rust-jackin-launch failed unexpectedly: $result" >&2; exit 1 ;;
+            esac
+          fi
+          if [[ "$selected" == *",rust-jackin-lints,"* ]]; then
+            result="$(result_for_job group-rust)"
+            case "$result" in
+              success) ;;
+              *) echo "selected CI unit rust-jackin-lints did not pass: $result" >&2; exit 1 ;;
+            esac
+          else
+            result="$(result_for_job group-rust)"
+            case "$result" in
+              success|skipped) ;;
+              *) echo "unselected CI unit rust-jackin-lints failed unexpectedly: $result" >&2; exit 1 ;;
             esac
           fi
           if [[ "$selected" == *",rust-jackin-manifest,"* ]]; then

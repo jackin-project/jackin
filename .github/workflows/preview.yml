@@ -10,10 +10,10 @@ on:
   workflow_dispatch:
     inputs:
       lanes:
-        description: velnor (default) | github | both
+        description: github (default) | velnor | both
         type: choice
-        default: velnor
-        options: [velnor, github, both]
+        default: github
+        options: [github, velnor, both]
 
 permissions:
   actions: read

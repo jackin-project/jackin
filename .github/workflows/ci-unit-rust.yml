@@ -14,9 +14,9 @@ on:
         type: string
 
 jobs:
-  github-rust-jackin:
-    name: "GitHub / rust-jackin"
-    if: ${{ inputs.unit == 'rust-jackin' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'github' || github.event.inputs.lanes == 'both'))) }}
+  github-rust-arrayref:
+    name: "GitHub / rust-arrayref"
+    if: ${{ inputs.unit == 'rust-arrayref' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || github.event_name == 'merge_group' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both'))) }}
     runs-on: ubuntu-26.04
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -29,12 +29,461 @@ jobs:
       - name: Download Velnor workflow runtime
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: velnor-workflow-runtime-02651ef94ee689994106f7893801f74b808eb828-${{ runner.os }}-${{ runner.arch }}
+          name: velnor-workflow-runtime-6017727759da543800c90be401c60c7f0d42092b-${{ runner.os }}-${{ runner.arch }}
           path: .velnor-workflow-runtime
       - name: Verify Velnor workflow runtime
         shell: bash
         env:
-          EXPECTED_REVISION: 02651ef94ee689994106f7893801f74b808eb828
+          EXPECTED_REVISION: 6017727759da543800c90be401c60c7f0d42092b
+        run: |
+          set -euo pipefail
+          manifest=.velnor-workflow-runtime/manifest.json
+          jq -e --arg revision "$EXPECTED_REVISION" --arg repository "$GITHUB_REPOSITORY" --arg platform "${RUNNER_OS}-${RUNNER_ARCH}" --arg run_id "$GITHUB_RUN_ID" '.revision == $revision and .repository == $repository and .platform == $platform and .run_id == $run_id and (.run_id | test("^[0-9]+$")) and .job_id != "" and (.binary_sha256 | test("^[0-9a-f]{64}$"))' "$manifest" >/dev/null
+          expected="$(jq -er '.binary_sha256' "$manifest")"
+          actual="$(sha256sum .velnor-workflow-runtime/velnor-workflow | awk '{print $1}')"
+          [[ "$actual" == "$expected" ]] || { echo "::error::runtime digest mismatch" >&2; exit 1; }
+      - name: Add Velnor workflow runtime to PATH
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -Dm0755 .velnor-workflow-runtime/velnor-workflow "$HOME/.cargo/bin/velnor-workflow"
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+      - name: Download Velnor CI selection
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ inputs.selection-artifact }}
+          path: .velnor-ci-selection
+      - name: Restore Rust toolchain
+        id: rustup-toolchain
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.rustup
+          key: velnor-rustup-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml', 'rust-toolchain') }}
+      - name: Provision Rust toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install
+          rustup target add 'aarch64-unknown-linux-gnu' 'x86_64-unknown-linux-gnu'
+      - name: Save Rust toolchain
+        if: ((github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')) && steps.rustup-toolchain.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.rustup
+          key: velnor-rustup-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml', 'rust-toolchain') }}
+      - name: Set up Mise tools
+        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        with:
+          install_args: aqua:nextest-rs/nextest/cargo-nextest
+          cache: true
+      - name: Set up Mr. Boxington
+        uses: jdx/mr-boxington-action@7234d3dd1a6ca8f6c381eea8e4dfb03f18fcf777 # v1.3.0
+        with:
+          backend: github
+          github-cache-mode: objects
+          version: 1.8.3
+          cache-key: velnor-mbx-v3-19580d966263-${{ runner.os }}-${{ runner.arch }}-rust-arrayref-${{ hashFiles('.cargo/**', 'Cargo.lock', 'Cargo.toml', 'rust-toolchain', 'rust-toolchain.toml', 'vendor/arrayref/Cargo.toml') }}-${{ hashFiles('mise.lock', 'vendor/arrayref/**/*.rs', 'vendor/arrayref/benches/**', 'vendor/arrayref/examples/**', 'vendor/arrayref/src/**', 'vendor/arrayref/tests/**') }}
+          restore-keys: |
+            velnor-mbx-v3-19580d966263-${{ runner.os }}-${{ runner.arch }}-rust-arrayref-${{ hashFiles('.cargo/**', 'Cargo.lock', 'Cargo.toml', 'rust-toolchain', 'rust-toolchain.toml', 'vendor/arrayref/Cargo.toml') }}-
+            velnor-mbx-v3-19580d966263-${{ runner.os }}-${{ runner.arch }}-rust-arrayref-
+          save-on-workflow-dispatch: true
+      - name: Restore mold 2.42.0 cache
+        id: mold-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/velnor/mold/2.42.0
+          key: velnor-mold-2.42.0-${{ runner.os }}-${{ runner.arch }}
+      - name: Set up mold 2.42.0
+        shell: bash
+        env:
+          MOLD_VERSION: 2.42.0
+        run: |
+          set -euo pipefail
+          case "$(uname -m)" in
+            x86_64) mold_arch=x86_64; expected='f5ed2f6e31d1ada4f07fe766fe0de7a73104d1c5cdc59086fcecc16a43720b6d' ;;
+            aarch64) mold_arch=aarch64; expected='3c9a0a3624aac8a2007569ae50c33b3129a0f0ae8bcc974aeee2f8939d295190' ;;
+            *) echo "unsupported mold architecture: $(uname -m)" >&2; exit 1 ;;
+          esac
+          cache_dir="$HOME/.cache/velnor/mold/$MOLD_VERSION"
+          archive="$cache_dir/mold-$MOLD_VERSION-$mold_arch-linux.tar.gz"
+          mkdir -p "$cache_dir"
+          if [[ ! -s "$archive" ]]; then
+            temporary="$archive.download"
+            trap 'rm -f "$temporary"' EXIT
+            curl --fail --silent --show-error --location --retry 3 --retry-delay 2 \
+              --output "$temporary" \
+              "https://github.com/rui314/mold/releases/download/v$MOLD_VERSION/mold-$MOLD_VERSION-$mold_arch-linux.tar.gz"
+            printf '%s  %s\n' "$expected" "$temporary" | sha256sum --check --strict
+            mv "$temporary" "$archive"
+            trap - EXIT
+          fi
+          printf '%s  %s\n' "$expected" "$archive" | sha256sum --check --strict
+          if [[ "$(id -u)" -eq 0 ]]; then
+            tar --directory /usr/local --strip-components=1 --no-overwrite-dir -xzf "$archive"
+            ln -sf /usr/local/bin/mold "$(realpath /usr/bin/ld 2>/dev/null || printf /usr/bin/ld)"
+          else
+            sudo tar --directory /usr/local --strip-components=1 --no-overwrite-dir -xzf "$archive"
+            sudo ln -sf /usr/local/bin/mold "$(realpath /usr/bin/ld 2>/dev/null || printf /usr/bin/ld)"
+          fi
+          mold --version | grep -F "$MOLD_VERSION"
+      - name: Save mold 2.42.0 cache
+        if: (((github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'))) && steps.mold-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/velnor/mold/2.42.0
+          key: velnor-mold-2.42.0-${{ runner.os }}-${{ runner.arch }}
+      - name: Restore "Rust crate (arrayref)" cache
+        id: cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ci-${{ runner.os }}-rust-${{ hashFiles('.cargo/**', 'Cargo.toml', 'vendor/arrayref/Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', 'rust-toolchain') }}
+          restore-keys: |
+            ci-${{ runner.os }}-rust-
+      - name: Prepare Cargo sources
+        env:
+          MISE_AUTO_INSTALL: "false"
+          MISE_EXEC_AUTO_INSTALL: "false"
+          MISE_NOT_FOUND_AUTO_INSTALL: "false"
+        run: |
+          set -euo pipefail
+          cd -- 'vendor/arrayref' && cargo fetch --locked
+      - name: Run "Rust crate (arrayref)" checks
+        env:
+          CI_SCOPE: ${{ inputs.scope }}
+          CI_UNIT_ID: ${{ inputs.unit }}
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.inputs.base_sha || github.event.before || 'refs/heads/main' }}
+          HEAD_SHA: ${{ github.sha }}
+          VELNOR_SELECTION_FILE: .velnor-ci-selection/velnor-ci-selection
+          CARGO_NET_OFFLINE: "true"
+          MISE_AUTO_INSTALL: "false"
+          MISE_EXEC_AUTO_INSTALL: "false"
+          MISE_NOT_FOUND_AUTO_INSTALL: "false"
+        run: |
+          set -o pipefail
+          echo "VELNOR_CHECKS_STARTED_EPOCH=$(date +%s)" >> "$GITHUB_ENV"
+          rc=0
+          velnor-workflow run --config .github/ci/project.toml --scope "$CI_SCOPE" --unit "$CI_UNIT_ID" 2>&1 | tee "$RUNNER_TEMP/velnor-unit-log.txt" || rc=$?
+          echo "VELNOR_CHECKS_ENDED_EPOCH=$(date +%s)" >> "$GITHUB_ENV"
+          exit $rc
+      - name: Report phase timings and cache outcomes
+        if: always()
+        env:
+          VELNOR_WORKFLOW_NAME: "Rust · arrayref"
+          VELNOR_LANE_NAME: GitHub
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -uo pipefail
+          log="$RUNNER_TEMP/velnor-unit-log.txt"
+          log_present=false
+          if [[ -s "$log" ]]; then log_present=true; fi
+          started="${VELNOR_CHECKS_STARTED_EPOCH:-}"
+          ended="${VELNOR_CHECKS_ENDED_EPOCH:-}"
+          wall=""
+          if [[ "$started" =~ ^[0-9]+$ && "$ended" =~ ^[0-9]+$ ]]; then
+            wall=$((ended - started))
+          fi
+          queue=""
+          job_name=""
+          expected_job="$VELNOR_WORKFLOW_NAME / $VELNOR_LANE_NAME"
+          if command -v gh >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
+            run_started="$(gh api "repos/$GH_REPO/actions/runs/$GITHUB_RUN_ID" --jq '.run_started_at // empty' 2>/dev/null || true)"
+            jobs_json="$(gh api --paginate "repos/$GH_REPO/actions/runs/$GITHUB_RUN_ID/jobs?per_page=100" 2>/dev/null || true)"
+            job_name="$(printf '%s' "$jobs_json" | jq -r --arg wf "$VELNOR_WORKFLOW_NAME" --arg lane "$VELNOR_LANE_NAME" '[.jobs[]? | select(.name == ($wf + " / " + $lane))][0].name // empty' 2>/dev/null | head -n1 || true)"
+            if [[ -z "$job_name" ]]; then
+              job_name="$(printf '%s' "$jobs_json" | jq -r --arg lane "$VELNOR_LANE_NAME" '[.jobs[]? | select(.name | endswith(" / " + $lane))][0].name // empty' 2>/dev/null | head -n1 || true)"
+            fi
+            if [[ -n "$job_name" && -n "$run_started" ]]; then
+              job_started="$(printf '%s' "$jobs_json" | jq -r --arg name "$job_name" '.jobs[]? | select(.name == $name) | .started_at' 2>/dev/null | head -n1 || true)"
+              if [[ -n "$job_started" ]]; then
+                queue="$(jq -n --arg job "$job_started" --arg run "$run_started" '($job | fromdateiso8601) - ($run | fromdateiso8601)' 2>/dev/null || true)"
+              fi
+            fi
+          fi
+          if [[ -z "$job_name" ]]; then
+            job_name="$expected_job"
+          fi
+          updating_index=0
+          updating_git=0
+          downloading_crates=0
+          compiling_count=0
+          downloaded_lines=""
+          mbx_lines=""
+          finished_lines=""
+          if [[ -s "$log" ]]; then
+            updating_index="$(grep -c 'Updating crates.io index' "$log" || true)"
+            updating_git="$(grep -cE 'Updating git (repository|submodule)' "$log" || true)"
+            downloading_crates="$(grep -c 'Downloading crates' "$log" || true)"
+            compiling_count="$(grep -c 'Compiling ' "$log" || true)"
+            downloaded_lines="$(grep -E 'Downloaded [0-9]+ crate' "$log" || true)"
+            mbx_lines="$(grep -E 'mbx(\[cache\])?:' "$log" | grep -E 'hits|misses' || true)"
+            finished_lines="$(grep -E 'Finished .* in ' "$log" || true)"
+          fi
+          positive_int() {
+            local value="$1"
+            [[ "$value" =~ ^[0-9]+$ ]] || value=0
+            printf '%s' "$value"
+          }
+          report_json="$(jq -nc \
+            --arg job "$job_name" \
+            --arg queue "$queue" \
+            --arg wall "$wall" \
+            --argjson log_present "$log_present" \
+            --argjson updating_index "$(positive_int "$updating_index")" \
+            --argjson updating_git "$(positive_int "$updating_git")" \
+            --argjson downloading_crates "$(positive_int "$downloading_crates")" \
+            --argjson compiling_count "$(positive_int "$compiling_count")" \
+            --argjson downloaded_lines "$(printf '%s' "$downloaded_lines" | jq -Rsc 'split("\n") | map(select(length > 0))' || true)" \
+            --argjson mbx "$(printf '%s' "$mbx_lines" | jq -Rsc 'split("\n") | map(select(length > 0))' || true)" \
+            --argjson finished "$(printf '%s' "$finished_lines" | jq -Rsc 'split("\n") | map(select(length > 0))' || true)" \
+            '{
+              job: $job,
+              log_present: $log_present,
+              queue_seconds: ($queue | if test("^[0-9]+$") then tonumber else null end),
+              checks_wall_seconds: ($wall | if test("^[0-9]+$") then tonumber else null end),
+              origin_downloads: {
+                updating_crates_io_index: $updating_index,
+                updating_git: $updating_git,
+                downloading_crates: $downloading_crates,
+                downloaded_lines: $downloaded_lines
+              },
+              compiler: {
+                mbx_outcomes: $mbx,
+                finished_segments: $finished,
+                compiling_lines: $compiling_count
+              }
+            }' 2>/dev/null || true)"
+          if [[ -z "$report_json" ]]; then
+            report_json="VELNOR_CI_REPORT_FALLBACK job=$job_name"
+          fi
+          echo "VELNOR_CI_REPORT $report_json"
+          {
+            echo ""
+            echo '### Phase timings and cache outcomes'
+            echo ""
+            echo '```json'
+            echo "$report_json"
+            echo '```'
+            echo ""
+            echo "| metric | value |"
+            echo "| --- | --- |"
+            echo "| queue_seconds | ${queue:-unknown} |"
+            echo "| checks_wall_seconds | ${wall:-unknown} |"
+            echo "| updating_crates_io_index | $updating_index |"
+            echo "| updating_git | $updating_git |"
+            echo "| downloading_crates | $downloading_crates |"
+            echo "| compiling_lines | $compiling_count |"
+          } >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
+          exit 0
+      - name: Save "Rust crate (arrayref)" cache
+        if: ((github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')) && steps.cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ci-${{ runner.os }}-rust-${{ hashFiles('.cargo/**', 'Cargo.toml', 'vendor/arrayref/Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', 'rust-toolchain') }}
+
+  velnor-rust-arrayref:
+    name: "Velnor / rust-arrayref"
+    if: ${{ inputs.unit == 'rust-arrayref' && (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'velnor' || github.event.inputs.runner == 'both')))) }}
+    runs-on: [self-hosted, velnor-target-mvp]
+    env:
+      RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Download Velnor CI selection
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ inputs.selection-artifact }}
+          path: .velnor-ci-selection
+      - name: Install declared Mise tools
+        run: |
+          set -euo pipefail
+          mise --yes install
+      - name: Set up Mr. Boxington
+        uses: jdx/mr-boxington-action@7234d3dd1a6ca8f6c381eea8e4dfb03f18fcf777 # v1.3.0
+        with:
+          backend: local
+      - name: Restore "Rust crate (arrayref)" cache
+        id: cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ci-${{ runner.os }}-rust-${{ hashFiles('.cargo/**', 'Cargo.toml', 'vendor/arrayref/Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', 'rust-toolchain') }}
+          restore-keys: |
+            ci-${{ runner.os }}-rust-
+      - name: Prepare Cargo sources
+        env:
+          MISE_AUTO_INSTALL: "false"
+          MISE_EXEC_AUTO_INSTALL: "false"
+          MISE_NOT_FOUND_AUTO_INSTALL: "false"
+        run: |
+          set -euo pipefail
+          cd -- 'vendor/arrayref' && cargo fetch --locked
+      - name: Run "Rust crate (arrayref)" checks
+        env:
+          CI_SCOPE: ${{ inputs.scope }}
+          CI_UNIT_ID: ${{ inputs.unit }}
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.inputs.base_sha || github.event.before || 'refs/heads/main' }}
+          HEAD_SHA: ${{ github.sha }}
+          VELNOR_SELECTION_FILE: .velnor-ci-selection/velnor-ci-selection
+          CARGO_NET_OFFLINE: "true"
+          MISE_AUTO_INSTALL: "false"
+          MISE_EXEC_AUTO_INSTALL: "false"
+          MISE_NOT_FOUND_AUTO_INSTALL: "false"
+        run: |
+          set -o pipefail
+          echo "VELNOR_CHECKS_STARTED_EPOCH=$(date +%s)" >> "$GITHUB_ENV"
+          rc=0
+          velnor-workflow run --config .github/ci/project.toml --scope "$CI_SCOPE" --unit "$CI_UNIT_ID" 2>&1 | tee "$RUNNER_TEMP/velnor-unit-log.txt" || rc=$?
+          echo "VELNOR_CHECKS_ENDED_EPOCH=$(date +%s)" >> "$GITHUB_ENV"
+          exit $rc
+      - name: Report phase timings and cache outcomes
+        if: always()
+        env:
+          VELNOR_WORKFLOW_NAME: "Rust · arrayref"
+          VELNOR_LANE_NAME: Velnor
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -uo pipefail
+          log="$RUNNER_TEMP/velnor-unit-log.txt"
+          log_present=false
+          if [[ -s "$log" ]]; then log_present=true; fi
+          started="${VELNOR_CHECKS_STARTED_EPOCH:-}"
+          ended="${VELNOR_CHECKS_ENDED_EPOCH:-}"
+          wall=""
+          if [[ "$started" =~ ^[0-9]+$ && "$ended" =~ ^[0-9]+$ ]]; then
+            wall=$((ended - started))
+          fi
+          queue=""
+          job_name=""
+          expected_job="$VELNOR_WORKFLOW_NAME / $VELNOR_LANE_NAME"
+          if command -v gh >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
+            run_started="$(gh api "repos/$GH_REPO/actions/runs/$GITHUB_RUN_ID" --jq '.run_started_at // empty' 2>/dev/null || true)"
+            jobs_json="$(gh api --paginate "repos/$GH_REPO/actions/runs/$GITHUB_RUN_ID/jobs?per_page=100" 2>/dev/null || true)"
+            job_name="$(printf '%s' "$jobs_json" | jq -r --arg wf "$VELNOR_WORKFLOW_NAME" --arg lane "$VELNOR_LANE_NAME" '[.jobs[]? | select(.name == ($wf + " / " + $lane))][0].name // empty' 2>/dev/null | head -n1 || true)"
+            if [[ -z "$job_name" ]]; then
+              job_name="$(printf '%s' "$jobs_json" | jq -r --arg lane "$VELNOR_LANE_NAME" '[.jobs[]? | select(.name | endswith(" / " + $lane))][0].name // empty' 2>/dev/null | head -n1 || true)"
+            fi
+            if [[ -n "$job_name" && -n "$run_started" ]]; then
+              job_started="$(printf '%s' "$jobs_json" | jq -r --arg name "$job_name" '.jobs[]? | select(.name == $name) | .started_at' 2>/dev/null | head -n1 || true)"
+              if [[ -n "$job_started" ]]; then
+                queue="$(jq -n --arg job "$job_started" --arg run "$run_started" '($job | fromdateiso8601) - ($run | fromdateiso8601)' 2>/dev/null || true)"
+              fi
+            fi
+          fi
+          if [[ -z "$job_name" ]]; then
+            job_name="$expected_job"
+          fi
+          updating_index=0
+          updating_git=0
+          downloading_crates=0
+          compiling_count=0
+          downloaded_lines=""
+          mbx_lines=""
+          finished_lines=""
+          if [[ -s "$log" ]]; then
+            updating_index="$(grep -c 'Updating crates.io index' "$log" || true)"
+            updating_git="$(grep -cE 'Updating git (repository|submodule)' "$log" || true)"
+            downloading_crates="$(grep -c 'Downloading crates' "$log" || true)"
+            compiling_count="$(grep -c 'Compiling ' "$log" || true)"
+            downloaded_lines="$(grep -E 'Downloaded [0-9]+ crate' "$log" || true)"
+            mbx_lines="$(grep -E 'mbx(\[cache\])?:' "$log" | grep -E 'hits|misses' || true)"
+            finished_lines="$(grep -E 'Finished .* in ' "$log" || true)"
+          fi
+          positive_int() {
+            local value="$1"
+            [[ "$value" =~ ^[0-9]+$ ]] || value=0
+            printf '%s' "$value"
+          }
+          report_json="$(jq -nc \
+            --arg job "$job_name" \
+            --arg queue "$queue" \
+            --arg wall "$wall" \
+            --argjson log_present "$log_present" \
+            --argjson updating_index "$(positive_int "$updating_index")" \
+            --argjson updating_git "$(positive_int "$updating_git")" \
+            --argjson downloading_crates "$(positive_int "$downloading_crates")" \
+            --argjson compiling_count "$(positive_int "$compiling_count")" \
+            --argjson downloaded_lines "$(printf '%s' "$downloaded_lines" | jq -Rsc 'split("\n") | map(select(length > 0))' || true)" \
+            --argjson mbx "$(printf '%s' "$mbx_lines" | jq -Rsc 'split("\n") | map(select(length > 0))' || true)" \
+            --argjson finished "$(printf '%s' "$finished_lines" | jq -Rsc 'split("\n") | map(select(length > 0))' || true)" \
+            '{
+              job: $job,
+              log_present: $log_present,
+              queue_seconds: ($queue | if test("^[0-9]+$") then tonumber else null end),
+              checks_wall_seconds: ($wall | if test("^[0-9]+$") then tonumber else null end),
+              origin_downloads: {
+                updating_crates_io_index: $updating_index,
+                updating_git: $updating_git,
+                downloading_crates: $downloading_crates,
+                downloaded_lines: $downloaded_lines
+              },
+              compiler: {
+                mbx_outcomes: $mbx,
+                finished_segments: $finished,
+                compiling_lines: $compiling_count
+              }
+            }' 2>/dev/null || true)"
+          if [[ -z "$report_json" ]]; then
+            report_json="VELNOR_CI_REPORT_FALLBACK job=$job_name"
+          fi
+          echo "VELNOR_CI_REPORT $report_json"
+          {
+            echo ""
+            echo '### Phase timings and cache outcomes'
+            echo ""
+            echo '```json'
+            echo "$report_json"
+            echo '```'
+            echo ""
+            echo "| metric | value |"
+            echo "| --- | --- |"
+            echo "| queue_seconds | ${queue:-unknown} |"
+            echo "| checks_wall_seconds | ${wall:-unknown} |"
+            echo "| updating_crates_io_index | $updating_index |"
+            echo "| updating_git | $updating_git |"
+            echo "| downloading_crates | $downloading_crates |"
+            echo "| compiling_lines | $compiling_count |"
+          } >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
+          exit 0
+
+  github-rust-jackin:
+    name: "GitHub / rust-jackin"
+    if: ${{ inputs.unit == 'rust-jackin' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || github.event_name == 'merge_group' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both'))) }}
+    runs-on: ubuntu-26.04
+    env:
+      RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Download Velnor workflow runtime
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: velnor-workflow-runtime-6017727759da543800c90be401c60c7f0d42092b-${{ runner.os }}-${{ runner.arch }}
+          path: .velnor-workflow-runtime
+      - name: Verify Velnor workflow runtime
+        shell: bash
+        env:
+          EXPECTED_REVISION: 6017727759da543800c90be401c60c7f0d42092b
         run: |
           set -euo pipefail
           manifest=.velnor-workflow-runtime/manifest.json
@@ -292,7 +741,7 @@ jobs:
 
   velnor-rust-jackin:
     name: "Velnor / rust-jackin"
-    if: ${{ inputs.unit == 'rust-jackin' && ((github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-jackin' && (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'velnor' || github.event.inputs.runner == 'both')))) }}
     runs-on: [self-hosted, velnor-target-mvp]
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -307,6 +756,10 @@ jobs:
         with:
           name: ${{ inputs.selection-artifact }}
           path: .velnor-ci-selection
+      - name: Install declared Mise tools
+        run: |
+          set -euo pipefail
+          mise --yes install
       - name: Set up Mr. Boxington
         uses: jdx/mr-boxington-action@7234d3dd1a6ca8f6c381eea8e4dfb03f18fcf777 # v1.3.0
         with:
@@ -461,7 +914,7 @@ jobs:
 
   github-rust-jackin-agent-status:
     name: "GitHub / rust-jackin-agent-status"
-    if: ${{ inputs.unit == 'rust-jackin-agent-status' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'github' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-jackin-agent-status' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || github.event_name == 'merge_group' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both'))) }}
     runs-on: ubuntu-26.04
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -474,12 +927,12 @@ jobs:
       - name: Download Velnor workflow runtime
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: velnor-workflow-runtime-02651ef94ee689994106f7893801f74b808eb828-${{ runner.os }}-${{ runner.arch }}
+          name: velnor-workflow-runtime-6017727759da543800c90be401c60c7f0d42092b-${{ runner.os }}-${{ runner.arch }}
           path: .velnor-workflow-runtime
       - name: Verify Velnor workflow runtime
         shell: bash
         env:
-          EXPECTED_REVISION: 02651ef94ee689994106f7893801f74b808eb828
+          EXPECTED_REVISION: 6017727759da543800c90be401c60c7f0d42092b
         run: |
           set -euo pipefail
           manifest=.velnor-workflow-runtime/manifest.json
@@ -737,7 +1190,7 @@ jobs:
 
   velnor-rust-jackin-agent-status:
     name: "Velnor / rust-jackin-agent-status"
-    if: ${{ inputs.unit == 'rust-jackin-agent-status' && ((github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-jackin-agent-status' && (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'velnor' || github.event.inputs.runner == 'both')))) }}
     runs-on: [self-hosted, velnor-target-mvp]
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -752,6 +1205,10 @@ jobs:
         with:
           name: ${{ inputs.selection-artifact }}
           path: .velnor-ci-selection
+      - name: Install declared Mise tools
+        run: |
+          set -euo pipefail
+          mise --yes install
       - name: Set up Mr. Boxington
         uses: jdx/mr-boxington-action@7234d3dd1a6ca8f6c381eea8e4dfb03f18fcf777 # v1.3.0
         with:
@@ -906,7 +1363,7 @@ jobs:
 
   github-rust-jackin-brand:
     name: "GitHub / rust-jackin-brand"
-    if: ${{ inputs.unit == 'rust-jackin-brand' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'github' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-jackin-brand' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || github.event_name == 'merge_group' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both'))) }}
     runs-on: ubuntu-26.04
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -919,12 +1376,12 @@ jobs:
       - name: Download Velnor workflow runtime
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: velnor-workflow-runtime-02651ef94ee689994106f7893801f74b808eb828-${{ runner.os }}-${{ runner.arch }}
+          name: velnor-workflow-runtime-6017727759da543800c90be401c60c7f0d42092b-${{ runner.os }}-${{ runner.arch }}
           path: .velnor-workflow-runtime
       - name: Verify Velnor workflow runtime
         shell: bash
         env:
-          EXPECTED_REVISION: 02651ef94ee689994106f7893801f74b808eb828
+          EXPECTED_REVISION: 6017727759da543800c90be401c60c7f0d42092b
         run: |
           set -euo pipefail
           manifest=.velnor-workflow-runtime/manifest.json
@@ -1182,7 +1639,7 @@ jobs:
 
   velnor-rust-jackin-brand:
     name: "Velnor / rust-jackin-brand"
-    if: ${{ inputs.unit == 'rust-jackin-brand' && ((github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-jackin-brand' && (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'velnor' || github.event.inputs.runner == 'both')))) }}
     runs-on: [self-hosted, velnor-target-mvp]
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -1197,6 +1654,10 @@ jobs:
         with:
           name: ${{ inputs.selection-artifact }}
           path: .velnor-ci-selection
+      - name: Install declared Mise tools
+        run: |
+          set -euo pipefail
+          mise --yes install
       - name: Set up Mr. Boxington
         uses: jdx/mr-boxington-action@7234d3dd1a6ca8f6c381eea8e4dfb03f18fcf777 # v1.3.0
         with:
@@ -1351,7 +1812,7 @@ jobs:
 
   github-rust-jackin-build-meta:
     name: "GitHub / rust-jackin-build-meta"
-    if: ${{ inputs.unit == 'rust-jackin-build-meta' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'github' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-jackin-build-meta' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || github.event_name == 'merge_group' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both'))) }}
     runs-on: ubuntu-26.04
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -1364,12 +1825,12 @@ jobs:
       - name: Download Velnor workflow runtime
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: velnor-workflow-runtime-02651ef94ee689994106f7893801f74b808eb828-${{ runner.os }}-${{ runner.arch }}
+          name: velnor-workflow-runtime-6017727759da543800c90be401c60c7f0d42092b-${{ runner.os }}-${{ runner.arch }}
           path: .velnor-workflow-runtime
       - name: Verify Velnor workflow runtime
         shell: bash
         env:
-          EXPECTED_REVISION: 02651ef94ee689994106f7893801f74b808eb828
+          EXPECTED_REVISION: 6017727759da543800c90be401c60c7f0d42092b
         run: |
           set -euo pipefail
           manifest=.velnor-workflow-runtime/manifest.json
@@ -1627,7 +2088,7 @@ jobs:
 
   velnor-rust-jackin-build-meta:
     name: "Velnor / rust-jackin-build-meta"
-    if: ${{ inputs.unit == 'rust-jackin-build-meta' && ((github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-jackin-build-meta' && (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'velnor' || github.event.inputs.runner == 'both')))) }}
     runs-on: [self-hosted, velnor-target-mvp]
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -1642,6 +2103,10 @@ jobs:
         with:
           name: ${{ inputs.selection-artifact }}
           path: .velnor-ci-selection
+      - name: Install declared Mise tools
+        run: |
+          set -euo pipefail
+          mise --yes install
       - name: Set up Mr. Boxington
         uses: jdx/mr-boxington-action@7234d3dd1a6ca8f6c381eea8e4dfb03f18fcf777 # v1.3.0
         with:
@@ -1796,7 +2261,7 @@ jobs:
 
   github-rust-jackin-capsule:
     name: "GitHub / rust-jackin-capsule"
-    if: ${{ inputs.unit == 'rust-jackin-capsule' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'github' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-jackin-capsule' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || github.event_name == 'merge_group' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both'))) }}
     runs-on: ubuntu-26.04
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -1809,12 +2274,12 @@ jobs:
       - name: Download Velnor workflow runtime
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: velnor-workflow-runtime-02651ef94ee689994106f7893801f74b808eb828-${{ runner.os }}-${{ runner.arch }}
+          name: velnor-workflow-runtime-6017727759da543800c90be401c60c7f0d42092b-${{ runner.os }}-${{ runner.arch }}
           path: .velnor-workflow-runtime
       - name: Verify Velnor workflow runtime
         shell: bash
         env:
-          EXPECTED_REVISION: 02651ef94ee689994106f7893801f74b808eb828
+          EXPECTED_REVISION: 6017727759da543800c90be401c60c7f0d42092b
         run: |
           set -euo pipefail
           manifest=.velnor-workflow-runtime/manifest.json
@@ -2072,7 +2537,7 @@ jobs:
 
   velnor-rust-jackin-capsule:
     name: "Velnor / rust-jackin-capsule"
-    if: ${{ inputs.unit == 'rust-jackin-capsule' && ((github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-jackin-capsule' && (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'velnor' || github.event.inputs.runner == 'both')))) }}
     runs-on: [self-hosted, velnor-target-mvp]
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -2087,6 +2552,10 @@ jobs:
         with:
           name: ${{ inputs.selection-artifact }}
           path: .velnor-ci-selection
+      - name: Install declared Mise tools
+        run: |
+          set -euo pipefail
+          mise --yes install
       - name: Set up Mr. Boxington
         uses: jdx/mr-boxington-action@7234d3dd1a6ca8f6c381eea8e4dfb03f18fcf777 # v1.3.0
         with:
@@ -2241,7 +2710,7 @@ jobs:
 
   github-rust-jackin-config:
     name: "GitHub / rust-jackin-config"
-    if: ${{ inputs.unit == 'rust-jackin-config' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'github' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-jackin-config' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || github.event_name == 'merge_group' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both'))) }}
     runs-on: ubuntu-26.04
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -2254,12 +2723,12 @@ jobs:
       - name: Download Velnor workflow runtime
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: velnor-workflow-runtime-02651ef94ee689994106f7893801f74b808eb828-${{ runner.os }}-${{ runner.arch }}
+          name: velnor-workflow-runtime-6017727759da543800c90be401c60c7f0d42092b-${{ runner.os }}-${{ runner.arch }}
           path: .velnor-workflow-runtime
       - name: Verify Velnor workflow runtime
         shell: bash
         env:
-          EXPECTED_REVISION: 02651ef94ee689994106f7893801f74b808eb828
+          EXPECTED_REVISION: 6017727759da543800c90be401c60c7f0d42092b
         run: |
           set -euo pipefail
           manifest=.velnor-workflow-runtime/manifest.json
@@ -2517,7 +2986,7 @@ jobs:
 
   velnor-rust-jackin-config:
     name: "Velnor / rust-jackin-config"
-    if: ${{ inputs.unit == 'rust-jackin-config' && ((github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-jackin-config' && (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'velnor' || github.event.inputs.runner == 'both')))) }}
     runs-on: [self-hosted, velnor-target-mvp]
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -2532,6 +3001,10 @@ jobs:
         with:
           name: ${{ inputs.selection-artifact }}
           path: .velnor-ci-selection
+      - name: Install declared Mise tools
+        run: |
+          set -euo pipefail
+          mise --yes install
       - name: Set up Mr. Boxington
         uses: jdx/mr-boxington-action@7234d3dd1a6ca8f6c381eea8e4dfb03f18fcf777 # v1.3.0
         with:
@@ -2686,7 +3159,7 @@ jobs:
 
   github-rust-jackin-config-fuzz:
     name: "GitHub / rust-jackin-config-fuzz"
-    if: ${{ inputs.unit == 'rust-jackin-config-fuzz' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'github' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-jackin-config-fuzz' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || github.event_name == 'merge_group' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both'))) }}
     runs-on: ubuntu-26.04
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -2699,12 +3172,12 @@ jobs:
       - name: Download Velnor workflow runtime
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: velnor-workflow-runtime-02651ef94ee689994106f7893801f74b808eb828-${{ runner.os }}-${{ runner.arch }}
+          name: velnor-workflow-runtime-6017727759da543800c90be401c60c7f0d42092b-${{ runner.os }}-${{ runner.arch }}
           path: .velnor-workflow-runtime
       - name: Verify Velnor workflow runtime
         shell: bash
         env:
-          EXPECTED_REVISION: 02651ef94ee689994106f7893801f74b808eb828
+          EXPECTED_REVISION: 6017727759da543800c90be401c60c7f0d42092b
         run: |
           set -euo pipefail
           manifest=.velnor-workflow-runtime/manifest.json
@@ -2962,7 +3435,7 @@ jobs:
 
   velnor-rust-jackin-config-fuzz:
     name: "Velnor / rust-jackin-config-fuzz"
-    if: ${{ inputs.unit == 'rust-jackin-config-fuzz' && ((github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-jackin-config-fuzz' && (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'velnor' || github.event.inputs.runner == 'both')))) }}
     runs-on: [self-hosted, velnor-target-mvp]
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -2977,6 +3450,10 @@ jobs:
         with:
           name: ${{ inputs.selection-artifact }}
           path: .velnor-ci-selection
+      - name: Install declared Mise tools
+        run: |
+          set -euo pipefail
+          mise --yes install
       - name: Set up Mr. Boxington
         uses: jdx/mr-boxington-action@7234d3dd1a6ca8f6c381eea8e4dfb03f18fcf777 # v1.3.0
         with:
@@ -3131,7 +3608,7 @@ jobs:
 
   github-rust-jackin-console:
     name: "GitHub / rust-jackin-console"
-    if: ${{ inputs.unit == 'rust-jackin-console' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'github' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-jackin-console' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || github.event_name == 'merge_group' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both'))) }}
     runs-on: ubuntu-26.04
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -3144,12 +3621,12 @@ jobs:
       - name: Download Velnor workflow runtime
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: velnor-workflow-runtime-02651ef94ee689994106f7893801f74b808eb828-${{ runner.os }}-${{ runner.arch }}
+          name: velnor-workflow-runtime-6017727759da543800c90be401c60c7f0d42092b-${{ runner.os }}-${{ runner.arch }}
           path: .velnor-workflow-runtime
       - name: Verify Velnor workflow runtime
         shell: bash
         env:
-          EXPECTED_REVISION: 02651ef94ee689994106f7893801f74b808eb828
+          EXPECTED_REVISION: 6017727759da543800c90be401c60c7f0d42092b
         run: |
           set -euo pipefail
           manifest=.velnor-workflow-runtime/manifest.json
@@ -3407,7 +3884,7 @@ jobs:
 
   velnor-rust-jackin-console:
     name: "Velnor / rust-jackin-console"
-    if: ${{ inputs.unit == 'rust-jackin-console' && ((github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-jackin-console' && (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'velnor' || github.event.inputs.runner == 'both')))) }}
     runs-on: [self-hosted, velnor-target-mvp]
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -3422,6 +3899,10 @@ jobs:
         with:
           name: ${{ inputs.selection-artifact }}
           path: .velnor-ci-selection
+      - name: Install declared Mise tools
+        run: |
+          set -euo pipefail
+          mise --yes install
       - name: Set up Mr. Boxington
         uses: jdx/mr-boxington-action@7234d3dd1a6ca8f6c381eea8e4dfb03f18fcf777 # v1.3.0
         with:
@@ -3576,7 +4057,7 @@ jobs:
 
   github-rust-jackin-core:
     name: "GitHub / rust-jackin-core"
-    if: ${{ inputs.unit == 'rust-jackin-core' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'github' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-jackin-core' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || github.event_name == 'merge_group' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both'))) }}
     runs-on: ubuntu-26.04
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -3589,12 +4070,12 @@ jobs:
       - name: Download Velnor workflow runtime
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: velnor-workflow-runtime-02651ef94ee689994106f7893801f74b808eb828-${{ runner.os }}-${{ runner.arch }}
+          name: velnor-workflow-runtime-6017727759da543800c90be401c60c7f0d42092b-${{ runner.os }}-${{ runner.arch }}
           path: .velnor-workflow-runtime
       - name: Verify Velnor workflow runtime
         shell: bash
         env:
-          EXPECTED_REVISION: 02651ef94ee689994106f7893801f74b808eb828
+          EXPECTED_REVISION: 6017727759da543800c90be401c60c7f0d42092b
         run: |
           set -euo pipefail
           manifest=.velnor-workflow-runtime/manifest.json
@@ -3852,7 +4333,7 @@ jobs:
 
   velnor-rust-jackin-core:
     name: "Velnor / rust-jackin-core"
-    if: ${{ inputs.unit == 'rust-jackin-core' && ((github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-jackin-core' && (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'velnor' || github.event.inputs.runner == 'both')))) }}
     runs-on: [self-hosted, velnor-target-mvp]
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -3867,6 +4348,10 @@ jobs:
         with:
           name: ${{ inputs.selection-artifact }}
           path: .velnor-ci-selection
+      - name: Install declared Mise tools
+        run: |
+          set -euo pipefail
+          mise --yes install
       - name: Set up Mr. Boxington
         uses: jdx/mr-boxington-action@7234d3dd1a6ca8f6c381eea8e4dfb03f18fcf777 # v1.3.0
         with:
@@ -4021,7 +4506,7 @@ jobs:
 
   github-rust-jackin-dev:
     name: "GitHub / rust-jackin-dev"
-    if: ${{ inputs.unit == 'rust-jackin-dev' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'github' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-jackin-dev' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || github.event_name == 'merge_group' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both'))) }}
     runs-on: ubuntu-26.04
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -4034,12 +4519,12 @@ jobs:
       - name: Download Velnor workflow runtime
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: velnor-workflow-runtime-02651ef94ee689994106f7893801f74b808eb828-${{ runner.os }}-${{ runner.arch }}
+          name: velnor-workflow-runtime-6017727759da543800c90be401c60c7f0d42092b-${{ runner.os }}-${{ runner.arch }}
           path: .velnor-workflow-runtime
       - name: Verify Velnor workflow runtime
         shell: bash
         env:
-          EXPECTED_REVISION: 02651ef94ee689994106f7893801f74b808eb828
+          EXPECTED_REVISION: 6017727759da543800c90be401c60c7f0d42092b
         run: |
           set -euo pipefail
           manifest=.velnor-workflow-runtime/manifest.json
@@ -4297,7 +4782,7 @@ jobs:
 
   velnor-rust-jackin-dev:
     name: "Velnor / rust-jackin-dev"
-    if: ${{ inputs.unit == 'rust-jackin-dev' && ((github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-jackin-dev' && (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'velnor' || github.event.inputs.runner == 'both')))) }}
     runs-on: [self-hosted, velnor-target-mvp]
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -4312,6 +4797,10 @@ jobs:
         with:
           name: ${{ inputs.selection-artifact }}
           path: .velnor-ci-selection
+      - name: Install declared Mise tools
+        run: |
+          set -euo pipefail
+          mise --yes install
       - name: Set up Mr. Boxington
         uses: jdx/mr-boxington-action@7234d3dd1a6ca8f6c381eea8e4dfb03f18fcf777 # v1.3.0
         with:
@@ -4466,7 +4955,7 @@ jobs:
 
   github-rust-jackin-diagnostics:
     name: "GitHub / rust-jackin-diagnostics"
-    if: ${{ inputs.unit == 'rust-jackin-diagnostics' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'github' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-jackin-diagnostics' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || github.event_name == 'merge_group' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both'))) }}
     runs-on: ubuntu-26.04
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -4479,12 +4968,12 @@ jobs:
       - name: Download Velnor workflow runtime
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: velnor-workflow-runtime-02651ef94ee689994106f7893801f74b808eb828-${{ runner.os }}-${{ runner.arch }}
+          name: velnor-workflow-runtime-6017727759da543800c90be401c60c7f0d42092b-${{ runner.os }}-${{ runner.arch }}
           path: .velnor-workflow-runtime
       - name: Verify Velnor workflow runtime
         shell: bash
         env:
-          EXPECTED_REVISION: 02651ef94ee689994106f7893801f74b808eb828
+          EXPECTED_REVISION: 6017727759da543800c90be401c60c7f0d42092b
         run: |
           set -euo pipefail
           manifest=.velnor-workflow-runtime/manifest.json
@@ -4742,7 +5231,7 @@ jobs:
 
   velnor-rust-jackin-diagnostics:
     name: "Velnor / rust-jackin-diagnostics"
-    if: ${{ inputs.unit == 'rust-jackin-diagnostics' && ((github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-jackin-diagnostics' && (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'velnor' || github.event.inputs.runner == 'both')))) }}
     runs-on: [self-hosted, velnor-target-mvp]
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -4757,6 +5246,10 @@ jobs:
         with:
           name: ${{ inputs.selection-artifact }}
           path: .velnor-ci-selection
+      - name: Install declared Mise tools
+        run: |
+          set -euo pipefail
+          mise --yes install
       - name: Set up Mr. Boxington
         uses: jdx/mr-boxington-action@7234d3dd1a6ca8f6c381eea8e4dfb03f18fcf777 # v1.3.0
         with:
@@ -4911,7 +5404,7 @@ jobs:
 
   github-rust-jackin-docker:
     name: "GitHub / rust-jackin-docker"
-    if: ${{ inputs.unit == 'rust-jackin-docker' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'github' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-jackin-docker' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || github.event_name == 'merge_group' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both'))) }}
     runs-on: ubuntu-26.04
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -4924,12 +5417,12 @@ jobs:
       - name: Download Velnor workflow runtime
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: velnor-workflow-runtime-02651ef94ee689994106f7893801f74b808eb828-${{ runner.os }}-${{ runner.arch }}
+          name: velnor-workflow-runtime-6017727759da543800c90be401c60c7f0d42092b-${{ runner.os }}-${{ runner.arch }}
           path: .velnor-workflow-runtime
       - name: Verify Velnor workflow runtime
         shell: bash
         env:
-          EXPECTED_REVISION: 02651ef94ee689994106f7893801f74b808eb828
+          EXPECTED_REVISION: 6017727759da543800c90be401c60c7f0d42092b
         run: |
           set -euo pipefail
           manifest=.velnor-workflow-runtime/manifest.json
@@ -5187,7 +5680,7 @@ jobs:
 
   velnor-rust-jackin-docker:
     name: "Velnor / rust-jackin-docker"
-    if: ${{ inputs.unit == 'rust-jackin-docker' && ((github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-jackin-docker' && (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'velnor' || github.event.inputs.runner == 'both')))) }}
     runs-on: [self-hosted, velnor-target-mvp]
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -5202,6 +5695,10 @@ jobs:
         with:
           name: ${{ inputs.selection-artifact }}
           path: .velnor-ci-selection
+      - name: Install declared Mise tools
+        run: |
+          set -euo pipefail
+          mise --yes install
       - name: Set up Mr. Boxington
         uses: jdx/mr-boxington-action@7234d3dd1a6ca8f6c381eea8e4dfb03f18fcf777 # v1.3.0
         with:
@@ -5356,7 +5853,7 @@ jobs:
 
   github-rust-jackin-env:
     name: "GitHub / rust-jackin-env"
-    if: ${{ inputs.unit == 'rust-jackin-env' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'github' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-jackin-env' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || github.event_name == 'merge_group' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both'))) }}
     runs-on: ubuntu-26.04
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -5369,12 +5866,12 @@ jobs:
       - name: Download Velnor workflow runtime
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: velnor-workflow-runtime-02651ef94ee689994106f7893801f74b808eb828-${{ runner.os }}-${{ runner.arch }}
+          name: velnor-workflow-runtime-6017727759da543800c90be401c60c7f0d42092b-${{ runner.os }}-${{ runner.arch }}
           path: .velnor-workflow-runtime
       - name: Verify Velnor workflow runtime
         shell: bash
         env:
-          EXPECTED_REVISION: 02651ef94ee689994106f7893801f74b808eb828
+          EXPECTED_REVISION: 6017727759da543800c90be401c60c7f0d42092b
         run: |
           set -euo pipefail
           manifest=.velnor-workflow-runtime/manifest.json
@@ -5632,7 +6129,7 @@ jobs:
 
   velnor-rust-jackin-env:
     name: "Velnor / rust-jackin-env"
-    if: ${{ inputs.unit == 'rust-jackin-env' && ((github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-jackin-env' && (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'velnor' || github.event.inputs.runner == 'both')))) }}
     runs-on: [self-hosted, velnor-target-mvp]
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -5647,6 +6144,10 @@ jobs:
         with:
           name: ${{ inputs.selection-artifact }}
           path: .velnor-ci-selection
+      - name: Install declared Mise tools
+        run: |
+          set -euo pipefail
+          mise --yes install
       - name: Set up Mr. Boxington
         uses: jdx/mr-boxington-action@7234d3dd1a6ca8f6c381eea8e4dfb03f18fcf777 # v1.3.0
         with:
@@ -5801,7 +6302,7 @@ jobs:
 
   github-rust-jackin-env-fuzz:
     name: "GitHub / rust-jackin-env-fuzz"
-    if: ${{ inputs.unit == 'rust-jackin-env-fuzz' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'github' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-jackin-env-fuzz' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || github.event_name == 'merge_group' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both'))) }}
     runs-on: ubuntu-26.04
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -5814,12 +6315,12 @@ jobs:
       - name: Download Velnor workflow runtime
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: velnor-workflow-runtime-02651ef94ee689994106f7893801f74b808eb828-${{ runner.os }}-${{ runner.arch }}
+          name: velnor-workflow-runtime-6017727759da543800c90be401c60c7f0d42092b-${{ runner.os }}-${{ runner.arch }}
           path: .velnor-workflow-runtime
       - name: Verify Velnor workflow runtime
         shell: bash
         env:
-          EXPECTED_REVISION: 02651ef94ee689994106f7893801f74b808eb828
+          EXPECTED_REVISION: 6017727759da543800c90be401c60c7f0d42092b
         run: |
           set -euo pipefail
           manifest=.velnor-workflow-runtime/manifest.json
@@ -6077,7 +6578,7 @@ jobs:
 
   velnor-rust-jackin-env-fuzz:
     name: "Velnor / rust-jackin-env-fuzz"
-    if: ${{ inputs.unit == 'rust-jackin-env-fuzz' && ((github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-jackin-env-fuzz' && (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'velnor' || github.event.inputs.runner == 'both')))) }}
     runs-on: [self-hosted, velnor-target-mvp]
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -6092,6 +6593,10 @@ jobs:
         with:
           name: ${{ inputs.selection-artifact }}
           path: .velnor-ci-selection
+      - name: Install declared Mise tools
+        run: |
+          set -euo pipefail
+          mise --yes install
       - name: Set up Mr. Boxington
         uses: jdx/mr-boxington-action@7234d3dd1a6ca8f6c381eea8e4dfb03f18fcf777 # v1.3.0
         with:
@@ -6246,7 +6751,7 @@ jobs:
 
   github-rust-jackin-host:
     name: "GitHub / rust-jackin-host"
-    if: ${{ inputs.unit == 'rust-jackin-host' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'github' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-jackin-host' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || github.event_name == 'merge_group' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both'))) }}
     runs-on: ubuntu-26.04
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -6259,12 +6764,12 @@ jobs:
       - name: Download Velnor workflow runtime
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: velnor-workflow-runtime-02651ef94ee689994106f7893801f74b808eb828-${{ runner.os }}-${{ runner.arch }}
+          name: velnor-workflow-runtime-6017727759da543800c90be401c60c7f0d42092b-${{ runner.os }}-${{ runner.arch }}
           path: .velnor-workflow-runtime
       - name: Verify Velnor workflow runtime
         shell: bash
         env:
-          EXPECTED_REVISION: 02651ef94ee689994106f7893801f74b808eb828
+          EXPECTED_REVISION: 6017727759da543800c90be401c60c7f0d42092b
         run: |
           set -euo pipefail
           manifest=.velnor-workflow-runtime/manifest.json
@@ -6522,7 +7027,7 @@ jobs:
 
   velnor-rust-jackin-host:
     name: "Velnor / rust-jackin-host"
-    if: ${{ inputs.unit == 'rust-jackin-host' && ((github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-jackin-host' && (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'velnor' || github.event.inputs.runner == 'both')))) }}
     runs-on: [self-hosted, velnor-target-mvp]
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -6537,6 +7042,10 @@ jobs:
         with:
           name: ${{ inputs.selection-artifact }}
           path: .velnor-ci-selection
+      - name: Install declared Mise tools
+        run: |
+          set -euo pipefail
+          mise --yes install
       - name: Set up Mr. Boxington
         uses: jdx/mr-boxington-action@7234d3dd1a6ca8f6c381eea8e4dfb03f18fcf777 # v1.3.0
         with:
@@ -6691,7 +7200,7 @@ jobs:
 
   github-rust-jackin-image:
     name: "GitHub / rust-jackin-image"
-    if: ${{ inputs.unit == 'rust-jackin-image' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'github' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-jackin-image' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || github.event_name == 'merge_group' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both'))) }}
     runs-on: ubuntu-26.04
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -6704,12 +7213,12 @@ jobs:
       - name: Download Velnor workflow runtime
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: velnor-workflow-runtime-02651ef94ee689994106f7893801f74b808eb828-${{ runner.os }}-${{ runner.arch }}
+          name: velnor-workflow-runtime-6017727759da543800c90be401c60c7f0d42092b-${{ runner.os }}-${{ runner.arch }}
           path: .velnor-workflow-runtime
       - name: Verify Velnor workflow runtime
         shell: bash
         env:
-          EXPECTED_REVISION: 02651ef94ee689994106f7893801f74b808eb828
+          EXPECTED_REVISION: 6017727759da543800c90be401c60c7f0d42092b
         run: |
           set -euo pipefail
           manifest=.velnor-workflow-runtime/manifest.json
@@ -6967,7 +7476,7 @@ jobs:
 
   velnor-rust-jackin-image:
     name: "Velnor / rust-jackin-image"
-    if: ${{ inputs.unit == 'rust-jackin-image' && ((github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-jackin-image' && (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'velnor' || github.event.inputs.runner == 'both')))) }}
     runs-on: [self-hosted, velnor-target-mvp]
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -6982,6 +7491,10 @@ jobs:
         with:
           name: ${{ inputs.selection-artifact }}
           path: .velnor-ci-selection
+      - name: Install declared Mise tools
+        run: |
+          set -euo pipefail
+          mise --yes install
       - name: Set up Mr. Boxington
         uses: jdx/mr-boxington-action@7234d3dd1a6ca8f6c381eea8e4dfb03f18fcf777 # v1.3.0
         with:
@@ -7136,7 +7649,7 @@ jobs:
 
   github-rust-jackin-instance:
     name: "GitHub / rust-jackin-instance"
-    if: ${{ inputs.unit == 'rust-jackin-instance' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'github' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-jackin-instance' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || github.event_name == 'merge_group' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both'))) }}
     runs-on: ubuntu-26.04
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -7149,12 +7662,12 @@ jobs:
       - name: Download Velnor workflow runtime
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: velnor-workflow-runtime-02651ef94ee689994106f7893801f74b808eb828-${{ runner.os }}-${{ runner.arch }}
+          name: velnor-workflow-runtime-6017727759da543800c90be401c60c7f0d42092b-${{ runner.os }}-${{ runner.arch }}
           path: .velnor-workflow-runtime
       - name: Verify Velnor workflow runtime
         shell: bash
         env:
-          EXPECTED_REVISION: 02651ef94ee689994106f7893801f74b808eb828
+          EXPECTED_REVISION: 6017727759da543800c90be401c60c7f0d42092b
         run: |
           set -euo pipefail
           manifest=.velnor-workflow-runtime/manifest.json
@@ -7412,7 +7925,7 @@ jobs:
 
   velnor-rust-jackin-instance:
     name: "Velnor / rust-jackin-instance"
-    if: ${{ inputs.unit == 'rust-jackin-instance' && ((github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-jackin-instance' && (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'velnor' || github.event.inputs.runner == 'both')))) }}
     runs-on: [self-hosted, velnor-target-mvp]
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -7427,6 +7940,10 @@ jobs:
         with:
           name: ${{ inputs.selection-artifact }}
           path: .velnor-ci-selection
+      - name: Install declared Mise tools
+        run: |
+          set -euo pipefail
+          mise --yes install
       - name: Set up Mr. Boxington
         uses: jdx/mr-boxington-action@7234d3dd1a6ca8f6c381eea8e4dfb03f18fcf777 # v1.3.0
         with:
@@ -7581,7 +8098,7 @@ jobs:
 
   github-rust-jackin-isolation:
     name: "GitHub / rust-jackin-isolation"
-    if: ${{ inputs.unit == 'rust-jackin-isolation' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'github' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-jackin-isolation' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || github.event_name == 'merge_group' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both'))) }}
     runs-on: ubuntu-26.04
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -7594,12 +8111,12 @@ jobs:
       - name: Download Velnor workflow runtime
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: velnor-workflow-runtime-02651ef94ee689994106f7893801f74b808eb828-${{ runner.os }}-${{ runner.arch }}
+          name: velnor-workflow-runtime-6017727759da543800c90be401c60c7f0d42092b-${{ runner.os }}-${{ runner.arch }}
           path: .velnor-workflow-runtime
       - name: Verify Velnor workflow runtime
         shell: bash
         env:
-          EXPECTED_REVISION: 02651ef94ee689994106f7893801f74b808eb828
+          EXPECTED_REVISION: 6017727759da543800c90be401c60c7f0d42092b
         run: |
           set -euo pipefail
           manifest=.velnor-workflow-runtime/manifest.json
@@ -7857,7 +8374,7 @@ jobs:
 
   velnor-rust-jackin-isolation:
     name: "Velnor / rust-jackin-isolation"
-    if: ${{ inputs.unit == 'rust-jackin-isolation' && ((github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-jackin-isolation' && (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'velnor' || github.event.inputs.runner == 'both')))) }}
     runs-on: [self-hosted, velnor-target-mvp]
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -7872,6 +8389,10 @@ jobs:
         with:
           name: ${{ inputs.selection-artifact }}
           path: .velnor-ci-selection
+      - name: Install declared Mise tools
+        run: |
+          set -euo pipefail
+          mise --yes install
       - name: Set up Mr. Boxington
         uses: jdx/mr-boxington-action@7234d3dd1a6ca8f6c381eea8e4dfb03f18fcf777 # v1.3.0
         with:
@@ -8026,7 +8547,7 @@ jobs:
 
   github-rust-jackin-launch:
     name: "GitHub / rust-jackin-launch"
-    if: ${{ inputs.unit == 'rust-jackin-launch' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'github' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-jackin-launch' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || github.event_name == 'merge_group' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both'))) }}
     runs-on: ubuntu-26.04
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -8039,12 +8560,12 @@ jobs:
       - name: Download Velnor workflow runtime
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: velnor-workflow-runtime-02651ef94ee689994106f7893801f74b808eb828-${{ runner.os }}-${{ runner.arch }}
+          name: velnor-workflow-runtime-6017727759da543800c90be401c60c7f0d42092b-${{ runner.os }}-${{ runner.arch }}
           path: .velnor-workflow-runtime
       - name: Verify Velnor workflow runtime
         shell: bash
         env:
-          EXPECTED_REVISION: 02651ef94ee689994106f7893801f74b808eb828
+          EXPECTED_REVISION: 6017727759da543800c90be401c60c7f0d42092b
         run: |
           set -euo pipefail
           manifest=.velnor-workflow-runtime/manifest.json
@@ -8302,7 +8823,7 @@ jobs:
 
   velnor-rust-jackin-launch:
     name: "Velnor / rust-jackin-launch"
-    if: ${{ inputs.unit == 'rust-jackin-launch' && ((github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-jackin-launch' && (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'velnor' || github.event.inputs.runner == 'both')))) }}
     runs-on: [self-hosted, velnor-target-mvp]
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -8317,6 +8838,10 @@ jobs:
         with:
           name: ${{ inputs.selection-artifact }}
           path: .velnor-ci-selection
+      - name: Install declared Mise tools
+        run: |
+          set -euo pipefail
+          mise --yes install
       - name: Set up Mr. Boxington
         uses: jdx/mr-boxington-action@7234d3dd1a6ca8f6c381eea8e4dfb03f18fcf777 # v1.3.0
         with:
@@ -8469,9 +8994,9 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
           exit 0
 
-  github-rust-jackin-manifest:
-    name: "GitHub / rust-jackin-manifest"
-    if: ${{ inputs.unit == 'rust-jackin-manifest' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'github' || github.event.inputs.lanes == 'both'))) }}
+  github-rust-jackin-lints:
+    name: "GitHub / rust-jackin-lints"
+    if: ${{ inputs.unit == 'rust-jackin-lints' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || github.event_name == 'merge_group' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both'))) }}
     runs-on: ubuntu-26.04
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -8484,12 +9009,461 @@ jobs:
       - name: Download Velnor workflow runtime
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: velnor-workflow-runtime-02651ef94ee689994106f7893801f74b808eb828-${{ runner.os }}-${{ runner.arch }}
+          name: velnor-workflow-runtime-6017727759da543800c90be401c60c7f0d42092b-${{ runner.os }}-${{ runner.arch }}
           path: .velnor-workflow-runtime
       - name: Verify Velnor workflow runtime
         shell: bash
         env:
-          EXPECTED_REVISION: 02651ef94ee689994106f7893801f74b808eb828
+          EXPECTED_REVISION: 6017727759da543800c90be401c60c7f0d42092b
+        run: |
+          set -euo pipefail
+          manifest=.velnor-workflow-runtime/manifest.json
+          jq -e --arg revision "$EXPECTED_REVISION" --arg repository "$GITHUB_REPOSITORY" --arg platform "${RUNNER_OS}-${RUNNER_ARCH}" --arg run_id "$GITHUB_RUN_ID" '.revision == $revision and .repository == $repository and .platform == $platform and .run_id == $run_id and (.run_id | test("^[0-9]+$")) and .job_id != "" and (.binary_sha256 | test("^[0-9a-f]{64}$"))' "$manifest" >/dev/null
+          expected="$(jq -er '.binary_sha256' "$manifest")"
+          actual="$(sha256sum .velnor-workflow-runtime/velnor-workflow | awk '{print $1}')"
+          [[ "$actual" == "$expected" ]] || { echo "::error::runtime digest mismatch" >&2; exit 1; }
+      - name: Add Velnor workflow runtime to PATH
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -Dm0755 .velnor-workflow-runtime/velnor-workflow "$HOME/.cargo/bin/velnor-workflow"
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+      - name: Download Velnor CI selection
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ inputs.selection-artifact }}
+          path: .velnor-ci-selection
+      - name: Restore Rust toolchain
+        id: rustup-toolchain
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.rustup
+          key: velnor-rustup-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml', 'rust-toolchain') }}
+      - name: Provision Rust toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install
+          rustup target add 'aarch64-unknown-linux-gnu' 'x86_64-unknown-linux-gnu'
+      - name: Save Rust toolchain
+        if: ((github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')) && steps.rustup-toolchain.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.rustup
+          key: velnor-rustup-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml', 'rust-toolchain') }}
+      - name: Set up Mise tools
+        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        with:
+          install_args: aqua:nextest-rs/nextest/cargo-nextest
+          cache: true
+      - name: Set up Mr. Boxington
+        uses: jdx/mr-boxington-action@7234d3dd1a6ca8f6c381eea8e4dfb03f18fcf777 # v1.3.0
+        with:
+          backend: github
+          github-cache-mode: objects
+          version: 1.8.3
+          cache-key: velnor-mbx-v3-85a0df39c5f4-${{ runner.os }}-${{ runner.arch }}-rust-jackin-lints-${{ hashFiles('.cargo/**', 'Cargo.lock', 'Cargo.toml', 'crates/jackin-lints/Cargo.toml', 'rust-toolchain', 'rust-toolchain.toml') }}-${{ hashFiles('crates/jackin-lints/**/*.rs', 'crates/jackin-lints/benches/**', 'crates/jackin-lints/examples/**', 'crates/jackin-lints/src/**', 'crates/jackin-lints/tests/**', 'mise.lock') }}
+          restore-keys: |
+            velnor-mbx-v3-85a0df39c5f4-${{ runner.os }}-${{ runner.arch }}-rust-jackin-lints-${{ hashFiles('.cargo/**', 'Cargo.lock', 'Cargo.toml', 'crates/jackin-lints/Cargo.toml', 'rust-toolchain', 'rust-toolchain.toml') }}-
+            velnor-mbx-v3-85a0df39c5f4-${{ runner.os }}-${{ runner.arch }}-rust-jackin-lints-
+          save-on-workflow-dispatch: true
+      - name: Restore mold 2.42.0 cache
+        id: mold-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/velnor/mold/2.42.0
+          key: velnor-mold-2.42.0-${{ runner.os }}-${{ runner.arch }}
+      - name: Set up mold 2.42.0
+        shell: bash
+        env:
+          MOLD_VERSION: 2.42.0
+        run: |
+          set -euo pipefail
+          case "$(uname -m)" in
+            x86_64) mold_arch=x86_64; expected='f5ed2f6e31d1ada4f07fe766fe0de7a73104d1c5cdc59086fcecc16a43720b6d' ;;
+            aarch64) mold_arch=aarch64; expected='3c9a0a3624aac8a2007569ae50c33b3129a0f0ae8bcc974aeee2f8939d295190' ;;
+            *) echo "unsupported mold architecture: $(uname -m)" >&2; exit 1 ;;
+          esac
+          cache_dir="$HOME/.cache/velnor/mold/$MOLD_VERSION"
+          archive="$cache_dir/mold-$MOLD_VERSION-$mold_arch-linux.tar.gz"
+          mkdir -p "$cache_dir"
+          if [[ ! -s "$archive" ]]; then
+            temporary="$archive.download"
+            trap 'rm -f "$temporary"' EXIT
+            curl --fail --silent --show-error --location --retry 3 --retry-delay 2 \
+              --output "$temporary" \
+              "https://github.com/rui314/mold/releases/download/v$MOLD_VERSION/mold-$MOLD_VERSION-$mold_arch-linux.tar.gz"
+            printf '%s  %s\n' "$expected" "$temporary" | sha256sum --check --strict
+            mv "$temporary" "$archive"
+            trap - EXIT
+          fi
+          printf '%s  %s\n' "$expected" "$archive" | sha256sum --check --strict
+          if [[ "$(id -u)" -eq 0 ]]; then
+            tar --directory /usr/local --strip-components=1 --no-overwrite-dir -xzf "$archive"
+            ln -sf /usr/local/bin/mold "$(realpath /usr/bin/ld 2>/dev/null || printf /usr/bin/ld)"
+          else
+            sudo tar --directory /usr/local --strip-components=1 --no-overwrite-dir -xzf "$archive"
+            sudo ln -sf /usr/local/bin/mold "$(realpath /usr/bin/ld 2>/dev/null || printf /usr/bin/ld)"
+          fi
+          mold --version | grep -F "$MOLD_VERSION"
+      - name: Save mold 2.42.0 cache
+        if: (((github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'))) && steps.mold-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/velnor/mold/2.42.0
+          key: velnor-mold-2.42.0-${{ runner.os }}-${{ runner.arch }}
+      - name: Restore "Rust crate (jackin_lints)" cache
+        id: cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ci-${{ runner.os }}-rust-${{ hashFiles('.cargo/**', 'Cargo.toml', 'crates/jackin-lints/Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', 'rust-toolchain') }}
+          restore-keys: |
+            ci-${{ runner.os }}-rust-
+      - name: Prepare Cargo sources
+        env:
+          MISE_AUTO_INSTALL: "false"
+          MISE_EXEC_AUTO_INSTALL: "false"
+          MISE_NOT_FOUND_AUTO_INSTALL: "false"
+        run: |
+          set -euo pipefail
+          cd -- 'crates/jackin-lints' && cargo fetch --locked
+      - name: Run "Rust crate (jackin_lints)" checks
+        env:
+          CI_SCOPE: ${{ inputs.scope }}
+          CI_UNIT_ID: ${{ inputs.unit }}
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.inputs.base_sha || github.event.before || 'refs/heads/main' }}
+          HEAD_SHA: ${{ github.sha }}
+          VELNOR_SELECTION_FILE: .velnor-ci-selection/velnor-ci-selection
+          CARGO_NET_OFFLINE: "true"
+          MISE_AUTO_INSTALL: "false"
+          MISE_EXEC_AUTO_INSTALL: "false"
+          MISE_NOT_FOUND_AUTO_INSTALL: "false"
+        run: |
+          set -o pipefail
+          echo "VELNOR_CHECKS_STARTED_EPOCH=$(date +%s)" >> "$GITHUB_ENV"
+          rc=0
+          velnor-workflow run --config .github/ci/project.toml --scope "$CI_SCOPE" --unit "$CI_UNIT_ID" 2>&1 | tee "$RUNNER_TEMP/velnor-unit-log.txt" || rc=$?
+          echo "VELNOR_CHECKS_ENDED_EPOCH=$(date +%s)" >> "$GITHUB_ENV"
+          exit $rc
+      - name: Report phase timings and cache outcomes
+        if: always()
+        env:
+          VELNOR_WORKFLOW_NAME: "Rust · jackin_lints"
+          VELNOR_LANE_NAME: GitHub
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -uo pipefail
+          log="$RUNNER_TEMP/velnor-unit-log.txt"
+          log_present=false
+          if [[ -s "$log" ]]; then log_present=true; fi
+          started="${VELNOR_CHECKS_STARTED_EPOCH:-}"
+          ended="${VELNOR_CHECKS_ENDED_EPOCH:-}"
+          wall=""
+          if [[ "$started" =~ ^[0-9]+$ && "$ended" =~ ^[0-9]+$ ]]; then
+            wall=$((ended - started))
+          fi
+          queue=""
+          job_name=""
+          expected_job="$VELNOR_WORKFLOW_NAME / $VELNOR_LANE_NAME"
+          if command -v gh >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
+            run_started="$(gh api "repos/$GH_REPO/actions/runs/$GITHUB_RUN_ID" --jq '.run_started_at // empty' 2>/dev/null || true)"
+            jobs_json="$(gh api --paginate "repos/$GH_REPO/actions/runs/$GITHUB_RUN_ID/jobs?per_page=100" 2>/dev/null || true)"
+            job_name="$(printf '%s' "$jobs_json" | jq -r --arg wf "$VELNOR_WORKFLOW_NAME" --arg lane "$VELNOR_LANE_NAME" '[.jobs[]? | select(.name == ($wf + " / " + $lane))][0].name // empty' 2>/dev/null | head -n1 || true)"
+            if [[ -z "$job_name" ]]; then
+              job_name="$(printf '%s' "$jobs_json" | jq -r --arg lane "$VELNOR_LANE_NAME" '[.jobs[]? | select(.name | endswith(" / " + $lane))][0].name // empty' 2>/dev/null | head -n1 || true)"
+            fi
+            if [[ -n "$job_name" && -n "$run_started" ]]; then
+              job_started="$(printf '%s' "$jobs_json" | jq -r --arg name "$job_name" '.jobs[]? | select(.name == $name) | .started_at' 2>/dev/null | head -n1 || true)"
+              if [[ -n "$job_started" ]]; then
+                queue="$(jq -n --arg job "$job_started" --arg run "$run_started" '($job | fromdateiso8601) - ($run | fromdateiso8601)' 2>/dev/null || true)"
+              fi
+            fi
+          fi
+          if [[ -z "$job_name" ]]; then
+            job_name="$expected_job"
+          fi
+          updating_index=0
+          updating_git=0
+          downloading_crates=0
+          compiling_count=0
+          downloaded_lines=""
+          mbx_lines=""
+          finished_lines=""
+          if [[ -s "$log" ]]; then
+            updating_index="$(grep -c 'Updating crates.io index' "$log" || true)"
+            updating_git="$(grep -cE 'Updating git (repository|submodule)' "$log" || true)"
+            downloading_crates="$(grep -c 'Downloading crates' "$log" || true)"
+            compiling_count="$(grep -c 'Compiling ' "$log" || true)"
+            downloaded_lines="$(grep -E 'Downloaded [0-9]+ crate' "$log" || true)"
+            mbx_lines="$(grep -E 'mbx(\[cache\])?:' "$log" | grep -E 'hits|misses' || true)"
+            finished_lines="$(grep -E 'Finished .* in ' "$log" || true)"
+          fi
+          positive_int() {
+            local value="$1"
+            [[ "$value" =~ ^[0-9]+$ ]] || value=0
+            printf '%s' "$value"
+          }
+          report_json="$(jq -nc \
+            --arg job "$job_name" \
+            --arg queue "$queue" \
+            --arg wall "$wall" \
+            --argjson log_present "$log_present" \
+            --argjson updating_index "$(positive_int "$updating_index")" \
+            --argjson updating_git "$(positive_int "$updating_git")" \
+            --argjson downloading_crates "$(positive_int "$downloading_crates")" \
+            --argjson compiling_count "$(positive_int "$compiling_count")" \
+            --argjson downloaded_lines "$(printf '%s' "$downloaded_lines" | jq -Rsc 'split("\n") | map(select(length > 0))' || true)" \
+            --argjson mbx "$(printf '%s' "$mbx_lines" | jq -Rsc 'split("\n") | map(select(length > 0))' || true)" \
+            --argjson finished "$(printf '%s' "$finished_lines" | jq -Rsc 'split("\n") | map(select(length > 0))' || true)" \
+            '{
+              job: $job,
+              log_present: $log_present,
+              queue_seconds: ($queue | if test("^[0-9]+$") then tonumber else null end),
+              checks_wall_seconds: ($wall | if test("^[0-9]+$") then tonumber else null end),
+              origin_downloads: {
+                updating_crates_io_index: $updating_index,
+                updating_git: $updating_git,
+                downloading_crates: $downloading_crates,
+                downloaded_lines: $downloaded_lines
+              },
+              compiler: {
+                mbx_outcomes: $mbx,
+                finished_segments: $finished,
+                compiling_lines: $compiling_count
+              }
+            }' 2>/dev/null || true)"
+          if [[ -z "$report_json" ]]; then
+            report_json="VELNOR_CI_REPORT_FALLBACK job=$job_name"
+          fi
+          echo "VELNOR_CI_REPORT $report_json"
+          {
+            echo ""
+            echo '### Phase timings and cache outcomes'
+            echo ""
+            echo '```json'
+            echo "$report_json"
+            echo '```'
+            echo ""
+            echo "| metric | value |"
+            echo "| --- | --- |"
+            echo "| queue_seconds | ${queue:-unknown} |"
+            echo "| checks_wall_seconds | ${wall:-unknown} |"
+            echo "| updating_crates_io_index | $updating_index |"
+            echo "| updating_git | $updating_git |"
+            echo "| downloading_crates | $downloading_crates |"
+            echo "| compiling_lines | $compiling_count |"
+          } >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
+          exit 0
+      - name: Save "Rust crate (jackin_lints)" cache
+        if: ((github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')) && steps.cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ci-${{ runner.os }}-rust-${{ hashFiles('.cargo/**', 'Cargo.toml', 'crates/jackin-lints/Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', 'rust-toolchain') }}
+
+  velnor-rust-jackin-lints:
+    name: "Velnor / rust-jackin-lints"
+    if: ${{ inputs.unit == 'rust-jackin-lints' && (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'velnor' || github.event.inputs.runner == 'both')))) }}
+    runs-on: [self-hosted, velnor-target-mvp]
+    env:
+      RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Download Velnor CI selection
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ inputs.selection-artifact }}
+          path: .velnor-ci-selection
+      - name: Install declared Mise tools
+        run: |
+          set -euo pipefail
+          mise --yes install
+      - name: Set up Mr. Boxington
+        uses: jdx/mr-boxington-action@7234d3dd1a6ca8f6c381eea8e4dfb03f18fcf777 # v1.3.0
+        with:
+          backend: local
+      - name: Restore "Rust crate (jackin_lints)" cache
+        id: cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ci-${{ runner.os }}-rust-${{ hashFiles('.cargo/**', 'Cargo.toml', 'crates/jackin-lints/Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', 'rust-toolchain') }}
+          restore-keys: |
+            ci-${{ runner.os }}-rust-
+      - name: Prepare Cargo sources
+        env:
+          MISE_AUTO_INSTALL: "false"
+          MISE_EXEC_AUTO_INSTALL: "false"
+          MISE_NOT_FOUND_AUTO_INSTALL: "false"
+        run: |
+          set -euo pipefail
+          cd -- 'crates/jackin-lints' && cargo fetch --locked
+      - name: Run "Rust crate (jackin_lints)" checks
+        env:
+          CI_SCOPE: ${{ inputs.scope }}
+          CI_UNIT_ID: ${{ inputs.unit }}
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.inputs.base_sha || github.event.before || 'refs/heads/main' }}
+          HEAD_SHA: ${{ github.sha }}
+          VELNOR_SELECTION_FILE: .velnor-ci-selection/velnor-ci-selection
+          CARGO_NET_OFFLINE: "true"
+          MISE_AUTO_INSTALL: "false"
+          MISE_EXEC_AUTO_INSTALL: "false"
+          MISE_NOT_FOUND_AUTO_INSTALL: "false"
+        run: |
+          set -o pipefail
+          echo "VELNOR_CHECKS_STARTED_EPOCH=$(date +%s)" >> "$GITHUB_ENV"
+          rc=0
+          velnor-workflow run --config .github/ci/project.toml --scope "$CI_SCOPE" --unit "$CI_UNIT_ID" 2>&1 | tee "$RUNNER_TEMP/velnor-unit-log.txt" || rc=$?
+          echo "VELNOR_CHECKS_ENDED_EPOCH=$(date +%s)" >> "$GITHUB_ENV"
+          exit $rc
+      - name: Report phase timings and cache outcomes
+        if: always()
+        env:
+          VELNOR_WORKFLOW_NAME: "Rust · jackin_lints"
+          VELNOR_LANE_NAME: Velnor
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -uo pipefail
+          log="$RUNNER_TEMP/velnor-unit-log.txt"
+          log_present=false
+          if [[ -s "$log" ]]; then log_present=true; fi
+          started="${VELNOR_CHECKS_STARTED_EPOCH:-}"
+          ended="${VELNOR_CHECKS_ENDED_EPOCH:-}"
+          wall=""
+          if [[ "$started" =~ ^[0-9]+$ && "$ended" =~ ^[0-9]+$ ]]; then
+            wall=$((ended - started))
+          fi
+          queue=""
+          job_name=""
+          expected_job="$VELNOR_WORKFLOW_NAME / $VELNOR_LANE_NAME"
+          if command -v gh >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
+            run_started="$(gh api "repos/$GH_REPO/actions/runs/$GITHUB_RUN_ID" --jq '.run_started_at // empty' 2>/dev/null || true)"
+            jobs_json="$(gh api --paginate "repos/$GH_REPO/actions/runs/$GITHUB_RUN_ID/jobs?per_page=100" 2>/dev/null || true)"
+            job_name="$(printf '%s' "$jobs_json" | jq -r --arg wf "$VELNOR_WORKFLOW_NAME" --arg lane "$VELNOR_LANE_NAME" '[.jobs[]? | select(.name == ($wf + " / " + $lane))][0].name // empty' 2>/dev/null | head -n1 || true)"
+            if [[ -z "$job_name" ]]; then
+              job_name="$(printf '%s' "$jobs_json" | jq -r --arg lane "$VELNOR_LANE_NAME" '[.jobs[]? | select(.name | endswith(" / " + $lane))][0].name // empty' 2>/dev/null | head -n1 || true)"
+            fi
+            if [[ -n "$job_name" && -n "$run_started" ]]; then
+              job_started="$(printf '%s' "$jobs_json" | jq -r --arg name "$job_name" '.jobs[]? | select(.name == $name) | .started_at' 2>/dev/null | head -n1 || true)"
+              if [[ -n "$job_started" ]]; then
+                queue="$(jq -n --arg job "$job_started" --arg run "$run_started" '($job | fromdateiso8601) - ($run | fromdateiso8601)' 2>/dev/null || true)"
+              fi
+            fi
+          fi
+          if [[ -z "$job_name" ]]; then
+            job_name="$expected_job"
+          fi
+          updating_index=0
+          updating_git=0
+          downloading_crates=0
+          compiling_count=0
+          downloaded_lines=""
+          mbx_lines=""
+          finished_lines=""
+          if [[ -s "$log" ]]; then
+            updating_index="$(grep -c 'Updating crates.io index' "$log" || true)"
+            updating_git="$(grep -cE 'Updating git (repository|submodule)' "$log" || true)"
+            downloading_crates="$(grep -c 'Downloading crates' "$log" || true)"
+            compiling_count="$(grep -c 'Compiling ' "$log" || true)"
+            downloaded_lines="$(grep -E 'Downloaded [0-9]+ crate' "$log" || true)"
+            mbx_lines="$(grep -E 'mbx(\[cache\])?:' "$log" | grep -E 'hits|misses' || true)"
+            finished_lines="$(grep -E 'Finished .* in ' "$log" || true)"
+          fi
+          positive_int() {
+            local value="$1"
+            [[ "$value" =~ ^[0-9]+$ ]] || value=0
+            printf '%s' "$value"
+          }
+          report_json="$(jq -nc \
+            --arg job "$job_name" \
+            --arg queue "$queue" \
+            --arg wall "$wall" \
+            --argjson log_present "$log_present" \
+            --argjson updating_index "$(positive_int "$updating_index")" \
+            --argjson updating_git "$(positive_int "$updating_git")" \
+            --argjson downloading_crates "$(positive_int "$downloading_crates")" \
+            --argjson compiling_count "$(positive_int "$compiling_count")" \
+            --argjson downloaded_lines "$(printf '%s' "$downloaded_lines" | jq -Rsc 'split("\n") | map(select(length > 0))' || true)" \
+            --argjson mbx "$(printf '%s' "$mbx_lines" | jq -Rsc 'split("\n") | map(select(length > 0))' || true)" \
+            --argjson finished "$(printf '%s' "$finished_lines" | jq -Rsc 'split("\n") | map(select(length > 0))' || true)" \
+            '{
+              job: $job,
+              log_present: $log_present,
+              queue_seconds: ($queue | if test("^[0-9]+$") then tonumber else null end),
+              checks_wall_seconds: ($wall | if test("^[0-9]+$") then tonumber else null end),
+              origin_downloads: {
+                updating_crates_io_index: $updating_index,
+                updating_git: $updating_git,
+                downloading_crates: $downloading_crates,
+                downloaded_lines: $downloaded_lines
+              },
+              compiler: {
+                mbx_outcomes: $mbx,
+                finished_segments: $finished,
+                compiling_lines: $compiling_count
+              }
+            }' 2>/dev/null || true)"
+          if [[ -z "$report_json" ]]; then
+            report_json="VELNOR_CI_REPORT_FALLBACK job=$job_name"
+          fi
+          echo "VELNOR_CI_REPORT $report_json"
+          {
+            echo ""
+            echo '### Phase timings and cache outcomes'
+            echo ""
+            echo '```json'
+            echo "$report_json"
+            echo '```'
+            echo ""
+            echo "| metric | value |"
+            echo "| --- | --- |"
+            echo "| queue_seconds | ${queue:-unknown} |"
+            echo "| checks_wall_seconds | ${wall:-unknown} |"
+            echo "| updating_crates_io_index | $updating_index |"
+            echo "| updating_git | $updating_git |"
+            echo "| downloading_crates | $downloading_crates |"
+            echo "| compiling_lines | $compiling_count |"
+          } >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
+          exit 0
+
+  github-rust-jackin-manifest:
+    name: "GitHub / rust-jackin-manifest"
+    if: ${{ inputs.unit == 'rust-jackin-manifest' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || github.event_name == 'merge_group' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both'))) }}
+    runs-on: ubuntu-26.04
+    env:
+      RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Download Velnor workflow runtime
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: velnor-workflow-runtime-6017727759da543800c90be401c60c7f0d42092b-${{ runner.os }}-${{ runner.arch }}
+          path: .velnor-workflow-runtime
+      - name: Verify Velnor workflow runtime
+        shell: bash
+        env:
+          EXPECTED_REVISION: 6017727759da543800c90be401c60c7f0d42092b
         run: |
           set -euo pipefail
           manifest=.velnor-workflow-runtime/manifest.json
@@ -8747,7 +9721,7 @@ jobs:
 
   velnor-rust-jackin-manifest:
     name: "Velnor / rust-jackin-manifest"
-    if: ${{ inputs.unit == 'rust-jackin-manifest' && ((github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-jackin-manifest' && (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'velnor' || github.event.inputs.runner == 'both')))) }}
     runs-on: [self-hosted, velnor-target-mvp]
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -8762,6 +9736,10 @@ jobs:
         with:
           name: ${{ inputs.selection-artifact }}
           path: .velnor-ci-selection
+      - name: Install declared Mise tools
+        run: |
+          set -euo pipefail
+          mise --yes install
       - name: Set up Mr. Boxington
         uses: jdx/mr-boxington-action@7234d3dd1a6ca8f6c381eea8e4dfb03f18fcf777 # v1.3.0
         with:
@@ -8916,7 +9894,7 @@ jobs:
 
   github-rust-jackin-manifest-fuzz:
     name: "GitHub / rust-jackin-manifest-fuzz"
-    if: ${{ inputs.unit == 'rust-jackin-manifest-fuzz' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'github' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-jackin-manifest-fuzz' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || github.event_name == 'merge_group' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both'))) }}
     runs-on: ubuntu-26.04
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -8929,12 +9907,12 @@ jobs:
       - name: Download Velnor workflow runtime
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: velnor-workflow-runtime-02651ef94ee689994106f7893801f74b808eb828-${{ runner.os }}-${{ runner.arch }}
+          name: velnor-workflow-runtime-6017727759da543800c90be401c60c7f0d42092b-${{ runner.os }}-${{ runner.arch }}
           path: .velnor-workflow-runtime
       - name: Verify Velnor workflow runtime
         shell: bash
         env:
-          EXPECTED_REVISION: 02651ef94ee689994106f7893801f74b808eb828
+          EXPECTED_REVISION: 6017727759da543800c90be401c60c7f0d42092b
         run: |
           set -euo pipefail
           manifest=.velnor-workflow-runtime/manifest.json
@@ -9192,7 +10170,7 @@ jobs:
 
   velnor-rust-jackin-manifest-fuzz:
     name: "Velnor / rust-jackin-manifest-fuzz"
-    if: ${{ inputs.unit == 'rust-jackin-manifest-fuzz' && ((github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-jackin-manifest-fuzz' && (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'velnor' || github.event.inputs.runner == 'both')))) }}
     runs-on: [self-hosted, velnor-target-mvp]
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -9207,6 +10185,10 @@ jobs:
         with:
           name: ${{ inputs.selection-artifact }}
           path: .velnor-ci-selection
+      - name: Install declared Mise tools
+        run: |
+          set -euo pipefail
+          mise --yes install
       - name: Set up Mr. Boxington
         uses: jdx/mr-boxington-action@7234d3dd1a6ca8f6c381eea8e4dfb03f18fcf777 # v1.3.0
         with:
@@ -9361,7 +10343,7 @@ jobs:
 
   github-rust-jackin-oppicker:
     name: "GitHub / rust-jackin-oppicker"
-    if: ${{ inputs.unit == 'rust-jackin-oppicker' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'github' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-jackin-oppicker' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || github.event_name == 'merge_group' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both'))) }}
     runs-on: ubuntu-26.04
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -9374,12 +10356,12 @@ jobs:
       - name: Download Velnor workflow runtime
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: velnor-workflow-runtime-02651ef94ee689994106f7893801f74b808eb828-${{ runner.os }}-${{ runner.arch }}
+          name: velnor-workflow-runtime-6017727759da543800c90be401c60c7f0d42092b-${{ runner.os }}-${{ runner.arch }}
           path: .velnor-workflow-runtime
       - name: Verify Velnor workflow runtime
         shell: bash
         env:
-          EXPECTED_REVISION: 02651ef94ee689994106f7893801f74b808eb828
+          EXPECTED_REVISION: 6017727759da543800c90be401c60c7f0d42092b
         run: |
           set -euo pipefail
           manifest=.velnor-workflow-runtime/manifest.json
@@ -9637,7 +10619,7 @@ jobs:
 
   velnor-rust-jackin-oppicker:
     name: "Velnor / rust-jackin-oppicker"
-    if: ${{ inputs.unit == 'rust-jackin-oppicker' && ((github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-jackin-oppicker' && (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'velnor' || github.event.inputs.runner == 'both')))) }}
     runs-on: [self-hosted, velnor-target-mvp]
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -9652,6 +10634,10 @@ jobs:
         with:
           name: ${{ inputs.selection-artifact }}
           path: .velnor-ci-selection
+      - name: Install declared Mise tools
+        run: |
+          set -euo pipefail
+          mise --yes install
       - name: Set up Mr. Boxington
         uses: jdx/mr-boxington-action@7234d3dd1a6ca8f6c381eea8e4dfb03f18fcf777 # v1.3.0
         with:
@@ -9806,7 +10792,7 @@ jobs:
 
   github-rust-jackin-otlp-testbed:
     name: "GitHub / rust-jackin-otlp-testbed"
-    if: ${{ inputs.unit == 'rust-jackin-otlp-testbed' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'github' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-jackin-otlp-testbed' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || github.event_name == 'merge_group' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both'))) }}
     runs-on: ubuntu-26.04
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -9819,12 +10805,12 @@ jobs:
       - name: Download Velnor workflow runtime
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: velnor-workflow-runtime-02651ef94ee689994106f7893801f74b808eb828-${{ runner.os }}-${{ runner.arch }}
+          name: velnor-workflow-runtime-6017727759da543800c90be401c60c7f0d42092b-${{ runner.os }}-${{ runner.arch }}
           path: .velnor-workflow-runtime
       - name: Verify Velnor workflow runtime
         shell: bash
         env:
-          EXPECTED_REVISION: 02651ef94ee689994106f7893801f74b808eb828
+          EXPECTED_REVISION: 6017727759da543800c90be401c60c7f0d42092b
         run: |
           set -euo pipefail
           manifest=.velnor-workflow-runtime/manifest.json
@@ -10082,7 +11068,7 @@ jobs:
 
   velnor-rust-jackin-otlp-testbed:
     name: "Velnor / rust-jackin-otlp-testbed"
-    if: ${{ inputs.unit == 'rust-jackin-otlp-testbed' && ((github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-jackin-otlp-testbed' && (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'velnor' || github.event.inputs.runner == 'both')))) }}
     runs-on: [self-hosted, velnor-target-mvp]
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -10097,6 +11083,10 @@ jobs:
         with:
           name: ${{ inputs.selection-artifact }}
           path: .velnor-ci-selection
+      - name: Install declared Mise tools
+        run: |
+          set -euo pipefail
+          mise --yes install
       - name: Set up Mr. Boxington
         uses: jdx/mr-boxington-action@7234d3dd1a6ca8f6c381eea8e4dfb03f18fcf777 # v1.3.0
         with:
@@ -10251,7 +11241,7 @@ jobs:
 
   github-rust-jackin-pr-trailers:
     name: "GitHub / rust-jackin-pr-trailers"
-    if: ${{ inputs.unit == 'rust-jackin-pr-trailers' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'github' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-jackin-pr-trailers' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || github.event_name == 'merge_group' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both'))) }}
     runs-on: ubuntu-26.04
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -10264,12 +11254,12 @@ jobs:
       - name: Download Velnor workflow runtime
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: velnor-workflow-runtime-02651ef94ee689994106f7893801f74b808eb828-${{ runner.os }}-${{ runner.arch }}
+          name: velnor-workflow-runtime-6017727759da543800c90be401c60c7f0d42092b-${{ runner.os }}-${{ runner.arch }}
           path: .velnor-workflow-runtime
       - name: Verify Velnor workflow runtime
         shell: bash
         env:
-          EXPECTED_REVISION: 02651ef94ee689994106f7893801f74b808eb828
+          EXPECTED_REVISION: 6017727759da543800c90be401c60c7f0d42092b
         run: |
           set -euo pipefail
           manifest=.velnor-workflow-runtime/manifest.json
@@ -10527,7 +11517,7 @@ jobs:
 
   velnor-rust-jackin-pr-trailers:
     name: "Velnor / rust-jackin-pr-trailers"
-    if: ${{ inputs.unit == 'rust-jackin-pr-trailers' && ((github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-jackin-pr-trailers' && (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'velnor' || github.event.inputs.runner == 'both')))) }}
     runs-on: [self-hosted, velnor-target-mvp]
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -10542,6 +11532,10 @@ jobs:
         with:
           name: ${{ inputs.selection-artifact }}
           path: .velnor-ci-selection
+      - name: Install declared Mise tools
+        run: |
+          set -euo pipefail
+          mise --yes install
       - name: Set up Mr. Boxington
         uses: jdx/mr-boxington-action@7234d3dd1a6ca8f6c381eea8e4dfb03f18fcf777 # v1.3.0
         with:
@@ -10696,7 +11690,7 @@ jobs:
 
   github-rust-jackin-process:
     name: "GitHub / rust-jackin-process"
-    if: ${{ inputs.unit == 'rust-jackin-process' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'github' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-jackin-process' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || github.event_name == 'merge_group' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both'))) }}
     runs-on: ubuntu-26.04
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -10709,12 +11703,12 @@ jobs:
       - name: Download Velnor workflow runtime
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: velnor-workflow-runtime-02651ef94ee689994106f7893801f74b808eb828-${{ runner.os }}-${{ runner.arch }}
+          name: velnor-workflow-runtime-6017727759da543800c90be401c60c7f0d42092b-${{ runner.os }}-${{ runner.arch }}
           path: .velnor-workflow-runtime
       - name: Verify Velnor workflow runtime
         shell: bash
         env:
-          EXPECTED_REVISION: 02651ef94ee689994106f7893801f74b808eb828
+          EXPECTED_REVISION: 6017727759da543800c90be401c60c7f0d42092b
         run: |
           set -euo pipefail
           manifest=.velnor-workflow-runtime/manifest.json
@@ -10972,7 +11966,7 @@ jobs:
 
   velnor-rust-jackin-process:
     name: "Velnor / rust-jackin-process"
-    if: ${{ inputs.unit == 'rust-jackin-process' && ((github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-jackin-process' && (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'velnor' || github.event.inputs.runner == 'both')))) }}
     runs-on: [self-hosted, velnor-target-mvp]
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -10987,6 +11981,10 @@ jobs:
         with:
           name: ${{ inputs.selection-artifact }}
           path: .velnor-ci-selection
+      - name: Install declared Mise tools
+        run: |
+          set -euo pipefail
+          mise --yes install
       - name: Set up Mr. Boxington
         uses: jdx/mr-boxington-action@7234d3dd1a6ca8f6c381eea8e4dfb03f18fcf777 # v1.3.0
         with:
@@ -11141,7 +12139,7 @@ jobs:
 
   github-rust-jackin-protocol:
     name: "GitHub / rust-jackin-protocol"
-    if: ${{ inputs.unit == 'rust-jackin-protocol' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'github' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-jackin-protocol' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || github.event_name == 'merge_group' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both'))) }}
     runs-on: ubuntu-26.04
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -11154,12 +12152,12 @@ jobs:
       - name: Download Velnor workflow runtime
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: velnor-workflow-runtime-02651ef94ee689994106f7893801f74b808eb828-${{ runner.os }}-${{ runner.arch }}
+          name: velnor-workflow-runtime-6017727759da543800c90be401c60c7f0d42092b-${{ runner.os }}-${{ runner.arch }}
           path: .velnor-workflow-runtime
       - name: Verify Velnor workflow runtime
         shell: bash
         env:
-          EXPECTED_REVISION: 02651ef94ee689994106f7893801f74b808eb828
+          EXPECTED_REVISION: 6017727759da543800c90be401c60c7f0d42092b
         run: |
           set -euo pipefail
           manifest=.velnor-workflow-runtime/manifest.json
@@ -11417,7 +12415,7 @@ jobs:
 
   velnor-rust-jackin-protocol:
     name: "Velnor / rust-jackin-protocol"
-    if: ${{ inputs.unit == 'rust-jackin-protocol' && ((github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-jackin-protocol' && (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'velnor' || github.event.inputs.runner == 'both')))) }}
     runs-on: [self-hosted, velnor-target-mvp]
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -11432,6 +12430,10 @@ jobs:
         with:
           name: ${{ inputs.selection-artifact }}
           path: .velnor-ci-selection
+      - name: Install declared Mise tools
+        run: |
+          set -euo pipefail
+          mise --yes install
       - name: Set up Mr. Boxington
         uses: jdx/mr-boxington-action@7234d3dd1a6ca8f6c381eea8e4dfb03f18fcf777 # v1.3.0
         with:
@@ -11586,7 +12588,7 @@ jobs:
 
   github-rust-jackin-protocol-fuzz:
     name: "GitHub / rust-jackin-protocol-fuzz"
-    if: ${{ inputs.unit == 'rust-jackin-protocol-fuzz' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'github' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-jackin-protocol-fuzz' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || github.event_name == 'merge_group' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both'))) }}
     runs-on: ubuntu-26.04
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -11599,12 +12601,12 @@ jobs:
       - name: Download Velnor workflow runtime
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: velnor-workflow-runtime-02651ef94ee689994106f7893801f74b808eb828-${{ runner.os }}-${{ runner.arch }}
+          name: velnor-workflow-runtime-6017727759da543800c90be401c60c7f0d42092b-${{ runner.os }}-${{ runner.arch }}
           path: .velnor-workflow-runtime
       - name: Verify Velnor workflow runtime
         shell: bash
         env:
-          EXPECTED_REVISION: 02651ef94ee689994106f7893801f74b808eb828
+          EXPECTED_REVISION: 6017727759da543800c90be401c60c7f0d42092b
         run: |
           set -euo pipefail
           manifest=.velnor-workflow-runtime/manifest.json
@@ -11862,7 +12864,7 @@ jobs:
 
   velnor-rust-jackin-protocol-fuzz:
     name: "Velnor / rust-jackin-protocol-fuzz"
-    if: ${{ inputs.unit == 'rust-jackin-protocol-fuzz' && ((github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-jackin-protocol-fuzz' && (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'velnor' || github.event.inputs.runner == 'both')))) }}
     runs-on: [self-hosted, velnor-target-mvp]
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -11877,6 +12879,10 @@ jobs:
         with:
           name: ${{ inputs.selection-artifact }}
           path: .velnor-ci-selection
+      - name: Install declared Mise tools
+        run: |
+          set -euo pipefail
+          mise --yes install
       - name: Set up Mr. Boxington
         uses: jdx/mr-boxington-action@7234d3dd1a6ca8f6c381eea8e4dfb03f18fcf777 # v1.3.0
         with:
@@ -12031,7 +13037,7 @@ jobs:
 
   github-rust-jackin-runtime:
     name: "GitHub / rust-jackin-runtime"
-    if: ${{ inputs.unit == 'rust-jackin-runtime' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'github' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-jackin-runtime' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || github.event_name == 'merge_group' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both'))) }}
     runs-on: ubuntu-26.04
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -12044,12 +13050,12 @@ jobs:
       - name: Download Velnor workflow runtime
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: velnor-workflow-runtime-02651ef94ee689994106f7893801f74b808eb828-${{ runner.os }}-${{ runner.arch }}
+          name: velnor-workflow-runtime-6017727759da543800c90be401c60c7f0d42092b-${{ runner.os }}-${{ runner.arch }}
           path: .velnor-workflow-runtime
       - name: Verify Velnor workflow runtime
         shell: bash
         env:
-          EXPECTED_REVISION: 02651ef94ee689994106f7893801f74b808eb828
+          EXPECTED_REVISION: 6017727759da543800c90be401c60c7f0d42092b
         run: |
           set -euo pipefail
           manifest=.velnor-workflow-runtime/manifest.json
@@ -12307,7 +13313,7 @@ jobs:
 
   velnor-rust-jackin-runtime:
     name: "Velnor / rust-jackin-runtime"
-    if: ${{ inputs.unit == 'rust-jackin-runtime' && ((github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-jackin-runtime' && (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'velnor' || github.event.inputs.runner == 'both')))) }}
     runs-on: [self-hosted, velnor-target-mvp]
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -12322,6 +13328,10 @@ jobs:
         with:
           name: ${{ inputs.selection-artifact }}
           path: .velnor-ci-selection
+      - name: Install declared Mise tools
+        run: |
+          set -euo pipefail
+          mise --yes install
       - name: Set up Mr. Boxington
         uses: jdx/mr-boxington-action@7234d3dd1a6ca8f6c381eea8e4dfb03f18fcf777 # v1.3.0
         with:
@@ -12476,7 +13486,7 @@ jobs:
 
   github-rust-jackin-telemetry:
     name: "GitHub / rust-jackin-telemetry"
-    if: ${{ inputs.unit == 'rust-jackin-telemetry' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'github' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-jackin-telemetry' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || github.event_name == 'merge_group' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both'))) }}
     runs-on: ubuntu-26.04
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -12489,12 +13499,12 @@ jobs:
       - name: Download Velnor workflow runtime
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: velnor-workflow-runtime-02651ef94ee689994106f7893801f74b808eb828-${{ runner.os }}-${{ runner.arch }}
+          name: velnor-workflow-runtime-6017727759da543800c90be401c60c7f0d42092b-${{ runner.os }}-${{ runner.arch }}
           path: .velnor-workflow-runtime
       - name: Verify Velnor workflow runtime
         shell: bash
         env:
-          EXPECTED_REVISION: 02651ef94ee689994106f7893801f74b808eb828
+          EXPECTED_REVISION: 6017727759da543800c90be401c60c7f0d42092b
         run: |
           set -euo pipefail
           manifest=.velnor-workflow-runtime/manifest.json
@@ -12752,7 +13762,7 @@ jobs:
 
   velnor-rust-jackin-telemetry:
     name: "Velnor / rust-jackin-telemetry"
-    if: ${{ inputs.unit == 'rust-jackin-telemetry' && ((github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-jackin-telemetry' && (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'velnor' || github.event.inputs.runner == 'both')))) }}
     runs-on: [self-hosted, velnor-target-mvp]
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -12767,6 +13777,10 @@ jobs:
         with:
           name: ${{ inputs.selection-artifact }}
           path: .velnor-ci-selection
+      - name: Install declared Mise tools
+        run: |
+          set -euo pipefail
+          mise --yes install
       - name: Set up Mr. Boxington
         uses: jdx/mr-boxington-action@7234d3dd1a6ca8f6c381eea8e4dfb03f18fcf777 # v1.3.0
         with:
@@ -12921,7 +13935,7 @@ jobs:
 
   github-rust-jackin-test-support:
     name: "GitHub / rust-jackin-test-support"
-    if: ${{ inputs.unit == 'rust-jackin-test-support' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'github' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-jackin-test-support' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || github.event_name == 'merge_group' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both'))) }}
     runs-on: ubuntu-26.04
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -12934,12 +13948,12 @@ jobs:
       - name: Download Velnor workflow runtime
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: velnor-workflow-runtime-02651ef94ee689994106f7893801f74b808eb828-${{ runner.os }}-${{ runner.arch }}
+          name: velnor-workflow-runtime-6017727759da543800c90be401c60c7f0d42092b-${{ runner.os }}-${{ runner.arch }}
           path: .velnor-workflow-runtime
       - name: Verify Velnor workflow runtime
         shell: bash
         env:
-          EXPECTED_REVISION: 02651ef94ee689994106f7893801f74b808eb828
+          EXPECTED_REVISION: 6017727759da543800c90be401c60c7f0d42092b
         run: |
           set -euo pipefail
           manifest=.velnor-workflow-runtime/manifest.json
@@ -13197,7 +14211,7 @@ jobs:
 
   velnor-rust-jackin-test-support:
     name: "Velnor / rust-jackin-test-support"
-    if: ${{ inputs.unit == 'rust-jackin-test-support' && ((github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-jackin-test-support' && (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'velnor' || github.event.inputs.runner == 'both')))) }}
     runs-on: [self-hosted, velnor-target-mvp]
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -13212,6 +14226,10 @@ jobs:
         with:
           name: ${{ inputs.selection-artifact }}
           path: .velnor-ci-selection
+      - name: Install declared Mise tools
+        run: |
+          set -euo pipefail
+          mise --yes install
       - name: Set up Mr. Boxington
         uses: jdx/mr-boxington-action@7234d3dd1a6ca8f6c381eea8e4dfb03f18fcf777 # v1.3.0
         with:
@@ -13366,7 +14384,7 @@ jobs:
 
   github-rust-jackin-tui:
     name: "GitHub / rust-jackin-tui"
-    if: ${{ inputs.unit == 'rust-jackin-tui' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'github' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-jackin-tui' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || github.event_name == 'merge_group' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both'))) }}
     runs-on: ubuntu-26.04
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -13379,12 +14397,12 @@ jobs:
       - name: Download Velnor workflow runtime
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: velnor-workflow-runtime-02651ef94ee689994106f7893801f74b808eb828-${{ runner.os }}-${{ runner.arch }}
+          name: velnor-workflow-runtime-6017727759da543800c90be401c60c7f0d42092b-${{ runner.os }}-${{ runner.arch }}
           path: .velnor-workflow-runtime
       - name: Verify Velnor workflow runtime
         shell: bash
         env:
-          EXPECTED_REVISION: 02651ef94ee689994106f7893801f74b808eb828
+          EXPECTED_REVISION: 6017727759da543800c90be401c60c7f0d42092b
         run: |
           set -euo pipefail
           manifest=.velnor-workflow-runtime/manifest.json
@@ -13642,7 +14660,7 @@ jobs:
 
   velnor-rust-jackin-tui:
     name: "Velnor / rust-jackin-tui"
-    if: ${{ inputs.unit == 'rust-jackin-tui' && ((github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-jackin-tui' && (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'velnor' || github.event.inputs.runner == 'both')))) }}
     runs-on: [self-hosted, velnor-target-mvp]
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -13657,6 +14675,10 @@ jobs:
         with:
           name: ${{ inputs.selection-artifact }}
           path: .velnor-ci-selection
+      - name: Install declared Mise tools
+        run: |
+          set -euo pipefail
+          mise --yes install
       - name: Set up Mr. Boxington
         uses: jdx/mr-boxington-action@7234d3dd1a6ca8f6c381eea8e4dfb03f18fcf777 # v1.3.0
         with:
@@ -13811,7 +14833,7 @@ jobs:
 
   github-rust-jackin-usage:
     name: "GitHub / rust-jackin-usage"
-    if: ${{ inputs.unit == 'rust-jackin-usage' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'github' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-jackin-usage' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || github.event_name == 'merge_group' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both'))) }}
     runs-on: ubuntu-26.04
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -13824,12 +14846,12 @@ jobs:
       - name: Download Velnor workflow runtime
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: velnor-workflow-runtime-02651ef94ee689994106f7893801f74b808eb828-${{ runner.os }}-${{ runner.arch }}
+          name: velnor-workflow-runtime-6017727759da543800c90be401c60c7f0d42092b-${{ runner.os }}-${{ runner.arch }}
           path: .velnor-workflow-runtime
       - name: Verify Velnor workflow runtime
         shell: bash
         env:
-          EXPECTED_REVISION: 02651ef94ee689994106f7893801f74b808eb828
+          EXPECTED_REVISION: 6017727759da543800c90be401c60c7f0d42092b
         run: |
           set -euo pipefail
           manifest=.velnor-workflow-runtime/manifest.json
@@ -14087,7 +15109,7 @@ jobs:
 
   velnor-rust-jackin-usage:
     name: "Velnor / rust-jackin-usage"
-    if: ${{ inputs.unit == 'rust-jackin-usage' && ((github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-jackin-usage' && (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'velnor' || github.event.inputs.runner == 'both')))) }}
     runs-on: [self-hosted, velnor-target-mvp]
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -14102,6 +15124,10 @@ jobs:
         with:
           name: ${{ inputs.selection-artifact }}
           path: .velnor-ci-selection
+      - name: Install declared Mise tools
+        run: |
+          set -euo pipefail
+          mise --yes install
       - name: Set up Mr. Boxington
         uses: jdx/mr-boxington-action@7234d3dd1a6ca8f6c381eea8e4dfb03f18fcf777 # v1.3.0
         with:
@@ -14256,7 +15282,7 @@ jobs:
 
   github-rust-jackin-usage-ffi:
     name: "GitHub / rust-jackin-usage-ffi"
-    if: ${{ inputs.unit == 'rust-jackin-usage-ffi' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'github' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-jackin-usage-ffi' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || github.event_name == 'merge_group' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both'))) }}
     runs-on: ubuntu-26.04
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -14269,12 +15295,12 @@ jobs:
       - name: Download Velnor workflow runtime
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: velnor-workflow-runtime-02651ef94ee689994106f7893801f74b808eb828-${{ runner.os }}-${{ runner.arch }}
+          name: velnor-workflow-runtime-6017727759da543800c90be401c60c7f0d42092b-${{ runner.os }}-${{ runner.arch }}
           path: .velnor-workflow-runtime
       - name: Verify Velnor workflow runtime
         shell: bash
         env:
-          EXPECTED_REVISION: 02651ef94ee689994106f7893801f74b808eb828
+          EXPECTED_REVISION: 6017727759da543800c90be401c60c7f0d42092b
         run: |
           set -euo pipefail
           manifest=.velnor-workflow-runtime/manifest.json
@@ -14532,7 +15558,7 @@ jobs:
 
   velnor-rust-jackin-usage-ffi:
     name: "Velnor / rust-jackin-usage-ffi"
-    if: ${{ inputs.unit == 'rust-jackin-usage-ffi' && ((github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-jackin-usage-ffi' && (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'velnor' || github.event.inputs.runner == 'both')))) }}
     runs-on: [self-hosted, velnor-target-mvp]
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -14547,6 +15573,10 @@ jobs:
         with:
           name: ${{ inputs.selection-artifact }}
           path: .velnor-ci-selection
+      - name: Install declared Mise tools
+        run: |
+          set -euo pipefail
+          mise --yes install
       - name: Set up Mr. Boxington
         uses: jdx/mr-boxington-action@7234d3dd1a6ca8f6c381eea8e4dfb03f18fcf777 # v1.3.0
         with:
@@ -14701,7 +15731,7 @@ jobs:
 
   github-rust-jackin-xtask:
     name: "GitHub / rust-jackin-xtask"
-    if: ${{ inputs.unit == 'rust-jackin-xtask' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'github' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-jackin-xtask' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || github.event_name == 'merge_group' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both'))) }}
     runs-on: ubuntu-26.04
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -14714,12 +15744,12 @@ jobs:
       - name: Download Velnor workflow runtime
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: velnor-workflow-runtime-02651ef94ee689994106f7893801f74b808eb828-${{ runner.os }}-${{ runner.arch }}
+          name: velnor-workflow-runtime-6017727759da543800c90be401c60c7f0d42092b-${{ runner.os }}-${{ runner.arch }}
           path: .velnor-workflow-runtime
       - name: Verify Velnor workflow runtime
         shell: bash
         env:
-          EXPECTED_REVISION: 02651ef94ee689994106f7893801f74b808eb828
+          EXPECTED_REVISION: 6017727759da543800c90be401c60c7f0d42092b
         run: |
           set -euo pipefail
           manifest=.velnor-workflow-runtime/manifest.json
@@ -14977,7 +16007,7 @@ jobs:
 
   velnor-rust-jackin-xtask:
     name: "Velnor / rust-jackin-xtask"
-    if: ${{ inputs.unit == 'rust-jackin-xtask' && ((github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-jackin-xtask' && (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'velnor' || github.event.inputs.runner == 'both')))) }}
     runs-on: [self-hosted, velnor-target-mvp]
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -14992,6 +16022,10 @@ jobs:
         with:
           name: ${{ inputs.selection-artifact }}
           path: .velnor-ci-selection
+      - name: Install declared Mise tools
+        run: |
+          set -euo pipefail
+          mise --yes install
       - name: Set up Mr. Boxington
         uses: jdx/mr-boxington-action@7234d3dd1a6ca8f6c381eea8e4dfb03f18fcf777 # v1.3.0
         with:
@@ -15146,7 +16180,7 @@ jobs:
 
   github-rust-policy:
     name: "GitHub / rust-policy"
-    if: ${{ inputs.unit == 'rust-policy' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'github' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-policy' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || github.event_name == 'merge_group' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both'))) }}
     runs-on: ubuntu-26.04
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -15159,12 +16193,12 @@ jobs:
       - name: Download Velnor workflow runtime
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: velnor-workflow-runtime-02651ef94ee689994106f7893801f74b808eb828-${{ runner.os }}-${{ runner.arch }}
+          name: velnor-workflow-runtime-6017727759da543800c90be401c60c7f0d42092b-${{ runner.os }}-${{ runner.arch }}
           path: .velnor-workflow-runtime
       - name: Verify Velnor workflow runtime
         shell: bash
         env:
-          EXPECTED_REVISION: 02651ef94ee689994106f7893801f74b808eb828
+          EXPECTED_REVISION: 6017727759da543800c90be401c60c7f0d42092b
         run: |
           set -euo pipefail
           manifest=.velnor-workflow-runtime/manifest.json
@@ -15418,7 +16452,7 @@ jobs:
 
   velnor-rust-policy:
     name: "Velnor / rust-policy"
-    if: ${{ inputs.unit == 'rust-policy' && ((github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.lanes == 'velnor' || github.event.inputs.lanes == 'both'))) }}
+    if: ${{ inputs.unit == 'rust-policy' && (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'velnor' || github.event.inputs.runner == 'both')))) }}
     runs-on: [self-hosted, velnor-target-mvp]
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -15433,6 +16467,10 @@ jobs:
         with:
           name: ${{ inputs.selection-artifact }}
           path: .velnor-ci-selection
+      - name: Install declared Mise tools
+        run: |
+          set -euo pipefail
+          mise --yes install
       - name: Set up Mr. Boxington
         uses: jdx/mr-boxington-action@7234d3dd1a6ca8f6c381eea8e4dfb03f18fcf777 # v1.3.0
         with:
