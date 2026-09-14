@@ -42,6 +42,15 @@ pr_commands = ["cargo xtask desktop xcframework", "cd -- 'native' && swift build
 full_commands = ["cargo xtask desktop xcframework", "cd -- 'native' && swift build", "cd -- 'native' && swift test --parallel"]
 mise_tools = ["cargo-binstall", "rust", "cargo:sccache", "cargo:boltffi_cli"]
 
+# dylint_testing UI harness expects `cargo build` to emit the lint cdylib as
+# `target/debug/lib<name>@<toolchain>.so`; mbx reroutes artifacts and breaks that.
+[[units]]
+id = "rust-jackin-lints"
+github_pr_commands = ["cd -- 'crates/jackin-lints' && cargo fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin-lints' && cargo clippy --locked --all-targets --all-features --package 'jackin_lints' -- -D warnings", "cd -- 'crates/jackin-lints' && cargo nextest run --locked --all-features --package 'jackin_lints' --no-tests pass"]
+github_full_commands = ["cd -- 'crates/jackin-lints' && cargo fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin-lints' && cargo clippy --locked --all-targets --all-features --package 'jackin_lints' -- -D warnings", "cd -- 'crates/jackin-lints' && cargo nextest run --locked --all-features --package 'jackin_lints' --no-tests pass"]
+velnor_pr_commands = ["cd -- 'crates/jackin-lints' && cargo fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin-lints' && cargo clippy --locked --all-targets --all-features --package 'jackin_lints' -- -D warnings", "cd -- 'crates/jackin-lints' && cargo nextest run --locked --all-features --package 'jackin_lints' --no-tests pass"]
+velnor_full_commands = ["cd -- 'crates/jackin-lints' && cargo fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin-lints' && cargo clippy --locked --all-targets --all-features --package 'jackin_lints' -- -D warnings", "cd -- 'crates/jackin-lints' && cargo nextest run --locked --all-features --package 'jackin_lints' --no-tests pass"]
+
 # Bespoke release-side files the generator must not replace with its default
 # family renders: jackin's reviewed Homebrew-preview publisher is declared
 # verbatim (pins/commands still refreshed at generation time).
