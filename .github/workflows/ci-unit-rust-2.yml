@@ -974,7 +974,7 @@ jobs:
       - name: Set up Mise tools
         uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
-          install_args: cargo-binstall cargo:sccache cargo:dylint-link aqua:nextest-rs/nextest/cargo-nextest
+          install_args: rust cargo-binstall cargo:sccache cargo:dylint-link aqua:nextest-rs/nextest/cargo-nextest
           cache: true
       - name: Set up Mr. Boxington
         uses: jdx/mr-boxington-action@7234d3dd1a6ca8f6c381eea8e4dfb03f18fcf777 # v1.3.0
