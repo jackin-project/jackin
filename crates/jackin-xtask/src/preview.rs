@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! Homebrew preview source-change classification.
-#![allow(dead_code)] // exercised by unit tests; workflow template will call via xtask next
+#![allow(dead_code, reason = "exercised by unit tests; workflow template will call via xtask next")]
 
 #[cfg(test)]
 mod tests;
