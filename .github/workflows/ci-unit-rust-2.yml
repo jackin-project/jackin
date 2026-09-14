@@ -1054,19 +1054,6 @@ jobs:
         run: |
           set -euo pipefail
           cd -- 'crates/jackin-lints' && env -u RUSTUP_TOOLCHAIN cargo fetch --locked
-          prep="$(mktemp -d)"
-          printf '%s\n' \
-            '[package]' \
-            'name = "dylint-driver-prep"' \
-            'version = "0.0.0"' \
-            'edition = "2021"' \
-            '' \
-            '[workspace]' \
-            '' \
-            '[dependencies]' \
-            'dylint_driver = "=6.0.4"' \
-            > "$prep/Cargo.toml"
-          (cd "$prep" && env -u RUSTUP_TOOLCHAIN cargo fetch)
       - name: Run "Rust crate (jackin_lints)" checks
         env:
           CI_SCOPE: ${{ inputs.scope }}
@@ -1248,19 +1235,6 @@ jobs:
         run: |
           set -euo pipefail
           cd -- 'crates/jackin-lints' && env -u RUSTUP_TOOLCHAIN cargo fetch --locked
-          prep="$(mktemp -d)"
-          printf '%s\n' \
-            '[package]' \
-            'name = "dylint-driver-prep"' \
-            'version = "0.0.0"' \
-            'edition = "2021"' \
-            '' \
-            '[workspace]' \
-            '' \
-            '[dependencies]' \
-            'dylint_driver = "=6.0.4"' \
-            > "$prep/Cargo.toml"
-          (cd "$prep" && env -u RUSTUP_TOOLCHAIN cargo fetch)
       - name: Run "Rust crate (jackin_lints)" checks
         env:
           CI_SCOPE: ${{ inputs.scope }}
