@@ -976,7 +976,7 @@ jobs:
         env:
           RUSTFLAGS: ""
         with:
-          install_args: rust cargo-binstall cargo:dylint-link aqua:nextest-rs/nextest/cargo-nextest
+          install_args: rust cargo-binstall aqua:nextest-rs/nextest/cargo-nextest
           cache: true
       - name: Set up Mr. Boxington
         uses: jdx/mr-boxington-action@7234d3dd1a6ca8f6c381eea8e4dfb03f18fcf777 # v1.3.0
@@ -1034,6 +1034,10 @@ jobs:
         with:
           path: ~/.cache/velnor/mold/2.42.0
           key: velnor-mold-2.42.0-${{ runner.os }}-${{ runner.arch }}
+      - name: Install dylint-link
+        env:
+          RUSTFLAGS: ""
+        run: cargo binstall --no-confirm --disable-telemetry dylint-link@6.0.4
       - name: Restore "Rust crate (jackin_lints)" cache
         id: cache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
