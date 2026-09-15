@@ -8,12 +8,11 @@ repository = "jackin-project/jackin"
 [scan]
 exclude = [".github-gen/sources/**"]
 
-# Runner placement: GitHub-hosted is the default for automatic CI and manual
-# dispatch. Velnor remains opt-in via workflow_dispatch runner=velnor, and
-# cross-runner verification uses runner=both. The Velnor lane stays main-gated
-# on automatic events so PRs never depend on fleet availability.
+# Runner placement: GitHub-hosted only. Automatic push/schedule/PR events must
+# not schedule Velnor jobs — ci-required gates on group-* completion and queued
+# self-hosted jobs would block main when the fleet is unavailable.
 [workflow]
-runners = "both"
+runners = "github"
 default_dispatch_runner = "github"
 automatic_lanes = "github"
 github_runner = "ubuntu-26.04"
