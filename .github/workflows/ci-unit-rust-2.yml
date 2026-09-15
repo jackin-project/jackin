@@ -976,20 +976,16 @@ jobs:
         with:
           install_args: aqua:nextest-rs/nextest/cargo-nextest rust cargo-binstall
           cache: true
-      - name: Install dylint-link
-        env:
-          RUSTFLAGS: ""
-        run: cargo binstall --no-confirm --disable-telemetry dylint-link@6.0.4
       - name: Set up Mr. Boxington
         uses: jdx/mr-boxington-action@7234d3dd1a6ca8f6c381eea8e4dfb03f18fcf777 # v1.3.0
         with:
           backend: github
           github-cache-mode: objects
           version: 1.8.3
-          cache-key: velnor-mbx-v3-e42f8a5d1645-${{ runner.os }}-${{ runner.arch }}-rust-jackin-lints-${{ hashFiles('.cargo/**', 'Cargo.lock', 'Cargo.toml', 'crates/jackin-lints/Cargo.toml', 'rust-toolchain', 'rust-toolchain.toml') }}-${{ hashFiles('crates/jackin-lints/**/*.rs', 'crates/jackin-lints/benches/**', 'crates/jackin-lints/examples/**', 'crates/jackin-lints/src/**', 'crates/jackin-lints/tests/**', 'mise.lock') }}
+          cache-key: velnor-mbx-v3-f8412dd0299e-${{ runner.os }}-${{ runner.arch }}-rust-jackin-lints-${{ hashFiles('.cargo/**', 'Cargo.lock', 'Cargo.toml', 'crates/jackin-lints/Cargo.toml', 'rust-toolchain', 'rust-toolchain.toml') }}-${{ hashFiles('crates/jackin-lints/**/*.rs', 'crates/jackin-lints/benches/**', 'crates/jackin-lints/examples/**', 'crates/jackin-lints/src/**', 'crates/jackin-lints/tests/**', 'mise.lock') }}
           restore-keys: |
-            velnor-mbx-v3-e42f8a5d1645-${{ runner.os }}-${{ runner.arch }}-rust-jackin-lints-${{ hashFiles('.cargo/**', 'Cargo.lock', 'Cargo.toml', 'crates/jackin-lints/Cargo.toml', 'rust-toolchain', 'rust-toolchain.toml') }}-
-            velnor-mbx-v3-e42f8a5d1645-${{ runner.os }}-${{ runner.arch }}-rust-jackin-lints-
+            velnor-mbx-v3-f8412dd0299e-${{ runner.os }}-${{ runner.arch }}-rust-jackin-lints-${{ hashFiles('.cargo/**', 'Cargo.lock', 'Cargo.toml', 'crates/jackin-lints/Cargo.toml', 'rust-toolchain', 'rust-toolchain.toml') }}-
+            velnor-mbx-v3-f8412dd0299e-${{ runner.os }}-${{ runner.arch }}-rust-jackin-lints-
           save-on-workflow-dispatch: true
       - name: Restore mold 2.42.0 cache
         id: mold-cache
@@ -1053,7 +1049,7 @@ jobs:
           MISE_NOT_FOUND_AUTO_INSTALL: "false"
         run: |
           set -euo pipefail
-          cd -- 'crates/jackin-lints' && env -u RUSTUP_TOOLCHAIN cargo fetch --locked
+          cd -- 'crates/jackin-lints' && cargo fetch --locked
       - name: Run "Rust crate (jackin_lints)" checks
         env:
           CI_SCOPE: ${{ inputs.scope }}
@@ -1234,7 +1230,7 @@ jobs:
           MISE_NOT_FOUND_AUTO_INSTALL: "false"
         run: |
           set -euo pipefail
-          cd -- 'crates/jackin-lints' && env -u RUSTUP_TOOLCHAIN cargo fetch --locked
+          cd -- 'crates/jackin-lints' && cargo fetch --locked
       - name: Run "Rust crate (jackin_lints)" checks
         env:
           CI_SCOPE: ${{ inputs.scope }}
