@@ -21,7 +21,7 @@ generator	22
 .github/actions/download-codebook/action.yml	a8ee1a071ee3d394
 .github/actions/sign-and-attest-archive/action.yml	bd4e49cdfe9bc910
 .github/actions/sign-capsule-manifest/action.yml	bcc6b1e304cc95c4
-.github/ci/project.toml	f82d5971116b2b5e
+.github/ci/project.toml	f93f785af3aab278
 .github/ci/workflow-templates/cache-cleanup.yml	eba8efe1071b8b05
 .github/ci/workflow-templates/construct.yml	0a419875a0aeaf85
 .github/ci/workflow-templates/desktop-cadence.yml	dce7101a5292aad0
