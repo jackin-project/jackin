@@ -21,7 +21,7 @@ generator	22
 .github/actions/download-codebook/action.yml	a8ee1a071ee3d394
 .github/actions/sign-and-attest-archive/action.yml	bd4e49cdfe9bc910
 .github/actions/sign-capsule-manifest/action.yml	bcc6b1e304cc95c4
-.github/ci/project.toml	f82d5971116b2b5e
+.github/ci/project.toml	f93f785af3aab278
 .github/ci/workflow-templates/cache-cleanup.yml	eba8efe1071b8b05
 .github/ci/workflow-templates/construct.yml	0a419875a0aeaf85
 .github/ci/workflow-templates/desktop-cadence.yml	dce7101a5292aad0
@@ -39,7 +39,7 @@ generator	22
 .github/workflows/ci-pr.yml	4e719deb27bb68d4
 .github/workflows/ci-unit-bun.yml	471151e4f7733109
 .github/workflows/ci-unit-docker.yml	eb049d8456a152fe
-.github/workflows/ci-unit-rust-2.yml	60e983722c90685b
+.github/workflows/ci-unit-rust-2.yml	ac9e216de0c3b906
 .github/workflows/ci-unit-rust.yml	8686d86cb62910b1
 .github/workflows/ci-unit-swift.yml	2c1a4ff79522c156
 .github/workflows/construct.yml	0a419875a0aeaf85
