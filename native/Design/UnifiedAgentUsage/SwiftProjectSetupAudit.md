@@ -52,9 +52,11 @@ live-resolvable during the audit; repo records match the skill baseline.
   architecture tests; split layout; `desktop-release` profile (thin LTO, one
   codegen unit, line tables); symbol + dSYM archival in release; arm64-only
   decision recorded; binding-drift gate exists.
-- PR CI/local command parity: generated `ci.yml` → pinned reusable
-  `ci-native.yml` → macos-26 job runs `mise run desktop-ci` verbatim, so the
-  drift gate, format, lint, tests, and build are PR-enforced.
+- PR CI/local command parity (historical — the `ci.yml` → `ci-native.yml`
+  lane was deleted; current lane is generated `ci-pr.yml` `group-swift` →
+  `ci-unit-swift.yml` via `velnor-workflow`): generated `ci.yml` → pinned
+  reusable `ci-native.yml` → macos-26 job runs `mise run desktop-ci`
+  verbatim, so the drift gate, format, lint, tests, and build are PR-enforced.
 - Release pipeline parity: `release.yml` invokes `mise run desktop-build /
   desktop-verify / desktop-sign-notarize / desktop-release-state` verbatim;
   workspace nextest runs in the same pipeline.
@@ -70,7 +72,9 @@ live-resolvable during the audit; repo records match the skill baseline.
    cron (Mon 04:41) runs `mise run desktop-scheduled` (merge graph + periphery
    dead-code scan).
 
-Fix landed locally because `ci.yml` is generated upstream by
-`velnor-actions-generator` and never hand-edited; the repo's other workflows
-are hand-written, so a separate cadence workflow follows existing convention.
+Fix landed locally because `ci.yml` (historical — deleted; current PR lane
+is generated `ci-pr.yml` `group-swift` → `ci-unit-swift.yml` via
+`velnor-workflow`) was generated upstream and never hand-edited; the repo's
+other workflows are hand-written, so a separate cadence workflow follows
+existing convention.
 Task names stay the single source of truth in `mise.toml`.

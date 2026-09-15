@@ -52,7 +52,6 @@ extern crate std;
 /// assert_eq!(4, read_u16(array_ref![data,4,2]));
 /// # }
 /// ```
-
 #[macro_export]
 macro_rules! array_ref {
     ($arr:expr, $offset:expr, $len:expr) => {{
@@ -108,7 +107,7 @@ macro_rules! array_refs {
             use core::slice;
             #[inline]
             #[allow(unused_assignments)]
-            #[allow(clippy::eval_order_dependence)]
+            #[allow(clippy::mixed_read_write_in_expression)]
             const unsafe fn as_arrays<T>(a: &[T]) -> ( $( &[T; $pre], )* &[T],  $( &[T; $post], )*) {
                 const MIN_LEN: usize = 0usize $( .saturating_add($pre) )* $( .saturating_add($post) )*;
                 assert!(MIN_LEN < usize::MAX, "Your arrays are too big, are you trying to hack yourself?!");
@@ -140,7 +139,7 @@ macro_rules! array_refs {
         {
             #[inline]
             #[allow(unused_assignments)]
-            #[allow(clippy::eval_order_dependence)]
+            #[allow(clippy::mixed_read_write_in_expression)]
             const unsafe fn as_arrays<T>(a: &[T; $( $len + )* 0 ]) -> ( $( &[T; $len], )* ) {
                 let mut p = a.as_ptr();
                 ( $( {
@@ -205,7 +204,7 @@ macro_rules! mut_array_refs {
             use core::slice;
             #[inline]
             #[allow(unused_assignments)]
-            #[allow(clippy::eval_order_dependence)]
+            #[allow(clippy::mixed_read_write_in_expression)]
             unsafe fn as_arrays<T>(a: &mut [T]) -> ( $( &mut [T; $pre], )* &mut [T],  $( &mut [T; $post], )*) {
                 const MIN_LEN: usize = 0usize $( .saturating_add($pre) )* $( .saturating_add($post) )*;
                 assert!(MIN_LEN < usize::MAX, "Your arrays are too big, are you trying to hack yourself?!");
@@ -237,7 +236,7 @@ macro_rules! mut_array_refs {
         {
             #[inline]
             #[allow(unused_assignments)]
-            #[allow(clippy::eval_order_dependence)]
+            #[allow(clippy::mixed_read_write_in_expression)]
             unsafe fn as_arrays<T>(a: &mut [T; $( $len + )* 0 ]) -> ( $( &mut [T; $len], )* ) {
                 let mut p = a.as_mut_ptr();
                 ( $( {

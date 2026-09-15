@@ -127,7 +127,7 @@ fn ignores_ci_orchestration_for_crate_selection() {
     assert!(
         graph()
             .affected(&[
-                PathBuf::from(".github/workflows/ci.yml"),
+                PathBuf::from(".github/workflows/ci-pr.yml"),
                 PathBuf::from(".github/actions/cache-cargo-registry/action.yml"),
             ])
             .is_empty()

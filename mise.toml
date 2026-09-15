@@ -32,7 +32,7 @@ ripgrep = "15.2.0"
 periphery = { version = "3.8.0", os = ["macos"] }
 swiftlint = { version = "0.65.1", os = ["macos"] }
 uv = "0.11.29"
-"pipx:reuse" = { version = "6.2.0", extras = "charset-normalizer", depends = ["python"] }
+"pipx:reuse" = { version = "6.2.0", extras = "charset-normalizer", depends = ["python", "uv"] }
 syft = "1.46.0"
 xcodegen = "2.46.0"
 xcbeautify = { version = "3.2.1", os = ["macos"] }
@@ -85,8 +85,8 @@ run = "cargo xtask construct publish-manifest"
 description = "Print the resolved construct Bake configuration"
 run = "cargo xtask construct inspect"
 
-# Canonical gate contract (native class). The generated ci.yml gates map to
-# exactly these commands; keep the names stable because ci.yml is generated
+# Canonical gate contract (native class). The generated ci-pr.yml gates map to
+# exactly these commands; keep the names stable because ci-pr.yml is generated
 # and never hand-edited:
 #   install → `mise install --locked`   (direct command, no task by design)
 #   build   → `mise run ci`             (depends-only aggregate over `build`)
