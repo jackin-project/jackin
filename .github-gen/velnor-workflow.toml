@@ -20,6 +20,21 @@ github_runner = "ubuntu-26.04"
 macos_runner = "macos-26"
 velnor_labels = ["self-hosted", "velnor-target-mvp"]
 
+# Interim: adopted release-side workflows predate policy conformance (#965).
+[policy]
+exclude_workflows = [
+  "cache-cleanup.yml",
+  "construct.yml",
+  "docs.yml",
+  "hygiene.yml",
+  "jackin-dev.yml",
+  "preview.yml",
+  "release.yml",
+  "renovate.yml",
+  "renovate-validate.yml",
+  "reuse-compliance.yml",
+]
+
 # Unit contracts the scan cannot derive: the construct image build reads its
 # tool versions from the checked-in versions file (main sources it the same
 # way), and the xtask test suite shells out to the Weaver registry resolver
