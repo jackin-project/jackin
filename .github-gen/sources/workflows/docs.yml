@@ -679,7 +679,7 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deploy1
         continue-on-error: true
-        uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5
 
       - name: Back off before Pages deploy retry 2
         if: steps.deploy1.outcome == 'failure'
@@ -692,7 +692,7 @@ jobs:
         id: deploy2
         if: steps.deploy1.outcome == 'failure'
         continue-on-error: true
-        uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5
 
       - name: Back off before Pages deploy retry 3
         if: steps.deploy1.outcome == 'failure' && steps.deploy2.outcome == 'failure'
@@ -705,7 +705,7 @@ jobs:
         id: deploy3
         if: steps.deploy1.outcome == 'failure' && steps.deploy2.outcome == 'failure'
         continue-on-error: true
-        uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5
 
       - name: Require Pages deployment success
         if: steps.deploy1.outcome != 'success' && steps.deploy2.outcome != 'success' && steps.deploy3.outcome != 'success'
