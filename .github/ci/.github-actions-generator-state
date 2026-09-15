@@ -1,9 +1,9 @@
 # Generated ownership state; do not edit.
 schema = 2
 [inputs]
-config	dff362b4a50e4b75
-scan	1706bf207d31feaa
-generator	22
+config	9149a62e85233d05
+scan	02ef1c401b4f2935
+generator	37
 [outputs]
 .github/actionlint.yaml	2c1dbf178fa8baa1
 .github/actions/aggregate-needs/action.yml	27737a2d2a84b908
@@ -19,36 +19,26 @@ generator	22
 .github/actions/download-ci-xtask/runtime/src/index.js	b2c65cc3696abb98
 .github/actions/download-ci-xtask/runtime/test/index.test.js	4dc6676878e31315
 .github/actions/download-codebook/action.yml	a8ee1a071ee3d394
+.github/actions/report-velnor-ci-outcomes/action.yml	b6d1fd4a90eecb12
 .github/actions/sign-and-attest-archive/action.yml	bd4e49cdfe9bc910
 .github/actions/sign-capsule-manifest/action.yml	bcc6b1e304cc95c4
-.github/ci/project.toml	f93f785af3aab278
-.github/ci/workflow-templates/cache-cleanup.yml	eba8efe1071b8b05
-.github/ci/workflow-templates/construct.yml	0a419875a0aeaf85
-.github/ci/workflow-templates/desktop-cadence.yml	dce7101a5292aad0
-.github/ci/workflow-templates/docs.yml	d5a030227cf39621
-.github/ci/workflow-templates/hygiene.yml	83a22f8e5bd6dc9f
-.github/ci/workflow-templates/jackin-dev.yml	f5709912b9831683
-.github/ci/workflow-templates/preview.yml	bc84384cc47fc81c
-.github/ci/workflow-templates/release.yml	51a13b612eab128c
-.github/ci/workflow-templates/renovate-validate.yml	4742f3cd3f75672d
-.github/ci/workflow-templates/renovate.yml	1c2ee0ece25fd18b
-.github/ci/workflow-templates/reuse-compliance.yml	6553fdb461d26d41
+.github/ci/project.toml	5edf85383752c74e
 .github/workflows/cache-cleanup.yml	eba8efe1071b8b05
-.github/workflows/ci-main.yml	87f042bedc86b88a
-.github/workflows/ci-policy.yml	6775538e208399e4
-.github/workflows/ci-pr.yml	4e719deb27bb68d4
-.github/workflows/ci-unit-bun.yml	471151e4f7733109
-.github/workflows/ci-unit-docker.yml	eb049d8456a152fe
-.github/workflows/ci-unit-rust-2.yml	ac9e216de0c3b906
-.github/workflows/ci-unit-rust.yml	8686d86cb62910b1
-.github/workflows/ci-unit-swift.yml	2c1a4ff79522c156
+.github/workflows/ci-main.yml	cd3bcdbde5175e6c
+.github/workflows/ci-policy.yml	2dca577cd974cfb6
+.github/workflows/ci-pr.yml	f68195a4b972fd6c
+.github/workflows/ci-unit-bun.yml	394e6989de882ceb
+.github/workflows/ci-unit-docker.yml	ada1cd35f51bb5ea
+.github/workflows/ci-unit-rust-2.yml	292a60c6da7e41fb
+.github/workflows/ci-unit-rust.yml	0db368dd0402cc22
+.github/workflows/ci-unit-swift.yml	33e85f2cb20e0ff6
 .github/workflows/construct.yml	0a419875a0aeaf85
 .github/workflows/desktop-cadence.yml	dce7101a5292aad0
-.github/workflows/docs.yml	d5a030227cf39621
+.github/workflows/docs.yml	3d1ef330bc15acd2
 .github/workflows/hygiene.yml	83a22f8e5bd6dc9f
-.github/workflows/jackin-dev.yml	f5709912b9831683
-.github/workflows/maintenance.yml	bb9a907500c87f1b
-.github/workflows/nightly.yml	3600ed7a0ec9ade1
+.github/workflows/jackin-dev.yml	371916cd57a57308
+.github/workflows/maintenance.yml	23c81838f37cf2cd
+.github/workflows/nightly.yml	9ee805b59ed5b570
 .github/workflows/preview.yml	f599fd0ee4d77bcf
 .github/workflows/release.yml	51a13b612eab128c
 .github/workflows/renovate-validate.yml	4742f3cd3f75672d

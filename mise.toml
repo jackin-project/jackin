@@ -85,6 +85,19 @@ run = "cargo xtask construct publish-manifest"
 description = "Print the resolved construct Bake configuration"
 run = "cargo xtask construct inspect"
 
+[tasks.construct-ci-dockerfile]
+description = "CI gate: build the construct Dockerfile with pinned tool versions"
+run = '''source 'docker/construct/versions.env' && docker build --file 'docker/construct/Dockerfile' --build-arg SHELLFIRM_VERSION="$SHELLFIRM_VERSION" --build-arg TIRITH_VERSION="$TIRITH_VERSION" --build-arg MISE_VERSION="$MISE_VERSION" --build-arg STARSHIP_VERSION="$STARSHIP_VERSION" --tag local-ci:docker-construct-dockerfile 'docker/construct''''
+
+[tasks.jackin-lints-ci]
+description = "Verify jackin-lints with its crate-local nightly toolchain"
+run = """
+cd -- 'crates/jackin-lints'
+env -u RUSTUP_TOOLCHAIN cargo fmt --manifest-path 'Cargo.toml' -- --check
+env -u RUSTUP_TOOLCHAIN cargo clippy --locked --all-targets --all-features --package 'jackin_lints' -- -D warnings
+env -u RUSTUP_TOOLCHAIN cargo nextest run --no-run --locked --all-features --package 'jackin_lints'
+"""
+
 # Canonical gate contract (native class). The generated ci-pr.yml gates map to
 # exactly these commands; keep the names stable because ci-pr.yml is generated
 # and never hand-edited:
@@ -135,6 +148,14 @@ run = "cargo xtask desktop bindings-check"
 [tasks.desktop-xcframework]
 description = "Build the arm64 static JackinUsageFFI XCFramework"
 run = "cargo xtask desktop xcframework"
+
+[tasks.native-swift-ci]
+description = "CI gate: build the XCFramework, then compile and test the native Swift package"
+run = """
+mise run desktop-xcframework
+cd -- 'native' && swift build
+cd -- 'native' && swift test --parallel
+"""
 
 [tasks.desktop-generate]
 description = "Regenerate the jackin❯ desktop Xcode project"

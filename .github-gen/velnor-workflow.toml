@@ -6,7 +6,12 @@ repository = "jackin-project/jackin"
 # Vendored generator inputs are never scan evidence: the download-ci-xtask
 # runtime ships package.json manifests that must not select a Node unit.
 [scan]
-exclude = [".github-gen/sources/**"]
+exclude = [
+  ".github-gen/sources/**",
+  "docker/construct/Dockerfile",
+  "crates/jackin-lints/Cargo.toml",
+  "native/Package.swift",
+]
 
 # Runner placement: GitHub-hosted is the default for automatic CI and manual
 # dispatch. Velnor remains opt-in via workflow_dispatch runner=velnor, and
@@ -19,6 +24,19 @@ automatic_lanes = "github"
 github_runner = "ubuntu-26.04"
 macos_runner = "macos-26"
 velnor_labels = ["self-hosted", "velnor-target-mvp"]
+files = [
+  "ci-main.yml",
+  "ci-policy.yml",
+  "ci-pr.yml",
+  "ci-unit-bun.yml",
+  "ci-unit-docker.yml",
+  "ci-unit-rust-2.yml",
+  "ci-unit-rust.yml",
+  "ci-unit-swift.yml",
+  "maintenance.yml",
+  "nightly.yml",
+]
+
 
 # Interim: adopted release-side workflows predate policy conformance (#965).
 [policy]
@@ -41,8 +59,10 @@ exclude_workflows = [
 # at runtime, so its jobs install the pinned tool beside nextest.
 [[units]]
 id = "docker-docker-construct"
-pr_commands = ["source 'docker/construct/versions.env' && docker build --file 'docker/construct/Dockerfile' --build-arg SHELLFIRM_VERSION=\"$SHELLFIRM_VERSION\" --build-arg TIRITH_VERSION=\"$TIRITH_VERSION\" --build-arg MISE_VERSION=\"$MISE_VERSION\" --build-arg STARSHIP_VERSION=\"$STARSHIP_VERSION\" --tag local-ci:docker-construct-dockerfile 'docker/construct'"]
-full_commands = ["source 'docker/construct/versions.env' && docker build --file 'docker/construct/Dockerfile' --build-arg SHELLFIRM_VERSION=\"$SHELLFIRM_VERSION\" --build-arg TIRITH_VERSION=\"$TIRITH_VERSION\" --build-arg MISE_VERSION=\"$MISE_VERSION\" --build-arg STARSHIP_VERSION=\"$STARSHIP_VERSION\" --tag local-ci:docker-construct-dockerfile 'docker/construct'"]
+kind = "docker"
+root = "docker/construct"
+watch = ["docker/construct/**"]
+ci_tasks = ["construct-ci-dockerfile"]
 
 [[units]]
 id = "rust-jackin-xtask"
@@ -53,762 +73,69 @@ mise_tools = ["github:open-telemetry/weaver"]
 # `swift build` resolves its binary target.
 [[units]]
 id = "swift-package-native"
-pr_commands = ["cargo xtask desktop xcframework", "cd -- 'native' && swift build", "cd -- 'native' && swift test --parallel"]
-full_commands = ["cargo xtask desktop xcframework", "cd -- 'native' && swift build", "cd -- 'native' && swift test --parallel"]
+kind = "swift"
+root = "native"
+watch = ["native/**"]
+ci_tasks = ["native-swift-ci"]
 mise_tools = ["cargo-binstall", "rust", "cargo:sccache", "cargo:boltffi_cli"]
 
 # jackin-lints pins a nightly toolchain with rustc-dev in crates/jackin-lints/rust-toolchain.
-# mise-action exports RUSTUP_TOOLCHAIN for the repo default (1.97.1), so unit commands must
-# unset it and let the crate toolchain file select nightly. dylint-link must be on PATH.
+# mise-action exports RUSTUP_TOOLCHAIN for the repo default (1.97.1), so the unit runs
+# through a mise task that unsets it and lets the crate toolchain file select nightly.
 [[units]]
 id = "rust-jackin-lints"
+kind = "rust"
+root = "crates/jackin-lints"
+watch = ["crates/jackin-lints/**"]
+ci_tasks = ["jackin-lints-ci"]
 mise_tools = ["rust", "cargo-binstall"]
-github_pr_commands = ["cd -- 'crates/jackin-lints' && env -u RUSTUP_TOOLCHAIN cargo fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin-lints' && env -u RUSTUP_TOOLCHAIN cargo clippy --locked --all-targets --all-features --package 'jackin_lints' -- -D warnings", "cd -- 'crates/jackin-lints' && env -u RUSTUP_TOOLCHAIN cargo nextest run --no-run --locked --all-features --package 'jackin_lints'"]
-github_full_commands = ["cd -- 'crates/jackin-lints' && env -u RUSTUP_TOOLCHAIN cargo fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin-lints' && env -u RUSTUP_TOOLCHAIN cargo clippy --locked --all-targets --all-features --package 'jackin_lints' -- -D warnings", "cd -- 'crates/jackin-lints' && env -u RUSTUP_TOOLCHAIN cargo nextest run --no-run --locked --all-features --package 'jackin_lints'"]
-velnor_pr_commands = ["cd -- 'crates/jackin-lints' && env -u RUSTUP_TOOLCHAIN cargo fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin-lints' && env -u RUSTUP_TOOLCHAIN cargo clippy --locked --all-targets --all-features --package 'jackin_lints' -- -D warnings", "cd -- 'crates/jackin-lints' && env -u RUSTUP_TOOLCHAIN cargo nextest run --no-run --locked --all-features --package 'jackin_lints'"]
-velnor_full_commands = ["cd -- 'crates/jackin-lints' && env -u RUSTUP_TOOLCHAIN cargo fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin-lints' && env -u RUSTUP_TOOLCHAIN cargo clippy --locked --all-targets --all-features --package 'jackin_lints' -- -D warnings", "cd -- 'crates/jackin-lints' && env -u RUSTUP_TOOLCHAIN cargo nextest run --no-run --locked --all-features --package 'jackin_lints'"]
 
-# Bespoke release-side files the generator must not replace with its default
-# family renders: jackin's reviewed Homebrew-preview publisher is declared
-# verbatim (pins/commands still refreshed at generation time).
-[[declare]]
-primitive = "static-workflow"
-file = "preview.yml"
+# Bespoke workflows the generator does not render yet: repository-owned
+# sources under .github-gen/sources/workflows, copied verbatim each generation.
 
-[declare.args]
-template = '''
-# SPDX-FileCopyrightText: 2026 Alexey Zhokhov
-# SPDX-License-Identifier: Apache-2.0
+[[static_files]]
+file = ".github/workflows/cache-cleanup.yml"
+source = ".github-gen/sources/workflows/cache-cleanup.yml"
 
-name: Publish Homebrew Preview
+[[static_files]]
+file = ".github/workflows/construct.yml"
+source = ".github-gen/sources/workflows/construct.yml"
 
-on:
-  # Publish only after main CI succeeds for the same commit (build-once gate).
-  workflow_run:
-    workflows: [CI]
-    types: [completed]
-    branches: [main]
-  workflow_dispatch:
-    inputs:
-      lanes:
-        description: github (default) | velnor | both
-        type: choice
-        default: github
-        options: [github, velnor, both]
+[[static_files]]
+file = ".github/workflows/docs.yml"
+source = ".github-gen/sources/workflows/docs.yml"
 
-permissions:
-  actions: read
-  contents: read
+[[static_files]]
+file = ".github/workflows/hygiene.yml"
+source = ".github-gen/sources/workflows/hygiene.yml"
 
-concurrency:
-  # Branch dispatches are build-only and must not contend with the main publish.
-  group: homebrew-preview-${{ github.ref == 'refs/heads/main' && 'publish' || github.ref }}
-  cancel-in-progress: false
+[[static_files]]
+file = ".github/workflows/jackin-dev.yml"
+source = ".github-gen/sources/workflows/jackin-dev.yml"
 
-jobs:
-  source-changed:
-    if: >-
-      (github.event_name == 'workflow_run' &&
-        github.event.workflow_run.conclusion == 'success' &&
-        github.event.workflow_run.name == 'CI') ||
-      github.event_name == 'workflow_dispatch'
-    runs-on: ${{ ((github.event_name == 'workflow_dispatch' && inputs.lanes != 'velnor') || github.event_name == 'pull_request' || github.event_name == 'push') && 'ubuntu-26.04' || fromJSON('["self-hosted","velnor-target-mvp"]') }}
-    timeout-minutes: 5
-    outputs:
-      source: ${{ steps.filter.outputs.source }}
-      sha: ${{ steps.source.outputs.sha }}
-      short_sha: ${{ steps.meta.outputs.short_sha }}
-      version: ${{ steps.meta.outputs.version }}
-      toolchain_key: ${{ steps.toolchain.outputs.key }}
-      xtask_contract: ${{ steps.toolchain.outputs.xtask_contract }}
-      jackin_archive_contract: ${{ steps.toolchain.outputs.jackin_archive_contract }}
-      capsule_archive_contract: ${{ steps.toolchain.outputs.capsule_archive_contract }}
-    steps:
-      - name: Resolve source SHA
-        id: source
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-        run: |
-          if [ "$EVENT_NAME" = "workflow_run" ]; then
-            echo "sha=${{ github.event.workflow_run.head_sha }}" >> "$GITHUB_OUTPUT"
-          else
-            echo "sha=${{ github.sha }}" >> "$GITHUB_OUTPUT"
-          fi
+[[static_files]]
+file = ".github/workflows/preview.yml"
+source = ".github-gen/sources/workflows/preview.yml"
 
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ steps.source.outputs.sha }}
-          # Preview result reuse compares the prior published source commit.
-          fetch-depth: 0
+[[static_files]]
+file = ".github/workflows/release.yml"
+source = ".github-gen/sources/workflows/release.yml"
 
-      - name: Resolve Rust toolchain cache key
-        id: toolchain
-        env:
-          CACHE_KEY: ${{ hashFiles('rust-toolchain.toml') }}
-          XTASK_CONTRACT: ${{ hashFiles('Cargo.lock', 'Cargo.toml', 'rust-toolchain.toml', '.cargo/**', 'crates/*/Cargo.toml', 'crates/jackin-xtask/src/**', 'crates/jackin-process/src/**') }}
-          JACKIN_ARCHIVE_CONTRACT: ${{ hashFiles('Cargo.lock', 'Cargo.toml', 'rust-toolchain.toml', 'mise.toml', 'mise.lock', '.cargo/**', 'crates/jackin/Cargo.toml', 'crates/jackin-brand/Cargo.toml', 'crates/jackin-build-meta/Cargo.toml', 'crates/jackin-config/Cargo.toml', 'crates/jackin-console/Cargo.toml', 'crates/jackin-core/Cargo.toml', 'crates/jackin-diagnostics/Cargo.toml', 'crates/jackin-docker/Cargo.toml', 'crates/jackin-env/Cargo.toml', 'crates/jackin-host/Cargo.toml', 'crates/jackin-image/Cargo.toml', 'crates/jackin-instance/Cargo.toml', 'crates/jackin-isolation/Cargo.toml', 'crates/jackin-launch/Cargo.toml', 'crates/jackin-manifest/Cargo.toml', 'crates/jackin-oppicker/Cargo.toml', 'crates/jackin-process/Cargo.toml', 'crates/jackin-protocol/Cargo.toml', 'crates/jackin-runtime/Cargo.toml', 'crates/jackin-test-support/Cargo.toml', 'crates/jackin-tui/Cargo.toml', 'crates/jackin-usage/Cargo.toml', 'crates/jackin/src/**', 'crates/jackin-brand/src/**', 'crates/jackin-build-meta/src/**', 'crates/jackin-config/src/**', 'crates/jackin-console/src/**', 'crates/jackin-core/src/**', 'crates/jackin-diagnostics/src/**', 'crates/jackin-docker/src/**', 'crates/jackin-env/src/**', 'crates/jackin-host/src/**', 'crates/jackin-image/src/**', 'crates/jackin-instance/src/**', 'crates/jackin-isolation/src/**', 'crates/jackin-launch/src/**', 'crates/jackin-manifest/src/**', 'crates/jackin-oppicker/src/**', 'crates/jackin-process/src/**', 'crates/jackin-protocol/src/**', 'crates/jackin-runtime/src/**', 'crates/jackin-test-support/src/**', 'crates/jackin-tui/src/**', 'crates/jackin-usage/src/**', 'crates/jackin-xtask/src/release_archive.rs', 'crates/jackin-xtask/src/cmd.rs') }}
-          CAPSULE_ARCHIVE_CONTRACT: ${{ hashFiles('Cargo.lock', 'Cargo.toml', 'rust-toolchain.toml', 'mise.toml', 'mise.lock', '.cargo/**', 'crates/jackin-agent-status/Cargo.toml', 'crates/jackin-agent-status/src/**', 'crates/jackin-brand/Cargo.toml', 'crates/jackin-brand/src/**', 'crates/jackin-build-meta/Cargo.toml', 'crates/jackin-build-meta/src/**', 'crates/jackin-capsule/Cargo.toml', 'crates/jackin-capsule/src/**', 'crates/jackin-core/Cargo.toml', 'crates/jackin-core/src/**', 'crates/jackin-diagnostics/Cargo.toml', 'crates/jackin-diagnostics/src/**', 'crates/jackin-process/Cargo.toml', 'crates/jackin-process/src/**', 'crates/jackin-protocol/Cargo.toml', 'crates/jackin-protocol/src/**', 'crates/jackin-tui/Cargo.toml', 'crates/jackin-tui/src/**', 'crates/jackin-usage/Cargo.toml', 'crates/jackin-usage/src/**', 'crates/jackin-xtask/src/release_archive.rs', 'crates/jackin-xtask/src/cmd.rs') }}
-        run: |
-          {
-            echo "key=$CACHE_KEY"
-            echo "xtask_contract=$XTASK_CONTRACT"
-            echo "jackin_archive_contract=$JACKIN_ARCHIVE_CONTRACT"
-            echo "capsule_archive_contract=$CAPSULE_ARCHIVE_CONTRACT"
-          } >> "$GITHUB_OUTPUT"
+[[static_files]]
+file = ".github/workflows/renovate.yml"
+source = ".github-gen/sources/workflows/renovate.yml"
 
-      - name: Classify changed paths
-        id: filter
-        shell: bash
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-          EVENT_NAME: ${{ github.event_name }}
-          SOURCE_SHA: ${{ steps.source.outputs.sha }}
-        run: |
-          set -euo pipefail
+[[static_files]]
+file = ".github/workflows/renovate-validate.yml"
+source = ".github-gen/sources/workflows/renovate-validate.yml"
 
-          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
-            echo "source=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
+[[static_files]]
+file = ".github/workflows/reuse-compliance.yml"
+source = ".github-gen/sources/workflows/reuse-compliance.yml"
 
-          sha="$SOURCE_SHA"
-
-          # Canonical diff base is the rolling preview release's target commit
-          # (and its body commit link). The live Homebrew formula source-sha is
-          # secondary verification only — it can lag behind the release.
-          old_sha=""
-          formula_sha=""
-          formula_err=""
-          if release_json=$(GH_TOKEN="$GITHUB_TOKEN" gh release view preview \
-              --repo "$GITHUB_REPOSITORY" \
-              --json targetCommitish,body 2>/dev/null); then
-            old_sha=$(printf '%s\n' "$release_json" | jq -er '.targetCommitish | select(test("^[0-9a-f]{40}$"))')
-            body_sha=$(printf '%s\n' "$release_json" | jq -er '.body // ""' \
-              | sed -n 's|.*commit/\([0-9a-f]\{40\}\).*|\1|p' | head -1)
-            if [ -n "$body_sha" ] && [ "$body_sha" != "$old_sha" ]; then
-              echo "::warning::preview release targetCommitish ($old_sha) differs from body commit ($body_sha); using body"
-              old_sha="$body_sha"
-            fi
-          fi
-          if formula_body=$(curl -fsSL --max-time 30 "https://raw.githubusercontent.com/jackin-project/homebrew-tap/main/Formula/jackin-preview.rb" 2>&1); then
-            formula_sha=$(printf '%s\n' "$formula_body" | sed -n 's|^[[:space:]]*# source-sha: \([0-9a-f]\{40\}\)$|\1|p' | head -1)
-            if [ -n "$old_sha" ] && [ -n "$formula_sha" ] && [ "$old_sha" != "$formula_sha" ]; then
-              echo "::warning::homebrew formula source-sha ($formula_sha) lags canonical preview release ($old_sha)"
-            elif [ -z "$old_sha" ] && [ -n "$formula_sha" ]; then
-              old_sha="$formula_sha"
-            fi
-          else
-            formula_err="$formula_body"
-            echo "::warning::failed to fetch homebrew-tap formula: ${formula_err}"
-          fi
-
-          # An input-identical source is already represented by the live
-          # release and formula, so do not rebuild its six signed archives.
-          if [ -n "$old_sha" ] && [ "$old_sha" = "$sha" ]; then
-            echo "source=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          # Fall open to source=true when curl failed, when there is no
-          # prior published SHA, or when the prior SHA is not reachable in
-          # the current checkout. The publish job's `git diff --cached --quiet`
-          # guard catches a no-op formula rewrite, so a spurious "true"
-          # at most costs a wasted run — never a silently-missed source
-          # change.
-          if [ -n "$formula_err" ] || [ -z "$old_sha" ] \
-             || ! git rev-parse --verify "${old_sha}^{commit}" >/dev/null 2>&1; then
-            echo "source=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          # Capture the diff via command substitution wrapped in `if !`,
-          # which suppresses `set -e` propagation so we can branch on
-          # the exit code explicitly. stderr is captured to a separate
-          # variable so a benign git warning cannot contaminate the file
-          # list the case statement scans.
-          diff_err=""
-          if ! { diff_files=$(git diff --name-only "${old_sha}...${sha}" 2>/tmp/diff.err); }; then
-            diff_err=$(cat /tmp/diff.err)
-            echo "::warning::diff failed for ${old_sha}...${sha}: ${diff_err}; falling open"
-            echo "source=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          extract_release_mise() {
-            awk '
-              function keep(name) {
-                return name == "zig" ||
-                  name == "cosign" ||
-                  name == "syft" ||
-                  name == "cargo-zigbuild" ||
-                  name == "sccache"
-              }
-              /^\[tools\]$/ { section = "tools"; next }
-              /^\[tool_alias\]$/ { section = "tool_alias"; next }
-              /^\[tools\./ {
-                section = $0
-                sub(/^\[tools\./, "", section)
-                sub(/\]$/, "", section)
-                next
-              }
-              /^\[/ { section = ""; next }
-              /^[[:space:]]*#/ || /^[[:space:]]*$/ { next }
-              {
-                key = $1
-                sub(/[[:space:]]*=.*/, "", key)
-                gsub(/"/, "", key)
-                if (section == "tools" && keep(key)) print section "." key "=" $0
-                else if (section == "tool_alias" && keep(key)) print section "." key "=" $0
-                else if (keep(section)) print "tools." section "." $0
-              }
-            ' "$1"
-          }
-
-          source=false
-          while IFS= read -r path; do
-            # Skip the trailing-newline empty iteration.
-            [ -z "$path" ] && continue
-            # Path globs are intentionally narrower than PR CI's Rust
-            # selection: tests/** and .github/workflows/ci-pr.yml change the
-            # Rust build but don't change the binary that ships in the
-            # Homebrew tarball, so they don't need a preview republish.
-            # The shared paths (Cargo.*, rust-toolchain.toml, build.rs,
-            # src/, docker/runtime/) MUST drift together with
-            # .github/ci/project.toml — when adding a new build input
-            # there, add it here too.
-            case "$path" in
-              .github/workflows/preview.yml|Cargo.toml|Cargo.lock|rust-toolchain.toml|build.rs|src/**|docker/runtime/**|crates/**)
-                source=true
-                ;;
-              mise.toml)
-                if ! git cat-file -e "${old_sha}:mise.toml" 2>/dev/null; then
-                  source=true
-                  continue
-                fi
-
-                git show "${old_sha}:mise.toml" > "$RUNNER_TEMP/mise-preview-base.toml"
-                extract_release_mise "$RUNNER_TEMP/mise-preview-base.toml" > "$RUNNER_TEMP/mise-preview-base-release.txt"
-                extract_release_mise mise.toml > "$RUNNER_TEMP/mise-preview-head-release.txt"
-
-                if ! cmp -s "$RUNNER_TEMP/mise-preview-base-release.txt" "$RUNNER_TEMP/mise-preview-head-release.txt"; then
-                  source=true
-                fi
-                ;;
-            esac
-          done <<< "$diff_files"
-
-          echo "source=$source" >> "$GITHUB_OUTPUT"
-
-      - name: Compute preview metadata
-        id: meta
-        if: steps.filter.outputs.source == 'true'
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-          FULL_SHA: ${{ steps.source.outputs.sha }}
-          EVENT_NAME: ${{ github.event_name }}
-        run: |
-          base_version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
-          base_version=${base_version%-dev}
-          short_sha=$(printf '%s' "$FULL_SHA" | cut -c1-7)
-          # Derive the preview counter from GitHub's server-side commit history
-          # instead of `git rev-list --count HEAD` so the version stays
-          # monotonic even if the runner checkout is unexpectedly shallow.
-          # shellcheck disable=SC2016
-          graphql_query='query($owner: String!, $name: String!, $oid: GitObjectID!) { repository(owner: $owner, name: $name) { object(oid: $oid) { ... on Commit { history(first: 1) { totalCount } } } } }'
-          commit_count=$(
-            jq -cn \
-              --arg query "$graphql_query" \
-              --arg owner "$GITHUB_REPOSITORY_OWNER" \
-              --arg name "${GITHUB_REPOSITORY#*/}" \
-              --arg oid "$FULL_SHA" \
-              '{query: $query, variables: {owner: $owner, name: $name, oid: $oid}}' |
-              curl -fsSL \
-                -H "Authorization: Bearer $GITHUB_TOKEN" \
-                -H "Content-Type: application/json" \
-                --data @- \
-                https://api.github.com/graphql |
-              jq -er '.data.repository.object.history.totalCount'
-          )
-          {
-            echo "full_sha=$FULL_SHA"
-            echo "short_sha=$short_sha"
-            echo "version=${base_version}-preview.${commit_count}+${short_sha}"
-          } >> "$GITHUB_OUTPUT"
-
-  build-preview:
-    name: build preview jackin (${{ matrix.config.lane }})
-    needs: [source-changed]
-    if: needs.source-changed.outputs.source == 'true'
-    runs-on: ${{ fromJSON(matrix.config.runner) }}
-    # Cold four-platform archive builds measured just over 60 minutes on GitHub.
-    timeout-minutes: 90
-    concurrency:
-      group: preview-jackin-${{ needs.source-changed.outputs.jackin_archive_contract }}-${{ needs.source-changed.outputs.version }}
-      cancel-in-progress: false
-    permissions:
-      actions: read
-      contents: read
-      id-token: write
-      attestations: write
-    env:
-      CARGO_INCREMENTAL: "0"
-      CARGO_TERM_COLOR: always
-      RUSTC_WRAPPER: sccache
-      SCCACHE_BASEDIRS: ${{ github.workspace }}
-      SCCACHE_GHA_ENABLED: "false"
-      SCCACHE_CACHE_SIZE: 20G
-      MISE_DATA_DIR: ${{ matrix.config.mise_data_dir }}
-      RUSTUP_HOME: ${{ github.workspace }}/.ci-rustup
-    strategy:
-      fail-fast: false
-      max-parallel: 1
-      matrix:
-        config: ${{ fromJSON((github.event_name == 'workflow_dispatch' && inputs.lanes == 'both') && '[{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","mise_data_dir":"/opt/mise"},{"lane":"GitHub","runner":"\"ubuntu-26.04\"","mise_data_dir":"/home/runner/.local/share/mise"}]' || ((github.event_name == 'workflow_dispatch' && inputs.lanes == 'github') || github.event_name == 'push') && '[{"lane":"GitHub","runner":"\"ubuntu-26.04\"","mise_data_dir":"/home/runner/.local/share/mise"}]' || '[{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","mise_data_dir":"/opt/mise"}]') }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ needs.source-changed.outputs.sha }}
-      # Velnor admission is fail-closed and must see remote dependencies of
-      # local composites in the workflow graph before checkout executes.
-      - name: Bind nested cache save into admitted closure
-        if: github.event_name == 'velnor-admission-closure'
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-      - name: Bind CI xtask resolver into admitted closure
-        if: github.event_name == 'velnor-admission-closure'
-        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
-      - name: Bind CI xtask fallback toolchain into admitted closure
-        if: github.event_name == 'velnor-admission-closure'
-        uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
-      - name: Bind nested xtask resolver into admitted closure
-        if: github.event_name == 'velnor-admission-closure'
-        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
-      - uses: ./.github/actions/download-ci-xtask
-        with:
-          token: ${{ github.token }}
-          lane: ${{ matrix.config.lane }}
-          xtask-contract: ${{ needs.source-changed.outputs.xtask_contract }}
-          include-tools: "false"
-      - name: Cache Rust toolchain
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            ${{ env.RUSTUP_HOME }}/toolchains
-            ${{ env.RUSTUP_HOME }}/update-hashes
-          key: rustup-v2-${{ runner.os }}-${{ runner.arch }}-${{ needs.source-changed.outputs.toolchain_key }}
-          restore-keys: |
-            rustup-v2-${{ runner.os }}-${{ runner.arch }}-
-      - name: Use the prepared current Rust toolchain
-        run: >-
-          "$CI_XTASK" ci-toolchain prepare
-      - uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
-        env:
-          # sccache install: blank wrapper in case binstall source-falls-back
-          # to cargo, which would probe rustc through a missing sccache.
-          RUSTC_WRAPPER: ""
-        with:
-          version: "2026.7.12"
-          cache_key_prefix: "mise-v2"
-          cache_save: ${{ github.ref == 'refs/heads/main' }}
-          install_args: "cargo-binstall zig cargo:cargo-zigbuild cosign syft cargo:sccache"
-          github_token: ${{ secrets.GH_READONLY_TOKEN }}
-      - id: cargo-registry-cache
-        uses: ./.github/actions/cache-cargo-registry
-      - name: Cache macOS SDK
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ${{ runner.temp }}/macos-sdk
-          key: macos-sdk-26.1
-      - name: Build complete signed jackin archive set
-        env:
-          VERSION: ${{ needs.source-changed.outputs.version }}
-        run: >-
-          "$CI_XTASK" release-archives
-          --package jackin
-          --version "$VERSION"
-          --archive-version "$VERSION"
-      - name: Attest complete jackin archive set
-        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
-        with:
-          subject-path: dist/*.tar.gz
-      - name: Upload complete jackin archive set
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: preview-${{ matrix.config.lane }}-jackin-${{ needs.source-changed.outputs.jackin_archive_contract }}-${{ needs.source-changed.outputs.version }}
-          path: dist/*.tar.gz*
-      - name: Upload jackin cargo timings
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: cargo-timings-preview-jackin-${{ matrix.config.lane }}
-          path: dist/cargo-timings/*.html
-          if-no-files-found: ignore
-          retention-days: 7
-
-  build-jackin-capsule:
-    name: build preview capsule (${{ matrix.config.lane }})
-    needs: [source-changed]
-    if: needs.source-changed.outputs.source == 'true'
-    runs-on: ${{ fromJSON(matrix.config.runner) }}
-    timeout-minutes: 60
-    concurrency:
-      group: preview-capsule-${{ needs.source-changed.outputs.capsule_archive_contract }}-${{ needs.source-changed.outputs.version }}
-      cancel-in-progress: false
-    permissions:
-      actions: read
-      contents: read
-      id-token: write
-      attestations: write
-    env:
-      CARGO_INCREMENTAL: "0"
-      CARGO_TERM_COLOR: always
-      RUSTC_WRAPPER: sccache
-      SCCACHE_BASEDIRS: ${{ github.workspace }}
-      SCCACHE_GHA_ENABLED: "false"
-      SCCACHE_CACHE_SIZE: 20G
-      MISE_DATA_DIR: ${{ matrix.config.mise_data_dir }}
-      RUSTUP_HOME: ${{ github.workspace }}/.ci-rustup
-    strategy:
-      fail-fast: false
-      max-parallel: 1
-      matrix:
-        config: ${{ fromJSON((github.event_name == 'workflow_dispatch' && inputs.lanes == 'both') && '[{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","mise_data_dir":"/opt/mise"},{"lane":"GitHub","runner":"\"ubuntu-26.04\"","mise_data_dir":"/home/runner/.local/share/mise"}]' || ((github.event_name == 'workflow_dispatch' && inputs.lanes == 'github') || github.event_name == 'push') && '[{"lane":"GitHub","runner":"\"ubuntu-26.04\"","mise_data_dir":"/home/runner/.local/share/mise"}]' || '[{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","mise_data_dir":"/opt/mise"}]') }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ needs.source-changed.outputs.sha }}
-      - name: Bind nested cache save into admitted closure
-        if: github.event_name == 'velnor-admission-closure'
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-      - name: Bind CI xtask resolver into admitted closure
-        if: github.event_name == 'velnor-admission-closure'
-        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
-      - name: Bind CI xtask fallback toolchain into admitted closure
-        if: github.event_name == 'velnor-admission-closure'
-        uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
-      - name: Bind nested xtask resolver into admitted closure
-        if: github.event_name == 'velnor-admission-closure'
-        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
-      - uses: ./.github/actions/download-ci-xtask
-        with:
-          token: ${{ github.token }}
-          lane: ${{ matrix.config.lane }}
-          xtask-contract: ${{ needs.source-changed.outputs.xtask_contract }}
-          include-tools: "false"
-      - name: Cache Rust toolchain
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            ${{ env.RUSTUP_HOME }}/toolchains
-            ${{ env.RUSTUP_HOME }}/update-hashes
-          key: rustup-v2-${{ runner.os }}-${{ runner.arch }}-${{ needs.source-changed.outputs.toolchain_key }}
-          restore-keys: |
-            rustup-v2-${{ runner.os }}-${{ runner.arch }}-
-      - name: Use the prepared current Rust toolchain
-        run: >-
-          "$CI_XTASK" ci-toolchain prepare
-      - uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
-        env:
-          # sccache install: blank wrapper in case binstall source-falls-back
-          # to cargo, which would probe rustc through a missing sccache.
-          RUSTC_WRAPPER: ""
-        with:
-          version: "2026.7.12"
-          cache_key_prefix: "mise-v2"
-          cache_save: ${{ github.ref == 'refs/heads/main' }}
-          install_args: "cargo-binstall zig cargo:cargo-zigbuild cosign syft cargo:sccache"
-          github_token: ${{ secrets.GH_READONLY_TOKEN }}
-      - id: cargo-registry-cache
-        uses: ./.github/actions/cache-cargo-registry
-      - name: Build complete signed capsule archive set
-        env:
-          VERSION: ${{ needs.source-changed.outputs.version }}
-        run: >-
-          "$CI_XTASK" release-archives
-          --package jackin-capsule
-          --version "$VERSION"
-          --archive-version "$VERSION"
-      - name: Attest complete capsule archive set
-        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
-        with:
-          subject-path: dist/*.tar.gz
-      - name: Upload complete capsule archive set
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: preview-${{ matrix.config.lane }}-jackin-capsule-${{ needs.source-changed.outputs.capsule_archive_contract }}-${{ needs.source-changed.outputs.version }}
-          path: dist/*.tar.gz*
-      - name: Upload capsule cargo timings
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: cargo-timings-preview-capsule-${{ matrix.config.lane }}
-          path: dist/cargo-timings/*.html
-          if-no-files-found: ignore
-          retention-days: 7
-
-  publish-gate:
-    needs: [source-changed, build-preview, build-jackin-capsule]
-    if: >-
-      needs.source-changed.outputs.source == 'true'
-    runs-on: ${{ ((github.event_name == 'workflow_dispatch' && inputs.lanes != 'velnor') || github.event_name == 'pull_request' || github.event_name == 'push') && 'ubuntu-26.04' || fromJSON('["self-hosted","velnor-target-mvp"]') }}
-    timeout-minutes: 45
-    outputs:
-      ci_ok: ${{ steps.ci.outputs.ok }}
-    permissions:
-      actions: read
-      contents: read
-    steps:
-      - name: Require successful main CI for source SHA
-        id: ci
-        env:
-          GH_TOKEN: ${{ github.token }}
-          EVENT_NAME: ${{ github.event_name }}
-          SOURCE_SHA: ${{ needs.source-changed.outputs.sha }}
-          WORKFLOW_RUN_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
-          WORKFLOW_RUN_NAME: ${{ github.event.workflow_run.name }}
-        run: |
-          set -euo pipefail
-
-          if [ "$EVENT_NAME" = "workflow_run" ]; then
-            if [ "$WORKFLOW_RUN_NAME" != "CI" ] || [ "$WORKFLOW_RUN_CONCLUSION" != "success" ]; then
-              echo "::error::preview publish refused: triggering workflow ${WORKFLOW_RUN_NAME} concluded ${WORKFLOW_RUN_CONCLUSION}"
-              exit 1
-            fi
-            echo "ok=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          if [ "$EVENT_NAME" != "workflow_dispatch" ]; then
-            echo "::error::unsupported preview event '${EVENT_NAME}' for source ${SOURCE_SHA}"
-            exit 1
-          fi
-
-          deadline=$((SECONDS + 2700))
-          while [ "$SECONDS" -lt "$deadline" ]; do
-            status=$(
-              gh run list \
-                --repo "$GITHUB_REPOSITORY" \
-                --workflow ci-main.yml \
-                --branch main \
-                --json databaseId,headSha,status,conclusion \
-                --jq "[.[] | select(.headSha == \"${SOURCE_SHA}\")][0] | (.status // \"\") + \":\" + (.conclusion // \"\")"
-            )
-            case "$status" in
-              completed:success)
-                echo "ok=true" >> "$GITHUB_OUTPUT"
-                exit 0
-                ;;
-              completed:*)
-                echo "::error::main CI for ${SOURCE_SHA} concluded ${status#completed:}; refusing preview publish"
-                exit 1
-                ;;
-            esac
-            sleep 30
-          done
-          echo "::error::timed out waiting for successful main CI on ${SOURCE_SHA}"
-          exit 1
-
-  assemble-preview:
-    needs: [source-changed, build-preview, build-jackin-capsule, publish-gate]
-    if: >-
-      needs.source-changed.outputs.source == 'true' &&
-      needs.publish-gate.outputs.ci_ok == 'true'
-    runs-on: ${{ ((github.event_name == 'workflow_dispatch' && inputs.lanes != 'velnor') || github.event_name == 'workflow_run') && 'ubuntu-26.04' || fromJSON('["self-hosted","velnor-target-mvp"]') }}
-    timeout-minutes: 30
-    outputs:
-      version: ${{ needs.source-changed.outputs.version }}
-      sha: ${{ needs.source-changed.outputs.sha }}
-    env:
-      VERSION: ${{ needs.source-changed.outputs.version }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ needs.source-changed.outputs.sha }}
-
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
-        with:
-          path: artifacts
-          pattern: preview-${{ (github.event_name == 'workflow_dispatch' && inputs.lanes == 'velnor') && 'Velnor' || 'GitHub' }}-*
-          merge-multiple: true
-
-      - name: Verify source SHA is on main
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-          FULL_SHA: ${{ needs.source-changed.outputs.sha }}
-        run: |
-          compare_status=$(
-            curl -fsSL \
-              -H "Authorization: Bearer $GITHUB_TOKEN" \
-              -H "Accept: application/vnd.github+json" \
-              "https://api.github.com/repos/${GITHUB_REPOSITORY}/compare/${FULL_SHA}...main" |
-              jq -er '.status'
-          )
-          case "$compare_status" in
-            identical|ahead) ;;
-            *)
-              echo "::error::source SHA ${FULL_SHA} is not on main (compare status: ${compare_status})"
-              exit 1
-              ;;
-          esac
-
-      - name: Read platform SHA256s
-        id: shas
-        run: |
-          read_sha() { awk '{print $1}' "artifacts/$1.sha256"; }
-          {
-            echo "arm64_macos=$(read_sha "jackin-${VERSION}-aarch64-apple-darwin.tar.gz")"
-            echo "x86_macos=$(read_sha "jackin-${VERSION}-x86_64-apple-darwin.tar.gz")"
-            echo "arm64_linux=$(read_sha "jackin-${VERSION}-aarch64-unknown-linux-gnu.tar.gz")"
-            echo "x86_linux=$(read_sha "jackin-${VERSION}-x86_64-unknown-linux-gnu.tar.gz")"
-            echo "capsule_arm64_linux=$(read_sha "jackin-capsule-${VERSION}-aarch64-unknown-linux-gnu.tar.gz")"
-            echo "capsule_x86_linux=$(read_sha "jackin-capsule-${VERSION}-x86_64-unknown-linux-gnu.tar.gz")"
-          } >> "$GITHUB_OUTPUT"
-
-      - name: Produce and sign capsule manifest
-        uses: ./.github/actions/sign-capsule-manifest
-        with:
-          version: ${{ needs.source-changed.outputs.version }}
-          arm64-sha: ${{ steps.shas.outputs.capsule_arm64_linux }}
-          x86-sha: ${{ steps.shas.outputs.capsule_x86_linux }}
-          github-token: ${{ github.token }}
-
-      - name: Assemble consumer release manifest and independent checksums
-        env:
-          SOURCE_SHA: ${{ needs.source-changed.outputs.sha }}
-        run: |
-          set -euo pipefail
-          mapfile -d '' -t subjects < <(
-            find artifacts -maxdepth 1 -type f \
-              \( -name "jackin-${VERSION}-*.tar.gz" \
-                 -o -name "jackin-capsule-${VERSION}-*.tar.gz" \) \
-              -print0 | sort -z
-          )
-          test "${#subjects[@]}" -eq 6
-          : > artifacts/SHA256SUMS
-          : > assets.jsonl
-          for subject in "${subjects[@]}"; do
-            name=$(basename "$subject")
-            digest=$(sha256sum "$subject" | awk '{print $1}')
-            printf '%s  %s\n' "$digest" "$name" >> artifacts/SHA256SUMS
-            jq -cn --arg name "$name" --arg sha256 "$digest" \
-              '{name:$name,sha256:$sha256}' >> assets.jsonl
-          done
-          jq -S -n \
-            --arg source_repository "$GITHUB_REPOSITORY" \
-            --arg source_ref "refs/heads/main" \
-            --arg source_commit "$SOURCE_SHA" \
-            --arg version "$VERSION" \
-            --slurpfile assets assets.jsonl \
-            '{schema:"velnor.package-release.v1",source_repository:$source_repository,source_ref:$source_ref,source_commit:$source_commit,version:$version,assets:$assets}' \
-            > artifacts/release-manifest.json
-          (cd artifacts && sha256sum --check --strict SHA256SUMS)
-
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: package-preview-assets
-          path: artifacts
-          if-no-files-found: error
-
-  sign-packages:
-    needs: assemble-preview
-    strategy:
-      fail-fast: false
-      matrix:
-        subject:
-          - jackin-${{ needs.assemble-preview.outputs.version }}-aarch64-apple-darwin.tar.gz
-          - jackin-${{ needs.assemble-preview.outputs.version }}-x86_64-apple-darwin.tar.gz
-          - jackin-${{ needs.assemble-preview.outputs.version }}-aarch64-unknown-linux-gnu.tar.gz
-          - jackin-${{ needs.assemble-preview.outputs.version }}-x86_64-unknown-linux-gnu.tar.gz
-          - jackin-capsule-${{ needs.assemble-preview.outputs.version }}-aarch64-unknown-linux-gnu.tar.gz
-          - jackin-capsule-${{ needs.assemble-preview.outputs.version }}-x86_64-unknown-linux-gnu.tar.gz
-    permissions:
-      attestations: write
-      contents: read
-      id-token: write
-    uses: jackin-project/velnor-actions/.github/workflows/package-signer.yml@851ef541d67f9cabebf2ddb2a2a02f51f6c54130 # 2026.8.33
-    with:
-      artifact-name: package-preview-assets
-      subject-path: ${{ matrix.subject }}
-      source-ref: refs/heads/main
-
-  publish-preview:
-    needs: [assemble-preview, sign-packages]
-    if: needs.assemble-preview.result == 'success'
-    runs-on: ${{ ((github.event_name == 'workflow_dispatch' && inputs.lanes != 'velnor') || github.event_name == 'workflow_run') && 'ubuntu-26.04' || fromJSON('["self-hosted","velnor-target-mvp"]') }}
-    timeout-minutes: 30
-    concurrency:
-      group: homebrew-tap-publish
-      cancel-in-progress: false
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ needs.assemble-preview.outputs.sha }}
-
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
-        with:
-          name: package-preview-assets
-          path: artifacts
-
-      - name: Restore prepared CI xtask
-        uses: ./.github/actions/download-ci-xtask
-        with:
-          token: ${{ github.token }}
-          lane: ${{ (github.event_name == 'workflow_dispatch' && inputs.lanes == 'velnor') && 'Velnor' || 'GitHub' }}
-          xtask-contract: ${{ hashFiles('Cargo.lock', 'Cargo.toml', 'rust-toolchain.toml', '.cargo/**', 'crates/*/Cargo.toml', 'crates/jackin-xtask/src/**', 'crates/jackin-process/src/**') }}
-          include-tools: "false"
-
-      - name: Publish preview GitHub Release
-        env:
-          GH_TOKEN: ${{ github.token }}
-          VERSION: ${{ needs.assemble-preview.outputs.version }}
-          SHA: ${{ needs.assemble-preview.outputs.sha }}
-        run: >-
-          "$CI_XTASK" github publish-preview
-          --repository "$GITHUB_REPOSITORY"
-          --version "$VERSION"
-          --sha "$SHA"
-          --assets artifacts
-
-  verify-homebrew:
-    needs: [assemble-preview, publish-preview]
-    if: needs.publish-preview.result == 'success'
-    runs-on: ubuntu-26.04
-    timeout-minutes: 45
-    steps:
-      - name: Request Homebrew tap package refresh
-        env:
-          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
-          FALLBACK_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          token="${GH_TOKEN:-$FALLBACK_TOKEN}"
-          GH_TOKEN="$token" gh workflow run package-update.yml \
-            --repo jackin-project/homebrew-tap \
-            -f lanes=github \
-            || echo "::warning::could not dispatch homebrew-tap package-update; polling formula only"
-
-      - name: Wait for live formula to match published preview
-        env:
-          SOURCE_SHA: ${{ needs.assemble-preview.outputs.sha }}
-          VERSION: ${{ needs.assemble-preview.outputs.version }}
-        run: |
-          set -euo pipefail
-          deadline=$((SECONDS + 2400))
-          while [ "$SECONDS" -lt "$deadline" ]; do
-            formula=$(curl -fsSL --max-time 30 \
-              "https://raw.githubusercontent.com/jackin-project/homebrew-tap/main/Formula/jackin-preview.rb")
-            formula_sha=$(printf '%s\n' "$formula" | sed -n 's|^[[:space:]]*# source-sha: \([0-9a-f]\{40\}\)$|\1|p' | head -1)
-            formula_version=$(printf '%s\n' "$formula" | sed -n 's/^[[:space:]]*version "\(.*\)"/\1/p' | head -1)
-            if [ "$formula_sha" = "$SOURCE_SHA" ] && [ "$formula_version" = "$VERSION" ]; then
-              echo "homebrew preview formula matches ${SOURCE_SHA} @ ${VERSION}"
-              exit 0
-            fi
-            sleep 60
-          done
-          echo "::error::homebrew preview formula did not reach ${SOURCE_SHA} @ ${VERSION} within timeout"
-          exit 1
-'''
+[[static_files]]
+file = ".github/workflows/desktop-cadence.yml"
+source = ".github-gen/sources/workflows/desktop-cadence.yml"
 
 # Composite actions the generated workflows reference: the repository owns the
 # bytes under .github-gen/sources, the generator owns the write into
