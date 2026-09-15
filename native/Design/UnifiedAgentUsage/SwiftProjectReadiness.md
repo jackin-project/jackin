@@ -22,7 +22,7 @@ Rust, and Swift gates green before commit.
 | One-way bridge package boundary (P0) | `3ea08dc2` | `JackinUsageBindings` (generated only) → `JackinUsageBridge` (sole handwritten importer, typed facade — `RefreshScheduler.run` is private) → UI targets; `BridgeBoundaryTests` enforce the import/handle rules. |
 | Generated-binding drift gate (P0) | `09934ad7` | `cargo xtask desktop bindings-check` / `mise run desktop-bindings-check`: staging regeneration, byte-compare of both trees, stale/missing/extra fixtures unit-tested. |
 | Swift unit-test count proof + all five harnesses (P0) | `508fe9b4` | `cargo xtask desktop test-swift`: dual proof — XCTest `All tests` summary (SwiftPM 6.3 writes xUnit for Swift Testing only) plus `-swift-testing.xml`; zero/missing/corrupt results fail. All five declared harness products run. |
-| Local/CI/release parity (P0) | `c449025f` | Cadence graph `desktop-ci` (PR) → `desktop-merge` (+UI) → `desktop-scheduled` (+dead-code); release.yml invokes the exact `mise run desktop-*` names; xtask contract tests prove the graph, the release wiring, and that generated `ci.yml` only delegates the native lane; TESTING.md contradiction reconciled. |
+| Local/CI/release parity (P0) | `c449025f` | Cadence graph `desktop-ci` (PR) → `desktop-merge` (+UI) → `desktop-scheduled` (+dead-code); release.yml invokes the exact `mise run desktop-*` names; xtask contract tests prove the graph, the release wiring, and that generated `ci-pr.yml` only delegates the native lane; TESTING.md contradiction reconciled. |
 | Release symbols (P1) | `dc32dc3f` | `[profile.desktop-release]` (thin LTO, 1 codegen unit, line tables, no strip) drives the static library/bindings/XCFramework; build archives the dSYM beside the app and proves correspondence via matching arm64 UUIDs; release CI uploads dSYM + compressed unstripped `.a` (90-day retention). dSYM verified to carry Rust function names and source lines. |
 | SwiftLint debt + unit-test policy (P1) | `fd04d8c4` | Root disables only the four verified swift-format conflicts; six size rules re-enabled at defaults with legacy overages in nested per-directory configs (SwiftLint has no per-rule path exclusion; `--config` would silently disable nested discovery, so `desktop-lint` drops it) carrying owner + deletion condition; `native/Tests/.swiftlint.yml` added; `LintPolicyTests` prove force rules stay error outside test trees. |
 | Apple agent knowledge governance (P1) | `f8324d6` + `105b73a` | Standing blocker: Xcode 26.6 (17F113) ships no exportable skill documents — nothing reviewable to vendor. Recorded with probe date, refresh rule, and non-execution policy in `native/README.md`; `VendorProvenanceTests` require PROVENANCE.md if a vendor tree ever appears. |
@@ -126,9 +126,10 @@ Implementation:
    - forward-validation lane: Xcode 27 beta/macOS 27 SDK, nonblocking and scheduled;
    - unavailable forward API behavior: guard every post-26.0 symbol, ship a
      decided native fallback, and name the minimum-target bump that removes it.
-2. Preserve the repository rule that `.github/workflows/ci.yml` is generated.
-   Add the forward lane at the owning `velnor-actions` native-workflow source,
-   regenerate the consumer, and do not hand-edit the generated workflow.
+2. Preserve the repository rule that `.github/workflows/ci-pr.yml` is generated.
+   Add the forward lane at the owning `velnor-workflow` source
+   (`.github/workflows/ci-unit-swift.yml`), regenerate the consumer, and do
+   not hand-edit the generated workflow.
 3. Until that runner lane exists, record a dated exception in `native/README.md`
    owned by Release Engineering: shipping remains Xcode 26.6; forward failures
    do not gate release; the exception exits when the Xcode 27 runner image is

@@ -25,6 +25,9 @@ fn selects_only_public_preview_assets() {
         "jackin-aarch64-apple-darwin.tar.gz.sbom.json",
         "capsule-manifest.json",
         "capsule-manifest.json.bundle",
+        "release-manifest.json",
+        "SHA256SUMS",
+        "jackin-0.6.0-preview.411+bf7df07-aarch64-apple-darwin.tar.gz",
     ] {
         assert!(is_release_asset(accepted.as_ref()), "{accepted}");
     }

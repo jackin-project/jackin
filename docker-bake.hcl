@@ -47,6 +47,10 @@ variable "MISE_VERSION" {
   default = ""
 }
 
+variable "STARSHIP_VERSION" {
+  default = ""
+}
+
 // ---------------------------------------------------------------------------
 // Default group — all construct targets
 // ---------------------------------------------------------------------------
@@ -64,6 +68,7 @@ target "_construct-common" {
     TIRITH_VERSION    = TIRITH_VERSION
     SHELLFIRM_VERSION = SHELLFIRM_VERSION
     MISE_VERSION      = MISE_VERSION
+    STARSHIP_VERSION  = STARSHIP_VERSION
   }
   labels = {
     "org.opencontainers.image.title"       = "jackin construct"
