@@ -49,10 +49,11 @@ jobs:
       head_sha: ${{ steps.plan.outputs.head_sha }}
       units: ${{ steps.plan.outputs.units }}
       full_units: ${{ steps.plan.outputs.full_units }}
-      rust_matrix: ${{ steps.plan.outputs.rust_matrix }}
       bun_matrix: ${{ steps.plan.outputs.bun_matrix }}
-      swift_matrix: ${{ steps.plan.outputs.swift_matrix }}
       docker_matrix: ${{ steps.plan.outputs.docker_matrix }}
+      rust-2_matrix: ${{ steps.plan.outputs.rust-2_matrix }}
+      rust_matrix: ${{ steps.plan.outputs.rust_matrix }}
+      swift_matrix: ${{ steps.plan.outputs.swift_matrix }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -61,11 +62,11 @@ jobs:
           persist-credentials: false
       - name: Set up Velnor workflow runtime
         if: ${{ runner.environment == 'github-hosted' }}
-        uses: tailrocks/velnor/.github/actions/setup-velnor-workflow@d3e441fb36dc0fee7502cc08fdc7bebf8c8bf754
+        uses: tailrocks/velnor/.github/actions/setup-velnor-workflow@7fa4a0731ee8bedc5b02d90507d6dbe8b719153a
         with:
-          rev: d3e441fb36dc0fee7502cc08fdc7bebf8c8bf754
+          rev: 7fa4a0731ee8bedc5b02d90507d6dbe8b719153a
       - name: Set trusted workflow policy revision
-        run: echo "VELNOR_WORKFLOW_POLICY_REVISION=d3e441fb36dc0fee7502cc08fdc7bebf8c8bf754" >> "$GITHUB_ENV"
+        run: echo "VELNOR_WORKFLOW_POLICY_REVISION=3bfd459772bc24161551e755a63a5a02517c63e4" >> "$GITHUB_ENV"
       - name: Select affected units
         id: plan
         env:
@@ -82,7 +83,7 @@ jobs:
       - name: Prepare Velnor workflow runtime
         shell: bash
         env:
-          EXPECTED_REVISION: d3e441fb36dc0fee7502cc08fdc7bebf8c8bf754
+          EXPECTED_REVISION: 7fa4a0731ee8bedc5b02d90507d6dbe8b719153a
         run: |
           set -euo pipefail
           stage="$RUNNER_TEMP/velnor-workflow-runtime"
@@ -95,7 +96,7 @@ jobs:
       - name: Publish Velnor workflow runtime
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: velnor-workflow-runtime-d3e441fb36dc0fee7502cc08fdc7bebf8c8bf754-${{ runner.os }}-${{ runner.arch }}
+          name: velnor-workflow-runtime-7fa4a0731ee8bedc5b02d90507d6dbe8b719153a-${{ runner.os }}-${{ runner.arch }}
           path: ${{ runner.temp }}/velnor-workflow-runtime
           if-no-files-found: error
           retention-days: 7
@@ -125,7 +126,7 @@ jobs:
         with:
           backend: github
           version: 1.8.3
-          cache-key: velnor-policy-mbx-1.8.3-${{ runner.os }}-${{ runner.arch }}-d3e441fb36dc0fee7502cc08fdc7bebf8c8bf754
+          cache-key: velnor-policy-mbx-1.8.3-${{ runner.os }}-${{ runner.arch }}-3bfd459772bc24161551e755a63a5a02517c63e4
           restore-keys: |
             velnor-policy-mbx-1.8.3-${{ runner.os }}-${{ runner.arch }}-
       - name: Install pinned Velnor workflow runtime
@@ -136,9 +137,9 @@ jobs:
           VELNOR_WORKFLOW_ROOT: ${{ runner.temp }}/velnor-workflow
         run: |
           set -euo pipefail
-          CACHED_POLICY_RUNTIME="$HOME/.cargo/bin/velnor-workflow-policy-d3e441fb36dc0fee7502cc08fdc7bebf8c8bf754"
+          CACHED_POLICY_RUNTIME="$HOME/.cargo/bin/velnor-workflow-policy-3bfd459772bc24161551e755a63a5a02517c63e4"
           if [ -x "$CACHED_POLICY_RUNTIME" ]; then
-            ln -sf "velnor-workflow-policy-d3e441fb36dc0fee7502cc08fdc7bebf8c8bf754" "$HOME/.cargo/bin/velnor-workflow"
+            ln -sf "velnor-workflow-policy-3bfd459772bc24161551e755a63a5a02517c63e4" "$HOME/.cargo/bin/velnor-workflow"
             echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
             exit 0
           fi
@@ -150,7 +151,7 @@ jobs:
           cargo install \
             --locked \
             --git https://github.com/tailrocks/velnor \
-            --rev d3e441fb36dc0fee7502cc08fdc7bebf8c8bf754 \
+            --rev 3bfd459772bc24161551e755a63a5a02517c63e4 \
             --root "$VELNOR_WORKFLOW_ROOT" \
             velnor-workflow \
             --bin velnor-workflow
@@ -161,7 +162,7 @@ jobs:
       - name: Enforce workflow policy
         env:
           WORKFLOW_ROOT: ${{ github.workspace }}/policy-checkout
-          VELNOR_WORKFLOW_POLICY_REVISION: d3e441fb36dc0fee7502cc08fdc7bebf8c8bf754
+          VELNOR_WORKFLOW_POLICY_REVISION: 3bfd459772bc24161551e755a63a5a02517c63e4
         run: velnor-workflow policy --workflow-root "$WORKFLOW_ROOT"
   group-bun:
     name: "Bun / Packages"
@@ -196,6 +197,17 @@ jobs:
       full_units: ${{ needs.plan.outputs.full_units }}
       base_sha: ${{ needs.plan.outputs.base_sha }}
       head_sha: ${{ needs.plan.outputs.head_sha }}
+  group-rust-2:
+    name: group-rust-2
+    if: ${{ always() && needs.plan.result == 'success' && needs.policy.result == 'success' && needs.plan.outputs.rust-2_matrix != '[]' }}
+    needs: [plan, policy]
+    uses: ./.github/workflows/ci-unit-rust-2.yml
+    with:
+      selected_units: ${{ needs.plan.outputs.units }}
+      scope: ${{ needs.plan.outputs.scope }}
+      full_units: ${{ needs.plan.outputs.full_units }}
+      base_sha: ${{ needs.plan.outputs.base_sha }}
+      head_sha: ${{ needs.plan.outputs.head_sha }}
   group-swift:
     name: "Swift / Packages"
     if: ${{ always() && needs.plan.result == 'success' && needs.policy.result == 'success' && needs.plan.outputs.swift_matrix != '[]' }}
@@ -210,7 +222,7 @@ jobs:
   ci-required:
     name: ci-required
     if: ${{ always() }}
-    needs: [plan, policy, group-bun, group-docker, group-rust, group-swift]
+    needs: [plan, policy, group-bun, group-docker, group-rust, group-rust-2, group-swift]
     runs-on: ubuntu-26.04
     timeout-minutes: 5
     steps:
@@ -270,6 +282,19 @@ jobs:
             case "$result" in
               success|skipped) ;;
               *) echo "unselected CI group group-rust failed unexpectedly: $result" >&2; exit 1 ;;
+            esac
+          fi
+          matrix="$(jq -r --arg key 'rust-2_matrix' --arg empty '[]' '.plan.outputs[$key] // $empty' <<<"$NEEDS_JSON")"
+          result="$(result_for_job group-rust-2)"
+          if [[ "$matrix" != '[]' ]]; then
+            if [[ "$result" != success ]]; then
+              echo "selected CI group group-rust-2 did not pass: $result" >&2
+              exit 1
+            fi
+          else
+            case "$result" in
+              success|skipped) ;;
+              *) echo "unselected CI group group-rust-2 failed unexpectedly: $result" >&2; exit 1 ;;
             esac
           fi
           matrix="$(jq -r --arg key 'swift_matrix' --arg empty '[]' '.plan.outputs[$key] // $empty' <<<"$NEEDS_JSON")"
