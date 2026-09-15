@@ -22,7 +22,7 @@ on:
 jobs:
   velnor-prepare-cargo-sources:
     name: "Velnor / Prepare Cargo sources"
-    if: ${{ (contains(format(',{0},', inputs.selected_units), ',rust-arrayref,') || contains(format(',{0},', inputs.selected_units), ',rust-jackin,') || contains(format(',{0},', inputs.selected_units), ',rust-jackin-agent-status,') || contains(format(',{0},', inputs.selected_units), ',rust-jackin-brand,') || contains(format(',{0},', inputs.selected_units), ',rust-jackin-build-meta,') || contains(format(',{0},', inputs.selected_units), ',rust-jackin-capsule,') || contains(format(',{0},', inputs.selected_units), ',rust-jackin-config,') || contains(format(',{0},', inputs.selected_units), ',rust-jackin-config-fuzz,') || contains(format(',{0},', inputs.selected_units), ',rust-jackin-console,') || contains(format(',{0},', inputs.selected_units), ',rust-jackin-core,') || contains(format(',{0},', inputs.selected_units), ',rust-jackin-dev,') || contains(format(',{0},', inputs.selected_units), ',rust-jackin-diagnostics,') || contains(format(',{0},', inputs.selected_units), ',rust-jackin-docker,') || contains(format(',{0},', inputs.selected_units), ',rust-jackin-env,') || contains(format(',{0},', inputs.selected_units), ',rust-jackin-env-fuzz,') || contains(format(',{0},', inputs.selected_units), ',rust-jackin-host,') || contains(format(',{0},', inputs.selected_units), ',rust-jackin-image,') || contains(format(',{0},', inputs.selected_units), ',rust-jackin-instance,') || contains(format(',{0},', inputs.selected_units), ',rust-jackin-isolation,') || contains(format(',{0},', inputs.selected_units), ',rust-jackin-launch,') || contains(format(',{0},', inputs.selected_units), ',rust-jackin-manifest,') || contains(format(',{0},', inputs.selected_units), ',rust-jackin-manifest-fuzz,') || contains(format(',{0},', inputs.selected_units), ',rust-jackin-oppicker,') || contains(format(',{0},', inputs.selected_units), ',rust-jackin-otlp-testbed,') || contains(format(',{0},', inputs.selected_units), ',rust-jackin-pr-trailers,') || contains(format(',{0},', inputs.selected_units), ',rust-jackin-process,') || contains(format(',{0},', inputs.selected_units), ',rust-jackin-protocol,') || contains(format(',{0},', inputs.selected_units), ',rust-jackin-protocol-fuzz,') || contains(format(',{0},', inputs.selected_units), ',rust-jackin-runtime,') || contains(format(',{0},', inputs.selected_units), ',rust-jackin-telemetry,') || contains(format(',{0},', inputs.selected_units), ',rust-jackin-test-support,') || contains(format(',{0},', inputs.selected_units), ',rust-jackin-tui,') || contains(format(',{0},', inputs.selected_units), ',rust-jackin-usage,') || contains(format(',{0},', inputs.selected_units), ',rust-jackin-usage-ffi,') || contains(format(',{0},', inputs.selected_units), ',rust-jackin-xtask,') || contains(format(',{0},', inputs.selected_units), ',rust-desktop-xcframework,')) && (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'velnor' || github.event.inputs.runner == 'both' || github.event.inputs.runner == '')))) }}
+    if: ${{ (contains(format(',{0},', inputs.selected_units), ',rust-arrayref,') || contains(format(',{0},', inputs.selected_units), ',rust-jackin,') || contains(format(',{0},', inputs.selected_units), ',rust-jackin-agent-status,') || contains(format(',{0},', inputs.selected_units), ',rust-jackin-brand,') || contains(format(',{0},', inputs.selected_units), ',rust-jackin-build-meta,') || contains(format(',{0},', inputs.selected_units), ',rust-jackin-capsule,') || contains(format(',{0},', inputs.selected_units), ',rust-jackin-config,') || contains(format(',{0},', inputs.selected_units), ',rust-jackin-config-fuzz,') || contains(format(',{0},', inputs.selected_units), ',rust-jackin-console,') || contains(format(',{0},', inputs.selected_units), ',rust-jackin-core,') || contains(format(',{0},', inputs.selected_units), ',rust-jackin-dev,') || contains(format(',{0},', inputs.selected_units), ',rust-jackin-diagnostics,') || contains(format(',{0},', inputs.selected_units), ',rust-jackin-docker,') || contains(format(',{0},', inputs.selected_units), ',rust-jackin-env,') || contains(format(',{0},', inputs.selected_units), ',rust-jackin-env-fuzz,') || contains(format(',{0},', inputs.selected_units), ',rust-jackin-host,') || contains(format(',{0},', inputs.selected_units), ',rust-jackin-image,') || contains(format(',{0},', inputs.selected_units), ',rust-jackin-instance,') || contains(format(',{0},', inputs.selected_units), ',rust-jackin-isolation,') || contains(format(',{0},', inputs.selected_units), ',rust-jackin-launch,') || contains(format(',{0},', inputs.selected_units), ',rust-jackin-manifest,') || contains(format(',{0},', inputs.selected_units), ',rust-jackin-manifest-fuzz,') || contains(format(',{0},', inputs.selected_units), ',rust-jackin-oppicker,') || contains(format(',{0},', inputs.selected_units), ',rust-jackin-otlp-testbed,') || contains(format(',{0},', inputs.selected_units), ',rust-jackin-pr-trailers,') || contains(format(',{0},', inputs.selected_units), ',rust-jackin-process,') || contains(format(',{0},', inputs.selected_units), ',rust-jackin-protocol,') || contains(format(',{0},', inputs.selected_units), ',rust-jackin-protocol-fuzz,') || contains(format(',{0},', inputs.selected_units), ',rust-jackin-runtime,') || contains(format(',{0},', inputs.selected_units), ',rust-jackin-telemetry,') || contains(format(',{0},', inputs.selected_units), ',rust-jackin-test-support,') || contains(format(',{0},', inputs.selected_units), ',rust-jackin-tui,') || contains(format(',{0},', inputs.selected_units), ',rust-jackin-usage,') || contains(format(',{0},', inputs.selected_units), ',rust-jackin-usage-ffi,') || contains(format(',{0},', inputs.selected_units), ',rust-jackin-xtask,') || contains(format(',{0},', inputs.selected_units), ',rust-desktop-xcframework,')) && (github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'velnor' || github.event.inputs.runner == 'both')) }}
     runs-on: [self-hosted, velnor-target-mvp]
     timeout-minutes: 20
     steps:
@@ -390,7 +390,7 @@ jobs:
 
   velnor-rust-jackin-manifest:
     name: "Velnor / rust-jackin-manifest"
-    if: ${{ contains(format(',{0},', inputs.selected_units), ',rust-jackin-manifest,') && (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'velnor' || github.event.inputs.runner == 'both' || github.event.inputs.runner == '')))) }}
+    if: ${{ contains(format(',{0},', inputs.selected_units), ',rust-jackin-manifest,') && (github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'velnor' || github.event.inputs.runner == 'both')) }}
     needs: [velnor-prepare-cargo-sources]
     runs-on: [self-hosted, velnor-target-mvp]
     env:
@@ -835,7 +835,7 @@ jobs:
 
   velnor-rust-jackin-manifest-fuzz:
     name: "Velnor / rust-jackin-manifest-fuzz"
-    if: ${{ contains(format(',{0},', inputs.selected_units), ',rust-jackin-manifest-fuzz,') && (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'velnor' || github.event.inputs.runner == 'both' || github.event.inputs.runner == '')))) }}
+    if: ${{ contains(format(',{0},', inputs.selected_units), ',rust-jackin-manifest-fuzz,') && (github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'velnor' || github.event.inputs.runner == 'both')) }}
     needs: [velnor-prepare-cargo-sources]
     runs-on: [self-hosted, velnor-target-mvp]
     env:
@@ -1280,7 +1280,7 @@ jobs:
 
   velnor-rust-jackin-oppicker:
     name: "Velnor / rust-jackin-oppicker"
-    if: ${{ contains(format(',{0},', inputs.selected_units), ',rust-jackin-oppicker,') && (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'velnor' || github.event.inputs.runner == 'both' || github.event.inputs.runner == '')))) }}
+    if: ${{ contains(format(',{0},', inputs.selected_units), ',rust-jackin-oppicker,') && (github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'velnor' || github.event.inputs.runner == 'both')) }}
     needs: [velnor-prepare-cargo-sources]
     runs-on: [self-hosted, velnor-target-mvp]
     env:
@@ -1725,7 +1725,7 @@ jobs:
 
   velnor-rust-jackin-otlp-testbed:
     name: "Velnor / rust-jackin-otlp-testbed"
-    if: ${{ contains(format(',{0},', inputs.selected_units), ',rust-jackin-otlp-testbed,') && (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'velnor' || github.event.inputs.runner == 'both' || github.event.inputs.runner == '')))) }}
+    if: ${{ contains(format(',{0},', inputs.selected_units), ',rust-jackin-otlp-testbed,') && (github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'velnor' || github.event.inputs.runner == 'both')) }}
     needs: [velnor-prepare-cargo-sources]
     runs-on: [self-hosted, velnor-target-mvp]
     env:
@@ -2170,7 +2170,7 @@ jobs:
 
   velnor-rust-jackin-pr-trailers:
     name: "Velnor / rust-jackin-pr-trailers"
-    if: ${{ contains(format(',{0},', inputs.selected_units), ',rust-jackin-pr-trailers,') && (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'velnor' || github.event.inputs.runner == 'both' || github.event.inputs.runner == '')))) }}
+    if: ${{ contains(format(',{0},', inputs.selected_units), ',rust-jackin-pr-trailers,') && (github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'velnor' || github.event.inputs.runner == 'both')) }}
     needs: [velnor-prepare-cargo-sources]
     runs-on: [self-hosted, velnor-target-mvp]
     env:
@@ -2615,7 +2615,7 @@ jobs:
 
   velnor-rust-jackin-process:
     name: "Velnor / rust-jackin-process"
-    if: ${{ contains(format(',{0},', inputs.selected_units), ',rust-jackin-process,') && (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'velnor' || github.event.inputs.runner == 'both' || github.event.inputs.runner == '')))) }}
+    if: ${{ contains(format(',{0},', inputs.selected_units), ',rust-jackin-process,') && (github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'velnor' || github.event.inputs.runner == 'both')) }}
     needs: [velnor-prepare-cargo-sources]
     runs-on: [self-hosted, velnor-target-mvp]
     env:
@@ -3060,7 +3060,7 @@ jobs:
 
   velnor-rust-jackin-protocol:
     name: "Velnor / rust-jackin-protocol"
-    if: ${{ contains(format(',{0},', inputs.selected_units), ',rust-jackin-protocol,') && (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'velnor' || github.event.inputs.runner == 'both' || github.event.inputs.runner == '')))) }}
+    if: ${{ contains(format(',{0},', inputs.selected_units), ',rust-jackin-protocol,') && (github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'velnor' || github.event.inputs.runner == 'both')) }}
     needs: [velnor-prepare-cargo-sources]
     runs-on: [self-hosted, velnor-target-mvp]
     env:
@@ -3505,7 +3505,7 @@ jobs:
 
   velnor-rust-jackin-protocol-fuzz:
     name: "Velnor / rust-jackin-protocol-fuzz"
-    if: ${{ contains(format(',{0},', inputs.selected_units), ',rust-jackin-protocol-fuzz,') && (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'velnor' || github.event.inputs.runner == 'both' || github.event.inputs.runner == '')))) }}
+    if: ${{ contains(format(',{0},', inputs.selected_units), ',rust-jackin-protocol-fuzz,') && (github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'velnor' || github.event.inputs.runner == 'both')) }}
     needs: [velnor-prepare-cargo-sources]
     runs-on: [self-hosted, velnor-target-mvp]
     env:
@@ -3950,7 +3950,7 @@ jobs:
 
   velnor-rust-jackin-runtime:
     name: "Velnor / rust-jackin-runtime"
-    if: ${{ contains(format(',{0},', inputs.selected_units), ',rust-jackin-runtime,') && (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'velnor' || github.event.inputs.runner == 'both' || github.event.inputs.runner == '')))) }}
+    if: ${{ contains(format(',{0},', inputs.selected_units), ',rust-jackin-runtime,') && (github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'velnor' || github.event.inputs.runner == 'both')) }}
     needs: [velnor-prepare-cargo-sources]
     runs-on: [self-hosted, velnor-target-mvp]
     env:
@@ -4395,7 +4395,7 @@ jobs:
 
   velnor-rust-jackin-telemetry:
     name: "Velnor / rust-jackin-telemetry"
-    if: ${{ contains(format(',{0},', inputs.selected_units), ',rust-jackin-telemetry,') && (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'velnor' || github.event.inputs.runner == 'both' || github.event.inputs.runner == '')))) }}
+    if: ${{ contains(format(',{0},', inputs.selected_units), ',rust-jackin-telemetry,') && (github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'velnor' || github.event.inputs.runner == 'both')) }}
     needs: [velnor-prepare-cargo-sources]
     runs-on: [self-hosted, velnor-target-mvp]
     env:
@@ -4840,7 +4840,7 @@ jobs:
 
   velnor-rust-jackin-test-support:
     name: "Velnor / rust-jackin-test-support"
-    if: ${{ contains(format(',{0},', inputs.selected_units), ',rust-jackin-test-support,') && (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'velnor' || github.event.inputs.runner == 'both' || github.event.inputs.runner == '')))) }}
+    if: ${{ contains(format(',{0},', inputs.selected_units), ',rust-jackin-test-support,') && (github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'velnor' || github.event.inputs.runner == 'both')) }}
     needs: [velnor-prepare-cargo-sources]
     runs-on: [self-hosted, velnor-target-mvp]
     env:
@@ -5285,7 +5285,7 @@ jobs:
 
   velnor-rust-jackin-tui:
     name: "Velnor / rust-jackin-tui"
-    if: ${{ contains(format(',{0},', inputs.selected_units), ',rust-jackin-tui,') && (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'velnor' || github.event.inputs.runner == 'both' || github.event.inputs.runner == '')))) }}
+    if: ${{ contains(format(',{0},', inputs.selected_units), ',rust-jackin-tui,') && (github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'velnor' || github.event.inputs.runner == 'both')) }}
     needs: [velnor-prepare-cargo-sources]
     runs-on: [self-hosted, velnor-target-mvp]
     env:
@@ -5730,7 +5730,7 @@ jobs:
 
   velnor-rust-jackin-usage:
     name: "Velnor / rust-jackin-usage"
-    if: ${{ contains(format(',{0},', inputs.selected_units), ',rust-jackin-usage,') && (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'velnor' || github.event.inputs.runner == 'both' || github.event.inputs.runner == '')))) }}
+    if: ${{ contains(format(',{0},', inputs.selected_units), ',rust-jackin-usage,') && (github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'velnor' || github.event.inputs.runner == 'both')) }}
     needs: [velnor-prepare-cargo-sources]
     runs-on: [self-hosted, velnor-target-mvp]
     env:
@@ -6175,7 +6175,7 @@ jobs:
 
   velnor-rust-jackin-usage-ffi:
     name: "Velnor / rust-jackin-usage-ffi"
-    if: ${{ contains(format(',{0},', inputs.selected_units), ',rust-jackin-usage-ffi,') && (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'velnor' || github.event.inputs.runner == 'both' || github.event.inputs.runner == '')))) }}
+    if: ${{ contains(format(',{0},', inputs.selected_units), ',rust-jackin-usage-ffi,') && (github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'velnor' || github.event.inputs.runner == 'both')) }}
     needs: [velnor-prepare-cargo-sources]
     runs-on: [self-hosted, velnor-target-mvp]
     env:
@@ -6620,7 +6620,7 @@ jobs:
 
   velnor-rust-jackin-xtask:
     name: "Velnor / rust-jackin-xtask"
-    if: ${{ contains(format(',{0},', inputs.selected_units), ',rust-jackin-xtask,') && (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'velnor' || github.event.inputs.runner == 'both' || github.event.inputs.runner == '')))) }}
+    if: ${{ contains(format(',{0},', inputs.selected_units), ',rust-jackin-xtask,') && (github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'velnor' || github.event.inputs.runner == 'both')) }}
     needs: [velnor-prepare-cargo-sources]
     runs-on: [self-hosted, velnor-target-mvp]
     env:
@@ -7056,7 +7056,7 @@ jobs:
 
   velnor-rust-policy:
     name: "Velnor / rust-policy"
-    if: ${{ contains(format(',{0},', inputs.selected_units), ',rust-policy,') && (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'velnor' || github.event.inputs.runner == 'both' || github.event.inputs.runner == '')))) }}
+    if: ${{ contains(format(',{0},', inputs.selected_units), ',rust-policy,') && (github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'velnor' || github.event.inputs.runner == 'both')) }}
     runs-on: [self-hosted, velnor-target-mvp]
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -7492,7 +7492,7 @@ jobs:
 
   velnor-rust-desktop-xcframework:
     name: "Velnor / rust-desktop-xcframework"
-    if: ${{ contains(format(',{0},', inputs.selected_units), ',rust-desktop-xcframework,') && (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'velnor' || github.event.inputs.runner == 'both' || github.event.inputs.runner == '')))) }}
+    if: ${{ contains(format(',{0},', inputs.selected_units), ',rust-desktop-xcframework,') && (github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'velnor' || github.event.inputs.runner == 'both')) }}
     needs: [velnor-prepare-cargo-sources]
     runs-on: [self-hosted, velnor-target-mvp]
     env:

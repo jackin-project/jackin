@@ -8,20 +8,17 @@ repository = "jackin-project/jackin"
 [scan]
 exclude = [".github-gen/sources/**"]
 
-# Runner placement: `runners` is the available backends. `automatic` is the
-# lanes that run on PR/push/schedule without a dispatch choice. Both lanes
-# schedule in parallel on pull_request (same-repo) and on main push/schedule.
-# `automatic_lanes` only feeds static workflows that read
-# vars.VELNOR_AUTOMATIC_LANES; it must not keep generated PR CI GitHub-only.
+# Runner placement: keep both backends for manual dispatch; automatic events
+# (main push/schedule, same-repo PR) must stay GitHub-only so ci-required is
+# not blocked by queued self-hosted jobs when the Velnor fleet is unavailable.
 [workflow]
 runners = "both"
-automatic = "both"
-default_dispatch_runner = "both"
+automatic = "github"
+default_dispatch_runner = "github"
 automatic_lanes = "github"
 github_runner = "ubuntu-26.04"
 macos_runner = "macos-26"
 velnor_labels = ["self-hosted", "velnor-target-mvp"]
-pull_request_on_velnor = true
 
 # Interim: adopted release-side workflows predate policy conformance (#965).
 [policy]
