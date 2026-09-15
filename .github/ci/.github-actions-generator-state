@@ -1,7 +1,7 @@
 # Generated ownership state; do not edit.
 schema = 2
 [inputs]
-config	dbd49ac48a2c3188
+config	641c13d06a3de973
 scan	43413d3e3e64a6e8
 generator	37
 [outputs]
@@ -22,7 +22,7 @@ generator	37
 .github/actions/report-velnor-ci-outcomes/action.yml	b6d1fd4a90eecb12
 .github/actions/sign-and-attest-archive/action.yml	bd4e49cdfe9bc910
 .github/actions/sign-capsule-manifest/action.yml	bcc6b1e304cc95c4
-.github/ci/project.toml	fd9a88bf25d4535c
+.github/ci/project.toml	1589153f6943e00d
 .github/workflows/cache-cleanup.yml	eba8efe1071b8b05
 .github/workflows/ci-main.yml	c6741484e8d6d761
 .github/workflows/ci-policy.yml	918721915b6ebf6b
@@ -31,7 +31,7 @@ generator	37
 .github/workflows/ci-unit-docker.yml	e64c5518b61d9c5a
 .github/workflows/ci-unit-rust-2.yml	5e2a4cbc691b4858
 .github/workflows/ci-unit-rust.yml	764efebf8636f1e3
-.github/workflows/ci-unit-swift.yml	e645bd6fb55f2583
+.github/workflows/ci-unit-swift.yml	1d6e83941b9d75ac
 .github/workflows/construct.yml	0a419875a0aeaf85
 .github/workflows/desktop-cadence.yml	dce7101a5292aad0
 .github/workflows/docs.yml	3d1ef330bc15acd2

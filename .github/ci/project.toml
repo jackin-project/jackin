@@ -623,11 +623,10 @@ label = "Swift package (native)"
 kind = "swift"
 root = "native"
 watch = ["native/**/*.swift", "native/.swiftpm/Package.resolved", "native/Package.resolved", "native/Package.swift", "native/Sources/**", "native/Tests/**"]
-github_pr_commands = ["cd -- 'native' && swift build", "cd -- 'native' && swift test --parallel"]
-github_full_commands = ["cd -- 'native' && swift build", "cd -- 'native' && swift test --parallel"]
-velnor_pr_commands = ["cd -- 'native' && swift build", "cd -- 'native' && swift test --parallel"]
-velnor_full_commands = ["cd -- 'native' && swift build", "cd -- 'native' && swift test --parallel"]
-depends_on = ["rust-desktop-xcframework"]
+github_pr_commands = ["cd -- 'native' && swift build", "cd -- 'native' && swift test --parallel", "mise run desktop-xcframework"]
+github_full_commands = ["cd -- 'native' && swift build", "cd -- 'native' && swift test --parallel", "mise run desktop-xcframework"]
+velnor_pr_commands = ["cd -- 'native' && swift build", "cd -- 'native' && swift test --parallel", "mise run desktop-xcframework"]
+velnor_full_commands = ["cd -- 'native' && swift build", "cd -- 'native' && swift test --parallel", "mise run desktop-xcframework"]
 workflow_file = "ci-unit-swift.yml"
 [unit.cache]
 key_files = ["native/Package.swift", "native/Package.resolved", "native/.swiftpm/Package.resolved"]
@@ -647,15 +646,3 @@ workflow_file = "ci-unit-swift.yml"
 [unit.cache]
 key_files = ["native/Design/Prototypes/UnifiedAgentUsage/Package.swift", "native/Design/Prototypes/UnifiedAgentUsage/Package.resolved", "native/Design/Prototypes/UnifiedAgentUsage/.swiftpm/Package.resolved"]
 paths = ["~/.swiftpm"]
-
-[[unit]]
-id = "rust-desktop-xcframework"
-label = ""
-kind = "swift"
-root = "native"
-watch = ["native/**", "crates/jackin-xtask/**"]
-github_pr_commands = ["mise run desktop-xcframework"]
-github_full_commands = ["mise run desktop-xcframework"]
-velnor_pr_commands = ["mise run desktop-xcframework"]
-velnor_full_commands = ["mise run desktop-xcframework"]
-workflow_file = "ci-unit-swift.yml"

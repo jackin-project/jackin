@@ -44,19 +44,12 @@ id = "rust-jackin-xtask"
 mise_tools = ["github:open-telemetry/weaver"]
 
 # XCFramework must exist before `swift build` resolves the binary target.
-# A dedicated precursor unit runs first; depends_on orders the Swift unit.
-[[units]]
-id = "rust-desktop-xcframework"
-kind = "swift"
-root = "native"
-watch = ["native/**", "crates/jackin-xtask/**"]
-ci_tasks = ["desktop-xcframework"]
-mise_tools = ["cargo-binstall", "rust", "cargo:sccache", "cargo:boltffi_cli"]
-pinned_lockfile = true
-
+# Run desktop-xcframework in the same macOS job as swift-package-native so
+# the binary target path is populated on one runner (separate jobs do not
+# share target/xcframework).
 [[units]]
 id = "swift-package-native"
-depends_on = ["rust-desktop-xcframework"]
+ci_tasks = ["desktop-xcframework"]
 mise_tools = ["cargo-binstall", "rust", "cargo:sccache", "cargo:boltffi_cli"]
 
 # jackin-lints pins nightly via crates/jackin-lints/rust-toolchain.
