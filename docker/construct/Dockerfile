@@ -1,4 +1,7 @@
-ARG SHELLFIRM_VERSION
+ARG SHELLFIRM_VERSION=0.3.10
+ARG TIRITH_VERSION=0.3.3
+ARG MISE_VERSION=2026.7.12
+ARG STARSHIP_VERSION=1.22.1
 
 # shellfirm has no Debian package, so build it from source in a throwaway Rust
 # stage (the documented cargo-install fallback) and copy only the binary into
