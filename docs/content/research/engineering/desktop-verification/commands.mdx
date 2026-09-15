@@ -17,15 +17,17 @@ Vetted: 2026-07-24
 
 ### Crates tests
 - `cargo nextest run -p jackin-usage -p jackin-usage-ffi --locked` — exact CI
-  step in job "Native usage menu bar" — <RepoFile path=".github/workflows/ci.yml" /> (job
-  name), step at ci.yml ~line 1147 (`run: cargo nextest run -p jackin-usage -p
-  jackin-usage-ffi --locked`) (confidence: HIGH)
+  command for the `rust-jackin-usage` / `rust-jackin-usage-ffi` units —
+  <RepoFile path=".github/workflows/ci-pr.yml" /> (`group-rust` dispatches
+  `ci-unit-rust.yml`; per-crate commands in <RepoFile path=".github/ci/project.toml" />)
+  (confidence: HIGH)
 - General runner and filters: `cargo nextest run`, `-E 'test(name)'`,
   `--all-features` — <RepoFile path="TESTING.md" /> (confidence: HIGH)
 
 ### Bindings drift gate
 - `cargo xtask desktop bindings-check`
-  — CI step, <RepoFile path=".github/workflows/ci.yml" />; requires
+  — desktop-cadence step, <RepoFile path=".github/workflows/desktop-cadence.yml" />
+  (via `mise run desktop-ci`); requires
   `cargo install boltffi_cli --version 0.30.1 --locked` (CI installs
   it; mise `cargo:boltffi_cli` provides `boltffi` per `native/README.md`)
   (confidence: HIGH)
@@ -33,11 +35,12 @@ Vetted: 2026-07-24
 ### App build / verify / run
 - `cargo xtask desktop build --version "$JACKIN_APP_VERSION" --build "$JACKIN_APP_BUILD"`
   → `native/dist/JackinDesktop.app`; `cargo xtask desktop verify
-  native/dist/JackinDesktop.app [zip]` — CI steps (~ci.yml:1154-1160);
+  native/dist/JackinDesktop.app [zip]` — desktop-cadence steps
+  (`mise run desktop-ci`, via `desktop-merge`/`desktop-scheduled`);
   operator wrappers `mise run desktop-build|desktop-verify|desktop-run|desktop`
   — <RepoFile path="mise.toml" /> (confidence: HIGH)
-- CI also soft-launches the app binary and checks the log
-  (`"$APP_BIN" > /tmp/jackin-desktop-launch.log`, ci.yml:1177-1197)
+- The merge cadence also exercises the built app via UI tests
+  (`mise run desktop-test-ui`, after `desktop-ci`)
   (confidence: HIGH)
 
 ### Swift tests

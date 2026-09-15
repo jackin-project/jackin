@@ -88,6 +88,7 @@ struct Config {
     tirith_version: String,
     shellfirm_version: String,
     mise_version: String,
+    starship_version: String,
     buildx_builder: String,
     digest_dir: String,
 }
@@ -110,6 +111,7 @@ impl Config {
         let shellfirm_version =
             env_or("SHELLFIRM_VERSION", versions_env_value("SHELLFIRM_VERSION"));
         let mise_version = env_or("MISE_VERSION", versions_env_value("MISE_VERSION"));
+        let starship_version = env_or("STARSHIP_VERSION", versions_env_value("STARSHIP_VERSION"));
         let buildx_builder = env_or("BUILDX_BUILDER", "jackin-construct");
         let digest_dir = env_or("DIGEST_DIR", "/tmp/jackin-construct-digests");
         Ok(Self {
@@ -123,6 +125,7 @@ impl Config {
             tirith_version,
             shellfirm_version,
             mise_version,
+            starship_version,
             buildx_builder,
             digest_dir,
         })
@@ -139,7 +142,8 @@ impl Config {
             .env("LOCAL_PLATFORM", &self.local_platform)
             .env("TIRITH_VERSION", &self.tirith_version)
             .env("SHELLFIRM_VERSION", &self.shellfirm_version)
-            .env("MISE_VERSION", &self.mise_version);
+            .env("MISE_VERSION", &self.mise_version)
+            .env("STARSHIP_VERSION", &self.starship_version);
     }
 
     fn ref_for(&self, tag: &str) -> String {

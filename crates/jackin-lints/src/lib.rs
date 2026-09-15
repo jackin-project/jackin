@@ -46,13 +46,10 @@ dylint_linting::declare_late_lint! {
 
 const MAX_DEPTH: usize = 5;
 
-const RENDER_ROOT_NAMES: &[&str] = &[
-    "render",
-    "compose_pending_frame",
-    "compose_ratatui_frame",
-];
+const RENDER_ROOT_NAMES: &[&str] = &["render", "compose_pending_frame", "compose_ratatui_frame"];
 
 impl<'tcx> LateLintPass<'tcx> for RenderThreadPurity {
+    #[allow(clippy::too_many_arguments)]
     fn check_fn(
         &mut self,
         cx: &LateContext<'tcx>,
@@ -98,7 +95,15 @@ fn walk_from_body<'tcx>(
         };
         // typeck_results is valid only for the body currently under analysis.
         // For callees we re-enter via their own body id through nested typeck.
-        find_calls(cx, body.value, &chain, depth, def_id, &mut queue, &mut reported);
+        find_calls(
+            cx,
+            body.value,
+            &chain,
+            depth,
+            def_id,
+            &mut queue,
+            &mut reported,
+        );
     }
 }
 
@@ -220,6 +225,7 @@ fn typeck_for_fn<'tcx>(
     Some(cx.tcx.typeck(fn_def))
 }
 
+#[allow(clippy::too_many_arguments)]
 fn check_callee<'tcx>(
     cx: &LateContext<'tcx>,
     callee: &'tcx Expr<'tcx>,

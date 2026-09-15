@@ -157,9 +157,30 @@ RUN useradd -m -u "$UID" -g 0 -s /bin/zsh agent && \
 RUN printf 'umask 0002\n' > /etc/jackin-build-env
 ENV BASH_ENV=/etc/jackin-build-env
 
-# Install starship prompt as root so the installer can write to /usr/local/bin
-# without needing to escalate privileges.
-RUN curl -sS https://starship.rs/install.sh | sh -s -- -y
+# Install starship from a pinned GitHub release tarball. The curl|sh installer
+# is fragile under bash -o pipefail (BASH_VERSION leaks to the piped sh) and
+# can fail opaquely when the CDN returns non-script content.
+ARG STARSHIP_VERSION
+RUN test -n "${STARSHIP_VERSION}" || { echo "STARSHIP_VERSION build arg is required" >&2; exit 1; } && \
+    case "${TARGETARCH}" in \
+      amd64) starship_triple=x86_64-unknown-linux-gnu ;; \
+      arm64) starship_triple=aarch64-unknown-linux-musl ;; \
+      *) printf 'unsupported TARGETARCH for starship: %s\n' "${TARGETARCH}" >&2 && exit 1 ;; \
+    esac && \
+    archive="starship-${starship_triple}.tar.gz" && \
+    base="https://github.com/starship/starship/releases/download/v${STARSHIP_VERSION}" && \
+    workdir="$(mktemp -d)" && \
+    cd "${workdir}" && \
+    curl --fail --location --show-error --retry 3 --retry-all-errors --connect-timeout 10 --max-time 120 \
+      --output "${archive}" "${base}/${archive}" && \
+    curl --fail --location --show-error --retry 3 --retry-all-errors --connect-timeout 10 --max-time 120 \
+      --output "${archive}.sha256" "${base}/${archive}.sha256" && \
+    printf '%s  %s\n' "$(tr -d '\n' < "${archive}.sha256")" "${archive}" | sha256sum -c - && \
+    tar -xzf "${archive}" -C /usr/local/bin starship && \
+    chmod 0755 /usr/local/bin/starship && \
+    cd / && \
+    rm -rf "${workdir}" && \
+    starship --version
 
 # Default to a UTF-8 locale so shell prompts and CLI output render correctly,
 # including `docker exec` sessions that bypass the jackin runtime entrypoint.

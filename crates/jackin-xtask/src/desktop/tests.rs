@@ -246,15 +246,15 @@ fn release_workflow_invokes_canonical_mise_tasks() {
 
 #[test]
 fn generated_ci_delegates_the_native_lane() {
-    let ci = repo_text(".github/workflows/ci.yml");
+    let ci = repo_text(".github/workflows/ci-pr.yml");
     assert!(
-        ci.contains("ci-native.yml"),
-        "generated ci.yml must delegate the native lane to the reusable workflow"
+        ci.contains("ci-unit-swift.yml"),
+        "generated ci-pr.yml must dispatch the Swift units to the unit workflow"
     );
     for hand_restated in ["swift test", "cargo xtask desktop", "xcodebuild"] {
         assert!(
             !ci.contains(hand_restated),
-            "generated ci.yml must not hand-restate native step `{hand_restated}`"
+            "generated ci-pr.yml must not hand-restate native step `{hand_restated}`"
         );
     }
 }

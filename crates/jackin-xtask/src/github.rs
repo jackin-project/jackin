@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::env;
-use std::ffi::OsString;
 use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
@@ -168,28 +167,7 @@ fn publish_preview(args: PublishPreviewArgs) -> Result<()> {
         args.repository,
         args.sha
     );
-    let view = release_view(&args.repository, &args.tag)?;
-    if view {
-        return update_release(&args, &notes, &assets);
-    }
-    let create = release_command("create", &args, &notes, &assets);
-    let result = cmd::output_raw(&mut create.to_command())?;
-    if result.success {
-        return Ok(());
-    }
-    let failure = format!(
-        "{}\n{}",
-        String::from_utf8_lossy(&result.stdout),
-        String::from_utf8_lossy(&result.stderr)
-    );
-    if release_already_exists(&failure) {
-        writeln!(
-            io::stderr().lock(),
-            "::notice::preview release appeared concurrently; updating it"
-        )?;
-        return update_release(&args, &notes, &assets);
-    }
-    bail!("creating preview release failed: {}", failure.trim())
+    replace_preview_release(&args, &notes, &assets)
 }
 
 fn release_view(repository: &str, tag: &str) -> Result<bool> {
@@ -206,10 +184,26 @@ fn release_view(repository: &str, tag: &str) -> Result<bool> {
     bail!("querying preview release failed: {}", failure.trim())
 }
 
-fn update_release(args: &PublishPreviewArgs, notes: &str, assets: &[PathBuf]) -> Result<()> {
-    cmd::run(Command::new("gh").args([
+fn replace_preview_release(
+    args: &PublishPreviewArgs,
+    notes: &str,
+    assets: &[PathBuf],
+) -> Result<()> {
+    if release_view(&args.repository, &args.tag)? {
+        cmd::run(Command::new("gh").args([
+            "release",
+            "delete",
+            &args.tag,
+            "--repo",
+            &args.repository,
+            "--cleanup-tag",
+            "--yes",
+        ]))?;
+    }
+    let mut create = Command::new("gh");
+    create.args([
         "release",
-        "edit",
+        "create",
         &args.tag,
         "--repo",
         &args.repository,
@@ -220,54 +214,25 @@ fn update_release(args: &PublishPreviewArgs, notes: &str, assets: &[PathBuf]) ->
         &format!("Preview {}", args.version),
         "--notes",
         notes,
-    ]))?;
-    let mut upload = Command::new("gh");
-    upload.args([
-        "release",
-        "upload",
-        &args.tag,
-        "--repo",
-        &args.repository,
-        "--clobber",
     ]);
-    upload.args(assets);
-    cmd::run(&mut upload)
-}
-
-struct ReleaseCommand {
-    args: Vec<OsString>,
-}
-
-impl ReleaseCommand {
-    fn to_command(&self) -> Command {
-        let mut command = Command::new("gh");
-        command.args(&self.args);
-        command
+    create.args(assets.iter().map(|path| path.as_os_str()));
+    let result = cmd::output_raw(&mut create)?;
+    if result.success {
+        return Ok(());
     }
-}
-
-fn release_command(
-    operation: &str,
-    args: &PublishPreviewArgs,
-    notes: &str,
-    assets: &[PathBuf],
-) -> ReleaseCommand {
-    let mut command = vec![
-        "release".into(),
-        operation.into(),
-        args.tag.clone().into(),
-        "--repo".into(),
-        args.repository.clone().into(),
-        "--prerelease".into(),
-        "--target".into(),
-        args.sha.clone().into(),
-        "--title".into(),
-        format!("Preview {}", args.version).into(),
-        "--notes".into(),
-        notes.into(),
-    ];
-    command.extend(assets.iter().map(|path| OsString::from(path.as_os_str())));
-    ReleaseCommand { args: command }
+    let failure = format!(
+        "{}\n{}",
+        String::from_utf8_lossy(&result.stdout),
+        String::from_utf8_lossy(&result.stderr)
+    );
+    if release_already_exists(&failure) {
+        writeln!(
+            io::stderr().lock(),
+            "::notice::preview release appeared concurrently; retrying replace"
+        )?;
+        return replace_preview_release(args, notes, assets);
+    }
+    bail!("creating preview release failed: {}", failure.trim())
 }
 
 fn release_assets(directory: &Path) -> Result<Vec<PathBuf>> {
@@ -296,7 +261,10 @@ fn is_release_asset(path: &Path) -> bool {
         .any(|suffix| name.ends_with(suffix)))
         || matches!(
             name,
-            "capsule-manifest.json" | "capsule-manifest.json.bundle"
+            "capsule-manifest.json"
+                | "capsule-manifest.json.bundle"
+                | "release-manifest.json"
+                | "SHA256SUMS"
         )
 }
 

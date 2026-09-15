@@ -32,6 +32,7 @@ mod headers;
 mod health;
 mod lint;
 mod pr;
+mod preview;
 mod profile_matrix;
 mod pty_fixture;
 mod ratchet;

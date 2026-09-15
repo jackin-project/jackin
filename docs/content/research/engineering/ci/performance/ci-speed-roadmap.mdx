@@ -58,7 +58,7 @@ The inherited CI matrix split item also called out the real Docker boundary dire
 
 ## Current controls
 
-- Path filters in <RepoFile path=".github/workflows/ci.yml">.github/workflows/ci.yml</RepoFile>, <RepoFile path=".github/workflows/docs.yml">.github/workflows/docs.yml</RepoFile>, <RepoFile path=".github/workflows/construct.yml">.github/workflows/construct.yml</RepoFile>, and <RepoFile path=".github/workflows/preview.yml">.github/workflows/preview.yml</RepoFile> prevent unrelated workflows from doing full work.
+- In-job path classification in <RepoFile path=".github/workflows/docs.yml">.github/workflows/docs.yml</RepoFile>, <RepoFile path=".github/workflows/construct.yml">.github/workflows/construct.yml</RepoFile>, and <RepoFile path=".github/workflows/preview.yml">.github/workflows/preview.yml</RepoFile>, plus affected-scope selection in <RepoFile path=".github/workflows/ci-pr.yml">.github/workflows/ci-pr.yml</RepoFile>, prevent unrelated workflows from doing full work.
 - PR workflow concurrency cancels stale PR runs while preserving non-cancelled release serialization.
 - Rust jobs restore `~/.rustup`, mise-managed tool caches, and `Swatinem/rust-cache` target/cargo caches; the reusable nextest workflow centralizes the expensive test-binary build and shares it with package jobs.
 - Construct builds use Buildx with registry cache for published main builds and GitHub Actions cache scopes for PR/rehearsal builds.
@@ -167,7 +167,8 @@ Small classifiers route <RepoFile path="mise.toml" /> changes: Rust CI turns on 
 
 ## Related work
 
-- <RepoFile path=".github/workflows/ci.yml">.github/workflows/ci.yml</RepoFile>
+- <RepoFile path=".github/workflows/ci-pr.yml">.github/workflows/ci-pr.yml</RepoFile>
+- <RepoFile path=".github/workflows/ci-main.yml">.github/workflows/ci-main.yml</RepoFile>
 - <RepoFile path=".github/workflows/docs.yml">.github/workflows/docs.yml</RepoFile>
 - <RepoFile path=".github/workflows/construct.yml">.github/workflows/construct.yml</RepoFile>
 - <RepoFile path=".github/workflows/preview.yml">.github/workflows/preview.yml</RepoFile>
