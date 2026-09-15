@@ -127,7 +127,7 @@ jobs:
           # Static policy validation only; fork head checkout is intentional.
           allow-unsafe-pr-checkout: true
       - name: Set up Mr. Boxington
-        uses: jdx/mr-boxington-action@7234d3dd1a6ca8f6c381eea8e4dfb03f18fcf777 # v1.3.0
+        uses: jdx/mr-boxington-action@a20e1ffcd962370fb2b6045c13b7b349f7b03386 # v1.3.1
         with:
           backend: github
           version: 1.8.3

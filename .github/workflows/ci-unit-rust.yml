@@ -213,7 +213,7 @@ jobs:
           install_args: aqua:nextest-rs/nextest/cargo-nextest
           cache: true
       - name: Set up Mr. Boxington
-        uses: jdx/mr-boxington-action@7234d3dd1a6ca8f6c381eea8e4dfb03f18fcf777 # v1.3.0
+        uses: jdx/mr-boxington-action@a20e1ffcd962370fb2b6045c13b7b349f7b03386 # v1.3.1
         with:
           backend: github
           github-cache-mode: objects
@@ -462,7 +462,7 @@ jobs:
           set -euo pipefail
           mise --yes install aqua:nextest-rs/nextest/cargo-nextest
       - name: Set up Mr. Boxington
-        uses: jdx/mr-boxington-action@7234d3dd1a6ca8f6c381eea8e4dfb03f18fcf777 # v1.3.0
+        uses: jdx/mr-boxington-action@a20e1ffcd962370fb2b6045c13b7b349f7b03386 # v1.3.1
         with:
           backend: local
       - name: Mark tool bootstrap end
@@ -658,7 +658,7 @@ jobs:
           install_args: aqua:nextest-rs/nextest/cargo-nextest
           cache: true
       - name: Set up Mr. Boxington
-        uses: jdx/mr-boxington-action@7234d3dd1a6ca8f6c381eea8e4dfb03f18fcf777 # v1.3.0
+        uses: jdx/mr-boxington-action@a20e1ffcd962370fb2b6045c13b7b349f7b03386 # v1.3.1
         with:
           backend: github
           github-cache-mode: objects
@@ -907,7 +907,7 @@ jobs:
           set -euo pipefail
           mise --yes install aqua:nextest-rs/nextest/cargo-nextest
       - name: Set up Mr. Boxington
-        uses: jdx/mr-boxington-action@7234d3dd1a6ca8f6c381eea8e4dfb03f18fcf777 # v1.3.0
+        uses: jdx/mr-boxington-action@a20e1ffcd962370fb2b6045c13b7b349f7b03386 # v1.3.1
         with:
           backend: local
       - name: Mark tool bootstrap end
@@ -1103,7 +1103,7 @@ jobs:
           install_args: aqua:nextest-rs/nextest/cargo-nextest
           cache: true
       - name: Set up Mr. Boxington
-        uses: jdx/mr-boxington-action@7234d3dd1a6ca8f6c381eea8e4dfb03f18fcf777 # v1.3.0
+        uses: jdx/mr-boxington-action@a20e1ffcd962370fb2b6045c13b7b349f7b03386 # v1.3.1
         with:
           backend: github
           github-cache-mode: objects
@@ -1352,7 +1352,7 @@ jobs:
           set -euo pipefail
           mise --yes install aqua:nextest-rs/nextest/cargo-nextest
       - name: Set up Mr. Boxington
-        uses: jdx/mr-boxington-action@7234d3dd1a6ca8f6c381eea8e4dfb03f18fcf777 # v1.3.0
+        uses: jdx/mr-boxington-action@a20e1ffcd962370fb2b6045c13b7b349f7b03386 # v1.3.1
         with:
           backend: local
       - name: Mark tool bootstrap end
@@ -1548,7 +1548,7 @@ jobs:
           install_args: aqua:nextest-rs/nextest/cargo-nextest
           cache: true
       - name: Set up Mr. Boxington
-        uses: jdx/mr-boxington-action@7234d3dd1a6ca8f6c381eea8e4dfb03f18fcf777 # v1.3.0
+        uses: jdx/mr-boxington-action@a20e1ffcd962370fb2b6045c13b7b349f7b03386 # v1.3.1
         with:
           backend: github
           github-cache-mode: objects
@@ -1797,7 +1797,7 @@ jobs:
           set -euo pipefail
           mise --yes install aqua:nextest-rs/nextest/cargo-nextest
       - name: Set up Mr. Boxington
-        uses: jdx/mr-boxington-action@7234d3dd1a6ca8f6c381eea8e4dfb03f18fcf777 # v1.3.0
+        uses: jdx/mr-boxington-action@a20e1ffcd962370fb2b6045c13b7b349f7b03386 # v1.3.1
         with:
           backend: local
       - name: Mark tool bootstrap end
@@ -1993,7 +1993,7 @@ jobs:
           install_args: aqua:nextest-rs/nextest/cargo-nextest
           cache: true
       - name: Set up Mr. Boxington
-        uses: jdx/mr-boxington-action@7234d3dd1a6ca8f6c381eea8e4dfb03f18fcf777 # v1.3.0
+        uses: jdx/mr-boxington-action@a20e1ffcd962370fb2b6045c13b7b349f7b03386 # v1.3.1
         with:
           backend: github
           github-cache-mode: objects
@@ -2242,7 +2242,7 @@ jobs:
           set -euo pipefail
           mise --yes install aqua:nextest-rs/nextest/cargo-nextest
       - name: Set up Mr. Boxington
-        uses: jdx/mr-boxington-action@7234d3dd1a6ca8f6c381eea8e4dfb03f18fcf777 # v1.3.0
+        uses: jdx/mr-boxington-action@a20e1ffcd962370fb2b6045c13b7b349f7b03386 # v1.3.1
         with:
           backend: local
       - name: Mark tool bootstrap end
@@ -2438,7 +2438,7 @@ jobs:
           install_args: aqua:nextest-rs/nextest/cargo-nextest
           cache: true
       - name: Set up Mr. Boxington
-        uses: jdx/mr-boxington-action@7234d3dd1a6ca8f6c381eea8e4dfb03f18fcf777 # v1.3.0
+        uses: jdx/mr-boxington-action@a20e1ffcd962370fb2b6045c13b7b349f7b03386 # v1.3.1
         with:
           backend: github
           github-cache-mode: objects
@@ -2687,7 +2687,7 @@ jobs:
           set -euo pipefail
           mise --yes install aqua:nextest-rs/nextest/cargo-nextest
       - name: Set up Mr. Boxington
-        uses: jdx/mr-boxington-action@7234d3dd1a6ca8f6c381eea8e4dfb03f18fcf777 # v1.3.0
+        uses: jdx/mr-boxington-action@a20e1ffcd962370fb2b6045c13b7b349f7b03386 # v1.3.1
         with:
           backend: local
       - name: Mark tool bootstrap end
@@ -2883,7 +2883,7 @@ jobs:
           install_args: aqua:nextest-rs/nextest/cargo-nextest
           cache: true
       - name: Set up Mr. Boxington
-        uses: jdx/mr-boxington-action@7234d3dd1a6ca8f6c381eea8e4dfb03f18fcf777 # v1.3.0
+        uses: jdx/mr-boxington-action@a20e1ffcd962370fb2b6045c13b7b349f7b03386 # v1.3.1
         with:
           backend: github
           github-cache-mode: objects
@@ -3132,7 +3132,7 @@ jobs:
           set -euo pipefail
           mise --yes install aqua:nextest-rs/nextest/cargo-nextest
       - name: Set up Mr. Boxington
-        uses: jdx/mr-boxington-action@7234d3dd1a6ca8f6c381eea8e4dfb03f18fcf777 # v1.3.0
+        uses: jdx/mr-boxington-action@a20e1ffcd962370fb2b6045c13b7b349f7b03386 # v1.3.1
         with:
           backend: local
       - name: Mark tool bootstrap end
@@ -3328,7 +3328,7 @@ jobs:
           install_args: aqua:nextest-rs/nextest/cargo-nextest
           cache: true
       - name: Set up Mr. Boxington
-        uses: jdx/mr-boxington-action@7234d3dd1a6ca8f6c381eea8e4dfb03f18fcf777 # v1.3.0
+        uses: jdx/mr-boxington-action@a20e1ffcd962370fb2b6045c13b7b349f7b03386 # v1.3.1
         with:
           backend: github
           github-cache-mode: objects
@@ -3577,7 +3577,7 @@ jobs:
           set -euo pipefail
           mise --yes install aqua:nextest-rs/nextest/cargo-nextest
       - name: Set up Mr. Boxington
-        uses: jdx/mr-boxington-action@7234d3dd1a6ca8f6c381eea8e4dfb03f18fcf777 # v1.3.0
+        uses: jdx/mr-boxington-action@a20e1ffcd962370fb2b6045c13b7b349f7b03386 # v1.3.1
         with:
           backend: local
       - name: Mark tool bootstrap end
@@ -3773,7 +3773,7 @@ jobs:
           install_args: aqua:nextest-rs/nextest/cargo-nextest
           cache: true
       - name: Set up Mr. Boxington
-        uses: jdx/mr-boxington-action@7234d3dd1a6ca8f6c381eea8e4dfb03f18fcf777 # v1.3.0
+        uses: jdx/mr-boxington-action@a20e1ffcd962370fb2b6045c13b7b349f7b03386 # v1.3.1
         with:
           backend: github
           github-cache-mode: objects
@@ -4022,7 +4022,7 @@ jobs:
           set -euo pipefail
           mise --yes install aqua:nextest-rs/nextest/cargo-nextest
       - name: Set up Mr. Boxington
-        uses: jdx/mr-boxington-action@7234d3dd1a6ca8f6c381eea8e4dfb03f18fcf777 # v1.3.0
+        uses: jdx/mr-boxington-action@a20e1ffcd962370fb2b6045c13b7b349f7b03386 # v1.3.1
         with:
           backend: local
       - name: Mark tool bootstrap end
@@ -4218,7 +4218,7 @@ jobs:
           install_args: aqua:nextest-rs/nextest/cargo-nextest
           cache: true
       - name: Set up Mr. Boxington
-        uses: jdx/mr-boxington-action@7234d3dd1a6ca8f6c381eea8e4dfb03f18fcf777 # v1.3.0
+        uses: jdx/mr-boxington-action@a20e1ffcd962370fb2b6045c13b7b349f7b03386 # v1.3.1
         with:
           backend: github
           github-cache-mode: objects
@@ -4467,7 +4467,7 @@ jobs:
           set -euo pipefail
           mise --yes install aqua:nextest-rs/nextest/cargo-nextest
       - name: Set up Mr. Boxington
-        uses: jdx/mr-boxington-action@7234d3dd1a6ca8f6c381eea8e4dfb03f18fcf777 # v1.3.0
+        uses: jdx/mr-boxington-action@a20e1ffcd962370fb2b6045c13b7b349f7b03386 # v1.3.1
         with:
           backend: local
       - name: Mark tool bootstrap end
@@ -4663,7 +4663,7 @@ jobs:
           install_args: aqua:nextest-rs/nextest/cargo-nextest
           cache: true
       - name: Set up Mr. Boxington
-        uses: jdx/mr-boxington-action@7234d3dd1a6ca8f6c381eea8e4dfb03f18fcf777 # v1.3.0
+        uses: jdx/mr-boxington-action@a20e1ffcd962370fb2b6045c13b7b349f7b03386 # v1.3.1
         with:
           backend: github
           github-cache-mode: objects
@@ -4912,7 +4912,7 @@ jobs:
           set -euo pipefail
           mise --yes install aqua:nextest-rs/nextest/cargo-nextest
       - name: Set up Mr. Boxington
-        uses: jdx/mr-boxington-action@7234d3dd1a6ca8f6c381eea8e4dfb03f18fcf777 # v1.3.0
+        uses: jdx/mr-boxington-action@a20e1ffcd962370fb2b6045c13b7b349f7b03386 # v1.3.1
         with:
           backend: local
       - name: Mark tool bootstrap end
@@ -5108,7 +5108,7 @@ jobs:
           install_args: aqua:nextest-rs/nextest/cargo-nextest
           cache: true
       - name: Set up Mr. Boxington
-        uses: jdx/mr-boxington-action@7234d3dd1a6ca8f6c381eea8e4dfb03f18fcf777 # v1.3.0
+        uses: jdx/mr-boxington-action@a20e1ffcd962370fb2b6045c13b7b349f7b03386 # v1.3.1
         with:
           backend: github
           github-cache-mode: objects
@@ -5357,7 +5357,7 @@ jobs:
           set -euo pipefail
           mise --yes install aqua:nextest-rs/nextest/cargo-nextest
       - name: Set up Mr. Boxington
-        uses: jdx/mr-boxington-action@7234d3dd1a6ca8f6c381eea8e4dfb03f18fcf777 # v1.3.0
+        uses: jdx/mr-boxington-action@a20e1ffcd962370fb2b6045c13b7b349f7b03386 # v1.3.1
         with:
           backend: local
       - name: Mark tool bootstrap end
@@ -5553,7 +5553,7 @@ jobs:
           install_args: aqua:nextest-rs/nextest/cargo-nextest
           cache: true
       - name: Set up Mr. Boxington
-        uses: jdx/mr-boxington-action@7234d3dd1a6ca8f6c381eea8e4dfb03f18fcf777 # v1.3.0
+        uses: jdx/mr-boxington-action@a20e1ffcd962370fb2b6045c13b7b349f7b03386 # v1.3.1
         with:
           backend: github
           github-cache-mode: objects
@@ -5802,7 +5802,7 @@ jobs:
           set -euo pipefail
           mise --yes install aqua:nextest-rs/nextest/cargo-nextest
       - name: Set up Mr. Boxington
-        uses: jdx/mr-boxington-action@7234d3dd1a6ca8f6c381eea8e4dfb03f18fcf777 # v1.3.0
+        uses: jdx/mr-boxington-action@a20e1ffcd962370fb2b6045c13b7b349f7b03386 # v1.3.1
         with:
           backend: local
       - name: Mark tool bootstrap end
@@ -5998,7 +5998,7 @@ jobs:
           install_args: aqua:nextest-rs/nextest/cargo-nextest
           cache: true
       - name: Set up Mr. Boxington
-        uses: jdx/mr-boxington-action@7234d3dd1a6ca8f6c381eea8e4dfb03f18fcf777 # v1.3.0
+        uses: jdx/mr-boxington-action@a20e1ffcd962370fb2b6045c13b7b349f7b03386 # v1.3.1
         with:
           backend: github
           github-cache-mode: objects
@@ -6247,7 +6247,7 @@ jobs:
           set -euo pipefail
           mise --yes install aqua:nextest-rs/nextest/cargo-nextest
       - name: Set up Mr. Boxington
-        uses: jdx/mr-boxington-action@7234d3dd1a6ca8f6c381eea8e4dfb03f18fcf777 # v1.3.0
+        uses: jdx/mr-boxington-action@a20e1ffcd962370fb2b6045c13b7b349f7b03386 # v1.3.1
         with:
           backend: local
       - name: Mark tool bootstrap end
@@ -6443,7 +6443,7 @@ jobs:
           install_args: aqua:nextest-rs/nextest/cargo-nextest
           cache: true
       - name: Set up Mr. Boxington
-        uses: jdx/mr-boxington-action@7234d3dd1a6ca8f6c381eea8e4dfb03f18fcf777 # v1.3.0
+        uses: jdx/mr-boxington-action@a20e1ffcd962370fb2b6045c13b7b349f7b03386 # v1.3.1
         with:
           backend: github
           github-cache-mode: objects
@@ -6692,7 +6692,7 @@ jobs:
           set -euo pipefail
           mise --yes install aqua:nextest-rs/nextest/cargo-nextest
       - name: Set up Mr. Boxington
-        uses: jdx/mr-boxington-action@7234d3dd1a6ca8f6c381eea8e4dfb03f18fcf777 # v1.3.0
+        uses: jdx/mr-boxington-action@a20e1ffcd962370fb2b6045c13b7b349f7b03386 # v1.3.1
         with:
           backend: local
       - name: Mark tool bootstrap end
@@ -6888,7 +6888,7 @@ jobs:
           install_args: aqua:nextest-rs/nextest/cargo-nextest
           cache: true
       - name: Set up Mr. Boxington
-        uses: jdx/mr-boxington-action@7234d3dd1a6ca8f6c381eea8e4dfb03f18fcf777 # v1.3.0
+        uses: jdx/mr-boxington-action@a20e1ffcd962370fb2b6045c13b7b349f7b03386 # v1.3.1
         with:
           backend: github
           github-cache-mode: objects
@@ -7137,7 +7137,7 @@ jobs:
           set -euo pipefail
           mise --yes install aqua:nextest-rs/nextest/cargo-nextest
       - name: Set up Mr. Boxington
-        uses: jdx/mr-boxington-action@7234d3dd1a6ca8f6c381eea8e4dfb03f18fcf777 # v1.3.0
+        uses: jdx/mr-boxington-action@a20e1ffcd962370fb2b6045c13b7b349f7b03386 # v1.3.1
         with:
           backend: local
       - name: Mark tool bootstrap end
@@ -7333,7 +7333,7 @@ jobs:
           install_args: aqua:nextest-rs/nextest/cargo-nextest
           cache: true
       - name: Set up Mr. Boxington
-        uses: jdx/mr-boxington-action@7234d3dd1a6ca8f6c381eea8e4dfb03f18fcf777 # v1.3.0
+        uses: jdx/mr-boxington-action@a20e1ffcd962370fb2b6045c13b7b349f7b03386 # v1.3.1
         with:
           backend: github
           github-cache-mode: objects
@@ -7582,7 +7582,7 @@ jobs:
           set -euo pipefail
           mise --yes install aqua:nextest-rs/nextest/cargo-nextest
       - name: Set up Mr. Boxington
-        uses: jdx/mr-boxington-action@7234d3dd1a6ca8f6c381eea8e4dfb03f18fcf777 # v1.3.0
+        uses: jdx/mr-boxington-action@a20e1ffcd962370fb2b6045c13b7b349f7b03386 # v1.3.1
         with:
           backend: local
       - name: Mark tool bootstrap end
@@ -7778,7 +7778,7 @@ jobs:
           install_args: aqua:nextest-rs/nextest/cargo-nextest
           cache: true
       - name: Set up Mr. Boxington
-        uses: jdx/mr-boxington-action@7234d3dd1a6ca8f6c381eea8e4dfb03f18fcf777 # v1.3.0
+        uses: jdx/mr-boxington-action@a20e1ffcd962370fb2b6045c13b7b349f7b03386 # v1.3.1
         with:
           backend: github
           github-cache-mode: objects
@@ -8027,7 +8027,7 @@ jobs:
           set -euo pipefail
           mise --yes install aqua:nextest-rs/nextest/cargo-nextest
       - name: Set up Mr. Boxington
-        uses: jdx/mr-boxington-action@7234d3dd1a6ca8f6c381eea8e4dfb03f18fcf777 # v1.3.0
+        uses: jdx/mr-boxington-action@a20e1ffcd962370fb2b6045c13b7b349f7b03386 # v1.3.1
         with:
           backend: local
       - name: Mark tool bootstrap end
@@ -8223,7 +8223,7 @@ jobs:
           install_args: aqua:nextest-rs/nextest/cargo-nextest
           cache: true
       - name: Set up Mr. Boxington
-        uses: jdx/mr-boxington-action@7234d3dd1a6ca8f6c381eea8e4dfb03f18fcf777 # v1.3.0
+        uses: jdx/mr-boxington-action@a20e1ffcd962370fb2b6045c13b7b349f7b03386 # v1.3.1
         with:
           backend: github
           github-cache-mode: objects
@@ -8472,7 +8472,7 @@ jobs:
           set -euo pipefail
           mise --yes install aqua:nextest-rs/nextest/cargo-nextest
       - name: Set up Mr. Boxington
-        uses: jdx/mr-boxington-action@7234d3dd1a6ca8f6c381eea8e4dfb03f18fcf777 # v1.3.0
+        uses: jdx/mr-boxington-action@a20e1ffcd962370fb2b6045c13b7b349f7b03386 # v1.3.1
         with:
           backend: local
       - name: Mark tool bootstrap end
@@ -8668,7 +8668,7 @@ jobs:
           install_args: aqua:nextest-rs/nextest/cargo-nextest
           cache: true
       - name: Set up Mr. Boxington
-        uses: jdx/mr-boxington-action@7234d3dd1a6ca8f6c381eea8e4dfb03f18fcf777 # v1.3.0
+        uses: jdx/mr-boxington-action@a20e1ffcd962370fb2b6045c13b7b349f7b03386 # v1.3.1
         with:
           backend: github
           github-cache-mode: objects
@@ -8917,7 +8917,7 @@ jobs:
           set -euo pipefail
           mise --yes install aqua:nextest-rs/nextest/cargo-nextest
       - name: Set up Mr. Boxington
-        uses: jdx/mr-boxington-action@7234d3dd1a6ca8f6c381eea8e4dfb03f18fcf777 # v1.3.0
+        uses: jdx/mr-boxington-action@a20e1ffcd962370fb2b6045c13b7b349f7b03386 # v1.3.1
         with:
           backend: local
       - name: Mark tool bootstrap end
