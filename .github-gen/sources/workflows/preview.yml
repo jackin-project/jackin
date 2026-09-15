@@ -5,15 +5,18 @@
 name: Publish Homebrew Preview
 
 on:
-  push:
+  # Publish only after main CI succeeds for the same commit (build-once gate).
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
     branches: [main]
   workflow_dispatch:
     inputs:
       lanes:
-        description: velnor (default) | github | both
+        description: github (default) | velnor | both
         type: choice
-        default: velnor
-        options: [velnor, github, both]
+        default: github
+        options: [github, velnor, both]
 
 permissions:
   actions: read
@@ -27,8 +30,10 @@ concurrency:
 jobs:
   source-changed:
     if: >-
-      github.ref == 'refs/heads/main' &&
-      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+      (github.event_name == 'workflow_run' &&
+        github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.name == 'CI') ||
+      github.event_name == 'workflow_dispatch'
     runs-on: ${{ ((github.event_name == 'workflow_dispatch' && inputs.lanes != 'velnor') || github.event_name == 'pull_request' || github.event_name == 'push') && 'ubuntu-26.04' || fromJSON('["self-hosted","velnor-target-mvp"]') }}
     timeout-minutes: 5
     outputs:
@@ -43,7 +48,14 @@ jobs:
     steps:
       - name: Resolve source SHA
         id: source
-        run: echo "sha=${{ github.sha }}" >> "$GITHUB_OUTPUT"
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          if [ "$EVENT_NAME" = "workflow_run" ]; then
+            echo "sha=${{ github.event.workflow_run.head_sha }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "sha=${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          fi
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -70,6 +82,7 @@ jobs:
         id: filter
         shell: bash
         env:
+          GITHUB_TOKEN: ${{ github.token }}
           EVENT_NAME: ${{ github.event_name }}
           SOURCE_SHA: ${{ steps.source.outputs.sha }}
         run: |
@@ -82,21 +95,33 @@ jobs:
 
           sha="$SOURCE_SHA"
 
-          # Diff base is the previously-published preview SHA, read from the
-          # leading "# source-sha: <40-hex>" comment in the live formula.
-          # A multi-commit push can land a source change in an earlier commit
-          # and a docs-only final commit; classifying against the prior
-          # published SHA (not sha^1) catches those cases correctly.
+          # Canonical diff base is the rolling preview release's target commit
+          # (and its body commit link). The live Homebrew formula source-sha is
+          # secondary verification only — it can lag behind the release.
           old_sha=""
+          formula_sha=""
           formula_err=""
+          if release_json=$(GH_TOKEN="$GITHUB_TOKEN" gh release view preview \
+              --repo "$GITHUB_REPOSITORY" \
+              --json targetCommitish,body 2>/dev/null); then
+            old_sha=$(printf '%s\n' "$release_json" | jq -er '.targetCommitish | select(test("^[0-9a-f]{40}$"))')
+            body_sha=$(printf '%s\n' "$release_json" | jq -er '.body // ""' \
+              | sed -n 's|.*commit/\([0-9a-f]\{40\}\).*|\1|p' | head -1)
+            if [ -n "$body_sha" ] && [ "$body_sha" != "$old_sha" ]; then
+              echo "::warning::preview release targetCommitish ($old_sha) differs from body commit ($body_sha); using body"
+              old_sha="$body_sha"
+            fi
+          fi
           if formula_body=$(curl -fsSL --max-time 30 "https://raw.githubusercontent.com/jackin-project/homebrew-tap/main/Formula/jackin-preview.rb" 2>&1); then
-            # Strict 40-hex-char regex: a captive-portal HTML response
-            # returning HTTP 200 will not match, so the downstream
-            # "old_sha empty" branch handles that as "no prior preview".
-            old_sha=$(printf '%s\n' "$formula_body" | sed -n 's|^[[:space:]]*# source-sha: \([0-9a-f]\{40\}\)$|\1|p' | head -1)
+            formula_sha=$(printf '%s\n' "$formula_body" | sed -n 's|^[[:space:]]*# source-sha: \([0-9a-f]\{40\}\)$|\1|p' | head -1)
+            if [ -n "$old_sha" ] && [ -n "$formula_sha" ] && [ "$old_sha" != "$formula_sha" ]; then
+              echo "::warning::homebrew formula source-sha ($formula_sha) lags canonical preview release ($old_sha)"
+            elif [ -z "$old_sha" ] && [ -n "$formula_sha" ]; then
+              old_sha="$formula_sha"
+            fi
           else
             formula_err="$formula_body"
-            echo "::warning::failed to fetch homebrew-tap formula: ${formula_err}; falling open"
+            echo "::warning::failed to fetch homebrew-tap formula: ${formula_err}"
           fi
 
           # An input-identical source is already represented by the live
@@ -202,6 +227,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
           FULL_SHA: ${{ steps.source.outputs.sha }}
+          EVENT_NAME: ${{ github.event_name }}
         run: |
           base_version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
           base_version=${base_version%-dev}
@@ -321,6 +347,7 @@ jobs:
           "$CI_XTASK" release-archives
           --package jackin
           --version "$VERSION"
+          --archive-version "$VERSION"
       - name: Attest complete jackin archive set
         uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
@@ -421,6 +448,7 @@ jobs:
           "$CI_XTASK" release-archives
           --package jackin-capsule
           --version "$VERSION"
+          --archive-version "$VERSION"
       - name: Attest complete capsule archive set
         uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
@@ -442,7 +470,6 @@ jobs:
   publish-gate:
     needs: [source-changed, build-preview, build-jackin-capsule]
     if: >-
-      github.ref == 'refs/heads/main' &&
       needs.source-changed.outputs.source == 'true'
     runs-on: ${{ ((github.event_name == 'workflow_dispatch' && inputs.lanes != 'velnor') || github.event_name == 'pull_request' || github.event_name == 'push') && 'ubuntu-26.04' || fromJSON('["self-hosted","velnor-target-mvp"]') }}
     timeout-minutes: 45
@@ -452,84 +479,84 @@ jobs:
       actions: read
       contents: read
     steps:
-      - name: Accept successful triggering CI
+      - name: Require successful main CI for source SHA
         id: ci
         env:
+          GH_TOKEN: ${{ github.token }}
           EVENT_NAME: ${{ github.event_name }}
           SOURCE_SHA: ${{ needs.source-changed.outputs.sha }}
+          WORKFLOW_RUN_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          WORKFLOW_RUN_NAME: ${{ github.event.workflow_run.name }}
         run: |
           set -euo pipefail
 
-          if [ "$EVENT_NAME" = "push" ] || [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+          if [ "$EVENT_NAME" = "workflow_run" ]; then
+            if [ "$WORKFLOW_RUN_NAME" != "CI" ] || [ "$WORKFLOW_RUN_CONCLUSION" != "success" ]; then
+              echo "::error::preview publish refused: triggering workflow ${WORKFLOW_RUN_NAME} concluded ${WORKFLOW_RUN_CONCLUSION}"
+              exit 1
+            fi
             echo "ok=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          echo "::error::unsupported preview event '${EVENT_NAME}' for source ${SOURCE_SHA}"
+
+          if [ "$EVENT_NAME" != "workflow_dispatch" ]; then
+            echo "::error::unsupported preview event '${EVENT_NAME}' for source ${SOURCE_SHA}"
+            exit 1
+          fi
+
+          deadline=$((SECONDS + 2700))
+          while [ "$SECONDS" -lt "$deadline" ]; do
+            status=$(
+              gh run list \
+                --repo "$GITHUB_REPOSITORY" \
+                --workflow ci-main.yml \
+                --branch main \
+                --json databaseId,headSha,status,conclusion \
+                --jq "[.[] | select(.headSha == \"${SOURCE_SHA}\")][0] | (.status // \"\") + \":\" + (.conclusion // \"\")"
+            )
+            case "$status" in
+              completed:success)
+                echo "ok=true" >> "$GITHUB_OUTPUT"
+                exit 0
+                ;;
+              completed:*)
+                echo "::error::main CI for ${SOURCE_SHA} concluded ${status#completed:}; refusing preview publish"
+                exit 1
+                ;;
+            esac
+            sleep 30
+          done
+          echo "::error::timed out waiting for successful main CI on ${SOURCE_SHA}"
           exit 1
 
-  publish-preview:
+  assemble-preview:
     needs: [source-changed, build-preview, build-jackin-capsule, publish-gate]
     if: >-
-      github.ref == 'refs/heads/main' &&
       needs.source-changed.outputs.source == 'true' &&
       needs.publish-gate.outputs.ci_ok == 'true'
-    runs-on: ${{ ((github.event_name == 'workflow_dispatch' && inputs.lanes != 'velnor') || github.event_name == 'pull_request' || github.event_name == 'push') && 'ubuntu-26.04' || fromJSON('["self-hosted","velnor-target-mvp"]') }}
-    timeout-minutes: 60
-    concurrency:
-      group: homebrew-tap-publish
-      cancel-in-progress: false
-    permissions:
-      contents: write
-      id-token: write
+    runs-on: ${{ ((github.event_name == 'workflow_dispatch' && inputs.lanes != 'velnor') || github.event_name == 'workflow_run') && 'ubuntu-26.04' || fromJSON('["self-hosted","velnor-target-mvp"]') }}
+    timeout-minutes: 30
+    outputs:
+      version: ${{ needs.source-changed.outputs.version }}
+      sha: ${{ needs.source-changed.outputs.sha }}
+    env:
+      VERSION: ${{ needs.source-changed.outputs.version }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.source-changed.outputs.sha }}
-          # Publishing verifies source ancestry before updating the formula.
-          fetch-depth: 0
-      - name: Bind publisher cache restore into admitted closure
-        if: github.event_name == 'velnor-admission-closure'
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-      - name: Bind publisher cache save into admitted closure
-        if: github.event_name == 'velnor-admission-closure'
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-      - name: Bind publisher xtask resolver into admitted closure
-        if: github.event_name == 'velnor-admission-closure'
-        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
-      - name: Bind publisher fallback toolchain into admitted closure
-        if: github.event_name == 'velnor-admission-closure'
-        uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
 
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           path: artifacts
-          pattern: preview-${{ ((github.event_name == 'workflow_dispatch' && inputs.lanes == 'github') || github.event_name == 'push') && 'GitHub' || 'Velnor' }}-*
+          pattern: preview-${{ (github.event_name == 'workflow_dispatch' && inputs.lanes == 'velnor') && 'Velnor' || 'GitHub' }}-*
           merge-multiple: true
-
-      - name: Bind CI xtask resolver into admitted closure
-        if: github.event_name == 'velnor-admission-closure'
-        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
-      - name: Bind CI xtask fallback toolchain into admitted closure
-        if: github.event_name == 'velnor-admission-closure'
-        uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
-      - name: Restore prepared CI xtask
-        uses: ./.github/actions/download-ci-xtask
-        with:
-          token: ${{ github.token }}
-          lane: ${{ ((github.event_name == 'workflow_dispatch' && inputs.lanes == 'github') || github.event_name == 'push') && 'GitHub' || 'Velnor' }}
-          xtask-contract: ${{ hashFiles('Cargo.lock', 'Cargo.toml', 'rust-toolchain.toml', '.cargo/**', 'crates/*/Cargo.toml', 'crates/jackin-xtask/src/**', 'crates/jackin-process/src/**') }}
-          include-tools: "false"
 
       - name: Verify source SHA is on main
         env:
           GITHUB_TOKEN: ${{ github.token }}
           FULL_SHA: ${{ needs.source-changed.outputs.sha }}
         run: |
-          # Use GitHub's compare API instead of mutating the local checkout.
-          # A prior run published preview.1 for f6327ae because the runner
-          # behaved like it only had a one-commit checkout even with
-          # fetch-depth: 0, so local git ancestry checks were no longer
-          # reliable enough for preview versioning.
           compare_status=$(
             curl -fsSL \
               -H "Authorization: Bearer $GITHUB_TOKEN" \
@@ -537,7 +564,6 @@ jobs:
               "https://api.github.com/repos/${GITHUB_REPOSITORY}/compare/${FULL_SHA}...main" |
               jq -er '.status'
           )
-
           case "$compare_status" in
             identical|ahead) ;;
             *)
@@ -549,13 +575,14 @@ jobs:
       - name: Read platform SHA256s
         id: shas
         run: |
+          read_sha() { awk '{print $1}' "artifacts/$1.sha256"; }
           {
-            echo "arm64_macos=$(cat artifacts/jackin-aarch64-apple-darwin.tar.gz.sha256)"
-            echo "x86_macos=$(cat artifacts/jackin-x86_64-apple-darwin.tar.gz.sha256)"
-            echo "arm64_linux=$(cat artifacts/jackin-aarch64-unknown-linux-gnu.tar.gz.sha256)"
-            echo "x86_linux=$(cat artifacts/jackin-x86_64-unknown-linux-gnu.tar.gz.sha256)"
-            echo "capsule_arm64_linux=$(cat artifacts/jackin-capsule-aarch64-unknown-linux-gnu.tar.gz.sha256)"
-            echo "capsule_x86_linux=$(cat artifacts/jackin-capsule-x86_64-unknown-linux-gnu.tar.gz.sha256)"
+            echo "arm64_macos=$(read_sha "jackin-${VERSION}-aarch64-apple-darwin.tar.gz")"
+            echo "x86_macos=$(read_sha "jackin-${VERSION}-x86_64-apple-darwin.tar.gz")"
+            echo "arm64_linux=$(read_sha "jackin-${VERSION}-aarch64-unknown-linux-gnu.tar.gz")"
+            echo "x86_linux=$(read_sha "jackin-${VERSION}-x86_64-unknown-linux-gnu.tar.gz")"
+            echo "capsule_arm64_linux=$(read_sha "jackin-capsule-${VERSION}-aarch64-unknown-linux-gnu.tar.gz")"
+            echo "capsule_x86_linux=$(read_sha "jackin-capsule-${VERSION}-x86_64-unknown-linux-gnu.tar.gz")"
           } >> "$GITHUB_OUTPUT"
 
       - name: Produce and sign capsule manifest
@@ -566,14 +593,140 @@ jobs:
           x86-sha: ${{ steps.shas.outputs.capsule_x86_linux }}
           github-token: ${{ github.token }}
 
+      - name: Assemble consumer release manifest and independent checksums
+        env:
+          SOURCE_SHA: ${{ needs.source-changed.outputs.sha }}
+        run: |
+          set -euo pipefail
+          mapfile -d '' -t subjects < <(
+            find artifacts -maxdepth 1 -type f \
+              \( -name "jackin-${VERSION}-*.tar.gz" \
+                 -o -name "jackin-capsule-${VERSION}-*.tar.gz" \) \
+              -print0 | sort -z
+          )
+          test "${#subjects[@]}" -eq 6
+          : > artifacts/SHA256SUMS
+          : > assets.jsonl
+          for subject in "${subjects[@]}"; do
+            name=$(basename "$subject")
+            digest=$(sha256sum "$subject" | awk '{print $1}')
+            printf '%s  %s\n' "$digest" "$name" >> artifacts/SHA256SUMS
+            jq -cn --arg name "$name" --arg sha256 "$digest" \
+              '{name:$name,sha256:$sha256}' >> assets.jsonl
+          done
+          jq -S -n \
+            --arg source_repository "$GITHUB_REPOSITORY" \
+            --arg source_ref "refs/heads/main" \
+            --arg source_commit "$SOURCE_SHA" \
+            --arg version "$VERSION" \
+            --slurpfile assets assets.jsonl \
+            '{schema:"velnor.package-release.v1",source_repository:$source_repository,source_ref:$source_ref,source_commit:$source_commit,version:$version,assets:$assets}' \
+            > artifacts/release-manifest.json
+          (cd artifacts && sha256sum --check --strict SHA256SUMS)
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: package-preview-assets
+          path: artifacts
+          if-no-files-found: error
+
+  sign-packages:
+    needs: assemble-preview
+    strategy:
+      fail-fast: false
+      matrix:
+        subject:
+          - jackin-${{ needs.assemble-preview.outputs.version }}-aarch64-apple-darwin.tar.gz
+          - jackin-${{ needs.assemble-preview.outputs.version }}-x86_64-apple-darwin.tar.gz
+          - jackin-${{ needs.assemble-preview.outputs.version }}-aarch64-unknown-linux-gnu.tar.gz
+          - jackin-${{ needs.assemble-preview.outputs.version }}-x86_64-unknown-linux-gnu.tar.gz
+          - jackin-capsule-${{ needs.assemble-preview.outputs.version }}-aarch64-unknown-linux-gnu.tar.gz
+          - jackin-capsule-${{ needs.assemble-preview.outputs.version }}-x86_64-unknown-linux-gnu.tar.gz
+    permissions:
+      attestations: write
+      contents: read
+      id-token: write
+    uses: jackin-project/velnor-actions/.github/workflows/package-signer.yml@851ef541d67f9cabebf2ddb2a2a02f51f6c54130 # 2026.8.33
+    with:
+      artifact-name: package-preview-assets
+      subject-path: ${{ matrix.subject }}
+      source-ref: refs/heads/main
+
+  publish-preview:
+    needs: [assemble-preview, sign-packages]
+    if: needs.assemble-preview.result == 'success'
+    runs-on: ${{ ((github.event_name == 'workflow_dispatch' && inputs.lanes != 'velnor') || github.event_name == 'workflow_run') && 'ubuntu-26.04' || fromJSON('["self-hosted","velnor-target-mvp"]') }}
+    timeout-minutes: 30
+    concurrency:
+      group: homebrew-tap-publish
+      cancel-in-progress: false
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.assemble-preview.outputs.sha }}
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: package-preview-assets
+          path: artifacts
+
+      - name: Restore prepared CI xtask
+        uses: ./.github/actions/download-ci-xtask
+        with:
+          token: ${{ github.token }}
+          lane: ${{ (github.event_name == 'workflow_dispatch' && inputs.lanes == 'velnor') && 'Velnor' || 'GitHub' }}
+          xtask-contract: ${{ hashFiles('Cargo.lock', 'Cargo.toml', 'rust-toolchain.toml', '.cargo/**', 'crates/*/Cargo.toml', 'crates/jackin-xtask/src/**', 'crates/jackin-process/src/**') }}
+          include-tools: "false"
+
       - name: Publish preview GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
-          VERSION: ${{ needs.source-changed.outputs.version }}
-          SHA: ${{ needs.source-changed.outputs.sha }}
+          VERSION: ${{ needs.assemble-preview.outputs.version }}
+          SHA: ${{ needs.assemble-preview.outputs.sha }}
         run: >-
           "$CI_XTASK" github publish-preview
           --repository "$GITHUB_REPOSITORY"
           --version "$VERSION"
           --sha "$SHA"
           --assets artifacts
+
+  verify-homebrew:
+    needs: [assemble-preview, publish-preview]
+    if: needs.publish-preview.result == 'success'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 45
+    steps:
+      - name: Request Homebrew tap package refresh
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          FALLBACK_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          token="${GH_TOKEN:-$FALLBACK_TOKEN}"
+          GH_TOKEN="$token" gh workflow run package-update.yml \
+            --repo jackin-project/homebrew-tap \
+            -f lanes=github \
+            || echo "::warning::could not dispatch homebrew-tap package-update; polling formula only"
+
+      - name: Wait for live formula to match published preview
+        env:
+          SOURCE_SHA: ${{ needs.assemble-preview.outputs.sha }}
+          VERSION: ${{ needs.assemble-preview.outputs.version }}
+        run: |
+          set -euo pipefail
+          deadline=$((SECONDS + 2400))
+          while [ "$SECONDS" -lt "$deadline" ]; do
+            formula=$(curl -fsSL --max-time 30 \
+              "https://raw.githubusercontent.com/jackin-project/homebrew-tap/main/Formula/jackin-preview.rb")
+            formula_sha=$(printf '%s\n' "$formula" | sed -n 's|^[[:space:]]*# source-sha: \([0-9a-f]\{40\}\)$|\1|p' | head -1)
+            formula_version=$(printf '%s\n' "$formula" | sed -n 's/^[[:space:]]*version "\(.*\)"/\1/p' | head -1)
+            if [ "$formula_sha" = "$SOURCE_SHA" ] && [ "$formula_version" = "$VERSION" ]; then
+              echo "homebrew preview formula matches ${SOURCE_SHA} @ ${VERSION}"
+              exit 0
+            fi
+            sleep 60
+          done
+          echo "::error::homebrew preview formula did not reach ${SOURCE_SHA} @ ${VERSION} within timeout"
+          exit 1
