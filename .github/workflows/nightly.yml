@@ -167,7 +167,7 @@ jobs:
         run: velnor-workflow policy --workflow-root "$WORKFLOW_ROOT"
   group-bun:
     name: ${{ matrix.label }}
-    if: ${{ always() && needs.plan.result == 'success' && needs.policy.result == 'success' && needs.plan.outputs.bun_matrix != '[]' }}
+    if: ${{ always() && needs.plan.result == 'success' && needs.policy.result == 'success' && needs.plan.outputs.bun_matrix != '' && needs.plan.outputs.bun_matrix != '[]' }}
     needs: [plan, policy]
     strategy:
       fail-fast: false
@@ -180,7 +180,7 @@ jobs:
       selection-artifact: velnor-ci-selection
   group-docker:
     name: ${{ matrix.label }}
-    if: ${{ always() && needs.plan.result == 'success' && needs.policy.result == 'success' && needs.plan.outputs.docker_matrix != '[]' }}
+    if: ${{ always() && needs.plan.result == 'success' && needs.policy.result == 'success' && needs.plan.outputs.docker_matrix != '' && needs.plan.outputs.docker_matrix != '[]' }}
     needs: [plan, policy]
     strategy:
       fail-fast: false
@@ -193,7 +193,7 @@ jobs:
       selection-artifact: velnor-ci-selection
   group-rust:
     name: ${{ matrix.label }}
-    if: ${{ always() && needs.plan.result == 'success' && needs.policy.result == 'success' && needs.plan.outputs.rust_matrix != '[]' }}
+    if: ${{ always() && needs.plan.result == 'success' && needs.policy.result == 'success' && needs.plan.outputs.rust_matrix != '' && needs.plan.outputs.rust_matrix != '[]' }}
     needs: [plan, policy]
     strategy:
       fail-fast: false
@@ -206,7 +206,7 @@ jobs:
       selection-artifact: velnor-ci-selection
   group-rust-2:
     name: ${{ matrix.label }}
-    if: ${{ always() && needs.plan.result == 'success' && needs.policy.result == 'success' && needs.plan.outputs.rust-2_matrix != '[]' }}
+    if: ${{ always() && needs.plan.result == 'success' && needs.policy.result == 'success' && needs.plan.outputs.rust-2_matrix != '' && needs.plan.outputs.rust-2_matrix != '[]' }}
     needs: [plan, policy]
     strategy:
       fail-fast: false
@@ -219,7 +219,7 @@ jobs:
       selection-artifact: velnor-ci-selection
   group-swift:
     name: ${{ matrix.label }}
-    if: ${{ always() && needs.plan.result == 'success' && needs.policy.result == 'success' && needs.plan.outputs.swift_matrix != '[]' }}
+    if: ${{ always() && needs.plan.result == 'success' && needs.policy.result == 'success' && needs.plan.outputs.swift_matrix != '' && needs.plan.outputs.swift_matrix != '[]' }}
     needs: [plan, policy]
     strategy:
       fail-fast: false
