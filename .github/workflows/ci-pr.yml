@@ -49,10 +49,11 @@ jobs:
       head_sha: ${{ steps.plan.outputs.head_sha }}
       units: ${{ steps.plan.outputs.units }}
       full_units: ${{ steps.plan.outputs.full_units }}
-      rust_matrix: ${{ steps.plan.outputs.rust_matrix }}
       bun_matrix: ${{ steps.plan.outputs.bun_matrix }}
-      swift_matrix: ${{ steps.plan.outputs.swift_matrix }}
       docker_matrix: ${{ steps.plan.outputs.docker_matrix }}
+      rust-2_matrix: ${{ steps.plan.outputs.rust-2_matrix }}
+      rust_matrix: ${{ steps.plan.outputs.rust_matrix }}
+      swift_matrix: ${{ steps.plan.outputs.swift_matrix }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -132,6 +133,17 @@ jobs:
       full_units: ${{ needs.plan.outputs.full_units }}
       base_sha: ${{ needs.plan.outputs.base_sha }}
       head_sha: ${{ needs.plan.outputs.head_sha }}
+  group-rust-2:
+    name: group-rust-2
+    if: ${{ always() && needs.plan.result == 'success' && needs.plan.outputs.rust-2_matrix != '[]' }}
+    needs: [plan]
+    uses: ./.github/workflows/ci-unit-rust-2.yml
+    with:
+      selected_units: ${{ needs.plan.outputs.units }}
+      scope: ${{ needs.plan.outputs.scope }}
+      full_units: ${{ needs.plan.outputs.full_units }}
+      base_sha: ${{ needs.plan.outputs.base_sha }}
+      head_sha: ${{ needs.plan.outputs.head_sha }}
   group-swift:
     name: "Swift / Packages"
     if: ${{ always() && needs.plan.result == 'success' && needs.plan.outputs.swift_matrix != '[]' }}
@@ -146,7 +158,7 @@ jobs:
   ci-required:
     name: ci-required
     if: ${{ always() }}
-    needs: [plan, group-bun, group-docker, group-rust, group-swift]
+    needs: [plan, group-bun, group-docker, group-rust, group-rust-2, group-swift]
     runs-on: ubuntu-26.04
     timeout-minutes: 5
     steps:
@@ -201,6 +213,19 @@ jobs:
             case "$result" in
               success|skipped) ;;
               *) echo "unselected CI group group-rust failed unexpectedly: $result" >&2; exit 1 ;;
+            esac
+          fi
+          matrix="$(jq -r --arg key 'rust-2_matrix' --arg empty '[]' '.plan.outputs[$key] // $empty' <<<"$NEEDS_JSON")"
+          result="$(result_for_job group-rust-2)"
+          if [[ "$matrix" != '[]' ]]; then
+            if [[ "$result" != success ]]; then
+              echo "selected CI group group-rust-2 did not pass: $result" >&2
+              exit 1
+            fi
+          else
+            case "$result" in
+              success|skipped) ;;
+              *) echo "unselected CI group group-rust-2 failed unexpectedly: $result" >&2; exit 1 ;;
             esac
           fi
           matrix="$(jq -r --arg key 'swift_matrix' --arg empty '[]' '.plan.outputs[$key] // $empty' <<<"$NEEDS_JSON")"
