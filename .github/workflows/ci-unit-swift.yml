@@ -49,7 +49,7 @@ jobs:
         with:
           rev: 7fa4a0731ee8bedc5b02d90507d6dbe8b719153a
       - name: Set trusted workflow policy revision
-        run: echo "VELNOR_WORKFLOW_POLICY_REVISION=7fa4a0731ee8bedc5b02d90507d6dbe8b719153a" >> "$GITHUB_ENV"
+        run: echo "VELNOR_WORKFLOW_POLICY_REVISION=3bfd459772bc24161551e755a63a5a02517c63e4" >> "$GITHUB_ENV"
       - name: Mark runner setup end
         if: always()
         run: |
@@ -231,7 +231,7 @@ jobs:
         with:
           rev: 7fa4a0731ee8bedc5b02d90507d6dbe8b719153a
       - name: Set trusted workflow policy revision
-        run: echo "VELNOR_WORKFLOW_POLICY_REVISION=7fa4a0731ee8bedc5b02d90507d6dbe8b719153a" >> "$GITHUB_ENV"
+        run: echo "VELNOR_WORKFLOW_POLICY_REVISION=3bfd459772bc24161551e755a63a5a02517c63e4" >> "$GITHUB_ENV"
       - name: Mark runner setup end
         if: always()
         run: |
