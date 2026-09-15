@@ -65,11 +65,11 @@ jobs:
     steps:
       - name: Set up Velnor workflow runtime
         if: ${{ runner.environment == 'github-hosted' }}
-        uses: tailrocks/velnor/.github/actions/setup-velnor-workflow@c323c311dfe6bbb2a96f2f3a8f06c32ae913f19f
+        uses: tailrocks/velnor/.github/actions/setup-velnor-workflow@8a17976725d2cf1a0517d2f9621083de9486c0b0
         with:
           rev: ${{ github.sha }}
       - name: Set trusted workflow policy revision
-        run: echo "VELNOR_WORKFLOW_POLICY_REVISION=c323c311dfe6bbb2a96f2f3a8f06c32ae913f19f" >> "$GITHUB_ENV"
+        run: echo "VELNOR_WORKFLOW_POLICY_REVISION=8a17976725d2cf1a0517d2f9621083de9486c0b0" >> "$GITHUB_ENV"
       - name: Collect Actions cache account
         env:
           GH_TOKEN: ${{ github.token }}
