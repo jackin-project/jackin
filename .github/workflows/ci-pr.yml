@@ -10,7 +10,7 @@ on:
       runner:
         description: Execution backend
         required: false
-        default: both
+        default: github
         type: choice
         options:
           - velnor
@@ -74,7 +74,7 @@ jobs:
           CI_SCOPE_OVERRIDE: ${{ github.event.inputs.scope || '' }}
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.inputs.base_sha || github.event.before || 'refs/heads/main' }}
           HEAD_SHA: ${{ github.sha }}
-          VELNOR_LANES: ${{ github.event.inputs.runner || 'both' }}
+          VELNOR_LANES: ${{ github.event.inputs.runner || 'github' }}
         run: |
           set -euo pipefail
           if [[ -z "${CI_SCOPE_OVERRIDE:-}" ]]; then unset CI_SCOPE_OVERRIDE; fi

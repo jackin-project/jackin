@@ -6,22 +6,19 @@ repository = "jackin-project/jackin"
 # Vendored generator inputs are never scan evidence: the download-ci-xtask
 # runtime ships package.json manifests that must not select a Node unit.
 [scan]
-exclude = [".github-gen/sources/**"]
+exclude = [".github-gen/sources/**", "native/Package.swift", "native/.swiftpm/**"]
 
-# Runner placement: `runners` is the available backends. `automatic` is the
-# lanes that run on PR/push/schedule without a dispatch choice. Both lanes
-# schedule in parallel on pull_request (same-repo) and on main push/schedule.
-# `automatic_lanes` only feeds static workflows that read
-# vars.VELNOR_AUTOMATIC_LANES; it must not keep generated PR CI GitHub-only.
+# Runner placement: keep both backends for manual dispatch; automatic events
+# (main push/schedule, same-repo PR) must stay GitHub-only so ci-required is
+# not blocked by queued self-hosted jobs when the Velnor fleet is unavailable.
 [workflow]
 runners = "both"
-automatic = "both"
-default_dispatch_runner = "both"
+automatic = "github"
+default_dispatch_runner = "github"
 automatic_lanes = "github"
 github_runner = "ubuntu-26.04"
 macos_runner = "macos-26"
 velnor_labels = ["self-hosted", "velnor-target-mvp"]
-pull_request_on_velnor = true
 
 # Interim: adopted release-side workflows predate policy conformance (#965).
 [policy]
@@ -47,19 +44,15 @@ id = "rust-jackin-xtask"
 mise_tools = ["github:open-telemetry/weaver"]
 
 # XCFramework must exist before `swift build` resolves the binary target.
-# A dedicated precursor unit runs first; depends_on orders the Swift unit.
-[[units]]
-id = "rust-desktop-xcframework"
-kind = "rust"
-root = "native"
-watch = ["native/**", "crates/jackin-xtask/**"]
-ci_tasks = ["desktop-xcframework"]
-mise_tools = ["cargo-binstall", "rust", "cargo:sccache", "cargo:boltffi_cli"]
-pinned_lockfile = true
-
+# Run desktop-xcframework in the same macOS job as swift-package-native so
+# the binary target path is populated on one runner (separate jobs do not
+# share target/xcframework).
 [[units]]
 id = "swift-package-native"
-depends_on = ["rust-desktop-xcframework"]
+kind = "swift"
+root = "native"
+watch = ["native/**/*.swift", "native/Package.swift", "native/Package.resolved", "native/.swiftpm/Package.resolved", "crates/jackin-xtask/**"]
+ci_tasks = ["swift-package-native-ci"]
 mise_tools = ["cargo-binstall", "rust", "cargo:sccache", "cargo:boltffi_cli"]
 
 # jackin-lints pins nightly via crates/jackin-lints/rust-toolchain.
