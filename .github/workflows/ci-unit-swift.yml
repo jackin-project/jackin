@@ -3,44 +3,113 @@ name: "Swift / Packages"
 on:
   workflow_call:
     inputs:
-      unit:
+      selected_units:
         required: true
         type: string
       scope:
         required: true
         type: string
-      selection-artifact:
+      full_units:
+        required: true
+        type: string
+      base_sha:
+        required: true
+        type: string
+      head_sha:
         required: true
         type: string
 
 jobs:
   github-swift-package-native:
     name: "GitHub / swift-package-native"
-    if: ${{ inputs.unit == 'swift-package-native' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || github.event_name == 'merge_group' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both'))) }}
+    if: ${{ contains(format(',{0},', inputs.selected_units), ',swift-package-native,') && (github.event_name == 'pull_request' || github.event_name == 'merge_group' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
     runs-on: macos-26
     timeout-minutes: 45
     steps:
+      - name: Mark CI job start
+        if: always()
+        run: |
+          timing_dir="$RUNNER_TEMP/velnor-ci-timing-${GITHUB_RUN_ID:-unknown}-${GITHUB_RUN_ATTEMPT:-0}-${GITHUB_JOB:-unknown}"
+          umask 077
+          mkdir -p "$timing_dir"
+          marker="$timing_dir/JOB_STARTED"
+          if [[ ! -e "$marker" ]]; then
+            if (set -C; printf '%s\n' "$(date +%s)" > "$marker") 2>/dev/null; then
+              chmod 0444 "$marker" 2>/dev/null || true
+            fi
+          fi
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          ref: ${{ inputs.head_sha }}
       - name: Set up Velnor workflow runtime
         if: ${{ runner.environment == 'github-hosted' }}
-        uses: tailrocks/velnor/.github/actions/setup-velnor-workflow@8a17976725d2cf1a0517d2f9621083de9486c0b0
+        uses: tailrocks/velnor/.github/actions/setup-velnor-workflow@d3e441fb36dc0fee7502cc08fdc7bebf8c8bf754
         with:
-          rev: 8a17976725d2cf1a0517d2f9621083de9486c0b0
+          rev: d3e441fb36dc0fee7502cc08fdc7bebf8c8bf754
       - name: Set trusted workflow policy revision
-        run: echo "VELNOR_WORKFLOW_POLICY_REVISION=8a17976725d2cf1a0517d2f9621083de9486c0b0" >> "$GITHUB_ENV"
-      - name: Download Velnor CI selection
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: ${{ inputs.selection-artifact }}
-          path: .velnor-ci-selection
+        run: echo "VELNOR_WORKFLOW_POLICY_REVISION=d3e441fb36dc0fee7502cc08fdc7bebf8c8bf754" >> "$GITHUB_ENV"
+      - name: Mark runner setup end
+        if: always()
+        run: |
+          timing_dir="$RUNNER_TEMP/velnor-ci-timing-${GITHUB_RUN_ID:-unknown}-${GITHUB_RUN_ATTEMPT:-0}-${GITHUB_JOB:-unknown}"
+          umask 077
+          mkdir -p "$timing_dir"
+          marker="$timing_dir/RUNNER_SETUP_ENDED"
+          if [[ ! -e "$marker" ]]; then
+            if (set -C; printf '%s\n' "$(date +%s)" > "$marker") 2>/dev/null; then
+              chmod 0444 "$marker" 2>/dev/null || true
+            fi
+          fi
+      - name: Materialize Velnor CI selection
+        shell: bash
+        env:
+          SELECTION_BASE_SHA: ${{ inputs.base_sha }}
+          SELECTION_HEAD_SHA: ${{ inputs.head_sha }}
+          SELECTION_SCOPE: ${{ inputs.scope }}
+          SELECTION_UNITS: ${{ inputs.selected_units }}
+          SELECTION_FULL_UNITS: ${{ inputs.full_units }}
+        run: |
+          set -euo pipefail
+          mkdir -p .velnor-ci-selection
+          {
+            printf 'version=1\n'
+            printf 'base_sha=%s\n' "$SELECTION_BASE_SHA"
+            printf 'head_sha=%s\n' "$SELECTION_HEAD_SHA"
+            printf 'scope=%s\n' "$SELECTION_SCOPE"
+            printf 'units=%s\n' "$SELECTION_UNITS"
+            printf 'full_units=%s\n' "$SELECTION_FULL_UNITS"
+          } > .velnor-ci-selection/velnor-ci-selection
+      - name: Mark selection transport end
+        if: always()
+        run: |
+          timing_dir="$RUNNER_TEMP/velnor-ci-timing-${GITHUB_RUN_ID:-unknown}-${GITHUB_RUN_ATTEMPT:-0}-${GITHUB_JOB:-unknown}"
+          umask 077
+          mkdir -p "$timing_dir"
+          marker="$timing_dir/SELECTION_ENDED"
+          if [[ ! -e "$marker" ]]; then
+            if (set -C; printf '%s\n' "$(date +%s)" > "$marker") 2>/dev/null; then
+              chmod 0444 "$marker" 2>/dev/null || true
+            fi
+          fi
       - name: Set up Mise tools
         uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
           install_args: cargo-binstall rust cargo:sccache cargo:boltffi_cli
           cache: true
+      - name: Mark tool bootstrap end
+        if: always()
+        run: |
+          timing_dir="$RUNNER_TEMP/velnor-ci-timing-${GITHUB_RUN_ID:-unknown}-${GITHUB_RUN_ATTEMPT:-0}-${GITHUB_JOB:-unknown}"
+          umask 077
+          mkdir -p "$timing_dir"
+          marker="$timing_dir/TOOL_BOOTSTRAP_ENDED"
+          if [[ ! -e "$marker" ]]; then
+            if (set -C; printf '%s\n' "$(date +%s)" > "$marker") 2>/dev/null; then
+              chmod 0444 "$marker" 2>/dev/null || true
+            fi
+          fi
       - name: Restore "Swift package (native)" cache
         id: cache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -50,134 +119,64 @@ jobs:
           key: ci-${{ runner.os }}-swift-${{ hashFiles('native/Package.swift', 'native/Package.resolved', 'native/.swiftpm/Package.resolved') }}
           restore-keys: |
             ci-${{ runner.os }}-swift-
+      - name: Mark cache prep end
+        if: always()
+        run: |
+          timing_dir="$RUNNER_TEMP/velnor-ci-timing-${GITHUB_RUN_ID:-unknown}-${GITHUB_RUN_ATTEMPT:-0}-${GITHUB_JOB:-unknown}"
+          umask 077
+          mkdir -p "$timing_dir"
+          marker="$timing_dir/CACHE_PREP_ENDED"
+          if [[ ! -e "$marker" ]]; then
+            if (set -C; printf '%s\n' "$(date +%s)" > "$marker") 2>/dev/null; then
+              chmod 0444 "$marker" 2>/dev/null || true
+            fi
+          fi
+      - name: Mark cargo fetch end
+        if: always()
+        run: |
+          timing_dir="$RUNNER_TEMP/velnor-ci-timing-${GITHUB_RUN_ID:-unknown}-${GITHUB_RUN_ATTEMPT:-0}-${GITHUB_JOB:-unknown}"
+          umask 077
+          mkdir -p "$timing_dir"
+          marker="$timing_dir/CARGO_FETCH_ENDED"
+          if [[ ! -e "$marker" ]]; then
+            if (set -C; printf '%s\n' "$(date +%s)" > "$marker") 2>/dev/null; then
+              chmod 0444 "$marker" 2>/dev/null || true
+            fi
+          fi
       - name: Run "Swift package (native)" checks
         env:
           CI_SCOPE: ${{ inputs.scope }}
-          CI_UNIT_ID: ${{ inputs.unit }}
+          CI_UNIT_ID: swift-package-native
           EVENT_NAME: ${{ github.event_name }}
-          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.inputs.base_sha || github.event.before || 'refs/heads/main' }}
-          HEAD_SHA: ${{ github.sha }}
+          BASE_SHA: ${{ inputs.base_sha }}
+          HEAD_SHA: ${{ inputs.head_sha }}
           VELNOR_SELECTION_FILE: .velnor-ci-selection/velnor-ci-selection
           MISE_AUTO_INSTALL: "false"
           MISE_EXEC_AUTO_INSTALL: "false"
           MISE_NOT_FOUND_AUTO_INSTALL: "false"
         run: |
           set -o pipefail
-          echo "VELNOR_CHECKS_STARTED_EPOCH=$(date +%s)" >> "$GITHUB_ENV"
+          timing_dir="$RUNNER_TEMP/velnor-ci-timing-${GITHUB_RUN_ID:-unknown}-${GITHUB_RUN_ATTEMPT:-0}-${GITHUB_JOB:-unknown}"
+          umask 077
+          mkdir -p "$timing_dir"
+          marker="$timing_dir/CHECKS_STARTED"
+          if [[ ! -e "$marker" ]]; then
+            if (set -C; printf '%s\n' "$(date +%s)" > "$marker") 2>/dev/null; then
+              chmod 0444 "$marker" 2>/dev/null || true
+            fi
+          fi
           rc=0
           velnor-workflow run --config .github/ci/project.toml --scope "$CI_SCOPE" --unit "$CI_UNIT_ID" 2>&1 | tee "$RUNNER_TEMP/velnor-unit-log.txt" || rc=$?
-          echo "VELNOR_CHECKS_ENDED_EPOCH=$(date +%s)" >> "$GITHUB_ENV"
+          timing_dir="$RUNNER_TEMP/velnor-ci-timing-${GITHUB_RUN_ID:-unknown}-${GITHUB_RUN_ATTEMPT:-0}-${GITHUB_JOB:-unknown}"
+          umask 077
+          mkdir -p "$timing_dir"
+          marker="$timing_dir/CHECKS_ENDED"
+          if [[ ! -e "$marker" ]]; then
+            if (set -C; printf '%s\n' "$(date +%s)" > "$marker") 2>/dev/null; then
+              chmod 0444 "$marker" 2>/dev/null || true
+            fi
+          fi
           exit $rc
-      - name: Report phase timings and cache outcomes
-        if: always()
-        env:
-          VELNOR_WORKFLOW_NAME: "Swift · Apple · Swift package (native)"
-          VELNOR_LANE_NAME: GitHub
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-        run: |
-          set -uo pipefail
-          log="$RUNNER_TEMP/velnor-unit-log.txt"
-          log_present=false
-          if [[ -s "$log" ]]; then log_present=true; fi
-          started="${VELNOR_CHECKS_STARTED_EPOCH:-}"
-          ended="${VELNOR_CHECKS_ENDED_EPOCH:-}"
-          wall=""
-          if [[ "$started" =~ ^[0-9]+$ && "$ended" =~ ^[0-9]+$ ]]; then
-            wall=$((ended - started))
-          fi
-          queue=""
-          job_name=""
-          expected_job="$VELNOR_WORKFLOW_NAME / $VELNOR_LANE_NAME"
-          if command -v gh >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
-            run_started="$(gh api "repos/$GH_REPO/actions/runs/$GITHUB_RUN_ID" --jq '.run_started_at // empty' 2>/dev/null || true)"
-            jobs_json="$(gh api --paginate "repos/$GH_REPO/actions/runs/$GITHUB_RUN_ID/jobs?per_page=100" 2>/dev/null || true)"
-            job_name="$(printf '%s' "$jobs_json" | jq -r --arg wf "$VELNOR_WORKFLOW_NAME" --arg lane "$VELNOR_LANE_NAME" '[.jobs[]? | select(.name == ($wf + " / " + $lane))][0].name // empty' 2>/dev/null | head -n1 || true)"
-            if [[ -z "$job_name" ]]; then
-              job_name="$(printf '%s' "$jobs_json" | jq -r --arg lane "$VELNOR_LANE_NAME" '[.jobs[]? | select(.name | endswith(" / " + $lane))][0].name // empty' 2>/dev/null | head -n1 || true)"
-            fi
-            if [[ -n "$job_name" && -n "$run_started" ]]; then
-              job_started="$(printf '%s' "$jobs_json" | jq -r --arg name "$job_name" '.jobs[]? | select(.name == $name) | .started_at' 2>/dev/null | head -n1 || true)"
-              if [[ -n "$job_started" ]]; then
-                queue="$(jq -n --arg job "$job_started" --arg run "$run_started" '($job | fromdateiso8601) - ($run | fromdateiso8601)' 2>/dev/null || true)"
-              fi
-            fi
-          fi
-          if [[ -z "$job_name" ]]; then
-            job_name="$expected_job"
-          fi
-          updating_index=0
-          updating_git=0
-          downloading_crates=0
-          compiling_count=0
-          downloaded_lines=""
-          mbx_lines=""
-          finished_lines=""
-          if [[ -s "$log" ]]; then
-            updating_index="$(grep -c 'Updating crates.io index' "$log" || true)"
-            updating_git="$(grep -cE 'Updating git (repository|submodule)' "$log" || true)"
-            downloading_crates="$(grep -c 'Downloading crates' "$log" || true)"
-            compiling_count="$(grep -c 'Compiling ' "$log" || true)"
-            downloaded_lines="$(grep -E 'Downloaded [0-9]+ crate' "$log" || true)"
-            mbx_lines="$(grep -E 'mbx(\[cache\])?:' "$log" | grep -E 'hits|misses' || true)"
-            finished_lines="$(grep -E 'Finished .* in ' "$log" || true)"
-          fi
-          positive_int() {
-            local value="$1"
-            [[ "$value" =~ ^[0-9]+$ ]] || value=0
-            printf '%s' "$value"
-          }
-          report_json="$(jq -nc \
-            --arg job "$job_name" \
-            --arg queue "$queue" \
-            --arg wall "$wall" \
-            --argjson log_present "$log_present" \
-            --argjson updating_index "$(positive_int "$updating_index")" \
-            --argjson updating_git "$(positive_int "$updating_git")" \
-            --argjson downloading_crates "$(positive_int "$downloading_crates")" \
-            --argjson compiling_count "$(positive_int "$compiling_count")" \
-            --argjson downloaded_lines "$(printf '%s' "$downloaded_lines" | jq -Rsc 'split("\n") | map(select(length > 0))' || true)" \
-            --argjson mbx "$(printf '%s' "$mbx_lines" | jq -Rsc 'split("\n") | map(select(length > 0))' || true)" \
-            --argjson finished "$(printf '%s' "$finished_lines" | jq -Rsc 'split("\n") | map(select(length > 0))' || true)" \
-            '{
-              job: $job,
-              log_present: $log_present,
-              queue_seconds: ($queue | if test("^[0-9]+$") then tonumber else null end),
-              checks_wall_seconds: ($wall | if test("^[0-9]+$") then tonumber else null end),
-              origin_downloads: {
-                updating_crates_io_index: $updating_index,
-                updating_git: $updating_git,
-                downloading_crates: $downloading_crates,
-                downloaded_lines: $downloaded_lines
-              },
-              compiler: {
-                mbx_outcomes: $mbx,
-                finished_segments: $finished,
-                compiling_lines: $compiling_count
-              }
-            }' 2>/dev/null || true)"
-          if [[ -z "$report_json" ]]; then
-            report_json="VELNOR_CI_REPORT_FALLBACK job=$job_name"
-          fi
-          echo "VELNOR_CI_REPORT $report_json"
-          {
-            echo ""
-            echo '### Phase timings and cache outcomes'
-            echo ""
-            echo '```json'
-            echo "$report_json"
-            echo '```'
-            echo ""
-            echo "| metric | value |"
-            echo "| --- | --- |"
-            echo "| queue_seconds | ${queue:-unknown} |"
-            echo "| checks_wall_seconds | ${wall:-unknown} |"
-            echo "| updating_crates_io_index | $updating_index |"
-            echo "| updating_git | $updating_git |"
-            echo "| downloading_crates | $downloading_crates |"
-            echo "| compiling_lines | $compiling_count |"
-          } >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
-          exit 0
       - name: Save "Swift package (native)" cache
         if: ((github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')) && steps.cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -185,29 +184,109 @@ jobs:
           path: |
             ~/.swiftpm
           key: ci-${{ runner.os }}-swift-${{ hashFiles('native/Package.swift', 'native/Package.resolved', 'native/.swiftpm/Package.resolved') }}
+      - name: Mark cleanup end
+        if: always()
+        run: |
+          timing_dir="$RUNNER_TEMP/velnor-ci-timing-${GITHUB_RUN_ID:-unknown}-${GITHUB_RUN_ATTEMPT:-0}-${GITHUB_JOB:-unknown}"
+          umask 077
+          mkdir -p "$timing_dir"
+          marker="$timing_dir/CLEANUP_ENDED"
+          if [[ ! -e "$marker" ]]; then
+            if (set -C; printf '%s\n' "$(date +%s)" > "$marker") 2>/dev/null; then
+              chmod 0444 "$marker" 2>/dev/null || true
+            fi
+          fi
+      - name: Report phase timings and cache outcomes
+        if: always()
+        uses: ./.github/actions/report-velnor-ci-outcomes
+        with:
+          job_label: "GitHub / swift-package-native"
 
   github-swift-package-native-design-prototypes-unifiedagentusage:
     name: "GitHub / swift-package-native-design-prototypes-unifiedagentusage"
-    if: ${{ inputs.unit == 'swift-package-native-design-prototypes-unifiedagentusage' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || github.event_name == 'merge_group' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both'))) }}
+    if: ${{ contains(format(',{0},', inputs.selected_units), ',swift-package-native-design-prototypes-unifiedagentusage,') && (github.event_name == 'pull_request' || github.event_name == 'merge_group' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
     runs-on: macos-26
     timeout-minutes: 45
     steps:
+      - name: Mark CI job start
+        if: always()
+        run: |
+          timing_dir="$RUNNER_TEMP/velnor-ci-timing-${GITHUB_RUN_ID:-unknown}-${GITHUB_RUN_ATTEMPT:-0}-${GITHUB_JOB:-unknown}"
+          umask 077
+          mkdir -p "$timing_dir"
+          marker="$timing_dir/JOB_STARTED"
+          if [[ ! -e "$marker" ]]; then
+            if (set -C; printf '%s\n' "$(date +%s)" > "$marker") 2>/dev/null; then
+              chmod 0444 "$marker" 2>/dev/null || true
+            fi
+          fi
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          ref: ${{ inputs.head_sha }}
       - name: Set up Velnor workflow runtime
         if: ${{ runner.environment == 'github-hosted' }}
-        uses: tailrocks/velnor/.github/actions/setup-velnor-workflow@8a17976725d2cf1a0517d2f9621083de9486c0b0
+        uses: tailrocks/velnor/.github/actions/setup-velnor-workflow@d3e441fb36dc0fee7502cc08fdc7bebf8c8bf754
         with:
-          rev: 8a17976725d2cf1a0517d2f9621083de9486c0b0
+          rev: d3e441fb36dc0fee7502cc08fdc7bebf8c8bf754
       - name: Set trusted workflow policy revision
-        run: echo "VELNOR_WORKFLOW_POLICY_REVISION=8a17976725d2cf1a0517d2f9621083de9486c0b0" >> "$GITHUB_ENV"
-      - name: Download Velnor CI selection
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: ${{ inputs.selection-artifact }}
-          path: .velnor-ci-selection
+        run: echo "VELNOR_WORKFLOW_POLICY_REVISION=d3e441fb36dc0fee7502cc08fdc7bebf8c8bf754" >> "$GITHUB_ENV"
+      - name: Mark runner setup end
+        if: always()
+        run: |
+          timing_dir="$RUNNER_TEMP/velnor-ci-timing-${GITHUB_RUN_ID:-unknown}-${GITHUB_RUN_ATTEMPT:-0}-${GITHUB_JOB:-unknown}"
+          umask 077
+          mkdir -p "$timing_dir"
+          marker="$timing_dir/RUNNER_SETUP_ENDED"
+          if [[ ! -e "$marker" ]]; then
+            if (set -C; printf '%s\n' "$(date +%s)" > "$marker") 2>/dev/null; then
+              chmod 0444 "$marker" 2>/dev/null || true
+            fi
+          fi
+      - name: Materialize Velnor CI selection
+        shell: bash
+        env:
+          SELECTION_BASE_SHA: ${{ inputs.base_sha }}
+          SELECTION_HEAD_SHA: ${{ inputs.head_sha }}
+          SELECTION_SCOPE: ${{ inputs.scope }}
+          SELECTION_UNITS: ${{ inputs.selected_units }}
+          SELECTION_FULL_UNITS: ${{ inputs.full_units }}
+        run: |
+          set -euo pipefail
+          mkdir -p .velnor-ci-selection
+          {
+            printf 'version=1\n'
+            printf 'base_sha=%s\n' "$SELECTION_BASE_SHA"
+            printf 'head_sha=%s\n' "$SELECTION_HEAD_SHA"
+            printf 'scope=%s\n' "$SELECTION_SCOPE"
+            printf 'units=%s\n' "$SELECTION_UNITS"
+            printf 'full_units=%s\n' "$SELECTION_FULL_UNITS"
+          } > .velnor-ci-selection/velnor-ci-selection
+      - name: Mark selection transport end
+        if: always()
+        run: |
+          timing_dir="$RUNNER_TEMP/velnor-ci-timing-${GITHUB_RUN_ID:-unknown}-${GITHUB_RUN_ATTEMPT:-0}-${GITHUB_JOB:-unknown}"
+          umask 077
+          mkdir -p "$timing_dir"
+          marker="$timing_dir/SELECTION_ENDED"
+          if [[ ! -e "$marker" ]]; then
+            if (set -C; printf '%s\n' "$(date +%s)" > "$marker") 2>/dev/null; then
+              chmod 0444 "$marker" 2>/dev/null || true
+            fi
+          fi
+      - name: Mark tool bootstrap end
+        if: always()
+        run: |
+          timing_dir="$RUNNER_TEMP/velnor-ci-timing-${GITHUB_RUN_ID:-unknown}-${GITHUB_RUN_ATTEMPT:-0}-${GITHUB_JOB:-unknown}"
+          umask 077
+          mkdir -p "$timing_dir"
+          marker="$timing_dir/TOOL_BOOTSTRAP_ENDED"
+          if [[ ! -e "$marker" ]]; then
+            if (set -C; printf '%s\n' "$(date +%s)" > "$marker") 2>/dev/null; then
+              chmod 0444 "$marker" 2>/dev/null || true
+            fi
+          fi
       - name: Restore "Swift package (native/Design/Prototypes/UnifiedAgentUsage)" cache
         id: cache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -217,134 +296,64 @@ jobs:
           key: ci-${{ runner.os }}-swift-${{ hashFiles('native/Design/Prototypes/UnifiedAgentUsage/Package.swift', 'native/Design/Prototypes/UnifiedAgentUsage/Package.resolved', 'native/Design/Prototypes/UnifiedAgentUsage/.swiftpm/Package.resolved') }}
           restore-keys: |
             ci-${{ runner.os }}-swift-
+      - name: Mark cache prep end
+        if: always()
+        run: |
+          timing_dir="$RUNNER_TEMP/velnor-ci-timing-${GITHUB_RUN_ID:-unknown}-${GITHUB_RUN_ATTEMPT:-0}-${GITHUB_JOB:-unknown}"
+          umask 077
+          mkdir -p "$timing_dir"
+          marker="$timing_dir/CACHE_PREP_ENDED"
+          if [[ ! -e "$marker" ]]; then
+            if (set -C; printf '%s\n' "$(date +%s)" > "$marker") 2>/dev/null; then
+              chmod 0444 "$marker" 2>/dev/null || true
+            fi
+          fi
+      - name: Mark cargo fetch end
+        if: always()
+        run: |
+          timing_dir="$RUNNER_TEMP/velnor-ci-timing-${GITHUB_RUN_ID:-unknown}-${GITHUB_RUN_ATTEMPT:-0}-${GITHUB_JOB:-unknown}"
+          umask 077
+          mkdir -p "$timing_dir"
+          marker="$timing_dir/CARGO_FETCH_ENDED"
+          if [[ ! -e "$marker" ]]; then
+            if (set -C; printf '%s\n' "$(date +%s)" > "$marker") 2>/dev/null; then
+              chmod 0444 "$marker" 2>/dev/null || true
+            fi
+          fi
       - name: Run "Swift package (native/Design/Prototypes/UnifiedAgentUsage)" checks
         env:
           CI_SCOPE: ${{ inputs.scope }}
-          CI_UNIT_ID: ${{ inputs.unit }}
+          CI_UNIT_ID: swift-package-native-design-prototypes-unifiedagentusage
           EVENT_NAME: ${{ github.event_name }}
-          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.inputs.base_sha || github.event.before || 'refs/heads/main' }}
-          HEAD_SHA: ${{ github.sha }}
+          BASE_SHA: ${{ inputs.base_sha }}
+          HEAD_SHA: ${{ inputs.head_sha }}
           VELNOR_SELECTION_FILE: .velnor-ci-selection/velnor-ci-selection
           MISE_AUTO_INSTALL: "false"
           MISE_EXEC_AUTO_INSTALL: "false"
           MISE_NOT_FOUND_AUTO_INSTALL: "false"
         run: |
           set -o pipefail
-          echo "VELNOR_CHECKS_STARTED_EPOCH=$(date +%s)" >> "$GITHUB_ENV"
+          timing_dir="$RUNNER_TEMP/velnor-ci-timing-${GITHUB_RUN_ID:-unknown}-${GITHUB_RUN_ATTEMPT:-0}-${GITHUB_JOB:-unknown}"
+          umask 077
+          mkdir -p "$timing_dir"
+          marker="$timing_dir/CHECKS_STARTED"
+          if [[ ! -e "$marker" ]]; then
+            if (set -C; printf '%s\n' "$(date +%s)" > "$marker") 2>/dev/null; then
+              chmod 0444 "$marker" 2>/dev/null || true
+            fi
+          fi
           rc=0
           velnor-workflow run --config .github/ci/project.toml --scope "$CI_SCOPE" --unit "$CI_UNIT_ID" 2>&1 | tee "$RUNNER_TEMP/velnor-unit-log.txt" || rc=$?
-          echo "VELNOR_CHECKS_ENDED_EPOCH=$(date +%s)" >> "$GITHUB_ENV"
+          timing_dir="$RUNNER_TEMP/velnor-ci-timing-${GITHUB_RUN_ID:-unknown}-${GITHUB_RUN_ATTEMPT:-0}-${GITHUB_JOB:-unknown}"
+          umask 077
+          mkdir -p "$timing_dir"
+          marker="$timing_dir/CHECKS_ENDED"
+          if [[ ! -e "$marker" ]]; then
+            if (set -C; printf '%s\n' "$(date +%s)" > "$marker") 2>/dev/null; then
+              chmod 0444 "$marker" 2>/dev/null || true
+            fi
+          fi
           exit $rc
-      - name: Report phase timings and cache outcomes
-        if: always()
-        env:
-          VELNOR_WORKFLOW_NAME: "Swift · Apple · Swift package (native/Design/Prototypes/UnifiedAgentUsage)"
-          VELNOR_LANE_NAME: GitHub
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-        run: |
-          set -uo pipefail
-          log="$RUNNER_TEMP/velnor-unit-log.txt"
-          log_present=false
-          if [[ -s "$log" ]]; then log_present=true; fi
-          started="${VELNOR_CHECKS_STARTED_EPOCH:-}"
-          ended="${VELNOR_CHECKS_ENDED_EPOCH:-}"
-          wall=""
-          if [[ "$started" =~ ^[0-9]+$ && "$ended" =~ ^[0-9]+$ ]]; then
-            wall=$((ended - started))
-          fi
-          queue=""
-          job_name=""
-          expected_job="$VELNOR_WORKFLOW_NAME / $VELNOR_LANE_NAME"
-          if command -v gh >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
-            run_started="$(gh api "repos/$GH_REPO/actions/runs/$GITHUB_RUN_ID" --jq '.run_started_at // empty' 2>/dev/null || true)"
-            jobs_json="$(gh api --paginate "repos/$GH_REPO/actions/runs/$GITHUB_RUN_ID/jobs?per_page=100" 2>/dev/null || true)"
-            job_name="$(printf '%s' "$jobs_json" | jq -r --arg wf "$VELNOR_WORKFLOW_NAME" --arg lane "$VELNOR_LANE_NAME" '[.jobs[]? | select(.name == ($wf + " / " + $lane))][0].name // empty' 2>/dev/null | head -n1 || true)"
-            if [[ -z "$job_name" ]]; then
-              job_name="$(printf '%s' "$jobs_json" | jq -r --arg lane "$VELNOR_LANE_NAME" '[.jobs[]? | select(.name | endswith(" / " + $lane))][0].name // empty' 2>/dev/null | head -n1 || true)"
-            fi
-            if [[ -n "$job_name" && -n "$run_started" ]]; then
-              job_started="$(printf '%s' "$jobs_json" | jq -r --arg name "$job_name" '.jobs[]? | select(.name == $name) | .started_at' 2>/dev/null | head -n1 || true)"
-              if [[ -n "$job_started" ]]; then
-                queue="$(jq -n --arg job "$job_started" --arg run "$run_started" '($job | fromdateiso8601) - ($run | fromdateiso8601)' 2>/dev/null || true)"
-              fi
-            fi
-          fi
-          if [[ -z "$job_name" ]]; then
-            job_name="$expected_job"
-          fi
-          updating_index=0
-          updating_git=0
-          downloading_crates=0
-          compiling_count=0
-          downloaded_lines=""
-          mbx_lines=""
-          finished_lines=""
-          if [[ -s "$log" ]]; then
-            updating_index="$(grep -c 'Updating crates.io index' "$log" || true)"
-            updating_git="$(grep -cE 'Updating git (repository|submodule)' "$log" || true)"
-            downloading_crates="$(grep -c 'Downloading crates' "$log" || true)"
-            compiling_count="$(grep -c 'Compiling ' "$log" || true)"
-            downloaded_lines="$(grep -E 'Downloaded [0-9]+ crate' "$log" || true)"
-            mbx_lines="$(grep -E 'mbx(\[cache\])?:' "$log" | grep -E 'hits|misses' || true)"
-            finished_lines="$(grep -E 'Finished .* in ' "$log" || true)"
-          fi
-          positive_int() {
-            local value="$1"
-            [[ "$value" =~ ^[0-9]+$ ]] || value=0
-            printf '%s' "$value"
-          }
-          report_json="$(jq -nc \
-            --arg job "$job_name" \
-            --arg queue "$queue" \
-            --arg wall "$wall" \
-            --argjson log_present "$log_present" \
-            --argjson updating_index "$(positive_int "$updating_index")" \
-            --argjson updating_git "$(positive_int "$updating_git")" \
-            --argjson downloading_crates "$(positive_int "$downloading_crates")" \
-            --argjson compiling_count "$(positive_int "$compiling_count")" \
-            --argjson downloaded_lines "$(printf '%s' "$downloaded_lines" | jq -Rsc 'split("\n") | map(select(length > 0))' || true)" \
-            --argjson mbx "$(printf '%s' "$mbx_lines" | jq -Rsc 'split("\n") | map(select(length > 0))' || true)" \
-            --argjson finished "$(printf '%s' "$finished_lines" | jq -Rsc 'split("\n") | map(select(length > 0))' || true)" \
-            '{
-              job: $job,
-              log_present: $log_present,
-              queue_seconds: ($queue | if test("^[0-9]+$") then tonumber else null end),
-              checks_wall_seconds: ($wall | if test("^[0-9]+$") then tonumber else null end),
-              origin_downloads: {
-                updating_crates_io_index: $updating_index,
-                updating_git: $updating_git,
-                downloading_crates: $downloading_crates,
-                downloaded_lines: $downloaded_lines
-              },
-              compiler: {
-                mbx_outcomes: $mbx,
-                finished_segments: $finished,
-                compiling_lines: $compiling_count
-              }
-            }' 2>/dev/null || true)"
-          if [[ -z "$report_json" ]]; then
-            report_json="VELNOR_CI_REPORT_FALLBACK job=$job_name"
-          fi
-          echo "VELNOR_CI_REPORT $report_json"
-          {
-            echo ""
-            echo '### Phase timings and cache outcomes'
-            echo ""
-            echo '```json'
-            echo "$report_json"
-            echo '```'
-            echo ""
-            echo "| metric | value |"
-            echo "| --- | --- |"
-            echo "| queue_seconds | ${queue:-unknown} |"
-            echo "| checks_wall_seconds | ${wall:-unknown} |"
-            echo "| updating_crates_io_index | $updating_index |"
-            echo "| updating_git | $updating_git |"
-            echo "| downloading_crates | $downloading_crates |"
-            echo "| compiling_lines | $compiling_count |"
-          } >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
-          exit 0
       - name: Save "Swift package (native/Design/Prototypes/UnifiedAgentUsage)" cache
         if: ((github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')) && steps.cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -352,4 +361,21 @@ jobs:
           path: |
             ~/.swiftpm
           key: ci-${{ runner.os }}-swift-${{ hashFiles('native/Design/Prototypes/UnifiedAgentUsage/Package.swift', 'native/Design/Prototypes/UnifiedAgentUsage/Package.resolved', 'native/Design/Prototypes/UnifiedAgentUsage/.swiftpm/Package.resolved') }}
+      - name: Mark cleanup end
+        if: always()
+        run: |
+          timing_dir="$RUNNER_TEMP/velnor-ci-timing-${GITHUB_RUN_ID:-unknown}-${GITHUB_RUN_ATTEMPT:-0}-${GITHUB_JOB:-unknown}"
+          umask 077
+          mkdir -p "$timing_dir"
+          marker="$timing_dir/CLEANUP_ENDED"
+          if [[ ! -e "$marker" ]]; then
+            if (set -C; printf '%s\n' "$(date +%s)" > "$marker") 2>/dev/null; then
+              chmod 0444 "$marker" 2>/dev/null || true
+            fi
+          fi
+      - name: Report phase timings and cache outcomes
+        if: always()
+        uses: ./.github/actions/report-velnor-ci-outcomes
+        with:
+          job_label: "GitHub / swift-package-native-design-prototypes-unifiedagentusage"
 
