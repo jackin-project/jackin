@@ -21,3 +21,5 @@ repository = "https://github.com/droundy/arrayref"
 
 [dev-dependencies.quickcheck]
 version = "1.0"
+
+[workspace]

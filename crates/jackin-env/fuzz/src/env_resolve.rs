@@ -1,9 +1,11 @@
 //! Fuzz pure env resolution + reserved-name validation — never panic.
 #![no_main]
 use jackin_config::AppConfig;
-use jackin_core::is_reserved;
 use jackin_core::EnvVarDecl;
-use jackin_env::{EnvPrompter, PromptResult, resolve_env, resolve_env_with_overrides, validate_reserved_names};
+use jackin_core::is_reserved;
+use jackin_env::{
+    EnvPrompter, PromptResult, resolve_env, resolve_env_with_overrides, validate_reserved_names,
+};
 use libfuzzer_sys::fuzz_target;
 use std::collections::BTreeMap;
 
@@ -49,7 +51,10 @@ fuzz_target!(|data: &[u8]| {
     let keys = keys_from_bytes(data);
     let mut decls: BTreeMap<String, EnvVarDecl> = BTreeMap::new();
     for (i, k) in keys.iter().enumerate() {
-        let val = data.get(i).map(|b| format!("v{b}")).unwrap_or_else(|| "v".into());
+        let val = data
+            .get(i)
+            .map(|b| format!("v{b}"))
+            .unwrap_or_else(|| "v".into());
         decls.insert(
             k.clone(),
             EnvVarDecl {
