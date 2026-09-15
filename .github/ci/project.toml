@@ -651,11 +651,11 @@ paths = ["~/.swiftpm"]
 [[unit]]
 id = "rust-desktop-xcframework"
 label = ""
-kind = "rust"
+kind = "swift"
 root = "native"
 watch = ["native/**", "crates/jackin-xtask/**"]
 github_pr_commands = ["mise run desktop-xcframework"]
 github_full_commands = ["mise run desktop-xcframework"]
 velnor_pr_commands = ["mise run desktop-xcframework"]
 velnor_full_commands = ["mise run desktop-xcframework"]
-workflow_file = "ci-unit-rust-2.yml"
+workflow_file = "ci-unit-swift.yml"

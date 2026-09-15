@@ -47,7 +47,7 @@ mise_tools = ["github:open-telemetry/weaver"]
 # A dedicated precursor unit runs first; depends_on orders the Swift unit.
 [[units]]
 id = "rust-desktop-xcframework"
-kind = "rust"
+kind = "swift"
 root = "native"
 watch = ["native/**", "crates/jackin-xtask/**"]
 ci_tasks = ["desktop-xcframework"]

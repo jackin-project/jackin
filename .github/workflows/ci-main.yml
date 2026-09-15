@@ -32,8 +32,7 @@ on:
 
 
 concurrency:
-  # v2: bust zombie queued runs in the legacy group that block all main CI (run 34934919337+).
-  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}-v2
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 permissions:
