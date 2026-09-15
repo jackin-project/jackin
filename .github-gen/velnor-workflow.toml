@@ -6,7 +6,7 @@ repository = "jackin-project/jackin"
 # Vendored generator inputs are never scan evidence: the download-ci-xtask
 # runtime ships package.json manifests that must not select a Node unit.
 [scan]
-exclude = [".github-gen/sources/**"]
+exclude = [".github-gen/sources/**", "native/Package.swift", "native/.swiftpm/**"]
 
 # Runner placement: keep both backends for manual dispatch; automatic events
 # (main push/schedule, same-repo PR) must stay GitHub-only so ci-required is
@@ -49,7 +49,10 @@ mise_tools = ["github:open-telemetry/weaver"]
 # share target/xcframework).
 [[units]]
 id = "swift-package-native"
-ci_tasks = ["desktop-xcframework"]
+kind = "swift"
+root = "native"
+watch = ["native/**/*.swift", "native/Package.swift", "native/Package.resolved", "native/.swiftpm/Package.resolved", "crates/jackin-xtask/**"]
+ci_tasks = ["swift-package-native-ci"]
 mise_tools = ["cargo-binstall", "rust", "cargo:sccache", "cargo:boltffi_cli"]
 
 # jackin-lints pins nightly via crates/jackin-lints/rust-toolchain.
