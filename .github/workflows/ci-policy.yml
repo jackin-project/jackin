@@ -39,7 +39,7 @@ jobs:
         with:
           backend: github
           version: 1.8.3
-          cache-key: velnor-policy-mbx-1.8.3-${{ runner.os }}-${{ runner.arch }}-8a17976725d2cf1a0517d2f9621083de9486c0b0
+          cache-key: velnor-policy-mbx-1.8.3-${{ runner.os }}-${{ runner.arch }}-d3e441fb36dc0fee7502cc08fdc7bebf8c8bf754
           restore-keys: |
             velnor-policy-mbx-1.8.3-${{ runner.os }}-${{ runner.arch }}-
       - name: Install pinned Velnor workflow runtime
@@ -50,6 +50,12 @@ jobs:
           VELNOR_WORKFLOW_ROOT: ${{ runner.temp }}/velnor-workflow
         run: |
           set -euo pipefail
+          CACHED_POLICY_RUNTIME="$HOME/.cargo/bin/velnor-workflow-policy-d3e441fb36dc0fee7502cc08fdc7bebf8c8bf754"
+          if [ -x "$CACHED_POLICY_RUNTIME" ]; then
+            ln -sf "velnor-workflow-policy-d3e441fb36dc0fee7502cc08fdc7bebf8c8bf754" "$HOME/.cargo/bin/velnor-workflow"
+            echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+            exit 0
+          fi
           install -d -m 700 \
             "$CARGO_HOME" \
             "$CARGO_TARGET_DIR" \
@@ -58,13 +64,16 @@ jobs:
           cargo install \
             --locked \
             --git https://github.com/tailrocks/velnor \
-            --rev 8a17976725d2cf1a0517d2f9621083de9486c0b0 \
+            --rev d3e441fb36dc0fee7502cc08fdc7bebf8c8bf754 \
             --root "$VELNOR_WORKFLOW_ROOT" \
             velnor-workflow \
             --bin velnor-workflow
+          STAGED_POLICY_RUNTIME="$CACHED_POLICY_RUNTIME.$$"
+          install -Dm0755 "$VELNOR_WORKFLOW_ROOT/bin/velnor-workflow" "$STAGED_POLICY_RUNTIME"
+          mv -f "$STAGED_POLICY_RUNTIME" "$CACHED_POLICY_RUNTIME"
           echo "$VELNOR_WORKFLOW_ROOT/bin" >> "$GITHUB_PATH"
       - name: Enforce workflow policy
         env:
           WORKFLOW_ROOT: ${{ github.workspace }}/policy-checkout
-          VELNOR_WORKFLOW_POLICY_REVISION: 8a17976725d2cf1a0517d2f9621083de9486c0b0
+          VELNOR_WORKFLOW_POLICY_REVISION: d3e441fb36dc0fee7502cc08fdc7bebf8c8bf754
         run: velnor-workflow policy --workflow-root "$WORKFLOW_ROOT"
