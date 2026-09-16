@@ -123,11 +123,11 @@ jobs:
           ref: ${{ inputs.head_sha }}
       - name: Set up Velnor workflow runtime
         if: ${{ runner.environment == 'github-hosted' }}
-        uses: tailrocks/velnor/.github/actions/setup-velnor-workflow@e05aee6de1d1614d752b4d1b1d26a49ac2c5ef91
+        uses: tailrocks/velnor/.github/actions/setup-velnor-workflow@1279c4f92c97b75dc4cc627f122e119f8a5eae16
         with:
-          rev: e05aee6de1d1614d752b4d1b1d26a49ac2c5ef91
+          rev: 1279c4f92c97b75dc4cc627f122e119f8a5eae16
       - name: Set trusted workflow policy revision
-        run: echo "VELNOR_WORKFLOW_POLICY_REVISION=e05aee6de1d1614d752b4d1b1d26a49ac2c5ef91" >> "$GITHUB_ENV"
+        run: echo "VELNOR_WORKFLOW_POLICY_REVISION=1279c4f92c97b75dc4cc627f122e119f8a5eae16" >> "$GITHUB_ENV"
       - name: Mark runner setup end
         if: always()
         run: |
@@ -279,11 +279,10 @@ jobs:
           fi
       - name: Report phase timings and cache outcomes
         if: always()
-        env:
-          VELNOR_CI_LANE: github
-          VELNOR_CACHE_CARGO_PRIMARY: ${{ steps.cache.outputs.cache-primary-key }}
-          VELNOR_CACHE_CARGO_MATCHED: ${{ steps.cache.outputs.cache-matched-key }}
         uses: ./.github/actions/report-velnor-ci-outcomes
         with:
           job_label: ${{ inputs.unit }}
+          ci_lane: github
+          cache_cargo_primary: ${{ steps.cache.outputs.cache-primary-key }}
+          cache_cargo_matched: ${{ steps.cache.outputs.cache-matched-key }}
 
