@@ -124,12 +124,12 @@ jobs:
       - name: Download Velnor workflow runtime
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: velnor-workflow-runtime-92a2b13b4d0fe9e4862c0145999d9ca2ae6450b4-${{ runner.os }}-${{ runner.arch }}
+          name: velnor-workflow-runtime-541d8926737213542156ee32e420010817f8a323-${{ runner.os }}-${{ runner.arch }}
           path: .velnor-workflow-runtime
       - name: Verify Velnor workflow runtime
         shell: bash
         env:
-          EXPECTED_REVISION: 92a2b13b4d0fe9e4862c0145999d9ca2ae6450b4
+          EXPECTED_REVISION: 541d8926737213542156ee32e420010817f8a323
         run: |
           set -euo pipefail
           manifest=.velnor-workflow-runtime/manifest.json
@@ -143,7 +143,7 @@ jobs:
       - name: Add Velnor workflow runtime to PATH
         shell: bash
         env:
-          EXPECTED_REVISION: 92a2b13b4d0fe9e4862c0145999d9ca2ae6450b4
+          EXPECTED_REVISION: 541d8926737213542156ee32e420010817f8a323
         run: |
           set -euo pipefail
           home="$RUNNER_TEMP/velnor-workflow-runtime-artifact"
@@ -321,10 +321,11 @@ jobs:
           printf '%s  %s\n' "$expected" "$archive" | sha256sum --check --strict
           if [[ "$(id -u)" -eq 0 ]]; then
             tar --directory /usr/local --strip-components=1 --no-overwrite-dir -xzf "$archive"
+            ln -sf /usr/local/bin/mold "$(realpath /usr/bin/ld 2>/dev/null || printf /usr/bin/ld)"
           else
             sudo tar --directory /usr/local --strip-components=1 --no-overwrite-dir -xzf "$archive"
+            sudo ln -sf /usr/local/bin/mold "$(realpath /usr/bin/ld 2>/dev/null || printf /usr/bin/ld)"
           fi
-          command -v mold >/dev/null
           mold --version | grep -F "$MOLD_VERSION"
       - name: Save mold 2.42.0 cache
         if: ((github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')) && steps.mold-cache.outputs.cache-hit != 'true'
@@ -447,7 +448,7 @@ jobs:
           fi
       - name: Report phase timings and cache outcomes
         if: always()
-        uses: tailrocks/velnor/.github/actions/report-velnor-ci-outcomes@92a2b13b4d0fe9e4862c0145999d9ca2ae6450b4
+        uses: tailrocks/velnor/.github/actions/report-velnor-ci-outcomes@541d8926737213542156ee32e420010817f8a323
         with:
           job_label: ${{ inputs.unit }}
           ci_lane: github

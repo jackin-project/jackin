@@ -2,7 +2,7 @@ schema = 1
 
 [generator]
 repository = "jackin-project/jackin"
-revision = "92a2b13b4d0fe9e4862c0145999d9ca2ae6450b4"
+revision = "541d8926737213542156ee32e420010817f8a323"
 
 # Vendored generator inputs are never scan evidence: the download-ci-xtask
 # runtime ships package.json manifests that must not select a Node unit.
