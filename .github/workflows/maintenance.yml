@@ -42,20 +42,25 @@ jobs:
             echo "No merge-ref cache entries found for $ref"
             exit 0
           fi
-          # shellcheck disable=SC2016
-          if ! printf '%s\n' "$cache_ids" | xargs -r -P 4 -n 1 bash -c '
-            repo="$1"
-            id="$2"
+          failed=0
+          while IFS= read -r id; do
+            [[ -z "$id" ]] && continue
+            deleted=false
             for delay in 1 2 4 8; do
-              if gh api --method DELETE "repos/$repo/actions/caches/$id" >/dev/null 2>&1; then
-                exit 0
+              if gh api --method DELETE "repos/$GITHUB_REPOSITORY/actions/caches/$id" >/dev/null 2>&1; then
+                deleted=true
+                break
               fi
               sleep "$delay"
             done
-            printf "::warning::failed to delete cache id %s after retries\\n" "$id" >&2
+            if [[ "$deleted" != true ]]; then
+              failed=$((failed + 1))
+              echo "::error::failed to delete cache id $id after retries" >&2
+            fi
+          done <<< "$cache_ids"
+          if (( failed > 0 )); then
+            echo "::error::$failed closed-PR cache entries could not be deleted; rerun maintenance" >&2
             exit 1
-          ' _ "$GITHUB_REPOSITORY"; then
-            echo "::warning::some closed-PR cache entries could not be deleted; rerun maintenance"
           fi
   cache-budget:
     name: Cache retention
@@ -65,15 +70,78 @@ jobs:
     permissions:
       contents: read
       actions: write
+      pull-requests: read
     steps:
+      - name: Skip while CI producers are running
+        id: retention-gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          for workflow in ci-main.yml nightly.yml; do
+            if [[ "$(gh run list --workflow "$workflow" --status in_progress --limit 1 --json databaseId --jq 'length')" != "0" ]]; then
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+              echo "$workflow is in_progress; skipping cache retention" >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+          done
+          echo "skip=false" >> "$GITHUB_OUTPUT"
       - name: Set up Velnor workflow runtime
-        if: ${{ runner.environment == 'github-hosted' }}
-        uses: tailrocks/velnor/.github/actions/setup-velnor-workflow@7fa4a0731ee8bedc5b02d90507d6dbe8b719153a
+        if: ${{ steps.retention-gate.outputs.skip != 'true' && runner.environment == 'github-hosted' }}
+        uses: tailrocks/velnor/.github/actions/setup-velnor-workflow@e05aee6de1d1614d752b4d1b1d26a49ac2c5ef91
         with:
-          rev: 7fa4a0731ee8bedc5b02d90507d6dbe8b719153a
+          rev: e05aee6de1d1614d752b4d1b1d26a49ac2c5ef91
       - name: Set trusted workflow policy revision
-        run: echo "VELNOR_WORKFLOW_POLICY_REVISION=92f933fdb7f84ef8d6e6eb3c1b5809d8231fbaea" >> "$GITHUB_ENV"
+        if: steps.retention-gate.outputs.skip != 'true'
+        run: echo "VELNOR_WORKFLOW_POLICY_REVISION=e05aee6de1d1614d752b4d1b1d26a49ac2c5ef91" >> "$GITHUB_ENV"
+      - name: Sweep closed-PR merge-ref caches
+        if: steps.retention-gate.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          failed=0
+          mapfile -t refs < <(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/caches?per_page=100" \
+            --jq '.actions_caches[].ref' | grep -E '^refs/pull/[0-9]+/merge$' | sort -u)
+          if ((${#refs[@]} == 0)); then
+            echo "No merge-ref cache scopes found"
+            exit 0
+          fi
+          for ref in "${refs[@]}"; do
+            pr="${ref#refs/pull/}"
+            pr="${pr%/merge}"
+            state="$(gh pr view "$pr" --json state --jq .state 2>/dev/null || echo unknown)"
+            if [[ "$state" != "CLOSED" ]]; then
+              continue
+            fi
+            encoded="$(printf '%s' "$ref" | jq -sRr @uri)"
+            mapfile -t cache_ids < <(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/caches?ref=$encoded" \
+              --jq '.actions_caches[].id')
+            if ((${#cache_ids[@]} == 0)); then
+              continue
+            fi
+            echo "Sweeping $ref ($pr): ${#cache_ids[@]} entries"
+            for id in "${cache_ids[@]}"; do
+              deleted=false
+              for delay in 1 2 4 8; do
+                if gh api --method DELETE "repos/$GITHUB_REPOSITORY/actions/caches/$id" >/dev/null 2>&1; then
+                  deleted=true
+                  break
+                fi
+                sleep "$delay"
+              done
+              if [[ "$deleted" != true ]]; then
+                failed=$((failed + 1))
+                echo "::error::failed to delete cache id $id for $ref after retries" >&2
+              fi
+            done
+          done
+          if (( failed > 0 )); then
+            echo "::error::$failed closed-PR merge-ref cache entries could not be deleted; rerun maintenance" >&2
+            exit 1
+          fi
       - name: Collect Actions cache account
+        if: steps.retention-gate.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -84,19 +152,31 @@ jobs:
             > "$RUNNER_TEMP/cache-retention/entries.jsonl"
           jq -s '.' "$RUNNER_TEMP/cache-retention/entries.jsonl" \
             > "$RUNNER_TEMP/cache-retention/entries.json"
+          velnor-workflow cache-plan --mode=budget --entries "$RUNNER_TEMP/cache-retention/entries.json" \
+            > "$RUNNER_TEMP/cache-retention/budget.json"
           # `gh api --paginate --jq` runs the filter once per page and
           # concatenates the outputs: summing inside the filter prints one
           # number per page, and the total silently understates the account.
           # Slurp the page stream first, then take one total over every entry.
-          total="$(jq '[.[].size_in_bytes] | add // 0' "$RUNNER_TEMP/cache-retention/entries.json")"
+          total="$(jq '.total_held_bytes' "$RUNNER_TEMP/cache-retention/budget.json")"
           count="$(jq 'length' "$RUNNER_TEMP/cache-retention/entries.json")"
-          headroom="$(( "$(velnor-workflow cache-plan --mode=budget)" - total ))"
+          headroom="$(jq '.headroom_bytes' "$RUNNER_TEMP/cache-retention/budget.json")"
+          if (( headroom >= 0 && headroom < 536870912 )); then
+            echo "::warning::Actions cache headroom below 512 MiB ($headroom bytes remaining)" >&2
+          fi
           jq -n --argjson total "$total" --argjson count "$count" --argjson headroom "$headroom" \
+            --slurpfile budget "$RUNNER_TEMP/cache-retention/budget.json" \
             --arg captured_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-            '{captured_at: $captured_at, cache_count: $count, total_bytes: $total, headroom_bytes: $headroom}' \
+            '{captured_at: $captured_at, cache_count: $count, total_bytes: $total, headroom_bytes: $headroom, classes: $budget[0].classes}' \
             > "$RUNNER_TEMP/cache-retention/summary.json"
-          cat "$RUNNER_TEMP/cache-retention/summary.json" >> "$GITHUB_STEP_SUMMARY"
+          {
+            cat "$RUNNER_TEMP/cache-retention/summary.json"
+            echo "Per-class totals:"
+            jq -r '.classes[] | "  \(.id): \(.entry_count) entries, \(.held_bytes) bytes (budget \(.budget_bytes))"' \
+              "$RUNNER_TEMP/cache-retention/budget.json"
+          } >> "$GITHUB_STEP_SUMMARY"
       - name: Plan retention evictions
+        if: steps.retention-gate.outputs.skip != 'true'
         run: |
           set -euo pipefail
           # The plan is the generator's own retention policy, executed - never
@@ -122,6 +202,7 @@ jobs:
             echo "Retention plan: nothing to evict" >> "$GITHUB_STEP_SUMMARY"
           fi
       - name: Apply retention evictions
+        if: steps.retention-gate.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -162,6 +243,7 @@ jobs:
             exit 1
           fi
       - name: Publish retention evidence
+        if: steps.retention-gate.outputs.skip != 'true'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: cache-retention-${{ github.run_id }}
@@ -169,6 +251,7 @@ jobs:
           if-no-files-found: error
           retention-days: 14
       - name: Enforce cache budget
+        if: steps.retention-gate.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
