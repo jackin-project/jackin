@@ -1,19 +1,19 @@
 # Generated ownership state; do not edit.
 schema = 2
 [inputs]
-config	b461f431e4f9d663
+config	8c4576303da6dd49
 scan	0f1c33a1259bf9f0
 generator	49
 [outputs]
 .github/actionlint.yaml	2c1dbf178fa8baa1
 .github/ci/project.toml	bbcc1474d08229ac
-.github/workflows/ci-main.yml	9e9e6a16261480ee
-.github/workflows/ci-policy.yml	c973aa6cb15b7de6
-.github/workflows/ci-pr.yml	a69af4c1b35718a3
-.github/workflows/ci-unit-bun.yml	e9f2bf47b7eafa7c
-.github/workflows/ci-unit-docker.yml	5c8f118cd2d84201
-.github/workflows/ci-unit-rust.yml	e6ca78e4f374f7fb
-.github/workflows/ci-unit-swift.yml	d49b46cf6fae1e4a
-.github/workflows/maintenance.yml	53c0eaca90b7a7f0
+.github/workflows/ci-main.yml	6913fbf982cd57ee
+.github/workflows/ci-policy.yml	846237be306414fc
+.github/workflows/ci-pr.yml	2efb2df577427ded
+.github/workflows/ci-unit-bun.yml	a7fcbf6a4422ab98
+.github/workflows/ci-unit-docker.yml	aac2fc0f064fe909
+.github/workflows/ci-unit-rust.yml	682cd31ac67d3e47
+.github/workflows/ci-unit-swift.yml	0cf5da067d339c16
+.github/workflows/maintenance.yml	378ae06a20a1adaa
 .github/workflows/nightly.yml	0bbe34967df0f3ed
 config/fleet/velnor-host.env	d14b419216449423
