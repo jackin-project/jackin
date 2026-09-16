@@ -4,9 +4,14 @@ schema = 1
 repository = "jackin-project/jackin"
 revision = "5623be5539f2a378430fdcc7d4ba5cb13b5f1222"
 
+# Vendored generator inputs are never scan evidence: the download-ci-xtask
+# runtime ships package.json manifests that must not select a Node unit.
 [scan]
 exclude = [".github-gen/sources/**", "native/Package.swift", "native/.swiftpm/**"]
 
+# Runner placement: keep both backends for manual dispatch; automatic events
+# (main push/schedule, same-repo PR) must stay GitHub-only so ci-required is
+# not blocked by queued self-hosted jobs when the Velnor fleet is unavailable.
 [workflow]
 runners = "github"
 automatic = "github"
@@ -16,10 +21,35 @@ github_runner = "ubuntu-26.04"
 macos_runner = "macos-26"
 velnor_labels = ["self-hosted", "velnor-target-mvp"]
 
+# Interim: adopted release-side workflows predate policy conformance (#965).
+[policy]
+ruleset_required_status_checks = ["ci-required"]
+ruleset_external_status_checks = ["DCO", "construct-required", "docs-link-check", "docs-required", "validate"]
+exclude_workflows = [
+  "cache-cleanup.yml",
+  "construct.yml",
+  "docs.yml",
+  "hygiene.yml",
+  "jackin-dev.yml",
+  "preview.yml",
+  "release.yml",
+  "renovate.yml",
+  "renovate-validate.yml",
+  "reuse-compliance.yml",
+]
+
+# Unit contracts the scan cannot derive. Command arrays are rejected by
+# velnor-workflow 721c2fed; typed capabilities only (`ci_tasks`, `mise_tools`).
+# Construct Dockerfile ARG defaults match versions.env so the scan-derived
+# `docker build` is self-contained.
 [[units]]
 id = "rust-jackin-xtask"
 mise_tools = ["github:open-telemetry/weaver"]
 
+# XCFramework must exist before `swift build` resolves the binary target.
+# Run desktop-xcframework in the same macOS job as swift-package-native so
+# the binary target path is populated on one runner (separate jobs do not
+# share target/xcframework).
 [[units]]
 id = "swift-package-native"
 kind = "swift"
@@ -28,6 +58,126 @@ watch = ["native/**/*.swift", "native/Package.swift", "native/Package.resolved",
 ci_tasks = ["swift-package-native-ci"]
 mise_tools = ["cargo-binstall", "rust", "cargo:sccache", "cargo:boltffi_cli"]
 
+# jackin-lints pins nightly via crates/jackin-lints/rust-toolchain.
+# dylint-link must be on PATH (rust + cargo-binstall).
 [[units]]
 id = "rust-jackin-lints"
 mise_tools = ["rust", "cargo-binstall"]
+
+# Adopted release-side workflows: the repository owns the bytes under
+# .github-gen/sources/workflows; the generator owns the write into
+# .github/workflows. The 721c2fed generator rejects
+# .github/ci/workflow-templates and `static-workflow` declares.
+
+[[static_files]]
+file = ".github/workflows/cache-cleanup.yml"
+source = ".github-gen/sources/workflows/cache-cleanup.yml"
+
+[[static_files]]
+file = ".github/workflows/construct.yml"
+source = ".github-gen/sources/workflows/construct.yml"
+
+[[static_files]]
+file = ".github/workflows/desktop-cadence.yml"
+source = ".github-gen/sources/workflows/desktop-cadence.yml"
+
+[[static_files]]
+file = ".github/workflows/docs.yml"
+source = ".github-gen/sources/workflows/docs.yml"
+
+[[static_files]]
+file = ".github/workflows/hygiene.yml"
+source = ".github-gen/sources/workflows/hygiene.yml"
+
+[[static_files]]
+file = ".github/workflows/jackin-dev.yml"
+source = ".github-gen/sources/workflows/jackin-dev.yml"
+
+[[static_files]]
+file = ".github/workflows/preview.yml"
+source = ".github-gen/sources/workflows/preview.yml"
+
+[[static_files]]
+file = ".github/workflows/release.yml"
+source = ".github-gen/sources/workflows/release.yml"
+
+[[static_files]]
+file = ".github/workflows/renovate-validate.yml"
+source = ".github-gen/sources/workflows/renovate-validate.yml"
+
+[[static_files]]
+file = ".github/workflows/renovate.yml"
+source = ".github-gen/sources/workflows/renovate.yml"
+
+[[static_files]]
+file = ".github/workflows/reuse-compliance.yml"
+source = ".github-gen/sources/workflows/reuse-compliance.yml"
+
+# Composite actions the generated workflows reference: the repository owns the
+# bytes under .github-gen/sources, the generator owns the write into
+# .github/actions.
+
+[[static_files]]
+file = ".github/actions/aggregate-needs/action.yml"
+source = ".github-gen/sources/actions/aggregate-needs/action.yml"
+
+[[static_files]]
+file = ".github/actions/build-release-archive/action.yml"
+source = ".github-gen/sources/actions/build-release-archive/action.yml"
+
+[[static_files]]
+file = ".github/actions/cache-cargo-registry/action.yml"
+source = ".github-gen/sources/actions/cache-cargo-registry/action.yml"
+
+[[static_files]]
+file = ".github/actions/check-deployed-docs/action.yml"
+source = ".github-gen/sources/actions/check-deployed-docs/action.yml"
+
+[[static_files]]
+file = ".github/actions/download-ci-xtask/action.yml"
+source = ".github-gen/sources/actions/download-ci-xtask/action.yml"
+
+[[static_files]]
+file = ".github/actions/download-ci-xtask/runtime/.gitignore"
+source = ".github-gen/sources/actions/download-ci-xtask/runtime/.gitignore"
+
+[[static_files]]
+file = ".github/actions/download-ci-xtask/runtime/dist/index.js"
+source = ".github-gen/sources/actions/download-ci-xtask/runtime/dist/index.js"
+
+[[static_files]]
+file = ".github/actions/download-ci-xtask/runtime/dist/package.json"
+source = ".github-gen/sources/actions/download-ci-xtask/runtime/dist/package.json"
+
+[[static_files]]
+file = ".github/actions/download-ci-xtask/runtime/package-lock.json"
+source = ".github-gen/sources/actions/download-ci-xtask/runtime/package-lock.json"
+
+[[static_files]]
+file = ".github/actions/download-ci-xtask/runtime/package.json"
+source = ".github-gen/sources/actions/download-ci-xtask/runtime/package.json"
+
+[[static_files]]
+file = ".github/actions/download-ci-xtask/runtime/src/index.js"
+source = ".github-gen/sources/actions/download-ci-xtask/runtime/src/index.js"
+
+[[static_files]]
+file = ".github/actions/download-ci-xtask/runtime/test/index.test.js"
+source = ".github-gen/sources/actions/download-ci-xtask/runtime/test/index.test.js"
+
+[[static_files]]
+file = ".github/actions/download-codebook/action.yml"
+source = ".github-gen/sources/actions/download-codebook/action.yml"
+
+[[static_files]]
+file = ".github/actions/sign-and-attest-archive/action.yml"
+source = ".github-gen/sources/actions/sign-and-attest-archive/action.yml"
+
+[[static_files]]
+file = ".github/actions/sign-capsule-manifest/action.yml"
+source = ".github-gen/sources/actions/sign-capsule-manifest/action.yml"
+
+# Swift/Xcode must run on macOS; velnor e05aee6 renders ubuntu for the shared lane job.
+[[static_files]]
+file = ".github/workflows/ci-unit-swift.yml"
+source = ".github-gen/sources/workflows/ci-unit-swift.yml"
