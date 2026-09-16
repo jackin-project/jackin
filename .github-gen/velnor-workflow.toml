@@ -24,7 +24,7 @@ velnor_labels = ["self-hosted", "velnor-target-mvp"]
 # Interim: adopted release-side workflows predate policy conformance (#965).
 [policy]
 ruleset_required_status_checks = ["ci-required"]
-ruleset_external_status_checks = ["DCO"]
+ruleset_external_status_checks = ["DCO", "construct-required", "docs-link-check", "docs-required", "validate"]
 exclude_workflows = [
   "cache-cleanup.yml",
   "construct.yml",
