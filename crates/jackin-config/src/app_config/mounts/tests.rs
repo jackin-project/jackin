@@ -334,8 +334,9 @@ fn validate_mounts_expands_tilde_in_src() {
             isolation: MountIsolation::Shared,
         },
     )];
-    let validated = AppConfig::expand_and_validate_named_mounts(&mounts).unwrap();
+    let (validated, report) = AppConfig::expand_and_validate_named_mounts(&mounts).unwrap();
     assert_eq!(validated[0].src, home);
+    assert!(report.is_empty());
 }
 
 #[test]

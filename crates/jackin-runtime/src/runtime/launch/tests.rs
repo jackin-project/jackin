@@ -215,7 +215,13 @@ fn docker_build_failure_cli_error_contains_no_local_artifact_paths() {
         jackin_diagnostics::ServiceIdentity::HOST_INTERACTIVE,
     )
     .unwrap();
-    let error = anyhow::anyhow!("Docker build command failed");
+    // The doubling this test used to pin was an artifact of the bare
+    // variant: now the stderr tail rides inside `DockerBuildFailed` and
+    // rendering passes it through once, with temp paths redacted.
+    let error: anyhow::Error = jackin_docker::DockerError::DockerBuildFailed {
+        stderr: "ERROR: failed to read dockerfile: open <redacted-path>: no such file".to_owned(),
+    }
+    .into();
     let rendered = launch_failure_cli_error(
         crate::runtime::progress::LaunchStage::DerivedImage,
         &error,
@@ -225,8 +231,9 @@ fn docker_build_failure_cli_error_contains_no_local_artifact_paths() {
 
     assert_eq!(
         rendered,
-        "Docker build command failed: Docker build command failed"
+        "Docker build command failed: ERROR: failed to read dockerfile: open <redacted-path>: no such file"
     );
+    assert!(!rendered.contains("/tmp/"));
 }
 
 #[test]
@@ -1782,6 +1789,7 @@ async fn workspace_mise_paths_cover_workdir_and_mount_destinations() {
         default_agent: None,
         keep_awake_enabled: false,
         git_pull_on_entry: false,
+        mount_heal: jackin_config::MountHealReport::default(),
     };
 
     let value = workspace_mise_trusted_config_paths(&workspace).unwrap();
@@ -1857,6 +1865,7 @@ fn codex_trust_fixture(root: &Path) -> (RoleState, jackin_config::ResolvedWorksp
         default_agent: None,
         keep_awake_enabled: false,
         git_pull_on_entry: false,
+        mount_heal: jackin_config::MountHealReport::default(),
     };
     (state, workspace)
 }
@@ -2015,6 +2024,7 @@ echo "pulled $2"
         default_agent: None,
         keep_awake_enabled: false,
         git_pull_on_entry: true,
+        mount_heal: jackin_config::MountHealReport::default(),
     };
 
     pull_workspace_repos_with_git(&workspace, false, &git_script);
@@ -2061,6 +2071,7 @@ fn repo_workspace(repo_dir: &Path) -> jackin_config::ResolvedWorkspace {
         default_agent: None,
         keep_awake_enabled: false,
         git_pull_on_entry: false,
+        mount_heal: jackin_config::MountHealReport::default(),
     }
 }
 
@@ -2354,7 +2365,7 @@ plugins = ["code-review@claude-plugins-official"]
             .any(|call| call.contains("git -C") || call.contains("git clone"))
     );
     assert!(runner.recorded.iter().any(|call| {
-        call.contains("buildx build ")
+        call.contains("docker build ")
             && call.contains("--output type=docker,name=jk_chainargos_the-architect")
     }));
     assert!(
@@ -2594,6 +2605,7 @@ trusted = true
         default_agent: None,
         keep_awake_enabled: false,
         git_pull_on_entry: false,
+        mount_heal: jackin_config::MountHealReport::default(),
     };
 
     let docker = jackin_test_support::FakeDockerClient::default();
@@ -2667,14 +2679,14 @@ plugins = ["code-review@claude-plugins-official"]
         runner
             .recorded
             .iter()
-            .any(|call| call.contains("buildx build ")
+            .any(|call| call.contains("docker build ")
                 && call.contains("--output type=docker,name=jk_agent-smith"))
     );
     assert!(
         runner
             .run_recorded
             .iter()
-            .any(|call| call.contains("buildx build "))
+            .any(|call| call.contains("docker build "))
     );
     assert!(
         docker
@@ -2777,7 +2789,7 @@ model = "gpt-5"
     let build_cmd = runner
         .recorded
         .iter()
-        .find(|call| call.contains("buildx build ") && call.contains("DerivedDockerfile"))
+        .find(|call| call.contains("docker build ") && call.contains("DerivedDockerfile"))
         .unwrap();
     // No published_image and no --rebuild → workspace mode without --pull
     assert!(!build_cmd.contains("--pull"));
@@ -3460,6 +3472,7 @@ plugins = []
         default_agent: None,
         keep_awake_enabled: false,
         git_pull_on_entry: false,
+        mount_heal: jackin_config::MountHealReport::default(),
     };
 
     let docker = jackin_test_support::FakeDockerClient::default();
@@ -3537,6 +3550,7 @@ plugins = []
         default_agent: None,
         keep_awake_enabled: false,
         git_pull_on_entry: false,
+        mount_heal: jackin_config::MountHealReport::default(),
     };
 
     let docker = jackin_test_support::FakeDockerClient::default();
@@ -3556,7 +3570,7 @@ plugins = []
         .recorded
         .iter()
         .find(|call| {
-            call.contains("buildx build ")
+            call.contains("docker build ")
                 && call.contains("DerivedDockerfile")
                 && call.contains("--output type=docker,name=jk_agent-smith")
         })
@@ -3583,7 +3597,7 @@ plugins = []
     let build_run_index = runner
         .run_recorded
         .iter()
-        .position(|call| call.contains("buildx build ") && call.contains("DerivedDockerfile"))
+        .position(|call| call.contains("docker build ") && call.contains("DerivedDockerfile"))
         .unwrap();
     let build_opts = &runner.run_options[build_run_index];
     assert!(build_opts.capture_stdout);
@@ -3704,7 +3718,7 @@ plugins = []
         !runner
             .recorded
             .iter()
-            .any(|c| c.contains("buildx build ") && c.contains("BaseDockerfile")),
+            .any(|c| c.contains("docker build ") && c.contains("BaseDockerfile")),
         "fresh published images must not be restamped through a Docker build"
     );
     // The overlay derives FROM that local base, not the published image.
@@ -3712,7 +3726,7 @@ plugins = []
         runner
             .recorded
             .iter()
-            .any(|c| c.contains("buildx build ") && c.contains("DerivedDockerfile")),
+            .any(|c| c.contains("docker build ") && c.contains("DerivedDockerfile")),
         "overlay must derive FROM the local base"
     );
 }
@@ -3765,7 +3779,7 @@ plugins = []
     let base_build = runner
         .recorded
         .iter()
-        .find(|c| c.contains("buildx build ") && c.contains("BaseDockerfile"))
+        .find(|c| c.contains("docker build ") && c.contains("BaseDockerfile"))
         .expect("workspace build must first build the role base image");
     assert!(
         base_build.contains("--output type=docker,name=jk_agent-smith__base")
@@ -3773,12 +3787,10 @@ plugins = []
         "base build must load uncompressed jk_<role>__base; got: {base_build}"
     );
     assert!(
-        base_build.contains("--builder default"),
-        "base build consumes local images and must use the Docker-driver builder; got: {base_build}"
-    );
-    assert!(
-        base_build.contains("docker --context default buildx build"),
-        "base build must select the default Docker context for the default builder; got: {base_build}"
+        base_build.contains("docker build ")
+            && !base_build.contains("--builder")
+            && !base_build.contains("--context"),
+        "base build consumes local images and must use plain docker build (ambient endpoint, Docker driver); got: {base_build}"
     );
     assert!(
         base_build.contains("--label jackin.construct.image=")
@@ -3794,19 +3806,17 @@ plugins = []
     let derived_build = runner
         .recorded
         .iter()
-        .find(|c| c.contains("buildx build ") && c.contains("DerivedDockerfile"))
+        .find(|c| c.contains("docker build ") && c.contains("DerivedDockerfile"))
         .expect("workspace build must derive the overlay after the base");
     assert!(
         !derived_build.contains("--pull"),
         "derived build is FROM a local base and must never --pull; got: {derived_build}"
     );
     assert!(
-        derived_build.contains("--builder default"),
-        "derived build consumes the local role base and must use the Docker-driver builder; got: {derived_build}"
-    );
-    assert!(
-        derived_build.contains("docker --context default buildx build"),
-        "derived build must select the default Docker context for the default builder; got: {derived_build}"
+        derived_build.contains("docker build ")
+            && !derived_build.contains("--builder")
+            && !derived_build.contains("--context"),
+        "derived build consumes the local role base and must use plain docker build (ambient endpoint, Docker driver); got: {derived_build}"
     );
     assert!(
         derived_build.contains("--label jackin.image.recipe.hash="),
@@ -3857,7 +3867,7 @@ plugins = []
     let build_cmd = runner
         .recorded
         .iter()
-        .find(|call| call.contains("buildx build ") && call.contains("DerivedDockerfile"))
+        .find(|call| call.contains("docker build ") && call.contains("DerivedDockerfile"))
         .unwrap();
     assert!(
         !build_cmd.contains("--pull"),
@@ -3888,7 +3898,7 @@ async fn load_agent_cleans_up_sidecar_when_derived_build_fails() {
     let selector = RoleSelector::new(None, "agent-smith");
     let mut runner = FakeRunner::for_load_agent([String::new()]);
     runner.fail_with.push((
-        "buildx build ".to_owned(),
+        "docker build ".to_owned(),
         "derived build failed".to_owned(),
     ));
 
@@ -3991,7 +4001,7 @@ async fn load_agent_reuses_valid_local_image_and_skips_build_work() {
         "abc123".to_owned(),
     ]);
     runner.fail_on = vec![
-        "buildx build ".to_owned(),
+        "docker build ".to_owned(),
         "gh auth token".to_owned(),
         "docker run --rm --entrypoint".to_owned(),
         "agent_binary".to_owned(),
@@ -4011,7 +4021,7 @@ async fn load_agent_reuses_valid_local_image_and_skips_build_work() {
 
     let recorded = runner.recorded.join("\n");
     assert!(
-        !recorded.contains("buildx build "),
+        !recorded.contains("docker build "),
         "valid local recipe must skip docker build; recorded:\n{recorded}"
     );
     assert!(
@@ -4084,7 +4094,7 @@ plugins = []
         "abc123".to_owned(),
     ]);
     runner.fail_on = vec![
-        "buildx build ".to_owned(),
+        "docker build ".to_owned(),
         "gh auth token".to_owned(),
         "docker run --rm --entrypoint".to_owned(),
         "agent_binary".to_owned(),
@@ -4104,7 +4114,7 @@ plugins = []
 
     let recorded = runner.recorded.join("\n");
     assert!(
-        !recorded.contains("buildx build "),
+        !recorded.contains("docker build "),
         "refresh-background decision must skip docker build; recorded:\n{recorded}"
     );
     assert!(
@@ -4291,7 +4301,7 @@ async fn stale_agent_version_cache_does_not_force_foreground_update_probe() {
     let build_cmd = runner
         .recorded
         .iter()
-        .find(|call| call.contains("buildx build ") && call.contains("DerivedDockerfile"))
+        .find(|call| call.contains("docker build ") && call.contains("DerivedDockerfile"))
         .expect("stale role SHA must trigger a derived image rebuild");
     assert!(
         build_cmd.contains("--build-arg JACKIN_CACHE_BUST=stored-bust"),
@@ -5125,7 +5135,7 @@ async fn load_agent_does_not_short_circuit_on_running_instance() {
 
     let recorded = runner.recorded.join("\n");
     assert!(
-        recorded.contains("buildx build "),
+        recorded.contains("docker build "),
         "D13: build must run even when current-role container is running; recorded:\n{recorded}"
     );
     assert!(
@@ -5216,7 +5226,7 @@ async fn load_agent_attaches_explicit_restore_container_before_role_repo() {
     );
     for forbidden in [
         &cached_repo.repo_dir.display().to_string(),
-        "buildx build ",
+        "docker build ",
         "gh auth token",
         "docker inspect image:",
         "docker run --rm --entrypoint",
@@ -5316,7 +5326,7 @@ async fn load_agent_starts_stopped_current_instance_before_credentials_and_build
         "started current-role instance must attach through Capsule; recorded:\n{recorded}"
     );
     for forbidden in [
-        "buildx build ",
+        "docker build ",
         "gh auth token",
         "docker inspect image:",
         "docker run --rm --entrypoint",
@@ -5405,7 +5415,7 @@ async fn load_agent_recreates_missing_current_instance_from_valid_image_without_
         "valid-image recreate path must run the missing role container from the reusable image; recorded:\n{recorded}"
     );
     for forbidden in [
-        "buildx build ",
+        "docker build ",
         "gh auth token",
         "docker run --rm --entrypoint",
     ] {
@@ -5462,7 +5472,7 @@ plugins = []
     let build_cmd = runner
         .recorded
         .iter()
-        .find(|call| call.contains("buildx build "))
+        .find(|call| call.contains("docker build "))
         .unwrap();
     assert!(
         build_cmd.contains("--pull"),
@@ -5551,7 +5561,7 @@ plugins = []
 
     let recorded = runner.recorded.join("\n");
     assert!(
-        recorded.contains("buildx build "),
+        recorded.contains("docker build "),
         "--rebuild must build even when a running current-role container exists \
          (must not take the attach/start fast path); recorded:\n{recorded}"
     );
@@ -5625,7 +5635,7 @@ plugins = []
         runner
             .recorded
             .iter()
-            .any(|call| call.contains("buildx build ") && call.contains("DerivedDockerfile")),
+            .any(|call| call.contains("docker build ") && call.contains("DerivedDockerfile")),
         "derived overlay build must still run"
     );
 }
@@ -5749,7 +5759,7 @@ plugins = []
     let build_cmd = runner
         .recorded
         .iter()
-        .find(|call| call.contains("buildx build "))
+        .find(|call| call.contains("docker build "))
         .unwrap();
     // A stale published image falls back to a workspace role-base build, but it
     // is not an operator-requested rebuild: keep Docker's layer cache and do
@@ -7344,6 +7354,7 @@ plugins = []
         default_agent: None,
         keep_awake_enabled: false,
         git_pull_on_entry: false,
+        mount_heal: jackin_config::MountHealReport::default(),
     };
 
     let docker = jackin_test_support::FakeDockerClient::default();

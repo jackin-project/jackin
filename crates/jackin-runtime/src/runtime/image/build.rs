@@ -31,7 +31,7 @@ use super::{
     PreparedRuntimeBinaries, docker_build_env, dockerfile_body_requests_github_token_secret,
     dockerfile_body_requests_role_git_sha_arg, dockerfile_requests_github_token_secret,
     dockerfile_requests_role_git_sha_arg, emit_build_context_snapshot, emit_compact_image_warning,
-    emit_image_build_source, emit_non_containerd_image_store_note, local_image_buildx_args,
+    emit_image_build_source, emit_non_containerd_image_store_note, local_image_build_args,
     local_image_output_arg, local_role_base_labels_match, record_built_agent_version,
     resolve_github_token, role_git_sha_for_recipe, should_stream_build_output,
 };
@@ -176,7 +176,7 @@ pub(crate) async fn ensure_local_role_base(
     let construct_label = format!("{LABEL_IMAGE_CONSTRUCT}={construct}");
     let build_arg_role_git_sha = format!("ROLE_GIT_SHA={}", head_sha.unwrap_or("unknown"));
 
-    let mut args = local_image_buildx_args();
+    let mut args = local_image_build_args();
     // A workspace rebuild refreshes the construct base. A plain workspace base
     // build rides the local layer cache.
     //
@@ -465,7 +465,7 @@ pub(crate) async fn build_agent_image(
     let recipe_hash = recipe.hash()?;
     let recipe_labels = recipe_labels(&recipe, &recipe_hash);
 
-    let mut build_args = local_image_buildx_args();
+    let mut build_args = local_image_build_args();
 
     // --pull semantics:
     //

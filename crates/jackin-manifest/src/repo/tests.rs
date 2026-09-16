@@ -358,7 +358,9 @@ plugins = []
 
 #[cfg(unix)]
 #[test]
-fn rejects_symlinked_preflight_hook_inside_repo() {
+fn accepts_symlinked_preflight_hook_inside_repo() {
+    // Contained hook symlinks (shared script conventions) validate;
+    // only repo escapes are rejected.
     let temp = tempdir().unwrap();
     std::fs::create_dir_all(temp.path().join("hooks")).unwrap();
     std::fs::write(temp.path().join("real-hook.sh"), "#!/bin/bash\necho hi\n").unwrap();
@@ -386,8 +388,5 @@ preflight = "hooks/preflight.sh"
     )
     .unwrap();
 
-    let error = validate_role_repo(temp.path()).unwrap_err();
-
-    assert!(error.to_string().contains("symlink"));
-    assert!(error.to_string().contains("preflight"));
+    validate_role_repo(temp.path()).unwrap();
 }

@@ -96,6 +96,7 @@ pub(super) async fn handle_load(
 
     let resolved_workspace =
         resolve_load_workspace(config, &class, &cwd, workspace_input, &ad_hoc_mounts)?;
+    super::emit_mount_heal_notices(&resolved_workspace);
     lifecycle.ready();
 
     if dry_run {
@@ -461,6 +462,7 @@ async fn console_outcome_new_session(
             super::restore::resolve_ad_hoc_restore_input(&manifest, &cwd)?
         };
         let workspace = resolve_load_workspace(ctx.config, &selector, &cwd, input, &[])?;
+        super::emit_mount_heal_notices(&workspace);
         let mut opts = runtime::LoadOptions::for_launch(ctx.debug);
         opts.agent = Some(agent);
         opts.account = account;
@@ -491,6 +493,7 @@ async fn console_outcome_launch_with_account(
     account: Option<String>,
     ctx: &mut ConsoleLaunchCtx<'_>,
 ) -> Result<()> {
+    super::emit_mount_heal_notices(&workspace);
     let mut opts = runtime::LoadOptions::for_launch(ctx.debug);
     opts.agent = Some(agent);
     opts.account = account;
@@ -531,6 +534,7 @@ async fn console_outcome_launch(
     selected_agent: Option<jackin_core::Agent>,
     ctx: &mut ConsoleLaunchCtx<'_>,
 ) -> Result<()> {
+    super::emit_mount_heal_notices(&workspace);
     let mut opts = runtime::LoadOptions::for_launch(ctx.debug);
     opts.agent = selected_agent;
     let entry_claim = if let Some((_entry_docker, claim)) = ctx.console_entry.take() {

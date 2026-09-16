@@ -14,7 +14,7 @@
 
 use std::collections::BTreeMap;
 
-use jackin_core::{Agent, EnvValue, MountIsolation};
+use jackin_core::{Agent, EnvValue, JackinPaths, MountIsolation};
 use jackin_core::{DockerGrants, DockerSecurityProfile};
 use serde::{Deserialize, Serialize};
 
@@ -433,6 +433,89 @@ pub struct ResolvedWorkspace {
     pub default_agent: Option<Agent>,
     /// Whether git pull-on-entry is enabled for this resolved workspace.
     pub git_pull_on_entry: bool,
+    /// Cache mounts recreated or skipped because their sources were missing.
+    ///
+    /// Callers must surface [`MountHealReport::notice_lines`] to the operator:
+    /// a skipped mount changes what the container sees, and a recreated
+    /// directory explains a cold cache.
+    pub mount_heal: MountHealReport,
+}
+
+/// One mount source recreated or skipped during launch resolution.
+///
+/// Cache-backed mount sources are ephemeral: the operator, the OS, or
+/// `jackin prune cache` may wipe a cache tree at any time, and wiping a
+/// cache must never brick launches. [`ensure_mount_sources`] heals such
+/// mounts instead of failing like [`validate_mount_paths`] does.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HealedMountSource {
+    /// Global mount name, when the healed mount came from `[docker.mounts]`.
+    /// `None` for workspace mounts, which are anonymous.
+    pub name: Option<String>,
+    /// Host source path that was recreated or skipped.
+    pub src: String,
+    /// Container destination (unchanged).
+    pub dst: String,
+}
+
+/// Outcome of [`ensure_mount_sources`]: which cache mounts were healed.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct MountHealReport {
+    /// Missing cache directories that were recreated and mounted normally.
+    pub recreated: Vec<HealedMountSource>,
+    /// Missing cache files that were skipped (the container launches
+    /// without them).
+    pub skipped: Vec<HealedMountSource>,
+}
+
+impl MountHealReport {
+    /// True when nothing was healed — the common case.
+    pub fn is_empty(&self) -> bool {
+        self.recreated.is_empty() && self.skipped.is_empty()
+    }
+
+    /// Merge another report into this one, preserving order.
+    pub fn merge(&mut self, other: Self) {
+        self.recreated.extend(other.recreated);
+        self.skipped.extend(other.skipped);
+    }
+
+    /// Operator-facing notice lines, in stable order (recreated first).
+    ///
+    /// Skipped mounts render as `warning:` lines with a remediation command;
+    /// every launch site that resolves mounts must print these.
+    pub fn notice_lines(&self) -> Vec<String> {
+        let mut lines = Vec::with_capacity(self.recreated.len() + self.skipped.len());
+        for healed in &self.recreated {
+            match &healed.name {
+                Some(name) => lines.push(format!(
+                    "recreated missing cache directory for global mount {name:?}: {} -> {}",
+                    healed.src, healed.dst
+                )),
+                None => lines.push(format!(
+                    "recreated missing cache directory: {} -> {}",
+                    healed.src, healed.dst
+                )),
+            }
+        }
+        for healed in &self.skipped {
+            match &healed.name {
+                Some(name) => lines.push(format!(
+                    "warning: skipping global mount {name:?}: source {} does not exist \
+                     (container path {} will be unavailable); restore the file or remove \
+                     the mount with: jackin config mount remove {name:?}",
+                    healed.src, healed.dst
+                )),
+                None => lines.push(format!(
+                    "warning: skipping workspace mount: source {} does not exist \
+                     (container path {} will be unavailable); restore the file or remove \
+                     the mount from the workspace",
+                    healed.src, healed.dst
+                )),
+            }
+        }
+        lines
+    }
 }
 
 impl ResolvedWorkspace {
@@ -520,6 +603,103 @@ pub fn validate_mount_paths(mounts: &[MountConfig]) -> crate::ConfigResult<()> {
 pub fn validate_mounts(mounts: &[MountConfig]) -> crate::ConfigResult<()> {
     validate_mount_specs(mounts)?;
     validate_mount_paths(mounts)
+}
+
+/// Cache roots whose missing mount sources are healed instead of fatal.
+///
+/// - The platform cache dir (`BaseDirs::cache_dir`: `~/.cache` on Linux,
+///   `~/Library/Caches` on macOS, honoring `XDG_CACHE_HOME`).
+/// - `~/.cache` explicitly: the de-facto cross-platform cache convention,
+///   which the platform dir alone would miss on macOS.
+/// - jackin❯'s own cache dir ([`JackinPaths::cache_dir`]), which
+///   `jackin prune cache` wipes — mounts into it must survive jackin❯'s
+///   own prune. Best-effort: skipped when the layout is undetectable.
+///
+/// Deliberately not `/tmp`: it hosts sockets and pipes whose absence must
+/// stay an error, and file-vs-directory cannot be told apart once the
+/// source is gone.
+pub fn launch_cache_roots() -> Vec<std::path::PathBuf> {
+    let mut roots = Vec::new();
+    if let Some(base) = directories::BaseDirs::new() {
+        roots.push(base.cache_dir().to_path_buf());
+        roots.push(base.home_dir().join(".cache"));
+    }
+    if let Ok(paths) = JackinPaths::detect() {
+        roots.push(paths.cache_dir);
+    }
+    roots.sort();
+    roots.dedup();
+    roots
+}
+
+/// Heal missing mount sources under cache roots; leave the rest for validation.
+///
+/// For each `(name, mount)` whose `src` does not exist:
+/// - under a cache root with a directory-like basename (no file extension):
+///   recreate it with `create_dir_all` and keep the mount — an empty cache
+///   directory is a valid cache;
+/// - under a cache root with a file-like basename: drop the mount and record
+///   it as skipped — a cache file's content is unrecoverable, so launching
+///   without it plus a loud warning is the honest behavior; an empty file
+///   is never fabricated;
+/// - anywhere else: keep the mount untouched so [`validate_mount_paths`]
+///   still reports it — a missing project checkout must stay a hard error.
+///
+/// A failed recreation also falls through to [`validate_mount_paths`],
+/// keeping today's error for unhealable paths.
+///
+/// Mounts must already be tilde-expanded and structurally validated:
+/// [`validate_mount_specs`] rejects `..`, so the `starts_with` containment
+/// check cannot be escaped. Save-time paths (`config mount add`, the
+/// settings screens) intentionally do not call this — a missing source at
+/// authoring time is a typo worth rejecting, while a source that vanishes
+/// after save is a wiped cache worth healing.
+pub fn ensure_mount_sources(
+    mounts: Vec<(Option<String>, MountConfig)>,
+    cache_roots: &[std::path::PathBuf],
+) -> (Vec<MountConfig>, MountHealReport) {
+    let mut kept = Vec::with_capacity(mounts.len());
+    let mut report = MountHealReport::default();
+    for (name, mount) in mounts {
+        if std::path::Path::new(&mount.src).exists() {
+            kept.push(mount);
+            continue;
+        }
+        let under_cache = cache_roots
+            .iter()
+            .any(|root| std::path::Path::new(&mount.src).starts_with(root));
+        if !under_cache {
+            kept.push(mount);
+            continue;
+        }
+        // Directories with dots (`foo.d`) misclassify as files and degrade
+        // to skip-plus-warning; extensionless files misclassify as
+        // directories and are recreated as dirs. The former is safe, the
+        // latter is confined to cache roots and always announced in the
+        // report — both beat bricking every launch on a wiped cache.
+        let file_like = std::path::Path::new(&mount.src)
+            .extension()
+            .is_some_and(|extension| !extension.is_empty());
+        if file_like {
+            report.skipped.push(HealedMountSource {
+                name,
+                src: mount.src,
+                dst: mount.dst,
+            });
+            continue;
+        }
+        if std::fs::create_dir_all(&mount.src).is_ok() {
+            report.recreated.push(HealedMountSource {
+                name,
+                src: mount.src.clone(),
+                dst: mount.dst.clone(),
+            });
+            kept.push(mount);
+        } else {
+            kept.push(mount);
+        }
+    }
+    (kept, report)
 }
 
 // ─── Workspace edit ──────────────────────────────────────────────────────────

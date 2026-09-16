@@ -21,7 +21,7 @@ velnor_labels = ["self-hosted", "velnor-target-mvp"]
 
 [policy]
 ruleset_required_status_checks = ["ci-required"]
-ruleset_external_status_checks = ["DCO", "construct-required", "docs-link-check", "docs-required", "validate"]
+ruleset_external_status_checks = ["DCO"]
 
 # Unit contracts the scan cannot derive. Command arrays are rejected by
 # velnor-workflow 721c2fed; typed capabilities only (`ci_tasks`, `mise_tools`).

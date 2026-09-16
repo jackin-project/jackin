@@ -15,7 +15,10 @@ use jackin_core::{MountIsolation, RoleSelector};
 
 use crate::app_config::AppConfig;
 use crate::paths::expand_tilde;
-use crate::schema::{MountConfig, ResolvedWorkspace, WorkspaceConfig, validate_mount_paths};
+use crate::schema::{
+    MountConfig, ResolvedWorkspace, WorkspaceConfig, ensure_mount_sources, launch_cache_roots,
+    validate_mount_paths,
+};
 use crate::validation::validate_workspace_config;
 use jackin_core::WorkspaceName;
 
@@ -182,6 +185,20 @@ pub fn resolve_load_workspace(
         &WorkspaceName::parse("runtime").map_err(anyhow::Error::from)?,
         &workspace,
     )?;
+    // Heal cache-backed workspace mounts (recreate dirs, skip files) before
+    // existence validation so a wiped cache never fails launch resolution.
+    // Anything still missing afterwards (project checkouts, failed
+    // recreations) keeps today's hard error.
+    let cache_roots = launch_cache_roots();
+    let owned_mounts = std::mem::take(&mut workspace.mounts);
+    let (healed_mounts, mut heal_report) = ensure_mount_sources(
+        owned_mounts
+            .into_iter()
+            .map(|mount| (None, mount))
+            .collect(),
+        &cache_roots,
+    );
+    workspace.mounts = healed_mounts;
     validate_mount_paths(&workspace.mounts)?;
 
     let mut mounts = workspace.mounts.clone();
@@ -191,7 +208,9 @@ pub fn resolve_load_workspace(
         .into_iter()
         .map(|row| (row.name, row.mount))
         .collect();
-    let global_mounts = AppConfig::expand_and_validate_named_mounts(&global_mounts)?;
+    let (global_mounts, global_report) =
+        AppConfig::expand_and_validate_named_mounts(&global_mounts)?;
+    heal_report.merge(global_report);
 
     for mount in global_mounts {
         if mounts.iter().any(|existing| existing.dst == mount.dst) {
@@ -211,6 +230,7 @@ pub fn resolve_load_workspace(
         keep_awake_enabled: workspace.keep_awake.enabled,
         default_agent: workspace.default_agent,
         git_pull_on_entry: workspace.git_pull_on_entry,
+        mount_heal: heal_report,
     })
 }
 
