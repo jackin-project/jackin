@@ -229,6 +229,62 @@ fn summarize_stderr(stderr: &[u8]) -> Option<String> {
     Some(summary)
 }
 
+/// Summarize a failed build's stderr for the CLI error: the LAST non-empty
+/// lines (BuildKit reports the cause at the end, unlike the preamble
+/// `summarize_stderr` takes from the front), with local temp paths
+/// redacted so launch errors stay free of machine-specific paths.
+fn summarize_build_stderr(stderr: &[u8]) -> String {
+    const MAX_CHARS: usize = 500;
+    let text = String::from_utf8_lossy(stderr);
+    let lines: Vec<&str> = text
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .collect();
+    let tail = lines
+        .iter()
+        .rev()
+        .take(3)
+        .rev()
+        .copied()
+        .collect::<Vec<_>>();
+    let mut summary = tail.join("; ");
+    if summary.is_empty() {
+        return "(no stderr captured)".to_owned();
+    }
+    summary = redact_local_paths(&summary);
+    if summary.chars().count() > MAX_CHARS {
+        summary = summary.chars().take(MAX_CHARS).collect();
+        summary.push_str("...");
+    }
+    summary
+}
+
+/// Scrub whitespace-delimited tokens that are local temp paths
+/// (`/tmp`, macOS `/private/tmp` + `/var/folders`, `~/...`). Docker
+/// build errors routinely name the ephemeral context directory; the
+/// operator's terminal may show the failure, but the error value itself
+/// must not carry machine-specific paths.
+fn redact_local_paths(summary: &str) -> String {
+    summary
+        .split_whitespace()
+        .map(|token| {
+            let trimmed =
+                token.trim_matches(|c| matches!(c, '"' | '\'' | '(' | ')' | ',' | ';' | ':'));
+            if trimmed.starts_with("/tmp/")
+                || trimmed.starts_with("/private/tmp/")
+                || trimmed.starts_with("/var/folders/")
+                || trimmed.starts_with("~/")
+            {
+                "<redacted-path>"
+            } else {
+                token
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum CaptureMode {
     Normal,
@@ -321,7 +377,7 @@ fn process_execute_completion<T>(
                         | DockerError::CommandFailedStderrSummary { .. }
                         | DockerError::CommandFailedCapturedSuppressed { .. }
                         | DockerError::CommandFailedSeeStderr { .. }
-                        | DockerError::DockerBuildFailed
+                        | DockerError::DockerBuildFailed { .. }
                 )
             ) =>
         {
@@ -538,7 +594,12 @@ impl ShellRunner {
         record_subprocess_done(op_guard, program, started, status);
         if !status.success() {
             if opts.tee_to_build_log {
-                return Err(DockerError::DockerBuildFailed.into());
+                // The full output went to the in-memory build log (visible
+                // in the cockpit while it lives), but a fatal error must be
+                // self-describing: the cockpit is gone by the time the
+                // operator reads it. Carry the redacted tail.
+                let stderr = summarize_build_stderr(&stderr_buf);
+                return Err(DockerError::DockerBuildFailed { stderr }.into());
             }
             if String::from_utf8_lossy(&stderr_buf).trim().is_empty() {
                 return Err(cmd_failed(program, args).into());

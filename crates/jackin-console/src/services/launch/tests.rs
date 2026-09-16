@@ -114,6 +114,43 @@ fn launch_workspace(workdir: &std::path::Path, allowed_roles: Vec<&str>) -> Work
 }
 
 #[test]
+fn build_workspace_choice_ignores_missing_global_mount_sources() {
+    // Global mounts merge and heal in `resolve_load_workspace`, not here:
+    // workspace selection must not fail on a wiped cache.
+    let temp = tempfile::tempdir().unwrap();
+    let project_dir = temp.path().canonicalize().unwrap();
+    let mut config = AppConfig::default();
+    config
+        .roles
+        .insert("agent-smith".to_owned(), agent_source_stub());
+    config.workspaces.insert(
+        "ws".to_owned(),
+        launch_workspace(&project_dir, vec!["agent-smith"]),
+    );
+    config.add_mount(
+        "cargo-git",
+        MountConfig {
+            src: temp.path().join("cache-wiped").display().to_string(),
+            dst: "/home/agent/.cargo/git".to_owned(),
+            readonly: false,
+            isolation: MountIsolation::Shared,
+        },
+        None,
+    );
+
+    let choice = build_workspace_choice(
+        &config,
+        &project_dir,
+        &LoadWorkspaceInput::Saved("ws".into()),
+    )
+    .unwrap()
+    .expect("present saved workspace must resolve");
+
+    assert_eq!(choice.name, "ws");
+    assert_eq!(choice.allowed_roles.len(), 1);
+}
+
+#[test]
 fn resolve_launch_dispatch_returns_none_for_deleted_workspace() {
     let temp = tempfile::tempdir().unwrap();
     let config = AppConfig::default();

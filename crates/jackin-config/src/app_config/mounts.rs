@@ -12,8 +12,10 @@ use jackin_core::{MountIsolation, RoleSelector};
 
 use super::AppConfig;
 use crate::paths::expand_tilde;
-use crate::schema::validate_mounts;
-use crate::schema::{GlobalMountConfig, MountConfig, MountEntry};
+use crate::schema::{
+    GlobalMountConfig, MountConfig, MountEntry, MountHealReport, ensure_mount_sources,
+    launch_cache_roots, validate_mount_paths, validate_mount_specs, validate_mounts,
+};
 
 /// A resolved global mount entry for display and validation.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -154,10 +156,15 @@ impl AppConfig {
             .collect()
     }
 
-    /// Expand tildes in named mounts and run full mount validation.
+    /// Expand tildes in named mounts, heal cache-backed sources, and validate.
+    ///
+    /// Missing sources under cache roots are recreated (directories) or
+    /// skipped (files) by [`ensure_mount_sources`] before existence
+    /// validation, so a wiped cache never fails launch resolution. The
+    /// returned [`MountHealReport`] must be surfaced to the operator.
     pub fn expand_and_validate_named_mounts(
         mounts: &[(String, MountConfig)],
-    ) -> crate::ConfigResult<Vec<MountConfig>> {
+    ) -> crate::ConfigResult<(Vec<MountConfig>, MountHealReport)> {
         let expanded: Vec<MountConfig> = mounts
             .iter()
             .map(|(_, mount)| MountConfig {
@@ -167,8 +174,15 @@ impl AppConfig {
                 isolation: mount.isolation,
             })
             .collect();
-        validate_mounts(&expanded)?;
-        Ok(expanded)
+        validate_mount_specs(&expanded)?;
+        let named: Vec<(Option<String>, MountConfig)> = mounts
+            .iter()
+            .zip(expanded)
+            .map(|((name, _), mount)| (Some(name.clone()), mount))
+            .collect();
+        let (healed, report) = ensure_mount_sources(named, &launch_cache_roots());
+        validate_mount_paths(&healed)?;
+        Ok((healed, report))
     }
 
     /// Insert or replace a global named mount (test / in-memory only; prefer `ConfigEditor`).

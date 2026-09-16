@@ -93,12 +93,6 @@ pub enum RoleRepoValidationError {
         /// Human-readable field label.
         label: &'static str,
     },
-    /// Path resolves to a symlink; role paths must be real files.
-    #[error("{label} path must not be a symlink")]
-    PathIsSymlink {
-        /// Human-readable field label.
-        label: &'static str,
-    },
     /// Canonicalized path escapes the repo root (symlink / mount tricks).
     #[error("{label} path escapes the repo boundary")]
     PathEscapesBoundary {
@@ -148,7 +142,7 @@ impl From<std::io::Error> for RoleRepoValidationError {
 }
 
 /// Validate a role-repo directory: manifest present, Dockerfile contract,
-/// relative non-symlink hooks, and semantic manifest rules.
+/// relative hooks, and semantic manifest rules.
 ///
 /// # Errors
 /// Returns [`RoleRepoValidationError`] for structural or semantic failures.
@@ -212,13 +206,11 @@ fn validate_relative_path(
     if !resolved.is_file() {
         return Err(RoleRepoValidationError::Missing(resolved));
     }
-    if std::fs::symlink_metadata(&resolved)?
-        .file_type()
-        .is_symlink()
-    {
-        return Err(RoleRepoValidationError::PathIsSymlink { label });
-    }
 
+    // Contained symlinks (shared script conventions) are accepted and
+    // resolved to their canonical target; only repo escapes are rejected.
+    // `is_file` above already follows links, so dangling links fail as
+    // `Missing` before reaching the containment check.
     let canonical_repo = repo_dir.canonicalize()?;
     let canonical_resolved = resolved.canonicalize()?;
     if !canonical_resolved.starts_with(&canonical_repo) {

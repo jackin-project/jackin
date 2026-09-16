@@ -97,6 +97,7 @@ async fn materialize_then_clean_exit_removes_record_and_branch() {
         default_agent: None,
         keep_awake_enabled: false,
         git_pull_on_entry: false,
+        mount_heal: jackin_config::MountHealReport::default(),
     };
 
     // materialize_workspace capture queue:

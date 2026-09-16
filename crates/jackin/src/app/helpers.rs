@@ -12,6 +12,18 @@ use jackin_docker::docker_client::DockerApi;
 use jackin_runtime::instance;
 use jackin_runtime::runtime;
 
+/// Print mount-heal notices from launch resolution to stderr.
+///
+/// Every site that resolves a workspace for launch must call this: a
+/// skipped mount changes what the container sees, and a recreated
+/// directory explains a cold cache. Stderr keeps dry-run plans and other
+/// stdout payloads parseable.
+pub(super) fn emit_mount_heal_notices(resolved: &jackin_config::ResolvedWorkspace) {
+    for line in resolved.mount_heal.notice_lines() {
+        eprintln!("{line}");
+    }
+}
+
 pub(super) async fn resolve_role_to_container(
     class: &RoleSelector,
     docker: &impl DockerApi,

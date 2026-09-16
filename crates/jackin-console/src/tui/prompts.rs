@@ -138,11 +138,19 @@ pub fn committed_role_prompt(
     let Some(input) = take_pending_launch_plan(state) else {
         return Ok(LaunchPromptDispatch::None);
     };
-    let Some(resolved) =
-        crate::services::launch::resolve_committed_role_launch(config, cwd, input, &role)?
-    else {
-        return Ok(LaunchPromptDispatch::None);
-    };
+    // Resolution failures surface as an in-TUI error popup (the console
+    // stays alive), so the taken plan must be restored — otherwise the
+    // still-visible role picker silently stops working.
+    let attempt = input.clone();
+    let resolved =
+        match crate::services::launch::resolve_committed_role_launch(config, cwd, attempt, &role) {
+            Ok(Some(resolved)) => resolved,
+            Ok(None) => return Ok(LaunchPromptDispatch::None),
+            Err(error) => {
+                store_pending_launch_plan(state, input);
+                return Err(error);
+            }
+        };
     Ok(LaunchPromptDispatch::Prompt(LaunchPromptRequest {
         role,
         workspace: resolved.workspace,
@@ -160,10 +168,23 @@ pub fn launch_with_committed_agent(
     let Some((input, role)) = take_pending_launch_and_role_plan(state) else {
         return Ok(None);
     };
-    let Some(resolved) =
-        crate::services::launch::resolve_committed_agent_launch(config, cwd, input, role, agent)?
-    else {
-        return Ok(None);
+    // Same restore contract as `committed_role_prompt`: the agent picker
+    // stays visible behind the error popup and must keep working.
+    let (attempt_input, attempt_role) = (input.clone(), role.clone());
+    let resolved = match crate::services::launch::resolve_committed_agent_launch(
+        config,
+        cwd,
+        attempt_input,
+        attempt_role,
+        agent,
+    ) {
+        Ok(Some(resolved)) => resolved,
+        Ok(None) => return Ok(None),
+        Err(error) => {
+            store_pending_launch_plan(state, input);
+            state.pending_launch_role = Some(role);
+            return Err(error);
+        }
     };
     if resolved.accounts.len() <= 1 {
         return Ok(Some(ConsoleOutcome::LaunchWithAccount {

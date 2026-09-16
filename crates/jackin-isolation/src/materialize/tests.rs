@@ -414,7 +414,7 @@ async fn clean_tree_passes() {
 }
 
 use crate::state::{CleanupStatus, read_records};
-use jackin_config::ResolvedWorkspace;
+use jackin_config::{MountHealReport, ResolvedWorkspace};
 
 fn resolved_with_one_isolated(repo: &Path, dst: &str) -> ResolvedWorkspace {
     ResolvedWorkspace {
@@ -430,6 +430,7 @@ fn resolved_with_one_isolated(repo: &Path, dst: &str) -> ResolvedWorkspace {
         default_agent: None,
         keep_awake_enabled: false,
         git_pull_on_entry: false,
+        mount_heal: MountHealReport::default(),
     }
 }
 
@@ -447,6 +448,7 @@ fn resolved_with_one_clone(repo: &Path, dst: &str) -> ResolvedWorkspace {
         default_agent: None,
         keep_awake_enabled: false,
         git_pull_on_entry: false,
+        mount_heal: MountHealReport::default(),
     }
 }
 
@@ -536,6 +538,7 @@ async fn shared_mounts_pass_through_unchanged() {
         default_agent: None,
         keep_awake_enabled: false,
         git_pull_on_entry: false,
+        mount_heal: MountHealReport::default(),
     };
     let mut runner = FakeRunner::default();
     let mat = materialize_workspace(

@@ -7,7 +7,7 @@ use jackin_core::{Agent, MountIsolation, WorkspaceName};
 use tempfile::tempdir;
 
 use crate::AppConfig;
-use crate::schema::RoleSource;
+use crate::schema::{MountHealReport, RoleSource};
 
 #[test]
 fn current_dir_workspace_uses_same_host_and_container_path() {
@@ -493,6 +493,7 @@ fn resolved_workspace_as_workspace_label_accepts_path_and_stem() {
         keep_awake_enabled: false,
         default_agent: None,
         git_pull_on_entry: false,
+        mount_heal: MountHealReport::default(),
     };
     let label = stem.as_workspace_label().unwrap();
     assert_eq!(label.as_str(), "chainargos");
@@ -506,9 +507,133 @@ fn resolved_workspace_as_workspace_label_accepts_path_and_stem() {
         keep_awake_enabled: false,
         default_agent: None,
         git_pull_on_entry: false,
+        mount_heal: MountHealReport::default(),
     };
     let label = path_label.as_workspace_label().unwrap();
     assert_eq!(label.as_str(), "/home/op/proj");
     let error = WorkspaceName::parse(label.as_str()).unwrap_err();
     assert!(error.to_string().contains("cannot contain path separators"));
+}
+
+#[test]
+fn resolve_heals_wiped_cache_mounts_end_to_end() {
+    // Regression test for a wiped `~/.cache/jackin` bricking every launch:
+    // cache directories are recreated, cache files are skipped with a
+    // report, and resolution succeeds.
+    static COUNTER: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let unique = COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    let cache_sandbox = PathBuf::from(std::env::var("HOME").unwrap())
+        .join(".cache")
+        .join(format!(
+            "jackin-config-heal-test-{}-{unique}",
+            std::process::id()
+        ));
+    // Start clean (stale junk from a previously aborted run heals the
+    // same way, but asserting recreation needs a missing dir).
+    let _unused = std::fs::remove_dir_all(&cache_sandbox);
+    let cargo_git = cache_sandbox.join("global/cargo/git");
+    let gradle_properties = cache_sandbox.join("global/gradle/gradle.properties");
+
+    let temp = tempdir().unwrap();
+    let mut config = AppConfig::default();
+    config.add_mount(
+        "cargo-git",
+        MountConfig {
+            src: cargo_git.display().to_string(),
+            dst: "/home/agent/.cargo/git".to_owned(),
+            readonly: false,
+            isolation: MountIsolation::Shared,
+        },
+        None,
+    );
+    config.add_mount(
+        "gradle-properties",
+        MountConfig {
+            src: gradle_properties.display().to_string(),
+            dst: "/home/agent/.gradle/gradle.properties".to_owned(),
+            readonly: true,
+            isolation: MountIsolation::Shared,
+        },
+        None,
+    );
+
+    let resolved = resolve_load_workspace(
+        &config,
+        &RoleSelector::new(None, "agent-smith"),
+        temp.path(),
+        LoadWorkspaceInput::CurrentDir,
+        &[],
+    )
+    .unwrap();
+
+    assert!(
+        cargo_git.is_dir(),
+        "wiped cache dir must be recreated during resolve"
+    );
+    assert!(
+        resolved
+            .mounts
+            .iter()
+            .any(|m| m.dst == "/home/agent/.cargo/git"),
+        "recreated cache mount must stay in the effective mounts"
+    );
+    assert!(
+        resolved
+            .mounts
+            .iter()
+            .all(|m| m.dst != "/home/agent/.gradle/gradle.properties"),
+        "missing cache file must be skipped, not mounted"
+    );
+    assert_eq!(resolved.mount_heal.recreated.len(), 1);
+    assert_eq!(
+        resolved.mount_heal.recreated[0].name.as_deref(),
+        Some("cargo-git")
+    );
+    assert_eq!(resolved.mount_heal.skipped.len(), 1);
+    assert_eq!(
+        resolved.mount_heal.skipped[0].name.as_deref(),
+        Some("gradle-properties")
+    );
+
+    std::fs::remove_dir_all(&cache_sandbox).unwrap();
+}
+
+#[test]
+fn resolve_still_rejects_missing_non_cache_mount_sources() {
+    // Healing is confined to cache roots: a missing project checkout
+    // must stay a hard error, never an auto-created empty directory.
+    let temp = tempdir().unwrap();
+    let missing_project = temp.path().join("projects/gone");
+    let mut config = AppConfig::default();
+    config.workspaces.insert(
+        "my-ws".to_owned(),
+        WorkspaceConfig {
+            workdir: "/workspace/project".to_owned(),
+            mounts: vec![MountConfig {
+                src: missing_project.display().to_string(),
+                dst: "/workspace/project".to_owned(),
+                readonly: false,
+                isolation: MountIsolation::Shared,
+            }],
+            ..Default::default()
+        },
+    );
+
+    let error = resolve_load_workspace(
+        &config,
+        &RoleSelector::new(None, "agent-smith"),
+        temp.path(),
+        LoadWorkspaceInput::Saved("my-ws".to_owned()),
+        &[],
+    )
+    .unwrap_err();
+
+    assert!(
+        error.to_string().contains("mount source does not exist"),
+        "{error}"
+    );
+    assert!(
+        !missing_project.exists(),
+        "non-cache sources must never be auto-created"
+    );
 }

@@ -150,6 +150,7 @@ fn dry_run_workspace() -> crate::workspace::ResolvedWorkspace {
         keep_awake_enabled: false,
         default_agent: Some(Agent::Claude),
         git_pull_on_entry: false,
+        mount_heal: jackin_config::MountHealReport::default(),
     }
 }
 

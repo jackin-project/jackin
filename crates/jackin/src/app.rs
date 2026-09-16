@@ -35,8 +35,8 @@ pub(crate) use restore::{
 };
 
 use helpers::{
-    mount_display, mount_mode, render_workspace_show, resolve_instance_reference,
-    resolve_role_to_container,
+    emit_mount_heal_notices, mount_display, mount_mode, render_workspace_show,
+    resolve_instance_reference, resolve_role_to_container,
 };
 
 use anyhow::Result;
