@@ -2,7 +2,7 @@ schema = 1
 
 [generator]
 repository = "jackin-project/jackin"
-revision = "92c3478694ef423fb4160b8c934d6671ca85b51a"
+revision = "b9c3156cdb88e63c11b9e595a3e694b02238c09a"
 
 [scan]
 exclude = ["native/Package.swift", "native/.swiftpm/**"]
