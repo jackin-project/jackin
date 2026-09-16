@@ -230,7 +230,7 @@ fn summarize_stderr(stderr: &[u8]) -> Option<String> {
 }
 
 /// Summarize a failed build's stderr for the CLI error: the LAST non-empty
-/// lines (BuildKit reports the cause at the end, unlike the preamble
+/// lines (`BuildKit` reports the cause at the end, unlike the preamble
 /// `summarize_stderr` takes from the front), with local temp paths
 /// redacted so launch errors stay free of machine-specific paths.
 fn summarize_build_stderr(stderr: &[u8]) -> String {
