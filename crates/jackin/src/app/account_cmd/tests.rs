@@ -22,6 +22,130 @@ fn secret_references_reject_literals_and_interpolation() {
 }
 
 #[test]
+fn scan_reference_variable_prints_only_validated_references() {
+    let plain = |value: &str| AccountConfig {
+        enabled: true,
+        name: "probe".into(),
+        provider: AiProvider::Anthropic,
+        credential: AccountCredential::ApiKey {
+            value: EnvValue::Plain(value.into()),
+            base_url: None,
+            model: None,
+        },
+    };
+    assert_eq!(
+        scan_reference_variable(&plain("$ANTHROPIC_API_KEY")),
+        Some("ANTHROPIC_API_KEY")
+    );
+    assert_eq!(
+        scan_reference_variable(&plain("${ANTHROPIC_API_KEY}")),
+        Some("ANTHROPIC_API_KEY")
+    );
+    for shape in [
+        "secret",
+        "$",
+        "${}",
+        "$1TOKEN",
+        "${TOKEN",
+        "$TOKEN/secret",
+        "prefix${TOKEN}",
+        "op://vault/item/field",
+        "${TOKEN}}",
+    ] {
+        assert_eq!(scan_reference_variable(&plain(shape)), None, "{shape}");
+    }
+    let profile = AccountConfig {
+        enabled: true,
+        name: "probe".into(),
+        provider: AiProvider::Anthropic,
+        credential: AccountCredential::Profile {
+            agent: jackin_core::Agent::Claude,
+            directory: "/tmp/probe".into(),
+            xdg_roots: None,
+        },
+    };
+    assert_eq!(scan_reference_variable(&profile), None);
+    let op_ref = AccountConfig {
+        enabled: true,
+        name: "probe".into(),
+        provider: AiProvider::Anthropic,
+        credential: AccountCredential::ApiKey {
+            value: EnvValue::OpRef(jackin_core::OpRef {
+                op: "op://vault/item-id/field".into(),
+                path: "Vault/Item/Field".into(),
+                account: None,
+                on_demand: false,
+            }),
+            base_url: None,
+            model: None,
+        },
+    };
+    // 1Password item IDs never reach operator output.
+    assert_eq!(scan_reference_variable(&op_ref), None);
+}
+
+#[test]
+fn scan_imports_discovered_profiles_once_with_bootstrap_naming() {
+    let temp = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    drop(AppConfig::load_or_init(&paths).unwrap());
+    let claude_dir = paths.home_dir.join(".claude");
+    std::fs::create_dir_all(&claude_dir).unwrap();
+    std::fs::write(
+        claude_dir.join(".credentials.json"),
+        r#"{"claudeAiOauth":{"accessToken":"fixture"}}"#,
+    )
+    .unwrap();
+
+    let config = AppConfig::load_or_init(&paths).unwrap();
+    handle(AccountCommand::Scan, &config, &paths).unwrap();
+    let config = AppConfig::load_or_init(&paths).unwrap();
+    assert_eq!(config.accounts["default-claude"].name, "Claude default");
+
+    // Second scan dedupes: no suffixed clones.
+    handle(AccountCommand::Scan, &config, &paths).unwrap();
+    let config = AppConfig::load_or_init(&paths).unwrap();
+    assert!(
+        !config
+            .accounts
+            .keys()
+            .any(|id| id.starts_with("default-claude-")),
+        "{:?}",
+        config.accounts.keys().collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn scan_seeds_zshrc_overrides_alongside_defaults() {
+    let temp = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    drop(AppConfig::load_or_init(&paths).unwrap());
+    let override_dir = temp.path().join("codex-override");
+    std::fs::create_dir_all(&override_dir).unwrap();
+    std::fs::write(
+        override_dir.join("auth.json"),
+        r#"{"OPENAI_API_KEY":"fixture"}"#,
+    )
+    .unwrap();
+    std::fs::create_dir_all(&paths.home_dir).unwrap();
+    std::fs::write(
+        paths.home_dir.join(".zshrc"),
+        format!(
+            "CODEX_HOME={}\nSOME_API_KEY=$(some-helper)\n",
+            override_dir.display()
+        ),
+    )
+    .unwrap();
+
+    let config = AppConfig::load_or_init(&paths).unwrap();
+    handle(AccountCommand::Scan, &config, &paths).unwrap();
+    let config = AppConfig::load_or_init(&paths).unwrap();
+    let seeded = &config.accounts["default-codex"];
+    assert_eq!(seeded.name, "Codex default");
+    assert_eq!(seeded.source_directory(), Some(override_dir.as_path()));
+}
+
+#[test]
 fn listing_redacts_secret_and_endpoint() {
     let account = AccountConfig {
         enabled: true,

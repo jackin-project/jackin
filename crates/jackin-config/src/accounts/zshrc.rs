@@ -18,6 +18,10 @@
 //! while unresolved entries accumulate in source order.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::path::PathBuf;
+
+use super::{WrapperSpec, XdgRoots};
+use jackin_core::{Agent, OpRef, parse_op_reference};
 
 /// Why a shell assignment could not be resolved to a static literal.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -789,6 +793,361 @@ fn truncate_detail(detail: String) -> String {
         short.push('\u{2026}');
         short
     }
+}
+
+/// Agent-attributed configuration directory from a config-dir override.
+///
+/// Maps onto `AccountCredential::Profile { agent, directory }`: the consumer
+/// pairs the candidate with a provider to seed a profile account. Only
+/// absolute paths are extracted (relative values cannot seed a profile).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DirectoryCandidate {
+    /// Agent owning this directory's storage format.
+    pub agent: Agent,
+    /// Absolute configuration directory.
+    pub directory: PathBuf,
+    /// Source variable (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`).
+    pub source_var: String,
+}
+
+/// Parsed `op read ...` invocation behind one secret variable.
+///
+/// Maps onto `EnvValue::OpRef`: the consumer stores the reference as an
+/// `ApiKey`/`OAuthToken` value. Carries the reference only, never the
+/// resolved secret.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OpReadCandidate {
+    /// Assigned variable name.
+    pub var: String,
+    /// 1-based number of the logical source line.
+    pub line: usize,
+    /// Parsed 1Password reference (`op` URI, display `path`, account pin).
+    pub reference: OpRef,
+}
+
+/// Shell-function call site behind one variable.
+///
+/// Maps onto [`WrapperSpec`]: the consumer stores the spec at the
+/// agent-invoked-via-wrapper schema home on the agent configuration built
+/// from this variable's account.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WrapperCallSite {
+    /// Assigned variable name.
+    pub var: String,
+    /// 1-based number of the logical source line.
+    pub line: usize,
+    /// Parsed wrapper identity plus call-site arguments.
+    pub spec: WrapperSpec,
+}
+
+/// Model/endpoint group gathered from one variable stem.
+///
+/// Groups every `*MODEL*`, `*_PROFILE*`, and `*_BASE_URL` (plus `_API_BASE` /
+/// `_API_URL`) literal by the lowercased first `_`-separated segment of the
+/// variable name (`KIMI_MODEL` + `KIMI_BASE_URL` → `kimi`). Maps onto
+/// `AccountCredential::ApiKey { model, base_url }` defaults and the matching
+/// `AgentConfiguration` overrides. Model IDs and endpoint URLs are not
+/// secrets; key/token literals never enter a profile.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ModelProfile {
+    /// Lowercased variable stem (`kimi`, `anthropic`, …).
+    pub name: String,
+    /// Explicit model identifier, if the group carries one.
+    pub model: Option<String>,
+    /// Endpoint override, if the group carries one.
+    pub base_url: Option<String>,
+}
+
+/// Typed extraction over a [`ZshrcImport`] that a consumer can apply.
+///
+/// Built purely from parsed literals and unresolved snippets: no shell is
+/// sourced, no substitution is executed, and no secret helper runs. The plan
+/// carries references and paths only — never resolved secret values or key
+/// literals. Variables that fail to parse (truncated snippets, relative
+/// directories, unparseable `op://` URIs) are skipped here and stay visible
+/// in [`ZshrcImport::unresolved`] for operator resolution.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ZshrcImportPlan {
+    /// Config-dir overrides, sorted by source variable.
+    pub directories: Vec<DirectoryCandidate>,
+    /// Complete absolute XDG triple, mappable to `XdgRoots` on an Amp
+    /// profile; `None` unless data/config/cache are all present.
+    pub xdg_roots: Option<XdgRoots>,
+    /// Parsed `op read` invocations, in source order.
+    pub op_refs: Vec<OpReadCandidate>,
+    /// Shell-function call sites, in source order.
+    pub wrappers: Vec<WrapperCallSite>,
+    /// Model/endpoint groups, sorted by name.
+    pub models: Vec<ModelProfile>,
+}
+
+/// Build the typed [`ZshrcImportPlan`] for a parsed import.
+///
+/// Total and side-effect-free: every extraction is a pure function of
+/// `import.values` and `import.unresolved`.
+pub fn import_plan(import: &ZshrcImport) -> ZshrcImportPlan {
+    ZshrcImportPlan {
+        directories: extract_directories(&import.values),
+        xdg_roots: extract_xdg_roots(&import.values),
+        op_refs: import
+            .unresolved
+            .iter()
+            .filter(|entry| entry.kind == UnresolvedKind::OpRead)
+            .filter_map(|entry| {
+                parse_op_read(&entry.detail).map(|reference| OpReadCandidate {
+                    var: entry.name.clone(),
+                    line: entry.line,
+                    reference,
+                })
+            })
+            .collect(),
+        wrappers: import
+            .unresolved
+            .iter()
+            .filter(|entry| entry.kind == UnresolvedKind::FunctionCall)
+            .filter_map(|entry| {
+                parse_wrapper_call(&entry.detail).map(|spec| WrapperCallSite {
+                    var: entry.name.clone(),
+                    line: entry.line,
+                    spec,
+                })
+            })
+            .collect(),
+        models: extract_model_profiles(&import.values),
+    }
+}
+
+/// Config-dir override variables attributed to their owning agent.
+const CONFIG_DIR_VARS: &[(&str, Agent)] = &[
+    ("CLAUDE_CONFIG_DIR", Agent::Claude),
+    ("CODEX_HOME", Agent::Codex),
+];
+
+/// Collect absolute config-dir overrides as agent-attributed candidates.
+fn extract_directories(values: &BTreeMap<String, String>) -> Vec<DirectoryCandidate> {
+    let mut out: Vec<DirectoryCandidate> = CONFIG_DIR_VARS
+        .iter()
+        .filter_map(|(var, agent)| {
+            let raw = values.get(*var)?;
+            let directory = PathBuf::from(raw);
+            if !directory.is_absolute() {
+                return None;
+            }
+            Some(DirectoryCandidate {
+                agent: *agent,
+                directory,
+                source_var: (*var).to_owned(),
+            })
+        })
+        .collect();
+    out.sort_by(|a, b| a.source_var.cmp(&b.source_var));
+    out
+}
+
+/// Collect the XDG triple when all three roots are present and absolute.
+fn extract_xdg_roots(values: &BTreeMap<String, String>) -> Option<XdgRoots> {
+    let data = PathBuf::from(values.get("XDG_DATA_HOME")?);
+    let config = PathBuf::from(values.get("XDG_CONFIG_HOME")?);
+    let cache = PathBuf::from(values.get("XDG_CACHE_HOME")?);
+    if !data.is_absolute() || !config.is_absolute() || !cache.is_absolute() {
+        return None;
+    }
+    Some(XdgRoots {
+        data,
+        config,
+        cache,
+    })
+}
+
+/// Endpoint suffixes that mark a variable as carrying a base URL.
+const ENDPOINT_SUFFIXES: &[&str] = &["_BASE_URL", "_API_BASE", "_API_URL"];
+
+/// Whether the variable can join a [`ModelProfile`] group.
+fn is_modelish(name: &str) -> bool {
+    name.contains("MODEL")
+        || ENDPOINT_SUFFIXES.iter().any(|s| name.ends_with(s))
+        || name.ends_with("_PROFILE")
+        || name.ends_with("_PROFILE_NAME")
+}
+
+/// Group modelish literals by lowercased first-segment stem.
+fn extract_model_profiles(values: &BTreeMap<String, String>) -> Vec<ModelProfile> {
+    let mut groups: BTreeMap<String, Vec<(&String, &String)>> = BTreeMap::new();
+    for (name, value) in values {
+        if !is_modelish(name) {
+            continue;
+        }
+        let stem = name.split('_').next().unwrap_or(name).to_lowercase();
+        groups.entry(stem).or_default().push((name, value));
+    }
+    groups
+        .into_iter()
+        .filter_map(|(stem, mut vars)| {
+            vars.sort_by(|a, b| a.0.cmp(b.0));
+            let upper = stem.to_uppercase();
+            let exact_model = format!("{upper}_MODEL");
+            let exact_url = format!("{upper}_BASE_URL");
+            let model = vars
+                .iter()
+                .find(|(name, _)| *name == &exact_model)
+                .or_else(|| vars.iter().find(|(name, _)| name.contains("MODEL")))
+                .map(|(_, value)| (*value).clone());
+            let base_url = vars
+                .iter()
+                .find(|(name, _)| *name == &exact_url)
+                .or_else(|| {
+                    vars.iter()
+                        .find(|(name, _)| ENDPOINT_SUFFIXES.iter().any(|s| name.ends_with(s)))
+                })
+                .map(|(_, value)| (*value).clone());
+            if model.is_none() && base_url.is_none() {
+                return None;
+            }
+            Some(ModelProfile {
+                name: stem,
+                model,
+                base_url,
+            })
+        })
+        .collect()
+}
+
+/// Parse an `OpRead` detail snippet into an [`OpRef`].
+///
+/// Accepts `$(op read ...)` / backquote forms with an optional `sudo` / `env`
+/// / `command` prefix, global `--account <id>` / `--account=<id>` flags in any
+/// position, and one `op://vault/item/[section/]field` argument (quoting
+/// honored). The display `path` breadcrumb is rebuilt from the URI segments;
+/// the URI may carry IDs rather than names, so the consumer treats it as a
+/// snapshot. Returns `None` for truncated snippets, non-`read` invocations,
+/// and URIs rejected by [`parse_op_reference`].
+fn parse_op_read(detail: &str) -> Option<OpRef> {
+    if detail.contains('\u{2026}') {
+        return None;
+    }
+    let words = split_shell_words(strip_substitution(detail)?);
+    let mut words = words.into_iter().peekable();
+    if matches!(
+        words.peek().map(String::as_str),
+        Some("sudo" | "env" | "command")
+    ) {
+        words.next();
+    }
+    if words.next().as_deref() != Some("op") {
+        return None;
+    }
+    let mut saw_read = false;
+    let mut account = None;
+    let mut uri = None;
+    let mut pending_account = false;
+    for word in words {
+        if pending_account {
+            account = Some(word);
+            pending_account = false;
+            continue;
+        }
+        if word == "read" {
+            saw_read = true;
+        } else if word == "--account" {
+            pending_account = true;
+        } else if let Some(id) = word.strip_prefix("--account=") {
+            account = Some(id.to_owned());
+        } else if word.starts_with("op://") && uri.is_none() {
+            uri = Some(word);
+        }
+    }
+    if pending_account || !saw_read {
+        return None;
+    }
+    let op = uri?;
+    let parts = parse_op_reference(&op)?;
+    let vault = &parts.vault;
+    let item = &parts.item;
+    let mut path = format!("{vault}/{item}");
+    if let Some(section) = &parts.section {
+        path.push('/');
+        path.push_str(section);
+    }
+    path.push('/');
+    let field = &parts.field;
+    path.push_str(field);
+    Some(OpRef {
+        op,
+        path,
+        account,
+        on_demand: false,
+    })
+}
+
+/// Parse a `FunctionCall` detail snippet into a [`WrapperSpec`].
+///
+/// The invoked function name becomes `identity`; remaining words (quoting
+/// honored) become `args`. Returns `None` for truncated snippets and empty
+/// invocations.
+fn parse_wrapper_call(detail: &str) -> Option<WrapperSpec> {
+    if detail.contains('\u{2026}') {
+        return None;
+    }
+    let mut words = split_shell_words(strip_substitution(detail)?).into_iter();
+    let identity = words.next()?;
+    if identity.trim().is_empty() {
+        return None;
+    }
+    Some(WrapperSpec {
+        identity,
+        args: words.collect(),
+    })
+}
+
+/// Strip the outer `$(...)` / `` `...` `` substitution markers.
+fn strip_substitution(detail: &str) -> Option<&str> {
+    if let Some(inner) = detail.strip_prefix("$(").and_then(|s| s.strip_suffix(')')) {
+        return Some(inner);
+    }
+    if let Some(inner) = detail
+        .strip_prefix('`')
+        .and_then(|stripped| stripped.strip_suffix('`'))
+    {
+        return Some(inner);
+    }
+    None
+}
+
+/// Split words honoring single/double quotes and backslash escapes.
+fn split_shell_words(text: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut current = String::new();
+    let mut single = false;
+    let mut double = false;
+    let mut escaped = false;
+    let mut in_word = false;
+    for c in text.chars() {
+        if escaped {
+            current.push(c);
+            escaped = false;
+            in_word = true;
+            continue;
+        }
+        match c {
+            '\\' if !single => escaped = true,
+            '\'' if !double => single = !single,
+            '"' if !single => double = !double,
+            _ if c.is_whitespace() && !single && !double => {
+                if in_word {
+                    out.push(std::mem::take(&mut current));
+                    in_word = false;
+                }
+            }
+            _ => {
+                current.push(c);
+                in_word = true;
+            }
+        }
+    }
+    if in_word {
+        out.push(current);
+    }
+    out
 }
 
 #[cfg(test)]

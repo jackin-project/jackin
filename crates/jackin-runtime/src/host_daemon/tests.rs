@@ -633,11 +633,14 @@ fn snapshot(state: AgentState) -> InstanceSnapshot {
         active_tab: 0,
         tabs: vec![TabSnapshot {
             label: "agent".to_owned(),
+            instance: Some("codex-main".to_owned()),
+            account_id: Some("acc-1".to_owned()),
             focused_pane: 7,
             panes: vec![PaneSnapshot {
                 session_id: 7,
                 label: "Codex".to_owned(),
                 agent: Some("codex".to_owned()),
+                account_id: Some("acc-1".to_owned()),
                 state,
                 agent_status_report: None,
             }],

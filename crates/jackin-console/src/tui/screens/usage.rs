@@ -33,6 +33,21 @@ pub const USAGE_HEARTBEAT_INTERVAL: Duration = Duration::from_mins(2);
 /// `load_console_usage_state` in the console adapter.
 pub type UsageRefreshOutcome = Result<(Vec<UsageAccount>, Option<String>), String>;
 
+/// One due Usage refresh, following the instance-refresh effect+subscription
+/// pattern: the worker tags its outcome with `generation` and
+/// [`UsageScreenState::poll_refresh`] drops completions from stale
+/// generations.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct UsageRefreshRequest {
+    pub generation: u64,
+    /// True only for an explicit operator refresh (`r`): bypasses the broker
+    /// success cadence. Periodic and open-path refreshes pass false so broker
+    /// cadence and retry deadlines win. Broker-owned rate-limit/`Retry-After`
+    /// deadlines are honored either way, and active generations are joined
+    /// rather than duplicated.
+    pub force: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UsageWindow {
     pub window_id: String,
@@ -93,13 +108,16 @@ pub struct UsageScreenState {
     pub notice: Option<String>,
     pub generated_at_epoch: Option<i64>,
     pub refresh_due: bool,
+    pub force_refresh_pending: bool,
+    pub refresh_generation: u64,
     pub last_refresh_at: Option<Instant>,
-    pub refresh_rx: Option<BlockingSubscription<UsageRefreshOutcome>>,
+    pub refresh_rx: Option<BlockingSubscription<(u64, UsageRefreshOutcome)>>,
 }
 
 // Manual impls: the in-flight refresh handle carries no value identity.
 // Cloning drops it (the worker result is then discarded); equality ignores
-// it so tests can compare screen snapshots while a refresh runs.
+// it so tests can compare screen snapshots while a refresh runs. The
+// generation counter is value state and survives both.
 impl Clone for UsageScreenState {
     fn clone(&self) -> Self {
         Self {
@@ -111,6 +129,8 @@ impl Clone for UsageScreenState {
             notice: self.notice.clone(),
             generated_at_epoch: self.generated_at_epoch,
             refresh_due: self.refresh_due,
+            force_refresh_pending: self.force_refresh_pending,
+            refresh_generation: self.refresh_generation,
             last_refresh_at: self.last_refresh_at,
             refresh_rx: None,
         }
@@ -127,6 +147,8 @@ impl PartialEq for UsageScreenState {
             && self.notice == other.notice
             && self.generated_at_epoch == other.generated_at_epoch
             && self.refresh_due == other.refresh_due
+            && self.force_refresh_pending == other.force_refresh_pending
+            && self.refresh_generation == other.refresh_generation
             && self.last_refresh_at == other.last_refresh_at
     }
 }
@@ -303,17 +325,45 @@ impl UsageScreenState {
         self.refresh_rx.is_some()
     }
 
-    pub fn begin_refresh(&mut self, rx: BlockingSubscription<UsageRefreshOutcome>) {
+    /// Claim the next due refresh, if any, following the instance-refresh
+    /// throttle shape: at most one generation is ever in flight, and a
+    /// requester arriving while one runs joins that shared work instead of
+    /// queueing a duplicate. Claiming consumes `refresh_due` and the pending
+    /// force flag; the worker must tag its outcome with the generation via
+    /// [`Self::begin_refresh`].
+    pub fn next_refresh_plan_if_due(&mut self, now: Instant) -> Option<UsageRefreshRequest> {
+        if self.refresh_in_flight() {
+            self.refresh_due = false;
+            return None;
+        }
+        if !self.refresh_due && !self.heartbeat_due(now) {
+            return None;
+        }
+        self.refresh_generation = self.refresh_generation.wrapping_add(1);
+        self.refresh_due = false;
+        let force = std::mem::take(&mut self.force_refresh_pending);
+        Some(UsageRefreshRequest {
+            generation: self.refresh_generation,
+            force,
+        })
+    }
+
+    pub fn begin_refresh(&mut self, rx: BlockingSubscription<(u64, UsageRefreshOutcome)>) {
         self.refresh_rx = Some(rx);
     }
 
-    /// Poll the in-flight refresh once. `None` means still running.
+    /// Poll the in-flight refresh once. `None` means still running — or that
+    /// the completed generation was stale and its outcome was dropped.
     pub fn poll_refresh(&mut self) -> Option<UsageRefreshOutcome> {
         let rx = self.refresh_rx.as_mut()?;
         match rx.poll_next() {
-            SubscriptionPoll::Ready(outcome) => {
+            SubscriptionPoll::Ready((generation, outcome)) => {
                 self.refresh_rx = None;
-                Some(outcome)
+                if generation == self.refresh_generation {
+                    Some(outcome)
+                } else {
+                    None
+                }
             }
             SubscriptionPoll::Closed => {
                 self.refresh_rx = None;
@@ -426,15 +476,18 @@ fn well_known_provider_name(provider_id: &str) -> String {
 }
 
 pub fn handle_key(state: &mut ManagerState<'_>, key: KeyEvent) {
-    let Some(screen) = state.usage_screen.as_mut() else {
+    let Some(screen) = state.usage.screen.as_mut() else {
         return;
     };
     match key.code {
-        KeyCode::Esc | KeyCode::Char('q') => state.usage_screen = None,
+        KeyCode::Esc | KeyCode::Char('q') => state.usage.visible = false,
         KeyCode::Up | KeyCode::Char('k') => screen.move_selection(-1),
         KeyCode::Down | KeyCode::Char('j') => screen.move_selection(1),
         KeyCode::Enter => screen.detail = !screen.detail,
-        KeyCode::Char('r') => screen.refresh_due = true,
+        KeyCode::Char('r') => {
+            screen.refresh_due = true;
+            screen.force_refresh_pending = true;
+        }
         KeyCode::PageUp => screen.scroll = screen.scroll.saturating_sub(5),
         KeyCode::PageDown => {
             screen.scroll = screen.scroll.saturating_add(5);
@@ -454,7 +507,7 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &ManagerState<'_>) {
 }
 
 fn render_account_list(frame: &mut Frame<'_>, area: Rect, state: &ManagerState<'_>) {
-    let Some(screen) = state.usage_screen.as_ref() else {
+    let Some(screen) = state.usage.screen.as_ref() else {
         return;
     };
     let focused = true;
@@ -541,7 +594,7 @@ fn render_account_list(frame: &mut Frame<'_>, area: Rect, state: &ManagerState<'
 }
 
 fn render_detail(frame: &mut Frame<'_>, area: Rect, state: &ManagerState<'_>) {
-    let Some(screen) = state.usage_screen.as_ref() else {
+    let Some(screen) = state.usage.screen.as_ref() else {
         return;
     };
     let now = now_epoch();

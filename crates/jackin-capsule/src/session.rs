@@ -118,7 +118,14 @@ const STATUS_FLAP_THRESHOLD: usize = 3;
 )]
 pub struct Session {
     pub label: String,
+    /// Instance config ID (`"claude-work"`), or `None` for shell sessions.
+    /// The admitted instance, not a runtime slug: several instances may
+    /// share one agent runtime. Resolved authoritatively at spawn time.
     pub agent: Option<String>,
+    /// Owning account ID for this session's instance, or `None` for shell
+    /// sessions and sessions spawned before account stamping. Splits inherit
+    /// this from the source pane's instance.
+    pub account_id: Option<String>,
     pub conversation_id: Option<String>,
     pub provider: Option<SessionProvider>,
     /// Published effective state. Authored solely by evidence arbitration on the
@@ -400,6 +407,7 @@ impl Session {
     pub fn spawn(
         label: impl Into<String>,
         agent: Option<String>,
+        account_id: Option<String>,
         provider: Option<SessionProvider>,
         mut cmd: CommandBuilder,
         terminal: SessionTerminal,
@@ -582,6 +590,7 @@ impl Session {
             Session {
                 label,
                 agent,
+                account_id,
                 conversation_id,
                 provider,
                 state: AgentState::Unknown,
@@ -1491,6 +1500,7 @@ impl Session {
         Self {
             label,
             agent,
+            account_id: None,
             conversation_id: None,
             provider,
             state: AgentState::Unknown,

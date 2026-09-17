@@ -446,8 +446,13 @@ pub struct Multiplexer {
 pub struct AgentRecord {
     pub session_id: u64,
     pub codename: String,
-    /// Agent slug (`"claude"`, `"codex"`, …), or `None` for shell sessions.
+    /// Instance config ID (`"claude-work"`), or `None` for shell sessions.
+    /// The admitted instance, not a runtime slug: several instances may
+    /// share one agent runtime.
     pub agent: Option<String>,
+    /// Owning account ID for this record's instance, or `None` for shells
+    /// and for records written before account stamping.
+    pub account_id: Option<String>,
     /// Provider label (e.g. `"Z.AI"`), or `None` when no provider selected.
     pub provider: Option<String>,
     pub started_at: DateTime<Utc>,

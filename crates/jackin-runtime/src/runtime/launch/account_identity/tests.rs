@@ -57,6 +57,7 @@ fn fingerprint_covers_the_admitted_instance_set() {
             model: None,
             base_url: None,
             display_label: None,
+            invoked_via_wrapper: None,
         },
     );
     assert_ne!(

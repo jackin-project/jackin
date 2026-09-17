@@ -68,8 +68,91 @@ pub struct BootstrapReport {
     pub fresh_install: bool,
     /// Account IDs registered by the bootstrap scan.
     pub added_accounts: Vec<String>,
+    /// Full `(id, account)` pairs for `added_accounts`, in the same order.
+    /// Draft-merge callers (Settings scan) join these into the pending
+    /// draft instead of saving immediately. Credentials are references
+    /// (`$VAR`), 1Password refs, or profile directories — discovery
+    /// never reads secret values.
+    pub added: Vec<(String, crate::AccountConfig)>,
     /// Discovery issues observed during the scan.
     pub issues: Vec<crate::DiscoveryIssue>,
+}
+
+/// Synthesize the registry entry for a discovered profile: `None` when the
+/// agent has no native billing (Omp/Hermes route arbitrary providers, so
+/// the operator adds those accounts explicitly with `--provider`).
+fn profile_scan_candidate(
+    discovered: &crate::DiscoveredAccount,
+) -> Option<(String, crate::AccountConfig)> {
+    let provider = crate::AiProvider::for_agent(discovered.agent)?;
+    let id = format!("default-{}", discovered.agent.slug());
+    let account = crate::AccountConfig {
+        enabled: true,
+        name: format!("{} default", discovered.agent.label()),
+        provider,
+        credential: crate::AccountCredential::Profile {
+            agent: discovered.agent,
+            directory: discovered.directory.clone(),
+            xdg_roots: None,
+        },
+    };
+    Some((id, account))
+}
+
+/// Synthesize the registry entry for an environment-provided API key.
+/// The credential is a `$VAR` reference — the value is never read.
+fn env_scan_candidate(
+    provider: crate::AiProvider,
+    variable: &str,
+) -> (String, crate::AccountConfig) {
+    api_key_scan_candidate(provider, EnvValue::from(format!("${variable}")))
+}
+
+/// Synthesize the registry entry for a provider API key with an explicit
+/// credential value (environment reference or 1Password ref).
+fn api_key_scan_candidate(
+    provider: crate::AiProvider,
+    value: EnvValue,
+) -> (String, crate::AccountConfig) {
+    let id = format!("{}-api-key", provider.slug());
+    let account = crate::AccountConfig {
+        enabled: true,
+        name: format!("{provider} API key"),
+        provider,
+        credential: crate::AccountCredential::ApiKey {
+            value,
+            base_url: None,
+            model: None,
+        },
+    };
+    (id, account)
+}
+
+/// Synthesize the registry entry for an environment-provided subscription
+/// token. `None` if the agent ever loses its native provider (today only
+/// Claude is discovered, which always has one).
+fn oauth_scan_candidate(
+    agent: jackin_core::Agent,
+    variable: &str,
+) -> Option<(String, crate::AccountConfig)> {
+    oauth_scan_candidate_with_value(agent, EnvValue::from(format!("${variable}")))
+}
+
+/// Synthesize the registry entry for a subscription token with an explicit
+/// credential value (environment reference or 1Password ref).
+fn oauth_scan_candidate_with_value(
+    agent: jackin_core::Agent,
+    value: EnvValue,
+) -> Option<(String, crate::AccountConfig)> {
+    let provider = crate::AiProvider::for_agent(agent)?;
+    let id = format!("{agent}-oauth-token");
+    let account = crate::AccountConfig {
+        enabled: true,
+        name: format!("{agent} subscription token"),
+        provider,
+        credential: crate::AccountCredential::OAuthToken { agent, value },
+    };
+    Some((id, account))
 }
 
 /// Scan default evidence + environment into `config`, registering only
@@ -79,80 +162,79 @@ fn bootstrap_scan_accounts(config: &mut AppConfig, home: &Path) -> BootstrapRepo
     let mut report = BootstrapReport::default();
     let scan = crate::discover_default_accounts(home);
     report.issues = scan.issues;
-    for discovered in scan.accounts {
-        // Multi-provider stores (Omp, Hermes) have no native
-        // billing, so bootstrap cannot pick a provider for them;
-        // the operator adds those accounts explicitly.
-        let Some(provider) = crate::AiProvider::for_agent(discovered.agent) else {
-            continue;
-        };
-        let id = format!("default-{}", discovered.agent.slug());
+    let mut register = |id: String, account: crate::AccountConfig| {
         if config.accounts.contains_key(&id) {
-            continue;
+            return;
         }
-        config.accounts.insert(
-            id.clone(),
-            crate::AccountConfig {
-                enabled: true,
-                name: format!("{} default", discovered.agent.label()),
-                provider,
-                credential: crate::AccountCredential::Profile {
-                    agent: discovered.agent,
-                    directory: discovered.directory,
-                    xdg_roots: None,
-                },
-            },
-        );
-        report.added_accounts.push(id);
+        config.accounts.insert(id.clone(), account.clone());
+        report.added_accounts.push(id.clone());
+        report.added.push((id, account));
+    };
+    for discovered in scan.accounts {
+        if let Some((id, account)) = profile_scan_candidate(&discovered) {
+            register(id, account);
+        }
     }
     let environment = std::env::vars_os()
         .filter_map(|(name, value)| Some((name.into_string().ok()?, value.into_string().ok()?)))
         .collect();
     for (provider, variable) in crate::discover_environment_accounts(&environment) {
-        let id = format!("{}-api-key", provider.slug());
-        if config.accounts.contains_key(&id) {
-            continue;
-        }
-        config.accounts.insert(
-            id.clone(),
-            crate::AccountConfig {
-                enabled: true,
-                name: format!("{provider} API key"),
-                provider,
-                credential: crate::AccountCredential::ApiKey {
-                    value: EnvValue::from(format!("${variable}")),
-                    base_url: None,
-                    model: None,
-                },
-            },
-        );
-        report.added_accounts.push(id);
+        let (id, account) = env_scan_candidate(provider, &variable);
+        register(id, account);
     }
     for (agent, variable) in crate::discover_environment_oauth_accounts(&environment) {
-        // OAuth discovery only ever yields Claude, which always has
-        // a native provider; skip defensively if that changes.
-        let Some(provider) = crate::AiProvider::for_agent(agent) else {
-            continue;
-        };
-        let id = format!("{agent}-oauth-token");
-        if config.accounts.contains_key(&id) {
-            continue;
+        if let Some((id, account)) = oauth_scan_candidate(agent, &variable) {
+            register(id, account);
         }
-        config.accounts.insert(
-            id.clone(),
-            crate::AccountConfig {
-                enabled: true,
-                name: format!("{agent} subscription token"),
-                provider,
-                credential: crate::AccountCredential::OAuthToken {
-                    agent,
-                    value: EnvValue::from(format!("${variable}")),
-                },
-            },
-        );
-        report.added_accounts.push(id);
     }
     report
+}
+
+/// Whether `candidate`'s credential source is already registered under any
+/// ID. Mirrors the `upsert_account` duplicate-source rule (same match arms
+/// as `editor::accounts`, which this module cannot reuse) so scans skip
+/// instead of erroring when the operator renamed an account ID.
+fn scan_source_registered(
+    accounts: &BTreeMap<String, crate::AccountConfig>,
+    candidate: &crate::AccountConfig,
+) -> bool {
+    use crate::AccountCredential;
+    accounts.values().any(|registered| {
+        if registered.provider != candidate.provider {
+            return false;
+        }
+        match (&candidate.credential, &registered.credential) {
+            (
+                AccountCredential::Profile {
+                    agent: a,
+                    directory: x,
+                    xdg_roots: rx,
+                },
+                AccountCredential::Profile {
+                    agent: b,
+                    directory: y,
+                    xdg_roots: ry,
+                },
+            ) => a == b && x == y && rx == ry,
+            (
+                AccountCredential::ApiKey {
+                    value: x,
+                    base_url: a,
+                    ..
+                },
+                AccountCredential::ApiKey {
+                    value: y,
+                    base_url: b,
+                    ..
+                },
+            ) => x == y && a == b,
+            (
+                AccountCredential::OAuthToken { agent: a, value: x },
+                AccountCredential::OAuthToken { agent: b, value: y },
+            ) => a == b && x == y,
+            _ => false,
+        }
+    })
 }
 
 /// Consume an installer `fresh_install` marker, returning whether one ran.
@@ -187,6 +269,7 @@ fn take_fresh_install_marker(path: &Path) -> crate::ConfigResult<bool> {
 #[derive(Debug)]
 pub struct ConfigEditor {
     _lock: ConfigWriteGuard,
+    home_dir: PathBuf,
     doc: DocumentMut,
     path: PathBuf,
     workspaces_dir: PathBuf,
@@ -245,6 +328,7 @@ impl ConfigEditor {
         let workspace_docs = load_workspace_docs(paths)?;
         let editor = Self {
             _lock: lock,
+            home_dir: paths.home_dir.clone(),
             doc,
             path: paths.config_file.clone(),
             workspaces_dir: paths.workspaces_dir.clone(),
@@ -252,6 +336,154 @@ impl ConfigEditor {
             removed_workspaces: BTreeSet::new(),
         };
         Ok((editor, report))
+    }
+
+    /// Scan default evidence + the process environment for importable
+    /// accounts, registering only IDs and credential sources not already
+    /// present. Same id-synthesis/dedup rules as the first-run bootstrap
+    /// (skip on ID collision; Omp/Hermes have no native billing and are
+    /// skipped), plus a credential-source check so a re-scan skips instead
+    /// of erroring when the operator renamed an account ID. Never
+    /// overwrites an operator-registered account.
+    ///
+    /// Runs under this editor's config lock, so concurrent scans serialize
+    /// and the loser dedupes to a no-op. Performs blocking filesystem /
+    /// Keychain I/O — console callers must run it on a worker thread.
+    ///
+    /// # Errors
+    /// Returns an error if a synthesized account fails validation.
+    pub fn scan_for_accounts(&mut self) -> crate::ConfigResult<BootstrapReport> {
+        let home = self.home_dir.clone();
+        let environment = std::env::vars_os()
+            .filter_map(|(name, value)| Some((name.into_string().ok()?, value.into_string().ok()?)))
+            .collect();
+        self.scan_for_accounts_with(&home, &environment)
+    }
+
+    /// [`scan_for_accounts`](Self::scan_for_accounts) with explicit
+    /// discovery inputs (deterministic seam for tests; production passes
+    /// the live home directory and process environment).
+    fn scan_for_accounts_with(
+        &mut self,
+        home: &Path,
+        environment: &BTreeMap<String, String>,
+    ) -> crate::ConfigResult<BootstrapReport> {
+        let mut report = BootstrapReport::default();
+        let scan = crate::discover_default_accounts(home);
+        report.issues = scan.issues;
+        let mut candidates = Vec::new();
+        for discovered in scan.accounts {
+            if let Some(candidate) = profile_scan_candidate(&discovered) {
+                candidates.push(candidate);
+            }
+        }
+        for (provider, variable) in crate::discover_environment_accounts(environment) {
+            candidates.push(env_scan_candidate(provider, &variable));
+        }
+        for (agent, variable) in crate::discover_environment_oauth_accounts(environment) {
+            if let Some(candidate) = oauth_scan_candidate(agent, &variable) {
+                candidates.push(candidate);
+            }
+        }
+        let existing: AppConfig = toml::from_str(&self.doc.to_string())?;
+        let mut known = existing.accounts;
+        for (id, account) in candidates {
+            // Skip-on-collision in both dimensions: an operator
+            // registration (same ID, or same credential source under
+            // another ID) always wins over scan synthesis.
+            if known.contains_key(&id) || scan_source_registered(&known, &account) {
+                continue;
+            }
+            self.upsert_account(&id, &account)?;
+            known.insert(id.clone(), account.clone());
+            report.added_accounts.push(id.clone());
+            report.added.push((id, account));
+        }
+        Ok(report)
+    }
+
+    /// Apply a `.zshrc` import plan, seeding verified profile accounts for
+    /// config-dir overrides plus `op read` references as key/token values.
+    /// Same skip-on-collision rules as
+    /// [`scan_for_accounts`](Self::scan_for_accounts): never overwrites an
+    /// operator registration, and override directories without credential
+    /// evidence seed nothing. Model/endpoint groups, wrapper call sites,
+    /// and XDG roots have no account home yet (orchestrator integration)
+    /// and are left for the caller to surface from the plan.
+    ///
+    /// # Errors
+    /// Returns an error if a seeded account fails validation.
+    pub fn apply_zshrc_plan(
+        &mut self,
+        plan: &crate::ZshrcImportPlan,
+    ) -> crate::ConfigResult<BootstrapReport> {
+        let mut report = BootstrapReport::default();
+        let existing: AppConfig = toml::from_str(&self.doc.to_string())?;
+        let mut known = existing.accounts;
+        let home = self.home_dir.clone();
+        for directory in &plan.directories {
+            let Some(provider) = crate::AiProvider::for_agent(directory.agent) else {
+                continue;
+            };
+            match crate::discover_account_directory(directory.agent, &directory.directory, &home) {
+                Ok(Some(found)) => {
+                    let id = format!("default-{}", directory.agent.slug());
+                    let account = crate::AccountConfig {
+                        enabled: true,
+                        name: format!("{} default", directory.agent.label()),
+                        provider,
+                        credential: crate::AccountCredential::Profile {
+                            agent: directory.agent,
+                            directory: found.directory,
+                            xdg_roots: None,
+                        },
+                    };
+                    if known.contains_key(&id) || scan_source_registered(&known, &account) {
+                        continue;
+                    }
+                    self.upsert_account(&id, &account)?;
+                    known.insert(id.clone(), account.clone());
+                    report.added_accounts.push(id.clone());
+                    report.added.push((id, account));
+                }
+                Ok(None) => {}
+                Err(error) => report.issues.push(crate::DiscoveryIssue {
+                    agent: directory.agent,
+                    directory: directory.directory.clone(),
+                    error,
+                }),
+            }
+        }
+        for op_ref in &plan.op_refs {
+            if op_ref.reference.on_demand {
+                continue;
+            }
+            let value = EnvValue::OpRef(op_ref.reference.clone());
+            // Presence-only probe: the synthetic value is never read, only
+            // its non-emptiness gates provider attribution.
+            let probe = BTreeMap::from([(op_ref.var.clone(), String::from("1"))]);
+            let seeded = if crate::discover_environment_oauth_accounts(&probe).is_empty() {
+                crate::discover_environment_accounts(&probe)
+                    .into_iter()
+                    .next()
+                    .map(|(provider, _)| api_key_scan_candidate(provider, value))
+            } else {
+                oauth_scan_candidate_with_value(jackin_core::Agent::Claude, value)
+            };
+            // Variables with no provider home stay in the plan for an
+            // explicit `account add`.
+            let Some((id, account)) = seeded else {
+                continue;
+            };
+            if known.contains_key(&id) || scan_source_registered(&known, &account) {
+                continue;
+            }
+            self.upsert_account(&id, &account)?;
+            known.insert(id.clone(), account.clone());
+            report.added_accounts.push(id.clone());
+            report.added.push((id, account));
+        }
+        Ok(report)
     }
 
     /// Atomic write + return a fresh `AppConfig` parsed from the

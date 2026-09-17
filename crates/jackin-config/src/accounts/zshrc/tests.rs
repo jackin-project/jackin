@@ -225,3 +225,152 @@ fn reports_line_numbers() {
     assert_eq!(parsed.unresolved[0].line, 2);
     assert_eq!(parsed.unresolved[0].name, "OPENAI_API_KEY");
 }
+
+#[test]
+fn plan_extracts_custom_config_dirs_and_skips_relative() {
+    let parsed =
+        parse_zshrc_source("CLAUDE_CONFIG_DIR=/srv/work/claude\nCODEX_HOME=/srv/work/codex\n");
+    let plan = import_plan(&parsed);
+    assert_eq!(
+        plan.directories,
+        vec![
+            DirectoryCandidate {
+                agent: Agent::Claude,
+                directory: PathBuf::from("/srv/work/claude"),
+                source_var: "CLAUDE_CONFIG_DIR".into(),
+            },
+            DirectoryCandidate {
+                agent: Agent::Codex,
+                directory: PathBuf::from("/srv/work/codex"),
+                source_var: "CODEX_HOME".into(),
+            },
+        ]
+    );
+    let parsed = parse_zshrc_source("CLAUDE_CONFIG_DIR=rel/path\n");
+    assert!(import_plan(&parsed).directories.is_empty());
+}
+
+#[test]
+fn plan_collects_complete_xdg_triple_only() {
+    let parsed = parse_zshrc_source(
+        "XDG_DATA_HOME=/srv/amp/data\nXDG_CONFIG_HOME=/srv/amp/config\nXDG_CACHE_HOME=/srv/amp/cache\n",
+    );
+    let plan = import_plan(&parsed);
+    assert_eq!(
+        plan.xdg_roots,
+        Some(XdgRoots {
+            data: PathBuf::from("/srv/amp/data"),
+            config: PathBuf::from("/srv/amp/config"),
+            cache: PathBuf::from("/srv/amp/cache"),
+        })
+    );
+    let parsed =
+        parse_zshrc_source("XDG_DATA_HOME=/srv/amp/data\nXDG_CONFIG_HOME=/srv/amp/config\n");
+    assert!(import_plan(&parsed).xdg_roots.is_none());
+}
+
+#[test]
+fn plan_parses_op_read_references() {
+    let parsed = parse_zshrc_source(
+        "KIMI_API_KEY=$(op read op://work/kimi/password)\nZHIPU_API_KEY=$(op read --account work \"op://work/zai/dev/field\")\n",
+    );
+    let plan = import_plan(&parsed);
+    assert_eq!(plan.op_refs.len(), 2);
+    assert_eq!(plan.op_refs[0].var, "KIMI_API_KEY");
+    assert_eq!(plan.op_refs[0].line, 1);
+    assert_eq!(plan.op_refs[0].reference.op, "op://work/kimi/password");
+    assert_eq!(plan.op_refs[0].reference.path, "work/kimi/password");
+    assert_eq!(plan.op_refs[0].reference.account, None);
+    assert!(!plan.op_refs[0].reference.on_demand);
+    assert_eq!(plan.op_refs[1].var, "ZHIPU_API_KEY");
+    assert_eq!(plan.op_refs[1].reference.op, "op://work/zai/dev/field");
+    assert_eq!(plan.op_refs[1].reference.path, "work/zai/dev/field");
+    assert_eq!(plan.op_refs[1].reference.account.as_deref(), Some("work"));
+    // Non-read op invocations and over-long (truncated) snippets stay unresolved-only.
+    let long_arg = "x".repeat(80);
+    let parsed = parse_zshrc_source(&format!(
+        "A_API_KEY=$(op item get x)\nB_API_KEY=$(op read op://{long_arg}/i/f)\n"
+    ));
+    assert!(import_plan(&parsed).op_refs.is_empty());
+    assert_eq!(parsed.unresolved.len(), 2);
+}
+
+#[test]
+fn plan_parses_backquote_op_read_with_equals_account_flag() {
+    let parsed =
+        parse_zshrc_source("MINIMAX_API_KEY=`op read --account=ops op://work/minimax/password`\n");
+    let plan = import_plan(&parsed);
+    assert_eq!(plan.op_refs.len(), 1);
+    assert_eq!(plan.op_refs[0].reference.op, "op://work/minimax/password");
+    assert_eq!(plan.op_refs[0].reference.account.as_deref(), Some("ops"));
+}
+
+#[test]
+fn plan_parses_wrapper_call_sites() {
+    let parsed = parse_zshrc_source(
+        "claude_key() { op read \"$1\"; }\nANTHROPIC_API_KEY=$(claude_key op://work/claude)\nXAI_API_KEY=`claude_key --profile \"work x\"`\n",
+    );
+    let plan = import_plan(&parsed);
+    assert_eq!(plan.wrappers.len(), 2);
+    assert_eq!(plan.wrappers[0].var, "ANTHROPIC_API_KEY");
+    assert_eq!(plan.wrappers[0].line, 2);
+    assert_eq!(
+        plan.wrappers[0].spec,
+        WrapperSpec {
+            identity: "claude_key".into(),
+            args: vec!["op://work/claude".into()],
+        }
+    );
+    assert_eq!(
+        plan.wrappers[1].spec,
+        WrapperSpec {
+            identity: "claude_key".into(),
+            args: vec!["--profile".into(), "work x".into()],
+        }
+    );
+}
+
+#[test]
+fn plan_groups_model_profiles_by_stem() {
+    let parsed = parse_zshrc_source(
+        "KIMI_MODEL=kimi-k2\nKIMI_BASE_URL=https://api.kimi.com/coding/v1\nKIMI_PROFILE=dev\nZAI_MODEL=glm-4.6\nMINIMAX_MODEL=MiniMax-M2\nMINIMAX_BASE_URL=https://api.minimax.io/v1\nANTHROPIC_DEFAULT_OPUS_MODEL=opus-x\nANTHROPIC_MODEL=sonnet-y\nAWS_PROFILE=dev-only\n",
+    );
+    let plan = import_plan(&parsed);
+    assert_eq!(
+        plan.models,
+        vec![
+            ModelProfile {
+                name: "anthropic".into(),
+                model: Some("sonnet-y".into()),
+                base_url: None,
+            },
+            ModelProfile {
+                name: "kimi".into(),
+                model: Some("kimi-k2".into()),
+                base_url: Some("https://api.kimi.com/coding/v1".into()),
+            },
+            ModelProfile {
+                name: "minimax".into(),
+                model: Some("MiniMax-M2".into()),
+                base_url: Some("https://api.minimax.io/v1".into()),
+            },
+            ModelProfile {
+                name: "zai".into(),
+                model: Some("glm-4.6".into()),
+                base_url: None,
+            },
+        ]
+    );
+}
+
+#[test]
+fn plan_carries_no_secret_values() {
+    let parsed = parse_zshrc_source(
+        "CLAUDE_CONFIG_DIR=/srv/claude\nANTHROPIC_API_KEY=sk-ant-secret\nKIMI_API_KEY=$(op read op://work/kimi/password)\nKIMI_MODEL=kimi-k2\n",
+    );
+    let plan = import_plan(&parsed);
+    let rendered = format!("{plan:?}");
+    assert!(!rendered.contains("sk-ant-secret"), "{rendered}");
+    assert!(rendered.contains("op://work/kimi/password"), "{rendered}");
+    assert!(rendered.contains("/srv/claude"), "{rendered}");
+}

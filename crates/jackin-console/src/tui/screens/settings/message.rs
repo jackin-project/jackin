@@ -8,8 +8,20 @@
 //! screen-local home for root-independent settings messages as the migration
 //! continues.
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+use super::model::AccountScanOutcome;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SettingsMessage {
     FocusTabBar,
     FocusContent,
+    /// Operator requested an account scan on the Accounts tab.
+    RequestAccountScan,
+    /// Scan worker finished. `generation` must match the epoch captured
+    /// when the worker spawned; stale completions are ignored.
+    AccountScanCompleted {
+        generation: u64,
+        result: Result<AccountScanOutcome, String>,
+    },
+    /// Operator abandoned the in-flight scan; orphan its completion.
+    CancelAccountScan,
 }

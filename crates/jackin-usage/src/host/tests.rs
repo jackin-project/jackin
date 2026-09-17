@@ -9,6 +9,8 @@ use jackin_protocol::control::{
     FocusedAccountHeader, FocusedUsageView, Money, QuotaBucketView, StatusSlot, UsageConfidence,
     UsageSeverity, UsageSnapshotStatus, UsageSource,
 };
+use std::sync::Arc;
+use std::sync::atomic::AtomicUsize;
 
 fn open_runtime(dir: &Path) -> HostUsageRuntime {
     let mut runtime = HostUsageRuntime::new();
@@ -1943,4 +1945,161 @@ fn disabled_probe_policy_skips_dispatch_and_is_never_due() {
         .expect("open");
     assert!(!runtime.live_probes_enabled());
     assert!(!runtime.refresh_due());
+}
+
+struct BatchCountingExecutor {
+    calls: AtomicUsize,
+}
+
+impl crate::coordinator::UsageProviderExecutor for BatchCountingExecutor {
+    fn probe(
+        &self,
+        _capability: &UsageAccountCapability,
+        _generation: u64,
+    ) -> crate::coordinator::ProviderProbeOutcome {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        crate::coordinator::ProviderProbeOutcome::success(codex_fixture_view())
+    }
+}
+
+fn batch_capability(account_id: &str, surface_id: &str) -> UsageAccountCapability {
+    UsageAccountCapability {
+        account_id: account_id.to_owned(),
+        surface_id: surface_id.to_owned(),
+    }
+}
+
+fn batch_broker() -> (
+    tempfile::TempDir,
+    UsageBrokerClient,
+    Arc<BatchCountingExecutor>,
+) {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let executor = Arc::new(BatchCountingExecutor {
+        calls: AtomicUsize::new(0),
+    });
+    let concrete_executor = Arc::clone(&executor);
+    let broker_executor: Arc<dyn crate::coordinator::UsageProviderExecutor> = concrete_executor;
+    let client = ensure_usage_broker_with_executor(
+        UsageBrokerConfig::for_data_dir(temp.path().to_path_buf()),
+        broker_executor,
+    )
+    .expect("broker");
+    (temp, client, executor)
+}
+
+fn join_batch(
+    client: &UsageBrokerClient,
+    batch: &[(
+        UsageAccountCapability,
+        Result<UsageGenerationView, UsageCoordinationError>,
+    )],
+) {
+    for (_, result) in batch {
+        let view = result.as_ref().expect("batch row ok");
+        client
+            .join(
+                view.capability.clone(),
+                view.generation,
+                Duration::from_secs(5),
+            )
+            .expect("join");
+    }
+}
+
+#[test]
+fn request_usage_batch_dedups_capabilities_and_reports_per_account() {
+    let (_temp, client, executor) = batch_broker();
+    let first = batch_capability("abc123", "claude");
+    let second = batch_capability("def456", "codex");
+
+    let batch = request_usage_batch(
+        &client,
+        [first.clone(), second.clone(), first.clone()],
+        false,
+    );
+    assert_eq!(batch.len(), 2);
+    assert!(batch.iter().all(|(_, result)| result.is_ok()));
+    join_batch(&client, &batch);
+    assert_eq!(executor.calls.load(Ordering::SeqCst), 2);
+
+    // Still-fresh observations are reused; nothing new is dispatched.
+    let reused = request_usage_batch(&client, [second, first], false);
+    assert!(reused.iter().all(|(_, result)| result.is_ok()));
+    assert_eq!(executor.calls.load(Ordering::SeqCst), 2);
+
+    // An explicit operator refresh bypasses the success cooldown exactly once.
+    let forced = request_usage_batch(&client, [batch_capability("abc123", "claude")], true);
+    assert_eq!(forced.len(), 1);
+    assert_eq!(forced[0].1.as_ref().expect("forced ok").generation, 2);
+    join_batch(&client, &forced);
+    assert_eq!(executor.calls.load(Ordering::SeqCst), 3);
+}
+
+#[test]
+fn request_usage_batch_never_aborts_on_per_account_errors() {
+    let missing = PathBuf::from("missing-batch-broker.sock");
+    let client = UsageBrokerClient::at(missing, env!("CARGO_PKG_VERSION").to_owned());
+    let batch = request_usage_batch(
+        &client,
+        [
+            batch_capability("abc123", "claude"),
+            batch_capability("abc123", "claude"),
+        ],
+        true,
+    );
+    assert_eq!(batch.len(), 1, "duplicates request once even on error");
+    let error = batch[0].1.as_ref().unwrap_err();
+    assert_eq!(
+        error.kind,
+        jackin_protocol::usage_broker::UsageCoordinationErrorKind::Unavailable
+    );
+}
+
+struct BatchRateLimitedExecutor {
+    calls: AtomicUsize,
+}
+
+impl crate::coordinator::UsageProviderExecutor for BatchRateLimitedExecutor {
+    fn probe(
+        &self,
+        _capability: &UsageAccountCapability,
+        _generation: u64,
+    ) -> crate::coordinator::ProviderProbeOutcome {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        crate::coordinator::ProviderProbeOutcome::Failure {
+            kind: jackin_protocol::usage_broker::UsageCoordinationErrorKind::RateLimited,
+            message: "usage provider rate limit is active".to_owned(),
+            retry_at_epoch: Some(chrono::Utc::now().timestamp() + 3_600),
+        }
+    }
+}
+
+#[test]
+fn request_usage_batch_forced_refresh_still_honors_retry_after() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let executor = Arc::new(BatchRateLimitedExecutor {
+        calls: AtomicUsize::new(0),
+    });
+    let concrete_executor = Arc::clone(&executor);
+    let broker_executor: Arc<dyn crate::coordinator::UsageProviderExecutor> = concrete_executor;
+    let client = ensure_usage_broker_with_executor(
+        UsageBrokerConfig::for_data_dir(temp.path().to_path_buf()),
+        broker_executor,
+    )
+    .expect("broker");
+    let capability = batch_capability("abc123", "claude");
+
+    let first = request_usage_batch(&client, [capability.clone()], true);
+    assert_eq!(first[0].1.as_ref().expect("first ok").generation, 1);
+    client
+        .join(capability.clone(), 1, Duration::from_secs(5))
+        .expect("join");
+    assert_eq!(executor.calls.load(Ordering::SeqCst), 1);
+
+    // A forced manual refresh during the Retry-After window joins the same
+    // generation instead of dispatching a duplicate probe.
+    let forced = request_usage_batch(&client, [capability], true);
+    assert_eq!(forced[0].1.as_ref().expect("forced ok").generation, 1);
+    assert_eq!(executor.calls.load(Ordering::SeqCst), 1);
 }

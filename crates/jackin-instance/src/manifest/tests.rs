@@ -55,6 +55,53 @@ fn manifest_v2_backend_roundtrips_and_legacy_v1_deserializes() {
     assert_eq!(legacy.backend, None);
 }
 
+#[test]
+fn admitted_instances_default_empty_and_validate_tabs() {
+    let mut manifest = sample_manifest();
+    assert!(manifest.admitted_instances.is_empty());
+    assert!(!manifest.admits_instance("claude-work"));
+
+    manifest.set_admitted_instances([
+        AdmittedInstance::new("claude-work", "work"),
+        AdmittedInstance::from(&jackin_config::ResolvedInstance {
+            config_id: "claude-personal".to_owned(),
+            agent: Agent::Claude,
+            account_id: "personal".to_owned(),
+            model: None,
+            base_url: None,
+            label: "Claude · Personal".to_owned(),
+            synthesized: true,
+        }),
+    ]);
+    assert!(manifest.admits_instance("claude-work"));
+    assert!(manifest.admits_instance("claude-personal"));
+    assert!(!manifest.admits_instance("codex-work"));
+    assert_eq!(manifest.account_for_instance("claude-work"), Some("work"));
+    assert_eq!(
+        manifest.account_for_instance("claude-personal"),
+        Some("personal")
+    );
+    assert_eq!(manifest.account_for_instance("codex-work"), None);
+
+    // Admission survives a serialize -> deserialize round trip.
+    let json = serde_json::to_string(&manifest).unwrap();
+    assert_eq!(
+        serde_json::from_str::<InstanceManifest>(&json).unwrap(),
+        manifest
+    );
+
+    // Manifests written before admission tracking still deserialize —
+    // `admitted_instances` defaults to empty ("unknown", not "deny all").
+    let mut obj = serde_json::to_value(&manifest)
+        .unwrap()
+        .as_object()
+        .unwrap()
+        .clone();
+    obj.remove("admitted_instances");
+    let legacy: InstanceManifest = serde_json::from_value(serde_json::Value::Object(obj)).unwrap();
+    assert!(legacy.admitted_instances.is_empty());
+}
+
 fn sample_manifest() -> InstanceManifest {
     InstanceManifest::new(NewInstanceManifest {
         container_base: "jk-k7p9m2xq-workspace-agent",

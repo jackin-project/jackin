@@ -157,6 +157,13 @@ impl AppConfig {
             workspace.git_pull_on_entry = enabled;
         }
 
+        if let Some(default_launch) = edit.default_launch {
+            if let Some(ids) = &default_launch {
+                validate_default_launch_ids(self, name, ids)?;
+            }
+            workspace.default_launch = default_launch;
+        }
+
         // Rule-C invariant: after applying this edit, the mount list must be
         // pairwise non-covering under rule C. The CLI layer pre-collapses
         // redundants; if any remain here, the caller is buggy (non-CLI) or
@@ -218,6 +225,21 @@ impl AppConfig {
         }
         Ok(())
     }
+}
+
+fn validate_default_launch_ids(
+    config: &AppConfig,
+    name: &WorkspaceName,
+    ids: &[String],
+) -> crate::ConfigResult<()> {
+    for id in ids {
+        if !config.agent_configurations.contains_key(id) {
+            return Err(ConfigError::msg(format!(
+                "workspace {name} default_launch names unknown agent configuration {id:?}"
+            )));
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]

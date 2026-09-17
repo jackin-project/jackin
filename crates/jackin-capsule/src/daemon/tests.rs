@@ -717,6 +717,8 @@ fn test_mux(rows: u16, cols: u16) -> Multiplexer {
             agents: BTreeMap::new(),
             models: BTreeMap::new(),
             auth_modes: BTreeMap::new(),
+            accounts: BTreeMap::new(),
+            labels: BTreeMap::new(),
             claude_marketplaces: Vec::new(),
             claude_plugins: Vec::new(),
             exec_bindings: Vec::new(),
@@ -9055,4 +9057,135 @@ fn daemon_session_boundary_keeps_account_credentials_per_instance() {
         mux.session_launch(Some("missing"), None, &ambient, "test")
             .is_err()
     );
+}
+
+fn two_claude_mux() -> Multiplexer {
+    let mut mux = test_mux(24, 80);
+    mux.launch_env.launch_config.instances = vec!["claude-work".into(), "claude-personal".into()];
+    mux.launch_env.launch_config.agents = BTreeMap::from([
+        ("claude-work".into(), "claude".into()),
+        ("claude-personal".into(), "claude".into()),
+    ]);
+    mux.launch_env.launch_config.accounts = BTreeMap::from([
+        ("claude-work".into(), "work".into()),
+        ("claude-personal".into(), "personal".into()),
+    ]);
+    mux.launch_env.launch_config.labels = BTreeMap::from([
+        ("claude-work".into(), "Claude · Work".into()),
+        ("claude-personal".into(), "Personal Claude".into()),
+    ]);
+    mux
+}
+
+#[test]
+fn session_launch_renders_instance_labels_for_same_agent_instances() {
+    let mux = two_claude_mux();
+    let work = mux
+        .session_launch(Some("claude-work"), None, &[], "test")
+        .expect("known instance launches");
+    let personal = mux
+        .session_launch(Some("claude-personal"), None, &[], "test")
+        .expect("known instance launches");
+    // Two same-agent instances are distinguishable in tab/pane chrome.
+    assert_eq!(work.label, "Claude · Work");
+    assert_eq!(personal.label, "Personal Claude");
+}
+
+#[test]
+fn session_launch_falls_back_to_slug_title_without_instance_label() {
+    let mut mux = two_claude_mux();
+    mux.launch_env.launch_config.labels.clear();
+    let launch = mux
+        .session_launch(Some("claude-work"), None, &[], "test")
+        .expect("known instance launches");
+    assert_eq!(launch.label, "Claude");
+    let launch = mux
+        .session_launch(Some("claude-work"), Some("Z.AI"), &[], "test")
+        .expect("known instance launches");
+    assert_eq!(launch.label, "Claude (Z.AI)");
+    let shell = mux
+        .session_launch(None, None, &[], "test")
+        .expect("shell launches");
+    assert_eq!(shell.label, "Shell");
+}
+
+#[test]
+fn record_agent_history_stamps_account_from_launch_config() {
+    let mut mux = two_claude_mux();
+    // `claude-work` is a sync instance with no credential-envelope entry;
+    // the account still resolves from the launch config map.
+    mux.record_agent_history(1, "badger".into(), Some("claude-work".into()), None);
+    mux.record_agent_history(2, "wombat".into(), None, None);
+    mux.record_agent_history(3, "quokka".into(), Some("ghost".into()), None);
+    let history = &mux.session_supervisor.agent_history;
+    assert_eq!(history[0].agent.as_deref(), Some("claude-work"));
+    assert_eq!(history[0].account_id.as_deref(), Some("work"));
+    // Default-provider inference resolves the slug through the instance map.
+    assert_eq!(history[0].provider.as_deref(), Some("anthropic"));
+    assert_eq!(history[1].agent, None);
+    assert_eq!(history[1].account_id, None);
+    assert_eq!(history[2].account_id, None);
+}
+
+#[test]
+fn spawn_session_gate_rejects_unknown_and_ambiguous_targets() {
+    let mut mux = two_claude_mux();
+    let err = mux
+        .spawn_session(Some("codex-work".to_owned()), &[], None)
+        .expect_err("unknown instance must error at the spawn gate");
+    assert!(
+        err.to_string().contains("rejected spawn target"),
+        "unexpected error: {err}"
+    );
+    // The shared slug never silently substitutes one of the two instances.
+    mux.spawn_session(Some("claude".to_owned()), &[], None)
+        .expect_err("ambiguous slug must error at the spawn gate");
+    // ... while an exact config ID passes the gate: whatever the PTY spawn
+    // itself does in this bed, the failure (if any) is never a rejection.
+    if let Err(err) = mux.spawn_session(Some("claude-work".to_owned()), &[], None) {
+        assert!(
+            !err.to_string().contains("rejected spawn target"),
+            "resolution must succeed for an exact ID: {err}"
+        );
+    }
+}
+
+#[test]
+fn spawn_session_shell_leaves_identity_empty() {
+    // `Session::spawn` parks PTY output via `spawn_blocking`: enter a
+    // runtime like the other shell-spawn tests.
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("test runtime");
+    let _guard = runtime.enter();
+    let mut mux = two_claude_mux();
+    let workdir = tempfile::tempdir().expect("test workdir");
+    mux.launch_env.workdir = workdir.path().to_path_buf();
+    let id = mux
+        .spawn_session(None, &[], None)
+        .expect("shell spawns in test bed");
+    let session = mux
+        .session_supervisor
+        .sessions
+        .get(id)
+        .expect("session is registered");
+    assert_eq!(session.label, "Shell");
+    assert_eq!(session.agent, None);
+    assert_eq!(session.account_id, None);
+    let tab = mux
+        .session_supervisor
+        .tabs
+        .last()
+        .expect("spawn opens a tab");
+    assert_eq!(tab.instance, None);
+    assert_eq!(tab.account_id, None);
+    let record = mux
+        .session_supervisor
+        .agent_history
+        .last()
+        .expect("spawn records history");
+    assert_eq!(record.session_id, id);
+    assert_eq!(record.agent, None);
+    assert_eq!(record.account_id, None);
 }

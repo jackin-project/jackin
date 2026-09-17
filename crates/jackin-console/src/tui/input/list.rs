@@ -58,10 +58,13 @@ pub fn handle_list_key(
     key: KeyEvent,
 ) -> anyhow::Result<InputOutcome> {
     if key.code == KeyCode::Char('u') {
-        state.usage_screen = Some(crate::tui::state::UsageScreenState::open_with_snapshot(
-            state.usage_accounts.clone(),
-            state.usage_notice.clone(),
-        ));
+        if state.usage.screen.is_none() {
+            state.usage.screen = Some(crate::tui::state::UsageScreenState::open_with_snapshot(
+                state.usage_accounts.clone(),
+                state.usage_notice.clone(),
+            ));
+        }
+        state.usage.visible = true;
         return Ok(InputOutcome::Continue);
     }
     let selected_row = state.selected_row();
@@ -744,17 +747,21 @@ pub fn handle_new_session_picker(state: &mut ManagerState<'_>, key: KeyEvent) ->
 }
 
 /// Prepare the stored provider list for the new-session picker: stable
-/// id-ascending order, then per-agent binding-default pruning.
+/// id-ascending order, then per-agent default pruning.
 ///
 /// The commit handler (`handle_new_session_picker`) runs without config
-/// access, so the open path resolves `account_bindings` for every agent up
-/// front and encodes the outcome in each account's offered-agent list: an
-/// agent with a valid default keeps only that default (commit dispatches it
-/// with no picker), an agent with an explicitly invalid binding is hidden
-/// everywhere (commit fails atomically instead of silently falling back),
-/// and an agent without a default keeps every eligible candidate (commit
-/// opens the picker when several remain). See
-/// `crate::tui::prompts::resolve_agent_default` for the precedence rules.
+/// access, so the open path resolves the default for every agent up front
+/// and encodes the outcome in each account's offered-agent list: an agent
+/// with a valid default keeps only the admitted/default accounts (commit
+/// dispatches with no picker when one remains), an agent with an
+/// explicitly invalid default is hidden everywhere (commit fails
+/// atomically instead of silently falling back), and an agent without a
+/// default keeps every eligible candidate (commit opens the picker when
+/// several remain). Defaults-regime pruning consults `default_launch`
+/// admission via `resolve_launch` — the same resolver the runtime
+/// provisions from — and reaches the legacy binding lookup only when no
+/// default is configured anywhere. See
+/// `crate::tui::prompts::select_launch_account` for the precedence rules.
 fn prepare_new_session_accounts(
     config: &AppConfig,
     workspace: Option<&jackin_core::WorkspaceName>,
@@ -763,20 +770,34 @@ fn prepare_new_session_accounts(
 ) {
     sort_account_choices_by_id(accounts);
     for agent in jackin_core::Agent::ALL.iter().copied() {
-        match resolve_agent_default(config, workspace, role, agent) {
-            AgentDefaultResolution::Launch(default) => {
+        match crate::services::launch::admitted_account_choices(config, workspace, role, agent) {
+            Ok(Some(admitted)) => {
                 for account in accounts.iter_mut() {
-                    if account.id != default {
+                    if !admitted.iter().any(|kept| kept.id == account.id) {
                         account.agents.retain(|candidate| *candidate != agent);
                     }
                 }
             }
-            AgentDefaultResolution::Invalid(_) => {
+            Err(_) => {
                 for account in accounts.iter_mut() {
                     account.agents.retain(|candidate| *candidate != agent);
                 }
             }
-            AgentDefaultResolution::NoDefault => {}
+            Ok(None) => match resolve_agent_default(config, workspace, role, agent) {
+                AgentDefaultResolution::Launch(default) => {
+                    for account in accounts.iter_mut() {
+                        if account.id != default {
+                            account.agents.retain(|candidate| *candidate != agent);
+                        }
+                    }
+                }
+                AgentDefaultResolution::Invalid(_) => {
+                    for account in accounts.iter_mut() {
+                        account.agents.retain(|candidate| *candidate != agent);
+                    }
+                }
+                AgentDefaultResolution::NoDefault => {}
+            },
         }
     }
 }

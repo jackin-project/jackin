@@ -19,7 +19,10 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use jackin_core::{Agent, account_key_hash};
 use jackin_protocol::control::{FocusedUsageView, UsageIdentityPresentation, UsageSeverity};
-use jackin_protocol::usage_broker::{UsageAccountCapability, UsageProjectionV1, UsageRefreshPhase};
+use jackin_protocol::usage_broker::{
+    UsageAccountCapability, UsageCoordinationError, UsageGenerationView, UsageProjectionV1,
+    UsageRefreshPhase,
+};
 
 use crate::usage::{
     UsageCache, UsageFormatPrefs, compact_duration_label, estimate_caption,
@@ -418,6 +421,43 @@ pub fn host_snapshot_store_path(data_dir: &Path) -> PathBuf {
 #[must_use]
 pub fn host_accounts_path(data_dir: &Path) -> PathBuf {
     data_dir.join(HOST_USAGE_STATE_REL).join("accounts.json")
+}
+
+/// Bounded batch broker read for console usage screens.
+///
+/// Issues one refresh request per unique capability and returns the broker's
+/// immediate answer for each: cached or last-good quota plus the live phase.
+/// This performs no blocking join — one slow provider's probe runs
+/// broker-side and never delays the other accounts' reads or the calling
+/// thread. Freshness arrives over subsequent heartbeat polls, which re-request
+/// (and join) through the same path.
+///
+/// Per-account failures are reported alongside successes, never as a batch
+/// abort. Pass `force: true` only for an explicit operator refresh: it
+/// bypasses the broker success cadence, while shared rate-limit/`Retry-After`
+/// deadlines are still honored broker-side and active generations are joined
+/// rather than duplicated.
+#[must_use]
+pub fn request_usage_batch(
+    client: &UsageBrokerClient,
+    capabilities: impl IntoIterator<Item = UsageAccountCapability>,
+    force: bool,
+) -> Vec<(
+    UsageAccountCapability,
+    Result<UsageGenerationView, UsageCoordinationError>,
+)> {
+    let mut results = Vec::new();
+    for capability in capabilities
+        .into_iter()
+        .collect::<std::collections::BTreeSet<_>>()
+    {
+        let observed = client
+            .current(capability.clone())
+            .map_or(0, |view| view.generation);
+        let result = client.refresh(capability.clone(), observed, force);
+        results.push((capability, result));
+    }
+    results
 }
 
 const MAX_EVENT_LOG: usize = 4_096;

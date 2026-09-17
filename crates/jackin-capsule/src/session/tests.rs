@@ -1262,6 +1262,35 @@ fn pty_spawn_exit_pair_is_bounded_and_does_not_export_wait_errors() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn spawn_records_instance_identity_on_session() {
+    let (event_tx, _event_rx) = mpsc::unbounded_channel();
+    let mut command = CommandBuilder::new("/bin/sh");
+    command.arg("-c");
+    command.arg("exit 0");
+    let terminal = SessionTerminal {
+        rows: 24,
+        cols: 80,
+        row_arena: termpane::RowArena::default(),
+        default_fg: None,
+        default_bg: None,
+    };
+
+    let (session, _id) = Session::spawn(
+        "Claude · Work",
+        Some("claude-work".to_owned()),
+        Some("work".to_owned()),
+        None,
+        command,
+        terminal,
+        event_tx,
+    )
+    .expect("spawn real PTY session");
+    assert_eq!(session.label, "Claude · Work");
+    assert_eq!(session.agent.as_deref(), Some("claude-work"));
+    assert_eq!(session.account_id.as_deref(), Some("work"));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn conformance_wire_real_pty_spawn_stream_and_exit_exclude_private_content() {
     let testbed = jackin_otlp_testbed::Testbed::start().expect("start OTLP testbed");
     jackin_diagnostics::init_wire_test_export(
@@ -1284,6 +1313,7 @@ async fn conformance_wire_real_pty_spawn_stream_and_exit_exclude_private_content
     let (_session, session_id) = Session::spawn(
         "wire-private-tab-label",
         Some("codex".to_owned()),
+        Some("acc-codex".to_owned()),
         None,
         command,
         terminal,

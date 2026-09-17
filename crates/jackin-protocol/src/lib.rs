@@ -136,8 +136,8 @@ pub struct CapsuleConfig {
     #[serde(default)]
     /// Admitted launch instance config IDs, in launch order. Several
     /// instances may share one agent runtime; per-instance facts live in
-    /// `agents`, `models`, `auth_modes`, and the protected
-    /// [`AgentCredentialEnv`] envelope, all keyed by these same IDs.
+    /// `agents`, `models`, `auth_modes`, `accounts`, `labels`, and the
+    /// protected [`AgentCredentialEnv`] envelope, all keyed by these same IDs.
     pub instances: Vec<String>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     /// Agent runtime slug per admitted instance, keyed by instance config
@@ -152,6 +152,19 @@ pub struct CapsuleConfig {
     /// keyed by instance config ID.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub auth_modes: BTreeMap<String, String>,
+    /// Owning account ID per admitted instance, keyed by instance config ID.
+    /// The capsule stamps spawned sessions, tabs, and history records from
+    /// this map: `sync`/`ignore` instances have no credential-envelope entry,
+    /// so the envelope alone cannot answer which account owns an instance.
+    /// Identifiers only — never credential material.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub accounts: BTreeMap<String, String>,
+    /// Display label per admitted instance, keyed by instance config ID.
+    /// `{Agent} · {account name}` unless the operator overrode it. Tab/pane
+    /// chrome renders these so two same-agent instances stay distinguishable.
+    /// Names only — never secrets.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub labels: BTreeMap<String, String>,
     /// Claude plugin marketplaces declared by the role manifest. The capsule
     /// registers them at container start — the agent binary is mounted, not
     /// baked, so plugin setup moved out of the image build into runtime-setup.
@@ -266,6 +279,18 @@ impl CapsuleConfig {
     #[must_use]
     pub fn agent_for_instance(&self, instance: &str) -> Option<&str> {
         self.agents.get(instance).map(String::as_str)
+    }
+
+    /// Owning account ID for an instance config ID.
+    #[must_use]
+    pub fn account_for_instance(&self, instance: &str) -> Option<&str> {
+        self.accounts.get(instance).map(String::as_str)
+    }
+
+    /// Display label for an instance config ID.
+    #[must_use]
+    pub fn label_for_instance(&self, instance: &str) -> Option<&str> {
+        self.labels.get(instance).map(String::as_str)
     }
 
     /// Resolve a spawn target to its admitted instance config ID. An exact

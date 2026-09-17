@@ -35,6 +35,7 @@ fn configuration(agent: Agent, account: &str) -> AgentConfiguration {
         model: None,
         base_url: None,
         display_label: None,
+        invoked_via_wrapper: None,
     }
 }
 

@@ -1952,3 +1952,235 @@ fn open_detailed_upgrade_never_resurrects_or_rescans() {
     );
     assert_eq!(config.bootstrap, Some(crate::BootstrapState::initialized()));
 }
+
+fn minimal_config_file(paths: &JackinPaths) {
+    paths.ensure_base_dirs().unwrap();
+    std::fs::write(
+        &paths.config_file,
+        format!("version = \"{}\"\n", crate::CURRENT_CONFIG_VERSION),
+    )
+    .unwrap();
+}
+
+fn claude_credentials_fixture(home: &Path) {
+    std::fs::create_dir_all(home.join(".claude")).unwrap();
+    std::fs::write(
+        home.join(".claude/.credentials.json"),
+        r#"{"claudeAiOauth":{"accessToken":"fixture"}}"#,
+    )
+    .unwrap();
+}
+
+#[test]
+fn scan_for_accounts_imports_profiles_with_bootstrap_naming_and_dedupes() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    minimal_config_file(&paths);
+    claude_credentials_fixture(&paths.home_dir);
+
+    let mut editor = ConfigEditor::open(&paths).unwrap();
+    let report = editor
+        .scan_for_accounts_with(&paths.home_dir, &BTreeMap::new())
+        .unwrap();
+    assert!(report.added_accounts.contains(&"default-claude".to_owned()));
+    assert_eq!(report.added_accounts.len(), report.added.len());
+    let (_, account) = report
+        .added
+        .iter()
+        .find(|(id, _)| id == "default-claude")
+        .unwrap();
+    assert_eq!(account.name, "Claude default");
+    assert_eq!(account.provider, crate::AiProvider::Anthropic);
+    let config = editor.save().unwrap();
+    assert!(config.accounts.contains_key("default-claude"));
+
+    // Re-scan dedupes to a no-op: same IDs, same sources, nothing added.
+    let mut editor = ConfigEditor::open(&paths).unwrap();
+    let second = editor
+        .scan_for_accounts_with(&paths.home_dir, &BTreeMap::new())
+        .unwrap();
+    assert!(second.added_accounts.is_empty(), "{second:?}");
+}
+
+#[test]
+fn scan_for_accounts_reads_live_home_and_environment() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    minimal_config_file(&paths);
+    claude_credentials_fixture(&paths.home_dir);
+    let mut editor = ConfigEditor::open(&paths).unwrap();
+    // Ambient process environment may add further accounts; the fixture
+    // profile must always be among them.
+    let report = editor.scan_for_accounts().unwrap();
+    assert!(report.added_accounts.contains(&"default-claude".to_owned()));
+}
+
+#[test]
+fn scan_for_accounts_never_overwrites_operator_id_registrations() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    minimal_config_file(&paths);
+    claude_credentials_fixture(&paths.home_dir);
+
+    let mut editor = ConfigEditor::open(&paths).unwrap();
+    let mut operator = profile_account();
+    operator.name = "Operator".into();
+    operator.credential = crate::AccountCredential::Profile {
+        agent: Agent::Claude,
+        directory: temp.path().join("elsewhere"),
+        xdg_roots: None,
+    };
+    editor.upsert_account("default-claude", &operator).unwrap();
+    let report = editor
+        .scan_for_accounts_with(&paths.home_dir, &BTreeMap::new())
+        .unwrap();
+    assert!(!report.added_accounts.contains(&"default-claude".to_owned()));
+    let config = editor.save().unwrap();
+    assert_eq!(config.accounts["default-claude"].name, "Operator");
+}
+
+#[test]
+fn scan_for_accounts_skips_sources_registered_under_other_ids() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    minimal_config_file(&paths);
+    claude_credentials_fixture(&paths.home_dir);
+
+    let mut editor = ConfigEditor::open(&paths).unwrap();
+    // Same credential source as the discovered default, registered under
+    // an operator-chosen ID: the scan must skip, not error.
+    let mut renamed = profile_account();
+    renamed.credential = crate::AccountCredential::Profile {
+        agent: Agent::Claude,
+        directory: paths.home_dir.join(".claude"),
+        xdg_roots: None,
+    };
+    editor.upsert_account("mine", &renamed).unwrap();
+    let report = editor
+        .scan_for_accounts_with(&paths.home_dir, &BTreeMap::new())
+        .unwrap();
+    assert!(!report.added_accounts.contains(&"default-claude".to_owned()));
+}
+
+#[test]
+fn scan_for_accounts_imports_environment_references_without_values() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    minimal_config_file(&paths);
+
+    let oauth_var = jackin_core::CLAUDE_CODE_OAUTH_TOKEN_ENV_NAME;
+    let environment = BTreeMap::from([
+        ("ANTHROPIC_API_KEY".to_owned(), "live-secret".to_owned()),
+        (oauth_var.to_owned(), "live-token".to_owned()),
+    ]);
+    let mut editor = ConfigEditor::open(&paths).unwrap();
+    let report = editor
+        .scan_for_accounts_with(&paths.home_dir, &environment)
+        .unwrap();
+    for (id, expected) in [
+        ("anthropic-api-key", "$ANTHROPIC_API_KEY".to_owned()),
+        ("claude-oauth-token", format!("${oauth_var}")),
+    ] {
+        let (_, account) = report.added.iter().find(|(found, _)| found == id).unwrap();
+        let persisted = match &account.credential {
+            crate::AccountCredential::ApiKey { value, .. }
+            | crate::AccountCredential::OAuthToken { value, .. } => value.as_persisted_str(),
+            other @ crate::AccountCredential::Profile { .. } => {
+                panic!("unexpected credential for {id}: {other:?}")
+            }
+        };
+        assert_eq!(persisted, expected);
+    }
+    // Values never enter the report, even under Debug.
+    let dumped = format!("{report:?}");
+    assert!(!dumped.contains("live-secret"), "{dumped}");
+    assert!(!dumped.contains("live-token"), "{dumped}");
+    let config = editor.save().unwrap();
+    assert!(config.accounts.contains_key("anthropic-api-key"));
+}
+
+#[test]
+fn profile_scan_candidate_skips_agents_without_native_billing() {
+    for agent in [Agent::Omp, Agent::Hermes] {
+        let discovered = crate::DiscoveredAccount {
+            agent,
+            directory: "/tmp/store".into(),
+            evidence: crate::CredentialEvidence::File("/tmp/store/auth.json".into()),
+        };
+        assert!(profile_scan_candidate(&discovered).is_none());
+    }
+    let discovered = crate::DiscoveredAccount {
+        agent: Agent::Claude,
+        directory: "/tmp/claude".into(),
+        evidence: crate::CredentialEvidence::File("/tmp/claude/.credentials.json".into()),
+    };
+    let (id, account) = profile_scan_candidate(&discovered).unwrap();
+    assert_eq!(id, "default-claude");
+    assert_eq!(account.name, "Claude default");
+}
+
+#[test]
+fn apply_zshrc_plan_seeds_verified_directories_and_op_refs() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    minimal_config_file(&paths);
+    let override_dir = temp.path().join("claude-override");
+    std::fs::create_dir_all(&override_dir).unwrap();
+    std::fs::write(
+        override_dir.join(".credentials.json"),
+        r#"{"claudeAiOauth":{"accessToken":"fixture"}}"#,
+    )
+    .unwrap();
+    let source = format!(
+        "CLAUDE_CONFIG_DIR={}\nANTHROPIC_API_KEY=$(op read op://vault/item/field)\n",
+        override_dir.display()
+    );
+    let plan = crate::import_plan(&crate::parse_zshrc_source(&source));
+    assert_eq!(plan.directories.len(), 1);
+    assert_eq!(plan.op_refs.len(), 1);
+
+    let mut editor = ConfigEditor::open(&paths).unwrap();
+    let report = editor.apply_zshrc_plan(&plan).unwrap();
+    assert!(report.added_accounts.contains(&"default-claude".to_owned()));
+    assert!(
+        report
+            .added_accounts
+            .contains(&"anthropic-api-key".to_owned())
+    );
+    let (_, key) = report
+        .added
+        .iter()
+        .find(|(id, _)| id == "anthropic-api-key")
+        .unwrap();
+    assert!(matches!(
+        key.credential,
+        crate::AccountCredential::ApiKey {
+            value: EnvValue::OpRef(_),
+            ..
+        }
+    ));
+    let config = editor.save().unwrap();
+    assert!(config.accounts.contains_key("default-claude"));
+    assert!(config.accounts.contains_key("anthropic-api-key"));
+}
+
+#[test]
+fn apply_zshrc_plan_skips_unverified_directories_and_unknown_vars() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    minimal_config_file(&paths);
+    let empty_dir = temp.path().join("empty-override");
+    std::fs::create_dir_all(&empty_dir).unwrap();
+    let source = format!(
+        "CLAUDE_CONFIG_DIR={}\nWIDGET_API_KEY=$(op read op://vault/item/field)\n",
+        empty_dir.display()
+    );
+    let plan = crate::import_plan(&crate::parse_zshrc_source(&source));
+    assert_eq!(plan.directories.len(), 1);
+    assert_eq!(plan.op_refs.len(), 1);
+
+    let mut editor = ConfigEditor::open(&paths).unwrap();
+    let report = editor.apply_zshrc_plan(&plan).unwrap();
+    assert!(report.added_accounts.is_empty(), "{report:?}");
+    assert!(report.issues.is_empty(), "{report:?}");
+}

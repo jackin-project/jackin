@@ -16,8 +16,8 @@ use super::super::launch_phases::{
 use super::super::{emit_auth_provision_launch_plan, purge_or_mark_clean_exited};
 use super::LaunchCore;
 use helpers::{
-    emit_auth_breadcrumbs, provision_agents_for_instances, resolve_provision_inputs, reuse_sentinel,
-    sidecar_replenish, workspace_launch_config,
+    emit_auth_breadcrumbs, provision_agents_for_instances, resolve_provision_inputs,
+    reuse_sentinel, sidecar_replenish, workspace_launch_config,
 };
 use jackin_core::{CommandRunner, ContainerId, WorkspaceName};
 use jackin_docker::docker_client::DockerApi;
@@ -28,8 +28,8 @@ use std::pin::Pin;
 
 use super::super::super::trust::seed_codex_project_trust;
 use crate::instance::{
-    DockerResources, InstanceManifest, InstanceStatus, NewInstanceManifest, PrepareResolvers,
-    RoleState,
+    AdmittedInstance, DockerResources, InstanceManifest, InstanceStatus, NewInstanceManifest,
+    PrepareResolvers, RoleState,
 };
 use crate::runtime::attach::{
     AgentSessionInventory, ContainerState, inspect_agent_sessions,
@@ -657,6 +657,7 @@ where
     let provision =
         resolve_provision_inputs(config, configured.workspace_opt.as_ref(), role_key, opts)?;
     let instances = provision.instances;
+    let admitted = instances.clone();
     let credentials = provision.credentials;
     let role_state_future = async move {
         jackin_telemetry::spawn::joined_blocking(move || {
@@ -763,6 +764,7 @@ where
             github_mode: configured.github_mode,
             github_env_decls: configured.github_env_decls,
         },
+        instances: admitted,
     })
 }
 
@@ -1273,6 +1275,21 @@ where
         early_sidecar_result,
     )
     .await?;
+    // Record the admitted instances on the manifest now that resolution
+    // succeeded, and persist immediately: all downstream paths (docker,
+    // detached, apple-container) read the same manifest file.
+    prepared
+        .instance_manifest
+        .set_admitted_instances(trust.instances.iter().map(AdmittedInstance::from));
+    if let Err(error) = super::super::super::write_instance_status(
+        launch.paths,
+        &prepared.container_state,
+        &mut prepared.instance_manifest,
+        InstanceStatus::Active,
+    ) {
+        launch.initialized.cleanup.run(launch.docker).await;
+        return Err(error);
+    }
     let workspace = materialize_workspace_phase(
         MaterializeWorkspace {
             paths: launch.paths,
@@ -1403,7 +1420,7 @@ where
         git_pull_join,
         prepared,
         cleanup,
-        trust: TrustSeeded { environment },
+        trust: TrustSeeded { environment, .. },
     } = input;
     emit_auth_breadcrumbs(
         agent,

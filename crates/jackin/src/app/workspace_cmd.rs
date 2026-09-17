@@ -52,6 +52,8 @@ struct WorkspaceEditParams {
     no_keep_awake: bool,
     git_pull: bool,
     no_git_pull: bool,
+    default_launch: Vec<String>,
+    clear_default_launch: bool,
 }
 
 struct PreparedWorkspaceEdit {
@@ -118,6 +120,8 @@ pub(super) async fn handle(
             no_keep_awake,
             git_pull,
             no_git_pull,
+            default_launch,
+            clear_default_launch,
         } => {
             handle_workspace_edit(
                 config,
@@ -144,6 +148,8 @@ pub(super) async fn handle(
                     no_keep_awake,
                     git_pull,
                     no_git_pull,
+                    default_launch,
+                    clear_default_launch,
                 },
             )
             .await
@@ -519,6 +525,14 @@ fn summarize_workspace_edit(
             if v { "enabled" } else { "disabled" }
         ));
     }
+    if params.clear_default_launch {
+        changes.push("cleared default launch (inherit global)".to_owned());
+    } else if !params.default_launch.is_empty() {
+        changes.push(format!(
+            "default launch → {}",
+            params.default_launch.join(", ")
+        ));
+    }
     changes
 }
 
@@ -631,6 +645,13 @@ async fn apply_workspace_edit(
             mount_isolation_overrides: params.mount_isolation,
             keep_awake_enabled: keep_awake_change,
             git_pull_on_entry_enabled: git_pull_change,
+            default_launch: if params.clear_default_launch {
+                Some(None)
+            } else if params.default_launch.is_empty() {
+                None
+            } else {
+                Some(Some(params.default_launch))
+            },
         },
     )?;
     editor.save()?;

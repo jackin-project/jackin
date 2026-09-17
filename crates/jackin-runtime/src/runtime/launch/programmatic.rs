@@ -19,7 +19,7 @@
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 
-use jackin_config::AppConfig;
+use jackin_config::{AgentConfiguration, AppConfig};
 use jackin_core::{Agent, ReasoningEffort, RoleSelector};
 
 /// Identity of the instance a programmatic launch claimed.
@@ -318,11 +318,51 @@ pub fn lane_agent_env(
     out
 }
 
-/// Make an ephemeral account binding, preserving workspace admission checks.
+/// Free configuration id for a synthesized one-launch pick.
+///
+/// Persisted configuration ids are validated slugs and can never contain
+/// `@`, so `{account}@{agent}` cannot collide with them; the suffix loop
+/// only covers hand-built configs that skipped validation.
+fn free_ephemeral_config_id(selected: &AppConfig, agent: Agent, id: &str) -> String {
+    let base = format!("{id}@{}", agent.slug());
+    if selected
+        .agent_configurations
+        .get(&base)
+        .is_none_or(|existing| existing.agent == agent && existing.account == id)
+    {
+        return base;
+    }
+    let mut counter = 2_u32;
+    while selected
+        .agent_configurations
+        .contains_key(&format!("{base}-{counter}"))
+    {
+        counter += 1;
+    }
+    format!("{base}-{counter}")
+}
+
+/// Make an ephemeral account selection, preserving workspace admission checks.
+///
+/// Records a one-launch pick for (`agent`, `id`) on a cloned config and
+/// validates the result through `jackin_config::resolve_launch` — the same
+/// resolver the launch pipeline provisions from — so the console pre-check
+/// and the runtime cannot admit different sets.
+///
+/// Authorization (the workspace allowlist) and admission (the
+/// `default_launch` set) stay distinct: the allowlist check rejects foreign
+/// accounts up front, while the launch-set check rejects picks the
+/// configured defaults do not admit instead of silently substituting
+/// another account. When no default is configured at any scope, the pick is
+/// synthesized into an ephemeral configuration plus a one-entry role
+/// (saved workspace) or global (ad-hoc) default, so the multi-instance
+/// pipeline provisions exactly the picked account instead of failing with
+/// ambiguity. The supplied configuration is never mutated.
 ///
 /// # Errors
-/// Rejects unknown accounts, incompatible agents, and accounts outside the
-/// workspace allowlist. Does not mutate the supplied configuration.
+/// Rejects unknown accounts, incompatible agents, accounts outside the
+/// workspace allowlist, picks the configured defaults do not admit, and
+/// invalid `default_launch` sets.
 pub fn with_account_selection(
     config: &AppConfig,
     agent: Agent,
@@ -339,6 +379,10 @@ pub fn with_account_selection(
         "account {id:?} does not support {agent}"
     );
     let mut selected = config.clone();
+    let ephemeral_id = selected
+        .effective_default_launch(workspace, role)
+        .is_none()
+        .then(|| free_ephemeral_config_id(&selected, agent, id));
     if let Some(workspace) = workspace {
         let ws = selected
             .workspaces
@@ -348,15 +392,39 @@ pub fn with_account_selection(
             ws.accounts.iter().any(|allowed| allowed == id),
             "account {id:?} is not assigned to workspace {workspace}"
         );
-        ws.roles
-            .entry(role.to_owned())
-            .or_default()
+        let override_config = ws.roles.entry(role.to_owned()).or_default();
+        override_config
             .account_bindings
             .insert(agent, id.to_owned());
+        if let Some(config_id) = ephemeral_id.clone() {
+            override_config.default_launch = Some(vec![config_id]);
+        }
     } else {
         selected.account_bindings.insert(agent, id.to_owned());
+        if let Some(config_id) = ephemeral_id.clone() {
+            selected.default_launch = Some(vec![config_id]);
+        }
     }
-    jackin_config::resolve_account(&selected, agent, workspace, role)?;
+    if let Some(config_id) = ephemeral_id {
+        selected.agent_configurations.insert(
+            config_id,
+            AgentConfiguration {
+                agent,
+                account: id.to_owned(),
+                model: None,
+                base_url: None,
+                display_label: None,
+                invoked_via_wrapper: None,
+            },
+        );
+    }
+    let instances = jackin_config::resolve_launch(&selected, workspace, role, None)?;
+    anyhow::ensure!(
+        instances
+            .iter()
+            .any(|instance| instance.agent == agent && instance.account_id == id),
+        "account {id:?} is not admitted for {agent} by the configured default launch set"
+    );
     Ok(selected)
 }
 

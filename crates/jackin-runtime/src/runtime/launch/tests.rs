@@ -2878,6 +2878,7 @@ trusted = true
             model: None,
             base_url: None,
             display_label: None,
+            invoked_via_wrapper: None,
         },
     );
     config.default_launch = Some(vec!["codex-main".into()]);
@@ -7409,6 +7410,7 @@ trusted = true
             model: None,
             base_url: None,
             display_label: None,
+            invoked_via_wrapper: None,
         },
     );
     config.default_launch = Some(vec!["claude-main".into()]);

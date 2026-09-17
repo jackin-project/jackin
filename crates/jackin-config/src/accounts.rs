@@ -156,6 +156,21 @@ pub struct XdgRoots {
     /// Cache home (`XDG_CACHE_HOME` equivalent).
     pub cache: PathBuf,
 }
+/// Shell-wrapper invocation identifying how an agent is launched.
+///
+/// Value type for the agent-invoked-via-wrapper schema home on
+/// [`AgentConfiguration`]: the wiring lane stores the extracted call-site spec
+/// there so launches can reproduce the wrapper invocation.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WrapperSpec {
+    /// Wrapper identity: shell function or helper command name.
+    pub identity: String,
+    /// Arguments passed to the wrapper at the call site, in order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub args: Vec<String>,
+}
+
 impl std::fmt::Debug for AccountCredential {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -597,6 +612,11 @@ pub struct AgentConfiguration {
     /// Explicit instance label; default derives `{Agent} · {account name}`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub display_label: Option<String>,
+    /// Shell wrapper this instance is invoked through, extracted from
+    /// wrapper call sites in shell configuration. Launches reproduce the
+    /// wrapper invocation instead of calling the agent binary directly.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub invoked_via_wrapper: Option<WrapperSpec>,
 }
 
 impl AgentConfiguration {

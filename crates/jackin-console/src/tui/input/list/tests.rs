@@ -703,11 +703,14 @@ fn live_snapshot() -> jackin_protocol::InstanceSnapshot {
     jackin_protocol::InstanceSnapshot {
         tabs: vec![jackin_protocol::control::TabSnapshot {
             label: "Codex".into(),
+            instance: Some("codex-main".into()),
+            account_id: Some("acc-1".into()),
             focused_pane: 1,
             panes: vec![jackin_protocol::control::PaneSnapshot {
                 session_id: 1,
                 label: "Codex".into(),
                 agent: Some("codex".into()),
+                account_id: Some("acc-1".into()),
                 state: jackin_protocol::control::AgentState::Idle,
                 agent_status_report: None,
             }],

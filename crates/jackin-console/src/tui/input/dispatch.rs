@@ -52,7 +52,7 @@ pub fn handle_key(
     key: KeyEvent,
     validate_auth_source_folder: &ValidateAuthSourceFolder,
 ) -> anyhow::Result<InputOutcome> {
-    if state.usage_screen.is_some() {
+    if state.usage.visible {
         crate::tui::screens::usage::handle_key(state, key);
         return Ok(InputOutcome::Continue);
     }

@@ -9,6 +9,7 @@ fn record(session: u64, state: AgentState, kind: SessionEventKind) -> SessionEve
         seq: 0,
         session,
         agent: Some("claude".to_owned()),
+        account_id: Some("acc-1".to_owned()),
         state,
         last_output_ms: Some(10),
         last_input_ms: Some(20),

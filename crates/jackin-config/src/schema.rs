@@ -19,6 +19,7 @@ use jackin_core::{DockerGrants, DockerSecurityProfile};
 use serde::{Deserialize, Serialize};
 
 use crate::ConfigError;
+use crate::accounts::AgentConfiguration;
 use crate::auth::GithubAuthConfig;
 use crate::versions::current_workspace_version;
 
@@ -314,6 +315,48 @@ impl WorkspaceConfig {
     /// Returns the workspace's selected agent, defaulting to Claude.
     pub fn resolved_agent(&self) -> Agent {
         self.default_agent.unwrap_or(Agent::Claude)
+    }
+
+    /// Validate one `default_launch` list for editor surfacing.
+    ///
+    /// Returns one message per invalid entry (empty means valid): unknown
+    /// configuration IDs, duplicates, and — for workspace/role scopes —
+    /// configurations whose account is outside the workspace allowlist.
+    /// Pass `allowlist: None` for the global scope: authorization does not
+    /// apply there (the resolver filters inherited global candidates
+    /// instead of rejecting them).
+    ///
+    /// Authorization (the allowlist) and admission (set membership) stay
+    /// distinct: an unknown ID is never reported as unauthorized, and an
+    /// unauthorized account is never reported as unknown. Messages mirror
+    /// `AppConfig::validate_accounts` verbatim so editor previews agree
+    /// with save-time validation; keep them in lockstep.
+    #[must_use]
+    pub fn validate_default_launch_list(
+        ids: &[String],
+        allowlist: Option<&[String]>,
+        configurations: &BTreeMap<String, AgentConfiguration>,
+    ) -> Vec<String> {
+        use std::collections::BTreeSet;
+        let mut errors = Vec::new();
+        let mut seen = BTreeSet::new();
+        for id in ids {
+            if !seen.insert(id) {
+                errors.push(format!("duplicate launch configuration {id:?}"));
+                continue;
+            }
+            let Some(config) = configurations.get(id) else {
+                errors.push(format!("unknown agent configuration {id:?}"));
+                continue;
+            };
+            if allowlist.is_some_and(|ids| !ids.contains(&config.account)) {
+                errors.push(format!(
+                    "account {:?} is not assigned to this workspace",
+                    config.account
+                ));
+            }
+        }
+        errors
     }
 }
 
@@ -740,6 +783,10 @@ pub struct WorkspaceEdit {
     pub keep_awake_enabled: Option<bool>,
     /// Git pull-on-entry toggle when `Some`.
     pub git_pull_on_entry_enabled: Option<bool>,
+    /// `None` = no change; `Some(None)` clears (inherit global default);
+    /// `Some(Some(ids))` sets the workspace launch admission set. Every ID
+    /// must name an existing agent configuration or the edit is rejected.
+    pub default_launch: Option<Option<Vec<String>>>,
 }
 
 // ─── Git config ───────────────────────────────────────────────────────────────

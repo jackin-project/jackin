@@ -230,6 +230,12 @@ pub fn launch_with_committed_agent(
 /// asymmetry: role/workspace bindings that name an account outside the
 /// workspace allowlist are hard errors, while an unauthorized global binding
 /// is silently filtered (a global default can never widen workspace access).
+///
+/// This is the legacy regime: bindings apply only when no `default_launch`
+/// is configured at any scope. A configured default set is authoritative
+/// admission and overrides every binding (see [`select_launch_account`]);
+/// defaults-aware callers gate on
+/// `crate::services::launch::admitted_account_choices` first.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AgentDefaultResolution {
     /// A binding resolved to a registered, authorized, agent-compatible
@@ -253,6 +259,10 @@ pub enum AgentDefaultResolution {
 /// `roles` map). Unknown workspaces report `Invalid`: the launch paths
 /// resolve the workspace first, so this only fires on concurrent-delete
 /// races.
+///
+/// Legacy regime only: this lookup deliberately ignores `default_launch`.
+/// Defaults-aware callers ([`select_launch_account`]) consult the admitted
+/// set first and reach this only when no default is configured.
 #[must_use]
 pub fn resolve_agent_default(
     config: &AppConfig,
@@ -312,19 +322,34 @@ pub enum LaunchAccountSelection {
 
 /// Decide the account for a committed (role + agent) launch.
 ///
-/// A valid binding default (see [`resolve_agent_default`]) always wins, so a
-/// configured default with several eligible accounts launches without a
-/// picker. Without a default, a sole eligible candidate launches directly and
-/// several open the picker in stable id order. Zero eligible candidates is an
-/// actionable error — an agent launch never proceeds with no account.
+/// Two regimes, gated by whether a `default_launch` is configured at any
+/// scope (role → workspace → global, via
+/// `crate::services::launch::admitted_account_choices`):
+///
+/// - Defaults regime: the admitted set resolves through
+///   `jackin_config::resolve_launch` — the same resolver the runtime
+///   provisions from — filtered to `agent`. A single admitted account
+///   launches directly (fast start honors valid defaults even with
+///   several accounts); several open the picker in stable id order; none
+///   is an actionable error. Any resolver error fails atomically: an
+///   explicit default never falls back to bindings or the eligible list,
+///   and a binding never overrides the admitted set, so a launch never
+///   silently substitutes another account or an ambient login.
+/// - Legacy regime (no default anywhere): a valid binding default (see
+///   [`resolve_agent_default`]) always wins, so a configured binding with
+///   several eligible accounts launches without a picker. Without a
+///   binding, a sole eligible candidate launches directly and several open
+///   the picker in stable id order. Zero eligible candidates is an
+///   actionable error — an agent launch never proceeds with no account.
 ///
 /// Like `resolve_account`, a dangling workspace-allowlist id is a config
 /// error even when other candidates exist: it is reported, never skipped.
 ///
 /// # Errors
 ///
-/// Returns an error for an invalid explicit binding, an unknown workspace, a
-/// dangling allowlist id, or zero eligible candidates.
+/// Returns an error for an invalid configured default, an agent the
+/// defaults admit nothing for, an invalid explicit binding, an unknown
+/// workspace, a dangling allowlist id, or zero eligible candidates.
 pub fn select_launch_account(
     config: &AppConfig,
     workspace: Option<&jackin_core::WorkspaceName>,
@@ -332,6 +357,21 @@ pub fn select_launch_account(
     agent: jackin_core::Agent,
     mut eligible: Vec<crate::services::launch::AccountChoice>,
 ) -> anyhow::Result<LaunchAccountSelection> {
+    if let Some(mut admitted) =
+        crate::services::launch::admitted_account_choices(config, workspace, role, agent)?
+    {
+        return match admitted.len() {
+            0 => {
+                let scope = match workspace {
+                    Some(name) => format!("workspace {name}"),
+                    None => "this launch".to_owned(),
+                };
+                Err(anyhow::anyhow!(no_admitted_instance_message(agent, scope)))
+            }
+            1 => Ok(LaunchAccountSelection::Launch(admitted.swap_remove(0).id)),
+            _ => Ok(LaunchAccountSelection::Pick(admitted)),
+        };
+    }
     match resolve_agent_default(config, workspace, role, agent) {
         AgentDefaultResolution::Launch(id) => return Ok(LaunchAccountSelection::Launch(id)),
         AgentDefaultResolution::Invalid(message) => return Err(anyhow::anyhow!(message)),
@@ -382,6 +422,21 @@ pub fn no_eligible_account_message(
 ) -> String {
     format!(
         "No account can authenticate {agent} in {scope}.\n\nAdd an account that supports {agent}, or set a default account binding for it."
+    )
+}
+
+/// Actionable error text for the admitted-but-empty case: a `default_launch`
+/// is configured, but the admitted set holds no instance for `agent`.
+/// Points at both remedies (admit a configuration for the agent, or clear
+/// the default to fall back to account bindings). `scope` is preformatted
+/// by the caller, like [`no_eligible_account_message`].
+#[must_use]
+pub fn no_admitted_instance_message(
+    agent: jackin_core::Agent,
+    scope: impl std::fmt::Display,
+) -> String {
+    format!(
+        "No launch configuration admits {agent} in {scope}.\n\nAdd a {agent} configuration to default_launch, or clear the default to fall back to account bindings."
     )
 }
 

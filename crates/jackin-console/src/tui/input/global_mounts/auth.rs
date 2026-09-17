@@ -81,6 +81,20 @@ pub(super) fn handle_auth_key(state: &mut ManagerState<'_>, key: KeyEvent) {
         }
         return;
     }
+    if matches!(key.code, KeyCode::Enter)
+        && settings_update::settings_auth_scan_row_selected(
+            settings.auth.pending.len(),
+            settings.auth.selected,
+        )
+    {
+        dispatch_manager(
+            state,
+            ManagerMessage::Settings(
+                crate::tui::screens::settings::message::SettingsMessage::RequestAccountScan,
+            ),
+        );
+        return;
+    }
     let plan = settings_update::settings_auth_key_plan(key.code, settings.is_dirty(), false, true);
     match plan {
         SettingsAuthKeyPlan::ClearKind => {

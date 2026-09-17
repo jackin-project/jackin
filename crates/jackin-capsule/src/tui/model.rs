@@ -210,10 +210,19 @@ pub fn visible_agent_state_from_protocol(state: AgentState) -> VisibleAgentState
 }
 
 /// Human-readable label for an agent/shell visible in tab and pane chrome.
+///
+/// The instance label (`{Agent} · {account name}` unless overridden) wins
+/// when the spawn resolved one, so two same-agent instances stay
+/// distinguishable; without it (shells, stale configs) this falls back to
+/// the slug-derived title.
 pub(crate) fn visible_agent_label(
+    instance_label: Option<&str>,
     agent_slug: Option<&str>,
     provider_label: Option<&str>,
 ) -> String {
+    if let Some(label) = instance_label {
+        return label.to_owned();
+    }
     let Some(slug) = agent_slug else {
         return "Shell".to_owned();
     };
@@ -288,15 +297,18 @@ pub(crate) enum VisibleTabPaneKind {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct VisibleTabPaneFacts<'a> {
+    pub(crate) instance_label: Option<&'a str>,
     pub(crate) agent_slug: Option<&'a str>,
     pub(crate) provider_label: Option<&'a str>,
 }
 
 pub(crate) fn visible_tab_pane_kind(facts: VisibleTabPaneFacts<'_>) -> VisibleTabPaneKind {
     match facts.agent_slug {
-        Some(agent) => {
-            VisibleTabPaneKind::Agent(visible_agent_label(Some(agent), facts.provider_label))
-        }
+        Some(agent) => VisibleTabPaneKind::Agent(visible_agent_label(
+            facts.instance_label,
+            Some(agent),
+            facts.provider_label,
+        )),
         None => VisibleTabPaneKind::Shell,
     }
 }

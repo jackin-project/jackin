@@ -187,6 +187,7 @@ pub enum ConsoleManagerMessage<
     DismissInlineAgentPicker,
     DismissInlineAccountPicker,
     DismissLaunchAccountPicker,
+    Settings(crate::tui::screens::settings::message::SettingsMessage),
 }
 
 #[derive(Debug)]

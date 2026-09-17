@@ -35,8 +35,10 @@ pub enum Action {
         /// explicit error instead of silently falling back to `--help`.
         explicit: bool,
     },
-    /// Run a non-console subcommand.
-    RunCommand(Command),
+    /// Run a non-console subcommand. Boxed: `Command` is the largest
+    /// variant by far (load/account arg structs), and the action enum
+    /// crosses the dispatch boundary by value.
+    RunCommand(Box<Command>),
     /// Print top-level `--help` and exit 0. This is the silent fallback
     /// chosen for bare `jackin` on a non-interactive stdout.
     PrintHelpAndExit,
@@ -83,7 +85,7 @@ pub fn classify(cli: Cli, tui_capable: bool) -> Action {
             }
         }
         Some(Command::Help { command }) => Action::PrintHelp { command },
-        Some(other) => Action::RunCommand(other),
+        Some(other) => Action::RunCommand(Box::new(other)),
         None => {
             if tui_capable {
                 Action::RunConsole {

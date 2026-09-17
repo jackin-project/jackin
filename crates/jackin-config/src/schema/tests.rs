@@ -154,6 +154,175 @@ fn heal_report_notice_lines_name_mounts_and_remediation() {
     );
 }
 
+fn launch_configurations() -> BTreeMap<String, AgentConfiguration> {
+    BTreeMap::from([
+        (
+            "claude-a".to_owned(),
+            AgentConfiguration {
+                agent: Agent::Claude,
+                account: "a-claude".into(),
+                model: None,
+                base_url: None,
+                display_label: None,
+                invoked_via_wrapper: None,
+            },
+        ),
+        (
+            "claude-z".to_owned(),
+            AgentConfiguration {
+                agent: Agent::Claude,
+                account: "z-claude".into(),
+                model: None,
+                base_url: None,
+                display_label: None,
+                invoked_via_wrapper: None,
+            },
+        ),
+        (
+            "claude-out".to_owned(),
+            AgentConfiguration {
+                agent: Agent::Claude,
+                account: "outside".into(),
+                model: None,
+                base_url: None,
+                display_label: None,
+                invoked_via_wrapper: None,
+            },
+        ),
+    ])
+}
+
+#[test]
+fn validate_default_launch_list_accepts_valid_lists() {
+    let configurations = launch_configurations();
+    let allowlist = vec!["a-claude".to_owned(), "z-claude".to_owned()];
+    assert!(
+        WorkspaceConfig::validate_default_launch_list(
+            &["claude-a".to_owned(), "claude-z".to_owned()],
+            Some(&allowlist),
+            &configurations,
+        )
+        .is_empty()
+    );
+    assert!(
+        WorkspaceConfig::validate_default_launch_list(&[], Some(&allowlist), &configurations)
+            .is_empty(),
+        "an explicit empty list (shell-only) is valid"
+    );
+}
+
+#[test]
+fn validate_default_launch_list_reports_each_invalid_entry() {
+    let configurations = launch_configurations();
+    let allowlist = vec!["a-claude".to_owned(), "z-claude".to_owned()];
+    let errors = WorkspaceConfig::validate_default_launch_list(
+        &[
+            "claude-a".to_owned(),
+            "ghost".to_owned(),
+            "claude-a".to_owned(),
+            "claude-out".to_owned(),
+        ],
+        Some(&allowlist),
+        &configurations,
+    );
+    assert_eq!(errors.len(), 3);
+    assert!(
+        errors
+            .iter()
+            .any(|error| error.contains("unknown agent configuration")),
+        "{errors:?}"
+    );
+    assert!(
+        errors
+            .iter()
+            .any(|error| error.contains("duplicate launch configuration")),
+        "{errors:?}"
+    );
+    assert!(
+        errors.iter().any(|error| error.contains("not assigned")),
+        "{errors:?}"
+    );
+    // Authorization and admission stay distinct: the unknown id is never
+    // reported as unauthorized, and vice versa.
+    assert!(
+        errors
+            .iter()
+            .filter(|error| error.contains("ghost"))
+            .all(|error| !error.contains("not assigned")),
+        "{errors:?}"
+    );
+}
+
+#[test]
+fn validate_default_launch_list_skips_authorization_for_global_scope() {
+    let configurations = launch_configurations();
+    assert!(
+        WorkspaceConfig::validate_default_launch_list(
+            &["claude-out".to_owned()],
+            None,
+            &configurations,
+        )
+        .is_empty(),
+        "global candidates filter by authorization at resolve time instead"
+    );
+    assert_eq!(
+        WorkspaceConfig::validate_default_launch_list(&["ghost".to_owned()], None, &configurations)
+            .len(),
+        1
+    );
+}
+
+#[test]
+fn validate_default_launch_list_matches_save_time_validation() {
+    // Editor previews must agree with `AppConfig::validate_accounts`:
+    // whatever it rejects, the surfacing helper flags with the same words.
+    use crate::{AccountConfig, AccountCredential};
+    use jackin_core::EnvValue;
+    let configurations = launch_configurations();
+    let allowlist = vec!["a-claude".to_owned()];
+    let mut config = crate::AppConfig::default();
+    for id in ["a-claude", "z-claude", "outside"] {
+        config.accounts.insert(
+            id.into(),
+            AccountConfig {
+                enabled: true,
+                name: id.into(),
+                provider: crate::AiProvider::Anthropic,
+                credential: AccountCredential::ApiKey {
+                    value: EnvValue::Plain("test-key".into()),
+                    base_url: None,
+                    model: None,
+                },
+            },
+        );
+    }
+    config.workspaces.insert(
+        "demo".into(),
+        WorkspaceConfig {
+            workdir: "/demo".into(),
+            accounts: allowlist.clone(),
+            default_launch: Some(vec!["claude-out".into()]),
+            ..Default::default()
+        },
+    );
+    for (id, configuration) in &configurations {
+        config
+            .agent_configurations
+            .insert(id.clone(), configuration.clone());
+    }
+    let save_error = config.validate_accounts().unwrap_err().to_string();
+    let preview = WorkspaceConfig::validate_default_launch_list(
+        &["claude-out".to_owned()],
+        Some(&allowlist),
+        &configurations,
+    );
+    assert_eq!(preview.len(), 1);
+    assert!(
+        save_error.contains(&preview[0]),
+        "save-time {save_error:?} must contain the preview {preview:?}"
+    );
+}
+
 #[test]
 fn launch_cache_roots_cover_dot_cache_and_platform_dir() {
     let base = directories::BaseDirs::new().unwrap();

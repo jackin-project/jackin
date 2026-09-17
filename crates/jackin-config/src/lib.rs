@@ -45,11 +45,13 @@ pub use accounts::discovery::{
     discover_environment_oauth_accounts,
 };
 pub use accounts::zshrc::{
-    UnresolvedEntry, UnresolvedKind, ZshrcImport, is_account_relevant, parse_zshrc_source,
+    DirectoryCandidate, ModelProfile, OpReadCandidate, UnresolvedEntry, UnresolvedKind,
+    WrapperCallSite, ZshrcImport, ZshrcImportPlan, import_plan, is_account_relevant,
+    parse_zshrc_source,
 };
 pub use accounts::{
     AccountConfig, AccountCredential, AgentConfiguration, AiProvider, BOOTSTRAP_VERSION,
-    BootstrapState, ResolvedInstance, XdgRoots, resolve_account, resolve_launch,
+    BootstrapState, ResolvedInstance, WrapperSpec, XdgRoots, resolve_account, resolve_launch,
     validate_account_id,
 };
 pub use error::{ConfigError, ConfigResult};

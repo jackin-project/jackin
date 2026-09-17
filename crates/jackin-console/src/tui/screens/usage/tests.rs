@@ -164,10 +164,16 @@ fn heartbeat_due_only_after_first_completion() {
 fn poll_refresh_delivers_ready_outcome_and_clears_in_flight() {
     let mut state = UsageScreenState::open_with_snapshot(Vec::new(), None);
     assert!(!state.refresh_in_flight());
-    state.begin_refresh(crate::tui::runtime::ready_blocking_subscription(Ok((
-        vec![test_account("openai", "a", "work")],
-        Some("n".to_owned()),
-    ))));
+    let plan = state
+        .next_refresh_plan_if_due(Instant::now())
+        .expect("open marks a refresh due");
+    state.begin_refresh(crate::tui::runtime::ready_blocking_subscription((
+        plan.generation,
+        Ok((
+            vec![test_account("openai", "a", "work")],
+            Some("n".to_owned()),
+        )),
+    )));
     assert!(state.refresh_in_flight());
     let outcome = state.poll_refresh().expect("ready outcome");
     let (accounts, notice) = outcome.expect("ok outcome");
@@ -177,18 +183,94 @@ fn poll_refresh_delivers_ready_outcome_and_clears_in_flight() {
 }
 
 #[test]
+fn poll_refresh_drops_stale_generations() {
+    let mut state = UsageScreenState::open_with_snapshot(Vec::new(), None);
+    let plan = state
+        .next_refresh_plan_if_due(Instant::now())
+        .expect("open marks a refresh due");
+    state.begin_refresh(crate::tui::runtime::ready_blocking_subscription((
+        plan.generation.wrapping_add(1),
+        Ok((vec![test_account("openai", "a", "work")], None)),
+    )));
+    assert!(state.poll_refresh().is_none(), "stale outcome dropped");
+    assert!(!state.refresh_in_flight());
+    assert!(state.accounts.is_empty());
+}
+
+#[test]
+fn refresh_plan_joins_in_flight_work_without_queueing() {
+    let mut state = UsageScreenState::open_with_snapshot(Vec::new(), None);
+    let plan = state
+        .next_refresh_plan_if_due(Instant::now())
+        .expect("open marks a refresh due");
+    assert!(!plan.force);
+    state.begin_refresh(crate::tui::runtime::ready_blocking_subscription((
+        plan.generation,
+        Ok((Vec::new(), None)),
+    )));
+    state.refresh_due = true;
+    state.force_refresh_pending = true;
+    assert!(
+        state.next_refresh_plan_if_due(Instant::now()).is_none(),
+        "in-flight refresh is joined, never duplicated"
+    );
+    assert!(!state.refresh_due);
+}
+
+#[test]
+fn refresh_plan_carries_force_only_for_manual_refresh() {
+    let mut state = UsageScreenState::open_with_snapshot(Vec::new(), None);
+    let open = state
+        .next_refresh_plan_if_due(Instant::now())
+        .expect("open marks a refresh due");
+    assert!(!open.force, "open subscribes without forcing");
+    state.apply_refresh(Vec::new(), None, Instant::now());
+    assert!(
+        state.next_refresh_plan_if_due(Instant::now()).is_none(),
+        "fresh completion is not due"
+    );
+
+    state.refresh_due = true;
+    state.force_refresh_pending = true;
+    let manual = state
+        .next_refresh_plan_if_due(Instant::now())
+        .expect("manual refresh is due");
+    assert!(manual.force);
+    assert_eq!(manual.generation, open.generation.wrapping_add(1));
+    assert!(!state.force_refresh_pending, "force is consumed on claim");
+
+    state.apply_refresh(Vec::new(), None, Instant::now());
+    let completed = Instant::now()
+        .checked_sub(USAGE_HEARTBEAT_INTERVAL + Duration::from_secs(1))
+        .expect("heartbeat interval fits in uptime");
+    state.apply_refresh(Vec::new(), None, completed);
+    let heartbeat = state
+        .next_refresh_plan_if_due(Instant::now())
+        .expect("heartbeat is due");
+    assert!(!heartbeat.force, "periodic refresh honors broker cadence");
+}
+
+#[test]
 fn screen_clone_drops_in_flight_refresh_but_keeps_value_state() {
     let mut state =
         UsageScreenState::open_with_snapshot(vec![test_account("openai", "a", "work")], None);
-    state.begin_refresh(crate::tui::runtime::ready_blocking_subscription(Ok((
-        Vec::new(),
-        None,
-    ))));
+    let plan = state
+        .next_refresh_plan_if_due(Instant::now())
+        .expect("open marks a refresh due");
+    state.begin_refresh(crate::tui::runtime::ready_blocking_subscription((
+        plan.generation,
+        Ok((Vec::new(), None)),
+    )));
     let cloned = state.clone();
     assert!(state.refresh_in_flight());
     assert!(!cloned.refresh_in_flight());
     assert_eq!(cloned.accounts, state.accounts);
+    assert_eq!(cloned.refresh_generation, state.refresh_generation);
     assert_eq!(cloned, state);
+
+    let mut diverged = cloned.clone();
+    diverged.refresh_generation = diverged.refresh_generation.wrapping_add(1);
+    assert_ne!(diverged, cloned);
 }
 
 #[test]
@@ -207,13 +289,14 @@ fn manual_refresh_key_marks_refresh_due() {
 
     let config = jackin_config::AppConfig::default();
     let mut manager = ManagerState::from_config(&config, std::path::Path::new("/test"));
-    manager.usage_screen = Some(UsageScreenState::open_with_snapshot(Vec::new(), None));
+    manager.usage.screen = Some(UsageScreenState::open_with_snapshot(Vec::new(), None));
     manager
-        .usage_screen
+        .usage
+        .screen
         .as_mut()
         .unwrap()
         .apply_refresh(Vec::new(), None, Instant::now());
-    assert!(!manager.usage_screen.as_ref().unwrap().refresh_due);
+    assert!(!manager.usage.screen.as_ref().unwrap().refresh_due);
 
     let key = KeyEvent {
         code: KeyCode::Char('r'),
@@ -222,7 +305,9 @@ fn manual_refresh_key_marks_refresh_due() {
         state: KeyEventState::empty(),
     };
     super::handle_key(&mut manager, key);
-    assert!(manager.usage_screen.as_ref().unwrap().refresh_due);
+    let screen = manager.usage.screen.as_ref().unwrap();
+    assert!(screen.refresh_due);
+    assert!(screen.force_refresh_pending);
 }
 
 #[test]
@@ -569,7 +654,7 @@ fn render_detail_overview_renders_all_windows_and_scrolling() {
         notice: Some("1 configured capability(s) unresolved".to_owned()),
         ..UsageScreenState::default()
     };
-    manager.usage_screen = Some(state);
+    manager.usage.screen = Some(state);
 
     let backend = TestBackend::new(80, 25);
     let mut terminal = Terminal::new(backend).unwrap();
@@ -600,7 +685,7 @@ fn render_full_route_narrow_and_wide() {
         let mut manager = ManagerState::from_config(&config, cwd);
         let mut account = test_account("openai", "work-id", "work");
         account.provider = "OpenAI".to_owned();
-        manager.usage_screen = Some(UsageScreenState {
+        manager.usage.screen = Some(UsageScreenState {
             accounts: vec![account],
             selected: 0,
             notice: Some("1 configured capability(s) unresolved".to_owned()),
@@ -652,12 +737,12 @@ fn render_detail_account_shows_freshness_and_refreshing_indicator() {
         selected_id: Some("openai:work-id".to_owned()),
         ..UsageScreenState::default()
     };
-    state.begin_refresh(crate::tui::runtime::ready_blocking_subscription(Ok((
-        Vec::new(),
-        None,
-    ))));
+    state.begin_refresh(crate::tui::runtime::ready_blocking_subscription((
+        state.refresh_generation,
+        Ok((Vec::new(), None)),
+    )));
     // Keep in flight: poll nothing, render while pending.
-    manager.usage_screen = Some(state);
+    manager.usage.screen = Some(state);
 
     let backend = TestBackend::new(80, 25);
     let mut terminal = Terminal::new(backend).unwrap();
@@ -689,7 +774,7 @@ fn render_unknown_window_shows_value_without_fabricated_bar() {
         used_percent: None,
         reset_at_epoch: None,
     }];
-    manager.usage_screen = Some(UsageScreenState {
+    manager.usage.screen = Some(UsageScreenState {
         accounts: vec![account],
         selected: 1,
         selected_id: Some("openai:work-id".to_owned()),

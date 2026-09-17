@@ -107,6 +107,12 @@ pub struct SessionRecord {
     /// Last attach timestamp when known.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_attached_at: Option<String>,
+    /// Instance config ID this session runs as, when recorded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub instance: Option<String>,
+    /// Owning account ID for this session's instance, when recorded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub account_id: Option<String>,
 }
 
 /// One row in the host instance index.

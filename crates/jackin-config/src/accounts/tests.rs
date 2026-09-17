@@ -610,6 +610,7 @@ fn launch_fixture() -> (AppConfig, WorkspaceName) {
                 model: None,
                 base_url: None,
                 display_label: None,
+                invoked_via_wrapper: None,
             },
         );
     }
@@ -698,6 +699,7 @@ fn resolve_launch_global_candidates_filter_by_authorization() {
             model: Some("glm-4".into()),
             base_url: None,
             display_label: None,
+            invoked_via_wrapper: None,
         },
     );
     cfg.default_launch = Some(vec!["zai-codex".into(), "codex-c".into()]);
@@ -740,6 +742,7 @@ fn resolve_launch_model_chain_prefers_configuration_override() {
             model: Some("glm-4-flash".into()),
             base_url: Some("https://api.z.ai/api/v1".into()),
             display_label: Some("Codex · ZAI flash".into()),
+            invoked_via_wrapper: None,
         },
     );
     cfg.workspaces
@@ -766,6 +769,7 @@ fn agent_configuration_validation_rejects_bad_references_and_overrides() {
         model: None,
         base_url: None,
         display_label: None,
+        invoked_via_wrapper: None,
     };
     good.validate("ok-id", &accounts).unwrap();
     good.validate("Bad_ID!", &accounts).unwrap_err();

@@ -65,9 +65,14 @@ impl Multiplexer {
             &tab_codename,
         )?;
         let agent_for_history = instance.clone();
+        let account_for_session = instance
+            .as_deref()
+            .and_then(|id| self.launch_env.launch_config.account_for_instance(id))
+            .map(str::to_owned);
         let (session, new_id) = Session::spawn(
             &launch.label,
             instance,
+            account_for_session,
             provider_label.map(|label| crate::session::SessionProvider {
                 label: label.to_owned(),
                 env_overrides: env_overrides.to_vec(),
@@ -310,16 +315,21 @@ impl Multiplexer {
                     .provider
                     .as_ref()
                     .map(|provider| provider.label.as_str());
-                // Sessions store instance config IDs; tabs still show the
-                // runtime name until per-instance labels land. Unknown IDs
-                // (hand-built test sessions) render verbatim.
+                // Sessions store instance config IDs; tabs show the
+                // per-instance label. Unknown IDs (hand-built test
+                // sessions) render verbatim.
                 let slug = session.agent.as_deref().map(|stored| {
                     self.launch_env
                         .launch_config
                         .agent_for_instance(stored)
                         .unwrap_or(stored)
                 });
+                let instance_label = session
+                    .agent
+                    .as_deref()
+                    .and_then(|stored| self.launch_env.launch_config.label_for_instance(stored));
                 crate::tui::model::visible_tab_pane_kind(crate::tui::model::VisibleTabPaneFacts {
+                    instance_label,
                     agent_slug: slug,
                     provider_label,
                 })

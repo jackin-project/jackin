@@ -237,7 +237,11 @@ impl Multiplexer {
                 let slug = config.agent_for_instance(instance).ok_or_else(|| {
                     anyhow::anyhow!("instance {instance:?} has no agent runtime in launch config")
                 })?;
-                let label = crate::tui::model::visible_agent_label(Some(slug), provider_label);
+                let label = crate::tui::model::visible_agent_label(
+                    config.label_for_instance(instance),
+                    Some(slug),
+                    provider_label,
+                );
                 let mut cmd = build_agent_command(
                     slug,
                     config.model_for_instance(instance),
@@ -255,7 +259,7 @@ impl Multiplexer {
                 Ok(SessionLaunch { label, cmd })
             }
             None => Ok(SessionLaunch {
-                label: crate::tui::model::visible_agent_label(None, None),
+                label: crate::tui::model::visible_agent_label(None, None, None),
                 cmd: build_shell_command(env_passthrough, cwd, codename),
             }),
         }
@@ -357,9 +361,16 @@ impl Multiplexer {
             &env_passthrough,
             &codename,
         )?;
+        let account_id = agent.as_deref().and_then(|id| {
+            self.launch_env
+                .launch_config
+                .account_for_instance(id)
+                .map(str::to_owned)
+        });
         let (session, id) = Session::spawn(
             &launch.label,
             agent.clone(),
+            account_id.clone(),
             provider_label.map(|label| crate::session::SessionProvider {
                 label: label.to_owned(),
                 env_overrides: env_overrides.to_vec(),
@@ -373,15 +384,14 @@ impl Multiplexer {
         )?;
         let tab_label = launch.label.clone();
         self.session_supervisor.sessions.insert(id, session);
+        let mut tab = Tab::new_single(tab_label, id, codename.clone());
+        tab.instance = agent.clone();
+        tab.account_id = account_id;
         if self.session_supervisor.tabs.is_empty() {
-            self.session_supervisor
-                .tabs
-                .push(Tab::new_single(tab_label, id, codename.clone()));
+            self.session_supervisor.tabs.push(tab);
             self.session_supervisor.active_tab = 0;
         } else {
-            self.session_supervisor
-                .tabs
-                .push(Tab::new_single(tab_label, id, codename.clone()));
+            self.session_supervisor.tabs.push(tab);
             self.session_supervisor.active_tab = self.session_supervisor.tabs.len() - 1;
         }
         self.session_supervisor
@@ -400,7 +410,10 @@ impl Multiplexer {
 
     /// Append a session to the agent registry. Uses the explicit provider label
     /// when given; otherwise infers the default provider from the agent slug so
-    /// the registry always shows a meaningful value.
+    /// the registry always shows a meaningful value. The owning account is
+    /// resolved from the launch config's instance map (not from the
+    /// credential envelope, which `sync` instances never populate), so both
+    /// fresh spawns and splits stamp the same identity for one instance.
     pub(super) fn record_agent_history(
         &mut self,
         session_id: u64,
@@ -408,18 +421,32 @@ impl Multiplexer {
         agent: Option<String>,
         provider_label: Option<&str>,
     ) {
-        let provider = provider_label
-            .map(str::to_owned)
-            .or_else(|| match agent.as_deref() {
-                Some("claude") => Some("anthropic".to_owned()),
-                Some("codex") => Some("openai".to_owned()),
-                _ => None,
-            });
+        // `agent` carries an instance config ID, not a slug: resolve the slug
+        // for default-provider inference. Unknown IDs (hand-built test
+        // sessions) match verbatim, mirroring `tab_display_label`.
+        let slug = agent.as_deref().map(|stored| {
+            self.launch_env
+                .launch_config
+                .agent_for_instance(stored)
+                .unwrap_or(stored)
+        });
+        let provider = provider_label.map(str::to_owned).or_else(|| match slug {
+            Some("claude") => Some("anthropic".to_owned()),
+            Some("codex") => Some("openai".to_owned()),
+            _ => None,
+        });
+        let account_id = agent.as_deref().and_then(|id| {
+            self.launch_env
+                .launch_config
+                .account_for_instance(id)
+                .map(str::to_owned)
+        });
         let started_at = self.wall_now_utc();
         self.session_supervisor.agent_history.push(AgentRecord {
             session_id,
             codename,
             agent,
+            account_id,
             provider,
             started_at,
             exited_at: None,

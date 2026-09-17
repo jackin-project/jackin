@@ -288,6 +288,7 @@ impl Multiplexer {
                 id,
                 label: s.label.clone(),
                 agent: s.agent.clone(),
+                account_id: s.account_id.clone(),
                 state: s.state,
                 active: Some(id) == focused,
             })
@@ -317,6 +318,7 @@ impl Multiplexer {
                             session_id: id,
                             label: session.label.clone(),
                             agent: session.agent.clone(),
+                            account_id: session.account_id.clone(),
                             state: session.state,
                             agent_status_report: Some(session.status.report(session.agent.clone())),
                         },
@@ -324,6 +326,7 @@ impl Multiplexer {
                             session_id: id,
                             label: "(missing)".to_owned(),
                             agent: None,
+                            account_id: None,
                             state: crate::protocol::control::AgentState::Idle,
                             agent_status_report: None,
                         },
@@ -331,6 +334,8 @@ impl Multiplexer {
                     .collect();
                 TabSnapshot {
                     label: tab.label_owned(),
+                    instance: tab.instance.clone(),
+                    account_id: tab.account_id.clone(),
                     focused_pane: tab.focused_id,
                     panes,
                 }
@@ -349,6 +354,7 @@ impl Multiplexer {
             .map(|r| jackin_protocol::control::AgentRegistryEntry {
                 codename: r.codename.clone(),
                 agent: r.agent.clone(),
+                account_id: r.account_id.clone(),
                 provider: r.provider.clone(),
                 started_at: r.started_at.format("%Y-%m-%dT%H:%M:%SZ").to_string(),
                 exited_at: r

@@ -209,3 +209,44 @@ fn capsule_config_fans_manifest_models_out_per_instance() {
         ])
     );
 }
+
+#[test]
+fn capsule_config_carries_instance_accounts_and_labels() {
+    let temp = tempfile::tempdir().unwrap();
+    let manifest = manifest_with(&temp, &["claude"]);
+    let selector = jackin_core::RoleSelector::new(Some("chainargos"), "the-architect");
+    let mut work = instance("claude-work", Agent::Claude, "work");
+    work.label = "Claude · Work".into();
+    let mut personal = instance("claude-personal", Agent::Claude, "personal");
+    personal.label = "Personal Claude".into();
+    let config = capsule_config(
+        &selector,
+        "/workspace",
+        &manifest,
+        "ask",
+        Vec::new(),
+        &[work, personal],
+    );
+    assert_eq!(
+        config.accounts,
+        std::collections::BTreeMap::from([
+            ("claude-work".into(), "work".into()),
+            ("claude-personal".into(), "personal".into()),
+        ])
+    );
+    assert_eq!(config.account_for_instance("claude-work"), Some("work"));
+    assert_eq!(config.account_for_instance("unknown"), None);
+    // Operator label overrides pass through verbatim; names only, never secrets.
+    assert_eq!(
+        config.labels,
+        std::collections::BTreeMap::from([
+            ("claude-work".into(), "Claude · Work".into()),
+            ("claude-personal".into(), "Personal Claude".into()),
+        ])
+    );
+    assert_eq!(
+        config.label_for_instance("claude-personal"),
+        Some("Personal Claude")
+    );
+    assert_eq!(config.label_for_instance("unknown"), None);
+}
