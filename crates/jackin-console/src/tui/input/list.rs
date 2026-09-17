@@ -15,6 +15,10 @@ use crate::tui::components::error_popup::{
 use crate::tui::components::github_picker::GithubOpenPlan;
 use crate::tui::layout::list_body_area;
 use crate::tui::message::ConsoleInstanceAction;
+use crate::tui::prompts::{
+    AgentDefaultResolution, no_eligible_account_message, resolve_agent_default,
+    sort_account_choices_by_id,
+};
 use crate::tui::screens::workspaces::update::{
     PreviewPaneActionPlan, SelectedInstanceActionPlan, SelectedInstancePurgeConfirmPlan,
     WorkspaceInstanceAction, WorkspaceInstanceLookupEntry, WorkspaceInstanceLookupScope,
@@ -54,10 +58,10 @@ pub fn handle_list_key(
     key: KeyEvent,
 ) -> anyhow::Result<InputOutcome> {
     if key.code == KeyCode::Char('u') {
-        let mut usage = crate::tui::state::UsageScreenState::default();
-        usage.set_accounts(state.usage_accounts.clone());
-        usage.notice = state.usage_notice.clone();
-        state.usage_screen = Some(usage);
+        state.usage_screen = Some(crate::tui::state::UsageScreenState::open_with_snapshot(
+            state.usage_accounts.clone(),
+            state.usage_notice.clone(),
+        ));
         return Ok(InputOutcome::Continue);
     }
     let selected_row = state.selected_row();
@@ -131,56 +135,7 @@ pub fn handle_list_key(
             Ok(InputOutcome::Continue)
         }
         WorkspaceListKeyPlan::NewSession => {
-            match workspace_list_new_session_open_plan(
-                workspace_list_new_session_plan(state.selected_row()),
-                |workspace_idx, instance_idx| {
-                    // Tree rows index the visible list (live + failed). A new
-                    // session can only attach to a live container, so resolve
-                    // by visible index but yield a container only when running.
-                    state
-                        .workspace_visible_instances(workspace_idx)
-                        .get(instance_idx)
-                        .filter(|entry| {
-                            matches!(
-                                entry.status,
-                                jackin_core::InstanceStatus::Active
-                                    | jackin_core::InstanceStatus::Running
-                            )
-                        })
-                        .map(|entry| entry.container_base.clone())
-                },
-            ) {
-                WorkspaceListNewSessionOpenPlan::OpenPicker { container } => {
-                    let picker = AgentChoiceState::with_choices(jackin_core::Agent::ALL.to_vec());
-                    let accounts = if let Some(instance) = state
-                        .instances
-                        .iter()
-                        .find(|instance| instance.container_base == container)
-                    {
-                        let workspace = instance
-                            .workspace_name
-                            .as_deref()
-                            .map(jackin_core::WorkspaceName::parse)
-                            .transpose()?;
-                        crate::services::launch::account_choices(config, workspace.as_ref())
-                    } else {
-                        Vec::new()
-                    };
-                    apply_inline_new_session_picker_plan(state, container, picker, accounts);
-                }
-                WorkspaceListNewSessionOpenPlan::OpenCreateWorkspace => {
-                    state.request_effect(ManagerEffect::OpenCreatePreludeFileBrowser);
-                }
-                WorkspaceListNewSessionOpenPlan::OpenInstanceUnavailableError => {
-                    dispatch_manager(
-                        state,
-                        ManagerMessage::OpenListErrorPopup {
-                            title: instance_unavailable_error_title().into(),
-                            message: instance_unavailable_error_message().into(),
-                        },
-                    );
-                }
-            }
+            open_new_session_picker(state, config)?;
             Ok(InputOutcome::Continue)
         }
         WorkspaceListKeyPlan::Delete => {
@@ -208,6 +163,71 @@ pub fn handle_list_key(
         }
         WorkspaceListKeyPlan::Continue => Ok(InputOutcome::Continue),
     }
+}
+
+/// Open the new-session agent picker for the selected instance row: a live
+/// container gets the agent picker with the host-config provider list
+/// prepared (stable order + per-agent binding defaults), anything else gets
+/// the create-workspace or instance-unavailable path.
+fn open_new_session_picker(state: &mut ManagerState<'_>, config: &AppConfig) -> anyhow::Result<()> {
+    match workspace_list_new_session_open_plan(
+        workspace_list_new_session_plan(state.selected_row()),
+        |workspace_idx, instance_idx| {
+            // Tree rows index the visible list (live + failed). A new
+            // session can only attach to a live container, so resolve
+            // by visible index but yield a container only when running.
+            state
+                .workspace_visible_instances(workspace_idx)
+                .get(instance_idx)
+                .filter(|entry| {
+                    matches!(
+                        entry.status,
+                        jackin_core::InstanceStatus::Active | jackin_core::InstanceStatus::Running
+                    )
+                })
+                .map(|entry| entry.container_base.clone())
+        },
+    ) {
+        WorkspaceListNewSessionOpenPlan::OpenPicker { container } => {
+            let picker = AgentChoiceState::with_choices(jackin_core::Agent::ALL.to_vec());
+            let accounts = if let Some(instance) = state
+                .instances
+                .iter()
+                .find(|instance| instance.container_base == container)
+            {
+                let workspace = instance
+                    .workspace_name
+                    .as_deref()
+                    .map(jackin_core::WorkspaceName::parse)
+                    .transpose()?;
+                let mut accounts =
+                    crate::services::launch::account_choices(config, workspace.as_ref());
+                prepare_new_session_accounts(
+                    config,
+                    workspace.as_ref(),
+                    &instance.role_key,
+                    &mut accounts,
+                );
+                accounts
+            } else {
+                Vec::new()
+            };
+            apply_inline_new_session_picker_plan(state, container, picker, accounts);
+        }
+        WorkspaceListNewSessionOpenPlan::OpenCreateWorkspace => {
+            state.request_effect(ManagerEffect::OpenCreatePreludeFileBrowser);
+        }
+        WorkspaceListNewSessionOpenPlan::OpenInstanceUnavailableError => {
+            dispatch_manager(
+                state,
+                ManagerMessage::OpenListErrorPopup {
+                    title: instance_unavailable_error_title().into(),
+                    message: instance_unavailable_error_message().into(),
+                },
+            );
+        }
+    }
+    Ok(())
 }
 
 fn dispatch_workspace_list_edit(
@@ -663,10 +683,12 @@ pub fn handle_inline_agent_picker(state: &mut ManagerState<'_>, key: KeyEvent) -
 }
 
 /// Handle key events while the new-session agent picker is open in the left
-/// sidebar. Commit runs `inline_account_followup_plan`; the running-container
-/// path always supplies an empty provider list (the daemon, not host config,
-/// owns the captured env), so in practice this dispatches `NewSessionWithAgent`
-/// directly and the provider picker never opens here. Cancel/Esc dismisses.
+/// sidebar. Commit filters the stored provider list — prepared at open time
+/// in stable id order with per-agent binding defaults pruned in (see
+/// `prepare_new_session_accounts`) — to the committed agent: an empty result
+/// opens an actionable error popup instead of dispatching an account-less
+/// session, a single candidate dispatches directly, and several open the
+/// account picker. Cancel/Esc dismisses.
 pub fn handle_new_session_picker(state: &mut ManagerState<'_>, key: KeyEvent) -> InputOutcome {
     let Some((container, picker, providers)) = state.inline_new_session_picker.as_mut() else {
         return InputOutcome::Continue;
@@ -674,12 +696,27 @@ pub fn handle_new_session_picker(state: &mut ManagerState<'_>, key: KeyEvent) ->
     match inline_picker_plan(picker.handle_key(key)) {
         InlinePickerPlan::Commit(agent) => {
             let container = container.clone();
-            // Running-container path passes an empty list → no provider picker.
-            let accounts = providers
+            let mut accounts: Vec<_> = providers
                 .iter()
                 .filter(|account| account.agents.contains(&agent))
                 .cloned()
                 .collect();
+            // Re-sort: the open path stores id order, but any producer
+            // (tests, a future daemon-queried list) must render the same
+            // deterministic picker.
+            sort_account_choices_by_id(&mut accounts);
+            if accounts.is_empty() {
+                let message = new_session_no_account_message(agent, &container, state);
+                dispatch_manager(state, ManagerMessage::DismissInlineSessionPicker);
+                dispatch_manager(
+                    state,
+                    ManagerMessage::OpenListErrorPopup {
+                        title: no_eligible_account_error_title().into(),
+                        message,
+                    },
+                );
+                return InputOutcome::Continue;
+            }
             let plan = inline_account_followup_plan(container, agent, accounts);
             dispatch_manager(state, ManagerMessage::DismissInlineSessionPicker);
             match plan {
@@ -704,6 +741,68 @@ pub fn handle_new_session_picker(state: &mut ManagerState<'_>, key: KeyEvent) ->
         }
         InlinePickerPlan::Continue => InputOutcome::Continue,
     }
+}
+
+/// Prepare the stored provider list for the new-session picker: stable
+/// id-ascending order, then per-agent binding-default pruning.
+///
+/// The commit handler (`handle_new_session_picker`) runs without config
+/// access, so the open path resolves `account_bindings` for every agent up
+/// front and encodes the outcome in each account's offered-agent list: an
+/// agent with a valid default keeps only that default (commit dispatches it
+/// with no picker), an agent with an explicitly invalid binding is hidden
+/// everywhere (commit fails atomically instead of silently falling back),
+/// and an agent without a default keeps every eligible candidate (commit
+/// opens the picker when several remain). See
+/// `crate::tui::prompts::resolve_agent_default` for the precedence rules.
+fn prepare_new_session_accounts(
+    config: &AppConfig,
+    workspace: Option<&jackin_core::WorkspaceName>,
+    role: &str,
+    accounts: &mut [crate::services::launch::AccountChoice],
+) {
+    sort_account_choices_by_id(accounts);
+    for agent in jackin_core::Agent::ALL.iter().copied() {
+        match resolve_agent_default(config, workspace, role, agent) {
+            AgentDefaultResolution::Launch(default) => {
+                for account in accounts.iter_mut() {
+                    if account.id != default {
+                        account.agents.retain(|candidate| *candidate != agent);
+                    }
+                }
+            }
+            AgentDefaultResolution::Invalid(_) => {
+                for account in accounts.iter_mut() {
+                    account.agents.retain(|candidate| *candidate != agent);
+                }
+            }
+            AgentDefaultResolution::NoDefault => {}
+        }
+    }
+}
+
+fn no_eligible_account_error_title() -> &'static str {
+    "No eligible account"
+}
+
+/// Actionable zero-eligible-account text for the new-session commit: names
+/// the agent and the workspace when the target container still maps to one,
+/// otherwise the container itself.
+fn new_session_no_account_message(
+    agent: jackin_core::Agent,
+    container: &str,
+    state: &ManagerState<'_>,
+) -> String {
+    let scope = state
+        .instances
+        .iter()
+        .find(|entry| entry.container_base == container)
+        .and_then(|entry| entry.workspace_name.as_deref())
+        .map_or_else(
+            || format!("container {container:?}"),
+            |name| format!("workspace {name:?}"),
+        );
+    no_eligible_account_message(agent, scope)
 }
 
 /// Handle key events while the inline provider picker is open (shown after

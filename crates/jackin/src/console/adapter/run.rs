@@ -49,8 +49,10 @@ pub struct ConsoleRunOptions<'a> {
 
 /// Read the broker's last published host projection for the Console route.
 ///
-/// This is deliberately current-only: Console startup never performs provider
-/// work. Refresh remains broker-owned and is requested by the route later.
+/// With `force_refresh` this performs broker provider work (refresh + a
+/// bounded join per capability) and must run on a worker thread via
+/// `spawn_blocking_subscription` — never on the UI thread. The current-only
+/// (`false`) form is startup's synchronous snapshot read.
 fn load_console_usage_state(
     paths: &JackinPaths,
     force_refresh: bool,
@@ -118,16 +120,18 @@ fn load_console_usage_state(
     Ok(jackin_console::tui::screens::usage::UsageScreenState::from_projection(&projection))
 }
 
+/// Drive the Usage route's background refresh: poll one completed worker
+/// result (if any), then start a refresh when one is due and none is in
+/// flight. Broker work always runs on the worker thread; the UI thread
+/// only polls and applies. Manual `r` (flagged by the route) joins shared
+/// in-flight work instead of queueing a duplicate.
 fn refresh_console_usage_on_key(
     state: &mut ConsoleState,
-    key: crossterm::event::KeyEvent,
+    _key: crossterm::event::KeyEvent,
     paths: &JackinPaths,
 ) -> anyhow::Result<()> {
-    use crossterm::event::KeyCode;
+    use std::time::Instant;
 
-    if key.code != KeyCode::Char('r') {
-        return Ok(());
-    }
     let ConsoleStage::Manager(manager) = &mut state.stage else {
         return Ok(());
     };
@@ -135,18 +139,36 @@ fn refresh_console_usage_on_key(
         return Ok(());
     };
 
-    match load_console_usage_state(paths, true) {
-        Ok(usage) => {
-            manager.usage_accounts = usage.accounts.clone();
-            manager.usage_notice = usage.notice.clone();
-            screen.set_accounts(usage.accounts);
-            screen.notice = usage.notice;
+    let now = Instant::now();
+    if let Some(outcome) = screen.poll_refresh() {
+        match outcome {
+            Ok((accounts, notice)) => {
+                manager.usage_accounts = accounts.clone();
+                manager.usage_notice = notice.clone();
+                screen.apply_refresh(accounts, notice, now);
+            }
+            Err(message) => {
+                let notice = format!("Usage unavailable: {message}");
+                manager.usage_notice = Some(notice.clone());
+                screen.apply_refresh_error(notice, now);
+            }
         }
-        Err(error) => {
-            let notice = format!("Usage unavailable: {error}");
-            manager.usage_notice = Some(notice.clone());
-            screen.notice = Some(notice);
-        }
+    }
+
+    if screen.refresh_in_flight() {
+        screen.refresh_due = false;
+        return Ok(());
+    }
+    if screen.refresh_due || screen.heartbeat_due(now) {
+        let paths = paths.clone();
+        screen.begin_refresh(jackin_console::tui::runtime::spawn_blocking_subscription(
+            move || {
+                load_console_usage_state(&paths, true)
+                    .map(|usage| (usage.accounts, usage.notice))
+                    .map_err(|error| error.to_string())
+            },
+        ));
+        screen.refresh_due = false;
     }
     Ok(())
 }
