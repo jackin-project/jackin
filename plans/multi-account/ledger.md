@@ -8,7 +8,12 @@ Proof levels: `implemented` < `fixture_verified` < `container_verified` <
 
 | Requirement | Owner | Test / scenario | Result / artifact | Proof | Status |
 |---|---|---|---|---|---|
-| S1 catalog (12 agents, 12 providers, adapters, matches) | s1-catalog-expand | cargo test -p jackin-core -p jackin-config + workspace check | /tmp/lane-s1-catalog.md (pending) | — | in_progress |
+| S1 catalog (12 agents, 12 providers, adapters, matches) | s1-catalog-expand | nextest 909 (core/config/instance/image/telemetry/agent-status) + usage 412 + console/runtime 1933 + workspace check clean | /tmp/lane-s1-catalog.md | fixture_verified | implemented |
+| provD OpenRouter/OpenCode-Go/Grok | prov-d | openrouter 9 + opencode/grok ext (in-tree green) | /tmp/lane-prov-d.md | fixture_verified | implemented |
+| T10 metric groups | t10 | protocol 56 + projection 36 + console 20 (in-tree) | /tmp/lane-t10.md | fixture_verified | implemented |
+| C04 committed-agent defaults | c04 | prompts 22 + list 38 (in-tree) | /tmp/lane-c04.md | fixture_verified | implemented |
+| broker cadence (coordinator) | broker-coord | 27 isolated + 28 in-tree | /tmp/lane-broker-coord.md | fixture_verified | implemented |
+| provider review (13 fixes) | reviewer | /tmp/review-providers.md | review-fix lane in flight | — | in_progress |
 | zshrc static parser | zshrc lane | standalone rustc --test 17/17 + probe | /tmp/lane-zshrc.md | fixture_verified | implemented |
 | stores enumerators | stores lane | config 317/317 (stores 29) | /tmp/lane-stores.md | fixture_verified | implemented |
 | T20 harness | t20 lane | standalone 26/26 | /tmp/lane-t20-harness.md | fixture_verified | implemented |
