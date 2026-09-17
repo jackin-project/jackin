@@ -221,6 +221,13 @@ pub struct AgentRuntimeState {
 /// `home_dir` is the agent home provisioned under the instance root
 /// (`<container>/home/...`); it is `None` when the lazy ignore path
 /// skipped all filesystem work.
+///
+/// Same-agent slots are disambiguated by `slot_suffix`: the first
+/// binding per agent in a provision call keeps the legacy layout
+/// (`None`), later bindings get suffixed store/home dirs. Container
+/// relative paths (`container_home_rel`, `container_store_rel`) and the
+/// folder-var target (`folder_target`) are computed once here so mounts
+/// and the Capsule launch config cannot derive them differently.
 #[derive(Debug, Clone)]
 pub struct ProvisionedInstanceAuth {
     pub agent: jackin_core::Agent,
@@ -229,6 +236,149 @@ pub struct ProvisionedInstanceAuth {
     pub home_dir: Option<PathBuf>,
     pub credential_paths: Vec<PathBuf>,
     pub forward_auth: bool,
+    pub slot_suffix: Option<String>,
+    pub container_home_rel: String,
+    pub container_store_rel: String,
+    pub folder_target: String,
+}
+
+/// Container-visible layout for one provisioned slot, derived from the
+/// legacy per-agent dirs plus the slot suffix.
+struct SlotLayout {
+    suffix: Option<String>,
+    home_rel: String,
+    store_rel: String,
+    folder_target: String,
+}
+
+/// Sanitize a binding key into a directory-name suffix: keep
+/// alphanumerics plus `-_.`, fold anything else (notably `@` in
+/// synthesized `{account}@{agent}` keys) to `-`.
+fn sanitize_slot_suffix(key: &str) -> String {
+    let sanitized: String = key
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.') {
+                c
+            } else {
+                '-'
+            }
+        })
+        .collect();
+    if sanitized.is_empty() {
+        "slot".to_owned()
+    } else {
+        sanitized
+    }
+}
+
+/// Apply a slot suffix to a store dir name (`claude` →
+/// `claude-<suffix>`); `None` keeps the legacy name.
+fn slot_store_rel(store: &str, suffix: Option<&str>) -> String {
+    match suffix {
+        Some(suffix) => format!("{store}-{suffix}"),
+        None => store.to_owned(),
+    }
+}
+
+/// Apply a slot suffix to the last component of a home-relative dir
+/// (`.local/share/amp` → `.local/share/amp-<suffix>`); `None` keeps
+/// the legacy path.
+#[must_use]
+pub fn slot_home_rel(rel: &str, suffix: Option<&str>) -> String {
+    let Some(suffix) = suffix else {
+        return rel.to_owned();
+    };
+    match rel.rsplit_once('/') {
+        Some((parent, leaf)) => format!("{parent}/{leaf}-{suffix}"),
+        None => format!("{rel}-{suffix}"),
+    }
+}
+
+/// Slot home rel + folder-var target for `agent`, honoring the
+/// folder-var kind. `Dir` agents point at their config home; `Parent`
+/// agents (`GEMINI_CLI_HOME`) point at a unique parent whose
+/// `credential_dir` child is the home; `XdgRoot` agents point at the
+/// XDG root (the first home-rel component), matching the unset-var
+/// default for primary slots. Agents without a folder var resolve the
+/// plain home; the target is unused because they admit one slot.
+fn slot_home_and_target(
+    agent: jackin_core::Agent,
+    home_rel: &str,
+    suffix: Option<&str>,
+) -> (String, String) {
+    use jackin_core::FolderVarKind;
+    let kind = agent
+        .runtime()
+        .state_paths()
+        .folder_env_var
+        .map(|var| var.kind);
+    match (kind, suffix) {
+        (Some(FolderVarKind::Parent), Some(suffix)) => {
+            let stem = home_rel.split('/').next().unwrap_or(home_rel);
+            (
+                format!("{stem}-{suffix}/{home_rel}"),
+                format!("/home/agent/{stem}-{suffix}"),
+            )
+        }
+        (Some(FolderVarKind::Parent), None) => (home_rel.to_owned(), "/home/agent".to_owned()),
+        (Some(FolderVarKind::XdgRoot), _) => {
+            let root = home_rel.split('/').next().unwrap_or(home_rel);
+            (
+                slot_home_rel(home_rel, suffix),
+                format!("/home/agent/{root}"),
+            )
+        }
+        _ => {
+            let home_rel = slot_home_rel(home_rel, suffix);
+            let folder_target = format!("/home/agent/{home_rel}");
+            (home_rel, folder_target)
+        }
+    }
+}
+
+/// Per-binding slot suffixes in binding order: the first binding per
+/// agent keeps the legacy layout (`None`); later same-agent bindings
+/// get their sanitized key as suffix. Shared by foreground prepare and
+/// background prewarm so shared keys land in identical dirs.
+/// Sanitized keys that collide (`a@b` vs `a-b`) get a numeric tail so
+/// two slots never share a directory.
+fn slot_suffixes(bindings: &[InstanceAuthBinding]) -> Vec<Option<String>> {
+    let mut primaried: std::collections::HashSet<jackin_core::Agent> =
+        std::collections::HashSet::new();
+    let mut used: std::collections::HashSet<(jackin_core::Agent, String)> =
+        std::collections::HashSet::new();
+    bindings
+        .iter()
+        .map(|binding| {
+            if primaried.insert(binding.agent) {
+                return None;
+            }
+            let base = sanitize_slot_suffix(&binding.key);
+            let mut candidate = base.clone();
+            let mut tail = 2;
+            while !used.insert((binding.agent, candidate.clone())) {
+                candidate = format!("{base}-{tail}");
+                tail += 1;
+            }
+            Some(candidate)
+        })
+        .collect()
+}
+
+fn slot_layout(
+    agent: jackin_core::Agent,
+    store: &str,
+    home_rel: &str,
+    suffix: Option<&str>,
+) -> SlotLayout {
+    let (home_rel, folder_target) = slot_home_and_target(agent, home_rel, suffix);
+    SlotLayout {
+        folder_target,
+        suffix: suffix.map(str::to_owned),
+        home_rel,
+        store_rel: slot_store_rel(store, suffix),
+    }
 }
 
 impl ProvisionedInstanceAuth {
@@ -237,6 +387,7 @@ impl ProvisionedInstanceAuth {
         home_dir: Option<PathBuf>,
         credential_paths: Vec<PathBuf>,
         forward_auth: bool,
+        layout: SlotLayout,
     ) -> Self {
         Self {
             agent: binding.agent,
@@ -245,6 +396,10 @@ impl ProvisionedInstanceAuth {
             home_dir,
             credential_paths,
             forward_auth,
+            slot_suffix: layout.suffix,
+            container_home_rel: layout.home_rel,
+            container_store_rel: layout.store_rel,
+            folder_target: layout.folder_target,
         }
     }
 }
@@ -667,9 +822,10 @@ impl RoleState {
         let root_path = root.clone();
         let home_path = home_dir.clone();
 
+        let suffixes = slot_suffixes(bindings);
         let (gh_provision_outcome, auth_provisions) = std::thread::scope(|scope| {
             let mut handles = Vec::with_capacity(bindings.len());
-            for binding in bindings {
+            for (binding, suffix) in bindings.iter().zip(suffixes) {
                 let root = root_path.clone();
                 let home_dir = home_path.clone();
                 let host_home = host_home_path.clone();
@@ -677,7 +833,13 @@ impl RoleState {
                 let mode = binding.mode;
                 let binding = binding.clone();
                 let handle = jackin_telemetry::spawn::thread_scoped_joined(scope, move || {
-                    Self::provision_agent_auth_slot(&root, &home_dir, &host_home, &binding)
+                    Self::provision_agent_auth_slot(
+                        &root,
+                        &home_dir,
+                        &host_home,
+                        &binding,
+                        suffix.as_deref(),
+                    )
                 });
                 handles.push((provisioned, mode, handle));
             }
@@ -852,22 +1014,27 @@ impl RoleState {
         let root_path = root.clone();
         let home_path = home_dir.clone();
 
+        let suffixes = slot_suffixes(bindings);
         let prepared_auth = std::thread::scope(|scope| {
-            let handles = bindings
-                .iter()
-                .map(|binding| {
-                    let root = root_path.clone();
-                    let home_dir = home_path.clone();
-                    let host_home = host_home_path.clone();
-                    let provisioned = binding.agent;
-                    let mode = binding.mode;
-                    let binding = binding.clone();
-                    let handle = jackin_telemetry::spawn::thread_scoped_joined(scope, move || {
-                        Self::provision_agent_auth_slot(&root, &home_dir, &host_home, &binding)
-                    });
-                    (provisioned, mode, handle)
-                })
-                .collect::<Vec<_>>();
+            let mut handles = Vec::with_capacity(bindings.len());
+            for (binding, suffix) in bindings.iter().zip(suffixes) {
+                let root = root_path.clone();
+                let home_dir = home_path.clone();
+                let host_home = host_home_path.clone();
+                let provisioned = binding.agent;
+                let mode = binding.mode;
+                let binding = binding.clone();
+                let handle = jackin_telemetry::spawn::thread_scoped_joined(scope, move || {
+                    Self::provision_agent_auth_slot(
+                        &root,
+                        &home_dir,
+                        &host_home,
+                        &binding,
+                        suffix.as_deref(),
+                    )
+                });
+                handles.push((provisioned, mode, handle));
+            }
 
             let mut prepared = Vec::with_capacity(handles.len());
             for (agent, mode, handle) in handles {
@@ -905,6 +1072,7 @@ impl RoleState {
         home_dir: &Path,
         host_home: &Path,
         binding: &InstanceAuthBinding,
+        suffix: Option<&str>,
     ) -> anyhow::Result<AgentAuthProvision> {
         let agent = binding.agent;
         let mode = binding.mode;
@@ -915,7 +1083,7 @@ impl RoleState {
             Some(&mode.to_string()),
         );
         let ignore_can_skip = if mode == AuthForwardMode::Ignore {
-            agent_ignore_can_skip_state_prepare(root, agent)?
+            agent_ignore_can_skip_state_prepare(root, agent, suffix)?
         } else {
             false
         };
@@ -927,7 +1095,7 @@ impl RoleState {
             );
             let provision = AgentAuthProvision {
                 key: binding.key.clone(),
-                auth: skipped_ignore_instance_auth(root, binding),
+                auth: skipped_ignore_instance_auth(root, binding, suffix),
                 outcome: AuthProvisionOutcome::Skipped,
             };
             return Ok(provision);
@@ -935,40 +1103,40 @@ impl RoleState {
         let provision_result: anyhow::Result<(ProvisionedInstanceAuth, AuthProvisionOutcome)> =
             match agent {
                 jackin_core::Agent::Claude => {
-                    Self::provision_claude_slot(root, home_dir, host_home, binding)
+                    Self::provision_claude_slot(root, home_dir, host_home, binding, suffix)
                 }
                 jackin_core::Agent::Codex => {
-                    Self::provision_codex_slot(root, home_dir, host_home, binding)
+                    Self::provision_codex_slot(root, home_dir, host_home, binding, suffix)
                 }
                 jackin_core::Agent::Amp => {
-                    Self::provision_amp_slot(root, home_dir, host_home, binding)
+                    Self::provision_amp_slot(root, home_dir, host_home, binding, suffix)
                 }
                 jackin_core::Agent::Kimi => {
-                    Self::provision_kimi_slot(root, home_dir, host_home, binding)
+                    Self::provision_kimi_slot(root, home_dir, host_home, binding, suffix)
                 }
                 jackin_core::Agent::Opencode => {
-                    Self::provision_opencode_slot(root, home_dir, host_home, binding)
+                    Self::provision_opencode_slot(root, home_dir, host_home, binding, suffix)
                 }
                 jackin_core::Agent::Grok => {
-                    Self::provision_grok_slot(root, home_dir, host_home, binding)
+                    Self::provision_grok_slot(root, home_dir, host_home, binding, suffix)
                 }
                 jackin_core::Agent::Antigravity => {
-                    Self::provision_antigravity_slot(root, home_dir, host_home, binding)
+                    Self::provision_antigravity_slot(root, home_dir, host_home, binding, suffix)
                 }
                 jackin_core::Agent::Gemini => {
-                    Self::provision_gemini_slot(root, home_dir, host_home, binding)
+                    Self::provision_gemini_slot(root, home_dir, host_home, binding, suffix)
                 }
                 jackin_core::Agent::Cursor => {
-                    Self::provision_cursor_slot(root, home_dir, host_home, binding)
+                    Self::provision_cursor_slot(root, home_dir, host_home, binding, suffix)
                 }
                 jackin_core::Agent::Muse => {
-                    Self::provision_muse_slot(root, home_dir, host_home, binding)
+                    Self::provision_muse_slot(root, home_dir, host_home, binding, suffix)
                 }
                 jackin_core::Agent::Omp => {
-                    Self::provision_omp_slot(root, home_dir, host_home, binding)
+                    Self::provision_omp_slot(root, home_dir, host_home, binding, suffix)
                 }
                 jackin_core::Agent::Hermes => {
-                    Self::provision_hermes_slot(root, home_dir, host_home, binding)
+                    Self::provision_hermes_slot(root, home_dir, host_home, binding, suffix)
                 }
             };
         let timing_detail = provision_result
@@ -998,11 +1166,14 @@ impl RoleState {
         home_dir: &Path,
         host_home: &Path,
         binding: &InstanceAuthBinding,
+        suffix: Option<&str>,
     ) -> anyhow::Result<(ProvisionedInstanceAuth, AuthProvisionOutcome)> {
         let mode = binding.mode;
         let sync_source_dir = binding.sync_source_dir.as_deref();
-        let claude_dir = root.join("claude");
-        let claude_home_dir = home_dir.join(".claude");
+        let (store, home_rel) = agent_slot_dirs(binding.agent);
+        let layout = slot_layout(binding.agent, store, home_rel, suffix);
+        let claude_dir = root.join(&layout.store_rel);
+        let claude_home_dir = home_dir.join(&layout.home_rel);
         std::fs::create_dir_all(&claude_dir)?;
         std::fs::create_dir_all(&claude_home_dir)?;
         // 0o600 because the Claude CLI may later persist OAuth state
@@ -1027,6 +1198,7 @@ impl RoleState {
             Some(claude_home_dir),
             vec![account_json, credentials_json],
             forward_auth,
+            layout,
         );
         Ok((slot, outcome))
     }
@@ -1036,11 +1208,14 @@ impl RoleState {
         home_dir: &Path,
         host_home: &Path,
         binding: &InstanceAuthBinding,
+        suffix: Option<&str>,
     ) -> anyhow::Result<(ProvisionedInstanceAuth, AuthProvisionOutcome)> {
         let mode = binding.mode;
         let sync_source_dir = binding.sync_source_dir.as_deref();
-        let codex_dir = root.join("codex");
-        let codex_home_dir = home_dir.join(".codex");
+        let (store, home_rel) = agent_slot_dirs(binding.agent);
+        let layout = slot_layout(binding.agent, store, home_rel, suffix);
+        let codex_dir = root.join(&layout.store_rel);
+        let codex_home_dir = home_dir.join(&layout.home_rel);
         std::fs::create_dir_all(&codex_dir)?;
         std::fs::create_dir_all(&codex_home_dir)?;
         let auth_json_path = codex_dir.join("auth.json");
@@ -1056,6 +1231,7 @@ impl RoleState {
             Some(codex_home_dir),
             credential_paths,
             forward_auth,
+            layout,
         );
         Ok((slot, outcome))
     }
@@ -1065,20 +1241,24 @@ impl RoleState {
         home_dir: &Path,
         host_home: &Path,
         binding: &InstanceAuthBinding,
+        suffix: Option<&str>,
     ) -> anyhow::Result<(ProvisionedInstanceAuth, AuthProvisionOutcome)> {
         let mode = binding.mode;
         let sync_source_dir = binding.sync_source_dir.as_deref();
-        let amp_dir = root.join("amp");
-        let amp_home_dir = home_dir.join(".local/share/amp");
+        let (store, home_rel) = agent_slot_dirs(binding.agent);
+        let layout = slot_layout(binding.agent, store, home_rel, suffix);
+        let amp_dir = root.join(&layout.store_rel);
+        let amp_home_dir = home_dir.join(&layout.home_rel);
+        let amp_config_dir = home_dir.join(slot_home_rel(".config/amp", suffix));
         std::fs::create_dir_all(&amp_dir)?;
         std::fs::create_dir_all(&amp_home_dir)?;
-        std::fs::create_dir_all(home_dir.join(".config/amp"))?;
+        std::fs::create_dir_all(&amp_config_dir)?;
         if mode == AuthForwardMode::Sync
             && let Some(source) = sync_source_dir
         {
             let settings = source.join("config/amp/settings.json");
             if settings.is_file() {
-                std::fs::copy(settings, home_dir.join(".config/amp/settings.json"))?;
+                std::fs::copy(settings, amp_config_dir.join("settings.json"))?;
             }
         }
         let secrets_json_path = amp_dir.join("secrets.json");
@@ -1094,6 +1274,7 @@ impl RoleState {
             Some(amp_home_dir),
             credential_paths,
             forward_auth,
+            layout,
         );
         Ok((slot, outcome))
     }
@@ -1103,11 +1284,14 @@ impl RoleState {
         home_dir: &Path,
         host_home: &Path,
         binding: &InstanceAuthBinding,
+        suffix: Option<&str>,
     ) -> anyhow::Result<(ProvisionedInstanceAuth, AuthProvisionOutcome)> {
         let mode = binding.mode;
         let sync_source_dir = binding.sync_source_dir.as_deref();
-        let kimi_dir = root.join("kimi-code");
-        let kimi_home_dir = home_dir.join(".kimi-code");
+        let (store, home_rel) = agent_slot_dirs(binding.agent);
+        let layout = slot_layout(binding.agent, store, home_rel, suffix);
+        let kimi_dir = root.join(&layout.store_rel);
+        let kimi_home_dir = home_dir.join(&layout.home_rel);
         std::fs::create_dir_all(&kimi_dir)?;
         std::fs::create_dir_all(&kimi_home_dir)?;
         let (outcome, forward_auth) = if let Some(source_dir) = sync_source_dir {
@@ -1120,6 +1304,7 @@ impl RoleState {
             Some(kimi_home_dir),
             vec![kimi_dir],
             forward_auth,
+            layout,
         );
         Ok((slot, outcome))
     }
@@ -1129,14 +1314,17 @@ impl RoleState {
         home_dir: &Path,
         host_home: &Path,
         binding: &InstanceAuthBinding,
+        suffix: Option<&str>,
     ) -> anyhow::Result<(ProvisionedInstanceAuth, AuthProvisionOutcome)> {
         let mode = binding.mode;
         let sync_source_dir = binding.sync_source_dir.as_deref();
-        let opencode_dir = root.join("opencode");
-        let opencode_home_dir = home_dir.join(".local/share/opencode");
+        let (store, home_rel) = agent_slot_dirs(binding.agent);
+        let layout = slot_layout(binding.agent, store, home_rel, suffix);
+        let opencode_dir = root.join(&layout.store_rel);
+        let opencode_home_dir = home_dir.join(&layout.home_rel);
         std::fs::create_dir_all(&opencode_dir)?;
         std::fs::create_dir_all(&opencode_home_dir)?;
-        std::fs::create_dir_all(home_dir.join(".config/opencode"))?;
+        std::fs::create_dir_all(home_dir.join(slot_home_rel(".config/opencode", suffix)))?;
         let auth_json_path = opencode_dir.join("auth.json");
         let (outcome, auth_json) = if let Some(source_dir) = sync_source_dir {
             Self::provision_opencode_auth_from_source_dir(&auth_json_path, mode, source_dir)?
@@ -1150,6 +1338,7 @@ impl RoleState {
             Some(opencode_home_dir),
             credential_paths,
             forward_auth,
+            layout,
         );
         Ok((slot, outcome))
     }
@@ -1159,11 +1348,14 @@ impl RoleState {
         home_dir: &Path,
         host_home: &Path,
         binding: &InstanceAuthBinding,
+        suffix: Option<&str>,
     ) -> anyhow::Result<(ProvisionedInstanceAuth, AuthProvisionOutcome)> {
         let mode = binding.mode;
         let sync_source_dir = binding.sync_source_dir.as_deref();
-        let grok_dir = root.join("grok");
-        let grok_home_dir = home_dir.join(".grok");
+        let (store, home_rel) = agent_slot_dirs(binding.agent);
+        let layout = slot_layout(binding.agent, store, home_rel, suffix);
+        let grok_dir = root.join(&layout.store_rel);
+        let grok_home_dir = home_dir.join(&layout.home_rel);
         std::fs::create_dir_all(&grok_dir)?;
         std::fs::create_dir_all(&grok_home_dir)?;
         let auth_json_path = grok_dir.join("auth.json");
@@ -1180,6 +1372,7 @@ impl RoleState {
             Some(grok_home_dir),
             credential_paths,
             forward_auth,
+            layout,
         );
         Ok((slot, outcome))
     }
@@ -1189,11 +1382,14 @@ impl RoleState {
         home_dir: &Path,
         host_home: &Path,
         binding: &InstanceAuthBinding,
+        suffix: Option<&str>,
     ) -> anyhow::Result<(ProvisionedInstanceAuth, AuthProvisionOutcome)> {
         let mode = binding.mode;
         let sync_source_dir = binding.sync_source_dir.as_deref();
-        let antigravity_dir = root.join("antigravity");
-        let antigravity_home_dir = home_dir.join(".gemini/antigravity-cli");
+        let (store, home_rel) = agent_slot_dirs(binding.agent);
+        let layout = slot_layout(binding.agent, store, home_rel, suffix);
+        let antigravity_dir = root.join(&layout.store_rel);
+        let antigravity_home_dir = home_dir.join(&layout.home_rel);
         std::fs::create_dir_all(&antigravity_dir)?;
         std::fs::create_dir_all(&antigravity_home_dir)?;
         let settings_json_path = antigravity_dir.join("settings.json");
@@ -1209,6 +1405,7 @@ impl RoleState {
             Some(antigravity_home_dir),
             credential_paths,
             forward_auth,
+            layout,
         );
         Ok((slot, outcome))
     }
@@ -1218,11 +1415,14 @@ impl RoleState {
         home_dir: &Path,
         host_home: &Path,
         binding: &InstanceAuthBinding,
+        suffix: Option<&str>,
     ) -> anyhow::Result<(ProvisionedInstanceAuth, AuthProvisionOutcome)> {
         let mode = binding.mode;
         let sync_source_dir = binding.sync_source_dir.as_deref();
-        let gemini_dir = root.join("gemini");
-        let gemini_home_dir = home_dir.join(".gemini");
+        let (store, home_rel) = agent_slot_dirs(binding.agent);
+        let layout = slot_layout(binding.agent, store, home_rel, suffix);
+        let gemini_dir = root.join(&layout.store_rel);
+        let gemini_home_dir = home_dir.join(&layout.home_rel);
         std::fs::create_dir_all(&gemini_dir)?;
         std::fs::create_dir_all(&gemini_home_dir)?;
         let oauth_creds_path = gemini_dir.join("oauth_creds.json");
@@ -1238,6 +1438,7 @@ impl RoleState {
             Some(gemini_home_dir),
             credential_paths,
             forward_auth,
+            layout,
         );
         Ok((slot, outcome))
     }
@@ -1247,11 +1448,14 @@ impl RoleState {
         home_dir: &Path,
         host_home: &Path,
         binding: &InstanceAuthBinding,
+        suffix: Option<&str>,
     ) -> anyhow::Result<(ProvisionedInstanceAuth, AuthProvisionOutcome)> {
         let mode = binding.mode;
         let sync_source_dir = binding.sync_source_dir.as_deref();
-        let cursor_dir = root.join("cursor");
-        let cursor_home_dir = home_dir.join(".cursor");
+        let (store, home_rel) = agent_slot_dirs(binding.agent);
+        let layout = slot_layout(binding.agent, store, home_rel, suffix);
+        let cursor_dir = root.join(&layout.store_rel);
+        let cursor_home_dir = home_dir.join(&layout.home_rel);
         std::fs::create_dir_all(&cursor_dir)?;
         std::fs::create_dir_all(&cursor_home_dir)?;
         let auth_json_path = cursor_dir.join("auth.json");
@@ -1267,6 +1471,7 @@ impl RoleState {
             Some(cursor_home_dir),
             credential_paths,
             forward_auth,
+            layout,
         );
         Ok((slot, outcome))
     }
@@ -1276,11 +1481,14 @@ impl RoleState {
         home_dir: &Path,
         host_home: &Path,
         binding: &InstanceAuthBinding,
+        suffix: Option<&str>,
     ) -> anyhow::Result<(ProvisionedInstanceAuth, AuthProvisionOutcome)> {
         let mode = binding.mode;
         let sync_source_dir = binding.sync_source_dir.as_deref();
-        let muse_dir = root.join("muse");
-        let muse_home_dir = home_dir.join(".config/muse");
+        let (store, home_rel) = agent_slot_dirs(binding.agent);
+        let layout = slot_layout(binding.agent, store, home_rel, suffix);
+        let muse_dir = root.join(&layout.store_rel);
+        let muse_home_dir = home_dir.join(&layout.home_rel);
         std::fs::create_dir_all(&muse_dir)?;
         std::fs::create_dir_all(&muse_home_dir)?;
         let auth_json_path = muse_dir.join("auth.json");
@@ -1296,6 +1504,7 @@ impl RoleState {
             Some(muse_home_dir),
             credential_paths,
             forward_auth,
+            layout,
         );
         Ok((slot, outcome))
     }
@@ -1305,11 +1514,14 @@ impl RoleState {
         home_dir: &Path,
         host_home: &Path,
         binding: &InstanceAuthBinding,
+        suffix: Option<&str>,
     ) -> anyhow::Result<(ProvisionedInstanceAuth, AuthProvisionOutcome)> {
         let mode = binding.mode;
         let sync_source_dir = binding.sync_source_dir.as_deref();
-        let omp_dir = root.join("omp");
-        let omp_home_dir = home_dir.join(".omp");
+        let (store, home_rel) = agent_slot_dirs(binding.agent);
+        let layout = slot_layout(binding.agent, store, home_rel, suffix);
+        let omp_dir = root.join(&layout.store_rel);
+        let omp_home_dir = home_dir.join(&layout.home_rel);
         std::fs::create_dir_all(&omp_dir)?;
         std::fs::create_dir_all(&omp_home_dir)?;
         let agent_db_path = omp_dir.join("agent.db");
@@ -1325,6 +1537,7 @@ impl RoleState {
             Some(omp_home_dir),
             credential_paths,
             forward_auth,
+            layout,
         );
         Ok((slot, outcome))
     }
@@ -1334,11 +1547,14 @@ impl RoleState {
         home_dir: &Path,
         host_home: &Path,
         binding: &InstanceAuthBinding,
+        suffix: Option<&str>,
     ) -> anyhow::Result<(ProvisionedInstanceAuth, AuthProvisionOutcome)> {
         let mode = binding.mode;
         let sync_source_dir = binding.sync_source_dir.as_deref();
-        let hermes_dir = root.join("hermes");
-        let hermes_home_dir = home_dir.join(".hermes");
+        let (store, home_rel) = agent_slot_dirs(binding.agent);
+        let layout = slot_layout(binding.agent, store, home_rel, suffix);
+        let hermes_dir = root.join(&layout.store_rel);
+        let hermes_home_dir = home_dir.join(&layout.home_rel);
         std::fs::create_dir_all(&hermes_dir)?;
         std::fs::create_dir_all(&hermes_home_dir)?;
         let (outcome, forward_auth) = if let Some(source_dir) = sync_source_dir {
@@ -1351,56 +1567,80 @@ impl RoleState {
             Some(hermes_home_dir),
             vec![hermes_dir],
             forward_auth,
+            layout,
         );
         Ok((slot, outcome))
+    }
+}
+
+/// Legacy store dir + home rel per agent, the single source the
+/// provision, skip, and ignore-check paths derive slot dirs from.
+fn agent_slot_dirs(agent: jackin_core::Agent) -> (&'static str, &'static str) {
+    match agent {
+        jackin_core::Agent::Claude => ("claude", ".claude"),
+        jackin_core::Agent::Codex => ("codex", ".codex"),
+        jackin_core::Agent::Amp => ("amp", ".local/share/amp"),
+        jackin_core::Agent::Kimi => ("kimi-code", ".kimi-code"),
+        jackin_core::Agent::Opencode => ("opencode", ".local/share/opencode"),
+        jackin_core::Agent::Grok => ("grok", ".grok"),
+        jackin_core::Agent::Antigravity => ("antigravity", ".gemini/antigravity-cli"),
+        jackin_core::Agent::Gemini => ("gemini", ".gemini"),
+        jackin_core::Agent::Cursor => ("cursor", ".cursor"),
+        jackin_core::Agent::Muse => ("muse", ".config/muse"),
+        jackin_core::Agent::Omp => ("omp", ".omp"),
+        jackin_core::Agent::Hermes => ("hermes", ".hermes"),
     }
 }
 
 fn skipped_ignore_instance_auth(
     root: &Path,
     binding: &InstanceAuthBinding,
+    suffix: Option<&str>,
 ) -> ProvisionedInstanceAuth {
     // No filesystem work ran, so `home_dir` stays `None`; the
     // deterministic credential paths match the real-path shape so
     // path accessors keep working for lazy launches.
+    let (store, home_rel) = agent_slot_dirs(binding.agent);
+    let layout = slot_layout(binding.agent, store, home_rel, suffix);
+    let store_dir = root.join(&layout.store_rel);
     let credential_paths = match binding.agent {
         jackin_core::Agent::Claude => {
-            let claude_dir = root.join("claude");
             vec![
-                claude_dir.join("account.json"),
-                claude_dir.join("credentials.json"),
+                store_dir.join("account.json"),
+                store_dir.join("credentials.json"),
             ]
         }
-        jackin_core::Agent::Kimi => vec![root.join("kimi-code")],
-        jackin_core::Agent::Hermes => vec![root.join("hermes")],
+        jackin_core::Agent::Kimi | jackin_core::Agent::Hermes => vec![store_dir],
         _ => Vec::new(),
     };
-    ProvisionedInstanceAuth::new(binding, None, credential_paths, false)
+    ProvisionedInstanceAuth::new(binding, None, credential_paths, false, layout)
 }
 
 fn agent_ignore_can_skip_state_prepare(
     root: &Path,
     agent: jackin_core::Agent,
+    suffix: Option<&str>,
 ) -> anyhow::Result<bool> {
+    let (store, _) = agent_slot_dirs(agent);
+    let store_dir = root.join(slot_store_rel(store, suffix));
     let stale_paths: Vec<PathBuf> = match agent {
         jackin_core::Agent::Claude => {
-            let claude_dir = root.join("claude");
             vec![
-                claude_dir.join("account.json"),
-                claude_dir.join("credentials.json"),
+                store_dir.join("account.json"),
+                store_dir.join("credentials.json"),
             ]
         }
-        jackin_core::Agent::Codex => vec![root.join("codex/auth.json")],
-        jackin_core::Agent::Amp => vec![root.join("amp/secrets.json")],
-        jackin_core::Agent::Kimi => vec![root.join("kimi-code")],
-        jackin_core::Agent::Opencode => vec![root.join("opencode/auth.json")],
-        jackin_core::Agent::Grok => vec![root.join("grok/auth.json")],
-        jackin_core::Agent::Antigravity => vec![root.join("antigravity/settings.json")],
-        jackin_core::Agent::Gemini => vec![root.join("gemini/oauth_creds.json")],
-        jackin_core::Agent::Cursor => vec![root.join("cursor/auth.json")],
-        jackin_core::Agent::Muse => vec![root.join("muse/auth.json")],
-        jackin_core::Agent::Omp => vec![root.join("omp/agent.db")],
-        jackin_core::Agent::Hermes => vec![root.join("hermes")],
+        jackin_core::Agent::Codex => vec![store_dir.join("auth.json")],
+        jackin_core::Agent::Amp => vec![store_dir.join("secrets.json")],
+        jackin_core::Agent::Kimi => vec![store_dir.clone()],
+        jackin_core::Agent::Opencode => vec![store_dir.join("auth.json")],
+        jackin_core::Agent::Grok => vec![store_dir.join("auth.json")],
+        jackin_core::Agent::Antigravity => vec![store_dir.join("settings.json")],
+        jackin_core::Agent::Gemini => vec![store_dir.join("oauth_creds.json")],
+        jackin_core::Agent::Cursor => vec![store_dir.join("auth.json")],
+        jackin_core::Agent::Muse => vec![store_dir.join("auth.json")],
+        jackin_core::Agent::Omp => vec![store_dir.join("agent.db")],
+        jackin_core::Agent::Hermes => vec![store_dir.clone()],
     };
 
     for path in stale_paths {

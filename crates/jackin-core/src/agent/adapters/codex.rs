@@ -6,8 +6,8 @@
 use crate::auth::AuthForwardMode;
 
 use crate::agent::runtime::{
-    AgentRuntime, AgentStatePaths, bounded_fallback_curl, looks_like_version,
-    render_fallback_install_block,
+    AgentRuntime, AgentStatePaths, FolderVar, FolderVarKind, bounded_fallback_curl,
+    looks_like_version, render_fallback_install_block,
 };
 
 const FALLBACK_INSTALL_COMMAND: &str = bounded_fallback_curl!(
@@ -78,7 +78,10 @@ RUN set -euxo pipefail && \\
             credential_dir: ".codex",
             config_dir: None, // all durable state under ~/.codex
             credential_file: Some(".codex/auth.json"),
-            folder_env_var: Some("CODEX_HOME"),
+            folder_env_var: Some(FolderVar {
+                name: "CODEX_HOME",
+                kind: FolderVarKind::Dir,
+            }),
         }
     }
 

@@ -608,17 +608,137 @@ fn prepare_for_bindings_provisions_two_instances_of_same_agent_independently() {
 
     assert_eq!(selected_outcome, AuthProvisionOutcome::Skipped);
     assert_eq!(state.auth.slots.len(), 2);
-    for account_id in ["work", "personal"] {
-        let key = ProvisionedAuth::instance_key(account_id, jackin_core::Agent::Claude);
-        let slot = state.auth.slots.get(&key).unwrap_or_else(|| {
-            panic!("{key} slot missing after multi-instance provision");
-        });
+    let work_key = ProvisionedAuth::instance_key("work", jackin_core::Agent::Claude);
+    let personal_key = ProvisionedAuth::instance_key("personal", jackin_core::Agent::Claude);
+    let work = state
+        .auth
+        .slots
+        .get(&work_key)
+        .expect("work slot missing after multi-instance provision");
+    let personal = state
+        .auth
+        .slots
+        .get(&personal_key)
+        .expect("personal slot missing after multi-instance provision");
+    for (slot, account_id) in [(&work, "work"), (&personal, "personal")] {
         assert_eq!(slot.agent, jackin_core::Agent::Claude);
         assert_eq!(slot.account_id, account_id);
         assert_eq!(slot.mode, AuthForwardMode::Ignore);
         assert!(!slot.forward_auth);
         assert!(slot.home_dir.is_none());
     }
+    // First binding keeps the legacy layout; the second gets suffixed
+    // dirs so the two accounts never share a store or home.
+    assert_eq!(work.slot_suffix, None);
+    assert_eq!(work.container_home_rel, ".claude");
+    assert_eq!(work.container_store_rel, "claude");
+    assert_eq!(work.folder_target, "/home/agent/.claude");
+    assert_eq!(personal.slot_suffix.as_deref(), Some("personal-claude"));
+    assert_eq!(personal.container_home_rel, ".claude-personal-claude");
+    assert_eq!(personal.container_store_rel, "claude-personal-claude");
+    assert_eq!(
+        personal.folder_target,
+        "/home/agent/.claude-personal-claude"
+    );
+    assert_ne!(
+        work.credential_paths, personal.credential_paths,
+        "same-agent slots must not share credential paths"
+    );
+}
+
+#[test]
+fn parent_kind_slots_isolate_under_a_unique_parent() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let manifest = simple_manifest(&temp);
+
+    let bindings = vec![
+        InstanceAuthBinding::new(
+            "g1",
+            jackin_core::Agent::Gemini,
+            AuthForwardMode::Ignore,
+            None,
+        ),
+        InstanceAuthBinding::new(
+            "g2",
+            jackin_core::Agent::Gemini,
+            AuthForwardMode::Ignore,
+            None,
+        ),
+    ];
+
+    let (state, _) = RoleState::prepare_for_bindings(
+        &paths,
+        "jk-k7p9m2xq-agentsmith",
+        &manifest,
+        &bindings,
+        &GithubAuthContext::default(),
+        temp.path(),
+        jackin_core::Agent::Gemini,
+    )
+    .unwrap();
+
+    // `GEMINI_CLI_HOME` names the parent: the primary keeps the legacy
+    // home with the agent-home target, the secondary gets a unique
+    // parent whose `.gemini` child is its home.
+    let primary_key = ProvisionedAuth::instance_key("g1", jackin_core::Agent::Gemini);
+    let primary = state.auth.slots.get(&primary_key).unwrap();
+    assert_eq!(primary.slot_suffix, None);
+    assert_eq!(primary.container_home_rel, ".gemini");
+    assert_eq!(primary.folder_target, "/home/agent");
+
+    let secondary_key = ProvisionedAuth::instance_key("g2", jackin_core::Agent::Gemini);
+    let secondary = state.auth.slots.get(&secondary_key).unwrap();
+    assert_eq!(
+        secondary.slot_suffix.as_deref(),
+        Some("g2-gemini"),
+        "secondary parent-kind slot keeps the sanitized key suffix"
+    );
+    assert_eq!(secondary.container_home_rel, ".gemini-g2-gemini/.gemini");
+    assert_eq!(secondary.folder_target, "/home/agent/.gemini-g2-gemini");
+}
+
+#[test]
+fn colliding_sanitized_suffixes_get_numeric_tails() {
+    // `a@b` and `a-b` sanitize identically; secondary slots must still
+    // land in distinct dirs.
+    let binding_for = |key: &str| {
+        let mut binding = InstanceAuthBinding::new(
+            "work",
+            jackin_core::Agent::Claude,
+            AuthForwardMode::Ignore,
+            None,
+        );
+        binding.key = key.to_owned();
+        binding
+    };
+    let bindings = [
+        binding_for("primary"),
+        binding_for("a@b"),
+        binding_for("a-b"),
+    ];
+    let suffixes = slot_suffixes(&bindings);
+    assert_eq!(suffixes[0], None);
+    assert_eq!(suffixes[1].as_deref(), Some("a-b"));
+    assert_eq!(suffixes[2].as_deref(), Some("a-b-2"));
+    // Dedupe is per agent: a codex secondary keeps `a-b` even
+    // though a claude secondary already owns it; store dirs are per
+    // agent so they cannot collide.
+    let mut codex_primary = binding_for("codex-primary");
+    codex_primary.agent = jackin_core::Agent::Codex;
+    let mut codex_secondary = binding_for("a@b");
+    codex_secondary.agent = jackin_core::Agent::Codex;
+    let mixed = [
+        bindings[0].clone(),
+        bindings[1].clone(),
+        codex_primary,
+        codex_secondary,
+    ];
+    let suffixes = slot_suffixes(&mixed);
+    assert_eq!(suffixes[0], None);
+    assert_eq!(suffixes[1].as_deref(), Some("a-b"));
+    assert_eq!(suffixes[2], None);
+    assert_eq!(suffixes[3].as_deref(), Some("a-b"));
 }
 
 #[test]

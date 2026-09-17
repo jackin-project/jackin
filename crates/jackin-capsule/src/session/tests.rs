@@ -3,11 +3,39 @@
 
 //! Tests for `session`.
 use super::{
-    AgentState, OscPolicy, Session, SessionEvent, SessionTerminal, agent_model_args,
-    build_agent_command, build_shell_command, child_exit_reason, emit_pty_exit, emit_pty_spawn,
-    inject_status_env, osc8_uri_is_safe, pty_exit_error_type, pty_exit_reason,
+    AgentSpawnSpec, AgentState, OscPolicy, Session, SessionEvent, SessionTerminal,
+    agent_model_args, build_agent_command, build_shell_command, child_exit_reason, emit_pty_exit,
+    emit_pty_spawn, inject_status_env, osc8_uri_is_safe, pty_exit_error_type, pty_exit_reason,
     validate_spawn_token_syntax,
 };
+
+/// Primary-layout spawn spec for `agent`/`instance`.
+fn spawn_spec<'a>(
+    agent: &'a str,
+    instance: &'a str,
+    auth_mode: Option<&'a str>,
+    env_passthrough: &'a [(String, String)],
+) -> AgentSpawnSpec<'a> {
+    let (home_dir, forwarded_dir) = match agent {
+        "claude" => (
+            jackin_core::container_paths::CLAUDE_CONFIG_DIR,
+            "/jackin/claude",
+        ),
+        "codex" => ("/home/agent/.codex", "/jackin/codex"),
+        _ => ("/home/agent/.test", "/jackin/test"),
+    };
+    AgentSpawnSpec {
+        agent,
+        instance,
+        home_dir,
+        forwarded_dir,
+        model: None,
+        auth_mode,
+        env_passthrough,
+        cwd: Path::new("/workspace"),
+        codename: "test",
+    }
+}
 
 use std::path::Path;
 use std::sync::{Arc, Mutex};
@@ -718,7 +746,7 @@ fn drain_clears_pending_between_calls() {
 #[test]
 fn build_agent_command_overrides_stale_agent_env() {
     let env = vec![("JACKIN_AGENT".to_owned(), "claude".to_owned())];
-    let cmd = build_agent_command("codex", None, None, &env, Path::new("/workspace"), "test");
+    let cmd = build_agent_command(&spawn_spec("codex", "codex-work", None, &env));
 
     assert_eq!(
         cmd.get_env("JACKIN_AGENT").and_then(|value| value.to_str()),
@@ -732,14 +760,7 @@ fn build_agent_command_injects_only_bounded_auth_mode() {
         jackin_protocol::AUTH_MODE_ENV.to_owned(),
         "private-stale-mode".to_owned(),
     )];
-    let cmd = build_agent_command(
-        "codex",
-        None,
-        Some("api_key"),
-        &env,
-        Path::new("/workspace"),
-        "test",
-    );
+    let cmd = build_agent_command(&spawn_spec("codex", "codex-work", Some("api_key"), &env));
 
     assert_eq!(
         cmd.get_env(jackin_protocol::AUTH_MODE_ENV)
@@ -751,7 +772,7 @@ fn build_agent_command_injects_only_bounded_auth_mode() {
 #[test]
 fn build_agent_command_uses_stable_pane_term() {
     let env = vec![("TERM".to_owned(), "xterm-ghostty".to_owned())];
-    let cmd = build_agent_command("codex", None, None, &env, Path::new("/workspace"), "test");
+    let cmd = build_agent_command(&spawn_spec("codex", "codex-work", None, &env));
 
     assert_eq!(
         cmd.get_env("TERM").and_then(|value| value.to_str()),
@@ -762,7 +783,7 @@ fn build_agent_command_uses_stable_pane_term() {
 #[test]
 fn build_agent_command_advertises_truecolor() {
     let env = vec![("COLORTERM".to_owned(), "24bit".to_owned())];
-    let cmd = build_agent_command("claude", None, None, &env, Path::new("/workspace"), "test");
+    let cmd = build_agent_command(&spawn_spec("claude", "claude-work", None, &env));
 
     assert_eq!(
         cmd.get_env("COLORTERM").and_then(|value| value.to_str()),
@@ -1730,25 +1751,21 @@ fn account_credentials_are_scoped_to_selected_instance_and_mode() {
     let credentials = v2_credentials_fixture();
     let hostile_passthrough = vec![("ANTHROPIC_API_KEY".into(), "wrong-secret".into())];
     for mode in ["sync", "ignore"] {
-        let mut cmd = build_agent_command(
+        let mut cmd = build_agent_command(&spawn_spec(
             "claude",
-            None,
+            "claude-work",
             Some(mode),
             &hostile_passthrough,
-            Path::new("/workspace"),
-            "test",
-        );
+        ));
         super::apply_account_env(&mut cmd, "claude-work", Some(mode), &credentials);
         assert!(cmd.get_env("ANTHROPIC_API_KEY").is_none());
     }
-    let mut cmd = build_agent_command(
+    let mut cmd = build_agent_command(&spawn_spec(
         "claude",
-        None,
+        "claude-work",
         Some("api_key"),
         &hostile_passthrough,
-        Path::new("/workspace"),
-        "test",
-    );
+    ));
     super::apply_account_env(&mut cmd, "claude-work", Some("api_key"), &credentials);
     assert_eq!(
         cmd.get_env("ANTHROPIC_API_KEY").and_then(|v| v.to_str()),
@@ -1757,14 +1774,12 @@ fn account_credentials_are_scoped_to_selected_instance_and_mode() {
     assert!(cmd.get_env("OPENAI_API_KEY").is_none());
     // Same agent, sibling instance: only its own env lands, never the other
     // claude instance's secret.
-    let mut cmd = build_agent_command(
+    let mut cmd = build_agent_command(&spawn_spec(
         "claude",
-        None,
+        "claude-work",
         Some("api_key"),
         &hostile_passthrough,
-        Path::new("/workspace"),
-        "test",
-    );
+    ));
     super::apply_account_env(&mut cmd, "claude-personal", Some("api_key"), &credentials);
     assert_eq!(
         cmd.get_env("ANTHROPIC_API_KEY").and_then(|v| v.to_str()),
@@ -1788,14 +1803,8 @@ fn unassigned_instance_cannot_inherit_another_instances_provider_key() {
             },
         }))
         .expect("v2 fixture must decode");
-    let mut cmd = build_agent_command(
-        "codex",
-        None,
-        Some("ignore"),
-        &[],
-        Path::new("/workspace"),
-        "test",
-    );
+    let empty: Vec<(String, String)> = Vec::new();
+    let mut cmd = build_agent_command(&spawn_spec("codex", "codex-work", Some("ignore"), &empty));
     super::apply_account_env(&mut cmd, "codex-work", Some("ignore"), &credentials);
     assert!(cmd.get_env("OPENAI_API_KEY").is_none());
     assert!(!format!("{credentials:?}").contains("opencode-secret"));
@@ -1805,14 +1814,12 @@ fn unassigned_instance_cannot_inherit_another_instances_provider_key() {
 fn claude_session_owns_its_durable_config_directory_for_every_auth_mode() {
     let passthrough = vec![("CLAUDE_CONFIG_DIR".to_owned(), "/stale-profile".to_owned())];
     for mode in ["sync", "api_key", "oauth_token", "ignore"] {
-        let command = build_agent_command(
+        let command = build_agent_command(&spawn_spec(
             "claude",
-            None,
+            "claude-work",
             Some(mode),
             &passthrough,
-            Path::new("/workspace"),
-            "test",
-        );
+        ));
         assert_eq!(
             command.get_env("CLAUDE_CONFIG_DIR"),
             Some(std::ffi::OsStr::new(
@@ -1820,4 +1827,53 @@ fn claude_session_owns_its_durable_config_directory_for_every_auth_mode() {
             ))
         );
     }
+}
+
+#[test]
+fn secondary_instance_gets_its_own_home_and_forwarded_dir() {
+    let hostile = vec![
+        ("CLAUDE_CONFIG_DIR".to_owned(), "/stale-profile".to_owned()),
+        ("CODEX_HOME".to_owned(), "/foreign-codex".to_owned()),
+    ];
+    let spec = AgentSpawnSpec {
+        agent: "claude",
+        instance: "claude-personal",
+        home_dir: "/home/agent/.claude-claude-personal",
+        forwarded_dir: "/jackin/claude-claude-personal",
+        model: None,
+        auth_mode: Some("sync"),
+        env_passthrough: &hostile,
+        cwd: Path::new("/workspace"),
+        codename: "test",
+    };
+    let cmd = build_agent_command(&spec);
+    let env = |name: &str| cmd.get_env(name).and_then(|v| v.to_str());
+    assert_eq!(
+        env("CLAUDE_CONFIG_DIR"),
+        Some("/home/agent/.claude-claude-personal")
+    );
+    assert!(env("CODEX_HOME").is_none());
+    assert_eq!(env(jackin_protocol::INSTANCE_ENV), Some("claude-personal"));
+    assert_eq!(
+        env(jackin_protocol::INSTANCE_FORWARDED_DIR_ENV),
+        Some("/jackin/claude-claude-personal")
+    );
+    assert_eq!(env("JACKIN_AGENT"), Some("claude"));
+
+    // A codex pane never inherits another runtime's folder var either.
+    let spec = AgentSpawnSpec {
+        agent: "codex",
+        instance: "codex-work",
+        home_dir: "/home/agent/.codex",
+        forwarded_dir: "/jackin/codex",
+        model: None,
+        auth_mode: Some("sync"),
+        env_passthrough: &hostile,
+        cwd: Path::new("/workspace"),
+        codename: "test",
+    };
+    let cmd = build_agent_command(&spec);
+    let env = |name: &str| cmd.get_env(name).and_then(|v| v.to_str());
+    assert_eq!(env("CODEX_HOME"), Some("/home/agent/.codex"));
+    assert!(env("CLAUDE_CONFIG_DIR").is_none());
 }

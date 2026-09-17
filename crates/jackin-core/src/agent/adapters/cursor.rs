@@ -6,8 +6,8 @@
 use crate::auth::AuthForwardMode;
 
 use crate::agent::runtime::{
-    AgentRuntime, AgentStatePaths, bounded_fallback_curl, looks_like_version,
-    render_fallback_install_block,
+    AgentRuntime, AgentStatePaths, FolderVar, FolderVarKind, bounded_fallback_curl,
+    looks_like_version, render_fallback_install_block,
 };
 
 // Official installer (verified 2026-09-17: serves `cursor-agent-installer.sh`).
@@ -86,7 +86,10 @@ RUN set -euxo pipefail && \\
             credential_dir: ".cursor",
             config_dir: None, // auth.json + cli-config.json both under ~/.cursor
             credential_file: Some(".cursor/auth.json"),
-            folder_env_var: Some("CURSOR_CONFIG_DIR"),
+            folder_env_var: Some(FolderVar {
+                name: "CURSOR_CONFIG_DIR",
+                kind: FolderVarKind::Dir,
+            }),
         }
     }
 

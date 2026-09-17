@@ -6,7 +6,8 @@
 use crate::auth::AuthForwardMode;
 
 use crate::agent::runtime::{
-    AgentRuntime, AgentStatePaths, looks_like_version, render_fallback_install_block,
+    AgentRuntime, AgentStatePaths, FolderVar, FolderVarKind, looks_like_version,
+    render_fallback_install_block,
 };
 
 // Pinned npm release (bin `omp` verified via registry metadata;
@@ -81,7 +82,10 @@ RUN set -euxo pipefail && \\
             // discovery treats file presence as evidence without parsing.
             credential_file: Some(".omp/agent/agent.db"),
             // OMP_PROFILE selects a named profile within the dir.
-            folder_env_var: Some("PI_CODING_AGENT_DIR"),
+            folder_env_var: Some(FolderVar {
+                name: "PI_CODING_AGENT_DIR",
+                kind: FolderVarKind::Dir,
+            }),
         }
     }
 

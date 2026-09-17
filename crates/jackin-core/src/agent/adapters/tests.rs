@@ -122,5 +122,11 @@ fn amp_state_paths_describe_xdg_data_store() {
 
     assert_eq!(paths.credential_dir, ".local/share/amp");
     assert_eq!(paths.credential_file, Some(".local/share/amp/secrets.json"));
-    assert_eq!(paths.folder_env_var, Some("XDG_DATA_HOME"));
+    assert_eq!(
+        paths.folder_env_var,
+        Some(crate::agent::FolderVar {
+            name: "XDG_DATA_HOME",
+            kind: crate::agent::FolderVarKind::XdgRoot,
+        })
+    );
 }

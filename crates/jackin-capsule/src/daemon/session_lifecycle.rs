@@ -237,19 +237,28 @@ impl Multiplexer {
                 let slug = config.agent_for_instance(instance).ok_or_else(|| {
                     anyhow::anyhow!("instance {instance:?} has no agent runtime in launch config")
                 })?;
+                let home_dir = config.home_for_instance(instance).ok_or_else(|| {
+                    anyhow::anyhow!("instance {instance:?} has no home dir in launch config")
+                })?;
+                let forwarded_dir = config.forwarded_for_instance(instance).ok_or_else(|| {
+                    anyhow::anyhow!("instance {instance:?} has no forwarded dir in launch config")
+                })?;
                 let label = crate::tui::model::visible_agent_label(
                     config.label_for_instance(instance),
                     Some(slug),
                     provider_label,
                 );
-                let mut cmd = build_agent_command(
-                    slug,
-                    config.model_for_instance(instance),
-                    config.auth_mode_for_instance(instance),
+                let mut cmd = build_agent_command(&crate::session::AgentSpawnSpec {
+                    agent: slug,
+                    instance,
+                    home_dir,
+                    forwarded_dir,
+                    model: config.model_for_instance(instance),
+                    auth_mode: config.auth_mode_for_instance(instance),
                     env_passthrough,
                     cwd,
                     codename,
-                );
+                });
                 crate::session::apply_account_env(
                     &mut cmd,
                     instance,

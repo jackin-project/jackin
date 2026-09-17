@@ -42,6 +42,32 @@ pub(crate) fn account_auth_selections(
         .collect()
 }
 
+/// One [`InstanceAuthBinding`](crate::instance::InstanceAuthBinding)
+/// per admitted instance, keyed by config ID in launch order. Fails on
+/// the first unknown account; every returned binding resolves.
+pub(crate) fn instance_auth_bindings(
+    config: &jackin_config::AppConfig,
+    instances: &[jackin_config::ResolvedInstance],
+) -> anyhow::Result<Vec<crate::instance::InstanceAuthBinding>> {
+    instances
+        .iter()
+        .map(|instance| {
+            let account = config
+                .accounts
+                .get(&instance.account_id)
+                .ok_or_else(|| anyhow::anyhow!("unknown account {:?}", instance.account_id))?;
+            let mut binding = crate::instance::InstanceAuthBinding::new(
+                instance.account_id.clone(),
+                instance.agent,
+                account.auth_mode(),
+                account.source_directory().map(Path::to_path_buf),
+            );
+            binding.key = instance.config_id.clone();
+            Ok(binding)
+        })
+        .collect()
+}
+
 /// Per-instance auth modes for [`jackin_protocol::CapsuleConfig`], keyed by
 /// instance config ID in launch order.
 pub(crate) fn capsule_auth_modes(
@@ -78,6 +104,34 @@ pub(crate) fn apply_account_models(
             model.to_owned()
         };
         launch.models.insert(instance.config_id.clone(), model);
+    }
+    Ok(())
+}
+
+/// Fill the per-instance container dirs from prepared role-state
+/// slots, keyed by instance config ID. The folder-var target comes
+/// straight from the slot; the forwarded dir joins `/jackin` with the
+/// slot's store rel. A missing slot fails the launch closed: the
+/// daemon cannot spawn an instance it cannot place.
+pub(crate) fn apply_instance_dirs(
+    launch: &mut jackin_protocol::CapsuleConfig,
+    instances: &[jackin_config::ResolvedInstance],
+    slots: &std::collections::BTreeMap<String, crate::instance::ProvisionedInstanceAuth>,
+) -> anyhow::Result<()> {
+    for instance in instances {
+        let slot = slots.get(&instance.config_id).ok_or_else(|| {
+            anyhow::anyhow!(
+                "instance {:?} has no provisioned auth slot in role state",
+                instance.config_id
+            )
+        })?;
+        launch
+            .instance_home_dirs
+            .insert(instance.config_id.clone(), slot.folder_target.clone());
+        launch.instance_forwarded_dirs.insert(
+            instance.config_id.clone(),
+            format!("/jackin/{}", slot.container_store_rel),
+        );
     }
     Ok(())
 }
@@ -143,6 +197,10 @@ pub(crate) fn capsule_config(
         auth_modes: std::collections::BTreeMap::new(),
         accounts,
         labels,
+        // Populated by `apply_instance_dirs` once role state is
+        // prepared; the manifest alone does not carry slot layout.
+        instance_home_dirs: std::collections::BTreeMap::new(),
+        instance_forwarded_dirs: std::collections::BTreeMap::new(),
         claude_marketplaces: Vec::new(),
         claude_plugins: Vec::new(),
         // Populated by the launch pipeline once the operator env is known; the

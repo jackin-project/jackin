@@ -17,8 +17,8 @@ use jackin_core::RoleSelector;
 use jackin_core::{CommandRunner, RunOptions};
 use jackin_docker::docker_client::DockerApi;
 
+use crate::instance::RoleState;
 use crate::instance::naming::dind_certs_volume;
-use crate::instance::{PrepareResolvers, RoleState};
 use crate::runtime::identity::GitIdentity;
 
 use super::progress_helpers::StepCounter;
@@ -139,6 +139,29 @@ fn emit_isolation_decision(
     jackin_diagnostics::operation::isolation_decision(workspace, network, dind);
 }
 
+/// Initial daemon argv: the first admitted instance (launch order) for
+/// the launch agent. Falls back to the first admitted instance of any
+/// agent, then to the bare slug for legacy launches without instances.
+/// An exact config ID always resolves at the daemon's spawn gate; a bare
+/// slug is rejected when several instances share the runtime.
+fn initial_daemon_argv(
+    agent: jackin_core::Agent,
+    capsule_config: &jackin_protocol::CapsuleConfig,
+) -> &str {
+    let slug = agent.slug();
+    capsule_config
+        .instances
+        .iter()
+        .find(|id| {
+            capsule_config
+                .agents
+                .get(id.as_str())
+                .is_some_and(|candidate| candidate == slug)
+        })
+        .or_else(|| capsule_config.instances.first())
+        .map_or(slug, String::as_str)
+}
+
 fn emit_post_run_failure(is_firewall: bool) {
     if is_firewall {
         jackin_diagnostics::operation::isolation_firewall_failed(
@@ -173,7 +196,6 @@ pub(crate) fn spawn_sibling_auth_prewarm(
     let paths_owned = paths.clone();
     let home_dir = paths.home_dir.clone();
     let container_name = container_name.to_owned();
-    let manifest = prewarm.manifest.clone();
     let config = prewarm.config.clone();
     let workspace_name = prewarm.workspace_name.to_owned();
     let role_key = prewarm.role_key.to_owned();
@@ -228,8 +250,12 @@ pub(crate) fn spawn_sibling_auth_prewarm(
                     return;
                 }
             };
-        let selections = match super::capsule_setup::account_auth_selections(&config, &instances) {
-            Ok(selections) => selections,
+        // Sibling instances keep their config-ID keys so this
+        // concurrent prewarm lands in the same slots the foreground
+        // prepare owns; sibling agents without instances get a
+        // placeholder Ignore binding each.
+        let mut bindings = match super::capsule_setup::instance_auth_bindings(&config, &instances) {
+            Ok(bindings) => bindings,
             Err(error) => {
                 if let Some(run) = active_run {
                     run.compact("sibling_auth_prewarm_failed", &error.to_string());
@@ -237,30 +263,21 @@ pub(crate) fn spawn_sibling_auth_prewarm(
                 return;
             }
         };
-        let resolve_mode = |agent| {
-            instances
-                .iter()
-                .find(|instance| instance.agent == agent)
-                .and_then(|instance| selections.get(&instance.config_id))
-                .map_or(jackin_config::AuthForwardMode::Ignore, |(mode, _)| *mode)
-        };
-        let resolve_sync_src = |agent| {
-            instances
-                .iter()
-                .find(|instance| instance.agent == agent)
-                .and_then(|instance| selections.get(&instance.config_id))
-                .and_then(|(_, directory)| directory.clone())
-        };
-        let result = RoleState::prewarm_auth_for_agents(
+        for agent in &sibling_agents {
+            if !instances.iter().any(|instance| instance.agent == *agent) {
+                bindings.push(crate::instance::InstanceAuthBinding::new(
+                    "default",
+                    *agent,
+                    jackin_config::AuthForwardMode::Ignore,
+                    None,
+                ));
+            }
+        }
+        let result = RoleState::prewarm_auth_for_bindings(
             &paths_owned,
             &container_name,
-            &manifest,
-            &PrepareResolvers {
-                auth_modes: &resolve_mode,
-                sync_source_dirs: &resolve_sync_src,
-            },
+            &bindings,
             &home_dir,
-            &sibling_agents,
         );
         let timing_done = match &result {
             Ok(count) => format!("{count} slots"),
@@ -1050,10 +1067,13 @@ pub(crate) async fn launch_role_runtime(
         );
     }
     run_args.push(image);
-    // Pass the initial agent as the container command argument. The
+    // Pass the initial instance as the container command argument. The
     // daemon uses it only to choose the first tab; per-session
-    // `JACKIN_AGENT` is set later when spawning an actual agent PTY.
-    run_args.push(agent.slug());
+    // `JACKIN_AGENT` is set later when spawning an actual agent PTY. A
+    // bare agent slug is ambiguous when several admitted instances share
+    // the runtime, and the daemon's spawn gate rejects it — so resolve to
+    // an exact instance config ID whenever instances are admitted.
+    run_args.push(initial_daemon_argv(*agent, capsule_config));
     jackin_diagnostics::active_timing_started(
         jackin_diagnostics::DiagnosticStage::Capsule,
         "docker_run_role",
@@ -1440,5 +1460,50 @@ pub(crate) const fn capsule_otlp_allowlist_host(
         Some("host.docker.internal")
     } else {
         None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn capsule_config_with(instances: &[(&str, &str)]) -> jackin_protocol::CapsuleConfig {
+        let mut config = jackin_protocol::CapsuleConfig::default();
+        for (id, agent) in instances {
+            config.instances.push((*id).to_owned());
+            config.agents.insert((*id).to_owned(), (*agent).to_owned());
+        }
+        config
+    }
+
+    #[test]
+    fn initial_argv_prefers_first_matching_instance() {
+        let config = capsule_config_with(&[
+            ("claude-work", "claude"),
+            ("claude-personal", "claude"),
+            ("codex-work", "codex"),
+        ]);
+        assert_eq!(
+            initial_daemon_argv(jackin_core::Agent::Claude, &config),
+            "claude-work"
+        );
+        assert_eq!(
+            initial_daemon_argv(jackin_core::Agent::Codex, &config),
+            "codex-work"
+        );
+    }
+
+    #[test]
+    fn initial_argv_falls_back_to_first_instance_then_slug() {
+        let config = capsule_config_with(&[("codex-work", "codex")]);
+        assert_eq!(
+            initial_daemon_argv(jackin_core::Agent::Claude, &config),
+            "codex-work"
+        );
+        let empty = jackin_protocol::CapsuleConfig::default();
+        assert_eq!(
+            initial_daemon_argv(jackin_core::Agent::Claude, &empty),
+            "claude"
+        );
     }
 }

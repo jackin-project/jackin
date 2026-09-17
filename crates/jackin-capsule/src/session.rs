@@ -1600,6 +1600,37 @@ fn grade_for_runtime(runtime: &str) -> crate::agent_status::evidence::AuthorityG
     }
 }
 
+/// Per-instance facts for one agent spawn, resolved from the Capsule
+/// launch config. `home_dir` is the folder-var target
+/// (`/home/agent/.claude` for primary slots,
+/// `/home/agent/.claude-<suffix>` for secondary same-agent slots);
+/// `forwarded_dir` is the host-forwarded credential dir.
+#[derive(Debug)]
+pub struct AgentSpawnSpec<'a> {
+    pub agent: &'a str,
+    pub instance: &'a str,
+    pub home_dir: &'a str,
+    pub forwarded_dir: &'a str,
+    pub model: Option<&'a str>,
+    pub auth_mode: Option<&'a str>,
+    pub env_passthrough: &'a [(String, String)],
+    pub cwd: &'a Path,
+    pub codename: &'a str,
+}
+
+/// Whether `name` is an agent config-folder env var
+/// (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`, …). Folder vars are owned by the
+/// spawned instance, never by passthrough.
+fn is_folder_env(name: &str) -> bool {
+    jackin_core::Agent::ALL.iter().any(|agent| {
+        agent
+            .runtime()
+            .state_paths()
+            .folder_env_var
+            .is_some_and(|var| var.name == name)
+    })
+}
+
 /// Build a `CommandBuilder` for an agent session.
 ///
 /// Entrypoint is `/jackin/runtime/entrypoint.sh` with `JACKIN_AGENT=<slug>`.
@@ -1608,40 +1639,50 @@ fn grade_for_runtime(runtime: &str) -> crate::agent_status::evidence::AuthorityG
 /// defaults the child's cwd to `$HOME` when none is set — it does not
 /// inherit the daemon's cwd — so omitting this would land every agent in
 /// `/home/agent` regardless of the workspace.
-pub fn build_agent_command(
-    agent: &str,
-    model: Option<&str>,
-    auth_mode: Option<&str>,
-    env_passthrough: &[(String, String)],
-    cwd: &Path,
-    codename: &str,
-) -> CommandBuilder {
+///
+/// Every agent folder var (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`, …) is
+/// scrubbed and rejected from passthrough, then this instance's folder
+/// var is set to its own home: a stale or foreign value can never leak
+/// this pane into another account's credentials or history.
+pub fn build_agent_command(spec: &AgentSpawnSpec<'_>) -> CommandBuilder {
     let mut cmd = CommandBuilder::new(container_paths::ENTRYPOINT);
-    for arg in agent_model_args(agent, model) {
+    for arg in agent_model_args(spec.agent, spec.model) {
         cmd.arg(arg);
     }
     for name in jackin_core::account_env_names() {
         cmd.env_remove(name);
     }
-    for (k, v) in env_passthrough {
-        if !jackin_core::is_account_env(k) {
+    for agent in jackin_core::Agent::ALL {
+        if let Some(var) = agent.runtime().state_paths().folder_env_var {
+            cmd.env_remove(var.name);
+        }
+    }
+    for (k, v) in spec.env_passthrough {
+        if !jackin_core::is_account_env(k) && !is_folder_env(k) {
             cmd.env(k, v);
         }
     }
-    if agent == "claude" {
+    if let Some(agent) = jackin_core::Agent::from_slug(spec.agent)
+        && let Some(var) = agent.runtime().state_paths().folder_env_var
+    {
         // Claude atomically replaces onboarding metadata; keep it inside the
         // durable directory mount rather than a file mounted at the home root.
-        cmd.env("CLAUDE_CONFIG_DIR", container_paths::CLAUDE_CONFIG_DIR);
+        cmd.env(var.name, spec.home_dir);
     }
-    cmd.env("JACKIN_AGENT", agent);
-    if let Some(auth_mode) = auth_mode {
+    cmd.env("JACKIN_AGENT", spec.agent);
+    cmd.env(jackin_protocol::INSTANCE_ENV, spec.instance);
+    cmd.env(
+        jackin_protocol::INSTANCE_FORWARDED_DIR_ENV,
+        spec.forwarded_dir,
+    );
+    if let Some(auth_mode) = spec.auth_mode {
         cmd.env(jackin_protocol::AUTH_MODE_ENV, auth_mode);
     } else {
         cmd.env_remove(jackin_protocol::AUTH_MODE_ENV);
     }
-    cmd.env("JACKIN_AGENT_CODENAME", codename);
+    cmd.env("JACKIN_AGENT_CODENAME", spec.codename);
     apply_terminal_env(&mut cmd);
-    cmd.cwd(cwd);
+    cmd.cwd(spec.cwd);
     cmd
 }
 

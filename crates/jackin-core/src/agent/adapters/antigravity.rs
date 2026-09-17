@@ -6,8 +6,8 @@
 use crate::auth::AuthForwardMode;
 
 use crate::agent::runtime::{
-    AgentRuntime, AgentStatePaths, bounded_fallback_curl, looks_like_version,
-    render_fallback_install_block,
+    AgentRuntime, AgentStatePaths, FolderVar, FolderVarKind, bounded_fallback_curl,
+    looks_like_version, render_fallback_install_block,
 };
 
 // Verified 2026-09-17 against https://antigravity.google/docs/cli/install
@@ -82,7 +82,10 @@ RUN set -euxo pipefail && \\
             // macOS Keychain singleton (service `gemini`, account
             // `antigravity`), which blocks naive per-directory
             // multi-account isolation.
-            folder_env_var: Some("GEMINI_CLI_HOME"),
+            folder_env_var: Some(FolderVar {
+                name: "GEMINI_CLI_HOME",
+                kind: FolderVarKind::Parent,
+            }),
             // NOTE: GEMINI_CLI_HOME names the *parent* to which `.gemini` is
             // appended, so it governs this subdir too.
         }

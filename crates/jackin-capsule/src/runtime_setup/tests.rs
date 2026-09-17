@@ -184,6 +184,29 @@ fn claude_paths_follow_config_dir_when_set() {
 }
 
 #[test]
+fn forwarded_paths_follow_instance_dir_when_set() {
+    assert_eq!(
+        forwarded_file_from(None, "/jackin/claude/credentials.json"),
+        PathBuf::from("/jackin/claude/credentials.json")
+    );
+    assert_eq!(
+        forwarded_file_from(
+            Some("/jackin/claude-claude-personal"),
+            "/jackin/claude/credentials.json"
+        ),
+        PathBuf::from("/jackin/claude-claude-personal/credentials.json")
+    );
+    assert_eq!(
+        forwarded_dir_from(None, "/jackin/hermes"),
+        PathBuf::from("/jackin/hermes")
+    );
+    assert_eq!(
+        forwarded_dir_from(Some("/jackin/hermes-x"), "/jackin/hermes"),
+        PathBuf::from("/jackin/hermes-x")
+    );
+}
+
+#[test]
 fn codex_home_honors_env_else_defaults() {
     assert_eq!(codex_home_from(None), PathBuf::from("/home/agent/.codex"));
     assert_eq!(

@@ -8,8 +8,8 @@ use crate::constants::CLAUDE_OAUTH_TOKEN_ENV;
 use crate::env_model;
 
 use crate::agent::runtime::{
-    AgentRuntime, AgentStatePaths, bounded_fallback_curl, looks_like_version,
-    render_fallback_install_block,
+    AgentRuntime, AgentStatePaths, FolderVar, FolderVarKind, bounded_fallback_curl,
+    looks_like_version, render_fallback_install_block,
 };
 
 const FALLBACK_INSTALL_COMMAND: &str =
@@ -86,7 +86,10 @@ RUN --mount=type=cache,id=jackin-agent-prefetch-claude,target=/home/agent/.cache
             credential_dir: ".claude",
             config_dir: None,      // all durable state under ~/.claude
             credential_file: None, // .credentials.json and .claude.json within config dir
-            folder_env_var: Some("CLAUDE_CONFIG_DIR"),
+            folder_env_var: Some(FolderVar {
+                name: "CLAUDE_CONFIG_DIR",
+                kind: FolderVarKind::Dir,
+            }),
         }
     }
 

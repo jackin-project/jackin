@@ -20,30 +20,93 @@ pub(crate) enum AppleContainerMountError {
     WorktreeFileOverlays { destination: String },
 }
 
-/// Emit the durable-home bind mounts for `agent`, derived from its
-/// [`AgentStatePaths`](jackin_core::AgentStatePaths) so the
-/// per-agent home layout (data root and paired config root)
-/// lives only in the agent enum. Auth-handoff mounts are agent-specific and stay
-/// inline in [`agent_mounts`].
-fn push_agent_home_mounts(mounts: &mut Vec<String>, root: &Path, agent: jackin_core::Agent) {
+/// Emit the durable-home bind mounts for one provisioned slot. The
+/// data home comes from the slot's kind-aware container rel
+/// (`/home/agent/.claude-<suffix>`, or a unique parent child for
+/// parent-scoped folder vars); paired config roots come from the
+/// agent's [`AgentStatePaths`](jackin_core::AgentStatePaths) with the
+/// slot suffix applied. Primary slots keep the legacy destinations.
+fn push_slot_home_mounts(
+    mounts: &mut Vec<String>,
+    root: &Path,
+    agent: jackin_core::Agent,
+    slot: &crate::instance::ProvisionedInstanceAuth,
+) {
     let paths = agent.runtime().state_paths();
     let home = root.join("home");
-    for entry in paths.home_dirs() {
-        mounts.push(format!(
-            "{}:/home/agent/{entry}",
-            home.join(entry).display()
-        ));
+    mounts.push(format!(
+        "{}:/home/agent/{}",
+        home.join(&slot.container_home_rel).display(),
+        slot.container_home_rel
+    ));
+    for entry in paths
+        .home_dirs()
+        .filter(|entry| *entry != paths.credential_dir)
+    {
+        let rel = crate::instance::slot_home_rel(entry, slot.slot_suffix.as_deref());
+        mounts.push(format!("{}:/home/agent/{rel}", home.join(&rel).display()));
     }
 }
 
-/// Returns the per-agent mount strings in jackin❯'s `src:dst[:ro]` idiom for
+/// Emit the auth-handoff mounts for one provisioned slot under its
+/// container store dir (`/jackin/<agent>` for primary slots,
+/// `/jackin/<agent>-<suffix>` for secondary same-agent slots).
+///
+/// File-credential agents mount each provisioned file by file name;
+/// Kimi/Hermes mount their credential directory. Claude keeps its
+/// per-file `exists()` guards: `forward_auth = true` covers `Sync`
+/// (host-derived credentials) and `OAuthToken` (the onboarding
+/// skeleton), while `ApiKey` and `Ignore` wipe the role-state files —
+/// and the guard keeps the `OAuthToken` arm from mounting a stale
+/// `credentials.json` if the provision-step removal failed silently.
+fn push_slot_auth_mounts(
+    mounts: &mut Vec<String>,
+    root: &Path,
+    slot: &crate::instance::ProvisionedInstanceAuth,
+) {
+    use jackin_core::Agent;
+    if !slot.forward_auth {
+        return;
+    }
+    if matches!(slot.agent, Agent::Kimi | Agent::Hermes) {
+        let store = root.join(&slot.container_store_rel);
+        mounts.push(format!(
+            "{}:/jackin/{}",
+            store.display(),
+            slot.container_store_rel
+        ));
+        return;
+    }
+    for path in &slot.credential_paths {
+        let Some(file_name) = path.file_name().and_then(|name| name.to_str()) else {
+            continue;
+        };
+        // Auth mounts are bound RW at the docker level so future
+        // plumbing (symlink / bind re-mount) for live bidirectional
+        // sync — see `roadmap/live-auth-sync.mdx` — can rely on a
+        // writable target. The entrypoint currently `cp`s the file, so
+        // in-container rotation does not flow back today.
+        let guarded = matches!(slot.agent, Agent::Claude) && !path.exists();
+        if !guarded {
+            mounts.push(format!(
+                "{}:/jackin/{}/{}",
+                path.display(),
+                slot.container_store_rel,
+                file_name
+            ));
+        }
+    }
+}
+
+/// Returns the per-slot mount strings in jackin❯'s `src:dst[:ro]` idiom for
 /// `docker run -v`.
 ///
-/// Every provisioned agent is represented on `state.auth`, so the mount block
-/// checks `auth.*` flags rather than matching the selected-agent variant. The
-/// foreground launch path provisions all manifest-supported agents so sibling
-/// tabs opened via `hardline --new --agent <other>` find their homes
-/// bind-mounted from the start.
+/// Every provisioned slot is represented on `state.auth`, so the mount
+/// block iterates slots rather than matching the selected-agent
+/// variant. The foreground launch path provisions all admitted
+/// instances so sibling tabs find their homes bind-mounted from the
+/// start. Agents keep a fixed order; each agent's primary slot (legacy
+/// destinations) mounts before its secondary slots in key order.
 pub(crate) fn agent_mounts(state: &crate::instance::RoleState) -> Vec<String> {
     use jackin_core::Agent;
     let mut mounts = vec![format!(
@@ -56,127 +119,19 @@ pub(crate) fn agent_mounts(state: &crate::instance::RoleState) -> Vec<String> {
         state.root.join("credentials").display()
     ));
 
-    if let Some(claude) = state.auth.for_agent(Agent::Claude) {
-        push_agent_home_mounts(&mut mounts, &state.root, Agent::Claude);
-        // `forward_auth = true` for Sync (host-derived credentials) and
-        // OAuthToken (the onboarding skeleton). ApiKey and Ignore set it
-        // to false so a `{}` placeholder left behind by `wipe_claude_state`
-        // never reaches the container. The per-file `exists()` guard keeps
-        // the OAuthToken arm from mounting a stale `credentials.json` if
-        // the provision-step removal failed silently.
-        if claude.forward_auth {
-            if let Some(account_json) = claude.credential_paths.first().filter(|p| p.exists()) {
-                mounts.push(format!(
-                    "{}:/jackin/claude/account.json",
-                    account_json.display()
-                ));
-            }
-            if let Some(credentials_json) = claude.credential_paths.get(1).filter(|p| p.exists()) {
-                mounts.push(format!(
-                    "{}:/jackin/claude/credentials.json",
-                    credentials_json.display()
-                ));
-            }
-        }
-    }
-
-    if let Some(codex) = state.auth.for_agent(Agent::Codex) {
-        push_agent_home_mounts(&mut mounts, &state.root, Agent::Codex);
-        if let Some(auth_json) = codex.credential_paths.first() {
-            mounts.push(format!("{}:/jackin/codex/auth.json", auth_json.display()));
-        }
-    }
-
-    if let Some(amp) = state.auth.for_agent(Agent::Amp) {
-        push_agent_home_mounts(&mut mounts, &state.root, Agent::Amp);
-        // Bound RW at the docker level so future plumbing (symlink / bind
-        // re-mount) for live bidirectional sync — see
-        // `roadmap/live-auth-sync.mdx` — can rely on a writable target.
-        // The entrypoint currently `cp`s the file, so in-container rotation
-        // does not flow back today.
-        if let Some(secrets_json) = amp.credential_paths.first() {
-            mounts.push(format!(
-                "{}:/jackin/amp/secrets.json",
-                secrets_json.display()
-            ));
-        }
-    }
-
-    if let Some(kimi) = state.auth.for_agent(Agent::Kimi) {
-        push_agent_home_mounts(&mut mounts, &state.root, Agent::Kimi);
-        if kimi.forward_auth {
-            mounts.push(format!(
-                "{}:/jackin/kimi-code",
-                state.root.join("kimi-code").display()
-            ));
-        }
-    }
-
-    if let Some(opencode) = state.auth.for_agent(Agent::Opencode) {
-        push_agent_home_mounts(&mut mounts, &state.root, Agent::Opencode);
-        if let Some(auth_json) = opencode.credential_paths.first() {
-            mounts.push(format!(
-                "{}:/jackin/opencode/auth.json",
-                auth_json.display()
-            ));
-        }
-    }
-
-    if let Some(grok) = state.auth.for_agent(Agent::Grok) {
-        push_agent_home_mounts(&mut mounts, &state.root, Agent::Grok);
-        if let Some(auth_json) = grok.credential_paths.first() {
-            mounts.push(format!("{}:/jackin/grok/auth.json", auth_json.display()));
-        }
-    }
-
-    if let Some(antigravity) = state.auth.for_agent(Agent::Antigravity) {
-        push_agent_home_mounts(&mut mounts, &state.root, Agent::Antigravity);
-        if let Some(settings_json) = antigravity.credential_paths.first() {
-            mounts.push(format!(
-                "{}:/jackin/antigravity/settings.json",
-                settings_json.display()
-            ));
-        }
-    }
-
-    if let Some(gemini) = state.auth.for_agent(Agent::Gemini) {
-        push_agent_home_mounts(&mut mounts, &state.root, Agent::Gemini);
-        if let Some(oauth_creds) = gemini.credential_paths.first() {
-            mounts.push(format!(
-                "{}:/jackin/gemini/oauth_creds.json",
-                oauth_creds.display()
-            ));
-        }
-    }
-
-    if let Some(cursor) = state.auth.for_agent(Agent::Cursor) {
-        push_agent_home_mounts(&mut mounts, &state.root, Agent::Cursor);
-        if let Some(auth_json) = cursor.credential_paths.first() {
-            mounts.push(format!("{}:/jackin/cursor/auth.json", auth_json.display()));
-        }
-    }
-
-    if let Some(muse_) = state.auth.for_agent(Agent::Muse) {
-        push_agent_home_mounts(&mut mounts, &state.root, Agent::Muse);
-        if let Some(auth_json) = muse_.credential_paths.first() {
-            mounts.push(format!("{}:/jackin/muse/auth.json", auth_json.display()));
-        }
-    }
-
-    if let Some(omp) = state.auth.for_agent(Agent::Omp) {
-        push_agent_home_mounts(&mut mounts, &state.root, Agent::Omp);
-        if let Some(agent_db) = omp.credential_paths.first() {
-            mounts.push(format!("{}:/jackin/omp/agent.db", agent_db.display()));
-        }
-    }
-
-    if let Some(hermes) = state.auth.for_agent(Agent::Hermes) {
-        push_agent_home_mounts(&mut mounts, &state.root, Agent::Hermes);
-        if hermes.forward_auth {
-            mounts.push(format!(
-                "{}:/jackin/hermes",
-                state.root.join("hermes").display()
-            ));
+    for agent in Agent::ALL {
+        let mut slots: Vec<(&String, &crate::instance::ProvisionedInstanceAuth)> = state
+            .auth
+            .slots
+            .iter()
+            .filter(|(_, slot)| slot.agent == *agent)
+            .collect();
+        slots.sort_by(|(a_key, a), (b_key, b)| {
+            (a.slot_suffix.is_some(), *a_key).cmp(&(b.slot_suffix.is_some(), *b_key))
+        });
+        for (_, slot) in slots {
+            push_slot_home_mounts(&mut mounts, &state.root, *agent, slot);
+            push_slot_auth_mounts(&mut mounts, &state.root, slot);
         }
     }
 

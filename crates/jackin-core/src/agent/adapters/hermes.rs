@@ -6,8 +6,8 @@
 use crate::auth::AuthForwardMode;
 
 use crate::agent::runtime::{
-    AgentRuntime, AgentStatePaths, bounded_fallback_curl, looks_like_version,
-    render_fallback_install_block,
+    AgentRuntime, AgentStatePaths, FolderVar, FolderVarKind, bounded_fallback_curl,
+    looks_like_version, render_fallback_install_block,
 };
 
 // Official installer (verified 2026-09-17: script header documents this
@@ -85,7 +85,10 @@ RUN set -euxo pipefail && \\
             credential_dir: ".hermes",
             config_dir: None,      // config.yaml + profiles both under ~/.hermes
             credential_file: None, // multi-file profiles dir, not one file
-            folder_env_var: Some("HERMES_HOME"),
+            folder_env_var: Some(FolderVar {
+                name: "HERMES_HOME",
+                kind: FolderVarKind::Dir,
+            }),
         }
     }
 

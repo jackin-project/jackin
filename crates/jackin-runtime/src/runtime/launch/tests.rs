@@ -1123,6 +1123,100 @@ agents = ["codex"]
 }
 
 #[tokio::test]
+async fn agent_mounts_for_two_claude_slots_isolates_homes_and_handoffs() {
+    use crate::instance::{InstanceAuthBinding, RoleState};
+    use jackin_core::Agent;
+
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
+    let manifest_temp = tempdir().unwrap();
+    std::fs::write(
+        manifest_temp.path().join("jackin.role.toml"),
+        "version = \"v1alpha3\"\ndockerfile = \"Dockerfile\"\nagents = [\"claude\"]\n\n[claude]\n",
+    )
+    .unwrap();
+    std::fs::write(
+        manifest_temp.path().join("Dockerfile"),
+        "FROM projectjackin/construct:0.1-trixie\n",
+    )
+    .unwrap();
+    let manifest = jackin_manifest::load_role_manifest(manifest_temp.path()).unwrap();
+
+    // Two distinct host Claude profiles plus a host onboarding file.
+    let host_home = temp.path().join("host_home");
+    std::fs::create_dir_all(&host_home).unwrap();
+    std::fs::write(host_home.join(".claude.json"), "{}").unwrap();
+    let mut bindings = Vec::new();
+    for (config_id, account, marker) in [
+        ("claude-work", "work", "work-oauth"),
+        ("claude-personal", "personal", "personal-oauth"),
+    ] {
+        let source = temp.path().join(format!("src-{account}"));
+        std::fs::create_dir_all(&source).unwrap();
+        std::fs::write(
+            source.join(".claude.json"),
+            format!("{{\"oauthAccount\":{{\"accountId\":\"{marker}\"}}}}"),
+        )
+        .unwrap();
+        std::fs::write(
+            source.join(".credentials.json"),
+            format!("{{\"claudeAiOauth\":{{\"marker\":\"{marker}\"}}}}"),
+        )
+        .unwrap();
+        let mut binding = InstanceAuthBinding::new(
+            account,
+            Agent::Claude,
+            jackin_config::AuthForwardMode::Sync,
+            Some(source),
+        );
+        binding.key = config_id.to_owned();
+        bindings.push(binding);
+    }
+
+    let (state, _) = RoleState::prepare_for_bindings(
+        &paths,
+        "jk-agent-smith",
+        &manifest,
+        &bindings,
+        &crate::instance::GithubAuthContext::default(),
+        &host_home,
+        Agent::Claude,
+    )
+    .unwrap();
+
+    let mounts = agent_mounts(&state);
+    // Primary keeps legacy destinations; the secondary gets suffixed
+    // home + handoff dirs.
+    for expected in [
+        ":/home/agent/.claude",
+        ":/home/agent/.claude-claude-personal",
+        "/jackin/claude/credentials.json",
+        "/jackin/claude-claude-personal/credentials.json",
+        "/jackin/claude/account.json",
+        "/jackin/claude-claude-personal/account.json",
+    ] {
+        assert!(
+            mounts.iter().any(|m| m.contains(expected)),
+            "mount {expected} missing: {mounts:?}"
+        );
+    }
+    // The two slots stage their own source credentials, not copies
+    // of each other.
+    for (store, marker) in [
+        ("claude", "work-oauth"),
+        ("claude-claude-personal", "personal-oauth"),
+    ] {
+        let staged = std::fs::read_to_string(state.root.join(format!("{store}/credentials.json")))
+            .unwrap_or_else(|_| panic!("{store}/credentials.json missing: {mounts:?}"));
+        assert!(
+            staged.contains(marker),
+            "{store} staged the wrong account: {staged}"
+        );
+    }
+}
+
+#[tokio::test]
 async fn agent_mounts_for_codex_host_missing_omits_auth_json() {
     use crate::instance::{PrepareResolvers, RoleState};
     use jackin_core::Agent;
@@ -1935,6 +2029,10 @@ fn codex_trust_fixture(root: &Path) -> (RoleState, jackin_config::ResolvedWorksp
                     home_dir: None,
                     credential_paths: Vec::new(),
                     forward_auth: false,
+                    slot_suffix: None,
+                    container_home_rel: ".codex".to_owned(),
+                    container_store_rel: "codex".to_owned(),
+                    folder_target: "/home/agent/.codex".to_owned(),
                 },
             )]),
         },
@@ -2952,8 +3050,8 @@ model = "gpt-5"
         "JACKIN_AGENT must not be a container env var"
     );
     assert!(
-        run_cmd.ends_with(" codex"),
-        "initial agent must be passed as container argv"
+        run_cmd.ends_with(" codex-main"),
+        "initial instance must be passed as container argv"
     );
     assert!(!run_cmd.contains("/jackin/codex/config.toml"));
     // Multi-agent role `agents = ["claude", "codex"]` provisions and mounts
@@ -3212,8 +3310,8 @@ agents = ["codex"]
         "JACKIN_AGENT must not be a container env var"
     );
     assert!(
-        run_cmd.ends_with(" codex"),
-        "initial agent must be passed as container argv"
+        run_cmd.ends_with(" codex-main"),
+        "initial instance must be passed as container argv"
     );
     assert!(!run_cmd.contains("-e OPENAI_API_KEY="));
 }
@@ -3293,8 +3391,8 @@ async fn load_agent_uses_single_supported_agent_without_workspace_default() {
         .last()
         .expect("docker run command must have at least one argument");
     assert_eq!(
-        last_positional, "codex",
-        "single supported agent must become the initial runtime: {run_cmd}"
+        last_positional, "codex-main",
+        "single supported agent's instance must become the initial runtime: {run_cmd}"
     );
 }
 

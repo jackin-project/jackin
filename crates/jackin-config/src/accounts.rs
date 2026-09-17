@@ -776,7 +776,7 @@ pub fn resolve_launch(
             }
             instances.push(bind_explicit(cfg, ws, id)?);
         }
-        return Ok(instances);
+        return checked_launch_instances(instances);
     }
 
     let inherited = ws
@@ -803,7 +803,7 @@ pub fn resolve_launch(
             }
             instances.push(bind_explicit(cfg, ws, id)?);
         }
-        return Ok(instances);
+        return checked_launch_instances(instances);
     }
 
     // No defaults anywhere: sole eligible instance wins, ambiguity needs a picker.
@@ -841,6 +841,50 @@ pub fn resolve_launch(
         ));
     }
     Ok(eligible)
+}
+
+/// Reject same-agent instance sets the container cannot isolate.
+/// Several admitted instances for one agent need a dedicated config-folder
+/// env var (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `GEMINI_CLI_HOME`, …) so
+/// each pane gets its own credentials and history. Agents without one
+/// cannot isolate instances; `XDG_*`-root agents would also redirect
+/// unrelated XDG consumers of the pane process. Both fail closed with
+/// the exact reason.
+fn checked_launch_instances(
+    instances: Vec<ResolvedInstance>,
+) -> ConfigResult<Vec<ResolvedInstance>> {
+    use jackin_core::FolderVarKind;
+    for agent in Agent::ALL {
+        let count = instances
+            .iter()
+            .filter(|instance| instance.agent == *agent)
+            .count();
+        if count < 2 {
+            continue;
+        }
+        match agent
+            .runtime()
+            .state_paths()
+            .folder_env_var
+            .map(|var| (var.name, var.kind))
+        {
+            Some((_, FolderVarKind::Dir | FolderVarKind::Parent)) => {}
+            Some((name, FolderVarKind::XdgRoot)) => {
+                return Err(ConfigError::msg(format!(
+                    "agent {agent} admits only one account per container: \
+                     isolating several accounts needs {name}, which would also \
+                     redirect unrelated XDG consumers of the pane process"
+                )));
+            }
+            None => {
+                return Err(ConfigError::msg(format!(
+                    "agent {agent} admits only one account per container: \
+                     it has no config-folder env var to isolate instances"
+                )));
+            }
+        }
+    }
+    Ok(instances)
 }
 
 /// Bind one explicit configuration ID, validating authorization and compatibility.

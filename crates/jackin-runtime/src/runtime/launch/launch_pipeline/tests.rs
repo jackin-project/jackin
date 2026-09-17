@@ -610,3 +610,96 @@ fn launch_core_builder_populates_required_fields() {
     assert_eq!(core.role_key, "agent-smith");
     drop(core);
 }
+
+fn breadcrumb_config() -> (AppConfig, WorkspaceName) {
+    use jackin_config::{AccountConfig, AccountCredential, AgentConfiguration, AiProvider};
+    let mut config = AppConfig::default();
+    for (id, display, provider) in [
+        ("a-claude", "A", AiProvider::Anthropic),
+        ("z-claude", "Z", AiProvider::Anthropic),
+        ("c-codex", "C", AiProvider::OpenAi),
+    ] {
+        config.accounts.insert(
+            id.to_owned(),
+            AccountConfig {
+                enabled: true,
+                name: display.into(),
+                provider,
+                credential: AccountCredential::ApiKey {
+                    value: jackin_core::EnvValue::Plain("test-key".into()),
+                    base_url: None,
+                    model: None,
+                },
+            },
+        );
+    }
+    for (id, agent, account) in [
+        ("claude-a", Agent::Claude, "a-claude"),
+        ("claude-z", Agent::Claude, "z-claude"),
+        ("codex-c", Agent::Codex, "c-codex"),
+    ] {
+        config.agent_configurations.insert(
+            id.to_owned(),
+            AgentConfiguration {
+                agent,
+                account: account.into(),
+                model: None,
+                base_url: None,
+                display_label: None,
+                invoked_via_wrapper: None,
+            },
+        );
+    }
+    let ws = WorkspaceName::parse("demo").unwrap();
+    config.workspaces.insert(
+        ws.as_str().to_owned(),
+        jackin_config::WorkspaceConfig {
+            workdir: "/demo".into(),
+            accounts: vec!["a-claude".into(), "z-claude".into(), "c-codex".into()],
+            default_launch: Some(vec!["claude-a".into(), "claude-z".into(), "codex-c".into()]),
+            ..Default::default()
+        },
+    );
+    (config, ws)
+}
+
+#[test]
+fn breadcrumb_auth_mode_uses_single_account_directly() {
+    use jackin_config::AuthForwardMode;
+    let (mut config, ws) = breadcrumb_config();
+    config.workspaces.get_mut(ws.as_str()).unwrap().accounts = vec!["c-codex".into()];
+    config
+        .workspaces
+        .get_mut(ws.as_str())
+        .unwrap()
+        .default_launch = None;
+    let mode = breadcrumb_auth_mode(&config, Agent::Codex, Some(&ws), "smith").unwrap();
+    assert_eq!(mode, AuthForwardMode::ApiKey);
+}
+
+#[test]
+fn breadcrumb_auth_mode_falls_back_to_first_admitted_instance() {
+    use jackin_config::AuthForwardMode;
+    let (config, ws) = breadcrumb_config();
+    // Two Claude accounts: no single account resolves, but the breadcrumb
+    // must not fail the launch — it reports the first admitted instance.
+    jackin_config::resolve_account(&config, Agent::Claude, Some(&ws), "smith")
+        .expect_err("two claude accounts must not resolve to one");
+    let mode = breadcrumb_auth_mode(&config, Agent::Claude, Some(&ws), "smith").unwrap();
+    assert_eq!(mode, AuthForwardMode::ApiKey);
+}
+
+#[test]
+fn breadcrumb_auth_mode_ignores_agents_with_no_admitted_instance() {
+    use jackin_config::AuthForwardMode;
+    let (mut config, ws) = breadcrumb_config();
+    config
+        .workspaces
+        .get_mut(ws.as_str())
+        .unwrap()
+        .default_launch = Some(vec!["codex-c".into()]);
+    // Claude is still ambiguous (two authorized accounts) while the launch
+    // admits only Codex, so the Claude breadcrumb reports `Ignore`.
+    let mode = breadcrumb_auth_mode(&config, Agent::Claude, Some(&ws), "smith").unwrap();
+    assert_eq!(mode, AuthForwardMode::Ignore);
+}

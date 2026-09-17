@@ -250,3 +250,96 @@ fn capsule_config_carries_instance_accounts_and_labels() {
     );
     assert_eq!(config.label_for_instance("unknown"), None);
 }
+
+#[test]
+fn instance_bindings_keep_launch_order_and_config_id_keys() {
+    let mut config = AppConfig::default();
+    config
+        .accounts
+        .insert("work".into(), api_key_account(AiProvider::Anthropic, None));
+    config.accounts.insert(
+        "personal".into(),
+        AccountConfig {
+            enabled: true,
+            name: "Personal".into(),
+            provider: AiProvider::OpenAi,
+            credential: AccountCredential::Profile {
+                agent: Agent::Codex,
+                directory: "/accounts/personal".into(),
+                xdg_roots: None,
+            },
+        },
+    );
+    // Launch order deliberately differs from key sort order.
+    let instances = vec![
+        instance("codex-personal", Agent::Codex, "personal"),
+        instance("claude-work", Agent::Claude, "work"),
+    ];
+    let bindings = instance_auth_bindings(&config, &instances).unwrap();
+    assert_eq!(bindings.len(), 2);
+    assert_eq!(bindings[0].key, "codex-personal");
+    assert_eq!(bindings[0].mode, AuthForwardMode::Sync);
+    assert_eq!(
+        bindings[0].sync_source_dir,
+        Some(std::path::PathBuf::from("/accounts/personal"))
+    );
+    assert_eq!(bindings[1].key, "claude-work");
+    assert_eq!(bindings[1].mode, AuthForwardMode::ApiKey);
+
+    let missing = vec![instance("ghost", Agent::Claude, "nope")];
+    instance_auth_bindings(&config, &missing).unwrap_err();
+}
+
+#[test]
+fn instance_dirs_come_from_slots_and_fail_closed() {
+    use crate::instance::ProvisionedInstanceAuth;
+    let slot = |suffix: Option<&str>, home_rel: &str, store_rel: &str| ProvisionedInstanceAuth {
+        agent: Agent::Claude,
+        account_id: "work".into(),
+        mode: AuthForwardMode::Sync,
+        home_dir: None,
+        credential_paths: Vec::new(),
+        forward_auth: true,
+        slot_suffix: suffix.map(str::to_owned),
+        container_home_rel: home_rel.into(),
+        container_store_rel: store_rel.into(),
+        folder_target: format!("/home/agent/{home_rel}"),
+    };
+    let slots = std::collections::BTreeMap::from([
+        ("claude-work".to_owned(), slot(None, ".claude", "claude")),
+        (
+            "claude-personal".to_owned(),
+            slot(
+                Some("claude-personal"),
+                ".claude-claude-personal",
+                "claude-claude-personal",
+            ),
+        ),
+    ]);
+    let instances = vec![
+        instance("claude-work", Agent::Claude, "work"),
+        instance("claude-personal", Agent::Claude, "personal"),
+    ];
+    let mut config = jackin_protocol::CapsuleConfig::default();
+    apply_instance_dirs(&mut config, &instances, &slots).unwrap();
+    assert_eq!(
+        config.home_for_instance("claude-work"),
+        Some("/home/agent/.claude")
+    );
+    assert_eq!(
+        config.home_for_instance("claude-personal"),
+        Some("/home/agent/.claude-claude-personal")
+    );
+    assert_eq!(
+        config.forwarded_for_instance("claude-work"),
+        Some("/jackin/claude")
+    );
+    assert_eq!(
+        config.forwarded_for_instance("claude-personal"),
+        Some("/jackin/claude-claude-personal")
+    );
+
+    let mut config = jackin_protocol::CapsuleConfig::default();
+    let missing = vec![instance("ghost", Agent::Claude, "work")];
+    apply_instance_dirs(&mut config, &missing, &slots).unwrap_err();
+}

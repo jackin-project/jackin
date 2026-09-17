@@ -24,7 +24,7 @@ Proof levels: `implemented` < `fixture_verified` < `container_verified` <
 | console-usage phase-1 | console-usage-1 | isolated worktree 20/20 + lib 1270 + adapter 106 | /tmp/lane-console-usage-1.md | fixture_verified | implemented |
 | S2 schema + resolver + bootstrap | orchestrator | config/resolver unit + migration tests | — | — | not_started |
 | S3 instance-keyed credential transport | orchestrator + 4 lanes | protocol 117 + instance 143 + env 56 + capsule 883 + runtime 646 + console/usage/jackin/xtask green; clippy -D warnings; xtask lint --strict | 6f0280c4 | fixture_verified | implemented |
-| Tracer bullet: 2×Claude + Codex live container | orchestrator | docker staging/relay/PTY + 3 TUIs, canary D absent | — | — | not_started |
+| Tracer bullet: 2×Claude + Codex live container | orchestrator | live jk-ctdn5jt0 (3 slots, 3 tabs, per-instance env, manifest A/B/C, D absent all surfaces, new/exit/reattach/restore) + nextest/clippy gates | /tmp/tracer/evidence.md (this commit message) | live_verified (claude-auth blocked: host grants expired; split/resize partial) | implemented |
 | S4 discovery/Settings/launch/Capsule lanes + integration | A/B/C/D/E + orchestrator | config/protocol/console/jackin 2457 + core/instance/env/runtime/capsule/usage 2326 + console re-run 2337; clippy -D warnings; xtask lint --strict; scan bridge (input→Manager→StartAccountScan→worker→AccountScanCompleted), usage offscreen heartbeat via UsageRouteState, boxed dispatch Action | S4 commit (see git log) | fixture_verified | implemented |
 
 ## Checklist A–H (from jackin-implementation-and-verification.md)

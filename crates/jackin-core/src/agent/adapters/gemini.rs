@@ -6,7 +6,8 @@
 use crate::auth::AuthForwardMode;
 
 use crate::agent::runtime::{
-    AgentRuntime, AgentStatePaths, looks_like_version, render_fallback_install_block,
+    AgentRuntime, AgentStatePaths, FolderVar, FolderVarKind, looks_like_version,
+    render_fallback_install_block,
 };
 
 // Documented upstream install (`npm i -g @google/gemini-cli`; Homebrew
@@ -79,7 +80,10 @@ RUN set -euxo pipefail && \\
             credential_file: Some(".gemini/oauth_creds.json"),
             // NOTE: GEMINI_CLI_HOME names the *parent* to which `.gemini`
             // is appended (it is not the config dir itself).
-            folder_env_var: Some("GEMINI_CLI_HOME"),
+            folder_env_var: Some(FolderVar {
+                name: "GEMINI_CLI_HOME",
+                kind: FolderVarKind::Parent,
+            }),
         }
     }
 

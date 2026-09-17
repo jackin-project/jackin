@@ -81,6 +81,7 @@ pub(super) fn workspace_launch_config(
     materialized: &crate::isolation::materialize::MaterializedWorkspace,
     dirty_exit_policy: &str,
     exec_bindings: Vec<jackin_protocol::ExecBinding>,
+    state: &crate::instance::RoleState,
 ) -> anyhow::Result<jackin_protocol::CapsuleConfig> {
     let instances = jackin_config::resolve_launch(config, workspace_name, role_key, None)?;
     let isolated_worktrees = materialized
@@ -105,6 +106,11 @@ pub(super) fn workspace_launch_config(
         config,
         &instances,
     )?;
+    crate::runtime::launch::capsule_setup::apply_instance_dirs(
+        &mut launch_config,
+        &instances,
+        &state.auth.slots,
+    )?;
     // A per-launch model overrides the role manifest's `[<agent>].model` for
     // the agent this launch selected. The same value also travels as the
     // Codex role hook's config key, so the daemon that spawns the agent and
@@ -120,21 +126,6 @@ pub(super) fn workspace_launch_config(
         }
     }
     Ok(launch_config)
-}
-
-/// Agent-grained auth slots derived from the admitted instances, in launch
-/// order. Several instances may share one slot; the first instance in launch
-/// order owns the shared agent home.
-pub(super) fn provision_agents_for_instances(
-    instances: &[jackin_config::ResolvedInstance],
-) -> Vec<jackin_core::Agent> {
-    let mut agents = Vec::new();
-    for instance in instances {
-        if !agents.contains(&instance.agent) {
-            agents.push(instance.agent);
-        }
-    }
-    agents
 }
 
 pub(super) struct ProvisionInputs {

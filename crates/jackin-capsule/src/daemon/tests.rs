@@ -724,6 +724,8 @@ fn test_mux(rows: u16, cols: u16) -> Multiplexer {
             exec_bindings: Vec::new(),
             dirty_exit_policy: None,
             isolated_worktrees: Vec::new(),
+            instance_home_dirs: BTreeMap::new(),
+            instance_forwarded_dirs: BTreeMap::new(),
         },
     )
     .unwrap_or_else(|error| panic!("test multiplexer construction failed: {error}"))
@@ -9016,6 +9018,14 @@ fn daemon_session_boundary_keeps_account_credentials_per_instance() {
         ("work".into(), "sync".into()),
         ("personal".into(), "api_key".into()),
     ]);
+    mux.launch_env.launch_config.instance_home_dirs = BTreeMap::from([
+        ("work".into(), "/home/agent/.claude".into()),
+        ("personal".into(), "/home/agent/.local".into()),
+    ]);
+    mux.launch_env.launch_config.instance_forwarded_dirs = BTreeMap::from([
+        ("work".into(), "/jackin/claude".into()),
+        ("personal".into(), "/jackin/opencode".into()),
+    ]);
     mux.launch_env.agent_credentials = serde_json::from_value(serde_json::json!({
         "schema_version": 2,
         "instances": {
@@ -9069,6 +9079,20 @@ fn two_claude_mux() -> Multiplexer {
     mux.launch_env.launch_config.accounts = BTreeMap::from([
         ("claude-work".into(), "work".into()),
         ("claude-personal".into(), "personal".into()),
+    ]);
+    mux.launch_env.launch_config.instance_home_dirs = BTreeMap::from([
+        ("claude-work".into(), "/home/agent/.claude".into()),
+        (
+            "claude-personal".into(),
+            "/home/agent/.claude-claude-personal".into(),
+        ),
+    ]);
+    mux.launch_env.launch_config.instance_forwarded_dirs = BTreeMap::from([
+        ("claude-work".into(), "/jackin/claude".into()),
+        (
+            "claude-personal".into(),
+            "/jackin/claude-claude-personal".into(),
+        ),
     ]);
     mux.launch_env.launch_config.labels = BTreeMap::from([
         ("claude-work".into(), "Claude · Work".into()),

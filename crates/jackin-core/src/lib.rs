@@ -58,7 +58,10 @@ mod workspace_name;
 mod worktree_dirty;
 
 pub use account_key::*;
-pub use agent::{Agent, AgentRuntime, AgentStatePaths, ParseAgentError, agent_runtime_registry};
+pub use agent::{
+    Agent, AgentRuntime, AgentStatePaths, FolderVar, FolderVarKind, ParseAgentError,
+    agent_runtime_registry,
+};
 pub use auth::*;
 pub use build_log_sink::*;
 pub use claude_keychain::{

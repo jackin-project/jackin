@@ -178,8 +178,8 @@ model = "gpt-5"
         "JACKIN_AGENT must not be a container env var; got: {run_cmd}"
     );
     assert!(
-        run_cmd.ends_with(" codex"),
-        "initial agent must be passed as container argv; got: {run_cmd}"
+        run_cmd.ends_with(" codex-main"),
+        "initial instance must be passed as container argv; got: {run_cmd}"
     );
     assert!(
         !run_cmd.contains("JACKIN_AGENT_MODEL_OVERRIDES"),
@@ -355,7 +355,7 @@ plugins = []
         "JACKIN_AGENT must not be a container env var; got: {run_cmd}"
     );
     assert!(
-        run_cmd.ends_with(" codex"),
-        "initial agent must be passed as container argv; got: {run_cmd}"
+        run_cmd.ends_with(" codex-main"),
+        "initial instance must be passed as container argv; got: {run_cmd}"
     );
 }

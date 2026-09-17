@@ -495,9 +495,24 @@ fn install_agent_status_reporter(agent: &str) -> Result<()> {
     };
     if let Some(installer) = installer {
         let home = Path::new("/home/agent");
-        if !installer.verify(home) {
+        // The daemon exports the instance's folder var before setup runs;
+        // fall back to the legacy config home when unset (manual runs).
+        let parsed = jackin_core::Agent::from_slug(agent);
+        let config_dir = parsed
+            .and_then(|agent| agent.runtime().state_paths().folder_env_var)
+            .and_then(|var| nonempty_env(var.name))
+            .map_or_else(
+                || {
+                    parsed.map_or_else(
+                        || home.to_path_buf(),
+                        |agent| home.join(agent.runtime().state_paths().credential_dir),
+                    )
+                },
+                PathBuf::from,
+            );
+        if !installer.verify(home, &config_dir) {
             installer
-                .install(home)
+                .install(home, &config_dir)
                 .with_context(|| format!("install {agent} agent-status reporter"))?;
         }
     }
@@ -509,14 +524,16 @@ fn setup_claude(mode: AuthMode) -> Result<AuthMaterialization> {
     // home once, then apply the shared credential policy to credentials.json and
     // the Claude-only account.json (.claude.json onboarding metadata) under that
     // single first-seed signal — same policy as every other agent.
-    let first_seed = seed_agent_home_from_enum(jackin_core::Agent::Claude)?.is_first_seed();
+    let home = claude_config_dir();
+    let first_seed = seed_agent_home_from_enum(jackin_core::Agent::Claude, &home)?.is_first_seed();
     let credentials_path = claude_credentials_path();
+    let forwarded = forwarded_file(container_paths::CLAUDE_CREDENTIALS);
     let materialization = apply_forwarded_credential(
         first_seed,
         mode,
         &ForwardedCredential {
             label: "claude",
-            forwarded: Path::new(container_paths::CLAUDE_CREDENTIALS),
+            forwarded: &forwarded,
             target: &credentials_path,
             api_key_envs: &[
                 "ANTHROPIC_API_KEY",
@@ -573,7 +590,7 @@ fn setup_claude(mode: AuthMode) -> Result<AuthMaterialization> {
 /// later launches, re-seed only while the container copy is still the empty
 /// `{}` skeleton — so a populated file the CLI has since written is preserved.
 fn seed_claude_account_json(first_seed: bool) -> Result<()> {
-    let forwarded_account = Path::new(container_paths::CLAUDE_ACCOUNT);
+    let forwarded_account = forwarded_file(container_paths::CLAUDE_ACCOUNT);
     if !forwarded_account.is_file() {
         return Ok(());
     }
@@ -581,7 +598,7 @@ fn seed_claude_account_json(first_seed: bool) -> Result<()> {
     let needs_seed = first_seed
         || fs::read_to_string(&account_path).map_or(true, |contents| contents.trim() == "{}");
     if needs_seed {
-        copy_file_with_mode(forwarded_account, &account_path, 0o600)?;
+        copy_file_with_mode(&forwarded_account, &account_path, 0o600)?;
     }
     Ok(())
 }
@@ -706,9 +723,10 @@ struct ForwardedCredential<'a> {
 fn seed_forwarded_credential(
     agent: jackin_core::Agent,
     mode: AuthMode,
+    seed_base: &Path,
     spec: &ForwardedCredential<'_>,
 ) -> Result<AuthMaterialization> {
-    let first_seed = seed_agent_home_from_enum(agent)?.is_first_seed();
+    let first_seed = seed_agent_home_from_enum(agent, seed_base)?.is_first_seed();
     apply_forwarded_credential(first_seed, mode, spec)
 }
 
@@ -786,26 +804,32 @@ fn apply_forwarded_credential(
 }
 
 fn setup_codex(mode: AuthMode) -> Result<AuthMaterialization> {
+    let forwarded = forwarded_file(container_paths::CODEX_AUTH);
+    let target = codex_auth_path();
     seed_forwarded_credential(
         jackin_core::Agent::Codex,
         mode,
+        &codex_home(),
         &ForwardedCredential {
             label: "codex",
-            forwarded: Path::new(container_paths::CODEX_AUTH),
-            target: &codex_auth_path(),
+            forwarded: &forwarded,
+            target: &target,
             api_key_envs: &["OPENAI_API_KEY"],
         },
     )
 }
 
 fn setup_amp(mode: AuthMode) -> Result<AuthMaterialization> {
+    let forwarded = forwarded_file(container_paths::AMP_SECRETS);
+    let target = amp_secrets_path();
     seed_forwarded_credential(
         jackin_core::Agent::Amp,
         mode,
+        &xdg_data_home().join("amp"),
         &ForwardedCredential {
             label: "amp",
-            forwarded: Path::new(container_paths::AMP_SECRETS),
-            target: &amp_secrets_path(),
+            forwarded: &forwarded,
+            target: &target,
             api_key_envs: &["AMP_API_KEY"],
         },
     )
@@ -819,10 +843,10 @@ fn setup_kimi(mode: AuthMode) -> Result<AuthMaterialization> {
     use jackin_telemetry::schema::enums::{
         CredentialSourceType as Source, ErrorType, OutcomeValue as Outcome,
     };
-    let first_seed = seed_agent_home_from_enum(jackin_core::Agent::Kimi)?.is_first_seed();
-    let forwarded = Path::new(container_paths::KIMI_CODE_DIR);
     let target = Path::new("/home/agent/.kimi-code");
-    let forwarded_present = forwarded.is_dir() && dir_nonempty(forwarded)?;
+    let first_seed = seed_agent_home_from_enum(jackin_core::Agent::Kimi, target)?.is_first_seed();
+    let forwarded = forwarded_dir(container_paths::KIMI_CODE_DIR);
+    let forwarded_present = forwarded.is_dir() && dir_nonempty(&forwarded)?;
     if matches!(mode, AuthMode::Ignore) {
         if target.exists() {
             fs::remove_dir_all(target).context("failed to clear ignored Kimi credentials")?;
@@ -855,7 +879,7 @@ fn setup_kimi(mode: AuthMode) -> Result<AuthMaterialization> {
     let mut copied = false;
     if first_seed {
         if forwarded_present {
-            copy_dir_contents(forwarded, target)?;
+            copy_dir_contents(&forwarded, target)?;
             copied = true;
         } else {
             crate::output::stderr_line(format_args!(
@@ -863,7 +887,7 @@ fn setup_kimi(mode: AuthMode) -> Result<AuthMaterialization> {
             ));
         }
     } else if forwarded_present && !(target.is_dir() && dir_nonempty(target)?) {
-        copy_dir_contents(forwarded, target)?;
+        copy_dir_contents(&forwarded, target)?;
         copied = true;
     }
     let available = target.is_dir() && dir_nonempty(target)?;
@@ -885,25 +909,33 @@ fn setup_kimi(mode: AuthMode) -> Result<AuthMaterialization> {
 }
 
 fn setup_opencode(mode: AuthMode) -> Result<AuthMaterialization> {
+    let forwarded = forwarded_file(container_paths::OPENCODE_AUTH);
+    let target = opencode_auth_path();
     seed_forwarded_credential(
         jackin_core::Agent::Opencode,
         mode,
+        &xdg_data_home().join("opencode"),
         &ForwardedCredential {
             label: "opencode",
-            forwarded: Path::new(container_paths::OPENCODE_AUTH),
-            target: &opencode_auth_path(),
+            forwarded: &forwarded,
+            target: &target,
             api_key_envs: &["OPENCODE_API_KEY"],
         },
     )
 }
 
 fn setup_grok(mode: AuthMode) -> Result<AuthMaterialization> {
+    let forwarded = forwarded_file(container_paths::GROK_AUTH);
+    let seed_base = Path::new(GROK_AUTH_PATH)
+        .parent()
+        .unwrap_or(Path::new(AGENT_HOME));
     seed_forwarded_credential(
         jackin_core::Agent::Grok,
         mode,
+        seed_base,
         &ForwardedCredential {
             label: "grok",
-            forwarded: Path::new(container_paths::GROK_AUTH),
+            forwarded: &forwarded,
             target: Path::new(GROK_AUTH_PATH),
             api_key_envs: &["XAI_API_KEY", "GROK_DEPLOYMENT_KEY"],
         },
@@ -911,51 +943,65 @@ fn setup_grok(mode: AuthMode) -> Result<AuthMaterialization> {
 }
 
 fn setup_antigravity(mode: AuthMode) -> Result<AuthMaterialization> {
+    let forwarded = forwarded_file(container_paths::ANTIGRAVITY_SETTINGS);
+    let target = antigravity_settings_path();
     seed_forwarded_credential(
         jackin_core::Agent::Antigravity,
         mode,
+        &gemini_home().join("antigravity-cli"),
         &ForwardedCredential {
             label: "antigravity",
-            forwarded: Path::new(container_paths::ANTIGRAVITY_SETTINGS),
-            target: &antigravity_settings_path(),
+            forwarded: &forwarded,
+            target: &target,
             api_key_envs: &["GEMINI_API_KEY"],
         },
     )
 }
 
 fn setup_gemini(mode: AuthMode) -> Result<AuthMaterialization> {
+    let forwarded = forwarded_file(container_paths::GEMINI_AUTH);
+    let target = gemini_oauth_creds_path();
     seed_forwarded_credential(
         jackin_core::Agent::Gemini,
         mode,
+        &gemini_home(),
         &ForwardedCredential {
             label: "gemini",
-            forwarded: Path::new(container_paths::GEMINI_AUTH),
-            target: &gemini_oauth_creds_path(),
+            forwarded: &forwarded,
+            target: &target,
             api_key_envs: &["GEMINI_API_KEY"],
         },
     )
 }
 
 fn setup_cursor(mode: AuthMode) -> Result<AuthMaterialization> {
+    let forwarded = forwarded_file(container_paths::CURSOR_AUTH);
+    let target = cursor_auth_path();
     seed_forwarded_credential(
         jackin_core::Agent::Cursor,
         mode,
+        &cursor_home(),
         &ForwardedCredential {
             label: "cursor",
-            forwarded: Path::new(container_paths::CURSOR_AUTH),
-            target: &cursor_auth_path(),
+            forwarded: &forwarded,
+            target: &target,
             api_key_envs: &["CURSOR_API_KEY"],
         },
     )
 }
 
 fn setup_muse(mode: AuthMode) -> Result<AuthMaterialization> {
+    let forwarded = forwarded_file(container_paths::MUSE_AUTH);
+    let seed_base = Path::new(MUSE_AUTH_PATH)
+        .parent()
+        .unwrap_or(Path::new(AGENT_HOME));
     seed_forwarded_credential(
         jackin_core::Agent::Muse,
         mode,
+        seed_base,
         &ForwardedCredential {
             label: "muse",
-            forwarded: Path::new(container_paths::MUSE_AUTH),
+            forwarded: &forwarded,
             target: Path::new(MUSE_AUTH_PATH),
             api_key_envs: &["META_API_KEY"],
         },
@@ -963,13 +1009,16 @@ fn setup_muse(mode: AuthMode) -> Result<AuthMaterialization> {
 }
 
 fn setup_omp(mode: AuthMode) -> Result<AuthMaterialization> {
+    let forwarded = forwarded_file(container_paths::OMP_AGENT_DB);
+    let target = omp_agent_db_path();
     seed_forwarded_credential(
         jackin_core::Agent::Omp,
         mode,
+        &omp_home(),
         &ForwardedCredential {
             label: "omp",
-            forwarded: Path::new(container_paths::OMP_AGENT_DB),
-            target: &omp_agent_db_path(),
+            forwarded: &forwarded,
+            target: &target,
             // No native key: any routed provider key suppresses the warning.
             api_key_envs: &[
                 "OPENROUTER_API_KEY",
@@ -990,10 +1039,11 @@ fn setup_hermes(mode: AuthMode) -> Result<AuthMaterialization> {
     use jackin_telemetry::schema::enums::{
         CredentialSourceType as Source, ErrorType, OutcomeValue as Outcome,
     };
-    let first_seed = seed_agent_home_from_enum(jackin_core::Agent::Hermes)?.is_first_seed();
-    let forwarded = Path::new(container_paths::HERMES_DIR);
     let target = hermes_home();
-    let forwarded_present = forwarded.is_dir() && dir_nonempty(forwarded)?;
+    let first_seed =
+        seed_agent_home_from_enum(jackin_core::Agent::Hermes, &target)?.is_first_seed();
+    let forwarded = forwarded_dir(container_paths::HERMES_DIR);
+    let forwarded_present = forwarded.is_dir() && dir_nonempty(&forwarded)?;
     if matches!(mode, AuthMode::Ignore) {
         if target.exists() {
             fs::remove_dir_all(&target).context("failed to clear ignored Hermes credentials")?;
@@ -1036,7 +1086,7 @@ fn setup_hermes(mode: AuthMode) -> Result<AuthMaterialization> {
     let mut copied = false;
     if first_seed {
         if forwarded_present {
-            copy_dir_contents(forwarded, &target)?;
+            copy_dir_contents(&forwarded, &target)?;
             copied = true;
         } else {
             crate::output::stderr_line(format_args!(
@@ -1044,7 +1094,7 @@ fn setup_hermes(mode: AuthMode) -> Result<AuthMaterialization> {
             ));
         }
     } else if forwarded_present && !(target.is_dir() && dir_nonempty(&target)?) {
-        copy_dir_contents(forwarded, &target)?;
+        copy_dir_contents(&forwarded, &target)?;
         copied = true;
     }
     let available = target.is_dir() && dir_nonempty(&target)?;
@@ -1174,12 +1224,19 @@ fn seed_agent_home(
     seed_home_dir(data_default, data_dst)
 }
 
-/// Seed `agent`'s durable home from `/jackin/default-home`, deriving the data and
-/// paired-config roots from the agent enum
+/// Seed `agent`'s durable home from `/jackin/default-home` into
+/// `home`, the instance's resolved data root. The baked defaults still
+/// come from the agent enum
 /// ([`AgentStatePaths`](jackin_core::AgentStatePaths)) so the
-/// per-agent folder layout has one source of truth. Returns the first-seed
-/// outcome; the caller copies auth only on [`SeedOutcome::FirstSeed`].
-fn seed_agent_home_from_enum(agent: jackin_core::Agent) -> Result<SeedOutcome> {
+/// per-agent folder layout has one source of truth; only the
+/// destination varies per instance. Returns the first-seed outcome;
+/// the caller copies auth only on [`SeedOutcome::FirstSeed`].
+///
+/// The paired config root seeds only when `home` equals the enum data
+/// root (primary slots). A differing home is always a secondary
+/// same-agent slot, and multi-instance admission is rejected for the
+/// paired-root agents — so a secondary never has a config pair to seed.
+fn seed_agent_home_from_enum(agent: jackin_core::Agent, home: &Path) -> Result<SeedOutcome> {
     let paths = agent.runtime().state_paths();
     let data_default = format!(
         "{}/{}",
@@ -1187,17 +1244,24 @@ fn seed_agent_home_from_enum(agent: jackin_core::Agent) -> Result<SeedOutcome> {
         paths.credential_dir
     );
     let data_dst = format!("/home/agent/{}", paths.credential_dir);
-    match paths.config_dir {
-        Some(config_dir) => {
+    let home = home.to_string_lossy().into_owned();
+    let config = match paths.config_dir {
+        Some(config_dir) if home == data_dst => {
             let config_default = format!("{}/{config_dir}", container_paths::DEFAULT_HOME_DIR);
             let config_dst = format!("/home/agent/{config_dir}");
-            seed_agent_home(
-                &data_default,
-                &data_dst,
-                Some((&config_default, &config_dst)),
-            )
+            Some((config_default, config_dst))
         }
-        None => seed_agent_home(&data_default, &data_dst, None),
+        _ => None,
+    };
+    match config {
+        Some((config_default, config_dst)) => seed_agent_home(
+            &data_default,
+            &data_dst,
+            Some((&config_default, &config_dst)),
+        ),
+        // Primary homes equal the enum root, so this arm serves both
+        // primary single-root agents and secondary slots.
+        None => seed_agent_home(&data_default, &home, None),
     }
 }
 
@@ -1525,6 +1589,36 @@ fn format_command(program: &str, args: &[&str]) -> String {
 
 fn nonempty_env(name: &str) -> Option<String> {
     std::env::var(name).ok().filter(|value| !value.is_empty())
+}
+
+/// Resolve a host-forwarded credential file for this instance: when the
+/// daemon set `JACKIN_FORWARDED_DIR`, join the legacy file name onto it;
+/// otherwise use the legacy path (primary slots).
+fn forwarded_file(legacy: &str) -> PathBuf {
+    forwarded_file_from(
+        nonempty_env(jackin_protocol::INSTANCE_FORWARDED_DIR_ENV).as_deref(),
+        legacy,
+    )
+}
+
+fn forwarded_file_from(env: Option<&str>, legacy: &str) -> PathBuf {
+    match env {
+        Some(dir) => Path::new(dir).join(Path::new(legacy).file_name().unwrap_or_default()),
+        None => PathBuf::from(legacy),
+    }
+}
+
+/// Resolve a host-forwarded credential directory for this instance:
+/// the daemon's `JACKIN_FORWARDED_DIR` when set, else the legacy dir.
+fn forwarded_dir(legacy: &str) -> PathBuf {
+    forwarded_dir_from(
+        nonempty_env(jackin_protocol::INSTANCE_FORWARDED_DIR_ENV).as_deref(),
+        legacy,
+    )
+}
+
+fn forwarded_dir_from(env: Option<&str>, legacy: &str) -> PathBuf {
+    env.map_or_else(|| PathBuf::from(legacy), PathBuf::from)
 }
 
 fn env_is_one(name: &str) -> bool {

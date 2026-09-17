@@ -666,6 +666,85 @@ fn resolve_launch_one_launch_wins_and_validates_atomically() {
 }
 
 #[test]
+fn resolve_launch_multi_instance_admission_follows_folder_var_kind() {
+    let (mut cfg, ws) = launch_fixture();
+    // Two Claude instances share a `Dir`-kind folder var → admitted.
+    let instances = resolve_launch(
+        &cfg,
+        Some(&ws),
+        "smith",
+        Some(&["claude-a".to_owned(), "claude-b".to_owned()]),
+    )
+    .unwrap();
+    assert_eq!(instances.len(), 2);
+
+    let profile_for = |agent: Agent, name: &str| AccountConfig {
+        enabled: true,
+        name: name.into(),
+        provider: AiProvider::for_agent(agent).unwrap(),
+        credential: AccountCredential::Profile {
+            agent,
+            directory: PathBuf::from("/profiles").join(name),
+            xdg_roots: None,
+        },
+    };
+    let add_pair = |cfg: &mut AppConfig, agent: Agent, prefix: &str| {
+        for (id, account) in [
+            (format!("{prefix}-a"), format!("{prefix}-work")),
+            (format!("{prefix}-b"), format!("{prefix}-personal")),
+        ] {
+            cfg.accounts
+                .insert(account.clone(), profile_for(agent, &account));
+            cfg.agent_configurations.insert(
+                id,
+                AgentConfiguration {
+                    agent,
+                    account: account.clone(),
+                    model: None,
+                    base_url: None,
+                    display_label: None,
+                    invoked_via_wrapper: None,
+                },
+            );
+            cfg.workspaces
+                .get_mut(ws.as_str())
+                .unwrap()
+                .accounts
+                .push(account);
+        }
+    };
+    // Kimi has no folder var → two instances rejected.
+    add_pair(&mut cfg, Agent::Kimi, "kimi");
+    let error = resolve_launch(
+        &cfg,
+        Some(&ws),
+        "smith",
+        Some(&["kimi-a".to_owned(), "kimi-b".to_owned()]),
+    )
+    .unwrap_err();
+    assert!(
+        error.to_string().contains("no config-folder env var"),
+        "unexpected kimi rejection: {error}"
+    );
+    // Amp is `XdgRoot`-kind → two instances rejected with the XDG reason.
+    add_pair(&mut cfg, Agent::Amp, "amp");
+    let error = resolve_launch(
+        &cfg,
+        Some(&ws),
+        "smith",
+        Some(&["amp-a".to_owned(), "amp-b".to_owned()]),
+    )
+    .unwrap_err();
+    assert!(
+        error.to_string().contains("XDG_DATA_HOME"),
+        "unexpected amp rejection: {error}"
+    );
+    // A lone second-agent instance still resolves.
+    let instances = resolve_launch(&cfg, Some(&ws), "smith", Some(&["kimi-a".to_owned()])).unwrap();
+    assert_eq!(instances.len(), 1);
+}
+
+#[test]
 fn resolve_launch_scope_precedence_replaces_without_union() {
     let (mut cfg, ws) = launch_fixture();
     cfg.default_launch = Some(vec!["codex-c".into()]);

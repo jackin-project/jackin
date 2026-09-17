@@ -16,8 +16,8 @@ use super::super::launch_phases::{
 use super::super::{emit_auth_provision_launch_plan, purge_or_mark_clean_exited};
 use super::LaunchCore;
 use helpers::{
-    emit_auth_breadcrumbs, provision_agents_for_instances, resolve_provision_inputs,
-    reuse_sentinel, sidecar_replenish, workspace_launch_config,
+    emit_auth_breadcrumbs, resolve_provision_inputs, reuse_sentinel, sidecar_replenish,
+    workspace_launch_config,
 };
 use jackin_core::{CommandRunner, ContainerId, WorkspaceName};
 use jackin_docker::docker_client::DockerApi;
@@ -29,7 +29,7 @@ use std::pin::Pin;
 use super::super::super::trust::seed_codex_project_trust;
 use crate::instance::{
     AdmittedInstance, DockerResources, InstanceManifest, InstanceStatus, NewInstanceManifest,
-    PrepareResolvers, RoleState,
+    RoleState,
 };
 use crate::runtime::attach::{
     AgentSessionInventory, ContainerState, inspect_agent_sessions,
@@ -661,37 +661,21 @@ where
     let credentials = provision.credentials;
     let role_state_future = async move {
         jackin_telemetry::spawn::joined_blocking(move || {
-            let provision_agents = provision_agents_for_instances(&instances);
-            let selections = super::super::super::capsule_setup::account_auth_selections(
+            // One binding per admitted instance, keyed by config ID in
+            // launch order: same-agent instances provision independent
+            // slots instead of collapsing onto the first match.
+            let bindings = super::super::super::capsule_setup::instance_auth_bindings(
                 &config_owned,
                 &instances,
             )?;
-            let resolve_mode = |candidate| {
-                instances
-                    .iter()
-                    .find(|instance| instance.agent == candidate)
-                    .and_then(|instance| selections.get(&instance.config_id))
-                    .map_or(jackin_config::AuthForwardMode::Ignore, |(mode, _)| *mode)
-            };
-            let resolve_sync_src = |candidate| {
-                instances
-                    .iter()
-                    .find(|instance| instance.agent == candidate)
-                    .and_then(|instance| selections.get(&instance.config_id))
-                    .and_then(|(_, directory)| directory.clone())
-            };
-            let prepared = RoleState::prepare_for_agents(
+            let prepared = RoleState::prepare_for_bindings(
                 &paths_owned,
                 &container_name_owned,
                 &manifest_owned,
-                &PrepareResolvers {
-                    auth_modes: &resolve_mode,
-                    sync_source_dirs: &resolve_sync_src,
-                },
+                &bindings,
                 &github_ctx_owned,
                 &paths_owned.home_dir,
                 agent,
-                &provision_agents,
             )?;
             super::super::super::account_identity::write_account_credentials(
                 &prepared.0.root,
@@ -1539,6 +1523,7 @@ where
         &materialized,
         dirty_exit_policy.as_str(),
         exec_bindings,
+        &environment.state,
     )?;
     Ok(WorkspaceMaterialized {
         materialized,

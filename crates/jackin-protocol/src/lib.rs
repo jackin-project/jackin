@@ -104,6 +104,18 @@ pub const HOST_SOCK_CONTAINER_PATH: &str = container_paths::HOST_SOCK;
 /// Bounded, non-secret auth-mode carrier from Capsule config to runtime setup.
 pub const AUTH_MODE_ENV: &str = "JACKIN_AUTH_MODE";
 
+/// Spawn env carrying the admitted instance config ID for a pane. The
+/// daemon sets it on every agent spawn; per-session setup uses it only
+/// for log attribution, never to resolve paths (paths come from
+/// [`INSTANCE_FORWARDED_DIR_ENV`] and the agent's folder env var).
+pub const INSTANCE_ENV: &str = "JACKIN_INSTANCE";
+
+/// Spawn env carrying the instance's host-forwarded credential directory
+/// (`/jackin/<agent>` for primary slots, `/jackin/<agent>-<suffix>` for
+/// secondary same-agent slots). Per-session setup reads forwarded files
+/// from here instead of hardcoded per-agent constants.
+pub const INSTANCE_FORWARDED_DIR_ENV: &str = "JACKIN_FORWARDED_DIR";
+
 /// Filename the capsule writes the operator's dirty-exit choice to, under the
 /// per-instance state dir, for the host to read and execute on cleanup.
 pub const EXIT_ACTION_FILENAME: &str = "exit-action.json";
@@ -136,7 +148,8 @@ pub struct CapsuleConfig {
     #[serde(default)]
     /// Admitted launch instance config IDs, in launch order. Several
     /// instances may share one agent runtime; per-instance facts live in
-    /// `agents`, `models`, `auth_modes`, `accounts`, `labels`, and the
+    /// `agents`, `models`, `auth_modes`, `accounts`, `labels`,
+    /// `instance_home_dirs`, `instance_forwarded_dirs`, and the
     /// protected [`AgentCredentialEnv`] envelope, all keyed by these same IDs.
     pub instances: Vec<String>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
@@ -193,6 +206,23 @@ pub struct CapsuleConfig {
     /// never listed (host-owned).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub isolated_worktrees: Vec<String>,
+    /// Value the daemon assigns to the agent's folder env var
+    /// (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`, …) when spawning this
+    /// instance, keyed by instance config ID. Primary slots carry the
+    /// legacy home (`/home/agent/.claude`); secondary same-agent slots
+    /// carry a suffixed home (`/home/agent/.claude-<suffix>`) so two
+    /// accounts for one agent never share credentials or history.
+    /// Every admitted instance has an entry; a missing entry fails the
+    /// spawn closed.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub instance_home_dirs: BTreeMap<String, String>,
+    /// Container handoff directory holding this instance's host-forwarded
+    /// credential files, keyed by instance config ID (`/jackin/<agent>`
+    /// for primary slots, `/jackin/<agent>-<suffix>` for secondary
+    /// same-agent slots). Every admitted instance has an entry; a missing
+    /// entry fails the spawn closed.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub instance_forwarded_dirs: BTreeMap<String, String>,
 }
 
 /// A Claude plugin marketplace the capsule registers at container start via
@@ -291,6 +321,21 @@ impl CapsuleConfig {
     #[must_use]
     pub fn label_for_instance(&self, instance: &str) -> Option<&str> {
         self.labels.get(instance).map(String::as_str)
+    }
+
+    /// Folder-var target (container config-home dir) for an instance
+    /// config ID.
+    #[must_use]
+    pub fn home_for_instance(&self, instance: &str) -> Option<&str> {
+        self.instance_home_dirs.get(instance).map(String::as_str)
+    }
+
+    /// Host-forwarded credential directory for an instance config ID.
+    #[must_use]
+    pub fn forwarded_for_instance(&self, instance: &str) -> Option<&str> {
+        self.instance_forwarded_dirs
+            .get(instance)
+            .map(String::as_str)
     }
 
     /// Resolve a spawn target to its admitted instance config ID. An exact

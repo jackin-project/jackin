@@ -134,8 +134,8 @@ agents = ["amp"]
         "JACKIN_AGENT must not be a container env var; got: {run_cmd}"
     );
     assert!(
-        run_cmd.ends_with(" amp"),
-        "initial agent must be passed as container argv; got: {run_cmd}"
+        run_cmd.ends_with(" amp-main"),
+        "initial instance must be passed as container argv; got: {run_cmd}"
     );
     assert!(
         !run_cmd.contains(":/home/agent/.amp/bin/amp:ro"),

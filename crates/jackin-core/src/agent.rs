@@ -272,7 +272,7 @@ impl FromStr for Agent {
 pub(crate) mod adapters;
 pub(crate) mod runtime;
 
-pub use runtime::{AgentRuntime, AgentStatePaths};
+pub use runtime::{AgentRuntime, AgentStatePaths, FolderVar, FolderVarKind};
 
 /// Public registry entry: all built-in [`AgentRuntime`] adapters.
 #[inline]
