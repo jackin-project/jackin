@@ -88,6 +88,14 @@ pub enum HostSurfaceId {
     Minimax,
     /// `OpenCode`.
     OpenCode,
+    /// Google (Antigravity + Gemini CLI).
+    Google,
+    /// Cursor.
+    Cursor,
+    /// Meta (Muse).
+    Meta,
+    /// `OpenRouter` (multi-provider clients only).
+    OpenRouter,
 }
 
 impl HostSurfaceId {
@@ -101,6 +109,10 @@ impl HostSurfaceId {
         Self::Kimi,
         Self::Minimax,
         Self::OpenCode,
+        Self::Google,
+        Self::Cursor,
+        Self::Meta,
+        Self::OpenRouter,
     ];
 
     /// The canonical seven-provider Desktop glance order (Capsule tab order).
@@ -127,6 +139,10 @@ impl HostSurfaceId {
             Self::Kimi => "kimi",
             Self::Minimax => "minimax",
             Self::OpenCode => "opencode",
+            Self::Google => "google",
+            Self::Cursor => "cursor",
+            Self::Meta => "meta",
+            Self::OpenRouter => "openrouter",
         }
     }
 
@@ -142,6 +158,10 @@ impl HostSurfaceId {
             Self::Kimi => "kimi",
             Self::Minimax => "minimax",
             Self::OpenCode => "opencode",
+            Self::Google => "google",
+            Self::Cursor => "cursor",
+            Self::Meta => "meta",
+            Self::OpenRouter => "openrouter",
         }
     }
 
@@ -157,6 +177,10 @@ impl HostSurfaceId {
             Self::Kimi => "Kimi",
             Self::Minimax => "MiniMax",
             Self::OpenCode => "OpenCode",
+            Self::Google => "Google",
+            Self::Cursor => "Cursor",
+            Self::Meta => "Meta",
+            Self::OpenRouter => "OpenRouter",
         }
     }
 
@@ -172,6 +196,10 @@ impl HostSurfaceId {
             Self::Kimi => "Ki",
             Self::Minimax => "MM",
             Self::OpenCode => "OC",
+            Self::Google => "Go",
+            Self::Cursor => "Cu",
+            Self::Meta => "Me",
+            Self::OpenRouter => "OR",
         }
     }
 
@@ -199,6 +227,10 @@ impl HostSurfaceId {
             Self::Kimi => Some("https://www.kimi.com/membership/subscription?tab=quota"),
             Self::Minimax => Some("https://platform.minimax.io/console/usage"),
             Self::OpenCode => None,
+            Self::Google => Some("https://aistudio.google.com/usage"),
+            Self::Cursor => Some("https://cursor.com/settings"),
+            Self::Meta => None,
+            Self::OpenRouter => Some("https://openrouter.ai/activity"),
         }
     }
 
@@ -213,6 +245,10 @@ impl HostSurfaceId {
             Self::Zai | Self::Minimax => "codex",
             Self::Kimi => "kimi",
             Self::OpenCode => "opencode",
+            Self::Google => "gemini",
+            Self::Cursor => "cursor",
+            Self::Meta => "muse",
+            Self::OpenRouter => "opencode",
         }
     }
 
@@ -228,6 +264,10 @@ impl HostSurfaceId {
             Self::Kimi => Some("Kimi"),
             Self::Minimax => Some("MiniMax"),
             Self::OpenCode => Some("OpenCode"),
+            Self::Google => Some("Google"),
+            Self::Cursor => Some("Cursor"),
+            Self::Meta => Some("Meta"),
+            Self::OpenRouter => Some("OpenRouter"),
         }
     }
 
@@ -257,6 +297,10 @@ impl HostSurfaceId {
             "kimi" => Some(Self::Kimi),
             "minimax" => Some(Self::Minimax),
             "opencode" => Some(Self::OpenCode),
+            "google" | "gemini" | "antigravity" => Some(Self::Google),
+            "cursor" => Some(Self::Cursor),
+            "meta" | "muse" => Some(Self::Meta),
+            "openrouter" => Some(Self::OpenRouter),
             _ => None,
         }
     }
@@ -271,6 +315,13 @@ impl HostSurfaceId {
             Agent::Kimi => Self::Kimi,
             Agent::Opencode => Self::OpenCode,
             Agent::Grok => Self::Grok,
+            Agent::Antigravity | Agent::Gemini => Self::Google,
+            Agent::Cursor => Self::Cursor,
+            Agent::Muse => Self::Meta,
+            // Omp/Hermes are multi-provider clients with no native surface;
+            // they share the generic multi-provider surface until per-provider
+            // routing lands in the usage lane.
+            Agent::Omp | Agent::Hermes => Self::OpenCode,
         }
     }
 }

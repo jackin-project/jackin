@@ -213,7 +213,11 @@ fn canonical_projection_provider_order_is_settled_and_not_agent_named() {
             "Z.AI",
             "Kimi",
             "MiniMax",
-            "OpenCode"
+            "OpenCode",
+            "Google",
+            "Cursor",
+            "Meta",
+            "OpenRouter"
         ]
     );
 }
@@ -258,13 +262,15 @@ fn host_surfaces_cover_agent_all_plus_routed_providers() {
         .iter()
         .map(|agent| HostSurfaceId::from_agent(*agent).id())
         .collect();
-    for id in ["claude", "codex", "amp", "kimi", "opencode", "grok"] {
+    for id in [
+        "claude", "codex", "amp", "kimi", "opencode", "grok", "google", "cursor", "meta",
+    ] {
         assert!(agent_ids.contains(id), "missing agent surface {id}");
     }
     assert!(HostSurfaceId::from_id("zai").is_some());
     assert!(HostSurfaceId::from_id("minimax").is_some());
-    assert!(HostSurfaceId::from_id("cursor").is_none());
-    assert_eq!(HostSurfaceId::ALL.len(), 8);
+    assert!(HostSurfaceId::from_id("openrouter").is_some());
+    assert_eq!(HostSurfaceId::ALL.len(), 12);
 }
 
 #[test]

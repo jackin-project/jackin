@@ -100,7 +100,8 @@ fn write_registry(config_root: &Path, entries: &[(&str, Agent, &Path)]) {
             jackin_config::AccountConfig {
                 enabled: true,
                 name: (*id).to_owned(),
-                provider: AiProvider::for_agent(*agent),
+                provider: AiProvider::for_agent(*agent)
+                    .expect("registry fixtures use native-provider agents"),
                 credential: AccountCredential::Profile {
                     agent: *agent,
                     directory: directory.to_path_buf(),

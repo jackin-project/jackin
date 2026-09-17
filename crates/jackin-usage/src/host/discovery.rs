@@ -92,6 +92,30 @@ pub fn host_credential_root_matrix() -> Vec<HostCredentialRootRow> {
             env_vars: "MINIMAX_CODING_API_KEY, MINIMAX_API_KEY",
             container_handoff: "",
         },
+        HostCredentialRootRow {
+            surface: "google",
+            host_paths: "~/.gemini/antigravity-cli, ~/.gemini, $GEMINI_CLI_HOME",
+            env_vars: "GEMINI_API_KEY, GOOGLE_API_KEY",
+            container_handoff: container_paths::GEMINI_AUTH,
+        },
+        HostCredentialRootRow {
+            surface: "cursor",
+            host_paths: "~/.cursor, $CURSOR_CONFIG_DIR",
+            env_vars: "CURSOR_API_KEY",
+            container_handoff: container_paths::CURSOR_AUTH,
+        },
+        HostCredentialRootRow {
+            surface: "meta",
+            host_paths: "~/.config/muse",
+            env_vars: "META_API_KEY",
+            container_handoff: container_paths::MUSE_AUTH,
+        },
+        HostCredentialRootRow {
+            surface: "openrouter",
+            host_paths: "",
+            env_vars: "OPENROUTER_API_KEY",
+            container_handoff: "",
+        },
     ]
 }
 
@@ -720,6 +744,10 @@ fn provider_surface(provider: AiProvider) -> (HostSurfaceId, UsageCredentialOwne
         AiProvider::Moonshot => (HostSurfaceId::Kimi, UsageCredentialOwner::Kimi),
         AiProvider::Zai => (HostSurfaceId::Zai, UsageCredentialOwner::Zai),
         AiProvider::Minimax => (HostSurfaceId::Minimax, UsageCredentialOwner::Minimax),
+        AiProvider::Google => (HostSurfaceId::Google, UsageCredentialOwner::Google),
+        AiProvider::Cursor => (HostSurfaceId::Cursor, UsageCredentialOwner::Cursor),
+        AiProvider::Meta => (HostSurfaceId::Meta, UsageCredentialOwner::Meta),
+        AiProvider::OpenRouter => (HostSurfaceId::OpenRouter, UsageCredentialOwner::OpenRouter),
     }
 }
 
@@ -1224,6 +1252,89 @@ fn profile_identity(
         }
         Agent::Grok => grok_profile_identity(reader, &root.join("auth.json")),
         Agent::Opencode => opencode_profile_identity(reader, &root.join("auth.json")),
+        // Antigravity's grant lives in the host Keychain singleton, which the
+        // file-based reader cannot probe: usage sees no usable credential.
+        // A Keychain-backed probe belongs to the usage lane.
+        Agent::Antigravity => ProfileValidation::Missing,
+        Agent::Gemini => anonymous_when_present(reader, &root.join("oauth_creds.json")),
+        Agent::Cursor => cursor_profile_identity(reader, root),
+        Agent::Muse => muse_profile_identity(reader, &root.join("auth.json")),
+        // SQLite store: presence (not content) is verified; table parsing
+        // belongs to a later lane.
+        Agent::Omp => {
+            if reader.exists(&root.join("agent/agent.db")) {
+                ProfileValidation::Anonymous(None)
+            } else {
+                ProfileValidation::Missing
+            }
+        }
+        Agent::Hermes => anonymous_when_present(reader, &root.join("auth.json")),
+    }
+}
+
+/// File present (any JSON shape) → anonymous binding; missing/denied/
+/// malformed propagate truthfully. Used for agents whose identity
+/// extraction is deferred to the usage lane.
+fn anonymous_when_present(reader: &dyn ProfileCredentialReader, path: &Path) -> ProfileValidation {
+    match read_json(reader, path) {
+        Ok(Some(_)) => ProfileValidation::Anonymous(None),
+        Ok(None) => ProfileValidation::Missing,
+        Err(outcome) => outcome,
+    }
+}
+
+/// Cursor identity comes from the sibling `cli-config.json` (`authInfo`
+/// email), verified locally; the tokens themselves live in `auth.json`.
+fn cursor_profile_identity(reader: &dyn ProfileCredentialReader, root: &Path) -> ProfileValidation {
+    match read_json(reader, &root.join("auth.json")) {
+        Ok(None) => return ProfileValidation::Missing,
+        Err(outcome) => return outcome,
+        Ok(Some(_)) => {}
+    }
+    let label = read_json(reader, &root.join("cli-config.json"))
+        .ok()
+        .flatten()
+        .and_then(|config| {
+            let info = config.get("authInfo")?;
+            info.get("email")
+                .or_else(|| info.get("displayName"))
+                .and_then(serde_json::Value::as_str)
+                .map(str::trim)
+                .filter(|label| !label.is_empty())
+                .map(str::to_owned)
+        });
+    match label {
+        Some(label) => ProfileValidation::Authenticated {
+            provider_id: None,
+            account_label: Some(label),
+            material: None,
+        },
+        None => ProfileValidation::Anonymous(None),
+    }
+}
+
+/// Muse identity comes from `auth.json` (`providers.meta.user_email`),
+/// verified locally; the secret itself stays in the host Keychain.
+fn muse_profile_identity(reader: &dyn ProfileCredentialReader, path: &Path) -> ProfileValidation {
+    let value = match read_json(reader, path) {
+        Ok(Some(value)) => value,
+        Ok(None) => return ProfileValidation::Missing,
+        Err(outcome) => return outcome,
+    };
+    let label = value
+        .pointer("/providers/meta/user_email")
+        .or_else(|| value.pointer("/providers/meta/user_full_name"))
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|label| !label.is_empty())
+        .map(str::to_owned);
+    match label {
+        Some(label) => ProfileValidation::Authenticated {
+            provider_id: None,
+            account_label: Some(label),
+            material: None,
+        },
+        None => ProfileValidation::Anonymous(None),
     }
 }
 

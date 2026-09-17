@@ -23,6 +23,7 @@ pub use state::{
     ProjectionAlias, ProjectionStateEnvelope, StateStoreError,
 };
 
+use self::policy::UsageActivity;
 use self::state::sanitize_usage_view;
 
 const TERMINAL_HISTORY_LIMIT: usize = 8;
@@ -154,14 +155,23 @@ impl UsageCapabilitySet {
     }
 }
 
+/// In-memory periodic cadence for one account. Due times are scheduling
+/// hints only; shared retry/rate-limit/success deadlines always win.
+struct AccountCadence {
+    activity: UsageActivity,
+    low_power: bool,
+    next_due_epoch: i64,
+}
+
 struct AccountEntry {
     envelope: AccountStateEnvelope,
     history: VecDeque<UsageGenerationView>,
     recovery_pending: bool,
+    cadence: AccountCadence,
 }
 
 impl AccountEntry {
-    fn new(envelope: AccountStateEnvelope, recovery_pending: bool) -> Self {
+    fn new(envelope: AccountStateEnvelope, recovery_pending: bool, now_epoch: i64) -> Self {
         let mut history = VecDeque::new();
         if envelope.phase.is_terminal() {
             history.push_back(generation_view(&envelope));
@@ -170,6 +180,11 @@ impl AccountEntry {
             envelope,
             history,
             recovery_pending,
+            cadence: AccountCadence {
+                activity: UsageActivity::Idle,
+                low_power: false,
+                next_due_epoch: now_epoch,
+            },
         }
     }
 
@@ -384,6 +399,151 @@ impl UsageCoordinator {
             .collect()
     }
 
+    /// Select the periodic cadence tier for one account. A due account stays
+    /// due; otherwise the next poll moves earlier when the new cadence is
+    /// shorter. Never dispatches provider work.
+    pub fn set_activity(
+        &self,
+        capability: &UsageAccountCapability,
+        activity: UsageActivity,
+        low_power: bool,
+        now_epoch: i64,
+    ) -> Result<(), UsageCoordinationError> {
+        self.ensure_loaded(capability, now_epoch)?;
+        let mut state = self.shared.state.lock().map_err(|_| unavailable_error())?;
+        if let Some(error) = state.blocked.get(capability) {
+            return Err(error.clone());
+        }
+        let entry = state
+            .accounts
+            .get_mut(capability)
+            .ok_or_else(unavailable_error)?;
+        entry.cadence.activity = activity;
+        entry.cadence.low_power = low_power;
+        let deadline = cadence_deadline(
+            activity,
+            low_power,
+            capability,
+            entry.envelope.generation,
+            now_epoch,
+        );
+        entry.cadence.next_due_epoch = entry.cadence.next_due_epoch.min(deadline);
+        Ok(())
+    }
+
+    /// Earliest periodic due time across known accounts, for scheduler sleep.
+    /// `None` when no account is tracked yet.
+    #[must_use]
+    pub fn next_due_epoch(&self) -> Option<i64> {
+        self.shared.state.lock().ok().and_then(|state| {
+            state
+                .accounts
+                .values()
+                .map(|entry| entry.cadence.next_due_epoch)
+                .min()
+        })
+    }
+
+    /// Poll every account whose periodic cadence is due. Each due account
+    /// issues at most one ambient (non-force) refresh, which joins in-flight
+    /// work and honors shared Retry-After/cooldown deadlines, so one call can
+    /// never produce a burst of missed polls. Returns the started or joined
+    /// views; blocked accounts are skipped.
+    pub fn poll_due(&self, now_epoch: i64) -> Vec<UsageGenerationView> {
+        let due: Vec<(UsageAccountCapability, u64)> = self
+            .shared
+            .state
+            .lock()
+            .map(|state| {
+                state
+                    .accounts
+                    .iter()
+                    .filter(|(capability, entry)| {
+                        !state.blocked.contains_key(*capability)
+                            && now_epoch >= entry.cadence.next_due_epoch
+                    })
+                    .map(|(capability, entry)| (capability.clone(), entry.envelope.generation))
+                    .collect()
+            })
+            .unwrap_or_default();
+        let mut views = Vec::with_capacity(due.len());
+        for (capability, observed) in due {
+            let Ok(view) = self.request_refresh(&capability, observed, false, now_epoch) else {
+                continue;
+            };
+            self.advance_cadence(&capability, observed, now_epoch);
+            views.push(view);
+        }
+        views
+    }
+
+    /// Recalculate due times after sleep/wake or network reconnection. Every
+    /// missed due time becomes one jittered cadence deadline from now, so the
+    /// next [`UsageCoordinator::poll_due`] issues at most one poll per
+    /// account. Future due times are untouched. Returns the number of
+    /// recalculated accounts. Never dispatches provider work.
+    pub fn note_wake(&self, now_epoch: i64) -> usize {
+        let Ok(mut state) = self.shared.state.lock() else {
+            return 0;
+        };
+        let mut recalculated = 0;
+        for (capability, entry) in &mut state.accounts {
+            if entry.cadence.next_due_epoch < now_epoch {
+                entry.cadence.next_due_epoch = cadence_deadline(
+                    entry.cadence.activity,
+                    entry.cadence.low_power,
+                    capability,
+                    entry.envelope.generation,
+                    now_epoch,
+                );
+                recalculated += 1;
+            }
+        }
+        recalculated
+    }
+
+    fn advance_cadence(
+        &self,
+        capability: &UsageAccountCapability,
+        observed_generation: u64,
+        now_epoch: i64,
+    ) {
+        let Ok(mut state) = self.shared.state.lock() else {
+            return;
+        };
+        let Some(entry) = state.accounts.get_mut(capability) else {
+            return;
+        };
+        if entry.envelope.generation > observed_generation {
+            entry.cadence.next_due_epoch = cadence_deadline(
+                entry.cadence.activity,
+                entry.cadence.low_power,
+                capability,
+                entry.envelope.generation,
+                now_epoch,
+            );
+            return;
+        }
+        let shared_deadline = [
+            entry.envelope.rate_limit_deadline_epoch,
+            entry.envelope.retry_deadline_epoch,
+            entry.envelope.success_deadline_epoch,
+        ]
+        .into_iter()
+        .flatten()
+        .filter(|deadline| *deadline > now_epoch)
+        .max();
+        entry.cadence.next_due_epoch = shared_deadline.unwrap_or_else(|| {
+            cadence_deadline(
+                entry.cadence.activity,
+                entry.cadence.low_power,
+                capability,
+                entry.envelope.generation,
+                now_epoch,
+            )
+        });
+    }
+
     /// Whether no queued or active generation is retained by this authority.
     #[must_use]
     pub fn is_idle(&self) -> bool {
@@ -488,7 +648,7 @@ impl UsageCoordinator {
                 }
                 state.accounts.insert(
                     capability.clone(),
-                    AccountEntry::new(envelope, recovery_pending),
+                    AccountEntry::new(envelope, recovery_pending, now_epoch),
                 );
                 Ok(())
             }
@@ -741,6 +901,38 @@ fn data_bearing(view: &FocusedUsageView) -> bool {
         )
 }
 
+/// Jittered periodic deadline: tier cadence plus a deterministic
+/// `[0, cadence/4]` skew, so accounts spread out instead of polling in
+/// lockstep. The capability and generation seed it, so joined callers never
+/// derive different due times.
+fn cadence_deadline(
+    activity: UsageActivity,
+    low_power: bool,
+    capability: &UsageAccountCapability,
+    generation: u64,
+    from_epoch: i64,
+) -> i64 {
+    let base = policy::cadence(activity, low_power).as_secs();
+    let span = base / 4 + 1;
+    let jitter = cadence_jitter_seed(capability, generation) % span;
+    from_epoch.saturating_add(i64::try_from(base.saturating_add(jitter)).unwrap_or(i64::MAX))
+}
+
+fn cadence_jitter_seed(capability: &UsageAccountCapability, generation: u64) -> u64 {
+    let mut seed = 0xcbf2_9ce4_8422_2325u64;
+    for byte in capability
+        .account_id
+        .as_bytes()
+        .iter()
+        .chain(capability.surface_id.as_bytes())
+        .chain(generation.to_le_bytes().iter())
+    {
+        seed ^= u64::from(*byte);
+        seed = seed.wrapping_mul(0x0100_0000_01b3);
+    }
+    seed
+}
+
 fn generation_view(envelope: &AccountStateEnvelope) -> UsageGenerationView {
     UsageGenerationView {
         capability: envelope.capability.clone(),
@@ -791,3 +983,349 @@ fn coordination_error(
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod cadence_tests {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    use jackin_protocol::control::{QuotaBucketView, UsageConfidence, UsageSeverity, UsageSource};
+
+    use super::*;
+
+    struct MemoryStore {
+        states: Mutex<BTreeMap<UsageAccountCapability, AccountStateEnvelope>>,
+    }
+
+    impl AccountStateStore for MemoryStore {
+        fn load(
+            &self,
+            capability: &UsageAccountCapability,
+            _now_epoch: i64,
+        ) -> Result<Option<AccountStateEnvelope>, StateStoreError> {
+            Ok(self.states.lock().unwrap().get(capability).cloned())
+        }
+
+        fn store(
+            &self,
+            envelope: &AccountStateEnvelope,
+            _now_epoch: i64,
+        ) -> Result<(), StateStoreError> {
+            self.states
+                .lock()
+                .unwrap()
+                .insert(envelope.capability.clone(), envelope.clone());
+            Ok(())
+        }
+    }
+
+    struct ImmediateExecutor {
+        calls: AtomicUsize,
+        outcome: Mutex<ProviderProbeOutcome>,
+    }
+
+    impl ImmediateExecutor {
+        fn new(outcome: ProviderProbeOutcome) -> Self {
+            Self {
+                calls: AtomicUsize::new(0),
+                outcome: Mutex::new(outcome),
+            }
+        }
+
+        fn set_outcome(&self, outcome: ProviderProbeOutcome) {
+            *self.outcome.lock().unwrap() = outcome;
+        }
+    }
+
+    impl UsageProviderExecutor for ImmediateExecutor {
+        fn probe(
+            &self,
+            _capability: &UsageAccountCapability,
+            _generation: u64,
+        ) -> ProviderProbeOutcome {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            self.outcome.lock().unwrap().clone()
+        }
+    }
+
+    struct GateExecutor {
+        calls: AtomicUsize,
+        started: (Mutex<usize>, Condvar),
+        permits: (Mutex<usize>, Condvar),
+        outcome: Mutex<ProviderProbeOutcome>,
+    }
+
+    impl GateExecutor {
+        fn new(outcome: ProviderProbeOutcome) -> Self {
+            Self {
+                calls: AtomicUsize::new(0),
+                started: (Mutex::new(0), Condvar::new()),
+                permits: (Mutex::new(0), Condvar::new()),
+                outcome: Mutex::new(outcome),
+            }
+        }
+
+        fn wait_started(&self) {
+            let deadline = Instant::now() + Duration::from_secs(2);
+            let (lock, changed) = &self.started;
+            let mut started = lock.lock().unwrap();
+            while *started < 1 {
+                let remaining = deadline.saturating_duration_since(Instant::now());
+                assert!(!remaining.is_zero(), "provider probe did not start");
+                let (next, wait) = changed.wait_timeout(started, remaining).unwrap();
+                started = next;
+                assert!(!wait.timed_out(), "provider probe did not start");
+            }
+        }
+
+        fn release(&self) {
+            let (lock, changed) = &self.permits;
+            *lock.lock().unwrap() += 1;
+            changed.notify_all();
+        }
+    }
+
+    impl UsageProviderExecutor for GateExecutor {
+        fn probe(
+            &self,
+            _capability: &UsageAccountCapability,
+            _generation: u64,
+        ) -> ProviderProbeOutcome {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            let (started_lock, started_changed) = &self.started;
+            *started_lock.lock().unwrap() += 1;
+            started_changed.notify_all();
+            let (permit_lock, permit_changed) = &self.permits;
+            let mut permits = permit_lock.lock().unwrap();
+            while *permits == 0 {
+                permits = permit_changed.wait(permits).unwrap();
+            }
+            *permits -= 1;
+            self.outcome.lock().unwrap().clone()
+        }
+    }
+
+    fn capability(id: &str) -> UsageAccountCapability {
+        UsageAccountCapability {
+            account_id: id.into(),
+            surface_id: "claude".into(),
+        }
+    }
+
+    fn quota_view(epoch: i64) -> FocusedUsageView {
+        let mut view = FocusedUsageView::unavailable("fixture", epoch);
+        view.status = UsageSnapshotStatus::Fresh;
+        view.source = UsageSource::ProviderApi;
+        view.confidence = UsageConfidence::Authoritative;
+        view.buckets = vec![QuotaBucketView {
+            label: "Session".into(),
+            used_label: None,
+            limit_label: None,
+            remaining_percent: Some(80),
+            reset_label: None,
+            resets_at: None,
+            status_slot: None,
+            pace_label: None,
+            status: UsageSnapshotStatus::Fresh,
+            used_money: None,
+            limit_money: None,
+            severity: UsageSeverity::Normal,
+        }];
+        view.last_error = None;
+        view
+    }
+
+    fn coordinator<E>(executor: Arc<E>, config: UsageCoordinatorConfig) -> UsageCoordinator
+    where
+        E: UsageProviderExecutor + 'static,
+    {
+        UsageCoordinator::new(
+            executor,
+            Arc::new(MemoryStore {
+                states: Mutex::new(BTreeMap::new()),
+            }),
+            config,
+        )
+    }
+
+    fn join_ok(
+        coordinator: &UsageCoordinator,
+        capability: &UsageAccountCapability,
+        generation: u64,
+        now_epoch: i64,
+    ) -> UsageGenerationView {
+        coordinator
+            .join_generation(capability, generation, Duration::from_secs(2), now_epoch)
+            .unwrap()
+    }
+
+    #[test]
+    fn cadence_tiers_select_spec_intervals_with_bounded_jitter() {
+        let account = capability("account-a");
+        let cases = [
+            (UsageActivity::DirectInteraction, false, 120..=150),
+            (UsageActivity::Recent, false, 300..=375),
+            (UsageActivity::Idle, false, 900..=1_125),
+            (UsageActivity::LongIdle, false, 1_800..=2_250),
+            (UsageActivity::DirectInteraction, true, 1_800..=2_250),
+        ];
+        for (activity, low_power, range) in cases {
+            let first = cadence_deadline(activity, low_power, &account, 3, 10_000);
+            assert!(
+                range.contains(&(first - 10_000)),
+                "{activity:?} low_power={low_power} out of range: {first}"
+            );
+            assert_eq!(
+                first,
+                cadence_deadline(activity, low_power, &account, 3, 10_000),
+                "cadence deadline must be deterministic for joined callers"
+            );
+        }
+    }
+
+    #[test]
+    fn cadence_poll_due_fires_once_per_interval_and_honors_success_cooldown() {
+        let executor = Arc::new(ImmediateExecutor::new(ProviderProbeOutcome::success(
+            quota_view(1_000),
+        )));
+        let coordinator = coordinator(Arc::clone(&executor), UsageCoordinatorConfig::default());
+        let account = capability("account-a");
+        coordinator
+            .set_activity(&account, UsageActivity::DirectInteraction, false, 1_000)
+            .unwrap();
+
+        let started = coordinator.poll_due(1_000);
+        assert_eq!(started.len(), 1);
+        assert_eq!(started[0].generation, 1);
+        assert_eq!(
+            join_ok(&coordinator, &account, 1, 1_001).phase,
+            UsageRefreshPhase::Completed
+        );
+        assert_eq!(executor.calls.load(Ordering::SeqCst), 1);
+
+        let due = coordinator.next_due_epoch().unwrap();
+        assert!((1_120..=1_150).contains(&due), "due={due}");
+        assert!(coordinator.poll_due(due - 1).is_empty());
+        assert_eq!(executor.calls.load(Ordering::SeqCst), 1);
+
+        let suppressed = coordinator.poll_due(due);
+        assert_eq!(suppressed.len(), 1);
+        assert_eq!(suppressed[0].generation, 1);
+        assert_eq!(executor.calls.load(Ordering::SeqCst), 1);
+        let cooldown_due = coordinator.next_due_epoch().unwrap();
+        assert!(
+            (1_300..=1_310).contains(&cooldown_due),
+            "shared success cooldown must win: {cooldown_due}"
+        );
+
+        let second = coordinator.poll_due(cooldown_due);
+        assert_eq!(second.len(), 1);
+        assert_eq!(second[0].generation, 2);
+        assert_eq!(
+            join_ok(&coordinator, &account, 2, cooldown_due + 1).phase,
+            UsageRefreshPhase::Completed
+        );
+        assert_eq!(executor.calls.load(Ordering::SeqCst), 2);
+    }
+
+    #[test]
+    fn cadence_wake_recalculates_without_missed_poll_burst() {
+        let executor = Arc::new(ImmediateExecutor::new(ProviderProbeOutcome::success(
+            quota_view(1_000),
+        )));
+        let coordinator = coordinator(Arc::clone(&executor), UsageCoordinatorConfig::default());
+        let account = capability("account-a");
+        coordinator
+            .set_activity(&account, UsageActivity::DirectInteraction, false, 1_000)
+            .unwrap();
+        assert_eq!(coordinator.poll_due(1_000).len(), 1);
+        drop(join_ok(&coordinator, &account, 1, 1_001));
+        assert_eq!(executor.calls.load(Ordering::SeqCst), 1);
+
+        let wake = 1_000 + 36_000;
+        assert_eq!(coordinator.note_wake(wake), 1);
+        assert_eq!(executor.calls.load(Ordering::SeqCst), 1);
+        let due = coordinator.next_due_epoch().unwrap();
+        assert!((wake + 120..=wake + 150).contains(&due), "due={due}");
+        assert!(coordinator.poll_due(wake).is_empty());
+        assert_eq!(executor.calls.load(Ordering::SeqCst), 1);
+
+        let second = coordinator.poll_due(due);
+        assert_eq!(second.len(), 1);
+        assert_eq!(second[0].generation, 2);
+        drop(join_ok(&coordinator, &account, 2, due + 1));
+        assert_eq!(executor.calls.load(Ordering::SeqCst), 2);
+    }
+
+    #[test]
+    fn cadence_shared_retry_after_wins_over_periodic_due() {
+        let executor = Arc::new(ImmediateExecutor::new(ProviderProbeOutcome::Failure {
+            kind: UsageCoordinationErrorKind::RateLimited,
+            message: "provider rate limited".into(),
+            retry_at_epoch: Some(5_000),
+        }));
+        let coordinator = coordinator(Arc::clone(&executor), UsageCoordinatorConfig::default());
+        let account = capability("account-a");
+        coordinator
+            .set_activity(&account, UsageActivity::DirectInteraction, false, 1_000)
+            .unwrap();
+        assert_eq!(coordinator.poll_due(1_000).len(), 1);
+        let failed = join_ok(&coordinator, &account, 1, 1_001);
+        assert_eq!(failed.phase, UsageRefreshPhase::Failed);
+        assert_eq!(failed.retry_at_epoch, Some(5_000));
+
+        let due = coordinator.next_due_epoch().unwrap();
+        assert!((1_120..=1_150).contains(&due), "due={due}");
+        let suppressed = coordinator.poll_due(due);
+        assert_eq!(suppressed.len(), 1);
+        assert_eq!(suppressed[0].generation, 1);
+        assert_eq!(executor.calls.load(Ordering::SeqCst), 1);
+        assert_eq!(coordinator.next_due_epoch(), Some(5_000));
+        assert!(coordinator.poll_due(4_999).is_empty());
+
+        executor.set_outcome(ProviderProbeOutcome::success(quota_view(5_000)));
+        let second = coordinator.poll_due(5_000);
+        assert_eq!(second.len(), 1);
+        assert_eq!(second[0].generation, 2);
+        assert_eq!(
+            join_ok(&coordinator, &account, 2, 5_001).phase,
+            UsageRefreshPhase::Completed
+        );
+        assert_eq!(executor.calls.load(Ordering::SeqCst), 2);
+    }
+
+    #[test]
+    fn cadence_two_clients_single_flight_exactly_one_provider_call() {
+        let executor = Arc::new(GateExecutor::new(ProviderProbeOutcome::success(
+            quota_view(1_000),
+        )));
+        let coordinator = coordinator(Arc::clone(&executor), UsageCoordinatorConfig::default());
+        let account = capability("account-a");
+        coordinator
+            .set_activity(&account, UsageActivity::DirectInteraction, false, 1_000)
+            .unwrap();
+
+        let winner = coordinator.poll_due(1_000);
+        assert_eq!(winner.len(), 1);
+        assert_eq!(winner[0].generation, 1);
+        executor.wait_started();
+
+        let manual_joiner = coordinator
+            .request_refresh(&account, 1, true, 1_000)
+            .unwrap();
+        assert_eq!(manual_joiner.generation, 1);
+        assert!(manual_joiner.phase.is_active());
+        let repeated_manual = coordinator
+            .request_refresh(&account, 1, true, 1_000)
+            .unwrap();
+        assert_eq!(repeated_manual.generation, 1);
+        let due = coordinator.next_due_epoch().unwrap();
+        let ambient_joiner = coordinator.poll_due(due);
+        assert_eq!(ambient_joiner.len(), 1);
+        assert_eq!(ambient_joiner[0].generation, 1);
+
+        executor.release();
+        let terminal = join_ok(&coordinator, &account, 1, 1_001);
+        assert_eq!(terminal.phase, UsageRefreshPhase::Completed);
+        assert_eq!(executor.calls.load(Ordering::SeqCst), 1);
+    }
+}
