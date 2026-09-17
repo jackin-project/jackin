@@ -165,6 +165,131 @@ fn coding_api_aliases_are_discovered() {
 }
 
 #[test]
+fn new_provider_keys_are_discovered() {
+    for (provider, name) in [
+        (AiProvider::Google, "GEMINI_API_KEY"),
+        (AiProvider::Google, "GOOGLE_API_KEY"),
+        (AiProvider::Cursor, "CURSOR_API_KEY"),
+        (AiProvider::Meta, "META_API_KEY"),
+        (AiProvider::OpenRouter, "OPENROUTER_API_KEY"),
+    ] {
+        let env = std::collections::BTreeMap::from([(name.into(), "fixture-key".into())]);
+        assert_eq!(
+            discover_environment_accounts(&env),
+            [(provider, name.into())]
+        );
+    }
+    // Canonical name wins over the alias.
+    let env = std::collections::BTreeMap::from([
+        ("GEMINI_API_KEY".to_owned(), "primary-fixture".to_owned()),
+        ("GOOGLE_API_KEY".to_owned(), "alias-fixture".to_owned()),
+    ]);
+    assert_eq!(
+        discover_environment_accounts(&env),
+        [(AiProvider::Google, "GEMINI_API_KEY".to_owned())]
+    );
+}
+
+#[test]
+fn recognizes_new_single_file_agents_and_rejects_metadata() {
+    let fixtures = [
+        (
+            Agent::Gemini,
+            "oauth_creds.json",
+            r#"{"access_token":"fixture","refresh_token":"fixture"}"#,
+        ),
+        (
+            Agent::Cursor,
+            "auth.json",
+            r#"{"accessToken":"fixture","refreshToken":"fixture"}"#,
+        ),
+        (
+            Agent::Muse,
+            "auth.json",
+            r#"{"schema_version":2,"providers":{"meta":{"user_email":"op@example.com"}}}"#,
+        ),
+    ];
+    for (agent, filename, content) in fixtures {
+        let home = tempfile::tempdir().unwrap();
+        let directory = home
+            .path()
+            .join(agent.runtime().state_paths().credential_dir);
+        let path = directory.join(filename);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let inspect = || inspect_directory(agent, &directory, home.path(), |_| false);
+        assert_eq!(inspect().unwrap(), None, "empty directory for {agent}");
+        std::fs::write(&path, "{}").unwrap();
+        assert_eq!(inspect().unwrap(), None, "metadata for {agent}");
+        std::fs::write(&path, content).unwrap();
+        let found = inspect().unwrap().unwrap();
+        assert_eq!(found.evidence, CredentialEvidence::File(path));
+        assert!(!format!("{found:?}").contains("fixture"));
+    }
+}
+
+#[test]
+fn antigravity_discovery_is_keychain_only() {
+    let home = tempfile::tempdir().unwrap();
+    let directory = home.path().join(".gemini/antigravity-cli");
+    std::fs::create_dir_all(&directory).unwrap();
+    // settings.json holds prefs, never credentials: no evidence without the
+    // Keychain singleton, even when the file exists and parses.
+    std::fs::write(directory.join("settings.json"), r#"{"model":"fixture"}"#).unwrap();
+    assert_eq!(
+        inspect_directory(Agent::Antigravity, &directory, home.path(), |_| false).unwrap(),
+        None
+    );
+    let found = inspect_directory(Agent::Antigravity, &directory, home.path(), |service| {
+        assert_eq!(service, "gemini");
+        true
+    })
+    .unwrap()
+    .unwrap();
+    assert_eq!(
+        found.evidence,
+        CredentialEvidence::Keychain("gemini".to_owned())
+    );
+}
+
+#[test]
+fn hermes_discovery_enumerates_profiles_through_stores() {
+    let home = tempfile::tempdir().unwrap();
+    let directory = home.path().join(".hermes");
+    std::fs::create_dir_all(&directory).unwrap();
+    let inspect = || inspect_directory(Agent::Hermes, &directory, home.path(), |_| false);
+    assert_eq!(inspect().unwrap(), None, "empty directory");
+    // auth.json alone, without an attributable profile, is not an account.
+    std::fs::write(
+        directory.join("auth.json"),
+        r#"{"openai":{"type":"api","key":"fixture"}}"#,
+    )
+    .unwrap();
+    assert_eq!(inspect().unwrap(), None, "profile-less store");
+    std::fs::write(
+        directory.join("config.yaml"),
+        "profiles:\n  work:\n    provider: openai\n",
+    )
+    .unwrap();
+    let found = inspect().unwrap().unwrap();
+    assert_eq!(
+        found.evidence,
+        CredentialEvidence::File(directory.join("auth.json"))
+    );
+    assert!(!format!("{found:?}").contains("fixture"));
+}
+
+#[test]
+fn omp_discovery_without_database_is_not_an_account() {
+    let home = tempfile::tempdir().unwrap();
+    let directory = home.path().join(".omp");
+    std::fs::create_dir_all(&directory).unwrap();
+    assert_eq!(
+        inspect_directory(Agent::Omp, &directory, home.path(), |_| false).unwrap(),
+        None
+    );
+}
+
+#[test]
 fn kimi_default_discovery_accepts_cli_home_without_duplicate_accounts() {
     let home = tempfile::tempdir().unwrap();
     // Keep the default Claude probe filesystem-only on macOS.

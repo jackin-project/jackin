@@ -91,10 +91,15 @@ fn scan(config: &AppConfig, paths: &JackinPaths) -> Result<()> {
             id = format!("{base}-{suffix}");
             suffix += 1;
         }
+        // Multi-provider stores (Omp, Hermes) have no native billing;
+        // the operator adds those accounts explicitly with --provider.
+        let Some(provider) = AiProvider::for_agent(found.agent) else {
+            continue;
+        };
         let account = AccountConfig {
             enabled: true,
             name: format!("{} default", found.agent),
-            provider: AiProvider::for_agent(found.agent),
+            provider,
             credential: AccountCredential::Profile {
                 agent: found.agent,
                 directory: found.directory,
@@ -143,10 +148,15 @@ fn scan(config: &AppConfig, paths: &JackinPaths) -> Result<()> {
             id = format!("{base}-{suffix}");
             suffix += 1;
         }
+        // OAuth discovery only ever yields Claude, which always has
+        // a native provider; skip defensively if that changes.
+        let Some(provider) = AiProvider::for_agent(agent) else {
+            continue;
+        };
         let account = AccountConfig {
             enabled: true,
             name: format!("{agent} OAuth token"),
-            provider: AiProvider::for_agent(agent),
+            provider,
             credential: AccountCredential::OAuthToken {
                 agent,
                 value: reference,
@@ -180,7 +190,7 @@ fn build_account(args: &AddAccountArgs, paths: &JackinPaths) -> Result<AccountCo
         .as_deref()
         .map(str::parse)
         .transpose()?
-        .or_else(|| args.agent.map(AiProvider::for_agent))
+        .or_else(|| args.agent.and_then(AiProvider::for_agent))
         .context("--provider is required")?;
     let credential = if let Some(directory) = &args.directory {
         let agent = args.agent.context("--agent is required for a profile")?;

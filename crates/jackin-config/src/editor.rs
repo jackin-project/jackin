@@ -84,13 +84,19 @@ impl ConfigEditor {
             let mut initial = AppConfig::default();
             initial.sync_builtin_agents();
             for discovered in crate::discover_default_accounts(&paths.home_dir).accounts {
+                // Multi-provider stores (Omp, Hermes) have no native
+                // billing, so bootstrap cannot pick a provider for them;
+                // the operator adds those accounts explicitly.
+                let Some(provider) = crate::AiProvider::for_agent(discovered.agent) else {
+                    continue;
+                };
                 let id = format!("default-{}", discovered.agent.slug());
                 initial.accounts.insert(
                     id,
                     crate::AccountConfig {
                         enabled: true,
                         name: format!("{} default", discovered.agent.label()),
-                        provider: crate::AiProvider::for_agent(discovered.agent),
+                        provider,
                         credential: crate::AccountCredential::Profile {
                             agent: discovered.agent,
                             directory: discovered.directory,
@@ -119,12 +125,17 @@ impl ConfigEditor {
                 );
             }
             for (agent, variable) in crate::discover_environment_oauth_accounts(&environment) {
+                // OAuth discovery only ever yields Claude, which always has
+                // a native provider; skip defensively if that changes.
+                let Some(provider) = crate::AiProvider::for_agent(agent) else {
+                    continue;
+                };
                 initial.accounts.insert(
                     format!("{agent}-oauth-token"),
                     crate::AccountConfig {
                         enabled: true,
                         name: format!("{agent} subscription token"),
-                        provider: crate::AiProvider::for_agent(agent),
+                        provider,
                         credential: crate::AccountCredential::OAuthToken {
                             agent,
                             value: EnvValue::from(format!("${variable}")),

@@ -12,6 +12,7 @@ use std::{
 };
 
 pub(crate) mod discovery;
+pub(crate) mod stores;
 
 /// Service issuing an account's credentials.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -34,6 +35,14 @@ pub enum AiProvider {
     Zai,
     /// `MiniMax`.
     Minimax,
+    /// Google AI Studio / Gemini API (Antigravity + Gemini CLI).
+    Google,
+    /// Cursor API.
+    Cursor,
+    /// Meta API (Muse).
+    Meta,
+    /// `OpenRouter` (multi-provider clients only; no native agent).
+    OpenRouter,
 }
 impl AiProvider {
     /// Canonical provider identifier.
@@ -47,17 +56,30 @@ impl AiProvider {
             Self::Moonshot => "moonshot",
             Self::Zai => "zai",
             Self::Minimax => "minimax",
+            Self::Google => "google",
+            Self::Cursor => "cursor",
+            Self::Meta => "meta",
+            Self::OpenRouter => "openrouter",
         }
     }
-    /// Native service for an agent's profile.
-    pub const fn for_agent(agent: Agent) -> Self {
+    /// Native billing service for an agent, if it has one.
+    ///
+    /// Returns `None` for pure multi-provider clients (Omp, Hermes),
+    /// which route arbitrary providers and have no native billing.
+    /// Callers comparing against an account's provider must compare
+    /// `Some(provider) == for_agent(agent)` so `None` never matches.
+    pub const fn for_agent(agent: Agent) -> Option<Self> {
         match agent {
-            Agent::Claude => Self::Anthropic,
-            Agent::Codex => Self::OpenAi,
-            Agent::Amp => Self::Amp,
-            Agent::Kimi => Self::Moonshot,
-            Agent::Opencode => Self::Opencode,
-            Agent::Grok => Self::Xai,
+            Agent::Claude => Some(Self::Anthropic),
+            Agent::Codex => Some(Self::OpenAi),
+            Agent::Amp => Some(Self::Amp),
+            Agent::Kimi => Some(Self::Moonshot),
+            Agent::Opencode => Some(Self::Opencode),
+            Agent::Grok => Some(Self::Xai),
+            Agent::Antigravity | Agent::Gemini => Some(Self::Google),
+            Agent::Cursor => Some(Self::Cursor),
+            Agent::Muse => Some(Self::Meta),
+            Agent::Omp | Agent::Hermes => None,
         }
     }
 }
@@ -78,6 +100,10 @@ impl std::str::FromStr for AiProvider {
             "moonshot" => Ok(Self::Moonshot),
             "zai" => Ok(Self::Zai),
             "minimax" => Ok(Self::Minimax),
+            "google" => Ok(Self::Google),
+            "cursor" => Ok(Self::Cursor),
+            "meta" => Ok(Self::Meta),
+            "openrouter" => Ok(Self::OpenRouter),
             _ => Err(ConfigError::msg(format!("unknown AI provider {value:?}"))),
         }
     }
@@ -158,15 +184,26 @@ impl AccountConfig {
 
     fn compatible_agent(&self, agent: Agent) -> bool {
         match &self.credential {
+            // Profile: the store owner must be the agent, and either the
+            // provider is that agent's native billing or the agent is a
+            // multi-provider client whose store holds arbitrary providers
+            // (OpenCode, Omp, Hermes).
             AccountCredential::Profile { agent: owner, .. } => {
-                *owner == agent && self.provider == AiProvider::for_agent(agent)
+                *owner == agent
+                    && (Some(self.provider) == AiProvider::for_agent(agent)
+                        || matches!(agent, Agent::Opencode | Agent::Omp | Agent::Hermes))
             }
             AccountCredential::OAuthToken { agent: owner, .. } => {
                 *owner == agent && agent == Agent::Claude && self.provider == AiProvider::Anthropic
             }
             AccountCredential::ApiKey { .. } => {
-                self.provider == AiProvider::for_agent(agent)
+                Some(self.provider) == AiProvider::for_agent(agent)
                     || match agent {
+                        // Claude/Codex route a fixed set of Anthropic/OpenAI
+                        // -compatible third parties. OpenRouter is
+                        // deliberately NOT routed here: it reaches
+                        // Claude/Codex-shaped workloads only through
+                        // OpenCode/Omp/Hermes with an explicit model.
                         Agent::Claude => matches!(
                             self.provider,
                             AiProvider::Moonshot | AiProvider::Zai | AiProvider::Minimax
@@ -177,7 +214,11 @@ impl AccountConfig {
                                 AiProvider::Moonshot | AiProvider::Zai | AiProvider::Minimax
                             )
                         }
-                        Agent::Opencode => !matches!(self.provider, AiProvider::Amp),
+                        // Multi-provider clients accept every provider
+                        // except Amp, whose key has no third-party use.
+                        Agent::Opencode | Agent::Omp | Agent::Hermes => {
+                            !matches!(self.provider, AiProvider::Amp)
+                        }
                         _ => false,
                     }
             }
@@ -195,14 +236,29 @@ impl AccountConfig {
             Agent::Amp => "AMP_API_KEY",
             Agent::Kimi => "KIMI_API_KEY",
             Agent::Grok => "XAI_API_KEY",
-            Agent::Opencode => match self.provider {
+            // Single-provider newcomers only accept their native provider,
+            // so the variable is fixed per agent.
+            Agent::Antigravity | Agent::Gemini => "GEMINI_API_KEY",
+            Agent::Cursor => "CURSOR_API_KEY",
+            Agent::Muse => "META_API_KEY",
+            // Multi-provider clients select the variable per provider.
+            // Provider-native names are used so the routed CLI finds the
+            // key without extra mapping; the OpenCode Zen key is the
+            // fallback for the two providers with no third-party variable
+            // (Amp is unreachable here — excluded by compatibility —
+            // and Opencode's own Zen key).
+            Agent::Opencode | Agent::Omp | Agent::Hermes => match self.provider {
                 AiProvider::Anthropic => "ANTHROPIC_API_KEY",
                 AiProvider::OpenAi => "OPENAI_API_KEY",
                 AiProvider::Xai => "XAI_API_KEY",
                 AiProvider::Moonshot => "MOONSHOT_API_KEY",
                 AiProvider::Zai => "ZHIPU_API_KEY",
                 AiProvider::Minimax => "MINIMAX_API_KEY",
-                _ => "OPENCODE_API_KEY",
+                AiProvider::Google => "GEMINI_API_KEY",
+                AiProvider::Cursor => "CURSOR_API_KEY",
+                AiProvider::Meta => "META_API_KEY",
+                AiProvider::OpenRouter => "OPENROUTER_API_KEY",
+                AiProvider::Amp | AiProvider::Opencode => "OPENCODE_API_KEY",
             },
         }
     }
@@ -215,6 +271,17 @@ impl AccountConfig {
             (Agent::Codex, AiProvider::Moonshot) => Some("https://api.kimi.com/coding/v1"),
             (Agent::Codex, AiProvider::Zai) => Some("https://api.z.ai/api/v1"),
             (Agent::Codex, AiProvider::Minimax) => Some("https://api.minimax.io/v1"),
+            // Multi-provider clients route OpenRouter at its documented
+            // base. Endpoint *application* for Omp/Hermes is deferred to
+            // the provider-config lane (credential_env skips env
+            // injection for them, like OpenCode); the URL is recorded
+            // here so that lane has one source of truth.
+            (Agent::Opencode | Agent::Omp | Agent::Hermes, AiProvider::OpenRouter) => {
+                Some("https://openrouter.ai/api/v1")
+            }
+            // Native Google/Cursor/Meta keys need no endpoint override;
+            // unknown third-party combinations fail closed (None) rather
+            // than guessing a base URL.
             _ => None,
         }
     }
@@ -307,8 +374,10 @@ impl AccountConfig {
                 base_url,
                 model,
             } => {
-                if matches!(agent, Agent::Claude | Agent::Codex | Agent::Opencode)
-                    && self.provider != AiProvider::for_agent(agent)
+                if matches!(
+                    agent,
+                    Agent::Claude | Agent::Codex | Agent::Opencode | Agent::Omp | Agent::Hermes
+                ) && Some(self.provider) != AiProvider::for_agent(agent)
                     && model.as_deref().is_none_or(|model| model.trim().is_empty())
                 {
                     return Err(ConfigError::msg(format!(
@@ -331,8 +400,10 @@ impl AccountConfig {
                     }
                 }
                 let default_url = self.default_api_url(agent);
-                // OpenCode endpoints are written to its private provider configuration.
-                if agent != Agent::Opencode
+                // OpenCode/Omp/Hermes endpoints are written to their private
+                // provider configurations (Omp/Hermes writers land in the
+                // provider-config lane), never to env vars.
+                if !matches!(agent, Agent::Opencode | Agent::Omp | Agent::Hermes)
                     && let Some(url) = base_url.as_deref().or(default_url)
                 {
                     let name = match agent {

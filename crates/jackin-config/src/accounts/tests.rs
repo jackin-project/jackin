@@ -246,6 +246,204 @@ fn cross_provider_opencode_account_requires_model_and_native_does_not() {
 }
 
 #[test]
+fn native_provider_mapping_covers_new_agents() {
+    assert_eq!(
+        AiProvider::for_agent(Agent::Claude),
+        Some(AiProvider::Anthropic)
+    );
+    assert_eq!(
+        AiProvider::for_agent(Agent::Antigravity),
+        Some(AiProvider::Google)
+    );
+    assert_eq!(
+        AiProvider::for_agent(Agent::Gemini),
+        Some(AiProvider::Google)
+    );
+    assert_eq!(
+        AiProvider::for_agent(Agent::Cursor),
+        Some(AiProvider::Cursor)
+    );
+    assert_eq!(AiProvider::for_agent(Agent::Muse), Some(AiProvider::Meta));
+    assert_eq!(AiProvider::for_agent(Agent::Omp), None);
+    assert_eq!(AiProvider::for_agent(Agent::Hermes), None);
+}
+
+#[test]
+fn new_provider_slugs_round_trip() {
+    for (provider, slug) in [
+        (AiProvider::Google, "google"),
+        (AiProvider::Cursor, "cursor"),
+        (AiProvider::Meta, "meta"),
+        (AiProvider::OpenRouter, "openrouter"),
+    ] {
+        assert_eq!(provider.slug(), slug);
+        assert_eq!(slug.parse::<AiProvider>().unwrap(), provider);
+    }
+}
+
+fn api_key(provider: AiProvider, model: Option<&str>) -> AccountConfig {
+    AccountConfig {
+        enabled: true,
+        name: format!("{provider} key"),
+        provider,
+        credential: AccountCredential::ApiKey {
+            value: EnvValue::from("fixture-key"),
+            base_url: None,
+            model: model.map(str::to_owned),
+        },
+    }
+}
+
+#[test]
+fn single_provider_newcomers_accept_only_native_keys() {
+    for (agent, provider) in [
+        (Agent::Antigravity, AiProvider::Google),
+        (Agent::Gemini, AiProvider::Google),
+        (Agent::Cursor, AiProvider::Cursor),
+        (Agent::Muse, AiProvider::Meta),
+    ] {
+        assert!(api_key(provider, None).supports_agent(agent), "{agent:?}");
+        for other in [
+            AiProvider::Anthropic,
+            AiProvider::OpenAi,
+            AiProvider::Google,
+            AiProvider::Cursor,
+            AiProvider::Meta,
+            AiProvider::OpenRouter,
+        ] {
+            if other != provider {
+                assert!(
+                    !api_key(other, Some("model")).supports_agent(agent),
+                    "{agent:?} vs {other:?}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn multi_provider_clients_accept_every_provider_but_amp() {
+    for agent in [Agent::Opencode, Agent::Omp, Agent::Hermes] {
+        for provider in [
+            AiProvider::Anthropic,
+            AiProvider::OpenAi,
+            AiProvider::Xai,
+            AiProvider::Opencode,
+            AiProvider::Moonshot,
+            AiProvider::Zai,
+            AiProvider::Minimax,
+            AiProvider::Google,
+            AiProvider::Cursor,
+            AiProvider::Meta,
+            AiProvider::OpenRouter,
+        ] {
+            assert!(
+                api_key(provider, Some("model")).supports_agent(agent),
+                "{agent:?} vs {provider:?}"
+            );
+        }
+        assert!(!api_key(AiProvider::Amp, Some("model")).supports_agent(agent));
+    }
+}
+
+#[test]
+fn claude_and_codex_routing_is_unchanged_by_new_providers() {
+    for agent in [Agent::Claude, Agent::Codex] {
+        for provider in [AiProvider::Moonshot, AiProvider::Zai, AiProvider::Minimax] {
+            assert!(api_key(provider, Some("model")).supports_agent(agent));
+        }
+        // OpenRouter reaches Claude/Codex-shaped workloads only through
+        // OpenCode/Omp/Hermes, never directly.
+        for provider in [
+            AiProvider::Google,
+            AiProvider::Cursor,
+            AiProvider::Meta,
+            AiProvider::OpenRouter,
+        ] {
+            assert!(!api_key(provider, Some("model")).supports_agent(agent));
+        }
+    }
+}
+
+#[test]
+fn profile_compatibility_requires_owner_and_native_or_multi_provider_store() {
+    let profile = |agent: Agent, provider: AiProvider| AccountConfig {
+        enabled: true,
+        name: "profile".into(),
+        provider,
+        credential: AccountCredential::Profile {
+            agent,
+            directory: PathBuf::from("/profiles/x"),
+        },
+    };
+    // Native profiles still work.
+    assert!(profile(Agent::Gemini, AiProvider::Google).supports_agent(Agent::Gemini));
+    // Owner mismatch never works.
+    assert!(!profile(Agent::Gemini, AiProvider::Google).supports_agent(Agent::Antigravity));
+    // Multi-provider stores accept any provider under the owning agent.
+    assert!(profile(Agent::Omp, AiProvider::Anthropic).supports_agent(Agent::Omp));
+    assert!(profile(Agent::Hermes, AiProvider::OpenRouter).supports_agent(Agent::Hermes));
+    assert!(profile(Agent::Opencode, AiProvider::Meta).supports_agent(Agent::Opencode));
+    // ...but only under the owning agent.
+    assert!(!profile(Agent::Omp, AiProvider::Anthropic).supports_agent(Agent::Hermes));
+    // Single-provider agents reject non-native profile providers.
+    assert!(!profile(Agent::Cursor, AiProvider::Google).supports_agent(Agent::Cursor));
+}
+
+#[test]
+fn new_agents_route_native_key_variables() {
+    let env = api_key(AiProvider::Google, None)
+        .credential_env(Agent::Gemini)
+        .unwrap();
+    assert_eq!(
+        env.get("GEMINI_API_KEY").unwrap().as_persisted_str(),
+        "fixture-key"
+    );
+    let env = api_key(AiProvider::Cursor, None)
+        .credential_env(Agent::Cursor)
+        .unwrap();
+    assert_eq!(
+        env.get("CURSOR_API_KEY").unwrap().as_persisted_str(),
+        "fixture-key"
+    );
+    let env = api_key(AiProvider::Meta, None)
+        .credential_env(Agent::Muse)
+        .unwrap();
+    assert_eq!(
+        env.get("META_API_KEY").unwrap().as_persisted_str(),
+        "fixture-key"
+    );
+}
+
+#[test]
+fn omp_routing_requires_model_and_selects_provider_variable() {
+    let account = api_key(AiProvider::OpenRouter, Some("org/model"));
+    let env = account.credential_env(Agent::Omp).unwrap();
+    assert_eq!(
+        env.get("OPENROUTER_API_KEY").unwrap().as_persisted_str(),
+        "fixture-key"
+    );
+    // Endpoints are provider-config material, never env, like OpenCode.
+    assert_eq!(env.len(), 1);
+    api_key(AiProvider::OpenRouter, None)
+        .credential_env(Agent::Omp)
+        .unwrap_err();
+}
+
+#[test]
+fn endpoint_overrides_fail_closed_for_new_single_agents() {
+    let mut account = api_key(AiProvider::Google, None);
+    if let AccountCredential::ApiKey { base_url, .. } = &mut account.credential {
+        *base_url = Some("https://proxy.example/v1".into());
+    }
+    let err = account.credential_env(Agent::Gemini).unwrap_err();
+    assert!(
+        err.to_string()
+            .contains("endpoint overrides are unsupported")
+    );
+}
+
+#[test]
 fn disabled_accounts_keep_configuration_but_cannot_authenticate() {
     let (mut cfg, ws) = config();
     cfg.workspaces
