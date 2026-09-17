@@ -2691,6 +2691,7 @@ jobs:
         native/Design/Prototypes/UnifiedAgentUsage/Package.swift
         native/Design/Prototypes/UnifiedAgentUsage/Package.resolved
         native/Design/Prototypes/UnifiedAgentUsage/.swiftpm/Package.resolved
+      apple_executor: true
       unit_admission: github
   github-swift-package-native:
     name: "Swift · Apple · "
@@ -2706,6 +2707,8 @@ jobs:
       base_sha: ${{ needs.plan.outputs.base_sha }}
       head_sha: ${{ needs.plan.outputs.head_sha }}
       mise_tools: "cargo-binstall rust cargo:sccache cargo:boltffi_cli"
+      apple_executor: true
+      unit_dependencies: rust-jackin-usage-ffi
       unit_admission: github
   ci-required:
     name: ci-required
