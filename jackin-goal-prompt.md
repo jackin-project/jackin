@@ -2,7 +2,7 @@ Implement Jackin's complete multi-account settings, usage monitoring, workspace 
 
 ## Execution and delivery scope
 
-Work autonomously and continuously until the entire goal is done and verified. Keep all work in exactly one branch created from the current base branch and exactly one pull request. Do not split work across branches or pull requests. Commit and push every in-scope change to that branch and keep the single pull request complete.
+Work autonomously and continuously until the entire goal is done and verified. Keep all work on exactly branch `feat/multi-account-support` and in exactly one pull request. Do not split work across branches or pull requests. Commit and push every in-scope change to `feat/multi-account-support` and keep the single pull request complete.
 
 Do not ask questions, request confirmation, wait for approval, offer choices, or stop for progress updates. Resolve ambiguity from repository evidence, git history, research, tests, documented defaults, and professional judgment. Missing optional inputs are not blockers; use documented fallbacks. Continue independent work while a provider, platform, credential, or external-service check is unavailable, and record exact unverified coverage. Stop only when every required implementation, verification, and handoff item is complete.
 
