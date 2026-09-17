@@ -22,9 +22,9 @@ Proof levels: `implemented` < `fixture_verified` < `container_verified` <
 | provC Antigravity/Gemini/Cursor | prov-c | 26/26 new-collector tests | /tmp/lane-prov-c.md | fixture_verified | implemented |
 | provE Muse/omp/Hermes | prov-e | 26/26 (13+5+8) | /tmp/lane-prov-e.md | fixture_verified | implemented |
 | console-usage phase-1 | console-usage-1 | isolated worktree 20/20 + lib 1270 + adapter 106 | /tmp/lane-console-usage-1.md | fixture_verified | implemented |
-| S2 schema + resolver + bootstrap | orchestrator | config/resolver unit + migration tests | — | — | not_started |
+| S2 schema + resolver + bootstrap | orchestrator | config/resolver unit + migration tests (landed in S4 integration commit) | git log feat(multi-account): S4 | fixture_verified | implemented |
 | S3 instance-keyed credential transport | orchestrator + 4 lanes | protocol 117 + instance 143 + env 56 + capsule 883 + runtime 646 + console/usage/jackin/xtask green; clippy -D warnings; xtask lint --strict | 6f0280c4 | fixture_verified | implemented |
-| Tracer bullet: 2×Claude + Codex live container | orchestrator | live jk-ctdn5jt0 (3 slots, 3 tabs, per-instance env, manifest A/B/C, D absent all surfaces, new/exit/reattach/restore) + nextest/clippy gates | /tmp/tracer/evidence.md (this commit message) | live_verified (claude-auth blocked: host grants expired; split/resize partial) | implemented |
+| Tracer bullet: 2×Claude + Codex live container | orchestrator | live jk-ctdn5jt0 (3 slots, 3 tabs, per-instance env, manifest A/B/C, D absent all surfaces, new/split/resize/exit/reattach/restore) + nextest/clippy gates | /tmp/tracer/evidence.md + /tmp/split.log | live_verified (claude live-auth capped: default session-limited, claude-b grant expired) | implemented |
 | S4 discovery/Settings/launch/Capsule lanes + integration | A/B/C/D/E + orchestrator | config/protocol/console/jackin 2457 + core/instance/env/runtime/capsule/usage 2326 + console re-run 2337; clippy -D warnings; xtask lint --strict; scan bridge (input→Manager→StartAccountScan→worker→AccountScanCompleted), usage offscreen heartbeat via UsageRouteState, boxed dispatch Action | S4 commit (see git log) | fixture_verified | implemented |
 
 ## Checklist A–H (from jackin-implementation-and-verification.md)
@@ -39,21 +39,21 @@ to be filled. Source of truth for item text is the companion doc.)
 
 | Provider | Parser/semantic | Service/process | Container | Live Mac | Notes |
 |---|---|---|---|---|---|
-| Claude/Anthropic | not_run | not_run | not_run | not_run | T01: keychain `Claude Code-credentials*`, oauthAccount cache |
-| Codex/OpenAI | not_run | not_run | not_run | not_run | T01: app-server 0.154.0, file backend |
-| Amp | not_run | not_run | not_run | not_run | T01: XDG data secrets.json, auto-update pin |
-| Antigravity/Google | not_run | not_run | not_run | not_run | T01: agy 1.2.5, keyring singleton |
-| Kimi | not_run | not_run | not_run | not_run | T01: new family 0.43.0 verified |
-| Z.AI | not_run | not_run | not_run | not_run | provider only |
-| Muse | not_run | not_run | not_run | not_run | T01: `.config/muse`, keychain resolved |
-| Cursor | not_run | not_run | not_run | not_run | T01: file+keychain lineages, `agent` collision |
-| Grok/xAI | not_run | not_run | not_run | not_run | T01: 1.0.30, embedded principal |
-| OpenRouter | not_run | not_run | not_run | not_run | provider only, exact model IDs |
-| omp | not_run | not_run | not_run | not_run | NOT installed; broker file is not authz |
-| Hermes | not_run | not_run | not_run | not_run | NOT installed; `hermes --tui` |
-| OpenCode | not_run | not_run | not_run | not_run | T01: 1.18.30, auth.json absent locally |
-| Gemini CLI | not_run | not_run | not_run | not_run | NOT installed |
-| MiniMax | not_run | not_run | not_run | not_run | mmx NOT installed; provider routes verified in shell |
+| Claude/Anthropic | pass | pass | pass (tracer A/B) | capped (default session-limited; claude-b OAuth expired) | keychain creds, oauthAccount cache |
+| Codex/OpenAI | pass | pass | pass (tracer C) | live (ChatGPT login, claude+codex 3/3 green) | app-server 0.154.0, file backend |
+| Amp | pass | pass | broker-only | live (alexey@zhokhov, credits shown) | XDG data secrets.json, auto-update pin |
+| Antigravity/Google | pass | pass | broker-only | unsupported-headless (no CLI; GUI state unverifiable) | keyring singleton |
+| Kimi | pass | pass | broker-only | live (`kimi -p` exit 0; default-kimi registered) | both families; 06b64e20 per-env grant fix |
+| Z.AI | pass | pass | broker-only | unavail (no CLI/creds) | provider only |
+| Muse | pass | pass | broker-only | live (native auth resolution green) | `.config/muse`, keychain resolved |
+| Cursor | pass | pass | broker-only | live (stored-token auth green) | file+keychain lineages |
+| Grok/xAI | pass | pass | broker-only | live (token refresh OK) | 1.0.30, embedded principal |
+| OpenRouter | pass | pass | broker-only | unavail (no key configured) | provider only, exact model IDs |
+| omp | pass | pass | broker-only | unavail (NOT installed) | broker file is not authz |
+| Hermes | pass | pass | broker-only | unavail (NOT installed) | `hermes --tui` |
+| OpenCode | pass | pass | broker-only | unavail (CLI present, 0 credentials) | 1.18.30, auth.json absent locally |
+| Gemini CLI | pass | pass | broker-only | unavail (NOT installed) | separate Google client |
+| MiniMax | pass | pass | broker-only | failed (canary-d in-band 1004 login fail; placeholder key) | shell provider routes verified |
 
 ## Environment (T00, 2026-09-17)
 
@@ -88,3 +88,22 @@ to be filled. Source of truth for item text is the companion doc.)
   (JUnit target/nextest/docker-e2e/junit.xml); desktop-ci PASS (Rust 454, Swift 78+2);
   desktop-merge FAIL on testOverviewPassesAccessibilityAudit (85 contrast/label
   findings, native/ untouched by branch — pre-existing; dedicated fix running).
+
+## Provider live matrix (lane 01a0b122-2e86, Mac 2026-09-18; kimi gap closed by 06b64e20)
+
+- live-verified: codex (ChatGPT login), amp (alexey@zhokhov, credits), muse,
+  cursor (stored token), grok (refresh OK), kimi (`kimi -p` exit 0; jackin
+  `default-kimi` registered after discovery fix).
+- auth-verified/capped: claude default (session-limit msg, quota-capped).
+- unavailable/expired: claude-b scentbird (OAuth expired, no refresh).
+- unsupported headless: antigravity (no CLI; GUI app state unverifiable).
+- unavailable (no CLI/creds): gemini-cli, zai, openrouter, omp, hermes, opencode
+  (CLI present, 0 credentials).
+- failed: minimax canary-d (HTTP 200 in-band 1004 login fail; placeholder key).
+- Parsers: all 15 lanes exist with tests; `nextest -p jackin-usage` 442/442.
+
+## Split/resize live (2026-09-18, same tracer container)
+
+- Palette split Right with claude-personal: 2 panes, per-pane account_id/agent
+  correct in snapshot; 2x Alt-Shift-Left moved divider col 40 -> 32; both panes
+  alive after client detach. Evidence: /tmp/tracer/evidence.md, /tmp/split.log.
