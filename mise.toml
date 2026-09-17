@@ -357,3 +357,26 @@ run = 'cargo xtask desktop release-state "$usage_version" --repo "$usage_repo" -
 [tasks.desktop-bootstrap-secrets]
 description = "Bootstrap release-macos Apple secrets into GitHub (never prints secret values)"
 run = "cargo xtask desktop bootstrap-secrets"
+
+[tasks.renovate-upstream-sources]
+description = "Verify the pinned mise release ships both construct architectures (guards the construct installer URLs and the MISE_VERSION customManager)"
+run = '''
+set -eu
+. ./docker/construct/versions.env
+if [ -z "${MISE_VERSION:-}" ]; then
+  echo "::error::MISE_VERSION is empty"
+  exit 1
+fi
+# The standalone installer (https://mise.run) the construct
+# Dockerfile pipes to `sh` downloads these exact release assets.
+for arch in x64 arm64; do
+  url="https://github.com/jdx/mise/releases/download/v${MISE_VERSION}/mise-v${MISE_VERSION}-linux-${arch}.tar.gz"
+  if ! curl --fail --silent --show-error --location --head \
+    --retry 5 --retry-all-errors --retry-delay 2 \
+    --connect-timeout 15 --max-time 60 \
+    -o /dev/null "$url"; then
+    echo "::error::${url} did not resolve — mise v${MISE_VERSION} is missing the linux-${arch} release asset"
+    exit 1
+  fi
+done
+'''

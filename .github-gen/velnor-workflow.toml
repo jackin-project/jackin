@@ -2,7 +2,9 @@ schema = 1
 
 [generator]
 repository = "jackin-project/jackin"
-revision = "b6f53c094e9f021f0a2503fdc3d58300b6408a1b"
+# D19 pin: the velnor-workflow commit that rendered this tree (generic
+# CI/CD capabilities superseding the #994 static-file restore).
+revision = "a2840748c588ec1dcb2751aa190ab4a74e1614c5"
 
 [scan]
 exclude = ["native/Package.swift", "native/.swiftpm/**"]
@@ -23,6 +25,116 @@ velnor_labels = ["self-hosted", "velnor-target-mvp"]
 ruleset_required_status_checks = ["ci-required"]
 ruleset_external_status_checks = ["DCO"]
 
+# Self-hosted Renovate: schedule + writer identity from the #994 copy
+# (renovate.yml: cron "0 6 * * *", secrets.RENOVATE_TOKEN, RENOVATE_GIT_AUTHOR).
+# lanes = "github": the copy defaulted to velnor, but velnor/both lanes
+# require [workflow] velnor_trusted_label, and no trusted-label fact exists in
+# this repo. Revisit for velnor/both once the fleet label is known.
+# The copy sets RENOVATE_ALLOWED_UNSAFE_EXECUTIONS=mise (intended: let
+# `mise lock` refresh mise.lock in Renovate PRs), but renovate.json
+# configures no post-upgrade execution, so the knob has no live effect and
+# nothing is lost by omitting it. If post-upgrade execution is ever
+# configured, [renovate] allowed_commands renders RENOVATE_ALLOWED_COMMANDS.
+[renovate]
+enabled = true
+reason = "Self-hosted Renovate writer for mise/cargo/docker/tool pins; validator gates renovate.json changes."
+schedule = "0 6 * * *"
+token = "RENOVATE_TOKEN"
+config = "renovate.json"
+validate = true
+lanes = "github"
+author = "Renovate Bot <renovate@whitesourcesoftware.com>"
+signoff = true
+
+[[declare]]
+primitive = "renovate"
+file = "renovate.yml"
+
+[[declare]]
+primitive = "renovate-validate"
+file = "renovate-validate.yml"
+
+# Desktop cadence (L5): the two heavier tiers from desktop-cadence.yml.
+# Merge tier runs the PR graph + UI tests (task desktop-merge, mise.toml);
+# scheduled tier runs the merge graph + dead-code scan (task desktop-scheduled).
+# Toolchain env (DEVELOPER_DIR, MACOSX_DEPLOYMENT_TARGET) is job-level in the
+# copy, so it travels as profile env; every tool id equals a mise.lock key.
+[[check_profile]]
+id = "desktop-merge"
+name = "Desktop merge cadence"
+runner = "macos"
+tools = ["cargo-binstall", "rust", "aqua:nextest-rs/nextest/cargo-nextest", "cargo:boltffi_cli", "xcodegen", "swiftlint", "xcbeautify", "ripgrep"]
+tasks = ["desktop-merge"]
+timeout_minutes = 90
+status = "required"
+[check_profile.env]
+CARGO_TERM_COLOR = "always"
+DEVELOPER_DIR = "/Applications/Xcode_26.6.app/Contents/Developer"
+MACOSX_DEPLOYMENT_TARGET = "26.0"
+
+[[check_profile]]
+id = "desktop-scheduled"
+name = "Desktop scheduled cadence"
+schedule = "41 4 * * 1"
+runner = "macos"
+tools = ["cargo-binstall", "rust", "aqua:nextest-rs/nextest/cargo-nextest", "cargo:boltffi_cli", "xcodegen", "swiftlint", "xcbeautify", "periphery", "ripgrep"]
+tasks = ["desktop-scheduled"]
+timeout_minutes = 90
+status = "required"
+[check_profile.env]
+CARGO_TERM_COLOR = "always"
+DEVELOPER_DIR = "/Applications/Xcode_26.6.app/Contents/Developer"
+MACOSX_DEPLOYMENT_TARGET = "26.0"
+
+# One file, one trigger set, faithful to the copy: the merge tier runs on
+# push-to-main + dispatch (copy desktop-cadence.yml push: branches: [main],
+# merge job gated on event != schedule); the scheduled tier keeps the
+# copy's Monday cron.
+[[declare]]
+primitive = "scheduled-checks"
+file = "desktop-merge.yml"
+[declare.args]
+profiles = ["desktop-merge"]
+name = "Desktop merge cadence"
+events = ["push"]
+branches = ["main"]
+
+[[declare]]
+primitive = "scheduled-checks"
+file = "desktop-scheduled.yml"
+[declare.args]
+profiles = ["desktop-scheduled"]
+name = "Desktop scheduled cadence"
+
+# Renovate upstream liveness (D2): the #994 renovate-validate.yml job that
+# verifies the pinned mise release still ships both construct architectures.
+# Product-owned (versions.env path + mise URLs) as task
+# renovate-upstream-sources; the generic primitive supplies triggers,
+# concurrency, and the runner. Complements the generic schema validator
+# (renovate-validate.yml), which passes --strict on this repo. The copy
+# scoped pull_request to branches [main]; the primitive renders a bare
+# pull_request (a superset that only runs the HEAD probe more often).
+[[check_profile]]
+id = "renovate-upstream-sources"
+name = "Renovate upstream sources"
+runner = "github"
+tasks = ["renovate-upstream-sources"]
+timeout_minutes = 10
+status = "required"
+[check_profile.env]
+# The probe needs only sh + curl: skip mise's whole-toolset install
+# (30 tools, ~9 cold minutes) before running the task.
+MISE_TASK_RUN_AUTO_INSTALL = "false"
+
+[[declare]]
+primitive = "scheduled-checks"
+file = "renovate-upstream-sources.yml"
+[declare.args]
+profiles = ["renovate-upstream-sources"]
+name = "Renovate upstream sources"
+events = ["push", "pull_request"]
+branches = ["main"]
+
 # Unit contracts the scan cannot derive. Command arrays are rejected by
 # velnor-workflow 721c2fed; typed capabilities only (`ci_tasks`, `mise_tools`).
 # Construct Dockerfile ARG defaults match versions.env so the scan-derived
@@ -35,6 +147,10 @@ mise_tools = ["github:open-telemetry/weaver"]
 # Run desktop-xcframework in the same macOS job as swift-package-native so
 # the binary target path is populated on one runner (separate jobs do not
 # share target/xcframework).
+# capabilities = ["xcframework"]: Q4 obligation — without it this Apple-bound
+# unit renders ubuntu + Linux plan-artifact runtime (slice 9 split).
+# depends_on (F2): FFI touches select this Swift consumer; selection coupling
+# only, no forced serialization (the unit rebuilds the XCFramework in-job).
 [[units]]
 id = "swift-package-native"
 kind = "swift"
@@ -42,9 +158,18 @@ root = "native"
 watch = ["native/**/*.swift", "native/Package.swift", "native/Package.resolved", "native/.swiftpm/Package.resolved", "crates/jackin-xtask/**"]
 ci_tasks = ["swift-package-native-ci"]
 mise_tools = ["cargo-binstall", "rust", "cargo:sccache", "cargo:boltffi_cli"]
+capabilities = ["xcframework"]
+depends_on = ["rust-jackin-usage-ffi"]
 
 # jackin-lints pins nightly via crates/jackin-lints/rust-toolchain.
 # dylint-link must be on PATH (rust + cargo-binstall).
 [[units]]
 id = "rust-jackin-lints"
 mise_tools = ["rust", "cargo-binstall"]
+
+# Q4 obligation, second Swift unit (scanned): AppKit prototype, genuinely
+# Apple-bound, but scan evidence cannot prove it. Row-over-scan merge keeps
+# the scanned base and overrides the platform requirement only.
+[[units]]
+id = "swift-package-native-design-prototypes-unifiedagentusage"
+capabilities = ["xcode"]

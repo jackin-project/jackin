@@ -60,11 +60,11 @@ jobs:
       - name: Set up Velnor workflow runtime
         id: runtime
         if: ${{ runner.environment == 'github-hosted' }}
-        uses: tailrocks/velnor/.github/actions/setup-velnor-workflow@b6f53c094e9f021f0a2503fdc3d58300b6408a1b
+        uses: tailrocks/velnor/.github/actions/setup-velnor-workflow@a2840748c588ec1dcb2751aa190ab4a74e1614c5
         with:
-          rev: b6f53c094e9f021f0a2503fdc3d58300b6408a1b
+          rev: a2840748c588ec1dcb2751aa190ab4a74e1614c5
       - name: Set trusted workflow policy revision
-        run: echo "VELNOR_WORKFLOW_POLICY_REVISION=b6f53c094e9f021f0a2503fdc3d58300b6408a1b" >> "$GITHUB_ENV"
+        run: echo "VELNOR_WORKFLOW_POLICY_REVISION=a2840748c588ec1dcb2751aa190ab4a74e1614c5" >> "$GITHUB_ENV"
       - name: Select affected units
         id: plan
         env:
@@ -80,7 +80,7 @@ jobs:
       - name: Prepare Velnor workflow runtime
         shell: bash
         env:
-          EXPECTED_REVISION: b6f53c094e9f021f0a2503fdc3d58300b6408a1b
+          EXPECTED_REVISION: a2840748c588ec1dcb2751aa190ab4a74e1614c5
         run: |
           set -euo pipefail
           stage="$RUNNER_TEMP/velnor-workflow-runtime"
@@ -99,7 +99,7 @@ jobs:
       - name: Publish Velnor workflow runtime
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: velnor-workflow-runtime-b6f53c094e9f021f0a2503fdc3d58300b6408a1b-${{ runner.os }}-${{ runner.arch }}
+          name: velnor-workflow-runtime-a2840748c588ec1dcb2751aa190ab4a74e1614c5-${{ runner.os }}-${{ runner.arch }}
           path: ${{ runner.temp }}/velnor-workflow-runtime
           if-no-files-found: error
           retention-days: 7
@@ -138,9 +138,9 @@ jobs:
           fi
           git checkout --quiet --detach "$HEAD_SHA"
       - name: Set up Velnor workflow runtime
-        uses: tailrocks/velnor/.github/actions/setup-velnor-workflow@b6f53c094e9f021f0a2503fdc3d58300b6408a1b
+        uses: tailrocks/velnor/.github/actions/setup-velnor-workflow@a2840748c588ec1dcb2751aa190ab4a74e1614c5
         with:
-          rev: b6f53c094e9f021f0a2503fdc3d58300b6408a1b
+          rev: a2840748c588ec1dcb2751aa190ab4a74e1614c5
           checkout-path: ${{ github.workspace }}/policy-checkout
       - name: Read declared generator pin
         id: pin
@@ -153,13 +153,13 @@ jobs:
           echo "value=$pin" >> "$GITHUB_OUTPUT"
       - name: Set up declared generator product
         id: renderer
-        if: steps.pin.outputs.value != 'b6f53c094e9f021f0a2503fdc3d58300b6408a1b'
-        uses: tailrocks/velnor/.github/actions/setup-velnor-workflow@b6f53c094e9f021f0a2503fdc3d58300b6408a1b
+        if: steps.pin.outputs.value != 'a2840748c588ec1dcb2751aa190ab4a74e1614c5'
+        uses: tailrocks/velnor/.github/actions/setup-velnor-workflow@a2840748c588ec1dcb2751aa190ab4a74e1614c5
         with:
           rev: ${{ steps.pin.outputs.value }}
           checkout-path: ${{ github.workspace }}/policy-checkout
       - name: Resolve declared generator product
-        if: steps.pin.outputs.value != 'b6f53c094e9f021f0a2503fdc3d58300b6408a1b'
+        if: steps.pin.outputs.value != 'a2840748c588ec1dcb2751aa190ab4a74e1614c5'
         run: |
           set -euo pipefail
           binary="$HOME/.cache/velnor/workflow-runtime/${{ steps.renderer.outputs.closure }}/bin/velnor-workflow"
@@ -193,7 +193,7 @@ jobs:
           WORKFLOW_ROOT: ${{ github.workspace }}/policy-checkout
           HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.sha }}
-          VELNOR_WORKFLOW_POLICY_REVISION: b6f53c094e9f021f0a2503fdc3d58300b6408a1b
+          VELNOR_WORKFLOW_POLICY_REVISION: a2840748c588ec1dcb2751aa190ab4a74e1614c5
         run: |
           set -euo pipefail
           velnor-workflow policy \
@@ -2691,6 +2691,7 @@ jobs:
         native/Design/Prototypes/UnifiedAgentUsage/Package.swift
         native/Design/Prototypes/UnifiedAgentUsage/Package.resolved
         native/Design/Prototypes/UnifiedAgentUsage/.swiftpm/Package.resolved
+      apple_executor: true
       unit_admission: github
   github-swift-package-native:
     name: "Swift · Apple · "
@@ -2706,6 +2707,8 @@ jobs:
       base_sha: ${{ needs.plan.outputs.base_sha }}
       head_sha: ${{ needs.plan.outputs.head_sha }}
       mise_tools: "cargo-binstall rust cargo:sccache cargo:boltffi_cli"
+      apple_executor: true
+      unit_dependencies: rust-jackin-usage-ffi
       unit_admission: github
   ci-required:
     name: ci-required
