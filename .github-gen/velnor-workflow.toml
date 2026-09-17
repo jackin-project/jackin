@@ -121,6 +121,10 @@ runner = "github"
 tasks = ["renovate-upstream-sources"]
 timeout_minutes = 10
 status = "required"
+[check_profile.env]
+# The probe needs only sh + curl: skip mise's whole-toolset install
+# (30 tools, ~9 cold minutes) before running the task.
+MISE_TASK_RUN_AUTO_INSTALL = "false"
 
 [[declare]]
 primitive = "scheduled-checks"

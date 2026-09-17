@@ -361,8 +361,8 @@ run = "cargo xtask desktop bootstrap-secrets"
 [tasks.renovate-upstream-sources]
 description = "Verify the pinned mise release ships both construct architectures (guards the construct installer URLs and the MISE_VERSION customManager)"
 run = '''
-set -euo pipefail
-source docker/construct/versions.env
+set -eu
+. ./docker/construct/versions.env
 if [ -z "${MISE_VERSION:-}" ]; then
   echo "::error::MISE_VERSION is empty"
   exit 1

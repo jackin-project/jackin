@@ -1,7 +1,7 @@
 # Generated ownership state; do not edit.
 schema = 2
 [inputs]
-config	e5edd5ef1798b452
+config	8c178516d757d4c2
 scan	a772b25b551a73e5
 generator	50
 [outputs]
@@ -18,7 +18,7 @@ generator	50
 .github/workflows/desktop-scheduled.yml	d015c5f78aa43813
 .github/workflows/maintenance.yml	228a6d7c84e3ed8d
 .github/workflows/nightly.yml	0bbe34967df0f3ed
-.github/workflows/renovate-upstream-sources.yml	4449a9770341f852
+.github/workflows/renovate-upstream-sources.yml	aea51fd10f50526e
 .github/workflows/renovate-validate.yml	0aac9a7e6ffb76ca
 .github/workflows/renovate.yml	2ad2805cd980d762
 config/fleet/velnor-host.env	d14b419216449423
