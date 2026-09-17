@@ -1,4 +1,8 @@
 # SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 # SPDX-License-Identifier: Apache-2.0
 
-version = "v1alpha10"
+version = "v1alpha11"
+
+[bootstrap]
+version = 1
+fresh_install = false

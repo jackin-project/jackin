@@ -640,7 +640,10 @@ fn enumerate_registered_accounts(
         } else {
             None
         };
-        if let AccountCredential::Profile { agent, directory } = &account.credential {
+        if let AccountCredential::Profile {
+            agent, directory, ..
+        } = &account.credential
+        {
             let root = resolve_profile_root(operator_home, directory);
             candidates
                 .entry(CredentialSourceKey::Profile {

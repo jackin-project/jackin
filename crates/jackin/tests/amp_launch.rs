@@ -240,6 +240,7 @@ agents = ["amp"]
             credential: jackin_config::AccountCredential::Profile {
                 agent: Agent::Amp,
                 directory: amp_dir,
+                xdg_roots: None,
             },
         },
     );

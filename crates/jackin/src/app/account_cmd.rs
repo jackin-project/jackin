@@ -83,7 +83,7 @@ fn scan(config: &AppConfig, paths: &JackinPaths) -> Result<()> {
     let mut editor = ConfigEditor::open(paths)?;
     let mut added = 0;
     for found in report.accounts {
-        if candidate.accounts.values().any(|account| matches!(&account.credential, AccountCredential::Profile { agent, directory } if *agent == found.agent && *directory == found.directory)) { continue; }
+        if candidate.accounts.values().any(|account| matches!(&account.credential, AccountCredential::Profile { agent, directory, .. } if *agent == found.agent && *directory == found.directory)) { continue; }
         let base = format!("default-{}", found.agent);
         let mut id = base.clone();
         let mut suffix = 2;
@@ -103,6 +103,7 @@ fn scan(config: &AppConfig, paths: &JackinPaths) -> Result<()> {
             credential: AccountCredential::Profile {
                 agent: found.agent,
                 directory: found.directory,
+                xdg_roots: None,
             },
         };
         editor.upsert_account(&id, &account)?;
@@ -209,7 +210,11 @@ fn build_account(args: &AddAccountArgs, paths: &JackinPaths) -> Result<AccountCo
         if found.is_none() {
             bail!("no {agent} authentication found in {}", directory.display());
         }
-        AccountCredential::Profile { agent, directory }
+        AccountCredential::Profile {
+            agent,
+            directory,
+            xdg_roots: None,
+        }
     } else if args.oauth_token {
         let agent = args
             .agent
@@ -295,7 +300,9 @@ fn valid_secret_reference(value: &str) -> bool {
 
 fn account_row(id: &str, account: &AccountConfig) -> String {
     let source = match &account.credential {
-        AccountCredential::Profile { agent, directory } => {
+        AccountCredential::Profile {
+            agent, directory, ..
+        } => {
             format!("profile:{agent} {}", directory.display())
         }
         AccountCredential::ApiKey { .. } => "api-key".to_owned(),

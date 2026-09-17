@@ -112,6 +112,10 @@ pub struct WorkspaceRoleOverride {
     /// Role-specific selections from the workspace account allowlist.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub account_bindings: BTreeMap<Agent, String>,
+    /// Role default launch set (configuration IDs). `None` inherits the
+    /// workspace/global default; an explicit list replaces it entirely.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_launch: Option<Vec<String>>,
     /// Role-layer operator env (most specific env merge layer).
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub env: BTreeMap<String, EnvValue>,
@@ -218,6 +222,10 @@ pub struct WorkspaceConfig {
     /// Preferred account per agent within the allowed accounts.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub account_bindings: BTreeMap<Agent, String>,
+    /// Workspace default launch set (configuration IDs). `None` inherits
+    /// the global default; an explicit list replaces it entirely.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_launch: Option<Vec<String>>,
     /// On-disk schema version for this workspace file.
     #[serde(default = "current_workspace_version", rename = "version")]
     pub version: String,
@@ -283,6 +291,7 @@ impl Default for WorkspaceConfig {
             version: current_workspace_version(),
             accounts: Vec::new(),
             account_bindings: BTreeMap::new(),
+            default_launch: None,
             workdir: String::new(),
             mounts: Vec::new(),
             allowed_roles: Vec::new(),

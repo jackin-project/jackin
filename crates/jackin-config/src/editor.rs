@@ -60,6 +60,129 @@ pub enum EnvScope {
     },
 }
 
+/// Outcome of a first-run bootstrap scan: registered account IDs plus
+/// every discovery issue (surfaced to CLI/Settings callers, never dropped).
+#[derive(Debug, Default)]
+pub struct BootstrapReport {
+    /// True when a fresh-install scan ran during this open.
+    pub fresh_install: bool,
+    /// Account IDs registered by the bootstrap scan.
+    pub added_accounts: Vec<String>,
+    /// Discovery issues observed during the scan.
+    pub issues: Vec<crate::DiscoveryIssue>,
+}
+
+/// Scan default evidence + environment into `config`, registering only
+/// IDs that do not collide with existing accounts. Never overwrites an
+/// operator-registered account.
+fn bootstrap_scan_accounts(config: &mut AppConfig, home: &Path) -> BootstrapReport {
+    let mut report = BootstrapReport::default();
+    let scan = crate::discover_default_accounts(home);
+    report.issues = scan.issues;
+    for discovered in scan.accounts {
+        // Multi-provider stores (Omp, Hermes) have no native
+        // billing, so bootstrap cannot pick a provider for them;
+        // the operator adds those accounts explicitly.
+        let Some(provider) = crate::AiProvider::for_agent(discovered.agent) else {
+            continue;
+        };
+        let id = format!("default-{}", discovered.agent.slug());
+        if config.accounts.contains_key(&id) {
+            continue;
+        }
+        config.accounts.insert(
+            id.clone(),
+            crate::AccountConfig {
+                enabled: true,
+                name: format!("{} default", discovered.agent.label()),
+                provider,
+                credential: crate::AccountCredential::Profile {
+                    agent: discovered.agent,
+                    directory: discovered.directory,
+                    xdg_roots: None,
+                },
+            },
+        );
+        report.added_accounts.push(id);
+    }
+    let environment = std::env::vars_os()
+        .filter_map(|(name, value)| Some((name.into_string().ok()?, value.into_string().ok()?)))
+        .collect();
+    for (provider, variable) in crate::discover_environment_accounts(&environment) {
+        let id = format!("{}-api-key", provider.slug());
+        if config.accounts.contains_key(&id) {
+            continue;
+        }
+        config.accounts.insert(
+            id.clone(),
+            crate::AccountConfig {
+                enabled: true,
+                name: format!("{provider} API key"),
+                provider,
+                credential: crate::AccountCredential::ApiKey {
+                    value: EnvValue::from(format!("${variable}")),
+                    base_url: None,
+                    model: None,
+                },
+            },
+        );
+        report.added_accounts.push(id);
+    }
+    for (agent, variable) in crate::discover_environment_oauth_accounts(&environment) {
+        // OAuth discovery only ever yields Claude, which always has
+        // a native provider; skip defensively if that changes.
+        let Some(provider) = crate::AiProvider::for_agent(agent) else {
+            continue;
+        };
+        let id = format!("{agent}-oauth-token");
+        if config.accounts.contains_key(&id) {
+            continue;
+        }
+        config.accounts.insert(
+            id.clone(),
+            crate::AccountConfig {
+                enabled: true,
+                name: format!("{agent} subscription token"),
+                provider,
+                credential: crate::AccountCredential::OAuthToken {
+                    agent,
+                    value: EnvValue::from(format!("${variable}")),
+                },
+            },
+        );
+        report.added_accounts.push(id);
+    }
+    report
+}
+
+/// Consume an installer `fresh_install` marker, returning whether one ran.
+///
+/// Reads the current file, clears the marker via an atomic rewrite, and
+/// reports whether the caller must run the first bootstrap scan. Any
+/// other content is preserved byte-for-byte (marker table keys only).
+fn take_fresh_install_marker(path: &Path) -> crate::ConfigResult<bool> {
+    let raw =
+        std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
+    let mut doc: DocumentMut = raw
+        .parse()
+        .with_context(|| format!("parsing {}", path.display()))?;
+    let marked = doc
+        .get("bootstrap")
+        .and_then(Item::as_table_like)
+        .and_then(|table| table.get("fresh_install"))
+        .and_then(Item::as_bool)
+        .unwrap_or(false);
+    if !marked {
+        return Ok(false);
+    }
+    if let Some(table) = doc.get_mut("bootstrap").and_then(Item::as_table_like_mut) {
+        table.insert("fresh_install", toml_edit::value(false));
+    }
+    atomic_write(path, &doc.to_string())
+        .with_context(|| format!("writing {} without fresh-install marker", path.display()))?;
+    Ok(true)
+}
+
 /// Comment-preserving mutator for `config.toml` and split workspace files.
 #[derive(Debug)]
 pub struct ConfigEditor {
@@ -78,75 +201,39 @@ impl ConfigEditor {
     /// Fresh installs are bootstrapped directly while this editor already owns
     /// the write lock, avoiding recursive editor acquisition.
     pub fn open(paths: &JackinPaths) -> crate::ConfigResult<Self> {
+        Self::open_detailed(paths).map(|(editor, _)| editor)
+    }
+
+    /// [`open`](Self::open) plus the bootstrap report for callers that
+    /// surface first-run discovery results (CLI report, Settings scan).
+    pub fn open_detailed(paths: &JackinPaths) -> crate::ConfigResult<(Self, BootstrapReport)> {
         let lock = acquire_config_write_lock(&paths.config_file)?;
         paths.ensure_base_dirs()?;
+        let mut report = BootstrapReport::default();
         if !paths.config_file.exists() {
             let mut initial = AppConfig::default();
             initial.sync_builtin_agents();
-            for discovered in crate::discover_default_accounts(&paths.home_dir).accounts {
-                // Multi-provider stores (Omp, Hermes) have no native
-                // billing, so bootstrap cannot pick a provider for them;
-                // the operator adds those accounts explicitly.
-                let Some(provider) = crate::AiProvider::for_agent(discovered.agent) else {
-                    continue;
-                };
-                let id = format!("default-{}", discovered.agent.slug());
-                initial.accounts.insert(
-                    id,
-                    crate::AccountConfig {
-                        enabled: true,
-                        name: format!("{} default", discovered.agent.label()),
-                        provider,
-                        credential: crate::AccountCredential::Profile {
-                            agent: discovered.agent,
-                            directory: discovered.directory,
-                        },
-                    },
-                );
-            }
-            let environment = std::env::vars_os()
-                .filter_map(|(name, value)| {
-                    Some((name.into_string().ok()?, value.into_string().ok()?))
-                })
-                .collect();
-            for (provider, variable) in crate::discover_environment_accounts(&environment) {
-                initial.accounts.insert(
-                    format!("{}-api-key", provider.slug()),
-                    crate::AccountConfig {
-                        enabled: true,
-                        name: format!("{provider} API key"),
-                        provider,
-                        credential: crate::AccountCredential::ApiKey {
-                            value: EnvValue::from(format!("${variable}")),
-                            base_url: None,
-                            model: None,
-                        },
-                    },
-                );
-            }
-            for (agent, variable) in crate::discover_environment_oauth_accounts(&environment) {
-                // OAuth discovery only ever yields Claude, which always has
-                // a native provider; skip defensively if that changes.
-                let Some(provider) = crate::AiProvider::for_agent(agent) else {
-                    continue;
-                };
-                initial.accounts.insert(
-                    format!("{agent}-oauth-token"),
-                    crate::AccountConfig {
-                        enabled: true,
-                        name: format!("{agent} subscription token"),
-                        provider,
-                        credential: crate::AccountCredential::OAuthToken {
-                            agent,
-                            value: EnvValue::from(format!("${variable}")),
-                        },
-                    },
-                );
-            }
+            report = bootstrap_scan_accounts(&mut initial, &paths.home_dir);
+            report.fresh_install = true;
+            initial.bootstrap = Some(crate::BootstrapState::initialized());
             initial.validate_accounts()?;
             atomic_write(&paths.config_file, &toml::to_string_pretty(&initial)?)?;
         }
         migrations::migrate_config_file_if_needed(&paths.config_file)?;
+        if take_fresh_install_marker(&paths.config_file)? {
+            // Installer-created empty config: run the first scan exactly
+            // once, then clear the marker. The file is installer-shaped
+            // (no operator comments to preserve), so a typed round-trip
+            // write is safe.
+            let raw = std::fs::read_to_string(&paths.config_file)
+                .with_context(|| format!("reading {}", paths.config_file.display()))?;
+            let mut config = load_split_config(paths, Some(raw))?;
+            report = bootstrap_scan_accounts(&mut config, &paths.home_dir);
+            report.fresh_install = true;
+            config.bootstrap = Some(crate::BootstrapState::initialized());
+            config.validate_accounts()?;
+            atomic_write(&paths.config_file, &toml::to_string_pretty(&config)?)?;
+        }
         let raw = std::fs::read_to_string(&paths.config_file)
             .with_context(|| format!("reading {}", paths.config_file.display()))?;
         drop(load_split_config(paths, Some(raw))?);
@@ -156,14 +243,15 @@ impl ConfigEditor {
             .parse()
             .with_context(|| format!("parsing {}", paths.config_file.display()))?;
         let workspace_docs = load_workspace_docs(paths)?;
-        Ok(Self {
+        let editor = Self {
             _lock: lock,
             doc,
             path: paths.config_file.clone(),
             workspaces_dir: paths.workspaces_dir.clone(),
             workspace_docs,
             removed_workspaces: BTreeSet::new(),
-        })
+        };
+        Ok((editor, report))
     }
 
     /// Atomic write + return a fresh `AppConfig` parsed from the

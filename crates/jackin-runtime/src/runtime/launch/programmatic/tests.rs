@@ -161,6 +161,7 @@ fn launch_selection_rejects_accounts_outside_workspace_allowlist() {
             credential: AccountCredential::Profile {
                 agent: Agent::Codex,
                 directory: "/private/codex".into(),
+                xdg_roots: None,
             },
         },
     );

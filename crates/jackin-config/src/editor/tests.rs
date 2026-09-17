@@ -1627,6 +1627,7 @@ fn profile_account() -> crate::AccountConfig {
         credential: crate::AccountCredential::Profile {
             agent: Agent::Claude,
             directory: "/home/operator/.claude-work".into(),
+            xdg_roots: None,
         },
     }
 }
@@ -1888,4 +1889,66 @@ fn disabling_account_via_upsert_prunes_bindings_across_all_scopes() {
             .account_bindings
             .is_empty()
     );
+}
+
+#[test]
+fn open_detailed_fresh_install_scans_and_stamps_sentinel() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let (editor, report) = ConfigEditor::open_detailed(&paths).unwrap();
+    assert!(report.fresh_install);
+    let config = editor.save().unwrap();
+    assert_eq!(config.bootstrap, Some(crate::BootstrapState::initialized()));
+    // Every reported ID exists in the registry (no phantom additions).
+    for id in &report.added_accounts {
+        assert!(config.accounts.contains_key(id), "missing {id}");
+    }
+    // Reopening is not a fresh install and rescans nothing.
+    let (_, second) = ConfigEditor::open_detailed(&paths).unwrap();
+    assert!(!second.fresh_install);
+    assert!(second.added_accounts.is_empty());
+}
+
+#[test]
+fn open_detailed_consumes_installer_marker_exactly_once() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    paths.ensure_base_dirs().unwrap();
+    std::fs::write(
+        &paths.config_file,
+        format!(
+            "version = \"{}\"\n\n[bootstrap]\nversion = 1\nfresh_install = true\n",
+            crate::CURRENT_CONFIG_VERSION
+        ),
+    )
+    .unwrap();
+    let (editor, report) = ConfigEditor::open_detailed(&paths).unwrap();
+    assert!(report.fresh_install);
+    let config = editor.save().unwrap();
+    assert_eq!(config.bootstrap, Some(crate::BootstrapState::initialized()));
+    let raw = std::fs::read_to_string(&paths.config_file).unwrap();
+    assert!(!raw.contains("fresh_install = true"), "{raw}");
+}
+
+#[test]
+fn open_detailed_upgrade_never_resurrects_or_rescans() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    paths.ensure_base_dirs().unwrap();
+    // Pre-sentinel config with one deliberate account and no marker.
+    std::fs::write(
+        &paths.config_file,
+        "version = \"v1alpha10\"\n\n[accounts.kept]\nenabled = true\nname = \"Kept\"\nprovider = \"anthropic\"\n\n[accounts.kept.credential]\ntype = \"api_key\"\nvalue = \"${ANTHROPIC_API_KEY}\"\n",
+    )
+    .unwrap();
+    let (editor, report) = ConfigEditor::open_detailed(&paths).unwrap();
+    assert!(!report.fresh_install);
+    assert!(report.added_accounts.is_empty());
+    let config = editor.save().unwrap();
+    // Exactly the deliberate account survives: nothing resurrected, nothing added.
+    assert_eq!(
+        config.accounts.keys().collect::<Vec<_>>(),
+        vec![&"kept".to_owned()]
+    );
+    assert_eq!(config.bootstrap, Some(crate::BootstrapState::initialized()));
 }

@@ -215,6 +215,7 @@ fn handle_workspace_create(paths: &JackinPaths, params: WorkspaceCreateParams) -
         runtime: jackin_config::WorkspaceRuntimeConfig::default(),
         dirty_exit_policy: None,
         docker: None,
+        default_launch: None,
     };
     let mut editor = jackin_config::ConfigEditor::open(paths)?;
     editor.create_workspace(

@@ -13,6 +13,7 @@ fn profile(name: &str) -> AccountConfig {
         credential: AccountCredential::Profile {
             agent: Agent::Claude,
             directory: PathBuf::from("/profiles").join(name),
+            xdg_roots: None,
         },
     }
 }
@@ -84,7 +85,7 @@ fn role_binding_wins_but_cannot_escape_allowlist() {
         "Work"
     );
     cfg.workspaces.get_mut(ws.as_str()).unwrap().accounts = vec!["personal".into()];
-    assert!(cfg.validate_accounts().is_err());
+    cfg.validate_accounts().unwrap_err();
     resolve_account(&cfg, Agent::Claude, Some(&ws), "role").unwrap_err();
 }
 #[test]
@@ -130,7 +131,7 @@ fn invalid_ids_and_on_demand_credentials_rejected() {
             },
         },
     );
-    assert!(cfg.validate_accounts().is_err());
+    cfg.validate_accounts().unwrap_err();
 }
 #[test]
 fn first_start_discovers_once_and_does_not_grant_workspace_access() {
@@ -374,6 +375,7 @@ fn profile_compatibility_requires_owner_and_native_or_multi_provider_store() {
         credential: AccountCredential::Profile {
             agent,
             directory: PathBuf::from("/profiles/x"),
+            xdg_roots: None,
         },
     };
     // Native profiles still work.
@@ -467,7 +469,7 @@ fn disabled_accounts_keep_configuration_but_cannot_authenticate() {
         .unwrap()
         .account_bindings
         .insert(Agent::Claude, "work".into());
-    assert!(cfg.validate_accounts().is_err());
+    cfg.validate_accounts().unwrap_err();
     resolve_account(&cfg, Agent::Claude, Some(&ws), "smith").unwrap_err();
     cfg.prune_account_bindings("work");
     cfg.validate_accounts().unwrap();
@@ -499,7 +501,7 @@ fn validate_accounts_rejects_disabled_bindings_at_all_scopes() {
 
     // Global binding to disabled account is rejected
     cfg.account_bindings.insert(Agent::Claude, "work".into());
-    assert!(cfg.validate_accounts().is_err());
+    cfg.validate_accounts().unwrap_err();
     cfg.account_bindings.clear();
     cfg.validate_accounts().unwrap();
 
@@ -509,7 +511,7 @@ fn validate_accounts_rejects_disabled_bindings_at_all_scopes() {
         .unwrap()
         .account_bindings
         .insert(Agent::Claude, "work".into());
-    assert!(cfg.validate_accounts().is_err());
+    cfg.validate_accounts().unwrap_err();
     cfg.workspaces
         .get_mut(ws.as_str())
         .unwrap()
@@ -525,7 +527,7 @@ fn validate_accounts_rejects_disabled_bindings_at_all_scopes() {
             ..Default::default()
         },
     );
-    assert!(cfg.validate_accounts().is_err());
+    cfg.validate_accounts().unwrap_err();
     cfg.workspaces.get_mut(ws.as_str()).unwrap().roles.clear();
     cfg.validate_accounts().unwrap();
 }
@@ -553,7 +555,7 @@ fn prune_account_bindings_clears_all_scopes_and_enables_fallback() {
 
     // Disable work
     cfg.accounts.get_mut("work").unwrap().enabled = false;
-    assert!(cfg.validate_accounts().is_err());
+    cfg.validate_accounts().unwrap_err();
 
     // Prune disabled bindings across all scopes
     cfg.prune_account_bindings("work");
@@ -572,4 +574,305 @@ fn prune_account_bindings_clears_all_scopes_and_enables_fallback() {
         .unwrap()
         .unwrap();
     assert_eq!(resolved.name, "Personal");
+}
+
+fn launch_fixture() -> (AppConfig, WorkspaceName) {
+    let mut cfg = AppConfig::default();
+    cfg.accounts.insert("claude-work".into(), profile("Work"));
+    let mut personal = profile("Personal");
+    personal.provider = AiProvider::Anthropic;
+    cfg.accounts.insert("claude-personal".into(), personal);
+    cfg.accounts.insert(
+        "codex-work".into(),
+        AccountConfig {
+            enabled: true,
+            name: "Work".into(),
+            provider: AiProvider::OpenAi,
+            credential: AccountCredential::Profile {
+                agent: Agent::Codex,
+                directory: PathBuf::from("/profiles/codex-work"),
+                xdg_roots: None,
+            },
+        },
+    );
+    cfg.accounts
+        .insert("zai-key".into(), api_key(AiProvider::Zai, None));
+    for (id, agent, account) in [
+        ("claude-a", Agent::Claude, "claude-work"),
+        ("claude-b", Agent::Claude, "claude-personal"),
+        ("codex-c", Agent::Codex, "codex-work"),
+    ] {
+        cfg.agent_configurations.insert(
+            id.into(),
+            AgentConfiguration {
+                agent,
+                account: account.into(),
+                model: None,
+                base_url: None,
+                display_label: None,
+            },
+        );
+    }
+    let ws = WorkspaceName::parse("project").unwrap();
+    let workspace = WorkspaceConfig {
+        accounts: vec![
+            "claude-work".into(),
+            "claude-personal".into(),
+            "codex-work".into(),
+        ],
+        ..Default::default()
+    };
+    cfg.workspaces.insert(ws.as_str().into(), workspace);
+    (cfg, ws)
+}
+
+#[test]
+fn resolve_launch_one_launch_wins_and_validates_atomically() {
+    let (cfg, ws) = launch_fixture();
+    let instances = resolve_launch(
+        &cfg,
+        Some(&ws),
+        "smith",
+        Some(&["codex-c".to_owned(), "claude-a".to_owned()]),
+    )
+    .unwrap();
+    assert_eq!(instances.len(), 2);
+    assert_eq!(instances[0].config_id, "codex-c");
+    assert_eq!(instances[0].label, "Codex · Work");
+    assert!(!instances[0].synthesized);
+    assert_eq!(instances[1].config_id, "claude-a");
+    assert_eq!(instances[1].label, "Claude · Work");
+
+    // Unknown ID fails the whole selection (no partial launch).
+    resolve_launch(
+        &cfg,
+        Some(&ws),
+        "smith",
+        Some(&["codex-c".to_owned(), "nope".to_owned()]),
+    )
+    .unwrap_err();
+    // Duplicate ID rejected.
+    resolve_launch(
+        &cfg,
+        Some(&ws),
+        "smith",
+        Some(&["codex-c".to_owned(), "codex-c".to_owned()]),
+    )
+    .unwrap_err();
+    // Explicit empty list resolves to no instances (shell-only).
+    let empty = resolve_launch(&cfg, Some(&ws), "smith", Some(&[])).unwrap();
+    assert!(empty.is_empty());
+}
+
+#[test]
+fn resolve_launch_scope_precedence_replaces_without_union() {
+    let (mut cfg, ws) = launch_fixture();
+    cfg.default_launch = Some(vec!["codex-c".into()]);
+    cfg.workspaces.get_mut(ws.as_str()).unwrap().default_launch =
+        Some(vec!["claude-a".into(), "claude-b".into()]);
+    cfg.workspaces.get_mut(ws.as_str()).unwrap().roles.insert(
+        "smith".into(),
+        WorkspaceRoleOverride {
+            default_launch: Some(vec!["claude-b".into()]),
+            ..Default::default()
+        },
+    );
+    // Role scope replaces workspace + global entirely.
+    let instances = resolve_launch(&cfg, Some(&ws), "smith", None).unwrap();
+    assert_eq!(instances.len(), 1);
+    assert_eq!(instances[0].config_id, "claude-b");
+    // Other roles fall through to the workspace scope.
+    let instances = resolve_launch(&cfg, Some(&ws), "other", None).unwrap();
+    assert_eq!(instances.len(), 2);
+    assert_eq!(instances[0].config_id, "claude-a");
+}
+
+#[test]
+fn resolve_launch_global_candidates_filter_by_authorization() {
+    let (mut cfg, ws) = launch_fixture();
+    cfg.agent_configurations.insert(
+        "zai-codex".into(),
+        AgentConfiguration {
+            agent: Agent::Codex,
+            account: "zai-key".into(),
+            model: Some("glm-4".into()),
+            base_url: None,
+            display_label: None,
+        },
+    );
+    cfg.default_launch = Some(vec!["zai-codex".into(), "codex-c".into()]);
+    // zai-key is outside the workspace allowlist: filtered, not an error.
+    let instances = resolve_launch(&cfg, Some(&ws), "smith", None).unwrap();
+    assert_eq!(instances.len(), 1);
+    assert_eq!(instances[0].config_id, "codex-c");
+    // Workspace-scoped defaults validate atomically instead.
+    cfg.workspaces.get_mut(ws.as_str()).unwrap().default_launch = Some(vec!["zai-codex".into()]);
+    resolve_launch(&cfg, Some(&ws), "smith", None).unwrap_err();
+}
+
+#[test]
+fn resolve_launch_fallback_needs_a_single_eligible_instance() {
+    let (cfg, ws) = launch_fixture();
+    // Several eligible instances: picker needed, never a silent pick.
+    let err = resolve_launch(&cfg, Some(&ws), "smith", None).unwrap_err();
+    assert!(err.to_string().contains("multiple accounts"), "{err}");
+    // Sole eligible instance fast-starts with a synthesized ID.
+    let mut solo = AppConfig::default();
+    solo.accounts.insert("only".into(), profile("Only"));
+    let instances = resolve_launch(&solo, None, "smith", None).unwrap();
+    assert_eq!(instances.len(), 1);
+    assert_eq!(instances[0].config_id, "only@claude");
+    assert!(instances[0].synthesized);
+    assert_eq!(instances[0].label, "Claude · Only");
+    // Zero eligible accounts is an actionable error.
+    let empty = AppConfig::default();
+    resolve_launch(&empty, None, "smith", None).unwrap_err();
+}
+
+#[test]
+fn resolve_launch_model_chain_prefers_configuration_override() {
+    let (mut cfg, ws) = launch_fixture();
+    cfg.agent_configurations.insert(
+        "zai-flash".into(),
+        AgentConfiguration {
+            agent: Agent::Codex,
+            account: "zai-key".into(),
+            model: Some("glm-4-flash".into()),
+            base_url: Some("https://api.z.ai/api/v1".into()),
+            display_label: Some("Codex · ZAI flash".into()),
+        },
+    );
+    cfg.workspaces
+        .get_mut(ws.as_str())
+        .unwrap()
+        .accounts
+        .push("zai-key".into());
+    let instances = resolve_launch(&cfg, Some(&ws), "smith", Some(&["zai-flash".into()])).unwrap();
+    assert_eq!(instances[0].model.as_deref(), Some("glm-4-flash"));
+    assert_eq!(
+        instances[0].base_url.as_deref(),
+        Some("https://api.z.ai/api/v1")
+    );
+    assert_eq!(instances[0].label, "Codex · ZAI flash");
+}
+
+#[test]
+fn agent_configuration_validation_rejects_bad_references_and_overrides() {
+    let (mut cfg, _) = launch_fixture();
+    let accounts = cfg.accounts.clone();
+    let good = AgentConfiguration {
+        agent: Agent::Claude,
+        account: "claude-work".into(),
+        model: None,
+        base_url: None,
+        display_label: None,
+    };
+    good.validate("ok-id", &accounts).unwrap();
+    good.validate("Bad_ID!", &accounts).unwrap_err();
+    AgentConfiguration {
+        account: "missing".into(),
+        ..good.clone()
+    }
+    .validate("x", &accounts)
+    .unwrap_err();
+    AgentConfiguration {
+        agent: Agent::Codex,
+        ..good.clone()
+    }
+    .validate("x", &accounts)
+    .unwrap_err();
+    AgentConfiguration {
+        model: Some("  ".into()),
+        ..good.clone()
+    }
+    .validate("x", &accounts)
+    .unwrap_err();
+    AgentConfiguration {
+        base_url: Some("ftp://x".into()),
+        ..good.clone()
+    }
+    .validate("x", &accounts)
+    .unwrap_err();
+    cfg.accounts.get_mut("claude-work").unwrap().enabled = false;
+    good.validate("x", &cfg.accounts).unwrap_err();
+}
+
+#[test]
+fn validate_launch_lists_rejects_unknown_duplicate_and_unauthorized() {
+    let (mut cfg, ws) = launch_fixture();
+    cfg.default_launch = Some(vec!["nope".into()]);
+    cfg.validate_accounts().unwrap_err();
+    cfg.default_launch = Some(vec!["codex-c".into(), "codex-c".into()]);
+    cfg.validate_accounts().unwrap_err();
+    cfg.default_launch = None;
+    cfg.workspaces.get_mut(ws.as_str()).unwrap().default_launch =
+        Some(vec!["codex-c".into(), "zzz".into()]);
+    cfg.validate_accounts().unwrap_err();
+}
+
+#[test]
+fn prune_agent_configurations_scrubs_launch_lists() {
+    let (mut cfg, ws) = launch_fixture();
+    cfg.default_launch = Some(vec!["claude-a".into(), "codex-c".into()]);
+    cfg.prune_agent_configurations("claude-work");
+    assert!(!cfg.agent_configurations.contains_key("claude-a"));
+    assert_eq!(
+        cfg.default_launch.as_deref(),
+        Some(["codex-c".to_owned()].as_slice())
+    );
+    cfg.validate_accounts().unwrap();
+    assert_eq!(ws.as_str(), "project");
+}
+
+#[test]
+fn xdg_roots_validate_amp_only_and_absolute() {
+    let roots = |data: &str| XdgRoots {
+        data: PathBuf::from(data),
+        config: PathBuf::from("/x/config"),
+        cache: PathBuf::from("/x/cache"),
+    };
+    let mut amp = AccountConfig {
+        enabled: true,
+        name: "Amp".into(),
+        provider: AiProvider::Amp,
+        credential: AccountCredential::Profile {
+            agent: Agent::Amp,
+            directory: PathBuf::from("/x/amp"),
+            xdg_roots: Some(roots("/x/data")),
+        },
+    };
+    amp.validate("amp").unwrap();
+    amp.credential = AccountCredential::Profile {
+        agent: Agent::Amp,
+        directory: PathBuf::from("/x/amp"),
+        xdg_roots: Some(roots("relative")),
+    };
+    amp.validate("amp").unwrap_err();
+    let claude = AccountConfig {
+        enabled: true,
+        name: "Claude".into(),
+        provider: AiProvider::Anthropic,
+        credential: AccountCredential::Profile {
+            agent: Agent::Claude,
+            directory: PathBuf::from("/x/claude"),
+            xdg_roots: Some(roots("/x/data")),
+        },
+    };
+    claude.validate("claude").unwrap_err();
+}
+
+#[test]
+fn new_schema_round_trips_through_toml() {
+    let (mut cfg, ws) = launch_fixture();
+    cfg.default_launch = Some(vec!["claude-a".into()]);
+    cfg.bootstrap = Some(BootstrapState::initialized());
+    cfg.workspaces.get_mut(ws.as_str()).unwrap().default_launch = Some(vec![]);
+    let raw = toml::to_string_pretty(&cfg).unwrap();
+    assert!(raw.contains("agent_configurations"), "{raw}");
+    assert!(raw.contains("default_launch"), "{raw}");
+    assert!(raw.contains("[bootstrap]"), "{raw}");
+    let back: AppConfig = toml::from_str(&raw).unwrap();
+    assert_eq!(back.agent_configurations.len(), 3);
+    assert_eq!(back.bootstrap, Some(BootstrapState::initialized()));
+    back.validate_accounts().unwrap();
 }

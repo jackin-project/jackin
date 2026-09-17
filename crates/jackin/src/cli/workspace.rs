@@ -81,7 +81,8 @@ Examples:
         /// Role to select by default when loading this workspace
         #[arg(long = "default-role")]
         default_role: Option<String>,
-        /// Default agent for this workspace (claude, codex, amp, or opencode)
+        /// Default agent for this workspace (claude, codex, amp, kimi, opencode,
+        /// grok, antigravity, gemini, cursor, muse, omp, or hermes)
         #[arg(long, value_parser = parse_agent)]
         default_agent: Option<jackin_core::Agent>,
         /// Set isolation mode for a mount destination. Repeatable.

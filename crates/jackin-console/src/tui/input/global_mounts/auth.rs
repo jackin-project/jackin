@@ -561,13 +561,11 @@ fn persist_settings_auth_form(
                 .as_ref()
                 .and_then(|id| auth.pending.get(id))
                 .map(|account| account.provider);
-            match existing {
-                Some(provider) => provider,
-                None => {
-                    auth.set_error("omp/Hermes accounts need an explicit provider; add them with `jackin account add --provider`");
-                    return;
-                }
-            }
+            let Some(provider) = existing else {
+                auth.set_error("omp/Hermes accounts need an explicit provider; add them with `jackin account add --provider`");
+                return;
+            };
+            provider
         }
         AuthKind::Zai => AiProvider::Zai,
         AuthKind::Minimax => AiProvider::Minimax,
@@ -585,7 +583,11 @@ fn persist_settings_auth_form(
             let Some(agent) = crate::tui::auth_config::auth_kind_agent(form.kind) else {
                 return;
             };
-            AccountCredential::Profile { agent, directory }
+            AccountCredential::Profile {
+                agent,
+                directory,
+                xdg_roots: None,
+            }
         }
         AuthMode::ApiKey => {
             let Some(value) = outcome.env_value else {

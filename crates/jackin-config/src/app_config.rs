@@ -35,6 +35,18 @@ pub struct AppConfig {
     /// Global explicit account selections by agent.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub account_bindings: BTreeMap<Agent, String>,
+    /// Named agent/account/model templates (one launchable instance each).
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub agent_configurations: BTreeMap<String, crate::AgentConfiguration>,
+    /// Global default launch set (configuration IDs). `None` inherits
+    /// nothing (sole-eligible fallback); an explicit empty list means
+    /// shell-only and replaces every inherited default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_launch: Option<Vec<String>>,
+    /// First-run bootstrap sentinel (absent only in pre-sentinel files,
+    /// which migrate as already-initialized and never rescan).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bootstrap: Option<crate::BootstrapState>,
     /// On-disk schema version (`version` key in `config.toml`).
     #[serde(
         default = "crate::versions::current_config_version",
@@ -105,6 +117,9 @@ impl Default for AppConfig {
             version: CURRENT_CONFIG_VERSION.to_owned(),
             accounts: BTreeMap::new(),
             account_bindings: BTreeMap::new(),
+            agent_configurations: BTreeMap::new(),
+            default_launch: None,
+            bootstrap: None,
             github: None,
             env: BTreeMap::new(),
             roles: BTreeMap::new(),

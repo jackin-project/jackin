@@ -37,12 +37,19 @@ pub(crate) mod process_telemetry;
 mod format;
 
 mod amp;
+mod antigravity;
 mod claude;
 mod codex;
+mod cursor;
+mod gemini;
 mod grok;
+mod hermes;
 mod kimi;
 mod minimax;
+mod muse;
+mod omp;
 mod opencode;
+mod openrouter;
 mod refresh;
 mod view;
 mod zai;
@@ -52,9 +59,21 @@ mod zai;
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]
 pub(crate) use self::amp::{
-    AmpSuccessContext, AmpUsage, AmpWorkspaceBalance, amp_api_key_snapshot, amp_snapshot,
-    amp_view_from_usage, fetch_amp_api_usage, fetch_amp_cli_usage, load_amp_api_key,
-    parse_amp_usage_output,
+    AmpRenewal, AmpSubscription, AmpSubscriptionKind, AmpSuccessContext, AmpUsage,
+    AmpWorkspaceBalance, amp_api_key_snapshot, amp_snapshot, amp_view_from_usage,
+    fetch_amp_api_usage, fetch_amp_cli_usage, load_amp_api_key, parse_amp_usage_output,
+};
+#[expect(
+    unused_imports,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
+pub(crate) use self::antigravity::{
+    ANTIGRAVITY_MIN_JSON_VERSION, AntigravityCredits, AntigravityFamily, AntigravityPool,
+    AntigravityUsage, AntigravityWindow, agy_version_supports_json, antigravity_buckets,
+    antigravity_cli_version, antigravity_credits_bucket, antigravity_identity_from_value,
+    antigravity_plan_from_value, antigravity_snapshot, fetch_antigravity_cli_credits,
+    fetch_antigravity_cli_usage, parse_agy_version, parse_antigravity_credits_output,
+    parse_antigravity_usage_output,
 };
 pub use self::claude::ClaudeUsageDiagnostic;
 #[expect(
@@ -67,11 +86,12 @@ pub(crate) use self::claude::{
     ClaudeOAuthSpend, ClaudeOAuthUsageResponse, ClaudeOAuthUsageWindow, ClaudeQuotaWindow,
     ClaudeResolved, ClaudeSpend, ClaudeWavePolicy, ClaudeWaveResolution, claude_account_identity,
     claude_code_user_agent, claude_code_user_agent_with, claude_code_version_from_text,
-    claude_email_from_value, claude_oauth_candidates, claude_oauth_from_value,
-    claude_organization_type_from_value, claude_snapshot, claude_spend_bucket,
-    claude_view_from_wave, claude_wave_policy, fetch_claude_cli_usage, fetch_claude_oauth_usage,
-    load_claude_account_email, normalize_claude_spend, push_claude_dollar_windows,
-    read_claude_keychain_item, resolve_claude_wave,
+    claude_email_from_value, claude_error_is_scope_restriction, claude_oauth_candidates,
+    claude_oauth_from_value, claude_organization_type_from_value, claude_provider_error_label,
+    claude_snapshot, claude_spend_bucket, claude_view_from_wave, claude_wave_policy,
+    fetch_claude_cli_usage, fetch_claude_oauth_usage, load_claude_account_email,
+    normalize_claude_spend, push_claude_dollar_windows, read_claude_keychain_item,
+    resolve_claude_wave,
 };
 #[cfg(test)]
 pub(crate) use self::claude::{
@@ -93,10 +113,40 @@ pub(crate) use self::codex::{
     codex_account_identity, codex_account_label_from_id_token, codex_auth_candidates,
     codex_oauth_from_value, codex_plan_display_name, codex_plan_exact_display,
     codex_plan_word_display, codex_profile_snapshot, codex_refresh_request_body,
-    codex_rpc_notification, codex_rpc_request, codex_snapshot, fetch_codex_oauth_reset_credits,
-    fetch_codex_oauth_usage, fetch_codex_oauth_usage_refreshing, fetch_codex_rpc_usage,
-    push_codex_window, refresh_codex_access_token, resolve_codex_base_url,
+    codex_rpc_notification, codex_rpc_request, codex_snapshot, decode_codex_rpc_usage,
+    fetch_codex_oauth_reset_credits, fetch_codex_oauth_usage, fetch_codex_oauth_usage_refreshing,
+    fetch_codex_rpc_usage, push_codex_window, refresh_codex_access_token, resolve_codex_base_url,
     resolve_codex_reset_credits_url, resolve_codex_usage_url,
+};
+#[expect(
+    unused_imports,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
+pub(crate) use self::cursor::{
+    CursorAuth, CursorEnterpriseScope, CursorMemberSpend, CursorPeriodUsage, CursorRequestUsage,
+    CursorSandUsage, CursorTeamSpend, CursorUsageEvents, CursorUsageSummary, cursor_auth_path,
+    cursor_credits_bucket, cursor_dashboard_base, cursor_dashboard_post, cursor_dashboard_url,
+    cursor_default_base, cursor_enterprise_snapshot, cursor_events_buckets,
+    cursor_needs_request_fallback, cursor_period_buckets, cursor_request_bucket, cursor_rest_get,
+    cursor_sand_bucket, cursor_session_cookie, cursor_snapshot, cursor_summary_buckets,
+    cursor_team_spend_buckets, cursor_teams_events_url, cursor_teams_spend_url,
+    cursor_user_id_from_token, fetch_cursor_credit_grants, fetch_cursor_period_usage,
+    fetch_cursor_plan_info, fetch_cursor_request_usage, fetch_cursor_sand_usage,
+    fetch_cursor_stripe_balance, fetch_cursor_team_spend, fetch_cursor_usage_events,
+    fetch_cursor_usage_summary, load_cursor_auth, load_cursor_cli_identity,
+    parse_cursor_credit_grants, parse_cursor_period_usage, parse_cursor_plan_info,
+    parse_cursor_request_usage, parse_cursor_sand_usage, parse_cursor_stripe_balance,
+    parse_cursor_team_spend, parse_cursor_usage_events, parse_cursor_usage_summary,
+};
+#[expect(
+    unused_imports,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
+pub(crate) use self::gemini::{
+    GEMINI_CONSUMER_OAUTH_END, GeminiEntitlement, GeminiProjectQuota,
+    gemini_consumer_oauth_retired, gemini_credential_origin, gemini_credential_presence,
+    gemini_error_needs_migration, gemini_migration_action, gemini_oauth_creds_path,
+    gemini_quota_buckets, gemini_snapshot, parse_gemini_entitlement, parse_gemini_project_quotas,
 };
 #[expect(
     unused_imports,

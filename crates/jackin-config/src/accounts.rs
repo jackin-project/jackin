@@ -3,6 +3,7 @@
 
 //! Named credentials and workspace account authorization.
 
+use crate::schema::WorkspaceConfig;
 use crate::{AppConfig, ConfigError, ConfigResult};
 use jackin_core::{Agent, AuthForwardMode, EnvValue, WorkspaceName};
 use serde::{Deserialize, Serialize};
@@ -13,6 +14,7 @@ use std::{
 
 pub(crate) mod discovery;
 pub(crate) mod stores;
+pub(crate) mod zshrc;
 
 /// Service issuing an account's credentials.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -119,6 +121,10 @@ pub enum AccountCredential {
         agent: Agent,
         /// Exact host configuration directory.
         directory: PathBuf,
+        /// Explicit XDG roots for clients that split state across
+        /// data/config/cache homes (Amp). Absolute directories; validated.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        xdg_roots: Option<XdgRoots>,
     },
     /// Provider API key, literal or an environment/1Password reference.
     ApiKey {
@@ -139,13 +145,29 @@ pub enum AccountCredential {
         value: EnvValue,
     },
 }
+/// Explicit XDG state roots for one profile credential.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct XdgRoots {
+    /// Data home (`XDG_DATA_HOME` equivalent).
+    pub data: PathBuf,
+    /// Config home (`XDG_CONFIG_HOME` equivalent).
+    pub config: PathBuf,
+    /// Cache home (`XDG_CACHE_HOME` equivalent).
+    pub cache: PathBuf,
+}
 impl std::fmt::Debug for AccountCredential {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Profile { agent, directory } => f
+            Self::Profile {
+                agent,
+                directory,
+                xdg_roots,
+            } => f
                 .debug_struct("Profile")
                 .field("agent", agent)
                 .field("directory", directory)
+                .field("xdg_roots", xdg_roots)
                 .finish(),
             Self::ApiKey { .. } => f.write_str("ApiKey { value: [REDACTED] }"),
             Self::OAuthToken { agent, .. } => f
@@ -294,9 +316,28 @@ impl AccountConfig {
             )));
         }
         match &self.credential {
-            AccountCredential::Profile { agent, directory } => {
+            AccountCredential::Profile {
+                agent,
+                directory,
+                xdg_roots,
+            } => {
                 if !directory.is_absolute() || !self.compatible_agent(*agent) {
                     return Err(ConfigError::msg(format!("invalid profile account {id:?}")));
+                }
+                if let Some(roots) = xdg_roots {
+                    if *agent != Agent::Amp {
+                        return Err(ConfigError::msg(format!(
+                            "account {id:?} sets xdg_roots, which only Amp profiles support"
+                        )));
+                    }
+                    if !roots.data.is_absolute()
+                        || !roots.config.is_absolute()
+                        || !roots.cache.is_absolute()
+                    {
+                        return Err(ConfigError::msg(format!(
+                            "account {id:?} requires absolute xdg_roots directories"
+                        )));
+                    }
                 }
             }
             AccountCredential::ApiKey { value, .. }
@@ -506,6 +547,312 @@ pub fn resolve_account<'a>(
     }
     Ok(selected)
 }
+/// Current bootstrap sentinel schema version.
+pub const BOOTSTRAP_VERSION: u32 = 1;
+
+/// First-run bootstrap sentinel (`[bootstrap]` in `config.toml`).
+///
+/// Distinguishes a genuine fresh install (no config file), an
+/// installer-created empty config (`fresh_install = true`, scan once),
+/// and an older installation (no sentinel: already initialized, never
+/// rescan — the migration stamps `fresh_install = false` explicitly).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BootstrapState {
+    /// Sentinel schema version ([`BOOTSTRAP_VERSION`]).
+    pub version: u32,
+    /// True only when an installer pre-created an empty config that
+    /// still needs its first discovery scan.
+    #[serde(default)]
+    pub fresh_install: bool,
+}
+
+impl BootstrapState {
+    /// Sentinel for a completed (or migrated) initialization.
+    pub const fn initialized() -> Self {
+        Self {
+            version: BOOTSTRAP_VERSION,
+            fresh_install: false,
+        }
+    }
+}
+
+/// Named agent/account/model template: one launchable agent instance.
+///
+/// Several configurations may share one account (and its quota); each
+/// configuration pins the agent plus optional model/endpoint overrides.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AgentConfiguration {
+    /// Client that runs this instance.
+    pub agent: Agent,
+    /// Registered account supplying credentials.
+    pub account: String,
+    /// Model override; empty falls back to the account/client default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    /// Endpoint override; empty falls back to the account/client default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base_url: Option<String>,
+    /// Explicit instance label; default derives `{Agent} · {account name}`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub display_label: Option<String>,
+}
+
+impl AgentConfiguration {
+    /// Validate this configuration against the account registry.
+    ///
+    /// # Errors
+    /// Rejects bad IDs, unknown/disabled/incompatible accounts, and bad overrides.
+    pub fn validate(
+        &self,
+        id: &str,
+        accounts: &BTreeMap<String, AccountConfig>,
+    ) -> ConfigResult<()> {
+        validate_account_id(id).map_err(|_| {
+            ConfigError::msg("configuration ID must be a lowercase slug of 1–64 characters")
+        })?;
+        let account = accounts
+            .get(&self.account)
+            .ok_or_else(|| ConfigError::msg(format!("unknown account {:?}", self.account)))?;
+        if !account.supports_agent(self.agent) {
+            return Err(ConfigError::msg(format!(
+                "account {:?} is not authorized for {}",
+                self.account, self.agent
+            )));
+        }
+        if self
+            .model
+            .as_deref()
+            .is_some_and(|model| model.trim().is_empty())
+        {
+            return Err(ConfigError::msg(format!(
+                "configuration {id:?} has an empty model"
+            )));
+        }
+        if self.base_url.as_deref().is_some_and(|url| {
+            !(url.starts_with("https://") || url.starts_with("http://"))
+                || url.contains(char::is_whitespace)
+        }) {
+            return Err(ConfigError::msg(format!(
+                "configuration {id:?} requires an HTTP(S) endpoint"
+            )));
+        }
+        if self
+            .display_label
+            .as_deref()
+            .is_some_and(|label| label.trim().is_empty())
+        {
+            return Err(ConfigError::msg(format!(
+                "configuration {id:?} has an empty display label"
+            )));
+        }
+        Ok(())
+    }
+}
+
+/// One resolved launch instance: a configuration bound to an authorized account.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResolvedInstance {
+    /// Configuration ID (explicit, or synthesized `{account}@{agent}`).
+    pub config_id: String,
+    /// Client that runs this instance.
+    pub agent: Agent,
+    /// Registered account supplying credentials.
+    pub account_id: String,
+    /// Effective model (configuration override, else account default).
+    pub model: Option<String>,
+    /// Effective endpoint (configuration override, else account default).
+    pub base_url: Option<String>,
+    /// Instance label (`{Agent} · {account name}` unless overridden).
+    pub label: String,
+    /// True when synthesized from a binding/sole-eligible fallback.
+    pub synthesized: bool,
+}
+
+impl ResolvedInstance {
+    /// Bind an explicit configuration to its resolved account values.
+    fn bind(config_id: &str, config: &AgentConfiguration, account: &AccountConfig) -> Self {
+        let (account_model, account_url) = match &account.credential {
+            AccountCredential::ApiKey {
+                base_url, model, ..
+            } => (model.clone(), base_url.clone()),
+            _ => (None, None),
+        };
+        let label = config
+            .display_label
+            .clone()
+            .unwrap_or_else(|| format!("{} · {}", config.agent.label(), account.name));
+        Self {
+            config_id: config_id.to_owned(),
+            agent: config.agent,
+            account_id: config.account.clone(),
+            model: config.model.clone().or(account_model),
+            base_url: config.base_url.clone().or(account_url),
+            label,
+            synthesized: false,
+        }
+    }
+
+    /// Synthesize the default instance for one account/agent pair.
+    fn synthesize(account_id: &str, agent: Agent, account: &AccountConfig) -> Self {
+        let (model, base_url) = match &account.credential {
+            AccountCredential::ApiKey {
+                base_url, model, ..
+            } => (model.clone(), base_url.clone()),
+            _ => (None, None),
+        };
+        Self {
+            config_id: format!("{account_id}@{}", agent.slug()),
+            agent,
+            account_id: account_id.to_owned(),
+            model,
+            base_url,
+            label: format!("{} · {}", agent.label(), account.name),
+            synthesized: true,
+        }
+    }
+}
+
+/// Resolve the ordered launch instances for a workspace/role selection.
+///
+/// Precedence: one-launch selection → role `default_launch` → workspace
+/// `default_launch` → global `default_launch` → sole eligible instance.
+/// An explicit scope replaces inherited scopes (no union). Explicit
+/// selections validate atomically against authorization and
+/// compatibility: invalid entries fail the whole launch, never fall
+/// back silently. Inherited global candidates filter by workspace
+/// authorization. An explicit empty list resolves to no instances
+/// (shell-only launches accept that; agent launches reject it).
+///
+/// # Errors
+/// Fails for unknown workspaces/configurations/accounts, unauthorized
+/// or incompatible selections, zero eligible accounts, and ambiguous
+/// (picker-needed) fallbacks.
+pub fn resolve_launch(
+    cfg: &AppConfig,
+    workspace: Option<&WorkspaceName>,
+    role: &str,
+    one_launch: Option<&[String]>,
+) -> ConfigResult<Vec<ResolvedInstance>> {
+    let ws = workspace
+        .map(|name| {
+            cfg.workspaces
+                .get(name.as_str())
+                .ok_or_else(|| ConfigError::WorkspaceNotFound(name.as_str().into()))
+        })
+        .transpose()?;
+    let authorized =
+        |account_id: &str| ws.is_none_or(|w| w.accounts.iter().any(|id| id == account_id));
+
+    if let Some(selection) = one_launch {
+        let mut seen = BTreeSet::new();
+        let mut instances = Vec::with_capacity(selection.len());
+        for id in selection {
+            if !seen.insert(id) {
+                return Err(ConfigError::msg(format!(
+                    "duplicate configuration {id:?} in launch selection"
+                )));
+            }
+            instances.push(bind_explicit(cfg, ws, id)?);
+        }
+        return Ok(instances);
+    }
+
+    let inherited = ws
+        .and_then(|w| w.roles.get(role))
+        .and_then(|r| r.default_launch.as_deref())
+        .or(ws.and_then(|w| w.default_launch.as_deref()))
+        .or(cfg.default_launch.as_deref());
+    if let Some(ids) = inherited {
+        let scope_is_global = ws
+            .and_then(|w| w.roles.get(role))
+            .and_then(|r| r.default_launch.as_deref())
+            .is_none()
+            && ws.and_then(|w| w.default_launch.as_deref()).is_none();
+        let mut instances = Vec::with_capacity(ids.len());
+        for id in ids {
+            let config = cfg
+                .agent_configurations
+                .get(id)
+                .ok_or_else(|| ConfigError::msg(format!("unknown agent configuration {id:?}")))?;
+            // Role/workspace scopes validate atomically like bindings;
+            // inherited global candidates filter by authorization.
+            if scope_is_global && !authorized(&config.account) {
+                continue;
+            }
+            instances.push(bind_explicit(cfg, ws, id)?);
+        }
+        return Ok(instances);
+    }
+
+    // No defaults anywhere: sole eligible instance wins, ambiguity needs a picker.
+    let mut eligible = Vec::new();
+    match ws {
+        Some(w) => {
+            for id in &w.accounts {
+                let account = cfg
+                    .accounts
+                    .get(id)
+                    .ok_or_else(|| ConfigError::msg(format!("unknown account {id:?}")))?;
+                for agent in Agent::ALL {
+                    if account.supports_agent(*agent) {
+                        eligible.push(ResolvedInstance::synthesize(id, *agent, account));
+                    }
+                }
+            }
+        }
+        None => {
+            for (id, account) in &cfg.accounts {
+                for agent in Agent::ALL {
+                    if account.supports_agent(*agent) {
+                        eligible.push(ResolvedInstance::synthesize(id, *agent, account));
+                    }
+                }
+            }
+        }
+    }
+    if eligible.is_empty() {
+        return Err(ConfigError::msg("no eligible account for this launch"));
+    }
+    if eligible.len() > 1 {
+        return Err(ConfigError::msg(
+            "multiple accounts are eligible; select launch configurations",
+        ));
+    }
+    Ok(eligible)
+}
+
+/// Bind one explicit configuration ID, validating authorization and compatibility.
+fn bind_explicit(
+    cfg: &AppConfig,
+    ws: Option<&WorkspaceConfig>,
+    id: &str,
+) -> ConfigResult<ResolvedInstance> {
+    let config = cfg
+        .agent_configurations
+        .get(id)
+        .ok_or_else(|| ConfigError::msg(format!("unknown agent configuration {id:?}")))?;
+    if let Some(w) = ws
+        && !w.accounts.contains(&config.account)
+    {
+        return Err(ConfigError::msg(format!(
+            "account {:?} is not assigned to this workspace",
+            config.account
+        )));
+    }
+    let account = cfg
+        .accounts
+        .get(&config.account)
+        .ok_or_else(|| ConfigError::msg(format!("unknown account {:?}", config.account)))?;
+    if !account.supports_agent(config.agent) {
+        return Err(ConfigError::msg(format!(
+            "account {:?} is not authorized for {}",
+            config.account, config.agent
+        )));
+    }
+    Ok(ResolvedInstance::bind(id, config, account))
+}
 impl AppConfig {
     /// Validate registry credentials and all account references.
     ///
@@ -514,6 +861,9 @@ impl AppConfig {
     pub fn validate_accounts(&self) -> ConfigResult<()> {
         for (id, account) in &self.accounts {
             account.validate(id)?;
+        }
+        for (id, config) in &self.agent_configurations {
+            config.validate(id, &self.accounts)?;
         }
         let check = |bindings: &BTreeMap<Agent, String>,
                      allowed: Option<&Vec<String>>|
@@ -532,6 +882,7 @@ impl AppConfig {
             Ok(())
         };
         check(&self.account_bindings, None)?;
+        self.validate_launch_list(self.default_launch.as_deref(), None)?;
         for ws in self.workspaces.values() {
             let mut seen = BTreeSet::new();
             for id in &ws.accounts {
@@ -542,8 +893,39 @@ impl AppConfig {
                 }
             }
             check(&ws.account_bindings, Some(&ws.accounts))?;
+            self.validate_launch_list(ws.default_launch.as_deref(), Some(&ws.accounts))?;
             for role in ws.roles.values() {
                 check(&role.account_bindings, Some(&ws.accounts))?;
+                self.validate_launch_list(role.default_launch.as_deref(), Some(&ws.accounts))?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Validate one `default_launch` list: known IDs, no duplicates, and
+    /// (for workspace/role scopes) accounts inside the workspace allowlist.
+    fn validate_launch_list(
+        &self,
+        ids: Option<&[String]>,
+        allowed: Option<&Vec<String>>,
+    ) -> ConfigResult<()> {
+        let Some(ids) = ids else { return Ok(()) };
+        let mut seen = BTreeSet::new();
+        for id in ids {
+            if !seen.insert(id) {
+                return Err(ConfigError::msg(format!(
+                    "duplicate launch configuration {id:?}"
+                )));
+            }
+            let config = self
+                .agent_configurations
+                .get(id)
+                .ok_or_else(|| ConfigError::msg(format!("unknown agent configuration {id:?}")))?;
+            if allowed.is_some_and(|ids| !ids.contains(&config.account)) {
+                return Err(ConfigError::msg(format!(
+                    "account {:?} is not assigned to this workspace",
+                    config.account
+                )));
             }
         }
         Ok(())
@@ -556,6 +938,35 @@ impl AppConfig {
             ws.account_bindings.retain(|_, selected| selected != id);
             for role in ws.roles.values_mut() {
                 role.account_bindings.retain(|_, selected| selected != id);
+            }
+        }
+    }
+
+    /// Drop agent configurations using the given account and scrub
+    /// `default_launch` lists of the removed configuration IDs.
+    pub fn prune_agent_configurations(&mut self, account_id: &str) {
+        let removed: Vec<String> = self
+            .agent_configurations
+            .iter()
+            .filter(|(_, config)| config.account == account_id)
+            .map(|(id, _)| id.clone())
+            .collect();
+        if removed.is_empty() {
+            return;
+        }
+        for id in &removed {
+            self.agent_configurations.remove(id);
+        }
+        let scrub = |list: &mut Option<Vec<String>>| {
+            if let Some(ids) = list {
+                ids.retain(|id| !removed.contains(id));
+            }
+        };
+        scrub(&mut self.default_launch);
+        for ws in self.workspaces.values_mut() {
+            scrub(&mut ws.default_launch);
+            for role in ws.roles.values_mut() {
+                scrub(&mut role.default_launch);
             }
         }
     }

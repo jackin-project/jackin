@@ -64,6 +64,7 @@ fn build_workspace_choice_picks_up_default_agent_from_config() {
             runtime: jackin_config::WorkspaceRuntimeConfig::default(),
             dirty_exit_policy: None,
             docker: None,
+            default_launch: None,
         },
     );
 
@@ -110,6 +111,7 @@ fn launch_workspace(workdir: &std::path::Path, allowed_roles: Vec<&str>) -> Work
         runtime: jackin_config::WorkspaceRuntimeConfig::default(),
         dirty_exit_policy: None,
         docker: None,
+        default_launch: None,
     }
 }
 
@@ -259,6 +261,7 @@ fn launch_accounts_require_workspace_assignment_and_agent_support() {
                 credential: AccountCredential::Profile {
                     agent: Agent::Claude,
                     directory: format!("/profiles/{id}").into(),
+                    xdg_roots: None,
                 },
             },
         );

@@ -1763,7 +1763,7 @@ fn codex_minimal_limits_value() -> serde_json::Value {
 
 #[test]
 fn codex_rpc_account_api_key_tag_yields_origin_label_and_rate_limits() {
-    let usage = codex::decode_codex_rpc_usage(
+    let usage = decode_codex_rpc_usage(
         codex_minimal_limits_value(),
         Some(serde_json::json!({ "account": { "type": "apiKey" } })),
     )
@@ -1787,7 +1787,7 @@ fn codex_rpc_account_amazon_bedrock_tag_decodes_without_label() {
 
 #[test]
 fn codex_rpc_account_decode_failure_degrades_to_no_label() {
-    let usage = codex::decode_codex_rpc_usage(
+    let usage = decode_codex_rpc_usage(
         codex_minimal_limits_value(),
         Some(serde_json::json!({ "account": { "type": "someFutureTag" } })),
     )
@@ -2610,7 +2610,7 @@ fn amp_daily_display_text_maps_daily_slot_and_reset_description() {
     assert_eq!(api.individual_credits, cli.individual_credits);
     assert_eq!(api.workspace_balances, cli.workspace_balances);
 
-    let buckets = api.buckets();
+    let buckets = api.buckets(1_781_185_560);
     assert_eq!(buckets[0].label, "Amp Free");
     assert_eq!(buckets[0].status_slot, Some(StatusSlot::Daily));
     assert_eq!(buckets[0].remaining_percent, Some(61));
@@ -2647,7 +2647,7 @@ fn amp_daily_parser_preserves_workspace_balances_in_order() {
             },
         ]
     );
-    let buckets = usage.buckets();
+    let buckets = usage.buckets(1_781_185_560);
     let labels: Vec<_> = buckets.iter().map(|bucket| bucket.label.as_str()).collect();
     assert_eq!(
         labels,
@@ -2675,7 +2675,7 @@ fn amp_paid_only_balances_do_not_infer_daily_or_plan() {
     )
     .expect("paid-only usage");
     assert_eq!(usage.plan_label(), None);
-    let buckets = usage.buckets();
+    let buckets = usage.buckets(1_781_185_560);
     assert!(
         buckets
             .iter()
@@ -2716,7 +2716,8 @@ fn amp_paid_only_balances_do_not_infer_daily_or_plan() {
     let mut with_daily = usage.clone();
     with_daily.daily_remaining_percent = Some(61);
     assert_eq!(
-        status_bar_headline_for_surface(UsageSurface::Amp, &with_daily.buckets()).as_deref(),
+        status_bar_headline_for_surface(UsageSurface::Amp, &with_daily.buckets(1_781_185_560))
+            .as_deref(),
         Some("Free 61%")
     );
 }
@@ -2736,7 +2737,7 @@ fn amp_legacy_hourly_display_text_is_rejected() {
     assert_eq!(usage.daily_remaining_percent, None);
     assert!(
         usage
-            .buckets()
+            .buckets(1_781_185_560)
             .iter()
             .all(|bucket| bucket.status_slot != Some(StatusSlot::Daily))
     );
@@ -4402,4 +4403,311 @@ fn quota_pace_label_exact_clock_equality_ignores_float_drift() {
     // 7*1000 == 70*100 -> projection reaches reset exactly -> no run-out segment.
     let label = quota_pace_label(Some(7), Some(70), Some(1_000), 0).expect("pace");
     assert!(!label.contains("Runs out"), "unexpected run-out: {label}");
+}
+
+// ===================================================================
+// Lane A (multi-account T02): Claude/Codex/Amp contract upgrades.
+// Sanitized fixtures only — no tokens, no account IDs.
+// ===================================================================
+
+#[test]
+fn claude_limits_inactive_flag_does_not_gate_rendering() {
+    // Live responses send `is_active: false` on headline limits that still
+    // carry quota — the flag must never suppress a bucket.
+    let response: ClaudeOAuthUsageResponse = serde_json::from_value(serde_json::json!({
+        "five_hour": null,
+        "seven_day": null,
+        "limits": [
+            {"kind": "session", "percent": 10, "is_active": false,
+             "resets_at": "2026-09-17T10:00:00Z"},
+            {"kind": "weekly_all", "percent": 42, "is_active": false,
+             "resets_at": "2026-09-24T10:00:00Z"},
+        ]
+    }))
+    .expect("inactive limits decode");
+    let buckets = response.into_buckets(1_781_185_560);
+    let session = buckets
+        .iter()
+        .find(|bucket| bucket.status_slot == Some(StatusSlot::Session))
+        .expect("session bucket despite is_active false");
+    assert_eq!(session.label, "Session");
+    assert_eq!(session.remaining_percent, Some(90));
+    let weekly = buckets
+        .iter()
+        .find(|bucket| bucket.status_slot == Some(StatusSlot::Weekly))
+        .expect("weekly bucket despite is_active false");
+    assert_eq!(weekly.label, "All models");
+    assert_eq!(weekly.remaining_percent, Some(58));
+}
+
+#[test]
+fn claude_scope_restriction_error_is_explicit() {
+    assert!(claude_error_is_scope_restriction(
+        "Claude OAuth usage HTTP 403 Forbidden"
+    ));
+    assert!(claude_error_is_scope_restriction(
+        "HTTP 403 insufficient_scope"
+    ));
+    assert!(!claude_error_is_scope_restriction(
+        "Claude OAuth usage HTTP 401 Unauthorized"
+    ));
+    assert!(!claude_error_is_scope_restriction(
+        "Claude OAuth usage request failed: connection reset"
+    ));
+    assert_eq!(
+        claude_provider_error_label(
+            Some("Claude OAuth usage HTTP 403 Forbidden"),
+            Some("cli boom")
+        )
+        .as_deref(),
+        Some("Claude token lacks usage scope (inference-only); quota unavailable")
+    );
+    // Non-scope errors pass through verbatim, OAuth first.
+    assert_eq!(
+        claude_provider_error_label(Some("oauth boom"), Some("cli boom")).as_deref(),
+        Some("oauth boom")
+    );
+    assert_eq!(
+        claude_provider_error_label(None, Some("cli boom")).as_deref(),
+        Some("cli boom")
+    );
+    assert_eq!(claude_provider_error_label(None, None), None);
+}
+
+#[test]
+fn codex_wham_relative_reset_resolves_against_now() {
+    let usage: CodexUsageResponse = serde_json::from_value(serde_json::json!({
+        "plan_type": "pro",
+        "rate_limit": {
+            "primary_window": {"used_percent": 25, "reset_after_seconds": 3_600},
+            "secondary_window": {"used_percent": 50, "reset_at": 1_782_000_000}
+        }
+    }))
+    .expect("wham relative reset decodes");
+    let buckets = usage.buckets(1_781_185_560);
+    let session = buckets
+        .iter()
+        .find(|bucket| bucket.status_slot == Some(StatusSlot::Session))
+        .expect("session bucket");
+    assert_eq!(session.remaining_percent, Some(75));
+    assert_eq!(session.resets_at, Some(1_781_185_560 + 3_600));
+    // Absolute reset_at still wins when both are present.
+    let weekly = buckets
+        .iter()
+        .find(|bucket| bucket.status_slot == Some(StatusSlot::Weekly))
+        .expect("weekly bucket");
+    assert_eq!(weekly.resets_at, Some(1_782_000_000));
+}
+
+#[test]
+fn codex_used_percent_tolerates_float_string_and_missing() {
+    for (raw, expected) in [
+        (serde_json::json!(63), Some(63)),
+        (serde_json::json!(63.7), Some(64)),
+        (serde_json::json!("41"), Some(41)),
+        (serde_json::json!(140), Some(100)),
+        (serde_json::json!(-3), Some(0)),
+        (serde_json::json!("bogus"), None),
+    ] {
+        let snapshot: CodexWindowSnapshot =
+            serde_json::from_value(serde_json::json!({"used_percent": raw}))
+                .expect("tolerant decode");
+        assert_eq!(snapshot.used_percent_clamped(), expected, "raw: {raw}");
+    }
+    let missing: CodexWindowSnapshot =
+        serde_json::from_value(serde_json::json!({"reset_at": 1_782_000_000}))
+            .expect("missing used decodes");
+    assert_eq!(missing.used_percent_clamped(), None);
+}
+
+#[test]
+fn codex_rpc_tolerates_missing_windows_credits_and_counts() {
+    // Missing `usedPercent`, `rateLimits`, `availableCount`, and credit flags
+    // all decode; unknown extra fields are ignored.
+    let usage = decode_codex_rpc_usage(
+        serde_json::json!({
+            "rateLimits": {
+                "primary": {"resetsAt": 1_782_000_000, "windowDurationMins": 300},
+                "credits": {"balance": "12", "future_field": true},
+                "planType": "pro",
+            },
+            "rateLimitsByLimitId": {},
+            "rateLimitResetCredits": {"future_field": 1},
+            "future_top_level": {"nested": [1, 2]},
+        }),
+        None,
+    )
+    .expect("sparse RPC decodes");
+    let buckets = usage.response.buckets(1_781_185_560);
+    let session = buckets
+        .iter()
+        .find(|bucket| bucket.status_slot == Some(StatusSlot::Session))
+        .expect("session bucket");
+    assert_eq!(session.used_label, None);
+    assert_eq!(session.remaining_percent, None);
+    assert_eq!(session.resets_at, Some(1_782_000_000));
+    assert!(
+        buckets
+            .iter()
+            .all(|bucket| bucket.label != "Limit Reset Credits"),
+        "zero-count credits stay hidden"
+    );
+    assert!(
+        buckets.iter().all(|bucket| bucket.label != "Credits"),
+        "flag-less credits stay hidden"
+    );
+
+    // A wholly absent `rateLimits` object still decodes to an empty snapshot.
+    let empty = decode_codex_rpc_usage(serde_json::json!({}), None).expect("empty decodes");
+    assert!(empty.response.buckets(1_781_185_560).is_empty());
+}
+
+const AMP_TIER_FIXTURE: &str = "Signed in as user@example.com (example)\n\
+     Amp Free: 61% remaining today (resets daily)\n\
+     Amp Pro Tier: agent usage $80.00 of $100.00 remaining, orb usage 7.5h of 10h a1.small orb hours remaining, period 2026-09-01 to 2026-10-01, resets upon renewal in 12 days\n\
+     Individual credits: $9.86 remaining";
+
+#[test]
+fn amp_tier_line_maps_agent_dollars_orb_hours_and_renewal() {
+    let now = 1_781_185_560;
+    let usage = parse_amp_usage_output(AMP_TIER_FIXTURE).expect("tier usage");
+    assert_eq!(usage.account_label.as_deref(), Some("user@example.com"));
+    assert_eq!(usage.plan_label().as_deref(), Some("Amp Pro"));
+    assert_eq!(
+        usage.renewal,
+        Some(AmpRenewal {
+            value: 12,
+            months: false,
+        })
+    );
+    assert_eq!(
+        usage.billing_period.as_deref(),
+        Some("2026-09-01 to 2026-10-01")
+    );
+
+    let buckets = usage.buckets(now);
+    let agent = buckets
+        .iter()
+        .find(|bucket| bucket.label == "Agent usage")
+        .expect("agent bucket");
+    assert_eq!(agent.used_label.as_deref(), Some("$20.00 used"));
+    assert_eq!(agent.limit_label.as_deref(), Some("$100.00"));
+    assert_eq!(agent.remaining_percent, Some(80));
+    assert_eq!(agent.resets_at, Some(now + 12 * 86_400));
+    assert_eq!(agent.status_slot, Some(StatusSlot::Spend));
+    assert_eq!(
+        agent.used_money.as_ref().map(|m| m.amount_minor),
+        Some(2_000)
+    );
+    assert_eq!(
+        agent.limit_money.as_ref().map(|m| m.amount_minor),
+        Some(10_000)
+    );
+
+    let orb = buckets
+        .iter()
+        .find(|bucket| bucket.label == "Orb usage")
+        .expect("orb bucket");
+    assert_eq!(orb.used_label.as_deref(), Some("2h used"));
+    assert_eq!(orb.limit_label.as_deref(), Some("10h"));
+    assert_eq!(orb.remaining_percent, Some(75));
+    assert_eq!(orb.resets_at, Some(now + 12 * 86_400));
+
+    // Daily headline is untouched by subscription pools.
+    assert_eq!(
+        status_bar_headline_for_surface(UsageSurface::Amp, &buckets).as_deref(),
+        Some("Free 61%")
+    );
+}
+
+#[test]
+fn amp_tier_without_orb_keeps_agent_and_skips_orb() {
+    let usage = parse_amp_usage_output(
+        "Amp Team Tier: agent usage $1,234.50 of $2,000.00 remaining, resets upon renewal in 2 months",
+    )
+    .expect("orb-less tier");
+    assert_eq!(usage.plan_label().as_deref(), Some("Amp Team"));
+    let buckets = usage.buckets(1_781_185_560);
+    let agent = buckets
+        .iter()
+        .find(|bucket| bucket.label == "Agent usage")
+        .expect("agent bucket");
+    assert_eq!(agent.remaining_percent, Some(62));
+    assert_eq!(agent.resets_at, Some(1_781_185_560 + 60 * 86_400));
+    assert!(
+        buckets.iter().all(|bucket| bucket.label != "Orb usage"),
+        "no orb segment, no orb bucket"
+    );
+}
+
+#[test]
+fn amp_unrecognized_orb_data_does_not_hide_agent() {
+    let usage = parse_amp_usage_output(
+        "Amp Pro Tier: agent usage $80.00 of $100.00 remaining, orb usage someday maybe, resets upon renewal in 12 days",
+    )
+    .expect("agent survives bad orb");
+    let buckets = usage.buckets(1_781_185_560);
+    assert!(
+        buckets.iter().any(|bucket| bucket.label == "Agent usage"),
+        "agent bucket present"
+    );
+    assert!(
+        buckets.iter().all(|bucket| bucket.label != "Orb usage"),
+        "malformed orb skipped"
+    );
+}
+
+#[test]
+fn amp_legacy_subscription_line_maps_percent_pools() {
+    let usage = parse_amp_usage_output(
+        "Subscription Business: 30% other usage and 55% orb usage remaining - resets upon renewal in 1 month - https://ampcode.com/settings",
+    )
+    .expect("legacy subscription");
+    assert_eq!(usage.plan_label().as_deref(), Some("Amp Business"));
+    let buckets = usage.buckets(1_781_185_560);
+    let agent = buckets
+        .iter()
+        .find(|bucket| bucket.label == "Agent usage")
+        .expect("agent bucket");
+    assert_eq!(agent.remaining_percent, Some(30));
+    assert_eq!(agent.resets_at, Some(1_781_185_560 + 30 * 86_400));
+    let orb = buckets
+        .iter()
+        .find(|bucket| bucket.label == "Orb usage")
+        .expect("orb bucket");
+    assert_eq!(orb.remaining_percent, Some(55));
+
+    // The `Amp <plan> Subscription:` variant parses identically.
+    let variant = parse_amp_usage_output(
+        "Amp Business Subscription: 30% other usage and 55% orb usage remaining - resets upon renewal in 5 days",
+    )
+    .expect("amp-prefixed legacy");
+    assert_eq!(
+        variant.subscription, usage.subscription,
+        "same pools, only renewal differs"
+    );
+    assert_eq!(
+        variant.renewal,
+        Some(AmpRenewal {
+            value: 5,
+            months: false,
+        })
+    );
+}
+
+#[test]
+fn amp_tier_wins_over_legacy_and_bold_markers_strip() {
+    let usage = parse_amp_usage_output(
+        "Subscription Business: 30% other usage and 55% orb usage remaining - resets upon renewal in 5 days\n\
+         **Amp Pro Tier:** agent usage $80.00 of $100.00 remaining, resets upon renewal in 12 days",
+    )
+    .expect("tier over legacy");
+    assert_eq!(usage.plan_label().as_deref(), Some("Amp Pro"));
+    assert!(
+        matches!(
+            usage.subscription.as_ref().map(|s| &s.kind),
+            Some(AmpSubscriptionKind::Tier { .. })
+        ),
+        "tier kind kept"
+    );
 }

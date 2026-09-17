@@ -105,6 +105,7 @@ fn write_registry(config_root: &Path, entries: &[(&str, Agent, &Path)]) {
                 credential: AccountCredential::Profile {
                     agent: *agent,
                     directory: directory.to_path_buf(),
+                    xdg_roots: None,
                 },
             },
         );
@@ -272,6 +273,7 @@ fn write_codex_workspace(path: &Path, root: &Path) {
             credential: AccountCredential::Profile {
                 agent: Agent::Codex,
                 directory: root.to_path_buf(),
+                xdg_roots: None,
             },
         },
     );

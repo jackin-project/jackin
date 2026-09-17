@@ -150,6 +150,7 @@ fn disabling_account_prunes_bindings_at_all_scopes() {
                 credential: AccountCredential::Profile {
                     agent: jackin_core::Agent::Claude,
                     directory: temp.path().join("profiles/work-1"),
+                    xdg_roots: None,
                 },
             },
         )
@@ -164,6 +165,7 @@ fn disabling_account_prunes_bindings_at_all_scopes() {
                 credential: AccountCredential::Profile {
                     agent: jackin_core::Agent::Claude,
                     directory: temp.path().join("profiles/work-2"),
+                    xdg_roots: None,
                 },
             },
         )

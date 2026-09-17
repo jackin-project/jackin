@@ -967,6 +967,7 @@ fn editor_with_agent_override() -> EditorState<'static> {
             account_bindings: BTreeMap::new(),
             env: role_env,
             github: None,
+            default_launch: None,
         },
     );
     let ws = WorkspaceConfig {
@@ -1111,6 +1112,7 @@ fn secrets_flat_rows_sequence_is_canonical() {
             account_bindings: BTreeMap::new(),
             env: role_env,
             github: None,
+            default_launch: None,
         },
     );
     roles.insert(
@@ -1119,6 +1121,7 @@ fn secrets_flat_rows_sequence_is_canonical() {
             account_bindings: BTreeMap::new(),
             env: BTreeMap::new(),
             github: None,
+            default_launch: None,
         },
     );
 
@@ -1440,6 +1443,7 @@ fn section_spacer_appears_between_workspace_and_first_agent_section() {
             account_bindings: BTreeMap::new(),
             env: role_env,
             github: None,
+            default_launch: None,
         },
     );
     let ws = WorkspaceConfig {
@@ -1476,6 +1480,7 @@ fn section_spacer_appears_between_consecutive_agent_sections() {
             account_bindings: BTreeMap::new(),
             env: a_env,
             github: None,
+            default_launch: None,
         },
     );
     roles.insert(
@@ -1484,6 +1489,7 @@ fn section_spacer_appears_between_consecutive_agent_sections() {
             account_bindings: BTreeMap::new(),
             env: b_env,
             github: None,
+            default_launch: None,
         },
     );
     let ws = WorkspaceConfig {
