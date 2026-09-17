@@ -4,7 +4,7 @@ schema = 1
 repository = "jackin-project/jackin"
 # D19 pin: the velnor-workflow commit that rendered this tree (generic
 # CI/CD capabilities superseding the #994 static-file restore).
-revision = "52c424b1d1ed2529275ae2d153f2eab8a8ded046"
+revision = "06050c9fa58fec8b5fd2c11c46756971e5270ec3"
 
 [scan]
 exclude = ["native/Package.swift", "native/.swiftpm/**"]
