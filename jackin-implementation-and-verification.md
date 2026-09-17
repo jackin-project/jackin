@@ -1,4 +1,4 @@
-# Jackin implementation plan and verification checklist
+# jackin❯ implementation plan and verification checklist
 
 17 September 2026 · Baseline `5bf20aaf37bbc49325072d199e09effe0678b047`
 
@@ -45,7 +45,7 @@ Status vocabulary: `not_started`, `in_progress`, `implemented`, `fixture_verifie
 | T22 | Independent reviewers: correctness/UX/auth | T20–T21 | Review actual diffs, tests, rendered screens and live-evidence ledger; challenge unsupported API/protocol/identity claims |
 | T23 | Orchestrator: finish and handoff | T22 | Remove superseded paths and temporary bypasses; final checks; complete requirement-to-evidence ledger; remaining blockers explicitly reported |
 
-Do T01 and the source audit concurrently. Freeze the minimum T02 contracts before broad edits, then parallelize config/discovery, broker/usage, and provider adapters. T17 should split per client; installer/runtime changes must integrate with current Jackin catalog and construct image, not shell wrappers placed beside it. Verification starts with each vertical slice, not after all providers are implemented.
+Do T01 and the source audit concurrently. Freeze the minimum T02 contracts before broad edits, then parallelize config/discovery, broker/usage, and provider adapters. T17 should split per client; installer/runtime changes must integrate with current jackin❯ catalog and construct image, not shell wrappers placed beside it. Verification starts with each vertical slice, not after all providers are implemented.
 
 ### First tracer bullet
 
@@ -267,7 +267,7 @@ Use four complementary layers:
 
 1. **Parser/semantic fixtures:** reviewed, sanitized real response shapes and independent expected values. Assert unit/scope/reset/identity, not just successful deserialization. Include additive unknown fields and malformed required fields.
 2. **Service/process integration:** local HTTP/RPC fixture servers and diagnostic fake TUIs launched through the real runtime path. Assert observed credentials via non-secret identity/canary results, broker call counts, concurrency and failure recovery.
-3. **Container integration:** actual Jackin-created container, real manifests/staging/relay/PTYs, private account homes and negative credential-access tests. Fixture providers make failure and isolation reproducible.
+3. **Container integration:** actual jackin❯-created container, real manifests/staging/relay/PTYs, private account homes and negative credential-access tests. Fixture providers make failure and isolation reproducible.
 4. **Authenticated host acceptance:** installed real clients, actual configured accounts, provider-native read-only usage/identity calls, interactive TUI smoke and macOS/OrbStack transport. Credentials stay on the user's machine.
 
 Prefer read-only usage/identity operations. Where proving a client/provider launch requires inference, use a bounded minimal task in a disposable workspace and record the fact. Never trigger a purchase, plan change, reset-credit redemption, destructive repo command or unrelated external communication as a usage test.
@@ -305,13 +305,13 @@ cargo xtask ci --e2e
 
 Verify `usage_broker_e2e` actually executes under the `docker-e2e` profile; zero matched tests is failure. Retain the JUnit report under `target/nextest/docker-e2e/` using the approved evidence workflow. A generic Linux Docker pass does not satisfy this repository requirement. [Audited testing policy](https://github.com/jackin-project/jackin/blob/5bf20aaf37bbc49325072d199e09effe0678b047/TESTING.md).
 
-Every manual Jackin invocation must include `--debug`, as required by the audited testing policy. The canonical Console smoke entry is:
+Every manual jackin❯ invocation must include `--debug`, as required by the audited testing policy. The canonical Console smoke entry is:
 
 ```sh
 cargo run --bin jackin -- console --debug
 ```
 
-For changed shared DTO/Swift bindings, also run the repository's bindings and native verification lane, including `mise run desktop-ci` and `mise run desktop-merge` on a logged-in Mac; the latter includes native UI tests. Do not mark native checks passed from a Linux compilation. For documentation integrated into Jackin, run:
+For changed shared DTO/Swift bindings, also run the repository's bindings and native verification lane, including `mise run desktop-ci` and `mise run desktop-merge` on a logged-in Mac; the latter includes native UI tests. Do not mark native checks passed from a Linux compilation. For documentation integrated into jackin❯, run:
 
 ```sh
 cargo xtask roadmap audit
@@ -326,7 +326,7 @@ TUI snapshots live in the Console and Capsule crates. Review changed frames usin
 | Requirement/check | Test or manual scenario | Source/CLI version | Environment | Expected result | Actual result/artifact | Proof level | Status/blocker |
 |---|---|---|---|---|---|---|---|
 | C09/D01/D02/E01/H07 | Real three-account shared container | Filled during execution | User Mac + OrbStack | Correct account in each TUI/tab; no account D | Not executed in research | Live/container | Not started |
-| G06/H05 | 2/20-client broker tests | Current Jackin SHA | Required Mac lane | One shared generation | Not executed in research | Process/container | Not started |
+| G06/H05 | 2/20-client broker tests | Current jackin❯ SHA | Required Mac lane | One shared generation | Not executed in research | Process/container | Not started |
 | F22 | OpenRouter key success, management denied | Versioned fixture | Local test server | Key usage shown; balance permission message | Implement test | Fixture | Not started |
 | F14/D08 | Antigravity identity and isolated auth | Installed `agy` version | Linux container on Mac | Selected account provenance; correct usage | Needs local proof | Live/container | Not started |
 

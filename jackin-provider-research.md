@@ -1,4 +1,4 @@
-# Jackin code audit and provider research
+# jackin❯ code audit and provider research
 
 Research date: 17 September 2026. This report combines a read-only GitHub audit, the supplied `.zshrc` excerpt, current vendor documentation, and source inspection of CodexBar, OpenUsage, and relevant upstream clients. Six parallel research/audit tracks covered the repository and providers; separate reviewers checked the resulting specification and verification plan.
 
@@ -6,7 +6,7 @@ No real user account, Mac keychain, provider login, paid inference, or local con
 
 ## 1. Findings that determine the design
 
-1. **This is an extension of an existing platform.** Jackin already has named accounts, account forms, custom folders, credential references, discovery, a usage broker, usage projections, several provider collectors, a Console Usage screen, and Capsule/desktop consumers.
+1. **This is an extension of an existing platform.** jackin❯ already has named accounts, account forms, custom folders, credential references, discovery, a usage broker, usage projections, several provider collectors, a Console Usage screen, and Capsule/desktop consumers.
 2. **The core container limitation is one selected account per agent type.** The current launch/credential/config/session pipeline cannot represent two differently authenticated Claude Code instances in one container. Add explicit container admission and per-instance bindings throughout the current pipeline.
 3. **The current Console is not yet a periodic monitor.** Opening copies cached rows; manual refresh performs synchronous per-account joins. Connect it to asynchronous broker events and scheduling.
 4. **Agent, provider product, credential source, account and model are different entities.** OpenRouter/Z.AI are providers; OpenCode/omp/Hermes are clients that may hold many providers; one Kimi account may fund Kimi, Claude and Codex. A model preset is not a second account.
@@ -19,7 +19,7 @@ No real user account, Mac keychain, provider login, paid inference, or local con
 
 | Repository | Snapshot inspected | Role |
 |---|---|---|
-| [Jackin](https://github.com/jackin-project/jackin/tree/5bf20aaf37bbc49325072d199e09effe0678b047) | `5bf20aaf37bbc49325072d199e09effe0678b047` | Actual implementation baseline |
+| [jackin❯](https://github.com/jackin-project/jackin/tree/5bf20aaf37bbc49325072d199e09effe0678b047) | `5bf20aaf37bbc49325072d199e09effe0678b047` | Actual implementation baseline |
 | [CodexBar](https://github.com/steipete/CodexBar/tree/b6e65a83dc471817b7ff7678e68e0204c9dd604f) | `b6e65a83dc471817b7ff7678e68e0204c9dd604f` | Provider descriptors, source/fallback strategies, quota parsing |
 | [OpenUsage](https://github.com/robinebers/openusage/tree/56378e5765f85d38ff413036fd984afe3d4664e4) | `56378e5765f85d38ff413036fd984afe3d4664e4` | Auth store → usage client → mapper, account identity, richer provider data |
 | [omp](https://github.com/can1357/oh-my-pi/tree/116190d317ca319ae17ab624cb479c76a1ca4704) | `116190d317ca319ae17ab624cb479c76a1ca4704` | TUI, SQLite auth, pools, broker and Muse/Go collectors |
@@ -39,7 +39,7 @@ Evidence classes used below:
 - **R — reference implementation:** CodexBar/OpenUsage/omp demonstrates an internal integration; not a vendor stability commitment.
 - **U — unresolved:** no adequate public proof or no local/live test yet.
 
-## 3. Jackin existing implementation and gaps
+## 3. jackin❯ existing implementation and gaps
 
 | Area | Already present | Extension required |
 |---|---|---|
@@ -140,7 +140,7 @@ Prefer the supported app-server interface of the installed version:
 
 The public docs and generated source already differ in some evolving fields. Negotiate capabilities and keep versioned fixtures rather than assuming every installed Codex has today's fields. External token refresh is a separately negotiated experimental mode, not a universal replacement for native auth. [App-server contract](https://learn.chatgpt.com/docs/app-server), [rate-limit schema](https://github.com/openai/codex/blob/main/codex-rs/app-server-protocol/schema/typescript/v2/RateLimitSnapshot.ts).
 
-Private fallback: `GET https://chatgpt.com/backend-api/wham/usage` with the selected OAuth token and account/workspace header. Optional reset-credit read uses the appropriate versioned endpoint. CodexBar delegates native renewal to Codex; OpenUsage documents some guarded native write-back. Jackin must choose one owner per actual credential lineage. [CodexBar](https://github.com/steipete/CodexBar/blob/b6e65a83dc471817b7ff7678e68e0204c9dd604f/docs/codex.md), [OpenUsage](https://github.com/robinebers/openusage/blob/56378e5765f85d38ff413036fd984afe3d4664e4/docs/providers/codex.md).
+Private fallback: `GET https://chatgpt.com/backend-api/wham/usage` with the selected OAuth token and account/workspace header. Optional reset-credit read uses the appropriate versioned endpoint. CodexBar delegates native renewal to Codex; OpenUsage documents some guarded native write-back. jackin❯ must choose one owner per actual credential lineage. [CodexBar](https://github.com/steipete/CodexBar/blob/b6e65a83dc471817b7ff7678e68e0204c9dd604f/docs/codex.md), [OpenUsage](https://github.com/robinebers/openusage/blob/56378e5765f85d38ff413036fd984afe3d4664e4/docs/providers/codex.md).
 
 OpenAI API billing is separate. Documented `/v1/organization/usage/completions` and `/v1/organization/costs` require appropriate organization reporting authority and pagination/scope handling. Ordinary project inference keys are insufficient for the full organization report. No stable universal prepaid-balance API was established here; legacy dashboard `credit_grants` is not a safe required contract. [Official usage reference](https://developers.openai.com/api/reference/resources/admin/subresources/organization/subresources/usage), [CodexBar OpenAI API](https://github.com/steipete/CodexBar/blob/b6e65a83dc471817b7ff7678e68e0204c9dd604f/docs/openai.md).
 
@@ -264,7 +264,7 @@ Its auth broker is a useful reference for coalescing/cache/refresh. However, `OM
 
 ### Hermes TUI
 
-Use `hermes --tui`, or explicitly enable `HERMES_TUI=1`/the configured TUI interface. Classic CLI remains default in the inspected guide. Modern TUI requires Node ≥20 plus the Python agent runtime and a PTY; prebuild its frontend during container construction. `HERMES_TUI_DIR` can select prebuilt `dist/entry.js`. Jackin core remains Rust; upstream runtime dependencies are part of running the requested agent. [TUI guide](https://github.com/NousResearch/hermes-agent/blob/f5d192611032025d2757b07ad838921872126182/website/docs/user-guide/tui.md).
+Use `hermes --tui`, or explicitly enable `HERMES_TUI=1`/the configured TUI interface. Classic CLI remains default in the inspected guide. Modern TUI requires Node ≥20 plus the Python agent runtime and a PTY; prebuild its frontend during container construction. `HERMES_TUI_DIR` can select prebuilt `dist/entry.js`. jackin❯ core remains Rust; upstream runtime dependencies are part of running the requested agent. [TUI guide](https://github.com/NousResearch/hermes-agent/blob/f5d192611032025d2757b07ad838921872126182/website/docs/user-guide/tui.md).
 
 Hermes supports direct/provider gateway accounts and its own Nous Portal route. Its profiles must not be shared by concurrent processes. Clone behavior deliberately drops rotating OAuth credentials because duplicated grants can race. Use distinct runtime state and a proven credential owner. Adapter availability does not automatically establish provider approval for every subscription, especially Anthropic OAuth. [Profiles](https://github.com/NousResearch/hermes-agent/blob/f5d192611032025d2757b07ad838921872126182/website/docs/user-guide/profiles.md), [provider integration](https://github.com/NousResearch/hermes-agent/blob/f5d192611032025d2757b07ad838921872126182/website/docs/integrations/providers.md).
 
@@ -278,7 +278,7 @@ Zen PAYG balance is separate. No stable public total-Zen-balance API was verifie
 
 ## 17. MiniMax
 
-Retain this account provider because the attachment and existing Jackin code use it. Current Token Plan has rolling/weekly allowance, credits and team/resource scope; Subscription Keys and PAYG keys are different products. Claude uses the Anthropic-compatible base, while current official Codex guide describes Responses at `https://api.minimax.io/v1`. Model settings are versioned configuration, not account identity. [Token Plan](https://platform.minimax.io/docs/token-plan/intro), [Claude integration](https://platform.minimax.io/docs/token-plan/claude-code), [Codex integration](https://platform.minimax.io/docs/token-plan/codex).
+Retain this account provider because the attachment and existing jackin❯ code use it. Current Token Plan has rolling/weekly allowance, credits and team/resource scope; Subscription Keys and PAYG keys are different products. Claude uses the Anthropic-compatible base, while current official Codex guide describes Responses at `https://api.minimax.io/v1`. Model settings are versioned configuration, not account identity. [Token Plan](https://platform.minimax.io/docs/token-plan/intro), [Claude integration](https://platform.minimax.io/docs/token-plan/claude-code), [Codex integration](https://platform.minimax.io/docs/token-plan/codex).
 
 First-party MiniMax CLI routes subscription usage to `GET https://api.minimax.io/v1/token_plan/remains`, and PAYG balance to `GET https://api.minimax.io/account/query_balance`. Preserve per-model/service interval and weekly totals/used/reset/status, remaining percentages, boosts and unlimited states. A boost can exceed the base allowance; clamp only visual geometry, not the source value. PAYG balances include cash/voucher/credit/debt-like amounts as decimal strings. Region and currency must be explicit. [Endpoint source](https://github.com/MiniMax-AI/cli/blob/bfbb4cb75ec343149eaccfd668c5011aa27bcf2b/src/client/endpoints.ts), [response types](https://github.com/MiniMax-AI/cli/blob/bfbb4cb75ec343149eaccfd668c5011aa27bcf2b/src/types/api.ts).
 
@@ -286,7 +286,7 @@ Older Coding Plan and regional web endpoints remain reference evidence, not auto
 
 ## 18. What to adopt from the references
 
-| Reference pattern | Adaptation for Jackin |
+| Reference pattern | Adaptation for jackin❯ |
 |---|---|
 | Provider descriptors and ordered fetch strategies | Capability catalog with documented/source/internal status and installed-version gates |
 | Auth store → usage client → mapper | Clear secret boundary and pure response normalization; use existing Rust module tiers |
@@ -294,10 +294,10 @@ Older Coding Plan and regional web endpoints remain reference evidence, not auto
 | Rich provider-specific snapshots | Typed extensible metrics/windows/pools, not fixed session/week fields or arbitrary JSON |
 | Last-good data and partial enrichment | Preserve healthy metrics and show stale/permission/source-specific errors |
 | Account/source dedup | Stable registrations plus verified billing/credential lineage; retain key-specific caps |
-| Shared scheduling | Extend existing Jackin broker; one generation, bounded per-provider concurrency and explicit credential-refresh owner |
+| Shared scheduling | Extend existing jackin❯ broker; one generation, bounded per-provider concurrency and explicit credential-refresh owner |
 | Existing native local-log readers | Optional measured coverage; never use pricing estimates to invent subscription allowance |
 
-Do not transplant whole implementations. Reference code can contain stale docs, private APIs, global active-account assumptions or browser-derived credentials unsuitable for Jackin's container model. Review licenses before copying code; implementing documented behavior and tested protocol contracts in Jackin's own architecture avoids needless dependencies.
+Do not transplant whole implementations. Reference code can contain stale docs, private APIs, global active-account assumptions or browser-derived credentials unsuitable for jackin❯'s container model. Review licenses before copying code; implementing documented behavior and tested protocol contracts in jackin❯'s own architecture avoids needless dependencies.
 
 ## 19. Execution-time questions that remain open
 

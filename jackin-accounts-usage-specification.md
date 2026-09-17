@@ -1,4 +1,4 @@
-# Jackin accounts, usage, and multi-account containers
+# jackin❯ accounts, usage, and multi-account containers
 
 Detailed implementation specification · 17 September 2026
 
@@ -8,9 +8,9 @@ This is the proposed product and engineering contract, not a claim that the feat
 
 ## 1. Outcome and scope
 
-Jackin Console becomes the place to register, select, and monitor all configured AI accounts. Settings owns the account inventory. Usage shows every configured account, its real provider allowances and freshness, and detailed provider-specific information. A workspace can choose defaults, and a launch can select a different subset without changing those defaults. A single container can run two Claude Code sessions with different Anthropic accounts and a Codex session with an OpenAI account concurrently. Each pane and tab retains the actual account and model selection through reconnect and restore.
+jackin❯ Console becomes the place to register, select, and monitor all configured AI accounts. Settings owns the account inventory. Usage shows every configured account, its real provider allowances and freshness, and detailed provider-specific information. A workspace can choose defaults, and a launch can select a different subset without changing those defaults. A single container can run two Claude Code sessions with different Anthropic accounts and a Codex session with an OpenAI account concurrently. Each pane and tab retains the actual account and model selection through reconnect and restore.
 
-All thirteen requested entries are covered: Claude Code, Codex, Amp, Antigravity, Kimi Code, Z.AI, Muse Code, Cursor Agent, Grok Build, OpenRouter, omp, Hermes TUI, and OpenCode. Z.AI and OpenRouter are billing/routing providers rather than independent TUI binaries. Their functionality is delivered through explicitly supported clients. Gemini CLI is a separate Google client and discovery source. MiniMax remains in scope because it already exists in Jackin and is present in the supplied shell configuration.
+All thirteen requested entries are covered: Claude Code, Codex, Amp, Antigravity, Kimi Code, Z.AI, Muse Code, Cursor Agent, Grok Build, OpenRouter, omp, Hermes TUI, and OpenCode. Z.AI and OpenRouter are billing/routing providers rather than independent TUI binaries. Their functionality is delivered through explicitly supported clients. Gemini CLI is a separate Google client and discovery source. MiniMax remains in scope because it already exists in jackin❯ and is present in the supplied shell configuration.
 
 The numbered list must not become a hardcoded filter that hides other providers configured inside these clients. During execution, inventory their complete current provider catalogs and every provider entry in the user's registered stores. Support registration and a verified launch mapping for each eligible configured route, including custom compatible endpoints. Add a usage collector wherever a verified authorized source exists; otherwise keep the account visible with the exact unavailable capability. Record a complete catalog-to-support ledger so unimplemented secondary providers cannot disappear behind a generic “all providers supported” claim. Vendor-specific cloud identity/endpoint mechanisms require their own verified adapters rather than an assumed generic API-key route.
 
@@ -18,7 +18,7 @@ Use and extend the existing Rust account configuration, provider adapters, broke
 
 ### User journeys that must work
 
-1. Install and start Jackin for the first time. Existing supported agent logins are registered automatically and are visible in Settings and Usage. An empty or damaged source does not stop the other discoveries.
+1. Install and start jackin❯ for the first time. Existing supported agent logins are registered automatically and are visible in Settings and Usage. An empty or damaged source does not stop the other discoveries.
 2. Add another login on the host later. Settings → Accounts → Scan for new accounts finds it, explains the result, and adds the selected new source without overwriting existing account choices.
 3. Add a subscription profile from a custom folder, an API key, an environment reference, or a 1Password reference. Configure a provider-compatible client and model.
 4. Open Usage. Current inventory appears immediately, last-known values carry their timestamps, and due provider refreshes run asynchronously. Leave the screen open and see periodic updates.
@@ -87,11 +87,11 @@ Each dimension is independently supported, unsupported, needs additional permiss
 
 Show a stable, keyboard-navigable list grouped by provider service, with search/filter when it no longer fits. Each row includes account label, provider/product, credential kind, validation state, supported clients, default assignments, and last successful usage update. Paths are available in the Settings detail where they help the operator identify the source; keep raw paths out of public usage/protocol messages and diagnostics.
 
-Required actions: Add account; Scan for new accounts; Edit; Rename; Enable/disable; Validate/reconnect; Set defaults; View usage; Remove registration. Removal removes Jackin's reference and flags affected workspace/default configurations; it must not delete a host agent login directory or log the user out of a provider.
+Required actions: Add account; Scan for new accounts; Edit; Rename; Enable/disable; Validate/reconnect; Set defaults; View usage; Remove registration. Removal removes jackin❯'s reference and flags affected workspace/default configurations; it must not delete a host agent login directory or log the user out of a provider.
 
 Scan results enter the current Settings draft as candidates. Selecting candidates and Apply/Save commits through the existing configuration lock and atomic-write path; cancelling before Apply leaves registration unchanged. Merge additions by stable source identity without replacing unsaved labels/defaults/source edits. A concurrent conflicting edit receives a targeted conflict or a safe re-merge, never last-writer-wins data loss. CLI scan may commit directly through the same importer because invoking it is the explicit import operation.
 
-Disable/removal denies new launches and new host secret/usage grants for that registration. Already running instances keep their recorded labels and show that the registration was disabled or removed. Credentials already materialized inside an active TUI cannot be revoked merely by deleting Jackin metadata. Present an explicit stop/recreate action when the user wants to remove that access; provider-side revocation is a separate account operation. Do not silently kill useful work or claim upstream revocation occurred.
+Disable/removal denies new launches and new host secret/usage grants for that registration. Already running instances keep their recorded labels and show that the registration was disabled or removed. Credentials already materialized inside an active TUI cannot be revoked merely by deleting jackin❯ metadata. Present an explicit stop/recreate action when the user wants to remove that access; provider-side revocation is a separate account operation. Do not silently kill useful work or claim upstream revocation occurred.
 
 ### Add/edit form
 
@@ -102,7 +102,7 @@ Required fields depend on the selected service and credential kind:
 - Credential source: default discovered profile, explicit custom directory/profile, OS keychain reference, environment variable reference, existing 1Password item reference, or entered key saved through the supported protected store.
 - Compatible agent configurations; endpoint/protocol where configurable; model selector and exact model ID.
 - Optional usage/billing credential with explicitly separate permission and identity scope. This credential stays host-side and is never part of a launch credential bundle.
-- Ownership: reference external agent-managed credentials, or use an explicitly Jackin-managed login. Clearly explain which component refreshes the login.
+- Ownership: reference external agent-managed credentials, or use an explicitly jackin❯-managed login. Clearly explain which component refreshes the login.
 
 Validate locally first. Test authentication/usage asynchronously and show separate results. A quota read failure must not erase a working account. A 1Password lock is `Needs secret access`, not `Invalid API key`. Storing a reference does not execute it during a filesystem scan.
 
@@ -122,7 +122,7 @@ Use one explicit, versioned initialization/discovery state rather than only test
 
 1. Load/validate configuration and reconcile the current schema.
 2. Start bounded discovery in a worker. Render a usable Console with discovery status immediately.
-3. Inspect catalog-known default paths and recognized existing Jackin credential references.
+3. Inspect catalog-known default paths and recognized existing jackin❯ credential references.
 4. Create registrations for evidenced credentials; persist them transactionally with stable IDs and provenance. Do not require online success to record an existing login source.
 5. Preserve per-source issues and show a concise summary: added, already registered, needs authentication, unreadable, or unsupported layout.
 6. Mark initialization complete only after the transaction. An interrupted startup retries idempotently.
@@ -250,7 +250,7 @@ No usage poll may send a model prompt, buy credits, redeem a reset credit, or ch
 
 ## 8. Console interaction and visual contract
 
-Reuse Jackin's shipped frame, focus semantics, termrock components, colors, meter formatting, and footer conventions. Evolve the existing Usage route rather than adding a second navigation destination.
+Reuse jackin❯'s shipped frame, focus semantics, termrock components, colors, meter formatting, and footer conventions. Evolve the existing Usage route rather than adding a second navigation destination.
 
 Wide layout: provider/account navigation on the left; overview or selected-account details on the right. The overview presents each account's primary windows together. Narrow layout: one focused pane with a clear back path; show essential labels, percentages, and reset text without horizontal overflow. Account labels must disambiguate duplicate names with a safe suffix.
 
@@ -331,20 +331,20 @@ Staging must:
 - Separate read-only source material from mutable sessions/history/caches. Do not mount the whole source login directory writable into several clients and expect token rotation to be safe.
 - Preserve selected profile/model/protocol fields through agent-native config serialization. Never implement config changes with string replacement of arbitrary shell snippets.
 - Remove inherited provider/auth/home variables before applying the selected account environment. Scrub credentials for every supported provider, not only the chosen agent's default provider.
-- Keep secrets out of Docker command arguments, image layers, Docker labels, public Capsule config, logs, telemetry, and snapshots. Use Jackin's protected transport/staging boundary and test it end to end.
+- Keep secrets out of Docker command arguments, image layers, Docker labels, public Capsule config, logs, telemetry, and snapshots. Use jackin❯'s protected transport/staging boundary and test it end to end.
 - Keep usage-only billing/admin credentials on the host. The container relay receives only scoped usage capabilities for launch-authorized accounts.
 - Treat custom endpoints as part of credential scope. Do not forward credentials on arbitrary cross-origin redirects or silently retry a failed endpoint on another provider host.
 
 ### Trust boundary
 
-The user's requested shared container is one trust boundary: processes with the same user/root privileges may be able to inspect other selected account credentials in that container. Per-process environments and directories prevent accidental account confusion; they do not create a hard adversarial boundary between selected agents. Jackin must guarantee that unselected accounts are absent and unauthorized, and must not claim stronger isolation than the container/process permissions actually provide. Separate containers remain the way to request stronger separation between selected accounts.
+The user's requested shared container is one trust boundary: processes with the same user/root privileges may be able to inspect other selected account credentials in that container. Per-process environments and directories prevent accidental account confusion; they do not create a hard adversarial boundary between selected agents. jackin❯ must guarantee that unselected accounts are absent and unauthorized, and must not claim stronger isolation than the container/process permissions actually provide. Separate containers remain the way to request stronger separation between selected accounts.
 
 ### OAuth ownership
 
 Define ownership for each credential source and client before enabling multi-account execution:
 
 - External/native source: discovery references it without taking over ownership. Prefer the native CLI/auth service for refresh if that is its supported contract.
-- Jackin-managed source: broker/credential service owns rotation with per-source lock, revision compare-and-swap, atomic writes, and identity validation.
+- jackin❯-managed source: broker/credential service owns rotation with per-source lock, revision compare-and-swap, atomic writes, and identity validation.
 - Coordinate rotating credentials by verified OAuth grant/credential lineage, not registration ID or directory alone. Two copied paths can hold the same grant. Keep any secret-derived correlation internal and protected, never a public account ID, and do not merge independent grants solely because they share a billing identity.
 - Where a client insists on rotating refresh tokens itself, choose a supported external-token interface, a separately authenticated managed profile, or a proven serialized ownership mechanism. Blind copying and later writing refresh tokens back is not an acceptable generic solution.
 - Multiple sessions sharing one account must be tested against the client's actual token lifecycle. Auth expiry/revocation is not a reason to switch billing identity silently.

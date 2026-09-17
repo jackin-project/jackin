@@ -44,6 +44,7 @@ the rendered crate page and its source README.
 | [jackin-core](/reference/crates/jackin-core/) | 0 | <RepoFile path="crates/jackin-core/README.md">README</RepoFile> |
 | [jackin-dev](/reference/crates/jackin-dev/) | 0 | <RepoFile path="crates/jackin-dev/README.md">README</RepoFile> |
 | [jackin-process](/reference/crates/jackin-process/) | 0 | <RepoFile path="crates/jackin-process/README.md">README</RepoFile> |
+| [jackin-telemetry](/reference/crates/jackin-telemetry/) | 0 | <RepoFile path="crates/jackin-telemetry/README.md">README</RepoFile> |
 | [jackin-build-meta](/reference/crates/jackin-build-meta/) | 1 | <RepoFile path="crates/jackin-build-meta/README.md">README</RepoFile> |
 | [jackin-pr-trailers](/reference/crates/jackin-pr-trailers/) | 1 | <RepoFile path="crates/jackin-pr-trailers/README.md">README</RepoFile> |
 | [jackin-xtask](/reference/crates/jackin-xtask/) | 1 | <RepoFile path="crates/jackin-xtask/README.md">README</RepoFile> |
@@ -58,6 +59,7 @@ the rendered crate page and its source README.
 | [jackin-env](/reference/crates/jackin-env/) | 3 | <RepoFile path="crates/jackin-env/README.md">README</RepoFile> |
 | [jackin-instance](/reference/crates/jackin-instance/) | 3 | <RepoFile path="crates/jackin-instance/README.md">README</RepoFile> |
 | [jackin-launch](/reference/crates/jackin-launch/) | 3 | <RepoFile path="crates/jackin-launch/README.md">README</RepoFile> |
+| [jackin-otlp-testbed](/reference/crates/jackin-otlp-testbed/) | 3 | <RepoFile path="crates/jackin-otlp-testbed/README.md">README</RepoFile> |
 | [jackin-test-support](/reference/crates/jackin-test-support/) | 3 | <RepoFile path="crates/jackin-test-support/README.md">README</RepoFile> |
 | [jackin-usage](/reference/crates/jackin-usage/) | 3 | <RepoFile path="crates/jackin-usage/README.md">README</RepoFile> |
 | [jackin-capsule](/reference/crates/jackin-capsule/) | 4 | <RepoFile path="crates/jackin-capsule/README.md">README</RepoFile> |
@@ -65,6 +67,7 @@ the rendered crate page and its source README.
 | [jackin-host](/reference/crates/jackin-host/) | 4 | <RepoFile path="crates/jackin-host/README.md">README</RepoFile> |
 | [jackin-image](/reference/crates/jackin-image/) | 4 | <RepoFile path="crates/jackin-image/README.md">README</RepoFile> |
 | [jackin-isolation](/reference/crates/jackin-isolation/) | 4 | <RepoFile path="crates/jackin-isolation/README.md">README</RepoFile> |
+| [jackin-usage-ffi](/reference/crates/jackin-usage-ffi/) | 4 | <RepoFile path="crates/jackin-usage-ffi/README.md">README</RepoFile> |
 | [jackin-runtime](/reference/crates/jackin-runtime/) | 5 | <RepoFile path="crates/jackin-runtime/README.md">README</RepoFile> |
 | [`jackin`](/reference/crates/jackin/) | 6 | <RepoFile path="crates/jackin/README.md">README</RepoFile> |
 
@@ -75,6 +78,8 @@ Tier 0  jackin-brand       renderer-neutral identity/domain RGB tokens
                            launch port traits + Clock
         jackin-protocol    capsule↔client wire protocol
         jackin-build-meta  build.rs helper: workspace crate version + git SHA embedding
+                           → (no workspace deps)
+        jackin-telemetry   schema authority + governed instrumentation facade
                            → (no workspace deps)
         ──  no tokio · no docker · no filesystem (except std::fs in paths)  ──
 
@@ -93,6 +98,8 @@ Tier 2  jackin-config      AppConfig · WorkspaceConfig · ConfigEditor · migra
 
 Tier 3  jackin-manifest    manifest validation + migrations + repo_contract + repo → core, config, diagnostics
         jackin-env         operator_env + env_resolver + host_claude + token_setup → core, config, diagnostics
+        jackin-otlp-testbed test-only OTLP/gRPC receiver for conformance suites
+                           (never linked into product binaries) → telemetry
 
 Tier 4  jackin-image       derived_image + agent_binary + capsule_binary +
                            binary_artifact + version_check  → core, config, manifest, docker, diagnostics
@@ -114,6 +121,9 @@ Tier 4  jackin-image       derived_image + agent_binary + capsule_binary +
         jackin-capsule     in-container TUI (its own binary)      → core, tui, protocol, usage
         jackin-agent-status pure status detection/arbitration      → core, protocol
         jackin-usage       in-container usage/pricing/telemetry + token monitors → core, protocol, diagnostics
+        jackin-usage-ffi   sync boltffi facade over jackin-usage host runtime
+                           for the native macOS menu bar (display-only Swift)
+                           → core, config, env, usage, protocol, telemetry
         jackin-process     shared subprocess transport (capture/timeout/retry/status; no redaction) → (no workspace deps)
         jackin-xtask       workspace automation binary (cargo xtask; construct image + dev fixtures)
                            → jackin-process (see Workspace Automation page)

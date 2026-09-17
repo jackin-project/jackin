@@ -67,3 +67,24 @@ to be filled. Source of truth for item text is the companion doc.)
 
 - `Rust · jackin` + `Rust · jackin-runtime`: FAILED at `Set up Mr. Boxington` (cache setup, before any build/test) — same mbx infra-flake signature as head 3c807144 (`Quota exceeded`), not code. Siblings (capsule/config/console/core/usage) PASS on this head. Rerun blocked while the workflow runs; the S4 push supersedes with a fresh full run.
 - `Policy` (Velnor workflow policy): FAILED on `generated-tree` drift vs pinned generator 06050c9f. Branch has zero diff vs main under `.github-gen/` + `.github/` — inherited main breakage, out of scope (generated files are never hand-edited). Recorded, not fixed.
+
+## Gates + console-live (post-compaction, 2026-09-17/18, head 06b64e20)
+
+- Console-live: `jackin console --debug` under PTY, Settings → Accounts renders all
+  accounts (canary-d masked, claude-b, 8 defaults, +Add rows); Ctrl-Q confirm exits 0.
+  Evidence: /tmp/tracer/evidence.md.
+- Focused gates green: fmt, clippy, nextest 839 + 3959 passed.
+- `cargo xtask ci` findings fixed: E0063 in reactive_daemon/tests.rs (all-features-only
+  module missed the account_id/instance fields); lint container-paths
+  (capsule_setup.rs:133 → container_paths::JACKIN_ROOT), telemetry-registry
+  regenerate, ratchet test-layout (launch_runtime.rs inline tests → sibling file).
+- Docs gates fixed (pre-existing main breakage from velnor regen #982/#992):
+  repo-links 17 stale workflow refs repointed (docs/construct/jackin-dev →
+  generated ci-pr.yml units; desktop-cadence → desktop-merge.yml; preview.yml →
+  planned-workflow prose since SAN pin + xtask preview.rs still reference it);
+  brand 42 (`Jackin` → `jackin❯` in 4 root companion docs); map-check 3 crates
+  (telemetry t0, otlp-testbed t3, usage-ffi t4) added to codebase-map.
+- Lane results (pre-compaction gates agent): docker-e2e usage_broker_e2e 12/12 PASS
+  (JUnit target/nextest/docker-e2e/junit.xml); desktop-ci PASS (Rust 454, Swift 78+2);
+  desktop-merge FAIL on testOverviewPassesAccessibilityAudit (85 contrast/label
+  findings, native/ untouched by branch — pre-existing; dedicated fix running).

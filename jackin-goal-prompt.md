@@ -1,4 +1,4 @@
-Implement Jackin's complete multi-account settings, usage monitoring, workspace selection, and multi-account container support. Own this goal from current-code audit through implementation and independent verification on my computer. Do not stop at a plan, UI mockup, provider enum entries, or fixture-only success.
+Implement jackin❯'s complete multi-account settings, usage monitoring, workspace selection, and multi-account container support. Own this goal from current-code audit through implementation and independent verification on my computer. Do not stop at a plan, UI mockup, provider enum entries, or fixture-only success.
 
 ## Execution and delivery scope
 
@@ -22,7 +22,7 @@ Also read current `AGENTS.md`, `RULES.md`, `ENGINEERING.md`, `TESTING.md`, `HOST
 
 ## Product outcome
 
-Jackin Console Settings must display and configure all my AI accounts, including several accounts for the same provider. First installation/start automatically registers existing evidenced agent accounts from real default paths. Later, Settings → Accounts has a Scan for new accounts action. I can add subscriptions, API keys, custom folders/profiles, environment references and 1Password references. Preserve existing references and labels; never disclose secret values or private secret-manager item IDs in logs/docs/tests.
+jackin❯ Console Settings must display and configure all my AI accounts, including several accounts for the same provider. First installation/start automatically registers existing evidenced agent accounts from real default paths. Later, Settings → Accounts has a Scan for new accounts action. I can add subscriptions, API keys, custom folders/profiles, environment references and 1Password references. Preserve existing references and labels; never disclose secret values or private secret-manager item IDs in logs/docs/tests.
 
 Cover every requested entry:
 
@@ -54,9 +54,9 @@ Keep one orchestrator responsible for the complete requirement-to-evidence ledge
 
 Judge all work by correctness, consistency and fulfillment of the goal. Do not defer a known wrong state because of ROI, effort, cost, or an assertion that it is an edge case. Investigate architectural causes, not only visible symptoms.
 
-## Extend the actual Jackin implementation
+## Extend the actual jackin❯ implementation
 
-Jackin already has an account registry, discovery, CLI scan, account forms, workspace authorization/defaults, provider adapters, canonical usage projection, durable usage broker, Console Usage route, Capsule relay/dialog and native bindings. Evolve those components.
+jackin❯ already has an account registry, discovery, CLI scan, account forms, workspace authorization/defaults, provider adapters, canonical usage projection, durable usage broker, Console Usage route, Capsule relay/dialog and native bindings. Evolve those components.
 
 Audit and fix these baseline gaps:
 
@@ -98,11 +98,11 @@ A new tab validates against the existing container manifest, not current global 
 
 Use per-instance config/HOME/XDG/keyring contexts actually supported by each client. Per-HOME separation alone does not isolate Antigravity's singleton keyring. Filter multi-provider stores. Scrub ambient auth/base-URL/model variables before applying selected credentials. Do not mutate the daemon's global environment when switching accounts.
 
-Keep secrets out of Docker argv, labels, inspect Config.Env, image layers, diagnostics, telemetry and snapshots. Preserve Jackin's protected transport. Reporting/management credentials stay host-side. A shared container is one trust boundary; private directories prevent accidental mixing, not adversarial access between same-UID selected processes. Guarantee exclusion of unselected accounts.
+Keep secrets out of Docker argv, labels, inspect Config.Env, image layers, diagnostics, telemetry and snapshots. Preserve jackin❯'s protected transport. Reporting/management credentials stay host-side. A shared container is one trust boundary; private directories prevent accidental mixing, not adversarial access between same-UID selected processes. Guarantee exclusion of unselected accounts.
 
 ## Credential lifecycle
 
-Define native external-source versus Jackin-managed ownership per provider. Use a tested native refresh flow, supported external-token interface, separately authenticated managed profile, or another proven strategy. Never blindly clone rotating refresh tokens into competing writers and copy them back later.
+Define native external-source versus jackin❯-managed ownership per provider. Use a tested native refresh flow, supported external-token interface, separately authenticated managed profile, or another proven strategy. Never blindly clone rotating refresh tokens into competing writers and copy them back later.
 
 Coordinate by actual credential grant/lineage, not path or account label alone; two paths can contain one rotating grant, while one billing identity can have independent grants. Use identity/revision guards and atomic publication. Account swap/logout/region/scope changes invalidate the correct observations and capabilities. A failed custom profile cannot borrow global/native/another-client credentials.
 
@@ -114,7 +114,7 @@ Overview shows percentage-used bars and reset/countdown for session/short window
 
 Never turn dollars/credits/requests/hours into invented tokens remaining. Distinguish reset time from credential expiry and subscription renewal. Preserve unknown/no permission/not started/not applicable/exhausted/error. Keep raw over-100% values and bound only bar geometry. Do not infer a refill when the reset timestamp passes.
 
-Store stable selection IDs and rich canonical metadata; preserve selection across refresh/rename/reorder. If removed, return to Overview with an inline notice. Test loading, empty, disabled-only, partial/all failure, stale/recovered, locked secret and unsupported-version states at narrow/wide sizes using current Jackin TUI conventions.
+Store stable selection IDs and rich canonical metadata; preserve selection across refresh/rename/reorder. If removed, return to Overview with an inline notice. Test loading, empty, disabled-only, partial/all failure, stale/recovered, locked secret and unsupported-version states at narrow/wide sizes using current jackin❯ TUI conventions.
 
 Each independently fetched metric group needs its own identity/scope, observed time, fetched time and freshness. Fresh quota cannot freshen stale balance/history. Local token histories need actual ownership and deduplication; today's login cannot own old shared/forked events. Reclassify cached ownerless totals before the first multi-account frame.
 
@@ -152,7 +152,7 @@ cargo xtask ci --e2e
 cargo run --bin jackin -- console --debug
 ```
 
-Recheck current docs/help before execution. Every manual Jackin invocation includes `--debug`. Prepare Capsule artifacts through the repository's documented workflow. The mandated usage/launch gate is Apple Silicon macOS 26 with OrbStack and actual `usage_broker_e2e` execution under the `docker-e2e` nextest profile. Zero matching tests is failure. Preserve JUnit proof, including 2/20-client single-flight, owner loss, timeout ownership, shared deadlines, capability isolation, distinct-account concurrency and unavailable-state zero calls. Linux fixture passes do not replace this lane.
+Recheck current docs/help before execution. Every manual jackin❯ invocation includes `--debug`. Prepare Capsule artifacts through the repository's documented workflow. The mandated usage/launch gate is Apple Silicon macOS 26 with OrbStack and actual `usage_broker_e2e` execution under the `docker-e2e` nextest profile. Zero matching tests is failure. Preserve JUnit proof, including 2/20-client single-flight, owner loss, timeout ownership, shared deadlines, capability isolation, distinct-account concurrency and unavailable-state zero calls. Linux fixture passes do not replace this lane.
 
 For affected shared DTO/native bindings, run generated-binding checks, `mise run desktop-ci` and `mise run desktop-merge` on the logged-in Mac. Update docs and run the repository's roadmap/link/research checks. Review intentional snapshot changes rather than blindly accepting them.
 

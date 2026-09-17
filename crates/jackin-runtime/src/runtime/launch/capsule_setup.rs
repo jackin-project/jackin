@@ -130,7 +130,11 @@ pub(crate) fn apply_instance_dirs(
             .insert(instance.config_id.clone(), slot.folder_target.clone());
         launch.instance_forwarded_dirs.insert(
             instance.config_id.clone(),
-            format!("/jackin/{}", slot.container_store_rel),
+            format!(
+                "{}/{}",
+                jackin_core::container_paths::JACKIN_ROOT,
+                slot.container_store_rel
+            ),
         );
     }
     Ok(())
