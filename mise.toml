@@ -421,7 +421,7 @@ else
   if [ "${GITHUB_REF_TYPE:-}" = "tag" ]; then
     version="${GITHUB_REF_NAME#v}"
   else
-    version="$(sed -n 's/^version = "\\(.*\\)"/\\1/p' Cargo.toml | head -1)"
+    version="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)"
     case "$version" in
       *-dev*) echo "Cannot release a dev version ($version)" >&2; exit 1;;
     esac
@@ -441,7 +441,13 @@ case "$version" in
   ''|*[!0-9.]*|.*|*.|*..*) echo "Stable app version must be X.Y.Z (got $version)" >&2; exit 1;;
 esac
 dots="$(printf '%s' "$version" | tr -cd '.' )"
-[ "${#dots}" = "2" ] || { echo "Stable app version must be X.Y.Z (got $version)" >&2; exit 1; }
+# NOTE: shell length expansion is banned in this file — mise renders task
+# scripts as templates first, so that syntax breaks task parsing.
+# Match the two dots with a glob instead.
+case "$dots" in
+  '..') ;;
+  *) echo "Stable app version must be X.Y.Z (got $version)" >&2; exit 1;;
+esac
 if [ -n "${GITHUB_ENV:-}" ]; then
   printf 'JACKIN_APP_VERSION=%s\nJACKIN_APP_BUILD=%s\n' "$version" "$build" >> "$GITHUB_ENV"
 fi
