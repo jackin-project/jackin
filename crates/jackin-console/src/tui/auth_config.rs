@@ -18,6 +18,12 @@ pub const fn auth_kind_agent(kind: AuthKind) -> Option<Agent> {
         AuthKind::Kimi => Some(Agent::Kimi),
         AuthKind::Opencode => Some(Agent::Opencode),
         AuthKind::Grok => Some(Agent::Grok),
+        AuthKind::Antigravity => Some(Agent::Antigravity),
+        AuthKind::Gemini => Some(Agent::Gemini),
+        AuthKind::Cursor => Some(Agent::Cursor),
+        AuthKind::Muse => Some(Agent::Muse),
+        AuthKind::Omp => Some(Agent::Omp),
+        AuthKind::Hermes => Some(Agent::Hermes),
         AuthKind::Github | AuthKind::Zai | AuthKind::Minimax => None,
     }
 }

@@ -549,6 +549,26 @@ fn persist_settings_auth_form(
         AuthKind::Kimi => AiProvider::Moonshot,
         AuthKind::Opencode => AiProvider::Opencode,
         AuthKind::Grok => AiProvider::Xai,
+        AuthKind::Antigravity | AuthKind::Gemini => AiProvider::Google,
+        AuthKind::Cursor => AiProvider::Cursor,
+        AuthKind::Muse => AiProvider::Meta,
+        AuthKind::Omp | AuthKind::Hermes => {
+            // No native provider: edits keep the existing account's
+            // provider; only brand-new console accounts are refused (the
+            // console has no provider picker yet — use the CLI).
+            let existing = auth
+                .editing_account
+                .as_ref()
+                .and_then(|id| auth.pending.get(id))
+                .map(|account| account.provider);
+            match existing {
+                Some(provider) => provider,
+                None => {
+                    auth.set_error("omp/Hermes accounts need an explicit provider; add them with `jackin account add --provider`");
+                    return;
+                }
+            }
+        }
         AuthKind::Zai => AiProvider::Zai,
         AuthKind::Minimax => AiProvider::Minimax,
         AuthKind::Github => {
