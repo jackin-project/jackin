@@ -3502,6 +3502,7 @@ dependencies = [
  "anyhow",
  "jackin-core",
  "jackin-manifest",
+ "jackin-telemetry",
 ]
 
 [[package]]

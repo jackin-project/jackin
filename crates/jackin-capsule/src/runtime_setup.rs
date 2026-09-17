@@ -138,7 +138,7 @@ fn cursor_auth_path() -> PathBuf {
 // Muse has no observed config-dir env var, so its credential path is fixed.
 const MUSE_AUTH_PATH: &str = "/home/agent/.config/muse/auth.json";
 
-/// omp reads its SQLite store from `PI_CODING_AGENT_DIR` (default `~/.omp`);
+/// `omp` reads its `SQLite` store from `PI_CODING_AGENT_DIR` (default `~/.omp`);
 /// `OMP_PROFILE` selects a named profile within that dir.
 fn omp_home() -> PathBuf {
     omp_home_from(nonempty_env("PI_CODING_AGENT_DIR").as_deref())

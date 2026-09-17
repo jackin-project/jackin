@@ -299,6 +299,10 @@ impl FakeBinary {
     ///
     /// Returns the filesystem error when the log cannot be read (a missing
     /// log — no spawns yet — yields an empty vec, not an error).
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "test-only log read on the calling test thread; never a render/runtime path"
+    )]
     pub fn invocations(&self) -> std::io::Result<Vec<Invocation>> {
         let file = match std::fs::File::open(&self.log) {
             Ok(file) => file,

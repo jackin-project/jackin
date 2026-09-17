@@ -21,14 +21,14 @@ fn advance_moves_forward_and_reports_elapsed() {
 #[test]
 fn elapsed_saturates_for_future_instants() {
     let clock = ManualClock::epoch();
-    let future = clock.now() + Duration::from_secs(60);
+    let future = clock.now() + Duration::from_mins(1);
     assert_eq!(clock.elapsed_since(future), Duration::ZERO);
 }
 
 #[test]
 fn set_allows_backwards_jumps() {
     let clock = ManualClock::epoch();
-    clock.advance(Duration::from_secs(60));
+    clock.advance(Duration::from_mins(1));
     clock.set(SystemTime::UNIX_EPOCH);
     assert_eq!(clock.now(), SystemTime::UNIX_EPOCH);
 }

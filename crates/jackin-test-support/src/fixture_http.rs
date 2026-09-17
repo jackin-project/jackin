@@ -206,9 +206,10 @@ impl FixtureHttpServer {
             recorded: Arc::clone(&recorded),
             shutdown: Arc::clone(&shutdown),
         };
-        let thread = std::thread::Builder::new()
-            .name("fixture-http".to_owned())
-            .spawn(move || worker.serve())?;
+        let thread =
+            jackin_telemetry::spawn::thread_joined_named("fixture-http".to_owned(), move || {
+                worker.serve();
+            })?;
         Ok(Self {
             addr,
             script,
@@ -283,6 +284,10 @@ struct Worker {
 }
 
 impl Worker {
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "fixture server runs on its own owned OS thread; 1ms backoff keeps accept-loop tests fast"
+    )]
     fn serve(&self) {
         while !self.shutdown.load(Ordering::Acquire) {
             match self.listener.accept() {
@@ -300,6 +305,10 @@ impl Worker {
         }
     }
 
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "fixture server runs on its own owned OS thread; scripted latency is the test product"
+    )]
     fn serve_one(&self, stream: TcpStream) {
         drop(stream.set_read_timeout(Some(Duration::from_secs(5))));
         drop(stream.set_write_timeout(Some(Duration::from_secs(5))));

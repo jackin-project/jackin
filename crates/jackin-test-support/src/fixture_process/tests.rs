@@ -3,6 +3,10 @@
 use super::{FakeProcessHarness, Invocation, ProcessScript};
 use std::io::Result;
 
+#[expect(
+    clippy::disallowed_methods,
+    reason = "self-test drives the fake binary on the test thread; never a render/runtime path"
+)]
 fn run(args: &[&str], fake: &super::FakeBinary) -> Result<(String, String, i32)> {
     let output = fake.command().args(args).output()?;
     Ok((
@@ -119,6 +123,10 @@ fn special_characters_in_args_match_literally() -> Result<()> {
 }
 
 #[test]
+#[expect(
+    clippy::disallowed_methods,
+    reason = "self-test drives the fake binary on the test thread; never a render/runtime path"
+)]
 fn records_argv_and_env_per_invocation_in_order() -> Result<()> {
     let harness = FakeProcessHarness::new()?;
     let fake = harness.binary("rec", &ProcessScript::new().with_default("", "", 0))?;
