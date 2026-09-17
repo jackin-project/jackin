@@ -21,8 +21,8 @@ jobs:
     # Trust invariant: this job runs the base branch's Stage-0 validator
     # product against the audited tree under pull_request_target. It holds
     # `contents: read` only, references no secrets, persists no credentials,
-    # and never compiles. When the audited pin's closure differs from the
-    # base validator's, it additionally EXECUTES the PR run's prebuilt
+    # and never compiles. When the audited tree differs from the declared
+    # pin's render, it additionally EXECUTES the PR run's prebuilt
     # candidate generator — PR-built code, same-repository runs only, bound
     # to the audited tree by manifest closure plus binary digest before
     # execution — with no secret references, no persisted credentials, the
@@ -49,9 +49,9 @@ jobs:
           fi
           git checkout --quiet --detach "$HEAD_SHA"
       - name: Set up Velnor workflow runtime
-        uses: tailrocks/velnor/.github/actions/setup-velnor-workflow@dead5ecb7baff1a5d28975bb81ee2832690b7e4a
+        uses: tailrocks/velnor/.github/actions/setup-velnor-workflow@0765af3566cebcc2c99e4d972db3fb2df18bfa49
         with:
-          rev: dead5ecb7baff1a5d28975bb81ee2832690b7e4a
+          rev: 0765af3566cebcc2c99e4d972db3fb2df18bfa49
           checkout-path: ${{ github.workspace }}/policy-checkout
       - name: Read declared generator pin
         id: pin
@@ -64,13 +64,13 @@ jobs:
           echo "value=$pin" >> "$GITHUB_OUTPUT"
       - name: Set up declared generator product
         id: renderer
-        if: steps.pin.outputs.value != 'dead5ecb7baff1a5d28975bb81ee2832690b7e4a'
-        uses: tailrocks/velnor/.github/actions/setup-velnor-workflow@dead5ecb7baff1a5d28975bb81ee2832690b7e4a
+        if: steps.pin.outputs.value != '0765af3566cebcc2c99e4d972db3fb2df18bfa49'
+        uses: tailrocks/velnor/.github/actions/setup-velnor-workflow@0765af3566cebcc2c99e4d972db3fb2df18bfa49
         with:
           rev: ${{ steps.pin.outputs.value }}
           checkout-path: ${{ github.workspace }}/policy-checkout
       - name: Resolve declared generator product
-        if: steps.pin.outputs.value != 'dead5ecb7baff1a5d28975bb81ee2832690b7e4a'
+        if: steps.pin.outputs.value != '0765af3566cebcc2c99e4d972db3fb2df18bfa49'
         run: |
           set -euo pipefail
           binary="$HOME/.cache/velnor/workflow-runtime/${{ steps.renderer.outputs.closure }}/bin/velnor-workflow"
@@ -104,7 +104,7 @@ jobs:
           WORKFLOW_ROOT: ${{ github.workspace }}/policy-checkout
           HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.sha }}
-          VELNOR_WORKFLOW_POLICY_REVISION: dead5ecb7baff1a5d28975bb81ee2832690b7e4a
+          VELNOR_WORKFLOW_POLICY_REVISION: 0765af3566cebcc2c99e4d972db3fb2df18bfa49
         run: |
           set -euo pipefail
           velnor-workflow policy \

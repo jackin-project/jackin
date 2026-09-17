@@ -4,7 +4,7 @@ schema = 1
 repository = "jackin-project/jackin"
 # D19 pin: the velnor-workflow commit that rendered this tree (generic
 # CI/CD capabilities superseding the #994 static-file restore).
-revision = "dead5ecb7baff1a5d28975bb81ee2832690b7e4a"
+revision = "0765af3566cebcc2c99e4d972db3fb2df18bfa49"
 
 [scan]
 exclude = ["native/Package.swift", "native/.swiftpm/**"]
@@ -30,8 +30,11 @@ ruleset_external_status_checks = ["DCO"]
 # lanes = "github": the copy defaulted to velnor, but velnor/both lanes
 # require [workflow] velnor_trusted_label, and no trusted-label fact exists in
 # this repo. Revisit for velnor/both once the fleet label is known.
-# The copy's `mise` unsafe-execution allowance (mise-lock refresh in Renovate
-# PRs) has no schema surface and is dropped; allowed_commands is unset.
+# The copy sets RENOVATE_ALLOWED_UNSAFE_EXECUTIONS=mise (intended: let
+# `mise lock` refresh mise.lock in Renovate PRs), but renovate.json
+# configures no post-upgrade execution, so the knob has no live effect and
+# nothing is lost by omitting it. If post-upgrade execution is ever
+# configured, [renovate] allowed_commands renders RENOVATE_ALLOWED_COMMANDS.
 [renovate]
 enabled = true
 reason = "Self-hosted Renovate writer for mise/cargo/docker/tool pins; validator gates renovate.json changes."
@@ -83,18 +86,18 @@ CARGO_TERM_COLOR = "always"
 DEVELOPER_DIR = "/Applications/Xcode_26.6.app/Contents/Developer"
 MACOSX_DEPLOYMENT_TARGET = "26.0"
 
-# One file, one trigger set, faithful to the copy: the merge tier is
-# dispatch-driven (no push trigger in the copy; `workflow_dispatch`
-# validates but renders nothing extra since every file carries it), the
-# scheduled tier keeps the copy's Monday cron. Switching the merge tier to
-# push-triggered is a product decision for a follow-up, not this migration.
+# One file, one trigger set, faithful to the copy: the merge tier runs on
+# push-to-main + dispatch (copy desktop-cadence.yml push: branches: [main],
+# merge job gated on event != schedule); the scheduled tier keeps the
+# copy's Monday cron.
 [[declare]]
 primitive = "scheduled-checks"
 file = "desktop-merge.yml"
 [declare.args]
 profiles = ["desktop-merge"]
 name = "Desktop merge cadence"
-events = ["workflow_dispatch"]
+events = ["push"]
+branches = ["main"]
 
 [[declare]]
 primitive = "scheduled-checks"
@@ -102,6 +105,31 @@ file = "desktop-scheduled.yml"
 [declare.args]
 profiles = ["desktop-scheduled"]
 name = "Desktop scheduled cadence"
+
+# Renovate upstream liveness (D2): the #994 renovate-validate.yml job that
+# verifies the pinned mise release still ships both construct architectures.
+# Product-owned (versions.env path + mise URLs) as task
+# renovate-upstream-sources; the generic primitive supplies triggers,
+# concurrency, and the runner. Complements the generic schema validator
+# (renovate-validate.yml), which passes --strict on this repo. The copy
+# scoped pull_request to branches [main]; the primitive renders a bare
+# pull_request (a superset that only runs the HEAD probe more often).
+[[check_profile]]
+id = "renovate-upstream-sources"
+name = "Renovate upstream sources"
+runner = "github"
+tasks = ["renovate-upstream-sources"]
+timeout_minutes = 10
+status = "required"
+
+[[declare]]
+primitive = "scheduled-checks"
+file = "renovate-upstream-sources.yml"
+[declare.args]
+profiles = ["renovate-upstream-sources"]
+name = "Renovate upstream sources"
+events = ["push", "pull_request"]
+branches = ["main"]
 
 # Unit contracts the scan cannot derive. Command arrays are rejected by
 # velnor-workflow 721c2fed; typed capabilities only (`ci_tasks`, `mise_tools`).

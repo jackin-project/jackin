@@ -3,6 +3,8 @@ name: "Desktop merge cadence"
 run-name: "Desktop merge cadence · ${{ github.event_name }}"
 
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -10,7 +12,7 @@ permissions:
 
 concurrency:
   group: desktop-merge-${{ github.repository }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   desktop-merge:

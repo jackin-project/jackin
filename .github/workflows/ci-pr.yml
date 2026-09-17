@@ -59,11 +59,11 @@ jobs:
       - name: Set up Velnor workflow runtime
         id: runtime
         if: ${{ runner.environment == 'github-hosted' }}
-        uses: tailrocks/velnor/.github/actions/setup-velnor-workflow@dead5ecb7baff1a5d28975bb81ee2832690b7e4a
+        uses: tailrocks/velnor/.github/actions/setup-velnor-workflow@0765af3566cebcc2c99e4d972db3fb2df18bfa49
         with:
-          rev: dead5ecb7baff1a5d28975bb81ee2832690b7e4a
+          rev: 0765af3566cebcc2c99e4d972db3fb2df18bfa49
       - name: Set trusted workflow policy revision
-        run: echo "VELNOR_WORKFLOW_POLICY_REVISION=dead5ecb7baff1a5d28975bb81ee2832690b7e4a" >> "$GITHUB_ENV"
+        run: echo "VELNOR_WORKFLOW_POLICY_REVISION=0765af3566cebcc2c99e4d972db3fb2df18bfa49" >> "$GITHUB_ENV"
       - name: Select affected units
         id: plan
         env:
@@ -79,7 +79,7 @@ jobs:
       - name: Prepare Velnor workflow runtime
         shell: bash
         env:
-          EXPECTED_REVISION: dead5ecb7baff1a5d28975bb81ee2832690b7e4a
+          EXPECTED_REVISION: 0765af3566cebcc2c99e4d972db3fb2df18bfa49
         run: |
           set -euo pipefail
           stage="$RUNNER_TEMP/velnor-workflow-runtime"
@@ -98,7 +98,7 @@ jobs:
       - name: Publish Velnor workflow runtime
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: velnor-workflow-runtime-dead5ecb7baff1a5d28975bb81ee2832690b7e4a-${{ runner.os }}-${{ runner.arch }}
+          name: velnor-workflow-runtime-0765af3566cebcc2c99e4d972db3fb2df18bfa49-${{ runner.os }}-${{ runner.arch }}
           path: ${{ runner.temp }}/velnor-workflow-runtime
           if-no-files-found: error
           retention-days: 7
