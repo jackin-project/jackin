@@ -39,6 +39,18 @@ pub const GROK_DIR: &str = "/jackin/grok";
 pub const OPENCODE_DIR: &str = "/jackin/opencode";
 /// Kimi Code handoff home.
 pub const KIMI_CODE_DIR: &str = "/jackin/kimi-code";
+/// Antigravity handoff directory (settings sync; OAuth stays in host Keychain).
+pub const ANTIGRAVITY_DIR: &str = "/jackin/antigravity";
+/// Gemini CLI handoff directory.
+pub const GEMINI_DIR: &str = "/jackin/gemini";
+/// Cursor handoff directory.
+pub const CURSOR_DIR: &str = "/jackin/cursor";
+/// Muse handoff directory.
+pub const MUSE_DIR: &str = "/jackin/muse";
+/// omp handoff directory.
+pub const OMP_DIR: &str = "/jackin/omp";
+/// Hermes handoff directory.
+pub const HERMES_DIR: &str = "/jackin/hermes";
 
 /// Capsule binary path inside the container image.
 pub const CAPSULE_BIN: &str = "/jackin/runtime/jackin-capsule";
@@ -88,6 +100,18 @@ pub const AMP_SECRETS: &str = "/jackin/amp/secrets.json";
 pub const OPENCODE_AUTH: &str = "/jackin/opencode/auth.json";
 /// Grok auth handoff file.
 pub const GROK_AUTH: &str = "/jackin/grok/auth.json";
+/// Antigravity settings handoff file (prefs only — never credentials).
+pub const ANTIGRAVITY_SETTINGS: &str = "/jackin/antigravity/settings.json";
+/// Gemini CLI OAuth credentials handoff file.
+pub const GEMINI_AUTH: &str = "/jackin/gemini/oauth_creds.json";
+/// Cursor auth handoff file.
+pub const CURSOR_AUTH: &str = "/jackin/cursor/auth.json";
+/// Muse auth handoff file.
+pub const MUSE_AUTH: &str = "/jackin/muse/auth.json";
+/// omp agent-store handoff file (`SQLite`, not JSON).
+pub const OMP_AGENT_DB: &str = "/jackin/omp/agent.db";
+/// Hermes auth handoff file (best-effort layout; unverified upstream).
+pub const HERMES_AUTH: &str = "/jackin/hermes/auth.json";
 /// Git prepare-commit-msg hook path.
 pub const GIT_HOOK_PREPARE_COMMIT_MSG: &str = "/jackin/state/git-hooks/prepare-commit-msg";
 /// Git prepare-commit-msg install marker.

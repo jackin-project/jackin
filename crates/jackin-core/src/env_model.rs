@@ -62,6 +62,20 @@ pub const KIMI_API_KEY_ENV_NAME: &str = "KIMI_API_KEY";
 pub const OPENCODE_API_KEY_ENV_NAME: &str = "OPENCODE_API_KEY";
 /// xAI API key env name (Grok Build).
 pub const XAI_API_KEY_ENV_NAME: &str = "XAI_API_KEY";
+/// Gemini API key env name (Antigravity `agy` + Gemini CLI `api_key` mode).
+///
+/// Documented Google AI Studio key variable; both Google-fronted agents
+/// accept it. `GOOGLE_API_KEY` remains a recognized alias only in the
+/// config discovery scan, not here.
+pub const GEMINI_API_KEY_ENV_NAME: &str = "GEMINI_API_KEY";
+/// Cursor API key env name (`cursor-agent api_key` mode; verified in
+/// `cursor-agent --help` alongside `CURSOR_API_ENDPOINT`).
+pub const CURSOR_API_KEY_ENV_NAME: &str = "CURSOR_API_KEY";
+/// Meta API key env name (Muse `api_key` mode; overrides keychain login
+/// per `muse login --help`).
+pub const META_API_KEY_ENV_NAME: &str = "META_API_KEY";
+/// `OpenRouter` API key env name (multi-provider clients only; no native agent).
+pub const OPENROUTER_API_KEY_ENV_NAME: &str = "OPENROUTER_API_KEY";
 /// Grok ACP deployment credential accepted by the Grok CLI.
 pub const GROK_DEPLOYMENT_KEY_ENV_NAME: &str = "GROK_DEPLOYMENT_KEY";
 /// GitHub CLI token env name (`gh`).
@@ -92,6 +106,14 @@ pub enum UsageCredentialOwner {
     Minimax,
     /// `OpenCode` (registered for launch consistency; Desktop excludes it).
     OpenCode,
+    /// Google (Antigravity + Gemini CLI).
+    Google,
+    /// Cursor.
+    Cursor,
+    /// Meta (Muse).
+    Meta,
+    /// `OpenRouter` (multi-provider clients only).
+    OpenRouter,
 }
 
 /// One governed environment credential name and its exact provider owner.
@@ -151,6 +173,22 @@ pub const USAGE_CREDENTIAL_ENV_REGISTRY: &[UsageCredentialEnvName] = &[
     UsageCredentialEnvName {
         name: OPENCODE_API_KEY_ENV_NAME,
         owner: UsageCredentialOwner::OpenCode,
+    },
+    UsageCredentialEnvName {
+        name: GEMINI_API_KEY_ENV_NAME,
+        owner: UsageCredentialOwner::Google,
+    },
+    UsageCredentialEnvName {
+        name: CURSOR_API_KEY_ENV_NAME,
+        owner: UsageCredentialOwner::Cursor,
+    },
+    UsageCredentialEnvName {
+        name: META_API_KEY_ENV_NAME,
+        owner: UsageCredentialOwner::Meta,
+    },
+    UsageCredentialEnvName {
+        name: OPENROUTER_API_KEY_ENV_NAME,
+        owner: UsageCredentialOwner::OpenRouter,
     },
 ];
 
