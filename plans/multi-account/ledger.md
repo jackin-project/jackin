@@ -8,7 +8,15 @@ Proof levels: `implemented` < `fixture_verified` < `container_verified` <
 
 | Requirement | Owner | Test / scenario | Result / artifact | Proof | Status |
 |---|---|---|---|---|---|
-| S1 catalog (12 agents, 12 providers, adapters, matches) | s1-catalog-expand | cargo test -p jackin-core -p jackin-config + workspace check | /tmp/lane-s1-catalog.md | — | in_progress |
+| S1 catalog (12 agents, 12 providers, adapters, matches) | s1-catalog-expand | cargo test -p jackin-core -p jackin-config + workspace check | /tmp/lane-s1-catalog.md (pending) | — | in_progress |
+| zshrc static parser | zshrc lane | standalone rustc --test 17/17 + probe | /tmp/lane-zshrc.md | fixture_verified | implemented |
+| stores enumerators | stores lane | config 317/317 (stores 29) | /tmp/lane-stores.md | fixture_verified | implemented |
+| T20 harness | t20 lane | standalone 26/26 | /tmp/lane-t20-harness.md | fixture_verified | implemented |
+| provA Claude/Codex/Amp | prov-a | isolated worktree 314/314 + clippy clean | /tmp/lane-prov-a.md | fixture_verified | implemented |
+| provB Kimi/ZAI/MiniMax | prov-b | kimi 14 + zai 9 + minimax 15 | /tmp/lane-prov-b.md | fixture_verified | implemented |
+| provC Antigravity/Gemini/Cursor | prov-c | 26/26 new-collector tests | /tmp/lane-prov-c.md | fixture_verified | implemented |
+| provE Muse/omp/Hermes | prov-e | 26/26 (13+5+8) | /tmp/lane-prov-e.md | fixture_verified | implemented |
+| console-usage phase-1 | console-usage-1 | isolated worktree 20/20 + lib 1270 + adapter 106 | /tmp/lane-console-usage-1.md | fixture_verified | implemented |
 | S2 schema + resolver + bootstrap | orchestrator | config/resolver unit + migration tests | — | — | not_started |
 | S3 instance-keyed credential transport | orchestrator | transport + capsule validation tests | — | — | not_started |
 | Tracer bullet: 2×Claude + Codex live container | orchestrator | docker staging/relay/PTY + 3 TUIs, canary D absent | — | — | not_started |
