@@ -58,12 +58,13 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - name: Set up Velnor workflow runtime
+        id: runtime
         if: ${{ runner.environment == 'github-hosted' }}
-        uses: tailrocks/velnor/.github/actions/setup-velnor-workflow@b9c3156cdb88e63c11b9e595a3e694b02238c09a
+        uses: tailrocks/velnor/.github/actions/setup-velnor-workflow@dead5ecb7baff1a5d28975bb81ee2832690b7e4a
         with:
-          rev: b9c3156cdb88e63c11b9e595a3e694b02238c09a
+          rev: dead5ecb7baff1a5d28975bb81ee2832690b7e4a
       - name: Set trusted workflow policy revision
-        run: echo "VELNOR_WORKFLOW_POLICY_REVISION=b9c3156cdb88e63c11b9e595a3e694b02238c09a" >> "$GITHUB_ENV"
+        run: echo "VELNOR_WORKFLOW_POLICY_REVISION=dead5ecb7baff1a5d28975bb81ee2832690b7e4a" >> "$GITHUB_ENV"
       - name: Select affected units
         id: plan
         env:
@@ -79,7 +80,7 @@ jobs:
       - name: Prepare Velnor workflow runtime
         shell: bash
         env:
-          EXPECTED_REVISION: b9c3156cdb88e63c11b9e595a3e694b02238c09a
+          EXPECTED_REVISION: dead5ecb7baff1a5d28975bb81ee2832690b7e4a
         run: |
           set -euo pipefail
           stage="$RUNNER_TEMP/velnor-workflow-runtime"
@@ -91,13 +92,14 @@ jobs:
           policy_src="${VELNOR_WORKFLOW_PINNED_BINARY:-$src}"
           install -m 0755 "$policy_src" "$stage/velnor-workflow-policy"
           policy_revision="$("$stage/velnor-workflow-policy" --revision)"
-          [[ "$policy_revision" == "$EXPECTED_REVISION" ]] || { echo "::error::policy runtime reports revision $policy_revision, expected $EXPECTED_REVISION" >&2; exit 1; }
+          policy_closure="$("$stage/velnor-workflow-policy" --closure)"
+          [[ "$policy_closure" == "${{ steps.runtime.outputs.closure }}" ]] || { echo "::error::policy runtime reports closure $policy_closure, expected ${{ steps.runtime.outputs.closure }}" >&2; exit 1; }
           policy_digest="$(sha256sum "$stage/velnor-workflow-policy" | awk '{print $1}')"
-          jq -n --arg repository "$GITHUB_REPOSITORY" --arg revision "$EXPECTED_REVISION" --arg head_branch "${{ github.ref_name }}" --arg platform "${{ runner.os }}-${{ runner.arch }}" --arg run_id "$GITHUB_RUN_ID" --arg job_id "${{ github.job }}" --arg binary_sha256 "$digest" --arg policy_revision "$policy_revision" --arg policy_binary_sha256 "$policy_digest" '{repository: $repository, revision: $revision, head_branch: $head_branch, platform: $platform, run_id: $run_id, job_id: $job_id, binary_sha256: $binary_sha256, policy_revision: $policy_revision, policy_binary_sha256: $policy_binary_sha256}' > "$stage/manifest.json"
+          jq -n --arg repository "$GITHUB_REPOSITORY" --arg revision "$EXPECTED_REVISION" --arg closure "${{ steps.runtime.outputs.closure }}" --arg head_branch "${{ github.ref_name }}" --arg platform "${{ runner.os }}-${{ runner.arch }}" --arg run_id "$GITHUB_RUN_ID" --arg job_id "${{ github.job }}" --arg binary_sha256 "$digest" --arg policy_revision "$policy_revision" --arg policy_closure "$policy_closure" --arg policy_binary_sha256 "$policy_digest" '{repository: $repository, revision: $revision, closure: $closure, head_branch: $head_branch, platform: $platform, run_id: $run_id, job_id: $job_id, binary_sha256: $binary_sha256, policy_revision: $policy_revision, policy_closure: $policy_closure, policy_binary_sha256: $policy_binary_sha256}' > "$stage/manifest.json"
       - name: Publish Velnor workflow runtime
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: velnor-workflow-runtime-b9c3156cdb88e63c11b9e595a3e694b02238c09a-${{ runner.os }}-${{ runner.arch }}
+          name: velnor-workflow-runtime-dead5ecb7baff1a5d28975bb81ee2832690b7e4a-${{ runner.os }}-${{ runner.arch }}
           path: ${{ runner.temp }}/velnor-workflow-runtime
           if-no-files-found: error
           retention-days: 7
@@ -105,11 +107,16 @@ jobs:
     name: Policy
     runs-on: ubuntu-26.04
     timeout-minutes: 20
-    # Trust invariant: this job runs the base branch's validator against the
-    # audited tree under pull_request_target. It holds `contents: read` only,
-    # references no secrets, and its checkout persists no credentials, so
-    # building and running the tree's declared generator here is no more
-    # privileged than the pull_request lanes that already build the tree.
+    # Trust invariant: this job runs the base branch's Stage-0 validator
+    # product against the audited tree under pull_request_target. It holds
+    # `contents: read` only, references no secrets, persists no credentials,
+    # and never compiles. When the audited pin's closure differs from the
+    # base validator's, it additionally EXECUTES the PR run's prebuilt
+    # candidate generator — PR-built code, same-repository runs only, bound
+    # to the audited tree by manifest closure plus binary digest before
+    # execution — with no secret references, no persisted credentials, the
+    # read-only github.token confined to the Acquire/Ruleset API steps,
+    # and both candidate exec points tokenless.
     permissions:
       contents: read
     steps:
@@ -130,64 +137,72 @@ jobs:
             git fetch --no-tags "$GITHUB_SERVER_URL/$HEAD_REPOSITORY" "$HEAD_SHA"
           fi
           git checkout --quiet --detach "$HEAD_SHA"
-      - name: Bound the Mr. Boxington store
-        shell: bash
-        run: echo "MBX_GC_MAX_SIZE=12GiB" >> "$GITHUB_ENV"
-      - name: Set up Mr. Boxington
-        uses: jdx/mr-boxington-action@7234d3dd1a6ca8f6c381eea8e4dfb03f18fcf777 # v1.3.0
+      - name: Set up Velnor workflow runtime
+        uses: tailrocks/velnor/.github/actions/setup-velnor-workflow@dead5ecb7baff1a5d28975bb81ee2832690b7e4a
         with:
-          backend: github
-          version: 1.11.1
-          cache-key: velnor-policy-mbx-1.11.1-${{ runner.os }}-${{ runner.arch }}-b9c3156cdb88e63c11b9e595a3e694b02238c09a
-          restore-keys: |
-            velnor-policy-mbx-1.11.1-${{ runner.os }}-${{ runner.arch }}-
-      - name: Install pinned Velnor workflow runtime
-        env:
-          CARGO_HOME: ${{ runner.temp }}/velnor-workflow-cargo-home
-          CARGO_TARGET_DIR: ${{ runner.temp }}/velnor-workflow-cargo-target
-          VELNOR_WORKFLOW_INSTALL_DIR: ${{ runner.temp }}/velnor-workflow-install
-          VELNOR_WORKFLOW_ROOT: ${{ runner.temp }}/velnor-workflow
+          rev: dead5ecb7baff1a5d28975bb81ee2832690b7e4a
+          checkout-path: ${{ github.workspace }}/policy-checkout
+      - name: Read declared generator pin
+        id: pin
+        working-directory: policy-checkout
         run: |
           set -euo pipefail
-          install -d -m 700 \
-            "$CARGO_HOME" \
-            "$CARGO_TARGET_DIR" \
-            "$VELNOR_WORKFLOW_INSTALL_DIR"
-          cd "$VELNOR_WORKFLOW_INSTALL_DIR"
-          env -u RUSTC_WRAPPER -u SCCACHE_GHA_ENABLED -u CARGO_INCREMENTAL -u RUSTFLAGS -u CARGO_ENCODED_RUSTFLAGS \
-            cargo install \
-            --locked \
-            --git https://github.com/tailrocks/velnor \
-            --rev b9c3156cdb88e63c11b9e595a3e694b02238c09a \
-            --root "$VELNOR_WORKFLOW_ROOT" \
-            velnor-workflow \
-            --bin velnor-workflow
-          echo "$VELNOR_WORKFLOW_ROOT/bin" >> "$GITHUB_PATH"
+          pin="$(sed -n -E 's/^[[:space:]]*revision[[:space:]]*=[[:space:]]*"([0-9a-f]{40})".*/\1/p' .github-gen/velnor-workflow.toml | head -n 1)"
+          test "$pin" != '' || pin="$(sed -n -E 's/^.*VELNOR_WORKFLOW_POLICY_REVISION:[[:space:]]*([0-9a-f]{40}).*/\1/p' .github/workflows/ci-policy.yml | head -n 1)"
+          test "$pin" != '' || { echo "::error::audited tree declares no generator pin" >&2; exit 1; }
+          echo "value=$pin" >> "$GITHUB_OUTPUT"
+      - name: Set up declared generator product
+        id: renderer
+        if: steps.pin.outputs.value != 'dead5ecb7baff1a5d28975bb81ee2832690b7e4a'
+        uses: tailrocks/velnor/.github/actions/setup-velnor-workflow@dead5ecb7baff1a5d28975bb81ee2832690b7e4a
+        with:
+          rev: ${{ steps.pin.outputs.value }}
+          checkout-path: ${{ github.workspace }}/policy-checkout
+      - name: Resolve declared generator product
+        if: steps.pin.outputs.value != 'dead5ecb7baff1a5d28975bb81ee2832690b7e4a'
+        run: |
+          set -euo pipefail
+          binary="$HOME/.cache/velnor/workflow-runtime/${{ steps.renderer.outputs.closure }}/bin/velnor-workflow"
+          test -x "$binary"
+          echo "VELNOR_WORKFLOW_PINNED_BINARY=$binary" >> "$GITHUB_ENV"
       - name: Resolve required status checks
         env:
           GH_TOKEN: ${{ github.token }}
           DEFAULT_BRANCH: main
+          DECLARED_RULESET_CONTEXTS: DCO,Policy,ci-required
         run: |
           set -euo pipefail
-          contexts="$(gh api "repos/$GITHUB_REPOSITORY/rulesets?includes_parents=true" \
+          stderr="$(mktemp)"
+          trap 'rm -f "$stderr"' EXIT
+          if contexts="$(gh api "repos/$GITHUB_REPOSITORY/rulesets?includes_parents=true" 2>"$stderr" \
             | jq -r '.[] | select(.target == "branch" and .enforcement == "active") | .id' \
             | while read -r id; do gh api "repos/$GITHUB_REPOSITORY/rulesets/$id"; done \
             | jq -r --arg branch "refs/heads/$DEFAULT_BRANCH" 'select(.conditions.ref_name.include | any(. == "~DEFAULT_BRANCH" or . == "~ALL" or . == $branch)) | .rules[] | select(.type == "required_status_checks") | .parameters.required_status_checks[].context' \
-            | sort -u | paste -sd, -)"
+            | sort -u | paste -sd, -)"; then
+            :
+          elif grep -qE '(HTTP 403|Upgrade to GitHub Team)' "$stderr"; then
+            echo "::warning::rulesets API returned 403; falling back to declared contexts [$DECLARED_RULESET_CONTEXTS]"
+            contexts="$DECLARED_RULESET_CONTEXTS"
+          else
+            cat "$stderr" >&2
+            exit 1
+          fi
           echo "RULESET_CONTEXTS=$contexts" >> "$GITHUB_ENV"
       - name: Enforce workflow policy
         env:
           WORKFLOW_ROOT: ${{ github.workspace }}/policy-checkout
           HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.sha }}
-          VELNOR_WORKFLOW_POLICY_REVISION: b9c3156cdb88e63c11b9e595a3e694b02238c09a
+          VELNOR_WORKFLOW_POLICY_REVISION: dead5ecb7baff1a5d28975bb81ee2832690b7e4a
         run: |
           set -euo pipefail
           velnor-workflow policy \
             --workflow-root "$WORKFLOW_ROOT" \
             --head-sha "$HEAD_SHA" \
             --base-sha "$BASE_SHA" \
+            --candidate-manifest "${VELNOR_WORKFLOW_CANDIDATE_MANIFEST:-}" \
             --ruleset-contexts "$RULESET_CONTEXTS"
+
       - name: Set up actionlint
         uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
@@ -195,10 +210,12 @@ jobs:
           cache: false
       - name: Lint caller workflows
         working-directory: policy-checkout
+        env:
+          MISE_NO_CONFIG: "1"
         run: mise exec actionlint@1.7.12 -- actionlint
   github-bun-jackin-docs:
     name: "Bun · Bun package (jackin-docs)"
-    if: ${{ always() && needs.plan.result == 'success' && needs.policy.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',bun-jackin-docs,') }}
+    if: ${{ always() && needs.plan.result == 'success' && needs.policy.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',bun-jackin-docs,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
     needs: [plan, policy]
     uses: ./.github/workflows/ci-unit-bun.yml
     with:
@@ -213,9 +230,10 @@ jobs:
       cache_key_files: |
         docs/package.json
         docs/bun.lock
+      unit_admission: github
   github-docker-docker-construct:
     name: "Docker · Docker (docker/construct)"
-    if: ${{ always() && needs.plan.result == 'success' && needs.policy.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',docker-docker-construct,') }}
+    if: ${{ always() && needs.plan.result == 'success' && needs.policy.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',docker-docker-construct,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
     needs: [plan, policy]
     uses: ./.github/workflows/ci-unit-docker.yml
     with:
@@ -226,9 +244,10 @@ jobs:
       full_units: ${{ needs.plan.outputs.full_units }}
       base_sha: ${{ needs.plan.outputs.base_sha }}
       head_sha: ${{ needs.plan.outputs.head_sha }}
+      unit_admission: github
   github-rust-arrayref:
     name: "Rust · arrayref"
-    if: ${{ always() && needs.plan.result == 'success' && needs.policy.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-arrayref,') }}
+    if: ${{ always() && needs.plan.result == 'success' && needs.policy.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-arrayref,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
     needs: [plan, policy]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
@@ -264,9 +283,10 @@ jobs:
         rust-toolchain
       cargo_root: "vendor/arrayref"
       cargo_net_offline: true
+      unit_admission: github
   github-rust-jackin:
     name: "Rust · jackin"
-    if: ${{ always() && needs.plan.result == 'success' && needs.policy.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin,') }}
+    if: ${{ always() && needs.plan.result == 'success' && needs.policy.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
     needs: [plan, policy]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
@@ -429,9 +449,11 @@ jobs:
         rust-toolchain
       cargo_root: "crates/jackin"
       cargo_net_offline: true
+      unit_dependencies: "rust-jackin-brand,rust-jackin-build-meta,rust-jackin-config,rust-jackin-console,rust-jackin-core,rust-jackin-diagnostics,rust-jackin-docker,rust-jackin-env,rust-jackin-image,rust-jackin-launch,rust-jackin-manifest,rust-jackin-otlp-testbed,rust-jackin-process,rust-jackin-protocol,rust-jackin-runtime,rust-jackin-telemetry,rust-jackin-test-support,rust-jackin-tui,rust-jackin-usage"
+      unit_admission: github
   github-rust-jackin-agent-status:
     name: "Rust · jackin-agent-status"
-    if: ${{ always() && needs.plan.result == 'success' && needs.policy.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-agent-status,') }}
+    if: ${{ always() && needs.plan.result == 'success' && needs.policy.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-agent-status,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
     needs: [plan, policy]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
@@ -482,9 +504,11 @@ jobs:
         rust-toolchain
       cargo_root: "crates/jackin-agent-status"
       cargo_net_offline: true
+      unit_dependencies: "rust-jackin-core,rust-jackin-protocol"
+      unit_admission: github
   github-rust-jackin-brand:
     name: "Rust · jackin-brand"
-    if: ${{ always() && needs.plan.result == 'success' && needs.policy.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-brand,') }}
+    if: ${{ always() && needs.plan.result == 'success' && needs.policy.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-brand,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
     needs: [plan, policy]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
@@ -519,9 +543,10 @@ jobs:
         rust-toolchain
       cargo_root: "crates/jackin-brand"
       cargo_net_offline: true
+      unit_admission: github
   github-rust-jackin-build-meta:
     name: "Rust · jackin-build-meta"
-    if: ${{ always() && needs.plan.result == 'success' && needs.policy.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-build-meta,') }}
+    if: ${{ always() && needs.plan.result == 'success' && needs.policy.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-build-meta,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
     needs: [plan, policy]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
@@ -561,9 +586,11 @@ jobs:
         rust-toolchain
       cargo_root: "crates/jackin-build-meta"
       cargo_net_offline: true
+      unit_dependencies: rust-jackin-process
+      unit_admission: github
   github-rust-jackin-capsule:
     name: "Rust · jackin-capsule"
-    if: ${{ always() && needs.plan.result == 'success' && needs.policy.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-capsule,') }}
+    if: ${{ always() && needs.plan.result == 'success' && needs.policy.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-capsule,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
     needs: [plan, policy]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
@@ -662,9 +689,11 @@ jobs:
         rust-toolchain
       cargo_root: "crates/jackin-capsule"
       cargo_net_offline: true
+      unit_dependencies: "rust-jackin-agent-status,rust-jackin-brand,rust-jackin-build-meta,rust-jackin-core,rust-jackin-diagnostics,rust-jackin-otlp-testbed,rust-jackin-process,rust-jackin-protocol,rust-jackin-telemetry,rust-jackin-tui,rust-jackin-usage"
+      unit_admission: github
   github-rust-jackin-config:
     name: "Rust · jackin-config"
-    if: ${{ always() && needs.plan.result == 'success' && needs.policy.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-config,') }}
+    if: ${{ always() && needs.plan.result == 'success' && needs.policy.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-config,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
     needs: [plan, policy]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
@@ -720,9 +749,11 @@ jobs:
         rust-toolchain
       cargo_root: "crates/jackin-config"
       cargo_net_offline: true
+      unit_dependencies: "rust-jackin-core,rust-jackin-diagnostics,rust-jackin-otlp-testbed,rust-jackin-telemetry"
+      unit_admission: github
   github-rust-jackin-config-fuzz:
     name: "Rust · jackin-config-fuzz"
-    if: ${{ always() && needs.plan.result == 'success' && needs.policy.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-config-fuzz,') }}
+    if: ${{ always() && needs.plan.result == 'success' && needs.policy.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-config-fuzz,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
     needs: [plan, policy]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
@@ -785,9 +816,11 @@ jobs:
         rust-toolchain
       cargo_root: "crates/jackin-config/fuzz"
       cargo_net_offline: true
+      unit_dependencies: rust-jackin-config
+      unit_admission: github
   github-rust-jackin-console:
     name: "Rust · jackin-console"
-    if: ${{ always() && needs.plan.result == 'success' && needs.policy.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-console,') }}
+    if: ${{ always() && needs.plan.result == 'success' && needs.policy.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-console,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
     needs: [plan, policy]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
@@ -879,9 +912,11 @@ jobs:
         rust-toolchain
       cargo_root: "crates/jackin-console"
       cargo_net_offline: true
+      unit_dependencies: "rust-jackin-config,rust-jackin-core,rust-jackin-diagnostics,rust-jackin-env,rust-jackin-oppicker,rust-jackin-otlp-testbed,rust-jackin-protocol,rust-jackin-telemetry,rust-jackin-tui"
+      unit_admission: github
   github-rust-jackin-core:
     name: "Rust · jackin-core"
-    if: ${{ always() && needs.plan.result == 'success' && needs.policy.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-core,') }}
+    if: ${{ always() && needs.plan.result == 'success' && needs.policy.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-core,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
     needs: [plan, policy]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
@@ -916,9 +951,10 @@ jobs:
         rust-toolchain
       cargo_root: "crates/jackin-core"
       cargo_net_offline: true
+      unit_admission: github
   github-rust-jackin-dev:
     name: "Rust · jackin-dev"
-    if: ${{ always() && needs.plan.result == 'success' && needs.policy.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-dev,') }}
+    if: ${{ always() && needs.plan.result == 'success' && needs.policy.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-dev,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
     needs: [plan, policy]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
@@ -953,9 +989,10 @@ jobs:
         rust-toolchain
       cargo_root: "crates/jackin-dev"
       cargo_net_offline: true
+      unit_admission: github
   github-rust-jackin-diagnostics:
     name: "Rust · jackin-diagnostics"
-    if: ${{ always() && needs.plan.result == 'success' && needs.policy.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-diagnostics,') }}
+    if: ${{ always() && needs.plan.result == 'success' && needs.policy.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-diagnostics,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
     needs: [plan, policy]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
@@ -1006,9 +1043,11 @@ jobs:
         rust-toolchain
       cargo_root: "crates/jackin-diagnostics"
       cargo_net_offline: true
+      unit_dependencies: "rust-jackin-core,rust-jackin-otlp-testbed,rust-jackin-telemetry"
+      unit_admission: github
   github-rust-jackin-docker:
     name: "Rust · jackin-docker"
-    if: ${{ always() && needs.plan.result == 'success' && needs.policy.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-docker,') }}
+    if: ${{ always() && needs.plan.result == 'success' && needs.policy.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-docker,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
     needs: [plan, policy]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
@@ -1075,9 +1114,11 @@ jobs:
         rust-toolchain
       cargo_root: "crates/jackin-docker"
       cargo_net_offline: true
+      unit_dependencies: "rust-jackin-build-meta,rust-jackin-core,rust-jackin-diagnostics,rust-jackin-otlp-testbed,rust-jackin-process,rust-jackin-telemetry"
+      unit_admission: github
   github-rust-jackin-env:
     name: "Rust · jackin-env"
-    if: ${{ always() && needs.plan.result == 'success' && needs.policy.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-env,') }}
+    if: ${{ always() && needs.plan.result == 'success' && needs.policy.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-env,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
     needs: [plan, policy]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
@@ -1149,9 +1190,11 @@ jobs:
         rust-toolchain
       cargo_root: "crates/jackin-env"
       cargo_net_offline: true
+      unit_dependencies: "rust-jackin-config,rust-jackin-core,rust-jackin-diagnostics,rust-jackin-process,rust-jackin-protocol,rust-jackin-telemetry"
+      unit_admission: github
   github-rust-jackin-env-fuzz:
     name: "Rust · jackin-env-fuzz"
-    if: ${{ always() && needs.plan.result == 'success' && needs.policy.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-env-fuzz,') }}
+    if: ${{ always() && needs.plan.result == 'success' && needs.policy.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-env-fuzz,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
     needs: [plan, policy]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
@@ -1230,9 +1273,11 @@ jobs:
         rust-toolchain
       cargo_root: "crates/jackin-env/fuzz"
       cargo_net_offline: true
+      unit_dependencies: "rust-jackin-config,rust-jackin-core,rust-jackin-env"
+      unit_admission: github
   github-rust-jackin-host:
     name: "Rust · jackin-host"
-    if: ${{ always() && needs.plan.result == 'success' && needs.policy.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-host,') }}
+    if: ${{ always() && needs.plan.result == 'success' && needs.policy.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-host,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
     needs: [plan, policy]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
@@ -1325,9 +1370,11 @@ jobs:
         rust-toolchain
       cargo_root: "crates/jackin-host"
       cargo_net_offline: true
+      unit_dependencies: "rust-jackin-core,rust-jackin-diagnostics,rust-jackin-docker,rust-jackin-process,rust-jackin-protocol,rust-jackin-telemetry,rust-jackin-test-support"
+      unit_admission: github
   github-rust-jackin-image:
     name: "Rust · jackin-image"
-    if: ${{ always() && needs.plan.result == 'success' && needs.policy.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-image,') }}
+    if: ${{ always() && needs.plan.result == 'success' && needs.policy.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-image,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
     needs: [plan, policy]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
@@ -1415,9 +1462,11 @@ jobs:
         rust-toolchain
       cargo_root: "crates/jackin-image"
       cargo_net_offline: true
+      unit_dependencies: "rust-jackin-build-meta,rust-jackin-core,rust-jackin-diagnostics,rust-jackin-docker,rust-jackin-manifest,rust-jackin-otlp-testbed,rust-jackin-process,rust-jackin-telemetry"
+      unit_admission: github
   github-rust-jackin-instance:
     name: "Rust · jackin-instance"
-    if: ${{ always() && needs.plan.result == 'success' && needs.policy.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-instance,') }}
+    if: ${{ always() && needs.plan.result == 'success' && needs.policy.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-instance,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
     needs: [plan, policy]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
@@ -1488,9 +1537,11 @@ jobs:
         rust-toolchain
       cargo_root: "crates/jackin-instance"
       cargo_net_offline: true
+      unit_dependencies: "rust-jackin-config,rust-jackin-core,rust-jackin-diagnostics,rust-jackin-manifest,rust-jackin-process,rust-jackin-telemetry"
+      unit_admission: github
   github-rust-jackin-isolation:
     name: "Rust · jackin-isolation"
-    if: ${{ always() && needs.plan.result == 'success' && needs.policy.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-isolation,') }}
+    if: ${{ always() && needs.plan.result == 'success' && needs.policy.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-isolation,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
     needs: [plan, policy]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
@@ -1583,9 +1634,11 @@ jobs:
         rust-toolchain
       cargo_root: "crates/jackin-isolation"
       cargo_net_offline: true
+      unit_dependencies: "rust-jackin-config,rust-jackin-core,rust-jackin-diagnostics,rust-jackin-docker,rust-jackin-process,rust-jackin-protocol,rust-jackin-telemetry,rust-jackin-test-support"
+      unit_admission: github
   github-rust-jackin-launch:
     name: "Rust · jackin-launch"
-    if: ${{ always() && needs.plan.result == 'success' && needs.policy.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-launch,') }}
+    if: ${{ always() && needs.plan.result == 'success' && needs.policy.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-launch,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
     needs: [plan, policy]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
@@ -1662,9 +1715,11 @@ jobs:
         rust-toolchain
       cargo_root: "crates/jackin-launch"
       cargo_net_offline: true
+      unit_dependencies: "rust-jackin-brand,rust-jackin-build-meta,rust-jackin-core,rust-jackin-diagnostics,rust-jackin-telemetry,rust-jackin-tui"
+      unit_admission: github
   github-rust-jackin-manifest:
     name: "Rust · jackin-manifest"
-    if: ${{ always() && needs.plan.result == 'success' && needs.policy.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-manifest,') }}
+    if: ${{ always() && needs.plan.result == 'success' && needs.policy.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-manifest,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
     needs: [plan, policy]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
@@ -1725,9 +1780,11 @@ jobs:
         rust-toolchain
       cargo_root: "crates/jackin-manifest"
       cargo_net_offline: true
+      unit_dependencies: "rust-jackin-config,rust-jackin-core"
+      unit_admission: github
   github-rust-jackin-manifest-fuzz:
     name: "Rust · jackin-manifest-fuzz"
-    if: ${{ always() && needs.plan.result == 'success' && needs.policy.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-manifest-fuzz,') }}
+    if: ${{ always() && needs.plan.result == 'success' && needs.policy.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-manifest-fuzz,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
     needs: [plan, policy]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
@@ -1795,9 +1852,11 @@ jobs:
         rust-toolchain
       cargo_root: "crates/jackin-manifest/fuzz"
       cargo_net_offline: true
+      unit_dependencies: rust-jackin-manifest
+      unit_admission: github
   github-rust-jackin-oppicker:
     name: "Rust · jackin-oppicker"
-    if: ${{ always() && needs.plan.result == 'success' && needs.policy.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-oppicker,') }}
+    if: ${{ always() && needs.plan.result == 'success' && needs.policy.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-oppicker,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
     needs: [plan, policy]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
@@ -1842,9 +1901,11 @@ jobs:
         rust-toolchain
       cargo_root: "crates/jackin-oppicker"
       cargo_net_offline: true
+      unit_dependencies: "rust-jackin-core,rust-jackin-telemetry"
+      unit_admission: github
   github-rust-jackin-otlp-testbed:
     name: "Rust · jackin-otlp-testbed"
-    if: ${{ always() && needs.plan.result == 'success' && needs.policy.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-otlp-testbed,') }}
+    if: ${{ always() && needs.plan.result == 'success' && needs.policy.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-otlp-testbed,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
     needs: [plan, policy]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
@@ -1884,9 +1945,11 @@ jobs:
         rust-toolchain
       cargo_root: "crates/jackin-otlp-testbed"
       cargo_net_offline: true
+      unit_dependencies: rust-jackin-telemetry
+      unit_admission: github
   github-rust-jackin-pr-trailers:
     name: "Rust · jackin-pr-trailers"
-    if: ${{ always() && needs.plan.result == 'success' && needs.policy.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-pr-trailers,') }}
+    if: ${{ always() && needs.plan.result == 'success' && needs.policy.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-pr-trailers,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
     needs: [plan, policy]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
@@ -1926,9 +1989,11 @@ jobs:
         rust-toolchain
       cargo_root: "crates/jackin-pr-trailers"
       cargo_net_offline: true
+      unit_dependencies: rust-jackin-process
+      unit_admission: github
   github-rust-jackin-process:
     name: "Rust · jackin-process"
-    if: ${{ always() && needs.plan.result == 'success' && needs.policy.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-process,') }}
+    if: ${{ always() && needs.plan.result == 'success' && needs.policy.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-process,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
     needs: [plan, policy]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
@@ -1963,9 +2028,10 @@ jobs:
         rust-toolchain
       cargo_root: "crates/jackin-process"
       cargo_net_offline: true
+      unit_admission: github
   github-rust-jackin-protocol:
     name: "Rust · jackin-protocol"
-    if: ${{ always() && needs.plan.result == 'success' && needs.policy.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-protocol,') }}
+    if: ${{ always() && needs.plan.result == 'success' && needs.policy.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-protocol,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
     needs: [plan, policy]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
@@ -2011,9 +2077,11 @@ jobs:
         rust-toolchain
       cargo_root: "crates/jackin-protocol"
       cargo_net_offline: true
+      unit_dependencies: "rust-jackin-core,rust-jackin-telemetry"
+      unit_admission: github
   github-rust-jackin-protocol-fuzz:
     name: "Rust · jackin-protocol-fuzz"
-    if: ${{ always() && needs.plan.result == 'success' && needs.policy.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-protocol-fuzz,') }}
+    if: ${{ always() && needs.plan.result == 'success' && needs.policy.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-protocol-fuzz,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
     needs: [plan, policy]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
@@ -2066,9 +2134,11 @@ jobs:
         rust-toolchain
       cargo_root: "crates/jackin-protocol/fuzz"
       cargo_net_offline: true
+      unit_dependencies: rust-jackin-protocol
+      unit_admission: github
   github-rust-jackin-runtime:
     name: "Rust · jackin-runtime"
-    if: ${{ always() && needs.plan.result == 'success' && needs.policy.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-runtime,') }}
+    if: ${{ always() && needs.plan.result == 'success' && needs.policy.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-runtime,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
     needs: [plan, policy]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
@@ -2214,9 +2284,11 @@ jobs:
         rust-toolchain
       cargo_root: "crates/jackin-runtime"
       cargo_net_offline: true
+      unit_dependencies: "rust-jackin-brand,rust-jackin-build-meta,rust-jackin-config,rust-jackin-core,rust-jackin-diagnostics,rust-jackin-docker,rust-jackin-env,rust-jackin-host,rust-jackin-image,rust-jackin-instance,rust-jackin-isolation,rust-jackin-launch,rust-jackin-manifest,rust-jackin-otlp-testbed,rust-jackin-process,rust-jackin-protocol,rust-jackin-telemetry,rust-jackin-test-support,rust-jackin-usage"
+      unit_admission: github
   github-rust-jackin-telemetry:
     name: "Rust · jackin-telemetry"
-    if: ${{ always() && needs.plan.result == 'success' && needs.policy.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-telemetry,') }}
+    if: ${{ always() && needs.plan.result == 'success' && needs.policy.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-telemetry,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
     needs: [plan, policy]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
@@ -2251,9 +2323,10 @@ jobs:
         rust-toolchain
       cargo_root: "crates/jackin-telemetry"
       cargo_net_offline: true
+      unit_admission: github
   github-rust-jackin-test-support:
     name: "Rust · jackin-test-support"
-    if: ${{ always() && needs.plan.result == 'success' && needs.policy.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-test-support,') }}
+    if: ${{ always() && needs.plan.result == 'success' && needs.policy.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-test-support,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
     needs: [plan, policy]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
@@ -2319,9 +2392,11 @@ jobs:
         rust-toolchain
       cargo_root: "crates/jackin-test-support"
       cargo_net_offline: true
+      unit_dependencies: "rust-jackin-core,rust-jackin-manifest"
+      unit_admission: github
   github-rust-jackin-tui:
     name: "Rust · jackin-tui"
-    if: ${{ always() && needs.plan.result == 'success' && needs.policy.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-tui,') }}
+    if: ${{ always() && needs.plan.result == 'success' && needs.policy.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-tui,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
     needs: [plan, policy]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
@@ -2361,9 +2436,11 @@ jobs:
         rust-toolchain
       cargo_root: "crates/jackin-tui"
       cargo_net_offline: true
+      unit_dependencies: rust-jackin-brand
+      unit_admission: github
   github-rust-jackin-usage:
     name: "Rust · jackin-usage"
-    if: ${{ always() && needs.plan.result == 'success' && needs.policy.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-usage,') }}
+    if: ${{ always() && needs.plan.result == 'success' && needs.policy.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-usage,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
     needs: [plan, policy]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
@@ -2430,9 +2507,11 @@ jobs:
         rust-toolchain
       cargo_root: "crates/jackin-usage"
       cargo_net_offline: true
+      unit_dependencies: "rust-jackin-config,rust-jackin-core,rust-jackin-diagnostics,rust-jackin-otlp-testbed,rust-jackin-protocol,rust-jackin-telemetry"
+      unit_admission: github
   github-rust-jackin-usage-ffi:
     name: "Rust · jackin-usage-ffi"
-    if: ${{ always() && needs.plan.result == 'success' && needs.policy.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-usage-ffi,') }}
+    if: ${{ always() && needs.plan.result == 'success' && needs.policy.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-usage-ffi,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
     needs: [plan, policy]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
@@ -2514,9 +2593,11 @@ jobs:
         rust-toolchain
       cargo_root: "crates/jackin-usage-ffi"
       cargo_net_offline: true
+      unit_dependencies: "rust-jackin-config,rust-jackin-core,rust-jackin-env,rust-jackin-protocol,rust-jackin-telemetry,rust-jackin-usage"
+      unit_admission: github
   github-rust-jackin-xtask:
     name: "Rust · jackin-xtask"
-    if: ${{ always() && needs.plan.result == 'success' && needs.policy.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-xtask,') }}
+    if: ${{ always() && needs.plan.result == 'success' && needs.policy.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-xtask,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
     needs: [plan, policy]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
@@ -2556,9 +2637,11 @@ jobs:
         rust-toolchain
       cargo_root: "crates/jackin-xtask"
       cargo_net_offline: true
+      unit_dependencies: rust-jackin-process
+      unit_admission: github
   github-rust-policy:
     name: "Rust · Rust dependency policy"
-    if: ${{ always() && needs.plan.result == 'success' && needs.policy.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-policy,') }}
+    if: ${{ always() && needs.plan.result == 'success' && needs.policy.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-policy,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
     needs: [plan, policy]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
@@ -2589,9 +2672,10 @@ jobs:
         Cargo.lock
         rust-toolchain.toml
         rust-toolchain
+      unit_admission: github
   github-swift-package-native-design-prototypes-unifiedagentusage:
     name: "Swift · Apple · Swift package (native/Design/Prototypes/UnifiedAgentUsage)"
-    if: ${{ always() && needs.plan.result == 'success' && needs.policy.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',swift-package-native-design-prototypes-unifiedagentusage,') }}
+    if: ${{ always() && needs.plan.result == 'success' && needs.policy.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',swift-package-native-design-prototypes-unifiedagentusage,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
     needs: [plan, policy]
     uses: ./.github/workflows/ci-unit-swift.yml
     with:
@@ -2607,9 +2691,11 @@ jobs:
         native/Design/Prototypes/UnifiedAgentUsage/Package.swift
         native/Design/Prototypes/UnifiedAgentUsage/Package.resolved
         native/Design/Prototypes/UnifiedAgentUsage/.swiftpm/Package.resolved
+      apple_executor: true
+      unit_admission: github
   github-swift-package-native:
     name: "Swift · Apple · "
-    if: ${{ always() && needs.plan.result == 'success' && needs.policy.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',swift-package-native,') }}
+    if: ${{ always() && needs.plan.result == 'success' && needs.policy.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',swift-package-native,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
     needs: [plan, policy]
     uses: ./.github/workflows/ci-unit-swift.yml
     with:
@@ -2621,6 +2707,9 @@ jobs:
       base_sha: ${{ needs.plan.outputs.base_sha }}
       head_sha: ${{ needs.plan.outputs.head_sha }}
       mise_tools: "cargo-binstall rust cargo:sccache cargo:boltffi_cli"
+      apple_executor: true
+      unit_dependencies: rust-jackin-usage-ffi
+      unit_admission: github
   ci-required:
     name: ci-required
     if: ${{ always() }}
@@ -2632,7 +2721,7 @@ jobs:
         env:
           NEEDS_JSON: ${{ toJSON(needs) }}
           SELECTED_UNITS: ${{ needs.plan.outputs.units }}
-          FORK_PR: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
+          LANE_ADMITTED_GITHUB: ${{ github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == '')) }}
         shell: bash
         run: |
           set -euo pipefail
@@ -2652,10 +2741,17 @@ jobs:
           selected=",$SELECTED_UNITS,"
           if [[ "$selected" == *",bun-jackin-docs,"* ]]; then
             result="$(result_for_job github-bun-jackin-docs)"
-            case "$result" in
-              success) ;;
-              *) echo "selected CI job github-bun-jackin-docs did not pass: $result" >&2; exit 1 ;;
-            esac
+            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+              case "$result" in
+                success) ;;
+                *) echo "selected CI job github-bun-jackin-docs did not pass: $result" >&2; exit 1 ;;
+              esac
+            else
+              case "$result" in
+                skipped) ;;
+                *) echo "selected CI job github-bun-jackin-docs ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+              esac
+            fi
           else
             result="$(result_for_job github-bun-jackin-docs)"
             case "$result" in
@@ -2665,10 +2761,17 @@ jobs:
           fi
           if [[ "$selected" == *",docker-docker-construct,"* ]]; then
             result="$(result_for_job github-docker-docker-construct)"
-            case "$result" in
-              success) ;;
-              *) echo "selected CI job github-docker-docker-construct did not pass: $result" >&2; exit 1 ;;
-            esac
+            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+              case "$result" in
+                success) ;;
+                *) echo "selected CI job github-docker-docker-construct did not pass: $result" >&2; exit 1 ;;
+              esac
+            else
+              case "$result" in
+                skipped) ;;
+                *) echo "selected CI job github-docker-docker-construct ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+              esac
+            fi
           else
             result="$(result_for_job github-docker-docker-construct)"
             case "$result" in
@@ -2678,10 +2781,17 @@ jobs:
           fi
           if [[ "$selected" == *",rust-arrayref,"* ]]; then
             result="$(result_for_job github-rust-arrayref)"
-            case "$result" in
-              success) ;;
-              *) echo "selected CI job github-rust-arrayref did not pass: $result" >&2; exit 1 ;;
-            esac
+            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+              case "$result" in
+                success) ;;
+                *) echo "selected CI job github-rust-arrayref did not pass: $result" >&2; exit 1 ;;
+              esac
+            else
+              case "$result" in
+                skipped) ;;
+                *) echo "selected CI job github-rust-arrayref ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+              esac
+            fi
           else
             result="$(result_for_job github-rust-arrayref)"
             case "$result" in
@@ -2691,10 +2801,17 @@ jobs:
           fi
           if [[ "$selected" == *",rust-jackin,"* ]]; then
             result="$(result_for_job github-rust-jackin)"
-            case "$result" in
-              success) ;;
-              *) echo "selected CI job github-rust-jackin did not pass: $result" >&2; exit 1 ;;
-            esac
+            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+              case "$result" in
+                success) ;;
+                *) echo "selected CI job github-rust-jackin did not pass: $result" >&2; exit 1 ;;
+              esac
+            else
+              case "$result" in
+                skipped) ;;
+                *) echo "selected CI job github-rust-jackin ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+              esac
+            fi
           else
             result="$(result_for_job github-rust-jackin)"
             case "$result" in
@@ -2704,10 +2821,17 @@ jobs:
           fi
           if [[ "$selected" == *",rust-jackin-agent-status,"* ]]; then
             result="$(result_for_job github-rust-jackin-agent-status)"
-            case "$result" in
-              success) ;;
-              *) echo "selected CI job github-rust-jackin-agent-status did not pass: $result" >&2; exit 1 ;;
-            esac
+            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+              case "$result" in
+                success) ;;
+                *) echo "selected CI job github-rust-jackin-agent-status did not pass: $result" >&2; exit 1 ;;
+              esac
+            else
+              case "$result" in
+                skipped) ;;
+                *) echo "selected CI job github-rust-jackin-agent-status ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+              esac
+            fi
           else
             result="$(result_for_job github-rust-jackin-agent-status)"
             case "$result" in
@@ -2717,10 +2841,17 @@ jobs:
           fi
           if [[ "$selected" == *",rust-jackin-brand,"* ]]; then
             result="$(result_for_job github-rust-jackin-brand)"
-            case "$result" in
-              success) ;;
-              *) echo "selected CI job github-rust-jackin-brand did not pass: $result" >&2; exit 1 ;;
-            esac
+            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+              case "$result" in
+                success) ;;
+                *) echo "selected CI job github-rust-jackin-brand did not pass: $result" >&2; exit 1 ;;
+              esac
+            else
+              case "$result" in
+                skipped) ;;
+                *) echo "selected CI job github-rust-jackin-brand ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+              esac
+            fi
           else
             result="$(result_for_job github-rust-jackin-brand)"
             case "$result" in
@@ -2730,10 +2861,17 @@ jobs:
           fi
           if [[ "$selected" == *",rust-jackin-build-meta,"* ]]; then
             result="$(result_for_job github-rust-jackin-build-meta)"
-            case "$result" in
-              success) ;;
-              *) echo "selected CI job github-rust-jackin-build-meta did not pass: $result" >&2; exit 1 ;;
-            esac
+            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+              case "$result" in
+                success) ;;
+                *) echo "selected CI job github-rust-jackin-build-meta did not pass: $result" >&2; exit 1 ;;
+              esac
+            else
+              case "$result" in
+                skipped) ;;
+                *) echo "selected CI job github-rust-jackin-build-meta ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+              esac
+            fi
           else
             result="$(result_for_job github-rust-jackin-build-meta)"
             case "$result" in
@@ -2743,10 +2881,17 @@ jobs:
           fi
           if [[ "$selected" == *",rust-jackin-capsule,"* ]]; then
             result="$(result_for_job github-rust-jackin-capsule)"
-            case "$result" in
-              success) ;;
-              *) echo "selected CI job github-rust-jackin-capsule did not pass: $result" >&2; exit 1 ;;
-            esac
+            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+              case "$result" in
+                success) ;;
+                *) echo "selected CI job github-rust-jackin-capsule did not pass: $result" >&2; exit 1 ;;
+              esac
+            else
+              case "$result" in
+                skipped) ;;
+                *) echo "selected CI job github-rust-jackin-capsule ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+              esac
+            fi
           else
             result="$(result_for_job github-rust-jackin-capsule)"
             case "$result" in
@@ -2756,10 +2901,17 @@ jobs:
           fi
           if [[ "$selected" == *",rust-jackin-config,"* ]]; then
             result="$(result_for_job github-rust-jackin-config)"
-            case "$result" in
-              success) ;;
-              *) echo "selected CI job github-rust-jackin-config did not pass: $result" >&2; exit 1 ;;
-            esac
+            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+              case "$result" in
+                success) ;;
+                *) echo "selected CI job github-rust-jackin-config did not pass: $result" >&2; exit 1 ;;
+              esac
+            else
+              case "$result" in
+                skipped) ;;
+                *) echo "selected CI job github-rust-jackin-config ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+              esac
+            fi
           else
             result="$(result_for_job github-rust-jackin-config)"
             case "$result" in
@@ -2769,10 +2921,17 @@ jobs:
           fi
           if [[ "$selected" == *",rust-jackin-config-fuzz,"* ]]; then
             result="$(result_for_job github-rust-jackin-config-fuzz)"
-            case "$result" in
-              success) ;;
-              *) echo "selected CI job github-rust-jackin-config-fuzz did not pass: $result" >&2; exit 1 ;;
-            esac
+            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+              case "$result" in
+                success) ;;
+                *) echo "selected CI job github-rust-jackin-config-fuzz did not pass: $result" >&2; exit 1 ;;
+              esac
+            else
+              case "$result" in
+                skipped) ;;
+                *) echo "selected CI job github-rust-jackin-config-fuzz ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+              esac
+            fi
           else
             result="$(result_for_job github-rust-jackin-config-fuzz)"
             case "$result" in
@@ -2782,10 +2941,17 @@ jobs:
           fi
           if [[ "$selected" == *",rust-jackin-console,"* ]]; then
             result="$(result_for_job github-rust-jackin-console)"
-            case "$result" in
-              success) ;;
-              *) echo "selected CI job github-rust-jackin-console did not pass: $result" >&2; exit 1 ;;
-            esac
+            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+              case "$result" in
+                success) ;;
+                *) echo "selected CI job github-rust-jackin-console did not pass: $result" >&2; exit 1 ;;
+              esac
+            else
+              case "$result" in
+                skipped) ;;
+                *) echo "selected CI job github-rust-jackin-console ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+              esac
+            fi
           else
             result="$(result_for_job github-rust-jackin-console)"
             case "$result" in
@@ -2795,10 +2961,17 @@ jobs:
           fi
           if [[ "$selected" == *",rust-jackin-core,"* ]]; then
             result="$(result_for_job github-rust-jackin-core)"
-            case "$result" in
-              success) ;;
-              *) echo "selected CI job github-rust-jackin-core did not pass: $result" >&2; exit 1 ;;
-            esac
+            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+              case "$result" in
+                success) ;;
+                *) echo "selected CI job github-rust-jackin-core did not pass: $result" >&2; exit 1 ;;
+              esac
+            else
+              case "$result" in
+                skipped) ;;
+                *) echo "selected CI job github-rust-jackin-core ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+              esac
+            fi
           else
             result="$(result_for_job github-rust-jackin-core)"
             case "$result" in
@@ -2808,10 +2981,17 @@ jobs:
           fi
           if [[ "$selected" == *",rust-jackin-dev,"* ]]; then
             result="$(result_for_job github-rust-jackin-dev)"
-            case "$result" in
-              success) ;;
-              *) echo "selected CI job github-rust-jackin-dev did not pass: $result" >&2; exit 1 ;;
-            esac
+            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+              case "$result" in
+                success) ;;
+                *) echo "selected CI job github-rust-jackin-dev did not pass: $result" >&2; exit 1 ;;
+              esac
+            else
+              case "$result" in
+                skipped) ;;
+                *) echo "selected CI job github-rust-jackin-dev ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+              esac
+            fi
           else
             result="$(result_for_job github-rust-jackin-dev)"
             case "$result" in
@@ -2821,10 +3001,17 @@ jobs:
           fi
           if [[ "$selected" == *",rust-jackin-diagnostics,"* ]]; then
             result="$(result_for_job github-rust-jackin-diagnostics)"
-            case "$result" in
-              success) ;;
-              *) echo "selected CI job github-rust-jackin-diagnostics did not pass: $result" >&2; exit 1 ;;
-            esac
+            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+              case "$result" in
+                success) ;;
+                *) echo "selected CI job github-rust-jackin-diagnostics did not pass: $result" >&2; exit 1 ;;
+              esac
+            else
+              case "$result" in
+                skipped) ;;
+                *) echo "selected CI job github-rust-jackin-diagnostics ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+              esac
+            fi
           else
             result="$(result_for_job github-rust-jackin-diagnostics)"
             case "$result" in
@@ -2834,10 +3021,17 @@ jobs:
           fi
           if [[ "$selected" == *",rust-jackin-docker,"* ]]; then
             result="$(result_for_job github-rust-jackin-docker)"
-            case "$result" in
-              success) ;;
-              *) echo "selected CI job github-rust-jackin-docker did not pass: $result" >&2; exit 1 ;;
-            esac
+            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+              case "$result" in
+                success) ;;
+                *) echo "selected CI job github-rust-jackin-docker did not pass: $result" >&2; exit 1 ;;
+              esac
+            else
+              case "$result" in
+                skipped) ;;
+                *) echo "selected CI job github-rust-jackin-docker ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+              esac
+            fi
           else
             result="$(result_for_job github-rust-jackin-docker)"
             case "$result" in
@@ -2847,10 +3041,17 @@ jobs:
           fi
           if [[ "$selected" == *",rust-jackin-env,"* ]]; then
             result="$(result_for_job github-rust-jackin-env)"
-            case "$result" in
-              success) ;;
-              *) echo "selected CI job github-rust-jackin-env did not pass: $result" >&2; exit 1 ;;
-            esac
+            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+              case "$result" in
+                success) ;;
+                *) echo "selected CI job github-rust-jackin-env did not pass: $result" >&2; exit 1 ;;
+              esac
+            else
+              case "$result" in
+                skipped) ;;
+                *) echo "selected CI job github-rust-jackin-env ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+              esac
+            fi
           else
             result="$(result_for_job github-rust-jackin-env)"
             case "$result" in
@@ -2860,10 +3061,17 @@ jobs:
           fi
           if [[ "$selected" == *",rust-jackin-env-fuzz,"* ]]; then
             result="$(result_for_job github-rust-jackin-env-fuzz)"
-            case "$result" in
-              success) ;;
-              *) echo "selected CI job github-rust-jackin-env-fuzz did not pass: $result" >&2; exit 1 ;;
-            esac
+            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+              case "$result" in
+                success) ;;
+                *) echo "selected CI job github-rust-jackin-env-fuzz did not pass: $result" >&2; exit 1 ;;
+              esac
+            else
+              case "$result" in
+                skipped) ;;
+                *) echo "selected CI job github-rust-jackin-env-fuzz ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+              esac
+            fi
           else
             result="$(result_for_job github-rust-jackin-env-fuzz)"
             case "$result" in
@@ -2873,10 +3081,17 @@ jobs:
           fi
           if [[ "$selected" == *",rust-jackin-host,"* ]]; then
             result="$(result_for_job github-rust-jackin-host)"
-            case "$result" in
-              success) ;;
-              *) echo "selected CI job github-rust-jackin-host did not pass: $result" >&2; exit 1 ;;
-            esac
+            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+              case "$result" in
+                success) ;;
+                *) echo "selected CI job github-rust-jackin-host did not pass: $result" >&2; exit 1 ;;
+              esac
+            else
+              case "$result" in
+                skipped) ;;
+                *) echo "selected CI job github-rust-jackin-host ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+              esac
+            fi
           else
             result="$(result_for_job github-rust-jackin-host)"
             case "$result" in
@@ -2886,10 +3101,17 @@ jobs:
           fi
           if [[ "$selected" == *",rust-jackin-image,"* ]]; then
             result="$(result_for_job github-rust-jackin-image)"
-            case "$result" in
-              success) ;;
-              *) echo "selected CI job github-rust-jackin-image did not pass: $result" >&2; exit 1 ;;
-            esac
+            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+              case "$result" in
+                success) ;;
+                *) echo "selected CI job github-rust-jackin-image did not pass: $result" >&2; exit 1 ;;
+              esac
+            else
+              case "$result" in
+                skipped) ;;
+                *) echo "selected CI job github-rust-jackin-image ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+              esac
+            fi
           else
             result="$(result_for_job github-rust-jackin-image)"
             case "$result" in
@@ -2899,10 +3121,17 @@ jobs:
           fi
           if [[ "$selected" == *",rust-jackin-instance,"* ]]; then
             result="$(result_for_job github-rust-jackin-instance)"
-            case "$result" in
-              success) ;;
-              *) echo "selected CI job github-rust-jackin-instance did not pass: $result" >&2; exit 1 ;;
-            esac
+            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+              case "$result" in
+                success) ;;
+                *) echo "selected CI job github-rust-jackin-instance did not pass: $result" >&2; exit 1 ;;
+              esac
+            else
+              case "$result" in
+                skipped) ;;
+                *) echo "selected CI job github-rust-jackin-instance ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+              esac
+            fi
           else
             result="$(result_for_job github-rust-jackin-instance)"
             case "$result" in
@@ -2912,10 +3141,17 @@ jobs:
           fi
           if [[ "$selected" == *",rust-jackin-isolation,"* ]]; then
             result="$(result_for_job github-rust-jackin-isolation)"
-            case "$result" in
-              success) ;;
-              *) echo "selected CI job github-rust-jackin-isolation did not pass: $result" >&2; exit 1 ;;
-            esac
+            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+              case "$result" in
+                success) ;;
+                *) echo "selected CI job github-rust-jackin-isolation did not pass: $result" >&2; exit 1 ;;
+              esac
+            else
+              case "$result" in
+                skipped) ;;
+                *) echo "selected CI job github-rust-jackin-isolation ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+              esac
+            fi
           else
             result="$(result_for_job github-rust-jackin-isolation)"
             case "$result" in
@@ -2925,10 +3161,17 @@ jobs:
           fi
           if [[ "$selected" == *",rust-jackin-launch,"* ]]; then
             result="$(result_for_job github-rust-jackin-launch)"
-            case "$result" in
-              success) ;;
-              *) echo "selected CI job github-rust-jackin-launch did not pass: $result" >&2; exit 1 ;;
-            esac
+            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+              case "$result" in
+                success) ;;
+                *) echo "selected CI job github-rust-jackin-launch did not pass: $result" >&2; exit 1 ;;
+              esac
+            else
+              case "$result" in
+                skipped) ;;
+                *) echo "selected CI job github-rust-jackin-launch ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+              esac
+            fi
           else
             result="$(result_for_job github-rust-jackin-launch)"
             case "$result" in
@@ -2938,10 +3181,17 @@ jobs:
           fi
           if [[ "$selected" == *",rust-jackin-manifest,"* ]]; then
             result="$(result_for_job github-rust-jackin-manifest)"
-            case "$result" in
-              success) ;;
-              *) echo "selected CI job github-rust-jackin-manifest did not pass: $result" >&2; exit 1 ;;
-            esac
+            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+              case "$result" in
+                success) ;;
+                *) echo "selected CI job github-rust-jackin-manifest did not pass: $result" >&2; exit 1 ;;
+              esac
+            else
+              case "$result" in
+                skipped) ;;
+                *) echo "selected CI job github-rust-jackin-manifest ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+              esac
+            fi
           else
             result="$(result_for_job github-rust-jackin-manifest)"
             case "$result" in
@@ -2951,10 +3201,17 @@ jobs:
           fi
           if [[ "$selected" == *",rust-jackin-manifest-fuzz,"* ]]; then
             result="$(result_for_job github-rust-jackin-manifest-fuzz)"
-            case "$result" in
-              success) ;;
-              *) echo "selected CI job github-rust-jackin-manifest-fuzz did not pass: $result" >&2; exit 1 ;;
-            esac
+            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+              case "$result" in
+                success) ;;
+                *) echo "selected CI job github-rust-jackin-manifest-fuzz did not pass: $result" >&2; exit 1 ;;
+              esac
+            else
+              case "$result" in
+                skipped) ;;
+                *) echo "selected CI job github-rust-jackin-manifest-fuzz ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+              esac
+            fi
           else
             result="$(result_for_job github-rust-jackin-manifest-fuzz)"
             case "$result" in
@@ -2964,10 +3221,17 @@ jobs:
           fi
           if [[ "$selected" == *",rust-jackin-oppicker,"* ]]; then
             result="$(result_for_job github-rust-jackin-oppicker)"
-            case "$result" in
-              success) ;;
-              *) echo "selected CI job github-rust-jackin-oppicker did not pass: $result" >&2; exit 1 ;;
-            esac
+            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+              case "$result" in
+                success) ;;
+                *) echo "selected CI job github-rust-jackin-oppicker did not pass: $result" >&2; exit 1 ;;
+              esac
+            else
+              case "$result" in
+                skipped) ;;
+                *) echo "selected CI job github-rust-jackin-oppicker ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+              esac
+            fi
           else
             result="$(result_for_job github-rust-jackin-oppicker)"
             case "$result" in
@@ -2977,10 +3241,17 @@ jobs:
           fi
           if [[ "$selected" == *",rust-jackin-otlp-testbed,"* ]]; then
             result="$(result_for_job github-rust-jackin-otlp-testbed)"
-            case "$result" in
-              success) ;;
-              *) echo "selected CI job github-rust-jackin-otlp-testbed did not pass: $result" >&2; exit 1 ;;
-            esac
+            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+              case "$result" in
+                success) ;;
+                *) echo "selected CI job github-rust-jackin-otlp-testbed did not pass: $result" >&2; exit 1 ;;
+              esac
+            else
+              case "$result" in
+                skipped) ;;
+                *) echo "selected CI job github-rust-jackin-otlp-testbed ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+              esac
+            fi
           else
             result="$(result_for_job github-rust-jackin-otlp-testbed)"
             case "$result" in
@@ -2990,10 +3261,17 @@ jobs:
           fi
           if [[ "$selected" == *",rust-jackin-pr-trailers,"* ]]; then
             result="$(result_for_job github-rust-jackin-pr-trailers)"
-            case "$result" in
-              success) ;;
-              *) echo "selected CI job github-rust-jackin-pr-trailers did not pass: $result" >&2; exit 1 ;;
-            esac
+            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+              case "$result" in
+                success) ;;
+                *) echo "selected CI job github-rust-jackin-pr-trailers did not pass: $result" >&2; exit 1 ;;
+              esac
+            else
+              case "$result" in
+                skipped) ;;
+                *) echo "selected CI job github-rust-jackin-pr-trailers ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+              esac
+            fi
           else
             result="$(result_for_job github-rust-jackin-pr-trailers)"
             case "$result" in
@@ -3003,10 +3281,17 @@ jobs:
           fi
           if [[ "$selected" == *",rust-jackin-process,"* ]]; then
             result="$(result_for_job github-rust-jackin-process)"
-            case "$result" in
-              success) ;;
-              *) echo "selected CI job github-rust-jackin-process did not pass: $result" >&2; exit 1 ;;
-            esac
+            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+              case "$result" in
+                success) ;;
+                *) echo "selected CI job github-rust-jackin-process did not pass: $result" >&2; exit 1 ;;
+              esac
+            else
+              case "$result" in
+                skipped) ;;
+                *) echo "selected CI job github-rust-jackin-process ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+              esac
+            fi
           else
             result="$(result_for_job github-rust-jackin-process)"
             case "$result" in
@@ -3016,10 +3301,17 @@ jobs:
           fi
           if [[ "$selected" == *",rust-jackin-protocol,"* ]]; then
             result="$(result_for_job github-rust-jackin-protocol)"
-            case "$result" in
-              success) ;;
-              *) echo "selected CI job github-rust-jackin-protocol did not pass: $result" >&2; exit 1 ;;
-            esac
+            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+              case "$result" in
+                success) ;;
+                *) echo "selected CI job github-rust-jackin-protocol did not pass: $result" >&2; exit 1 ;;
+              esac
+            else
+              case "$result" in
+                skipped) ;;
+                *) echo "selected CI job github-rust-jackin-protocol ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+              esac
+            fi
           else
             result="$(result_for_job github-rust-jackin-protocol)"
             case "$result" in
@@ -3029,10 +3321,17 @@ jobs:
           fi
           if [[ "$selected" == *",rust-jackin-protocol-fuzz,"* ]]; then
             result="$(result_for_job github-rust-jackin-protocol-fuzz)"
-            case "$result" in
-              success) ;;
-              *) echo "selected CI job github-rust-jackin-protocol-fuzz did not pass: $result" >&2; exit 1 ;;
-            esac
+            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+              case "$result" in
+                success) ;;
+                *) echo "selected CI job github-rust-jackin-protocol-fuzz did not pass: $result" >&2; exit 1 ;;
+              esac
+            else
+              case "$result" in
+                skipped) ;;
+                *) echo "selected CI job github-rust-jackin-protocol-fuzz ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+              esac
+            fi
           else
             result="$(result_for_job github-rust-jackin-protocol-fuzz)"
             case "$result" in
@@ -3042,10 +3341,17 @@ jobs:
           fi
           if [[ "$selected" == *",rust-jackin-runtime,"* ]]; then
             result="$(result_for_job github-rust-jackin-runtime)"
-            case "$result" in
-              success) ;;
-              *) echo "selected CI job github-rust-jackin-runtime did not pass: $result" >&2; exit 1 ;;
-            esac
+            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+              case "$result" in
+                success) ;;
+                *) echo "selected CI job github-rust-jackin-runtime did not pass: $result" >&2; exit 1 ;;
+              esac
+            else
+              case "$result" in
+                skipped) ;;
+                *) echo "selected CI job github-rust-jackin-runtime ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+              esac
+            fi
           else
             result="$(result_for_job github-rust-jackin-runtime)"
             case "$result" in
@@ -3055,10 +3361,17 @@ jobs:
           fi
           if [[ "$selected" == *",rust-jackin-telemetry,"* ]]; then
             result="$(result_for_job github-rust-jackin-telemetry)"
-            case "$result" in
-              success) ;;
-              *) echo "selected CI job github-rust-jackin-telemetry did not pass: $result" >&2; exit 1 ;;
-            esac
+            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+              case "$result" in
+                success) ;;
+                *) echo "selected CI job github-rust-jackin-telemetry did not pass: $result" >&2; exit 1 ;;
+              esac
+            else
+              case "$result" in
+                skipped) ;;
+                *) echo "selected CI job github-rust-jackin-telemetry ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+              esac
+            fi
           else
             result="$(result_for_job github-rust-jackin-telemetry)"
             case "$result" in
@@ -3068,10 +3381,17 @@ jobs:
           fi
           if [[ "$selected" == *",rust-jackin-test-support,"* ]]; then
             result="$(result_for_job github-rust-jackin-test-support)"
-            case "$result" in
-              success) ;;
-              *) echo "selected CI job github-rust-jackin-test-support did not pass: $result" >&2; exit 1 ;;
-            esac
+            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+              case "$result" in
+                success) ;;
+                *) echo "selected CI job github-rust-jackin-test-support did not pass: $result" >&2; exit 1 ;;
+              esac
+            else
+              case "$result" in
+                skipped) ;;
+                *) echo "selected CI job github-rust-jackin-test-support ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+              esac
+            fi
           else
             result="$(result_for_job github-rust-jackin-test-support)"
             case "$result" in
@@ -3081,10 +3401,17 @@ jobs:
           fi
           if [[ "$selected" == *",rust-jackin-tui,"* ]]; then
             result="$(result_for_job github-rust-jackin-tui)"
-            case "$result" in
-              success) ;;
-              *) echo "selected CI job github-rust-jackin-tui did not pass: $result" >&2; exit 1 ;;
-            esac
+            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+              case "$result" in
+                success) ;;
+                *) echo "selected CI job github-rust-jackin-tui did not pass: $result" >&2; exit 1 ;;
+              esac
+            else
+              case "$result" in
+                skipped) ;;
+                *) echo "selected CI job github-rust-jackin-tui ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+              esac
+            fi
           else
             result="$(result_for_job github-rust-jackin-tui)"
             case "$result" in
@@ -3094,10 +3421,17 @@ jobs:
           fi
           if [[ "$selected" == *",rust-jackin-usage,"* ]]; then
             result="$(result_for_job github-rust-jackin-usage)"
-            case "$result" in
-              success) ;;
-              *) echo "selected CI job github-rust-jackin-usage did not pass: $result" >&2; exit 1 ;;
-            esac
+            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+              case "$result" in
+                success) ;;
+                *) echo "selected CI job github-rust-jackin-usage did not pass: $result" >&2; exit 1 ;;
+              esac
+            else
+              case "$result" in
+                skipped) ;;
+                *) echo "selected CI job github-rust-jackin-usage ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+              esac
+            fi
           else
             result="$(result_for_job github-rust-jackin-usage)"
             case "$result" in
@@ -3107,10 +3441,17 @@ jobs:
           fi
           if [[ "$selected" == *",rust-jackin-usage-ffi,"* ]]; then
             result="$(result_for_job github-rust-jackin-usage-ffi)"
-            case "$result" in
-              success) ;;
-              *) echo "selected CI job github-rust-jackin-usage-ffi did not pass: $result" >&2; exit 1 ;;
-            esac
+            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+              case "$result" in
+                success) ;;
+                *) echo "selected CI job github-rust-jackin-usage-ffi did not pass: $result" >&2; exit 1 ;;
+              esac
+            else
+              case "$result" in
+                skipped) ;;
+                *) echo "selected CI job github-rust-jackin-usage-ffi ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+              esac
+            fi
           else
             result="$(result_for_job github-rust-jackin-usage-ffi)"
             case "$result" in
@@ -3120,10 +3461,17 @@ jobs:
           fi
           if [[ "$selected" == *",rust-jackin-xtask,"* ]]; then
             result="$(result_for_job github-rust-jackin-xtask)"
-            case "$result" in
-              success) ;;
-              *) echo "selected CI job github-rust-jackin-xtask did not pass: $result" >&2; exit 1 ;;
-            esac
+            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+              case "$result" in
+                success) ;;
+                *) echo "selected CI job github-rust-jackin-xtask did not pass: $result" >&2; exit 1 ;;
+              esac
+            else
+              case "$result" in
+                skipped) ;;
+                *) echo "selected CI job github-rust-jackin-xtask ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+              esac
+            fi
           else
             result="$(result_for_job github-rust-jackin-xtask)"
             case "$result" in
@@ -3133,10 +3481,17 @@ jobs:
           fi
           if [[ "$selected" == *",rust-policy,"* ]]; then
             result="$(result_for_job github-rust-policy)"
-            case "$result" in
-              success) ;;
-              *) echo "selected CI job github-rust-policy did not pass: $result" >&2; exit 1 ;;
-            esac
+            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+              case "$result" in
+                success) ;;
+                *) echo "selected CI job github-rust-policy did not pass: $result" >&2; exit 1 ;;
+              esac
+            else
+              case "$result" in
+                skipped) ;;
+                *) echo "selected CI job github-rust-policy ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+              esac
+            fi
           else
             result="$(result_for_job github-rust-policy)"
             case "$result" in
@@ -3146,10 +3501,17 @@ jobs:
           fi
           if [[ "$selected" == *",swift-package-native-design-prototypes-unifiedagentusage,"* ]]; then
             result="$(result_for_job github-swift-package-native-design-prototypes-unifiedagentusage)"
-            case "$result" in
-              success) ;;
-              *) echo "selected CI job github-swift-package-native-design-prototypes-unifiedagentusage did not pass: $result" >&2; exit 1 ;;
-            esac
+            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+              case "$result" in
+                success) ;;
+                *) echo "selected CI job github-swift-package-native-design-prototypes-unifiedagentusage did not pass: $result" >&2; exit 1 ;;
+              esac
+            else
+              case "$result" in
+                skipped) ;;
+                *) echo "selected CI job github-swift-package-native-design-prototypes-unifiedagentusage ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+              esac
+            fi
           else
             result="$(result_for_job github-swift-package-native-design-prototypes-unifiedagentusage)"
             case "$result" in
@@ -3159,10 +3521,17 @@ jobs:
           fi
           if [[ "$selected" == *",swift-package-native,"* ]]; then
             result="$(result_for_job github-swift-package-native)"
-            case "$result" in
-              success) ;;
-              *) echo "selected CI job github-swift-package-native did not pass: $result" >&2; exit 1 ;;
-            esac
+            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+              case "$result" in
+                success) ;;
+                *) echo "selected CI job github-swift-package-native did not pass: $result" >&2; exit 1 ;;
+              esac
+            else
+              case "$result" in
+                skipped) ;;
+                *) echo "selected CI job github-swift-package-native ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+              esac
+            fi
           else
             result="$(result_for_job github-swift-package-native)"
             case "$result" in

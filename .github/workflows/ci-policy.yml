@@ -18,11 +18,16 @@ jobs:
     name: Policy
     runs-on: ubuntu-26.04
     timeout-minutes: 20
-    # Trust invariant: this job runs the base branch's validator against the
-    # audited tree under pull_request_target. It holds `contents: read` only,
-    # references no secrets, and its checkout persists no credentials, so
-    # building and running the tree's declared generator here is no more
-    # privileged than the pull_request lanes that already build the tree.
+    # Trust invariant: this job runs the base branch's Stage-0 validator
+    # product against the audited tree under pull_request_target. It holds
+    # `contents: read` only, references no secrets, persists no credentials,
+    # and never compiles. When the audited pin's closure differs from the
+    # base validator's, it additionally EXECUTES the PR run's prebuilt
+    # candidate generator — PR-built code, same-repository runs only, bound
+    # to the audited tree by manifest closure plus binary digest before
+    # execution — with no secret references, no persisted credentials, the
+    # read-only github.token confined to the Acquire/Ruleset API steps,
+    # and both candidate exec points tokenless.
     permissions:
       contents: read
     steps:
@@ -43,64 +48,72 @@ jobs:
             git fetch --no-tags "$GITHUB_SERVER_URL/$HEAD_REPOSITORY" "$HEAD_SHA"
           fi
           git checkout --quiet --detach "$HEAD_SHA"
-      - name: Bound the Mr. Boxington store
-        shell: bash
-        run: echo "MBX_GC_MAX_SIZE=12GiB" >> "$GITHUB_ENV"
-      - name: Set up Mr. Boxington
-        uses: jdx/mr-boxington-action@7234d3dd1a6ca8f6c381eea8e4dfb03f18fcf777 # v1.3.0
+      - name: Set up Velnor workflow runtime
+        uses: tailrocks/velnor/.github/actions/setup-velnor-workflow@dead5ecb7baff1a5d28975bb81ee2832690b7e4a
         with:
-          backend: github
-          version: 1.11.1
-          cache-key: velnor-policy-mbx-1.11.1-${{ runner.os }}-${{ runner.arch }}-b9c3156cdb88e63c11b9e595a3e694b02238c09a
-          restore-keys: |
-            velnor-policy-mbx-1.11.1-${{ runner.os }}-${{ runner.arch }}-
-      - name: Install pinned Velnor workflow runtime
-        env:
-          CARGO_HOME: ${{ runner.temp }}/velnor-workflow-cargo-home
-          CARGO_TARGET_DIR: ${{ runner.temp }}/velnor-workflow-cargo-target
-          VELNOR_WORKFLOW_INSTALL_DIR: ${{ runner.temp }}/velnor-workflow-install
-          VELNOR_WORKFLOW_ROOT: ${{ runner.temp }}/velnor-workflow
+          rev: dead5ecb7baff1a5d28975bb81ee2832690b7e4a
+          checkout-path: ${{ github.workspace }}/policy-checkout
+      - name: Read declared generator pin
+        id: pin
+        working-directory: policy-checkout
         run: |
           set -euo pipefail
-          install -d -m 700 \
-            "$CARGO_HOME" \
-            "$CARGO_TARGET_DIR" \
-            "$VELNOR_WORKFLOW_INSTALL_DIR"
-          cd "$VELNOR_WORKFLOW_INSTALL_DIR"
-          env -u RUSTC_WRAPPER -u SCCACHE_GHA_ENABLED -u CARGO_INCREMENTAL -u RUSTFLAGS -u CARGO_ENCODED_RUSTFLAGS \
-            cargo install \
-            --locked \
-            --git https://github.com/tailrocks/velnor \
-            --rev b9c3156cdb88e63c11b9e595a3e694b02238c09a \
-            --root "$VELNOR_WORKFLOW_ROOT" \
-            velnor-workflow \
-            --bin velnor-workflow
-          echo "$VELNOR_WORKFLOW_ROOT/bin" >> "$GITHUB_PATH"
+          pin="$(sed -n -E 's/^[[:space:]]*revision[[:space:]]*=[[:space:]]*"([0-9a-f]{40})".*/\1/p' .github-gen/velnor-workflow.toml | head -n 1)"
+          test "$pin" != '' || pin="$(sed -n -E 's/^.*VELNOR_WORKFLOW_POLICY_REVISION:[[:space:]]*([0-9a-f]{40}).*/\1/p' .github/workflows/ci-policy.yml | head -n 1)"
+          test "$pin" != '' || { echo "::error::audited tree declares no generator pin" >&2; exit 1; }
+          echo "value=$pin" >> "$GITHUB_OUTPUT"
+      - name: Set up declared generator product
+        id: renderer
+        if: steps.pin.outputs.value != 'dead5ecb7baff1a5d28975bb81ee2832690b7e4a'
+        uses: tailrocks/velnor/.github/actions/setup-velnor-workflow@dead5ecb7baff1a5d28975bb81ee2832690b7e4a
+        with:
+          rev: ${{ steps.pin.outputs.value }}
+          checkout-path: ${{ github.workspace }}/policy-checkout
+      - name: Resolve declared generator product
+        if: steps.pin.outputs.value != 'dead5ecb7baff1a5d28975bb81ee2832690b7e4a'
+        run: |
+          set -euo pipefail
+          binary="$HOME/.cache/velnor/workflow-runtime/${{ steps.renderer.outputs.closure }}/bin/velnor-workflow"
+          test -x "$binary"
+          echo "VELNOR_WORKFLOW_PINNED_BINARY=$binary" >> "$GITHUB_ENV"
       - name: Resolve required status checks
         env:
           GH_TOKEN: ${{ github.token }}
           DEFAULT_BRANCH: main
+          DECLARED_RULESET_CONTEXTS: DCO,Policy,ci-required
         run: |
           set -euo pipefail
-          contexts="$(gh api "repos/$GITHUB_REPOSITORY/rulesets?includes_parents=true" \
+          stderr="$(mktemp)"
+          trap 'rm -f "$stderr"' EXIT
+          if contexts="$(gh api "repos/$GITHUB_REPOSITORY/rulesets?includes_parents=true" 2>"$stderr" \
             | jq -r '.[] | select(.target == "branch" and .enforcement == "active") | .id' \
             | while read -r id; do gh api "repos/$GITHUB_REPOSITORY/rulesets/$id"; done \
             | jq -r --arg branch "refs/heads/$DEFAULT_BRANCH" 'select(.conditions.ref_name.include | any(. == "~DEFAULT_BRANCH" or . == "~ALL" or . == $branch)) | .rules[] | select(.type == "required_status_checks") | .parameters.required_status_checks[].context' \
-            | sort -u | paste -sd, -)"
+            | sort -u | paste -sd, -)"; then
+            :
+          elif grep -qE '(HTTP 403|Upgrade to GitHub Team)' "$stderr"; then
+            echo "::warning::rulesets API returned 403; falling back to declared contexts [$DECLARED_RULESET_CONTEXTS]"
+            contexts="$DECLARED_RULESET_CONTEXTS"
+          else
+            cat "$stderr" >&2
+            exit 1
+          fi
           echo "RULESET_CONTEXTS=$contexts" >> "$GITHUB_ENV"
       - name: Enforce workflow policy
         env:
           WORKFLOW_ROOT: ${{ github.workspace }}/policy-checkout
           HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.sha }}
-          VELNOR_WORKFLOW_POLICY_REVISION: b9c3156cdb88e63c11b9e595a3e694b02238c09a
+          VELNOR_WORKFLOW_POLICY_REVISION: dead5ecb7baff1a5d28975bb81ee2832690b7e4a
         run: |
           set -euo pipefail
           velnor-workflow policy \
             --workflow-root "$WORKFLOW_ROOT" \
             --head-sha "$HEAD_SHA" \
             --base-sha "$BASE_SHA" \
+            --candidate-manifest "${VELNOR_WORKFLOW_CANDIDATE_MANIFEST:-}" \
             --ruleset-contexts "$RULESET_CONTEXTS"
+
       - name: Set up actionlint
         uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
@@ -108,4 +121,6 @@ jobs:
           cache: false
       - name: Lint caller workflows
         working-directory: policy-checkout
+        env:
+          MISE_NO_CONFIG: "1"
         run: mise exec actionlint@1.7.12 -- actionlint

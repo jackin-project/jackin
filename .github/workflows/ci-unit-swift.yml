@@ -96,12 +96,28 @@ on:
         required: false
         type: boolean
         default: false
+      candidate_publish:
+        required: false
+        type: boolean
+        default: false
+      apple_executor:
+        required: false
+        type: boolean
+        default: false
+      unit_dependencies:
+        required: false
+        type: string
+        default: ""
+      unit_admission:
+        required: false
+        type: string
+        default: ""
 
 jobs:
   verify-github:
     name: GitHub
     if: ${{ inputs.lane == 'github' && contains(format(',{0},', inputs.selected_units), format(',{0},', inputs.unit)) && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
-    runs-on: ubuntu-26.04
+    runs-on: macos-26
     timeout-minutes: 45
     steps:
       - name: Mark CI job start
@@ -121,13 +137,33 @@ jobs:
         with:
           persist-credentials: false
           ref: ${{ inputs.head_sha }}
+      - name: Record unit dependencies
+        env:
+          UNIT_ID: ${{ inputs.unit }}
+          UNIT_DEPENDENCIES: ${{ inputs.unit_dependencies }}
+          UNIT_ADMISSION: ${{ inputs.unit_admission }}
+          UNIT_LANE: ${{ inputs.lane }}
+        run: |
+          {
+            echo '## Unit dependencies'
+            echo
+            echo "- Unit: $UNIT_ID"
+            echo "- Lane: $UNIT_LANE"
+            echo "- Admission: $UNIT_ADMISSION"
+            if [[ -z "$UNIT_DEPENDENCIES" ]]; then
+              echo '- Dependencies: none'
+            else
+              echo "- Dependencies: $UNIT_DEPENDENCIES"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
       - name: Set up Velnor workflow runtime
+        id: runtime
         if: ${{ runner.environment == 'github-hosted' }}
-        uses: tailrocks/velnor/.github/actions/setup-velnor-workflow@b9c3156cdb88e63c11b9e595a3e694b02238c09a
+        uses: tailrocks/velnor/.github/actions/setup-velnor-workflow@dead5ecb7baff1a5d28975bb81ee2832690b7e4a
         with:
-          rev: b9c3156cdb88e63c11b9e595a3e694b02238c09a
+          rev: dead5ecb7baff1a5d28975bb81ee2832690b7e4a
       - name: Set trusted workflow policy revision
-        run: echo "VELNOR_WORKFLOW_POLICY_REVISION=b9c3156cdb88e63c11b9e595a3e694b02238c09a" >> "$GITHUB_ENV"
+        run: echo "VELNOR_WORKFLOW_POLICY_REVISION=dead5ecb7baff1a5d28975bb81ee2832690b7e4a" >> "$GITHUB_ENV"
       - name: Mark runner setup end
         if: always()
         run: |
@@ -279,7 +315,7 @@ jobs:
           fi
       - name: Report phase timings and cache outcomes
         if: always()
-        uses: tailrocks/velnor/.github/actions/report-velnor-ci-outcomes@b9c3156cdb88e63c11b9e595a3e694b02238c09a
+        uses: tailrocks/velnor/.github/actions/report-velnor-ci-outcomes@dead5ecb7baff1a5d28975bb81ee2832690b7e4a
         with:
           job_label: ${{ inputs.unit }}
           ci_lane: github

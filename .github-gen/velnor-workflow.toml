@@ -2,7 +2,9 @@ schema = 1
 
 [generator]
 repository = "jackin-project/jackin"
-revision = "b9c3156cdb88e63c11b9e595a3e694b02238c09a"
+# D19 pin: the velnor-workflow commit that rendered this tree (generic
+# CI/CD capabilities superseding the #994 static-file restore).
+revision = "dead5ecb7baff1a5d28975bb81ee2832690b7e4a"
 
 [scan]
 exclude = ["native/Package.swift", "native/.swiftpm/**"]
@@ -23,6 +25,84 @@ velnor_labels = ["self-hosted", "velnor-target-mvp"]
 ruleset_required_status_checks = ["ci-required"]
 ruleset_external_status_checks = ["DCO"]
 
+# Self-hosted Renovate: schedule + writer identity from the #994 copy
+# (renovate.yml: cron "0 6 * * *", secrets.RENOVATE_TOKEN, RENOVATE_GIT_AUTHOR).
+# lanes = "github": the copy defaulted to velnor, but velnor/both lanes
+# require [workflow] velnor_trusted_label, and no trusted-label fact exists in
+# this repo. Revisit for velnor/both once the fleet label is known.
+# The copy's `mise` unsafe-execution allowance (mise-lock refresh in Renovate
+# PRs) has no schema surface and is dropped; allowed_commands is unset.
+[renovate]
+enabled = true
+reason = "Self-hosted Renovate writer for mise/cargo/docker/tool pins; validator gates renovate.json changes."
+schedule = "0 6 * * *"
+token = "RENOVATE_TOKEN"
+config = "renovate.json"
+validate = true
+lanes = "github"
+author = "Renovate Bot <renovate@whitesourcesoftware.com>"
+signoff = true
+
+[[declare]]
+primitive = "renovate"
+file = "renovate.yml"
+
+[[declare]]
+primitive = "renovate-validate"
+file = "renovate-validate.yml"
+
+# Desktop cadence (L5): the two heavier tiers from desktop-cadence.yml.
+# Merge tier runs the PR graph + UI tests (task desktop-merge, mise.toml);
+# scheduled tier runs the merge graph + dead-code scan (task desktop-scheduled).
+# Toolchain env (DEVELOPER_DIR, MACOSX_DEPLOYMENT_TARGET) is job-level in the
+# copy, so it travels as profile env; every tool id equals a mise.lock key.
+[[check_profile]]
+id = "desktop-merge"
+name = "Desktop merge cadence"
+runner = "macos"
+tools = ["cargo-binstall", "rust", "aqua:nextest-rs/nextest/cargo-nextest", "cargo:boltffi_cli", "xcodegen", "swiftlint", "xcbeautify", "ripgrep"]
+tasks = ["desktop-merge"]
+timeout_minutes = 90
+status = "required"
+[check_profile.env]
+CARGO_TERM_COLOR = "always"
+DEVELOPER_DIR = "/Applications/Xcode_26.6.app/Contents/Developer"
+MACOSX_DEPLOYMENT_TARGET = "26.0"
+
+[[check_profile]]
+id = "desktop-scheduled"
+name = "Desktop scheduled cadence"
+schedule = "41 4 * * 1"
+runner = "macos"
+tools = ["cargo-binstall", "rust", "aqua:nextest-rs/nextest/cargo-nextest", "cargo:boltffi_cli", "xcodegen", "swiftlint", "xcbeautify", "periphery", "ripgrep"]
+tasks = ["desktop-scheduled"]
+timeout_minutes = 90
+status = "required"
+[check_profile.env]
+CARGO_TERM_COLOR = "always"
+DEVELOPER_DIR = "/Applications/Xcode_26.6.app/Contents/Developer"
+MACOSX_DEPLOYMENT_TARGET = "26.0"
+
+# One file, one trigger set, faithful to the copy: the merge tier is
+# dispatch-driven (no push trigger in the copy; `workflow_dispatch`
+# validates but renders nothing extra since every file carries it), the
+# scheduled tier keeps the copy's Monday cron. Switching the merge tier to
+# push-triggered is a product decision for a follow-up, not this migration.
+[[declare]]
+primitive = "scheduled-checks"
+file = "desktop-merge.yml"
+[declare.args]
+profiles = ["desktop-merge"]
+name = "Desktop merge cadence"
+events = ["workflow_dispatch"]
+
+[[declare]]
+primitive = "scheduled-checks"
+file = "desktop-scheduled.yml"
+[declare.args]
+profiles = ["desktop-scheduled"]
+name = "Desktop scheduled cadence"
+
 # Unit contracts the scan cannot derive. Command arrays are rejected by
 # velnor-workflow 721c2fed; typed capabilities only (`ci_tasks`, `mise_tools`).
 # Construct Dockerfile ARG defaults match versions.env so the scan-derived
@@ -35,6 +115,10 @@ mise_tools = ["github:open-telemetry/weaver"]
 # Run desktop-xcframework in the same macOS job as swift-package-native so
 # the binary target path is populated on one runner (separate jobs do not
 # share target/xcframework).
+# capabilities = ["xcframework"]: Q4 obligation — without it this Apple-bound
+# unit renders ubuntu + Linux plan-artifact runtime (slice 9 split).
+# depends_on (F2): FFI touches select this Swift consumer; selection coupling
+# only, no forced serialization (the unit rebuilds the XCFramework in-job).
 [[units]]
 id = "swift-package-native"
 kind = "swift"
@@ -42,9 +126,18 @@ root = "native"
 watch = ["native/**/*.swift", "native/Package.swift", "native/Package.resolved", "native/.swiftpm/Package.resolved", "crates/jackin-xtask/**"]
 ci_tasks = ["swift-package-native-ci"]
 mise_tools = ["cargo-binstall", "rust", "cargo:sccache", "cargo:boltffi_cli"]
+capabilities = ["xcframework"]
+depends_on = ["rust-jackin-usage-ffi"]
 
 # jackin-lints pins nightly via crates/jackin-lints/rust-toolchain.
 # dylint-link must be on PATH (rust + cargo-binstall).
 [[units]]
 id = "rust-jackin-lints"
 mise_tools = ["rust", "cargo-binstall"]
+
+# Q4 obligation, second Swift unit (scanned): AppKit prototype, genuinely
+# Apple-bound, but scan evidence cannot prove it. Row-over-scan merge keeps
+# the scanned base and overrides the platform requirement only.
+[[units]]
+id = "swift-package-native-design-prototypes-unifiedagentusage"
+capabilities = ["xcode"]
