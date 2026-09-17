@@ -129,6 +129,57 @@ pub(crate) fn agent_mounts(state: &crate::instance::RoleState) -> Vec<String> {
         }
     }
 
+    if let Some(antigravity) = &state.auth.antigravity {
+        push_agent_home_mounts(&mut mounts, &state.root, Agent::Antigravity);
+        if let Some(settings_json) = &antigravity.settings_json {
+            mounts.push(format!(
+                "{}:/jackin/antigravity/settings.json",
+                settings_json.display()
+            ));
+        }
+    }
+
+    if let Some(gemini) = &state.auth.gemini {
+        push_agent_home_mounts(&mut mounts, &state.root, Agent::Gemini);
+        if let Some(oauth_creds) = &gemini.oauth_creds {
+            mounts.push(format!(
+                "{}:/jackin/gemini/oauth_creds.json",
+                oauth_creds.display()
+            ));
+        }
+    }
+
+    if let Some(cursor) = &state.auth.cursor {
+        push_agent_home_mounts(&mut mounts, &state.root, Agent::Cursor);
+        if let Some(auth_json) = &cursor.auth_json {
+            mounts.push(format!("{}:/jackin/cursor/auth.json", auth_json.display()));
+        }
+    }
+
+    if let Some(muse_) = &state.auth.muse {
+        push_agent_home_mounts(&mut mounts, &state.root, Agent::Muse);
+        if let Some(auth_json) = &muse_.auth_json {
+            mounts.push(format!("{}:/jackin/muse/auth.json", auth_json.display()));
+        }
+    }
+
+    if let Some(omp) = &state.auth.omp {
+        push_agent_home_mounts(&mut mounts, &state.root, Agent::Omp);
+        if let Some(agent_db) = &omp.agent_db {
+            mounts.push(format!("{}:/jackin/omp/agent.db", agent_db.display()));
+        }
+    }
+
+    if let Some(hermes) = &state.auth.hermes {
+        push_agent_home_mounts(&mut mounts, &state.root, Agent::Hermes);
+        if hermes.forward_auth {
+            mounts.push(format!(
+                "{}:/jackin/hermes",
+                state.root.join("hermes").display()
+            ));
+        }
+    }
+
     mounts
 }
 

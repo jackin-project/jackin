@@ -815,6 +815,12 @@ pub(crate) async fn launch_role_runtime(
             "kimi" => state.auth.kimi.is_some(),
             "opencode" => state.auth.opencode.is_some(),
             "grok" => state.auth.grok.is_some(),
+            "antigravity" => state.auth.antigravity.is_some(),
+            "gemini" => state.auth.gemini.is_some(),
+            "cursor" => state.auth.cursor.is_some(),
+            "muse" => state.auth.muse.is_some(),
+            "omp" => state.auth.omp.is_some(),
+            "hermes" => state.auth.hermes.is_some(),
             _ => false,
         };
         let session_contract = crate::runtime::docker_profile::format_session_contract(

@@ -760,6 +760,14 @@ pub fn default_allowed_hosts_for_agent(agent: &str) -> &'static [&'static str] {
         "kimi" => &["api.kimi.com", "kimi.moonshot.cn"],
         "opencode" => &["api.z.ai", "api.anthropic.com", "api.openai.com"],
         "grok" => &["api.x.ai"],
+        // Google-fronted CLIs reach the Gemini API endpoint.
+        "antigravity" | "gemini" => &["generativelanguage.googleapis.com"],
+        "cursor" => &["api2.cursor.sh"],
+        // Muse API base is provider-configured; no verified default host.
+        "muse" => &[],
+        // Multi-provider routers reach whichever provider the routed account
+        // selects; OpenRouter is the documented default route.
+        "omp" | "hermes" => &["openrouter.ai"],
         _ => &[],
     }
 }

@@ -99,6 +99,67 @@ fn amp_secrets_path() -> PathBuf {
 fn opencode_auth_path() -> PathBuf {
     xdg_data_home().join("opencode/auth.json")
 }
+
+/// Gemini home: `GEMINI_CLI_HOME` names the *parent* to which `.gemini` is
+/// appended (it is not the config dir itself); default `~/.gemini`.
+fn gemini_home() -> PathBuf {
+    gemini_home_from(nonempty_env("GEMINI_CLI_HOME").as_deref())
+}
+
+fn gemini_home_from(env: Option<&str>) -> PathBuf {
+    match env {
+        Some(parent) => Path::new(parent).join(".gemini"),
+        None => Path::new(AGENT_HOME).join(".gemini"),
+    }
+}
+
+fn gemini_oauth_creds_path() -> PathBuf {
+    gemini_home().join("oauth_creds.json")
+}
+
+fn antigravity_settings_path() -> PathBuf {
+    gemini_home().join("antigravity-cli/settings.json")
+}
+
+/// Cursor reads `auth.json` from `CURSOR_CONFIG_DIR` (default `~/.cursor`).
+/// Verbatim-dir semantics assumed from the variable name and docs citation.
+fn cursor_home() -> PathBuf {
+    cursor_home_from(nonempty_env("CURSOR_CONFIG_DIR").as_deref())
+}
+
+fn cursor_home_from(env: Option<&str>) -> PathBuf {
+    env_or_agent_home(env, ".cursor")
+}
+
+fn cursor_auth_path() -> PathBuf {
+    cursor_home().join("auth.json")
+}
+
+// Muse has no observed config-dir env var, so its credential path is fixed.
+const MUSE_AUTH_PATH: &str = "/home/agent/.config/muse/auth.json";
+
+/// omp reads its SQLite store from `PI_CODING_AGENT_DIR` (default `~/.omp`);
+/// `OMP_PROFILE` selects a named profile within that dir.
+fn omp_home() -> PathBuf {
+    omp_home_from(nonempty_env("PI_CODING_AGENT_DIR").as_deref())
+}
+
+fn omp_home_from(env: Option<&str>) -> PathBuf {
+    env_or_agent_home(env, ".omp")
+}
+
+fn omp_agent_db_path() -> PathBuf {
+    omp_home().join("agent/agent.db")
+}
+
+/// Hermes reads its store from `HERMES_HOME` (default `~/.hermes`).
+fn hermes_home() -> PathBuf {
+    hermes_home_from(nonempty_env("HERMES_HOME").as_deref())
+}
+
+fn hermes_home_from(env: Option<&str>) -> PathBuf {
+    env_or_agent_home(env, ".hermes")
+}
 const CAPSULE_RUNTIME_BIN: &str = container_paths::CAPSULE_BIN;
 const GIT_HOOKS_DIR: &str = container_paths::GIT_HOOKS_DIR;
 const GIT_HOOK_PATH: &str = container_paths::GIT_HOOK_PREPARE_COMMIT_MSG;
@@ -293,6 +354,12 @@ fn run_agent_setup() -> Result<()> {
         "kimi" => setup_kimi(mode),
         "opencode" => setup_opencode(mode),
         "grok" => setup_grok(mode),
+        "antigravity" => setup_antigravity(mode),
+        "gemini" => setup_gemini(mode),
+        "cursor" => setup_cursor(mode),
+        "muse" => setup_muse(mode),
+        "omp" => setup_omp(mode),
+        "hermes" => setup_hermes(mode),
         other => bail!("unknown JACKIN_AGENT: {other}"),
     };
     emit_capsule_auth_provision(&agent, mode, materialization.as_ref());
@@ -841,6 +908,161 @@ fn setup_grok(mode: AuthMode) -> Result<AuthMaterialization> {
             api_key_envs: &["XAI_API_KEY", "GROK_DEPLOYMENT_KEY"],
         },
     )
+}
+
+fn setup_antigravity(mode: AuthMode) -> Result<AuthMaterialization> {
+    seed_forwarded_credential(
+        jackin_core::Agent::Antigravity,
+        mode,
+        &ForwardedCredential {
+            label: "antigravity",
+            forwarded: Path::new(container_paths::ANTIGRAVITY_SETTINGS),
+            target: &antigravity_settings_path(),
+            api_key_envs: &["GEMINI_API_KEY"],
+        },
+    )
+}
+
+fn setup_gemini(mode: AuthMode) -> Result<AuthMaterialization> {
+    seed_forwarded_credential(
+        jackin_core::Agent::Gemini,
+        mode,
+        &ForwardedCredential {
+            label: "gemini",
+            forwarded: Path::new(container_paths::GEMINI_AUTH),
+            target: &gemini_oauth_creds_path(),
+            api_key_envs: &["GEMINI_API_KEY"],
+        },
+    )
+}
+
+fn setup_cursor(mode: AuthMode) -> Result<AuthMaterialization> {
+    seed_forwarded_credential(
+        jackin_core::Agent::Cursor,
+        mode,
+        &ForwardedCredential {
+            label: "cursor",
+            forwarded: Path::new(container_paths::CURSOR_AUTH),
+            target: &cursor_auth_path(),
+            api_key_envs: &["CURSOR_API_KEY"],
+        },
+    )
+}
+
+fn setup_muse(mode: AuthMode) -> Result<AuthMaterialization> {
+    seed_forwarded_credential(
+        jackin_core::Agent::Muse,
+        mode,
+        &ForwardedCredential {
+            label: "muse",
+            forwarded: Path::new(container_paths::MUSE_AUTH),
+            target: Path::new(MUSE_AUTH_PATH),
+            api_key_envs: &["META_API_KEY"],
+        },
+    )
+}
+
+fn setup_omp(mode: AuthMode) -> Result<AuthMaterialization> {
+    seed_forwarded_credential(
+        jackin_core::Agent::Omp,
+        mode,
+        &ForwardedCredential {
+            label: "omp",
+            forwarded: Path::new(container_paths::OMP_AGENT_DB),
+            target: &omp_agent_db_path(),
+            // No native key: any routed provider key suppresses the warning.
+            api_key_envs: &[
+                "OPENROUTER_API_KEY",
+                "ANTHROPIC_API_KEY",
+                "OPENAI_API_KEY",
+                "GEMINI_API_KEY",
+                "CURSOR_API_KEY",
+                "META_API_KEY",
+                "XAI_API_KEY",
+            ],
+        },
+    )
+}
+
+/// Hermes's store is a directory (like Kimi), so it cannot use
+/// [`seed_forwarded_credential`]; same closed mode policy as [`setup_kimi`].
+fn setup_hermes(mode: AuthMode) -> Result<AuthMaterialization> {
+    use jackin_telemetry::schema::enums::{
+        CredentialSourceType as Source, ErrorType, OutcomeValue as Outcome,
+    };
+    let first_seed = seed_agent_home_from_enum(jackin_core::Agent::Hermes)?.is_first_seed();
+    let forwarded = Path::new(container_paths::HERMES_DIR);
+    let target = hermes_home();
+    let forwarded_present = forwarded.is_dir() && dir_nonempty(forwarded)?;
+    if matches!(mode, AuthMode::Ignore) {
+        if target.exists() {
+            fs::remove_dir_all(&target).context("failed to clear ignored Hermes credentials")?;
+        }
+        return Ok(AuthMaterialization {
+            source: Source::None,
+            outcome: Outcome::Skip,
+            error: None,
+        });
+    }
+    if matches!(mode, AuthMode::ApiKey | AuthMode::OauthToken) {
+        if target.exists() {
+            fs::remove_dir_all(&target).context("failed to clear Hermes credential store")?;
+        }
+        let available = [
+            "OPENROUTER_API_KEY",
+            "ANTHROPIC_API_KEY",
+            "OPENAI_API_KEY",
+            "GEMINI_API_KEY",
+            "CURSOR_API_KEY",
+            "META_API_KEY",
+            "XAI_API_KEY",
+        ]
+        .iter()
+        .any(|key| nonempty_env(key).is_some());
+        return Ok(AuthMaterialization {
+            source: if available {
+                Source::Environment
+            } else {
+                Source::None
+            },
+            outcome: if available {
+                Outcome::Success
+            } else {
+                Outcome::Failure
+            },
+            error: (!available).then_some(ErrorType::CredentialUnavailable),
+        });
+    }
+    let mut copied = false;
+    if first_seed {
+        if forwarded_present {
+            copy_dir_contents(forwarded, &target)?;
+            copied = true;
+        } else {
+            crate::output::stderr_line(format_args!(
+                "[entrypoint] hermes: no forwarded credential and no api key in env - agent will require interactive login"
+            ));
+        }
+    } else if forwarded_present && !(target.is_dir() && dir_nonempty(&target)?) {
+        copy_dir_contents(forwarded, &target)?;
+        copied = true;
+    }
+    let available = target.is_dir() && dir_nonempty(&target)?;
+    Ok(AuthMaterialization {
+        source: if copied {
+            Source::AgentHome
+        } else if available {
+            Source::OauthStore
+        } else {
+            Source::None
+        },
+        outcome: if available {
+            Outcome::Success
+        } else {
+            Outcome::Failure
+        },
+        error: (!available).then_some(ErrorType::CredentialUnavailable),
+    })
 }
 
 /// Whether a durable home was empty and got seeded on this start. Named instead

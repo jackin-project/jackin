@@ -247,7 +247,13 @@ plugins = []
         jackin_core::Agent::Amp
         | jackin_core::Agent::Kimi
         | jackin_core::Agent::Opencode
-        | jackin_core::Agent::Grok => AuthForwardMode::Ignore,
+        | jackin_core::Agent::Grok
+        | jackin_core::Agent::Antigravity
+        | jackin_core::Agent::Gemini
+        | jackin_core::Agent::Cursor
+        | jackin_core::Agent::Muse
+        | jackin_core::Agent::Omp
+        | jackin_core::Agent::Hermes => AuthForwardMode::Ignore,
     };
 
     let (state, selected_outcome) = RoleState::prepare(

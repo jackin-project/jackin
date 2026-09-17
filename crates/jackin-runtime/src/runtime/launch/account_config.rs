@@ -123,6 +123,25 @@ fn opencode_provider(
             "@ai-sdk/openai-compatible",
             "https://opencode.ai/zen/v1",
         ),
+        // models.dev `google` provider via the AI SDK Google package; v1beta
+        // is the package default base.
+        AiProvider::Google => (
+            "google",
+            "@ai-sdk/google",
+            "https://generativelanguage.googleapis.com/v1beta",
+        ),
+        AiProvider::OpenRouter => (
+            "openrouter",
+            "@ai-sdk/openai-compatible",
+            "https://openrouter.ai/api/v1",
+        ),
+        // No OpenCode catalog provider exists for Cursor/Meta; a custom
+        // provider entry needs verified protocol/base-URL details that are
+        // still unknown (Cursor's agent endpoint is proprietary; Meta's API
+        // base is unconfirmed). Deferred to the provider-config lane.
+        AiProvider::Cursor | AiProvider::Meta => anyhow::bail!(
+            "{provider} accounts cannot authenticate OpenCode yet: no catalog provider entry"
+        ),
         AiProvider::Amp => anyhow::bail!("Amp accounts cannot authenticate OpenCode"),
     })
 }

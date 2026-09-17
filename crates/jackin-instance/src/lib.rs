@@ -245,6 +245,47 @@ pub struct GrokAuth {
     pub auth_json: Option<PathBuf>,
 }
 
+/// Antigravity's provisioned auth slot. Forwards prefs only — the OAuth
+/// grant stays in the host Keychain singleton and cannot be synced.
+#[derive(Debug, Clone, Default)]
+pub struct AntigravityAuth {
+    pub settings_json: Option<PathBuf>,
+}
+
+/// Gemini CLI's provisioned auth slot. `oauth_creds` is `None` under
+/// env-driven modes or when no host `~/.gemini/oauth_creds.json` was present.
+#[derive(Debug, Clone, Default)]
+pub struct GeminiAuth {
+    pub oauth_creds: Option<PathBuf>,
+}
+
+/// Cursor's provisioned auth slot. `auth_json` is `None` under env-driven
+/// modes or when no host `~/.cursor/auth.json` was present.
+#[derive(Debug, Clone, Default)]
+pub struct CursorAuth {
+    pub auth_json: Option<PathBuf>,
+}
+
+/// Muse's provisioned auth slot. `auth_json` is `None` under env-driven
+/// modes or when no host `~/.config/muse/auth.json` was present.
+#[derive(Debug, Clone, Default)]
+pub struct MuseAuth {
+    pub auth_json: Option<PathBuf>,
+}
+
+/// omp's provisioned auth slot. `agent_db` is `None` under env-driven
+/// modes or when no host `~/.omp/agent/agent.db` was present.
+#[derive(Debug, Clone, Default)]
+pub struct OmpAuth {
+    pub agent_db: Option<PathBuf>,
+}
+
+/// Hermes's provisioned auth slot.
+#[derive(Debug, Clone, Default)]
+pub struct HermesAuth {
+    pub forward_auth: bool,
+}
+
 /// Auth state provisioned for one or more agents.
 ///
 /// Each per-agent slot is `Some(_)` iff that agent was included in the
@@ -257,6 +298,12 @@ pub struct ProvisionedAuth {
     pub kimi: Option<KimiAuth>,
     pub opencode: Option<OpencodeAuth>,
     pub grok: Option<GrokAuth>,
+    pub antigravity: Option<AntigravityAuth>,
+    pub gemini: Option<GeminiAuth>,
+    pub cursor: Option<CursorAuth>,
+    pub muse: Option<MuseAuth>,
+    pub omp: Option<OmpAuth>,
+    pub hermes: Option<HermesAuth>,
 }
 
 enum ProvisionedAuthSlot {
@@ -266,6 +313,12 @@ enum ProvisionedAuthSlot {
     Kimi(KimiAuth),
     Opencode(OpencodeAuth),
     Grok(GrokAuth),
+    Antigravity(AntigravityAuth),
+    Gemini(GeminiAuth),
+    Cursor(CursorAuth),
+    Muse(MuseAuth),
+    Omp(OmpAuth),
+    Hermes(HermesAuth),
 }
 
 struct AgentAuthProvision {
@@ -673,6 +726,12 @@ impl RoleState {
                 ProvisionedAuthSlot::Kimi(slot) => auth.kimi = Some(slot),
                 ProvisionedAuthSlot::Opencode(slot) => auth.opencode = Some(slot),
                 ProvisionedAuthSlot::Grok(slot) => auth.grok = Some(slot),
+                ProvisionedAuthSlot::Antigravity(slot) => auth.antigravity = Some(slot),
+                ProvisionedAuthSlot::Gemini(slot) => auth.gemini = Some(slot),
+                ProvisionedAuthSlot::Cursor(slot) => auth.cursor = Some(slot),
+                ProvisionedAuthSlot::Muse(slot) => auth.muse = Some(slot),
+                ProvisionedAuthSlot::Omp(slot) => auth.omp = Some(slot),
+                ProvisionedAuthSlot::Hermes(slot) => auth.hermes = Some(slot),
             }
         }
 
@@ -883,6 +942,37 @@ impl RoleState {
                         Self::provision_grok_slot(root, home_dir, mode, host_home, sync_src)?;
                     Ok((ProvisionedAuthSlot::Grok(slot), outcome))
                 }
+                jackin_core::Agent::Antigravity => {
+                    let (slot, outcome) = Self::provision_antigravity_slot(
+                        root, home_dir, mode, host_home, sync_src,
+                    )?;
+                    Ok((ProvisionedAuthSlot::Antigravity(slot), outcome))
+                }
+                jackin_core::Agent::Gemini => {
+                    let (slot, outcome) =
+                        Self::provision_gemini_slot(root, home_dir, mode, host_home, sync_src)?;
+                    Ok((ProvisionedAuthSlot::Gemini(slot), outcome))
+                }
+                jackin_core::Agent::Cursor => {
+                    let (slot, outcome) =
+                        Self::provision_cursor_slot(root, home_dir, mode, host_home, sync_src)?;
+                    Ok((ProvisionedAuthSlot::Cursor(slot), outcome))
+                }
+                jackin_core::Agent::Muse => {
+                    let (slot, outcome) =
+                        Self::provision_muse_slot(root, home_dir, mode, host_home, sync_src)?;
+                    Ok((ProvisionedAuthSlot::Muse(slot), outcome))
+                }
+                jackin_core::Agent::Omp => {
+                    let (slot, outcome) =
+                        Self::provision_omp_slot(root, home_dir, mode, host_home, sync_src)?;
+                    Ok((ProvisionedAuthSlot::Omp(slot), outcome))
+                }
+                jackin_core::Agent::Hermes => {
+                    let (slot, outcome) =
+                        Self::provision_hermes_slot(root, home_dir, mode, host_home, sync_src)?;
+                    Ok((ProvisionedAuthSlot::Hermes(slot), outcome))
+                }
             };
         let timing_detail = provision_result
             .as_ref()
@@ -1053,6 +1143,125 @@ impl RoleState {
 
         Ok((GrokAuth { auth_json }, outcome))
     }
+
+    fn provision_antigravity_slot(
+        root: &Path,
+        home_dir: &Path,
+        mode: AuthForwardMode,
+        host_home: &Path,
+        sync_source_dir: Option<&Path>,
+    ) -> anyhow::Result<(AntigravityAuth, AuthProvisionOutcome)> {
+        let antigravity_dir = root.join("antigravity");
+        let antigravity_home_dir = home_dir.join(".gemini/antigravity-cli");
+        std::fs::create_dir_all(&antigravity_dir)?;
+        std::fs::create_dir_all(&antigravity_home_dir)?;
+        let settings_json_path = antigravity_dir.join("settings.json");
+        let (outcome, settings_json) = if let Some(source_dir) = sync_source_dir {
+            Self::provision_antigravity_auth_from_source_dir(&settings_json_path, mode, source_dir)?
+        } else {
+            Self::provision_antigravity_auth(&settings_json_path, mode, host_home)?
+        };
+        Ok((AntigravityAuth { settings_json }, outcome))
+    }
+
+    fn provision_gemini_slot(
+        root: &Path,
+        home_dir: &Path,
+        mode: AuthForwardMode,
+        host_home: &Path,
+        sync_source_dir: Option<&Path>,
+    ) -> anyhow::Result<(GeminiAuth, AuthProvisionOutcome)> {
+        let gemini_dir = root.join("gemini");
+        let gemini_home_dir = home_dir.join(".gemini");
+        std::fs::create_dir_all(&gemini_dir)?;
+        std::fs::create_dir_all(&gemini_home_dir)?;
+        let oauth_creds_path = gemini_dir.join("oauth_creds.json");
+        let (outcome, oauth_creds) = if let Some(source_dir) = sync_source_dir {
+            Self::provision_gemini_auth_from_source_dir(&oauth_creds_path, mode, source_dir)?
+        } else {
+            Self::provision_gemini_auth(&oauth_creds_path, mode, host_home)?
+        };
+        Ok((GeminiAuth { oauth_creds }, outcome))
+    }
+
+    fn provision_cursor_slot(
+        root: &Path,
+        home_dir: &Path,
+        mode: AuthForwardMode,
+        host_home: &Path,
+        sync_source_dir: Option<&Path>,
+    ) -> anyhow::Result<(CursorAuth, AuthProvisionOutcome)> {
+        let cursor_dir = root.join("cursor");
+        let cursor_home_dir = home_dir.join(".cursor");
+        std::fs::create_dir_all(&cursor_dir)?;
+        std::fs::create_dir_all(&cursor_home_dir)?;
+        let auth_json_path = cursor_dir.join("auth.json");
+        let (outcome, auth_json) = if let Some(source_dir) = sync_source_dir {
+            Self::provision_cursor_auth_from_source_dir(&auth_json_path, mode, source_dir)?
+        } else {
+            Self::provision_cursor_auth(&auth_json_path, mode, host_home)?
+        };
+        Ok((CursorAuth { auth_json }, outcome))
+    }
+
+    fn provision_muse_slot(
+        root: &Path,
+        home_dir: &Path,
+        mode: AuthForwardMode,
+        host_home: &Path,
+        sync_source_dir: Option<&Path>,
+    ) -> anyhow::Result<(MuseAuth, AuthProvisionOutcome)> {
+        let muse_dir = root.join("muse");
+        let muse_home_dir = home_dir.join(".config/muse");
+        std::fs::create_dir_all(&muse_dir)?;
+        std::fs::create_dir_all(&muse_home_dir)?;
+        let auth_json_path = muse_dir.join("auth.json");
+        let (outcome, auth_json) = if let Some(source_dir) = sync_source_dir {
+            Self::provision_muse_auth_from_source_dir(&auth_json_path, mode, source_dir)?
+        } else {
+            Self::provision_muse_auth(&auth_json_path, mode, host_home)?
+        };
+        Ok((MuseAuth { auth_json }, outcome))
+    }
+
+    fn provision_omp_slot(
+        root: &Path,
+        home_dir: &Path,
+        mode: AuthForwardMode,
+        host_home: &Path,
+        sync_source_dir: Option<&Path>,
+    ) -> anyhow::Result<(OmpAuth, AuthProvisionOutcome)> {
+        let omp_dir = root.join("omp");
+        let omp_home_dir = home_dir.join(".omp");
+        std::fs::create_dir_all(&omp_dir)?;
+        std::fs::create_dir_all(&omp_home_dir)?;
+        let agent_db_path = omp_dir.join("agent.db");
+        let (outcome, agent_db) = if let Some(source_dir) = sync_source_dir {
+            Self::provision_omp_auth_from_source_dir(&agent_db_path, mode, source_dir)?
+        } else {
+            Self::provision_omp_auth(&agent_db_path, mode, host_home)?
+        };
+        Ok((OmpAuth { agent_db }, outcome))
+    }
+
+    fn provision_hermes_slot(
+        root: &Path,
+        home_dir: &Path,
+        mode: AuthForwardMode,
+        host_home: &Path,
+        sync_source_dir: Option<&Path>,
+    ) -> anyhow::Result<(HermesAuth, AuthProvisionOutcome)> {
+        let hermes_dir = root.join("hermes");
+        let hermes_home_dir = home_dir.join(".hermes");
+        std::fs::create_dir_all(&hermes_dir)?;
+        std::fs::create_dir_all(&hermes_home_dir)?;
+        let (outcome, forward_auth) = if let Some(source_dir) = sync_source_dir {
+            Self::provision_hermes_auth_from_source_dir(&hermes_dir, mode, source_dir)?
+        } else {
+            Self::provision_hermes_auth(&hermes_dir, mode, host_home)?
+        };
+        Ok((HermesAuth { forward_auth }, outcome))
+    }
 }
 
 fn skipped_ignore_auth_slot(root: &Path, agent: jackin_core::Agent) -> ProvisionedAuthSlot {
@@ -1070,6 +1279,14 @@ fn skipped_ignore_auth_slot(root: &Path, agent: jackin_core::Agent) -> Provision
         jackin_core::Agent::Kimi => ProvisionedAuthSlot::Kimi(KimiAuth::default()),
         jackin_core::Agent::Opencode => ProvisionedAuthSlot::Opencode(OpencodeAuth::default()),
         jackin_core::Agent::Grok => ProvisionedAuthSlot::Grok(GrokAuth::default()),
+        jackin_core::Agent::Antigravity => {
+            ProvisionedAuthSlot::Antigravity(AntigravityAuth::default())
+        }
+        jackin_core::Agent::Gemini => ProvisionedAuthSlot::Gemini(GeminiAuth::default()),
+        jackin_core::Agent::Cursor => ProvisionedAuthSlot::Cursor(CursorAuth::default()),
+        jackin_core::Agent::Muse => ProvisionedAuthSlot::Muse(MuseAuth::default()),
+        jackin_core::Agent::Omp => ProvisionedAuthSlot::Omp(OmpAuth::default()),
+        jackin_core::Agent::Hermes => ProvisionedAuthSlot::Hermes(HermesAuth::default()),
     }
 }
 
@@ -1090,6 +1307,12 @@ fn agent_ignore_can_skip_state_prepare(
         jackin_core::Agent::Kimi => vec![root.join("kimi-code")],
         jackin_core::Agent::Opencode => vec![root.join("opencode/auth.json")],
         jackin_core::Agent::Grok => vec![root.join("grok/auth.json")],
+        jackin_core::Agent::Antigravity => vec![root.join("antigravity/settings.json")],
+        jackin_core::Agent::Gemini => vec![root.join("gemini/oauth_creds.json")],
+        jackin_core::Agent::Cursor => vec![root.join("cursor/auth.json")],
+        jackin_core::Agent::Muse => vec![root.join("muse/auth.json")],
+        jackin_core::Agent::Omp => vec![root.join("omp/agent.db")],
+        jackin_core::Agent::Hermes => vec![root.join("hermes")],
     };
 
     for path in stale_paths {

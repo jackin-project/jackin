@@ -27,7 +27,7 @@ fn renders_derived_dockerfile_with_workspace_and_entrypoint() {
     ));
     // A fixed PATH covers every agent's bin dir so the mounted binaries resolve.
     assert!(dockerfile.contains(
-        "ENV PATH=\"/jackin/runtime:/home/agent/.local/bin:/home/agent/.amp/bin:/home/agent/.kimi-code/bin:/home/agent/.opencode/bin:/home/agent/.grok/bin:${PATH}\""
+        "ENV PATH=\"/jackin/runtime:/home/agent/.local/bin:/home/agent/.amp/bin:/home/agent/.kimi-code/bin:/home/agent/.opencode/bin:/home/agent/.grok/bin:/home/agent/.antigravity/bin:/home/agent/.gemini-cli/bin:/home/agent/.cursor-agent/bin:/home/agent/.muse/bin:/home/agent/.omp/bin:/home/agent/.hermes/bin:${PATH}\""
     ));
     assert!(dockerfile.contains("ENTRYPOINT [\"/jackin/runtime/jackin-capsule\"]"));
 }
