@@ -212,6 +212,15 @@ fn inspect_directory(
             file = nested;
         }
     }
+    // Kimi rotates the live grant into per-environment siblings
+    // (`credentials/kimi-code-env-<id>.json`) while the base file keeps a
+    // drained placeholder; a stale base file must not hide the live grant.
+    if agent == Agent::Kimi
+        && !matches!(&read_credentials(&file), Ok(Some(value)) if has_credentials(agent, value))
+        && let Some(live) = newest_kimi_env_credentials(&directory.join("credentials"))
+    {
+        file = live;
+    }
     let file_result = read_credentials(&file);
     if let Ok(Some(value)) = &file_result
         && has_credentials(agent, value)
@@ -285,6 +294,35 @@ fn map_store_error(error: super::stores::StoreError) -> DiscoveryError {
 // when the stores lane exposes secrets for import, a
 // `discover_store_credentials` API + `account scan` import can be layered
 // here without touching the matchers above.
+
+/// Newest Kimi per-environment credential file, if any.
+///
+/// Bounded directory scan: only `kimi-code-env-*.json` regular files are
+/// considered, newest first by mtime (name order breaks ties and covers
+/// mtime failures deterministically). Returns `None` when the directory
+/// cannot be listed.
+fn newest_kimi_env_credentials(dir: &Path) -> Option<PathBuf> {
+    let entries = std::fs::read_dir(dir).ok()?;
+    let mut candidates: Vec<(std::time::SystemTime, PathBuf)> = entries
+        .flatten()
+        .filter_map(|entry| {
+            let name = entry.file_name();
+            let name = name.to_str()?;
+            let is_env_grant = name.starts_with("kimi-code-env-")
+                && entry.path().extension().is_some_and(|ext| ext == "json");
+            if !is_env_grant {
+                return None;
+            }
+            let mtime = entry
+                .metadata()
+                .and_then(|m| m.modified())
+                .unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+            Some((mtime, entry.path()))
+        })
+        .collect();
+    candidates.sort();
+    candidates.pop().map(|(_, path)| path)
+}
 
 fn read_credentials(path: &Path) -> Result<Option<Value>, DiscoveryError> {
     match std::fs::metadata(path) {

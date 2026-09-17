@@ -319,6 +319,31 @@ fn kimi_default_discovery_accepts_cli_home_without_duplicate_accounts() {
 }
 
 #[test]
+fn kimi_discovery_prefers_live_env_grant_over_drained_base_file() {
+    let home = tempfile::tempdir().unwrap();
+    let directory = home.path().join(".kimi-code");
+    std::fs::create_dir_all(directory.join("credentials")).unwrap();
+    std::fs::write(
+        directory.join("credentials/kimi-code.json"),
+        r#"{"access_token":"","refresh_token":"","expires_at":0,"scope":"kimi-code"}"#,
+    )
+    .unwrap();
+    std::fs::write(
+        directory.join("credentials/kimi-code-env-fixture.json"),
+        r#"{"access_token":"fixture-live","refresh_token":"fixture-refresh","expires_at":9999999999,"scope":"kimi-code"}"#,
+    )
+    .unwrap();
+    let found = inspect_directory(Agent::Kimi, &directory, home.path(), |_| false)
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        found.evidence,
+        CredentialEvidence::File(directory.join("credentials/kimi-code-env-fixture.json"))
+    );
+    assert!(!format!("{found:?}").contains("fixture-live"));
+}
+
+#[test]
 fn oauth_discovery_keeps_only_nonempty_subscription_reference() {
     let name = jackin_core::CLAUDE_CODE_OAUTH_TOKEN_ENV_NAME;
     for (value, expected) in [("", false), (" ", false), ("fixture-token", true)] {
