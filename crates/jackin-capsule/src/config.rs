@@ -63,20 +63,20 @@ fn validate(config: &CapsuleConfig) -> Result<()> {
     if config.workdir.trim().is_empty() {
         anyhow::bail!("{} workdir is empty", jackin_protocol::CAPSULE_CONFIG_PATH);
     }
-    for agent in &config.agents {
-        let mode = config.auth_mode_for_agent(agent).ok_or_else(|| {
-            anyhow::anyhow!("missing bounded auth mode for configured agent {agent}")
+    for instance in &config.instances {
+        let mode = config.auth_mode_for_instance(instance).ok_or_else(|| {
+            anyhow::anyhow!("missing bounded auth mode for configured instance {instance}")
         })?;
         if !matches!(mode, "sync" | "api_key" | "oauth_token" | "ignore") {
-            anyhow::bail!("invalid bounded auth mode for configured agent {agent}");
+            anyhow::bail!("invalid bounded auth mode for configured instance {instance}");
         }
     }
     if config
         .auth_modes
         .keys()
-        .any(|agent| !config.agents.contains(agent))
+        .any(|instance| !config.instances.contains(instance))
     {
-        anyhow::bail!("auth mode names an agent outside the configured allowlist");
+        anyhow::bail!("auth mode names an instance outside the configured allowlist");
     }
     Ok(())
 }
@@ -97,14 +97,33 @@ pub(crate) fn load_agent_credentials(
         }
         Err(error) => return Err(error),
     };
+    let credentials = parse_agent_credentials(&raw)?;
+    validate_agent_credentials(config, &credentials)?;
+    Ok(credentials)
+}
+
+/// Decode the staged protected-credentials file. Only the v2 envelope is
+/// accepted; anything else (v1 agent-keyed shape, missing or non-2 version,
+/// malformed JSON) is an explicit restart/upgrade error, never a silent
+/// misread. Diagnostics never carry file contents.
+fn parse_agent_credentials(raw: &[u8]) -> std::io::Result<jackin_protocol::AgentCredentialEnv> {
     let credentials: jackin_protocol::AgentCredentialEnv =
-        serde_json::from_slice(&raw).map_err(|_| {
+        serde_json::from_slice(raw).map_err(|_| {
             std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
-                "invalid protected account credentials",
+                "invalid protected account credentials: expected the v2 envelope \
+                 `{\"schema_version\":2,\"instances\":{...}}`; restart the container \
+                 from an upgraded host",
             )
         })?;
-    validate_agent_credentials(config, &credentials)?;
+    if credentials.schema_version() != 2 {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "unsupported protected account credentials schema: expected the v2 envelope \
+             `{\"schema_version\":2,\"instances\":{...}}`; restart the container \
+             from an upgraded host",
+        ));
+    }
     Ok(credentials)
 }
 
@@ -112,12 +131,18 @@ fn validate_agent_credentials(
     config: &CapsuleConfig,
     credentials: &jackin_protocol::AgentCredentialEnv,
 ) -> std::io::Result<()> {
-    for agent in &config.agents {
+    for instance in &config.instances {
+        if config.agent_for_instance(instance).is_none() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "launch config instance has no agent runtime",
+            ));
+        }
         if matches!(
-            config.auth_mode_for_agent(agent),
+            config.auth_mode_for_instance(instance),
             Some("api_key" | "oauth_token")
         ) && credentials
-            .for_agent(agent)
+            .for_instance(instance)
             .is_none_or(std::collections::BTreeMap::is_empty)
         {
             return Err(std::io::Error::new(
@@ -126,19 +151,20 @@ fn validate_agent_credentials(
             ));
         }
     }
-    for (agent, env) in credentials.iter() {
-        if !config.agents.contains(agent)
+    for (instance, entry) in credentials.iter() {
+        if !config.instances.contains(instance)
             || !matches!(
-                config.auth_mode_for_agent(agent),
+                config.auth_mode_for_instance(instance),
                 Some("api_key" | "oauth_token")
             )
-            || env
+            || entry
+                .env
                 .iter()
                 .any(|(name, value)| !jackin_core::is_account_env(name) || value.trim().is_empty())
         {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
-                "protected account credentials violate agent admission",
+                "protected account credentials violate instance admission",
             ));
         }
     }

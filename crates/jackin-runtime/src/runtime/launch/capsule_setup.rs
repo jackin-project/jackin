@@ -10,89 +10,74 @@ use jackin_protocol;
 
 const CAPSULE_LITERAL_SOURCE: &str = "literal";
 
+/// Auth transport per admitted instance, keyed by config id.
+///
+/// Instances are already authorized by [`jackin_config::resolve_launch`};
+/// each entry carries its account's forward mode plus the profile source
+/// directory for `sync` transports.
 pub(crate) fn account_auth_selections(
     config: &jackin_config::AppConfig,
-    workspace_name: Option<&jackin_core::WorkspaceName>,
-    role_key: &str,
-    agents: &[jackin_core::Agent],
+    instances: &[jackin_config::ResolvedInstance],
 ) -> anyhow::Result<
     std::collections::BTreeMap<
-        jackin_core::Agent,
+        String,
         (jackin_config::AuthForwardMode, Option<std::path::PathBuf>),
     >,
 > {
-    agents
+    instances
         .iter()
-        .copied()
-        .map(|agent| {
-            let account = jackin_config::resolve_account(config, agent, workspace_name, role_key)?;
-            let selection =
-                account.map_or((jackin_config::AuthForwardMode::Ignore, None), |account| {
-                    (
-                        account.auth_mode(),
-                        account.source_directory().map(Path::to_path_buf),
-                    )
-                });
-            Ok((agent, selection))
+        .map(|instance| {
+            let account = config
+                .accounts
+                .get(&instance.account_id)
+                .ok_or_else(|| anyhow::anyhow!("unknown account {:?}", instance.account_id))?;
+            Ok((
+                instance.config_id.clone(),
+                (
+                    account.auth_mode(),
+                    account.source_directory().map(Path::to_path_buf),
+                ),
+            ))
         })
         .collect()
 }
 
+/// Per-instance auth modes for [`jackin_protocol::CapsuleConfig`], keyed by
+/// instance config ID in launch order.
 pub(crate) fn capsule_auth_modes(
     config: &jackin_config::AppConfig,
-    workspace_name: Option<&jackin_core::WorkspaceName>,
-    role_key: &str,
-    manifest: &jackin_manifest::RoleManifest,
-    selected_agent: Option<jackin_core::Agent>,
+    instances: &[jackin_config::ResolvedInstance],
 ) -> anyhow::Result<std::collections::BTreeMap<String, String>> {
-    let supported = manifest.supported_agents();
-    let mut auth_modes = std::collections::BTreeMap::new();
-    if let Some(selected) = selected_agent {
-        let selections = account_auth_selections(config, workspace_name, role_key, &[selected])?;
-        for agent in supported {
-            let mode = if agent == selected {
-                selections
-                    .get(&agent)
-                    .map_or(jackin_config::AuthForwardMode::Ignore, |(mode, _)| *mode)
-            } else {
-                jackin_config::AuthForwardMode::Ignore
-            };
-            auth_modes.insert(agent.slug().to_owned(), mode.to_string());
-        }
-    } else {
-        let selections = account_auth_selections(config, workspace_name, role_key, &supported)?;
-        for (agent, (mode, _)) in selections {
-            auth_modes.insert(agent.slug().to_owned(), mode.to_string());
-        }
-    }
-    Ok(auth_modes)
+    let selections = account_auth_selections(config, instances)?;
+    Ok(selections
+        .into_iter()
+        .map(|(config_id, (mode, _))| (config_id, mode.to_string()))
+        .collect())
 }
 
 /// Account models must override role defaults: a role's native-provider model
 /// may be invalid for the selected account's provider. Explicit launch options
-/// are applied afterwards by the coordinator.
+/// are applied afterwards by the coordinator. The effective instance model
+/// (configuration override, else account default) wins per instance.
 pub(crate) fn apply_account_models(
     launch: &mut jackin_protocol::CapsuleConfig,
     config: &jackin_config::AppConfig,
-    workspace: Option<&jackin_core::WorkspaceName>,
-    role: &str,
-    agents: &[jackin_core::Agent],
+    instances: &[jackin_config::ResolvedInstance],
 ) -> anyhow::Result<()> {
-    for &agent in agents {
-        let Some(account) = jackin_config::resolve_account(config, agent, workspace, role)? else {
+    for instance in instances {
+        let account = config
+            .accounts
+            .get(&instance.account_id)
+            .ok_or_else(|| anyhow::anyhow!("unknown account {:?}", instance.account_id))?;
+        let Some(model) = instance.model.as_deref() else {
             continue;
         };
-        if let jackin_config::AccountCredential::ApiKey {
-            model: Some(model), ..
-        } = &account.credential
-        {
-            let model = if agent == jackin_core::Agent::Opencode {
-                super::account_config::opencode_model(account.provider, model)?
-            } else {
-                model.clone()
-            };
-            launch.models.insert(agent.slug().to_owned(), model);
-        }
+        let model = if instance.agent == jackin_core::Agent::Opencode {
+            super::account_config::opencode_model(account.provider, model)?
+        } else {
+            model.to_owned()
+        };
+        launch.models.insert(instance.config_id.clone(), model);
     }
     Ok(())
 }
@@ -132,19 +117,23 @@ pub(crate) fn capsule_config(
     manifest: &jackin_manifest::RoleManifest,
     dirty_exit_policy: &str,
     isolated_worktrees: Vec<String>,
+    instances: &[jackin_config::ResolvedInstance],
 ) -> jackin_protocol::CapsuleConfig {
-    let mut agents = Vec::new();
     let mut models = std::collections::BTreeMap::new();
-    for agent in manifest.supported_agents() {
-        agents.push(agent.slug().to_owned());
-        let model = manifest.agent_model(agent);
-        if let Some(model) = model {
-            models.insert(agent.slug().to_owned(), model.to_owned());
+    let mut agents = std::collections::BTreeMap::new();
+    for instance in instances {
+        agents.insert(instance.config_id.clone(), instance.agent.slug().to_owned());
+        if let Some(model) = manifest.agent_model(instance.agent) {
+            models.insert(instance.config_id.clone(), model.to_owned());
         }
     }
     jackin_protocol::CapsuleConfig {
         role: selector.key(),
         workdir: workdir.to_owned(),
+        instances: instances
+            .iter()
+            .map(|instance| instance.config_id.clone())
+            .collect(),
         agents,
         models,
         auth_modes: std::collections::BTreeMap::new(),
@@ -358,3 +347,6 @@ pub(crate) fn extract_host_env_entries(
     *args = inline;
     Ok(host_only)
 }
+
+#[cfg(test)]
+mod tests;

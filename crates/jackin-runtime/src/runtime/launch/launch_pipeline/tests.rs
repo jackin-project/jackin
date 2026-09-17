@@ -126,7 +126,31 @@ agents = ["codex"]
         let validated_repo =
             jackin_manifest::repo::validate_role_repo(&cached_repo.repo_dir).unwrap();
 
-        let config = AppConfig::load_or_init(&paths).unwrap();
+        let mut config = AppConfig::load_or_init(&paths).unwrap();
+        config.accounts.insert(
+            "test-codex".into(),
+            jackin_config::AccountConfig {
+                enabled: true,
+                name: "Test".into(),
+                provider: jackin_config::AiProvider::OpenAi,
+                credential: jackin_config::AccountCredential::ApiKey {
+                    value: "test-key".into(),
+                    base_url: None,
+                    model: None,
+                },
+            },
+        );
+        config.agent_configurations.insert(
+            "codex-main".into(),
+            jackin_config::AgentConfiguration {
+                agent: Agent::Codex,
+                account: "test-codex".into(),
+                model: None,
+                base_url: None,
+                display_label: None,
+            },
+        );
+        config.default_launch = Some(vec!["codex-main".into()]);
         let workspace = jackin_config::ResolvedWorkspace {
             name: String::new(),
             label: cached_repo.repo_dir.display().to_string(),

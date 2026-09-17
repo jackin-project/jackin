@@ -61,3 +61,8 @@ to be filled. Source of truth for item text is the companion doc.)
 - Installed: claude 2.1.274, codex 0.154.0, amp 0.0.1789639648-g3c529d, agy 1.2.5,
   kimi 0.43.0, muse 1.3.0, cursor-agent 2026.09.10, grok-build 1.0.30,
   opencode 1.18.30. Missing: gemini, omp, hermes, mmx.
+
+## CI watch (PR #1002, head 3c807144, 2026-09-17)
+
+- `Rust · jackin`: FAILED by runner infra flake (`mbx failed to unpack ... Quota exceeded (os error 122)`), not code. Rerun blocked while the workflow is still running; the next push (S3) supersedes with a fresh full run.
+- `Policy` (Velnor workflow policy): FAILED on `generated-tree` drift vs pinned generator 06050c9f. Branch has zero diff vs main under `.github-gen/` + `.github/` — inherited main breakage, out of scope (generated files are never hand-edited). Recorded, not fixed.

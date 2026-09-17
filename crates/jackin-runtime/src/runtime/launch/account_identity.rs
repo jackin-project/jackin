@@ -49,14 +49,21 @@ pub fn account_configuration_fingerprint(
         })
         .collect::<anyhow::Result<std::collections::BTreeMap<_, _>>>()?;
     let bytes = serde_json::to_vec(&(
-        // v2 keeps Claude metadata inside its directory mount; v1 containers
-        // pin a mutable .claude.json inode and cannot support atomic replacement.
-        "account-config-v2",
+        // v3 extends admission to the instance set: agent configurations and
+        // launch defaults select which instances resolve. v2 keeps Claude
+        // metadata inside its directory mount; v1 containers pin a mutable
+        // .claude.json inode and cannot support atomic replacement.
+        "account-config-v3",
         accounts,
         &config.account_bindings,
         ws.map(|ws| &ws.account_bindings),
         ws.and_then(|ws| ws.roles.get(role))
             .map(|role| &role.account_bindings),
+        &config.agent_configurations,
+        &config.default_launch,
+        ws.map(|ws| &ws.default_launch),
+        ws.and_then(|ws| ws.roles.get(role))
+            .map(|role| &role.default_launch),
     ))?;
     let mut encoded = String::with_capacity(64);
     for byte in Sha256::digest(bytes) {
@@ -151,7 +158,7 @@ pub(super) fn admit_restore(
 
 pub(super) fn write_account_credentials(
     root: &Path,
-    credentials: std::collections::BTreeMap<String, std::collections::BTreeMap<String, String>>,
+    credentials: &jackin_protocol::AgentCredentialEnv,
 ) -> anyhow::Result<()> {
     use std::io::Write as _;
     use std::os::unix::fs::PermissionsExt as _;
@@ -161,8 +168,11 @@ pub(super) fn write_account_credentials(
     let mut file = tempfile::NamedTempFile::new_in(&directory)?;
     file.as_file()
         .set_permissions(std::fs::Permissions::from_mode(0o600))?;
-    file.write_all(&serde_json::to_vec(&credentials)?)?;
+    file.write_all(&serde_json::to_vec(credentials)?)?;
     file.as_file().sync_all()?;
     file.persist(directory.join("account-credentials.json"))?;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests;

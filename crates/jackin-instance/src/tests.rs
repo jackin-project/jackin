@@ -122,7 +122,7 @@ fn prepares_persisted_claude_state() {
     // Pin the host-side grouped layout: a regression to the legacy
     // flat shape (`.claude/state/.credentials.json` at the data-dir
     // root) would still satisfy the accessor checks
-    // above, since they only look up paths through the enum. These
+    // above, since they only look up paths through the slots map. These
     // assertions verify the actual host paths under
     // `<container>/claude/`.
     let container_root = paths.data_dir.join("jk-k7p9m2xq-agentsmith");
@@ -199,8 +199,8 @@ model = "gpt-5"
             .join("home/.codex")
             .exists()
     );
-    // Codex state carries no Claude auth paths — the typed enum
-    // makes the absence structural rather than a runtime nil.
+    // Codex state carries no Claude auth paths — the slots map
+    // holds no Claude entry rather than a runtime nil.
     assert!(state.claude_account_json().is_none());
     assert!(state.claude_credentials_json().is_none());
     assert!(!state.claude_forwards_auth());
@@ -277,11 +277,11 @@ plugins = []
 
     // Both agents provisioned.
     assert!(
-        state.auth.claude.is_some(),
+        state.auth.for_agent(jackin_core::Agent::Claude).is_some(),
         "claude home dirs should be provisioned"
     );
     assert!(
-        state.auth.codex.is_some(),
+        state.auth.for_agent(jackin_core::Agent::Codex).is_some(),
         "codex home dirs should be provisioned"
     );
 
@@ -379,7 +379,7 @@ fn agent_ignore_prepare_skips_absent_state_without_host_or_home_work() {
     .unwrap();
 
     assert_eq!(outcome, AuthProvisionOutcome::Skipped);
-    assert!(state.auth.claude.is_some());
+    assert!(state.auth.for_agent(jackin_core::Agent::Claude).is_some());
 
     let container_root = paths.data_dir.join("jk-k7p9m2xq-agentsmith");
     assert!(
@@ -533,12 +533,28 @@ plugins = []
     .unwrap();
 
     assert_eq!(selected_outcome, AuthProvisionOutcome::Skipped);
-    assert!(state.auth.claude.is_some());
-    assert!(state.auth.codex.is_some());
-    assert!(state.auth.amp.is_some());
-    assert!(state.auth.kimi.is_some());
-    assert!(state.auth.opencode.is_some());
-    assert!(state.auth.grok.is_some());
+    for agent in [
+        jackin_core::Agent::Claude,
+        jackin_core::Agent::Codex,
+        jackin_core::Agent::Amp,
+        jackin_core::Agent::Kimi,
+        jackin_core::Agent::Opencode,
+        jackin_core::Agent::Grok,
+    ] {
+        assert!(
+            state.auth.for_agent(agent).is_some(),
+            "{} slot missing after parallel provision",
+            agent.slug()
+        );
+        assert!(
+            state
+                .auth
+                .slots
+                .contains_key(&ProvisionedAuth::instance_key("default", agent)),
+            "{} slot key must be the default {{account}}@{{agent}} synthesis",
+            agent.slug()
+        );
+    }
     for agent in [
         jackin_core::Agent::Claude,
         jackin_core::Agent::Codex,
@@ -554,4 +570,121 @@ plugins = []
             agent.slug()
         );
     }
+}
+
+#[test]
+fn prepare_for_bindings_provisions_two_instances_of_same_agent_independently() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let manifest = simple_manifest(&temp);
+
+    // Ignore mode takes the lazy skip path (no filesystem writes),
+    // so both same-agent bindings provision deterministically.
+    let bindings = vec![
+        InstanceAuthBinding::new(
+            "work",
+            jackin_core::Agent::Claude,
+            AuthForwardMode::Ignore,
+            None,
+        ),
+        InstanceAuthBinding::new(
+            "personal",
+            jackin_core::Agent::Claude,
+            AuthForwardMode::Ignore,
+            None,
+        ),
+    ];
+
+    let (state, selected_outcome) = RoleState::prepare_for_bindings(
+        &paths,
+        "jk-k7p9m2xq-agentsmith",
+        &manifest,
+        &bindings,
+        &GithubAuthContext::default(),
+        temp.path(),
+        jackin_core::Agent::Claude,
+    )
+    .unwrap();
+
+    assert_eq!(selected_outcome, AuthProvisionOutcome::Skipped);
+    assert_eq!(state.auth.slots.len(), 2);
+    for account_id in ["work", "personal"] {
+        let key = ProvisionedAuth::instance_key(account_id, jackin_core::Agent::Claude);
+        let slot = state.auth.slots.get(&key).unwrap_or_else(|| {
+            panic!("{key} slot missing after multi-instance provision");
+        });
+        assert_eq!(slot.agent, jackin_core::Agent::Claude);
+        assert_eq!(slot.account_id, account_id);
+        assert_eq!(slot.mode, AuthForwardMode::Ignore);
+        assert!(!slot.forward_auth);
+        assert!(slot.home_dir.is_none());
+    }
+}
+
+#[test]
+fn prepare_for_bindings_honors_explicit_config_id_keys() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let manifest = simple_manifest(&temp);
+
+    let mut binding = InstanceAuthBinding::new(
+        "work",
+        jackin_core::Agent::Claude,
+        AuthForwardMode::Ignore,
+        None,
+    );
+    binding.key = "work-claude".to_owned();
+
+    let (state, _) = RoleState::prepare_for_bindings(
+        &paths,
+        "jk-k7p9m2xq-agentsmith",
+        &manifest,
+        std::slice::from_ref(&binding),
+        &GithubAuthContext::default(),
+        temp.path(),
+        jackin_core::Agent::Claude,
+    )
+    .unwrap();
+
+    assert_eq!(state.auth.slots.len(), 1);
+    let slot = state
+        .auth
+        .slots
+        .get("work-claude")
+        .expect("explicit key lost");
+    assert_eq!(slot.account_id, "work");
+    // Agent-scoped lookups still resolve through the explicit key.
+    assert!(state.claude_account_json().is_some());
+    assert!(state.claude_credentials_json().is_some());
+}
+
+#[test]
+fn prewarm_auth_for_bindings_provisions_each_binding_once() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+
+    let bindings = vec![
+        InstanceAuthBinding::new(
+            "work",
+            jackin_core::Agent::Codex,
+            AuthForwardMode::Ignore,
+            None,
+        ),
+        InstanceAuthBinding::new(
+            "personal",
+            jackin_core::Agent::Codex,
+            AuthForwardMode::Ignore,
+            None,
+        ),
+    ];
+
+    let count = RoleState::prewarm_auth_for_bindings(
+        &paths,
+        "jk-k7p9m2xq-agentsmith",
+        &bindings,
+        temp.path(),
+    )
+    .unwrap();
+
+    assert_eq!(count, 2);
 }

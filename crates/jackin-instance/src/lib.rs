@@ -197,133 +197,134 @@ pub struct AgentRuntimeState {
     pub model: Option<String>,
 }
 
-/// Claude's provisioned auth slot.
+/// Auth state provisioned for a single launch instance.
 ///
-/// `forward_auth` is `true` only for modes that mount real credential
-/// files (`Sync` / `OAuthToken`); `ApiKey` and `Ignore` wipe the
-/// role-state credential files and do not mount them — `ApiKey`
-/// authenticates via `ANTHROPIC_API_KEY`; `Ignore` forces a fresh
-/// login inside the durable per-instance agent home.
+/// One entry per instance binding (agent + account + mode): two
+/// instances of the same agent provision independently and merge as
+/// separate entries in [`ProvisionedAuth::slots`].
+///
+/// `credential_paths` carries the host paths the launcher may
+/// bind-mount into the container. Its shape is fixed per agent:
+/// - Claude: `[account.json, credentials.json]`, always present —
+///   pair with `forward_auth` plus an existence check at mount time.
+///   `forward_auth` is `true` only for modes that mount real
+///   credential files (`Sync` / `OAuthToken`); `ApiKey` and `Ignore`
+///   wipe the role-state credential files and do not mount them.
+/// - Kimi / Hermes: `[<role-state dir>]`, always present — pair with
+///   `forward_auth`, which is `true` only when the directory holds
+///   synced credentials worth mounting.
+/// - Every other agent: the single credential file iff provisioning
+///   decided it should mount (empty after a wipe, or after a
+///   host-missing run with no prior file). For these agents
+///   `forward_auth` is exactly `!credential_paths.is_empty()`.
+///
+/// `home_dir` is the agent home provisioned under the instance root
+/// (`<container>/home/...`); it is `None` when the lazy ignore path
+/// skipped all filesystem work.
 #[derive(Debug, Clone)]
-pub struct ClaudeAuth {
-    pub account_json: PathBuf,
-    pub credentials_json: PathBuf,
+pub struct ProvisionedInstanceAuth {
+    pub agent: jackin_core::Agent,
+    pub account_id: String,
+    pub mode: AuthForwardMode,
+    pub home_dir: Option<PathBuf>,
+    pub credential_paths: Vec<PathBuf>,
     pub forward_auth: bool,
 }
 
-/// Codex' provisioned auth slot. `auth_json` is `None` under env-driven
-/// modes or when the host had no `~/.codex/auth.json`.
-#[derive(Debug, Clone, Default)]
-pub struct CodexAuth {
-    pub auth_json: Option<PathBuf>,
+impl ProvisionedInstanceAuth {
+    fn new(
+        binding: &InstanceAuthBinding,
+        home_dir: Option<PathBuf>,
+        credential_paths: Vec<PathBuf>,
+        forward_auth: bool,
+    ) -> Self {
+        Self {
+            agent: binding.agent,
+            account_id: binding.account_id.clone(),
+            mode: binding.mode,
+            home_dir,
+            credential_paths,
+            forward_auth,
+        }
+    }
 }
 
-/// Amp's provisioned auth slot. `secrets_json` is `None` under
-/// env-driven modes or when no host secrets file was present.
-#[derive(Debug, Clone, Default)]
-pub struct AmpAuth {
-    pub secrets_json: Option<PathBuf>,
-}
-
-/// Kimi's provisioned auth slot.
-#[derive(Debug, Clone, Default)]
-pub struct KimiAuth {
-    pub forward_auth: bool,
-}
-
-/// `OpenCode`'s provisioned auth slot. `auth_json` is `None` under
-/// env-driven modes or when no host auth file was present.
-#[derive(Debug, Clone, Default)]
-pub struct OpencodeAuth {
-    pub auth_json: Option<PathBuf>,
-}
-
-/// Grok's provisioned auth slot. `auth_json` is `None` under env-driven
-/// modes or when no host `~/.grok/auth.json` was present.
-#[derive(Debug, Clone, Default)]
-pub struct GrokAuth {
-    pub auth_json: Option<PathBuf>,
-}
-
-/// Antigravity's provisioned auth slot. Forwards prefs only — the OAuth
-/// grant stays in the host Keychain singleton and cannot be synced.
-#[derive(Debug, Clone, Default)]
-pub struct AntigravityAuth {
-    pub settings_json: Option<PathBuf>,
-}
-
-/// Gemini CLI's provisioned auth slot. `oauth_creds` is `None` under
-/// env-driven modes or when no host `~/.gemini/oauth_creds.json` was present.
-#[derive(Debug, Clone, Default)]
-pub struct GeminiAuth {
-    pub oauth_creds: Option<PathBuf>,
-}
-
-/// Cursor's provisioned auth slot. `auth_json` is `None` under env-driven
-/// modes or when no host `~/.cursor/auth.json` was present.
-#[derive(Debug, Clone, Default)]
-pub struct CursorAuth {
-    pub auth_json: Option<PathBuf>,
-}
-
-/// Muse's provisioned auth slot. `auth_json` is `None` under env-driven
-/// modes or when no host `~/.config/muse/auth.json` was present.
-#[derive(Debug, Clone, Default)]
-pub struct MuseAuth {
-    pub auth_json: Option<PathBuf>,
-}
-
-/// omp's provisioned auth slot. `agent_db` is `None` under env-driven
-/// modes or when no host `~/.omp/agent/agent.db` was present.
-#[derive(Debug, Clone, Default)]
-pub struct OmpAuth {
-    pub agent_db: Option<PathBuf>,
-}
-
-/// Hermes's provisioned auth slot.
-#[derive(Debug, Clone, Default)]
-pub struct HermesAuth {
-    pub forward_auth: bool,
-}
-
-/// Auth state provisioned for one or more agents.
+/// Auth state provisioned for a launch, keyed by instance key.
 ///
-/// Each per-agent slot is `Some(_)` iff that agent was included in the
+/// An entry exists iff its instance binding was included in the
 /// caller's provision list and the corresponding preparation step ran.
 #[derive(Debug, Clone, Default)]
 pub struct ProvisionedAuth {
-    pub claude: Option<ClaudeAuth>,
-    pub codex: Option<CodexAuth>,
-    pub amp: Option<AmpAuth>,
-    pub kimi: Option<KimiAuth>,
-    pub opencode: Option<OpencodeAuth>,
-    pub grok: Option<GrokAuth>,
-    pub antigravity: Option<AntigravityAuth>,
-    pub gemini: Option<GeminiAuth>,
-    pub cursor: Option<CursorAuth>,
-    pub muse: Option<MuseAuth>,
-    pub omp: Option<OmpAuth>,
-    pub hermes: Option<HermesAuth>,
+    pub slots: BTreeMap<String /*instance key*/, ProvisionedInstanceAuth>,
 }
 
-enum ProvisionedAuthSlot {
-    Claude(ClaudeAuth),
-    Codex(CodexAuth),
-    Amp(AmpAuth),
-    Kimi(KimiAuth),
-    Opencode(OpencodeAuth),
-    Grok(GrokAuth),
-    Antigravity(AntigravityAuth),
-    Gemini(GeminiAuth),
-    Cursor(CursorAuth),
-    Muse(MuseAuth),
-    Omp(OmpAuth),
-    Hermes(HermesAuth),
+impl ProvisionedAuth {
+    /// Synthesize the [`ProvisionedAuth::slots`] key for one
+    /// account/agent pair: `{account-id}@{agent-slug}`. Shares the
+    /// convention with `ResolvedInstance::config_id` in
+    /// `jackin-config`; explicit config ids replace the synthesized
+    /// key once threaded through the pipeline.
+    #[must_use]
+    pub fn instance_key(account_id: &str, agent: jackin_core::Agent) -> String {
+        format!("{account_id}@{}", agent.slug())
+    }
+
+    /// First slot provisioned for `agent` in key order, if any.
+    /// Single-instance launches hold at most one slot per agent, so
+    /// this is the whole story there; multi-instance callers iterate
+    /// [`ProvisionedAuth::slots`] and filter by [`ProvisionedInstanceAuth::agent`]
+    /// instead.
+    #[must_use]
+    pub fn for_agent(&self, agent: jackin_core::Agent) -> Option<&ProvisionedInstanceAuth> {
+        self.slots.values().find(|slot| slot.agent == agent)
+    }
 }
+
+/// One instance's auth-provisioning request: which agent, which
+/// account, which forward mode, and where sync-mode credentials come
+/// from.
+#[derive(Debug, Clone)]
+pub struct InstanceAuthBinding {
+    /// [`ProvisionedAuth::slots`] key: an explicit config id, or the
+    /// `{account-id}@{agent-slug}` synthesis from
+    /// [`ProvisionedAuth::instance_key`].
+    pub key: String,
+    pub agent: jackin_core::Agent,
+    pub account_id: String,
+    pub mode: AuthForwardMode,
+    pub sync_source_dir: Option<PathBuf>,
+}
+
+impl InstanceAuthBinding {
+    /// Bind one account/agent pair with a synthesized instance key.
+    /// Overwrite `.key` afterwards when an explicit config id exists.
+    #[must_use]
+    pub fn new(
+        account_id: impl Into<String>,
+        agent: jackin_core::Agent,
+        mode: AuthForwardMode,
+        sync_source_dir: Option<PathBuf>,
+    ) -> Self {
+        let account_id = account_id.into();
+        let key = ProvisionedAuth::instance_key(&account_id, agent);
+        Self {
+            key,
+            agent,
+            account_id,
+            mode,
+            sync_source_dir,
+        }
+    }
+}
+
+/// Placeholder account id used until config ids are threaded through
+/// the provisioning pipeline (a later pass wires `ResolvedInstance`
+/// through [`RoleState::prepare_for_bindings`]).
+const DEFAULT_ACCOUNT_ID: &str = "default";
 
 struct AgentAuthProvision {
-    agent: jackin_core::Agent,
-    slot: ProvisionedAuthSlot,
+    key: String,
+    auth: ProvisionedInstanceAuth,
     outcome: AuthProvisionOutcome,
 }
 
@@ -398,14 +399,14 @@ fn emit_agent_auth_provision(
 }
 
 fn validate_selected_account_sources(
-    selections: &[(jackin_core::Agent, AuthForwardMode, Option<PathBuf>)],
+    bindings: &[InstanceAuthBinding],
     host_home: &Path,
 ) -> anyhow::Result<()> {
-    for (agent, mode, source) in selections {
-        if *mode == AuthForwardMode::Sync
-            && let Some(source) = source
+    for binding in bindings {
+        if binding.mode == AuthForwardMode::Sync
+            && let Some(source) = &binding.sync_source_dir
         {
-            validate_sync_source_dir(*agent, source, host_home)?;
+            validate_sync_source_dir(binding.agent, source, host_home)?;
         }
     }
     Ok(())
@@ -432,7 +433,9 @@ impl RoleState {
     /// when filtering for runtime reachability.
     #[must_use]
     pub fn claude_account_json(&self) -> Option<&Path> {
-        self.auth.claude.as_ref().map(|c| c.account_json.as_path())
+        self.auth
+            .for_agent(jackin_core::Agent::Claude)
+            .and_then(|slot| slot.credential_paths.first().map(PathBuf::as_path))
     }
 
     /// Manifest model override for Claude, or `None` when the selected agent
@@ -451,9 +454,8 @@ impl RoleState {
     #[must_use]
     pub fn claude_credentials_json(&self) -> Option<&Path> {
         self.auth
-            .claude
-            .as_ref()
-            .map(|c| c.credentials_json.as_path())
+            .for_agent(jackin_core::Agent::Claude)
+            .and_then(|slot| slot.credential_paths.get(1).map(PathBuf::as_path))
     }
 
     /// Whether Claude's auth files flow into the container under
@@ -462,7 +464,9 @@ impl RoleState {
     /// `supported_agents()`.
     #[must_use]
     pub fn claude_forwards_auth(&self) -> bool {
-        self.auth.claude.as_ref().is_some_and(|c| c.forward_auth)
+        self.auth
+            .for_agent(jackin_core::Agent::Claude)
+            .is_some_and(|slot| slot.forward_auth)
     }
 
     /// Manifest model override for Codex, or `None` if not Codex or no override.
@@ -582,6 +586,11 @@ impl RoleState {
     /// need only a subset (such as tests) can pass a narrower slice. The
     /// foreground launch path passes the full `manifest.supported_agents()` set;
     /// [`Self::prepare`] is a convenience wrapper that does the same.
+    ///
+    /// Each agent resolves to one [`InstanceAuthBinding`] with a
+    /// placeholder account id; multi-instance callers use
+    /// [`Self::prepare_for_bindings`] directly so two instances of the
+    /// same agent provision independently.
     #[expect(
         clippy::too_many_arguments,
         reason = "Per-agent prepare carries every per-agent + per-container input \
@@ -599,6 +608,46 @@ impl RoleState {
         agent: jackin_core::Agent,
         provision_agents: &[jackin_core::Agent],
     ) -> anyhow::Result<(Self, AuthProvisionOutcome)> {
+        let supported = manifest.supported_agents();
+        let bindings: Vec<InstanceAuthBinding> = provision_agents
+            .iter()
+            .copied()
+            .filter(|provision_agent| supported.contains(provision_agent))
+            .map(|provisioned| {
+                InstanceAuthBinding::new(
+                    DEFAULT_ACCOUNT_ID,
+                    provisioned,
+                    (resolvers.auth_modes)(provisioned),
+                    (resolvers.sync_source_dirs)(provisioned),
+                )
+            })
+            .collect();
+        Self::prepare_for_bindings(
+            paths,
+            container_name,
+            manifest,
+            &bindings,
+            github,
+            host_home,
+            agent,
+        )
+    }
+
+    /// Provision auth state for one explicit instance binding each.
+    ///
+    /// Unlike [`Self::prepare_for_agents`], bindings carry their own
+    /// account/mode/key, so two bindings for the same agent provision
+    /// independently and merge as separate [`ProvisionedAuth::slots`]
+    /// entries. Binding keys must be unique within `bindings`.
+    pub fn prepare_for_bindings(
+        paths: &JackinPaths,
+        container_name: &str,
+        manifest: &RoleManifest,
+        bindings: &[InstanceAuthBinding],
+        github: &GithubAuthContext,
+        host_home: &Path,
+        agent: jackin_core::Agent,
+    ) -> anyhow::Result<(Self, AuthProvisionOutcome)> {
         let root = paths.data_dir.join(container_name);
         let gh_config_dir = root.join(".config/gh");
         let home_dir = root.join("home");
@@ -610,48 +659,27 @@ impl RoleState {
         // with no special directory mode.
         std::fs::create_dir_all(&jackin_state_dir)?;
 
-        let supported = manifest.supported_agents();
-        let supported_auth: Vec<_> = provision_agents
-            .iter()
-            .copied()
-            .filter(|provision_agent| supported.contains(provision_agent))
-            .map(|supported| {
-                (
-                    supported,
-                    (resolvers.auth_modes)(supported),
-                    (resolvers.sync_source_dirs)(supported),
-                )
-            })
-            .collect();
-
         let hosts_yml = gh_config_dir.join("hosts.yml");
         let github_context = github.clone();
-        validate_selected_account_sources(&supported_auth, host_home)?;
+        validate_selected_account_sources(bindings, host_home)?;
 
         let host_home_path = host_home.to_path_buf();
         let root_path = root.clone();
         let home_path = home_dir.clone();
 
         let (gh_provision_outcome, auth_provisions) = std::thread::scope(|scope| {
-            let mut handles = Vec::with_capacity(supported_auth.len());
-            for (supported, mode, sync_src) in &supported_auth {
+            let mut handles = Vec::with_capacity(bindings.len());
+            for binding in bindings {
                 let root = root_path.clone();
                 let home_dir = home_path.clone();
                 let host_home = host_home_path.clone();
-                let sync_src = sync_src.clone();
-                let supported = *supported;
-                let mode = *mode;
+                let provisioned = binding.agent;
+                let mode = binding.mode;
+                let binding = binding.clone();
                 let handle = jackin_telemetry::spawn::thread_scoped_joined(scope, move || {
-                    Self::provision_agent_auth_slot(
-                        &root,
-                        &home_dir,
-                        &host_home,
-                        supported,
-                        mode,
-                        sync_src.as_deref(),
-                    )
+                    Self::provision_agent_auth_slot(&root, &home_dir, &host_home, &binding)
                 });
-                handles.push((supported, mode, handle));
+                handles.push((provisioned, mode, handle));
             }
 
             let gh_provision_outcome =
@@ -715,24 +743,11 @@ impl RoleState {
         let mut selected_outcome = AuthProvisionOutcome::Skipped;
 
         for provision in auth_provisions {
-            if provision.agent == agent {
+            if provision.auth.agent == agent {
                 selected_outcome = provision.outcome;
             }
-            auth_outcomes.insert(provision.agent, provision.outcome);
-            match provision.slot {
-                ProvisionedAuthSlot::Claude(slot) => auth.claude = Some(slot),
-                ProvisionedAuthSlot::Codex(slot) => auth.codex = Some(slot),
-                ProvisionedAuthSlot::Amp(slot) => auth.amp = Some(slot),
-                ProvisionedAuthSlot::Kimi(slot) => auth.kimi = Some(slot),
-                ProvisionedAuthSlot::Opencode(slot) => auth.opencode = Some(slot),
-                ProvisionedAuthSlot::Grok(slot) => auth.grok = Some(slot),
-                ProvisionedAuthSlot::Antigravity(slot) => auth.antigravity = Some(slot),
-                ProvisionedAuthSlot::Gemini(slot) => auth.gemini = Some(slot),
-                ProvisionedAuthSlot::Cursor(slot) => auth.cursor = Some(slot),
-                ProvisionedAuthSlot::Muse(slot) => auth.muse = Some(slot),
-                ProvisionedAuthSlot::Omp(slot) => auth.omp = Some(slot),
-                ProvisionedAuthSlot::Hermes(slot) => auth.hermes = Some(slot),
-            }
+            auth_outcomes.insert(provision.auth.agent, provision.outcome);
+            auth.slots.insert(provision.key, provision.auth);
         }
 
         // Single struct construction — no per-variant dispatch needed.
@@ -796,6 +811,34 @@ impl RoleState {
         host_home: &Path,
         agents: &[jackin_core::Agent],
     ) -> anyhow::Result<usize> {
+        let supported = manifest.supported_agents();
+        let bindings: Vec<InstanceAuthBinding> = agents
+            .iter()
+            .copied()
+            .filter(|agent| supported.contains(agent))
+            .map(|provisioned| {
+                InstanceAuthBinding::new(
+                    DEFAULT_ACCOUNT_ID,
+                    provisioned,
+                    (resolvers.auth_modes)(provisioned),
+                    (resolvers.sync_source_dirs)(provisioned),
+                )
+            })
+            .collect();
+        Self::prewarm_auth_for_bindings(paths, container_name, &bindings, host_home)
+    }
+
+    /// Background-prewarm auth state for one explicit instance binding
+    /// each. Binding-driven counterpart of
+    /// [`Self::prewarm_auth_for_agents`]; see its docs for the
+    /// skip-GitHub contract. Bindings are already resolved, so no
+    /// manifest filter applies here.
+    pub fn prewarm_auth_for_bindings(
+        paths: &JackinPaths,
+        container_name: &str,
+        bindings: &[InstanceAuthBinding],
+        host_home: &Path,
+    ) -> anyhow::Result<usize> {
         let root = paths.data_dir.join(container_name);
         let home_dir = root.join("home");
         let jackin_state_dir = root.join("state");
@@ -803,47 +846,26 @@ impl RoleState {
         std::fs::create_dir_all(&home_dir)?;
         std::fs::create_dir_all(&jackin_state_dir)?;
 
-        let supported = manifest.supported_agents();
-        let supported_auth: Vec<_> = agents
-            .iter()
-            .copied()
-            .filter(|agent| supported.contains(agent))
-            .map(|agent| {
-                (
-                    agent,
-                    (resolvers.auth_modes)(agent),
-                    (resolvers.sync_source_dirs)(agent),
-                )
-            })
-            .collect();
-
-        validate_selected_account_sources(&supported_auth, host_home)?;
+        validate_selected_account_sources(bindings, host_home)?;
 
         let host_home_path = host_home.to_path_buf();
         let root_path = root.clone();
         let home_path = home_dir.clone();
 
         let prepared_auth = std::thread::scope(|scope| {
-            let handles = supported_auth
+            let handles = bindings
                 .iter()
-                .map(|(supported, mode, sync_src)| {
+                .map(|binding| {
                     let root = root_path.clone();
                     let home_dir = home_path.clone();
                     let host_home = host_home_path.clone();
-                    let sync_src = sync_src.clone();
-                    let supported = *supported;
-                    let mode = *mode;
+                    let provisioned = binding.agent;
+                    let mode = binding.mode;
+                    let binding = binding.clone();
                     let handle = jackin_telemetry::spawn::thread_scoped_joined(scope, move || {
-                        Self::provision_agent_auth_slot(
-                            &root,
-                            &home_dir,
-                            &host_home,
-                            supported,
-                            mode,
-                            sync_src.as_deref(),
-                        )
+                        Self::provision_agent_auth_slot(&root, &home_dir, &host_home, &binding)
                     });
-                    (supported, mode, handle)
+                    (provisioned, mode, handle)
                 })
                 .collect::<Vec<_>>();
 
@@ -882,18 +904,18 @@ impl RoleState {
         root: &Path,
         home_dir: &Path,
         host_home: &Path,
-        supported: jackin_core::Agent,
-        mode: AuthForwardMode,
-        sync_src: Option<&Path>,
+        binding: &InstanceAuthBinding,
     ) -> anyhow::Result<AgentAuthProvision> {
-        let timing_name = format!("role_state_prepare:{}_auth", supported.slug());
+        let agent = binding.agent;
+        let mode = binding.mode;
+        let timing_name = format!("role_state_prepare:{}_auth", agent.slug());
         jackin_diagnostics::active_timing_started(
             jackin_diagnostics::DiagnosticStage::Credentials,
             &timing_name,
             Some(&mode.to_string()),
         );
         let ignore_can_skip = if mode == AuthForwardMode::Ignore {
-            agent_ignore_can_skip_state_prepare(root, supported)?
+            agent_ignore_can_skip_state_prepare(root, agent)?
         } else {
             false
         };
@@ -904,74 +926,49 @@ impl RoleState {
                 Some("skipped_no_state"),
             );
             let provision = AgentAuthProvision {
-                agent: supported,
-                slot: skipped_ignore_auth_slot(root, supported),
+                key: binding.key.clone(),
+                auth: skipped_ignore_instance_auth(root, binding),
                 outcome: AuthProvisionOutcome::Skipped,
             };
             return Ok(provision);
         }
-        let provision_result: anyhow::Result<(ProvisionedAuthSlot, AuthProvisionOutcome)> =
-            match supported {
+        let provision_result: anyhow::Result<(ProvisionedInstanceAuth, AuthProvisionOutcome)> =
+            match agent {
                 jackin_core::Agent::Claude => {
-                    let (slot, outcome) =
-                        Self::provision_claude_slot(root, home_dir, mode, host_home, sync_src)?;
-                    Ok((ProvisionedAuthSlot::Claude(slot), outcome))
+                    Self::provision_claude_slot(root, home_dir, host_home, binding)
                 }
                 jackin_core::Agent::Codex => {
-                    let (slot, outcome) =
-                        Self::provision_codex_slot(root, home_dir, mode, host_home, sync_src)?;
-                    Ok((ProvisionedAuthSlot::Codex(slot), outcome))
+                    Self::provision_codex_slot(root, home_dir, host_home, binding)
                 }
                 jackin_core::Agent::Amp => {
-                    let (slot, outcome) =
-                        Self::provision_amp_slot(root, home_dir, mode, host_home, sync_src)?;
-                    Ok((ProvisionedAuthSlot::Amp(slot), outcome))
+                    Self::provision_amp_slot(root, home_dir, host_home, binding)
                 }
                 jackin_core::Agent::Kimi => {
-                    let (slot, outcome) =
-                        Self::provision_kimi_slot(root, home_dir, mode, host_home, sync_src)?;
-                    Ok((ProvisionedAuthSlot::Kimi(slot), outcome))
+                    Self::provision_kimi_slot(root, home_dir, host_home, binding)
                 }
                 jackin_core::Agent::Opencode => {
-                    let (slot, outcome) =
-                        Self::provision_opencode_slot(root, home_dir, mode, host_home, sync_src)?;
-                    Ok((ProvisionedAuthSlot::Opencode(slot), outcome))
+                    Self::provision_opencode_slot(root, home_dir, host_home, binding)
                 }
                 jackin_core::Agent::Grok => {
-                    let (slot, outcome) =
-                        Self::provision_grok_slot(root, home_dir, mode, host_home, sync_src)?;
-                    Ok((ProvisionedAuthSlot::Grok(slot), outcome))
+                    Self::provision_grok_slot(root, home_dir, host_home, binding)
                 }
                 jackin_core::Agent::Antigravity => {
-                    let (slot, outcome) = Self::provision_antigravity_slot(
-                        root, home_dir, mode, host_home, sync_src,
-                    )?;
-                    Ok((ProvisionedAuthSlot::Antigravity(slot), outcome))
+                    Self::provision_antigravity_slot(root, home_dir, host_home, binding)
                 }
                 jackin_core::Agent::Gemini => {
-                    let (slot, outcome) =
-                        Self::provision_gemini_slot(root, home_dir, mode, host_home, sync_src)?;
-                    Ok((ProvisionedAuthSlot::Gemini(slot), outcome))
+                    Self::provision_gemini_slot(root, home_dir, host_home, binding)
                 }
                 jackin_core::Agent::Cursor => {
-                    let (slot, outcome) =
-                        Self::provision_cursor_slot(root, home_dir, mode, host_home, sync_src)?;
-                    Ok((ProvisionedAuthSlot::Cursor(slot), outcome))
+                    Self::provision_cursor_slot(root, home_dir, host_home, binding)
                 }
                 jackin_core::Agent::Muse => {
-                    let (slot, outcome) =
-                        Self::provision_muse_slot(root, home_dir, mode, host_home, sync_src)?;
-                    Ok((ProvisionedAuthSlot::Muse(slot), outcome))
+                    Self::provision_muse_slot(root, home_dir, host_home, binding)
                 }
                 jackin_core::Agent::Omp => {
-                    let (slot, outcome) =
-                        Self::provision_omp_slot(root, home_dir, mode, host_home, sync_src)?;
-                    Ok((ProvisionedAuthSlot::Omp(slot), outcome))
+                    Self::provision_omp_slot(root, home_dir, host_home, binding)
                 }
                 jackin_core::Agent::Hermes => {
-                    let (slot, outcome) =
-                        Self::provision_hermes_slot(root, home_dir, mode, host_home, sync_src)?;
-                    Ok((ProvisionedAuthSlot::Hermes(slot), outcome))
+                    Self::provision_hermes_slot(root, home_dir, host_home, binding)
                 }
             };
         let timing_detail = provision_result
@@ -985,13 +982,13 @@ impl RoleState {
         let (slot, outcome) = provision_result?;
         anyhow::ensure!(
             !(mode == AuthForwardMode::Sync
-                && sync_src.is_some()
+                && binding.sync_source_dir.is_some()
                 && outcome == AuthProvisionOutcome::HostMissing),
-            "selected {supported} account credentials disappeared during provisioning"
+            "selected {agent} account credentials disappeared during provisioning"
         );
         Ok(AgentAuthProvision {
-            agent: supported,
-            slot,
+            key: binding.key.clone(),
+            auth: slot,
             outcome,
         })
     }
@@ -999,10 +996,11 @@ impl RoleState {
     fn provision_claude_slot(
         root: &Path,
         home_dir: &Path,
-        mode: AuthForwardMode,
         host_home: &Path,
-        sync_source_dir: Option<&Path>,
-    ) -> anyhow::Result<(ClaudeAuth, AuthProvisionOutcome)> {
+        binding: &InstanceAuthBinding,
+    ) -> anyhow::Result<(ProvisionedInstanceAuth, AuthProvisionOutcome)> {
+        let mode = binding.mode;
+        let sync_source_dir = binding.sync_source_dir.as_deref();
         let claude_dir = root.join("claude");
         let claude_home_dir = home_dir.join(".claude");
         std::fs::create_dir_all(&claude_dir)?;
@@ -1024,23 +1022,23 @@ impl RoleState {
         } else {
             Self::provision_claude_auth(&account_json, &credentials_json, mode, host_home)?
         };
-        Ok((
-            ClaudeAuth {
-                account_json,
-                credentials_json,
-                forward_auth,
-            },
-            outcome,
-        ))
+        let slot = ProvisionedInstanceAuth::new(
+            binding,
+            Some(claude_home_dir),
+            vec![account_json, credentials_json],
+            forward_auth,
+        );
+        Ok((slot, outcome))
     }
 
     fn provision_codex_slot(
         root: &Path,
         home_dir: &Path,
-        mode: AuthForwardMode,
         host_home: &Path,
-        sync_source_dir: Option<&Path>,
-    ) -> anyhow::Result<(CodexAuth, AuthProvisionOutcome)> {
+        binding: &InstanceAuthBinding,
+    ) -> anyhow::Result<(ProvisionedInstanceAuth, AuthProvisionOutcome)> {
+        let mode = binding.mode;
+        let sync_source_dir = binding.sync_source_dir.as_deref();
         let codex_dir = root.join("codex");
         let codex_home_dir = home_dir.join(".codex");
         std::fs::create_dir_all(&codex_dir)?;
@@ -1051,16 +1049,25 @@ impl RoleState {
         } else {
             Self::provision_codex_auth(&auth_json_path, mode, host_home)?
         };
-        Ok((CodexAuth { auth_json }, outcome))
+        let credential_paths = auth_json.into_iter().collect::<Vec<_>>();
+        let forward_auth = !credential_paths.is_empty();
+        let slot = ProvisionedInstanceAuth::new(
+            binding,
+            Some(codex_home_dir),
+            credential_paths,
+            forward_auth,
+        );
+        Ok((slot, outcome))
     }
 
     fn provision_amp_slot(
         root: &Path,
         home_dir: &Path,
-        mode: AuthForwardMode,
         host_home: &Path,
-        sync_source_dir: Option<&Path>,
-    ) -> anyhow::Result<(AmpAuth, AuthProvisionOutcome)> {
+        binding: &InstanceAuthBinding,
+    ) -> anyhow::Result<(ProvisionedInstanceAuth, AuthProvisionOutcome)> {
+        let mode = binding.mode;
+        let sync_source_dir = binding.sync_source_dir.as_deref();
         let amp_dir = root.join("amp");
         let amp_home_dir = home_dir.join(".local/share/amp");
         std::fs::create_dir_all(&amp_dir)?;
@@ -1080,16 +1087,25 @@ impl RoleState {
         } else {
             Self::provision_amp_auth(&secrets_json_path, mode, host_home)?
         };
-        Ok((AmpAuth { secrets_json }, outcome))
+        let credential_paths = secrets_json.into_iter().collect::<Vec<_>>();
+        let forward_auth = !credential_paths.is_empty();
+        let slot = ProvisionedInstanceAuth::new(
+            binding,
+            Some(amp_home_dir),
+            credential_paths,
+            forward_auth,
+        );
+        Ok((slot, outcome))
     }
 
     fn provision_kimi_slot(
         root: &Path,
         home_dir: &Path,
-        mode: AuthForwardMode,
         host_home: &Path,
-        sync_source_dir: Option<&Path>,
-    ) -> anyhow::Result<(KimiAuth, AuthProvisionOutcome)> {
+        binding: &InstanceAuthBinding,
+    ) -> anyhow::Result<(ProvisionedInstanceAuth, AuthProvisionOutcome)> {
+        let mode = binding.mode;
+        let sync_source_dir = binding.sync_source_dir.as_deref();
         let kimi_dir = root.join("kimi-code");
         let kimi_home_dir = home_dir.join(".kimi-code");
         std::fs::create_dir_all(&kimi_dir)?;
@@ -1099,16 +1115,23 @@ impl RoleState {
         } else {
             Self::provision_kimi_auth(&kimi_dir, mode, host_home)?
         };
-        Ok((KimiAuth { forward_auth }, outcome))
+        let slot = ProvisionedInstanceAuth::new(
+            binding,
+            Some(kimi_home_dir),
+            vec![kimi_dir],
+            forward_auth,
+        );
+        Ok((slot, outcome))
     }
 
     fn provision_opencode_slot(
         root: &Path,
         home_dir: &Path,
-        mode: AuthForwardMode,
         host_home: &Path,
-        sync_source_dir: Option<&Path>,
-    ) -> anyhow::Result<(OpencodeAuth, AuthProvisionOutcome)> {
+        binding: &InstanceAuthBinding,
+    ) -> anyhow::Result<(ProvisionedInstanceAuth, AuthProvisionOutcome)> {
+        let mode = binding.mode;
+        let sync_source_dir = binding.sync_source_dir.as_deref();
         let opencode_dir = root.join("opencode");
         let opencode_home_dir = home_dir.join(".local/share/opencode");
         std::fs::create_dir_all(&opencode_dir)?;
@@ -1120,16 +1143,25 @@ impl RoleState {
         } else {
             Self::provision_opencode_auth(&auth_json_path, mode, host_home)?
         };
-        Ok((OpencodeAuth { auth_json }, outcome))
+        let credential_paths = auth_json.into_iter().collect::<Vec<_>>();
+        let forward_auth = !credential_paths.is_empty();
+        let slot = ProvisionedInstanceAuth::new(
+            binding,
+            Some(opencode_home_dir),
+            credential_paths,
+            forward_auth,
+        );
+        Ok((slot, outcome))
     }
 
     fn provision_grok_slot(
         root: &Path,
         home_dir: &Path,
-        mode: AuthForwardMode,
         host_home: &Path,
-        sync_source_dir: Option<&Path>,
-    ) -> anyhow::Result<(GrokAuth, AuthProvisionOutcome)> {
+        binding: &InstanceAuthBinding,
+    ) -> anyhow::Result<(ProvisionedInstanceAuth, AuthProvisionOutcome)> {
+        let mode = binding.mode;
+        let sync_source_dir = binding.sync_source_dir.as_deref();
         let grok_dir = root.join("grok");
         let grok_home_dir = home_dir.join(".grok");
         std::fs::create_dir_all(&grok_dir)?;
@@ -1141,16 +1173,25 @@ impl RoleState {
             Self::provision_grok_auth(&auth_json_path, mode, host_home)?
         };
 
-        Ok((GrokAuth { auth_json }, outcome))
+        let credential_paths = auth_json.into_iter().collect::<Vec<_>>();
+        let forward_auth = !credential_paths.is_empty();
+        let slot = ProvisionedInstanceAuth::new(
+            binding,
+            Some(grok_home_dir),
+            credential_paths,
+            forward_auth,
+        );
+        Ok((slot, outcome))
     }
 
     fn provision_antigravity_slot(
         root: &Path,
         home_dir: &Path,
-        mode: AuthForwardMode,
         host_home: &Path,
-        sync_source_dir: Option<&Path>,
-    ) -> anyhow::Result<(AntigravityAuth, AuthProvisionOutcome)> {
+        binding: &InstanceAuthBinding,
+    ) -> anyhow::Result<(ProvisionedInstanceAuth, AuthProvisionOutcome)> {
+        let mode = binding.mode;
+        let sync_source_dir = binding.sync_source_dir.as_deref();
         let antigravity_dir = root.join("antigravity");
         let antigravity_home_dir = home_dir.join(".gemini/antigravity-cli");
         std::fs::create_dir_all(&antigravity_dir)?;
@@ -1161,16 +1202,25 @@ impl RoleState {
         } else {
             Self::provision_antigravity_auth(&settings_json_path, mode, host_home)?
         };
-        Ok((AntigravityAuth { settings_json }, outcome))
+        let credential_paths = settings_json.into_iter().collect::<Vec<_>>();
+        let forward_auth = !credential_paths.is_empty();
+        let slot = ProvisionedInstanceAuth::new(
+            binding,
+            Some(antigravity_home_dir),
+            credential_paths,
+            forward_auth,
+        );
+        Ok((slot, outcome))
     }
 
     fn provision_gemini_slot(
         root: &Path,
         home_dir: &Path,
-        mode: AuthForwardMode,
         host_home: &Path,
-        sync_source_dir: Option<&Path>,
-    ) -> anyhow::Result<(GeminiAuth, AuthProvisionOutcome)> {
+        binding: &InstanceAuthBinding,
+    ) -> anyhow::Result<(ProvisionedInstanceAuth, AuthProvisionOutcome)> {
+        let mode = binding.mode;
+        let sync_source_dir = binding.sync_source_dir.as_deref();
         let gemini_dir = root.join("gemini");
         let gemini_home_dir = home_dir.join(".gemini");
         std::fs::create_dir_all(&gemini_dir)?;
@@ -1181,16 +1231,25 @@ impl RoleState {
         } else {
             Self::provision_gemini_auth(&oauth_creds_path, mode, host_home)?
         };
-        Ok((GeminiAuth { oauth_creds }, outcome))
+        let credential_paths = oauth_creds.into_iter().collect::<Vec<_>>();
+        let forward_auth = !credential_paths.is_empty();
+        let slot = ProvisionedInstanceAuth::new(
+            binding,
+            Some(gemini_home_dir),
+            credential_paths,
+            forward_auth,
+        );
+        Ok((slot, outcome))
     }
 
     fn provision_cursor_slot(
         root: &Path,
         home_dir: &Path,
-        mode: AuthForwardMode,
         host_home: &Path,
-        sync_source_dir: Option<&Path>,
-    ) -> anyhow::Result<(CursorAuth, AuthProvisionOutcome)> {
+        binding: &InstanceAuthBinding,
+    ) -> anyhow::Result<(ProvisionedInstanceAuth, AuthProvisionOutcome)> {
+        let mode = binding.mode;
+        let sync_source_dir = binding.sync_source_dir.as_deref();
         let cursor_dir = root.join("cursor");
         let cursor_home_dir = home_dir.join(".cursor");
         std::fs::create_dir_all(&cursor_dir)?;
@@ -1201,16 +1260,25 @@ impl RoleState {
         } else {
             Self::provision_cursor_auth(&auth_json_path, mode, host_home)?
         };
-        Ok((CursorAuth { auth_json }, outcome))
+        let credential_paths = auth_json.into_iter().collect::<Vec<_>>();
+        let forward_auth = !credential_paths.is_empty();
+        let slot = ProvisionedInstanceAuth::new(
+            binding,
+            Some(cursor_home_dir),
+            credential_paths,
+            forward_auth,
+        );
+        Ok((slot, outcome))
     }
 
     fn provision_muse_slot(
         root: &Path,
         home_dir: &Path,
-        mode: AuthForwardMode,
         host_home: &Path,
-        sync_source_dir: Option<&Path>,
-    ) -> anyhow::Result<(MuseAuth, AuthProvisionOutcome)> {
+        binding: &InstanceAuthBinding,
+    ) -> anyhow::Result<(ProvisionedInstanceAuth, AuthProvisionOutcome)> {
+        let mode = binding.mode;
+        let sync_source_dir = binding.sync_source_dir.as_deref();
         let muse_dir = root.join("muse");
         let muse_home_dir = home_dir.join(".config/muse");
         std::fs::create_dir_all(&muse_dir)?;
@@ -1221,16 +1289,25 @@ impl RoleState {
         } else {
             Self::provision_muse_auth(&auth_json_path, mode, host_home)?
         };
-        Ok((MuseAuth { auth_json }, outcome))
+        let credential_paths = auth_json.into_iter().collect::<Vec<_>>();
+        let forward_auth = !credential_paths.is_empty();
+        let slot = ProvisionedInstanceAuth::new(
+            binding,
+            Some(muse_home_dir),
+            credential_paths,
+            forward_auth,
+        );
+        Ok((slot, outcome))
     }
 
     fn provision_omp_slot(
         root: &Path,
         home_dir: &Path,
-        mode: AuthForwardMode,
         host_home: &Path,
-        sync_source_dir: Option<&Path>,
-    ) -> anyhow::Result<(OmpAuth, AuthProvisionOutcome)> {
+        binding: &InstanceAuthBinding,
+    ) -> anyhow::Result<(ProvisionedInstanceAuth, AuthProvisionOutcome)> {
+        let mode = binding.mode;
+        let sync_source_dir = binding.sync_source_dir.as_deref();
         let omp_dir = root.join("omp");
         let omp_home_dir = home_dir.join(".omp");
         std::fs::create_dir_all(&omp_dir)?;
@@ -1241,16 +1318,25 @@ impl RoleState {
         } else {
             Self::provision_omp_auth(&agent_db_path, mode, host_home)?
         };
-        Ok((OmpAuth { agent_db }, outcome))
+        let credential_paths = agent_db.into_iter().collect::<Vec<_>>();
+        let forward_auth = !credential_paths.is_empty();
+        let slot = ProvisionedInstanceAuth::new(
+            binding,
+            Some(omp_home_dir),
+            credential_paths,
+            forward_auth,
+        );
+        Ok((slot, outcome))
     }
 
     fn provision_hermes_slot(
         root: &Path,
         home_dir: &Path,
-        mode: AuthForwardMode,
         host_home: &Path,
-        sync_source_dir: Option<&Path>,
-    ) -> anyhow::Result<(HermesAuth, AuthProvisionOutcome)> {
+        binding: &InstanceAuthBinding,
+    ) -> anyhow::Result<(ProvisionedInstanceAuth, AuthProvisionOutcome)> {
+        let mode = binding.mode;
+        let sync_source_dir = binding.sync_source_dir.as_deref();
         let hermes_dir = root.join("hermes");
         let hermes_home_dir = home_dir.join(".hermes");
         std::fs::create_dir_all(&hermes_dir)?;
@@ -1260,34 +1346,36 @@ impl RoleState {
         } else {
             Self::provision_hermes_auth(&hermes_dir, mode, host_home)?
         };
-        Ok((HermesAuth { forward_auth }, outcome))
+        let slot = ProvisionedInstanceAuth::new(
+            binding,
+            Some(hermes_home_dir),
+            vec![hermes_dir],
+            forward_auth,
+        );
+        Ok((slot, outcome))
     }
 }
 
-fn skipped_ignore_auth_slot(root: &Path, agent: jackin_core::Agent) -> ProvisionedAuthSlot {
-    match agent {
+fn skipped_ignore_instance_auth(
+    root: &Path,
+    binding: &InstanceAuthBinding,
+) -> ProvisionedInstanceAuth {
+    // No filesystem work ran, so `home_dir` stays `None`; the
+    // deterministic credential paths match the real-path shape so
+    // path accessors keep working for lazy launches.
+    let credential_paths = match binding.agent {
         jackin_core::Agent::Claude => {
             let claude_dir = root.join("claude");
-            ProvisionedAuthSlot::Claude(ClaudeAuth {
-                account_json: claude_dir.join("account.json"),
-                credentials_json: claude_dir.join("credentials.json"),
-                forward_auth: false,
-            })
+            vec![
+                claude_dir.join("account.json"),
+                claude_dir.join("credentials.json"),
+            ]
         }
-        jackin_core::Agent::Codex => ProvisionedAuthSlot::Codex(CodexAuth::default()),
-        jackin_core::Agent::Amp => ProvisionedAuthSlot::Amp(AmpAuth::default()),
-        jackin_core::Agent::Kimi => ProvisionedAuthSlot::Kimi(KimiAuth::default()),
-        jackin_core::Agent::Opencode => ProvisionedAuthSlot::Opencode(OpencodeAuth::default()),
-        jackin_core::Agent::Grok => ProvisionedAuthSlot::Grok(GrokAuth::default()),
-        jackin_core::Agent::Antigravity => {
-            ProvisionedAuthSlot::Antigravity(AntigravityAuth::default())
-        }
-        jackin_core::Agent::Gemini => ProvisionedAuthSlot::Gemini(GeminiAuth::default()),
-        jackin_core::Agent::Cursor => ProvisionedAuthSlot::Cursor(CursorAuth::default()),
-        jackin_core::Agent::Muse => ProvisionedAuthSlot::Muse(MuseAuth::default()),
-        jackin_core::Agent::Omp => ProvisionedAuthSlot::Omp(OmpAuth::default()),
-        jackin_core::Agent::Hermes => ProvisionedAuthSlot::Hermes(HermesAuth::default()),
-    }
+        jackin_core::Agent::Kimi => vec![root.join("kimi-code")],
+        jackin_core::Agent::Hermes => vec![root.join("hermes")],
+        _ => Vec::new(),
+    };
+    ProvisionedInstanceAuth::new(binding, None, credential_paths, false)
 }
 
 fn agent_ignore_can_skip_state_prepare(

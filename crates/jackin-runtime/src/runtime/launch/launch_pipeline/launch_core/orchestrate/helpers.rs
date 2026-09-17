@@ -75,13 +75,14 @@ pub(super) fn workspace_launch_config(
     workspace: &jackin_config::ResolvedWorkspace,
     workspace_name: Option<&WorkspaceName>,
     role_key: &str,
-    agent: jackin_core::Agent,
+    _agent: jackin_core::Agent,
     validated_repo: &jackin_manifest::repo::ValidatedRoleRepo,
     opts: &crate::runtime::launch::LoadOptions,
     materialized: &crate::isolation::materialize::MaterializedWorkspace,
     dirty_exit_policy: &str,
     exec_bindings: Vec<jackin_protocol::ExecBinding>,
 ) -> anyhow::Result<jackin_protocol::CapsuleConfig> {
+    let instances = jackin_config::resolve_launch(config, workspace_name, role_key, None)?;
     let isolated_worktrees = materialized
         .mounts
         .iter()
@@ -94,21 +95,15 @@ pub(super) fn workspace_launch_config(
         &validated_repo.manifest,
         dirty_exit_policy,
         isolated_worktrees,
+        &instances,
     );
-    launch_config.auth_modes = crate::runtime::launch::capsule_setup::capsule_auth_modes(
-        config,
-        workspace_name,
-        role_key,
-        &validated_repo.manifest,
-        Some(agent),
-    )?;
+    launch_config.auth_modes =
+        crate::runtime::launch::capsule_setup::capsule_auth_modes(config, &instances)?;
     launch_config.exec_bindings = exec_bindings;
     crate::runtime::launch::capsule_setup::apply_account_models(
         &mut launch_config,
         config,
-        workspace_name,
-        role_key,
-        &[agent],
+        &instances,
     )?;
     // A per-launch model overrides the role manifest's `[<agent>].model` for
     // the agent this launch selected. The same value also travels as the
@@ -116,11 +111,62 @@ pub(super) fn workspace_launch_config(
     // the hook that writes `$CODEX_HOME/config.toml` cannot disagree (D-078).
     if let (Some(model), Some(agent)) = (opts.model.as_deref(), opts.agent) {
         let model = model.trim();
-        if !model.is_empty() {
+        if !model.is_empty()
+            && let Some(instance) = instances.iter().find(|i| i.agent == agent)
+        {
             launch_config
                 .models
-                .insert(agent.slug().to_owned(), model.to_owned());
+                .insert(instance.config_id.clone(), model.to_owned());
         }
     }
     Ok(launch_config)
+}
+
+/// Agent-grained auth slots derived from the admitted instances, in launch
+/// order. Several instances may share one slot; the first instance in launch
+/// order owns the shared agent home.
+pub(super) fn provision_agents_for_instances(
+    instances: &[jackin_config::ResolvedInstance],
+) -> Vec<jackin_core::Agent> {
+    let mut agents = Vec::new();
+    for instance in instances {
+        if !agents.contains(&instance.agent) {
+            agents.push(instance.agent);
+        }
+    }
+    agents
+}
+
+pub(super) struct ProvisionInputs {
+    pub(super) instances: Vec<jackin_config::ResolvedInstance>,
+    pub(super) credentials: jackin_protocol::AgentCredentialEnv,
+}
+
+pub(super) fn resolve_provision_inputs(
+    config: &jackin_config::AppConfig,
+    workspace: Option<&WorkspaceName>,
+    role_key: &str,
+    opts: &crate::runtime::launch::LoadOptions,
+) -> anyhow::Result<ProvisionInputs> {
+    let instances = jackin_config::resolve_launch(config, workspace, role_key, None)?;
+    anyhow::ensure!(
+        !instances.is_empty(),
+        "no agent instances are admitted for role {role_key:?}"
+    );
+    let default_runner = jackin_env::OpCli::new();
+    let credentials = jackin_env::resolve_instance_env_with(
+        config,
+        &instances,
+        workspace,
+        role_key,
+        opts.op_runner.as_deref().unwrap_or(&default_runner),
+        |name| match &opts.host_env {
+            Some(env) => env.get(name).cloned().ok_or(std::env::VarError::NotPresent),
+            None => std::env::var(name),
+        },
+    )?;
+    Ok(ProvisionInputs {
+        instances,
+        credentials,
+    })
 }

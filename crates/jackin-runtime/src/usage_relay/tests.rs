@@ -18,13 +18,17 @@ use jackin_usage::host::ensure_usage_broker_with_executor;
 #[test]
 fn resolved_launch_inventory_deduplicates_only_launch_agents() {
     let config = jackin_protocol::CapsuleConfig {
-        agents: vec!["claude".to_owned(), "codex".to_owned(), "claude".to_owned()],
+        instances: vec![
+            "work@claude".to_owned(),
+            "work@codex".to_owned(),
+            "work@claude".to_owned(),
+        ],
         ..jackin_protocol::CapsuleConfig::default()
     };
 
     assert_eq!(
-        resolved_launch_usage_inventory(&config).agents,
-        ["claude", "codex"]
+        resolved_launch_usage_inventory(&config).instances,
+        ["work@claude", "work@codex"]
     );
 }
 

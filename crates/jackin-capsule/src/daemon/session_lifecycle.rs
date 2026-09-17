@@ -205,14 +205,8 @@ impl Multiplexer {
         env_overrides: &[(String, String)],
     ) -> Result<u64> {
         match request {
-            SpawnRequest::Agent(agent_slug) => {
-                if let Err(reason) = crate::session::validate_agent_slug(
-                    &agent_slug,
-                    &self.launch_env.available_agents,
-                ) {
-                    anyhow::bail!("rejected agent {agent_slug:?}: {reason}");
-                }
-                let id = self.spawn_session(Some(agent_slug), env_overrides, None)?;
+            SpawnRequest::Agent(target) => {
+                let id = self.spawn_session(Some(target), env_overrides, None)?;
                 self.note_agent_started();
                 Ok(id)
             }
@@ -231,35 +225,39 @@ impl Multiplexer {
 
     pub(super) fn session_launch(
         &self,
-        agent: Option<&str>,
+        instance: Option<&str>,
         provider_label: Option<&str>,
         env_passthrough: &[(String, String)],
         codename: &str,
-    ) -> SessionLaunch {
+    ) -> Result<SessionLaunch> {
         let cwd = self.launch_env.workdir.as_path();
-        match agent {
-            Some(slug) => {
+        match instance {
+            Some(instance) => {
+                let config = &self.launch_env.launch_config;
+                let slug = config.agent_for_instance(instance).ok_or_else(|| {
+                    anyhow::anyhow!("instance {instance:?} has no agent runtime in launch config")
+                })?;
                 let label = crate::tui::model::visible_agent_label(Some(slug), provider_label);
                 let mut cmd = build_agent_command(
                     slug,
-                    self.model_for_agent(slug),
-                    self.launch_env.launch_config.auth_mode_for_agent(slug),
+                    config.model_for_instance(instance),
+                    config.auth_mode_for_instance(instance),
                     env_passthrough,
                     cwd,
                     codename,
                 );
                 crate::session::apply_account_env(
                     &mut cmd,
-                    slug,
-                    self.launch_env.launch_config.auth_mode_for_agent(slug),
+                    instance,
+                    config.auth_mode_for_instance(instance),
                     &self.launch_env.agent_credentials,
                 );
-                SessionLaunch { label, cmd }
+                Ok(SessionLaunch { label, cmd })
             }
-            None => SessionLaunch {
+            None => Ok(SessionLaunch {
                 label: crate::tui::model::visible_agent_label(None, None),
                 cmd: build_shell_command(env_passthrough, cwd, codename),
-            },
+            }),
         }
     }
 
@@ -331,6 +329,19 @@ impl Multiplexer {
         // under typical limits, but well past the size any operator
         // can usefully navigate.
         self.ensure_capacity_for_new_session(true)?;
+        // Authoritative spawn gate: resolve the slug-or-ID target to its
+        // admitted instance. Ambiguity and unknown targets fail here so
+        // neither the TUI picker path nor a wire client can silently
+        // substitute another account's instance.
+        let agent = agent
+            .map(|raw| {
+                self.launch_env
+                    .launch_config
+                    .resolve_instance(&raw)
+                    .map(str::to_owned)
+                    .map_err(|reason| anyhow::anyhow!("rejected spawn target {raw:?}: {reason}"))
+            })
+            .transpose()?;
         let codename = self.pick_next_codename();
         // Mirror split_focused_into: resize_panes below reflows every
         // pane's interior rect, and the new tab swaps the visible
@@ -345,7 +356,7 @@ impl Multiplexer {
             provider_label,
             &env_passthrough,
             &codename,
-        );
+        )?;
         let (session, id) = Session::spawn(
             &launch.label,
             agent.clone(),

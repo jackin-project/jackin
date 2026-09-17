@@ -69,7 +69,7 @@ pub(crate) fn seed_codex_project_trust(
     state: &crate::instance::RoleState,
     workspace: &jackin_config::ResolvedWorkspace,
 ) -> anyhow::Result<()> {
-    if state.auth.codex.is_none() {
+    if state.auth.for_agent(jackin_core::Agent::Codex).is_none() {
         return Ok(());
     }
 

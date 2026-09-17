@@ -22,7 +22,7 @@ key = "crates/jackin-diagnostics/src/observability.rs"
 bound = 2012
 [[family.entry]]
 key = "crates/jackin-xtask/src/telemetry_registry.rs"
-bound = 2008
+bound = 2012
 [[family.entry]]
 key = "crates/jackin-usage/src/host.rs"
 bound = 1890
@@ -792,9 +792,6 @@ bound = 21
 key = "jackin-image"
 bound = 28
 [[family.entry]]
-key = "jackin-instance"
-bound = 27
-[[family.entry]]
 key = "jackin-isolation"
 bound = 23
 [[family.entry]]
@@ -808,7 +805,7 @@ key = "jackin-protocol"
 bound = 74
 [[family.entry]]
 key = "jackin-runtime"
-bound = 98
+bound = 86
 [[family.entry]]
 key = "jackin-telemetry"
 bound = 30

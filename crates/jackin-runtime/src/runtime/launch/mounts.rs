@@ -56,7 +56,7 @@ pub(crate) fn agent_mounts(state: &crate::instance::RoleState) -> Vec<String> {
         state.root.join("credentials").display()
     ));
 
-    if let Some(claude) = &state.auth.claude {
+    if let Some(claude) = state.auth.for_agent(Agent::Claude) {
         push_agent_home_mounts(&mut mounts, &state.root, Agent::Claude);
         // `forward_auth = true` for Sync (host-derived credentials) and
         // OAuthToken (the onboarding skeleton). ApiKey and Ignore set it
@@ -65,36 +65,36 @@ pub(crate) fn agent_mounts(state: &crate::instance::RoleState) -> Vec<String> {
         // the OAuthToken arm from mounting a stale `credentials.json` if
         // the provision-step removal failed silently.
         if claude.forward_auth {
-            if claude.account_json.exists() {
+            if let Some(account_json) = claude.credential_paths.first().filter(|p| p.exists()) {
                 mounts.push(format!(
                     "{}:/jackin/claude/account.json",
-                    claude.account_json.display()
+                    account_json.display()
                 ));
             }
-            if claude.credentials_json.exists() {
+            if let Some(credentials_json) = claude.credential_paths.get(1).filter(|p| p.exists()) {
                 mounts.push(format!(
                     "{}:/jackin/claude/credentials.json",
-                    claude.credentials_json.display()
+                    credentials_json.display()
                 ));
             }
         }
     }
 
-    if let Some(codex) = &state.auth.codex {
+    if let Some(codex) = state.auth.for_agent(Agent::Codex) {
         push_agent_home_mounts(&mut mounts, &state.root, Agent::Codex);
-        if let Some(auth_json) = &codex.auth_json {
+        if let Some(auth_json) = codex.credential_paths.first() {
             mounts.push(format!("{}:/jackin/codex/auth.json", auth_json.display()));
         }
     }
 
-    if let Some(amp) = &state.auth.amp {
+    if let Some(amp) = state.auth.for_agent(Agent::Amp) {
         push_agent_home_mounts(&mut mounts, &state.root, Agent::Amp);
         // Bound RW at the docker level so future plumbing (symlink / bind
         // re-mount) for live bidirectional sync — see
         // `roadmap/live-auth-sync.mdx` — can rely on a writable target.
         // The entrypoint currently `cp`s the file, so in-container rotation
         // does not flow back today.
-        if let Some(secrets_json) = &amp.secrets_json {
+        if let Some(secrets_json) = amp.credential_paths.first() {
             mounts.push(format!(
                 "{}:/jackin/amp/secrets.json",
                 secrets_json.display()
@@ -102,7 +102,7 @@ pub(crate) fn agent_mounts(state: &crate::instance::RoleState) -> Vec<String> {
         }
     }
 
-    if let Some(kimi) = &state.auth.kimi {
+    if let Some(kimi) = state.auth.for_agent(Agent::Kimi) {
         push_agent_home_mounts(&mut mounts, &state.root, Agent::Kimi);
         if kimi.forward_auth {
             mounts.push(format!(
@@ -112,9 +112,9 @@ pub(crate) fn agent_mounts(state: &crate::instance::RoleState) -> Vec<String> {
         }
     }
 
-    if let Some(opencode) = &state.auth.opencode {
+    if let Some(opencode) = state.auth.for_agent(Agent::Opencode) {
         push_agent_home_mounts(&mut mounts, &state.root, Agent::Opencode);
-        if let Some(auth_json) = &opencode.auth_json {
+        if let Some(auth_json) = opencode.credential_paths.first() {
             mounts.push(format!(
                 "{}:/jackin/opencode/auth.json",
                 auth_json.display()
@@ -122,16 +122,16 @@ pub(crate) fn agent_mounts(state: &crate::instance::RoleState) -> Vec<String> {
         }
     }
 
-    if let Some(grok) = &state.auth.grok {
+    if let Some(grok) = state.auth.for_agent(Agent::Grok) {
         push_agent_home_mounts(&mut mounts, &state.root, Agent::Grok);
-        if let Some(auth_json) = &grok.auth_json {
+        if let Some(auth_json) = grok.credential_paths.first() {
             mounts.push(format!("{}:/jackin/grok/auth.json", auth_json.display()));
         }
     }
 
-    if let Some(antigravity) = &state.auth.antigravity {
+    if let Some(antigravity) = state.auth.for_agent(Agent::Antigravity) {
         push_agent_home_mounts(&mut mounts, &state.root, Agent::Antigravity);
-        if let Some(settings_json) = &antigravity.settings_json {
+        if let Some(settings_json) = antigravity.credential_paths.first() {
             mounts.push(format!(
                 "{}:/jackin/antigravity/settings.json",
                 settings_json.display()
@@ -139,9 +139,9 @@ pub(crate) fn agent_mounts(state: &crate::instance::RoleState) -> Vec<String> {
         }
     }
 
-    if let Some(gemini) = &state.auth.gemini {
+    if let Some(gemini) = state.auth.for_agent(Agent::Gemini) {
         push_agent_home_mounts(&mut mounts, &state.root, Agent::Gemini);
-        if let Some(oauth_creds) = &gemini.oauth_creds {
+        if let Some(oauth_creds) = gemini.credential_paths.first() {
             mounts.push(format!(
                 "{}:/jackin/gemini/oauth_creds.json",
                 oauth_creds.display()
@@ -149,28 +149,28 @@ pub(crate) fn agent_mounts(state: &crate::instance::RoleState) -> Vec<String> {
         }
     }
 
-    if let Some(cursor) = &state.auth.cursor {
+    if let Some(cursor) = state.auth.for_agent(Agent::Cursor) {
         push_agent_home_mounts(&mut mounts, &state.root, Agent::Cursor);
-        if let Some(auth_json) = &cursor.auth_json {
+        if let Some(auth_json) = cursor.credential_paths.first() {
             mounts.push(format!("{}:/jackin/cursor/auth.json", auth_json.display()));
         }
     }
 
-    if let Some(muse_) = &state.auth.muse {
+    if let Some(muse_) = state.auth.for_agent(Agent::Muse) {
         push_agent_home_mounts(&mut mounts, &state.root, Agent::Muse);
-        if let Some(auth_json) = &muse_.auth_json {
+        if let Some(auth_json) = muse_.credential_paths.first() {
             mounts.push(format!("{}:/jackin/muse/auth.json", auth_json.display()));
         }
     }
 
-    if let Some(omp) = &state.auth.omp {
+    if let Some(omp) = state.auth.for_agent(Agent::Omp) {
         push_agent_home_mounts(&mut mounts, &state.root, Agent::Omp);
-        if let Some(agent_db) = &omp.agent_db {
+        if let Some(agent_db) = omp.credential_paths.first() {
             mounts.push(format!("{}:/jackin/omp/agent.db", agent_db.display()));
         }
     }
 
-    if let Some(hermes) = &state.auth.hermes {
+    if let Some(hermes) = state.auth.for_agent(Agent::Hermes) {
         push_agent_home_mounts(&mut mounts, &state.root, Agent::Hermes);
         if hermes.forward_auth {
             mounts.push(format!(

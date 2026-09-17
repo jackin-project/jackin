@@ -58,10 +58,6 @@ impl Multiplexer {
         }
     }
 
-    pub(super) fn model_for_agent(&self, agent: &str) -> Option<&str> {
-        self.launch_env.launch_config.model_for_agent(agent)
-    }
-
     /// Bound the per-container surface for any path that allocates a
     /// new PTY (top-level spawn, split, etc.). All such paths must
     /// route through here so `MAX_TABS` / `MAX_SESSIONS` are enforced
@@ -134,9 +130,9 @@ impl Multiplexer {
         provider_label: Option<&str>,
     ) -> jackin_protocol::control::FocusedUsageView {
         let (agent, provider) = self.focused_agent_provider();
-        if agent.is_none() && self.launch_env.available_agents.is_empty() {
+        if agent.is_none() && self.launch_env.available_instances.is_empty() {
             return jackin_protocol::control::FocusedUsageView::unavailable(
-                "No agents configured for this Capsule.",
+                "No agent instances configured for this Capsule.",
                 chrono::Utc::now().timestamp(),
             );
         }

@@ -1538,17 +1538,14 @@ fn parse_modify_other_keys(raw: &[u8]) -> Option<u16> {
     std::str::from_utf8(level).ok()?.parse::<u16>().ok()
 }
 
-/// Reject agent-slug strings that are flags (start with `-`), empty,
-/// contain whitespace / control characters, or — when the launch
-/// config lists supported agents — do not appear in that allowlist.
-/// Shared by the PID-1 argv path, the
-/// `jackin-capsule new <agent>` client path, and the daemon's
-/// `Hello.spawn` decode path so all three trust boundaries
-/// apply the same gate.
-pub fn validate_agent_slug<'a>(
-    raw: &'a str,
-    supported_agents: &[String],
-) -> Result<&'a str, &'static str> {
+/// Reject spawn-target strings that are flags (start with `-`), empty, or
+/// contain whitespace / control characters. Syntax only: membership is
+/// resolved separately via `CapsuleConfig::resolve_instance`, which maps
+/// an instance config ID (or an unambiguous agent-slug shorthand) to its
+/// admitted instance. Shared by the PID-1 argv path and the
+/// `jackin-capsule new <target>` client path; the daemon re-resolves
+/// authoritatively at spawn time.
+pub fn validate_spawn_token_syntax(raw: &str) -> Result<&str, &'static str> {
     if raw.is_empty() {
         return Err("empty value");
     }
@@ -1557,9 +1554,6 @@ pub fn validate_agent_slug<'a>(
     }
     if raw.chars().any(|c| c.is_whitespace() || c.is_control()) {
         return Err("contains whitespace or control characters");
-    }
-    if !supported_agents.is_empty() && !supported_agents.iter().any(|a| a == raw) {
-        return Err("not in launch config allowlist");
     }
     Ok(raw)
 }
@@ -1706,17 +1700,18 @@ fn apply_terminal_env(cmd: &mut CommandBuilder) {
 #[cfg(test)]
 mod tests;
 
-/// Inject only the account selected for this pane after ambient credentials were stripped.
+/// Inject only the account selected for this pane — the env of one instance
+/// config ID — after ambient credentials were stripped.
 pub(crate) fn apply_account_env(
     command: &mut CommandBuilder,
-    agent: &str,
+    instance: &str,
     auth_mode: Option<&str>,
     credentials: &jackin_protocol::AgentCredentialEnv,
 ) {
     if !matches!(auth_mode, Some("api_key" | "oauth_token")) {
         return;
     }
-    if let Some(env) = credentials.for_agent(agent) {
+    if let Some(env) = credentials.for_instance(instance) {
         for (name, value) in env {
             command.env(name, value);
         }

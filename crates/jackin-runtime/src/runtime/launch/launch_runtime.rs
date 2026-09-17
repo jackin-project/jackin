@@ -215,12 +215,20 @@ pub(crate) fn spawn_sibling_auth_prewarm(
 
     Some(jackin_telemetry::spawn::joined_blocking(move || {
         let ws = jackin_core::WorkspaceName::parse(&workspace_name).ok();
-        let selections = match super::capsule_setup::account_auth_selections(
-            &config,
-            ws.as_ref(),
-            &role_key,
-            &sibling_agents,
-        ) {
+        let instances: Vec<jackin_config::ResolvedInstance> =
+            match jackin_config::resolve_launch(&config, ws.as_ref(), &role_key, None) {
+                Ok(instances) => instances
+                    .into_iter()
+                    .filter(|instance| sibling_agents.contains(&instance.agent))
+                    .collect(),
+                Err(error) => {
+                    if let Some(run) = active_run {
+                        run.compact("sibling_auth_prewarm_failed", &error.to_string());
+                    }
+                    return;
+                }
+            };
+        let selections = match super::capsule_setup::account_auth_selections(&config, &instances) {
             Ok(selections) => selections,
             Err(error) => {
                 if let Some(run) = active_run {
@@ -230,13 +238,17 @@ pub(crate) fn spawn_sibling_auth_prewarm(
             }
         };
         let resolve_mode = |agent| {
-            selections
-                .get(&agent)
+            instances
+                .iter()
+                .find(|instance| instance.agent == agent)
+                .and_then(|instance| selections.get(&instance.config_id))
                 .map_or(jackin_config::AuthForwardMode::Ignore, |(mode, _)| *mode)
         };
         let resolve_sync_src = |agent| {
-            selections
-                .get(&agent)
+            instances
+                .iter()
+                .find(|instance| instance.agent == agent)
+                .and_then(|instance| selections.get(&instance.config_id))
                 .and_then(|(_, directory)| directory.clone())
         };
         let result = RoleState::prewarm_auth_for_agents(
@@ -808,21 +820,7 @@ pub(crate) async fn launch_role_runtime(
     // is the local debug sink below). Coarse `agent_auth_mode` reflects whether the
     // selected agent's auth was provisioned; richer posture is owned by WP7.
     if *debug {
-        let agent_auth_mode = match agent.slug() {
-            "claude" => state.auth.claude.is_some(),
-            "codex" => state.auth.codex.is_some(),
-            "amp" => state.auth.amp.is_some(),
-            "kimi" => state.auth.kimi.is_some(),
-            "opencode" => state.auth.opencode.is_some(),
-            "grok" => state.auth.grok.is_some(),
-            "antigravity" => state.auth.antigravity.is_some(),
-            "gemini" => state.auth.gemini.is_some(),
-            "cursor" => state.auth.cursor.is_some(),
-            "muse" => state.auth.muse.is_some(),
-            "omp" => state.auth.omp.is_some(),
-            "hermes" => state.auth.hermes.is_some(),
-            _ => false,
-        };
+        let agent_auth_mode = state.auth.for_agent(*agent).is_some();
         let session_contract = crate::runtime::docker_profile::format_session_contract(
             *profile,
             &profile_source.to_string(),

@@ -15,7 +15,10 @@ use super::super::launch_phases::{
 };
 use super::super::{emit_auth_provision_launch_plan, purge_or_mark_clean_exited};
 use super::LaunchCore;
-use helpers::{emit_auth_breadcrumbs, reuse_sentinel, sidecar_replenish, workspace_launch_config};
+use helpers::{
+    emit_auth_breadcrumbs, provision_agents_for_instances, resolve_provision_inputs, reuse_sentinel,
+    sidecar_replenish, workspace_launch_config,
+};
 use jackin_core::{CommandRunner, ContainerId, WorkspaceName};
 use jackin_docker::docker_client::DockerApi;
 
@@ -651,35 +654,29 @@ where
     let workspace_opt_owned = configured.workspace_opt.clone();
     let role_key_owned = role_key.to_owned();
     let github_ctx_owned = configured.github_ctx.clone();
-    let default_runner = jackin_env::OpCli::new();
-    let credentials = jackin_env::resolve_account_env_with(
-        config,
-        &[agent],
-        configured.workspace_opt.as_ref(),
-        role_key,
-        opts.op_runner.as_deref().unwrap_or(&default_runner),
-        |name| match &opts.host_env {
-            Some(env) => env.get(name).cloned().ok_or(std::env::VarError::NotPresent),
-            None => std::env::var(name),
-        },
-    )?;
+    let provision =
+        resolve_provision_inputs(config, configured.workspace_opt.as_ref(), role_key, opts)?;
+    let instances = provision.instances;
+    let credentials = provision.credentials;
     let role_state_future = async move {
         jackin_telemetry::spawn::joined_blocking(move || {
-            let provision_agents = [agent];
+            let provision_agents = provision_agents_for_instances(&instances);
             let selections = super::super::super::capsule_setup::account_auth_selections(
                 &config_owned,
-                workspace_opt_owned.as_ref(),
-                &role_key_owned,
-                &provision_agents,
+                &instances,
             )?;
             let resolve_mode = |candidate| {
-                selections
-                    .get(&candidate)
+                instances
+                    .iter()
+                    .find(|instance| instance.agent == candidate)
+                    .and_then(|instance| selections.get(&instance.config_id))
                     .map_or(jackin_config::AuthForwardMode::Ignore, |(mode, _)| *mode)
             };
             let resolve_sync_src = |candidate| {
-                selections
-                    .get(&candidate)
+                instances
+                    .iter()
+                    .find(|instance| instance.agent == candidate)
+                    .and_then(|instance| selections.get(&instance.config_id))
                     .and_then(|(_, directory)| directory.clone())
             };
             let prepared = RoleState::prepare_for_agents(
@@ -697,14 +694,12 @@ where
             )?;
             super::super::super::account_identity::write_account_credentials(
                 &prepared.0.root,
-                credentials,
+                &credentials,
             )?;
             super::super::super::account_config::configure_accounts(
                 &prepared.0.root,
                 &config_owned,
-                workspace_opt_owned.as_ref(),
-                &role_key_owned,
-                &provision_agents,
+                &instances,
             )?;
             super::super::super::account_identity::record_account_configuration(
                 &prepared.0.root,

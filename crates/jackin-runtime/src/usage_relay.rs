@@ -145,8 +145,8 @@ pub struct UsageRelayLaunch<'a> {
 /// capability alone cannot create a Capsule row.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ResolvedLaunchUsageInventory {
-    /// Agent slugs in deterministic launch-config order.
-    pub agents: Vec<String>,
+    /// Instance config IDs in deterministic launch-config order.
+    pub instances: Vec<String>,
 }
 
 /// Project the resolved launch configuration into the Capsule usage boundary.
@@ -154,10 +154,10 @@ pub struct ResolvedLaunchUsageInventory {
 pub fn resolved_launch_usage_inventory(
     config: &jackin_protocol::CapsuleConfig,
 ) -> ResolvedLaunchUsageInventory {
-    let mut agents = config.agents.clone();
-    agents.sort();
-    agents.dedup();
-    ResolvedLaunchUsageInventory { agents }
+    let mut instances = config.instances.clone();
+    instances.sort();
+    instances.dedup();
+    ResolvedLaunchUsageInventory { instances }
 }
 
 /// Session-lifetime relay ownership. Drop revokes the socket task.

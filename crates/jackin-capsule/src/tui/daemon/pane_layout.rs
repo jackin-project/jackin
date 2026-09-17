@@ -11,17 +11,28 @@ use super::{
 
 impl Multiplexer {
     /// Split the focused pane and spawn a session of the operator's
-    /// choice inside it. `agent_slug = None` opens a shell. Used by
+    /// choice inside it. `instance = None` opens a shell. Used by
     /// the `AgentPicker` → Split flow so the operator picks the new
     /// pane's identity instead of cloning the source pane's agent.
+    /// The target resolves exactly like a fresh spawn: unknown or
+    /// ambiguous agent slugs fail rather than substituting an instance.
     pub(super) fn split_focused_into(
         &mut self,
         direction: SplitDirection,
-        agent_slug: Option<String>,
+        instance: Option<String>,
         env_overrides: &[(String, String)],
         provider_label: Option<&str>,
     ) -> Result<()> {
         self.ensure_capacity_for_new_session(false)?;
+        let instance = instance
+            .map(|raw| {
+                self.launch_env
+                    .launch_config
+                    .resolve_instance(&raw)
+                    .map(str::to_owned)
+                    .map_err(|reason| anyhow::anyhow!("rejected spawn target {raw:?}: {reason}"))
+            })
+            .transpose()?;
         // Any selection / drag-resize is anchored to a specific pane
         // rect that this reflow is about to invalidate.
         self.cancel_drag();
@@ -48,15 +59,15 @@ impl Multiplexer {
         let (spawn_rows, spawn_cols) = split_spawn_inner_size(split_geometry, from_rect);
         let env_passthrough = self.env_for_spawn(env_overrides);
         let launch = self.session_launch(
-            agent_slug.as_deref(),
+            instance.as_deref(),
             provider_label,
             &env_passthrough,
             &tab_codename,
-        );
-        let agent_for_history = agent_slug.clone();
+        )?;
+        let agent_for_history = instance.clone();
         let (session, new_id) = Session::spawn(
             &launch.label,
-            agent_slug,
+            instance,
             provider_label.map(|label| crate::session::SessionProvider {
                 label: label.to_owned(),
                 env_overrides: env_overrides.to_vec(),
@@ -106,10 +117,10 @@ impl Multiplexer {
     /// the source pane's runtime.
     pub(super) fn split_focused(&mut self, direction: SplitDirection) -> Result<()> {
         self.ensure_capacity_for_new_session(false)?;
-        let (agent_slug, provider_env_overrides, provider_label) = self.focused_spawn_metadata();
+        let (instance, provider_env_overrides, provider_label) = self.focused_spawn_metadata();
         self.split_focused_into(
             direction,
-            agent_slug,
+            instance,
             &provider_env_overrides,
             provider_label.as_deref(),
         )
@@ -299,8 +310,17 @@ impl Multiplexer {
                     .provider
                     .as_ref()
                     .map(|provider| provider.label.as_str());
+                // Sessions store instance config IDs; tabs still show the
+                // runtime name until per-instance labels land. Unknown IDs
+                // (hand-built test sessions) render verbatim.
+                let slug = session.agent.as_deref().map(|stored| {
+                    self.launch_env
+                        .launch_config
+                        .agent_for_instance(stored)
+                        .unwrap_or(stored)
+                });
                 crate::tui::model::visible_tab_pane_kind(crate::tui::model::VisibleTabPaneFacts {
-                    agent_slug: session.agent.as_deref(),
+                    agent_slug: slug,
                     provider_label,
                 })
             })

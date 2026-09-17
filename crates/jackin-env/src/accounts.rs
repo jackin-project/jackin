@@ -5,7 +5,8 @@
 
 use crate::{OpRunner, resolve_env_value};
 use jackin_config::AppConfig;
-use jackin_core::{Agent, WorkspaceName};
+use jackin_core::WorkspaceName;
+use jackin_protocol::{AgentCredentialEnv, InstanceCredentialEnv};
 use std::collections::BTreeMap;
 
 /// Environment names owned by account selection, including endpoint routing.
@@ -27,29 +28,35 @@ pub fn is_account_env(name: &str) -> bool {
         )
 }
 
-/// Resolve the selected accounts for every agent supported by a role.
+/// Resolve credentials for the admitted launch instances.
+///
+/// Instances are already authorized by [`jackin_config::resolve_launch`};
+/// `_workspace`/`_role` only preserve the launch-stage call shape. Each
+/// instance receives its own credential map keyed by its verbatim
+/// `config_id`, including when several instances share one agent.
 ///
 /// # Errors
-/// Returns an error for invalid bindings or unavailable credentials. Each agent receives
-/// its own credential map, including when providers use the same key name.
-pub fn resolve_account_env_with<R, H>(
+/// Returns an error for unknown accounts, incompatible agent/provider
+/// combinations, on-demand or empty credentials, and unavailable secrets.
+pub fn resolve_instance_env_with<R, H>(
     config: &AppConfig,
-    agents: &[Agent],
-    workspace: Option<&WorkspaceName>,
-    role: &str,
+    instances: &[jackin_config::ResolvedInstance],
+    _workspace: Option<&WorkspaceName>,
+    _role: &str,
     runner: &R,
     host_env: H,
-) -> anyhow::Result<BTreeMap<String, BTreeMap<String, String>>>
+) -> anyhow::Result<AgentCredentialEnv>
 where
     R: OpRunner + ?Sized,
     H: Fn(&str) -> Result<String, std::env::VarError> + Send + Sync,
 {
-    let mut agents_env = BTreeMap::new();
-    for &agent in agents {
-        let Some(account) = jackin_config::resolve_account(config, agent, workspace, role)? else {
-            continue;
-        };
-        let declarations = account.credential_env(agent)?;
+    let mut resolved_instances = BTreeMap::new();
+    for instance in instances {
+        let account = config
+            .accounts
+            .get(&instance.account_id)
+            .ok_or_else(|| anyhow::anyhow!("unknown account {:?}", instance.account_id))?;
+        let declarations = account.credential_env(instance.agent)?;
         if declarations
             .values()
             .any(|value| matches!(value, jackin_core::EnvValue::OpRef(_)))
@@ -73,10 +80,17 @@ where
             })
             .collect::<anyhow::Result<BTreeMap<_, _>>>()?;
         if !resolved.is_empty() {
-            agents_env.insert(agent.slug().to_owned(), resolved);
+            resolved_instances.insert(
+                instance.config_id.clone(),
+                InstanceCredentialEnv {
+                    agent: instance.agent.slug().to_owned(),
+                    account_id: instance.account_id.clone(),
+                    env: resolved,
+                },
+            );
         }
     }
-    Ok(agents_env)
+    Ok(AgentCredentialEnv::new(resolved_instances))
 }
 
 #[cfg(test)]

@@ -14,7 +14,7 @@
 #![deny(missing_docs)]
 
 mod account_credentials;
-pub use account_credentials::AgentCredentialEnv;
+pub use account_credentials::{AgentCredentialEnv, InstanceCredentialEnv};
 
 use jackin_core::container_paths;
 
@@ -134,12 +134,22 @@ pub struct CapsuleConfig {
     /// `workdir` field.
     pub workdir: String,
     #[serde(default)]
-    /// `agents` field.
-    pub agents: Vec<String>,
+    /// Admitted launch instance config IDs, in launch order. Several
+    /// instances may share one agent runtime; per-instance facts live in
+    /// `agents`, `models`, `auth_modes`, and the protected
+    /// [`AgentCredentialEnv`] envelope, all keyed by these same IDs.
+    pub instances: Vec<String>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    /// `models` field.
+    /// Agent runtime slug per admitted instance, keyed by instance config
+    /// ID. The capsule needs this to select the runtime binary: config IDs
+    /// are opaque (`work-claude` carries no slug) and sync-mode instances
+    /// have no credential envelope to consult.
+    pub agents: BTreeMap<String, String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    /// Per-instance model override, keyed by instance config ID.
     pub models: BTreeMap<String, String>,
-    /// Resolved per-agent auth modes (`sync|api_key|oauth_token|ignore`).
+    /// Resolved per-instance auth modes (`sync|api_key|oauth_token|ignore`),
+    /// keyed by instance config ID.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub auth_modes: BTreeMap<String, String>,
     /// Claude plugin marketplaces declared by the role manifest. The capsule
@@ -236,20 +246,50 @@ impl Provider {
 }
 
 impl CapsuleConfig {
-    /// `supported_agents` method.
-    pub fn supported_agents(&self) -> Vec<String> {
-        self.agents.clone()
+    /// Admitted instance config IDs, in launch order.
+    pub fn supported_instances(&self) -> Vec<String> {
+        self.instances.clone()
     }
 
-    /// `model_for_agent` method.
-    pub fn model_for_agent(&self, agent: &str) -> Option<&str> {
-        self.models.get(agent).map(String::as_str)
+    /// Per-instance model override for an instance config ID.
+    pub fn model_for_instance(&self, instance: &str) -> Option<&str> {
+        self.models.get(instance).map(String::as_str)
     }
 
-    /// Resolved bounded authentication mode for an agent runtime.
+    /// Resolved bounded authentication mode for an instance config ID.
     #[must_use]
-    pub fn auth_mode_for_agent(&self, agent: &str) -> Option<&str> {
-        self.auth_modes.get(agent).map(String::as_str)
+    pub fn auth_mode_for_instance(&self, instance: &str) -> Option<&str> {
+        self.auth_modes.get(instance).map(String::as_str)
+    }
+
+    /// Agent runtime slug for an instance config ID.
+    #[must_use]
+    pub fn agent_for_instance(&self, instance: &str) -> Option<&str> {
+        self.agents.get(instance).map(String::as_str)
+    }
+
+    /// Resolve a spawn target to its admitted instance config ID. An exact
+    /// config-ID match wins; otherwise an agent slug resolves only when
+    /// exactly one admitted instance uses that runtime. Ambiguity and
+    /// unknown targets are explicit errors — never a silent pick.
+    pub fn resolve_instance(&self, raw: &str) -> Result<&str, &'static str> {
+        if let Some(id) = self.instances.iter().find(|id| id.as_str() == raw) {
+            return if self.agents.contains_key(id) {
+                Ok(id.as_str())
+            } else {
+                Err("instance has no agent runtime in launch config")
+            };
+        }
+        let mut hit = None;
+        for id in &self.instances {
+            if self.agents.get(id).is_some_and(|slug| slug == raw) {
+                if hit.is_some() {
+                    return Err("ambiguous agent: several instances share it; pick an instance");
+                }
+                hit = Some(id.as_str());
+            }
+        }
+        hit.ok_or("not in launch config allowlist")
     }
 }
 

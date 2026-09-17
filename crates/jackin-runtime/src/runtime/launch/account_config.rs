@@ -7,31 +7,33 @@ use std::path::Path;
 
 use anyhow::Context as _;
 use jackin_config::{AccountCredential, AiProvider, AppConfig};
-use jackin_core::{Agent, WorkspaceName};
+use jackin_core::Agent;
 
 pub(super) fn configure_accounts(
     root: &Path,
     config: &AppConfig,
-    workspace: Option<&WorkspaceName>,
-    role: &str,
-    agents: &[Agent],
+    instances: &[jackin_config::ResolvedInstance],
 ) -> anyhow::Result<()> {
-    if agents.contains(&Agent::Opencode) {
-        configure_opencode(root, config, workspace, role)?;
+    if let Some(instance) = instances
+        .iter()
+        .find(|instance| instance.agent == Agent::Opencode)
+    {
+        configure_opencode(root, config, instance)?;
     }
-    if !agents.contains(&Agent::Codex) {
-        return Ok(());
-    }
-    let Some(account) = jackin_config::resolve_account(config, Agent::Codex, workspace, role)?
+    let Some(instance) = instances
+        .iter()
+        .find(|instance| instance.agent == Agent::Codex)
     else {
         return Ok(());
     };
-    let AccountCredential::ApiKey {
-        base_url, model, ..
-    } = &account.credential
-    else {
+    let account = config
+        .accounts
+        .get(&instance.account_id)
+        .ok_or_else(|| anyhow::anyhow!("unknown account {:?}", instance.account_id))?;
+    let AccountCredential::ApiKey { .. } = &account.credential else {
         return Ok(());
     };
+    let (base_url, model) = (instance.base_url.as_deref(), instance.model.as_deref());
     let cross_provider = account.provider != AiProvider::OpenAi;
     anyhow::ensure!(
         !cross_provider || model.is_some(),
@@ -54,10 +56,7 @@ pub(super) fn configure_accounts(
     };
     let mut provider = toml::Table::new();
     provider.insert("name".into(), account.provider.slug().into());
-    provider.insert(
-        "base_url".into(),
-        base_url.as_deref().unwrap_or(default_url).into(),
-    );
+    provider.insert("base_url".into(), base_url.unwrap_or(default_url).into());
     provider.insert("env_key".into(), key.into());
     provider.insert("wire_api".into(), "responses".into());
     provider.insert("requires_openai_auth".into(), false.into());
@@ -73,7 +72,7 @@ pub(super) fn configure_accounts(
         document.remove("model_catalog_json");
     }
     if let Some(model) = model {
-        document.insert("model".into(), model.clone().into());
+        document.insert("model".into(), model.into());
         if let Some(catalog) = model_catalog(account.provider, model) {
             std::fs::write(
                 directory.join("account-models.json"),
@@ -159,19 +158,16 @@ pub(super) fn opencode_model(provider: AiProvider, model: &str) -> anyhow::Resul
 fn configure_opencode(
     root: &Path,
     config: &AppConfig,
-    workspace: Option<&WorkspaceName>,
-    role: &str,
+    instance: &jackin_config::ResolvedInstance,
 ) -> anyhow::Result<()> {
-    let Some(account) = jackin_config::resolve_account(config, Agent::Opencode, workspace, role)?
-    else {
+    let account = config
+        .accounts
+        .get(&instance.account_id)
+        .ok_or_else(|| anyhow::anyhow!("unknown account {:?}", instance.account_id))?;
+    let AccountCredential::ApiKey { .. } = &account.credential else {
         return Ok(());
     };
-    let AccountCredential::ApiKey {
-        base_url, model, ..
-    } = &account.credential
-    else {
-        return Ok(());
-    };
+    let (base_url, model) = (instance.base_url.as_deref(), instance.model.as_deref());
     let (id, npm, default_url) = opencode_provider(account.provider)?;
     let credentials = account.credential_env(Agent::Opencode)?;
     let key = credentials
@@ -183,7 +179,7 @@ fn configure_opencode(
         .context("create private OpenCode configuration directory")?;
     let mut provider = serde_json::json!({
         "name": account.name, "npm": npm,
-        "options": { "baseURL": base_url.as_deref().unwrap_or(default_url), "apiKey": format!("{{env:{key}}}") }
+        "options": { "baseURL": base_url.unwrap_or(default_url), "apiKey": format!("{{env:{key}}}") }
     });
     // Zen chooses a protocol per model; preserve its built-in catalog routing.
     if account.provider == AiProvider::Opencode && base_url.is_none() {

@@ -713,7 +713,8 @@ fn test_mux(rows: u16, cols: u16) -> Multiplexer {
         CapsuleConfig {
             role: "test-role".to_owned(),
             workdir: "/workspace".to_owned(),
-            agents: Vec::new(),
+            instances: Vec::new(),
+            agents: BTreeMap::new(),
             models: BTreeMap::new(),
             auth_modes: BTreeMap::new(),
             claude_marketplaces: Vec::new(),
@@ -2161,13 +2162,13 @@ fn initial_spawn_request_is_data_only_agent_or_shell() {
 #[test]
 fn spawn_request_rejects_agent_outside_allowlist_before_pty_spawn() {
     let mut mux = test_mux(24, 80);
-    mux.launch_env.available_agents = vec!["codex".to_owned()];
+    mux.launch_env.available_instances = vec!["codex".to_owned()];
 
     let err = mux
         .spawn_request(SpawnRequest::Agent("claude".to_owned()), &[])
         .unwrap_err();
 
-    assert!(err.to_string().contains("rejected agent \"claude\""));
+    assert!(err.to_string().contains("rejected spawn target \"claude\""));
     assert!(mux.session_supervisor.sessions.is_empty());
 }
 
@@ -5356,8 +5357,13 @@ fn account_model_is_used_for_agent_launch() {
     mux.launch_env
         .launch_config
         .models
-        .insert("opencode".to_owned(), "minimax/custom".to_owned());
-    assert_eq!(mux.model_for_agent("opencode"), Some("minimax/custom"));
+        .insert("work@opencode".to_owned(), "minimax/custom".to_owned());
+    assert_eq!(
+        mux.launch_env
+            .launch_config
+            .model_for_instance("work@opencode"),
+        Some("minimax/custom")
+    );
 }
 
 #[test]
@@ -8997,28 +9003,40 @@ fn session_send_then_status_tick_is_observable_end_to_end_in_process() {
 }
 
 #[test]
-fn daemon_session_boundary_keeps_account_credentials_per_agent() {
+fn daemon_session_boundary_keeps_account_credentials_per_instance() {
     let mut mux = test_mux(24, 80);
-    mux.launch_env.launch_config.auth_modes = BTreeMap::from([
-        ("claude".into(), "sync".into()),
-        ("codex".into(), "ignore".into()),
-        ("opencode".into(), "api_key".into()),
+    mux.launch_env.launch_config.instances = vec!["work".into(), "personal".into()];
+    mux.launch_env.launch_config.agents = BTreeMap::from([
+        ("work".into(), "claude".into()),
+        ("personal".into(), "opencode".into()),
     ]);
-    mux.launch_env.agent_credentials =
-        jackin_protocol::AgentCredentialEnv::new(BTreeMap::from([(
-            "opencode".into(),
-            BTreeMap::from([
-                ("ANTHROPIC_API_KEY".into(), "opencode-anthropic".into()),
-                ("OPENAI_API_KEY".into(), "opencode-openai".into()),
-            ]),
-        )]));
+    mux.launch_env.launch_config.auth_modes = BTreeMap::from([
+        ("work".into(), "sync".into()),
+        ("personal".into(), "api_key".into()),
+    ]);
+    mux.launch_env.agent_credentials = serde_json::from_value(serde_json::json!({
+        "schema_version": 2,
+        "instances": {
+            "personal": {
+                "agent": "opencode",
+                "account_id": "acc-personal",
+                "env": {
+                    "ANTHROPIC_API_KEY": "opencode-anthropic",
+                    "OPENAI_API_KEY": "opencode-openai",
+                },
+            },
+        },
+    }))
+    .expect("v2 fixture must decode");
     let ambient = vec![("ANTHROPIC_API_KEY".into(), "ambient-secret".into())];
-    for agent in [Some("claude"), Some("codex"), None] {
-        let launch = mux.session_launch(agent, None, &ambient, "test");
-        assert!(launch.cmd.get_env("ANTHROPIC_API_KEY").is_none());
-        assert!(launch.cmd.get_env("OPENAI_API_KEY").is_none());
-    }
-    let launch = mux.session_launch(Some("opencode"), None, &ambient, "test");
+    let launch = mux
+        .session_launch(Some("work"), None, &ambient, "test")
+        .expect("known instance launches");
+    assert!(launch.cmd.get_env("ANTHROPIC_API_KEY").is_none());
+    assert!(launch.cmd.get_env("OPENAI_API_KEY").is_none());
+    let launch = mux
+        .session_launch(Some("personal"), None, &ambient, "test")
+        .expect("known instance launches");
     assert_eq!(
         launch
             .cmd
@@ -9032,5 +9050,9 @@ fn daemon_session_boundary_keeps_account_credentials_per_agent() {
             .get_env("OPENAI_API_KEY")
             .and_then(|v| v.to_str()),
         Some("opencode-openai")
+    );
+    assert!(
+        mux.session_launch(Some("missing"), None, &ambient, "test")
+            .is_err()
     );
 }

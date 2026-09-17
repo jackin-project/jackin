@@ -5,7 +5,8 @@
 use super::{
     AgentState, OscPolicy, Session, SessionEvent, SessionTerminal, agent_model_args,
     build_agent_command, build_shell_command, child_exit_reason, emit_pty_exit, emit_pty_spawn,
-    inject_status_env, osc8_uri_is_safe, pty_exit_error_type, pty_exit_reason, validate_agent_slug,
+    inject_status_env, osc8_uri_is_safe, pty_exit_error_type, pty_exit_reason,
+    validate_spawn_token_syntax,
 };
 
 use std::path::Path;
@@ -1147,30 +1148,19 @@ fn osc8_uri_unsafe_schemes_rejected() {
 }
 
 #[test]
-fn validate_agent_slug_rejects_typical_attacks() {
-    let supported = Vec::new();
-    validate_agent_slug("", &supported).unwrap_err();
-    validate_agent_slug("--debug", &supported).unwrap_err();
-    validate_agent_slug("claude\n; rm -rf /", &supported).unwrap_err();
-    validate_agent_slug("claude codex", &supported).unwrap_err();
-    validate_agent_slug("claude\0", &supported).unwrap_err();
+fn validate_spawn_token_syntax_rejects_typical_attacks() {
+    validate_spawn_token_syntax("").unwrap_err();
+    validate_spawn_token_syntax("--debug").unwrap_err();
+    validate_spawn_token_syntax("claude\n; rm -rf /").unwrap_err();
+    validate_spawn_token_syntax("claude codex").unwrap_err();
+    validate_spawn_token_syntax("claude\0").unwrap_err();
 }
 
 #[test]
-fn validate_agent_slug_accepts_well_formed_slug_when_no_allowlist() {
-    let supported = Vec::new();
-    validate_agent_slug("claude", &supported).unwrap();
-    validate_agent_slug("codex", &supported).unwrap();
-}
-
-#[test]
-fn validate_agent_slug_rejects_slug_outside_launch_config_allowlist() {
-    let supported = vec!["claude".to_owned()];
-    validate_agent_slug("claude", &supported).unwrap();
-    assert_eq!(
-        validate_agent_slug("codex", &supported).unwrap_err(),
-        "not in launch config allowlist"
-    );
+fn validate_spawn_token_syntax_accepts_well_formed_tokens() {
+    validate_spawn_token_syntax("claude").unwrap();
+    validate_spawn_token_syntax("work@claude").unwrap();
+    validate_spawn_token_syntax("codex").unwrap();
 }
 
 // ── exit-reason classification ────────────────────────────────────────────
@@ -1681,21 +1671,33 @@ fn bare_claude_notification_payload_authors_authority() {
     assert_eq!(a.grade, AuthorityGrade::Partial);
 }
 
+fn v2_credentials_fixture() -> jackin_protocol::AgentCredentialEnv {
+    serde_json::from_value(serde_json::json!({
+        "schema_version": 2,
+        "instances": {
+            "opencode-personal": {
+                "agent": "opencode",
+                "account_id": "acc-personal",
+                "env": {"ANTHROPIC_API_KEY": "personal-secret"},
+            },
+            "claude-work": {
+                "agent": "claude",
+                "account_id": "acc-work",
+                "env": {"ANTHROPIC_API_KEY": "work-secret"},
+            },
+            "claude-personal": {
+                "agent": "claude",
+                "account_id": "acc-personal",
+                "env": {"ANTHROPIC_API_KEY": "personal-secret"},
+            },
+        },
+    }))
+    .expect("v2 fixture must decode")
+}
+
 #[test]
-fn account_credentials_are_scoped_to_selected_agent_and_mode() {
-    let credentials = jackin_protocol::AgentCredentialEnv::new(std::collections::BTreeMap::from([
-        (
-            "opencode".into(),
-            std::collections::BTreeMap::from([(
-                "ANTHROPIC_API_KEY".into(),
-                "personal-secret".into(),
-            )]),
-        ),
-        (
-            "claude".into(),
-            std::collections::BTreeMap::from([("ANTHROPIC_API_KEY".into(), "work-secret".into())]),
-        ),
-    ]));
+fn account_credentials_are_scoped_to_selected_instance_and_mode() {
+    let credentials = v2_credentials_fixture();
     let hostile_passthrough = vec![("ANTHROPIC_API_KEY".into(), "wrong-secret".into())];
     for mode in ["sync", "ignore"] {
         let mut cmd = build_agent_command(
@@ -1706,7 +1708,7 @@ fn account_credentials_are_scoped_to_selected_agent_and_mode() {
             Path::new("/workspace"),
             "test",
         );
-        super::apply_account_env(&mut cmd, "claude", Some(mode), &credentials);
+        super::apply_account_env(&mut cmd, "claude-work", Some(mode), &credentials);
         assert!(cmd.get_env("ANTHROPIC_API_KEY").is_none());
     }
     let mut cmd = build_agent_command(
@@ -1717,23 +1719,45 @@ fn account_credentials_are_scoped_to_selected_agent_and_mode() {
         Path::new("/workspace"),
         "test",
     );
-    super::apply_account_env(&mut cmd, "claude", Some("api_key"), &credentials);
+    super::apply_account_env(&mut cmd, "claude-work", Some("api_key"), &credentials);
     assert_eq!(
         cmd.get_env("ANTHROPIC_API_KEY").and_then(|v| v.to_str()),
         Some("work-secret")
     );
     assert!(cmd.get_env("OPENAI_API_KEY").is_none());
+    // Same agent, sibling instance: only its own env lands, never the other
+    // claude instance's secret.
+    let mut cmd = build_agent_command(
+        "claude",
+        None,
+        Some("api_key"),
+        &hostile_passthrough,
+        Path::new("/workspace"),
+        "test",
+    );
+    super::apply_account_env(&mut cmd, "claude-personal", Some("api_key"), &credentials);
+    assert_eq!(
+        cmd.get_env("ANTHROPIC_API_KEY").and_then(|v| v.to_str()),
+        Some("personal-secret")
+    );
     let shell = build_shell_command(&hostile_passthrough, Path::new("/workspace"), "test");
     assert!(shell.get_env("ANTHROPIC_API_KEY").is_none());
 }
 
 #[test]
-fn unassigned_agent_cannot_inherit_another_agents_provider_key() {
-    let credentials =
-        jackin_protocol::AgentCredentialEnv::new(std::collections::BTreeMap::from([(
-            "opencode".into(),
-            std::collections::BTreeMap::from([("OPENAI_API_KEY".into(), "opencode-secret".into())]),
-        )]));
+fn unassigned_instance_cannot_inherit_another_instances_provider_key() {
+    let credentials: jackin_protocol::AgentCredentialEnv =
+        serde_json::from_value(serde_json::json!({
+            "schema_version": 2,
+            "instances": {
+                "opencode-personal": {
+                    "agent": "opencode",
+                    "account_id": "acc-personal",
+                    "env": {"OPENAI_API_KEY": "opencode-secret"},
+                },
+            },
+        }))
+        .expect("v2 fixture must decode");
     let mut cmd = build_agent_command(
         "codex",
         None,
@@ -1742,7 +1766,7 @@ fn unassigned_agent_cannot_inherit_another_agents_provider_key() {
         Path::new("/workspace"),
         "test",
     );
-    super::apply_account_env(&mut cmd, "codex", Some("ignore"), &credentials);
+    super::apply_account_env(&mut cmd, "codex-work", Some("ignore"), &credentials);
     assert!(cmd.get_env("OPENAI_API_KEY").is_none());
     assert!(!format!("{credentials:?}").contains("opencode-secret"));
 }

@@ -3,6 +3,24 @@
 
 use super::*;
 
+fn instance(
+    config_id: &str,
+    agent: Agent,
+    account_id: &str,
+    model: Option<&str>,
+    base_url: Option<&str>,
+) -> jackin_config::ResolvedInstance {
+    jackin_config::ResolvedInstance {
+        config_id: config_id.into(),
+        agent,
+        account_id: account_id.into(),
+        model: model.map(str::to_owned),
+        base_url: base_url.map(str::to_owned),
+        label: config_id.into(),
+        synthesized: false,
+    }
+}
+
 #[test]
 fn selected_opencode_account_pairs_endpoint_key_and_model() {
     for provider in [
@@ -29,10 +47,14 @@ fn selected_opencode_account_pairs_endpoint_key_and_model() {
                 },
             },
         );
-        config
-            .account_bindings
-            .insert(Agent::Opencode, "work".into());
-        configure_accounts(temp.path(), &config, None, "", &[Agent::Opencode]).unwrap();
+        let instances = [instance(
+            "opencode-work",
+            Agent::Opencode,
+            "work",
+            Some("custom-model"),
+            Some("https://provider.example/v1"),
+        )];
+        configure_accounts(temp.path(), &config, &instances).unwrap();
         let contents =
             std::fs::read_to_string(temp.path().join("home/.config/opencode/opencode.json"))
                 .unwrap();
@@ -90,8 +112,14 @@ fn selected_coding_provider_has_model_protocol_and_no_stored_secret() {
                 },
             },
         );
-        config.account_bindings.insert(Agent::Codex, "work".into());
-        configure_accounts(temp.path(), &config, None, "", &[Agent::Codex]).unwrap();
+        let instances = [instance(
+            "codex-work",
+            Agent::Codex,
+            "work",
+            Some(model),
+            None,
+        )];
+        configure_accounts(temp.path(), &config, &instances).unwrap();
         let contents =
             std::fs::read_to_string(temp.path().join("home/.codex/config.toml")).unwrap();
         let parsed: toml::Value = toml::from_str(&contents).unwrap();
@@ -130,4 +158,62 @@ fn selected_coding_provider_has_model_protocol_and_no_stored_secret() {
             );
         }
     }
+}
+
+#[test]
+fn configuration_model_override_wins_over_account_default() {
+    let temp = tempfile::tempdir().unwrap();
+    let mut config = AppConfig::default();
+    config.accounts.insert(
+        "work".into(),
+        jackin_config::AccountConfig {
+            enabled: true,
+            name: "Work".into(),
+            provider: AiProvider::Moonshot,
+            credential: AccountCredential::ApiKey {
+                value: "fixture-private-key".into(),
+                base_url: None,
+                model: Some("k3".into()),
+            },
+        },
+    );
+    let instances = [instance(
+        "codex-work",
+        Agent::Codex,
+        "work",
+        Some("k3-256k"),
+        None,
+    )];
+    configure_accounts(temp.path(), &config, &instances).unwrap();
+    let contents = std::fs::read_to_string(temp.path().join("home/.codex/config.toml")).unwrap();
+    let parsed: toml::Value = toml::from_str(&contents).unwrap();
+    assert_eq!(parsed["model"].as_str(), Some("k3-256k"));
+}
+
+#[test]
+fn unadmitted_agents_leave_no_staged_config() {
+    let temp = tempfile::tempdir().unwrap();
+    let mut config = AppConfig::default();
+    config.accounts.insert(
+        "work".into(),
+        jackin_config::AccountConfig {
+            enabled: true,
+            name: "Work".into(),
+            provider: AiProvider::Anthropic,
+            credential: AccountCredential::ApiKey {
+                value: "fixture-private-key".into(),
+                base_url: None,
+                model: None,
+            },
+        },
+    );
+    let instances = [instance("claude-work", Agent::Claude, "work", None, None)];
+    configure_accounts(temp.path(), &config, &instances).unwrap();
+    assert!(!temp.path().join("home/.codex/config.toml").exists());
+    assert!(
+        !temp
+            .path()
+            .join("home/.config/opencode/opencode.json")
+            .exists()
+    );
 }

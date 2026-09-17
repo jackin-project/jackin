@@ -410,7 +410,7 @@ pub(super) struct RenderState {
 
 /// Static launch configuration at daemon construction.
 pub(super) struct LaunchEnv {
-    pub(crate) available_agents: Vec<String>,
+    pub(crate) available_instances: Vec<String>,
     pub(crate) launch_config: CapsuleConfig,
     pub(crate) agent_credentials: jackin_protocol::AgentCredentialEnv,
     pub(crate) env_passthrough: Vec<(String, String)>,
@@ -543,7 +543,7 @@ impl Multiplexer {
         let (rows, cols) = normalize_size(rows, cols);
         let (event_tx, event_rx) = mpsc::unbounded_channel();
         let content_rows = available_content_rows(rows);
-        let agents = launch_config.supported_agents();
+        let instances = launch_config.supported_instances();
         let agent_credentials = crate::config::load_agent_credentials(&launch_config)?;
         let env_passthrough: Vec<(String, String)> = SESSION_ENV_PASSTHROUGH
             .iter()
@@ -646,7 +646,7 @@ impl Multiplexer {
                 terminal_row_arena: termpane::RowArena::default(),
             },
             launch_env: LaunchEnv {
-                available_agents: agents,
+                available_instances: instances,
                 launch_config,
                 agent_credentials,
                 env_passthrough,
