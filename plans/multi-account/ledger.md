@@ -23,7 +23,7 @@ Proof levels: `implemented` < `fixture_verified` < `container_verified` <
 | provE Muse/omp/Hermes | prov-e | 26/26 (13+5+8) | /tmp/lane-prov-e.md | fixture_verified | implemented |
 | console-usage phase-1 | console-usage-1 | isolated worktree 20/20 + lib 1270 + adapter 106 | /tmp/lane-console-usage-1.md | fixture_verified | implemented |
 | S2 schema + resolver + bootstrap | orchestrator | config/resolver unit + migration tests | — | — | not_started |
-| S3 instance-keyed credential transport | orchestrator | transport + capsule validation tests | — | — | not_started |
+| S3 instance-keyed credential transport | orchestrator + 4 lanes | protocol 117 + instance 143 + env 56 + capsule 883 + runtime 646 + console/usage/jackin/xtask green; clippy -D warnings; xtask lint --strict | 6f0280c4 | fixture_verified | implemented |
 | Tracer bullet: 2×Claude + Codex live container | orchestrator | docker staging/relay/PTY + 3 TUIs, canary D absent | — | — | not_started |
 
 ## Checklist A–H (from jackin-implementation-and-verification.md)
@@ -62,7 +62,7 @@ to be filled. Source of truth for item text is the companion doc.)
   kimi 0.43.0, muse 1.3.0, cursor-agent 2026.09.10, grok-build 1.0.30,
   opencode 1.18.30. Missing: gemini, omp, hermes, mmx.
 
-## CI watch (PR #1002, head 3c807144, 2026-09-17)
+## CI watch (PR #1002, head 6f0280c4, 2026-09-17)
 
-- `Rust · jackin`: FAILED by runner infra flake (`mbx failed to unpack ... Quota exceeded (os error 122)`), not code. Rerun blocked while the workflow is still running; the next push (S3) supersedes with a fresh full run.
+- `Rust · jackin` + `Rust · jackin-runtime`: FAILED at `Set up Mr. Boxington` (cache setup, before any build/test) — same mbx infra-flake signature as head 3c807144 (`Quota exceeded`), not code. Siblings (capsule/config/console/core/usage) PASS on this head. Rerun blocked while the workflow runs; the S4 push supersedes with a fresh full run.
 - `Policy` (Velnor workflow policy): FAILED on `generated-tree` drift vs pinned generator 06050c9f. Branch has zero diff vs main under `.github-gen/` + `.github/` — inherited main breakage, out of scope (generated files are never hand-edited). Recorded, not fixed.

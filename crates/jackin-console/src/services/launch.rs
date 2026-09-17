@@ -4,8 +4,8 @@
 //! Pure launch-resolution helpers for the host console.
 
 use jackin_config::{
-    AppConfig, LoadWorkspaceInput, MountHealReport, ResolvedWorkspace, current_dir_workspace,
-    resolve_load_workspace,
+    AccountConfig, AppConfig, LoadWorkspaceInput, MountHealReport, ResolvedInstance,
+    ResolvedWorkspace, current_dir_workspace, resolve_launch, resolve_load_workspace,
 };
 use jackin_core::{Agent, RoleSelector, WorkspaceName};
 
@@ -196,6 +196,11 @@ pub struct CommittedAgentLaunch {
 /// Resolve a committed (role + agent) launch into a workspace and available
 /// providers. Returns `Ok(None)` when the workspace went missing between the
 /// operator's keypress and the commit (concurrent delete).
+///
+/// The returned accounts are admission-aware: when a `default_launch` is
+/// configured at any scope they are the admitted rows for `agent` (see
+/// [`admitted_account_choices`]); otherwise they are the legacy eligible
+/// list. An invalid configured default fails here — never falls back.
 pub fn resolve_committed_agent_launch(
     config: &AppConfig,
     cwd: &std::path::Path,
@@ -211,7 +216,15 @@ pub fn resolve_committed_agent_launch(
         LoadWorkspaceInput::Saved(name) => Some(WorkspaceName::parse(name)?),
         LoadWorkspaceInput::CurrentDir | LoadWorkspaceInput::Path { .. } => None,
     };
-    let accounts = accounts_for_launch(config, workspace_name.as_ref(), agent);
+    let accounts = match admitted_account_choices(
+        config,
+        workspace_name.as_ref(),
+        &role.key(),
+        agent,
+    )? {
+        Some(admitted) => admitted,
+        None => accounts_for_launch(config, workspace_name.as_ref(), agent),
+    };
     Ok(Some(CommittedAgentLaunch {
         input,
         role,
@@ -235,9 +248,28 @@ impl AccountChoice {
     }
 }
 
+/// Secret-free row for one registered account: id, display name, provider,
+/// and every agent the account can authenticate.
+fn account_row(id: &str, account: &AccountConfig) -> AccountChoice {
+    AccountChoice {
+        id: id.to_owned(),
+        name: account.name.clone(),
+        provider: account.provider,
+        agents: Agent::ALL
+            .iter()
+            .copied()
+            .filter(|agent| account.supports_agent(*agent))
+            .collect(),
+    }
+}
+
 /// List only registered accounts authorized by the saved workspace.
 /// Ad-hoc launches have no workspace allowlist; choosing a registered account
 /// here is the explicit selection. A missing saved workspace yields no choices.
+///
+/// This is the authorization-and-compatibility view, not the admission view:
+/// it ignores `default_launch`. Defaults-aware callers use
+/// [`admitted_account_choices`] instead.
 pub fn account_choices(
     config: &AppConfig,
     workspace: Option<&WorkspaceName>,
@@ -254,20 +286,14 @@ pub fn account_choices(
                         .is_some_and(|workspace| workspace.accounts.contains(id))
                 })
         })
-        .map(|(id, account)| AccountChoice {
-            id: id.clone(),
-            name: account.name.clone(),
-            provider: account.provider,
-            agents: Agent::ALL
-                .iter()
-                .copied()
-                .filter(|agent| account.supports_agent(*agent))
-                .collect(),
-        })
+        .map(|(id, account)| account_row(id, account))
         .collect()
 }
 
 /// Filter authorized registered accounts by coding-agent compatibility.
+///
+/// Like [`account_choices`], this ignores `default_launch`; see
+/// [`admitted_account_choices`] for the admission-constrained rows.
 pub fn accounts_for_launch(
     config: &AppConfig,
     workspace: Option<&WorkspaceName>,
@@ -277,6 +303,67 @@ pub fn accounts_for_launch(
         .into_iter()
         .filter(|account| account.agents.contains(&agent))
         .collect()
+}
+
+/// Map admitted launch instances to secret-free picker rows.
+///
+/// One row per distinct account id (several instances may share one
+/// account with different models), in ascending-id picker order.
+/// Instances naming an unregistered account are skipped:
+/// `jackin_config::resolve_launch` never produces them, so only a foreign
+/// instance list can hit that.
+#[must_use]
+pub fn account_choices_for_instances(
+    config: &AppConfig,
+    instances: &[ResolvedInstance],
+) -> Vec<AccountChoice> {
+    let mut choices: Vec<AccountChoice> = instances
+        .iter()
+        .filter_map(|instance| {
+            config
+                .accounts
+                .get(&instance.account_id)
+                .map(|account| account_row(&instance.account_id, account))
+        })
+        .collect();
+    choices.sort_by_key(|choice| choice.id.clone());
+    choices.dedup_by_key(|choice| choice.id.clone());
+    choices
+}
+
+/// Admitted picker rows for a committed (role + agent) launch.
+///
+/// Returns `None` when no `default_launch` is configured at any scope —
+/// the legacy account-bindings path applies. Otherwise resolves through
+/// `jackin_config::resolve_launch`, the same resolver the runtime
+/// provisions from, so this pre-check cannot drift from it, and returns
+/// the admitted rows for `agent` (possibly empty when the defaults admit
+/// nothing for this agent).
+///
+/// # Errors
+///
+/// Returns the resolver error verbatim when the configured defaults are
+/// invalid (unknown configuration, unauthorized or incompatible account):
+/// an explicit default fails atomically and never falls back to the
+/// eligible-candidate list.
+pub fn admitted_account_choices(
+    config: &AppConfig,
+    workspace: Option<&WorkspaceName>,
+    role: &str,
+    agent: Agent,
+) -> anyhow::Result<Option<Vec<AccountChoice>>> {
+    if config
+        .effective_default_launch(workspace, role)
+        .is_none()
+    {
+        return Ok(None);
+    }
+    let instances = resolve_launch(config, workspace, role, None)?;
+    let mine: Vec<ResolvedInstance> = instances
+        .into_iter()
+        .filter(|instance| instance.agent == agent)
+        .collect();
+    Ok(Some(account_choices_for_instances(config, &mine)))
 }
 
 #[cfg(test)]

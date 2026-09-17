@@ -121,8 +121,12 @@ pub(crate) fn capsule_config(
 ) -> jackin_protocol::CapsuleConfig {
     let mut models = std::collections::BTreeMap::new();
     let mut agents = std::collections::BTreeMap::new();
+    let mut accounts = std::collections::BTreeMap::new();
+    let mut labels = std::collections::BTreeMap::new();
     for instance in instances {
         agents.insert(instance.config_id.clone(), instance.agent.slug().to_owned());
+        accounts.insert(instance.config_id.clone(), instance.account_id.clone());
+        labels.insert(instance.config_id.clone(), instance.label.clone());
         if let Some(model) = manifest.agent_model(instance.agent) {
             models.insert(instance.config_id.clone(), model.to_owned());
         }
@@ -137,6 +141,8 @@ pub(crate) fn capsule_config(
         agents,
         models,
         auth_modes: std::collections::BTreeMap::new(),
+        accounts,
+        labels,
         claude_marketplaces: Vec::new(),
         claude_plugins: Vec::new(),
         // Populated by the launch pipeline once the operator env is known; the

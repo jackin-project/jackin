@@ -637,3 +637,148 @@ fn resolve_still_rejects_missing_non_cache_mount_sources() {
         "non-cache sources must never be auto-created"
     );
 }
+
+fn launch_config() -> (AppConfig, WorkspaceName) {
+    use crate::{AccountConfig, AccountCredential, AgentConfiguration, AiProvider};
+    use jackin_core::EnvValue;
+    let mut config = AppConfig::default();
+    for (id, display) in [("a-claude", "A"), ("z-claude", "Z")] {
+        config.accounts.insert(
+            id.to_owned(),
+            AccountConfig {
+                enabled: true,
+                name: display.into(),
+                provider: AiProvider::Anthropic,
+                credential: AccountCredential::ApiKey {
+                    value: EnvValue::Plain("test-key".into()),
+                    base_url: None,
+                    model: None,
+                },
+            },
+        );
+    }
+    for (id, account) in [("claude-a", "a-claude"), ("claude-z", "z-claude")] {
+        config.agent_configurations.insert(
+            id.to_owned(),
+            AgentConfiguration {
+                agent: Agent::Claude,
+                account: account.into(),
+                model: None,
+                base_url: None,
+                display_label: None,
+            },
+        );
+    }
+    let ws = WorkspaceName::parse("demo").unwrap();
+    config.workspaces.insert(
+        ws.as_str().to_owned(),
+        WorkspaceConfig {
+            workdir: "/demo".into(),
+            accounts: vec!["a-claude".into(), "z-claude".into()],
+            ..Default::default()
+        },
+    );
+    (config, ws)
+}
+
+fn effective_ids(config: &AppConfig, ws: Option<&WorkspaceName>, role: &str) -> Option<Vec<String>> {
+    config
+        .effective_default_launch(ws, role)
+        .map(|ids| ids.to_vec())
+}
+
+#[test]
+fn effective_default_launch_follows_scope_precedence() {
+    let (mut config, ws) = launch_config();
+    assert_eq!(effective_ids(&config, Some(&ws), "smith"), None);
+    assert_eq!(effective_ids(&config, None, "smith"), None);
+
+    config.default_launch = Some(vec!["claude-a".into()]);
+    assert_eq!(
+        effective_ids(&config, Some(&ws), "smith"),
+        Some(vec!["claude-a".to_owned()])
+    );
+    assert_eq!(
+        effective_ids(&config, None, "smith"),
+        Some(vec!["claude-a".to_owned()])
+    );
+
+    config.workspaces.get_mut(ws.as_str()).unwrap().default_launch =
+        Some(vec!["claude-z".into()]);
+    assert_eq!(
+        effective_ids(&config, Some(&ws), "smith"),
+        Some(vec!["claude-z".to_owned()])
+    );
+    // Ad-hoc launches have no workspace scope: the global list applies.
+    assert_eq!(
+        effective_ids(&config, None, "smith"),
+        Some(vec!["claude-a".to_owned()])
+    );
+
+    config
+        .workspaces
+        .get_mut(ws.as_str())
+        .unwrap()
+        .roles
+        .entry("smith".into())
+        .or_default()
+        .default_launch = Some(vec!["claude-a".into()]);
+    assert_eq!(
+        effective_ids(&config, Some(&ws), "smith"),
+        Some(vec!["claude-a".to_owned()])
+    );
+    // A role default binds its own role only.
+    assert_eq!(
+        effective_ids(&config, Some(&ws), "other"),
+        Some(vec!["claude-z".to_owned()])
+    );
+
+    // An explicit empty list is still a configured default (shell-only).
+    config.workspaces.get_mut(ws.as_str()).unwrap().default_launch = Some(Vec::new());
+    config
+        .workspaces
+        .get_mut(ws.as_str())
+        .unwrap()
+        .roles
+        .clear();
+    assert_eq!(
+        effective_ids(&config, Some(&ws), "smith"),
+        Some(Vec::new())
+    );
+
+    // Unknown workspaces defer to the legacy unknown-workspace error path.
+    let ghost = WorkspaceName::parse("ghost").unwrap();
+    assert_eq!(effective_ids(&config, Some(&ghost), "smith"), None);
+}
+
+#[test]
+fn effective_default_launch_agrees_with_resolve_launch() {
+    // Some ⟺ `resolve_launch` consults defaults: an invalid role default
+    // fails the whole resolution even though a sole eligible account
+    // exists and no ambiguity is possible.
+    let (mut config, ws) = launch_config();
+    config.workspaces.get_mut(ws.as_str()).unwrap().accounts = vec!["a-claude".into()];
+    assert!(config.effective_default_launch(Some(&ws), "smith").is_none());
+    assert_eq!(
+        crate::resolve_launch(&config, Some(&ws), "smith", None)
+            .unwrap()
+            .len(),
+        1
+    );
+    config
+        .workspaces
+        .get_mut(ws.as_str())
+        .unwrap()
+        .roles
+        .entry("smith".into())
+        .or_default()
+        .default_launch = Some(vec!["ghost".into()]);
+    assert!(config.effective_default_launch(Some(&ws), "smith").is_some());
+    crate::resolve_launch(&config, Some(&ws), "smith", None).unwrap_err();
+
+    // None ⟺ sole-eligible fallback: two eligible accounts with no
+    // defaults must fail with ambiguity, never resolve.
+    let (config, ws) = launch_config();
+    assert!(config.effective_default_launch(Some(&ws), "smith").is_none());
+    crate::resolve_launch(&config, Some(&ws), "smith", None).unwrap_err();
+}
