@@ -173,3 +173,58 @@ mise_tools = ["rust", "cargo-binstall"]
 [[units]]
 id = "swift-package-native-design-prototypes-unifiedagentusage"
 capabilities = ["xcode"]
+
+# Desktop release (L10): tag-triggered tasks release over the canonical
+# desktop mise tasks. Each event runs exactly one self-contained job
+# (jobs share no filesystem): dispatch drills build/verify/release-state
+# with a fixed fixture and no secrets; tag pushes run the full pipeline
+# plus sign/notarize/attest. Versions derive in-job via
+# desktop-release-env (tag/manifest/fixture); secrets map by reference
+# and toolchain pins are explicit per job.
+[release]
+enabled = true
+reason = "Tag-triggered desktop release: drill-only build job plus self-contained publish job (build/verify/sign/attest)."
+kind = "tasks"
+modes = ["validate"]
+tag_pattern = "v[0-9]*"
+
+[[release.job]]
+id = "build"
+tasks = ["desktop-release-env", "desktop-build", "desktop-verify", "desktop-release-state"]
+runner = "macos"
+modes = ["validate"]
+timeout_minutes = 90
+
+[release.job.env]
+DEVELOPER_DIR = "/Applications/Xcode_26.6.app/Contents/Developer"
+MACOSX_DEPLOYMENT_TARGET = "26.0"
+
+[[release.job]]
+id = "sign"
+name = "Sign release"
+tasks = ["desktop-release-env", "desktop-build", "desktop-verify", "desktop-release-state", "desktop-sign-notarize"]
+runner = "macos"
+modes = ["publish"]
+timeout_minutes = 90
+environment = "release-macos"
+attest_subjects = ["native/dist/jackin-desktop-*-aarch64-apple-darwin.zip"]
+
+[release.job.permissions]
+contents = "read"
+id-token = "write"
+attestations = "write"
+
+[release.job.env]
+DEVELOPER_DIR = "/Applications/Xcode_26.6.app/Contents/Developer"
+MACOSX_DEPLOYMENT_TARGET = "26.0"
+DEVELOPER_ID_APPLICATION_P12_BASE64 = "${{ secrets.DEVELOPER_ID_APPLICATION_P12_BASE64 }}"
+DEVELOPER_ID_APPLICATION_P12_PASSWORD = "${{ secrets.DEVELOPER_ID_APPLICATION_P12_PASSWORD }}"
+APP_STORE_CONNECT_API_KEY_P8 = "${{ secrets.APP_STORE_CONNECT_API_KEY_P8 }}"
+APP_STORE_CONNECT_KEY_ID = "${{ secrets.APP_STORE_CONNECT_KEY_ID }}"
+APP_STORE_CONNECT_ISSUER_ID = "${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}"
+EXPECTED_CERT_SHA256 = "${{ vars.JACKIN_DEVELOPER_ID_CERT_SHA256 }}"
+EXPECTED_TEAM_ID = "${{ vars.JACKIN_DEVELOPER_ID_TEAM_ID }}"
+
+[[declare]]
+primitive = "release"
+file = "release.yml"
