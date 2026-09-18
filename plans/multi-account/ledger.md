@@ -100,6 +100,25 @@ to be filled. Source of truth for item text is the companion doc.)
   `resolve_provision_inputs` used `opts.agent` (CLI override only, `None`
   for picker commits); it now takes the committed agent. Sentinel dind_e2e
   green in 13.6s (was 3x300s timeout).
+- Full `cargo xtask ci --e2e` GREEN at a219c97e (2026-09-18, exit 0,
+  `ci gate OK`, 19 steps): docker-e2e JUnit 23/23 PASS — dind 9/9 (chaos
+  trio, sentinel, agentsmith, 4 exit-gates), load_options 1/1, session_send
+  1/1, usage_broker_e2e 12/12 (2/20-client single-flight host+dind,
+  owner loss, timeout ownership, shared deadlines, capability isolation,
+  distinct-account concurrency, unavailable-state zero calls).
+  JUnit: target/nextest/docker-e2e/junit.xml. (One intermediate full run was
+  SIGTERM-murdered externally at 6116/6117 with only the 60s png-baseline
+  test in flight; that test passes alone in 60.7s — not a code failure.)
+- desktop-merge at a219c97e (2026-09-18): desktop-ci parts GREEN
+  (bindings-check, Rust 454, Swift 78+2, 0 failures); desktop-test-ui
+  BLOCKED — Mac is at the lock screen ("Touch ID or Enter Password",
+  screenshot /tmp/screen-check4.png), so no app can activate:
+  testEmptyUsageStateIsDistinct fails `Failed to activate application ...
+  (current state: Running Background)` 3x deterministically, incl. under
+  `caffeinate -d -u`. Re-run `mise run desktop-test-ui` after unlock.
+  (Prior unlocked run failed testOverviewPassesAccessibilityAudit with 85
+  pre-existing contrast/label findings; native/ app code untouched by
+  branch — separate change if still red after unlock.)
 
 ## Provider live matrix (lane 01a0b122-2e86, Mac 2026-09-18; kimi gap closed by 06b64e20)
 
