@@ -242,8 +242,9 @@ final class JackinDesktopUITests: XCTestCase {
             )
         else { return }
         XCTAssertTrue(ensureUsageWindowVisible(contentIdentifier: "usage.global-error"))
-        let retry = application.buttons["Retry"]
+        let retry = element("usage.retry")
         XCTAssertTrue(retry.waitForExistence(timeout: 3))
+        XCTAssertEqual(retry.label, "Retry")
         XCTAssertTrue(retry.isEnabled)
         XCTAssertTrue(application.windows["usage-window"].frame.intersects(retry.frame))
     }
@@ -643,7 +644,12 @@ final class JackinDesktopUITests: XCTestCase {
     ) -> Bool {
         for _ in 0..<8 {
             if target.isHittable { return true }
-            guard container.waitForHittable(timeout: 3) else { return false }
+            guard container.waitForHittable(timeout: 3) else {
+                // Another app may have stolen focus mid-test; re-activate and retry
+                // instead of failing immediately.
+                application.activate()
+                continue
+            }
             // Moderate wheel deltas avoid AppKit coalescing or discarding one giant event.
             container.scroll(byDeltaX: 0, deltaY: -1_200)
         }

@@ -660,10 +660,25 @@ fn projection_refresh_runs_due_checks_and_join_settles() {
 
     // A forced projection refresh starts one new generation and the join
     // observes it settle without cancelling broker ownership.
+    //
+    // Join returns a superseding publication immediately by design, and
+    // every intermediate publish mints a fresh publication id, so a single
+    // join can observe a still-Refreshing snapshot under load. Chase the
+    // chain until Idle or the deadline, like any correct caller must.
     let refreshing = client.request_refresh(None, true).unwrap();
-    let settled = client
-        .join_publication(refreshing.projection_id.clone(), Duration::from_secs(5))
-        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(15);
+    let mut target = refreshing.projection_id.clone();
+    let settled = loop {
+        let observed = client
+            .join_publication(target.clone(), Duration::from_secs(5))
+            .unwrap();
+        if observed.refresh_state == UsageProjectionRefreshStateV1::Idle
+            || Instant::now() >= deadline
+        {
+            break observed;
+        }
+        target = observed.projection_id.clone();
+    };
     assert_eq!(settled.refresh_state, UsageProjectionRefreshStateV1::Idle);
     assert_eq!(executor.calls.load(Ordering::SeqCst), 2);
 

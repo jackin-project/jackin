@@ -119,6 +119,20 @@ to be filled. Source of truth for item text is the companion doc.)
   (Prior unlocked run failed testOverviewPassesAccessibilityAudit with 85
   pre-existing contrast/label findings; native/ app code untouched by
   branch — separate change if still red after unlock.)
+- desktop-merge GREEN end to end on final tree (2026-09-18, exit 0):
+  desktop-ci exit 0 (bindings-check, Rust 454, Swift 78+2) + desktop-test-ui
+  19/19 incl. scroll + all 3 AX audits (JUnit 19 tests, 0 failures).
+  Fixes on the way: (a) test locator buttons["Retry"] → element("usage.retry")
+  + label assert; (b) moved usage.global-error identifier from
+  ContentUnavailableView container (shadowed all children incl. the Retry
+  button) onto its Label — UsageWindowRoot.swift; (c) scroll() helper
+  re-activates + retries on focus steal; (d) broker test
+  projection_refresh_runs_due_checks_and_join_settles chases superseding
+  publications to Idle (publish_due mints a fresh id per intermediate
+  snapshot; single join could observe Refreshing under load — branch-new
+  race, now deterministic, 8/8 stress + package 454/454).
+  Full `cargo xtask ci --e2e` green (exit 0, ci gate OK, 23/23 docker-e2e)
+  stands from a219c97e; post-merge Rust delta is the broker-test-only fix.
 
 ## Provider live matrix (lane 01a0b122-2e86, Mac 2026-09-18; kimi gap closed by 06b64e20)
 
