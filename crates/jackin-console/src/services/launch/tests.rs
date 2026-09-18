@@ -359,6 +359,7 @@ fn account_choices_for_instances_dedupe_and_sort() {
         Some(&wn("demo")),
         "smith",
         Some(&["claude-z".to_owned(), "claude-a".to_owned()]),
+        None,
     )
     .unwrap();
 

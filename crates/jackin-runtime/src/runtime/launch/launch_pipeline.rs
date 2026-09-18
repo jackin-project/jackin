@@ -743,7 +743,7 @@ fn breadcrumb_auth_mode(
             jackin_config::AccountConfig::auth_mode,
         ));
     }
-    let instances = jackin_config::resolve_launch(config, workspace, role_key, None)?;
+    let instances = jackin_config::resolve_launch(config, workspace, role_key, None, Some(agent))?;
     Ok(instances
         .iter()
         .find(|instance| instance.agent == agent)

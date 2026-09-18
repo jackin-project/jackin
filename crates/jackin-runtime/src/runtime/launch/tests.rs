@@ -8699,7 +8699,8 @@ fn assigned_account_resolves_mode_and_profile_together() {
         },
     );
     let proj = jackin_core::WorkspaceName::parse("proj").unwrap();
-    let instances = jackin_config::resolve_launch(&cfg, Some(&proj), "builder", None).unwrap();
+    let instances =
+        jackin_config::resolve_launch(&cfg, Some(&proj), "builder", None, None).unwrap();
     assert_eq!(instances.len(), 1);
     assert_eq!(instances[0].config_id, "work@codex");
     let selections = super::capsule_setup::account_auth_selections(&cfg, &instances).unwrap();

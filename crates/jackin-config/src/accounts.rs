@@ -755,13 +755,19 @@ impl ResolvedInstance {
 /// Resolve the ordered launch instances for a workspace/role selection.
 ///
 /// Precedence: one-launch selection → role `default_launch` → workspace
-/// `default_launch` → global `default_launch` → sole eligible instance.
-/// An explicit scope replaces inherited scopes (no union). Explicit
-/// selections validate atomically against authorization and
-/// compatibility: invalid entries fail the whole launch, never fall
-/// back silently. Inherited global candidates filter by workspace
-/// authorization. An explicit empty list resolves to no instances
-/// (shell-only launches accept that; agent launches reject it).
+/// `default_launch` → global `default_launch` → per-agent
+/// `account_bindings` (role → workspace → global, when `agent` is
+/// known) → sole eligible instance. A full launch list beats a bare
+/// per-agent account preference at any scope; the committed launch
+/// agent scopes the binding/sole-eligible fallbacks so fast start
+/// honors a valid default instead of prompting whenever several
+/// accounts exist. An explicit scope replaces inherited scopes (no
+/// union). Explicit selections validate atomically against
+/// authorization and compatibility: invalid entries fail the whole
+/// launch, never fall back silently. Inherited global candidates
+/// filter by workspace authorization. An explicit empty list resolves
+/// to no instances (shell-only launches accept that; agent launches
+/// reject it).
 ///
 /// # Errors
 /// Fails for unknown workspaces/configurations/accounts, unauthorized
@@ -772,6 +778,7 @@ pub fn resolve_launch(
     workspace: Option<&WorkspaceName>,
     role: &str,
     one_launch: Option<&[String]>,
+    agent: Option<Agent>,
 ) -> ConfigResult<Vec<ResolvedInstance>> {
     let ws = workspace
         .map(|name| {
@@ -824,7 +831,27 @@ pub fn resolve_launch(
         return checked_launch_instances(instances);
     }
 
+    // No launch list anywhere: per-agent account bindings are the
+    // global defaults layer (role → workspace → global), validated
+    // atomically — a valid default wins over prompting whenever the
+    // committed launch agent is known.
+    if let Some(committed) = agent
+        && let Some(selected) = resolve_account(cfg, committed, workspace, role)?
+        && let Some(id) = cfg
+            .accounts
+            .iter()
+            .find(|(_, account)| std::ptr::eq(*account, selected))
+            .map(|(id, _)| id.clone())
+    {
+        return checked_launch_instances(vec![ResolvedInstance::synthesize(
+            &id, committed, selected,
+        )]);
+    }
     // No defaults anywhere: sole eligible instance wins, ambiguity needs a picker.
+    let agents: &[Agent] = match agent.as_slice() {
+        [committed] => std::slice::from_ref(committed),
+        _ => Agent::ALL,
+    };
     let mut eligible = Vec::new();
     match ws {
         Some(w) => {
@@ -833,7 +860,7 @@ pub fn resolve_launch(
                     .accounts
                     .get(id)
                     .ok_or_else(|| ConfigError::msg(format!("unknown account {id:?}")))?;
-                for agent in Agent::ALL {
+                for agent in agents {
                     if account.supports_agent(*agent) {
                         eligible.push(ResolvedInstance::synthesize(id, *agent, account));
                     }
@@ -842,7 +869,7 @@ pub fn resolve_launch(
         }
         None => {
             for (id, account) in &cfg.accounts {
-                for agent in Agent::ALL {
+                for agent in agents {
                     if account.supports_agent(*agent) {
                         eligible.push(ResolvedInstance::synthesize(id, *agent, account));
                     }

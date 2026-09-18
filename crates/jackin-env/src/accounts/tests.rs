@@ -41,7 +41,7 @@ fn configuration(agent: Agent, account: &str) -> AgentConfiguration {
 
 fn launch(cfg: &AppConfig, ids: &[&str]) -> Vec<jackin_config::ResolvedInstance> {
     let ids: Vec<String> = ids.iter().map(ToString::to_string).collect();
-    jackin_config::resolve_launch(cfg, None, "role", Some(&ids)).unwrap()
+    jackin_config::resolve_launch(cfg, None, "role", Some(&ids), None).unwrap()
 }
 
 #[test]
@@ -167,7 +167,7 @@ fn synthesized_config_id_used_verbatim() {
             },
         },
     );
-    let instances = jackin_config::resolve_launch(&cfg, None, "role", None).unwrap();
+    let instances = jackin_config::resolve_launch(&cfg, None, "role", None, None).unwrap();
     assert_eq!(instances.len(), 1);
     assert_eq!(instances[0].config_id, "work@amp");
     let env = resolve_instance_env_with(&cfg, &instances, None, "role", &NoSecrets, |_| {

@@ -351,7 +351,7 @@ pub fn admitted_account_choices(
     if config.effective_default_launch(workspace, role).is_none() {
         return Ok(None);
     }
-    let instances = resolve_launch(config, workspace, role, None)?;
+    let instances = resolve_launch(config, workspace, role, None, Some(agent))?;
     let mine: Vec<ResolvedInstance> = instances
         .into_iter()
         .filter(|instance| instance.agent == agent)

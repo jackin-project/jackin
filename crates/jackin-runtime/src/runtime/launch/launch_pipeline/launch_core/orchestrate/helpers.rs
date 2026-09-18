@@ -75,7 +75,7 @@ pub(super) fn workspace_launch_config(
     workspace: &jackin_config::ResolvedWorkspace,
     workspace_name: Option<&WorkspaceName>,
     role_key: &str,
-    _agent: jackin_core::Agent,
+    agent: jackin_core::Agent,
     validated_repo: &jackin_manifest::repo::ValidatedRoleRepo,
     opts: &crate::runtime::launch::LoadOptions,
     materialized: &crate::isolation::materialize::MaterializedWorkspace,
@@ -83,7 +83,8 @@ pub(super) fn workspace_launch_config(
     exec_bindings: Vec<jackin_protocol::ExecBinding>,
     state: &crate::instance::RoleState,
 ) -> anyhow::Result<jackin_protocol::CapsuleConfig> {
-    let instances = jackin_config::resolve_launch(config, workspace_name, role_key, None)?;
+    let instances =
+        jackin_config::resolve_launch(config, workspace_name, role_key, None, Some(agent))?;
     let isolated_worktrees = materialized
         .mounts
         .iter()
@@ -139,7 +140,7 @@ pub(super) fn resolve_provision_inputs(
     role_key: &str,
     opts: &crate::runtime::launch::LoadOptions,
 ) -> anyhow::Result<ProvisionInputs> {
-    let instances = jackin_config::resolve_launch(config, workspace, role_key, None)?;
+    let instances = jackin_config::resolve_launch(config, workspace, role_key, None, opts.agent)?;
     anyhow::ensure!(
         !instances.is_empty(),
         "no agent instances are admitted for role {role_key:?}"

@@ -635,6 +635,7 @@ fn resolve_launch_one_launch_wins_and_validates_atomically() {
         Some(&ws),
         "smith",
         Some(&["codex-c".to_owned(), "claude-a".to_owned()]),
+        None,
     )
     .unwrap();
     assert_eq!(instances.len(), 2);
@@ -650,6 +651,7 @@ fn resolve_launch_one_launch_wins_and_validates_atomically() {
         Some(&ws),
         "smith",
         Some(&["codex-c".to_owned(), "nope".to_owned()]),
+        None,
     )
     .unwrap_err();
     // Duplicate ID rejected.
@@ -658,10 +660,11 @@ fn resolve_launch_one_launch_wins_and_validates_atomically() {
         Some(&ws),
         "smith",
         Some(&["codex-c".to_owned(), "codex-c".to_owned()]),
+        None,
     )
     .unwrap_err();
     // Explicit empty list resolves to no instances (shell-only).
-    let empty = resolve_launch(&cfg, Some(&ws), "smith", Some(&[])).unwrap();
+    let empty = resolve_launch(&cfg, Some(&ws), "smith", Some(&[]), None).unwrap();
     assert!(empty.is_empty());
 }
 
@@ -674,6 +677,7 @@ fn resolve_launch_multi_instance_admission_follows_folder_var_kind() {
         Some(&ws),
         "smith",
         Some(&["claude-a".to_owned(), "claude-b".to_owned()]),
+        None,
     )
     .unwrap();
     assert_eq!(instances.len(), 2);
@@ -720,6 +724,7 @@ fn resolve_launch_multi_instance_admission_follows_folder_var_kind() {
         Some(&ws),
         "smith",
         Some(&["kimi-a".to_owned(), "kimi-b".to_owned()]),
+        None,
     )
     .unwrap_err();
     assert!(
@@ -733,6 +738,7 @@ fn resolve_launch_multi_instance_admission_follows_folder_var_kind() {
         Some(&ws),
         "smith",
         Some(&["amp-a".to_owned(), "amp-b".to_owned()]),
+        None,
     )
     .unwrap_err();
     assert!(
@@ -740,7 +746,8 @@ fn resolve_launch_multi_instance_admission_follows_folder_var_kind() {
         "unexpected amp rejection: {error}"
     );
     // A lone second-agent instance still resolves.
-    let instances = resolve_launch(&cfg, Some(&ws), "smith", Some(&["kimi-a".to_owned()])).unwrap();
+    let instances =
+        resolve_launch(&cfg, Some(&ws), "smith", Some(&["kimi-a".to_owned()]), None).unwrap();
     assert_eq!(instances.len(), 1);
 }
 
@@ -758,11 +765,11 @@ fn resolve_launch_scope_precedence_replaces_without_union() {
         },
     );
     // Role scope replaces workspace + global entirely.
-    let instances = resolve_launch(&cfg, Some(&ws), "smith", None).unwrap();
+    let instances = resolve_launch(&cfg, Some(&ws), "smith", None, None).unwrap();
     assert_eq!(instances.len(), 1);
     assert_eq!(instances[0].config_id, "claude-b");
     // Other roles fall through to the workspace scope.
-    let instances = resolve_launch(&cfg, Some(&ws), "other", None).unwrap();
+    let instances = resolve_launch(&cfg, Some(&ws), "other", None, None).unwrap();
     assert_eq!(instances.len(), 2);
     assert_eq!(instances[0].config_id, "claude-a");
 }
@@ -783,31 +790,107 @@ fn resolve_launch_global_candidates_filter_by_authorization() {
     );
     cfg.default_launch = Some(vec!["zai-codex".into(), "codex-c".into()]);
     // zai-key is outside the workspace allowlist: filtered, not an error.
-    let instances = resolve_launch(&cfg, Some(&ws), "smith", None).unwrap();
+    let instances = resolve_launch(&cfg, Some(&ws), "smith", None, None).unwrap();
     assert_eq!(instances.len(), 1);
     assert_eq!(instances[0].config_id, "codex-c");
     // Workspace-scoped defaults validate atomically instead.
     cfg.workspaces.get_mut(ws.as_str()).unwrap().default_launch = Some(vec!["zai-codex".into()]);
-    resolve_launch(&cfg, Some(&ws), "smith", None).unwrap_err();
+    resolve_launch(&cfg, Some(&ws), "smith", None, None).unwrap_err();
 }
 
 #[test]
 fn resolve_launch_fallback_needs_a_single_eligible_instance() {
     let (cfg, ws) = launch_fixture();
     // Several eligible instances: picker needed, never a silent pick.
-    let err = resolve_launch(&cfg, Some(&ws), "smith", None).unwrap_err();
+    let err = resolve_launch(&cfg, Some(&ws), "smith", None, None).unwrap_err();
     assert!(err.to_string().contains("multiple accounts"), "{err}");
     // Sole eligible instance fast-starts with a synthesized ID.
     let mut solo = AppConfig::default();
     solo.accounts.insert("only".into(), profile("Only"));
-    let instances = resolve_launch(&solo, None, "smith", None).unwrap();
+    let instances = resolve_launch(&solo, None, "smith", None, None).unwrap();
     assert_eq!(instances.len(), 1);
     assert_eq!(instances[0].config_id, "only@claude");
     assert!(instances[0].synthesized);
     assert_eq!(instances[0].label, "Claude · Only");
     // Zero eligible accounts is an actionable error.
     let empty = AppConfig::default();
-    resolve_launch(&empty, None, "smith", None).unwrap_err();
+    resolve_launch(&empty, None, "smith", None, None).unwrap_err();
+}
+
+#[test]
+fn resolve_launch_committed_agent_honors_global_binding() {
+    // E2E shape: many accounts, no launch lists, one per-agent default.
+    // Fast start must honor the binding, never prompt.
+    let (mut cfg, ws) = launch_fixture();
+    cfg.account_bindings
+        .insert(Agent::Claude, "claude-personal".into());
+    for workspace in [None, Some(&ws)] {
+        let instances =
+            resolve_launch(&cfg, workspace, "smith", None, Some(Agent::Claude)).unwrap();
+        assert_eq!(instances.len(), 1);
+        assert_eq!(instances[0].account_id, "claude-personal");
+        assert_eq!(instances[0].agent, Agent::Claude);
+        assert_eq!(instances[0].config_id, "claude-personal@claude");
+        assert_eq!(instances[0].label, "Claude · Personal");
+        assert!(instances[0].synthesized);
+    }
+}
+
+#[test]
+fn resolve_launch_role_binding_beats_global_binding() {
+    let (mut cfg, ws) = launch_fixture();
+    cfg.account_bindings
+        .insert(Agent::Claude, "claude-personal".into());
+    cfg.workspaces.get_mut(ws.as_str()).unwrap().roles.insert(
+        "smith".into(),
+        WorkspaceRoleOverride {
+            account_bindings: BTreeMap::from([(Agent::Claude, "claude-work".into())]),
+            ..Default::default()
+        },
+    );
+    let instances = resolve_launch(&cfg, Some(&ws), "smith", None, Some(Agent::Claude)).unwrap();
+    assert_eq!(instances.len(), 1);
+    assert_eq!(instances[0].account_id, "claude-work");
+}
+
+#[test]
+fn resolve_launch_default_launch_beats_binding() {
+    // A full launch list names the composition explicitly; a bare
+    // per-agent account preference loses at any scope.
+    let (mut cfg, ws) = launch_fixture();
+    cfg.default_launch = Some(vec!["claude-a".into()]);
+    cfg.account_bindings
+        .insert(Agent::Claude, "claude-personal".into());
+    let instances = resolve_launch(&cfg, Some(&ws), "smith", None, Some(Agent::Claude)).unwrap();
+    assert_eq!(instances.len(), 1);
+    assert_eq!(instances[0].config_id, "claude-a");
+    assert!(!instances[0].synthesized);
+}
+
+#[test]
+fn resolve_launch_agent_scopes_sole_eligible_fallback() {
+    // No bindings: only codex-work supports Codex, so the committed
+    // agent resolves it alone; without an agent the same registry is
+    // ambiguous and still needs a picker.
+    let (cfg, ws) = launch_fixture();
+    let instances = resolve_launch(&cfg, Some(&ws), "smith", None, Some(Agent::Codex)).unwrap();
+    assert_eq!(instances.len(), 1);
+    assert_eq!(instances[0].config_id, "codex-work@codex");
+    let err = resolve_launch(&cfg, Some(&ws), "smith", None, None).unwrap_err();
+    assert!(err.to_string().contains("multiple accounts"), "{err}");
+}
+
+#[test]
+fn resolve_launch_invalid_binding_fails_without_silent_fallback() {
+    let (mut cfg, _) = launch_fixture();
+    cfg.account_bindings.insert(Agent::Claude, "nope".into());
+    let err = resolve_launch(&cfg, None, "smith", None, Some(Agent::Claude)).unwrap_err();
+    assert!(err.to_string().contains("unknown account"), "{err}");
+    // codex-work is a Codex-owned profile: incompatible with Claude.
+    cfg.account_bindings
+        .insert(Agent::Claude, "codex-work".into());
+    let err = resolve_launch(&cfg, None, "smith", None, Some(Agent::Claude)).unwrap_err();
+    assert!(err.to_string().contains("does not support"), "{err}");
 }
 
 #[test]
@@ -829,7 +912,8 @@ fn resolve_launch_model_chain_prefers_configuration_override() {
         .unwrap()
         .accounts
         .push("zai-key".into());
-    let instances = resolve_launch(&cfg, Some(&ws), "smith", Some(&["zai-flash".into()])).unwrap();
+    let instances =
+        resolve_launch(&cfg, Some(&ws), "smith", Some(&["zai-flash".into()]), None).unwrap();
     assert_eq!(instances[0].model.as_deref(), Some("glm-4-flash"));
     assert_eq!(
         instances[0].base_url.as_deref(),

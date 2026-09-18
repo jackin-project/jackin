@@ -241,13 +241,13 @@ fn launch_selection_without_defaults_synthesizes_ephemeral_default() {
     let (config, workspace) = two_account_config();
     // Two eligible accounts and no defaults: `resolve_launch` alone is
     // ambiguous. The explicit pick must resolve it, not fail with it.
-    jackin_config::resolve_launch(&config, Some(&workspace), "codex", None).unwrap_err();
+    jackin_config::resolve_launch(&config, Some(&workspace), "codex", None, None).unwrap_err();
 
     let selected =
         with_account_selection(&config, Agent::Codex, Some(&workspace), "codex", "private")
             .unwrap();
     let instances =
-        jackin_config::resolve_launch(&selected, Some(&workspace), "codex", None).unwrap();
+        jackin_config::resolve_launch(&selected, Some(&workspace), "codex", None, None).unwrap();
     assert_eq!(instances.len(), 1);
     assert_eq!(instances[0].agent, Agent::Codex);
     assert_eq!(instances[0].account_id, "private");
@@ -283,7 +283,7 @@ fn launch_selection_with_admitting_defaults_keeps_them() {
         Some(vec!["codex-main".to_owned(), "codex-alt".to_owned()])
     );
     let instances =
-        jackin_config::resolve_launch(&selected, Some(&workspace), "codex", None).unwrap();
+        jackin_config::resolve_launch(&selected, Some(&workspace), "codex", None, None).unwrap();
     assert_eq!(instances.len(), 2);
 }
 
@@ -324,7 +324,7 @@ fn ad_hoc_launch_selection_without_defaults_sets_global_ephemeral_default() {
         Some(vec!["shared@codex".to_owned()])
     );
     assert!(config.default_launch.is_none());
-    let instances = jackin_config::resolve_launch(&selected, None, "codex", None).unwrap();
+    let instances = jackin_config::resolve_launch(&selected, None, "codex", None, None).unwrap();
     assert_eq!(instances.len(), 1);
     assert_eq!(instances[0].account_id, "shared");
 }

@@ -238,7 +238,7 @@ pub(crate) fn spawn_sibling_auth_prewarm(
     Some(jackin_telemetry::spawn::joined_blocking(move || {
         let ws = jackin_core::WorkspaceName::parse(&workspace_name).ok();
         let instances: Vec<jackin_config::ResolvedInstance> =
-            match jackin_config::resolve_launch(&config, ws.as_ref(), &role_key, None) {
+            match jackin_config::resolve_launch(&config, ws.as_ref(), &role_key, None, None) {
                 Ok(instances) => instances
                     .into_iter()
                     .filter(|instance| sibling_agents.contains(&instance.agent))

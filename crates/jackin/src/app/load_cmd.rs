@@ -834,15 +834,21 @@ fn resolve_dry_run_identity(
         )),
         Err(_) => Ok((
             None,
-            jackin_config::resolve_launch(plan_config, workspace_name, role_key, None)?
-                .into_iter()
-                .map(|instance| DryRunInstance {
-                    config_id: instance.config_id,
-                    agent: instance.agent,
-                    account_id: instance.account_id,
-                    label: instance.label,
-                })
-                .collect(),
+            jackin_config::resolve_launch(
+                plan_config,
+                workspace_name,
+                role_key,
+                None,
+                Some(selected_agent),
+            )?
+            .into_iter()
+            .map(|instance| DryRunInstance {
+                config_id: instance.config_id,
+                agent: instance.agent,
+                account_id: instance.account_id,
+                label: instance.label,
+            })
+            .collect(),
         )),
     }
 }

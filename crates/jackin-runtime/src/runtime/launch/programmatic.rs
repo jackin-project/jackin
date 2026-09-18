@@ -418,7 +418,7 @@ pub fn with_account_selection(
             },
         );
     }
-    let instances = jackin_config::resolve_launch(&selected, workspace, role, None)?;
+    let instances = jackin_config::resolve_launch(&selected, workspace, role, None, Some(agent))?;
     anyhow::ensure!(
         instances
             .iter()

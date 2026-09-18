@@ -770,7 +770,7 @@ fn effective_default_launch_agrees_with_resolve_launch() {
             .effective_default_launch(Some(&ws), "smith")
             .is_none()
     );
-    let error = crate::resolve_launch(&config, Some(&ws), "smith", None).unwrap_err();
+    let error = crate::resolve_launch(&config, Some(&ws), "smith", None, None).unwrap_err();
     assert!(
         error.to_string().contains("multiple accounts are eligible"),
         "{error:?}"
@@ -792,7 +792,7 @@ fn effective_default_launch_agrees_with_resolve_launch() {
             .effective_default_launch(Some(&ws), "smith")
             .is_some()
     );
-    let error = crate::resolve_launch(&config, Some(&ws), "smith", None).unwrap_err();
+    let error = crate::resolve_launch(&config, Some(&ws), "smith", None, None).unwrap_err();
     assert!(
         error.to_string().contains("unknown agent configuration"),
         "{error:?}"
