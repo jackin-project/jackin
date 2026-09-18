@@ -310,6 +310,12 @@ impl Worker {
         reason = "fixture server runs on its own owned OS thread; scripted latency is the test product"
     )]
     fn serve_one(&self, stream: TcpStream) {
+        // Accepted sockets inherit the listener's nonblocking mode on
+        // BSD/macOS, and read timeouts do not apply to nonblocking reads:
+        // without this, `read_request` fails with WouldBlock whenever the
+        // server thread outruns the client write. Restore blocking mode so
+        // the timeouts below actually bound the reads.
+        drop(stream.set_nonblocking(false));
         drop(stream.set_read_timeout(Some(Duration::from_secs(5))));
         drop(stream.set_write_timeout(Some(Duration::from_secs(5))));
         let mut reader = BufReader::new(stream);

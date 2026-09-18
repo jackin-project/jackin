@@ -133,6 +133,12 @@ to be filled. Source of truth for item text is the companion doc.)
   race, now deterministic, 8/8 stress + package 454/454).
   Full `cargo xtask ci --e2e` green (exit 0, ci gate OK, 23/23 docker-e2e)
   stands from a219c97e; post-merge Rust delta is the broker-test-only fix.
+- Fixture HTTP harness race fixed: accepted sockets inherit the listener's
+  nonblocking mode on macOS, so read timeouts never applied and
+  `read_request` failed with WouldBlock whenever the server thread outran
+  the client write (empty-EOF/RST flakes under parallel load).
+  `serve_one` now restores blocking mode first. Package 28/28 x6.
+  Production broker unaffected (explicit WouldBlock loops with deadlines).
 
 ## Provider live matrix (lane 01a0b122-2e86, Mac 2026-09-18; kimi gap closed by 06b64e20)
 
