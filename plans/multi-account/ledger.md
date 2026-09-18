@@ -88,6 +88,18 @@ to be filled. Source of truth for item text is the companion doc.)
   (JUnit target/nextest/docker-e2e/junit.xml); desktop-ci PASS (Rust 454, Swift 78+2);
   desktop-merge FAIL on testOverviewPassesAccessibilityAudit (85 contrast/label
   findings, native/ untouched by branch — pre-existing; dedicated fix running).
+- Launch-resolver fix 9cc2d675 (2026-09-18): `resolve_launch` ignored the
+  committed agent and `account_bindings`, so valid-default multi-account
+  configs failed `multiple accounts are eligible` and parked on the ack
+  dialog; dind_e2e chaos tests timed out with no container. Fix adds the
+  agent-scoped per-agent binding layer (role → workspace → global) plus
+  agent-scoped sole-eligible fallback; 5 new regression tests; config 392,
+  env+console 1386, runtime+jackin 1284 all green. Focused
+  `chaos_drop_control_socket` e2e: `ci gate OK`. Follow-up: interactive
+  picker launches still failed the same way because
+  `resolve_provision_inputs` used `opts.agent` (CLI override only, `None`
+  for picker commits); it now takes the committed agent. Sentinel dind_e2e
+  green in 13.6s (was 3x300s timeout).
 
 ## Provider live matrix (lane 01a0b122-2e86, Mac 2026-09-18; kimi gap closed by 06b64e20)
 

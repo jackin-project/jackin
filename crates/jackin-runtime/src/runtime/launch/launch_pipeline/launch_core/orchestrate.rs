@@ -654,8 +654,13 @@ where
     let workspace_opt_owned = configured.workspace_opt.clone();
     let role_key_owned = role_key.to_owned();
     let github_ctx_owned = configured.github_ctx.clone();
-    let provision =
-        resolve_provision_inputs(config, configured.workspace_opt.as_ref(), role_key, opts)?;
+    let provision = resolve_provision_inputs(
+        config,
+        configured.workspace_opt.as_ref(),
+        role_key,
+        agent,
+        opts,
+    )?;
     let instances = provision.instances;
     let admitted = instances.clone();
     let credentials = provision.credentials;

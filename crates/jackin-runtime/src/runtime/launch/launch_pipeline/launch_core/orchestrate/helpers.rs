@@ -138,9 +138,16 @@ pub(super) fn resolve_provision_inputs(
     config: &jackin_config::AppConfig,
     workspace: Option<&WorkspaceName>,
     role_key: &str,
+    agent: jackin_core::Agent,
     opts: &crate::runtime::launch::LoadOptions,
 ) -> anyhow::Result<ProvisionInputs> {
-    let instances = jackin_config::resolve_launch(config, workspace, role_key, None, opts.agent)?;
+    // The committed launch agent (CLI override, workspace default, or
+    // picker choice) scopes the binding/sole-eligible fallbacks, so an
+    // interactive launch honors `account_bindings` instead of failing
+    // with "multiple accounts are eligible" whenever several accounts
+    // exist. `opts.agent` is only the CLI override and is `None` for
+    // picker-committed launches.
+    let instances = jackin_config::resolve_launch(config, workspace, role_key, None, Some(agent))?;
     anyhow::ensure!(
         !instances.is_empty(),
         "no agent instances are admitted for role {role_key:?}"
