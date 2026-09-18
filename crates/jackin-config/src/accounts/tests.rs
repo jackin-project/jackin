@@ -959,3 +959,20 @@ fn new_schema_round_trips_through_toml() {
     assert_eq!(back.bootstrap, Some(BootstrapState::initialized()));
     back.validate_accounts().unwrap();
 }
+
+#[test]
+fn provider_wire_spelling_matches_canonical_slug() {
+    for provider in AiProvider::ALL {
+        let slug = provider.slug();
+        assert_eq!(provider.to_string(), slug);
+        assert_eq!(slug.parse::<AiProvider>().unwrap(), *provider);
+        assert_eq!(
+            serde_json::to_string(provider).unwrap(),
+            format!("{slug:?}")
+        );
+        assert_eq!(
+            serde_json::from_str::<AiProvider>(&format!("{slug:?}")).unwrap(),
+            *provider
+        );
+    }
+}

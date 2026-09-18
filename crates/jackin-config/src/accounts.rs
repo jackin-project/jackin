@@ -44,9 +44,27 @@ pub enum AiProvider {
     /// Meta API (Muse).
     Meta,
     /// `OpenRouter` (multi-provider clients only; no native agent).
+    #[serde(rename = "openrouter")]
     OpenRouter,
 }
 impl AiProvider {
+    /// Every variant in declaration order. Iteration sites consult this
+    /// instead of hand-rolling their own array.
+    pub const ALL: &'static [Self] = &[
+        Self::Anthropic,
+        Self::OpenAi,
+        Self::Amp,
+        Self::Xai,
+        Self::Opencode,
+        Self::Moonshot,
+        Self::Zai,
+        Self::Minimax,
+        Self::Google,
+        Self::Cursor,
+        Self::Meta,
+        Self::OpenRouter,
+    ];
+
     /// Canonical provider identifier.
     pub const fn slug(self) -> &'static str {
         match self {
