@@ -194,6 +194,14 @@ fn conformance_serialized_control_propagation_matrix_preserves_parentage_and_rej
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn conformance_wire_real_capsule_control_status_preserves_parent_and_delivery() {
+    if crate::process_telemetry::run_wire_test_in_child(
+        "daemon::tests::conformance_wire_real_capsule_control_status_preserves_parent_and_delivery",
+        "JACKIN_DAEMON_CONTROL_WIRE_CHILD",
+    )
+    .expect("dispatch isolated daemon control wire test")
+    {
+        return;
+    }
     let testbed = jackin_otlp_testbed::Testbed::start().expect("start OTLP testbed");
     jackin_diagnostics::init_wire_test_export(
         &testbed.endpoint(),

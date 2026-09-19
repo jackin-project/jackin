@@ -1313,6 +1313,14 @@ async fn spawn_records_instance_identity_on_session() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn conformance_wire_real_pty_spawn_stream_and_exit_exclude_private_content() {
+    if crate::process_telemetry::run_wire_test_in_child(
+        "session::tests::conformance_wire_real_pty_spawn_stream_and_exit_exclude_private_content",
+        "JACKIN_SESSION_WIRE_CHILD",
+    )
+    .expect("dispatch isolated session wire test")
+    {
+        return;
+    }
     let testbed = jackin_otlp_testbed::Testbed::start().expect("start OTLP testbed");
     jackin_diagnostics::init_wire_test_export(
         &testbed.endpoint(),
