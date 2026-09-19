@@ -46,8 +46,14 @@ impl UsageCache {
         if view.focused_provider.is_none() {
             view.focused_provider = target.provider.clone();
         }
-        self.snapshots
-            .insert(target.cache_key(), CachedUsage { view });
+        self.snapshots.insert(
+            usage_cache_key_for_broker_account(
+                &target.agent,
+                target.provider.as_deref(),
+                &state.capability.account_id,
+            ),
+            CachedUsage { view },
+        );
     }
 
     /// Preserve last-good quota while surfacing a typed relay/broker failure.
@@ -56,18 +62,36 @@ impl UsageCache {
         target: &UsageRefreshTarget,
         error: &jackin_protocol::usage_broker::UsageCoordinationError,
     ) {
-        let cache_key = target.cache_key();
-        if let Some(cached) = self.snapshots.get_mut(&cache_key) {
+        let matching_keys = self
+            .snapshots
+            .iter()
+            .filter(|(key, cached)| {
+                cache_key_matches_target(key, &target.agent, target.provider.as_deref())
+                    || cache_view_matches_target(
+                        &cached.view,
+                        &target.agent,
+                        target.provider.as_deref(),
+                    )
+            })
+            .map(|(key, _)| key.clone())
+            .collect::<Vec<_>>();
+        if matching_keys.is_empty() {
+            let cache_key = target.cache_key();
+            let mut view = FocusedUsageView::unavailable(&error.message, now_epoch());
+            view.focused_agent = Some(target.agent.clone());
+            view.focused_provider = target.provider.clone();
+            self.snapshots.insert(cache_key, CachedUsage { view });
+            return;
+        }
+        for cache_key in matching_keys {
+            let Some(cached) = self.snapshots.get_mut(&cache_key) else {
+                continue;
+            };
             cached.view.last_error = Some(error.message.clone());
             if !cached.view.buckets.is_empty() {
                 cached.view.status = UsageSnapshotStatus::Stale;
             }
-            return;
         }
-        let mut view = FocusedUsageView::unavailable(&error.message, now_epoch());
-        view.focused_agent = Some(target.agent.clone());
-        view.focused_provider = target.provider.clone();
-        self.snapshots.insert(cache_key, CachedUsage { view });
     }
 }
 

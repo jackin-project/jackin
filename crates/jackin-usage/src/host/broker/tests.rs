@@ -93,6 +93,35 @@ fn discovery_provider_rate_limit_preserves_retry_after() {
 }
 
 #[test]
+fn discovery_provider_stale_and_error_views_are_retryable_failures() {
+    for status in [UsageSnapshotStatus::Stale, UsageSnapshotStatus::Error] {
+        let mut view = quota_view();
+        view.status = status;
+        view.last_error = None;
+        let ProviderProbeOutcome::Failure {
+            kind,
+            retry_at_epoch,
+            ..
+        } = provider_probe_outcome(view)
+        else {
+            panic!("{status:?} provider view must not publish as success");
+        };
+        assert_eq!(kind, UsageCoordinationErrorKind::ProviderUnavailable);
+        assert_eq!(retry_at_epoch, None);
+    }
+}
+
+#[test]
+fn discovery_provider_unsupported_views_remain_publishable_unsupported() {
+    let mut view = quota_view();
+    view.status = UsageSnapshotStatus::Unsupported;
+    assert!(matches!(
+        provider_probe_outcome(view),
+        ProviderProbeOutcome::Success(_)
+    ));
+}
+
+#[test]
 fn forwarded_scope_selects_only_accounts_backed_by_forwarded_sources() {
     use crate::host::{CanonicalAccountIdentity, CanonicalAccountSubject, HostSurfaceId};
 

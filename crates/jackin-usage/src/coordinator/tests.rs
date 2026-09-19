@@ -318,6 +318,98 @@ fn coordinator_empty_result_is_failure_and_preserves_last_good() {
 }
 
 #[test]
+fn coordinator_stale_and_error_success_results_schedule_retry() {
+    for status in [UsageSnapshotStatus::Stale, UsageSnapshotStatus::Error] {
+        let executor = Arc::new(ImmediateExecutor::new(ProviderProbeOutcome::success(
+            quota_view(1_000, 80),
+        )));
+        #[expect(
+            clippy::clone_on_ref_ptr,
+            reason = "coerce concrete executor to shared trait object"
+        )]
+        let provider_executor: Arc<dyn UsageProviderExecutor> = executor.clone();
+        let coordinator = UsageCoordinator::new(
+            provider_executor,
+            Arc::new(MemoryStore::default()),
+            UsageCoordinatorConfig::default(),
+        );
+        let account = capability("account-a");
+        let first = coordinator
+            .request_refresh(&account, 0, true, 1_000)
+            .unwrap();
+        let first = join_ok(&coordinator, &account, first.generation, 1_001);
+
+        let mut failed_view = quota_view(1_002, 80);
+        failed_view.status = status;
+        failed_view.last_error = Some("provider result is not current".to_owned());
+        executor.set_outcome(ProviderProbeOutcome::success(failed_view));
+        let second = coordinator
+            .request_refresh(&account, first.generation, true, 1_002)
+            .unwrap();
+        let failed = join_ok(&coordinator, &account, second.generation, 1_003);
+
+        assert_eq!(failed.phase, UsageRefreshPhase::Failed);
+        assert_eq!(
+            failed.error.as_ref().map(|error| error.kind),
+            Some(UsageCoordinationErrorKind::ProviderUnavailable)
+        );
+        assert!(failed.retry_at_epoch.is_some());
+        assert_eq!(
+            failed
+                .snapshot
+                .as_ref()
+                .and_then(|view| view.buckets.first())
+                .and_then(|bucket| bucket.remaining_percent),
+            Some(80)
+        );
+    }
+}
+
+#[test]
+fn coordinator_unsupported_result_stays_unsupported_without_quota() {
+    let mut view = quota_view(1_000, 80);
+    view.status = UsageSnapshotStatus::Unsupported;
+    view.buckets.clear();
+    view.source = UsageSource::None;
+    view.confidence = UsageConfidence::None;
+    let executor = Arc::new(ImmediateExecutor::new(ProviderProbeOutcome::success(view)));
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "coerce concrete executor to shared trait object"
+    )]
+    let provider_executor: Arc<dyn UsageProviderExecutor> = executor.clone();
+    let coordinator = UsageCoordinator::new(
+        provider_executor,
+        Arc::new(MemoryStore::default()),
+        UsageCoordinatorConfig::default(),
+    );
+    let account = capability("unsupported-account");
+    let queued = coordinator
+        .request_refresh(&account, 0, true, 1_000)
+        .unwrap();
+    let result = join_ok(&coordinator, &account, queued.generation, 1_001);
+
+    assert_eq!(result.phase, UsageRefreshPhase::Completed);
+    assert_eq!(result.retry_at_epoch, None);
+    let snapshot = result.snapshot.expect("unsupported snapshot");
+    assert_eq!(snapshot.status, UsageSnapshotStatus::Unsupported);
+    assert!(snapshot.buckets.is_empty());
+}
+
+#[test]
+fn generation_view_exposes_the_latest_account_retry_deadline() {
+    let account = capability("account-a");
+    let mut envelope = AccountStateEnvelope::idle(account);
+    envelope.rate_limit_deadline_epoch = Some(2_000);
+    envelope.retry_deadline_epoch = Some(3_000);
+    assert_eq!(generation_view(&envelope).retry_at_epoch, Some(3_000));
+
+    envelope.rate_limit_deadline_epoch = Some(4_000);
+    envelope.retry_deadline_epoch = Some(3_000);
+    assert_eq!(generation_view(&envelope).retry_at_epoch, Some(4_000));
+}
+
+#[test]
 fn coordinator_unavailable_or_corrupt_state_makes_zero_provider_calls() {
     for error in [StateStoreError::Unavailable, StateStoreError::Corrupt] {
         let executor = Arc::new(GateExecutor::new(ProviderProbeOutcome::success(

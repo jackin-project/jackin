@@ -715,12 +715,13 @@ fn provider_probe_outcome(
         }
         UsageSnapshotStatus::Error
         | UsageSnapshotStatus::Unavailable
-        | UsageSnapshotStatus::Unsupported => ProviderProbeOutcome::Failure {
+        | UsageSnapshotStatus::Stale => ProviderProbeOutcome::Failure {
             kind: UsageCoordinationErrorKind::ProviderUnavailable,
             message: "usage provider quota is unavailable".to_owned(),
             retry_at_epoch: None,
         },
-        _ => ProviderProbeOutcome::success(view),
+        UsageSnapshotStatus::Unsupported => ProviderProbeOutcome::success(view),
+        UsageSnapshotStatus::Fresh => ProviderProbeOutcome::success(view),
     }
 }
 

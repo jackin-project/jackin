@@ -88,11 +88,16 @@ impl CanonicalAccountIdentity {
     }
 
     pub(super) fn account_key(&self) -> String {
-        let subject = match &self.subject {
-            CanonicalAccountSubject::ProviderId(id)
-            | CanonicalAccountSubject::ProviderStableHandle(id) => id,
+        let evidence = match &self.subject {
+            CanonicalAccountSubject::ProviderId(id) => {
+                format!("account-key-v1:provider-id:{}", id.trim())
+            }
+            CanonicalAccountSubject::ProviderStableHandle(handle) => format!(
+                "account-key-v1:stable-handle:{}",
+                normalize_stable_handle(handle)
+            ),
         };
-        account_key_hash(self.surface.account_provider_label(), subject)
+        account_key_hash(self.surface.provider_id(), &evidence)
     }
 
     pub(super) fn canonical_id_v1(&self) -> String {
