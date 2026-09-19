@@ -15,7 +15,7 @@ use sha2::{Digest as _, Sha256};
 use toml_edit::DocumentMut;
 
 use super::AppConfig;
-use crate::editor::ConfigEditor;
+use crate::editor::{ConfigEditor, recover_pending_publication};
 use crate::migrations;
 use crate::persist::{
     acquire_config_write_lock, atomic_write, config_file_for_workspace_path,
@@ -729,6 +729,7 @@ impl AppConfig {
         let loaded = (|| {
             paths.ensure_base_dirs()?;
             let _lock = acquire_config_write_lock(&paths.config_file)?;
+            recover_pending_publication(&paths.config_file)?;
             let contents_opt = load_config_contents_locked(paths)?;
             load_split_config_locked(paths, contents_opt)
         })();

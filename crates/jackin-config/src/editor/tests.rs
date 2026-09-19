@@ -748,6 +748,157 @@ fn editor_save_second_commit_failure_rolls_back_every_original_file() {
 }
 
 #[test]
+fn startup_recovers_prepared_publication_before_bootstrap() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    paths.ensure_base_dirs().unwrap();
+    std::fs::write(&paths.config_file, "[env]\nSURVIVOR = \"before\"\n").unwrap();
+    AppConfig::load_or_init(&paths).unwrap();
+    let before = std::fs::read(&paths.config_file).unwrap();
+
+    let originals = prepare_originals([paths.config_file.clone()]).unwrap();
+    let journal = journal_from(PublicationPhase::Prepared, &originals, &[]);
+    write_publication_journal(&paths.config_file, &journal).unwrap();
+    backup_originals(&originals).unwrap();
+    assert!(
+        !paths.config_file.exists(),
+        "the test must model the crash window"
+    );
+
+    let (editor, report) = ConfigEditor::open_detailed(&paths).unwrap();
+    drop(editor);
+    assert!(
+        !report.fresh_install,
+        "recovery must precede fresh-install bootstrap"
+    );
+    assert_eq!(std::fs::read(&paths.config_file).unwrap(), before);
+    assert!(!publication_journal_path(&paths.config_file).exists());
+    assert!(
+        originals
+            .iter()
+            .all(|original| { original.backup.as_ref().is_none_or(|path| !path.exists()) })
+    );
+}
+
+#[test]
+fn startup_rolls_back_partial_publication_and_removes_staged_files() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    paths.ensure_base_dirs().unwrap();
+    std::fs::write(&paths.config_file, "[env]\nGLOBAL = \"before\"\n").unwrap();
+    AppConfig::load_or_init(&paths).unwrap();
+    let global_before = std::fs::read(&paths.config_file).unwrap();
+    std::fs::write(&paths.config_file, &global_before).unwrap();
+
+    let workspace_path = paths.workspaces_dir.join("prod.toml");
+    std::fs::write(
+        &workspace_path,
+        "version = \"v1alpha10\"\nworkdir = \"/workspace/prod\"\n",
+    )
+    .unwrap();
+    let workspace_before = std::fs::read(&workspace_path).unwrap();
+
+    let mut staged = vec![
+        PendingWrite {
+            staged: stage_atomic_write(&paths.config_file, "[env]\nGLOBAL = \"after\"\n").unwrap(),
+        },
+        PendingWrite {
+            staged: stage_atomic_write(&workspace_path, "workdir = \"/workspace/after\"\n")
+                .unwrap(),
+        },
+    ];
+    let originals = prepare_originals([paths.config_file.clone(), workspace_path.clone()]).unwrap();
+    let journal = journal_from(PublicationPhase::Prepared, &originals, &staged);
+    write_publication_journal(&paths.config_file, &journal).unwrap();
+    backup_originals(&originals).unwrap();
+
+    staged.remove(0).staged.commit().unwrap();
+    assert_eq!(
+        std::fs::read(&paths.config_file).unwrap(),
+        b"[env]\nGLOBAL = \"after\"\n"
+    );
+    assert!(!workspace_path.exists());
+
+    let (editor, _) = ConfigEditor::open_detailed(&paths).unwrap();
+    drop(editor);
+    assert_eq!(std::fs::read(&paths.config_file).unwrap(), global_before);
+    assert_eq!(std::fs::read(&workspace_path).unwrap(), workspace_before);
+    assert!(!publication_journal_path(&paths.config_file).exists());
+    let leftovers: Vec<_> = std::fs::read_dir(&paths.config_dir)
+        .unwrap()
+        .chain(std::fs::read_dir(&paths.workspaces_dir).unwrap())
+        .filter_map(Result::ok)
+        .filter(|entry| {
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
+            name.contains(".tmp.") || name.contains(".jackin-rollback.")
+        })
+        .collect();
+    assert!(leftovers.is_empty(), "recovery leftovers: {leftovers:?}");
+}
+
+#[test]
+fn committed_recovery_keeps_live_files_and_retries_all_cleanup() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    paths.ensure_base_dirs().unwrap();
+    let workspace_path = paths.workspaces_dir.join("prod.toml");
+    let failing_backup = paths.config_dir.join("rollback-fails");
+    let successful_backup = paths.config_dir.join("rollback-succeeds");
+
+    std::fs::create_dir_all(&paths.workspaces_dir).unwrap();
+    std::fs::write(&paths.config_file, "new global\n").unwrap();
+    std::fs::write(&workspace_path, "new workspace\n").unwrap();
+    std::fs::create_dir(&failing_backup).unwrap();
+    std::fs::write(&successful_backup, "old workspace\n").unwrap();
+    let journal = PublicationJournal {
+        version: PUBLICATION_JOURNAL_VERSION,
+        phase: PublicationPhase::Committed,
+        originals: vec![
+            JournalOriginal {
+                target: paths.config_file.clone(),
+                backup: Some(failing_backup.clone()),
+                existed: true,
+                protected: false,
+            },
+            JournalOriginal {
+                target: workspace_path.clone(),
+                backup: Some(successful_backup.clone()),
+                existed: true,
+                protected: false,
+            },
+        ],
+        staged: Vec::new(),
+    };
+    write_publication_journal(&paths.config_file, &journal).unwrap();
+
+    let error = recover_pending_publication(&paths.config_file).unwrap_err();
+    assert!(error.to_string().contains("cleanup"), "{error:#}");
+    assert_eq!(
+        std::fs::read_to_string(&paths.config_file).unwrap(),
+        "new global\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(&workspace_path).unwrap(),
+        "new workspace\n"
+    );
+    assert!(failing_backup.is_dir());
+    assert!(
+        !successful_backup.exists(),
+        "cleanup must continue after one failure"
+    );
+    assert!(publication_journal_path(&paths.config_file).exists());
+
+    std::fs::remove_dir(&failing_backup).unwrap();
+    recover_pending_publication(&paths.config_file).unwrap();
+    assert!(!publication_journal_path(&paths.config_file).exists());
+    assert_eq!(
+        std::fs::read_to_string(&paths.config_file).unwrap(),
+        "new global\n"
+    );
+}
+
+#[test]
 fn editor_save_keeps_exclusive_lock_during_publication() {
     use std::sync::mpsc;
     use std::time::Duration;

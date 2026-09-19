@@ -300,6 +300,10 @@ fn sync_parent(path: &Path) -> crate::ConfigResult<()> {
 }
 
 impl StagedWrite {
+    pub(crate) fn temporary_path(&self) -> &Path {
+        &self.tmp
+    }
+
     pub(crate) fn commit(mut self) -> crate::ConfigResult<()> {
         std::fs::rename(&self.tmp, &self.target).map_err(|rename_err| {
             anyhow::Error::new(rename_err).context(format!(
