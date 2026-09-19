@@ -141,6 +141,15 @@ fn openrouter_credits_separates_spend_from_remaining_balance() {
     let exhausted = openrouter_credits_bucket(1_000, 1_000);
     assert_eq!(exhausted.used_label.as_deref(), Some("$10"));
     assert_eq!(exhausted.remaining_percent, Some(0));
+
+    let overage = openrouter_credits_bucket(12_000, 10_000);
+    assert_eq!(overage.used_label.as_deref(), Some("120% used"));
+    assert_eq!(overage.remaining_percent, None);
+    assert_eq!(
+        overage.used_money.as_ref().map(|money| money.amount_minor),
+        Some(12_000)
+    );
+
     let bare = openrouter_credits_bucket(0, 0);
     assert_eq!(bare.remaining_percent, None);
 }

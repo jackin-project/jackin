@@ -69,7 +69,12 @@ impl Multiplexer {
             .as_deref()
             .and_then(|id| self.launch_env.launch_config.account_for_instance(id))
             .map(str::to_owned);
-        let (session, new_id) = Session::spawn(
+        let usage_capability = instance.as_deref().and_then(|id| {
+            self.launch_env
+                .launch_config
+                .usage_capability_for_instance(id)
+        });
+        let (mut session, new_id) = Session::spawn(
             &launch.label,
             instance,
             account_for_session,
@@ -81,6 +86,7 @@ impl Multiplexer {
             self.session_terminal(spawn_rows, spawn_cols),
             self.control.event_tx.clone(),
         )?;
+        session.usage_capability = usage_capability.cloned();
         self.session_supervisor.sessions.insert(new_id, session);
         self.record_agent_history(
             new_id,

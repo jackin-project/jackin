@@ -288,9 +288,10 @@ pub async fn launch(args: AppleContainerLaunch<'_>) -> Result<()> {
             paths,
             workspace_name,
             role_key,
-            forwarded_sources: crate::usage_relay::forwarded_sources_from_launch(
+            forwarded_sources: crate::usage_relay::forwarded_sources_from_launch_config(
                 state,
                 resolved_env,
+                capsule_config,
             ),
             socket_dir: socket_dir.clone(),
         })

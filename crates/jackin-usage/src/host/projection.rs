@@ -326,14 +326,18 @@ fn project_window(
     bucket: &QuotaBucketView,
     rank: usize,
 ) -> Result<UsageLimitWindowV1, String> {
-    let (remaining_percent, remaining_raw_percent) = if let Some(value) = bucket.remaining_percent {
+    let raw_used = money_used_raw_percent(bucket);
+    let overage = raw_used.is_some_and(|value| value > 100);
+    let (remaining_percent, remaining_raw_percent) = if overage {
+        (None, None)
+    } else if let Some(value) = bucket.remaining_percent {
         let (raw, clamped) = UsagePercent::split_raw(i32::from(value));
         (Some(clamped), Some(raw))
     } else {
         (None, None)
     };
-    let (used_percent, used_raw_percent) = if remaining_percent.is_none() {
-        if let Some(raw) = money_used_raw_percent(bucket) {
+    let (used_percent, used_raw_percent) = if overage || remaining_percent.is_none() {
+        if let Some(raw) = raw_used {
             let (_, clamped) = UsagePercent::split_raw(raw);
             (Some(clamped), Some(raw))
         } else {
@@ -342,10 +346,17 @@ fn project_window(
     } else {
         (None, None)
     };
-    let value_label = bucket.remaining_percent.map_or_else(
-        || bucket.used_label.clone().unwrap_or_default(),
-        |value| format!("{value}% left"),
-    );
+    let value_label = if overage {
+        raw_used.map_or_else(
+            || bucket.used_label.clone().unwrap_or_default(),
+            |raw| format!("{raw}% used"),
+        )
+    } else {
+        bucket.remaining_percent.map_or_else(
+            || bucket.used_label.clone().unwrap_or_default(),
+            |value| format!("{value}% left"),
+        )
+    };
     Ok(UsageLimitWindowV1 {
         window_id: account_key_hash(canonical_account_id, &format!("canonical-window-v1:{rank}")),
         rank: u32::try_from(rank).map_err(|_| "window rank overflow")?,

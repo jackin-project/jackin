@@ -176,6 +176,11 @@ pub struct CapsuleConfig {
     /// Identifiers only — never credential material.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub accounts: BTreeMap<String, String>,
+    /// Exact host usage-broker capability per admitted instance. The capsule
+    /// must carry this opaque authority unchanged; account labels and agent
+    /// surface names are not sufficient to select a same-provider account.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub usage_capabilities: BTreeMap<String, usage_broker::UsageAccountCapability>,
     /// Display label per admitted instance, keyed by instance config ID.
     /// `{Agent} · {account name}` unless the operator overrode it. Tab/pane
     /// chrome renders these so two same-agent instances stay distinguishable.
@@ -325,6 +330,15 @@ impl CapsuleConfig {
     #[must_use]
     pub fn account_for_instance(&self, instance: &str) -> Option<&str> {
         self.accounts.get(instance).map(String::as_str)
+    }
+
+    /// Exact host usage capability for an instance config ID.
+    #[must_use]
+    pub fn usage_capability_for_instance(
+        &self,
+        instance: &str,
+    ) -> Option<&usage_broker::UsageAccountCapability> {
+        self.usage_capabilities.get(instance)
     }
 
     /// Display label for an instance config ID.

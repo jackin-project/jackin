@@ -377,7 +377,7 @@ impl Multiplexer {
                 .account_for_instance(id)
                 .map(str::to_owned)
         });
-        let (session, id) = Session::spawn(
+        let (mut session, id) = Session::spawn(
             &launch.label,
             agent.clone(),
             account_id.clone(),
@@ -392,6 +392,14 @@ impl Multiplexer {
             ),
             self.control.event_tx.clone(),
         )?;
+        session.usage_capability = agent
+            .as_deref()
+            .and_then(|id| {
+                self.launch_env
+                    .launch_config
+                    .usage_capability_for_instance(id)
+            })
+            .cloned();
         let tab_label = launch.label.clone();
         self.session_supervisor.sessions.insert(id, session);
         let mut tab = Tab::new_single(tab_label, id, codename.clone());

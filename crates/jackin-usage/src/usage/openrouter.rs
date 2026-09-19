@@ -347,7 +347,8 @@ pub(crate) fn parse_openrouter_credits(
 /// ceiling is positive.
 pub(crate) fn openrouter_credits_bucket(spent_cents: i64, ceiling_cents: i64) -> QuotaBucketView {
     let balance = ceiling_cents.saturating_sub(spent_cents);
-    let remaining_percent = (ceiling_cents > 0).then(|| {
+    let overage = ceiling_cents > 0 && spent_cents > ceiling_cents;
+    let remaining_percent = (ceiling_cents > 0 && !overage).then(|| {
         #[expect(clippy::cast_precision_loss, reason = "cents magnitudes fit f64")]
         let fraction = (balance.max(0).min(ceiling_cents) as f64) / (ceiling_cents as f64);
         #[expect(clippy::cast_sign_loss, reason = "clamped 0.0..=100.0 before cast")]
@@ -364,6 +365,13 @@ pub(crate) fn openrouter_credits_bucket(spent_cents: i64, ceiling_cents: i64) ->
         None,
         UsageSnapshotStatus::Fresh,
     );
+    if overage {
+        let raw_used = spent_cents
+            .saturating_mul(100)
+            .checked_div(ceiling_cents)
+            .unwrap_or(i64::MAX);
+        view.used_label = Some(format!("{raw_used}% used"));
+    }
     view.used_money = Some(Money::new(spent_cents, "USD", 2));
     view.limit_money = Some(Money::new(ceiling_cents, "USD", 2));
     view

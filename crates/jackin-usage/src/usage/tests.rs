@@ -780,14 +780,22 @@ fn usage_cache_key_canonicalizes_provider_aliases() {
 
 #[test]
 fn usage_cache_keeps_account_snapshots_isolated_across_one_provider_target() {
+    let personal = jackin_protocol::usage_broker::UsageAccountCapability {
+        account_id: "account-personal".to_owned(),
+        surface_id: "codex".to_owned(),
+    };
+    let work = jackin_protocol::usage_broker::UsageAccountCapability {
+        account_id: "account-work".to_owned(),
+        surface_id: "codex".to_owned(),
+    };
     let mut first = codex_cached_usage_view();
     first.account.account_label = "personal@example.test".to_owned();
     let mut second = codex_cached_usage_view();
     second.account.account_label = "work@example.test".to_owned();
 
     let mut cache = UsageCache::default();
-    cache.insert_snapshot_for_test("codex", Some("OpenAI"), first);
-    cache.insert_snapshot_for_test("codex", Some("OpenAI"), second);
+    cache.insert_snapshot_for_capability_for_test("codex", Some("OpenAI"), &personal, first);
+    cache.insert_snapshot_for_capability_for_test("codex", Some("OpenAI"), &work, second);
 
     assert_eq!(cache.snapshots.len(), 2);
     let rows = cache.account_snapshot_views();
@@ -805,6 +813,7 @@ fn usage_cache_keeps_account_snapshots_isolated_across_one_provider_target() {
         &UsageRefreshTarget {
             agent: "codex".to_owned(),
             provider: Some("OpenAI".to_owned()),
+            capability: personal.clone(),
         },
         &jackin_protocol::usage_broker::UsageCoordinationError {
             kind: jackin_protocol::usage_broker::UsageCoordinationErrorKind::ProviderUnavailable,
@@ -812,11 +821,59 @@ fn usage_cache_keeps_account_snapshots_isolated_across_one_provider_target() {
         },
     );
     assert_eq!(cache.snapshots.len(), 2);
-    assert!(
+    assert_eq!(
         cache
             .snapshots
             .values()
-            .all(|cached| cached.view.status == UsageSnapshotStatus::Stale)
+            .find(|cached| cached.view.account.account_label == "personal@example.test")
+            .map(|cached| cached.view.status),
+        Some(UsageSnapshotStatus::Stale)
+    );
+    assert_eq!(
+        cache
+            .snapshots
+            .values()
+            .find(|cached| cached.view.account.account_label == "work@example.test")
+            .map(|cached| cached.view.status),
+        Some(UsageSnapshotStatus::Fresh)
+    );
+}
+
+#[test]
+fn focused_usage_cache_selects_the_exact_account_capability() {
+    let personal = jackin_protocol::usage_broker::UsageAccountCapability {
+        account_id: "account-personal".to_owned(),
+        surface_id: "codex".to_owned(),
+    };
+    let work = jackin_protocol::usage_broker::UsageAccountCapability {
+        account_id: "account-work".to_owned(),
+        surface_id: "codex".to_owned(),
+    };
+    let mut personal_view = codex_cached_usage_view();
+    personal_view.status_bar_label = "personal account".to_owned();
+    let mut work_view = codex_cached_usage_view();
+    work_view.status_bar_label = "work account".to_owned();
+
+    let mut cache = UsageCache::default();
+    cache.insert_snapshot_for_capability_for_test(
+        "codex",
+        Some("OpenAI"),
+        &personal,
+        personal_view,
+    );
+    cache.insert_snapshot_for_capability_for_test("codex", Some("OpenAI"), &work, work_view);
+
+    assert_eq!(
+        cache
+            .focused_snapshot_for_capability(Some("codex"), Some("OpenAI"), Some(&personal))
+            .status_bar_label,
+        "personal account"
+    );
+    assert_eq!(
+        cache
+            .focused_snapshot_for_capability(Some("codex"), Some("OpenAI"), Some(&work))
+            .status_bar_label,
+        "work account"
     );
 }
 
@@ -850,6 +907,10 @@ fn usage_cache_adopts_broker_generations_by_account_capability() {
     let target = UsageRefreshTarget {
         agent: "codex".to_owned(),
         provider: Some("OpenAI".to_owned()),
+        capability: jackin_protocol::usage_broker::UsageAccountCapability {
+            account_id: "account-a".to_owned(),
+            surface_id: "codex".to_owned(),
+        },
     };
     let generation = |account_id: &str, account_label: &str| {
         let mut view = codex_cached_usage_view();
@@ -869,7 +930,14 @@ fn usage_cache_adopts_broker_generations_by_account_capability() {
 
     let mut cache = UsageCache::default();
     cache.adopt_broker_generation(&target, &generation("account-a", "personal@example.test"));
-    cache.adopt_broker_generation(&target, &generation("account-b", "work@example.test"));
+    let other_target = UsageRefreshTarget {
+        capability: jackin_protocol::usage_broker::UsageAccountCapability {
+            account_id: "account-b".to_owned(),
+            surface_id: "codex".to_owned(),
+        },
+        ..target.clone()
+    };
+    cache.adopt_broker_generation(&other_target, &generation("account-b", "work@example.test"));
 
     assert_eq!(cache.snapshots.len(), 2);
     assert_eq!(cache.account_snapshot_views().len(), 2);
@@ -880,11 +948,21 @@ fn usage_cache_adopts_broker_generations_by_account_capability() {
             message: "provider unavailable".to_owned(),
         },
     );
-    assert!(
+    assert_eq!(
         cache
             .snapshots
             .values()
-            .all(|cached| cached.view.status == UsageSnapshotStatus::Stale)
+            .find(|cached| cached.view.account.account_label == "personal@example.test")
+            .map(|cached| cached.view.status),
+        Some(UsageSnapshotStatus::Stale)
+    );
+    assert_eq!(
+        cache
+            .snapshots
+            .values()
+            .find(|cached| cached.view.account.account_label == "work@example.test")
+            .map(|cached| cached.view.status),
+        Some(UsageSnapshotStatus::Fresh)
     );
 }
 
@@ -955,6 +1033,10 @@ fn broker_client_failure_preserves_last_good_quota() {
     let target = UsageRefreshTarget {
         agent: "claude".to_owned(),
         provider: Some("Claude".to_owned()),
+        capability: jackin_protocol::usage_broker::UsageAccountCapability {
+            account_id: "account-claude".to_owned(),
+            surface_id: "claude".to_owned(),
+        },
     };
     let mut cached = FocusedUsageView::unavailable("seed", 123);
     cached.status = UsageSnapshotStatus::Fresh;
@@ -973,7 +1055,12 @@ fn broker_client_failure_preserves_last_good_quota() {
         status: UsageSnapshotStatus::Fresh,
     }];
     let mut cache = UsageCache::default();
-    cache.insert_snapshot_for_test("claude", Some("Claude"), cached);
+    cache.insert_snapshot_for_capability_for_test(
+        "claude",
+        Some("Claude"),
+        &target.capability,
+        cached,
+    );
 
     cache.adopt_broker_error(
         &target,

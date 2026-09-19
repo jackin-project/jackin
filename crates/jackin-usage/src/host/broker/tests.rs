@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use std::collections::BTreeSet;
 use std::os::unix::fs::symlink;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Barrier};
@@ -11,7 +12,7 @@ use jackin_protocol::control::{
     UsageSource,
 };
 use jackin_protocol::usage_broker::{
-    UsageFreshnessPhaseV1, UsageProjectionRefreshStateV1, UsageRefreshPhase,
+    UsageFreshnessPhaseV1, UsageIdentityKindV1, UsageProjectionRefreshStateV1, UsageRefreshPhase,
 };
 
 use super::*;
@@ -145,7 +146,10 @@ fn forwarded_scope_selects_only_accounts_backed_by_forwarded_sources() {
                 identity: Some(profile_identity),
                 source_id: "profile-source".to_owned(),
                 capability_id: "profile-capability".to_owned(),
-                provenance: std::collections::BTreeSet::from([scope.to_owned()]),
+                provenance: BTreeSet::from([
+                    scope.to_owned(),
+                    "account account-profile".to_owned(),
+                ]),
                 source: ValidatedCredentialSource::Profile(
                     super::super::discovery::ProfileCredentialMaterial::Amp {
                         key: "profile-secret".to_owned(),
@@ -157,7 +161,7 @@ fn forwarded_scope_selects_only_accounts_backed_by_forwarded_sources() {
                 identity: Some(env_identity),
                 source_id: "env-source".to_owned(),
                 capability_id: "env-capability".to_owned(),
-                provenance: std::collections::BTreeSet::from([scope.to_owned()]),
+                provenance: BTreeSet::from([scope.to_owned(), "account account-env".to_owned()]),
                 source: ValidatedCredentialSource::Env {
                     handle: super::super::OpaqueCredentialHandle::new("env-handle"),
                     key: "AMP_API_KEY".to_owned(),
@@ -172,21 +176,72 @@ fn forwarded_scope_selects_only_accounts_backed_by_forwarded_sources() {
         &discovery,
         scope,
         &ForwardedUsageSources {
-            profile_surface_ids: std::collections::BTreeSet::from(["amp".to_owned()]),
-            env_keys: std::collections::BTreeSet::new(),
+            selected_account_ids: BTreeSet::new(),
+            profile_surface_ids: BTreeSet::from(["amp".to_owned()]),
+            env_keys: BTreeSet::new(),
         },
     );
-    assert_eq!(profile_only, vec![profile_capability]);
+    assert_eq!(profile_only, vec![profile_capability.clone()]);
 
     let env_only = forwarded_usage_capabilities(
         &discovery,
         scope,
         &ForwardedUsageSources {
-            profile_surface_ids: std::collections::BTreeSet::new(),
-            env_keys: std::collections::BTreeSet::from(["AMP_API_KEY".to_owned()]),
+            selected_account_ids: BTreeSet::new(),
+            profile_surface_ids: BTreeSet::new(),
+            env_keys: BTreeSet::from(["AMP_API_KEY".to_owned()]),
         },
     );
-    assert_eq!(env_only, vec![env_capability]);
+    assert_eq!(env_only, vec![env_capability.clone()]);
+
+    let selected_profile = forwarded_usage_capabilities(
+        &discovery,
+        scope,
+        &ForwardedUsageSources {
+            selected_account_ids: BTreeSet::from(["account-profile".to_owned()]),
+            profile_surface_ids: BTreeSet::from(["amp".to_owned()]),
+            env_keys: BTreeSet::new(),
+        },
+    );
+    assert_eq!(selected_profile, vec![profile_capability.clone()]);
+
+    let selected_env = forwarded_usage_capabilities(
+        &discovery,
+        scope,
+        &ForwardedUsageSources {
+            selected_account_ids: BTreeSet::from(["account-env".to_owned()]),
+            profile_surface_ids: BTreeSet::new(),
+            env_keys: BTreeSet::from(["AMP_API_KEY".to_owned()]),
+        },
+    );
+    assert_eq!(selected_env, vec![env_capability]);
+
+    let wrong_account = forwarded_usage_capabilities(
+        &discovery,
+        scope,
+        &ForwardedUsageSources {
+            selected_account_ids: BTreeSet::from(["account-does-not-exist".to_owned()]),
+            profile_surface_ids: BTreeSet::from(["amp".to_owned()]),
+            env_keys: BTreeSet::from(["AMP_API_KEY".to_owned()]),
+        },
+    );
+    assert!(wrong_account.is_empty());
+
+    assert_eq!(
+        usage_capability_for_selected_account(&discovery, "account-profile", "amp"),
+        Some(profile_capability.clone())
+    );
+    assert_eq!(
+        usage_capability_for_selected_account(&discovery, "account-profile", "claude"),
+        None
+    );
+
+    let publication = publication_identity_metadata(&discovery);
+    assert_eq!(
+        publication[&profile_capability].identity_kind,
+        UsageIdentityKindV1::ProviderStableHandle
+    );
+    assert_eq!(publication[&profile_capability].provenance_count, 2);
 }
 
 #[test]
@@ -254,7 +309,12 @@ fn broker_client_scoped_operation_requires_relay_and_never_probes() {
     )
     .unwrap();
 
-    let error = client.current_for_surface("claude").unwrap_err();
+    let error = client
+        .current_for_capability(UsageAccountCapability {
+            account_id: "account-a".to_owned(),
+            surface_id: "claude".to_owned(),
+        })
+        .unwrap_err();
     assert_eq!(error.kind, UsageCoordinationErrorKind::Unauthorized);
     assert_eq!(executor.calls.load(Ordering::SeqCst), 0);
 }

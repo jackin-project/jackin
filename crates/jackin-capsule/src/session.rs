@@ -126,6 +126,10 @@ pub struct Session {
     /// sessions and sessions spawned before account stamping. Splits inherit
     /// this from the source pane's instance.
     pub account_id: Option<String>,
+    /// Exact host usage-broker capability for this instance. Surface and
+    /// configured-account labels are insufficient when two accounts share a
+    /// provider, so refreshes must carry this authority unchanged.
+    pub usage_capability: Option<jackin_protocol::usage_broker::UsageAccountCapability>,
     pub conversation_id: Option<String>,
     pub provider: Option<SessionProvider>,
     /// Published effective state. Authored solely by evidence arbitration on the
@@ -591,6 +595,7 @@ impl Session {
                 label,
                 agent,
                 account_id,
+                usage_capability: None,
                 conversation_id,
                 provider,
                 state: AgentState::Unknown,
@@ -1501,6 +1506,7 @@ impl Session {
             label,
             agent,
             account_id: None,
+            usage_capability: None,
             conversation_id: None,
             provider,
             state: AgentState::Unknown,
