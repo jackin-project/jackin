@@ -26,6 +26,7 @@ fn selects_only_public_preview_assets() {
         "capsule-manifest.json",
         "capsule-manifest.json.bundle",
         "release-manifest.json",
+        "identity.json",
         "SHA256SUMS",
         "jackin-0.6.0-preview.411+bf7df07-aarch64-apple-darwin.tar.gz",
     ] {

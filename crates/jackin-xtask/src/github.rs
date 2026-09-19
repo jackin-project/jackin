@@ -264,6 +264,7 @@ fn is_release_asset(path: &Path) -> bool {
             "capsule-manifest.json"
                 | "capsule-manifest.json.bundle"
                 | "release-manifest.json"
+                | "identity.json"
                 | "SHA256SUMS"
         )
 }
