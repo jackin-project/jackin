@@ -11,7 +11,7 @@ use jackin_protocol::control::{
     FocusedUsageView, QuotaBucketView, UsageConfidence, UsageSeverity, UsageSnapshotStatus,
     UsageSource,
 };
-use jackin_protocol::usage_broker::UsageRefreshPhase;
+use jackin_protocol::usage_broker::{UsageCoordinationErrorKind, UsageRefreshPhase};
 use jackin_usage::coordinator::{ProviderProbeOutcome, UsageCapabilitySet, UsageProviderExecutor};
 use jackin_usage::host::{
     CachedProviderCredentialResolver, UsageDiscoveryScope, discover_usage_sources,
@@ -214,19 +214,17 @@ fn launch_discovery_relay_uses_distinct_canonical_ids_for_same_surface() -> Resu
     assert_ne!(personal.account_id, "personal-openai");
     assert_ne!(work.account_id, "work-openai");
     assert_ne!(personal.account_id, work.account_id);
-    assert!(
-        UsageCapabilitySet::new(forwarded)
-            .authorize(personal)
-            .is_ok()
-    );
-    assert!(
-        UsageCapabilitySet::new(allowed)
-            .authorize(&UsageAccountCapability {
-                account_id: "personal-openai".to_owned(),
-                surface_id: "codex".to_owned(),
-            })
-            .is_err()
-    );
+    assert!(matches!(
+        UsageCapabilitySet::new(forwarded).authorize(personal),
+        Ok(())
+    ));
+    assert!(matches!(
+        UsageCapabilitySet::new(allowed).authorize(&UsageAccountCapability {
+            account_id: "personal-openai".to_owned(),
+            surface_id: "codex".to_owned(),
+        }),
+        Err(error) if error.kind == UsageCoordinationErrorKind::Unauthorized
+    ));
     Ok(())
 }
 

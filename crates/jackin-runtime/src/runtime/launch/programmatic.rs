@@ -407,19 +407,17 @@ pub fn with_account_selection(
         }
     }
     if let Some(config_id) = ephemeral_id {
-        if !selected.agent_configurations.contains_key(&config_id) {
-            selected.agent_configurations.insert(
-                config_id,
-                AgentConfiguration {
-                    agent,
-                    account: id.to_owned(),
-                    model: None,
-                    base_url: None,
-                    display_label: None,
-                    invoked_via_wrapper: None,
-                },
-            );
-        }
+        selected
+            .agent_configurations
+            .entry(config_id)
+            .or_insert_with(|| AgentConfiguration {
+                agent,
+                account: id.to_owned(),
+                model: None,
+                base_url: None,
+                display_label: None,
+                invoked_via_wrapper: None,
+            });
     }
     let instances = jackin_config::resolve_launch(&selected, workspace, role, None, Some(agent))?;
     anyhow::ensure!(
