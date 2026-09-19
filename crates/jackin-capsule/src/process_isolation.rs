@@ -149,6 +149,10 @@ mod linux {
     pub(super) const TRAVERSE: u64 = ACCESS_EXECUTE;
     pub(super) const READ_FILE_ONLY: u64 = ACCESS_EXECUTE | ACCESS_READ_FILE;
     const READ_ONLY: u64 = READ_FILE_ONLY | ACCESS_READ_DIR;
+    // `std::process::Stdio::null()` opens the null device read/write even
+    // when it is used for stdin. Keep the device tree read-only and grant
+    // only this exact character device the file I/O needed by that primitive.
+    const NULL_DEVICE: u64 = READ_FILE_ONLY | ACCESS_WRITE_FILE;
     const WRITABLE: u64 = ACCESS_WRITE_FILE
         | ACCESS_REMOVE_DIR
         | ACCESS_REMOVE_FILE
@@ -236,6 +240,26 @@ mod linux {
         cwd: &Path,
         session_root: &Path,
     ) -> Result<Vec<Rule>> {
+        rules_for_impl(config, instance, cwd, session_root, true)
+    }
+
+    #[cfg(test)]
+    pub(super) fn rules_for_test(
+        config: &CapsuleConfig,
+        instance: Option<&str>,
+        cwd: &Path,
+        session_root: &Path,
+    ) -> Result<Vec<Rule>> {
+        rules_for_impl(config, instance, cwd, session_root, false)
+    }
+
+    fn rules_for_impl(
+        config: &CapsuleConfig,
+        instance: Option<&str>,
+        cwd: &Path,
+        session_root: &Path,
+        require_runtime_files: bool,
+    ) -> Result<Vec<Rule>> {
         anyhow::ensure!(cwd.is_absolute(), "isolated session cwd must be absolute");
         anyhow::ensure!(
             !cwd.starts_with(Path::new(jackin_core::container_paths::JACKIN_ROOT))
@@ -248,17 +272,19 @@ mod linux {
         // receive this bit.
         required_exact_rule(&mut rules, cwd, FULL_WITH_UNIX);
         required_exact_rule(&mut rules, session_root, FULL_WITH_UNIX);
-        for path in [
-            format!(
-                "{}/entrypoint.sh",
-                jackin_core::container_paths::RUNTIME_DIR
-            ),
-            format!(
-                "{}/jackin-capsule",
-                jackin_core::container_paths::RUNTIME_DIR
-            ),
-        ] {
-            required_exact_rule(&mut rules, Path::new(&path), READ_ONLY);
+        if require_runtime_files {
+            for path in [
+                format!(
+                    "{}/entrypoint.sh",
+                    jackin_core::container_paths::RUNTIME_DIR
+                ),
+                format!(
+                    "{}/jackin-capsule",
+                    jackin_core::container_paths::RUNTIME_DIR
+                ),
+            ] {
+                required_exact_rule(&mut rules, Path::new(&path), READ_ONLY);
+            }
         }
         for path in [
             format!("{}/hooks", jackin_core::container_paths::RUNTIME_DIR),
@@ -271,6 +297,11 @@ mod linux {
         ] {
             optional_exact_rule(&mut rules, Path::new(path), READ_ONLY);
         }
+        // Recovery/runtime setup uses jackin-process's StdioMode::Null for
+        // non-interactive children. Its stdin fd is opened O_RDWR, so a
+        // read-only /dev rule is insufficient. This is the narrow device
+        // exception; no other device path receives write access.
+        optional_exact_rule(&mut rules, Path::new("/dev/null"), NULL_DEVICE);
         // Do not grant a broad /proc read rule: selected credentials are
         // transported in the child environment, and /proc/<pid>/environ would
         // otherwise let a DAC-capable sibling read them. Programs may inspect
@@ -559,6 +590,7 @@ mod linux {
     pub(super) mod test_support {
         pub(crate) const ACCESS_RESOLVE_UNIX: u64 = super::ACCESS_RESOLVE_UNIX;
         pub(crate) const FULL_WITH_UNIX: u64 = super::FULL_WITH_UNIX;
+        pub(crate) const NULL_DEVICE: u64 = super::NULL_DEVICE;
         pub(crate) const READ_ONLY: u64 = super::READ_ONLY;
         pub(crate) const READ_ONLY_WITH_UNIX: u64 = super::READ_ONLY_WITH_UNIX;
         pub(crate) const WRITABLE: u64 = super::WRITABLE;
@@ -660,8 +692,9 @@ mod linux {
 mod tests {
     use super::linux::{
         FULL, READ_FILE_ONLY, Rule, add_execute_only_ancestors, drop_privileges, install_landlock,
-        retained_capability_mask, rules_for, test_support,
+        retained_capability_mask, rules_for, rules_for_test, test_support,
     };
+    use anyhow::Context as _;
     use jackin_protocol::CapsuleConfig;
     use std::collections::BTreeMap;
     use std::fs;
@@ -669,7 +702,8 @@ mod tests {
     use std::os::unix::fs::PermissionsExt as _;
     use std::path::Path;
     use test_support::{
-        ACCESS_RESOLVE_UNIX, FULL_WITH_UNIX, READ_ONLY, READ_ONLY_WITH_UNIX, access_for_abi,
+        ACCESS_RESOLVE_UNIX, FULL_WITH_UNIX, NULL_DEVICE, READ_ONLY, READ_ONLY_WITH_UNIX,
+        access_for_abi,
     };
 
     #[test]
@@ -830,6 +864,136 @@ mod tests {
         );
         assert_eq!(retained_capability_mask(), 1u32 << 1);
         assert_eq!(retained_capability_mask() & (1u32 << 3), 0);
+    }
+
+    #[test]
+    fn null_stdio_has_only_an_exact_null_device_write_grant() {
+        let config = CapsuleConfig::default();
+        let rules = rules_for(
+            &config,
+            None,
+            Path::new("/workspace/project"),
+            Path::new("/jackin/run/sessions/1"),
+        )
+        .expect("construct Landlock rules");
+
+        assert_eq!(
+            rules
+                .iter()
+                .find(|rule| rule.path == Path::new("/dev/null"))
+                .expect("exact null-device rule")
+                .access,
+            NULL_DEVICE
+        );
+        assert!(
+            rules
+                .iter()
+                .any(|rule| { rule.path == Path::new("/dev") && rule.access == READ_ONLY })
+        );
+        assert!(!rules.iter().any(|rule| {
+            rule.path == Path::new("/dev") && rule.access & test_support::WRITABLE != 0
+        }));
+        assert!(!rules.iter().any(|rule| {
+            rule.path.starts_with(Path::new("/dev/"))
+                && rule.path != Path::new("/dev/null")
+                && rule.access & test_support::WRITABLE != 0
+        }));
+    }
+
+    #[test]
+    fn isolated_runtime_setup_can_spawn_git_config_with_null_stdio() {
+        // SAFETY: the production wrapper starts as root. Non-root test hosts
+        // cannot exercise its capability-preserving UID transition.
+        if unsafe { libc::geteuid() } != 0 {
+            return;
+        }
+
+        let temp = tempfile::tempdir().expect("temporary runtime setup fixture");
+        let workspace = temp.path().join("workspace");
+        let session_root = temp.path().join("session");
+        fs::create_dir(&workspace).expect("workspace");
+        fs::create_dir(&session_root).expect("session root");
+        fs::set_permissions(&workspace, fs::Permissions::from_mode(0o777))
+            .expect("workspace permissions");
+        fs::set_permissions(&session_root, fs::Permissions::from_mode(0o777))
+            .expect("session root permissions");
+
+        let (read_fd, write_fd) = {
+            let mut fds = [0; 2];
+            // SAFETY: `fds` points to two writable integers for pipe output.
+            assert_eq!(unsafe { libc::pipe(fds.as_mut_ptr()) }, 0);
+            (fds[0], fds[1])
+        };
+        // SAFETY: the child immediately enters the isolated probe. This test
+        // follows the same fork boundary as the sibling capability probe so a
+        // successful Landlock install cannot restrict the test harness.
+        let child = unsafe { libc::fork() };
+        assert!(child >= 0, "fork runtime setup probe");
+        if child == 0 {
+            // SAFETY: `read_fd` is the unused read end returned by pipe.
+            unsafe { libc::close(read_fd) };
+            let result = (|| -> anyhow::Result<()> {
+                drop_privileges(jackin_protocol::SessionIdentity {
+                    uid: 65_534,
+                    gid: 65_534,
+                })?;
+                let rules =
+                    rules_for_test(&CapsuleConfig::default(), None, &workspace, &session_root)?;
+                install_landlock(&rules)?;
+
+                let global_config = session_root.join("gitconfig");
+                let request = jackin_process::ExecRequest::new(
+                    "git",
+                    [
+                        "config",
+                        "--global",
+                        "--get-all",
+                        "url.https://github.com/.insteadOf",
+                    ],
+                )
+                .cwd(&workspace)
+                .envs([("GIT_CONFIG_GLOBAL", global_config.as_os_str())]);
+                let output = jackin_process::exec_sync(&request)
+                    .context("spawn git config under session Landlock");
+                let output = output?;
+                anyhow::ensure!(
+                    output.code == Some(1),
+                    "git config probe exited unexpectedly: {:?}, stderr={}",
+                    output.code,
+                    String::from_utf8_lossy(&output.stderr)
+                );
+                Ok(())
+            })();
+            if let Err(error) = &result {
+                eprintln!("isolated runtime setup probe failed: {error:#}");
+            }
+            let status = [u8::from(result.is_ok())];
+            // SAFETY: `status` points to one initialized byte and `write_fd`
+            // is the pipe's valid write end.
+            unsafe { libc::write(write_fd, status.as_ptr().cast(), 1) };
+            // SAFETY: `write_fd` is no longer used after reporting the result.
+            unsafe { libc::close(write_fd) };
+            // SAFETY: the child must terminate without running parent-side
+            // Rust destructors after fork.
+            unsafe { libc::_exit(if result.is_ok() { 0 } else { 1 }) };
+        }
+        // SAFETY: the parent owns no use for the pipe's write end.
+        unsafe { libc::close(write_fd) };
+        let mut status = [0u8; 1];
+        // SAFETY: `status` points to one writable byte and `read_fd` is valid.
+        assert_eq!(
+            unsafe { libc::read(read_fd, status.as_mut_ptr().cast(), 1) },
+            1
+        );
+        // SAFETY: `read_fd` is no longer used after receiving the result.
+        unsafe { libc::close(read_fd) };
+        let mut wait_status = 0;
+        // SAFETY: `wait_status` is writable and `child` is the pid returned by
+        // fork.
+        assert_eq!(unsafe { libc::waitpid(child, &mut wait_status, 0) }, child);
+        assert_eq!(status[0], 1, "isolated runtime setup probe failed");
+        assert!(libc::WIFEXITED(wait_status));
+        assert_eq!(libc::WEXITSTATUS(wait_status), 0);
     }
 
     #[test]
