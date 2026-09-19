@@ -35,8 +35,8 @@ run_hook() {
 /jackin/runtime/jackin-capsule runtime-setup
 
 # ── agent runtime status env ───────────────────────────────────────────
-# JACKIN_SESSION_ID is set by the daemon before spawning. Export remaining
-# status vars so hook scripts and subprocesses inherit them.
+# JACKIN_SESSION_ID is set only for agent runtimes by the daemon. Export
+# remaining status vars so agent hook scripts and subprocesses inherit them.
 export JACKIN_STATUS_SOCKET="${JACKIN_STATUS_SOCKET:-/jackin/run/jackin.sock}"
 export JACKIN_STATUS_SOURCE="${JACKIN_STATUS_SOURCE:-wrapper-${JACKIN_SESSION_ID:-0}}"
 export JACKIN_AGENT_RUNTIME="${JACKIN_AGENT:-unknown}"

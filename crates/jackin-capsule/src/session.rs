@@ -1604,11 +1604,11 @@ pub fn validate_spawn_token_syntax(raw: &str) -> Result<&str, &'static str> {
     Ok(raw)
 }
 
-/// Inject the agent-status reporter environment into a session's command,
-/// keyed on the session id assigned at spawn. Agent panes get the full set so
-/// hook/plugin reporters can address this session; shell panes get only the
-/// socket var (no runtime to report for). State is never authored from these —
-/// reporters forward events, the daemon maps and gates them.
+/// Inject session-scoped environment into a command. The isolation wrapper
+/// receives its private numeric identity for every child; only agent panes
+/// receive the public runtime/status identity used by hook reporters. State is
+/// never authored from these — reporters forward events, the daemon maps and
+/// gates them.
 fn inject_status_env(
     cmd: &mut CommandBuilder,
     session_id: u64,
@@ -1632,10 +1632,14 @@ fn inject_status_env(
     cmd.env("XDG_CACHE_HOME", &session_cache);
     cmd.env("GIT_CONFIG_GLOBAL", session_root.join("gitconfig"));
     cmd.env(jackin_protocol::SESSION_CAPABILITY_ENV, control_capability);
-    cmd.env("JACKIN_SESSION_ID", session_id.to_string());
+    cmd.env(
+        jackin_protocol::ISOLATION_SESSION_ID_ENV,
+        session_id.to_string(),
+    );
+    cmd.env_remove(jackin_protocol::SESSION_ID_ENV);
     cmd.env("JACKIN_STATUS_SOCKET", crate::socket::SOCKET_PATH);
     if let Some(runtime) = agent {
-        cmd.env("JACKIN_SESSION_ID", session_id.to_string());
+        cmd.env(jackin_protocol::SESSION_ID_ENV, session_id.to_string());
         cmd.env("JACKIN_AGENT_RUNTIME", runtime);
         cmd.env(
             "JACKIN_STATUS_SOURCE",

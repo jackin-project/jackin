@@ -213,10 +213,10 @@ mod linux {
             effective_uid == 0,
             "capsule isolation wrapper must start as root"
         );
-        let session_id = std::env::var(jackin_protocol::SESSION_ID_ENV)
-            .context("isolated session wrapper requires JACKIN_SESSION_ID")?
+        let session_id = std::env::var(jackin_protocol::ISOLATION_SESSION_ID_ENV)
+            .context("isolated session wrapper requires JACKIN_ISOLATION_SESSION_ID")?
             .parse::<u64>()
-            .context("isolated session wrapper has invalid JACKIN_SESSION_ID")?;
+            .context("isolated session wrapper has invalid JACKIN_ISOLATION_SESSION_ID")?;
         anyhow::ensure!(session_id > 0, "isolated session id cannot be zero");
         let session_root = session_root_path(session_id);
         prepare_session_root(&session_root)?;

@@ -108,7 +108,13 @@ pub const HOST_SOCK_CONTAINER_PATH: &str = container_paths::HOST_SOCK;
 /// child session's target-scoped control RPCs. It is never a host passthrough.
 pub const SESSION_CAPABILITY_ENV: &str = "JACKIN_SESSION_CAPABILITY";
 
-/// Daemon-assigned numeric session id consumed by the root isolation wrapper.
+/// Internal daemon-assigned numeric session id consumed only by the root
+/// isolation wrapper. It is present for every child, including shell panes,
+/// but is not an agent runtime/status identity.
+pub const ISOLATION_SESSION_ID_ENV: &str = "JACKIN_ISOLATION_SESSION_ID";
+
+/// Daemon-assigned numeric session id exposed to agent runtimes and status
+/// hooks. Shell panes intentionally do not receive this variable.
 pub const SESSION_ID_ENV: &str = "JACKIN_SESSION_ID";
 /// Private mutable setup/state root allocated for one session.
 pub const SESSION_STATE_DIR_ENV: &str = "JACKIN_SESSION_STATE_DIR";
