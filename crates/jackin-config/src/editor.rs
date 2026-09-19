@@ -14,6 +14,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::Context as _;
 use jackin_core::{EnvValue, JackinPaths, WorkspaceName};
+use serde::{Deserialize, Serialize};
 use toml_edit::{DocumentMut, Item, Table};
 
 use crate::accounts::account_source_fingerprint;
@@ -34,6 +35,9 @@ use std::sync::atomic::{AtomicU64, Ordering};
 // staged files are individually atomic, but the set is not; this counter names
 // rollback siblings without colliding with another editor process.
 static ROLLBACK_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+const PUBLICATION_JOURNAL_VERSION: u8 = 1;
+const PUBLICATION_JOURNAL_NAME: &str = ".jackin-config-publication";
 
 /// Which env map a setter/remover targets in the config tree.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -321,14 +325,86 @@ pub struct ConfigEditor {
 }
 
 struct PendingWrite {
-    target: PathBuf,
     staged: StagedWrite,
 }
 
 struct OriginalFile {
     target: PathBuf,
     backup: Option<PathBuf>,
+    existed: bool,
     protected: bool,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+enum PublicationPhase {
+    Prepared,
+    Committed,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct JournalOriginal {
+    target: PathBuf,
+    backup: Option<PathBuf>,
+    existed: bool,
+    protected: bool,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct PublicationJournal {
+    version: u8,
+    phase: PublicationPhase,
+    originals: Vec<JournalOriginal>,
+    staged: Vec<PathBuf>,
+}
+
+fn publication_journal_path(config_file: &Path) -> PathBuf {
+    config_file.with_file_name(PUBLICATION_JOURNAL_NAME)
+}
+
+fn journal_from(
+    phase: PublicationPhase,
+    originals: &[OriginalFile],
+    staged: &[PendingWrite],
+) -> PublicationJournal {
+    PublicationJournal {
+        version: PUBLICATION_JOURNAL_VERSION,
+        phase,
+        originals: originals
+            .iter()
+            .map(|original| JournalOriginal {
+                target: original.target.clone(),
+                backup: original.backup.clone(),
+                existed: original.existed,
+                protected: original.protected,
+            })
+            .collect(),
+        staged: staged
+            .iter()
+            .map(|pending| pending.staged.temporary_path().to_path_buf())
+            .collect(),
+    }
+}
+
+fn write_publication_journal(
+    config_file: &Path,
+    journal: &PublicationJournal,
+) -> crate::ConfigResult<()> {
+    let contents = toml::to_string_pretty(journal)?;
+    atomic_write(&publication_journal_path(config_file), &contents)
+}
+
+fn remove_publication_journal(config_file: &Path) -> crate::ConfigResult<()> {
+    let path = publication_journal_path(config_file);
+    match std::fs::remove_file(&path) {
+        Ok(()) => sync_parent_directory(&path),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(anyhow::Error::new(error)
+            .context(format!("removing publication journal {}", path.display()))
+            .into()),
+    }
 }
 
 #[expect(
@@ -378,58 +454,220 @@ fn transaction_failure(primary: ConfigError, recovery: ConfigError) -> ConfigErr
     ))
 }
 
-fn rollback_publication(
-    originals: &[OriginalFile],
-    attempted: &BTreeSet<PathBuf>,
-) -> crate::ConfigResult<()> {
+fn prepare_originals(
+    targets: impl IntoIterator<Item = PathBuf>,
+) -> crate::ConfigResult<Vec<OriginalFile>> {
+    let mut originals = Vec::new();
+    for target in targets {
+        let (exists, protected) = match std::fs::symlink_metadata(&target) {
+            Ok(metadata) => (true, metadata.file_type().is_dir()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => (false, false),
+            Err(error) => {
+                return Err(anyhow::Error::new(error)
+                    .context(format!("checking publication target {}", target.display()))
+                    .into());
+            }
+        };
+        let backup = if exists && !protected {
+            Some(next_rollback_path(&target)?)
+        } else {
+            None
+        };
+        originals.push(OriginalFile {
+            target,
+            backup,
+            existed: exists,
+            protected,
+        });
+    }
+    Ok(originals)
+}
+
+fn backup_originals(originals: &[OriginalFile]) -> crate::ConfigResult<()> {
+    for original in originals {
+        let Some(backup) = &original.backup else {
+            continue;
+        };
+        std::fs::rename(&original.target, backup).map_err(|error| {
+            anyhow::Error::new(error).context(format!(
+                "moving {} to its rollback sibling {}",
+                original.target.display(),
+                backup.display()
+            ))
+        })?;
+        sync_parent_directory(&original.target)?;
+    }
+    Ok(())
+}
+
+fn discard_backups_with<F>(originals: &[OriginalFile], mut remove: F) -> crate::ConfigResult<()>
+where
+    F: FnMut(&Path) -> std::io::Result<()>,
+{
     let mut failures = Vec::new();
-    for original in originals.iter().rev() {
-        if attempted.contains(&original.target) && !original.protected {
-            match std::fs::symlink_metadata(&original.target) {
-                Ok(metadata) if metadata.file_type().is_dir() => failures.push(format!(
-                    "cannot remove directory at {} during rollback",
+    for original in originals {
+        let Some(backup) = &original.backup else {
+            continue;
+        };
+        match remove(backup) {
+            Ok(()) => {
+                if let Err(error) = sync_parent_directory(backup) {
+                    failures.push(format!(
+                        "syncing {} after removal: {error}",
+                        backup.display()
+                    ));
+                }
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => failures.push(format!(
+                "removing rollback sibling {}: {error}",
+                backup.display()
+            )),
+        }
+    }
+    if failures.is_empty() {
+        Ok(())
+    } else {
+        Err(anyhow::anyhow!("rollback cleanup failed: {}", failures.join("; ")).into())
+    }
+}
+
+fn discard_backups(originals: &[OriginalFile]) -> crate::ConfigResult<()> {
+    discard_backups_with(originals, |path| std::fs::remove_file(path))
+}
+
+fn discard_staged_with<F>(paths: &[PathBuf], mut remove: F) -> crate::ConfigResult<()>
+where
+    F: FnMut(&Path) -> std::io::Result<()>,
+{
+    let mut failures = Vec::new();
+    for path in paths {
+        match remove(path) {
+            Ok(()) => {
+                if let Err(error) = sync_parent_directory(path) {
+                    failures.push(format!("syncing {} after removal: {error}", path.display()));
+                }
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => {
+                failures.push(format!("removing staged file {}: {error}", path.display()));
+            }
+        }
+    }
+    if failures.is_empty() {
+        Ok(())
+    } else {
+        Err(anyhow::anyhow!("staged cleanup failed: {}", failures.join("; ")).into())
+    }
+}
+
+fn journal_originals(journal: &PublicationJournal) -> Vec<OriginalFile> {
+    journal
+        .originals
+        .iter()
+        .map(|original| OriginalFile {
+            target: original.target.clone(),
+            backup: original.backup.clone(),
+            existed: original.existed,
+            protected: original.protected,
+        })
+        .collect()
+}
+
+fn restore_prepared_publication(journal: &PublicationJournal) -> crate::ConfigResult<()> {
+    let mut failures = Vec::new();
+    for original in journal.originals.iter().rev() {
+        let backup_exists = original
+            .backup
+            .as_ref()
+            .is_some_and(|backup| std::fs::symlink_metadata(backup).is_ok());
+        if backup_exists {
+            let Some(backup) = original.backup.as_ref() else {
+                failures.push(format!(
+                    "journal omitted rollback sibling for {}",
                     original.target.display()
-                )),
+                ));
+                continue;
+            };
+            let mut target_ready_for_restore = true;
+            match std::fs::symlink_metadata(&original.target) {
+                Ok(metadata) if metadata.file_type().is_dir() => {
+                    failures.push(format!(
+                        "cannot remove directory at {} before restoring {}",
+                        original.target.display(),
+                        backup.display()
+                    ));
+                    target_ready_for_restore = false;
+                }
                 Ok(_) => {
                     if let Err(error) = std::fs::remove_file(&original.target) {
-                        failures.push(format!("removing {}: {error}", original.target.display()));
+                        failures.push(format!(
+                            "removing {} before restore: {error}",
+                            original.target.display()
+                        ));
+                        target_ready_for_restore = false;
                     }
                 }
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
                 Err(error) => {
-                    failures.push(format!("checking {}: {error}", original.target.display()));
+                    failures.push(format!(
+                        "checking {} before restore: {error}",
+                        original.target.display()
+                    ));
+                    target_ready_for_restore = false;
                 }
             }
-        }
-
-        if let Some(backup) = &original.backup {
+            if target_ready_for_restore
+                && let Err(error) = std::fs::rename(backup, &original.target)
+            {
+                failures.push(format!(
+                    "restoring {} -> {}: {error}",
+                    backup.display(),
+                    original.target.display()
+                ));
+            }
+        } else if !original.existed && !original.protected {
             match std::fs::symlink_metadata(&original.target) {
-                Ok(_) => failures.push(format!(
-                    "{} still exists before restoring {}",
-                    original.target.display(),
-                    backup.display()
+                Ok(metadata) if metadata.file_type().is_dir() => failures.push(format!(
+                    "cannot remove directory at {} during recovery",
+                    original.target.display()
                 )),
-                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                    if let Err(error) = std::fs::rename(backup, &original.target) {
+                Ok(_) => {
+                    if let Err(error) = std::fs::remove_file(&original.target) {
                         failures.push(format!(
-                            "restoring {} -> {}: {error}",
-                            backup.display(),
+                            "removing newly published {}: {error}",
                             original.target.display()
                         ));
                     }
                 }
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
                 Err(error) => failures.push(format!(
-                    "checking {} before restore: {error}",
+                    "checking new target {}: {error}",
+                    original.target.display()
+                )),
+            }
+        } else if original.existed {
+            match std::fs::symlink_metadata(&original.target) {
+                Ok(_) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                    failures.push(format!(
+                        "original {} is missing and has no rollback sibling",
+                        original.target.display()
+                    ));
+                }
+                Err(error) => failures.push(format!(
+                    "checking original {}: {error}",
                     original.target.display()
                 )),
             }
         }
-
         if let Err(error) = sync_parent_directory(&original.target) {
             failures.push(format!("syncing {}: {error}", original.target.display()));
         }
     }
-
+    if let Err(error) = discard_staged_with(&journal.staged, |path| std::fs::remove_file(path)) {
+        failures.push(error.to_string());
+    }
     if failures.is_empty() {
         Ok(())
     } else {
@@ -441,72 +679,61 @@ fn rollback_publication(
     }
 }
 
-fn backup_originals(
-    targets: impl IntoIterator<Item = PathBuf>,
-) -> crate::ConfigResult<Vec<OriginalFile>> {
-    let mut originals = Vec::new();
-    for target in targets {
-        let (exists, protected) = match std::fs::symlink_metadata(&target) {
-            Ok(metadata) => (true, metadata.file_type().is_dir()),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => (false, false),
-            Err(error) => {
-                let primary: ConfigError = anyhow::Error::new(error)
-                    .context(format!("checking publication target {}", target.display()))
-                    .into();
-                if let Err(recovery) = rollback_publication(&originals, &BTreeSet::new()) {
-                    return Err(transaction_failure(primary, recovery));
-                }
-                return Err(primary);
-            }
-        };
-        let backup = if exists && !protected {
-            let backup = match next_rollback_path(&target) {
-                Ok(backup) => backup,
-                Err(primary) => {
-                    if let Err(recovery) = rollback_publication(&originals, &BTreeSet::new()) {
-                        return Err(transaction_failure(primary, recovery));
-                    }
-                    return Err(primary);
-                }
-            };
-            if let Err(error) = std::fs::rename(&target, &backup) {
-                let primary: ConfigError = anyhow::Error::new(error)
-                    .context(format!(
-                        "moving {} to its rollback sibling {}",
-                        target.display(),
-                        backup.display()
-                    ))
-                    .into();
-                if let Err(recovery) = rollback_publication(&originals, &BTreeSet::new()) {
-                    return Err(transaction_failure(primary, recovery));
-                }
-                return Err(primary);
-            }
-            Some(backup)
-        } else {
-            None
-        };
-        originals.push(OriginalFile {
-            target,
-            backup,
-            protected,
-        });
+fn recover_committed_publication(
+    config_file: &Path,
+    journal: &PublicationJournal,
+) -> crate::ConfigResult<()> {
+    let originals = journal_originals(journal);
+    let mut failures = Vec::new();
+    if let Err(error) = discard_backups(&originals) {
+        failures.push(error.to_string());
     }
-    Ok(originals)
+    if let Err(error) = discard_staged_with(&journal.staged, |path| std::fs::remove_file(path)) {
+        failures.push(error.to_string());
+    }
+    if failures.is_empty() {
+        remove_publication_journal(config_file)
+    } else {
+        Err(anyhow::anyhow!(
+            "committed configuration cleanup is incomplete: {}",
+            failures.join("; ")
+        )
+        .into())
+    }
 }
 
-fn discard_backups(originals: &[OriginalFile]) -> crate::ConfigResult<()> {
-    for original in originals {
-        let Some(backup) = &original.backup else {
-            continue;
-        };
-        if let Err(error) = std::fs::remove_file(backup) {
-            return Err(ConfigError::Other(anyhow::Error::new(error).context(
-                format!("removing rollback sibling {}", backup.display()),
-            )));
+/// Recover a publication interrupted after staging or during publication.
+///
+/// The journal is written and synced before any authoritative file is moved.
+/// A prepared transaction is rolled back; a committed transaction is retained
+/// and only its rollback siblings are cleaned. This function runs while the
+/// caller holds the config write lock.
+pub(crate) fn recover_pending_publication(config_file: &Path) -> crate::ConfigResult<()> {
+    let path = publication_journal_path(config_file);
+    let raw = match std::fs::read_to_string(&path) {
+        Ok(raw) => raw,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => {
+            return Err(anyhow::Error::new(error)
+                .context(format!("reading publication journal {}", path.display()))
+                .into());
         }
+    };
+    let journal: PublicationJournal = toml::from_str(&raw)
+        .with_context(|| format!("parsing publication journal {}", path.display()))?;
+    if journal.version != PUBLICATION_JOURNAL_VERSION {
+        return Err(ConfigError::msg(format!(
+            "unsupported configuration publication journal version {}",
+            journal.version
+        )));
     }
-    Ok(())
+    match journal.phase {
+        PublicationPhase::Prepared => {
+            restore_prepared_publication(&journal)?;
+            remove_publication_journal(config_file)
+        }
+        PublicationPhase::Committed => recover_committed_publication(config_file, &journal),
+    }
 }
 
 fn apply_xdg_profile_candidate(
@@ -549,6 +776,7 @@ impl ConfigEditor {
     pub fn open_detailed(paths: &JackinPaths) -> crate::ConfigResult<(Self, BootstrapReport)> {
         let lock = acquire_config_write_lock(&paths.config_file)?;
         paths.ensure_base_dirs()?;
+        recover_pending_publication(&paths.config_file)?;
         let mut report = BootstrapReport::default();
         if !paths.config_file.exists() {
             let mut initial = AppConfig::default();
@@ -884,13 +1112,11 @@ impl ConfigEditor {
                 }
                 let mut staged = Vec::with_capacity(self.workspace_docs.len() + 1);
                 staged.push(PendingWrite {
-                    target: self.path.clone(),
                     staged: stage(&self.path, &global_contents)?,
                 });
                 for (name, doc) in &self.workspace_docs {
                     let target = self.workspace_file(name);
                     staged.push(PendingWrite {
-                        target: target.clone(),
                         staged: stage(&target, &doc.to_string())?,
                     });
                 }
@@ -907,27 +1133,43 @@ impl ConfigEditor {
                         .iter()
                         .map(|name| self.workspace_file(name)),
                 );
-                let originals = backup_originals(targets)?;
-                let mut attempted = BTreeSet::new();
-                let mut commit_error = None;
+                let originals = prepare_originals(targets)?;
+                let prepared_journal =
+                    journal_from(PublicationPhase::Prepared, &originals, &staged);
+                write_publication_journal(&self.path, &prepared_journal)?;
+
+                if let Err(error) = backup_originals(&originals) {
+                    return Err(match recover_pending_publication(&self.path) {
+                        Ok(()) => error,
+                        Err(recovery) => transaction_failure(error, recovery),
+                    });
+                }
+
                 for pending in staged {
-                    attempted.insert(pending.target.clone());
                     if let Err(error) = commit(pending.staged) {
-                        commit_error = Some(error);
-                        break;
+                        return Err(match recover_pending_publication(&self.path) {
+                            Ok(()) => error,
+                            Err(recovery) => transaction_failure(error, recovery),
+                        });
                     }
                 }
 
-                if let Some(error) = commit_error {
-                    if let Err(recovery) = rollback_publication(&originals, &attempted) {
-                        return Err(transaction_failure(error, recovery));
-                    }
-                    return Err(error);
+                let committed_journal = journal_from(PublicationPhase::Committed, &originals, &[]);
+                if let Err(error) = write_publication_journal(&self.path, &committed_journal) {
+                    return Err(match recover_pending_publication(&self.path) {
+                        Ok(()) => error,
+                        Err(recovery) => transaction_failure(error, recovery),
+                    });
                 }
 
                 if let Err(error) = discard_backups(&originals) {
                     return Err(anyhow::Error::new(error)
                         .context("configuration committed but rollback cleanup failed")
+                        .into());
+                }
+                if let Err(error) = remove_publication_journal(&self.path) {
+                    return Err(anyhow::Error::new(error)
+                        .context("configuration committed but publication journal cleanup failed")
                         .into());
                 }
                 Ok(config)
