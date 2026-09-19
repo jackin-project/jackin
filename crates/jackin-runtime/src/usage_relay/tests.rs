@@ -556,6 +556,33 @@ async fn usage_relay_impossible_socket_path_skips_discovery() {
     assert!(!guard.socket_path.as_ref().unwrap().exists());
 }
 
+#[test]
+fn apple_usage_relay_supervisor_binding_is_root_root_only() {
+    let capability = capability("allowed");
+    let allowlist = UsageCapabilitySet::new(vec![capability.clone()]);
+    let peer_capabilities = BTreeMap::new();
+    let operation = UsageBrokerOperation::CurrentForCapability { capability };
+
+    assert!(peer_authorized(
+        Some((0, 0)),
+        &operation,
+        &allowlist,
+        &peer_capabilities,
+    ));
+    assert!(!peer_authorized(
+        Some((0, 1)),
+        &operation,
+        &allowlist,
+        &peer_capabilities,
+    ));
+    assert!(!peer_authorized(
+        None,
+        &operation,
+        &allowlist,
+        &peer_capabilities,
+    ));
+}
+
 fn current_peer(path: &Path) -> (u32, u32) {
     let metadata = fs::metadata(path).unwrap();
     (metadata.uid(), metadata.gid())

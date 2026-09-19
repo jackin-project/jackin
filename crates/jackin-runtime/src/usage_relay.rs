@@ -733,8 +733,15 @@ fn peer_authorized(
     let Some((uid, gid)) = peer else {
         return false;
     };
+    // This listener is used only by the Apple-container backend. Docker
+    // launches the capsule-local proxy instead, where the supervisor is
+    // authenticated by its kernel PID. Apple launches the capsule supervisor
+    // as root:root and does not provision sudo for session identities, so keep
+    // that backend-specific launch identity explicit rather than treating any
+    // UID 0 as a generic relay authority.
+    let is_apple_supervisor = (uid, gid) == (0, 0);
     allowlist.authorize(capability).is_ok()
-        && (uid == 0 || peer_capabilities.get(&(uid, gid)) == Some(capability))
+        && (is_apple_supervisor || peer_capabilities.get(&(uid, gid)) == Some(capability))
 }
 
 fn operation_capability(operation: &UsageBrokerOperation) -> Option<&UsageAccountCapability> {

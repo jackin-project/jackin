@@ -103,10 +103,12 @@ fn usage_relay_binds_session_peer_to_its_capability() {
     };
     let authorization = UsageRelayAuthorization::from_config(&config).unwrap();
     let peer_a = PeerIdentity {
+        pid: None,
         uid: 2_001,
         gid: 2_001,
     };
     let peer_b = PeerIdentity {
+        pid: None,
         uid: 2_002,
         gid: 2_002,
     };
@@ -137,6 +139,60 @@ fn usage_relay_binds_session_peer_to_its_capability() {
     ));
 }
 
+#[test]
+fn usage_relay_rejects_agent_root_but_accepts_capsule_supervisor() {
+    let account = capability("account-a");
+    let config = CapsuleConfig {
+        instances: vec!["session-a".to_owned()],
+        usage_capabilities: BTreeMap::from([("session-a".to_owned(), account.clone())]),
+        instance_identities: BTreeMap::from([(
+            "session-a".to_owned(),
+            SessionIdentity {
+                uid: 2_001,
+                gid: 2_001,
+            },
+        )]),
+        ..CapsuleConfig::default()
+    };
+    let authorization = UsageRelayAuthorization::from_config(&config).unwrap();
+    let operation = UsageBrokerOperation::CurrentForCapability {
+        capability: account,
+    };
+
+    assert!(!authorization.authorizes(
+        Some(PeerIdentity {
+            pid: Some(2),
+            uid: 0,
+            gid: 0,
+        }),
+        &operation,
+    ));
+    assert!(!authorization.authorizes(
+        Some(PeerIdentity {
+            pid: None,
+            uid: 0,
+            gid: 0,
+        }),
+        &operation,
+    ));
+    assert!(!authorization.authorizes(
+        Some(PeerIdentity {
+            pid: Some(1),
+            uid: 0,
+            gid: 1,
+        }),
+        &operation,
+    ));
+    assert!(authorization.authorizes(
+        Some(PeerIdentity {
+            pid: Some(1),
+            uid: 0,
+            gid: 0,
+        }),
+        &operation,
+    ));
+}
+
 fn capability(account_id: &str) -> UsageAccountCapability {
     UsageAccountCapability {
         account_id: account_id.to_owned(),
@@ -147,6 +203,7 @@ fn capability(account_id: &str) -> UsageAccountCapability {
 fn current_peer(path: &Path) -> PeerIdentity {
     let metadata = std::fs::metadata(path).unwrap();
     PeerIdentity {
+        pid: Some(std::process::id()),
         uid: metadata.uid(),
         gid: metadata.gid(),
     }

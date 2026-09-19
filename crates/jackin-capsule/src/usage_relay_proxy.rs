@@ -30,16 +30,19 @@ type Pending = Arc<Mutex<BTreeMap<u64, oneshot::Sender<UsageBrokerResponse>>>>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 struct PeerIdentity {
+    pid: Option<u32>,
     uid: u32,
     gid: u32,
 }
+
+const CAPSULE_SUPERVISOR_PID: u32 = 1;
 
 /// Immutable capability binding loaded from the host-validated Capsule config.
 /// Session peers get exactly one capability through their kernel UID/GID; the
 /// root Capsule supervisor may use the launch-wide set for daemon refreshes.
 #[derive(Debug, Clone, Default)]
 struct UsageRelayAuthorization {
-    by_peer: BTreeMap<PeerIdentity, UsageAccountCapability>,
+    by_peer: BTreeMap<(u32, u32), UsageAccountCapability>,
     launch_capabilities: BTreeSet<UsageAccountCapability>,
 }
 
@@ -65,7 +68,7 @@ impl UsageRelayAuthorization {
             anyhow::ensure!(
                 authorization
                     .by_peer
-                    .insert(peer, capability.clone())
+                    .insert((peer.uid, peer.gid), capability.clone())
                     .is_none(),
                 "multiple usage instances share Unix identity {peer:?}"
             );
@@ -78,17 +81,19 @@ impl UsageRelayAuthorization {
         let Some(capability) = operation_capability(operation) else {
             return false;
         };
-        match peer {
-            Some(PeerIdentity { uid: 0, .. }) => self.launch_capabilities.contains(capability),
-            Some(peer) => self.by_peer.get(&peer) == Some(capability),
-            None => false,
+        let Some(peer) = peer else {
+            return false;
+        };
+        if peer.uid == 0 && peer.gid == 0 && peer.pid == Some(CAPSULE_SUPERVISOR_PID) {
+            return self.launch_capabilities.contains(capability);
         }
+        self.by_peer.get(&(peer.uid, peer.gid)) == Some(capability)
     }
 
     #[cfg(test)]
     fn for_peer(peer: PeerIdentity, capability: UsageAccountCapability) -> Self {
         Self {
-            by_peer: BTreeMap::from([(peer, capability.clone())]),
+            by_peer: BTreeMap::from([((peer.uid, peer.gid), capability.clone())]),
             launch_capabilities: BTreeSet::from([capability]),
         }
     }
@@ -97,6 +102,7 @@ impl UsageRelayAuthorization {
 impl From<SessionIdentity> for PeerIdentity {
     fn from(identity: SessionIdentity) -> Self {
         Self {
+            pid: None,
             uid: identity.uid,
             gid: identity.gid,
         }
@@ -184,6 +190,9 @@ where
                 let pending = Arc::clone(&pending);
                 let authorization = Arc::clone(&authorization);
                 let peer = stream.peer_cred().ok().map(|credentials| PeerIdentity {
+                    pid: credentials
+                        .pid()
+                        .and_then(|pid| u32::try_from(pid).ok()),
                     uid: credentials.uid(),
                     gid: credentials.gid(),
                 });

@@ -56,6 +56,15 @@ created only inside a Capsule are not monitored until a separate secure-enrollme
 design exists. The former writable `/jackin/usage-shared` snapshot/cooldown/lock tree
 is removed and is not a fallback.
 
+The Docker relay proxy does not treat container root as the supervisor: launch-wide
+capabilities require the kernel peer tuple `(pid=1, uid=0, gid=0)`, which is the
+Capsule daemon. Session peers remain bound to their exact configured `(uid, gid)`.
+The Apple-container backend uses the host relay directly; its launch contract runs
+the Capsule supervisor as `root:root` and does not provision sudo for session
+identities, so that backend retains an explicit `root:root` supervisor residual.
+If Apple-container ever grants sessions a supported path to UID 0, the direct host
+relay must gain a distinct supervisor credential before that profile is enabled.
+
 ## Container path convention: everything jackin❯ owns lives under `/jackin/` (hard rule)
 
 **Every path jackin❯ creates, mounts, or owns inside role container must live under `/jackin/`.** No FHS-borrowed top-level directories (`/run/jackin/`, `/var/lib/jackin/`, `/opt/jackin/`, `/etc/jackin/`), no scattered locations to discover one-by-one. Operator running `ls /jackin/` inside any role container must see complete map of jackin-owned state in one place.
