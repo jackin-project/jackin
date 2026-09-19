@@ -64,10 +64,23 @@ const OSC_EVIDENCE_MAX_CHARS: usize = 256;
 pub const SESSION_ENV_PASSTHROUGH: &[&str] = &[
     "GIT_AUTHOR_NAME",
     "GIT_AUTHOR_EMAIL",
-    "GH_TOKEN",
     "JACKIN_GIT_COAUTHOR_TRAILER",
     "JACKIN_GIT_DCO",
     "TZ",
+];
+
+/// Host credentials that are capabilities, not session ambient state.
+///
+/// These names may be resolved only through the operator-approved
+/// `jackin-exec` path. They are removed from both the inherited process
+/// environment and the session override allowlist before an agent or shell
+/// starts. Keeping this list separate from account credentials is deliberate:
+/// GitHub access is an on-demand capability, not an account selected for an
+/// agent pane.
+pub const EXPLICIT_CAPABILITY_ENV_NAMES: &[&str] = &[
+    jackin_core::GH_TOKEN_ENV_NAME,
+    jackin_core::GITHUB_TOKEN_ENV_NAME,
+    jackin_core::GH_ENTERPRISE_TOKEN_ENV_NAME,
 ];
 
 /// True when an OSC 8 `URI` payload is safe to forward to the
@@ -1669,6 +1682,7 @@ pub fn build_agent_command(spec: &AgentSpawnSpec<'_>) -> CommandBuilder {
         Some(spec.instance),
         container_paths::ENTRYPOINT,
     );
+    remove_ambient_capability_env(&mut cmd);
     for arg in agent_model_args(spec.agent, spec.model) {
         cmd.arg(arg);
     }
@@ -1681,7 +1695,7 @@ pub fn build_agent_command(spec: &AgentSpawnSpec<'_>) -> CommandBuilder {
         }
     }
     for (k, v) in spec.env_passthrough {
-        if !jackin_core::is_account_env(k) && !is_folder_env(k) {
+        if !jackin_core::is_account_env(k) && !is_folder_env(k) && !is_explicit_capability_env(k) {
             cmd.env(k, v);
         }
     }
@@ -1769,11 +1783,12 @@ pub fn build_shell_command(
 ) -> CommandBuilder {
     let shell = shell_executable();
     let mut cmd = isolated_command(identity, None, &shell);
+    remove_ambient_capability_env(&mut cmd);
     for name in jackin_core::account_env_names() {
         cmd.env_remove(name);
     }
     for (k, v) in env_passthrough {
-        if !jackin_core::is_account_env(k) {
+        if !jackin_core::is_account_env(k) && !is_explicit_capability_env(k) {
             cmd.env(k, v);
         }
     }
@@ -1782,6 +1797,16 @@ pub fn build_shell_command(
     apply_terminal_env(&mut cmd);
     cmd.cwd(cwd);
     cmd
+}
+
+fn is_explicit_capability_env(name: &str) -> bool {
+    EXPLICIT_CAPABILITY_ENV_NAMES.contains(&name)
+}
+
+fn remove_ambient_capability_env(cmd: &mut CommandBuilder) {
+    for name in EXPLICIT_CAPABILITY_ENV_NAMES {
+        cmd.env_remove(name);
+    }
 }
 
 /// Build the internal root-supervisor wrapper command. The wrapper validates

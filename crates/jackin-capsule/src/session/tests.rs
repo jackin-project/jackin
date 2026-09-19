@@ -3,10 +3,11 @@
 
 //! Tests for `session`.
 use super::{
-    AgentSpawnSpec, AgentState, OscPolicy, Session, SessionEvent, SessionTerminal,
-    agent_model_args, build_agent_command, build_shell_command, child_exit_reason, emit_pty_exit,
-    emit_pty_spawn, inject_status_env, isolated_wrapper_args, osc8_uri_is_safe,
-    pty_exit_error_type, pty_exit_reason, validate_spawn_token_syntax,
+    AgentSpawnSpec, AgentState, EXPLICIT_CAPABILITY_ENV_NAMES, OscPolicy, SESSION_ENV_PASSTHROUGH,
+    Session, SessionEvent, SessionTerminal, agent_model_args, build_agent_command,
+    build_shell_command, child_exit_reason, emit_pty_exit, emit_pty_spawn, inject_status_env,
+    isolated_wrapper_args, osc8_uri_is_safe, pty_exit_error_type, pty_exit_reason,
+    validate_spawn_token_syntax,
 };
 
 /// Primary-layout spawn spec for `agent`/`instance`.
@@ -786,6 +787,33 @@ fn amp_command_exports_xdg_data_home_as_durable_parent() {
             .and_then(|value| value.to_str()),
         Some("/home/agent/.local/share")
     );
+}
+
+#[test]
+fn agent_and_shell_children_require_explicit_github_capability() {
+    let inherited = EXPLICIT_CAPABILITY_ENV_NAMES
+        .iter()
+        .map(|name| ((*name).to_owned(), "ambient-secret".to_owned()))
+        .collect::<Vec<_>>();
+    let agent = build_agent_command(&spawn_spec("codex", "codex-work", None, &inherited));
+    let shell = build_shell_command(
+        &inherited,
+        Path::new("/workspace"),
+        "test",
+        jackin_protocol::SessionIdentity {
+            uid: 2_000,
+            gid: 2_000,
+        },
+    );
+
+    for name in EXPLICIT_CAPABILITY_ENV_NAMES {
+        assert!(agent.get_env(name).is_none(), "agent inherited {name}");
+        assert!(shell.get_env(name).is_none(), "shell inherited {name}");
+        assert!(
+            !SESSION_ENV_PASSTHROUGH.contains(name),
+            "ambient capability {name} is still in the session allowlist"
+        );
+    }
 }
 
 #[test]

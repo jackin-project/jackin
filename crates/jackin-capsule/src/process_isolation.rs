@@ -5,6 +5,16 @@
 //! work in host bind mounts, and are confined with Landlock before `exec`.
 //! Landlock is required rather than best-effort because DAC override would
 //! otherwise let one slot walk into another slot's bind mount.
+//!
+//! The session boundary is intentionally layered. On Landlock ABI 9 and
+//! newer, pathname Unix-socket resolution is denied outside explicitly
+//! writable session roots. Older kernels only get the ABI-3 filesystem rules;
+//! the daemon's kernel peer-UID authorization is then the control-socket
+//! boundary. `/jackin/state` remains a shared writable mount because the
+//! current runtime uses it for shared Git configuration and lifecycle state;
+//! it is a documented residual, not an instance-isolation claim. A future
+//! per-session state layout must remove that residual before this module can
+//! claim full writable-state isolation.
 
 #[cfg(target_os = "linux")]
 use anyhow::Context;
@@ -134,6 +144,8 @@ mod linux {
     const ACCESS_MAKE_SYM: u64 = 1 << 12;
     const ACCESS_REFER: u64 = 1 << 13;
     const ACCESS_TRUNCATE: u64 = 1 << 14;
+    const ACCESS_RESOLVE_UNIX: u64 = 1 << 16;
+    const LANDLOCK_ABI_RESOLVE_UNIX: libc::c_long = 9;
 
     pub(super) const TRAVERSE: u64 = ACCESS_EXECUTE;
     pub(super) const READ_FILE_ONLY: u64 = ACCESS_EXECUTE | ACCESS_READ_FILE;
@@ -151,6 +163,7 @@ mod linux {
         | ACCESS_REFER
         | ACCESS_TRUNCATE;
     pub(super) const FULL: u64 = READ_ONLY | WRITABLE;
+    const FULL_WITH_UNIX: u64 = FULL | ACCESS_RESOLVE_UNIX;
 
     // Pass only the ABI-1 prefix to create_ruleset. ABI 3 accepts this
     // prefix, and this boundary does not use the later network/scoped fields;
@@ -222,7 +235,10 @@ mod linux {
             "isolated session cwd cannot be a capsule or agent-private path"
         );
         let mut rules = Vec::new();
-        required_exact_rule(&mut rules, cwd, FULL);
+        // The workspace and selected slot roots may contain legitimate
+        // process-local Unix sockets. Sensitive `/jackin/run` sockets never
+        // receive this bit.
+        required_exact_rule(&mut rules, cwd, FULL_WITH_UNIX);
         required_exact_rule(
             &mut rules,
             Path::new(jackin_core::container_paths::STATE_DIR),
@@ -258,7 +274,7 @@ mod linux {
         for path in ["/proc/self", "/proc/thread-self"] {
             optional_exact_rule(&mut rules, Path::new(path), READ_ONLY);
         }
-        optional_exact_rule(&mut rules, Path::new("/tmp"), FULL);
+        optional_exact_rule(&mut rules, Path::new("/tmp"), FULL_WITH_UNIX);
 
         // Image-baked tools and shell configuration are shared, but are not
         // account slots. Slot roots below are the only mutable account paths.
@@ -285,7 +301,7 @@ mod linux {
             "/home/agent/.zshrc",
             "/home/agent/.zshenv",
         ] {
-            optional_exact_rule(&mut rules, Path::new(path), FULL);
+            optional_exact_rule(&mut rules, Path::new(path), FULL_WITH_UNIX);
         }
         for path in [
             jackin_core::container_paths::CAPSULE_CONFIG,
@@ -311,7 +327,7 @@ mod linux {
             for path in paths {
                 let path_ref = Path::new(path);
                 let access = if path_ref.is_dir() {
-                    FULL
+                    FULL_WITH_UNIX
                 } else {
                     // Forwarded auth files are Docker/Apple read-only mounts;
                     // keep the Landlock grant read-only too.
@@ -379,7 +395,12 @@ mod linux {
             bail!("Landlock ABI 3 is required for credential isolation; kernel reported {abi}");
         }
         let handled = RulesetAttr {
-            handled_access_fs: FULL,
+            handled_access_fs: FULL
+                | if abi >= LANDLOCK_ABI_RESOLVE_UNIX {
+                    ACCESS_RESOLVE_UNIX
+                } else {
+                    0
+                },
         };
         // SAFETY: `handled` is a valid, initialized ruleset attribute and its
         // size matches the ABI structure passed to the kernel.
@@ -422,7 +443,7 @@ mod linux {
                 // READ_DIR rights. Most rules are directories, but selected
                 // auth mounts and runtime files are exact regular files.
                 allowed_access: if rule.path.is_dir() {
-                    rule.access
+                    access_for_abi(rule.access, abi)
                 } else {
                     rule.access
                         & (ACCESS_EXECUTE | ACCESS_WRITE_FILE | ACCESS_READ_FILE | ACCESS_TRUNCATE)
@@ -464,6 +485,14 @@ mod linux {
                 .context("activate required Landlock credential boundary");
         }
         Ok(())
+    }
+
+    fn access_for_abi(access: u64, abi: libc::c_long) -> u64 {
+        if abi >= LANDLOCK_ABI_RESOLVE_UNIX {
+            access
+        } else {
+            access & !ACCESS_RESOLVE_UNIX
+        }
     }
 
     pub(super) fn drop_privileges(identity: SessionIdentity) -> Result<()> {
@@ -548,8 +577,8 @@ mod linux {
 #[cfg(all(test, target_os = "linux"))]
 mod tests {
     use super::linux::{
-        FULL, READ_FILE_ONLY, Rule, add_execute_only_ancestors, drop_privileges, install_landlock,
-        rules_for,
+        ACCESS_RESOLVE_UNIX, FULL, FULL_WITH_UNIX, READ_FILE_ONLY, Rule, access_for_abi,
+        add_execute_only_ancestors, drop_privileges, install_landlock, rules_for,
     };
     use jackin_protocol::CapsuleConfig;
     use std::collections::BTreeMap;
@@ -618,6 +647,72 @@ mod tests {
                 .iter()
                 .any(|rule| rule.path == Path::new("/jackin/runtime")
                     && rule.access == super::linux::TRAVERSE)
+        );
+    }
+
+    #[test]
+    fn socket_resolution_is_only_granted_to_non_sensitive_roots_on_abi9() {
+        assert_eq!(access_for_abi(FULL_WITH_UNIX, 3), FULL);
+        assert_eq!(access_for_abi(FULL_WITH_UNIX, 9), FULL_WITH_UNIX);
+        assert_eq!(
+            access_for_abi(super::linux::TRAVERSE, 9),
+            super::linux::TRAVERSE
+        );
+
+        let config = CapsuleConfig {
+            instances: vec!["slot-a".to_owned()],
+            instance_mount_paths: BTreeMap::from([(
+                "slot-a".to_owned(),
+                vec!["/home/agent/.claude-a".to_owned()],
+            )]),
+            ..CapsuleConfig::default()
+        };
+        let rules = rules_for(&config, Some("slot-a"), Path::new("/workspace/project"))
+            .expect("construct Landlock rules");
+        for socket in [
+            jackin_core::container_paths::CAPSULE_SOCKET,
+            jackin_core::container_paths::HOST_SOCK,
+            jackin_core::container_paths::USAGE_SOCK,
+        ] {
+            assert!(
+                rules.iter().all(|rule| {
+                    rule.path != Path::new(socket) || rule.access & ACCESS_RESOLVE_UNIX == 0
+                }),
+                "sensitive socket received ResolveUnix: {socket}"
+            );
+        }
+        assert!(
+            rules.iter().any(|rule| {
+                rule.path == Path::new("/workspace/project")
+                    && rule.access & ACCESS_RESOLVE_UNIX != 0
+            }),
+            "workspace must retain local Unix-socket behavior on ABI9"
+        );
+    }
+
+    #[test]
+    fn shared_state_residual_is_explicit_and_not_slot_isolation() {
+        let config = CapsuleConfig {
+            instances: vec!["slot-a".to_owned()],
+            instance_mount_paths: BTreeMap::from([(
+                "slot-a".to_owned(),
+                vec!["/home/agent/.claude-a".to_owned()],
+            )]),
+            ..CapsuleConfig::default()
+        };
+        let rules = rules_for(&config, Some("slot-a"), Path::new("/workspace/project"))
+            .expect("construct Landlock rules");
+        let state = rules
+            .iter()
+            .find(|rule| rule.path == Path::new(jackin_core::container_paths::STATE_DIR))
+            .expect("shared state rule");
+        assert_eq!(state.access, FULL);
+        assert!(
+            rules.iter().any(|rule| {
+                rule.path == Path::new(jackin_core::container_paths::RUN_DIR)
+                    && rule.access == super::linux::TRAVERSE
+            }),
+            "run directory must remain traverse-only in the filesystem policy"
         );
     }
 
