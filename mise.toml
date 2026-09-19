@@ -468,6 +468,7 @@ esac
 
 source_ref="${VELNOR_SOURCE_REF:-refs/heads/main}"
 [ "$source_ref" = "refs/heads/main" ] || { echo "preview source ref must be refs/heads/main: $source_ref" >&2; exit 1; }
+source_repository="jackin-project/jackin"
 base_version="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)"
 case "$base_version" in
   ''|*[!0-9.]*|.*|*.|*..*) echo "workspace version is not X.Y.Z: $base_version" >&2; exit 1 ;;
@@ -512,6 +513,29 @@ payloads=(
   jackin-capsule-aarch64-unknown-linux-gnu.tar.gz
   jackin-capsule-x86_64-unknown-linux-gnu.tar.gz
 )
+supporting_assets=(
+  jackin-aarch64-apple-darwin.tar.gz.sha256
+  jackin-aarch64-apple-darwin.tar.gz.bundle
+  jackin-aarch64-apple-darwin.tar.gz.sbom.json
+  jackin-x86_64-apple-darwin.tar.gz.sha256
+  jackin-x86_64-apple-darwin.tar.gz.bundle
+  jackin-x86_64-apple-darwin.tar.gz.sbom.json
+  jackin-aarch64-unknown-linux-gnu.tar.gz.sha256
+  jackin-aarch64-unknown-linux-gnu.tar.gz.bundle
+  jackin-aarch64-unknown-linux-gnu.tar.gz.sbom.json
+  jackin-x86_64-unknown-linux-gnu.tar.gz.sha256
+  jackin-x86_64-unknown-linux-gnu.tar.gz.bundle
+  jackin-x86_64-unknown-linux-gnu.tar.gz.sbom.json
+  jackin-capsule-aarch64-unknown-linux-gnu.tar.gz.sha256
+  jackin-capsule-aarch64-unknown-linux-gnu.tar.gz.bundle
+  jackin-capsule-aarch64-unknown-linux-gnu.tar.gz.sbom.json
+  jackin-capsule-x86_64-unknown-linux-gnu.tar.gz.sha256
+  jackin-capsule-x86_64-unknown-linux-gnu.tar.gz.bundle
+  jackin-capsule-x86_64-unknown-linux-gnu.tar.gz.sbom.json
+  SHA256SUMS
+  capsule-manifest.json
+  capsule-manifest.json.bundle
+)
 for payload in "${payloads[@]}"; do
   test -s "$package_dir/$payload"
   test -s "$package_dir/$payload.sha256"
@@ -536,9 +560,23 @@ LC_ALL=C sha256sum \
 
 jq -n \
   --arg version "$version" \
+  --arg arm64 "$(awk 'NR == 1 {print $1}' "$package_dir/jackin-capsule-aarch64-unknown-linux-gnu.tar.gz.sha256")" \
+  --arg x86 "$(awk 'NR == 1 {print $1}' "$package_dir/jackin-capsule-x86_64-unknown-linux-gnu.tar.gz.sha256")" \
+  '{version: $version, targets: {"aarch64-unknown-linux-gnu": $arm64, "x86_64-unknown-linux-gnu": $x86}}' \
+  > "$package_dir/capsule-manifest.json"
+cosign sign-blob \
+  --bundle "$package_dir/capsule-manifest.json.bundle" \
+  --yes "$package_dir/capsule-manifest.json"
+
+for supporting_asset in "${supporting_assets[@]}"; do
+  test -s "$package_dir/$supporting_asset"
+done
+
+jq -n \
+  --arg version "$version" \
   --arg source_commit "$source_commit" \
-  --arg source_ref "refs/heads/main" \
-  --arg source_repository "jackin-project/jackin" \
+  --arg source_ref "$source_ref" \
+  --arg source_repository "$source_repository" \
   --arg schema "velnor.package-release.v1" \
   --argjson assets "$(
     for payload in "${payloads[@]}"; do
@@ -548,32 +586,68 @@ jq -n \
         '{name: $name, sha256: $sha256}'
     done | jq -s .
   )" \
-  '{assets: $assets, schema: $schema, source_commit: $source_commit, source_ref: $source_ref, source_repository: $source_repository, version: $version}' \
+  --argjson supporting_assets "$(
+    for supporting_asset in "${supporting_assets[@]}"; do
+      jq -n \
+        --arg name "$supporting_asset" \
+        --arg sha256 "$(sha256sum "$package_dir/$supporting_asset" | awk '{print $1}')" \
+        '{name: $name, sha256: $sha256}'
+    done | jq -s .
+  )" \
+  '{assets: $assets, schema: $schema, source_commit: $source_commit, source_ref: $source_ref, source_repository: $source_repository, supporting_assets: $supporting_assets, version: $version}' \
   > "$package_dir/release-manifest.json"
+
+payload_count="$(printf '%s\n' "${payloads[@]}" | wc -l | tr -d '[:space:]')"
+supporting_asset_count="$(printf '%s\n' "${supporting_assets[@]}" | wc -l | tr -d '[:space:]')"
+jq -e \
+  --arg schema "velnor.package-release.v1" \
+  --arg source_commit "$source_commit" \
+  --arg source_ref "$source_ref" \
+  --arg source_repository "$source_repository" \
+  --arg version "$version" \
+  --argjson payload_count "$payload_count" \
+  --argjson supporting_asset_count "$supporting_asset_count" \
+  'keys == ["assets", "schema", "source_commit", "source_ref", "source_repository", "supporting_assets", "version"] and
+   .schema == $schema and
+   .source_commit == $source_commit and
+   .source_ref == $source_ref and
+   .source_repository == $source_repository and
+   .version == $version and
+   (.assets | type == "array" and length == $payload_count and all(.[]; (keys == ["name", "sha256"] and (.sha256 | test("^[0-9a-f]{64}$"))))) and
+   (.supporting_assets | type == "array" and length == $supporting_asset_count and all(.[]; (keys == ["name", "sha256"] and (.sha256 | test("^[0-9a-f]{64}$")))))' \
+  "$package_dir/release-manifest.json" >/dev/null
+for payload in "${payloads[@]}"; do
+  expected="$(sha256sum "$package_dir/$payload" | awk '{print $1}')"
+  jq -e --arg name "$payload" --arg sha256 "$expected" \
+    '[.assets[] | select(.name == $name and .sha256 == $sha256)] | length == 1' \
+    "$package_dir/release-manifest.json" >/dev/null
+done
+for supporting_asset in "${supporting_assets[@]}"; do
+  expected="$(sha256sum "$package_dir/$supporting_asset" | awk '{print $1}')"
+  jq -e --arg name "$supporting_asset" --arg sha256 "$expected" \
+    '[.supporting_assets[] | select(.name == $name and .sha256 == $sha256)] | length == 1' \
+    "$package_dir/release-manifest.json" >/dev/null
+done
 
 jq -n \
   --arg source_digest "$source_commit" \
-  --arg source_ref "refs/heads/main" \
-  --arg source_repository "jackin-project/jackin" \
+  --arg source_ref "$source_ref" \
+  --arg source_repository "$source_repository" \
   --slurpfile manifest "$package_dir/release-manifest.json" \
   '{manifest: $manifest[0], source_digest: $source_digest, source_ref: $source_ref, source_repository: $source_repository}' \
   > "$package_dir/identity.json"
 
-jq -e --arg commit "$source_commit" --arg version "$version" \
-  '.schema == "velnor.package-release.v1" and .source_commit == $commit and .version == $version and (.assets | length == 6)' \
-  "$package_dir/release-manifest.json" >/dev/null
-
-arm_checksum="$(cat "$package_dir/jackin-capsule-aarch64-unknown-linux-gnu.tar.gz.sha256")"
-x86_checksum="$(cat "$package_dir/jackin-capsule-x86_64-unknown-linux-gnu.tar.gz.sha256")"
-jq -n \
-  --arg version "$version" \
-  --arg arm64 "$arm_checksum" \
-  --arg x86 "$x86_checksum" \
-  '{version: $version, targets: {"aarch64-unknown-linux-gnu": $arm64, "x86_64-unknown-linux-gnu": $x86}}' \
-  > "$package_dir/capsule-manifest.json"
-cosign sign-blob \
-  --bundle "$package_dir/capsule-manifest.json.bundle" \
-  --yes "$package_dir/capsule-manifest.json"
+jq -e \
+  --arg source_digest "$source_commit" \
+  --arg source_ref "$source_ref" \
+  --arg source_repository "$source_repository" \
+  --slurpfile manifest "$package_dir/release-manifest.json" \
+  'keys == ["manifest", "source_digest", "source_ref", "source_repository"] and
+   .source_digest == $source_digest and
+   .source_ref == $source_ref and
+   .source_repository == $source_repository and
+   .manifest == $manifest[0]' \
+  "$package_dir/identity.json" >/dev/null
 
 printf 'version=%s\nsource_commit=%s\n' "$version" "$source_commit"
 '''
