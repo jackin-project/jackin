@@ -619,11 +619,10 @@ pub fn resolve_account<'a>(
         .and_then(|w| w.roles.get(role))
         .and_then(|r| r.account_bindings.get(&agent))
         .or_else(|| ws.and_then(|w| w.account_bindings.get(&agent)))
-        .or_else(|| {
-            cfg.account_bindings
-                .get(&agent)
-                .filter(|id| ws.is_none_or(|w| w.accounts.contains(id)))
-        });
+        // Keep an inherited global binding in the chain. It is an explicit
+        // account selection, so an unauthorized ID must fail below instead
+        // of disappearing and selecting another workspace account.
+        .or_else(|| cfg.account_bindings.get(&agent));
     if let Some(id) = binding {
         if ws.is_some_and(|w| !w.accounts.contains(id)) {
             return Err(ConfigError::msg(format!(

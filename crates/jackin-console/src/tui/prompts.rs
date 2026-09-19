@@ -226,10 +226,10 @@ pub fn launch_with_committed_agent(
 /// committed-agent launch path and the new-session picker.
 ///
 /// Mirrors `jackin_config::resolve_account` precedence — role binding, then
-/// workspace binding, then the global binding — including its authorization
-/// asymmetry: role/workspace bindings that name an account outside the
-/// workspace allowlist are hard errors, while an unauthorized global binding
-/// is silently filtered (a global default can never widen workspace access).
+/// workspace binding, then the global binding. Every binding that names an
+/// account outside the workspace allowlist is a hard error; an inherited
+/// global selection cannot widen workspace access or silently choose another
+/// account.
 ///
 /// This is the legacy regime: bindings apply only when no `default_launch`
 /// is configured at any scope. A configured default set is authoritative
@@ -241,8 +241,7 @@ pub enum AgentDefaultResolution {
     /// A binding resolved to a registered, authorized, agent-compatible
     /// account. Launch it directly; never open the picker.
     Launch(String),
-    /// No binding applies (or the global binding was filtered as
-    /// unauthorized). Fall back to the eligible-candidate list.
+    /// No binding applies. Fall back to the eligible-candidate list.
     NoDefault,
     /// An explicit binding exists but is unusable: unknown account id,
     /// unauthorized role/workspace binding, or an agent-incompatible
@@ -285,12 +284,7 @@ pub fn resolve_agent_default(
         .and_then(|w| w.roles.get(role))
         .and_then(|r| r.account_bindings.get(&agent))
         .or_else(|| ws.and_then(|w| w.account_bindings.get(&agent)))
-        .or_else(|| {
-            config
-                .account_bindings
-                .get(&agent)
-                .filter(|id| ws.is_none_or(|w| w.accounts.contains(id)))
-        });
+        .or_else(|| config.account_bindings.get(&agent));
     let Some(id) = binding else {
         return AgentDefaultResolution::NoDefault;
     };

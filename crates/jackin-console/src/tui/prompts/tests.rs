@@ -276,23 +276,25 @@ fn zero_eligible_candidates_without_workspace_errors() {
 }
 
 #[test]
-fn empty_allowlist_errors_despite_global_accounts() {
-    // Empty selection: the saved workspace authorizes nothing, so the
-    // global default is filtered and zero candidates remain — an error,
-    // even though compatible accounts exist globally.
+fn unauthorized_global_binding_hard_errors_without_fallback() {
+    // The saved workspace authorizes a different account. The global
+    // selection is explicit and must not be filtered into a fallback.
     let (mut config, ws) = test_config();
-    config.workspaces.get_mut(ws.as_str()).unwrap().accounts = Vec::new();
+    config.workspaces.get_mut(ws.as_str()).unwrap().accounts = vec!["z-claude".into()];
     config
         .account_bindings
         .insert(Agent::Claude, "a-claude".into());
     let eligible = accounts_for_launch(&config, Some(&ws), Agent::Claude);
-    assert!(eligible.is_empty());
+    assert_eq!(eligible.len(), 1);
 
-    assert_eq!(
-        resolve_agent_default(&config, Some(&ws), ROLE, Agent::Claude),
-        AgentDefaultResolution::NoDefault
+    let resolution = resolve_agent_default(&config, Some(&ws), ROLE, Agent::Claude);
+    assert!(
+        matches!(resolution, AgentDefaultResolution::Invalid(_)),
+        "unauthorized global selection must be invalid; got {resolution:?}"
     );
-    select_launch_account(&config, Some(&ws), ROLE, Agent::Claude, eligible).unwrap_err();
+    let error =
+        select_launch_account(&config, Some(&ws), ROLE, Agent::Claude, eligible).unwrap_err();
+    assert!(error.to_string().contains("not assigned"), "{error:?}");
 }
 
 #[test]
@@ -371,9 +373,9 @@ fn unauthorized_workspace_binding_hard_errors_without_fallback() {
 }
 
 #[test]
-fn unauthorized_global_binding_is_filtered_not_honored() {
+fn unauthorized_global_binding_is_not_filtered_into_fallback() {
     // Global defaults can never widen workspace access: an unauthorized
-    // global binding is ignored and the eligible candidates decide.
+    // global binding is an error, not a reason to choose another account.
     let (mut config, ws) = test_config();
     config
         .account_bindings
@@ -381,13 +383,11 @@ fn unauthorized_global_binding_is_filtered_not_honored() {
     let eligible = accounts_for_launch(&config, Some(&ws), Agent::Claude);
     assert_eq!(eligible.len(), 2);
 
-    assert_eq!(
+    assert!(matches!(
         resolve_agent_default(&config, Some(&ws), ROLE, Agent::Claude),
-        AgentDefaultResolution::NoDefault
-    );
-    let selection =
-        select_launch_account(&config, Some(&ws), ROLE, Agent::Claude, eligible).unwrap();
-    assert_eq!(eligible_ids(&selection), vec!["a-claude", "z-claude"]);
+        AgentDefaultResolution::Invalid(_)
+    ));
+    select_launch_account(&config, Some(&ws), ROLE, Agent::Claude, eligible).unwrap_err();
 }
 
 #[test]
@@ -436,23 +436,20 @@ fn binding_to_unknown_account_errors_at_every_scope() {
 }
 
 #[test]
-fn global_binding_to_unknown_id_is_filtered_like_any_unauthorized_global() {
-    // The global scope cannot distinguish "unknown id" from
-    // "unauthorized id": both fail the allowlist filter and fall back
-    // to the eligible candidates, exactly like `resolve_account`.
+fn global_binding_to_unknown_id_errors_without_fallback() {
+    // A global binding remains an explicit selection when inherited by a
+    // workspace, so an unknown ID is an atomic configuration error.
     let (mut config, ws) = test_config();
     config
         .account_bindings
         .insert(Agent::Claude, "ghost".into());
     let eligible = accounts_for_launch(&config, Some(&ws), Agent::Claude);
 
-    assert_eq!(
+    assert!(matches!(
         resolve_agent_default(&config, Some(&ws), ROLE, Agent::Claude),
-        AgentDefaultResolution::NoDefault
-    );
-    let selection =
-        select_launch_account(&config, Some(&ws), ROLE, Agent::Claude, eligible).unwrap();
-    assert_eq!(eligible_ids(&selection), vec!["a-claude", "z-claude"]);
+        AgentDefaultResolution::Invalid(_)
+    ));
+    select_launch_account(&config, Some(&ws), ROLE, Agent::Claude, eligible).unwrap_err();
 }
 
 #[test]

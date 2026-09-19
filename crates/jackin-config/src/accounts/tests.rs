@@ -27,15 +27,13 @@ fn config() -> (AppConfig, WorkspaceName) {
     (cfg, ws)
 }
 #[test]
-fn workspace_empty_allowlist_never_inherits_global_credentials() {
+fn unauthorized_global_binding_does_not_fall_back_to_workspace_account() {
     let (mut cfg, ws) = config();
+    cfg.workspaces.get_mut(ws.as_str()).unwrap().accounts = vec!["work".into()];
     cfg.account_bindings
         .insert(Agent::Claude, "personal".into());
-    assert!(
-        resolve_account(&cfg, Agent::Claude, Some(&ws), "")
-            .unwrap()
-            .is_none()
-    );
+    let error = resolve_account(&cfg, Agent::Claude, Some(&ws), "").unwrap_err();
+    assert!(error.to_string().contains("not assigned"), "{error}");
     assert_eq!(
         resolve_account(&cfg, Agent::Claude, None, "")
             .unwrap()
@@ -43,6 +41,19 @@ fn workspace_empty_allowlist_never_inherits_global_credentials() {
             .name,
         "Personal"
     );
+}
+
+#[test]
+fn authorized_global_binding_is_inherited_by_workspace() {
+    let (mut cfg, ws) = config();
+    cfg.workspaces.get_mut(ws.as_str()).unwrap().accounts = vec!["personal".into(), "work".into()];
+    cfg.account_bindings
+        .insert(Agent::Claude, "personal".into());
+
+    let resolved = resolve_account(&cfg, Agent::Claude, Some(&ws), "")
+        .unwrap()
+        .unwrap();
+    assert_eq!(resolved.name, "Personal");
 }
 #[test]
 fn sole_allowed_account_selected_and_ambiguity_rejected() {
