@@ -3,7 +3,7 @@
 
 //! Host-only usage broker lifecycle and bounded Unix-socket transport.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, File};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::os::unix::fs::{MetadataExt as _, PermissionsExt as _};
@@ -19,8 +19,8 @@ use jackin_protocol::control::UsageSnapshotStatus;
 use jackin_protocol::usage_broker::{
     USAGE_BROKER_MAX_FRAME_BYTES, USAGE_BROKER_PROTOCOL_VERSION, UsageAccountCapability,
     UsageBrokerOperation, UsageBrokerRequest, UsageBrokerResponse, UsageCoordinationError,
-    UsageCoordinationErrorKind, UsageGenerationView, UsageProjectionRefreshStateV1,
-    UsageProjectionSchemaV1, UsageProjectionV1, UsageRefreshPhase,
+    UsageCoordinationErrorKind, UsageGenerationView, UsageIdentityKindV1,
+    UsageProjectionRefreshStateV1, UsageProjectionSchemaV1, UsageProjectionV1, UsageRefreshPhase,
 };
 use nix::fcntl::{OFlag, open, openat, renameat};
 use nix::sys::signal::kill;
@@ -32,6 +32,7 @@ use crate::coordinator::{
     UsageCoordinator, UsageCoordinatorConfig, UsageProviderExecutor,
 };
 
+use super::accounts::CanonicalAccountSubject;
 use super::discovery::{
     ProviderCredentialEnvResolver, ProviderCredentialRefreshOutcome, ValidatedCredentialBinding,
     ValidatedCredentialSource, discover_usage_sources, refresh_credential_binding,
@@ -257,7 +258,7 @@ impl UsageBrokerHandle {
             .flatten()
             .filter(|entry| entry.requirement.is_forwarded(sources))
             .map(|entry| entry.capability.clone())
-            .collect::<std::collections::BTreeSet<_>>()
+            .collect::<BTreeSet<_>>()
             .into_iter()
             .collect()
     }
@@ -266,10 +267,13 @@ impl UsageBrokerHandle {
 /// Secret-free launch facts proving which credential sources reached a Capsule.
 #[derive(Debug, Clone, Default)]
 pub struct ForwardedUsageSources {
+    /// Exact configured account ids admitted to this Capsule. A provider
+    /// surface alone is never sufficient when several accounts share it.
+    pub selected_account_ids: BTreeSet<String>,
     /// Surface ids with a successfully forwarded profile directory.
-    pub profile_surface_ids: std::collections::BTreeSet<String>,
+    pub profile_surface_ids: BTreeSet<String>,
     /// Governed provider env names present in the Capsule's resolved environment.
-    pub env_keys: std::collections::BTreeSet<String>,
+    pub env_keys: BTreeSet<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -316,11 +320,43 @@ pub fn forwarded_usage_capabilities(
         .bindings
         .iter()
         .filter(|binding| binding.provenance.contains(scope_label))
+        .filter(|binding| {
+            sources.selected_account_ids.is_empty()
+                || binding.provenance.iter().any(|provenance| {
+                    sources
+                        .selected_account_ids
+                        .iter()
+                        .any(|account_id| provenance == &format!("account {account_id}"))
+                })
+        })
         .filter(|binding| forwarding_requirement(binding).is_forwarded(sources))
         .map(capability_for_binding)
-        .collect::<std::collections::BTreeSet<_>>()
+        .collect::<BTreeSet<_>>()
         .into_iter()
         .collect()
+}
+
+/// Resolve one exact configured account to the canonical broker capability
+/// used by Capsule sessions. Multiple source bindings for the same canonical
+/// account collapse to one capability; distinct identities are rejected rather
+/// than guessed.
+#[must_use]
+pub fn usage_capability_for_selected_account(
+    discovery: &ValidatedUsageDiscovery,
+    account_id: &str,
+    surface_id: &str,
+) -> Option<UsageAccountCapability> {
+    let provenance = format!("account {account_id}");
+    let capabilities = discovery
+        .bindings
+        .iter()
+        .filter(|binding| binding.surface.id() == surface_id)
+        .filter(|binding| binding.provenance.contains(&provenance))
+        .map(capability_for_binding)
+        .collect::<BTreeSet<_>>();
+    (capabilities.len() == 1)
+        .then(|| capabilities.into_iter().next())
+        .flatten()
 }
 
 /// Every canonical capability in one validated host discovery generation.
@@ -332,7 +368,7 @@ pub fn usage_broker_capabilities(
         .bindings
         .iter()
         .map(capability_for_binding)
-        .collect::<std::collections::BTreeSet<_>>()
+        .collect::<BTreeSet<_>>()
         .into_iter()
         .collect()
 }
@@ -392,14 +428,12 @@ impl UsageBrokerClient {
         self.execute(UsageBrokerOperation::Current { capability })
     }
 
-    /// Read the one account authorized for a provider surface through a scoped relay.
-    pub fn current_for_surface(
+    /// Read one exact account capability through a scoped relay.
+    pub fn current_for_capability(
         &self,
-        surface_id: impl Into<String>,
+        capability: UsageAccountCapability,
     ) -> Result<UsageGenerationView, UsageCoordinationError> {
-        self.execute(UsageBrokerOperation::CurrentForSurface {
-            surface_id: surface_id.into(),
-        })
+        self.execute(UsageBrokerOperation::CurrentForCapability { capability })
     }
 
     /// Request or join one account generation.
@@ -416,15 +450,15 @@ impl UsageBrokerClient {
         })
     }
 
-    /// Request or join the one account authorized for a provider surface.
-    pub fn refresh_for_surface(
+    /// Request or join one exact account capability through a scoped relay.
+    pub fn refresh_for_capability(
         &self,
-        surface_id: impl Into<String>,
+        capability: UsageAccountCapability,
         observed_generation: u64,
         force: bool,
     ) -> Result<UsageGenerationView, UsageCoordinationError> {
-        self.execute(UsageBrokerOperation::RefreshForSurface {
-            surface_id: surface_id.into(),
+        self.execute(UsageBrokerOperation::RefreshForCapability {
+            capability,
             observed_generation,
             force,
         })
@@ -445,16 +479,16 @@ impl UsageBrokerClient {
         })
     }
 
-    /// Wait for one generation through a scoped provider-surface relay.
-    pub fn join_for_surface(
+    /// Wait for one exact capability generation through a scoped relay.
+    pub fn join_for_capability(
         &self,
-        surface_id: impl Into<String>,
+        capability: UsageAccountCapability,
         generation: u64,
         timeout: Duration,
     ) -> Result<UsageGenerationView, UsageCoordinationError> {
         let timeout_ms = u64::try_from(timeout.as_millis()).unwrap_or(u64::MAX);
-        self.execute(UsageBrokerOperation::JoinForSurface {
-            surface_id: surface_id.into(),
+        self.execute(UsageBrokerOperation::JoinForCapability {
+            capability,
             generation,
             timeout_ms,
         })
@@ -802,6 +836,7 @@ pub fn run_usage_broker_service(
     discovery: ValidatedUsageDiscovery,
     resolver: Arc<dyn ProviderCredentialEnvResolver>,
 ) -> Result<(), UsageCoordinationError> {
+    let identity_metadata = publication_identity_metadata(&discovery);
     let mut bindings = BTreeMap::new();
     for binding in discovery.bindings {
         bindings
@@ -814,13 +849,21 @@ pub fn run_usage_broker_service(
         resolver,
         probe_budget: config.coordinator.provider_timeout,
     });
-    run_usage_broker_service_with_executor(config, executor)
+    run_usage_broker_service_with_executor_and_metadata(config, executor, identity_metadata)
 }
 
 /// Process service seam used by the shipped broker binary and process tests.
 pub fn run_usage_broker_service_with_executor(
     config: UsageBrokerConfig,
     executor: Arc<dyn UsageProviderExecutor>,
+) -> Result<(), UsageCoordinationError> {
+    run_usage_broker_service_with_executor_and_metadata(config, executor, BTreeMap::new())
+}
+
+fn run_usage_broker_service_with_executor_and_metadata(
+    config: UsageBrokerConfig,
+    executor: Arc<dyn UsageProviderExecutor>,
+    identity_metadata: BTreeMap<UsageAccountCapability, publish::AccountIdentityMetadata>,
 ) -> Result<(), UsageCoordinationError> {
     let run_dir = secure_run_directory(&config.data_dir)?;
     let leader_path = run_dir.join(BROKER_LEADER);
@@ -842,7 +885,8 @@ pub fn run_usage_broker_service_with_executor(
         Arc::clone(&coordinator),
         Arc::clone(&projection),
         FileProjectionStateStore::under_data_dir(&config.data_dir),
-    );
+    )
+    .with_identity_metadata(identity_metadata);
     serve(ServeConfig {
         listener,
         coordinator,
@@ -1191,9 +1235,9 @@ fn dispatch(
         | UsageBrokerOperation::CurrentProjectionForSurface
         | UsageBrokerOperation::RequestRefreshForSurface { .. }
         | UsageBrokerOperation::JoinPublicationForSurface { .. } => Err(protocol_error()),
-        UsageBrokerOperation::CurrentForSurface { .. }
-        | UsageBrokerOperation::RefreshForSurface { .. }
-        | UsageBrokerOperation::JoinForSurface { .. } => Err(UsageCoordinationError {
+        UsageBrokerOperation::CurrentForCapability { .. }
+        | UsageBrokerOperation::RefreshForCapability { .. }
+        | UsageBrokerOperation::JoinForCapability { .. } => Err(UsageCoordinationError {
             kind: UsageCoordinationErrorKind::Unauthorized,
             message: "scoped usage operation requires a container relay".to_owned(),
         }),
@@ -1553,6 +1597,47 @@ pub(super) fn capability_for_binding(
         account_id,
         surface_id: binding.surface.id().to_owned(),
     }
+}
+
+/// Preserve the canonical identity evidence that host discovery already
+/// merged before the broker publisher turns generation views into the
+/// Capsule-facing projection. Labels are deliberately not consulted.
+fn publication_identity_metadata(
+    discovery: &ValidatedUsageDiscovery,
+) -> BTreeMap<UsageAccountCapability, publish::AccountIdentityMetadata> {
+    let mut evidence =
+        BTreeMap::<UsageAccountCapability, (UsageIdentityKindV1, BTreeSet<String>)>::new();
+    for binding in &discovery.bindings {
+        let capability = capability_for_binding(binding);
+        let identity_kind = match binding.identity.as_ref().map(|identity| &identity.subject) {
+            Some(CanonicalAccountSubject::ProviderId(_)) => UsageIdentityKindV1::ProviderAccountId,
+            Some(CanonicalAccountSubject::ProviderStableHandle(_)) => {
+                UsageIdentityKindV1::ProviderStableHandle
+            }
+            None => UsageIdentityKindV1::ProviderAccountId,
+        };
+        let entry = evidence
+            .entry(capability)
+            .or_insert_with(|| (identity_kind, BTreeSet::new()));
+        // A provider-issued id is stronger evidence than a stable display
+        // handle if malformed input ever aliases them to one capability.
+        if identity_kind == UsageIdentityKindV1::ProviderAccountId {
+            entry.0 = UsageIdentityKindV1::ProviderAccountId;
+        }
+        entry.1.extend(binding.provenance.iter().cloned());
+    }
+    evidence
+        .into_iter()
+        .map(|(capability, (identity_kind, provenance))| {
+            (
+                capability,
+                publish::AccountIdentityMetadata {
+                    identity_kind,
+                    provenance_count: u32::try_from(provenance.len()).unwrap_or(u32::MAX),
+                },
+            )
+        })
+        .collect()
 }
 
 fn unavailable() -> UsageCoordinationError {

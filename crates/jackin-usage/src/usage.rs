@@ -265,11 +265,14 @@ pub(crate) struct CachedUsage {
 pub struct UsageRefreshTarget {
     pub agent: String,
     pub provider: Option<String>,
+    /// Exact broker authority for the selected account. Surface labels are
+    /// presentation only and must never route a refresh.
+    pub capability: jackin_protocol::usage_broker::UsageAccountCapability,
 }
 
 impl UsageRefreshTarget {
     pub(crate) fn cache_key(&self) -> String {
-        canonical_usage_cache_key(&self.agent, self.provider.as_deref())
+        usage_cache_key_for_broker_account(&self.agent, self.provider.as_deref(), &self.capability)
     }
 }
 
@@ -386,6 +389,26 @@ impl UsageCache {
         self.snapshots.insert(cache_key, CachedUsage { view });
     }
 
+    /// Test-only helper for an exact account snapshot. Production broker
+    /// adoption always uses this same capability-qualified key.
+    #[doc(hidden)]
+    pub fn insert_snapshot_for_capability_for_test(
+        &mut self,
+        agent: &str,
+        focused_provider: Option<&str>,
+        capability: &jackin_protocol::usage_broker::UsageAccountCapability,
+        mut view: FocusedUsageView,
+    ) {
+        if view.focused_agent.is_none() {
+            view.focused_agent = Some(agent.to_owned());
+        }
+        if view.focused_provider.is_none() {
+            view.focused_provider = focused_provider.map(str::to_owned);
+        }
+        let cache_key = usage_cache_key_for_broker_account(agent, focused_provider, capability);
+        self.snapshots.insert(cache_key, CachedUsage { view });
+    }
+
     /// Bench/test helper: write materialized accounts to `path` instead of the
     /// container path. Cross-crate like `insert_snapshot_for_test`.
     #[doc(hidden)]
@@ -419,6 +442,28 @@ impl UsageCache {
         Some("refreshing".to_owned())
     }
 
+    /// Exact-account status-bar lookup used by Capsule sessions. A missing
+    /// capability is intentionally treated as not yet loaded; it must never
+    /// fall back to another account on the same provider surface.
+    pub fn focused_status_bar_label_for_capability(
+        &self,
+        focused_agent: Option<&str>,
+        focused_provider: Option<&str>,
+        capability: Option<&jackin_protocol::usage_broker::UsageAccountCapability>,
+    ) -> Option<String> {
+        let agent = focused_agent?;
+        let Some(capability) = capability else {
+            return Some("refreshing".to_owned());
+        };
+        Some(
+            cached_usage_for_capability(&self.snapshots, agent, focused_provider, capability)
+                .map_or_else(
+                    || "refreshing".to_owned(),
+                    |cached| cached.view.status_bar_label.clone(),
+                ),
+        )
+    }
+
     pub fn account_snapshot_views(&self) -> Vec<AccountUsageSnapshotView> {
         account_snapshot_views_from_cache(&self.snapshots)
     }
@@ -444,6 +489,32 @@ impl UsageCache {
         cached_refreshing_view(agent, focused_provider, now)
     }
 
+    /// Exact-account focused snapshot. Surface-only cache selection is not
+    /// acceptable for a Capsule with duplicate provider accounts.
+    pub fn focused_snapshot_for_capability(
+        &mut self,
+        focused_agent: Option<&str>,
+        focused_provider: Option<&str>,
+        capability: Option<&jackin_protocol::usage_broker::UsageAccountCapability>,
+    ) -> FocusedUsageView {
+        let Some(agent) = focused_agent else {
+            if let Some(provider) = focused_provider {
+                return cached_unavailable_view("usage", Some(provider), now_epoch());
+            }
+            return FocusedUsageView::unavailable("no focused agent session", now_epoch());
+        };
+        let now = now_epoch();
+        let Some(capability) = capability else {
+            return cached_refreshing_view(agent, focused_provider, now);
+        };
+        if let Some(view) =
+            self.cached_focused_usage_view_for_capability(agent, focused_provider, capability)
+        {
+            return view;
+        }
+        cached_refreshing_view(agent, focused_provider, now)
+    }
+
     pub(crate) fn cached_focused_usage_view(
         &self,
         agent: &str,
@@ -451,6 +522,27 @@ impl UsageCache {
     ) -> Option<FocusedUsageView> {
         let mut view = cached_usage_for_target(&self.snapshots, agent, focused_provider)
             .map(|cached| cached.view.clone())?;
+        refresh_cached_updated_label(&mut view, now_epoch());
+        if view.focused_agent.is_none() {
+            view.focused_agent = Some(agent.to_owned());
+        }
+        if view.focused_provider.is_none() {
+            view.focused_provider = focused_provider.map(str::to_owned);
+        }
+        enrich_provider_tabs(&mut view, &self.snapshots);
+        mark_active_tab(&mut view);
+        Some(view)
+    }
+
+    fn cached_focused_usage_view_for_capability(
+        &self,
+        agent: &str,
+        focused_provider: Option<&str>,
+        capability: &jackin_protocol::usage_broker::UsageAccountCapability,
+    ) -> Option<FocusedUsageView> {
+        let mut view =
+            cached_usage_for_capability(&self.snapshots, agent, focused_provider, capability)
+                .map(|cached| cached.view.clone())?;
         refresh_cached_updated_label(&mut view, now_epoch());
         if view.focused_agent.is_none() {
             view.focused_agent = Some(agent.to_owned());
@@ -515,11 +607,13 @@ fn usage_cache_key_for_view(
 fn usage_cache_key_for_broker_account(
     agent: &str,
     focused_provider: Option<&str>,
-    account_id: &str,
+    capability: &jackin_protocol::usage_broker::UsageAccountCapability,
 ) -> String {
     format!(
-        "{}:account-id-v1:{account_id}",
-        canonical_usage_cache_key(agent, focused_provider)
+        "{}:account-id-v1:{}:{}",
+        canonical_usage_cache_key(agent, focused_provider),
+        capability.surface_id,
+        capability.account_id,
     )
 }
 
@@ -572,6 +666,16 @@ fn cached_usage_for_target<'a>(
     focused_provider: Option<&str>,
 ) -> Option<&'a CachedUsage> {
     let key = cached_usage_key_for_target(snapshots, agent, focused_provider)?;
+    snapshots.get(&key)
+}
+
+fn cached_usage_for_capability<'a>(
+    snapshots: &'a HashMap<String, CachedUsage>,
+    agent: &str,
+    focused_provider: Option<&str>,
+    capability: &jackin_protocol::usage_broker::UsageAccountCapability,
+) -> Option<&'a CachedUsage> {
+    let key = usage_cache_key_for_broker_account(agent, focused_provider, capability);
     snapshots.get(&key)
 }
 

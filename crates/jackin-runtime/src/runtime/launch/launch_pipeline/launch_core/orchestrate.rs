@@ -1517,7 +1517,7 @@ where
     );
     let dirty_exit_policy =
         config.resolve_dirty_exit_policy(config.workspaces.get(workspace_label.as_str()));
-    let launch_config = workspace_launch_config(
+    let mut launch_config = workspace_launch_config(
         config,
         selector,
         workspace,
@@ -1531,6 +1531,7 @@ where
         exec_bindings,
         &environment.state,
     )?;
+    crate::usage_relay::populate_launch_usage_capabilities(config, &mut launch_config);
     Ok(WorkspaceMaterialized {
         materialized,
         launch_config,

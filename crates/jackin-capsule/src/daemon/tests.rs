@@ -726,6 +726,7 @@ fn test_mux(rows: u16, cols: u16) -> Multiplexer {
             models: BTreeMap::new(),
             auth_modes: BTreeMap::new(),
             accounts: BTreeMap::new(),
+            usage_capabilities: BTreeMap::new(),
             labels: BTreeMap::new(),
             claude_marketplaces: Vec::new(),
             claude_plugins: Vec::new(),
@@ -890,7 +891,8 @@ fn seed_usage_dialog_for_refresh_test(mux: &mut Multiplexer) {
 }
 
 #[test]
-fn broker_client_capsule_deduplicates_surface_and_adopts_terminal_generation() {
+fn broker_client_capsule_deduplicates_each_account_and_adopts_terminal_generation() {
+    use std::collections::{BTreeMap, BTreeSet};
     use std::io::{BufRead as _, BufReader, Write as _};
     use std::os::unix::net::UnixListener;
 
@@ -906,12 +908,18 @@ fn broker_client_capsule_deduplicates_surface_and_adopts_terminal_generation() {
     let temp = tempfile::tempdir().unwrap();
     let socket = temp.path().join("usage.sock");
     let listener = UnixListener::bind(&socket).unwrap();
+    let capability = UsageAccountCapability {
+        account_id: "allowed-a".to_owned(),
+        surface_id: "codex".to_owned(),
+    };
+    let second_capability = UsageAccountCapability {
+        account_id: "allowed-b".to_owned(),
+        surface_id: "codex".to_owned(),
+    };
+    let server_capabilities = BTreeSet::from([capability.clone(), second_capability.clone()]);
     let server = std::thread::spawn(move || {
-        let capability = UsageAccountCapability {
-            account_id: "allowed".to_owned(),
-            surface_id: "codex".to_owned(),
-        };
-        for expected in 0..3 {
+        let mut seen = BTreeMap::<UsageAccountCapability, [bool; 3]>::new();
+        for _ in 0..6 {
             let (mut stream, _) = listener.accept().unwrap();
             let request = {
                 let mut line = String::new();
@@ -919,40 +927,31 @@ fn broker_client_capsule_deduplicates_surface_and_adopts_terminal_generation() {
                 serde_json::from_str::<UsageBrokerRequest>(line.trim()).unwrap()
             };
             assert_eq!(request.protocol_version, USAGE_BROKER_PROTOCOL_VERSION);
-            let (generation, phase, snapshot) = match (expected, request.operation) {
-                (0, UsageBrokerOperation::CurrentForSurface { surface_id }) => {
-                    assert_eq!(surface_id, "codex");
-                    (0, UsageRefreshPhase::Idle, None)
+            let (request_capability, generation, phase, snapshot, stage) = match request.operation {
+                UsageBrokerOperation::CurrentForCapability { capability } => {
+                    (capability, 0, UsageRefreshPhase::Idle, None, 0)
                 }
-                (
-                    1,
-                    UsageBrokerOperation::RefreshForSurface {
-                        surface_id,
-                        observed_generation,
-                        force,
-                    },
-                ) => {
-                    assert_eq!(surface_id, "codex");
+                UsageBrokerOperation::RefreshForCapability {
+                    capability,
+                    observed_generation,
+                    ..
+                } => {
                     assert_eq!(observed_generation, 0);
-                    assert!(force);
-                    (1, UsageRefreshPhase::Queued, None)
+                    (capability, 1, UsageRefreshPhase::Queued, None, 1)
                 }
-                (
-                    2,
-                    UsageBrokerOperation::JoinForSurface {
-                        surface_id,
-                        generation,
-                        ..
-                    },
-                ) => {
-                    assert_eq!(surface_id, "codex");
+                UsageBrokerOperation::JoinForCapability {
+                    capability,
+                    generation,
+                    ..
+                } => {
                     assert_eq!(generation, 1);
                     let mut view = FocusedUsageView::unavailable("fixture", 1);
                     view.status = UsageSnapshotStatus::Fresh;
                     view.source = UsageSource::ProviderApi;
                     view.confidence = UsageConfidence::Authoritative;
                     view.account.provider_label = "OpenAI / Codex".to_owned();
-                    view.account.account_label = "capsule@example.test".to_owned();
+                    view.account.account_label =
+                        format!("{}@capsule.example.test", capability.account_id);
                     view.buckets = vec![QuotaBucketView {
                         label: "Weekly".to_owned(),
                         used_label: None,
@@ -967,13 +966,14 @@ fn broker_client_capsule_deduplicates_surface_and_adopts_terminal_generation() {
                         limit_money: None,
                         severity: UsageSeverity::Normal,
                     }];
-                    (1, UsageRefreshPhase::Completed, Some(view))
+                    (capability, 1, UsageRefreshPhase::Completed, Some(view), 2)
                 }
-                (_, operation) => panic!("unexpected relay operation: {operation:?}"),
+                operation => panic!("unexpected relay operation: {operation:?}"),
             };
+            seen.entry(request_capability.clone()).or_default()[stage] = true;
             let response = UsageBrokerResponse::State {
                 state: Box::new(UsageGenerationView {
-                    capability: capability.clone(),
+                    capability: request_capability,
                     generation,
                     phase,
                     snapshot,
@@ -985,29 +985,54 @@ fn broker_client_capsule_deduplicates_surface_and_adopts_terminal_generation() {
             bytes.push(b'\n');
             stream.write_all(&bytes).unwrap();
         }
+        assert_eq!(
+            seen.keys().cloned().collect::<BTreeSet<_>>(),
+            server_capabilities
+        );
+        assert!(seen.values().all(|stages| stages == &[true, true, true]));
     });
     let client =
         jackin_usage::host::UsageBrokerClient::at(socket, env!("CARGO_PKG_VERSION").to_owned());
     let target = crate::usage::UsageRefreshTarget {
         agent: "codex".to_owned(),
         provider: Some("OpenAI".to_owned()),
+        capability: capability.clone(),
+    };
+    let second_target = crate::usage::UsageRefreshTarget {
+        capability: second_capability.clone(),
+        ..target.clone()
     };
 
     let refreshes = multiplexer_utils::refresh_usage_targets_with_client(
         &client,
-        vec![target.clone(), target.clone()],
+        vec![
+            target.clone(),
+            second_target.clone(),
+            target.clone(),
+            second_target.clone(),
+        ],
         Some(target.clone()),
         Some(&target),
     );
     server.join().unwrap();
 
-    assert_eq!(refreshes.len(), 1);
-    let state = refreshes.into_iter().next().unwrap().result.unwrap();
-    assert_eq!(state.phase, UsageRefreshPhase::Completed);
-    assert_eq!(
-        state.snapshot.unwrap().account.account_label,
-        "capsule@example.test"
-    );
+    assert_eq!(refreshes.len(), 2);
+    let states = refreshes
+        .into_iter()
+        .map(|refresh| {
+            let state = refresh.result.unwrap();
+            (refresh.target.capability, state)
+        })
+        .collect::<BTreeMap<_, _>>();
+    assert_eq!(states.len(), 2);
+    for capability in [capability, second_capability] {
+        let state = states.get(&capability).expect("account state");
+        assert_eq!(state.phase, UsageRefreshPhase::Completed);
+        assert_eq!(
+            state.snapshot.as_ref().unwrap().account.account_label,
+            format!("{}@capsule.example.test", capability.account_id)
+        );
+    }
 }
 
 /// Drive `handle_palette_command` then compose; `None` when empty.
@@ -1218,7 +1243,11 @@ fn apply_dialog_action_refresh_usage_queues_refresh_without_replacing_dialog() {
         mux.usage.pending_usage_refresh,
         Some(crate::usage::UsageRefreshTarget {
             agent: "codex".to_owned(),
-            provider: Some("OpenAI".to_owned())
+            provider: Some("OpenAI".to_owned()),
+            capability: jackin_protocol::usage_broker::UsageAccountCapability {
+                account_id: "test-codex".to_owned(),
+                surface_id: "codex".to_owned(),
+            },
         })
     );
 }
@@ -1247,7 +1276,11 @@ fn apply_action_refresh_usage_queues_refresh_without_replacing_dialog() {
         mux.usage.pending_usage_refresh,
         Some(crate::usage::UsageRefreshTarget {
             agent: "codex".to_owned(),
-            provider: Some("OpenAI".to_owned())
+            provider: Some("OpenAI".to_owned()),
+            capability: jackin_protocol::usage_broker::UsageAccountCapability {
+                account_id: "test-codex".to_owned(),
+                surface_id: "codex".to_owned(),
+            },
         })
     );
 }
@@ -1285,7 +1318,11 @@ fn apply_dialog_action_switch_usage_provider_updates_focused_provider() {
         mux.usage.pending_usage_refresh,
         Some(crate::usage::UsageRefreshTarget {
             agent: "codex".to_owned(),
-            provider: Some("Claude".to_owned())
+            provider: Some("Claude".to_owned()),
+            capability: jackin_protocol::usage_broker::UsageAccountCapability {
+                account_id: "test-codex".to_owned(),
+                surface_id: "codex".to_owned(),
+            },
         })
     );
 }
@@ -1320,7 +1357,11 @@ fn apply_action_open_usage_queues_focused_provider_refresh() {
         mux.usage.pending_usage_refresh,
         Some(crate::usage::UsageRefreshTarget {
             agent: "codex".to_owned(),
-            provider: Some("OpenAI".to_owned())
+            provider: Some("OpenAI".to_owned()),
+            capability: jackin_protocol::usage_broker::UsageAccountCapability {
+                account_id: "test-codex".to_owned(),
+                surface_id: "codex".to_owned(),
+            },
         })
     );
 }
@@ -1333,6 +1374,11 @@ fn open_usage_dialog_refreshes_visible_relative_timestamp_from_cache() {
         label: "OpenAI".to_owned(),
         env_overrides: Vec::new(),
     });
+    let capability = jackin_protocol::usage_broker::UsageAccountCapability {
+        account_id: "test-codex".to_owned(),
+        surface_id: "codex".to_owned(),
+    };
+    session.usage_capability = Some(capability.clone());
     mux.session_supervisor.sessions.insert(1, session);
     mux.session_supervisor.tabs[0] = Tab::new_single("Codex", 1, "test");
     let now_epoch = std::time::SystemTime::now()
@@ -1374,7 +1420,7 @@ fn open_usage_dialog_refreshes_visible_relative_timestamp_from_cache() {
     };
     mux.usage
         .usage_cache
-        .insert_snapshot_for_test("codex", Some("OpenAI"), cached);
+        .insert_snapshot_for_capability_for_test("codex", Some("OpenAI"), &capability, cached);
     let mut view = jackin_protocol::control::FocusedUsageView::unavailable("seed", 1);
     view.updated_label = "Updated just now".to_owned();
     mux.dialog_push(Dialog::new_usage(view));
@@ -1641,19 +1687,24 @@ pub(super) fn test_session_with_agent(
     agent: Option<String>,
 ) -> (Session, mpsc::UnboundedReceiver<Vec<u8>>) {
     let (input_tx, input_rx) = mpsc::unbounded_channel();
-    (
-        Session::new_for_test(
-            "Test".to_owned(),
-            agent,
-            None,
-            (rows, cols),
-            100,
-            input_tx,
-            Arc::new(Mutex::new(Box::new(NullMasterPty))),
-            Arc::new(Mutex::new(Box::new(NullChildKiller))),
-        ),
-        input_rx,
-    )
+    let mut session = Session::new_for_test(
+        "Test".to_owned(),
+        agent.clone(),
+        None,
+        (rows, cols),
+        100,
+        input_tx,
+        Arc::new(Mutex::new(Box::new(NullMasterPty))),
+        Arc::new(Mutex::new(Box::new(NullChildKiller))),
+    );
+    session.usage_capability =
+        agent.map(
+            |agent| jackin_protocol::usage_broker::UsageAccountCapability {
+                account_id: format!("test-{agent}"),
+                surface_id: agent,
+            },
+        );
+    (session, input_rx)
 }
 
 fn test_provider_session(

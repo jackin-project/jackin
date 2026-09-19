@@ -44,6 +44,7 @@ pub(crate) struct ProjectionPublisher {
     store: FileProjectionStateStore,
     known: Arc<Mutex<BTreeSet<UsageAccountCapability>>>,
     published: Arc<Mutex<BTreeMap<UsageAccountCapability, PublishedAccount>>>,
+    identity_metadata: BTreeMap<UsageAccountCapability, AccountIdentityMetadata>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -51,6 +52,14 @@ struct PublishedAccount {
     generation: u64,
     phase: UsageRefreshPhase,
     has_snapshot: bool,
+}
+
+/// Canonical identity evidence captured by host discovery and carried into
+/// the Capsule-facing projection. A display label is not identity evidence.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct AccountIdentityMetadata {
+    pub identity_kind: UsageIdentityKindV1,
+    pub provenance_count: u32,
 }
 
 impl ProjectionPublisher {
@@ -66,7 +75,19 @@ impl ProjectionPublisher {
             store,
             known: Arc::new(Mutex::new(BTreeSet::new())),
             published: Arc::new(Mutex::new(BTreeMap::new())),
+            identity_metadata: BTreeMap::new(),
         }
+    }
+
+    /// Attach the immutable host-discovery identity evidence used by the
+    /// Capsule/FFI publication. Missing entries remain conservative fallback
+    /// rows for synthetic broker seams only.
+    pub(crate) fn with_identity_metadata(
+        mut self,
+        identity_metadata: BTreeMap<UsageAccountCapability, AccountIdentityMetadata>,
+    ) -> Self {
+        self.identity_metadata = identity_metadata;
+        self
     }
 
     /// Record one capability served by the broker. Only observed capabilities
@@ -136,7 +157,7 @@ impl ProjectionPublisher {
             return false;
         };
         let mut next = projection.clone();
-        merge_views(&mut next, &views);
+        merge_views(&mut next, &views, &self.identity_metadata);
         next.broker_generation = next.broker_generation.saturating_add(1);
         next.projection_id = format!("{}:{}", next.broker_instance_id, next.broker_generation);
         next.generated_at_epoch = now_epoch;
@@ -168,7 +189,11 @@ impl ProjectionPublisher {
 /// Providers and accounts are rebuilt in settled `(surface_id, account_id)`
 /// order with canonical ranks. Projection-level `unresolved`, `issues`, and
 /// the catalog revision are preserved untouched.
-fn merge_views(projection: &mut UsageProjectionV1, views: &[UsageGenerationView]) {
+fn merge_views(
+    projection: &mut UsageProjectionV1,
+    views: &[UsageGenerationView],
+    identity_metadata: &BTreeMap<UsageAccountCapability, AccountIdentityMetadata>,
+) {
     let mut ordered = views.to_vec();
     ordered.sort_by(|left, right| {
         (&left.capability.surface_id, &left.capability.account_id)
@@ -206,7 +231,11 @@ fn merge_views(projection: &mut UsageProjectionV1, views: &[UsageGenerationView]
         let Some(provider) = providers.last_mut() else {
             continue;
         };
-        let account = account_for_view(view, provider.accounts.len());
+        let account = account_for_view(
+            view,
+            provider.accounts.len(),
+            identity_metadata.get(&view.capability),
+        );
         if let Some(snapshot) = &view.snapshot
             && !snapshot.account.provider_label.is_empty()
         {
@@ -257,7 +286,11 @@ fn aggregate_freshness(any_active: bool, accounts: &[UsageAccountV1]) -> UsageFr
     freshness
 }
 
-fn account_for_view(view: &UsageGenerationView, rank: usize) -> UsageAccountV1 {
+fn account_for_view(
+    view: &UsageGenerationView,
+    rank: usize,
+    identity_metadata: Option<&AccountIdentityMetadata>,
+) -> UsageAccountV1 {
     let snapshot = view.snapshot.clone();
     let header_label = snapshot
         .as_ref()
@@ -316,13 +349,15 @@ fn account_for_view(view: &UsageGenerationView, rank: usize) -> UsageAccountV1 {
             }]
         })
         .unwrap_or_default();
+    let fallback_identity_kind = if header_label.trim().is_empty() {
+        UsageIdentityKindV1::ProviderAccountId
+    } else {
+        UsageIdentityKindV1::ProviderStableHandle
+    };
     UsageAccountV1 {
         canonical_account_id: view.capability.account_id.clone(),
-        identity_kind: if header_label.trim().is_empty() {
-            UsageIdentityKindV1::ProviderAccountId
-        } else {
-            UsageIdentityKindV1::ProviderStableHandle
-        },
+        identity_kind: identity_metadata
+            .map_or(fallback_identity_kind, |metadata| metadata.identity_kind),
         rank: u32::try_from(rank).unwrap_or(u32::MAX),
         display_label,
         plan_label: snapshot
@@ -337,7 +372,7 @@ fn account_for_view(view: &UsageGenerationView, rank: usize) -> UsageAccountV1 {
             retry_at_epoch: view.retry_at_epoch,
             is_stale,
         },
-        provenance_count: 1,
+        provenance_count: identity_metadata.map_or(1, |metadata| metadata.provenance_count),
         windows,
         metric_groups: Vec::new(),
         credential_expires_at_epoch: None,
@@ -364,19 +399,38 @@ fn window_for_bucket(
         Some(StatusSlot::Daily | StatusSlot::Weekly) => UsageWindowCategoryV1::LongRange,
         Some(StatusSlot::Spend) | None => UsageWindowCategoryV1::Other,
     };
-    let value_label = match (&bucket.used_label, &bucket.limit_label) {
-        (Some(used), Some(limit)) => format!("{used} of {limit}"),
-        (Some(used), None) => used.clone(),
-        (None, Some(limit)) => limit.clone(),
-        (None, None) => bucket
-            .remaining_percent
-            .map_or_else(String::new, |percent| format!("{percent}% left")),
-    };
-    let (remaining_percent, remaining_raw_percent) =
+    let raw_used = money_used_raw_percent(bucket);
+    let overage = raw_used.is_some_and(|value| value > 100);
+    let (remaining_percent, remaining_raw_percent) = if overage {
+        (None, None)
+    } else {
         bucket.remaining_percent.map_or((None, None), |percent| {
             let clamped = UsagePercent::clamp_raw(i32::from(percent));
             (Some(clamped), Some(i32::from(percent)))
-        });
+        })
+    };
+    let (used_percent, used_raw_percent) = if overage || remaining_percent.is_none() {
+        raw_used.map_or((None, None), |raw| {
+            (Some(UsagePercent::clamp_raw(raw)), Some(raw))
+        })
+    } else {
+        (None, None)
+    };
+    let value_label = if overage {
+        raw_used.map_or_else(
+            || bucket.used_label.clone().unwrap_or_default(),
+            |raw| format!("{raw}% used"),
+        )
+    } else {
+        match (&bucket.used_label, &bucket.limit_label) {
+            (Some(used), Some(limit)) => format!("{used} of {limit}"),
+            (Some(used), None) => used.clone(),
+            (None, Some(limit)) => limit.clone(),
+            (None, None) => bucket
+                .remaining_percent
+                .map_or_else(String::new, |percent| format!("{percent}% left")),
+        }
+    };
     UsageLimitWindowV1 {
         window_id: format!("{account_id}:{rank}"),
         rank: u32::try_from(rank).unwrap_or(u32::MAX),
@@ -386,13 +440,28 @@ fn window_for_bucket(
         reset_label: bucket.reset_label.clone().unwrap_or_default(),
         remaining_percent,
         remaining_raw_percent,
-        used_percent: None,
-        used_raw_percent: None,
+        used_percent,
+        used_raw_percent,
         reset_at_epoch: bucket.resets_at,
         quota_state: quota_state_for_status(bucket.status),
         pace_label: bucket.pace_label.clone(),
         runs_out_label: None,
     }
+}
+
+/// Raw used percentage for money-backed quota windows. The broker publisher
+/// must preserve overage just like the desktop projection; only bar geometry
+/// is clamped.
+fn money_used_raw_percent(bucket: &QuotaBucketView) -> Option<i32> {
+    let used = bucket.used_money.as_ref()?;
+    let limit = bucket.limit_money.as_ref()?;
+    if used.currency != limit.currency || used.exponent != limit.exponent || limit.amount_minor <= 0
+    {
+        return None;
+    }
+    let scaled = used.amount_minor.saturating_mul(100);
+    let raw = scaled.checked_div(limit.amount_minor)?;
+    Some(i32::try_from(raw).unwrap_or(if raw < 0 { i32::MIN } else { i32::MAX }))
 }
 
 const fn quota_state_for_status(status: UsageSnapshotStatus) -> UsageQuotaStateV1 {
@@ -442,7 +511,7 @@ mod tests {
     use std::sync::{Arc, Mutex};
     use std::time::Duration;
 
-    use jackin_protocol::control::{UsageConfidence, UsageSeverity, UsageSource};
+    use jackin_protocol::control::{Money, UsageConfidence, UsageSeverity, UsageSource};
     use jackin_protocol::usage_broker::{
         UsageAccountCapability, UsageIdentityKindV1, UsageLifecycleV1,
         UsageProjectionRefreshStateV1, UsageProjectionSchemaV1,
@@ -564,6 +633,107 @@ mod tests {
             credential_expires_at_epoch: None,
             issues: Vec::new(),
         }
+    }
+
+    #[test]
+    fn capsule_publication_preserves_identity_kind_and_provenance_per_account() {
+        let first = UsageAccountCapability {
+            account_id: "account-a".to_owned(),
+            surface_id: "claude".to_owned(),
+        };
+        let second = UsageAccountCapability {
+            account_id: "account-b".to_owned(),
+            surface_id: "claude".to_owned(),
+        };
+        let views = vec![
+            UsageGenerationView {
+                capability: first.clone(),
+                generation: 1,
+                phase: UsageRefreshPhase::Completed,
+                snapshot: Some(fresh_view()),
+                error: None,
+                retry_at_epoch: None,
+            },
+            UsageGenerationView {
+                capability: second.clone(),
+                generation: 1,
+                phase: UsageRefreshPhase::Completed,
+                snapshot: Some(fresh_view()),
+                error: None,
+                retry_at_epoch: None,
+            },
+        ];
+        let metadata = BTreeMap::from([
+            (
+                first,
+                AccountIdentityMetadata {
+                    identity_kind: UsageIdentityKindV1::ProviderAccountId,
+                    provenance_count: 3,
+                },
+            ),
+            (
+                second,
+                AccountIdentityMetadata {
+                    identity_kind: UsageIdentityKindV1::ProviderStableHandle,
+                    provenance_count: 2,
+                },
+            ),
+        ]);
+        let mut projection = empty_projection();
+
+        merge_views(&mut projection, &views, &metadata);
+
+        let accounts = &projection.providers[0].accounts;
+        assert_eq!(accounts.len(), 2);
+        assert_eq!(
+            accounts[0].identity_kind,
+            UsageIdentityKindV1::ProviderAccountId
+        );
+        assert_eq!(accounts[0].provenance_count, 3);
+        assert_eq!(
+            accounts[1].identity_kind,
+            UsageIdentityKindV1::ProviderStableHandle
+        );
+        assert_eq!(accounts[1].provenance_count, 2);
+    }
+
+    #[test]
+    fn capsule_publication_preserves_openrouter_overage_raw_used_percent() {
+        let capability = capability();
+        let mut view = fresh_view();
+        view.buckets = vec![QuotaBucketView {
+            label: "Account credits".to_owned(),
+            used_label: Some("$120".to_owned()),
+            limit_label: Some("$100".to_owned()),
+            remaining_percent: None,
+            reset_label: None,
+            resets_at: None,
+            status_slot: Some(StatusSlot::Spend),
+            pace_label: None,
+            status: UsageSnapshotStatus::Fresh,
+            used_money: Some(Money::new(12_000, "USD", 2)),
+            limit_money: Some(Money::new(10_000, "USD", 2)),
+            severity: UsageSeverity::Danger,
+        }];
+        let views = [UsageGenerationView {
+            capability,
+            generation: 1,
+            phase: UsageRefreshPhase::Completed,
+            snapshot: Some(view),
+            error: None,
+            retry_at_epoch: None,
+        }];
+        let mut projection = empty_projection();
+
+        merge_views(&mut projection, &views, &BTreeMap::new());
+
+        let window = &projection.providers[0].accounts[0].windows[0];
+        assert_eq!(window.value_label, "120% used");
+        assert_eq!(window.used_percent.map(UsagePercent::get), Some(100));
+        assert_eq!(window.used_raw_percent, Some(120));
+        assert_eq!(window.remaining_percent, None);
+        assert_eq!(window.remaining_raw_percent, None);
+        window.validate(0).unwrap();
     }
 
     #[test]

@@ -85,19 +85,22 @@ fn projection_operations_and_publication_response_round_trip() {
 }
 
 #[test]
-fn scoped_surface_request_round_trip_exposes_no_capability() {
+fn scoped_capability_request_round_trip_preserves_exact_capability() {
     let request = UsageBrokerRequest {
         protocol_version: USAGE_BROKER_PROTOCOL_VERSION.into(),
         build_id: "test-build".into(),
-        operation: UsageBrokerOperation::RefreshForSurface {
-            surface_id: "claude".into(),
+        operation: UsageBrokerOperation::RefreshForCapability {
+            capability: UsageAccountCapability {
+                account_id: "account-a".into(),
+                surface_id: "claude".into(),
+            },
             observed_generation: 3,
             force: false,
         },
     };
 
     let bytes = serde_json::to_vec(&request).unwrap();
-    assert!(!String::from_utf8_lossy(&bytes).contains("account_id"));
+    assert!(String::from_utf8_lossy(&bytes).contains("account_id"));
     assert_eq!(
         serde_json::from_slice::<UsageBrokerRequest>(&bytes).unwrap(),
         request
@@ -111,13 +114,16 @@ fn stdio_tunnel_envelope_round_trips_without_account_metadata() {
         request: UsageBrokerRequest {
             protocol_version: USAGE_BROKER_PROTOCOL_VERSION.to_owned(),
             build_id: "build".to_owned(),
-            operation: UsageBrokerOperation::CurrentForSurface {
-                surface_id: "claude".to_owned(),
+            operation: UsageBrokerOperation::CurrentForCapability {
+                capability: UsageAccountCapability {
+                    account_id: "account-a".to_owned(),
+                    surface_id: "claude".to_owned(),
+                },
             },
         },
     };
     let bytes = serde_json::to_vec(&request).unwrap();
-    assert!(!String::from_utf8_lossy(&bytes).contains("account_id"));
+    assert!(String::from_utf8_lossy(&bytes).contains("account_id"));
     assert_eq!(
         serde_json::from_slice::<UsageRelayTunnelRequest>(&bytes).unwrap(),
         request

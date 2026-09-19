@@ -19,6 +19,9 @@ impl UsageCache {
         target: &UsageRefreshTarget,
         state: &jackin_protocol::usage_broker::UsageGenerationView,
     ) {
+        if target.capability != state.capability {
+            return;
+        }
         let mut view = state.snapshot.clone().unwrap_or_else(|| {
             if state.phase.is_active() {
                 FocusedUsageView::refreshing(target.provider.as_deref(), now_epoch())
@@ -50,7 +53,7 @@ impl UsageCache {
             usage_cache_key_for_broker_account(
                 &target.agent,
                 target.provider.as_deref(),
-                &state.capability.account_id,
+                &state.capability,
             ),
             CachedUsage { view },
         );
@@ -62,35 +65,16 @@ impl UsageCache {
         target: &UsageRefreshTarget,
         error: &jackin_protocol::usage_broker::UsageCoordinationError,
     ) {
-        let matching_keys = self
-            .snapshots
-            .iter()
-            .filter(|(key, cached)| {
-                cache_key_matches_target(key, &target.agent, target.provider.as_deref())
-                    || cache_view_matches_target(
-                        &cached.view,
-                        &target.agent,
-                        target.provider.as_deref(),
-                    )
-            })
-            .map(|(key, _)| key.clone())
-            .collect::<Vec<_>>();
-        if matching_keys.is_empty() {
-            let cache_key = target.cache_key();
+        let cache_key = target.cache_key();
+        let cached = self.snapshots.entry(cache_key).or_insert_with(|| {
             let mut view = FocusedUsageView::unavailable(&error.message, now_epoch());
             view.focused_agent = Some(target.agent.clone());
             view.focused_provider = target.provider.clone();
-            self.snapshots.insert(cache_key, CachedUsage { view });
-            return;
-        }
-        for cache_key in matching_keys {
-            let Some(cached) = self.snapshots.get_mut(&cache_key) else {
-                continue;
-            };
-            cached.view.last_error = Some(error.message.clone());
-            if !cached.view.buckets.is_empty() {
-                cached.view.status = UsageSnapshotStatus::Stale;
-            }
+            CachedUsage { view }
+        });
+        cached.view.last_error = Some(error.message.clone());
+        if !cached.view.buckets.is_empty() {
+            cached.view.status = UsageSnapshotStatus::Stale;
         }
     }
 }

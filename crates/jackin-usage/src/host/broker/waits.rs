@@ -112,7 +112,7 @@ pub(super) const fn is_wait(operation: &UsageBrokerOperation) -> bool {
     matches!(
         operation,
         UsageBrokerOperation::Join { .. }
-            | UsageBrokerOperation::JoinForSurface { .. }
+            | UsageBrokerOperation::JoinForCapability { .. }
             | UsageBrokerOperation::JoinPublication { .. }
             | UsageBrokerOperation::JoinPublicationForSurface { .. }
     )
@@ -120,7 +120,7 @@ pub(super) const fn is_wait(operation: &UsageBrokerOperation) -> bool {
 
 fn account_for_dispatch_time(operation: &mut UsageBrokerOperation, elapsed: Duration) {
     let (UsageBrokerOperation::Join { timeout_ms, .. }
-    | UsageBrokerOperation::JoinForSurface { timeout_ms, .. }
+    | UsageBrokerOperation::JoinForCapability { timeout_ms, .. }
     | UsageBrokerOperation::JoinPublication { timeout_ms, .. }
     | UsageBrokerOperation::JoinPublicationForSurface { timeout_ms, .. }) = operation
     else {

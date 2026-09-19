@@ -1076,26 +1076,26 @@ pub enum UsageBrokerOperation {
         /// Bounded client wait in milliseconds.
         timeout_ms: u64,
     },
-    /// Relay-only current-state request for one known provider surface.
-    /// The per-container relay resolves this to exactly one allowed capability;
+    /// Relay-only current-state request for one exact forwarded capability.
+    /// The per-container relay authorizes this capability before forwarding;
     /// the global host broker rejects this operation directly.
-    CurrentForSurface {
-        /// Closed provider surface id already known to the Capsule.
-        surface_id: String,
+    CurrentForCapability {
+        /// Exact account authority selected for this Capsule session.
+        capability: UsageAccountCapability,
     },
-    /// Relay-only refresh request for one known provider surface.
-    RefreshForSurface {
-        /// Closed provider surface id already known to the Capsule.
-        surface_id: String,
+    /// Relay-only refresh request for one exact forwarded capability.
+    RefreshForCapability {
+        /// Exact account authority selected for this Capsule session.
+        capability: UsageAccountCapability,
         /// Last generation observed by the caller.
         observed_generation: u64,
         /// True only for an explicit operator Refresh action.
         force: bool,
     },
-    /// Relay-only wait for one surface generation.
-    JoinForSurface {
-        /// Closed provider surface id already known to the Capsule.
-        surface_id: String,
+    /// Relay-only wait for one exact capability generation.
+    JoinForCapability {
+        /// Exact account authority selected for this Capsule session.
+        capability: UsageAccountCapability,
         /// Generation returned by a prior refresh request.
         generation: u64,
         /// Bounded client wait in milliseconds.

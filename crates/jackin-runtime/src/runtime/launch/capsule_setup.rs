@@ -201,6 +201,7 @@ pub(crate) fn capsule_config(
         models,
         auth_modes: std::collections::BTreeMap::new(),
         accounts,
+        usage_capabilities: std::collections::BTreeMap::new(),
         labels,
         // Populated by `apply_instance_dirs` once role state is
         // prepared; the manifest alone does not carry slot layout.

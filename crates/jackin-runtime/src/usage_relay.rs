@@ -232,8 +232,57 @@ pub fn forwarded_sources_from_launch(
         .map(|entry| entry.name.to_owned())
         .collect();
     ForwardedUsageSources {
+        selected_account_ids: BTreeSet::new(),
         profile_surface_ids,
         env_keys,
+    }
+}
+
+/// Source proof for the serialized launch config. The account ids are the
+/// exact configured selections and are used to filter host bindings before a
+/// relay capability allowlist is created.
+#[must_use]
+pub fn forwarded_sources_from_launch_config(
+    state: &crate::instance::RoleState,
+    resolved_env: &jackin_env::ResolvedEnv,
+    launch_config: &jackin_protocol::CapsuleConfig,
+) -> ForwardedUsageSources {
+    let mut sources = forwarded_sources_from_launch(state, resolved_env);
+    sources.selected_account_ids = launch_config.accounts.values().cloned().collect();
+    sources
+}
+
+/// Populate the Capsule launch contract with canonical usage authorities for
+/// every admitted instance. An unknown account or provider leaves that entry
+/// absent; the Capsule then fails closed for usage refresh instead of falling
+/// back to a same-surface account.
+pub fn populate_launch_usage_capabilities(
+    config: &AppConfig,
+    launch_config: &mut jackin_protocol::CapsuleConfig,
+) {
+    for instance_id in &launch_config.instances {
+        let Some(account_id) = launch_config.accounts.get(instance_id) else {
+            continue;
+        };
+        let Some(account) = config.accounts.get(account_id) else {
+            continue;
+        };
+        // The selected account's configured provider is the canonical usage
+        // surface. Do not rediscover profiles here: launch materialization is
+        // on the critical path, and profile identity readers may block on a
+        // protected keychain. Broker discovery still validates credentials
+        // when the relay starts; this contract only carries the already
+        // authorized account/provider identity into Capsule.
+        let Some(surface) = HostSurfaceId::from_provider_alias(account.provider.slug()) else {
+            continue;
+        };
+        launch_config.usage_capabilities.insert(
+            instance_id.clone(),
+            UsageAccountCapability {
+                account_id: account_id.clone(),
+                surface_id: surface.id().to_owned(),
+            },
+        );
     }
 }
 
@@ -520,29 +569,27 @@ async fn dispatch(
     allowlist: UsageCapabilitySet,
 ) -> UsageBrokerResponse {
     let authorized = match operation {
-        UsageBrokerOperation::CurrentForSurface { surface_id } => allowlist
-            .resolve_surface(&surface_id)
-            .map(|capability| UsageBrokerOperation::Current { capability }),
-        UsageBrokerOperation::RefreshForSurface {
-            surface_id,
+        UsageBrokerOperation::CurrentForCapability { capability } => allowlist
+            .authorize(&capability)
+            .map(|()| UsageBrokerOperation::Current { capability }),
+        UsageBrokerOperation::RefreshForCapability {
+            capability,
             observed_generation,
             force,
-        } => {
-            allowlist
-                .resolve_surface(&surface_id)
-                .map(|capability| UsageBrokerOperation::Refresh {
-                    capability,
-                    observed_generation,
-                    force,
-                })
-        }
-        UsageBrokerOperation::JoinForSurface {
-            surface_id,
+        } => allowlist
+            .authorize(&capability)
+            .map(|()| UsageBrokerOperation::Refresh {
+                capability,
+                observed_generation,
+                force,
+            }),
+        UsageBrokerOperation::JoinForCapability {
+            capability,
             generation,
             timeout_ms,
         } => allowlist
-            .resolve_surface(&surface_id)
-            .map(|capability| UsageBrokerOperation::Join {
+            .authorize(&capability)
+            .map(|()| UsageBrokerOperation::Join {
                 capability,
                 generation,
                 timeout_ms,
@@ -572,18 +619,6 @@ async fn dispatch(
         Ok(operation) => operation,
         Err(error) => return UsageBrokerResponse::Error { error },
     };
-    if matches!(
-        operation,
-        UsageBrokerOperation::CurrentForSurface { .. }
-            | UsageBrokerOperation::RefreshForSurface { .. }
-            | UsageBrokerOperation::JoinForSurface { .. }
-    ) {
-        let error = UsageCoordinationError {
-            kind: UsageCoordinationErrorKind::Unauthorized,
-            message: "usage provider surface is not authorized".to_owned(),
-        };
-        return UsageBrokerResponse::Error { error };
-    }
     match jackin_telemetry::spawn::joined_blocking(move || broker.execute(operation)).await {
         Ok(Ok(state)) => UsageBrokerResponse::State {
             state: Box::new(state),
