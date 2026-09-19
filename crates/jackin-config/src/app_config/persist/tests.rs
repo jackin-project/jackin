@@ -298,6 +298,50 @@ LOCAL = "only-prod"
 }
 
 #[test]
+fn load_migrates_legacy_global_agent_tables_before_embedded_split() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    paths.ensure_base_dirs().unwrap();
+    std::fs::write(
+        &paths.config_file,
+        r#"[claude]
+auth_forward = "sync"
+
+[roles.builder]
+git = "https://example.test/builder.git"
+
+[roles.builder.codex]
+auth_forward = "sync"
+
+[workspaces.prod]
+workdir = "/workspace/prod"
+
+[[workspaces.prod.mounts]]
+src = "/tmp/prod"
+dst = "/workspace/prod"
+"#,
+    )
+    .unwrap();
+
+    let config = AppConfig::load_or_init(&paths).unwrap();
+    assert_eq!(
+        config.roles["builder"].git,
+        "https://example.test/builder.git"
+    );
+    assert!(config.workspaces.contains_key("prod"));
+
+    let global = std::fs::read_to_string(&paths.config_file).unwrap();
+    assert!(
+        !global.contains("[claude]"),
+        "legacy agent table survived: {global}"
+    );
+    assert!(
+        !global.contains("roles.builder.codex") && !global.contains("[roles.builder.codex]"),
+        "legacy role agent table survived: {global}"
+    );
+}
+
+#[test]
 fn load_preserves_legacy_workspace_op_account_onto_refs() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());

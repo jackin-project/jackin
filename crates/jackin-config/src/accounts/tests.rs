@@ -444,6 +444,45 @@ fn omp_routing_requires_model_and_selects_provider_variable() {
 }
 
 #[test]
+fn omp_and_hermes_endpoint_overrides_fail_closed_until_provider_config_exists() {
+    for agent in [Agent::Omp, Agent::Hermes] {
+        let mut account = api_key(AiProvider::OpenRouter, Some("org/model"));
+        if let AccountCredential::ApiKey { base_url, .. } = &mut account.credential {
+            *base_url = Some("https://proxy.example/v1".into());
+        }
+        let err = account.credential_env(agent).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("provider configuration is unsupported")
+        );
+    }
+}
+
+#[test]
+fn omp_and_hermes_configuration_endpoint_overrides_fail_closed() {
+    let mut accounts = BTreeMap::new();
+    accounts.insert(
+        "router".into(),
+        api_key(AiProvider::OpenRouter, Some("org/model")),
+    );
+    for agent in [Agent::Omp, Agent::Hermes] {
+        let config = AgentConfiguration {
+            agent,
+            account: "router".into(),
+            model: Some("org/model".into()),
+            base_url: Some("https://proxy.example/v1".into()),
+            display_label: None,
+            invoked_via_wrapper: None,
+        };
+        let err = config.validate("router-config", &accounts).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("provider configuration is unsupported")
+        );
+    }
+}
+
+#[test]
 fn endpoint_overrides_fail_closed_for_new_single_agents() {
     let mut account = api_key(AiProvider::Google, None);
     if let AccountCredential::ApiKey { base_url, .. } = &mut account.credential {

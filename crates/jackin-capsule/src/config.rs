@@ -109,6 +109,25 @@ fn validate(config: &CapsuleConfig) -> Result<()> {
                 && !home.split('/').any(|component| component == ".."),
             "instance {instance:?} has an invalid private home path"
         );
+        // Amp/OpenCode export their data directory through XDG_DATA_HOME, but
+        // persist settings under a sibling `.config/<agent>` directory. The
+        // host mounts both roots for the same slot; admit only the exact
+        // adapter-defined sibling rather than widening the allowlist to all
+        // of `/home/agent`.
+        let paired_xdg_config_root = config
+            .agent_for_instance(instance)
+            .and_then(jackin_core::Agent::from_slug)
+            .filter(|agent| {
+                matches!(
+                    agent.runtime().state_paths().folder_env_var,
+                    Some(jackin_core::FolderVar {
+                        kind: jackin_core::FolderVarKind::XdgRoot,
+                        ..
+                    })
+                )
+            })
+            .and_then(|agent| agent.runtime().state_paths().config_dir)
+            .map(|relative| format!("/home/agent/{relative}"));
         let forwarded = config
             .forwarded_for_instance(instance)
             .ok_or_else(|| anyhow::anyhow!("instance {instance:?} has no private auth path"))?;
@@ -134,7 +153,11 @@ fn validate(config: &CapsuleConfig) -> Result<()> {
             "instance {instance:?} has an invalid credential mount path"
         );
         for path in config.mount_paths_for_instance(instance) {
-            let is_private_home = path.starts_with("/home/agent/") && is_descendant(path, home);
+            let is_private_home = path.starts_with("/home/agent/")
+                && (is_descendant(path, home)
+                    || paired_xdg_config_root
+                        .as_deref()
+                        .is_some_and(|root| is_descendant(path, root)));
             let is_forwarded_auth = is_descendant(path, forwarded);
             anyhow::ensure!(
                 path != "/home/agent"

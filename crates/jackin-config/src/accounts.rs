@@ -475,9 +475,16 @@ impl AccountConfig {
                     }
                 }
                 let default_url = self.default_api_url(agent);
-                // OpenCode/Omp/Hermes endpoints are written to their private
-                // provider configurations (Omp/Hermes writers land in the
-                // provider-config lane), never to env vars.
+                if matches!(agent, Agent::Omp | Agent::Hermes) && base_url.is_some() {
+                    return Err(ConfigError::msg(format!(
+                        "account {:?} has an endpoint override for {agent}, but that provider configuration is unsupported",
+                        self.name
+                    )));
+                }
+                // OpenCode writes its endpoint to private provider
+                // configuration. Omp/Hermes endpoint overrides were rejected
+                // above until their provider-config writers exist; neither
+                // client receives an endpoint through ambient env.
                 if !matches!(agent, Agent::Opencode | Agent::Omp | Agent::Hermes)
                     && let Some(url) = base_url.as_deref().or(default_url)
                 {
@@ -753,6 +760,12 @@ impl AgentConfiguration {
         }) {
             return Err(ConfigError::msg(format!(
                 "configuration {id:?} requires an HTTP(S) endpoint"
+            )));
+        }
+        if self.base_url.is_some() && matches!(self.agent, Agent::Omp | Agent::Hermes) {
+            return Err(ConfigError::msg(format!(
+                "configuration {id:?} has an endpoint override for {}, but that provider configuration is unsupported",
+                self.agent
             )));
         }
         if self

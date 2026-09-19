@@ -913,6 +913,14 @@ fn agent_model_args_match_cli_contracts() {
         vec!["--model", "kimi-k2"]
     );
     assert_eq!(
+        agent_model_args("omp", Some("openrouter/sonnet")),
+        vec!["--model", "openrouter/sonnet"]
+    );
+    assert_eq!(
+        agent_model_args("hermes", Some("openrouter/sonnet")),
+        vec!["--model", "openrouter/sonnet"]
+    );
+    assert_eq!(
         agent_model_args("opencode", Some("zai/glm")),
         vec!["-m", "zai/glm"]
     );
