@@ -9283,6 +9283,22 @@ fn two_codex_mux() -> Multiplexer {
             "/jackin/codex-codex-personal".into(),
         ),
     ]);
+    mux.launch_env.launch_config.instance_identities = BTreeMap::from([
+        (
+            "codex-work".into(),
+            jackin_protocol::SessionIdentity {
+                uid: 2_000,
+                gid: 2_000,
+            },
+        ),
+        (
+            "codex-personal".into(),
+            jackin_protocol::SessionIdentity {
+                uid: 2_001,
+                gid: 2_001,
+            },
+        ),
+    ]);
     // A stale process-wide value must not win over either slot's routing map.
     mux.launch_env.env_passthrough = vec![
         (
