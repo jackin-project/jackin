@@ -279,6 +279,12 @@ pub struct CapsuleConfig {
     /// spawn closed.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub instance_home_dirs: BTreeMap<String, String>,
+    /// Per-instance XDG cache roots, keyed by instance config ID. These are
+    /// distinct container paths even when the instances share an agent
+    /// runtime; the capsule uses the value as `XDG_CACHE_HOME` for that
+    /// instance instead of falling back to the PTY-session cache.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub instance_cache_dirs: BTreeMap<String, String>,
     /// Container handoff directory holding this instance's host-forwarded
     /// credential files, keyed by instance config ID (`/jackin/<agent>`
     /// for primary slots, `/jackin/<agent>-<suffix>` for secondary
@@ -426,6 +432,12 @@ impl CapsuleConfig {
     #[must_use]
     pub fn home_for_instance(&self, instance: &str) -> Option<&str> {
         self.instance_home_dirs.get(instance).map(String::as_str)
+    }
+
+    /// Per-instance XDG cache root for an instance config ID.
+    #[must_use]
+    pub fn cache_for_instance(&self, instance: &str) -> Option<&str> {
+        self.instance_cache_dirs.get(instance).map(String::as_str)
     }
 
     /// Host-forwarded credential directory for an instance config ID.

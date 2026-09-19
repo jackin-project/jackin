@@ -141,7 +141,8 @@ pub enum AccountCredential {
         /// Exact host configuration directory.
         directory: PathBuf,
         /// Explicit XDG roots for clients that split state across
-        /// data/config/cache homes (Amp). Absolute directories; validated.
+        /// data/config/cache homes (Amp, OpenCode, and future XDG-root
+        /// clients). Absolute directories; validated.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         xdg_roots: Option<XdgRoots>,
     },
@@ -359,9 +360,13 @@ impl AccountConfig {
                     return Err(ConfigError::msg(format!("invalid profile account {id:?}")));
                 }
                 if let Some(roots) = xdg_roots {
-                    if *agent != Agent::Amp {
+                    let supports_xdg_roots = matches!(
+                        agent.runtime().state_paths().folder_env_var,
+                        Some(var) if matches!(var.kind, jackin_core::FolderVarKind::XdgRoot)
+                    );
+                    if !supports_xdg_roots {
                         return Err(ConfigError::msg(format!(
-                            "account {id:?} sets xdg_roots, which only Amp profiles support"
+                            "account {id:?} sets xdg_roots, but its agent does not use XDG roots"
                         )));
                     }
                     if !roots.data.is_absolute()

@@ -117,6 +117,9 @@ pub struct SessionSpawnSpec {
     pub identity: jackin_protocol::SessionIdentity,
     /// Provider routing and environment inherited by this session.
     pub provider: Option<SessionProvider>,
+    /// Per-instance XDG cache root. Shells and legacy configs use the
+    /// private PTY-session cache instead.
+    pub cache_dir: Option<String>,
 }
 
 /// A published public-state change emitted by [`Session::advance_status`].
@@ -466,6 +469,7 @@ impl Session {
             account_id,
             identity,
             provider,
+            cache_dir,
         } = spec;
         let conversation_id = agent.as_ref().map(|_| uuid::Uuid::new_v4().to_string());
         // Per-tab trace: each pane/agent spawn is its own short trace on the
@@ -489,7 +493,13 @@ impl Session {
         // reporter env can carry it. (Assigned here, used for the Session below.)
         let sid = next_id();
         let control_capability = uuid::Uuid::new_v4().to_string();
-        inject_status_env(&mut cmd, sid, agent.as_deref(), &control_capability);
+        inject_status_env(
+            &mut cmd,
+            sid,
+            agent.as_deref(),
+            cache_dir.as_deref(),
+            &control_capability,
+        );
 
         let mut child = slave
             .spawn_command(cmd)
@@ -1660,6 +1670,7 @@ fn inject_status_env(
     cmd: &mut CommandBuilder,
     session_id: u64,
     agent: Option<&str>,
+    cache_dir: Option<&str>,
     control_capability: &str,
 ) {
     let session_root = session_root_path(session_id);
@@ -1676,7 +1687,11 @@ fn inject_status_env(
     cmd.env("TMP", &session_tmp);
     cmd.env("TEMP", &session_tmp);
     cmd.env("XDG_RUNTIME_DIR", &session_runtime);
-    cmd.env("XDG_CACHE_HOME", &session_cache);
+    if let Some(cache_dir) = cache_dir {
+        cmd.env("XDG_CACHE_HOME", cache_dir);
+    } else {
+        cmd.env("XDG_CACHE_HOME", &session_cache);
+    }
     cmd.env("GIT_CONFIG_GLOBAL", session_root.join("gitconfig"));
     cmd.env(jackin_protocol::SESSION_CAPABILITY_ENV, control_capability);
     cmd.env(

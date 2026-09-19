@@ -330,9 +330,13 @@ fn xdg_agent_allows_its_paired_config_root_without_widening_home_access() {
         vec![
             "/home/agent/.local/share/amp".into(),
             "/home/agent/.config/amp".into(),
+            "/home/agent/.cache/amp".into(),
             "/jackin/amp".into(),
         ],
     );
+    config
+        .instance_cache_dirs
+        .insert("amp".into(), "/home/agent/.cache/amp".into());
 
     validate(&config).unwrap();
 
@@ -341,6 +345,7 @@ fn xdg_agent_allows_its_paired_config_root_without_widening_home_access() {
         vec![
             "/home/agent/.local/share/amp".into(),
             "/home/agent/.config/opencode".into(),
+            "/home/agent/.cache/amp".into(),
             "/jackin/amp".into(),
         ],
     );

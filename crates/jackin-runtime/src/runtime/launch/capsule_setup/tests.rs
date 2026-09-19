@@ -389,6 +389,8 @@ fn instance_dirs_come_from_slots_and_fail_closed() {
         container_home_rel: home_rel.into(),
         container_store_rel: store_rel.into(),
         folder_target: format!("/home/agent/{home_rel}"),
+        cache_source_dir: None,
+        container_cache_rel: None,
     };
     let slots = std::collections::BTreeMap::from([
         ("claude-work".to_owned(), slot(None, ".claude", "claude")),
@@ -463,6 +465,8 @@ fn amp_instance_dir_exports_the_durable_data_parent() {
         container_home_rel: ".local/share/amp".into(),
         container_store_rel: "amp".into(),
         folder_target: "/home/agent/.local/share".into(),
+        cache_source_dir: Some("/tmp/amp-cache".into()),
+        container_cache_rel: Some(".cache/amp".into()),
     };
     let slots = std::collections::BTreeMap::from([("amp".to_owned(), slot)]);
     let instances = vec![instance("amp", Agent::Amp, "amp")];
@@ -475,4 +479,13 @@ fn amp_instance_dir_exports_the_durable_data_parent() {
         Some("/home/agent/.local/share")
     );
     assert_eq!(config.forwarded_for_instance("amp"), Some("/jackin/amp"));
+    assert_eq!(
+        config.cache_for_instance("amp"),
+        Some("/home/agent/.cache/amp")
+    );
+    assert!(
+        config
+            .mount_paths_for_instance("amp")
+            .contains(&"/home/agent/.cache/amp".to_owned())
+    );
 }

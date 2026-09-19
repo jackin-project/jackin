@@ -240,6 +240,11 @@ pub struct ProvisionedInstanceAuth {
     pub container_home_rel: String,
     pub container_store_rel: String,
     pub folder_target: String,
+    /// Host-side XDG cache root mounted into this slot, when its agent uses
+    /// XDG roots.
+    pub cache_source_dir: Option<PathBuf>,
+    /// Per-instance container-relative XDG cache root.
+    pub container_cache_rel: Option<String>,
 }
 
 /// Container-visible layout for one provisioned slot, derived from the
@@ -293,6 +298,19 @@ pub fn slot_home_rel(rel: &str, suffix: Option<&str>) -> String {
         Some((parent, leaf)) => format!("{parent}/{leaf}-{suffix}"),
         None => format!("{rel}-{suffix}"),
     }
+}
+
+fn xdg_root_agent(agent: jackin_core::Agent) -> bool {
+    use jackin_core::FolderVarKind;
+
+    matches!(
+        agent.runtime().state_paths().folder_env_var,
+        Some(var) if matches!(var.kind, FolderVarKind::XdgRoot)
+    )
+}
+
+fn xdg_cache_rel(agent: jackin_core::Agent, suffix: Option<&str>) -> Option<String> {
+    xdg_root_agent(agent).then(|| slot_home_rel(&format!(".cache/{}", agent.slug()), suffix))
 }
 
 /// Slot home rel + folder-var target for `agent`, honoring the
@@ -406,7 +424,28 @@ impl ProvisionedInstanceAuth {
             container_home_rel: layout.home_rel,
             container_store_rel: layout.store_rel,
             folder_target: layout.folder_target,
+            cache_source_dir: None,
+            container_cache_rel: None,
         }
+    }
+
+    fn with_xdg_cache(
+        mut self,
+        role_home: &Path,
+        binding: &InstanceAuthBinding,
+        suffix: Option<&str>,
+    ) -> anyhow::Result<Self> {
+        let Some(container_cache_rel) = xdg_cache_rel(binding.agent, suffix) else {
+            return Ok(self);
+        };
+        let cache_source_dir = binding.xdg_roots.as_ref().map_or_else(
+            || role_home.join(&container_cache_rel),
+            |roots| roots.cache.clone(),
+        );
+        std::fs::create_dir_all(&cache_source_dir)?;
+        self.cache_source_dir = Some(cache_source_dir);
+        self.container_cache_rel = Some(container_cache_rel);
+        Ok(self)
     }
 }
 
@@ -567,13 +606,33 @@ fn validate_selected_account_sources(
     bindings: &[InstanceAuthBinding],
     host_home: &Path,
 ) -> anyhow::Result<()> {
+    let mut configured_cache_roots = BTreeMap::<PathBuf, String>::new();
     for binding in bindings {
-        let xdg_data_dir = (binding.agent == jackin_core::Agent::Amp)
+        if xdg_root_agent(binding.agent)
+            && let Some(roots) = &binding.xdg_roots
+        {
+            if let Some((previous_root, previous_key)) =
+                configured_cache_roots.iter().find(|(previous_root, _)| {
+                    roots.cache == **previous_root
+                        || roots.cache.starts_with(previous_root)
+                        || previous_root.starts_with(&roots.cache)
+                })
+            {
+                anyhow::bail!(
+                    "configured XDG cache roots for instances {:?} and {:?} overlap at {}",
+                    previous_key,
+                    binding.key,
+                    previous_root.display()
+                );
+            }
+            configured_cache_roots.insert(roots.cache.clone(), binding.key.clone());
+        }
+        let xdg_data_dir = xdg_root_agent(binding.agent)
             .then(|| {
                 binding
                     .xdg_roots
                     .as_ref()
-                    .map(|roots| roots.data.join("amp"))
+                    .map(|roots| roots.data.join(binding.agent.slug()))
             })
             .flatten();
         let source = xdg_data_dir
@@ -1103,7 +1162,7 @@ impl RoleState {
             &timing_name,
             Some(&mode.to_string()),
         );
-        let ignore_can_skip = if mode == AuthForwardMode::Ignore {
+        let ignore_can_skip = if mode == AuthForwardMode::Ignore && binding.xdg_roots.is_none() {
             agent_ignore_can_skip_state_prepare(root, agent, suffix)?
         } else {
             false
@@ -1303,7 +1362,8 @@ impl RoleState {
             credential_paths,
             forward_auth,
             layout,
-        );
+        )
+        .with_xdg_cache(home_dir, binding, suffix)?;
         Ok((slot, outcome))
     }
 
@@ -1346,6 +1406,11 @@ impl RoleState {
     ) -> anyhow::Result<(ProvisionedInstanceAuth, AuthProvisionOutcome)> {
         let mode = binding.mode;
         let sync_source_dir = binding.sync_source_dir.as_deref();
+        let xdg_data_dir = binding
+            .xdg_roots
+            .as_ref()
+            .map(|roots| roots.data.join("opencode"));
+        let credential_source_dir = xdg_data_dir.as_deref().or(sync_source_dir);
         let (store, home_rel) = agent_slot_dirs(binding.agent);
         let layout = slot_layout(binding.agent, store, home_rel, suffix);
         let opencode_dir = root.join(&layout.store_rel);
@@ -1354,7 +1419,7 @@ impl RoleState {
         std::fs::create_dir_all(&opencode_home_dir)?;
         std::fs::create_dir_all(home_dir.join(slot_home_rel(".config/opencode", suffix)))?;
         let auth_json_path = opencode_dir.join("auth.json");
-        let (outcome, auth_json) = if let Some(source_dir) = sync_source_dir {
+        let (outcome, auth_json) = if let Some(source_dir) = credential_source_dir {
             Self::provision_opencode_auth_from_source_dir(&auth_json_path, mode, source_dir)?
         } else {
             Self::provision_opencode_auth(&auth_json_path, mode, host_home)?
@@ -1367,7 +1432,8 @@ impl RoleState {
             credential_paths,
             forward_auth,
             layout,
-        );
+        )
+        .with_xdg_cache(home_dir, binding, suffix)?;
         Ok((slot, outcome))
     }
 

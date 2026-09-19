@@ -230,6 +230,12 @@ pub(crate) fn apply_instance_dirs(
         launch
             .instance_home_dirs
             .insert(instance.config_id.clone(), slot.folder_target.clone());
+        if let Some(cache_rel) = &slot.container_cache_rel {
+            launch.instance_cache_dirs.insert(
+                instance.config_id.clone(),
+                format!("/home/agent/{cache_rel}"),
+            );
+        }
         launch.instance_forwarded_dirs.insert(
             instance.config_id.clone(),
             format!(
@@ -252,6 +258,9 @@ pub(crate) fn apply_instance_dirs(
 
         let paths = instance.agent.runtime().state_paths();
         let mut mount_paths = vec![format!("/home/agent/{}", slot.container_home_rel)];
+        if let Some(cache_rel) = &slot.container_cache_rel {
+            mount_paths.push(format!("/home/agent/{cache_rel}"));
+        }
         mount_paths.extend(
             paths
                 .home_dirs()
@@ -344,6 +353,7 @@ pub(crate) fn capsule_config(
         // Populated by `apply_instance_dirs` once role state is
         // prepared; the manifest alone does not carry slot layout.
         instance_home_dirs: std::collections::BTreeMap::new(),
+        instance_cache_dirs: std::collections::BTreeMap::new(),
         instance_forwarded_dirs: std::collections::BTreeMap::new(),
         instance_credential_files: std::collections::BTreeMap::new(),
         instance_mount_paths: std::collections::BTreeMap::new(),

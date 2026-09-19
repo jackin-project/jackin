@@ -2049,6 +2049,8 @@ fn codex_trust_slot(
         container_home_rel: container_home_rel.to_owned(),
         container_store_rel: "codex".to_owned(),
         folder_target: format!("/home/agent/{container_home_rel}"),
+        cache_source_dir: None,
+        container_cache_rel: None,
     }
 }
 

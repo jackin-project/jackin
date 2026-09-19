@@ -173,6 +173,7 @@ fn session_display_title(session: &Session) -> String {
 struct SessionLaunch {
     label: String,
     cmd: CommandBuilder,
+    cache_dir: Option<String>,
 }
 
 // ── Owned subsystems (plan 017) ────────────────────────────────────────────

@@ -738,7 +738,7 @@ fn amp_binding_provisions_credentials_from_selected_xdg_roots() {
     binding.xdg_roots = Some(jackin_config::XdgRoots {
         data,
         config,
-        cache,
+        cache: cache.clone(),
     });
     let (state, _) = RoleState::prepare_for_bindings(
         &paths,
@@ -757,6 +757,8 @@ fn amp_binding_provisions_credentials_from_selected_xdg_roots() {
         .get("selected@amp")
         .expect("selected Amp slot missing");
     assert_eq!(slot.folder_target, "/home/agent/.local/share");
+    assert_eq!(slot.cache_source_dir.as_deref(), Some(cache.as_path()));
+    assert_eq!(slot.container_cache_rel.as_deref(), Some(".cache/amp"));
     assert_eq!(
         std::fs::read_to_string(state.root.join("amp/secrets.json")).unwrap(),
         r#"{"apiKey@https://ampcode.com/":"fixture-key"}"#
@@ -764,6 +766,58 @@ fn amp_binding_provisions_credentials_from_selected_xdg_roots() {
     assert_eq!(
         std::fs::read_to_string(state.root.join("home/.config/amp/settings.json")).unwrap(),
         r#"{"theme":"fixture"}"#
+    );
+}
+
+#[test]
+fn opencode_binding_uses_selected_xdg_data_and_cache_roots() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let manifest = simple_manifest(&temp);
+    let data = temp.path().join("selected-opencode/data");
+    let config = temp.path().join("selected-opencode/config");
+    let cache = temp.path().join("selected-opencode/cache");
+    std::fs::create_dir_all(data.join("opencode")).unwrap();
+    std::fs::create_dir_all(config.join("opencode")).unwrap();
+    std::fs::create_dir_all(&cache).unwrap();
+    std::fs::write(
+        data.join("opencode/auth.json"),
+        r#"{"https://opencode.ai/api":{"key":"fixture-key"}}"#,
+    )
+    .unwrap();
+
+    let mut binding = InstanceAuthBinding::new(
+        "selected",
+        jackin_core::Agent::Opencode,
+        AuthForwardMode::Sync,
+        None,
+    );
+    binding.xdg_roots = Some(jackin_config::XdgRoots {
+        data,
+        config,
+        cache: cache.clone(),
+    });
+    let (state, _) = RoleState::prepare_for_bindings(
+        &paths,
+        "jk-selected-opencode",
+        &manifest,
+        &[binding],
+        &GithubAuthContext::default(),
+        temp.path().join("host-home").as_path(),
+        jackin_core::Agent::Opencode,
+    )
+    .unwrap();
+
+    let slot = state
+        .auth
+        .slots
+        .get("selected@opencode")
+        .expect("selected OpenCode slot missing");
+    assert_eq!(slot.cache_source_dir.as_deref(), Some(cache.as_path()));
+    assert_eq!(slot.container_cache_rel.as_deref(), Some(".cache/opencode"));
+    assert_eq!(
+        std::fs::read_to_string(state.root.join("opencode/auth.json")).unwrap(),
+        r#"{"https://opencode.ai/api":{"key":"fixture-key"}}"#
     );
 }
 

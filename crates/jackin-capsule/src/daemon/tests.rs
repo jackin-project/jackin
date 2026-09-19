@@ -742,6 +742,7 @@ fn test_mux(rows: u16, cols: u16) -> Multiplexer {
             dirty_exit_policy: None,
             isolated_worktrees: Vec::new(),
             instance_home_dirs: BTreeMap::new(),
+            instance_cache_dirs: BTreeMap::new(),
             instance_forwarded_dirs: BTreeMap::new(),
             instance_credential_files: BTreeMap::new(),
             instance_mount_paths: BTreeMap::new(),

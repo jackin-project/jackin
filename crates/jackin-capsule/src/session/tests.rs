@@ -1232,7 +1232,7 @@ fn clear_runtime_authority_drops_state_and_counters() {
 #[test]
 fn agent_session_gets_status_reporter_env() {
     let mut cmd = CommandBuilder::new("/bin/true");
-    inject_status_env(&mut cmd, 42, Some("codex"), "test-capability");
+    inject_status_env(&mut cmd, 42, Some("codex"), None, "test-capability");
     let get = |k| cmd.get_env(k).and_then(|v| v.to_str());
     assert_eq!(get(jackin_protocol::SESSION_ID_ENV), Some("42"));
     assert_eq!(get(jackin_protocol::ISOLATION_SESSION_ID_ENV), Some("42"));
@@ -1248,12 +1248,30 @@ fn agent_session_gets_status_reporter_env() {
         get("JACKIN_SESSION_STATE_DIR"),
         Some("/jackin/run/sessions/42/state")
     );
+    assert_eq!(get("XDG_CACHE_HOME"), Some("/jackin/run/sessions/42/cache"));
+}
+
+#[test]
+fn configured_xdg_cache_root_overrides_session_cache() {
+    let mut cmd = CommandBuilder::new("/bin/true");
+    inject_status_env(
+        &mut cmd,
+        42,
+        Some("amp"),
+        Some("/home/agent/.cache/amp"),
+        "test-capability",
+    );
+    assert_eq!(
+        cmd.get_env("XDG_CACHE_HOME")
+            .and_then(|value| value.to_str()),
+        Some("/home/agent/.cache/amp")
+    );
 }
 
 #[test]
 fn shell_session_gets_private_paths_and_no_agent_status_identity() {
     let mut cmd = CommandBuilder::new("/bin/zsh");
-    inject_status_env(&mut cmd, 7, None, "shell-capability");
+    inject_status_env(&mut cmd, 7, None, None, "shell-capability");
     assert!(cmd.get_env(jackin_protocol::SESSION_ID_ENV).is_none());
     assert_eq!(
         cmd.get_env(jackin_protocol::ISOLATION_SESSION_ID_ENV)
@@ -1438,6 +1456,7 @@ async fn spawn_records_instance_identity_on_session() {
                 gid: 2_001,
             },
             provider: None,
+            cache_dir: None,
         },
         command,
         terminal,
@@ -1488,6 +1507,7 @@ async fn conformance_wire_real_pty_spawn_stream_and_exit_exclude_private_content
                 gid: 2_002,
             },
             provider: None,
+            cache_dir: None,
         },
         command,
         terminal,

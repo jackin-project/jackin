@@ -270,7 +270,11 @@ impl Multiplexer {
                     config.auth_mode_for_instance(instance),
                     &self.launch_env.agent_credentials,
                 );
-                Ok(SessionLaunch { label, cmd })
+                Ok(SessionLaunch {
+                    label,
+                    cmd,
+                    cache_dir: config.cache_for_instance(instance).map(str::to_owned),
+                })
             }
             None => Ok(SessionLaunch {
                 label: crate::tui::model::visible_agent_label(None, None, None),
@@ -285,6 +289,7 @@ impl Multiplexer {
                             anyhow::anyhow!("launch config has no isolated shell identity")
                         })?,
                 ),
+                cache_dir: None,
             }),
         }
     }
@@ -406,6 +411,7 @@ impl Multiplexer {
                     label: label.to_owned(),
                     env_overrides: env_overrides.to_vec(),
                 }),
+                cache_dir: launch.cache_dir,
             },
             launch.cmd,
             self.session_terminal(

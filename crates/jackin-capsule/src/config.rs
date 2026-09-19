@@ -109,6 +109,14 @@ fn validate_instance(
         is_descendant(home, "/home/agent") && !home.split('/').any(|component| component == ".."),
         "instance {instance:?} has an invalid private home path"
     );
+    let cache_root = config.cache_for_instance(instance);
+    if let Some(cache_root) = cache_root {
+        anyhow::ensure!(
+            cache_root.starts_with("/home/agent/.cache/")
+                && !cache_root.split('/').any(|component| component == ".."),
+            "instance {instance:?} has an invalid XDG cache path"
+        );
+    }
     // Amp/OpenCode export their data directory through XDG_DATA_HOME, but
     // persist settings under a sibling `.config/<agent>` directory. The
     // host mounts both roots for the same slot; admit only the exact
@@ -157,7 +165,8 @@ fn validate_instance(
             && (is_descendant(path, home)
                 || paired_xdg_config_root
                     .as_deref()
-                    .is_some_and(|root| is_descendant(path, root)));
+                    .is_some_and(|root| is_descendant(path, root))
+                || cache_root.is_some_and(|root| is_descendant(path, root)));
         let is_forwarded_auth = is_descendant(path, forwarded);
         anyhow::ensure!(
             path != "/home/agent"
@@ -212,6 +221,12 @@ fn validate(config: &CapsuleConfig) -> Result<()> {
         anyhow::ensure!(
             config.instances.contains(instance),
             "home paths name an instance outside the configured allowlist"
+        );
+    }
+    for instance in config.instance_cache_dirs.keys() {
+        anyhow::ensure!(
+            config.instances.contains(instance),
+            "cache paths name an instance outside the configured allowlist"
         );
     }
     for instance in config.instance_forwarded_dirs.keys() {

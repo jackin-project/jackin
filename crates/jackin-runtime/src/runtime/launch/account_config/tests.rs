@@ -46,6 +46,8 @@ fn slots_for(
                     container_home_rel,
                     container_store_rel,
                     folder_target,
+                    cache_source_dir: None,
+                    container_cache_rel: None,
                 },
             )
         })

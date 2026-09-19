@@ -239,8 +239,8 @@ inherited scopes entirely; inherited global candidates filter by workspace
 authorization, while explicit selections validate atomically and never fall back
 silently. An explicit empty list means shell-only.
 
-Amp profiles may pin explicit XDG roots when state splits across data, config,
-and cache homes:
+Amp and OpenCode profiles may pin explicit XDG roots when state splits across
+data, config, and cache homes:
 
 ```toml
 [accounts.amp-scent.credential.xdg_roots]
@@ -248,6 +248,14 @@ data = "/Users/operator/.amp-scentbird/data"
 config = "/Users/operator/.amp-scentbird/config"
 cache = "/Users/operator/.amp-scentbird/cache"
 ```
+
+The configured cache directory is preserved as the host-side source. Each
+selected instance receives a unique container target such as
+`/home/agent/.cache/amp` or `/home/agent/.cache/opencode`; secondary instances
+get a slot suffix. Reusing or nesting configured cache roots across selected
+instances is rejected because it would break per-instance isolation. Without
+an explicit cache root, jackin creates the equivalent cache directory under
+the instance's managed `home/` state.
 
 The `[bootstrap]` sentinel records first-run initialization. A missing config
 file scans once on creation; an installer-created empty config carries
@@ -462,8 +470,10 @@ Each running role stores state at `~/.jackin/data/<container-name>/`:
 | `home/.claude/` (including `.claude.json`) | Durable Claude Code home state, including conversation history, runtime-local plugins, account metadata, and settings written during the session |
 | `home/.codex/` | Durable Codex home state, including conversation history, runtime-local config, and login state created inside the session |
 | `home/.local/share/amp/` | Durable Amp data state created inside the session |
+| `home/.cache/amp[-<slot>]/` | Per-instance Amp XDG cache target; an explicit `XdgRoots.cache` is mounted here from its configured host root |
 | `home/.kimi-code/` | Durable Kimi home state, including runtime-local config and login state created inside the session |
 | `home/.local/share/opencode/` | Durable OpenCode data state (auth credentials, model preferences) created inside the session |
+| `home/.cache/opencode[-<slot>]/` | Per-instance OpenCode XDG cache target; an explicit `XdgRoots.cache` is mounted here from its configured host root |
 | `home/.grok/` | Durable Grok home state, including runtime-local config, auth files copied from `/jackin/grok/`, and cache written during the session |
 | `state/` | jackin❯ runtime state mounted at `/jackin/state`, including the `setup_once` marker |
 | `.config/gh/` | GitHub CLI authentication and settings (agent-neutral) |

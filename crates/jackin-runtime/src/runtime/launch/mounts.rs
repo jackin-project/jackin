@@ -39,6 +39,9 @@ fn push_slot_home_mounts(
         home.join(&slot.container_home_rel).display(),
         slot.container_home_rel
     ));
+    if let (Some(source), Some(rel)) = (&slot.cache_source_dir, &slot.container_cache_rel) {
+        mounts.push(format!("{}:/home/agent/{rel}", source.display()));
+    }
     for entry in paths
         .home_dirs()
         .filter(|entry| *entry != paths.credential_dir)
@@ -177,6 +180,13 @@ pub(crate) fn apple_agent_mounts(
                 format!("/home/agent/{}", slot.container_home_rel),
                 false,
             ));
+            if let (Some(source), Some(rel)) = (&slot.cache_source_dir, &slot.container_cache_rel) {
+                mounts.push(AppleContainerMount::new(
+                    source.clone(),
+                    format!("/home/agent/{rel}"),
+                    false,
+                ));
+            }
             for entry in paths
                 .home_dirs()
                 .filter(|entry| *entry != paths.credential_dir)

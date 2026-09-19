@@ -89,6 +89,7 @@ impl Multiplexer {
                     label: label.to_owned(),
                     env_overrides: env_overrides.to_vec(),
                 }),
+                cache_dir: launch.cache_dir,
             },
             launch.cmd,
             self.session_terminal(spawn_rows, spawn_cols),

@@ -1042,7 +1042,7 @@ fn prune_agent_configurations_scrubs_launch_lists() {
 }
 
 #[test]
-fn xdg_roots_validate_amp_only_and_absolute() {
+fn xdg_roots_validate_xdg_agents_and_absolute() {
     let roots = |data: &str| XdgRoots {
         data: PathBuf::from(data),
         config: PathBuf::from("/x/config"),
@@ -1076,6 +1076,17 @@ fn xdg_roots_validate_amp_only_and_absolute() {
         },
     };
     claude.validate("claude").unwrap_err();
+    let opencode = AccountConfig {
+        enabled: true,
+        name: "OpenCode".into(),
+        provider: AiProvider::Opencode,
+        credential: AccountCredential::Profile {
+            agent: Agent::Opencode,
+            directory: PathBuf::from("/x/opencode"),
+            xdg_roots: Some(roots("/x/data")),
+        },
+    };
+    opencode.validate("opencode").unwrap();
 }
 
 #[test]
