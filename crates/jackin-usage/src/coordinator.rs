@@ -892,13 +892,10 @@ fn persist_terminal(
 }
 
 fn data_bearing(view: &FocusedUsageView) -> bool {
-    !view.buckets.is_empty()
-        && !matches!(
-            view.status,
-            UsageSnapshotStatus::Unavailable
-                | UsageSnapshotStatus::Unsupported
-                | UsageSnapshotStatus::NeedsSecret
-        )
+    if view.status == UsageSnapshotStatus::Unsupported {
+        return true;
+    }
+    !view.buckets.is_empty() && view.status == UsageSnapshotStatus::Fresh
 }
 
 /// Jittered periodic deadline: tier cadence plus a deterministic
@@ -943,9 +940,13 @@ fn generation_view(envelope: &AccountStateEnvelope) -> UsageGenerationView {
             .clone()
             .or_else(|| envelope.last_good.clone()),
         error: envelope.terminal_error.clone(),
-        retry_at_epoch: envelope
-            .rate_limit_deadline_epoch
-            .or(envelope.retry_deadline_epoch),
+        retry_at_epoch: [
+            envelope.rate_limit_deadline_epoch,
+            envelope.retry_deadline_epoch,
+        ]
+        .into_iter()
+        .flatten()
+        .max(),
     }
 }
 

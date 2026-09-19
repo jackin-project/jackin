@@ -113,9 +113,9 @@ fn openrouter_credits_403_is_typed_scope_denial() {
 }
 
 #[test]
-fn openrouter_credits_zero_balance_renders_without_meter_when_uncapped() {
+fn openrouter_credits_separates_spend_from_remaining_balance() {
     let outcome = parse_openrouter_credits(serde_json::json!({
-        "data": {"total_credits": 10.0, "total_usage": 10.0}
+        "data": {"total_credits": 100.0, "total_usage": 25.0}
     }))
     .expect("credits fixture");
     let OpenRouterCreditsOutcome::Available {
@@ -126,8 +126,21 @@ fn openrouter_credits_zero_balance_renders_without_meter_when_uncapped() {
         panic!("expected available credits");
     };
     let view = openrouter_credits_bucket(spent_cents, ceiling_cents);
-    assert_eq!(view.used_label.as_deref(), Some("$0"));
-    assert_eq!(view.remaining_percent, Some(0));
+    assert_eq!(view.used_label.as_deref(), Some("$25"));
+    assert_eq!(view.limit_label.as_deref(), Some("$100"));
+    assert_eq!(
+        view.used_money.as_ref().map(|money| money.amount_minor),
+        Some(2_500)
+    );
+    assert_eq!(
+        view.limit_money.as_ref().map(|money| money.amount_minor),
+        Some(10_000)
+    );
+    assert_eq!(view.remaining_percent, Some(75));
+
+    let exhausted = openrouter_credits_bucket(1_000, 1_000);
+    assert_eq!(exhausted.used_label.as_deref(), Some("$10"));
+    assert_eq!(exhausted.remaining_percent, Some(0));
     let bare = openrouter_credits_bucket(0, 0);
     assert_eq!(bare.remaining_percent, None);
 }

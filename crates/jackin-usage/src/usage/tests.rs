@@ -777,6 +777,117 @@ fn usage_cache_key_canonicalizes_provider_aliases() {
         canonical_usage_cache_key("claude", Some("Z.AI"))
     );
 }
+
+#[test]
+fn usage_cache_keeps_account_snapshots_isolated_across_one_provider_target() {
+    let mut first = codex_cached_usage_view();
+    first.account.account_label = "personal@example.test".to_owned();
+    let mut second = codex_cached_usage_view();
+    second.account.account_label = "work@example.test".to_owned();
+
+    let mut cache = UsageCache::default();
+    cache.insert_snapshot_for_test("codex", Some("OpenAI"), first);
+    cache.insert_snapshot_for_test("codex", Some("OpenAI"), second);
+
+    assert_eq!(cache.snapshots.len(), 2);
+    let rows = cache.account_snapshot_views();
+    assert_eq!(rows.len(), 2);
+    assert!(
+        rows.iter()
+            .any(|row| row.account_label == "personal@example.test")
+    );
+    assert!(
+        rows.iter()
+            .any(|row| row.account_label == "work@example.test")
+    );
+
+    cache.adopt_broker_error(
+        &UsageRefreshTarget {
+            agent: "codex".to_owned(),
+            provider: Some("OpenAI".to_owned()),
+        },
+        &jackin_protocol::usage_broker::UsageCoordinationError {
+            kind: jackin_protocol::usage_broker::UsageCoordinationErrorKind::ProviderUnavailable,
+            message: "provider unavailable".to_owned(),
+        },
+    );
+    assert_eq!(cache.snapshots.len(), 2);
+    assert!(
+        cache
+            .snapshots
+            .values()
+            .all(|cached| cached.view.status == UsageSnapshotStatus::Stale)
+    );
+}
+
+#[test]
+fn usage_cache_isolates_provider_targets_that_share_one_agent_slug() {
+    let mut zai = codex_cached_usage_view();
+    zai.status_bar_label = "zai".to_owned();
+    let mut minimax = codex_cached_usage_view();
+    minimax.status_bar_label = "minimax".to_owned();
+
+    let mut cache = UsageCache::default();
+    cache.insert_snapshot_for_test("codex", Some("Z.AI"), zai);
+    cache.insert_snapshot_for_test("codex", Some("MiniMax"), minimax);
+
+    assert_eq!(
+        cache
+            .focused_snapshot(Some("codex"), Some("Z.AI"))
+            .status_bar_label,
+        "zai"
+    );
+    assert_eq!(
+        cache
+            .focused_snapshot(Some("codex"), Some("MiniMax"))
+            .status_bar_label,
+        "minimax"
+    );
+}
+
+#[test]
+fn usage_cache_adopts_broker_generations_by_account_capability() {
+    let target = UsageRefreshTarget {
+        agent: "codex".to_owned(),
+        provider: Some("OpenAI".to_owned()),
+    };
+    let generation = |account_id: &str, account_label: &str| {
+        let mut view = codex_cached_usage_view();
+        view.account.account_label = account_label.to_owned();
+        jackin_protocol::usage_broker::UsageGenerationView {
+            capability: jackin_protocol::usage_broker::UsageAccountCapability {
+                account_id: account_id.to_owned(),
+                surface_id: "codex".to_owned(),
+            },
+            generation: 1,
+            phase: jackin_protocol::usage_broker::UsageRefreshPhase::Completed,
+            snapshot: Some(view),
+            error: None,
+            retry_at_epoch: None,
+        }
+    };
+
+    let mut cache = UsageCache::default();
+    cache.adopt_broker_generation(&target, &generation("account-a", "personal@example.test"));
+    cache.adopt_broker_generation(&target, &generation("account-b", "work@example.test"));
+
+    assert_eq!(cache.snapshots.len(), 2);
+    assert_eq!(cache.account_snapshot_views().len(), 2);
+    cache.adopt_broker_error(
+        &target,
+        &jackin_protocol::usage_broker::UsageCoordinationError {
+            kind: jackin_protocol::usage_broker::UsageCoordinationErrorKind::ProviderUnavailable,
+            message: "provider unavailable".to_owned(),
+        },
+    );
+    assert!(
+        cache
+            .snapshots
+            .values()
+            .all(|cached| cached.view.status == UsageSnapshotStatus::Stale)
+    );
+}
+
 #[test]
 fn failed_refresh_preserves_last_fresh_quota_rows_as_stale_cache() {
     let mut cached = FocusedUsageView::unavailable("seed", 123);

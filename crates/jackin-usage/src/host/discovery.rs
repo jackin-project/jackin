@@ -875,8 +875,20 @@ fn source_capability_id(surface: HostSurfaceId, key: &CredentialSourceKey) -> St
         CredentialSourceKey::Profile { agent, root } => {
             format!("profile-v1:{}:{}", agent.slug(), root.to_string_lossy())
         }
-        CredentialSourceKey::Env { surface, key, .. } => {
-            format!("env-v1:{}:{key}", surface.id())
+        CredentialSourceKey::Env {
+            surface,
+            handle,
+            key,
+        } => {
+            fn segment(value: &str) -> String {
+                format!("{}:{value}", value.len())
+            }
+            format!(
+                "env-v2:{}:{}:{}",
+                surface.id(),
+                segment(key),
+                segment(&handle.0)
+            )
         }
         CredentialSourceKey::Capability { .. } => unreachable!("returned above"),
     };

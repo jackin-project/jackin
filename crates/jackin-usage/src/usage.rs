@@ -12,7 +12,7 @@
 //! details stay here so status chrome and dialogs render strings, not API
 //! branches.
 
-use jackin_core::container_paths;
+use jackin_core::{account_key_hash, container_paths};
 use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::future::Future;
@@ -371,12 +371,19 @@ impl UsageCache {
         &mut self,
         agent: &str,
         focused_provider: Option<&str>,
-        view: FocusedUsageView,
+        mut view: FocusedUsageView,
     ) {
-        self.snapshots.insert(
-            canonical_usage_cache_key(agent, focused_provider),
-            CachedUsage { view },
-        );
+        if view.focused_agent.is_none() {
+            view.focused_agent = Some(agent.to_owned());
+        }
+        if view.focused_provider.is_none() {
+            view.focused_provider = focused_provider.map(str::to_owned);
+        }
+        let cache_key = stable_cache_account_label(&view.account.account_label)
+            .map(|_| usage_cache_key_for_view(agent, focused_provider, &view))
+            .or_else(|| cached_usage_key_for_target(&self.snapshots, agent, focused_provider))
+            .unwrap_or_else(|| canonical_usage_cache_key(agent, focused_provider));
+        self.snapshots.insert(cache_key, CachedUsage { view });
     }
 
     /// Bench/test helper: write materialized accounts to `path` instead of the
@@ -402,8 +409,7 @@ impl UsageCache {
         // Label-only fast path: the status bar needs just `status_bar_label`, which
         // `cached_focused_usage_view`'s clone + enrich/mark-active never touch. Read
         // it straight from the stored view instead of cloning the whole snapshot.
-        let cache_key = canonical_usage_cache_key(agent, focused_provider);
-        if let Some(cached) = self.snapshots.get(&cache_key) {
+        if let Some(cached) = cached_usage_for_target(&self.snapshots, agent, focused_provider) {
             return Some(cached.view.status_bar_label.clone());
         }
         // A focused agent with no snapshot yet is mid-load — show `refreshing`
@@ -443,8 +449,8 @@ impl UsageCache {
         agent: &str,
         focused_provider: Option<&str>,
     ) -> Option<FocusedUsageView> {
-        let cache_key = canonical_usage_cache_key(agent, focused_provider);
-        let mut view = self.snapshots.get(&cache_key)?.view.clone();
+        let mut view = cached_usage_for_target(&self.snapshots, agent, focused_provider)
+            .map(|cached| cached.view.clone())?;
         refresh_cached_updated_label(&mut view, now_epoch());
         if view.focused_agent.is_none() {
             view.focused_agent = Some(agent.to_owned());
@@ -483,6 +489,110 @@ pub(crate) fn canonical_usage_cache_key(agent: &str, focused_provider: Option<&s
         return format!("{agent}:{}", focused_provider.unwrap_or_default());
     }
     surface.label().to_owned()
+}
+
+fn usage_cache_key_for_view(
+    agent: &str,
+    focused_provider: Option<&str>,
+    view: &FocusedUsageView,
+) -> String {
+    let base = canonical_usage_cache_key(agent, focused_provider);
+    let Some(label) = stable_cache_account_label(&view.account.account_label) else {
+        return base;
+    };
+    let surface = resolve_surface(agent, focused_provider);
+    let surface_id = surface.id().unwrap_or(agent);
+    let evidence = format!(
+        "usage-cache-account-v1:{}:{}",
+        length_prefixed(surface_id),
+        length_prefixed(&label),
+    );
+    let hash = account_key_hash("usage-cache-account-v1", &evidence);
+    let hash = hash.strip_prefix("sha256:").unwrap_or(&hash);
+    format!("{base}:account-{hash}")
+}
+
+fn usage_cache_key_for_broker_account(
+    agent: &str,
+    focused_provider: Option<&str>,
+    account_id: &str,
+) -> String {
+    format!(
+        "{}:account-id-v1:{account_id}",
+        canonical_usage_cache_key(agent, focused_provider)
+    )
+}
+
+fn stable_cache_account_label(label: &str) -> Option<String> {
+    let label = label.trim();
+    if label.is_empty()
+        || label.eq_ignore_ascii_case("account unavailable")
+        || label.eq_ignore_ascii_case("unknown")
+        || label.eq_ignore_ascii_case("current host login")
+        || label.eq_ignore_ascii_case("refreshing")
+    {
+        None
+    } else {
+        Some(label.to_lowercase())
+    }
+}
+
+fn length_prefixed(value: &str) -> String {
+    format!("{}:{value}", value.len())
+}
+
+fn cache_view_matches_target(
+    view: &FocusedUsageView,
+    agent: &str,
+    focused_provider: Option<&str>,
+) -> bool {
+    let target_surface = resolve_surface(agent, focused_provider);
+    let view_surface = resolve_surface(
+        view.focused_agent.as_deref().unwrap_or_default(),
+        view.focused_provider
+            .as_deref()
+            .or(Some(view.account.provider_label.as_str())),
+    );
+    if target_surface == UsageSurface::Unsupported {
+        view.focused_agent.as_deref() == Some(agent)
+            && view.focused_provider.as_deref() == focused_provider
+    } else {
+        view_surface == target_surface
+    }
+}
+
+fn cache_key_matches_target(key: &str, agent: &str, focused_provider: Option<&str>) -> bool {
+    let base = canonical_usage_cache_key(agent, focused_provider);
+    key == base || key.starts_with(&format!("{base}:account-"))
+}
+
+fn cached_usage_for_target<'a>(
+    snapshots: &'a HashMap<String, CachedUsage>,
+    agent: &str,
+    focused_provider: Option<&str>,
+) -> Option<&'a CachedUsage> {
+    let key = cached_usage_key_for_target(snapshots, agent, focused_provider)?;
+    snapshots.get(&key)
+}
+
+fn cached_usage_key_for_target(
+    snapshots: &HashMap<String, CachedUsage>,
+    agent: &str,
+    focused_provider: Option<&str>,
+) -> Option<String> {
+    snapshots
+        .iter()
+        .filter(|(key, cached)| {
+            cache_key_matches_target(key, agent, focused_provider)
+                || cache_view_matches_target(&cached.view, agent, focused_provider)
+        })
+        .max_by(|(left_key, left), (right_key, right)| {
+            left.view
+                .fetched_at_epoch
+                .cmp(&right.view.fetched_at_epoch)
+                .then_with(|| left_key.cmp(right_key))
+        })
+        .map(|(key, _)| key.clone())
 }
 
 pub(crate) fn env_dir_or_home(env_var: &str, home_default: &str) -> PathBuf {

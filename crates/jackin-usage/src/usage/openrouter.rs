@@ -341,9 +341,10 @@ pub(crate) fn parse_openrouter_credits(
     })
 }
 
-/// Account-credits row: balance is `total_credits - total_usage`, and a real
-/// zero balance renders as `$0` (never "No data"). The percentage meter exists
-/// only when the ceiling is positive.
+/// Account-credits row: the meter shows remaining balance, while the spent
+/// fields retain the provider's `total_usage`. A real zero balance renders as
+/// `$0` remaining (never "No data"). The percentage meter exists only when the
+/// ceiling is positive.
 pub(crate) fn openrouter_credits_bucket(spent_cents: i64, ceiling_cents: i64) -> QuotaBucketView {
     let balance = ceiling_cents.saturating_sub(spent_cents);
     let remaining_percent = (ceiling_cents > 0).then(|| {
@@ -356,14 +357,14 @@ pub(crate) fn openrouter_credits_bucket(spent_cents: i64, ceiling_cents: i64) ->
     });
     let mut view = bucket(
         "Account credits",
-        Some(format_cents(balance)),
+        Some(format_cents(spent_cents)),
         Some(format_cents(ceiling_cents)),
         remaining_percent,
         None,
         None,
         UsageSnapshotStatus::Fresh,
     );
-    view.used_money = Some(Money::new(balance.max(0), "USD", 2));
+    view.used_money = Some(Money::new(spent_cents, "USD", 2));
     view.limit_money = Some(Money::new(ceiling_cents, "USD", 2));
     view
 }

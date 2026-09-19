@@ -107,6 +107,7 @@ impl ProjectionPublisher {
         let Ok(mut published) = self.published.lock() else {
             return false;
         };
+        let mut pending = Vec::new();
         let mut advanced = false;
         for view in &views {
             let current = PublishedAccount {
@@ -124,7 +125,7 @@ impl ProjectionPublisher {
                         && current.phase.is_active())
             });
             if !stale {
-                published.insert(view.capability.clone(), current);
+                pending.push((view.capability.clone(), current));
                 advanced = true;
             }
         }
@@ -151,8 +152,13 @@ impl ProjectionPublisher {
             retry_deadline_epoch: None,
             success_deadline_epoch: None,
         };
-        let _ignored = self.store.store(&envelope);
+        if self.store.store(&envelope).is_err() {
+            return false;
+        }
         *projection = next;
+        for (capability, current) in pending {
+            published.insert(capability, current);
+        }
         true
     }
 }
@@ -227,9 +233,10 @@ fn aggregate_freshness(any_active: bool, accounts: &[UsageAccountV1]) -> UsageFr
         freshness.last_good_at_epoch = freshness
             .last_good_at_epoch
             .max(account.freshness.last_good_at_epoch);
-        if freshness.retry_at_epoch.is_none() {
-            freshness.retry_at_epoch = account.freshness.retry_at_epoch;
-        }
+        freshness.retry_at_epoch = [freshness.retry_at_epoch, account.freshness.retry_at_epoch]
+            .into_iter()
+            .flatten()
+            .min();
         freshness.is_stale |= account.freshness.is_stale;
     }
     freshness.phase = if any_active {
@@ -425,5 +432,183 @@ const fn issue_recoverability(kind: UsageCoordinationErrorKind) -> UsageIssueRec
         | UsageCoordinationErrorKind::CorruptState
         | UsageCoordinationErrorKind::OwnerLost => UsageIssueRecoverabilityV1::Terminal,
         _ => UsageIssueRecoverabilityV1::Retryable,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+    use std::fs;
+    use std::sync::{Arc, Mutex};
+    use std::time::Duration;
+
+    use jackin_protocol::control::{UsageConfidence, UsageSeverity, UsageSource};
+    use jackin_protocol::usage_broker::{
+        UsageAccountCapability, UsageIdentityKindV1, UsageLifecycleV1,
+        UsageProjectionRefreshStateV1, UsageProjectionSchemaV1,
+    };
+
+    use super::*;
+    use crate::coordinator::{
+        AccountStateEnvelope, AccountStateStore, ProviderProbeOutcome, StateStoreError,
+        UsageCoordinatorConfig, UsageProviderExecutor,
+    };
+
+    #[derive(Default)]
+    struct MemoryStore {
+        states: Mutex<BTreeMap<UsageAccountCapability, AccountStateEnvelope>>,
+    }
+
+    impl AccountStateStore for MemoryStore {
+        fn load(
+            &self,
+            capability: &UsageAccountCapability,
+            _now_epoch: i64,
+        ) -> Result<Option<AccountStateEnvelope>, StateStoreError> {
+            Ok(self.states.lock().unwrap().get(capability).cloned())
+        }
+
+        fn store(
+            &self,
+            envelope: &AccountStateEnvelope,
+            _now_epoch: i64,
+        ) -> Result<(), StateStoreError> {
+            self.states
+                .lock()
+                .unwrap()
+                .insert(envelope.capability.clone(), envelope.clone());
+            Ok(())
+        }
+    }
+
+    struct ImmediateExecutor;
+
+    impl UsageProviderExecutor for ImmediateExecutor {
+        fn probe(
+            &self,
+            _capability: &UsageAccountCapability,
+            _generation: u64,
+        ) -> ProviderProbeOutcome {
+            ProviderProbeOutcome::success(fresh_view())
+        }
+    }
+
+    fn capability() -> UsageAccountCapability {
+        UsageAccountCapability {
+            account_id: "account-a".to_owned(),
+            surface_id: "claude".to_owned(),
+        }
+    }
+
+    fn fresh_view() -> FocusedUsageView {
+        let mut view = FocusedUsageView::unavailable("fixture", 1_000);
+        view.focused_agent = Some("claude".to_owned());
+        view.focused_provider = Some("Claude".to_owned());
+        view.account.provider_label = "Anthropic".to_owned();
+        view.account.account_label = "account@example.test".to_owned();
+        view.status = UsageSnapshotStatus::Fresh;
+        view.source = UsageSource::ProviderApi;
+        view.confidence = UsageConfidence::Authoritative;
+        view.buckets = vec![QuotaBucketView {
+            label: "Weekly".to_owned(),
+            used_label: None,
+            limit_label: None,
+            remaining_percent: Some(75),
+            reset_label: None,
+            resets_at: None,
+            status_slot: None,
+            pace_label: None,
+            status: UsageSnapshotStatus::Fresh,
+            used_money: None,
+            limit_money: None,
+            severity: UsageSeverity::Normal,
+        }];
+        view.last_error = None;
+        view
+    }
+
+    fn empty_projection() -> UsageProjectionV1 {
+        UsageProjectionV1 {
+            schema_version: UsageProjectionSchemaV1,
+            projection_id: "test:0".to_owned(),
+            generated_at_epoch: 1_000,
+            discovery_revision: "catalog".to_owned(),
+            broker_instance_id: "test".to_owned(),
+            broker_generation: 0,
+            refresh_state: UsageProjectionRefreshStateV1::Idle,
+            providers: Vec::new(),
+            unresolved: Vec::new(),
+            issues: Vec::new(),
+        }
+    }
+
+    fn account_with_retry(id: &str, retry_at_epoch: Option<i64>) -> UsageAccountV1 {
+        UsageAccountV1 {
+            canonical_account_id: id.to_owned(),
+            identity_kind: UsageIdentityKindV1::ProviderAccountId,
+            rank: 0,
+            display_label: id.to_owned(),
+            plan_label: None,
+            status_label: None,
+            lifecycle: UsageLifecycleV1::Available,
+            freshness: UsageFreshnessV1 {
+                generation: 1,
+                phase: UsageFreshnessPhaseV1::Failed,
+                last_good_at_epoch: None,
+                retry_at_epoch,
+                is_stale: false,
+            },
+            provenance_count: 1,
+            windows: Vec::new(),
+            metric_groups: Vec::new(),
+            credential_expires_at_epoch: None,
+            issues: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn retry_deadline_aggregation_is_independent_of_account_order() {
+        let early = account_with_retry("early", Some(100));
+        let late = account_with_retry("late", Some(200));
+        let first = aggregate_freshness(false, &[late.clone(), early.clone()]);
+        let second = aggregate_freshness(false, &[early, late]);
+        assert_eq!(first.retry_at_epoch, Some(100));
+        assert_eq!(second.retry_at_epoch, Some(100));
+    }
+
+    #[test]
+    fn publication_checkpoint_advances_only_after_durable_store() {
+        let temp = tempfile::tempdir().unwrap();
+        let account = capability();
+        let coordinator = Arc::new(UsageCoordinator::new(
+            Arc::new(ImmediateExecutor),
+            Arc::new(MemoryStore::default()),
+            UsageCoordinatorConfig::default(),
+        ));
+        let queued = coordinator
+            .request_refresh(&account, 0, true, 1_000)
+            .unwrap();
+        coordinator
+            .join_generation(&account, queued.generation, Duration::from_secs(2), 1_001)
+            .unwrap();
+
+        let projection = Arc::new(Mutex::new(empty_projection()));
+        let publisher = ProjectionPublisher::new(
+            Arc::clone(&coordinator),
+            Arc::clone(&projection),
+            FileProjectionStateStore::under_data_dir(temp.path()),
+        );
+        publisher.observe(&account);
+
+        let broker_dir = temp.path().join("usage-broker");
+        fs::create_dir_all(&broker_dir).unwrap();
+        fs::create_dir(broker_dir.join("projection.json")).unwrap();
+        assert!(!publisher.publish_due(1_002));
+        assert_eq!(projection.lock().unwrap().broker_generation, 0);
+
+        fs::remove_dir(broker_dir.join("projection.json")).unwrap();
+        assert!(publisher.publish_due(1_003));
+        assert_eq!(projection.lock().unwrap().broker_generation, 1);
+        assert!(!publisher.publish_due(1_004));
     }
 }

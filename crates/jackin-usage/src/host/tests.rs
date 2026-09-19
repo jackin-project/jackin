@@ -1064,6 +1064,11 @@ fn canonical_identity_domain_separates_evidence_and_normalizes_stable_handles() 
         provider_id.canonical_id_v1(),
         stable_handle.canonical_id_v1()
     );
+    assert_ne!(
+        provider_id.account_key(),
+        stable_handle.account_key(),
+        "routing keys must retain the identity evidence kind"
+    );
 
     let mut uppercase = FocusedUsageView::unavailable("seed", 1);
     uppercase.focused_agent = Some("codex".to_owned());

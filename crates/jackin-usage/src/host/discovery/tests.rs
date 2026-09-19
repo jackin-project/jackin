@@ -119,6 +119,27 @@ fn write_registry(config_root: &Path, entries: &[(&str, Agent, &Path)]) {
 }
 
 #[test]
+fn env_capability_ids_isolate_distinct_opaque_credentials() {
+    let first = CredentialSourceKey::Env {
+        surface: HostSurfaceId::Zai,
+        handle: OpaqueCredentialHandle::new("credential-1"),
+        key: "ZAI_API_KEY".to_owned(),
+    };
+    let second = CredentialSourceKey::Env {
+        surface: HostSurfaceId::Zai,
+        handle: OpaqueCredentialHandle::new("credential-2"),
+        key: "ZAI_API_KEY".to_owned(),
+    };
+
+    let first_id = source_capability_id(HostSurfaceId::Zai, &first);
+    let second_id = source_capability_id(HostSurfaceId::Zai, &second);
+    assert_ne!(first_id, second_id);
+    assert_eq!(first_id, source_capability_id(HostSurfaceId::Zai, &first));
+    assert!(!first_id.contains("credential-1"));
+    assert!(!second_id.contains("credential-2"));
+}
+
+#[test]
 fn disc_registry_enumerates_registered_sources_without_ambient_fallback() {
     let temp = tempfile::tempdir().unwrap();
     let config_root = temp.path().join("config");
