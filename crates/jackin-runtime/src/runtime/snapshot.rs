@@ -162,6 +162,7 @@ pub(crate) fn request_control_inner(path: &Path, request: &ClientMsg) -> Result<
                 jackin_telemetry::propagation::inject(&mut ctx);
                 ctx
             },
+            session_capability: None,
             msg: request.clone(),
         }))
         .context("writing control request to daemon")?;

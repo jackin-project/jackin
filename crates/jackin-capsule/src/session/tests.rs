@@ -1411,6 +1411,23 @@ async fn spawn_records_instance_identity_on_session() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn conformance_wire_real_pty_spawn_stream_and_exit_exclude_private_content() {
+    const CHILD: &str = "JACKIN_SESSION_WIRE_CHILD";
+    if std::env::var_os(CHILD).is_none() {
+        let status = std::process::Command::new(
+            std::env::current_exe().expect("current test executable"),
+        )
+        .args([
+            "--exact",
+            "session::tests::conformance_wire_real_pty_spawn_stream_and_exit_exclude_private_content",
+            "--nocapture",
+        ])
+        .env(CHILD, "1")
+        .status()
+        .expect("spawn isolated session wire test");
+        assert!(status.success(), "isolated session wire test failed");
+        return;
+    }
+    let _telemetry_guard = crate::test_support::telemetry_test_guard();
     let testbed = jackin_otlp_testbed::Testbed::start().expect("start OTLP testbed");
     jackin_diagnostics::init_wire_test_export(
         &testbed.endpoint(),

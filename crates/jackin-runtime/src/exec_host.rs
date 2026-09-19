@@ -29,10 +29,12 @@
 //!
 //! On Linux, the listener also authenticates the socket peer with safe
 //! `SO_PEERCRED` (`UnixStream::peer_cred`) and accepts only the container's
-//! init process (`NSpid` innermost PID 1), which is the capsule daemon. That
-//! binds credential resolution to the daemon path that already enforces the
-//! operator picker. Non-Linux hosts fail closed: the relay is disabled until
-//! an equivalent peer-identity mechanism is implemented for that backend.
+//! init process with an `NSpid` vector exactly `[host_pid, 1]`. This requires
+//! the one container PID namespace directly hosted by the launch process and
+//! rejects nested PID namespaces. That binds credential resolution to the
+//! daemon path that already enforces the operator picker. Non-Linux hosts fail
+//! closed: the relay is disabled until an equivalent peer-identity mechanism
+//! is implemented for that backend.
 //! File permissions and an operator binding allowlist are not a substitute
 //! for authenticating the in-container caller.
 
@@ -377,8 +379,14 @@ fn peer_is_container_init_process_status(status: &str) -> bool {
     status
         .lines()
         .find_map(|line| line.strip_prefix("NSpid:"))
-        .and_then(|value| value.split_whitespace().last())
-        == Some("1")
+        .is_some_and(|value| {
+            let mut ids = value.split_whitespace();
+            let host_pid = ids.next().and_then(|value| value.parse::<u32>().ok());
+            let container_pid = ids.next();
+            host_pid.is_some_and(|pid| pid > 0)
+                && container_pid == Some("1")
+                && ids.next().is_none()
+        })
 }
 
 async fn resolve_all(refs: &[ExecBinding]) -> Result<std::collections::BTreeMap<String, String>> {

@@ -403,6 +403,7 @@ fn write_control_request(
         .write_all(&jackin_protocol::control::frame(
             &jackin_protocol::control::ControlRequest {
                 ctx,
+                session_capability: None,
                 msg: request.clone(),
             },
         ))

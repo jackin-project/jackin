@@ -38,6 +38,19 @@ pub mod socket;
 pub mod sudo_provision;
 pub mod util;
 
+#[cfg(test)]
+pub(crate) mod test_support {
+    use std::sync::{Mutex, MutexGuard};
+
+    static TELEMETRY_TEST_LOCK: Mutex<()> = Mutex::new(());
+
+    pub(crate) fn telemetry_test_guard() -> MutexGuard<'static, ()> {
+        TELEMETRY_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+}
+
 /// Terminal-rendering code — all UI paint/layout lives here.
 pub mod tui;
 pub mod wordlist;

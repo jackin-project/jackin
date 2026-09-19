@@ -189,6 +189,7 @@ fn conformance_wire_real_listener_has_bounded_private_open_and_close() -> Result
     if dispatch_socket_wire_child()? {
         return Ok(());
     }
+    let _telemetry_guard = crate::test_support::telemetry_test_guard();
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(2)
         .enable_all()

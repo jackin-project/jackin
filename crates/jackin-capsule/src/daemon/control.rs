@@ -45,6 +45,21 @@ pub(crate) fn control_request_allowed(
     let Some(peer_uid) = peer_uid else {
         return false;
     };
+
+    // The in-container MCP/`jackin-exec` path has no target session field in
+    // its wire shape. Infer exactly one authorized session from the kernel
+    // peer UID plus its daemon-issued capability; never let a session peer
+    // enter the operator/global credential picker without both.
+    if matches!(message, ClientMsg::ExecCommand { .. }) {
+        if peer_uid == 0 {
+            return true;
+        }
+        return mux.session_supervisor.sessions.values().any(|session| {
+            session.identity.uid == peer_uid
+                && capability_matches(&session.control_capability, session_capability)
+        });
+    }
+
     if !configured_session_uid(mux, peer_uid) {
         return true;
     }
