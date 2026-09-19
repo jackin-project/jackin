@@ -68,7 +68,7 @@ pub fn run_isolated_command(args: &[String]) -> Result<()> {
 fn admitted_identity(
     config: &jackin_protocol::CapsuleConfig,
     instance: Option<&str>,
-) -> Option<jackin_protocol::SessionIdentity> {
+) -> Option<SessionIdentity> {
     match instance {
         Some(id) => config.identity_for_instance(id),
         None => config.shell_identity,
