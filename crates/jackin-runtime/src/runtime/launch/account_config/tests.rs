@@ -16,6 +16,7 @@ fn instance(
         account_id: account_id.into(),
         model: model.map(str::to_owned),
         base_url: base_url.map(str::to_owned),
+        xdg_roots: None,
         label: config_id.into(),
         synthesized: false,
     }

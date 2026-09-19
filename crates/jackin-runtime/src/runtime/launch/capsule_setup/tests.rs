@@ -25,6 +25,7 @@ fn instance(config_id: &str, agent: Agent, account_id: &str) -> jackin_config::R
         account_id: account_id.into(),
         model: None,
         base_url: None,
+        xdg_roots: None,
         label: config_id.into(),
         synthesized: true,
     }
@@ -291,6 +292,44 @@ fn instance_bindings_keep_launch_order_and_config_id_keys() {
 }
 
 #[test]
+fn instance_bindings_carry_roots_only_for_selected_instances() {
+    let roots = jackin_config::XdgRoots {
+        data: "/selected/data".into(),
+        config: "/selected/config".into(),
+        cache: "/selected/cache".into(),
+    };
+    let mut config = AppConfig::default();
+    for account_id in ["selected", "unselected"] {
+        config.accounts.insert(
+            account_id.into(),
+            AccountConfig {
+                enabled: true,
+                name: account_id.into(),
+                provider: AiProvider::Amp,
+                credential: AccountCredential::Profile {
+                    agent: Agent::Amp,
+                    directory: format!("/{account_id}/amp").into(),
+                    xdg_roots: Some(roots.clone()),
+                },
+            },
+        );
+    }
+
+    let mut selected = instance("amp-selected", Agent::Amp, "selected");
+    selected.xdg_roots = Some(roots.clone());
+    let bindings = instance_auth_bindings(&config, &[selected]).unwrap();
+
+    assert_eq!(bindings.len(), 1);
+    assert_eq!(bindings[0].account_id, "selected");
+    assert_eq!(bindings[0].xdg_roots, Some(roots));
+    assert!(
+        !bindings
+            .iter()
+            .any(|binding| binding.account_id == "unselected")
+    );
+}
+
+#[test]
 fn instance_dirs_come_from_slots_and_fail_closed() {
     use crate::instance::ProvisionedInstanceAuth;
     let slot = |suffix: Option<&str>, home_rel: &str, store_rel: &str| ProvisionedInstanceAuth {
@@ -342,4 +381,33 @@ fn instance_dirs_come_from_slots_and_fail_closed() {
     let mut config = jackin_protocol::CapsuleConfig::default();
     let missing = vec![instance("ghost", Agent::Claude, "work")];
     apply_instance_dirs(&mut config, &missing, &slots).unwrap_err();
+}
+
+#[test]
+fn amp_instance_dir_exports_the_durable_data_parent() {
+    use crate::instance::ProvisionedInstanceAuth;
+
+    let slot = ProvisionedInstanceAuth {
+        agent: Agent::Amp,
+        account_id: "amp".into(),
+        mode: AuthForwardMode::Sync,
+        home_dir: None,
+        credential_paths: Vec::new(),
+        forward_auth: true,
+        slot_suffix: None,
+        container_home_rel: ".local/share/amp".into(),
+        container_store_rel: "amp".into(),
+        folder_target: "/home/agent/.local/share".into(),
+    };
+    let slots = std::collections::BTreeMap::from([("amp".to_owned(), slot)]);
+    let instances = vec![instance("amp", Agent::Amp, "amp")];
+    let mut config = jackin_protocol::CapsuleConfig::default();
+
+    apply_instance_dirs(&mut config, &instances, &slots).unwrap();
+
+    assert_eq!(
+        config.home_for_instance("amp"),
+        Some("/home/agent/.local/share")
+    );
+    assert_eq!(config.forwarded_for_instance("amp"), Some("/jackin/amp"));
 }

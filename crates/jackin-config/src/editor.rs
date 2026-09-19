@@ -76,27 +76,67 @@ pub struct BootstrapReport {
     pub added: Vec<(String, crate::AccountConfig)>,
     /// Discovery issues observed during the scan.
     pub issues: Vec<crate::DiscoveryIssue>,
+    /// `.zshrc` model profiles that could not be attached to a persisted
+    /// API-key account. These are model/endpoint literals only; no secret
+    /// values are carried here.
+    pub unapplied_zshrc_models: Vec<crate::ModelProfile>,
+    /// `.zshrc` wrapper call sites that have no launch executor yet. The
+    /// parser's wrapper identity/arguments are retained so callers can report
+    /// the exact unimplemented input instead of dropping it.
+    pub unapplied_zshrc_wrappers: Vec<crate::WrapperCallSite>,
+    /// Complete Amp XDG triples for which no credential evidence was found.
+    /// A discovered triple is persisted on the profile account instead.
+    pub unapplied_zshrc_xdg_roots: Vec<crate::XdgRoots>,
 }
 
-/// Synthesize the registry entry for a discovered profile: `None` when the
-/// agent has no native billing (Omp/Hermes route arbitrary providers, so
-/// the operator adds those accounts explicitly with `--provider`).
+/// Build a profile candidate with an explicit identity and optional Amp XDG
+/// roots. `None` when the agent has no native billing (Omp/Hermes route
+/// arbitrary providers, so the operator adds those accounts explicitly with
+/// `--provider`).
+fn profile_account_candidate(
+    id: String,
+    agent: jackin_core::Agent,
+    directory: PathBuf,
+    name: String,
+    xdg_roots: Option<crate::XdgRoots>,
+) -> Option<(String, crate::AccountConfig)> {
+    let provider = crate::AiProvider::for_agent(agent)?;
+    Some((
+        id,
+        crate::AccountConfig {
+            enabled: true,
+            name,
+            provider,
+            credential: crate::AccountCredential::Profile {
+                agent,
+                directory,
+                xdg_roots,
+            },
+        },
+    ))
+}
+
+/// Synthesize the registry entry for a discovered default profile.
 fn profile_scan_candidate(
     discovered: &crate::DiscoveredAccount,
 ) -> Option<(String, crate::AccountConfig)> {
-    let provider = crate::AiProvider::for_agent(discovered.agent)?;
-    let id = format!("default-{}", discovered.agent.slug());
-    let account = crate::AccountConfig {
-        enabled: true,
-        name: format!("{} default", discovered.agent.label()),
-        provider,
-        credential: crate::AccountCredential::Profile {
-            agent: discovered.agent,
-            directory: discovered.directory.clone(),
-            xdg_roots: None,
-        },
-    };
-    Some((id, account))
+    profile_account_candidate(
+        format!("default-{}", discovered.agent.slug()),
+        discovered.agent,
+        discovered.directory.clone(),
+        format!("{} default", discovered.agent.label()),
+        None,
+    )
+}
+
+/// Map the shell variable stem used by [`crate::ModelProfile`] to a provider.
+/// Provider slugs are accepted directly; legacy shell names remain aliases.
+fn zshrc_provider(stem: &str) -> Option<crate::AiProvider> {
+    match stem {
+        "kimi" => Some(crate::AiProvider::Moonshot),
+        "gemini" => Some(crate::AiProvider::Google),
+        _ => stem.parse().ok(),
+    }
 }
 
 /// Synthesize the registry entry for an environment-provided API key.
@@ -403,13 +443,14 @@ impl ConfigEditor {
     }
 
     /// Apply a `.zshrc` import plan, seeding verified profile accounts for
-    /// config-dir overrides plus `op read` references as key/token values.
+    /// config-dir/XDG overrides plus `op read` references as key/token values.
     /// Same skip-on-collision rules as
     /// [`scan_for_accounts`](Self::scan_for_accounts): never overwrites an
     /// operator registration, and override directories without credential
-    /// evidence seed nothing. Model/endpoint groups, wrapper call sites,
-    /// and XDG roots have no account home yet (orchestrator integration)
-    /// and are left for the caller to surface from the plan.
+    /// evidence seed nothing. Model/endpoint groups update matching API-key
+    /// accounts when present; wrapper call sites and otherwise-unapplied
+    /// model/XDG entries are returned in the report so no parsed field
+    /// disappears silently.
     ///
     /// # Errors
     /// Returns an error if a seeded account fails validation.
@@ -427,10 +468,14 @@ impl ConfigEditor {
             };
             match crate::discover_account_directory(directory.agent, &directory.directory, &home) {
                 Ok(Some(found)) => {
-                    let id = format!("default-{}", directory.agent.slug());
+                    // Shell overrides are distinct profiles from the
+                    // default-home discovery entry. Reusing
+                    // `default-{agent}` made a valid custom profile vanish
+                    // after the default profile had already been scanned.
+                    let id = format!("custom-{}", directory.agent.slug());
                     let account = crate::AccountConfig {
                         enabled: true,
-                        name: format!("{} default", directory.agent.label()),
+                        name: format!("{} custom", directory.agent.label()),
                         provider,
                         credential: crate::AccountCredential::Profile {
                             agent: directory.agent,
@@ -450,6 +495,37 @@ impl ConfigEditor {
                 Err(error) => report.issues.push(crate::DiscoveryIssue {
                     agent: directory.agent,
                     directory: directory.directory.clone(),
+                    error,
+                }),
+            }
+        }
+        if let Some(roots) = &plan.xdg_roots {
+            let directory = roots.data.join("amp");
+            match crate::discover_account_directory(jackin_core::Agent::Amp, &directory, &home) {
+                Ok(Some(found)) => {
+                    let (id, account) = profile_account_candidate(
+                        "custom-amp".to_owned(),
+                        jackin_core::Agent::Amp,
+                        found.directory,
+                        "Amp custom".to_owned(),
+                        Some(roots.clone()),
+                    )
+                    .expect("Amp has a native provider");
+                    if known.contains_key(&id) {
+                        if !scan_source_registered(&known, &account) {
+                            report.unapplied_zshrc_xdg_roots.push(roots.clone());
+                        }
+                    } else if !scan_source_registered(&known, &account) {
+                        self.upsert_account(&id, &account)?;
+                        known.insert(id.clone(), account.clone());
+                        report.added_accounts.push(id.clone());
+                        report.added.push((id, account));
+                    }
+                }
+                Ok(None) => report.unapplied_zshrc_xdg_roots.push(roots.clone()),
+                Err(error) => report.issues.push(crate::DiscoveryIssue {
+                    agent: jackin_core::Agent::Amp,
+                    directory,
                     error,
                 }),
             }
@@ -483,6 +559,39 @@ impl ConfigEditor {
             report.added_accounts.push(id.clone());
             report.added.push((id, account));
         }
+        for model in &plan.models {
+            let Some(provider) = zshrc_provider(&model.name) else {
+                report.unapplied_zshrc_models.push(model.clone());
+                continue;
+            };
+            let id = format!("{}-api-key", provider.slug());
+            let Some(existing) = known.get(&id).cloned() else {
+                report.unapplied_zshrc_models.push(model.clone());
+                continue;
+            };
+            let mut account = existing;
+            let crate::AccountCredential::ApiKey {
+                model: account_model,
+                base_url: account_url,
+                ..
+            } = &mut account.credential
+            else {
+                report.unapplied_zshrc_models.push(model.clone());
+                continue;
+            };
+            if model.model.is_some() {
+                *account_model = model.model.clone();
+            }
+            if model.base_url.is_some() {
+                *account_url = model.base_url.clone();
+            }
+            self.upsert_account(&id, &account)?;
+            known.insert(id, account);
+        }
+        // Arbitrary shell wrappers cannot safely be executed or serialized
+        // into the current launch protocol. Retain the parsed call sites in
+        // the report so callers surface them instead of dropping them.
+        report.unapplied_zshrc_wrappers = plan.wrappers.clone();
         Ok(report)
     }
 

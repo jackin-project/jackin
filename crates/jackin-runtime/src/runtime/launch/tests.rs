@@ -362,6 +362,7 @@ model = "zai/glm"
         account_id: "test".into(),
         model: None,
         base_url: None,
+        xdg_roots: None,
         label: config_id.into(),
         synthesized: true,
     };
@@ -437,6 +438,7 @@ fn selected_account_model_overrides_native_role_model_only_when_admitted() {
         account_id: "coding".into(),
         model: Some("k3-256k".into()),
         base_url: None,
+        xdg_roots: None,
         label: "coding-codex".into(),
         synthesized: false,
     }];
@@ -449,6 +451,7 @@ fn selected_account_model_overrides_native_role_model_only_when_admitted() {
         account_id: "coding".into(),
         model: None,
         base_url: None,
+        xdg_roots: None,
         label: "coding-codex".into(),
         synthesized: false,
     }];

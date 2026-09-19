@@ -140,8 +140,8 @@ fn scan_seeds_zshrc_overrides_alongside_defaults() {
     let config = AppConfig::load_or_init(&paths).unwrap();
     handle(AccountCommand::Scan, &config, &paths).unwrap();
     let config = AppConfig::load_or_init(&paths).unwrap();
-    let seeded = &config.accounts["default-codex"];
-    assert_eq!(seeded.name, "Codex default");
+    let seeded = &config.accounts["custom-codex"];
+    assert_eq!(seeded.name, "Codex custom");
     assert_eq!(seeded.source_directory(), Some(override_dir.as_path()));
 }
 

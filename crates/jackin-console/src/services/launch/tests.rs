@@ -381,6 +381,7 @@ fn account_choices_for_instances_dedupe_and_sort() {
         account_id: "ghost".into(),
         model: None,
         base_url: None,
+        xdg_roots: None,
         label: "Ghost".into(),
         synthesized: true,
     });

@@ -702,6 +702,10 @@ pub struct ResolvedInstance {
     pub model: Option<String>,
     /// Effective endpoint (configuration override, else account default).
     pub base_url: Option<String>,
+    /// Explicit profile XDG roots, when the selected account carries them.
+    /// These are threaded into selected auth provisioning; they are never
+    /// inferred from ambient process environment.
+    pub xdg_roots: Option<XdgRoots>,
     /// Instance label (`{Agent} · {account name}` unless overridden).
     pub label: String,
     /// True when synthesized from a binding/sole-eligible fallback.
@@ -721,12 +725,19 @@ impl ResolvedInstance {
             .display_label
             .clone()
             .unwrap_or_else(|| format!("{} · {}", config.agent.label(), account.name));
+        let xdg_roots = match &account.credential {
+            AccountCredential::Profile {
+                agent, xdg_roots, ..
+            } if *agent == config.agent => xdg_roots.clone(),
+            _ => None,
+        };
         Self {
             config_id: config_id.to_owned(),
             agent: config.agent,
             account_id: config.account.clone(),
             model: config.model.clone().or(account_model),
             base_url: config.base_url.clone().or(account_url),
+            xdg_roots,
             label,
             synthesized: false,
         }
@@ -740,12 +751,21 @@ impl ResolvedInstance {
             } => (model.clone(), base_url.clone()),
             _ => (None, None),
         };
+        let xdg_roots = match &account.credential {
+            AccountCredential::Profile {
+                agent: owner,
+                xdg_roots,
+                ..
+            } if *owner == agent => xdg_roots.clone(),
+            _ => None,
+        };
         Self {
             config_id: format!("{account_id}@{}", agent.slug()),
             agent,
             account_id: account_id.to_owned(),
             model,
             base_url,
+            xdg_roots,
             label: format!("{} · {}", agent.label(), account.name),
             synthesized: true,
         }

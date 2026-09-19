@@ -2141,7 +2141,7 @@ fn apply_zshrc_plan_seeds_verified_directories_and_op_refs() {
 
     let mut editor = ConfigEditor::open(&paths).unwrap();
     let report = editor.apply_zshrc_plan(&plan).unwrap();
-    assert!(report.added_accounts.contains(&"default-claude".to_owned()));
+    assert!(report.added_accounts.contains(&"custom-claude".to_owned()));
     assert!(
         report
             .added_accounts
@@ -2160,8 +2160,45 @@ fn apply_zshrc_plan_seeds_verified_directories_and_op_refs() {
         }
     ));
     let config = editor.save().unwrap();
-    assert!(config.accounts.contains_key("default-claude"));
+    assert!(config.accounts.contains_key("custom-claude"));
     assert!(config.accounts.contains_key("anthropic-api-key"));
+}
+
+#[test]
+fn apply_zshrc_custom_profile_does_not_collide_with_default_profile() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    minimal_config_file(&paths);
+    claude_credentials_fixture(&paths.home_dir);
+    let override_dir = temp.path().join("claude-override");
+    std::fs::create_dir_all(&override_dir).unwrap();
+    std::fs::write(
+        override_dir.join(".credentials.json"),
+        r#"{"claudeAiOauth":{"accessToken":"custom-fixture"}}"#,
+    )
+    .unwrap();
+
+    let mut editor = ConfigEditor::open(&paths).unwrap();
+    let defaults = editor
+        .scan_for_accounts_with(&paths.home_dir, &BTreeMap::new())
+        .unwrap();
+    assert!(
+        defaults
+            .added_accounts
+            .contains(&"default-claude".to_owned())
+    );
+    let source = format!("CLAUDE_CONFIG_DIR={}\n", override_dir.display());
+    let plan = crate::import_plan(&crate::parse_zshrc_source(&source));
+    let custom = editor.apply_zshrc_plan(&plan).unwrap();
+
+    assert!(custom.added_accounts.contains(&"custom-claude".to_owned()));
+    let config = editor.save().unwrap();
+    assert!(config.accounts.contains_key("default-claude"));
+    assert!(config.accounts.contains_key("custom-claude"));
+    assert_ne!(
+        config.accounts["default-claude"].source_directory(),
+        config.accounts["custom-claude"].source_directory()
+    );
 }
 
 #[test]
@@ -2183,4 +2220,93 @@ fn apply_zshrc_plan_skips_unverified_directories_and_unknown_vars() {
     let report = editor.apply_zshrc_plan(&plan).unwrap();
     assert!(report.added_accounts.is_empty(), "{report:?}");
     assert!(report.issues.is_empty(), "{report:?}");
+}
+
+#[test]
+fn apply_zshrc_plan_persists_model_and_reports_unsupported_wrapper() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    minimal_config_file(&paths);
+    let mut editor = ConfigEditor::open(&paths).unwrap();
+    editor
+        .upsert_account(
+            "moonshot-api-key",
+            &crate::AccountConfig {
+                enabled: true,
+                name: "Kimi API".into(),
+                provider: crate::AiProvider::Moonshot,
+                credential: crate::AccountCredential::ApiKey {
+                    value: EnvValue::Plain("$KIMI_API_KEY".into()),
+                    base_url: None,
+                    model: None,
+                },
+            },
+        )
+        .unwrap();
+    let plan = crate::import_plan(&crate::parse_zshrc_source(
+        "kimi_key() { echo fixture; }\nKIMI_MODEL=kimi-k2\nKIMI_BASE_URL=https://api.kimi.example/v1\nKIMI_API_KEY=$(kimi_key)\n",
+    ));
+
+    let report = editor.apply_zshrc_plan(&plan).unwrap();
+
+    assert!(report.unapplied_zshrc_models.is_empty(), "{report:?}");
+    assert_eq!(report.unapplied_zshrc_wrappers.len(), 1);
+    assert_eq!(report.unapplied_zshrc_wrappers[0].var, "KIMI_API_KEY");
+    let config = editor.save().unwrap();
+    let account = &config.accounts["moonshot-api-key"];
+    assert_eq!(
+        account.credential,
+        crate::AccountCredential::ApiKey {
+            value: EnvValue::Plain("$KIMI_API_KEY".into()),
+            base_url: Some("https://api.kimi.example/v1".into()),
+            model: Some("kimi-k2".into()),
+        }
+    );
+}
+
+#[test]
+fn apply_zshrc_plan_persists_amp_xdg_roots_with_discovered_credentials() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    minimal_config_file(&paths);
+    let data = temp.path().join("xdg-data");
+    let config = temp.path().join("xdg-config");
+    let cache = temp.path().join("xdg-cache");
+    std::fs::create_dir_all(data.join("amp")).unwrap();
+    std::fs::create_dir_all(&config).unwrap();
+    std::fs::create_dir_all(&cache).unwrap();
+    std::fs::write(
+        data.join("amp/secrets.json"),
+        r#"{"apiKey@https://ampcode.com/":"fixture-key"}"#,
+    )
+    .unwrap();
+    let source = format!(
+        "XDG_DATA_HOME={}\nXDG_CONFIG_HOME={}\nXDG_CACHE_HOME={}\n",
+        data.display(),
+        config.display(),
+        cache.display()
+    );
+    let plan = crate::import_plan(&crate::parse_zshrc_source(&source));
+
+    let mut editor = ConfigEditor::open(&paths).unwrap();
+    let report = editor.apply_zshrc_plan(&plan).unwrap();
+
+    assert!(report.unapplied_zshrc_xdg_roots.is_empty(), "{report:?}");
+    assert!(report.added_accounts.contains(&"custom-amp".to_owned()));
+    let account = &report
+        .added
+        .iter()
+        .find(|(id, _)| id == "custom-amp")
+        .unwrap()
+        .1;
+    assert!(matches!(
+        &account.credential,
+        crate::AccountCredential::Profile {
+            agent: Agent::Amp,
+            directory,
+            xdg_roots: Some(_),
+        } if directory == &data.join("amp")
+    ));
+    let config = editor.save().unwrap();
+    assert!(config.accounts.contains_key("custom-amp"));
 }

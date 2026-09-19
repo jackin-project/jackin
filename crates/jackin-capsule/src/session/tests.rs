@@ -755,6 +755,30 @@ fn build_agent_command_overrides_stale_agent_env() {
 }
 
 #[test]
+fn amp_command_exports_xdg_data_home_as_durable_parent() {
+    let empty: Vec<(String, String)> = Vec::new();
+    let spec = AgentSpawnSpec {
+        agent: "amp",
+        instance: "amp",
+        home_dir: "/home/agent/.local/share",
+        forwarded_dir: "/jackin/amp",
+        model: None,
+        auth_mode: Some("sync"),
+        env_passthrough: &empty,
+        cwd: Path::new("/workspace"),
+        codename: "test",
+    };
+    let command = build_agent_command(&spec);
+
+    assert_eq!(
+        command
+            .get_env("XDG_DATA_HOME")
+            .and_then(|value| value.to_str()),
+        Some("/home/agent/.local/share")
+    );
+}
+
+#[test]
 fn build_agent_command_injects_only_bounded_auth_mode() {
     let env = vec![(
         jackin_protocol::AUTH_MODE_ENV.to_owned(),
