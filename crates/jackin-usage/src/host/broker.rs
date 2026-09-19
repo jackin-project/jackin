@@ -3,13 +3,14 @@
 
 //! Host-only usage broker lifecycle and bounded Unix-socket transport.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, File};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::os::unix::fs::{MetadataExt as _, PermissionsExt as _};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, TrySendError};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -18,8 +19,8 @@ use jackin_protocol::control::UsageSnapshotStatus;
 use jackin_protocol::usage_broker::{
     USAGE_BROKER_MAX_FRAME_BYTES, USAGE_BROKER_PROTOCOL_VERSION, UsageAccountCapability,
     UsageBrokerOperation, UsageBrokerRequest, UsageBrokerResponse, UsageCoordinationError,
-    UsageCoordinationErrorKind, UsageGenerationView, UsageProjectionRefreshStateV1,
-    UsageProjectionSchemaV1, UsageProjectionV1, UsageRefreshPhase,
+    UsageCoordinationErrorKind, UsageGenerationView, UsageIdentityKindV1,
+    UsageProjectionRefreshStateV1, UsageProjectionSchemaV1, UsageProjectionV1, UsageRefreshPhase,
 };
 use nix::fcntl::{OFlag, open, openat, renameat};
 use nix::sys::signal::kill;
@@ -31,6 +32,7 @@ use crate::coordinator::{
     UsageCoordinator, UsageCoordinatorConfig, UsageProviderExecutor,
 };
 
+use super::accounts::CanonicalAccountSubject;
 use super::discovery::{
     ProviderCredentialEnvResolver, ProviderCredentialRefreshOutcome, ValidatedCredentialBinding,
     ValidatedCredentialSource, discover_usage_sources, refresh_credential_binding,
@@ -67,9 +69,11 @@ impl HostUsageRuntime {
         if let Some(mut view) = state.snapshot {
             if let Some(error) = &state.error {
                 view.last_error = Some(error.message.clone());
-                if !view.buckets.is_empty() {
-                    view.status = UsageSnapshotStatus::Stale;
-                }
+                view.status = if view.buckets.is_empty() {
+                    UsageSnapshotStatus::Error
+                } else {
+                    UsageSnapshotStatus::Stale
+                };
             }
             let binding = self.discovery.as_ref().and_then(|discovery| {
                 discovery
@@ -136,6 +140,7 @@ const CONNECT_RETRY: Duration = Duration::from_secs(10);
 const CONNECT_RETRY_STEP: Duration = Duration::from_millis(20);
 const BROKER_CONNECTION_WORKERS: usize = 4;
 const BROKER_CONNECTION_QUEUE: usize = 128;
+const PUBLISH_TICK: Duration = Duration::from_millis(200);
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 struct BrokerLease {
@@ -255,7 +260,7 @@ impl UsageBrokerHandle {
             .flatten()
             .filter(|entry| entry.requirement.is_forwarded(sources))
             .map(|entry| entry.capability.clone())
-            .collect::<std::collections::BTreeSet<_>>()
+            .collect::<BTreeSet<_>>()
             .into_iter()
             .collect()
     }
@@ -264,10 +269,17 @@ impl UsageBrokerHandle {
 /// Secret-free launch facts proving which credential sources reached a Capsule.
 #[derive(Debug, Clone, Default)]
 pub struct ForwardedUsageSources {
+    /// Exact configured account ids admitted to this Capsule. A provider
+    /// surface alone is never sufficient when several accounts share it.
+    pub selected_account_ids: BTreeSet<String>,
+    /// Provider surface paired with each selected configured account id. This
+    /// lets the runtime replace the config alias with the canonical authority
+    /// discovered for that exact account.
+    pub selected_account_surfaces: BTreeMap<String, String>,
     /// Surface ids with a successfully forwarded profile directory.
-    pub profile_surface_ids: std::collections::BTreeSet<String>,
+    pub profile_surface_ids: BTreeSet<String>,
     /// Governed provider env names present in the Capsule's resolved environment.
-    pub env_keys: std::collections::BTreeSet<String>,
+    pub env_keys: BTreeSet<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -313,12 +325,46 @@ pub fn forwarded_usage_capabilities(
     discovery
         .bindings
         .iter()
-        .filter(|binding| binding.provenance.contains(scope_label))
+        .filter(|binding| {
+            if sources.selected_account_ids.is_empty() {
+                binding.provenance.contains(scope_label)
+            } else {
+                binding.provenance.iter().any(|provenance| {
+                    sources
+                        .selected_account_ids
+                        .iter()
+                        .any(|account_id| provenance == &format!("account {account_id}"))
+                })
+            }
+        })
         .filter(|binding| forwarding_requirement(binding).is_forwarded(sources))
         .map(capability_for_binding)
-        .collect::<std::collections::BTreeSet<_>>()
+        .collect::<BTreeSet<_>>()
         .into_iter()
         .collect()
+}
+
+/// Resolve one exact configured account to the canonical broker capability
+/// used by Capsule sessions. Multiple source bindings for the same canonical
+/// account collapse to one capability; distinct identities are rejected rather
+/// than guessed.
+#[must_use]
+pub fn usage_capability_for_selected_account(
+    discovery: &ValidatedUsageDiscovery,
+    account_id: &str,
+    surface_id: &str,
+) -> Option<UsageAccountCapability> {
+    let provenance = format!("account {account_id}");
+    let capabilities = discovery
+        .bindings
+        .iter()
+        .filter(|binding| binding.surface.id() == surface_id)
+        .filter(|binding| binding.provenance.contains(&provenance))
+        .map(capability_for_binding)
+        .collect::<BTreeSet<_>>();
+    (capabilities.len() == 1)
+        .then(|| capabilities.into_iter().next())
+        .flatten()
 }
 
 /// Every canonical capability in one validated host discovery generation.
@@ -330,16 +376,36 @@ pub fn usage_broker_capabilities(
         .bindings
         .iter()
         .map(capability_for_binding)
-        .collect::<std::collections::BTreeSet<_>>()
+        .collect::<BTreeSet<_>>()
         .into_iter()
         .collect()
 }
 
 /// Small synchronous client. Each operation uses one bounded frame/connection.
-#[derive(Debug, Clone)]
+///
+/// A client also carries one monitoring screen's subscription set (see
+/// `view`). Cloning forks that set: the clone starts with the same observed
+/// generations but later (un)subscribes diverge.
+#[derive(Debug)]
 pub struct UsageBrokerClient {
     socket_path: PathBuf,
     build_id: String,
+    subscriptions: Arc<Mutex<BTreeMap<UsageAccountCapability, u64>>>,
+}
+
+impl Clone for UsageBrokerClient {
+    fn clone(&self) -> Self {
+        let subscriptions = self
+            .subscriptions
+            .lock()
+            .map(|subscriptions| subscriptions.clone())
+            .unwrap_or_default();
+        Self {
+            socket_path: self.socket_path.clone(),
+            build_id: self.build_id.clone(),
+            subscriptions: Arc::new(Mutex::new(subscriptions)),
+        }
+    }
 }
 
 impl UsageBrokerClient {
@@ -349,6 +415,7 @@ impl UsageBrokerClient {
         Self {
             socket_path,
             build_id,
+            subscriptions: Arc::new(Mutex::new(BTreeMap::new())),
         }
     }
 
@@ -369,14 +436,12 @@ impl UsageBrokerClient {
         self.execute(UsageBrokerOperation::Current { capability })
     }
 
-    /// Read the one account authorized for a provider surface through a scoped relay.
-    pub fn current_for_surface(
+    /// Read one exact account capability through a scoped relay.
+    pub fn current_for_capability(
         &self,
-        surface_id: impl Into<String>,
+        capability: UsageAccountCapability,
     ) -> Result<UsageGenerationView, UsageCoordinationError> {
-        self.execute(UsageBrokerOperation::CurrentForSurface {
-            surface_id: surface_id.into(),
-        })
+        self.execute(UsageBrokerOperation::CurrentForCapability { capability })
     }
 
     /// Request or join one account generation.
@@ -393,15 +458,15 @@ impl UsageBrokerClient {
         })
     }
 
-    /// Request or join the one account authorized for a provider surface.
-    pub fn refresh_for_surface(
+    /// Request or join one exact account capability through a scoped relay.
+    pub fn refresh_for_capability(
         &self,
-        surface_id: impl Into<String>,
+        capability: UsageAccountCapability,
         observed_generation: u64,
         force: bool,
     ) -> Result<UsageGenerationView, UsageCoordinationError> {
-        self.execute(UsageBrokerOperation::RefreshForSurface {
-            surface_id: surface_id.into(),
+        self.execute(UsageBrokerOperation::RefreshForCapability {
+            capability,
             observed_generation,
             force,
         })
@@ -422,16 +487,16 @@ impl UsageBrokerClient {
         })
     }
 
-    /// Wait for one generation through a scoped provider-surface relay.
-    pub fn join_for_surface(
+    /// Wait for one exact capability generation through a scoped relay.
+    pub fn join_for_capability(
         &self,
-        surface_id: impl Into<String>,
+        capability: UsageAccountCapability,
         generation: u64,
         timeout: Duration,
     ) -> Result<UsageGenerationView, UsageCoordinationError> {
         let timeout_ms = u64::try_from(timeout.as_millis()).unwrap_or(u64::MAX);
-        self.execute(UsageBrokerOperation::JoinForSurface {
-            surface_id: surface_id.into(),
+        self.execute(UsageBrokerOperation::JoinForCapability {
+            capability,
             generation,
             timeout_ms,
         })
@@ -569,40 +634,96 @@ struct DiscoveryProviderExecutor {
     bindings: Mutex<BTreeMap<UsageAccountCapability, ValidatedCredentialBinding>>,
     scope: UsageDiscoveryScope,
     resolver: Arc<dyn ProviderCredentialEnvResolver>,
+    probe_budget: Duration,
 }
 
 impl UsageProviderExecutor for DiscoveryProviderExecutor {
     fn probe(&self, capability: &UsageAccountCapability, _generation: u64) -> ProviderProbeOutcome {
-        let binding = self
+        // The coordinator only classifies elapsed time after a probe returns,
+        // so the blocking provider call (child CLI/RPC, secret resolution)
+        // runs under an explicit broker-side budget. Expiry completes the
+        // generation through the normal failure path: last-good quota is
+        // preserved and broker ownership is unaffected.
+        let cached = self
             .bindings
             .lock()
             .ok()
-            .and_then(|bindings| bindings.get(capability).cloned())
-            .or_else(|| self.rediscover_binding(capability));
-        let Some(binding) = binding else {
-            return ProviderProbeOutcome::Failure {
-                kind: UsageCoordinationErrorKind::Unauthorized,
-                message: "usage account capability is not authorized".to_owned(),
-                retry_at_epoch: None,
+            .and_then(|bindings| bindings.get(capability).cloned());
+        let scope = self.scope.clone();
+        let resolver = Arc::clone(&self.resolver);
+        let task_capability = capability.clone();
+        let outcome = probe::run_probe_with_budget(self.probe_budget, move || {
+            let (binding, refreshed) = match cached {
+                Some(binding) => (Some(binding), None),
+                None => rediscover_bindings(&scope, resolver.as_ref(), &task_capability),
             };
-        };
-        match refresh_credential_binding(&binding, self.resolver.as_ref()) {
-            ProviderCredentialRefreshOutcome::Snapshot(view) => provider_probe_outcome(*view),
-            ProviderCredentialRefreshOutcome::Missing
-            | ProviderCredentialRefreshOutcome::Denied
-            | ProviderCredentialRefreshOutcome::InteractionRequired => {
-                ProviderProbeOutcome::Failure {
-                    kind: UsageCoordinationErrorKind::NeedsSecret,
-                    message: "usage provider credentials require operator action".to_owned(),
+            let outcome = match binding {
+                Some(binding) => refresh_binding_outcome(&binding, resolver.as_ref()),
+                None => ProviderProbeOutcome::Failure {
+                    kind: UsageCoordinationErrorKind::Unauthorized,
+                    message: "usage account capability is not authorized".to_owned(),
                     retry_at_epoch: None,
+                },
+            };
+            (outcome, refreshed)
+        });
+        match outcome {
+            Ok((outcome, refreshed)) => {
+                if let Some(refreshed) = refreshed
+                    && let Ok(mut bindings) = self.bindings.lock()
+                {
+                    *bindings = refreshed;
                 }
+                outcome
             }
-            ProviderCredentialRefreshOutcome::Malformed => ProviderProbeOutcome::Failure {
-                kind: UsageCoordinationErrorKind::ProviderUnavailable,
-                message: "usage provider response is unavailable".to_owned(),
-                retry_at_epoch: None,
-            },
+            Err(_) => probe::probe_timeout_outcome(),
         }
+    }
+}
+
+fn rediscover_bindings(
+    scope: &UsageDiscoveryScope,
+    resolver: &dyn ProviderCredentialEnvResolver,
+    capability: &UsageAccountCapability,
+) -> (
+    Option<ValidatedCredentialBinding>,
+    Option<BTreeMap<UsageAccountCapability, ValidatedCredentialBinding>>,
+) {
+    resolver.begin_manual_retry();
+    let bindings = discover_usage_sources(scope, resolver)
+        .ok()
+        .map(|catalog| validate_usage_sources(catalog, resolver))
+        .map(|discovery| {
+            discovery
+                .bindings
+                .into_iter()
+                .map(|binding| (capability_for_binding(&binding), binding))
+                .collect::<BTreeMap<_, _>>()
+        });
+    let binding = bindings
+        .as_ref()
+        .and_then(|bindings| bindings.get(capability).cloned());
+    (binding, bindings)
+}
+
+fn refresh_binding_outcome(
+    binding: &ValidatedCredentialBinding,
+    resolver: &dyn ProviderCredentialEnvResolver,
+) -> ProviderProbeOutcome {
+    match refresh_credential_binding(binding, resolver) {
+        ProviderCredentialRefreshOutcome::Snapshot(view) => provider_probe_outcome(*view),
+        ProviderCredentialRefreshOutcome::Missing
+        | ProviderCredentialRefreshOutcome::Denied
+        | ProviderCredentialRefreshOutcome::InteractionRequired => ProviderProbeOutcome::Failure {
+            kind: UsageCoordinationErrorKind::NeedsSecret,
+            message: "usage provider credentials require operator action".to_owned(),
+            retry_at_epoch: None,
+        },
+        ProviderCredentialRefreshOutcome::Malformed => ProviderProbeOutcome::Failure {
+            kind: UsageCoordinationErrorKind::ProviderUnavailable,
+            message: "usage provider response is unavailable".to_owned(),
+            retry_at_epoch: None,
+        },
     }
 }
 
@@ -636,31 +757,13 @@ fn provider_probe_outcome(
         }
         UsageSnapshotStatus::Error
         | UsageSnapshotStatus::Unavailable
-        | UsageSnapshotStatus::Unsupported => ProviderProbeOutcome::Failure {
+        | UsageSnapshotStatus::Stale => ProviderProbeOutcome::Failure {
             kind: UsageCoordinationErrorKind::ProviderUnavailable,
             message: "usage provider quota is unavailable".to_owned(),
             retry_at_epoch: None,
         },
-        _ => ProviderProbeOutcome::success(view),
-    }
-}
-
-impl DiscoveryProviderExecutor {
-    fn rediscover_binding(
-        &self,
-        capability: &UsageAccountCapability,
-    ) -> Option<ValidatedCredentialBinding> {
-        self.resolver.begin_manual_retry();
-        let catalog = discover_usage_sources(&self.scope, self.resolver.as_ref()).ok()?;
-        let discovery = validate_usage_sources(catalog, self.resolver.as_ref());
-        let bindings = discovery
-            .bindings
-            .into_iter()
-            .map(|binding| (capability_for_binding(&binding), binding))
-            .collect::<BTreeMap<_, _>>();
-        let binding = bindings.get(capability).cloned();
-        *self.bindings.lock().ok()? = bindings;
-        binding
+        UsageSnapshotStatus::Unsupported => ProviderProbeOutcome::success(view),
+        UsageSnapshotStatus::Fresh => ProviderProbeOutcome::success(view),
     }
 }
 
@@ -741,6 +844,7 @@ pub fn run_usage_broker_service(
     discovery: ValidatedUsageDiscovery,
     resolver: Arc<dyn ProviderCredentialEnvResolver>,
 ) -> Result<(), UsageCoordinationError> {
+    let identity_metadata = publication_identity_metadata(&discovery);
     let mut bindings = BTreeMap::new();
     for binding in discovery.bindings {
         bindings
@@ -751,14 +855,23 @@ pub fn run_usage_broker_service(
         bindings: Mutex::new(bindings),
         scope,
         resolver,
+        probe_budget: config.coordinator.provider_timeout,
     });
-    run_usage_broker_service_with_executor(config, executor)
+    run_usage_broker_service_with_executor_and_metadata(config, executor, identity_metadata)
 }
 
 /// Process service seam used by the shipped broker binary and process tests.
 pub fn run_usage_broker_service_with_executor(
     config: UsageBrokerConfig,
     executor: Arc<dyn UsageProviderExecutor>,
+) -> Result<(), UsageCoordinationError> {
+    run_usage_broker_service_with_executor_and_metadata(config, executor, BTreeMap::new())
+}
+
+fn run_usage_broker_service_with_executor_and_metadata(
+    config: UsageBrokerConfig,
+    executor: Arc<dyn UsageProviderExecutor>,
+    identity_metadata: BTreeMap<UsageAccountCapability, publish::AccountIdentityMetadata>,
 ) -> Result<(), UsageCoordinationError> {
     let run_dir = secure_run_directory(&config.data_dir)?;
     let leader_path = run_dir.join(BROKER_LEADER);
@@ -776,19 +889,26 @@ pub fn run_usage_broker_service_with_executor(
     let store = Arc::new(FileAccountStateStore::under_data_dir(&config.data_dir));
     let coordinator = Arc::new(UsageCoordinator::new(executor, store, config.coordinator));
     let projection = load_projection(&config);
-    serve(
+    let publisher = publish::ProjectionPublisher::new(
+        Arc::clone(&coordinator),
+        Arc::clone(&projection),
+        FileProjectionStateStore::under_data_dir(&config.data_dir),
+    )
+    .with_identity_metadata(identity_metadata);
+    serve(ServeConfig {
         listener,
         coordinator,
-        &config.build_id,
-        &leader_path,
+        build_id: config.build_id.clone(),
+        lease_path: leader_path,
         lease,
-        ServePolicy {
+        policy: ServePolicy {
             idle_exit: config.idle_exit,
             lease_duration: config.lease_duration,
             lease_renewal: config.lease_renewal,
         },
         projection,
-    );
+        publisher,
+    });
     Ok(())
 }
 
@@ -826,44 +946,67 @@ pub fn ensure_usage_broker_with_executor(
     let lease_renewal = config.lease_renewal;
     let lease_path = leader_path.clone();
     let projection = load_projection(&config);
+    let publisher = publish::ProjectionPublisher::new(
+        Arc::clone(&coordinator),
+        Arc::clone(&projection),
+        FileProjectionStateStore::under_data_dir(&config.data_dir),
+    );
     jackin_telemetry::spawn::thread_joined_named("usage-broker".to_owned(), move || {
-        serve(
+        serve(ServeConfig {
             listener,
             coordinator,
-            &build_id,
-            &lease_path,
+            build_id,
+            lease_path,
             lease,
-            ServePolicy {
+            policy: ServePolicy {
                 idle_exit,
                 lease_duration,
                 lease_renewal,
             },
             projection,
-        );
+            publisher,
+        });
     })
     .map_err(|_| unavailable())?;
     wait_for_leader(&client)?;
     Ok(client)
 }
 
+mod probe;
+mod publish;
+mod view;
 mod waits;
 
-fn serve(
+struct ServeConfig {
     listener: UnixListener,
     coordinator: Arc<UsageCoordinator>,
-    build_id: &str,
-    lease_path: &Path,
-    mut lease: BrokerLease,
+    build_id: String,
+    lease_path: PathBuf,
+    lease: BrokerLease,
     policy: ServePolicy,
     projection: Arc<Mutex<UsageProjectionV1>>,
-) {
+    publisher: publish::ProjectionPublisher,
+}
+
+fn serve(config: ServeConfig) {
+    let ServeConfig {
+        listener,
+        coordinator,
+        build_id,
+        lease_path,
+        mut lease,
+        policy,
+        projection,
+        publisher,
+    } = config;
     let (connections, receiver) = mpsc::sync_channel(BROKER_CONNECTION_QUEUE);
     let receiver = Arc::new(Mutex::new(receiver));
-    let build_id = Arc::<str>::from(build_id);
+    let build_id = Arc::<str>::from(build_id.as_str());
     let wait_pool = waits::WaitPool::new(
         Arc::clone(&coordinator),
         Arc::clone(&build_id),
         Arc::clone(&projection),
+        publisher.clone(),
     );
     let wait_pool = Arc::new(wait_pool);
     let mut workers = Vec::with_capacity(BROKER_CONNECTION_WORKERS);
@@ -872,6 +1015,7 @@ fn serve(
         let coordinator = Arc::clone(&coordinator);
         let build_id = Arc::clone(&build_id);
         let projection = Arc::clone(&projection);
+        let publisher = publisher.clone();
         let wait_pool = Arc::clone(&wait_pool);
         let worker = jackin_telemetry::spawn::thread_joined_named(
             format!("usage-broker-connection-{index}"),
@@ -885,7 +1029,14 @@ fn serve(
                 let Ok(stream) = stream else {
                     return;
                 };
-                handle_stream(stream, &coordinator, &build_id, &projection, &wait_pool);
+                handle_stream(
+                    stream,
+                    &coordinator,
+                    &build_id,
+                    &projection,
+                    &publisher,
+                    &wait_pool,
+                );
             },
         );
         match worker {
@@ -903,6 +1054,31 @@ fn serve(
         }
         return;
     }
+    // Incremental publisher: while any generation is active, merge completed
+    // accounts into the canonical projection as they finish. One stalled
+    // account never blocks healthy accounts; dispatch-path publishing covers
+    // promptness when this ticker cannot spawn.
+    let publisher_shutdown = Arc::new(AtomicBool::new(false));
+    let ticker = {
+        let publisher = publisher.clone();
+        let ticker_coordinator = Arc::clone(&coordinator);
+        let shutdown = Arc::clone(&publisher_shutdown);
+        jackin_telemetry::spawn::thread_joined_named(
+            "usage-broker-publisher".to_owned(),
+            move || {
+                while !shutdown.load(Ordering::Relaxed) {
+                    std::thread::park_timeout(PUBLISH_TICK);
+                    if shutdown.load(Ordering::Relaxed) {
+                        break;
+                    }
+                    if !ticker_coordinator.is_idle() {
+                        publisher.publish_due(chrono::Utc::now().timestamp());
+                    }
+                }
+            },
+        )
+        .ok()
+    };
     let started = Instant::now();
     let mut last_activity = started;
     let mut last_renewal = started;
@@ -927,7 +1103,7 @@ fn serve(
             Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
                 let now = Instant::now();
                 if now.duration_since(last_renewal) >= policy.lease_renewal {
-                    if !renew_lease(lease_path, &mut lease, policy.lease_duration) {
+                    if !renew_lease(&lease_path, &mut lease, policy.lease_duration) {
                         break;
                     }
                     last_renewal = now;
@@ -944,7 +1120,11 @@ fn serve(
     for worker in workers {
         drop(worker.join());
     }
-    let _ignored = remove_lease(lease_path, &lease);
+    publisher_shutdown.store(true, Ordering::Relaxed);
+    if let Some(ticker) = ticker {
+        drop(ticker.join());
+    }
+    let _ignored = remove_lease(&lease_path, &lease);
     let _ignored = fs::remove_file(lease_path.with_file_name(BROKER_SOCKET));
 }
 
@@ -953,6 +1133,7 @@ fn handle_stream(
     coordinator: &UsageCoordinator,
     build_id: &str,
     projection: &Arc<Mutex<UsageProjectionV1>>,
+    publisher: &publish::ProjectionPublisher,
     waits: &waits::WaitPool,
 ) {
     let response = match read_request(&mut stream) {
@@ -960,7 +1141,7 @@ fn handle_stream(
             waits.enqueue(stream, request);
             return;
         }
-        Ok(request) => dispatch(coordinator, request, build_id, projection),
+        Ok(request) => dispatch(coordinator, request, build_id, projection, publisher),
         Err(error) => UsageBrokerResponse::Error { error },
     };
     write_response(&mut stream, response);
@@ -1025,16 +1206,23 @@ fn dispatch(
     request: UsageBrokerRequest,
     build_id: &str,
     projection: &Arc<Mutex<UsageProjectionV1>>,
+    publisher: &publish::ProjectionPublisher,
 ) -> UsageBrokerResponse {
     if request.protocol_version != USAGE_BROKER_PROTOCOL_VERSION || request.build_id != build_id {
         return UsageBrokerResponse::Error {
             error: protocol_error(),
         };
     }
-    let projection_operation = match &request.operation {
-        UsageBrokerOperation::CurrentProjection
-        | UsageBrokerOperation::RequestRefresh { .. }
-        | UsageBrokerOperation::JoinPublication { .. } => true,
+    match &request.operation {
+        UsageBrokerOperation::CurrentProjection => return read_projection(projection),
+        UsageBrokerOperation::RequestRefresh {
+            force,
+            observed_projection_id: _,
+        } => return refresh_projection(coordinator, projection, publisher, *force),
+        UsageBrokerOperation::JoinPublication {
+            projection_id,
+            timeout_ms,
+        } => return join_publication(projection, publisher, projection_id, *timeout_ms),
         UsageBrokerOperation::CurrentProjectionForSurface
         | UsageBrokerOperation::RequestRefreshForSurface { .. }
         | UsageBrokerOperation::JoinPublicationForSurface { .. } => {
@@ -1045,17 +1233,7 @@ fn dispatch(
                 },
             };
         }
-        _ => false,
-    };
-    if projection_operation {
-        return match projection.lock() {
-            Ok(projection) => UsageBrokerResponse::Projection {
-                projection: Box::new(projection.clone()),
-            },
-            Err(_) => UsageBrokerResponse::Error {
-                error: unavailable(),
-            },
-        };
+        _ => {}
     }
     let now = chrono::Utc::now().timestamp();
     let result = match request.operation {
@@ -1065,34 +1243,129 @@ fn dispatch(
         | UsageBrokerOperation::CurrentProjectionForSurface
         | UsageBrokerOperation::RequestRefreshForSurface { .. }
         | UsageBrokerOperation::JoinPublicationForSurface { .. } => Err(protocol_error()),
-        UsageBrokerOperation::CurrentForSurface { .. }
-        | UsageBrokerOperation::RefreshForSurface { .. }
-        | UsageBrokerOperation::JoinForSurface { .. } => Err(UsageCoordinationError {
+        UsageBrokerOperation::CurrentForCapability { .. }
+        | UsageBrokerOperation::RefreshForCapability { .. }
+        | UsageBrokerOperation::JoinForCapability { .. } => Err(UsageCoordinationError {
             kind: UsageCoordinationErrorKind::Unauthorized,
             message: "scoped usage operation requires a container relay".to_owned(),
         }),
-        UsageBrokerOperation::Current { capability } => coordinator.current(&capability, now),
+        UsageBrokerOperation::Current { capability } => {
+            publisher.observe(&capability);
+            let result = coordinator.current(&capability, now);
+            publisher.publish_due(now);
+            result
+        }
         UsageBrokerOperation::Refresh {
             capability,
             observed_generation,
             force,
-        } => coordinator.request_refresh(&capability, observed_generation, force, now),
+        } => {
+            publisher.observe(&capability);
+            let result = coordinator.request_refresh(&capability, observed_generation, force, now);
+            publisher.publish_due(now);
+            result
+        }
         UsageBrokerOperation::Join {
             capability,
             generation,
             timeout_ms,
-        } => coordinator.join_generation(
-            &capability,
-            generation,
-            Duration::from_millis(timeout_ms.min(30_000)),
-            now,
-        ),
+        } => {
+            publisher.observe(&capability);
+            let result = coordinator.join_generation(
+                &capability,
+                generation,
+                Duration::from_millis(timeout_ms.min(30_000)),
+                now,
+            );
+            publisher.publish_due(now);
+            result
+        }
     };
     match result {
         Ok(state) => UsageBrokerResponse::State {
             state: Box::new(state),
         },
         Err(error) => UsageBrokerResponse::Error { error },
+    }
+}
+
+fn read_projection(projection: &Arc<Mutex<UsageProjectionV1>>) -> UsageBrokerResponse {
+    match projection.lock() {
+        Ok(projection) => UsageBrokerResponse::Projection {
+            projection: Box::new(projection.clone()),
+        },
+        Err(_) => UsageBrokerResponse::Error {
+            error: unavailable(),
+        },
+    }
+}
+
+/// Request due observations for every observed account and return the latest
+/// publication. Each account runs its normal due check: still-fresh data is
+/// reused, active work is joined, and retry deadlines always win. `force` is
+/// honored only as the coordinator honors it — an explicit operator refresh
+/// bypasses the success cooldown but never retry or rate-limit deadlines.
+fn refresh_projection(
+    coordinator: &UsageCoordinator,
+    projection: &Arc<Mutex<UsageProjectionV1>>,
+    publisher: &publish::ProjectionPublisher,
+    force: bool,
+) -> UsageBrokerResponse {
+    let now = chrono::Utc::now().timestamp();
+    let known = publisher.known_capabilities();
+    if !known.is_empty() {
+        let mut requests = Vec::with_capacity(known.len());
+        for capability in &known {
+            // A read failure resolves to generation 0, which can only adopt
+            // the current winner — never force a duplicate generation.
+            let observed = coordinator
+                .current(capability, now)
+                .map_or(0, |view| view.generation);
+            requests.push((capability.clone(), observed));
+        }
+        let _ignored = coordinator.request_refresh_all(requests, force, now);
+        publisher.publish_due(now);
+    }
+    read_projection(projection)
+}
+
+/// Wait until one named publication settles or is superseded.
+///
+/// A newer publication means the requested one is terminal history and is
+/// returned immediately. Waiting only happens while the requested publication
+/// is current and still refreshing. Expiry reports `WaitTimeout` without
+/// touching broker ownership: generations always run to terminal.
+fn join_publication(
+    projection: &Arc<Mutex<UsageProjectionV1>>,
+    publisher: &publish::ProjectionPublisher,
+    projection_id: &str,
+    timeout_ms: u64,
+) -> UsageBrokerResponse {
+    let deadline = Instant::now() + Duration::from_millis(timeout_ms.min(30_000));
+    loop {
+        let current = projection.lock().ok().map(|projection| projection.clone());
+        let Some(current) = current else {
+            return UsageBrokerResponse::Error {
+                error: unavailable(),
+            };
+        };
+        if current.projection_id != projection_id
+            || current.refresh_state != UsageProjectionRefreshStateV1::Refreshing
+        {
+            return UsageBrokerResponse::Projection {
+                projection: Box::new(current),
+            };
+        }
+        publisher.publish_due(chrono::Utc::now().timestamp());
+        if Instant::now() >= deadline {
+            return UsageBrokerResponse::Error {
+                error: UsageCoordinationError {
+                    kind: UsageCoordinationErrorKind::WaitTimeout,
+                    message: "usage projection publication is still refreshing".to_owned(),
+                },
+            };
+        }
+        std::thread::park_timeout(Duration::from_millis(50));
     }
 }
 
@@ -1332,6 +1605,47 @@ pub(super) fn capability_for_binding(
         account_id,
         surface_id: binding.surface.id().to_owned(),
     }
+}
+
+/// Preserve the canonical identity evidence that host discovery already
+/// merged before the broker publisher turns generation views into the
+/// Capsule-facing projection. Labels are deliberately not consulted.
+fn publication_identity_metadata(
+    discovery: &ValidatedUsageDiscovery,
+) -> BTreeMap<UsageAccountCapability, publish::AccountIdentityMetadata> {
+    let mut evidence =
+        BTreeMap::<UsageAccountCapability, (UsageIdentityKindV1, BTreeSet<String>)>::new();
+    for binding in &discovery.bindings {
+        let capability = capability_for_binding(binding);
+        let identity_kind = match binding.identity.as_ref().map(|identity| &identity.subject) {
+            Some(CanonicalAccountSubject::ProviderId(_)) => UsageIdentityKindV1::ProviderAccountId,
+            Some(CanonicalAccountSubject::ProviderStableHandle(_)) => {
+                UsageIdentityKindV1::ProviderStableHandle
+            }
+            None => UsageIdentityKindV1::ProviderAccountId,
+        };
+        let entry = evidence
+            .entry(capability)
+            .or_insert_with(|| (identity_kind, BTreeSet::new()));
+        // A provider-issued id is stronger evidence than a stable display
+        // handle if malformed input ever aliases them to one capability.
+        if identity_kind == UsageIdentityKindV1::ProviderAccountId {
+            entry.0 = UsageIdentityKindV1::ProviderAccountId;
+        }
+        entry.1.extend(binding.provenance.iter().cloned());
+    }
+    evidence
+        .into_iter()
+        .map(|(capability, (identity_kind, provenance))| {
+            (
+                capability,
+                publish::AccountIdentityMetadata {
+                    identity_kind,
+                    provenance_count: u32::try_from(provenance.len()).unwrap_or(u32::MAX),
+                },
+            )
+        })
+        .collect()
 }
 
 fn unavailable() -> UsageCoordinationError {

@@ -630,6 +630,13 @@ pub struct Tab {
     /// because it is a tab property, not a process property. Injected into every
     /// child process as `JACKIN_AGENT_CODENAME`.
     pub codename: String,
+    /// Instance config ID of the session that created this tab, or `None`
+    /// for shell-created tabs. Splits may add panes from other instances;
+    /// per-pane identity lives on `Session`.
+    pub instance: Option<String>,
+    /// Owning account ID of the tab-creating session, or `None` for
+    /// shell-created tabs.
+    pub account_id: Option<String>,
 }
 
 impl Tab {
@@ -645,6 +652,8 @@ impl Tab {
             focused_id: session_id,
             zoomed: None,
             codename: codename.into(),
+            instance: None,
+            account_id: None,
         }
     }
 

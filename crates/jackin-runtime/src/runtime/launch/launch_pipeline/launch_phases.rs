@@ -221,6 +221,10 @@ pub(crate) struct EnvironmentResolved {
 pub(crate) struct TrustSeeded {
     /// Environment state whose trust material was seeded.
     pub environment: EnvironmentResolved,
+    /// Launch-admitted instances, in launch order. Recorded on the
+    /// instance manifest so host-side tab validation can check spawned
+    /// tabs against the authorized set.
+    pub instances: Vec<jackin_config::ResolvedInstance>,
 }
 
 /// Workspace mounts materialized and network/DinD sidecar ready.

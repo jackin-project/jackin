@@ -14,6 +14,15 @@ fn auth_kind_agent_returns_none_for_github() {
     assert_eq!(auth_kind_agent(AuthKind::Kimi), Some(Agent::Kimi));
     assert_eq!(auth_kind_agent(AuthKind::Opencode), Some(Agent::Opencode));
     assert_eq!(auth_kind_agent(AuthKind::Grok), Some(Agent::Grok));
+    assert_eq!(
+        auth_kind_agent(AuthKind::Antigravity),
+        Some(Agent::Antigravity)
+    );
+    assert_eq!(auth_kind_agent(AuthKind::Gemini), Some(Agent::Gemini));
+    assert_eq!(auth_kind_agent(AuthKind::Cursor), Some(Agent::Cursor));
+    assert_eq!(auth_kind_agent(AuthKind::Muse), Some(Agent::Muse));
+    assert_eq!(auth_kind_agent(AuthKind::Omp), Some(Agent::Omp));
+    assert_eq!(auth_kind_agent(AuthKind::Hermes), Some(Agent::Hermes));
 }
 
 #[test]

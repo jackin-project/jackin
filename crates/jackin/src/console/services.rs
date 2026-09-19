@@ -32,10 +32,11 @@ pub(super) mod config {
 
     use jackin_config::GlobalMountRow;
     use jackin_config::WorkspaceConfig;
-    use jackin_config::{AppConfig, RoleSource};
+    use jackin_config::{AppConfig, BootstrapReport, RoleSource};
     use jackin_console::services::config_save::{
         WorkspaceSaveDiffOp, build_workspace_edit, workspace_save_diff_plan,
     };
+    use jackin_console::tui::screens::settings::model::AccountScanOutcome;
     use jackin_core::JackinPaths;
     use jackin_core::WorkspaceName;
 
@@ -60,7 +61,8 @@ pub(super) mod config {
         key: &str,
         source: &RoleSource,
     ) -> anyhow::Result<AppConfig> {
-        let mut editor_doc = jackin_config::ConfigEditor::open(paths)?;
+        let (mut editor_doc, bootstrap) = jackin_config::ConfigEditor::open_detailed(paths)?;
+        emit_bootstrap_report(&bootstrap);
         editor_doc.upsert_agent_source(key, source);
         Ok(editor_doc.save()?)
     }
@@ -92,7 +94,8 @@ pub(super) mod config {
     }
 
     fn remove_workspace_from_disk(paths: &JackinPaths, name: &str) -> anyhow::Result<AppConfig> {
-        let mut editor_doc = jackin_config::ConfigEditor::open(paths)?;
+        let (mut editor_doc, bootstrap) = jackin_config::ConfigEditor::open_detailed(paths)?;
+        emit_bootstrap_report(&bootstrap);
         editor_doc.remove_workspace(&WorkspaceName::parse(name).map_err(anyhow::Error::from)?)?;
         Ok(editor_doc.save()?)
     }
@@ -117,7 +120,8 @@ pub(super) mod config {
         pending: &[GlobalMountRow],
     ) -> anyhow::Result<AppConfig> {
         AppConfig::validate_global_mount_rows(pending)?;
-        let mut editor_doc = jackin_config::ConfigEditor::open(paths)?;
+        let (mut editor_doc, bootstrap) = jackin_config::ConfigEditor::open_detailed(paths)?;
+        emit_bootstrap_report(&bootstrap);
         for row in original {
             editor_doc.remove_mount(&row.name, row.scope.as_deref());
         }
@@ -158,7 +162,8 @@ pub(super) mod config {
         paths: &JackinPaths,
         input: WorkspaceSaveInput<'_>,
     ) -> anyhow::Result<WorkspaceSaveResult> {
-        let mut editor_doc = jackin_config::ConfigEditor::open(paths)?;
+        let (mut editor_doc, bootstrap) = jackin_config::ConfigEditor::open_detailed(paths)?;
+        emit_bootstrap_report(&bootstrap);
         let (pending_rename, current_name) = match input.mode {
             WorkspaceSaveMode::Edit {
                 original_name,
@@ -284,8 +289,91 @@ pub(super) mod config {
         jackin_console::tui::state::ManagerConfigSaveResult,
     > {
         jackin_console::tui::runtime::spawn_blocking_subscription(move || {
-            let result = save_settings(&paths, input.as_borrowed());
+            let result = save_settings_first_run_aware(&paths, &input);
             jackin_console::tui::subscriptions::ConfigSaveResult::Settings(result)
+        })
+    }
+
+    /// Settings save with first-run bootstrap surfaced. The pre-open
+    /// consumes any installer marker and runs the initial scan under the
+    /// config lock; [`save_settings`] then applies the UI diff on top of
+    /// the bootstrapped config (bootstrap IDs are absent from the UI
+    /// originals, so they are preserved — and the returned config carries
+    /// them back to the UI refresh path).
+    fn save_settings_first_run_aware(
+        paths: &JackinPaths,
+        input: &OwnedSettingsSaveInput,
+    ) -> anyhow::Result<AppConfig> {
+        let (editor, bootstrap) = jackin_config::ConfigEditor::open_detailed(paths)?;
+        drop(editor);
+        emit_bootstrap_report(&bootstrap);
+        save_settings(paths, input.as_borrowed())
+    }
+
+    /// Surface a first-run bootstrap report through operator diagnostics.
+    /// The config-save channel carries `AppConfig` only, so the fresh
+    /// flag, added IDs, and discovery issues ride the diagnostics surface
+    /// instead. Secret-free: account IDs, counts, agents, error
+    /// categories, and directories — never credential values or 1Password
+    /// item IDs. Silent when the report is empty.
+    fn emit_bootstrap_report(report: &BootstrapReport) {
+        if report.fresh_install {
+            let added = report.added_accounts.len();
+            let ids = report.added_accounts.join(", ");
+            jackin_diagnostics::emit_compact_line(
+                "info",
+                &format!("jackin: first-run account scan imported {added} account(s): {ids}"),
+            );
+        }
+        for issue in &report.issues {
+            let agent = issue.agent;
+            let error = issue.error;
+            jackin_diagnostics::emit_compact_line(
+                "warning",
+                &format!(
+                    "jackin: account scan issue: {agent}: {error} ({})",
+                    issue.directory.display()
+                ),
+            );
+        }
+    }
+
+    /// Spawn the Settings account-scan worker. Discovery is blocking
+    /// filesystem/Keychain I/O — it must never run on the UI thread.
+    /// Candidates are returned unsaved; the Accounts tab joins them into
+    /// the pending draft (Apply commits, Cancel preserves). The echoed
+    /// `generation` lets the scan reducer ignore orphaned completions.
+    pub(crate) fn start_account_scan(
+        paths: JackinPaths,
+        generation: u64,
+    ) -> jackin_console::tui::runtime::BlockingSubscription<(u64, Result<AccountScanOutcome, String>)>
+    {
+        jackin_console::tui::runtime::spawn_blocking_subscription(move || {
+            (generation, run_account_scan(&paths))
+        })
+    }
+
+    /// Blocking scan body: open under the config lock (first-run aware),
+    /// scan, drop without saving. Concurrent scans serialize on the lock;
+    /// the loser dedupes against the winner's committed accounts. Error
+    /// strings carry open/scan failures only (lock, IO, TOML shape) —
+    /// never credential values.
+    fn run_account_scan(paths: &JackinPaths) -> Result<AccountScanOutcome, String> {
+        let (mut editor, open_report) = jackin_config::ConfigEditor::open_detailed(paths)
+            .map_err(|error| format!("{error:#}"))?;
+        let scan_report = editor
+            .scan_for_accounts()
+            .map_err(|error| format!("{error:#}"))?;
+        drop(editor);
+        Ok(AccountScanOutcome {
+            fresh_install: open_report.fresh_install,
+            committed: open_report.added,
+            candidates: scan_report.added,
+            issues: open_report
+                .issues
+                .into_iter()
+                .chain(scan_report.issues)
+                .collect(),
         })
     }
 

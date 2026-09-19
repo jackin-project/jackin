@@ -503,6 +503,7 @@ fn change_count_agent_env_delta() {
             env: role_x_env,
             account_bindings: std::collections::BTreeMap::default(),
             github: None,
+            default_launch: None,
         },
     );
     let mut e = EditorState::new_edit("a".into(), ws);
@@ -555,6 +556,7 @@ fn is_dirty_from_env_mutation() {
             },
             account_bindings: std::collections::BTreeMap::default(),
             github: None,
+            default_launch: None,
         },
     );
     assert!(e2.is_dirty(), "role env set must make state dirty");
@@ -827,6 +829,7 @@ fn editor_with_one_shared_mount() -> EditorState<'static> {
         git_pull_on_entry: false,
         runtime: jackin_config::WorkspaceRuntimeConfig::default(),
         dirty_exit_policy: None,
+        default_launch: None,
     };
     let mut e = EditorState::new_edit("ws".into(), ws);
     e.active_tab = EditorTab::Mounts;

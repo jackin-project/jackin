@@ -3071,6 +3071,7 @@ dependencies = [
  "jackin-telemetry",
  "jackin-tui",
  "jackin-usage",
+ "libc",
  "nix 0.31.3",
  "opentelemetry",
  "opentelemetry-proto",
@@ -3100,6 +3101,7 @@ dependencies = [
  "anyhow",
  "criterion",
  "directories",
+ "filetime",
  "fs4",
  "hex",
  "jackin-core",
@@ -3502,6 +3504,7 @@ dependencies = [
  "anyhow",
  "jackin-core",
  "jackin-manifest",
+ "jackin-telemetry",
 ]
 
 [[package]]

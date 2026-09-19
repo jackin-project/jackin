@@ -60,7 +60,7 @@ fn account_cli_onboards_and_enforces_workspace_assignments() -> anyhow::Result<(
         .stderr(predicate::str::contains("synthetic-default-token").not());
     assert!(matches!(
         &registry(home)?.accounts["default-codex"].credential,
-        AccountCredential::Profile { agent: Agent::Codex, directory }
+        AccountCredential::Profile { agent: Agent::Codex, directory, .. }
             if directory == &home.join(".codex")
     ));
 
@@ -77,7 +77,7 @@ fn account_cli_onboards_and_enforces_workspace_assignments() -> anyhow::Result<(
         .success();
     assert!(matches!(
         &registry(home)?.accounts["work"].credential,
-        AccountCredential::Profile { agent: Agent::Codex, directory }
+        AccountCredential::Profile { agent: Agent::Codex, directory, .. }
             if directory == &profile.canonicalize()?
     ));
     command(home)?

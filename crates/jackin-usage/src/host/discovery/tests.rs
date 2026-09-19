@@ -100,10 +100,12 @@ fn write_registry(config_root: &Path, entries: &[(&str, Agent, &Path)]) {
             jackin_config::AccountConfig {
                 enabled: true,
                 name: (*id).to_owned(),
-                provider: AiProvider::for_agent(*agent),
+                provider: AiProvider::for_agent(*agent)
+                    .expect("registry fixtures use native-provider agents"),
                 credential: AccountCredential::Profile {
                     agent: *agent,
                     directory: directory.to_path_buf(),
+                    xdg_roots: None,
                 },
             },
         );
@@ -114,6 +116,27 @@ fn write_registry(config_root: &Path, entries: &[(&str, Agent, &Path)]) {
         toml::to_string(&config).unwrap(),
     )
     .unwrap();
+}
+
+#[test]
+fn env_capability_ids_isolate_distinct_opaque_credentials() {
+    let first = CredentialSourceKey::Env {
+        surface: HostSurfaceId::Zai,
+        handle: OpaqueCredentialHandle::new("credential-1"),
+        key: "ZAI_API_KEY".to_owned(),
+    };
+    let second = CredentialSourceKey::Env {
+        surface: HostSurfaceId::Zai,
+        handle: OpaqueCredentialHandle::new("credential-2"),
+        key: "ZAI_API_KEY".to_owned(),
+    };
+
+    let first_id = source_capability_id(HostSurfaceId::Zai, &first);
+    let second_id = source_capability_id(HostSurfaceId::Zai, &second);
+    assert_ne!(first_id, second_id);
+    assert_eq!(first_id, source_capability_id(HostSurfaceId::Zai, &first));
+    assert!(!first_id.contains("credential-1"));
+    assert!(!second_id.contains("credential-2"));
 }
 
 #[test]
@@ -271,6 +294,7 @@ fn write_codex_workspace(path: &Path, root: &Path) {
             credential: AccountCredential::Profile {
                 agent: Agent::Codex,
                 directory: root.to_path_buf(),
+                xdg_roots: None,
             },
         },
     );

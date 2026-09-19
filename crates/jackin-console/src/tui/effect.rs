@@ -11,6 +11,7 @@
 pub enum ConsoleEffect {
     RequestActiveMountInfoRefresh,
     RequestInstanceRefresh,
+    RequestUsageRefresh,
     SaveSettings,
 }
 
@@ -52,6 +53,12 @@ pub enum ConsoleManagerEffect<RoleSelector, RoleSource, OpRef> {
     ValidateOpCommit {
         op_ref: OpRef,
         is_settings: bool,
+    },
+    /// Run account discovery on a worker thread (blocking I/O — never
+    /// on the UI thread), then dispatch
+    /// `SettingsMessage::AccountScanCompleted` with this generation.
+    StartAccountScan {
+        generation: u64,
     },
 }
 

@@ -25,6 +25,21 @@ pub(crate) fn grok_snapshot(
     let has_xai_api_key = env_value("XAI_API_KEY").is_some();
     let has_deployment_key = env_value("GROK_DEPLOYMENT_KEY").is_some();
     let billing_result = fetch_grok_billing(&auth, now, rpc_gate);
+    // Subscription-over-key precedence: with no stored subscription auth the
+    // REST call never went out on an inference key, so replace the confusing
+    // file/RPC failure with the honest billing gap.
+    let billing_result = match &billing_result {
+        Err(_)
+            if resolve_grok_billing_auth(has_auth, has_xai_api_key, has_deployment_key)
+                == GrokBillingAuth::EnvKeyOnly =>
+        {
+            Err(
+                "Grok consumer billing needs subscription auth; XAI_API_KEY is inference-only"
+                    .to_owned(),
+            )
+        }
+        _ => billing_result,
+    };
     grok_snapshot_from_rpc_result(
         agent,
         now,
@@ -124,6 +139,70 @@ pub(crate) fn grok_snapshot_from_rpc_result(
     })
 }
 
+/// Typed billing-failure taxonomy: REST/HTTP and RPC failures classify into
+/// disjoint kinds so status mapping never sniffs ad-hoc substrings at the call
+/// site. Pure over this module's own error strings.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum GrokBillingErrorKind {
+    Auth,
+    RateLimited,
+    Timeout,
+    Rpc,
+    Decode,
+    Transport,
+}
+
+pub(crate) fn classify_grok_billing_error(error: &str) -> GrokBillingErrorKind {
+    let lower = error.to_ascii_lowercase();
+    if lower.contains("401")
+        || lower.contains("403")
+        || lower.contains("unauthorized")
+        || lower.contains("forbidden")
+        || lower.contains("expired")
+    {
+        GrokBillingErrorKind::Auth
+    } else if lower.contains("429") || lower.contains("rate-limit") || lower.contains("rate limit")
+    {
+        GrokBillingErrorKind::RateLimited
+    } else if lower.contains("timed out") || lower.contains("timeout") {
+        GrokBillingErrorKind::Timeout
+    } else if lower.contains("decode")
+        || lower.contains("shape unsupported")
+        || lower.contains("not found in")
+    {
+        GrokBillingErrorKind::Decode
+    } else if lower.contains("rpc") || lower.contains("stdio") || lower.contains("acp billing") {
+        GrokBillingErrorKind::Rpc
+    } else {
+        GrokBillingErrorKind::Transport
+    }
+}
+
+/// Billing-auth precedence: stored subscription auth outranks ambient inference
+/// keys. An `XAI_API_KEY` / deployment key alone is explicitly not billing
+/// auth — the REST call never sends it, so env-key-only accounts report an
+/// honest billing gap instead of a failed request.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum GrokBillingAuth {
+    Subscription,
+    EnvKeyOnly,
+    None,
+}
+
+pub(crate) fn resolve_grok_billing_auth(
+    has_auth: bool,
+    has_xai_api_key: bool,
+    has_deployment_key: bool,
+) -> GrokBillingAuth {
+    if has_auth {
+        GrokBillingAuth::Subscription
+    } else if has_xai_api_key || has_deployment_key {
+        GrokBillingAuth::EnvKeyOnly
+    } else {
+        GrokBillingAuth::None
+    }
+}
+
 /// Current ACP `x.ai/billing` response (top-level `config` + resolved tier).
 #[derive(Debug, Deserialize)]
 pub(crate) struct GrokBillingResponse {
@@ -148,6 +227,10 @@ pub(crate) struct GrokBillingConfig {
     pub(crate) prepaid_balance: Option<GrokCent>,
     pub(crate) billing_period_start: Option<String>,
     pub(crate) billing_period_end: Option<String>,
+    /// Unified-billing monthly quota aliases (`periodStart`/`periodEnd`) from
+    /// the plain `{proxy}/billing` response.
+    pub(crate) period_start: Option<String>,
+    pub(crate) period_end: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -165,10 +248,12 @@ pub(crate) struct GrokCent {
     pub(crate) val: i64,
 }
 
-/// Normalized cent magnitude; `i64::MIN` (no `checked_abs`) is invalid → `None`.
-/// Every monetary quota field passes through this before comparison/label/money.
-fn checked_cent_magnitude(val: i64) -> Option<i64> {
-    val.checked_abs()
+/// Positive cent value as-is. Zero/negative magnitudes are invalid for
+/// limits and caps, and a negative prepaid is a deficit, not a credit —
+/// never mirrored into positive bounds. Every monetary quota field passes
+/// through this before comparison/label/money.
+fn positive_cent_value(val: i64) -> Option<i64> {
+    (val > 0).then_some(val)
 }
 
 /// Period label: the server period type wins, then window duration, then Credits.
@@ -273,8 +358,7 @@ impl GrokBillingResponse {
         if let Some(balance) = config
             .prepaid_balance
             .as_ref()
-            .and_then(|cents| checked_cent_magnitude(cents.val))
-            .filter(|balance| *balance > 0)
+            .and_then(|cents| positive_cent_value(cents.val))
         {
             let mut view = bucket(
                 "Extra usage credits",
@@ -294,23 +378,25 @@ impl GrokBillingResponse {
             && let Some(cap) = config
                 .on_demand_cap
                 .as_ref()
-                .and_then(|cents| checked_cent_magnitude(cents.val))
-                .filter(|cap| *cap > 0)
+                .and_then(|cents| positive_cent_value(cents.val))
         {
+            // Omitted/negative used is unknown, never $0: the row degrades to
+            // limit-only rather than inventing zero spend.
             let used = config
                 .on_demand_used
                 .as_ref()
-                .map_or(0, |cents| cents.val.max(0));
+                .map(|cents| cents.val)
+                .filter(|used| *used >= 0);
             let mut view = bucket(
                 "On-demand usage",
-                Some(format_cents(used)),
+                used.map(format_cents),
                 Some(format_cents(cap)),
                 None,
                 None,
                 None,
                 UsageSnapshotStatus::Fresh,
             );
-            view.used_money = Some(Money::new(used, "USD", 2));
+            view.used_money = used.map(|used| Money::new(used, "USD", 2));
             view.limit_money = Some(Money::new(cap, "USD", 2));
             buckets.push(view);
         }
@@ -320,40 +406,66 @@ impl GrokBillingResponse {
 
 impl GrokBillingConfig {
     /// The single current billing headline, with pace when a positive window is
-    /// derivable. Preferred: finite `creditUsagePercent` + a positive
-    /// `currentPeriod`; fallback: positive normalized `monthlyLimit` +
-    /// `billingPeriod*`. Neither complete → no headline.
+    /// derivable. Preferred: a non-monthly `currentPeriod` with a usable
+    /// `creditUsagePercent`; an explicitly monthly period never renders the
+    /// weekly percent meter — monthly-only accounts honestly fall through.
+    /// Fallback: positive `monthlyLimit` + `used` + `billingPeriod*`/`period*`.
+    /// Neither complete → no headline. Omitted quota figures are unknown
+    /// ("No data"), never 0% used.
     fn headline_bucket(&self, now: i64) -> Option<QuotaBucketView> {
-        if let Some(percent) = self.credit_usage_percent.filter(|value| value.is_finite())
-            && let Some(period) = self.current_period.as_ref()
+        if let Some(period) = self.current_period.as_ref()
+            && !period
+                .period_type
+                .as_deref()
+                .is_some_and(|kind| kind.contains("MONTHLY"))
             && let Some(start) = period.start.as_deref().and_then(parse_iso_epoch)
             && let Some(end) = period.end.as_deref().and_then(parse_iso_epoch)
             && end > start
         {
             let window_seconds = end - start;
-            let remaining = remaining_from_used_percent(percent);
             let label = grok_period_label(period.period_type.as_deref(), window_seconds);
+            // No evidence supports proto3-zero semantics for this field, so an
+            // omitted (or garbage) percent is unknown, never a full meter
+            // (F05); the known period end still anchors the reset.
+            let Some(percent) = self
+                .credit_usage_percent
+                .filter(|value| value.is_finite() && *value >= 0.0)
+            else {
+                return Some(unknown_billing_headline(label, end, now));
+            };
+            let remaining = remaining_from_used_percent(percent);
             let pace = quota_pace_label(Some(remaining), Some(end), Some(window_seconds), now);
             return Some(weekly_billing_headline(label, remaining, end, now, pace));
         }
         if let Some(limit) = self
             .monthly_limit
             .as_ref()
-            .and_then(|cents| checked_cent_magnitude(cents.val))
-            .filter(|limit| *limit > 0)
+            .and_then(|cents| positive_cent_value(cents.val))
             && let Some(start) = self
                 .billing_period_start
                 .as_deref()
+                .or(self.period_start.as_deref())
                 .and_then(parse_iso_epoch)
-            && let Some(end) = self.billing_period_end.as_deref().and_then(parse_iso_epoch)
+            && let Some(end) = self
+                .billing_period_end
+                .as_deref()
+                .or(self.period_end.as_deref())
+                .and_then(parse_iso_epoch)
             && end > start
         {
             let window_seconds = end - start;
-            let used_cents = self.used.as_ref().map_or(0, |cents| cents.val.max(0));
+            let label = grok_cycle_label_from_minutes(window_seconds / 60);
+            let Some(used_cents) = self
+                .used
+                .as_ref()
+                .map(|cents| cents.val)
+                .filter(|used| *used >= 0)
+            else {
+                return Some(unknown_billing_headline(label, end, now));
+            };
             #[expect(clippy::cast_precision_loss, reason = "cents magnitudes fit f64")]
             let percent = ((used_cents as f64 / limit as f64) * 100.0).clamp(0.0, 100.0);
             let remaining = remaining_from_used_percent(percent);
-            let label = grok_cycle_label_from_minutes(window_seconds / 60);
             let pace = quota_pace_label(Some(remaining), Some(end), Some(window_seconds), now);
             return Some(weekly_billing_headline(label, remaining, end, now, pace));
         }
@@ -366,6 +478,22 @@ fn remaining_from_used_percent(used_percent: f64) -> u8 {
     {
         100u8.saturating_sub(used_percent.clamp(0.0, 100.0).round() as u8)
     }
+}
+
+/// Unknown-quota headline: the window and reset are known but no quota
+/// figure arrived. Renders "No data" with no headline slot — never a
+/// fabricated 0% used / 100% remaining.
+fn unknown_billing_headline(label: &str, reset_at: i64, now: i64) -> QuotaBucketView {
+    timed_bucket(
+        label,
+        None,
+        None,
+        None,
+        Some(reset_at),
+        now,
+        Some("No data"),
+        UsageSnapshotStatus::Fresh,
+    )
 }
 
 fn weekly_billing_headline(
@@ -447,6 +575,7 @@ pub(crate) fn fetch_grok_rest_billing(
                 .bearer_auth(&token)
                 .header(reqwest::header::ACCEPT, "application/json")
                 .header(reqwest::header::USER_AGENT, "jackin-capsule")
+                .header("X-XAI-Token-Auth", "xai-grok-cli")
                 .send()
                 .map_err(|error| format!("Grok billing request failed: {error}"))?;
             let status = response.status();
@@ -460,16 +589,26 @@ pub(crate) fn fetch_grok_rest_billing(
     )?;
     let mut response = parse_grok_rest_billing_response(&billing_value)?;
     if let Ok(settings) = fetch_grok_rest_settings(&token)
-        && let Some(tier) = settings
-            .get("subscriptionTier")
-            .or_else(|| settings.get("subscription_tier"))
-            .and_then(serde_json::Value::as_str)
-            .map(str::trim)
-            .filter(|tier| !tier.is_empty())
+        && let Some(tier) = grok_tier_from_settings(&settings)
     {
-        response.subscription_tier = Some(tier.to_owned());
+        response.subscription_tier = Some(tier);
     }
     Ok(response)
+}
+
+/// Server-resolved plan label from the `{proxy}/settings` payload. The display
+/// form wins, then the machine form, in either case convention. Pure so the
+/// lookup chain is unit-testable without provider I/O.
+pub(crate) fn grok_tier_from_settings(settings: &serde_json::Value) -> Option<String> {
+    settings
+        .get("subscriptionTierDisplay")
+        .or_else(|| settings.get("subscription_tier_display"))
+        .or_else(|| settings.get("subscriptionTier"))
+        .or_else(|| settings.get("subscription_tier"))
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|tier| !tier.is_empty())
+        .map(str::to_owned)
 }
 
 fn fetch_grok_rest_settings(token: &str) -> Result<serde_json::Value, String> {
@@ -478,6 +617,7 @@ fn fetch_grok_rest_settings(token: &str) -> Result<serde_json::Value, String> {
         .get("https://cli-chat-proxy.grok.com/v1/settings")
         .bearer_auth(token)
         .header(reqwest::header::ACCEPT, "application/json")
+        .header("X-XAI-Token-Auth", "xai-grok-cli")
         .send()
         .map_err(|error| format!("Grok settings request failed: {error}"))?;
     if !response.status().is_success() {
@@ -599,6 +739,9 @@ pub(crate) fn grok_binary_path() -> PathBuf {
     }
 }
 
+/// Subscription Bearer [REDACTED] the stored auth file only. This never consults
+/// `XAI_API_KEY` / `GROK_DEPLOYMENT_KEY`: ambient inference keys are not
+/// consumer-billing auth (see [`resolve_grok_billing_auth`]).
 pub(crate) fn grok_bearer_token(auth_path: &Path, now: i64) -> Result<String, String> {
     let text = fs::read_to_string(auth_path).map_err(|err| format!("auth read failed: {err}"))?;
     let value: serde_json::Value =
@@ -898,3 +1041,6 @@ pub(crate) fn grok_account_label_or_presence(
         }
     })
 }
+
+#[cfg(test)]
+mod tests;

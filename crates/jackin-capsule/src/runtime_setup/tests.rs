@@ -4,6 +4,7 @@
 //! Tests for `runtime_setup`.
 use super::*;
 use std::fs;
+use std::path::Path;
 use std::sync::{
     Arc, Barrier,
     atomic::{AtomicBool, Ordering},
@@ -57,8 +58,29 @@ fn runtime_setup_process_boundary_classifies_and_redacts_failures() {
 }
 
 #[test]
-fn container_init_marker_is_container_local() {
-    assert_eq!(CONTAINER_INIT_MARKER, "/jackin/state/container-init.done");
+fn fresh_session_setup_paths_are_private_and_validated() {
+    let state =
+        parse_session_state_dir("/jackin/run/sessions/42/state").expect("valid session state root");
+    assert_eq!(
+        state.join("container-init.done"),
+        Path::new("/jackin/run/sessions/42/state/container-init.done")
+    );
+    assert_eq!(
+        state.join("git-hooks/prepare-commit-msg.v3.done"),
+        Path::new("/jackin/run/sessions/42/state/git-hooks/prepare-commit-msg.v3.done")
+    );
+    assert_ne!(state, Path::new(container_paths::STATE_DIR));
+    for invalid in [
+        "/jackin/state",
+        "/jackin/run/sessions/current/state",
+        "/jackin/run/sessions/42/state/other",
+        "/jackin/run/sessions/42/../state",
+    ] {
+        assert!(
+            parse_session_state_dir(invalid).is_err(),
+            "accepted invalid session state path {invalid}"
+        );
+    }
 }
 
 #[test]
@@ -180,6 +202,29 @@ fn claude_paths_follow_config_dir_when_set() {
     assert_eq!(
         claude_config_dir_from(Some(dir)).join(".credentials.json"),
         PathBuf::from("/home/agent/.claude-work/.credentials.json")
+    );
+}
+
+#[test]
+fn forwarded_paths_follow_instance_dir_when_set() {
+    assert_eq!(
+        forwarded_file_from(None, "/jackin/claude/credentials.json"),
+        PathBuf::from("/jackin/claude/credentials.json")
+    );
+    assert_eq!(
+        forwarded_file_from(
+            Some("/jackin/claude-claude-personal"),
+            "/jackin/claude/credentials.json"
+        ),
+        PathBuf::from("/jackin/claude-claude-personal/credentials.json")
+    );
+    assert_eq!(
+        forwarded_dir_from(None, "/jackin/hermes"),
+        PathBuf::from("/jackin/hermes")
+    );
+    assert_eq!(
+        forwarded_dir_from(Some("/jackin/hermes-x"), "/jackin/hermes"),
+        PathBuf::from("/jackin/hermes-x")
     );
 }
 
@@ -511,9 +556,10 @@ fn seed_agent_home_no_config_root_seeds_data_only() {
 
 #[test]
 fn git_hook_marker_is_versioned() {
+    let state = parse_session_state_dir("/jackin/run/sessions/42/state").unwrap();
     assert_eq!(
-        GIT_HOOK_MARKER,
-        "/jackin/state/git-hooks/prepare-commit-msg.v3.done"
+        state.join("git-hooks/prepare-commit-msg.v3.done"),
+        Path::new("/jackin/run/sessions/42/state/git-hooks/prepare-commit-msg.v3.done")
     );
 }
 

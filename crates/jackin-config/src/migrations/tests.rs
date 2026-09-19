@@ -28,6 +28,34 @@ fn migrates_missing_config_version_to_current() {
 }
 
 #[test]
+fn config_migration_waits_for_the_shared_writer_lock() {
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    let temp = tempdir().unwrap();
+    let path = temp.path().join("config.toml");
+    std::fs::write(&path, "version = \"v1alpha10\"\n").unwrap();
+    let guard = acquire_config_write_lock(&path).unwrap();
+    let (done_tx, done_rx) = mpsc::channel();
+    let migration_path = path.clone();
+    let waiter = std::thread::spawn(move || {
+        let result = migrate_config_file_if_needed(&migration_path);
+        done_tx.send(result).unwrap();
+    });
+
+    assert!(matches!(
+        done_rx.recv_timeout(Duration::from_millis(50)),
+        Err(mpsc::RecvTimeoutError::Timeout)
+    ));
+    drop(guard);
+    done_rx
+        .recv_timeout(Duration::from_secs(1))
+        .expect("migration thread did not finish")
+        .expect("migration failed");
+    waiter.join().unwrap();
+}
+
+#[test]
 fn migrates_missing_workspace_version_to_current() {
     let temp = tempdir().unwrap();
     let path = temp.path().join("prod.toml");
@@ -538,8 +566,16 @@ fn prop_config_migration_idempotent() {
     use proptest::prelude::*;
 
     let versions = [
-        "v1alpha1", "v1alpha2", "v1alpha3", "v1alpha4", "v1alpha5", "v1alpha6", "v1alpha7",
-        "v1alpha8", "v1alpha9",
+        "v1alpha1",
+        "v1alpha2",
+        "v1alpha3",
+        "v1alpha4",
+        "v1alpha5",
+        "v1alpha6",
+        "v1alpha7",
+        "v1alpha8",
+        "v1alpha9",
+        "v1alpha10",
     ];
     proptest!(|(idx in 0usize..versions.len())| {
         let version = versions[idx];
@@ -576,7 +612,7 @@ fn prop_workspace_migration_idempotent() {
 
     let versions = [
         "v1alpha1", "v1alpha2", "v1alpha3", "v1alpha4", "v1alpha5", "v1alpha6", "v1alpha7",
-        "v1alpha8",
+        "v1alpha8", "v1alpha9",
     ];
     proptest!(|(idx in 0usize..versions.len())| {
         let version = versions[idx];
@@ -643,7 +679,7 @@ fn account_schema_preserves_existing_registry_and_assignments() {
 }
 
 #[test]
-fn migrates_config_with_top_level_and_role_legacy_agent_tables_to_v1alpha10() {
+fn migrates_config_with_top_level_and_role_legacy_agent_tables_to_current() {
     let temp = tempdir().unwrap();
     let path = temp.path().join("config.toml");
     let original = r#"version = "v1alpha9"
@@ -661,7 +697,7 @@ auth_forward = "sync"
     assert!(migrate_config_file_if_needed(&path).unwrap());
     let out = std::fs::read_to_string(&path).unwrap();
     let parsed: toml::Value = toml::from_str(&out).unwrap();
-    assert_eq!(parsed["version"].as_str().unwrap(), "v1alpha10");
+    assert_eq!(parsed["version"].as_str().unwrap(), CURRENT_CONFIG_VERSION);
     assert!(
         !out.contains("claude"),
         "top-level [claude] must be stripped:\n{out}"
@@ -674,4 +710,37 @@ auth_forward = "sync"
         out.contains("builder.git"),
         "role git url must be preserved:\n{out}"
     );
+}
+
+#[test]
+fn v1alpha10_to_current_stamps_initialized_sentinel_without_touching_accounts() {
+    let temp = tempdir().unwrap();
+    let path = temp.path().join("config.toml");
+    let original = "version = \"v1alpha10\"\n\n[accounts.work]\nenabled = true\nname = \"Work\"\nprovider = \"anthropic\"\n\n[accounts.work.credential]\ntype = \"api_key\"\nvalue = \"${ANTHROPIC_API_KEY}\"\n";
+    std::fs::write(&path, original).unwrap();
+    assert!(migrate_config_file_if_needed(&path).unwrap());
+    let out = std::fs::read_to_string(&path).unwrap();
+    let parsed: toml::Value = toml::from_str(&out).unwrap();
+    assert_eq!(parsed["version"].as_str().unwrap(), CURRENT_CONFIG_VERSION);
+    assert_eq!(parsed["bootstrap"]["version"].as_integer(), Some(1));
+    assert_eq!(parsed["bootstrap"]["fresh_install"].as_bool(), Some(false));
+    assert_eq!(parsed["accounts"]["work"]["name"].as_str(), Some("Work"));
+    // Second run is a no-op (idempotent, never rescans).
+    assert!(!migrate_config_file_if_needed(&path).unwrap());
+}
+
+#[test]
+fn migration_preserves_installer_fresh_install_marker() {
+    let temp = tempdir().unwrap();
+    let path = temp.path().join("config.toml");
+    std::fs::write(
+        &path,
+        "version = \"v1alpha10\"\n\n[bootstrap]\nversion = 1\nfresh_install = true\n",
+    )
+    .unwrap();
+    assert!(migrate_config_file_if_needed(&path).unwrap());
+    let out = std::fs::read_to_string(&path).unwrap();
+    let parsed: toml::Value = toml::from_str(&out).unwrap();
+    assert_eq!(parsed["version"].as_str().unwrap(), CURRENT_CONFIG_VERSION);
+    assert_eq!(parsed["bootstrap"]["fresh_install"].as_bool(), Some(true));
 }

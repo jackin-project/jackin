@@ -1,12 +1,17 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{WorkspaceSaveInput, WorkspaceSaveMode, save_workspace};
+use super::{
+    AccountScanOutcome, OwnedSettingsSaveInput, WorkspaceSaveInput, WorkspaceSaveMode,
+    run_account_scan, save_settings_first_run_aware, save_workspace, start_account_scan,
+};
 use jackin_config::{
     AccountConfig, AccountCredential, AiProvider, AppConfig, CURRENT_WORKSPACE_VERSION, EnvValue,
-    MountConfig, MountIsolation, WorkspaceConfig, WorkspaceRoleOverride,
+    GithubAuthConfig, MountConfig, MountIsolation, WorkspaceConfig, WorkspaceRoleOverride,
 };
+use jackin_console::tui::runtime::{BlockingSubscription, SubscriptionPoll};
 use jackin_core::{Agent, JackinPaths};
+use std::collections::BTreeMap;
 
 fn workspace_file_contents(paths: &JackinPaths, name: &str) -> String {
     std::fs::read_to_string(paths.workspaces_dir.join(format!("{name}.toml"))).unwrap()
@@ -118,4 +123,120 @@ fn save_workspace_persists_and_clears_account_assignments_and_bindings() {
 
     let out = workspace_file_contents(&paths, "proj");
     assert!(!out.contains("work\""), "{out}");
+}
+
+fn cursor_credentials_fixture(home: &std::path::Path) {
+    std::fs::create_dir_all(home.join(".cursor")).unwrap();
+    std::fs::write(
+        home.join(".cursor/auth.json"),
+        r#"{"accessToken":"fixture"}"#,
+    )
+    .unwrap();
+}
+
+fn poll_scan_to_ready(
+    rx: &mut BlockingSubscription<(u64, Result<AccountScanOutcome, String>)>,
+) -> (u64, Result<AccountScanOutcome, String>) {
+    // Spin (no thread sleep: banned repo-wide): the worker is local
+    // filesystem I/O and lands in milliseconds.
+    for _ in 0..10_000_000 {
+        match rx.poll_next() {
+            SubscriptionPoll::Ready(result) => return result,
+            SubscriptionPoll::Closed => panic!("scan worker dropped"),
+            SubscriptionPoll::Pending => std::hint::spin_loop(),
+        }
+    }
+    panic!("scan worker timed out");
+}
+
+#[test]
+fn account_scan_worker_returns_candidates_without_saving() {
+    let tmp = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(tmp.path());
+    paths.ensure_base_dirs().unwrap();
+    std::fs::write(
+        &paths.config_file,
+        format!("version = \"{}\"\n", jackin_config::CURRENT_CONFIG_VERSION),
+    )
+    .unwrap();
+    cursor_credentials_fixture(&paths.home_dir);
+
+    let mut rx = start_account_scan(paths.clone(), 7);
+    let (generation, result) = poll_scan_to_ready(&mut rx);
+    assert_eq!(generation, 7);
+    let outcome = result.unwrap();
+    assert!(!outcome.fresh_install);
+    assert!(outcome.committed.is_empty());
+    assert!(
+        outcome
+            .candidates
+            .iter()
+            .any(|(id, _)| id == "default-cursor"),
+        "{outcome:?}"
+    );
+    // Nothing saved: the draft merge owns persistence.
+    let raw = std::fs::read_to_string(&paths.config_file).unwrap();
+    assert!(!raw.contains("default-cursor"), "{raw}");
+}
+
+#[test]
+fn account_scan_worker_reports_bootstrap_as_committed() {
+    let tmp = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(tmp.path());
+    // No config file: the worker's open bootstraps (fresh install).
+    cursor_credentials_fixture(&paths.home_dir);
+
+    let outcome = run_account_scan(&paths).unwrap();
+    assert!(outcome.fresh_install);
+    assert!(
+        outcome
+            .committed
+            .iter()
+            .any(|(id, _)| id == "default-cursor"),
+        "{outcome:?}"
+    );
+    assert!(
+        outcome
+            .candidates
+            .iter()
+            .all(|(id, _)| id != "default-cursor"),
+        "{outcome:?}"
+    );
+}
+
+#[test]
+fn settings_save_preserves_first_run_bootstrap_accounts() {
+    let tmp = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(tmp.path());
+    // Fresh install with discoverable evidence: the save bootstraps
+    // first, then applies the (empty) UI diff without dropping
+    // bootstrapped accounts.
+    cursor_credentials_fixture(&paths.home_dir);
+    let input = OwnedSettingsSaveInput {
+        mounts_original: Vec::new(),
+        mounts_pending: Vec::new(),
+        env_original: jackin_console::tui::state::SettingsEnvConfig {
+            env: BTreeMap::new(),
+            roles: BTreeMap::new(),
+        },
+        env_pending: jackin_console::tui::state::SettingsEnvConfig {
+            env: BTreeMap::new(),
+            roles: BTreeMap::new(),
+        },
+        auth_pending: BTreeMap::new(),
+        auth_original: BTreeMap::new(),
+        bindings_pending: BTreeMap::new(),
+        bindings_original: BTreeMap::new(),
+        github: GithubAuthConfig::default(),
+        original_github: GithubAuthConfig::default(),
+        trust_pending: Vec::new(),
+        git_coauthor_trailer: false,
+        git_dco: false,
+    };
+    let saved = save_settings_first_run_aware(&paths, &input).unwrap();
+    assert!(saved.accounts.contains_key("default-cursor"));
+    assert_eq!(
+        saved.bootstrap,
+        Some(jackin_config::BootstrapState::initialized())
+    );
 }

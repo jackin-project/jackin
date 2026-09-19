@@ -133,6 +133,39 @@ pub struct InstanceManifest {
     /// so this field is not yet read back. Serializes as the lowercase slugs.
     #[serde(default)]
     pub supported_agents: Vec<Agent>,
+    /// Instances admitted at launch, in launch order. Host-side tab
+    /// validation checks spawned tabs against this set so a tab can never
+    /// reference an instance (or account) the launch did not authorize.
+    /// Empty for manifests written before admission tracking — "unknown",
+    /// not "deny all".
+    #[serde(default)]
+    pub admitted_instances: Vec<AdmittedInstance>,
+}
+
+/// One launch-admitted instance: its config ID and owning account ID.
+/// Identifiers only — never credential material.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AdmittedInstance {
+    /// Instance config ID (`"claude-work"`).
+    pub config_id: String,
+    /// Owning account ID (`"work"`).
+    pub account_id: String,
+}
+
+impl AdmittedInstance {
+    /// Record one admitted instance.
+    pub fn new(config_id: impl Into<String>, account_id: impl Into<String>) -> Self {
+        Self {
+            config_id: config_id.into(),
+            account_id: account_id.into(),
+        }
+    }
+}
+
+impl From<&jackin_config::ResolvedInstance> for AdmittedInstance {
+    fn from(instance: &jackin_config::ResolvedInstance) -> Self {
+        Self::new(instance.config_id.clone(), instance.account_id.clone())
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -208,7 +241,34 @@ impl InstanceManifest {
             base_image_ref: input.base_image_ref,
             base_image_digest: input.base_image_digest,
             supported_agents: input.supported_agents,
+            admitted_instances: Vec::new(),
         }
+    }
+
+    /// Record the launch-admitted instances, in launch order. Called by the
+    /// host launch path once instances resolve; kept out of
+    /// [`NewInstanceManifest`] so admission stays optional for restore and
+    /// test fixtures.
+    pub fn set_admitted_instances(&mut self, admitted: impl IntoIterator<Item = AdmittedInstance>) {
+        self.admitted_instances = admitted.into_iter().collect();
+    }
+
+    /// Whether `config_id` was admitted at launch. An empty admission set
+    /// (a manifest written before admission tracking) admits nothing here —
+    /// callers that must distinguish "unknown" from "denied" check
+    /// `admitted_instances.is_empty()` first.
+    pub fn admits_instance(&self, config_id: &str) -> bool {
+        self.admitted_instances
+            .iter()
+            .any(|admitted| admitted.config_id == config_id)
+    }
+
+    /// Owning account ID for an admitted instance config ID.
+    pub fn account_for_instance(&self, config_id: &str) -> Option<&str> {
+        self.admitted_instances
+            .iter()
+            .find(|admitted| admitted.config_id == config_id)
+            .map(|admitted| admitted.account_id.as_str())
     }
 
     /// Project this manifest to the lightweight index entry stored in

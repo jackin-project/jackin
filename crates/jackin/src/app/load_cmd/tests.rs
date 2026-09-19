@@ -1,4 +1,4 @@
-use super::{docker_startup_error, take_post_console_config};
+use super::{docker_startup_error, resolve_dry_run_identity, take_post_console_config};
 use jackin_config::AppConfig;
 use jackin_config::{MountConfig, WorkspaceConfig};
 use jackin_core::Agent;
@@ -251,4 +251,91 @@ fn a_role_without_a_published_image_reports_it_as_null_not_missing() {
     );
     assert!(data["image_decision"]["base_image"].is_null());
     assert_eq!(data["image_decision"]["decision"], "build_from_workspace");
+}
+
+fn dry_run_identity_config() -> (AppConfig, jackin_core::WorkspaceName) {
+    use jackin_config::{AccountConfig, AccountCredential, AgentConfiguration, AiProvider};
+    let mut config = AppConfig::default();
+    for (id, display, provider) in [
+        ("a-claude", "Work", AiProvider::Anthropic),
+        ("b-claude", "Personal", AiProvider::Anthropic),
+        ("c-codex", "Work", AiProvider::OpenAi),
+    ] {
+        config.accounts.insert(
+            id.to_owned(),
+            AccountConfig {
+                enabled: true,
+                name: display.into(),
+                provider,
+                credential: AccountCredential::ApiKey {
+                    value: jackin_core::EnvValue::Plain("test-key".into()),
+                    base_url: None,
+                    model: None,
+                },
+            },
+        );
+    }
+    for (id, agent, account) in [
+        ("claude-work", Agent::Claude, "a-claude"),
+        ("claude-personal", Agent::Claude, "b-claude"),
+        ("codex-work", Agent::Codex, "c-codex"),
+    ] {
+        config.agent_configurations.insert(
+            id.to_owned(),
+            AgentConfiguration {
+                agent,
+                account: account.into(),
+                model: None,
+                base_url: None,
+                display_label: None,
+                invoked_via_wrapper: None,
+            },
+        );
+    }
+    let ws = jackin_core::WorkspaceName::parse("demo").unwrap();
+    config.workspaces.insert(
+        ws.as_str().to_owned(),
+        WorkspaceConfig {
+            workdir: "/demo".into(),
+            accounts: vec!["a-claude".into(), "b-claude".into(), "c-codex".into()],
+            default_launch: Some(vec![
+                "claude-work".into(),
+                "claude-personal".into(),
+                "codex-work".into(),
+            ]),
+            ..Default::default()
+        },
+    );
+    (config, ws)
+}
+
+#[test]
+fn dry_run_identity_lists_every_instance_when_no_single_account_resolves() {
+    let (config, ws) = dry_run_identity_config();
+    let (selected_id, instances) =
+        resolve_dry_run_identity(&config, Agent::Claude, Some(&ws), "smith").unwrap();
+    assert_eq!(selected_id, None);
+    let ids: Vec<&str> = instances
+        .iter()
+        .map(|instance| instance.config_id.as_str())
+        .collect();
+    assert_eq!(ids, ["claude-work", "claude-personal", "codex-work"]);
+    assert_eq!(instances[0].label, "Claude · Work");
+    assert_eq!(instances[0].account_id, "a-claude");
+    assert_eq!(instances[2].label, "Codex · Work");
+}
+
+#[test]
+fn dry_run_identity_keeps_single_account_shape_for_unambiguous_launches() {
+    let (mut config, ws) = dry_run_identity_config();
+    config.workspaces.get_mut(ws.as_str()).unwrap().accounts = vec!["c-codex".into()];
+    config
+        .workspaces
+        .get_mut(ws.as_str())
+        .unwrap()
+        .default_launch = None;
+    let (selected_id, instances) =
+        resolve_dry_run_identity(&config, Agent::Codex, Some(&ws), "smith").unwrap();
+    assert_eq!(selected_id.as_deref(), Some("c-codex"));
+    assert!(instances.is_empty());
 }

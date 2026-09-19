@@ -43,14 +43,18 @@ async fn amp_launch_invokes_docker_run_with_amp_agent() {
     install_agent_binary_stubs(&paths);
     std::fs::write(
         &paths.config_file,
-        r#"[accounts.amp-test]
+        r#"default_launch = ["amp-main"]
+
+[accounts.amp-test]
 name = "Amp test"
 provider = "amp"
 [accounts.amp-test.credential]
 type = "api_key"
 value = "test-amp-key"
-[account_bindings]
-amp = "amp-test"
+
+[agent_configurations.amp-main]
+agent = "amp"
+account = "amp-test"
 
 [roles.the-architect]
 git = "https://github.com/jackin-project/jackin-the-architect.git"
@@ -130,8 +134,8 @@ agents = ["amp"]
         "JACKIN_AGENT must not be a container env var; got: {run_cmd}"
     );
     assert!(
-        run_cmd.ends_with(" amp"),
-        "initial agent must be passed as container argv; got: {run_cmd}"
+        run_cmd.ends_with(" amp-main"),
+        "initial instance must be passed as container argv; got: {run_cmd}"
     );
     assert!(
         !run_cmd.contains(":/home/agent/.amp/bin/amp:ro"),
@@ -145,11 +149,18 @@ agents = ["amp"]
     let credentials_path = paths
         .data_dir
         .join(recorded_role_container_name(run_cmd))
-        .join("credentials/account-credentials.json");
+        .join(format!(
+            "credentials/{}",
+            jackin_protocol::account_credentials_filename("amp-main")
+        ));
     let credentials: serde_json::Value =
         serde_json::from_slice(&std::fs::read(&credentials_path).unwrap()).unwrap();
-    assert_eq!(credentials["amp"]["AMP_API_KEY"], "test-amp-key");
-    assert_eq!(credentials.as_object().unwrap().len(), 1);
+    assert_eq!(credentials["schema_version"], 1);
+    assert_eq!(
+        credentials["credential"]["env"]["AMP_API_KEY"],
+        "test-amp-key"
+    );
+    assert_eq!(credentials["instance"], "amp-main");
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt as _;
@@ -178,7 +189,8 @@ agents = ["amp"]
         toml::from_str(&std::fs::read_to_string(capsule_config_path).unwrap()).unwrap();
     assert_eq!(capsule_config.role, "the-architect");
     assert_eq!(capsule_config.workdir, "/workspace");
-    assert_eq!(capsule_config.agents, vec!["amp"]);
+    assert_eq!(capsule_config.instances, vec!["amp-main"]);
+    assert_eq!(capsule_config.agents.get("amp-main").unwrap(), "amp");
     assert!(capsule_config.models.is_empty());
 }
 
@@ -240,12 +252,22 @@ agents = ["amp"]
             credential: jackin_config::AccountCredential::Profile {
                 agent: Agent::Amp,
                 directory: amp_dir,
+                xdg_roots: None,
             },
         },
     );
-    config
-        .account_bindings
-        .insert(Agent::Amp, "amp-profile".into());
+    config.agent_configurations.insert(
+        "amp-main".into(),
+        jackin_config::AgentConfiguration {
+            agent: Agent::Amp,
+            account: "amp-profile".into(),
+            model: None,
+            base_url: None,
+            display_label: None,
+            invoked_via_wrapper: None,
+        },
+    );
+    config.default_launch = Some(vec!["amp-main".into()]);
     let workspace = ResolvedWorkspace {
         name: String::new(),
         label: repo_dir.display().to_string(),

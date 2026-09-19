@@ -451,6 +451,7 @@ fn account_config() -> AppConfig {
             AccountCredential::Profile {
                 agent: Agent::Claude,
                 directory: "/profiles/claude-personal".into(),
+                xdg_roots: None,
             },
         ),
         (
@@ -459,6 +460,7 @@ fn account_config() -> AppConfig {
             AccountCredential::Profile {
                 agent: Agent::Claude,
                 directory: "/profiles/claude-work".into(),
+                xdg_roots: None,
             },
         ),
         (

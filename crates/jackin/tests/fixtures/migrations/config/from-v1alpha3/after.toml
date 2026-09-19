@@ -1,8 +1,12 @@
 # SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 # SPDX-License-Identifier: Apache-2.0
 
-version = "v1alpha10"
+version = "v1alpha12"
 
 [roles.agent-smith]
 git = "https://github.com/jackin-project/jackin-agent-smith.git"
 trusted = true
+
+[bootstrap]
+version = 1
+fresh_install = false

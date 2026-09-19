@@ -1,5 +1,6 @@
 ---
 source: crates/jackin-console/src/tui/view/tests.rs
+assertion_line: 1447
 expression: rendered
 ---
  jackin❯  · edit workspace · ws                                                           
@@ -8,16 +9,16 @@ expression: rendered
  General   Mounts   Roles   Environments   Accounts                                       
                                           ──────────                                      
 ┌────────────────────────────────────────────────────────────────────────────────────────┐
-│  ▸ Workspace / Claude: automatic                                                       │
-│    Workspace / Codex: automatic                                                        │
-│    Workspace / Amp: automatic                                                          │
-│    Workspace / Kimi: automatic                                                         │
-│    Workspace / OpenCode: automatic                                                     │
-│    Workspace / Grok: automatic                                                         │
-│    Workspace / GitHub: inherited                                                       │
-│                                                                                        │
-│                                                                                        │
-│                                                                                        │
+│  ▸ Workspace / Claude: automatic                                                       ┃
+│    Workspace / Codex: automatic                                                        ┃
+│    Workspace / Amp: automatic                                                          ┃
+│    Workspace / Kimi: automatic                                                         ┃
+│    Workspace / OpenCode: automatic                                                     ┃
+│    Workspace / Grok: automatic                                                         ┃
+│    Workspace / Antigravity: automatic                                                  ┃
+│    Workspace / Gemini: automatic                                                       ┃
+│    Workspace / Cursor: automatic                                                       ·
+│    Workspace / Muse: automatic                                                         ·
 └────────────────────────────────────────────────────────────────────────────────────────┘
                                                                                           
    ↑↓ navigate   ↵/Space toggle / next account · D clear   ⇤ tab bar   S save workspace   

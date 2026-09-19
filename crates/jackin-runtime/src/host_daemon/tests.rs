@@ -393,6 +393,10 @@ fn hello_reports_protocol_without_adapters() {
 fn telemetry_health_round_trip_is_typed_and_sanitized() {
     let (_temp, _paths, layout) = layout();
     let mut attention = AttentionAdapter::new(RecordingNotifier::default());
+    // The diagnostics lifecycle is process-global and other tests exercise
+    // its flush/shutdown transitions. Capture the pre-request state instead
+    // of assuming this test owns a fresh process.
+    let health_before = jackin_diagnostics::telemetry_health_snapshot();
     let request = DaemonRequest {
         id: "health".to_owned(),
         protocol_version: DAEMON_PROTOCOL_VERSION,
@@ -419,8 +423,16 @@ fn telemetry_health_round_trip_is_typed_and_sanitized() {
     assert_eq!(report.fingerprint.compression, "gzip");
     assert_eq!(report.fingerprint.sampler, "parentbased_always_on");
     assert_eq!(report.config_failure, None);
-    assert_eq!(report.health.flush, TelemetryFlushStatus::Pending);
-    assert!(!report.health.shutdown_timed_out);
+    let expected_flush = match health_before.flush {
+        jackin_diagnostics::TelemetryFlushStatus::Pending => TelemetryFlushStatus::Pending,
+        jackin_diagnostics::TelemetryFlushStatus::Succeeded => TelemetryFlushStatus::Succeeded,
+        jackin_diagnostics::TelemetryFlushStatus::Failed => TelemetryFlushStatus::Failed,
+    };
+    assert_eq!(report.health.flush, expected_flush);
+    assert_eq!(
+        report.health.shutdown_timed_out,
+        health_before.shutdown_timed_out
+    );
     let json = serde_json::to_string(&report).unwrap().to_ascii_lowercase();
     assert!(!json.contains("authorization"));
     assert!(!json.contains("header"));
@@ -633,11 +645,14 @@ fn snapshot(state: AgentState) -> InstanceSnapshot {
         active_tab: 0,
         tabs: vec![TabSnapshot {
             label: "agent".to_owned(),
+            instance: Some("codex-main".to_owned()),
+            account_id: Some("acc-1".to_owned()),
             focused_pane: 7,
             panes: vec![PaneSnapshot {
                 session_id: 7,
                 label: "Codex".to_owned(),
                 agent: Some("codex".to_owned()),
+                account_id: Some("acc-1".to_owned()),
                 state,
                 agent_status_report: None,
             }],

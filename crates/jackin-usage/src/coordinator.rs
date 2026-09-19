@@ -23,6 +23,7 @@ pub use state::{
     ProjectionAlias, ProjectionStateEnvelope, StateStoreError,
 };
 
+use self::policy::UsageActivity;
 use self::state::sanitize_usage_view;
 
 const TERMINAL_HISTORY_LIMIT: usize = 8;
@@ -154,14 +155,23 @@ impl UsageCapabilitySet {
     }
 }
 
+/// In-memory periodic cadence for one account. Due times are scheduling
+/// hints only; shared retry/rate-limit/success deadlines always win.
+struct AccountCadence {
+    activity: UsageActivity,
+    low_power: bool,
+    next_due_epoch: i64,
+}
+
 struct AccountEntry {
     envelope: AccountStateEnvelope,
     history: VecDeque<UsageGenerationView>,
     recovery_pending: bool,
+    cadence: AccountCadence,
 }
 
 impl AccountEntry {
-    fn new(envelope: AccountStateEnvelope, recovery_pending: bool) -> Self {
+    fn new(envelope: AccountStateEnvelope, recovery_pending: bool, now_epoch: i64) -> Self {
         let mut history = VecDeque::new();
         if envelope.phase.is_terminal() {
             history.push_back(generation_view(&envelope));
@@ -170,6 +180,11 @@ impl AccountEntry {
             envelope,
             history,
             recovery_pending,
+            cadence: AccountCadence {
+                activity: UsageActivity::Idle,
+                low_power: false,
+                next_due_epoch: now_epoch,
+            },
         }
     }
 
@@ -384,6 +399,151 @@ impl UsageCoordinator {
             .collect()
     }
 
+    /// Select the periodic cadence tier for one account. A due account stays
+    /// due; otherwise the next poll moves earlier when the new cadence is
+    /// shorter. Never dispatches provider work.
+    pub fn set_activity(
+        &self,
+        capability: &UsageAccountCapability,
+        activity: UsageActivity,
+        low_power: bool,
+        now_epoch: i64,
+    ) -> Result<(), UsageCoordinationError> {
+        self.ensure_loaded(capability, now_epoch)?;
+        let mut state = self.shared.state.lock().map_err(|_| unavailable_error())?;
+        if let Some(error) = state.blocked.get(capability) {
+            return Err(error.clone());
+        }
+        let entry = state
+            .accounts
+            .get_mut(capability)
+            .ok_or_else(unavailable_error)?;
+        entry.cadence.activity = activity;
+        entry.cadence.low_power = low_power;
+        let deadline = cadence_deadline(
+            activity,
+            low_power,
+            capability,
+            entry.envelope.generation,
+            now_epoch,
+        );
+        entry.cadence.next_due_epoch = entry.cadence.next_due_epoch.min(deadline);
+        Ok(())
+    }
+
+    /// Earliest periodic due time across known accounts, for scheduler sleep.
+    /// `None` when no account is tracked yet.
+    #[must_use]
+    pub fn next_due_epoch(&self) -> Option<i64> {
+        self.shared.state.lock().ok().and_then(|state| {
+            state
+                .accounts
+                .values()
+                .map(|entry| entry.cadence.next_due_epoch)
+                .min()
+        })
+    }
+
+    /// Poll every account whose periodic cadence is due. Each due account
+    /// issues at most one ambient (non-force) refresh, which joins in-flight
+    /// work and honors shared Retry-After/cooldown deadlines, so one call can
+    /// never produce a burst of missed polls. Returns the started or joined
+    /// views; blocked accounts are skipped.
+    pub fn poll_due(&self, now_epoch: i64) -> Vec<UsageGenerationView> {
+        let due: Vec<(UsageAccountCapability, u64)> = self
+            .shared
+            .state
+            .lock()
+            .map(|state| {
+                state
+                    .accounts
+                    .iter()
+                    .filter(|(capability, entry)| {
+                        !state.blocked.contains_key(*capability)
+                            && now_epoch >= entry.cadence.next_due_epoch
+                    })
+                    .map(|(capability, entry)| (capability.clone(), entry.envelope.generation))
+                    .collect()
+            })
+            .unwrap_or_default();
+        let mut views = Vec::with_capacity(due.len());
+        for (capability, observed) in due {
+            let Ok(view) = self.request_refresh(&capability, observed, false, now_epoch) else {
+                continue;
+            };
+            self.advance_cadence(&capability, observed, now_epoch);
+            views.push(view);
+        }
+        views
+    }
+
+    /// Recalculate due times after sleep/wake or network reconnection. Every
+    /// missed due time becomes one jittered cadence deadline from now, so the
+    /// next [`UsageCoordinator::poll_due`] issues at most one poll per
+    /// account. Future due times are untouched. Returns the number of
+    /// recalculated accounts. Never dispatches provider work.
+    pub fn note_wake(&self, now_epoch: i64) -> usize {
+        let Ok(mut state) = self.shared.state.lock() else {
+            return 0;
+        };
+        let mut recalculated = 0;
+        for (capability, entry) in &mut state.accounts {
+            if entry.cadence.next_due_epoch < now_epoch {
+                entry.cadence.next_due_epoch = cadence_deadline(
+                    entry.cadence.activity,
+                    entry.cadence.low_power,
+                    capability,
+                    entry.envelope.generation,
+                    now_epoch,
+                );
+                recalculated += 1;
+            }
+        }
+        recalculated
+    }
+
+    fn advance_cadence(
+        &self,
+        capability: &UsageAccountCapability,
+        observed_generation: u64,
+        now_epoch: i64,
+    ) {
+        let Ok(mut state) = self.shared.state.lock() else {
+            return;
+        };
+        let Some(entry) = state.accounts.get_mut(capability) else {
+            return;
+        };
+        if entry.envelope.generation > observed_generation {
+            entry.cadence.next_due_epoch = cadence_deadline(
+                entry.cadence.activity,
+                entry.cadence.low_power,
+                capability,
+                entry.envelope.generation,
+                now_epoch,
+            );
+            return;
+        }
+        let shared_deadline = [
+            entry.envelope.rate_limit_deadline_epoch,
+            entry.envelope.retry_deadline_epoch,
+            entry.envelope.success_deadline_epoch,
+        ]
+        .into_iter()
+        .flatten()
+        .filter(|deadline| *deadline > now_epoch)
+        .max();
+        entry.cadence.next_due_epoch = shared_deadline.unwrap_or_else(|| {
+            cadence_deadline(
+                entry.cadence.activity,
+                entry.cadence.low_power,
+                capability,
+                entry.envelope.generation,
+                now_epoch,
+            )
+        });
+    }
+
     /// Whether no queued or active generation is retained by this authority.
     #[must_use]
     pub fn is_idle(&self) -> bool {
@@ -488,7 +648,7 @@ impl UsageCoordinator {
                 }
                 state.accounts.insert(
                     capability.clone(),
-                    AccountEntry::new(envelope, recovery_pending),
+                    AccountEntry::new(envelope, recovery_pending, now_epoch),
                 );
                 Ok(())
             }
@@ -732,13 +892,42 @@ fn persist_terminal(
 }
 
 fn data_bearing(view: &FocusedUsageView) -> bool {
-    !view.buckets.is_empty()
-        && !matches!(
-            view.status,
-            UsageSnapshotStatus::Unavailable
-                | UsageSnapshotStatus::Unsupported
-                | UsageSnapshotStatus::NeedsSecret
-        )
+    if view.status == UsageSnapshotStatus::Unsupported {
+        return true;
+    }
+    !view.buckets.is_empty() && view.status == UsageSnapshotStatus::Fresh
+}
+
+/// Jittered periodic deadline: tier cadence plus a deterministic
+/// `[0, cadence/4]` skew, so accounts spread out instead of polling in
+/// lockstep. The capability and generation seed it, so joined callers never
+/// derive different due times.
+fn cadence_deadline(
+    activity: UsageActivity,
+    low_power: bool,
+    capability: &UsageAccountCapability,
+    generation: u64,
+    from_epoch: i64,
+) -> i64 {
+    let base = policy::cadence(activity, low_power).as_secs();
+    let span = base / 4 + 1;
+    let jitter = cadence_jitter_seed(capability, generation) % span;
+    from_epoch.saturating_add(i64::try_from(base.saturating_add(jitter)).unwrap_or(i64::MAX))
+}
+
+fn cadence_jitter_seed(capability: &UsageAccountCapability, generation: u64) -> u64 {
+    let mut seed = 0xcbf2_9ce4_8422_2325u64;
+    for byte in capability
+        .account_id
+        .as_bytes()
+        .iter()
+        .chain(capability.surface_id.as_bytes())
+        .chain(generation.to_le_bytes().iter())
+    {
+        seed ^= u64::from(*byte);
+        seed = seed.wrapping_mul(0x0100_0000_01b3);
+    }
+    seed
 }
 
 fn generation_view(envelope: &AccountStateEnvelope) -> UsageGenerationView {
@@ -751,9 +940,13 @@ fn generation_view(envelope: &AccountStateEnvelope) -> UsageGenerationView {
             .clone()
             .or_else(|| envelope.last_good.clone()),
         error: envelope.terminal_error.clone(),
-        retry_at_epoch: envelope
-            .rate_limit_deadline_epoch
-            .or(envelope.retry_deadline_epoch),
+        retry_at_epoch: [
+            envelope.rate_limit_deadline_epoch,
+            envelope.retry_deadline_epoch,
+        ]
+        .into_iter()
+        .flatten()
+        .max(),
     }
 }
 

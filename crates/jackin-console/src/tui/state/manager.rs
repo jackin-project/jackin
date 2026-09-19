@@ -165,6 +165,7 @@ impl ManagerState<'_> {
             file_browser_listing_rx: None,
             file_browser_commit_rx: None,
             config_save_rx: None,
+            account_scan_rx: None,
             instances_last_error: None,
             expanded_workspaces: BTreeSet::new(),
             current_dir_expanded: false,
@@ -173,7 +174,7 @@ impl ManagerState<'_> {
             instance_snapshots: HashMap::new(),
             preview_focused: false,
             preview_pane_cursor: HashMap::new(),
-            usage_screen: None,
+            usage: super::UsageRouteState::default(),
             usage_accounts: Vec::new(),
             usage_notice: None,
         }
@@ -629,6 +630,39 @@ impl ManagerState<'_> {
 
     pub const fn config_save_in_flight(&self) -> bool {
         self.config_save_rx.is_some()
+    }
+
+    pub fn begin_account_scan(
+        &mut self,
+        rx: BlockingSubscription<(
+            u64,
+            Result<crate::tui::screens::settings::model::AccountScanOutcome, String>,
+        )>,
+    ) {
+        self.account_scan_rx = Some(rx);
+    }
+
+    pub const fn account_scan_in_flight(&self) -> bool {
+        self.account_scan_rx.is_some()
+    }
+
+    pub fn poll_account_scan(
+        &mut self,
+    ) -> Option<(
+        u64,
+        Result<crate::tui::screens::settings::model::AccountScanOutcome, String>,
+    )> {
+        let rx = self.account_scan_rx.as_mut()?;
+        let result = match rx.poll_next() {
+            SubscriptionPoll::Ready(result) => result,
+            SubscriptionPoll::Pending => return None,
+            SubscriptionPoll::Closed => {
+                self.account_scan_rx = None;
+                return None;
+            }
+        };
+        self.account_scan_rx = None;
+        Some(result)
     }
 
     pub fn poll_mount_info_refresh(&mut self) -> Option<PendingMountInfoRefresh> {

@@ -34,7 +34,8 @@ pub async fn run_client(
 /// Forward a runtime hook/plugin event to the daemon for the current session.
 ///
 /// Invoked as `jackin-capsule report-event --event <name> [--payload-stdin]`
-/// from a container-local hook/plugin. Reads `JACKIN_SESSION_ID`,
+/// from a container-local hook/plugin. Reads the agent-only
+/// `JACKIN_SESSION_ID`,
 /// `JACKIN_STATUS_SOURCE`, `JACKIN_AGENT_RUNTIME` from the spawn env. Always
 /// exits 0 — a reporter must never break the agent's hook — so all failures are
 /// logged and swallowed.
@@ -99,7 +100,7 @@ where
 
 async fn try_report_event(args: &[String]) -> Result<()> {
     let event = flag_value(args, "--event").context("report-event requires --event <name>")?;
-    let session_id: u64 = std::env::var("JACKIN_SESSION_ID")
+    let session_id: u64 = std::env::var(jackin_protocol::SESSION_ID_ENV)
         .context("JACKIN_SESSION_ID unset")?
         .parse()
         .context("JACKIN_SESSION_ID not a u64")?;
@@ -603,6 +604,9 @@ async fn connect_and_send(
     let result = stream
         .write_all(&control_frame(&ControlRequest {
             ctx,
+            session_capability: std::env::var(jackin_protocol::SESSION_CAPABILITY_ENV)
+                .ok()
+                .filter(|value| !value.is_empty()),
             msg: request.clone(),
         }))
         .await;

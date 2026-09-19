@@ -81,7 +81,8 @@ Examples:
         /// Role to select by default when loading this workspace
         #[arg(long = "default-role")]
         default_role: Option<String>,
-        /// Default agent for this workspace (claude, codex, amp, or opencode)
+        /// Default agent for this workspace (claude, codex, amp, kimi, opencode,
+        /// grok, antigravity, gemini, cursor, muse, omp, or hermes)
         #[arg(long, value_parser = parse_agent)]
         default_agent: Option<jackin_core::Agent>,
         /// Set isolation mode for a mount destination. Repeatable.
@@ -132,6 +133,8 @@ Examples:
   jackin workspace edit my-app --clear-default-role
   jackin workspace edit my-app --default-agent amp
   jackin workspace edit my-app --clear-default-agent
+  jackin workspace edit my-app --default-launch claude-main --default-launch codex-main
+  jackin workspace edit my-app --clear-default-launch
   jackin workspace edit my-app --mount ~/Projects/my-app --yes
   jackin workspace edit my-app --prune"
     )]
@@ -216,6 +219,23 @@ Examples:
             default_value_t = false
         )]
         no_git_pull: bool,
+        /// Set the workspace launch admission set: agent-configuration IDs
+        /// admitted to this workspace's containers (repeatable). Replaces
+        /// the inherited global default entirely.
+        #[arg(
+            long = "default-launch",
+            value_name = "CONFIG_ID",
+            action = clap::ArgAction::Append
+        )]
+        default_launch: Vec<String>,
+        /// Clear the workspace launch admission set so the workspace
+        /// inherits the global default again.
+        #[arg(
+            long = "clear-default-launch",
+            conflicts_with = "default_launch",
+            default_value_t = false
+        )]
+        clear_default_launch: bool,
     },
     /// Remove redundant mounts (rule-C violations) from a saved workspace
     #[command(

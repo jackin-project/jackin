@@ -18,6 +18,13 @@ fn display_matches_slug() {
     assert_eq!(format!("{}", Agent::Amp), "amp");
     assert_eq!(format!("{}", Agent::Kimi), "kimi");
     assert_eq!(format!("{}", Agent::Opencode), "opencode");
+    assert_eq!(format!("{}", Agent::Grok), "grok");
+    assert_eq!(format!("{}", Agent::Antigravity), "antigravity");
+    assert_eq!(format!("{}", Agent::Gemini), "gemini");
+    assert_eq!(format!("{}", Agent::Cursor), "cursor");
+    assert_eq!(format!("{}", Agent::Muse), "muse");
+    assert_eq!(format!("{}", Agent::Omp), "omp");
+    assert_eq!(format!("{}", Agent::Hermes), "hermes");
 }
 
 #[test]
@@ -136,36 +143,71 @@ RUN set -euxo pipefail && \\
 fn fallback_install_blocks_use_official_installers() {
     let curl_flags =
         "--connect-timeout 15 --max-time 120 --retry 2 --retry-delay 2 --retry-connrefused";
+    // (agent, installer command, smoke-check binary): the binary differs from
+    // the slug where the CLI name differs (`agy`, `cursor-agent`).
     let cases = [
         (
             Agent::Claude,
             format!("curl -fsSL {curl_flags} https://claude.ai/install.sh | bash"),
+            "claude",
         ),
         (
             Agent::Codex,
             format!(
                 "curl -fsSL {curl_flags} https://chatgpt.com/codex/install.sh | CODEX_NON_INTERACTIVE=1 bash"
             ),
+            "codex",
         ),
         (
             Agent::Amp,
             format!("curl -fsSL {curl_flags} https://ampcode.com/install.sh | bash"),
+            "amp",
         ),
         (
             Agent::Kimi,
             format!("curl -fsSL {curl_flags} https://code.kimi.com/kimi-code/install.sh | bash"),
+            "kimi",
         ),
         (
             Agent::Opencode,
             format!("curl -fsSL {curl_flags} https://opencode.ai/install | bash"),
+            "opencode",
         ),
         (
             Agent::Grok,
             format!("curl -fsSL {curl_flags} https://x.ai/cli/install.sh | bash"),
+            "grok",
+        ),
+        (
+            Agent::Antigravity,
+            format!("curl -fsSL {curl_flags} https://antigravity.google/cli/install.sh | bash"),
+            "agy",
+        ),
+        (
+            Agent::Gemini,
+            "npm install -g @google/gemini-cli".to_owned(),
+            "gemini",
+        ),
+        (
+            Agent::Cursor,
+            format!("curl -fsSL {curl_flags} https://cursor.com/install | bash"),
+            "cursor-agent",
+        ),
+        (
+            Agent::Omp,
+            "npm install -g @oh-my-pi/pi-coding-agent@18.2.4".to_owned(),
+            "omp",
+        ),
+        (
+            Agent::Hermes,
+            format!(
+                "curl -fsSL {curl_flags} https://hermes-agent.nousresearch.com/install.sh | bash"
+            ),
+            "hermes",
         ),
     ];
 
-    for (agent, command) in cases {
+    for (agent, command, version_bin) in cases {
         assert_eq!(agent.fallback_install_command(), command);
         let block = agent.fallback_install_block();
         assert!(block.contains(&command), "{agent} fallback block: {block}");
@@ -175,15 +217,36 @@ fn fallback_install_blocks_use_official_installers() {
         );
         assert!(
             block.contains(&format!(
-                "RUN --mount=type=cache,id=jackin-agent-fallback-{},target=/home/agent/.cache",
-                agent.slug()
+                "RUN --mount=type=cache,id=jackin-agent-fallback-{version_bin},target=/home/agent/.cache"
             )),
             "{agent} fallback block should use an agent-scoped BuildKit cache mount: {block}"
         );
         assert!(
-            block.contains(&format!("{} --version", agent.slug())),
+            block.contains(&format!("{version_bin} --version")),
             "{agent} fallback block must verify install: {block}"
         );
+    }
+}
+
+#[test]
+fn muse_fallback_install_fails_closed_without_invented_url() {
+    let command = Agent::Muse.fallback_install_command();
+    assert!(command.contains("exit 1"), "{command}");
+    assert!(
+        !command.contains("https://"),
+        "muse fallback must not invent a download URL: {command}"
+    );
+    let block = Agent::Muse.fallback_install_block();
+    assert!(block.contains(command), "{block}");
+}
+
+/// CLI binary name per agent: differs from the slug where upstream named the
+/// binary differently (`agy`, `cursor-agent`).
+fn cli_binary(agent: Agent) -> &'static str {
+    match agent {
+        Agent::Antigravity => "agy",
+        Agent::Cursor => "cursor-agent",
+        _ => agent.slug(),
     }
 }
 
@@ -193,7 +256,7 @@ fn prefetched_install_blocks_verify_installed_cli_versions() {
         let block =
             agent.install_block(&format!(".jackin-runtime/agent-binaries/{}", agent.slug()));
         assert!(
-            block.contains(&format!("{} --version", agent.slug())),
+            block.contains(&format!("{} --version", cli_binary(*agent))),
             "{agent} prefetched install block must print the baked CLI version: {block}"
         );
     }
@@ -268,6 +331,48 @@ fn required_env_var_table() {
         Agent::Opencode.required_env_var(AuthForwardMode::Ignore),
         None
     );
+
+    assert_eq!(Agent::Grok.required_env_var(AuthForwardMode::Sync), None);
+    assert_eq!(
+        Agent::Grok.required_env_var(AuthForwardMode::ApiKey),
+        Some(env_model::XAI_API_KEY_ENV_NAME)
+    );
+    assert_eq!(
+        Agent::Grok.required_env_var(AuthForwardMode::OAuthToken),
+        None
+    );
+    assert_eq!(Agent::Grok.required_env_var(AuthForwardMode::Ignore), None);
+
+    for agent in [Agent::Antigravity, Agent::Gemini] {
+        assert_eq!(agent.required_env_var(AuthForwardMode::Sync), None);
+        assert_eq!(
+            agent.required_env_var(AuthForwardMode::ApiKey),
+            Some(env_model::GEMINI_API_KEY_ENV_NAME)
+        );
+        assert_eq!(agent.required_env_var(AuthForwardMode::OAuthToken), None);
+        assert_eq!(agent.required_env_var(AuthForwardMode::Ignore), None);
+    }
+
+    assert_eq!(
+        Agent::Cursor.required_env_var(AuthForwardMode::ApiKey),
+        Some(env_model::CURSOR_API_KEY_ENV_NAME)
+    );
+    assert_eq!(
+        Agent::Muse.required_env_var(AuthForwardMode::ApiKey),
+        Some(env_model::META_API_KEY_ENV_NAME)
+    );
+
+    // Multi-provider clients have no single agent-level variable.
+    for agent in [Agent::Omp, Agent::Hermes] {
+        for mode in [
+            AuthForwardMode::Sync,
+            AuthForwardMode::ApiKey,
+            AuthForwardMode::OAuthToken,
+            AuthForwardMode::Ignore,
+        ] {
+            assert_eq!(agent.required_env_var(mode), None);
+        }
+    }
 }
 
 #[test]
@@ -313,4 +418,26 @@ fn supported_modes_opencode_excludes_oauth_token() {
     assert!(modes.contains(&AuthForwardMode::ApiKey));
     assert!(!modes.contains(&AuthForwardMode::OAuthToken));
     assert!(modes.contains(&AuthForwardMode::Ignore));
+}
+
+#[test]
+fn supported_modes_new_agents_are_sync_api_key_ignore() {
+    for agent in [
+        Agent::Antigravity,
+        Agent::Gemini,
+        Agent::Cursor,
+        Agent::Muse,
+        Agent::Omp,
+        Agent::Hermes,
+    ] {
+        assert_eq!(
+            agent.supported_modes(),
+            &[
+                AuthForwardMode::Sync,
+                AuthForwardMode::ApiKey,
+                AuthForwardMode::Ignore
+            ],
+            "{agent:?}",
+        );
+    }
 }

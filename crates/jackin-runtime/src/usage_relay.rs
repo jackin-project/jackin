@@ -3,7 +3,7 @@
 
 //! Per-container allowlisted relay to the host-only usage broker.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::os::unix::ffi::OsStrExt as _;
 use std::os::unix::fs::PermissionsExt as _;
@@ -23,7 +23,7 @@ use jackin_usage::host::{
     CachedProviderCredentialResolver, ForwardedUsageSources, HostSurfaceId,
     ProviderCredentialSecretOutcome, ProviderCredentialSecretResolution,
     ProviderCredentialSecretSource, UsageBrokerClient, UsageBrokerConfig, discover_usage_sources,
-    forwarded_usage_capabilities, validate_usage_sources,
+    forwarded_usage_capabilities, usage_capability_for_selected_account, validate_usage_sources,
 };
 use tokio::io::{
     AsyncBufRead, AsyncBufReadExt as _, AsyncRead, AsyncReadExt as _, AsyncWrite,
@@ -145,8 +145,8 @@ pub struct UsageRelayLaunch<'a> {
 /// capability alone cannot create a Capsule row.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ResolvedLaunchUsageInventory {
-    /// Agent slugs in deterministic launch-config order.
-    pub agents: Vec<String>,
+    /// Instance config IDs in deterministic launch-config order.
+    pub instances: Vec<String>,
 }
 
 /// Project the resolved launch configuration into the Capsule usage boundary.
@@ -154,10 +154,10 @@ pub struct ResolvedLaunchUsageInventory {
 pub fn resolved_launch_usage_inventory(
     config: &jackin_protocol::CapsuleConfig,
 ) -> ResolvedLaunchUsageInventory {
-    let mut agents = config.agents.clone();
-    agents.sort();
-    agents.dedup();
-    ResolvedLaunchUsageInventory { agents }
+    let mut instances = config.instances.clone();
+    instances.sort();
+    instances.dedup();
+    ResolvedLaunchUsageInventory { instances }
 }
 
 /// Session-lifetime relay ownership. Drop revokes the socket task.
@@ -207,6 +207,49 @@ impl Drop for UsageRelayGuard {
 pub struct PreparedUsageRelay {
     broker: UsageBrokerClient,
     capabilities: Vec<UsageAccountCapability>,
+    canonical_launch_usage_capabilities: CanonicalLaunchUsageCapabilities,
+}
+
+/// Canonical host capabilities resolved for the configured account selections
+/// in one Capsule launch. The launch config starts with config-account aliases
+/// so discovery can select the right binding; this map replaces those aliases
+/// with the exact opaque authorities accepted by the relay.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct CanonicalLaunchUsageCapabilities {
+    by_account_surface: BTreeMap<(String, String), UsageAccountCapability>,
+}
+
+impl CanonicalLaunchUsageCapabilities {
+    pub(crate) fn apply_to_launch_config(
+        &self,
+        launch_config: &mut jackin_protocol::CapsuleConfig,
+    ) {
+        let replacements = launch_config
+            .instances
+            .iter()
+            .filter_map(|instance_id| {
+                let account_id = launch_config.accounts.get(instance_id)?;
+                let capability = launch_config.usage_capabilities.get(instance_id)?;
+                Some((
+                    instance_id.clone(),
+                    account_id.clone(),
+                    capability.surface_id.clone(),
+                ))
+            })
+            .collect::<Vec<_>>();
+        for (instance_id, account_id, surface_id) in replacements {
+            let key = (account_id, surface_id);
+            if let Some(capability) = self.by_account_surface.get(&key) {
+                launch_config
+                    .usage_capabilities
+                    .insert(instance_id, capability.clone());
+            } else {
+                // Never leave a pre-discovery config alias in the Capsule when
+                // host discovery did not prove that exact identity.
+                launch_config.usage_capabilities.remove(&instance_id);
+            }
+        }
+    }
 }
 
 /// Derive source proof from credentials actually provisioned for this launch.
@@ -232,14 +275,74 @@ pub fn forwarded_sources_from_launch(
         .map(|entry| entry.name.to_owned())
         .collect();
     ForwardedUsageSources {
+        selected_account_ids: BTreeSet::new(),
+        selected_account_surfaces: BTreeMap::new(),
         profile_surface_ids,
         env_keys,
     }
 }
 
+/// Source proof for the serialized launch config. The account ids are the
+/// exact configured selections and are used to filter host bindings before a
+/// relay capability allowlist is created.
+#[must_use]
+pub fn forwarded_sources_from_launch_config(
+    state: &crate::instance::RoleState,
+    resolved_env: &jackin_env::ResolvedEnv,
+    launch_config: &jackin_protocol::CapsuleConfig,
+) -> ForwardedUsageSources {
+    let mut sources = forwarded_sources_from_launch(state, resolved_env);
+    sources.selected_account_ids = launch_config.accounts.values().cloned().collect();
+    for (instance_id, account_id) in &launch_config.accounts {
+        if let Some(capability) = launch_config.usage_capabilities.get(instance_id) {
+            sources
+                .selected_account_surfaces
+                .entry(account_id.clone())
+                .or_insert_with(|| capability.surface_id.clone());
+        }
+    }
+    sources
+}
+
+/// Populate the Capsule launch contract with canonical usage authorities for
+/// every admitted instance. An unknown account or provider leaves that entry
+/// absent; the Capsule then fails closed for usage refresh instead of falling
+/// back to a same-surface account.
+pub fn populate_launch_usage_capabilities(
+    config: &AppConfig,
+    launch_config: &mut jackin_protocol::CapsuleConfig,
+) {
+    for instance_id in &launch_config.instances {
+        let Some(account_id) = launch_config.accounts.get(instance_id) else {
+            continue;
+        };
+        let Some(account) = config.accounts.get(account_id) else {
+            continue;
+        };
+        // The selected account's configured provider is the canonical usage
+        // surface. Do not rediscover profiles here: launch materialization is
+        // on the critical path, and profile identity readers may block on a
+        // protected keychain. Broker discovery still validates credentials
+        // when the relay starts; this contract only carries the already
+        // authorized account/provider identity into Capsule.
+        let Some(surface) = HostSurfaceId::from_provider_alias(account.provider.slug()) else {
+            continue;
+        };
+        launch_config.usage_capabilities.insert(
+            instance_id.clone(),
+            UsageAccountCapability {
+                account_id: account_id.clone(),
+                surface_id: surface.id().to_owned(),
+            },
+        );
+    }
+}
+
 /// Resolve global discovery, ensure the host broker, then start one scoped relay.
 /// Broker startup failure remains fail-closed through an unavailable client.
-pub async fn prepare_for_container(launch: UsageRelayLaunch<'_>) -> Result<UsageRelayGuard> {
+pub(crate) async fn prepare_for_container(
+    launch: UsageRelayLaunch<'_>,
+) -> Result<(UsageRelayGuard, CanonicalLaunchUsageCapabilities)> {
     let paths = launch.paths.clone();
     let workspace_name = launch.workspace_name.map(str::to_owned);
     let role_key = launch.role_key.to_owned();
@@ -248,11 +351,14 @@ pub async fn prepare_for_container(launch: UsageRelayLaunch<'_>) -> Result<Usage
     let socket_path = socket_dir.join(RELAY_SOCKET);
     if socket_path.as_os_str().as_bytes().len() >= crate::runtime::attach::MAX_UNIX_SOCKET_PATH_LEN
     {
-        return Ok(UsageRelayGuard {
-            task: None,
-            socket_path: Some(socket_path),
-            shutdown: None,
-        });
+        return Ok((
+            UsageRelayGuard {
+                task: None,
+                socket_path: Some(socket_path),
+                shutdown: None,
+            },
+            CanonicalLaunchUsageCapabilities::default(),
+        ));
     }
     let prepared = jackin_telemetry::spawn::joined_blocking(move || {
         prepare_broker_client(
@@ -264,15 +370,26 @@ pub async fn prepare_for_container(launch: UsageRelayLaunch<'_>) -> Result<Usage
     })
     .await
     .context("usage broker preparation task panicked")?;
-    let (client, capabilities) = prepared;
+    let (client, capabilities, canonical_launch_usage_capabilities) = prepared;
     if capabilities.is_empty() {
-        return Ok(UsageRelayGuard {
-            task: None,
-            socket_path: Some(socket_path),
-            shutdown: None,
-        });
+        return Ok((
+            UsageRelayGuard {
+                task: None,
+                socket_path: Some(socket_path),
+                shutdown: None,
+            },
+            CanonicalLaunchUsageCapabilities::default(),
+        ));
     }
-    Ok(start_guard(socket_path, client, capabilities))
+    if let Some(parent) = socket_path.parent() {
+        fs::create_dir_all(parent)
+            .with_context(|| format!("creating usage relay directory {}", parent.display()))?;
+        fs::set_permissions(parent, fs::Permissions::from_mode(0o700))?;
+    }
+    Ok((
+        start_guard(socket_path, client, capabilities),
+        canonical_launch_usage_capabilities,
+    ))
 }
 
 /// Resolve one Docker Capsule's broker and immutable capability allowlist.
@@ -284,20 +401,32 @@ pub async fn prepare_for_docker_container(
     let workspace_name = launch.workspace_name.map(str::to_owned);
     let role_key = launch.role_key.to_owned();
     let forwarded_sources = launch.forwarded_sources;
-    let (broker, capabilities) = jackin_telemetry::spawn::joined_blocking(move || {
-        prepare_broker_client(
-            &paths,
-            workspace_name.as_deref(),
-            &role_key,
-            &forwarded_sources,
-        )
-    })
-    .await
-    .context("usage broker preparation task panicked")?;
+    let (broker, capabilities, canonical_launch_usage_capabilities) =
+        jackin_telemetry::spawn::joined_blocking(move || {
+            prepare_broker_client(
+                &paths,
+                workspace_name.as_deref(),
+                &role_key,
+                &forwarded_sources,
+            )
+        })
+        .await
+        .context("usage broker preparation task panicked")?;
     Ok(PreparedUsageRelay {
         broker,
         capabilities,
+        canonical_launch_usage_capabilities,
     })
+}
+
+impl PreparedUsageRelay {
+    pub(crate) fn apply_to_launch_config(
+        &self,
+        launch_config: &mut jackin_protocol::CapsuleConfig,
+    ) {
+        self.canonical_launch_usage_capabilities
+            .apply_to_launch_config(launch_config);
+    }
 }
 
 /// Start the production Docker stdio tunnel after the Capsule is running.
@@ -410,11 +539,19 @@ fn prepare_broker_client(
     workspace_name: Option<&str>,
     role_key: &str,
     forwarded_sources: &ForwardedUsageSources,
-) -> (UsageBrokerClient, Vec<UsageAccountCapability>) {
+) -> (
+    UsageBrokerClient,
+    Vec<UsageAccountCapability>,
+    CanonicalLaunchUsageCapabilities,
+) {
     let broker_config = UsageBrokerConfig::for_data_dir(paths.data_dir.clone());
     let fallback = broker_config.client();
     if paths.test_layout {
-        return (fallback, Vec::new());
+        return (
+            fallback,
+            Vec::new(),
+            CanonicalLaunchUsageCapabilities::default(),
+        );
     }
     let resolver = Arc::new(CachedProviderCredentialResolver::new(RuntimeSecretSource));
     let scope = jackin_usage::host::UsageDiscoveryScope::HostDesktop {
@@ -422,7 +559,11 @@ fn prepare_broker_client(
         operator_home: paths.home_dir.clone(),
     };
     let Ok(catalog) = discover_usage_sources(&scope, resolver.as_ref()) else {
-        return (fallback, Vec::new());
+        return (
+            fallback,
+            Vec::new(),
+            CanonicalLaunchUsageCapabilities::default(),
+        );
     };
     let discovery = validate_usage_sources(catalog, resolver.as_ref());
     let scope_label = workspace_name.map_or_else(
@@ -430,12 +571,39 @@ fn prepare_broker_client(
         |workspace| format!("workspace {workspace} role {role_key}"),
     );
     let capabilities = forwarded_usage_capabilities(&discovery, &scope_label, forwarded_sources);
+    let allowed = capabilities.iter().cloned().collect::<BTreeSet<_>>();
+    let canonical_launch_usage_capabilities =
+        canonical_capabilities_for_launch(&discovery, forwarded_sources, &allowed);
     if capabilities.is_empty() {
-        return (fallback, capabilities);
+        return (
+            fallback,
+            capabilities,
+            CanonicalLaunchUsageCapabilities::default(),
+        );
     }
     let client =
         jackin_usage::host::ensure_usage_broker_process(broker_config, &scope).unwrap_or(fallback);
-    (client, capabilities)
+    (client, capabilities, canonical_launch_usage_capabilities)
+}
+
+fn canonical_capabilities_for_launch(
+    discovery: &jackin_usage::host::ValidatedUsageDiscovery,
+    forwarded_sources: &ForwardedUsageSources,
+    allowed: &BTreeSet<UsageAccountCapability>,
+) -> CanonicalLaunchUsageCapabilities {
+    CanonicalLaunchUsageCapabilities {
+        by_account_surface: forwarded_sources
+            .selected_account_surfaces
+            .iter()
+            .filter_map(|(account_id, surface_id)| {
+                let capability =
+                    usage_capability_for_selected_account(discovery, account_id, surface_id)?;
+                allowed
+                    .contains(&capability)
+                    .then_some(((account_id.clone(), surface_id.clone()), capability))
+            })
+            .collect(),
+    }
 }
 
 /// Start a relay at an explicit per-container socket path.
@@ -520,29 +688,27 @@ async fn dispatch(
     allowlist: UsageCapabilitySet,
 ) -> UsageBrokerResponse {
     let authorized = match operation {
-        UsageBrokerOperation::CurrentForSurface { surface_id } => allowlist
-            .resolve_surface(&surface_id)
-            .map(|capability| UsageBrokerOperation::Current { capability }),
-        UsageBrokerOperation::RefreshForSurface {
-            surface_id,
+        UsageBrokerOperation::CurrentForCapability { capability } => allowlist
+            .authorize(&capability)
+            .map(|()| UsageBrokerOperation::Current { capability }),
+        UsageBrokerOperation::RefreshForCapability {
+            capability,
             observed_generation,
             force,
-        } => {
-            allowlist
-                .resolve_surface(&surface_id)
-                .map(|capability| UsageBrokerOperation::Refresh {
-                    capability,
-                    observed_generation,
-                    force,
-                })
-        }
-        UsageBrokerOperation::JoinForSurface {
-            surface_id,
+        } => allowlist
+            .authorize(&capability)
+            .map(|()| UsageBrokerOperation::Refresh {
+                capability,
+                observed_generation,
+                force,
+            }),
+        UsageBrokerOperation::JoinForCapability {
+            capability,
             generation,
             timeout_ms,
         } => allowlist
-            .resolve_surface(&surface_id)
-            .map(|capability| UsageBrokerOperation::Join {
+            .authorize(&capability)
+            .map(|()| UsageBrokerOperation::Join {
                 capability,
                 generation,
                 timeout_ms,
@@ -572,18 +738,6 @@ async fn dispatch(
         Ok(operation) => operation,
         Err(error) => return UsageBrokerResponse::Error { error },
     };
-    if matches!(
-        operation,
-        UsageBrokerOperation::CurrentForSurface { .. }
-            | UsageBrokerOperation::RefreshForSurface { .. }
-            | UsageBrokerOperation::JoinForSurface { .. }
-    ) {
-        let error = UsageCoordinationError {
-            kind: UsageCoordinationErrorKind::Unauthorized,
-            message: "usage provider surface is not authorized".to_owned(),
-        };
-        return UsageBrokerResponse::Error { error };
-    }
     match jackin_telemetry::spawn::joined_blocking(move || broker.execute(operation)).await {
         Ok(Ok(state)) => UsageBrokerResponse::State {
             state: Box::new(state),

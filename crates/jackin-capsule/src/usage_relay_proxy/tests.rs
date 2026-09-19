@@ -3,7 +3,8 @@
 
 use super::*;
 use jackin_protocol::usage_broker::{
-    USAGE_BROKER_PROTOCOL_VERSION, UsageBrokerOperation, UsageCoordinationError,
+    USAGE_BROKER_PROTOCOL_VERSION, UsageAccountCapability, UsageBrokerOperation,
+    UsageCoordinationError,
 };
 use tokio::io::BufReader;
 
@@ -28,8 +29,8 @@ async fn broker_client_stdio_proxy_multiplexes_out_of_order_responses() {
     }
     frames.reverse();
     for frame in frames {
-        let surface = match frame.request.operation {
-            UsageBrokerOperation::CurrentForSurface { surface_id } => surface_id,
+        let account = match frame.request.operation {
+            UsageBrokerOperation::CurrentForCapability { capability } => capability.account_id,
             operation => panic!("unexpected operation: {operation:?}"),
         };
         let response = UsageRelayTunnelResponse {
@@ -37,7 +38,7 @@ async fn broker_client_stdio_proxy_multiplexes_out_of_order_responses() {
             response: UsageBrokerResponse::Error {
                 error: UsageCoordinationError {
                     kind: UsageCoordinationErrorKind::Unauthorized,
-                    message: surface,
+                    message: account,
                 },
             },
         };
@@ -56,8 +57,11 @@ async fn send_request(socket: std::path::PathBuf, surface: &str) -> UsageBrokerR
     let request = UsageBrokerRequest {
         protocol_version: USAGE_BROKER_PROTOCOL_VERSION.to_owned(),
         build_id: env!("CARGO_PKG_VERSION").to_owned(),
-        operation: UsageBrokerOperation::CurrentForSurface {
-            surface_id: surface.to_owned(),
+        operation: UsageBrokerOperation::CurrentForCapability {
+            capability: UsageAccountCapability {
+                account_id: surface.to_owned(),
+                surface_id: surface.to_owned(),
+            },
         },
     };
     let mut bytes = serde_json::to_vec(&request).unwrap();

@@ -6,8 +6,8 @@
 use crate::auth::AuthForwardMode;
 
 use crate::agent::runtime::{
-    AgentRuntime, AgentStatePaths, bounded_fallback_curl, looks_like_version,
-    render_fallback_install_block,
+    AgentRuntime, AgentStatePaths, FolderVar, FolderVarKind, bounded_fallback_curl,
+    looks_like_version, render_fallback_install_block,
 };
 
 const FALLBACK_INSTALL_COMMAND: &str =
@@ -76,7 +76,10 @@ RUN set -euxo pipefail && \\
             credential_dir: ".local/share/opencode",
             config_dir: Some(".config/opencode"),
             credential_file: Some(".local/share/opencode/auth.json"),
-            folder_env_var: Some("XDG_DATA_HOME"),
+            folder_env_var: Some(FolderVar {
+                name: "XDG_DATA_HOME",
+                kind: FolderVarKind::XdgRoot,
+            }),
         }
     }
 

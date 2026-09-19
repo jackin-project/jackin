@@ -176,15 +176,25 @@ fn canonical_supported_agent_slugs(manifest: &jackin_core::RoleManifest) -> Vec<
 }
 
 /// The derived image carries a non-reproducible install step (Claude / Grok run
-/// a network installer at build time) when either agent is in the supported set,
-/// so the recipe folds in the stored cache-bust token to force a rebuild when
-/// that token advances. Other supported sets install purely from prefetched
-/// binaries and need no cache bust.
+/// a network installer at build time; Gemini / Cursor / Muse / Omp / Hermes
+/// cannot be host-prefetched so they always install from the network at build
+/// time) when any such agent is in the supported set, so the recipe folds in
+/// the stored cache-bust token to force a rebuild when that token advances.
+/// Other supported sets install purely from prefetched binaries and need no
+/// cache bust.
 pub fn supported_set_uses_cache_bust(manifest: &jackin_core::RoleManifest) -> bool {
-    manifest
-        .supported_agents()
-        .iter()
-        .any(|agent| matches!(agent, Agent::Claude | Agent::Grok))
+    manifest.supported_agents().iter().any(|agent| {
+        matches!(
+            agent,
+            Agent::Claude
+                | Agent::Grok
+                | Agent::Gemini
+                | Agent::Cursor
+                | Agent::Muse
+                | Agent::Omp
+                | Agent::Hermes
+        )
+    })
 }
 
 pub fn cache_bust_recipe_value(

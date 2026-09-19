@@ -450,10 +450,17 @@ pub(crate) struct CodexRateLimitDetails {
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct CodexWindowSnapshot {
+    // Untyped so a float/string `used_percent` degrades to a used-less window
+    // instead of failing the whole response decode (wham shape drift).
     #[serde(rename = "used_percent")]
-    pub(crate) used_percent: Option<u8>,
+    pub(crate) used_percent: Option<serde_json::Value>,
     #[serde(rename = "reset_at")]
     pub(crate) reset_at: Option<i64>,
+    // Relative reset form the wham API sends instead of `reset_at` on some
+    // windows (`reset_at (epoch s) | reset_after_seconds`); resolved against
+    // the fetch time in `resets_at`.
+    #[serde(rename = "reset_after_seconds")]
+    pub(crate) reset_after_seconds: Option<i64>,
     #[serde(rename = "limit_window_seconds")]
     pub(crate) limit_window_seconds: Option<i64>,
     #[serde(skip)]
@@ -463,14 +470,41 @@ pub(crate) struct CodexWindowSnapshot {
 impl CodexWindowSnapshot {
     pub(crate) fn from_rpc(window: CodexRpcRateLimitWindow) -> Self {
         Self {
-            used_percent: {
-                let bounded = window.used_percent.round().clamp(0.0, 100.0);
-                Some(bounded.to_string().parse::<u8>().unwrap_or(0))
-            },
+            used_percent: window.used_percent.map(|used| {
+                let bounded = used.round().clamp(0.0, 100.0);
+                serde_json::Value::from(bounded.to_string().parse::<u8>().unwrap_or(0))
+            }),
             reset_at: window.resets_at,
+            reset_after_seconds: None,
             limit_window_seconds: None,
             window_duration_mins: window.window_duration_mins,
         }
+    }
+
+    /// Raw used percent, rounded but unclamped: over-cap readings (>100%)
+    /// survive so the bucket can carry the raw figure (T02); only the bar
+    /// geometry clamps. `None` when the server sent no usable number.
+    pub(crate) fn used_percent_raw(&self) -> Option<f64> {
+        let used = json_number(self.used_percent.as_ref()?)?.round();
+        used.is_finite().then_some(used)
+    }
+
+    /// Used percent rounded and clamped to `0..=100`; `None` when the server
+    /// sent no usable number (missing, float drift handled, strings parsed).
+    pub(crate) fn used_percent_clamped(&self) -> Option<u8> {
+        let used = self.used_percent_raw()?;
+        #[expect(clippy::cast_sign_loss, reason = "clamped to 0.0..=100.0")]
+        Some(used.clamp(0.0, 100.0) as u8)
+    }
+
+    /// Effective reset epoch: absolute `reset_at` wins, otherwise `now` plus
+    /// the relative `reset_after_seconds` offset (negative offsets ignored).
+    pub(crate) fn resets_at(&self, now: i64) -> Option<i64> {
+        self.reset_at.or_else(|| {
+            self.reset_after_seconds
+                .filter(|offset| *offset >= 0)
+                .map(|offset| now.saturating_add(offset))
+        })
     }
 
     pub(crate) fn window_label(&self) -> Option<String> {
@@ -544,7 +578,9 @@ pub(crate) enum CodexRpcAccountDetails {
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct CodexRpcRateLimitsResponse {
-    #[serde(rename = "rateLimits")]
+    // Defaulted: a server that omits the whole object (permission/capability
+    // drift) still decodes, yielding no windows instead of no snapshot.
+    #[serde(rename = "rateLimits", default)]
     pub(crate) rate_limits: CodexRpcRateLimits,
     // Per-limit-id windows. Every entry other than the main "codex" limit
     // (already surfaced as Session/Weekly) is an extra limit — the
@@ -567,11 +603,13 @@ pub(crate) struct CodexRpcLimitEntry {
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct CodexRpcResetCredits {
-    #[serde(rename = "availableCount")]
+    // Defaulted: a missing count reads as zero (no bucket) rather than failing
+    // the whole rate-limit decode.
+    #[serde(rename = "availableCount", default)]
     pub(crate) available_count: i64,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Default, Deserialize)]
 pub(crate) struct CodexRpcRateLimits {
     pub(crate) primary: Option<CodexRpcRateLimitWindow>,
     pub(crate) secondary: Option<CodexRpcRateLimitWindow>,
@@ -582,8 +620,10 @@ pub(crate) struct CodexRpcRateLimits {
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct CodexRpcRateLimitWindow {
+    // Optional: a window without a used figure still decodes (reset/duration
+    // rows stay); the bucket just carries no used/remaining percent.
     #[serde(rename = "usedPercent")]
-    pub(crate) used_percent: f64,
+    pub(crate) used_percent: Option<f64>,
     #[serde(rename = "windowDurationMins")]
     pub(crate) window_duration_mins: Option<i64>,
     #[serde(rename = "resetsAt")]
@@ -592,8 +632,11 @@ pub(crate) struct CodexRpcRateLimitWindow {
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct CodexRpcCredits {
-    #[serde(rename = "hasCredits")]
+    // Defaulted: a credits object with drifted/missing flags reads as
+    // no-credits (no bucket) rather than failing the whole decode.
+    #[serde(rename = "hasCredits", default)]
     pub(crate) has_credits: bool,
+    #[serde(default)]
     pub(crate) unlimited: bool,
     pub(crate) balance: Option<String>,
 }
@@ -884,24 +927,40 @@ pub(crate) fn push_codex_window(
     let Some(window) = window else {
         return;
     };
-    let used = window.used_percent.map(|value| value.min(100));
+    let used = window.used_percent_clamped();
     let remaining = used.map(|value| 100u8.saturating_sub(value));
+    // The label carries the raw figure (`142% used` over cap); only the
+    // remaining bar clamps. Negative garbage floors at 0, never "-3% used".
+    let used_label = window
+        .used_percent_raw()
+        .map(|raw| codex_used_label(raw.max(0.0)));
     let window_seconds = window.window_seconds();
-    let pace = quota_pace_label(remaining, window.reset_at, window_seconds, now)
+    let reset_at = window.resets_at(now);
+    let pace = quota_pace_label(remaining, reset_at, window_seconds, now)
         .or_else(|| window.window_label());
     buckets.push(with_status_slot(
         timed_bucket(
             label,
-            used.map(|value| format!("{value}% used")),
+            used_label,
             Some("100%".to_owned()),
             remaining,
-            window.reset_at,
+            reset_at,
             now,
             pace.as_deref(),
             UsageSnapshotStatus::Fresh,
         ),
         slot,
     ));
+}
+
+/// Used-side label preserving the raw provider figure, including over-cap
+/// readings (`142% used`) — the Muse lane renders the same form.
+fn codex_used_label(used_percent: f64) -> String {
+    if used_percent.fract() == 0.0 {
+        format!("{used_percent:.0}% used")
+    } else {
+        format!("{used_percent:.1}% used")
+    }
 }
 
 pub(crate) fn decode_codex_rpc_usage(
@@ -1257,3 +1316,6 @@ pub(crate) fn resolve_codex_base_url(codex_home: &Path) -> String {
     }
     normalized
 }
+
+#[cfg(test)]
+mod tests;

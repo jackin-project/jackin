@@ -95,6 +95,8 @@ pub async fn check_dns(container_name: &str) {
         "container",
         [
             "exec",
+            "--user",
+            crate::runtime::identity::CAPSULE_SUPERVISOR_USER,
             container_name,
             "sh",
             "-c",
@@ -134,7 +136,15 @@ pub async fn wait_for_capsule(container_name: &str) -> Result<()> {
 
         let output = crate::process_telemetry::exec_async(&jackin_process::ExecRequest::new(
             "container",
-            ["exec", container_name, "sh", "-c", check_cmd],
+            [
+                "exec",
+                "--user",
+                crate::runtime::identity::CAPSULE_SUPERVISOR_USER,
+                container_name,
+                "sh",
+                "-c",
+                check_cmd,
+            ],
         ))
         .await;
 
@@ -155,7 +165,14 @@ pub async fn wait_for_capsule(container_name: &str) -> Result<()> {
 /// can record an attach outcome — a non-zero exit distinguishes a crash from a
 /// clean detach.
 pub async fn attach(container_name: &str, focus_session: Option<u64>) -> Result<Option<i32>> {
-    let mut args: Vec<&str> = vec!["exec", "-it", container_name, container_paths::CAPSULE_BIN];
+    let mut args: Vec<&str> = vec![
+        "exec",
+        "--user",
+        crate::runtime::identity::CAPSULE_SUPERVISOR_USER,
+        "-it",
+        container_name,
+        container_paths::CAPSULE_BIN,
+    ];
 
     let focus_str;
     if let Some(id) = focus_session {
@@ -270,6 +287,7 @@ pub async fn launch(args: AppleContainerLaunch<'_>) -> Result<()> {
         .filter(|(key, _)| key != "JACKIN_CAPSULE_FORCE_DAEMON" && key != "JACKIN_DEBUG")
         .cloned()
         .collect::<Vec<_>>();
+    let mut capsule_config = capsule_config.clone();
     // Mirror the Docker path: list on-demand credential var names so the
     // in-container MCP tool advertises which commands need jackin-exec.
     let names = super::launch::exec_binding_names(&capsule_config.exec_bindings);
@@ -280,22 +298,25 @@ pub async fn launch(args: AppleContainerLaunch<'_>) -> Result<()> {
     // socket dir bind-mount to /jackin/run: carries Capsule's launch config
     // (agent.toml, which the daemon requires at startup) and host.sock.
     let socket_dir = paths.jackin_home.join("sockets").join(container_name);
-    let capsule_config_contents = super::launch::capsule_config_contents(capsule_config)
-        .context("serializing Capsule launch config for /jackin/run/agent.toml")?;
-    super::launch::prepare_socket_dir(&socket_dir, &capsule_config_contents)?;
-    let _usage_relay_guard =
+    let (usage_relay_guard, canonical_launch_usage_capabilities) =
         crate::usage_relay::prepare_for_container(crate::usage_relay::UsageRelayLaunch {
             paths,
             workspace_name,
             role_key,
-            forwarded_sources: crate::usage_relay::forwarded_sources_from_launch(
+            forwarded_sources: crate::usage_relay::forwarded_sources_from_launch_config(
                 state,
                 resolved_env,
+                &capsule_config,
             ),
             socket_dir: socket_dir.clone(),
         })
         .await
         .context("starting scoped usage relay")?;
+    canonical_launch_usage_capabilities.apply_to_launch_config(&mut capsule_config);
+    let capsule_config_contents = super::launch::capsule_config_contents(&capsule_config)
+        .context("serializing Capsule launch config for /jackin/run/agent.toml")?;
+    super::launch::prepare_socket_dir(&socket_dir, &capsule_config_contents)?;
+    let _usage_relay_guard = usage_relay_guard;
     let mut container_mounts = mounts.to_vec();
     container_mounts.push(crate::usage_relay::apple_runtime_mount(socket_dir));
 
@@ -305,6 +326,7 @@ pub async fn launch(args: AppleContainerLaunch<'_>) -> Result<()> {
 
     let spec = crate::apple_container_client::AppleContainerSpec {
         image: image.to_owned(),
+        user: crate::runtime::identity::CAPSULE_SUPERVISOR_USER.to_owned(),
         env,
         env_file: host_env_file.as_ref().map(|file| file.path().to_path_buf()),
         mounts: container_mounts,

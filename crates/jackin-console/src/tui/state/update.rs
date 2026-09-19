@@ -289,10 +289,30 @@ pub fn update_manager(state: &mut ManagerState<'_>, message: ManagerMessage) {
                 inline_picker_dismissal_plan(InlinePickerDismissal::LaunchAccount),
             );
         }
+        ManagerMessage::Settings(message) => apply_settings_message(state, message),
     }
     drop(action_span);
     if let Some(guard) = action_guard {
         jackin_telemetry::ui::remember_action_parent(guard);
+    }
+}
+
+fn apply_settings_message(
+    state: &mut ManagerState<'_>,
+    message: crate::tui::screens::settings::message::SettingsMessage,
+) {
+    let ManagerStage::Settings(settings) = &mut state.stage else {
+        return;
+    };
+    let effect = crate::tui::screens::settings::update::reduce_account_scan_message(
+        &mut settings.auth,
+        &message,
+    );
+    if let Some(crate::tui::screens::settings::effect::SettingsEffect::StartAccountScan {
+        generation,
+    }) = effect
+    {
+        state.request_effect(ManagerEffect::StartAccountScan { generation });
     }
 }
 
@@ -428,7 +448,8 @@ pub(crate) const fn action_of(
         | ManagerMessage::OpenListErrorPopup { .. }
         | ManagerMessage::OpenStatusPopup { .. }
         | ManagerMessage::OpenListContainerInfo { .. }
-        | ManagerMessage::OpenListGithubPicker { .. } => None,
+        | ManagerMessage::OpenListGithubPicker { .. }
+        | ManagerMessage::Settings(_) => None,
     }
 }
 

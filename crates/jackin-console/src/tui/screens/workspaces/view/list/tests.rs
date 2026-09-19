@@ -481,6 +481,7 @@ fn ws_config_with_allowed(names: &[&str], default: Option<&str>) -> WorkspaceCon
         runtime: jackin_config::WorkspaceRuntimeConfig::default(),
         dirty_exit_policy: None,
         docker: None,
+        default_launch: None,
     }
 }
 

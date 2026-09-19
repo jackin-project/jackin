@@ -116,6 +116,9 @@ pub fn build_workspace_edit(
     if pending.git_pull_on_entry != original.git_pull_on_entry {
         edit.git_pull_on_entry_enabled = Some(pending.git_pull_on_entry);
     }
+    if pending.default_launch != original.default_launch {
+        edit.default_launch = Some(pending.default_launch.clone());
+    }
     edit
 }
 

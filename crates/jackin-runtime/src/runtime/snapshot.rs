@@ -162,6 +162,7 @@ pub(crate) fn request_control_inner(path: &Path, request: &ClientMsg) -> Result<
                 jackin_telemetry::propagation::inject(&mut ctx);
                 ctx
             },
+            session_capability: None,
             msg: request.clone(),
         }))
         .context("writing control request to daemon")?;
@@ -251,14 +252,12 @@ pub(crate) fn run_docker_exec_capsule(
     container_name: &str,
     script: &str,
 ) -> Result<std::process::Output> {
-    // Match the container's run-time UID (`--user` on docker run) so fallback
-    // exec reads host-UID-owned state, not as the image's baked UID 1000.
-    let run_as_user = crate::runtime::identity::host_run_as_user();
+    // Capsule state is root-supervisor-owned. Fallback exec must use the same
+    // identity as PID 1, not the image's baked agent UID.
+    let run_as_user = crate::runtime::identity::CAPSULE_SUPERVISOR_USER;
     let mut args: Vec<&str> = vec!["exec"];
-    if let Some(ref user) = run_as_user {
-        args.push("--user");
-        args.push(user.as_str());
-    }
+    args.push("--user");
+    args.push(run_as_user);
     args.extend_from_slice(&[container_name, "sh", "-lc", script]);
     let request = jackin_process::ExecRequest::new("docker", &args);
     let (operation, mut child) = crate::process_telemetry::spawn_sync(&request)

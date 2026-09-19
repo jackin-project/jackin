@@ -607,19 +607,19 @@ pub fn render(
         } => {
             let areas = workspace_frame_areas(area);
 
-            if state.usage_screen.is_some() {
+            if state.usage.visible {
                 render_usage_surface(frame, area, state);
             } else {
                 render_header(frame, areas.header, workspace_header_title());
             }
 
-            if show_list_body && state.usage_screen.is_none() {
+            if show_list_body && !state.usage.visible {
                 crate::tui::screens::workspaces::view::list::render_list_body(
                     frame, areas.body, state, config, cwd,
                 );
             }
 
-            if state.usage_screen.is_none() {
+            if !state.usage.visible {
                 render_footer(
                     frame,
                     areas.footer,

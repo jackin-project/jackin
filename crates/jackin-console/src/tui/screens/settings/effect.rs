@@ -8,4 +8,9 @@
 //! introduced.
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SettingsEffect {}
+pub enum SettingsEffect {
+    /// Run account discovery on a worker thread (blocking filesystem /
+    /// Keychain I/O — never on the UI thread), then dispatch
+    /// `AccountScanCompleted` carrying this generation.
+    StartAccountScan { generation: u64 },
+}

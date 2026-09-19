@@ -81,7 +81,10 @@ pub(super) fn workspace_launch_config(
     materialized: &crate::isolation::materialize::MaterializedWorkspace,
     dirty_exit_policy: &str,
     exec_bindings: Vec<jackin_protocol::ExecBinding>,
+    state: &crate::instance::RoleState,
 ) -> anyhow::Result<jackin_protocol::CapsuleConfig> {
+    let instances =
+        jackin_config::resolve_launch(config, workspace_name, role_key, None, Some(agent))?;
     let isolated_worktrees = materialized
         .mounts
         .iter()
@@ -94,33 +97,68 @@ pub(super) fn workspace_launch_config(
         &validated_repo.manifest,
         dirty_exit_policy,
         isolated_worktrees,
+        &instances,
     );
-    launch_config.auth_modes = crate::runtime::launch::capsule_setup::capsule_auth_modes(
-        config,
-        workspace_name,
-        role_key,
-        &validated_repo.manifest,
-        Some(agent),
-    )?;
+    launch_config.auth_modes =
+        crate::runtime::launch::capsule_setup::capsule_auth_modes(config, &instances)?;
     launch_config.exec_bindings = exec_bindings;
-    crate::runtime::launch::capsule_setup::apply_account_models(
-        &mut launch_config,
+    launch_config.models = crate::runtime::launch::capsule_setup::resolved_instance_models(
         config,
-        workspace_name,
-        role_key,
-        &[agent],
+        &validated_repo.manifest,
+        &instances,
+        agent,
+        opts.model.as_deref(),
     )?;
-    // A per-launch model overrides the role manifest's `[<agent>].model` for
-    // the agent this launch selected. The same value also travels as the
-    // Codex role hook's config key, so the daemon that spawns the agent and
-    // the hook that writes `$CODEX_HOME/config.toml` cannot disagree (D-078).
-    if let (Some(model), Some(agent)) = (opts.model.as_deref(), opts.agent) {
-        let model = model.trim();
-        if !model.is_empty() {
-            launch_config
-                .models
-                .insert(agent.slug().to_owned(), model.to_owned());
-        }
-    }
+    launch_config.efforts = crate::runtime::launch::capsule_setup::resolved_instance_efforts(
+        &instances,
+        agent,
+        opts.effort,
+    );
+    crate::runtime::launch::capsule_setup::apply_instance_dirs(
+        &mut launch_config,
+        &instances,
+        &state.auth.slots,
+    )?;
     Ok(launch_config)
+}
+
+pub(super) struct ProvisionInputs {
+    pub(super) instances: Vec<jackin_config::ResolvedInstance>,
+    pub(super) credentials: jackin_protocol::AgentCredentialEnv,
+}
+
+pub(super) fn resolve_provision_inputs(
+    config: &jackin_config::AppConfig,
+    workspace: Option<&WorkspaceName>,
+    role_key: &str,
+    agent: jackin_core::Agent,
+    opts: &crate::runtime::launch::LoadOptions,
+) -> anyhow::Result<ProvisionInputs> {
+    // The committed launch agent (CLI override, workspace default, or
+    // picker choice) scopes the binding/sole-eligible fallbacks, so an
+    // interactive launch honors `account_bindings` instead of failing
+    // with "multiple accounts are eligible" whenever several accounts
+    // exist. `opts.agent` is only the CLI override and is `None` for
+    // picker-committed launches.
+    let instances = jackin_config::resolve_launch(config, workspace, role_key, None, Some(agent))?;
+    anyhow::ensure!(
+        !instances.is_empty(),
+        "no agent instances are admitted for role {role_key:?}"
+    );
+    let default_runner = jackin_env::OpCli::new();
+    let credentials = jackin_env::resolve_instance_env_with(
+        config,
+        &instances,
+        workspace,
+        role_key,
+        opts.op_runner.as_deref().unwrap_or(&default_runner),
+        |name| match &opts.host_env {
+            Some(env) => env.get(name).cloned().ok_or(std::env::VarError::NotPresent),
+            None => std::env::var(name),
+        },
+    )?;
+    Ok(ProvisionInputs {
+        instances,
+        credentials,
+    })
 }

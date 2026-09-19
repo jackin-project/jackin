@@ -454,6 +454,130 @@ fi
 printf 'JACKIN_APP_VERSION=%s\nJACKIN_APP_BUILD=%s\n' "$version" "$build"
 '''
 
+[tasks.release-preview-package]
+description = "Build and attest the complete six-payload Homebrew preview package"
+run = '''
+set -euo pipefail
+
+source_commit="${VELNOR_SOURCE_COMMIT:-$(git rev-parse HEAD)}"
+case "$source_commit" in
+  ''|*[!0-9a-f]*) echo "source commit is not lowercase hex: $source_commit" >&2; exit 1 ;;
+esac
+[ "$(printf '%s' "$source_commit" | wc -c | tr -d ' ')" = 40 ]
+[ "$(git rev-parse HEAD)" = "$source_commit" ]
+
+source_ref="${VELNOR_SOURCE_REF:-refs/heads/main}"
+[ "$source_ref" = "refs/heads/main" ] || { echo "preview source ref must be refs/heads/main: $source_ref" >&2; exit 1; }
+base_version="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)"
+case "$base_version" in
+  ''|*[!0-9.]*|.*|*.|*..*) echo "workspace version is not X.Y.Z: $base_version" >&2; exit 1 ;;
+esac
+case "$(printf '%s' "$base_version" | tr -cd '.')" in
+  '..') ;;
+  *) echo "workspace version is not X.Y.Z: $base_version" >&2; exit 1 ;;
+esac
+short_commit="$(printf '%s' "$source_commit" | cut -c1-7)"
+commit_count="$(git rev-list --count "$source_commit")"
+case "$commit_count" in
+  ''|*[!0-9]*) echo "invalid source commit count: $commit_count" >&2; exit 1 ;;
+esac
+version="${base_version}-preview.${commit_count}+${short_commit}"
+
+package_dir="${VELNOR_VERIFIED_PACKAGE_DIR:?missing VELNOR_VERIFIED_PACKAGE_DIR}"
+runner_temp="${RUNNER_TEMP:-${TMPDIR:-/tmp}}"
+archive_root="$runner_temp/jackin-preview-archives"
+check_dir="$runner_temp/jackin-preview-check"
+rm -rf -- "$archive_root" "$check_dir" "$package_dir"
+mkdir -p -- "$archive_root/jackin" "$archive_root/capsule" "$package_dir" "$check_dir"
+trap 'rm -rf -- "$archive_root" "$check_dir"' EXIT
+
+export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$PWD/target}"
+cargo xtask release-archives \
+  --package jackin \
+  --version "$version" \
+  --output-dir "$archive_root/jackin"
+cargo xtask release-archives \
+  --package jackin-capsule \
+  --version "$version" \
+  --output-dir "$archive_root/capsule"
+
+cp -- "$archive_root/jackin/"*.tar.gz* "$package_dir/"
+cp -- "$archive_root/capsule/"*.tar.gz* "$package_dir/"
+
+payloads=(
+  jackin-aarch64-apple-darwin.tar.gz
+  jackin-x86_64-apple-darwin.tar.gz
+  jackin-aarch64-unknown-linux-gnu.tar.gz
+  jackin-x86_64-unknown-linux-gnu.tar.gz
+  jackin-capsule-aarch64-unknown-linux-gnu.tar.gz
+  jackin-capsule-x86_64-unknown-linux-gnu.tar.gz
+)
+for payload in "${payloads[@]}"; do
+  test -s "$package_dir/$payload"
+  test -s "$package_dir/$payload.sha256"
+  test -s "$package_dir/$payload.bundle"
+  test -s "$package_dir/$payload.sbom.json"
+  expected="$(awk 'NR == 1 {print $1}' "$package_dir/$payload.sha256")"
+  [[ "$expected" =~ ^[0-9a-f]{64}$ ]]
+  test "$(sha256sum "$package_dir/$payload" | awk '{print $1}')" = "$expected"
+  cargo xtask release-verify "$package_dir/$payload" --skip-attestation
+done
+
+test "$(tar -xzf "$package_dir/jackin-x86_64-unknown-linux-gnu.tar.gz" -C "$check_dir" && "$check_dir/jackin" --version)" = "jackin $version"
+
+LC_ALL=C sha256sum \
+  "$package_dir/jackin-aarch64-apple-darwin.tar.gz" \
+  "$package_dir/jackin-x86_64-apple-darwin.tar.gz" \
+  "$package_dir/jackin-aarch64-unknown-linux-gnu.tar.gz" \
+  "$package_dir/jackin-x86_64-unknown-linux-gnu.tar.gz" \
+  "$package_dir/jackin-capsule-aarch64-unknown-linux-gnu.tar.gz" \
+  "$package_dir/jackin-capsule-x86_64-unknown-linux-gnu.tar.gz" \
+  | sed "s# $package_dir/# #" > "$package_dir/SHA256SUMS"
+
+jq -n \
+  --arg version "$version" \
+  --arg source_commit "$source_commit" \
+  --arg source_ref "refs/heads/main" \
+  --arg source_repository "jackin-project/jackin" \
+  --arg schema "velnor.package-release.v1" \
+  --argjson assets "$(
+    for payload in "${payloads[@]}"; do
+      jq -n \
+        --arg name "$payload" \
+        --arg sha256 "$(awk 'NR == 1 {print $1}' "$package_dir/$payload.sha256")" \
+        '{name: $name, sha256: $sha256}'
+    done | jq -s .
+  )" \
+  '{assets: $assets, schema: $schema, source_commit: $source_commit, source_ref: $source_ref, source_repository: $source_repository, version: $version}' \
+  > "$package_dir/release-manifest.json"
+
+jq -n \
+  --arg source_digest "$source_commit" \
+  --arg source_ref "refs/heads/main" \
+  --arg source_repository "jackin-project/jackin" \
+  --slurpfile manifest "$package_dir/release-manifest.json" \
+  '{manifest: $manifest[0], source_digest: $source_digest, source_ref: $source_ref, source_repository: $source_repository}' \
+  > "$package_dir/identity.json"
+
+jq -e --arg commit "$source_commit" --arg version "$version" \
+  '.schema == "velnor.package-release.v1" and .source_commit == $commit and .version == $version and (.assets | length == 6)' \
+  "$package_dir/release-manifest.json" >/dev/null
+
+arm_checksum="$(cat "$package_dir/jackin-capsule-aarch64-unknown-linux-gnu.tar.gz.sha256")"
+x86_checksum="$(cat "$package_dir/jackin-capsule-x86_64-unknown-linux-gnu.tar.gz.sha256")"
+jq -n \
+  --arg version "$version" \
+  --arg arm64 "$arm_checksum" \
+  --arg x86 "$x86_checksum" \
+  '{version: $version, targets: {"aarch64-unknown-linux-gnu": $arm64, "x86_64-unknown-linux-gnu": $x86}}' \
+  > "$package_dir/capsule-manifest.json"
+cosign sign-blob \
+  --bundle "$package_dir/capsule-manifest.json.bundle" \
+  --yes "$package_dir/capsule-manifest.json"
+
+printf 'version=%s\nsource_commit=%s\n' "$version" "$source_commit"
+'''
+
 [tasks.renovate-upstream-sources]
 description = "Verify the pinned mise release ships both construct architectures (guards the construct installer URLs and the MISE_VERSION customManager)"
 run = '''

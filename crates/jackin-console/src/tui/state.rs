@@ -48,6 +48,18 @@ pub use crate::tui::screens::settings::model::{
     SettingsTrustRow, SettingsTrustState,
 };
 pub use crate::tui::screens::usage::{UsageAccount, UsageScreenState};
+
+/// Console-owned Usage route state: the persistent screen plus its
+/// visibility. Grouped so `ManagerState` stays under the excessive-bools
+/// budget and the two fields move together.
+#[derive(Debug, Default)]
+pub struct UsageRouteState {
+    /// Focus/scroll/refresh state, created on first open and kept alive so
+    /// the heartbeat keeps refreshing while the route is offscreen.
+    pub screen: Option<UsageScreenState>,
+    /// Whether the Usage route is currently visible.
+    pub visible: bool,
+}
 pub use crate::tui::screens::workspaces::model::{
     ManagerHoverTarget, ManagerListRow, WorkspaceSummary,
 };
@@ -300,6 +312,12 @@ pub struct ManagerState<'a> {
     pub(in crate::tui) file_browser_commit_rx:
         Option<BlockingSubscription<PendingFileBrowserCommit>>,
     pub(in crate::tui) config_save_rx: Option<BlockingSubscription<ManagerConfigSaveResult>>,
+    pub(in crate::tui) account_scan_rx: Option<
+        BlockingSubscription<(
+            u64,
+            Result<crate::tui::screens::settings::model::AccountScanOutcome, String>,
+        )>,
+    >,
     /// Dedup gate: last error string from `refresh_instances`. Without
     /// this, a persistent parse error would reopen the popup on every
     /// 20 Hz tick — operators would never be able to dismiss it.
@@ -337,8 +355,13 @@ pub struct ManagerState<'a> {
     /// across re-entries to the preview pane so the operator's last
     /// selection survives a `Esc → ↑/↓ → Tab` round-trip.
     pub preview_pane_cursor: HashMap<String, usize>,
-    /// Console-owned focus/scroll state for the Usage route; Some opens it.
-    pub usage_screen: Option<UsageScreenState>,
+    /// Console-owned Usage route state (screen + visibility). The screen is
+    /// created on first open and kept alive afterwards so the heartbeat
+    /// keeps refreshing broker data while the route is offscreen; closing
+    /// the route hides it without destroying screen state, so periodic
+    /// refreshes continue offscreen and selection survives a close/reopen
+    /// round-trip.
+    pub usage: UsageRouteState,
     /// Rust-owned usage rows staged before the Usage route is opened.
     pub usage_accounts: Vec<UsageAccount>,
     /// Rust-owned usage discovery notice shown by the Usage route.

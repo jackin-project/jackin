@@ -49,14 +49,21 @@ pub fn account_configuration_fingerprint(
         })
         .collect::<anyhow::Result<std::collections::BTreeMap<_, _>>>()?;
     let bytes = serde_json::to_vec(&(
-        // v2 keeps Claude metadata inside its directory mount; v1 containers
-        // pin a mutable .claude.json inode and cannot support atomic replacement.
-        "account-config-v2",
+        // v4 extends admission to the instance set: agent configurations and
+        // launch defaults select which instances resolve. v2 keeps Claude
+        // metadata inside its directory mount; v1 containers pin a mutable
+        // .claude.json inode and cannot support atomic replacement.
+        "account-config-v4-isolated-sessions",
         accounts,
         &config.account_bindings,
         ws.map(|ws| &ws.account_bindings),
         ws.and_then(|ws| ws.roles.get(role))
             .map(|role| &role.account_bindings),
+        &config.agent_configurations,
+        &config.default_launch,
+        ws.map(|ws| &ws.default_launch),
+        ws.and_then(|ws| ws.roles.get(role))
+            .map(|role| &role.default_launch),
     ))?;
     let mut encoded = String::with_capacity(64);
     for byte in Sha256::digest(bytes) {
@@ -151,18 +158,38 @@ pub(super) fn admit_restore(
 
 pub(super) fn write_account_credentials(
     root: &Path,
-    credentials: std::collections::BTreeMap<String, std::collections::BTreeMap<String, String>>,
+    credentials: &jackin_protocol::AgentCredentialEnv,
 ) -> anyhow::Result<()> {
     use std::io::Write as _;
     use std::os::unix::fs::PermissionsExt as _;
     let directory = root.join("credentials");
     std::fs::create_dir_all(&directory)?;
     std::fs::set_permissions(&directory, std::fs::Permissions::from_mode(0o700))?;
-    let mut file = tempfile::NamedTempFile::new_in(&directory)?;
-    file.as_file()
-        .set_permissions(std::fs::Permissions::from_mode(0o600))?;
-    file.write_all(&serde_json::to_vec(&credentials)?)?;
-    file.as_file().sync_all()?;
-    file.persist(directory.join("account-credentials.json"))?;
+    for entry in std::fs::read_dir(&directory)? {
+        let entry = entry?;
+        let file_type = entry.file_type()?;
+        anyhow::ensure!(
+            file_type.is_file(),
+            "unexpected non-file entry in private credentials directory: {}",
+            entry.path().display()
+        );
+        std::fs::remove_file(entry.path())?;
+    }
+    for (instance, credential) in credentials.iter() {
+        let staged = jackin_protocol::StagedInstanceCredential {
+            schema_version: 1,
+            instance: instance.clone(),
+            credential: credential.clone(),
+        };
+        let mut file = tempfile::NamedTempFile::new_in(&directory)?;
+        file.as_file()
+            .set_permissions(std::fs::Permissions::from_mode(0o600))?;
+        file.write_all(&serde_json::to_vec(&staged)?)?;
+        file.as_file().sync_all()?;
+        file.persist(directory.join(jackin_protocol::account_credentials_filename(instance)))?;
+    }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests;

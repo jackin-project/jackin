@@ -58,10 +58,6 @@ impl Multiplexer {
         }
     }
 
-    pub(super) fn model_for_agent(&self, agent: &str) -> Option<&str> {
-        self.launch_env.launch_config.model_for_agent(agent)
-    }
-
     /// Bound the per-container surface for any path that allocates a
     /// new PTY (top-level spawn, split, etc.). All such paths must
     /// route through here so `MAX_TABS` / `MAX_SESSIONS` are enforced
@@ -111,41 +107,54 @@ impl Multiplexer {
     }
 
     /// Agent codename and provider label of the currently focused session.
-    fn focused_agent_provider(&self) -> (Option<String>, Option<String>) {
+    fn focused_agent_provider(
+        &self,
+    ) -> (
+        Option<String>,
+        Option<String>,
+        Option<jackin_protocol::usage_broker::UsageAccountCapability>,
+    ) {
         self.active_focused_id()
             .and_then(|id| self.session_supervisor.sessions.get(id))
-            .map_or((None, None), |session| {
+            .map_or((None, None, None), |session| {
                 (
                     session.agent.clone(),
                     session.provider.as_ref().map(|p| p.label.clone()),
+                    session.usage_capability.clone(),
                 )
             })
     }
 
     pub(super) fn focused_usage_status_label(&self) -> Option<String> {
-        let (agent, provider) = self.focused_agent_provider();
+        let (agent, provider, capability) = self.focused_agent_provider();
         self.usage
             .usage_cache
-            .focused_status_bar_label(agent.as_deref(), provider.as_deref())
+            .focused_status_bar_label_for_capability(
+                agent.as_deref(),
+                provider.as_deref(),
+                capability.as_ref(),
+            )
     }
 
     pub(super) fn focused_usage_snapshot_for_provider(
         &mut self,
         provider_label: Option<&str>,
     ) -> jackin_protocol::control::FocusedUsageView {
-        let (agent, provider) = self.focused_agent_provider();
-        if agent.is_none() && self.launch_env.available_agents.is_empty() {
+        let (agent, provider, capability) = self.focused_agent_provider();
+        if agent.is_none() && self.launch_env.available_instances.is_empty() {
             return jackin_protocol::control::FocusedUsageView::unavailable(
-                "No agents configured for this Capsule.",
+                "No agent instances configured for this Capsule.",
                 chrono::Utc::now().timestamp(),
             );
         }
         let provider = provider_label
             .map(str::to_owned)
             .or_else(|| provider.as_ref().map(ToOwned::to_owned));
-        self.usage
-            .usage_cache
-            .focused_snapshot(agent.as_deref(), provider.as_deref())
+        self.usage.usage_cache.focused_snapshot_for_capability(
+            agent.as_deref(),
+            provider.as_deref(),
+            capability.as_ref(),
+        )
     }
 
     pub(super) fn request_usage_refresh_for_provider(&mut self, provider_label: Option<&str>) {
@@ -157,11 +166,19 @@ impl Multiplexer {
         &self,
         provider_label: Option<&str>,
     ) -> Option<crate::usage::UsageRefreshTarget> {
-        let (agent, provider) = self.focused_agent_provider();
+        let session = self
+            .active_focused_id()
+            .and_then(|id| self.session_supervisor.sessions.get(id))?;
+        let agent = session.agent.clone()?;
         let provider = provider_label
             .map(str::to_owned)
-            .or_else(|| provider.as_ref().map(ToOwned::to_owned));
-        agent.map(|agent| crate::usage::UsageRefreshTarget { agent, provider })
+            .or_else(|| session.provider.as_ref().map(|p| p.label.clone()));
+        let capability = session.usage_capability.clone()?;
+        Some(crate::usage::UsageRefreshTarget {
+            agent,
+            provider,
+            capability,
+        })
     }
 
     pub(super) fn spawn_active_usage_account_refresh(&mut self) -> bool {
@@ -292,6 +309,7 @@ impl Multiplexer {
                 id,
                 label: s.label.clone(),
                 agent: s.agent.clone(),
+                account_id: s.account_id.clone(),
                 state: s.state,
                 active: Some(id) == focused,
             })
@@ -321,6 +339,7 @@ impl Multiplexer {
                             session_id: id,
                             label: session.label.clone(),
                             agent: session.agent.clone(),
+                            account_id: session.account_id.clone(),
                             state: session.state,
                             agent_status_report: Some(session.status.report(session.agent.clone())),
                         },
@@ -328,6 +347,7 @@ impl Multiplexer {
                             session_id: id,
                             label: "(missing)".to_owned(),
                             agent: None,
+                            account_id: None,
                             state: crate::protocol::control::AgentState::Idle,
                             agent_status_report: None,
                         },
@@ -335,6 +355,8 @@ impl Multiplexer {
                     .collect();
                 TabSnapshot {
                     label: tab.label_owned(),
+                    instance: tab.instance.clone(),
+                    account_id: tab.account_id.clone(),
                     focused_pane: tab.focused_id,
                     panes,
                 }
@@ -353,6 +375,7 @@ impl Multiplexer {
             .map(|r| jackin_protocol::control::AgentRegistryEntry {
                 codename: r.codename.clone(),
                 agent: r.agent.clone(),
+                account_id: r.account_id.clone(),
                 provider: r.provider.clone(),
                 started_at: r.started_at.format("%Y-%m-%dT%H:%M:%SZ").to_string(),
                 exited_at: r
@@ -378,29 +401,24 @@ pub(super) fn refresh_usage_targets_with_client(
 ) -> Vec<super::BrokerUsageRefresh> {
     let mut requests = std::collections::BTreeMap::new();
     for target in active_targets.into_iter().chain(focused) {
-        let Some(surface_id) =
-            crate::usage::broker_surface_id(&target.agent, target.provider.as_deref())
-        else {
-            continue;
-        };
         let force = manual == Some(&target);
         requests
-            .entry(surface_id.to_owned())
+            .entry(target.capability.clone())
             .and_modify(|(_, existing_force)| *existing_force |= force)
             .or_insert((target, force));
     }
     requests
         .into_iter()
-        .map(|(surface_id, (target, force))| {
+        .map(|(capability, (target, force))| {
             let result = client
-                .current_for_surface(&surface_id)
+                .current_for_capability(capability.clone())
                 .and_then(|current| {
-                    client.refresh_for_surface(&surface_id, current.generation, force)
+                    client.refresh_for_capability(capability.clone(), current.generation, force)
                 })
                 .and_then(|state| {
                     if state.phase.is_active() {
-                        client.join_for_surface(
-                            &surface_id,
+                        client.join_for_capability(
+                            capability,
                             state.generation,
                             std::time::Duration::from_secs(30),
                         )
@@ -417,13 +435,16 @@ pub(super) fn refresh_usage_targets_with_client(
 fn session_refresh_target(
     session: &crate::session::Session,
 ) -> Option<crate::usage::UsageRefreshTarget> {
-    session
-        .agent
-        .as_ref()
-        .map(|agent| crate::usage::UsageRefreshTarget {
-            agent: agent.clone(),
-            provider: session.provider.as_ref().map(|p| p.label.clone()),
-        })
+    session.agent.as_ref().and_then(|agent| {
+        session
+            .usage_capability
+            .clone()
+            .map(|capability| crate::usage::UsageRefreshTarget {
+                agent: agent.clone(),
+                provider: session.provider.as_ref().map(|p| p.label.clone()),
+                capability,
+            })
+    })
 }
 
 fn decorate_usage_view_refreshing(view: &mut jackin_protocol::control::FocusedUsageView) {

@@ -34,9 +34,11 @@ async fn control_socket_exports_client_parent_server_and_completes_after_reply_w
         .in_scope(|| jackin_telemetry::propagation::inject(&mut context));
     let request = jackin_protocol::control::ControlRequest {
         ctx: context,
+        session_capability: None,
         msg: jackin_protocol::control::ClientMsg::Status,
     };
     let (mut server, mut client) = UnixStream::pair().expect("control socket pair");
+    let expected_peer_uid = server.peer_cred().expect("peer credentials").uid();
     client
         .write_all(&jackin_protocol::control::frame(&request))
         .await
@@ -52,10 +54,12 @@ async fn control_socket_exports_client_parent_server_and_completes_after_reply_w
         server,
         first_tag,
         permit,
+        expected_peer_uid,
         control_tx,
         std::time::Duration::from_secs(1),
     ));
     let dispatched = control_rx.recv().await.expect("daemon dispatch");
+    assert_eq!(dispatched.peer_uid, expected_peer_uid);
     let server_operation =
         crate::daemon::control_server_operation(&dispatched.ctx, &dispatched.msg)
             .expect("valid correlation");
@@ -112,9 +116,11 @@ async fn control_socket_marks_server_failure_when_peer_closes_before_reply() {
         Some("00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01".to_owned());
     let request = jackin_protocol::control::ControlRequest {
         ctx: context,
+        session_capability: None,
         msg: jackin_protocol::control::ClientMsg::Status,
     };
     let (mut server, mut client) = UnixStream::pair().expect("control socket pair");
+    let expected_peer_uid = server.peer_cred().expect("peer credentials").uid();
     client
         .write_all(&jackin_protocol::control::frame(&request))
         .await
@@ -129,6 +135,7 @@ async fn control_socket_marks_server_failure_when_peer_closes_before_reply() {
         server,
         first_tag,
         permit,
+        expected_peer_uid,
         control_tx,
         std::time::Duration::from_secs(1),
     ));

@@ -24,13 +24,50 @@ The split-workspace layout described in [Configuration File](/reference/runtime/
 
 | File | Current version | Owner | Migration mode |
 |---|---|---|---|
-| `~/.config/jackin/config.toml` | `v1alpha10` | jackin❯ | Automatic on startup |
-| `~/.config/jackin/workspaces/<name>.toml` | `v1alpha9` | jackin❯ | Automatic on startup |
+| `~/.config/jackin/config.toml` | `v1alpha12` | jackin❯ | Automatic on startup |
+| `~/.config/jackin/workspaces/<name>.toml` | `v1alpha10` | jackin❯ | Automatic on startup |
 | `jackin.role.toml` | `v1alpha7` | Role repository | Desktop: `jackin role migrate <role-repo-path>`; CI/automation: `jackin-role migrate <role-repo-path>` |
 
 ## Timeline
 
 Each entry is one upgrade path the current binary applies. <RepoFile path="crates/jackin/tests/migration_fixtures.rs">crates/jackin/tests/migration_fixtures.rs</RepoFile> walks every fixture on every CI run, so a regression breaks here before it breaks on a delayed operator's machine. Newest first; append, never edit.
+
+### Config `v1alpha12` — 2026-09-19
+
+| File kind | Predecessor | Migration mode | Fixture |
+|---|---|---|---|
+| Config (`config.toml`) | `v1alpha11` | Automatic on startup | <RepoFile path="crates/jackin/tests/fixtures/migrations/config/from-v1alpha11/meta.toml">crates/jackin/tests/fixtures/migrations/config/from-v1alpha11/meta.toml</RepoFile> |
+
+**Summary**: deliberate account removal records a secret-free credential-source
+fingerprint in `account_scan_exclusions`. Explicit account scans skip that
+source after reload; direct account registration clears the matching exclusion.
+
+### Config `v1alpha11` and workspace `v1alpha10` — 2026-09-17
+
+| File kind | Predecessor | Migration mode | Fixture |
+|---|---|---|---|
+| Config (`config.toml`) | `v1alpha10` | Automatic on startup | <RepoFile path="crates/jackin/tests/fixtures/migrations/config/from-v1alpha10/meta.toml">crates/jackin/tests/fixtures/migrations/config/from-v1alpha10/meta.toml</RepoFile> |
+| Workspace (`workspaces/<name>.toml`) | `v1alpha9` | Automatic on startup | <RepoFile path="crates/jackin/tests/fixtures/migrations/workspace/from-v1alpha9/meta.toml">crates/jackin/tests/fixtures/migrations/workspace/from-v1alpha9/meta.toml</RepoFile> |
+
+**Summary**: upgrades already initialized installations without rescanning. Named agent configurations (`[agent_configurations.<id>]`) and `default_launch` lists (global, workspace, role) arrive through serde defaults; profile credentials gain optional Amp `xdg_roots`. The migration stamps an already-initialized `[bootstrap]` sentinel and preserves an installer `fresh_install = true` marker so its first scan still runs exactly once. Workspace files restamp with no transformation.
+
+**After** (v1alpha11 config):
+
+```toml
+version = "v1alpha11"
+
+[accounts.personal]
+name = "Personal"
+provider = "anthropic"
+
+[accounts.personal.credential]
+type = "api_key"
+value = "$ANTHROPIC_API_KEY"
+
+[bootstrap]
+version = 1
+fresh_install = false
+```
 
 ### Config `v1alpha10` and workspace `v1alpha9` — 2026-09-07
 

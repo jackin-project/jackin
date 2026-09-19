@@ -12,6 +12,12 @@ pub enum AuthKind {
     Kimi,
     Opencode,
     Grok,
+    Antigravity,
+    Gemini,
+    Cursor,
+    Muse,
+    Omp,
+    Hermes,
     Github,
     /// Z.AI / GLM Coding Plan: env-only auth kind.
     Zai,
@@ -27,6 +33,12 @@ impl AuthKind {
         Self::Amp,
         Self::Opencode,
         Self::Grok,
+        Self::Antigravity,
+        Self::Gemini,
+        Self::Cursor,
+        Self::Muse,
+        Self::Omp,
+        Self::Hermes,
         Self::Github,
         Self::Zai,
         Self::Minimax,
@@ -39,6 +51,12 @@ impl AuthKind {
         Self::Kimi,
         Self::Opencode,
         Self::Grok,
+        Self::Antigravity,
+        Self::Gemini,
+        Self::Cursor,
+        Self::Muse,
+        Self::Omp,
+        Self::Hermes,
         Self::Github,
         Self::Zai,
         Self::Minimax,
@@ -53,6 +71,12 @@ impl AuthKind {
             Self::Kimi => "Kimi",
             Self::Opencode => "OpenCode",
             Self::Grok => "Grok",
+            Self::Antigravity => "Antigravity",
+            Self::Gemini => "Gemini",
+            Self::Cursor => "Cursor",
+            Self::Muse => "Muse",
+            Self::Omp => "omp",
+            Self::Hermes => "Hermes",
             Self::Github => "GitHub CLI",
             Self::Zai => "Z.AI",
             Self::Minimax => "MiniMax",
@@ -63,9 +87,17 @@ impl AuthKind {
     pub const fn supported_modes(self) -> &'static [AuthMode] {
         match self {
             Self::Claude => &[AuthMode::Sync, AuthMode::ApiKey, AuthMode::OAuthToken],
-            Self::Codex | Self::Amp | Self::Kimi | Self::Opencode | Self::Grok => {
-                &[AuthMode::Sync, AuthMode::ApiKey]
-            }
+            Self::Codex
+            | Self::Amp
+            | Self::Kimi
+            | Self::Opencode
+            | Self::Grok
+            | Self::Antigravity
+            | Self::Gemini
+            | Self::Cursor
+            | Self::Muse
+            | Self::Omp
+            | Self::Hermes => &[AuthMode::Sync, AuthMode::ApiKey],
             Self::Github => &[AuthMode::Sync, AuthMode::Token, AuthMode::Ignore],
             Self::Zai | Self::Minimax => &[AuthMode::ApiKey],
         }
@@ -83,6 +115,12 @@ impl AuthKind {
             (Self::Kimi, AuthMode::ApiKey) => Some(jackin_core::KIMI_CODE_API_KEY_ENV_NAME),
             (Self::Opencode, AuthMode::ApiKey) => Some(jackin_core::OPENCODE_API_KEY_ENV_NAME),
             (Self::Grok, AuthMode::ApiKey) => Some(jackin_core::XAI_API_KEY_ENV_NAME),
+            (Self::Antigravity | Self::Gemini, AuthMode::ApiKey) => {
+                Some(jackin_core::GEMINI_API_KEY_ENV_NAME)
+            }
+            (Self::Cursor, AuthMode::ApiKey) => Some(jackin_core::CURSOR_API_KEY_ENV_NAME),
+            (Self::Muse, AuthMode::ApiKey) => Some(jackin_core::META_API_KEY_ENV_NAME),
+            // Omp/Hermes route per-provider keys; no single variable exists.
             (Self::Github, AuthMode::Token) => Some(jackin_core::GH_TOKEN_ENV_NAME),
             (Self::Zai, AuthMode::ApiKey) => Some(jackin_core::ZAI_API_KEY_ENV_NAME),
             (Self::Minimax, AuthMode::ApiKey) => Some(jackin_core::MINIMAX_API_KEY_ENV_NAME),
@@ -130,6 +168,12 @@ pub const fn auth_mode_supports_source_folder(kind: AuthKind, mode: AuthMode) ->
                 | AuthKind::Kimi
                 | AuthKind::Opencode
                 | AuthKind::Grok
+                | AuthKind::Antigravity
+                | AuthKind::Gemini
+                | AuthKind::Cursor
+                | AuthKind::Muse
+                | AuthKind::Omp
+                | AuthKind::Hermes
         )
 }
 

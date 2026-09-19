@@ -242,6 +242,7 @@ fn secrets_agent_section_expand_collapse() -> Result<()> {
             env: role_env,
             account_bindings: std::collections::BTreeMap::default(),
             github: None,
+            default_launch: None,
         },
     );
     let ws = WorkspaceConfig {

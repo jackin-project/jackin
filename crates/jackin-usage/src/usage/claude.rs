@@ -196,6 +196,38 @@ fn claude_missing_view(agent: &str, provider: Option<&str>, now: i64) -> Focused
     })
 }
 
+/// True when the OAuth usage fetch failed because the token lacks the quota
+/// scope (an inference-only grant): HTTP 403 / forbidden / scope-denied, but
+/// never a 401 (expired/revoked) or a transport/decode failure. Pure so the
+/// inference-only state is unit-testable without provider I/O.
+pub(crate) fn claude_error_is_scope_restriction(error: &str) -> bool {
+    let lower = error.to_ascii_lowercase();
+    if lower.contains("401") || lower.contains("unauthorized") {
+        return false;
+    }
+    lower.contains("403")
+        || lower.contains("forbidden")
+        || lower.contains("scope")
+        || lower.contains("permission")
+}
+
+/// Pick the provider error label for a resolved view: OAuth first, CLI second.
+/// A scope-restricted OAuth failure normalizes to the explicit inference-only
+/// message so the operator sees *why* quota is unavailable instead of a bare
+/// HTTP status; every other error passes through verbatim.
+pub(crate) fn claude_provider_error_label(
+    oauth_error: Option<&str>,
+    cli_error: Option<&str>,
+) -> Option<String> {
+    let error = oauth_error.or(cli_error)?;
+    if oauth_error.is_some_and(claude_error_is_scope_restriction) {
+        return Some(
+            "Claude token lacks usage scope (inference-only); quota unavailable".to_owned(),
+        );
+    }
+    Some(error.to_owned())
+}
+
 fn claude_resolved_view(
     agent: &str,
     provider: Option<&str>,
@@ -205,11 +237,7 @@ fn claude_resolved_view(
     let (oauth_quota, oauth_error) =
         split_fetch(Some(fetch_claude_oauth_usage(&resolved.access_token)));
     let (cli_usage, cli_error) = split_fetch(oauth_quota.is_none().then(fetch_claude_cli_usage));
-    let provider_error = if oauth_quota.is_some() || cli_usage.is_some() {
-        None
-    } else {
-        oauth_error.as_ref().or(cli_error.as_ref()).cloned()
-    };
+    let provider_error = claude_provider_error_label(oauth_error.as_deref(), cli_error.as_deref());
     let status = if oauth_quota.is_some() || cli_usage.is_some() {
         UsageSnapshotStatus::Fresh
     } else {
@@ -249,16 +277,28 @@ fn claude_resolved_view(
             UsageConfidence::None
         },
         now,
-        last_error: match status {
-            UsageSnapshotStatus::Stale => Some(provider_error.unwrap_or_else(|| {
-                "Claude provider usage unavailable; cached quota is stale".to_owned()
-            })),
-            _ if cli_usage.is_some() => Some(oauth_error.clone().unwrap_or_else(|| {
-                "Claude OAuth usage unavailable; showing reduced CLI snapshot".to_owned()
-            })),
-            _ => None,
-        },
+        last_error: claude_resolved_last_error(status, provider_error, cli_usage.is_some()),
     })
+}
+
+/// `last_error` for a resolved view: the normalized provider error when stale,
+/// the (already normalized) provider error on CLI fallback so the explicit
+/// scope text surfaces there too, else none. Pure so the routing is
+/// unit-testable without provider I/O.
+pub(crate) fn claude_resolved_last_error(
+    status: UsageSnapshotStatus,
+    provider_error: Option<String>,
+    cli_fallback: bool,
+) -> Option<String> {
+    match status {
+        UsageSnapshotStatus::Stale => Some(provider_error.unwrap_or_else(|| {
+            "Claude provider usage unavailable; cached quota is stale".to_owned()
+        })),
+        _ if cli_fallback => Some(provider_error.unwrap_or_else(|| {
+            "Claude OAuth usage unavailable; showing reduced CLI snapshot".to_owned()
+        })),
+        _ => None,
+    }
 }
 
 // No `Debug`/`Display`: this carries a live access token and (optionally) the
@@ -910,7 +950,9 @@ impl ClaudeOAuthLimit {
     /// Normalize a `limits`-array entry into the unified quota model. Returns
     /// `None` for an entry without a usable shape: a missing `percent`, an
     /// unknown `kind`, or a `weekly_scoped` window whose model has no display
-    /// name (omitted, never fabricated into an empty-label row).
+    /// name (omitted, never fabricated into an empty-label row). The API's
+    /// `is_active` flag is deliberately NOT a render gate — live responses
+    /// send `false` on headline limits that still carry quota.
     fn as_quota(&self) -> Option<ClaudeQuotaWindow> {
         let percent = json_number(self.percent.as_ref()?)?;
         let (label, slot, window_seconds) = match self.kind.as_deref()? {
@@ -1270,3 +1312,6 @@ pub(crate) fn fetch_claude_cli_usage() -> Result<ClaudeCliUsage, String> {
     parse_claude_usage_output(&diagnostic.stdout)
         .ok_or_else(|| "Claude CLI usage output was not recognized".to_owned())
 }
+
+#[cfg(test)]
+mod tests;

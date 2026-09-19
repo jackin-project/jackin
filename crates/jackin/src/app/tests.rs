@@ -497,6 +497,7 @@ fn workspace_show_includes_isolation_column() {
         runtime: jackin_config::WorkspaceRuntimeConfig::default(),
         dirty_exit_policy: None,
         docker: None,
+        default_launch: None,
     };
     let out = render_workspace_show(&AppConfig::default(), "jackin", &ws);
     assert!(out.contains("Isolation"));

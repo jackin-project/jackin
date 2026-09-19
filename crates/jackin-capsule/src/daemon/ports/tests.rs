@@ -92,6 +92,7 @@ fn status_port_retires_codename_and_stamps_history() {
             session_id: 1,
             codename: "test".to_owned(),
             agent: None,
+            account_id: None,
             provider: None,
             started_at: observed_at,
             exited_at: None,

@@ -3,11 +3,12 @@
 
 /// `SettingsAuthState` impls + helper fns.
 use super::{
-    AuthKind, BTreeMap, GlobalMountsState, SettingsAuthRestorePendingForm, SettingsAuthSaveRefs,
-    SettingsAuthSlot, SettingsAuthState, SettingsEnvState, SettingsPanelChangeCount,
-    SettingsPanelDirty, SettingsPanelDiscard, SettingsPanelMarkSaved, SettingsPanelTakeError,
-    SettingsState,
+    AccountScanOutcome, AccountScanState, AccountScanSummary, AuthKind, BTreeMap,
+    GlobalMountsState, SettingsAuthRestorePendingForm, SettingsAuthSaveRefs, SettingsAuthSlot,
+    SettingsAuthState, SettingsEnvState, SettingsPanelChangeCount, SettingsPanelDirty,
+    SettingsPanelDiscard, SettingsPanelMarkSaved, SettingsPanelTakeError, SettingsState,
 };
+use crate::tui::screens::settings::effect::SettingsEffect;
 
 impl<EnvValue, Modal, PendingOpCommit> SettingsAuthState<EnvValue, Modal, PendingOpCommit> {
     #[must_use]
@@ -38,6 +39,7 @@ impl<EnvValue, Modal, PendingOpCommit> SettingsAuthState<EnvValue, Modal, Pendin
             error: None,
             pending_op_commit: None,
             scroll: crate::tui::scroll_block::console_scroll_area_state(),
+            scan: AccountScanState::default(),
         }
     }
 
@@ -50,7 +52,10 @@ impl<EnvValue, Modal, PendingOpCommit> SettingsAuthState<EnvValue, Modal, Pendin
 
     #[must_use]
     pub fn row_count(&self) -> usize {
-        self.pending.len() + ACCOUNT_KINDS.len() + 1
+        // Pending accounts + "+ Add {kind}" rows + GitHub row + scan row.
+        // The scan row stays last so the GitHub index
+        // (`pending.len() + ACCOUNT_KINDS.len()`) never moves.
+        self.pending.len() + ACCOUNT_KINDS.len() + 2
     }
 
     #[must_use]
@@ -97,6 +102,13 @@ impl<EnvValue, Modal, PendingOpCommit> SettingsAuthState<EnvValue, Modal, Pendin
         self.selected = self.selected.min(self.pending.len().saturating_sub(1));
         self.modals.clear();
         self.error = None;
+        // Discard orphans any in-flight scan: a stale completion must not
+        // resurrect candidates the operator just threw away.
+        let generation = self.scan.generation.wrapping_add(1);
+        self.scan = AccountScanState {
+            generation,
+            ..AccountScanState::default()
+        };
     }
 
     pub fn mark_saved(&mut self)
@@ -106,6 +118,9 @@ impl<EnvValue, Modal, PendingOpCommit> SettingsAuthState<EnvValue, Modal, Pendin
         self.original = self.pending.clone();
         self.original_github = self.github.clone();
         self.original_bindings = self.bindings.clone();
+        self.scan.scanned_ids.clear();
+        self.scan.issues.clear();
+        self.scan.last_summary = None;
     }
 
     pub fn restore_pending_auth_form(&mut self) {
@@ -171,6 +186,7 @@ impl<EnvValue, Modal, PendingOpCommit> SettingsAuthState<EnvValue, Modal, Pendin
     }
 
     pub fn enter_selected_kind(&mut self) {
+        let github_index = self.pending.len() + ACCOUNT_KINDS.len();
         self.selected_kind = self
             .pending
             .values()
@@ -180,7 +196,7 @@ impl<EnvValue, Modal, PendingOpCommit> SettingsAuthState<EnvValue, Modal, Pendin
                 ACCOUNT_KINDS
                     .get(self.selected.saturating_sub(self.pending.len()))
                     .copied()
-                    .or_else(|| (self.selected == self.row_count() - 1).then_some(AuthKind::Github))
+                    .or_else(|| (self.selected == github_index).then_some(AuthKind::Github))
             });
     }
 
@@ -241,6 +257,93 @@ impl<EnvValue, Modal, PendingOpCommit> SettingsAuthState<EnvValue, Modal, Pendin
     /// open without losing the auth form's in-progress state.
     pub fn push_auth_modal(&mut self, sub_modal: Modal) {
         self.modals.open_sub(sub_modal);
+    }
+
+    /// Arm a scan worker run, returning the effect the root executes.
+    /// `None` while a scan is already in flight (concurrent scans from
+    /// the UI dedupe here; concurrent scans across processes dedupe
+    /// under the config lock).
+    pub fn begin_account_scan(&mut self) -> Option<SettingsEffect> {
+        if self.scan.in_flight {
+            return None;
+        }
+        self.scan.in_flight = true;
+        self.scan.generation = self.scan.generation.wrapping_add(1);
+        Some(SettingsEffect::StartAccountScan {
+            generation: self.scan.generation,
+        })
+    }
+
+    /// Abandon the in-flight scan; its late completion is ignored via
+    /// the bumped generation (the worker thread itself cannot be
+    /// recalled, only orphaned).
+    pub fn cancel_account_scan(&mut self) {
+        self.scan.in_flight = false;
+        self.scan.generation = self.scan.generation.wrapping_add(1);
+    }
+
+    /// Merge a scan worker completion into the pending draft. Stale
+    /// generations are ignored; worker failures surface as panel errors.
+    pub fn complete_account_scan(
+        &mut self,
+        generation: u64,
+        result: &Result<AccountScanOutcome, String>,
+    ) {
+        if generation != self.scan.generation {
+            return;
+        }
+        self.scan.in_flight = false;
+        match result {
+            Err(error) => self.set_error(error.clone()),
+            Ok(outcome) => {
+                let summary = self.merge_account_scan_outcome(outcome);
+                self.scan.issues = outcome.issues.clone();
+                self.scan.last_summary = Some(summary);
+            }
+        }
+    }
+
+    /// Join a scan outcome into the draft: committed accounts (already on
+    /// disk) refresh both pending and original, candidates join pending
+    /// only so Apply commits them and Cancel preserves the pre-scan
+    /// draft. IDs already present — including IDs the operator deleted
+    /// from pending — are never touched, so newer edits are never
+    /// silently overwritten.
+    pub fn merge_account_scan_outcome(
+        &mut self,
+        outcome: &AccountScanOutcome,
+    ) -> AccountScanSummary {
+        let mut summary = AccountScanSummary {
+            joined: Vec::new(),
+            skipped: Vec::new(),
+            fresh_install: outcome.fresh_install,
+        };
+        for (id, account) in &outcome.committed {
+            if self.pending.contains_key(id) || self.original.contains_key(id) {
+                summary.skipped.push(id.clone());
+                continue;
+            }
+            self.original.insert(id.clone(), account.clone());
+            self.pending.insert(id.clone(), account.clone());
+            self.scan.scanned_ids.insert(id.clone());
+            summary.joined.push(id.clone());
+        }
+        for (id, account) in &outcome.candidates {
+            if self.pending.contains_key(id)
+                || self.original.contains_key(id)
+                || crate::tui::screens::settings::update::scanned_source_in_draft(
+                    &self.pending,
+                    account,
+                )
+            {
+                summary.skipped.push(id.clone());
+                continue;
+            }
+            self.pending.insert(id.clone(), account.clone());
+            self.scan.scanned_ids.insert(id.clone());
+            summary.joined.push(id.clone());
+        }
+        summary
     }
 }
 
@@ -434,12 +537,30 @@ pub const ACCOUNT_KINDS: &[AuthKind] = &[
     AuthKind::Kimi,
     AuthKind::Opencode,
     AuthKind::Grok,
+    AuthKind::Antigravity,
+    AuthKind::Gemini,
+    AuthKind::Cursor,
+    AuthKind::Muse,
+    AuthKind::Omp,
+    AuthKind::Hermes,
     AuthKind::Zai,
     AuthKind::Minimax,
 ];
 
 pub fn account_kind(account: &jackin_config::AccountConfig) -> AuthKind {
     use jackin_config::AiProvider;
+    // Owner-bearing credentials resolve by owner, not provider: two agents
+    // share the Google provider, so provider-only mapping would rewrite an
+    // Antigravity profile's owner on save.
+    match &account.credential {
+        jackin_config::AccountCredential::Profile { agent, .. }
+        | jackin_config::AccountCredential::OAuthToken { agent, .. } => {
+            if let Some(kind) = auth_kind_for_agent(*agent) {
+                return kind;
+            }
+        }
+        jackin_config::AccountCredential::ApiKey { .. } => {}
+    }
     match account.provider {
         AiProvider::Anthropic => AuthKind::Claude,
         AiProvider::OpenAi => AuthKind::Codex,
@@ -447,7 +568,34 @@ pub fn account_kind(account: &jackin_config::AccountConfig) -> AuthKind {
         AiProvider::Moonshot => AuthKind::Kimi,
         AiProvider::Opencode => AuthKind::Opencode,
         AiProvider::Xai => AuthKind::Grok,
+        // Ownerless Google keys show under Gemini; either Google agent can
+        // consume them and the save roundtrips to the same provider.
+        AiProvider::Google => AuthKind::Gemini,
+        AiProvider::Cursor => AuthKind::Cursor,
+        AiProvider::Meta => AuthKind::Muse,
+        // Routed-provider accounts show under the first multi-provider kind;
+        // the save roundtrips by provider, not kind.
+        AiProvider::OpenRouter => AuthKind::Omp,
         AiProvider::Zai => AuthKind::Zai,
         AiProvider::Minimax => AuthKind::Minimax,
+    }
+}
+
+/// Inverse of [`auth_kind_agent`](crate::tui::auth_config::auth_kind_agent).
+fn auth_kind_for_agent(agent: jackin_core::Agent) -> Option<AuthKind> {
+    use jackin_core::Agent;
+    match agent {
+        Agent::Claude => Some(AuthKind::Claude),
+        Agent::Codex => Some(AuthKind::Codex),
+        Agent::Amp => Some(AuthKind::Amp),
+        Agent::Kimi => Some(AuthKind::Kimi),
+        Agent::Opencode => Some(AuthKind::Opencode),
+        Agent::Grok => Some(AuthKind::Grok),
+        Agent::Antigravity => Some(AuthKind::Antigravity),
+        Agent::Gemini => Some(AuthKind::Gemini),
+        Agent::Cursor => Some(AuthKind::Cursor),
+        Agent::Muse => Some(AuthKind::Muse),
+        Agent::Omp => Some(AuthKind::Omp),
+        Agent::Hermes => Some(AuthKind::Hermes),
     }
 }

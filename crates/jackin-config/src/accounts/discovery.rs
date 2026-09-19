@@ -37,6 +37,15 @@ pub fn discover_environment_accounts(
                 "MINIMAX_API_TOKEN",
             ][..],
         ),
+        // GEMINI_API_KEY is the documented Google AI Studio variable;
+        // GOOGLE_API_KEY is a widely used alias for the same key.
+        (
+            AiProvider::Google,
+            &["GEMINI_API_KEY", "GOOGLE_API_KEY"][..],
+        ),
+        (AiProvider::Cursor, &["CURSOR_API_KEY"][..]),
+        (AiProvider::Meta, &["META_API_KEY"][..]),
+        (AiProvider::OpenRouter, &["OPENROUTER_API_KEY"][..]),
     ]
     .into_iter()
     .filter_map(|(provider, names)| {
@@ -91,8 +100,8 @@ pub enum DiscoveryError {
     /// Source cannot be read as a regular file.
     #[error("credential source cannot be read")]
     Unreadable,
-    /// Source contains invalid JSON.
-    #[error("credential file is not valid JSON")]
+    /// Source is present but not parseable in its documented layout.
+    #[error("credential source is not parseable")]
     Malformed,
     /// Source exceeds the bounded credential read size.
     #[error("credential file exceeds the discovery size limit")]
@@ -164,11 +173,37 @@ fn inspect_directory(
     home: &Path,
     keychain_exists: impl FnOnce(&str) -> bool,
 ) -> Result<Option<DiscoveredAccount>, DiscoveryError> {
+    // Antigravity credentials live ONLY in the macOS Keychain singleton
+    // (service `gemini`, account `antigravity`); settings.json holds prefs
+    // and can never be evidence, so it is not read at all.
+    if agent == Agent::Antigravity {
+        if keychain_exists("gemini") {
+            return Ok(Some(DiscoveredAccount {
+                agent,
+                directory: directory.to_path_buf(),
+                evidence: CredentialEvidence::Keychain("gemini".to_owned()),
+            }));
+        }
+        return Ok(None);
+    }
+    // Stores-backed agents enumerate content-verified candidates via the
+    // `stores` enumerators (JSON + read-only SQLite, WAL-safe, no writes):
+    // OpenCode checks auth.json AND the opencode.db `credential` table, omp
+    // checks the agent.db `credentials` table, Hermes checks config.yaml +
+    // profiles + auth.json. Candidates carry secrets for import; discovery
+    // keeps only the source location and drops the values at this boundary.
+    if matches!(agent, Agent::Opencode | Agent::Omp | Agent::Hermes) {
+        return inspect_store(agent, directory);
+    }
     let mut file = directory.join(match agent {
         Agent::Claude => ".credentials.json",
-        Agent::Codex | Agent::Opencode | Agent::Grok => "auth.json",
+        Agent::Codex | Agent::Grok | Agent::Cursor | Agent::Muse => "auth.json",
         Agent::Amp => "secrets.json",
         Agent::Kimi => "credentials/kimi-code.json",
+        Agent::Gemini => "oauth_creds.json",
+        Agent::Antigravity | Agent::Opencode | Agent::Omp | Agent::Hermes => {
+            unreachable!("handled by early returns above")
+        }
     });
     // Alias-style Amp accounts set both XDG roots beneath one selected folder.
     if agent == Agent::Amp && !file.exists() {
@@ -176,6 +211,15 @@ fn inspect_directory(
         if nested.exists() {
             file = nested;
         }
+    }
+    // Kimi rotates the live grant into per-environment siblings
+    // (`credentials/kimi-code-env-<id>.json`) while the base file keeps a
+    // drained placeholder; a stale base file must not hide the live grant.
+    if agent == Agent::Kimi
+        && !matches!(&read_credentials(&file), Ok(Some(value)) if has_credentials(agent, value))
+        && let Some(live) = newest_kimi_env_credentials(&directory.join("credentials"))
+    {
+        file = live;
     }
     let file_result = read_credentials(&file);
     if let Ok(Some(value)) = &file_result
@@ -199,6 +243,91 @@ fn inspect_directory(
         }));
     }
     file_result.map(|_| None)
+}
+
+/// Inspect a stores-backed agent directory via the `stores` enumerators.
+///
+/// The first candidate's source file becomes the evidence location; secrets
+/// are dropped here and never leave the discovery boundary. An empty
+/// enumeration is an honest `Ok(None)` (no attributable credential found),
+/// and store failures map to the matching [`DiscoveryError`] category.
+fn inspect_store(
+    agent: Agent,
+    directory: &Path,
+) -> Result<Option<DiscoveredAccount>, DiscoveryError> {
+    use super::stores::{hermes, omp, opencode};
+    let candidates = match agent {
+        Agent::Opencode => opencode::enumerate_opencode_store(directory),
+        Agent::Omp => omp::enumerate_omp_credentials(&directory.join("agent/agent.db")),
+        Agent::Hermes => hermes::enumerate_hermes_store(directory),
+        _ => unreachable!("stores-backed agents only"),
+    };
+    match candidates {
+        Ok(candidates) => Ok(candidates
+            .into_iter()
+            .next()
+            .map(|candidate| DiscoveredAccount {
+                agent,
+                directory: directory.to_path_buf(),
+                evidence: CredentialEvidence::File(candidate.source),
+            })),
+        Err(error) => Err(map_store_error(error)),
+    }
+}
+
+/// Map a secret-free [`StoreError`](super::stores::StoreError) to the
+/// matching discovery category. `Unsupported` (present but uncovered
+/// layout) folds into `Malformed`: both mean present-but-unverifiable.
+fn map_store_error(error: super::stores::StoreError) -> DiscoveryError {
+    match error {
+        super::stores::StoreError::Unreadable => DiscoveryError::Unreadable,
+        super::stores::StoreError::TooLarge => DiscoveryError::TooLarge,
+        super::stores::StoreError::Malformed | super::stores::StoreError::Unsupported(_) => {
+            DiscoveryError::Malformed
+        }
+    }
+}
+
+// NOTE (S1/stores seam): per-value secret import from store candidates
+// awaits a secret accessor on `StoreCandidate` (the field is currently
+// private with no reader). Discovery consumes only the source location;
+// when the stores lane exposes secrets for import, a
+// `discover_store_credentials` API + `account scan` import can be layered
+// here without touching the matchers above.
+
+/// Newest Kimi per-environment credential file, if any.
+///
+/// Bounded directory scan: only `kimi-code-env-*.json` regular files are
+/// considered, newest first by mtime (name order breaks ties and covers
+/// mtime failures deterministically). Returns `None` when the directory
+/// cannot be listed.
+fn newest_kimi_env_credentials(dir: &Path) -> Option<PathBuf> {
+    let entries = std::fs::read_dir(dir).ok()?;
+    let mut candidates: Vec<(std::time::SystemTime, PathBuf)> = entries
+        .flatten()
+        .filter_map(|entry| {
+            let name = entry.file_name();
+            let name = name.to_str()?;
+            let is_env_grant = name.starts_with("kimi-code-env-")
+                && entry.path().extension().is_some_and(|ext| ext == "json");
+            if !is_env_grant {
+                return None;
+            }
+            // A newer directory with a `.json` suffix is not a credential
+            // file.  Keep it out of the mtime ordering so it cannot hide a
+            // valid live grant when the selected path is read below.
+            if !entry.file_type().ok()?.is_file() {
+                return None;
+            }
+            let mtime = entry
+                .metadata()
+                .and_then(|m| m.modified())
+                .unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+            Some((mtime, entry.path()))
+        })
+        .collect();
+    candidates.sort();
+    candidates.pop().map(|(_, path)| path)
 }
 
 fn read_credentials(path: &Path) -> Result<Option<Value>, DiscoveryError> {
@@ -243,23 +372,26 @@ fn has_credentials(agent: Agent, value: &Value) -> bool {
                 .any(|(key, value)| key.starts_with("apiKey@") && nonempty(Some(value)))
         }),
         Agent::Kimi => nonempty(value.get("access_token")),
-        Agent::Opencode => value.as_object().is_some_and(|entries| {
-            entries
-                .values()
-                .any(|entry| match entry.get("type").and_then(Value::as_str) {
-                    Some("api") => nonempty(entry.get("key")),
-                    Some("oauth") => {
-                        nonempty(entry.get("access")) || nonempty(entry.get("refresh"))
-                    }
-                    _ => false,
-                })
-        }),
         Agent::Grok => value.as_object().is_some_and(|entries| {
             entries.iter().any(|(scope, entry)| {
                 (scope.starts_with("https://auth.x.ai::") || scope.contains("/sign-in"))
                     && nonempty(entry.get("key"))
             })
         }),
+        // Unreachable: Antigravity never reads a file; OpenCode, Omp,
+        // and Hermes enumerate via the `stores` enumerators instead.
+        Agent::Antigravity | Agent::Opencode | Agent::Omp | Agent::Hermes => false,
+        // Docs-derived shape, unverified against a live install.
+        Agent::Gemini => {
+            nonempty(value.get("access_token"))
+                || nonempty(value.get("refresh_token"))
+                || nonempty(value.get("token"))
+        }
+        Agent::Cursor => nonempty(value.get("accessToken")) || nonempty(value.get("refreshToken")),
+        // Verified shape: {schema_version: 2, providers: {meta: {...}}};
+        // the secret itself lives in the Keychain, so the meta entry's
+        // presence is the evidence.
+        Agent::Muse => value.pointer("/providers/meta").is_some(),
     }
 }
 

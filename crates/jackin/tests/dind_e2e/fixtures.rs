@@ -74,7 +74,9 @@ fn synthetic_accounts() -> String {
         writeln!(config, "{agent} = \"e2e-{agent}\"").unwrap();
     }
     for agent in jackin_core::Agent::ALL {
-        let provider = jackin_config::AiProvider::for_agent(*agent);
+        // Omp/Hermes have no native billing; OpenRouter is routable by both.
+        let provider = jackin_config::AiProvider::for_agent(*agent)
+            .unwrap_or(jackin_config::AiProvider::OpenRouter);
         write!(config,
             "\n[accounts.e2e-{agent}]\nname = \"E2E {agent}\"\nprovider = \"{provider}\"\n[accounts.e2e-{agent}.credential]\ntype = \"api_key\"\nvalue = \"synthetic-e2e-{agent}-key\"\n"
         ).unwrap();

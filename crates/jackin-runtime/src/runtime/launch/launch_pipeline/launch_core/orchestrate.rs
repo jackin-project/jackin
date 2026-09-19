@@ -15,7 +15,10 @@ use super::super::launch_phases::{
 };
 use super::super::{emit_auth_provision_launch_plan, purge_or_mark_clean_exited};
 use super::LaunchCore;
-use helpers::{emit_auth_breadcrumbs, reuse_sentinel, sidecar_replenish, workspace_launch_config};
+use helpers::{
+    emit_auth_breadcrumbs, resolve_provision_inputs, reuse_sentinel, sidecar_replenish,
+    workspace_launch_config,
+};
 use jackin_core::{CommandRunner, ContainerId, WorkspaceName};
 use jackin_docker::docker_client::DockerApi;
 
@@ -25,7 +28,7 @@ use std::pin::Pin;
 
 use super::super::super::trust::seed_codex_project_trust;
 use crate::instance::{
-    DockerResources, InstanceManifest, InstanceStatus, NewInstanceManifest, PrepareResolvers,
+    AdmittedInstance, DockerResources, InstanceManifest, InstanceStatus, NewInstanceManifest,
     RoleState,
 };
 use crate::runtime::attach::{
@@ -651,60 +654,59 @@ where
     let workspace_opt_owned = configured.workspace_opt.clone();
     let role_key_owned = role_key.to_owned();
     let github_ctx_owned = configured.github_ctx.clone();
-    let default_runner = jackin_env::OpCli::new();
-    let credentials = jackin_env::resolve_account_env_with(
+    let model_override_owned = opts.model.clone();
+    let effort_owned = opts.effort;
+    let provision = resolve_provision_inputs(
         config,
-        &[agent],
         configured.workspace_opt.as_ref(),
         role_key,
-        opts.op_runner.as_deref().unwrap_or(&default_runner),
-        |name| match &opts.host_env {
-            Some(env) => env.get(name).cloned().ok_or(std::env::VarError::NotPresent),
-            None => std::env::var(name),
-        },
+        agent,
+        opts,
     )?;
+    let instances = provision.instances;
+    let admitted = instances.clone();
+    let credentials = provision.credentials;
     let role_state_future = async move {
         jackin_telemetry::spawn::joined_blocking(move || {
-            let provision_agents = [agent];
-            let selections = super::super::super::capsule_setup::account_auth_selections(
+            // One binding per admitted instance, keyed by config ID in
+            // launch order: same-agent instances provision independent
+            // slots instead of collapsing onto the first match.
+            let bindings = super::super::super::capsule_setup::instance_auth_bindings(
                 &config_owned,
-                workspace_opt_owned.as_ref(),
-                &role_key_owned,
-                &provision_agents,
+                &instances,
             )?;
-            let resolve_mode = |candidate| {
-                selections
-                    .get(&candidate)
-                    .map_or(jackin_config::AuthForwardMode::Ignore, |(mode, _)| *mode)
-            };
-            let resolve_sync_src = |candidate| {
-                selections
-                    .get(&candidate)
-                    .and_then(|(_, directory)| directory.clone())
-            };
-            let prepared = RoleState::prepare_for_agents(
+            let prepared = RoleState::prepare_for_bindings(
                 &paths_owned,
                 &container_name_owned,
                 &manifest_owned,
-                &PrepareResolvers {
-                    auth_modes: &resolve_mode,
-                    sync_source_dirs: &resolve_sync_src,
-                },
+                &bindings,
                 &github_ctx_owned,
                 &paths_owned.home_dir,
                 agent,
-                &provision_agents,
             )?;
             super::super::super::account_identity::write_account_credentials(
                 &prepared.0.root,
-                credentials,
+                &credentials,
             )?;
+            let models = super::super::super::capsule_setup::resolved_instance_models(
+                &config_owned,
+                &manifest_owned,
+                &instances,
+                agent,
+                model_override_owned.as_deref(),
+            )?;
+            let efforts = super::super::super::capsule_setup::resolved_instance_efforts(
+                &instances,
+                agent,
+                effort_owned,
+            );
             super::super::super::account_config::configure_accounts(
                 &prepared.0.root,
                 &config_owned,
-                workspace_opt_owned.as_ref(),
-                &role_key_owned,
-                &provision_agents,
+                &instances,
+                &prepared.0.auth.slots,
+                &models,
+                &efforts,
             )?;
             super::super::super::account_identity::record_account_configuration(
                 &prepared.0.root,
@@ -768,6 +770,7 @@ where
             github_mode: configured.github_mode,
             github_env_decls: configured.github_env_decls,
         },
+        instances: admitted,
     })
 }
 
@@ -1278,6 +1281,21 @@ where
         early_sidecar_result,
     )
     .await?;
+    // Record the admitted instances on the manifest now that resolution
+    // succeeded, and persist immediately: all downstream paths (docker,
+    // detached, apple-container) read the same manifest file.
+    prepared
+        .instance_manifest
+        .set_admitted_instances(trust.instances.iter().map(AdmittedInstance::from));
+    if let Err(error) = super::super::super::write_instance_status(
+        launch.paths,
+        &prepared.container_state,
+        &mut prepared.instance_manifest,
+        InstanceStatus::Active,
+    ) {
+        launch.initialized.cleanup.run(launch.docker).await;
+        return Err(error);
+    }
     let workspace = materialize_workspace_phase(
         MaterializeWorkspace {
             paths: launch.paths,
@@ -1408,7 +1426,7 @@ where
         git_pull_join,
         prepared,
         cleanup,
-        trust: TrustSeeded { environment },
+        trust: TrustSeeded { environment, .. },
     } = input;
     emit_auth_breadcrumbs(
         agent,
@@ -1515,7 +1533,7 @@ where
     );
     let dirty_exit_policy =
         config.resolve_dirty_exit_policy(config.workspaces.get(workspace_label.as_str()));
-    let launch_config = workspace_launch_config(
+    let mut launch_config = workspace_launch_config(
         config,
         selector,
         workspace,
@@ -1527,7 +1545,9 @@ where
         &materialized,
         dirty_exit_policy.as_str(),
         exec_bindings,
+        &environment.state,
     )?;
+    crate::usage_relay::populate_launch_usage_capabilities(config, &mut launch_config);
     Ok(WorkspaceMaterialized {
         materialized,
         launch_config,
@@ -1588,7 +1608,8 @@ where
         cleanup,
     } = input;
     if backend == super::super::super::Backend::AppleContainer {
-        let mounts = super::super::super::build_workspace_mounts(&materialized)?;
+        let mut mounts = super::super::super::build_workspace_mounts(&materialized)?;
+        mounts.extend(super::super::super::apple_agent_mounts(&state)?);
         cleanup.run(docker).await;
         crate::runtime::apple_container::launch(
             crate::runtime::apple_container::AppleContainerLaunch {

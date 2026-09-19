@@ -9,8 +9,8 @@
 
 use crate::ImageError;
 use crate::binary_artifact::{
-    chmod_executable, container_arch, extract_tar_gz_member, hash_file_sha256, is_executable_file,
-    parse_sha256_hex, repair_executable_file,
+    chmod_executable, container_arch, extract_tar_gz_member, hash_file_sha256, hash_file_sha512,
+    is_executable_file, parse_sha256_hex, parse_sha512_hex, repair_executable_file,
 };
 use anyhow::{Context, Result};
 use jackin_core::{Agent, Clock, JackinPaths, SystemClock};
@@ -384,7 +384,95 @@ async fn resolve_latest_release(agent: Agent) -> Result<AgentRelease> {
         Agent::Kimi => resolve_kimi().await,
         Agent::Opencode => resolve_opencode().await,
         Agent::Grok => resolve_grok().await,
+        Agent::Antigravity => resolve_antigravity().await,
+        Agent::Gemini => resolve_npm_only(Agent::Gemini, "@google/gemini-cli"),
+        // Cursor ships a versioned install tree (node bundle + shell wrapper),
+        // not a relocatable single binary: host prefetch cannot reproduce that
+        // layout, so resolution fails closed and the launch falls through to
+        // the official installer block.
+        Agent::Cursor => resolve_no_binary(
+            Agent::Cursor,
+            "the official installer lays down a versioned directory plus wrapper, not a relocatable binary",
+        ),
+        Agent::Muse => resolve_no_installer(Agent::Muse),
+        Agent::Omp => resolve_npm_only(Agent::Omp, "@oh-my-pi/pi-coding-agent"),
+        Agent::Hermes => resolve_no_binary(
+            Agent::Hermes,
+            "the official installer lays down a Python/uv environment, not a relocatable binary",
+        ),
     }
+}
+
+/// Antigravity manifest shape (`{base}/manifests/{platform}.json`).
+#[derive(Debug, Deserialize)]
+struct AntigravityManifest {
+    version: String,
+    url: String,
+    sha512: String,
+}
+
+async fn resolve_antigravity() -> Result<AgentRelease> {
+    // Version pointer and binary layout extracted from the official installer
+    // https://antigravity.google/cli/install.sh (verified 2026-09-17):
+    //
+    // - Platform manifest (JSON): ${BASE}/manifests/${platform}.json with
+    //   {version, url, sha512}, where platform is linux_amd64 / linux_arm64
+    //   (glibc; a linux_${arch}_musl flavor exists but role images are glibc).
+    // - The payload is a .tar.gz carrying a single `antigravity` member
+    //   (renamed to `agy` at install time), verified with SHA-512.
+    const BASE: &str = "https://antigravity-cli-auto-updater-974169037036.us-central1.run.app";
+    let platform = match container_arch() {
+        "arm64" => "linux_arm64",
+        _ => "linux_amd64",
+    };
+    let manifest: AntigravityManifest = serde_json::from_str(
+        &fetch_text_with_retry(&format!("{BASE}/manifests/{platform}.json")).await?,
+    )
+    .context("parsing Antigravity platform manifest")?;
+    if manifest.version.trim().is_empty() || manifest.url.trim().is_empty() {
+        return Err(ImageError::msg(format!(
+            "Antigravity manifest for {platform} is missing version/url"
+        ))
+        .into());
+    }
+    let checksum = parse_sha512_hex(&manifest.sha512)
+        .with_context(|| format!("Antigravity published checksum for {}", manifest.version))?;
+    Ok(AgentRelease {
+        agent: Agent::Antigravity,
+        version: manifest.version,
+        url: manifest.url,
+        checksum: Some(checksum),
+        archive_member: Some("antigravity".to_owned()),
+    })
+}
+
+/// npm-distributed CLIs have no standalone binary artifact to prefetch: the
+/// launch falls through to `npm install -g` in the fallback install block.
+fn resolve_npm_only(agent: Agent, package: &str) -> Result<AgentRelease> {
+    Err(ImageError::msg(format!(
+        "{} is distributed via npm ({package}); host binary prefetch is not applicable",
+        agent.slug(),
+    ))
+    .into())
+}
+
+/// Agents with no verified standalone installer cannot be prefetched; the
+/// launch falls through to the (fail-closed) fallback install block.
+fn resolve_no_installer(agent: Agent) -> Result<AgentRelease> {
+    Err(ImageError::msg(format!(
+        "{} has no verified standalone installer; install it on the host",
+        agent.slug(),
+    ))
+    .into())
+}
+
+/// Agents whose installer produces no relocatable single binary.
+fn resolve_no_binary(agent: Agent, reason: &str) -> Result<AgentRelease> {
+    Err(ImageError::msg(format!(
+        "{} host binary prefetch is not applicable: {reason}",
+        agent.slug(),
+    ))
+    .into())
 }
 
 async fn resolve_claude() -> Result<AgentRelease> {
@@ -778,18 +866,39 @@ async fn download_and_cache_inner(
     //
     // Claude/Kimi/Amp publish checksums in their manifests.
     // Codex/OpenCode get them from GitHub release asset digests.
+    // Antigravity publishes SHA-512 in its platform manifest.
     //
     // Grok (per analysis of https://x.ai/cli/install.sh) does not publish a
     // per-artifact SHA sidecar for the direct linux binary. We fall back to a
     // `--version` smoke test after download (exactly as the official installer
     // does on non-Windows) to verify we got a runnable binary for that version.
     if let Some(expected) = release.checksum.as_deref() {
+        // The digest length selects the algorithm: resolvers store validated
+        // 64-hex SHA-256 or 128-hex SHA-512, nothing else.
+        let use_sha512 = match expected.len() {
+            64 => false,
+            128 => true,
+            _ => {
+                return Err(ImageError::msg(format!(
+                    "{} release {} carries an unrecognized checksum length {}",
+                    release.agent.slug(),
+                    release.version,
+                    expected.len()
+                ))
+                .into());
+            }
+        };
         let tmp_for_hash = tmp_download.to_owned();
-        let actual =
-            jackin_telemetry::spawn::joined_blocking(move || hash_file_sha256(&tmp_for_hash))
-                .await
-                .context("hash worker join")?
-                .with_context(|| format!("hashing {}", tmp_download.display()))?;
+        let actual = jackin_telemetry::spawn::joined_blocking(move || {
+            if use_sha512 {
+                hash_file_sha512(&tmp_for_hash)
+            } else {
+                hash_file_sha256(&tmp_for_hash)
+            }
+        })
+        .await
+        .context("hash worker join")?
+        .with_context(|| format!("hashing {}", tmp_download.display()))?;
         if !actual.eq_ignore_ascii_case(expected) {
             return Err(ImageError::msg(format!(
                 "{} checksum mismatch for {}\n  expected {}\n  actual   {}",

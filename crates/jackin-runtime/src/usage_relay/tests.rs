@@ -12,20 +12,222 @@ use jackin_protocol::control::{
     UsageSource,
 };
 use jackin_protocol::usage_broker::UsageRefreshPhase;
-use jackin_usage::coordinator::{ProviderProbeOutcome, UsageProviderExecutor};
-use jackin_usage::host::ensure_usage_broker_with_executor;
+use jackin_usage::coordinator::{ProviderProbeOutcome, UsageCapabilitySet, UsageProviderExecutor};
+use jackin_usage::host::{
+    CachedProviderCredentialResolver, UsageDiscoveryScope, discover_usage_sources,
+    ensure_usage_broker_with_executor, validate_usage_sources,
+};
 
 #[test]
 fn resolved_launch_inventory_deduplicates_only_launch_agents() {
     let config = jackin_protocol::CapsuleConfig {
-        agents: vec!["claude".to_owned(), "codex".to_owned(), "claude".to_owned()],
+        instances: vec![
+            "work@claude".to_owned(),
+            "work@codex".to_owned(),
+            "work@claude".to_owned(),
+        ],
         ..jackin_protocol::CapsuleConfig::default()
     };
 
     assert_eq!(
-        resolved_launch_usage_inventory(&config).agents,
-        ["claude", "codex"]
+        resolved_launch_usage_inventory(&config).instances,
+        ["work@claude", "work@codex"]
     );
+}
+
+#[test]
+fn launch_usage_capabilities_preserve_account_identity_and_provider_surface() {
+    use jackin_config::{AccountConfig, AccountCredential, AiProvider};
+
+    let mut config = AppConfig::default();
+    for (id, provider) in [
+        ("personal-openai", AiProvider::OpenAi),
+        ("work-openai", AiProvider::OpenAi),
+        ("routed-zai", AiProvider::Zai),
+    ] {
+        config.accounts.insert(
+            id.to_owned(),
+            AccountConfig {
+                enabled: true,
+                name: id.to_owned(),
+                provider,
+                credential: AccountCredential::ApiKey {
+                    value: "fixture-key".into(),
+                    base_url: None,
+                    model: None,
+                },
+            },
+        );
+    }
+
+    let mut launch_config = jackin_protocol::CapsuleConfig {
+        instances: vec![
+            "personal-codex".to_owned(),
+            "work-codex".to_owned(),
+            "routed-codex".to_owned(),
+        ],
+        agents: BTreeMap::from([
+            ("personal-codex".to_owned(), "codex".to_owned()),
+            ("work-codex".to_owned(), "codex".to_owned()),
+            ("routed-codex".to_owned(), "codex".to_owned()),
+        ]),
+        accounts: BTreeMap::from([
+            ("personal-codex".to_owned(), "personal-openai".to_owned()),
+            ("work-codex".to_owned(), "work-openai".to_owned()),
+            ("routed-codex".to_owned(), "routed-zai".to_owned()),
+        ]),
+        ..jackin_protocol::CapsuleConfig::default()
+    };
+
+    populate_launch_usage_capabilities(&config, &mut launch_config);
+
+    assert_eq!(
+        launch_config.usage_capabilities,
+        BTreeMap::from([
+            (
+                "personal-codex".to_owned(),
+                UsageAccountCapability {
+                    account_id: "personal-openai".to_owned(),
+                    surface_id: "codex".to_owned(),
+                },
+            ),
+            (
+                "work-codex".to_owned(),
+                UsageAccountCapability {
+                    account_id: "work-openai".to_owned(),
+                    surface_id: "codex".to_owned(),
+                },
+            ),
+            (
+                "routed-codex".to_owned(),
+                UsageAccountCapability {
+                    account_id: "routed-zai".to_owned(),
+                    surface_id: "zai".to_owned(),
+                },
+            ),
+        ])
+    );
+}
+
+#[test]
+fn launch_discovery_relay_uses_distinct_canonical_ids_for_same_surface() -> Result<()> {
+    use jackin_config::{AccountConfig, AccountCredential, AiProvider};
+
+    let temp = tempfile::tempdir()?;
+    let config_root = temp.path().join("config");
+    let home = temp.path().join("home");
+    fs::create_dir_all(&config_root)?;
+    let mut config = AppConfig::default();
+    for (id, name, account_id, token) in [
+        (
+            "personal-openai",
+            "Personal",
+            "provider-personal",
+            "fixture-personal-token",
+        ),
+        ("work-openai", "Work", "provider-work", "fixture-work-token"),
+    ] {
+        let profile = temp.path().join(id);
+        fs::create_dir_all(&profile)?;
+        fs::write(
+            profile.join("auth.json"),
+            format!(r#"{{"tokens":{{"access_token":"{token}","account_id":"{account_id}"}}}}"#),
+        )?;
+        config.accounts.insert(
+            id.to_owned(),
+            AccountConfig {
+                enabled: true,
+                name: name.to_owned(),
+                provider: AiProvider::OpenAi,
+                credential: AccountCredential::Profile {
+                    agent: jackin_core::Agent::Codex,
+                    directory: profile,
+                    xdg_roots: None,
+                },
+            },
+        );
+    }
+    fs::write(config_root.join("config.toml"), toml::to_string(&config)?)?;
+
+    let resolver = CachedProviderCredentialResolver::new(RuntimeSecretSource);
+    let catalog = discover_usage_sources(
+        &UsageDiscoveryScope::HostDesktop {
+            config_root,
+            operator_home: home,
+        },
+        &resolver,
+    )
+    .map_err(anyhow::Error::msg)?;
+    let discovery = validate_usage_sources(catalog, &resolver);
+    let sources = ForwardedUsageSources {
+        selected_account_ids: BTreeSet::from([
+            "personal-openai".to_owned(),
+            "work-openai".to_owned(),
+        ]),
+        selected_account_surfaces: BTreeMap::from([
+            ("personal-openai".to_owned(), "codex".to_owned()),
+            ("work-openai".to_owned(), "codex".to_owned()),
+        ]),
+        profile_surface_ids: BTreeSet::from(["codex".to_owned()]),
+        env_keys: BTreeSet::new(),
+    };
+    let forwarded = forwarded_usage_capabilities(&discovery, "unrelated scope", &sources);
+    assert_eq!(forwarded.len(), 2);
+    assert!(
+        forwarded
+            .iter()
+            .all(|capability| capability.surface_id == "codex")
+    );
+
+    let allowed = forwarded.iter().cloned().collect::<BTreeSet<_>>();
+    let canonical = canonical_capabilities_for_launch(&discovery, &sources, &allowed);
+    let mut launch_config = jackin_protocol::CapsuleConfig {
+        instances: vec!["personal@codex".to_owned(), "work@codex".to_owned()],
+        accounts: BTreeMap::from([
+            ("personal@codex".to_owned(), "personal-openai".to_owned()),
+            ("work@codex".to_owned(), "work-openai".to_owned()),
+        ]),
+        usage_capabilities: BTreeMap::from([
+            (
+                "personal@codex".to_owned(),
+                UsageAccountCapability {
+                    account_id: "personal-openai".to_owned(),
+                    surface_id: "codex".to_owned(),
+                },
+            ),
+            (
+                "work@codex".to_owned(),
+                UsageAccountCapability {
+                    account_id: "work-openai".to_owned(),
+                    surface_id: "codex".to_owned(),
+                },
+            ),
+        ]),
+        ..jackin_protocol::CapsuleConfig::default()
+    };
+
+    canonical.apply_to_launch_config(&mut launch_config);
+    let personal = &launch_config.usage_capabilities["personal@codex"];
+    let work = &launch_config.usage_capabilities["work@codex"];
+    assert_eq!(personal.surface_id, "codex");
+    assert_eq!(work.surface_id, "codex");
+    assert_ne!(personal.account_id, "personal-openai");
+    assert_ne!(work.account_id, "work-openai");
+    assert_ne!(personal.account_id, work.account_id);
+    assert!(
+        UsageCapabilitySet::new(forwarded)
+            .authorize(personal)
+            .is_ok()
+    );
+    assert!(
+        UsageCapabilitySet::new(allowed)
+            .authorize(&UsageAccountCapability {
+                account_id: "personal-openai".to_owned(),
+                surface_id: "codex".to_owned(),
+            })
+            .is_err()
+    );
+    Ok(())
 }
 
 #[tokio::test]
@@ -115,7 +317,7 @@ fn forwarded_sources_include_only_provisioned_profiles_and_governed_env() {
             model: None,
         },
         auth: ProvisionedAuth::default(),
-        auth_outcomes: std::collections::BTreeMap::from([
+        auth_outcomes: BTreeMap::from([
             (Agent::Claude, AuthProvisionOutcome::Synced),
             (Agent::Codex, AuthProvisionOutcome::HostMissing),
             (Agent::Amp, AuthProvisionOutcome::TokenMode),
@@ -150,11 +352,13 @@ fn hermetic_layout_never_starts_host_usage_discovery() {
     );
     fs::write(&paths.config_file, &config).unwrap();
     let forwarded_sources = ForwardedUsageSources {
+        selected_account_ids: BTreeSet::new(),
+        selected_account_surfaces: BTreeMap::new(),
         profile_surface_ids: BTreeSet::new(),
         env_keys: BTreeSet::from(["ZAI_API_KEY".to_owned()]),
     };
 
-    let (_, capabilities) =
+    let (_, capabilities, _) =
         prepare_broker_client(&paths, Some("fixture"), "reviewer", &forwarded_sources);
 
     assert!(capabilities.is_empty());
@@ -247,8 +451,8 @@ async fn usage_relay_authorizes_only_exact_forwarded_account() {
 
     let denied_surface = send(
         &socket,
-        UsageBrokerOperation::RefreshForSurface {
-            surface_id: "codex".to_owned(),
+        UsageBrokerOperation::RefreshForCapability {
+            capability: capability("denied"),
             observed_generation: 0,
             force: true,
         },
@@ -262,8 +466,8 @@ async fn usage_relay_authorizes_only_exact_forwarded_account() {
 
     let refresh = send(
         &socket,
-        UsageBrokerOperation::RefreshForSurface {
-            surface_id: "claude".to_owned(),
+        UsageBrokerOperation::RefreshForCapability {
+            capability: allowed.clone(),
             observed_generation: 0,
             force: true,
         },
@@ -274,8 +478,8 @@ async fn usage_relay_authorizes_only_exact_forwarded_account() {
     };
     let terminal = send(
         &socket,
-        UsageBrokerOperation::JoinForSurface {
-            surface_id: "claude".to_owned(),
+        UsageBrokerOperation::JoinForCapability {
+            capability: allowed,
             generation: state.generation,
             timeout_ms: 2_000,
         },
@@ -321,11 +525,13 @@ async fn usage_relay_impossible_socket_path_skips_discovery() {
     let paths = JackinPaths::resolve_with_env(temp.path(), None, None);
     let socket_dir = temp.path().join("x".repeat(120));
 
-    let guard = prepare_for_container(UsageRelayLaunch {
+    let (guard, _) = prepare_for_container(UsageRelayLaunch {
         paths: &paths,
         workspace_name: Some("fixture"),
         role_key: "role",
         forwarded_sources: ForwardedUsageSources {
+            selected_account_ids: BTreeSet::new(),
+            selected_account_surfaces: BTreeMap::new(),
             profile_surface_ids: BTreeSet::from(["claude".to_owned()]),
             env_keys: BTreeSet::new(),
         },

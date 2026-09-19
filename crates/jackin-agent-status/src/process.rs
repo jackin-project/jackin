@@ -251,12 +251,14 @@ pub fn pids_in_pgrp(target_pgid: u32) -> Vec<u32> {
 /// Map a process basename to the canonical agent slug enum, or `None` when it
 /// is not a recognized agent binary.
 fn agent_from_name(name: &str) -> Option<Agent> {
-    // `claude-code` is the npm package's binary name; the canonical slug is
-    // `claude`. Everything else maps by `Agent`'s own slug parser.
-    let slug = if name == "claude-code" {
-        "claude"
-    } else {
-        name
+    // Binary names that differ from the canonical slug map here; everything
+    // else maps by `Agent`'s own slug parser. Bare `agent` stays unrecognized:
+    // it is both the Grok Build alias and the Cursor installer default.
+    let slug = match name {
+        "claude-code" => "claude",
+        "agy" => "antigravity",
+        "cursor-agent" => "cursor",
+        _ => name,
     };
     Agent::from_slug(slug)
 }
@@ -279,6 +281,12 @@ fn strip_script_extension(name: &str) -> &str {
 fn agent_from_wrapped_path(path: &str) -> Option<Agent> {
     if path.contains("@anthropic-ai/claude-code") || path.contains("claude-code") {
         return Some(Agent::Claude);
+    }
+    if path.contains("@google/gemini-cli") || path.contains("gemini-cli") {
+        return Some(Agent::Gemini);
+    }
+    if path.contains("@oh-my-pi/pi-coding-agent") || path.contains("pi-coding-agent") {
+        return Some(Agent::Omp);
     }
 
     path.split(['/', '\\']).rev().find_map(|component| {

@@ -1,4 +1,4 @@
-version = "v1alpha10"
+version = "v1alpha12"
 # SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 # SPDX-License-Identifier: Apache-2.0
 
@@ -10,3 +10,7 @@ trusted = true
 
 [env]
 OPERATOR_ORG = "acme"
+
+[bootstrap]
+version = 1
+fresh_install = false

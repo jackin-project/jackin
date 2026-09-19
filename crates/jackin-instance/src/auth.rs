@@ -69,6 +69,39 @@ pub fn validate_sync_source_dir(
         Agent::Codex => require_credential_file(source_dir, "auth.json", "Codex"),
         Agent::Grok => require_credential_file(source_dir, "auth.json", "Grok"),
         Agent::Opencode => require_credential_file(source_dir, "auth.json", "OpenCode"),
+        // Sync carries prefs only; the OAuth grant stays in the host Keychain.
+        Agent::Antigravity => require_credential_file(source_dir, "settings.json", "Antigravity"),
+        Agent::Gemini => require_credential_file(source_dir, "oauth_creds.json", "Gemini"),
+        Agent::Cursor => require_credential_file(source_dir, "auth.json", "Cursor"),
+        Agent::Muse => require_credential_file(source_dir, "auth.json", "Muse"),
+        // SQLite store: byte content, so only presence is validated here.
+        Agent::Omp => {
+            if source_dir.join("agent/agent.db").is_file() {
+                Ok(())
+            } else {
+                Err(SyncSourceValidationError::new(format!(
+                    "Not an omp config folder: expected agent/agent.db directly inside {}.",
+                    source_dir.display()
+                )))
+            }
+        }
+        // Best-effort layout (unverified upstream): any one of the known
+        // auth-bearing entries counts.
+        Agent::Hermes => {
+            if source_dir.join("auth.json").is_file()
+                || source_dir.join("config.yaml").is_file()
+                || source_dir.join(".env").is_file()
+                || source_dir.join("profiles").is_dir()
+            {
+                Ok(())
+            } else {
+                Err(SyncSourceValidationError::new(format!(
+                    "Not a Hermes config folder: {} must contain auth.json, config.yaml, \
+                     .env, or a profiles/ directory.",
+                    source_dir.display()
+                )))
+            }
+        }
         Agent::Amp => {
             require_credential_file(&amp_credentials_dir(source_dir), "secrets.json", "Amp")
         }
@@ -904,6 +937,411 @@ impl RoleState {
             true,
         )
     }
+}
+
+impl RoleState {
+    /// Provision Antigravity's host-side `settings.json` per the chosen mode.
+    ///
+    /// Source: `~/.gemini/antigravity-cli/settings.json`. Prefs only — the
+    /// OAuth grant lives in the host Keychain singleton and cannot be
+    /// synced, so Sync mode forwards preferences while real auth comes
+    /// from `GEMINI_API_KEY` (`ApiKey` mode) or in-container login.
+    pub(super) fn provision_antigravity_auth(
+        settings_json: &Path,
+        mode: AuthForwardMode,
+        host_home: &Path,
+    ) -> anyhow::Result<(AuthProvisionOutcome, Option<std::path::PathBuf>)> {
+        Self::provision_antigravity_auth_from_path(
+            settings_json,
+            mode,
+            &host_home.join(".gemini/antigravity-cli/settings.json"),
+        )
+    }
+
+    pub(super) fn provision_antigravity_auth_from_source_dir(
+        settings_json: &Path,
+        mode: AuthForwardMode,
+        source_dir: &Path,
+    ) -> anyhow::Result<(AuthProvisionOutcome, Option<std::path::PathBuf>)> {
+        Self::provision_antigravity_auth_from_path(
+            settings_json,
+            mode,
+            &source_dir.join("settings.json"),
+        )
+    }
+
+    fn provision_antigravity_auth_from_path(
+        settings_json: &Path,
+        mode: AuthForwardMode,
+        host_settings_json: &Path,
+    ) -> anyhow::Result<(AuthProvisionOutcome, Option<std::path::PathBuf>)> {
+        provision_single_file_credential(
+            settings_json,
+            host_settings_json,
+            mode,
+            "Antigravity settings.json",
+            "Antigravity",
+            true,
+            true,
+            true,
+        )
+    }
+}
+
+impl RoleState {
+    /// Provision Gemini CLI's host-side `~/.gemini/oauth_creds.json` per the
+    /// chosen mode. Follows the same semantics as `provision_grok_auth`.
+    pub(super) fn provision_gemini_auth(
+        oauth_creds: &Path,
+        mode: AuthForwardMode,
+        host_home: &Path,
+    ) -> anyhow::Result<(AuthProvisionOutcome, Option<std::path::PathBuf>)> {
+        Self::provision_gemini_auth_from_path(
+            oauth_creds,
+            mode,
+            &host_home.join(".gemini/oauth_creds.json"),
+        )
+    }
+
+    pub(super) fn provision_gemini_auth_from_source_dir(
+        oauth_creds: &Path,
+        mode: AuthForwardMode,
+        source_dir: &Path,
+    ) -> anyhow::Result<(AuthProvisionOutcome, Option<std::path::PathBuf>)> {
+        Self::provision_gemini_auth_from_path(
+            oauth_creds,
+            mode,
+            &source_dir.join("oauth_creds.json"),
+        )
+    }
+
+    fn provision_gemini_auth_from_path(
+        oauth_creds: &Path,
+        mode: AuthForwardMode,
+        host_oauth_creds: &Path,
+    ) -> anyhow::Result<(AuthProvisionOutcome, Option<std::path::PathBuf>)> {
+        provision_single_file_credential(
+            oauth_creds,
+            host_oauth_creds,
+            mode,
+            "Gemini oauth_creds.json",
+            "Gemini",
+            true,
+            true,
+            true,
+        )
+    }
+}
+
+impl RoleState {
+    /// Provision Cursor's host-side `~/.cursor/auth.json` per the chosen mode.
+    /// Follows the same semantics as `provision_grok_auth`.
+    pub(super) fn provision_cursor_auth(
+        auth_json: &Path,
+        mode: AuthForwardMode,
+        host_home: &Path,
+    ) -> anyhow::Result<(AuthProvisionOutcome, Option<std::path::PathBuf>)> {
+        Self::provision_cursor_auth_from_path(auth_json, mode, &host_home.join(".cursor/auth.json"))
+    }
+
+    pub(super) fn provision_cursor_auth_from_source_dir(
+        auth_json: &Path,
+        mode: AuthForwardMode,
+        source_dir: &Path,
+    ) -> anyhow::Result<(AuthProvisionOutcome, Option<std::path::PathBuf>)> {
+        Self::provision_cursor_auth_from_path(auth_json, mode, &source_dir.join("auth.json"))
+    }
+
+    fn provision_cursor_auth_from_path(
+        auth_json: &Path,
+        mode: AuthForwardMode,
+        host_auth_json: &Path,
+    ) -> anyhow::Result<(AuthProvisionOutcome, Option<std::path::PathBuf>)> {
+        provision_single_file_credential(
+            auth_json,
+            host_auth_json,
+            mode,
+            "Cursor auth.json",
+            "Cursor",
+            true,
+            true,
+            true,
+        )
+    }
+}
+
+impl RoleState {
+    /// Provision Muse's host-side `~/.config/muse/auth.json` per the chosen
+    /// mode. Follows the same semantics as `provision_grok_auth`. The file
+    /// carries identity fields; the secret itself stays in the host
+    /// Keychain, so a synced file alone may still require in-container
+    /// login or `META_API_KEY`.
+    pub(super) fn provision_muse_auth(
+        auth_json: &Path,
+        mode: AuthForwardMode,
+        host_home: &Path,
+    ) -> anyhow::Result<(AuthProvisionOutcome, Option<std::path::PathBuf>)> {
+        Self::provision_muse_auth_from_path(
+            auth_json,
+            mode,
+            &host_home.join(".config/muse/auth.json"),
+        )
+    }
+
+    pub(super) fn provision_muse_auth_from_source_dir(
+        auth_json: &Path,
+        mode: AuthForwardMode,
+        source_dir: &Path,
+    ) -> anyhow::Result<(AuthProvisionOutcome, Option<std::path::PathBuf>)> {
+        Self::provision_muse_auth_from_path(auth_json, mode, &source_dir.join("auth.json"))
+    }
+
+    fn provision_muse_auth_from_path(
+        auth_json: &Path,
+        mode: AuthForwardMode,
+        host_auth_json: &Path,
+    ) -> anyhow::Result<(AuthProvisionOutcome, Option<std::path::PathBuf>)> {
+        provision_single_file_credential(
+            auth_json,
+            host_auth_json,
+            mode,
+            "Muse auth.json",
+            "Muse",
+            true,
+            true,
+            true,
+        )
+    }
+}
+
+impl RoleState {
+    /// Provision omp's host-side `~/.omp/agent/agent.db` (`SQLite`) per the
+    /// chosen mode. Byte-oriented twin of `provision_grok_auth`: the store
+    /// is binary, so the UTF-8 provisioner cannot be used.
+    pub(super) fn provision_omp_auth(
+        agent_db: &Path,
+        mode: AuthForwardMode,
+        host_home: &Path,
+    ) -> anyhow::Result<(AuthProvisionOutcome, Option<std::path::PathBuf>)> {
+        Self::provision_omp_auth_from_path(agent_db, mode, &host_home.join(".omp/agent/agent.db"))
+    }
+
+    pub(super) fn provision_omp_auth_from_source_dir(
+        agent_db: &Path,
+        mode: AuthForwardMode,
+        source_dir: &Path,
+    ) -> anyhow::Result<(AuthProvisionOutcome, Option<std::path::PathBuf>)> {
+        Self::provision_omp_auth_from_path(agent_db, mode, &source_dir.join("agent/agent.db"))
+    }
+
+    fn provision_omp_auth_from_path(
+        agent_db: &Path,
+        mode: AuthForwardMode,
+        host_agent_db: &Path,
+    ) -> anyhow::Result<(AuthProvisionOutcome, Option<std::path::PathBuf>)> {
+        provision_single_blob_credential(agent_db, host_agent_db, mode, "omp agent.db", "omp")
+    }
+}
+
+impl RoleState {
+    /// Provision Hermes's host-side `~/.hermes/` dir per the chosen mode.
+    ///
+    /// Best-effort layout (unverified upstream): forwards `config.yaml`,
+    /// `.env`, `auth.json` when present plus a `profiles/` subtree.
+    pub(super) fn provision_hermes_auth(
+        hermes_dir: &Path,
+        mode: AuthForwardMode,
+        host_home: &Path,
+    ) -> anyhow::Result<(AuthProvisionOutcome, bool)> {
+        Self::provision_hermes_auth_from_source_dir(hermes_dir, mode, &host_home.join(".hermes"))
+    }
+
+    pub(super) fn provision_hermes_auth_from_source_dir(
+        hermes_dir: &Path,
+        mode: AuthForwardMode,
+        source_dir: &Path,
+    ) -> anyhow::Result<(AuthProvisionOutcome, bool)> {
+        provision_hermes_dir_credential(hermes_dir, source_dir, mode)
+    }
+}
+
+/// Directory credential provisioner for Hermes's multi-file store, mirroring
+/// [`provision_kimi_dir_credential`] semantics (OAuthToken/ApiKey/Ignore wipe
+/// the dir; Sync copies known files + a `profiles/` subtree).
+///
+/// Returns `(outcome, forward_auth)` where `forward_auth` is `true` when the
+/// role-state directory should be bind-mounted into the container.
+fn provision_hermes_dir_credential(
+    target_dir: &Path,
+    host_dir: &Path,
+    mode: AuthForwardMode,
+) -> anyhow::Result<(AuthProvisionOutcome, bool)> {
+    use anyhow::Context;
+
+    reject_symlink(target_dir)?;
+
+    // Best-effort file set; the layout is unverified upstream.
+    const SYNC_FILES: &[&str] = &["config.yaml", ".env", "auth.json"];
+
+    let outcome = match mode {
+        AuthForwardMode::OAuthToken => {
+            eprintln!(
+                "[jackin] internal: Hermes provision received unsupported \
+                 OAuthToken mode — parser invariant bypassed; \
+                 wiping role state and falling back to token-mode."
+            );
+            wipe_hermes_state(target_dir)?;
+            AuthProvisionOutcome::TokenMode
+        }
+        AuthForwardMode::ApiKey => {
+            wipe_hermes_state(target_dir)?;
+            AuthProvisionOutcome::TokenMode
+        }
+        AuthForwardMode::Ignore => {
+            wipe_hermes_state(target_dir)?;
+            AuthProvisionOutcome::Skipped
+        }
+        AuthForwardMode::Sync => {
+            std::fs::create_dir_all(target_dir)?;
+
+            if host_dir.exists() {
+                for name in SYNC_FILES {
+                    let host_file = host_dir.join(name);
+                    if host_file.is_file() {
+                        let bytes = std::fs::read(&host_file)
+                            .with_context(|| format!("reading {}", host_file.display()))?;
+                        write_private_bytes(&target_dir.join(name), &bytes)?;
+                    }
+                }
+
+                let host_profiles = host_dir.join("profiles");
+                if host_profiles.is_dir() {
+                    let dest_profiles = target_dir.join("profiles");
+                    copy_kimi_credentials_tree(&host_profiles, &dest_profiles)
+                        .with_context(|| format!("copying {}", host_profiles.display()))?;
+                }
+
+                AuthProvisionOutcome::Synced
+            } else {
+                AuthProvisionOutcome::HostMissing
+            }
+        }
+    };
+
+    let forward_auth = matches!(
+        outcome,
+        AuthProvisionOutcome::Synced | AuthProvisionOutcome::HostMissing
+    );
+    Ok((outcome, forward_auth))
+}
+
+/// Remove role-state Hermes auth files so a prior Sync run cannot leak
+/// credentials under env-driven modes.
+fn wipe_hermes_state(hermes_dir: &Path) -> anyhow::Result<()> {
+    use anyhow::Context;
+    if hermes_dir.exists() {
+        std::fs::remove_dir_all(hermes_dir).with_context(|| {
+            format!(
+                "failed to wipe stale Hermes state at {} \
+                 (auth_forward switched to ignore/api_key); remove the directory \
+                 manually if it has unexpected ownership",
+                hermes_dir.display()
+            )
+        })?;
+    }
+    Ok(())
+}
+
+/// Byte-oriented twin of [`provision_single_file_credential`] for binary
+/// single-file stores (omp's `SQLite` `agent.db`). Same outcome/mount
+/// contract; an empty host file counts as host-missing.
+fn provision_single_blob_credential(
+    target: &Path,
+    host_path: &Path,
+    mode: AuthForwardMode,
+    label: &str,
+    agent_name: &str,
+) -> anyhow::Result<(AuthProvisionOutcome, Option<std::path::PathBuf>)> {
+    use anyhow::Context;
+
+    reject_symlink(target)?;
+
+    let outcome = match mode {
+        AuthForwardMode::OAuthToken => {
+            eprintln!(
+                "[jackin] internal: {agent_name} provision received unsupported \
+                 OAuthToken mode — parser invariant bypassed; \
+                 wiping role state and falling back to token-mode."
+            );
+            wipe_agent_file_state(target, label)?;
+            AuthProvisionOutcome::TokenMode
+        }
+        AuthForwardMode::ApiKey => {
+            wipe_agent_file_state(target, label)?;
+            AuthProvisionOutcome::TokenMode
+        }
+        AuthForwardMode::Ignore => {
+            wipe_agent_file_state(target, label)?;
+            AuthProvisionOutcome::Skipped
+        }
+        AuthForwardMode::Sync => match std::fs::read(host_path) {
+            Ok(content) if content.is_empty() => {
+                eprintln!(
+                    "[jackin] host {} is empty — treating as host-missing",
+                    host_path.display()
+                );
+                if target.exists() {
+                    repair_permissions(target);
+                }
+                AuthProvisionOutcome::HostMissing
+            }
+            Ok(content) => {
+                // No-churn guard mirroring the UTF-8 provisioner: an
+                // unconditional atomic rename would invalidate a live
+                // single-file bind mount into the running container.
+                let unchanged = std::fs::read(target).is_ok_and(|existing| existing == content);
+                if unchanged {
+                    repair_permissions(target);
+                } else {
+                    write_private_bytes(target, &content).with_context(|| {
+                        format!(
+                            "failed to write {agent_name} role-state {label} at {}",
+                            target.display()
+                        )
+                    })?;
+                }
+                AuthProvisionOutcome::Synced
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                if target.exists() {
+                    repair_permissions(target);
+                }
+                AuthProvisionOutcome::HostMissing
+            }
+            Err(e) => {
+                let hint = match e.kind() {
+                    std::io::ErrorKind::PermissionDenied => {
+                        " (check host file permissions on the parent dir)"
+                    }
+                    _ => "",
+                };
+                return Err(anyhow::Error::new(e).context(format!(
+                    "failed to read host {}{}",
+                    host_path.display(),
+                    hint
+                )));
+            }
+        },
+    };
+
+    let mounted = match outcome {
+        AuthProvisionOutcome::Synced => Some(target.to_path_buf()),
+        AuthProvisionOutcome::Skipped => None,
+        AuthProvisionOutcome::HostMissing | AuthProvisionOutcome::TokenMode => {
+            target.exists().then(|| target.to_path_buf())
+        }
+    };
+    Ok((outcome, mounted))
 }
 
 /// Shared file-credential provisioner for agents that use a single JSON
