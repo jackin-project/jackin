@@ -123,6 +123,38 @@ fn secrets_are_redacted_and_provider_routing_is_explicit() {
     );
     assert!(!account.supports_agent(Agent::Amp));
 }
+
+#[test]
+fn oauth_token_instance_endpoint_is_routed() {
+    let account = AccountConfig {
+        enabled: true,
+        name: "Claude subscription".into(),
+        provider: AiProvider::Anthropic,
+        credential: AccountCredential::OAuthToken {
+            agent: Agent::Claude,
+            value: EnvValue::from("oauth-token"),
+        },
+    };
+
+    let env = account
+        .credential_env_for_instance(Agent::Claude, Some("https://proxy.example/v1"))
+        .unwrap();
+
+    assert_eq!(
+        env,
+        BTreeMap::from([
+            (
+                "ANTHROPIC_BASE_URL".into(),
+                EnvValue::from("https://proxy.example/v1"),
+            ),
+            (
+                "CLAUDE_CODE_OAUTH_TOKEN".into(),
+                EnvValue::from("oauth-token"),
+            ),
+        ])
+    );
+}
+
 #[test]
 fn invalid_ids_and_on_demand_credentials_rejected() {
     for id in ["", "../x", "X", "-start", "with space"] {
