@@ -1,7 +1,7 @@
 # Generated ownership state; do not edit.
 schema = 2
 [inputs]
-config	ebd3c48860aabcfa
+config	6cc33819cb3b847e
 scan	a772b25b551a73e5
 generator	50
 [outputs]
@@ -14,8 +14,8 @@ generator	50
 .github/workflows/ci-unit-docker.yml	2fabbe72450ed35a
 .github/workflows/ci-unit-rust.yml	62ffe3dfe2fe4b07
 .github/workflows/ci-unit-swift.yml	c549723cb2dca5cd
-.github/workflows/desktop-merge.yml	071270b6e91f4621
-.github/workflows/desktop-scheduled.yml	d015c5f78aa43813
+.github/workflows/desktop-merge.yml	f9cb2a63c3d833ff
+.github/workflows/desktop-scheduled.yml	ede17b880d391a6d
 .github/workflows/maintenance.yml	9c97243435999cc5
 .github/workflows/nightly.yml	0bbe34967df0f3ed
 .github/workflows/release.yml	1aace61e7093c352
