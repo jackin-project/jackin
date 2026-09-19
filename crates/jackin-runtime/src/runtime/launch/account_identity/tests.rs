@@ -152,7 +152,7 @@ fn fingerprint_covers_the_admitted_instance_set() {
     with_config.agent_configurations.insert(
         "primary".into(),
         AgentConfiguration {
-            agent: jackin_core::Agent::Claude,
+            agent: Agent::Claude,
             account: "work".into(),
             model: None,
             base_url: None,
