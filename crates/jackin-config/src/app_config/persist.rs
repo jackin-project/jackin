@@ -429,6 +429,7 @@ pub fn load_split_config(
             let mut doc: DocumentMut = c
                 .parse()
                 .context("parsing embedded workspace configuration")?;
+            migrate_config_document_in_memory(&mut doc)?;
             migrate_embedded_op_accounts(&mut doc)?;
             toml::from_str(&doc.to_string())?
         }
@@ -463,6 +464,23 @@ fn migrate_embedded_op_accounts(doc: &mut DocumentMut) -> crate::ConfigResult<()
         *workspace.as_table_mut() = table.clone();
         migrations::migrate_workspace_op_account_to_refs(&mut workspace)?;
         *table = workspace.as_table().clone();
+    }
+    Ok(())
+}
+
+/// Apply global schema migrations before a legacy embedded workspace is split
+/// out. The split path must keep this in memory so a conflicting workspace
+/// file still leaves the legacy global file untouched.
+fn migrate_config_document_in_memory(doc: &mut DocumentMut) -> crate::ConfigResult<()> {
+    let old = migrations::doc_version(doc, "config")?;
+    let current = migrations::parse_version(CURRENT_CONFIG_VERSION)?;
+    if old > current {
+        return Err(ConfigError::msg(format!(
+            "config is at {old}, this binary only understands up to {CURRENT_CONFIG_VERSION}; upgrade jackin"
+        )));
+    }
+    if old < current {
+        migrations::apply_migrations(doc, &old, &current, migrations::CONFIG_MIGRATIONS, "config")?;
     }
     Ok(())
 }
