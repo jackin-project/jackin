@@ -80,14 +80,16 @@ impl Multiplexer {
             .or(self.launch_env.launch_config.shell_identity)
             .ok_or_else(|| anyhow::anyhow!("split target has no isolated Unix identity"))?;
         let (mut session, new_id) = Session::spawn(
-            &launch.label,
-            instance,
-            account_for_session,
-            identity,
-            provider_label.map(|label| crate::session::SessionProvider {
-                label: label.to_owned(),
-                env_overrides: env_overrides.to_vec(),
-            }),
+            crate::session::SessionSpawnSpec {
+                label: launch.label.clone(),
+                agent: instance,
+                account_id: account_for_session,
+                identity,
+                provider: provider_label.map(|label| crate::session::SessionProvider {
+                    label: label.to_owned(),
+                    env_overrides: env_overrides.to_vec(),
+                }),
+            },
             launch.cmd,
             self.session_terminal(spawn_rows, spawn_cols),
             self.control.event_tx.clone(),
@@ -450,7 +452,7 @@ impl Multiplexer {
             && let Some(s) = self.session_supervisor.sessions.get(o)
             && s.focus_events_enabled()
         {
-            s.send_input(b"\x1b[O");
+            let _sent = s.send_input(b"\x1b[O");
         }
         // Cursor and mode state for the newly focused pane are reconciled
         // by the next composed frame (§3.4) — no assertion site here.
@@ -458,7 +460,7 @@ impl Multiplexer {
             && let Some(s) = self.session_supervisor.sessions.get(n)
             && s.focus_events_enabled()
         {
-            s.send_input(b"\x1b[I");
+            let _sent = s.send_input(b"\x1b[I");
         }
     }
 

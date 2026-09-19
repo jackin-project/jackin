@@ -33,6 +33,7 @@ impl Default for ContainerDiagnostics {
     }
 }
 
+#[must_use]
 pub fn resolve_status_identity() -> StatusIdentity {
     let container_name = resolve_container_name();
     let instance_id = resolve_instance_id(&container_name);
@@ -42,6 +43,7 @@ pub fn resolve_status_identity() -> StatusIdentity {
     }
 }
 
+#[must_use]
 pub fn resolve_container_diagnostics() -> ContainerDiagnostics {
     let host_version =
         std::env::var("JACKIN_HOST_VERSION").unwrap_or_else(|_| "unknown".to_owned());

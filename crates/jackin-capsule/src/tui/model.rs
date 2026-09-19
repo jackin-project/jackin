@@ -22,10 +22,12 @@ pub enum MuxMode {
 }
 
 impl MuxMode {
+    #[must_use]
     pub const fn forwards_to_pane(self) -> bool {
         matches!(self, Self::Normal | Self::PrefixAwait)
     }
 
+    #[must_use]
     pub const fn blocks_focus_report(self) -> bool {
         !matches!(self, Self::Normal | Self::PrefixAwait)
     }
@@ -199,6 +201,7 @@ pub enum VisibleAgentState {
     Unknown,
 }
 
+#[must_use]
 pub fn visible_agent_state_from_protocol(state: AgentState) -> VisibleAgentState {
     match state {
         AgentState::Idle => VisibleAgentState::Idle,

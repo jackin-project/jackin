@@ -60,6 +60,9 @@ const MAX_CONCURRENT_CLIENTS: usize = 16;
 /// clients paired with the concurrency-cap permit. The caller (daemon)
 /// must hold the permit alive for the lifetime of the spawned attach
 /// task so the per-process cap correctly tracks live connections.
+/// # Errors
+///
+/// Returns an error when the socket directory or listener cannot be created.
 pub fn start_listener() -> Result<ListenerReceiver> {
     start_listener_at(Path::new(SOCKET_PATH))
 }
@@ -211,6 +214,10 @@ const CONTROL_READ_TIMEOUT: Duration = Duration::from_secs(10);
 /// callers can clog the underlying cause; a silently-collapsed None
 /// would let the host's `jackin status` block on `read_exact` for a
 /// reply that never comes.
+/// # Errors
+///
+/// Returns an error when the length prefix or payload times out, the payload
+/// exceeds its limit, or JSON decoding fails.
 pub async fn read_control_msg(
     stream: &mut UnixStream,
     first_byte: u8,
@@ -265,6 +272,9 @@ async fn read_payload_lazy(
     Ok(buf)
 }
 
+/// # Errors
+///
+/// Returns an error when writing the framed response times out or fails.
 pub async fn write_control_reply(mut stream: UnixStream, reply: &ServerMsg) -> Result<()> {
     write_control_frame(&mut stream, reply).await
 }
@@ -272,6 +282,9 @@ pub async fn write_control_reply(mut stream: UnixStream, reply: &ServerMsg) -> R
 /// Write one framed `ServerMsg` without consuming the stream. Subscriptions
 /// (`events`) write many frames over one connection, so they borrow; the
 /// one-shot path calls this once and drops the stream afterwards.
+/// # Errors
+///
+/// Returns an error when the framed response write times out or fails.
 pub async fn write_control_frame(stream: &mut UnixStream, reply: &ServerMsg) -> Result<()> {
     match tokio::time::timeout(Duration::from_secs(2), stream.write_all(&frame(reply))).await {
         Ok(result) => result.context("control reply write failed"),

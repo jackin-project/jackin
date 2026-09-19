@@ -81,7 +81,10 @@ impl Multiplexer {
             return Vec::new();
         };
         self.render.rendered_generation = generation;
-        jackin_diagnostics::record_render(started.elapsed().as_micros() as u64, 0);
+        jackin_diagnostics::record_render(
+            u64::try_from(started.elapsed().as_micros()).unwrap_or(u64::MAX),
+            0,
+        );
         self.frame_with_title(output)
     }
 

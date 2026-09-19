@@ -168,6 +168,7 @@ pub static WORDLIST: &[&str] = &[
 /// Cycles through `WORDLIST` starting at `offset % WORDLIST.len()`.
 /// Falls back to `<word>-N` (N ≥ 2) appended to retired words when the
 /// entire bare-word pool is exhausted — ensures uniqueness without panic.
+#[must_use]
 pub fn pick_codename(
     live: &std::collections::HashSet<String>,
     retired: &std::collections::HashSet<String>,

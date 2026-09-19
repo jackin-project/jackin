@@ -36,6 +36,10 @@ fn telemetry_context() -> Option<Box<jackin_protocol::TelemetryContext>> {
 /// the first Hello frame asks the daemon to create that session before
 /// completing attach. Plain attach (operator-initiated reattach)
 /// passes `None`.
+/// # Errors
+///
+/// Returns an error when terminal setup, socket connection, protocol I/O, or
+/// attach handling fails.
 pub async fn run_client(
     spawn_request: Option<SpawnRequest>,
     focus_session: Option<u64>,

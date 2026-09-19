@@ -10,7 +10,7 @@ fn grid_with_scrollback(screen_rows: u16, cols: u16, scrollback_rows: usize) -> 
     let mut grid = DamageGrid::new(screen_rows, cols, scrollback_rows.saturating_add(64));
     // Each `\n` advances a row; write a unique digit so rows are distinguishable.
     for i in 0..scrollback_rows.saturating_add(usize::from(screen_rows)) {
-        let ch = char::from(b'A' + (i % 26) as u8);
+        let ch = char::from(b'A' + u8::try_from(i % 26).unwrap_or_default());
         let line = format!("{ch}{i:04}\r\n");
         grid.process(line.as_bytes());
     }

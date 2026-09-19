@@ -40,14 +40,21 @@ pub mod util;
 
 #[cfg(test)]
 pub(crate) mod test_support {
-    use std::sync::{Mutex, MutexGuard};
+    use std::sync::{Arc, OnceLock};
+    use tokio::sync::{Mutex, OwnedMutexGuard};
 
-    static TELEMETRY_TEST_LOCK: Mutex<()> = Mutex::new(());
+    static TELEMETRY_TEST_LOCK: OnceLock<Arc<Mutex<()>>> = OnceLock::new();
 
-    pub(crate) fn telemetry_test_guard() -> MutexGuard<'static, ()> {
-        TELEMETRY_TEST_LOCK
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    fn telemetry_test_lock() -> Arc<Mutex<()>> {
+        Arc::clone(TELEMETRY_TEST_LOCK.get_or_init(|| Arc::new(Mutex::new(()))))
+    }
+
+    pub(crate) fn telemetry_test_guard() -> OwnedMutexGuard<()> {
+        telemetry_test_lock().blocking_lock_owned()
+    }
+
+    pub(crate) async fn telemetry_test_guard_async() -> OwnedMutexGuard<()> {
+        telemetry_test_lock().lock_owned().await
     }
 }
 

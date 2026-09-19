@@ -21,7 +21,7 @@ const RPC_ERROR: jackin_telemetry::schema::enums::ErrorType =
 
 /// Whether a kernel-authenticated peer may open the interactive attach path.
 ///
-/// The socket is intentionally still owner-only, but DAC_OVERRIDE makes file
+/// The socket is intentionally still owner-only, but `DAC_OVERRIDE` makes file
 /// modes insufficient. Every admitted session identity is therefore denied at
 /// the protocol boundary. A non-admitted UID is an operator/host peer and
 /// retains the existing attach flow.
@@ -194,6 +194,10 @@ pub(super) fn send_attach_control_response(
 /// and the current evidence report (`evidence.json`), under
 /// `/jackin/state/agent-status/captures/<id>-<seq>/`. Turns a live
 /// mis-detection into a regression fixture in one command.
+/// # Errors
+///
+/// Returns an error when the capture directory or either fixture file cannot
+/// be created or written.
 pub fn write_status_capture(session_id: u64, session: &Session) -> Result<()> {
     use std::sync::atomic::{AtomicU64, Ordering};
     static CAPTURE_SEQ: AtomicU64 = AtomicU64::new(0);
@@ -542,7 +546,7 @@ pub fn handle_client_frame(mux: &mut Multiplexer, frame: ClientFrame) {
                 && let Some(s) = mux.session_supervisor.sessions.get(focused)
                 && s.focus_events_enabled()
             {
-                s.send_input(b"\x1b[I");
+                let _sent = s.send_input(b"\x1b[I");
             }
         }
         ClientFrame::FocusOut => {
@@ -551,7 +555,7 @@ pub fn handle_client_frame(mux: &mut Multiplexer, frame: ClientFrame) {
                 && let Some(s) = mux.session_supervisor.sessions.get(focused)
                 && s.focus_events_enabled()
             {
-                s.send_input(b"\x1b[O");
+                let _sent = s.send_input(b"\x1b[O");
             }
         }
     }

@@ -107,7 +107,10 @@ impl ModalRectMode {
                 height: 12,
             },
             Self::GithubPicker { choice_len } => {
-                let rows = (choice_len as u16).saturating_add(5).min(15);
+                let rows = u16::try_from(choice_len)
+                    .unwrap_or(u16::MAX)
+                    .saturating_add(5)
+                    .min(15);
                 ModalRectSpec::Fixed {
                     width_pct: 60,
                     height: rows,
@@ -227,7 +230,10 @@ pub fn op_picker_rect(outer: Rect) -> Rect {
 
 #[must_use]
 pub fn role_picker_rect_for_count(outer: Rect, filtered_len: usize) -> Rect {
-    let rows = (filtered_len as u16).saturating_add(6).min(15);
+    let rows = u16::try_from(filtered_len)
+        .unwrap_or(u16::MAX)
+        .saturating_add(6)
+        .min(15);
     centered_rect_fixed(outer, 50, rows)
 }
 

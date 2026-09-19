@@ -69,7 +69,7 @@ async fn conformance_wire_exec_spawn_failure_is_owned_once_without_command_mater
     {
         return;
     }
-    let _telemetry_guard = crate::test_support::telemetry_test_guard();
+    let _telemetry_guard = crate::test_support::telemetry_test_guard_async().await;
     let testbed = jackin_otlp_testbed::Testbed::start().expect("start OTLP testbed");
     jackin_diagnostics::init_wire_test_export(
         &testbed.endpoint(),

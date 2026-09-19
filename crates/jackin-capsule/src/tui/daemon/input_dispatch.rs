@@ -447,7 +447,7 @@ impl Multiplexer {
                     && let Some(session) = self.session_supervisor.sessions.get(focused)
                     && session.focus_events_enabled()
                 {
-                    session.send_input(bytes);
+                    let _sent = session.send_input(bytes);
                 }
             }
             Action::MouseChromeUpdate { row, col, button } => {
@@ -507,7 +507,7 @@ impl Multiplexer {
                         button,
                     )
                 {
-                    session.send_input(&buf);
+                    let _sent = session.send_input(&buf);
                     return;
                 }
                 if filled == 0 {

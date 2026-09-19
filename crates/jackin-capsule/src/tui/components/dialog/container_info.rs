@@ -8,6 +8,7 @@
 use super::{ContainerInfoDiagnostics, Dialog};
 
 impl Dialog {
+    #[must_use]
     pub fn new_container_info(
         container_name: String,
         role: String,

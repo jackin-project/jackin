@@ -197,7 +197,7 @@ pub(super) fn handle_control_subscription(
 ) {
     // A rejected trace correlation refuses the subscription outright, exactly
     // as it refuses a query: dropping `tx` closes the connection.
-    let Some(operation) = control_server_operation(ctx, msg) else {
+    let Ok(operation) = control_server_operation(ctx, msg) else {
         let _error = jackin_telemetry::record_error(RPC_ERROR);
         return;
     };

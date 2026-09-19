@@ -28,9 +28,9 @@ struct CpuJiffies {
 
 #[derive(Clone, Copy, Debug)]
 struct ResourceObservation {
-    uptime_seconds: f64,
-    user_cpu_seconds: u64,
-    system_cpu_seconds: u64,
+    uptime: f64,
+    user_cpu: u64,
+    system_cpu: u64,
 }
 
 #[derive(Debug)]
@@ -93,9 +93,9 @@ impl ResourceMetricsSampler {
         self.user_remainder = user_total % ticks_per_second;
         self.system_remainder = system_total % ticks_per_second;
         Some(Ok(ResourceObservation {
-            uptime_seconds: sample.at.duration_since(self.started_at).as_secs_f64(),
-            user_cpu_seconds: user_total / ticks_per_second,
-            system_cpu_seconds: system_total / ticks_per_second,
+            uptime: sample.at.duration_since(self.started_at).as_secs_f64(),
+            user_cpu: user_total / ticks_per_second,
+            system_cpu: system_total / ticks_per_second,
         }))
     }
 }
@@ -105,7 +105,7 @@ impl Multiplexer {
         match self.resource_metrics.poll().await {
             Some(Ok(observation)) => {
                 gauge(&PROCESS_UPTIME)
-                    .record(observation.uptime_seconds, &[])
+                    .record(observation.uptime, &[])
                     .unwrap_or(());
                 let user = [Attr {
                     key: attrs::std_attrs::CPU_MODE,
@@ -116,10 +116,10 @@ impl Multiplexer {
                     value: Value::Str("system"),
                 }];
                 counter(&PROCESS_CPU_TIME)
-                    .add(observation.user_cpu_seconds, &user)
+                    .add(observation.user_cpu, &user)
                     .unwrap_or(());
                 counter(&PROCESS_CPU_TIME)
-                    .add(observation.system_cpu_seconds, &system)
+                    .add(observation.system_cpu, &system)
                     .unwrap_or(());
             }
             Some(Err(error_type)) => {

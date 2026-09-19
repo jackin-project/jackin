@@ -410,13 +410,16 @@ fn render_hint_spans_row(buf: &mut Buffer, area: Rect, spans: &[termrock::widget
     for (idx, line) in visible.iter().enumerate() {
         let total = line_display_cols(line);
         let padded_total = total.saturating_add(4);
-        let start_col = ((usize::from(area.width)).saturating_sub(padded_total) / 2) as u16;
+        let start_col = u16::try_from((usize::from(area.width)).saturating_sub(padded_total) / 2)
+            .unwrap_or(u16::MAX);
         let mut x = area.x + start_col + 2;
         let row_y = area.y + first_row + u16::try_from(idx).unwrap_or(0);
         for span in &line.spans {
             let content = span.content.as_ref();
             buf.set_string(x, row_y, content, span.style);
-            x += termrock::text::display_cols(content) as u16;
+            x = x.saturating_add(
+                u16::try_from(termrock::text::display_cols(content)).unwrap_or(u16::MAX),
+            );
         }
     }
 }

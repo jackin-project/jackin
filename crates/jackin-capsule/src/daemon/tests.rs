@@ -115,8 +115,8 @@ fn serialized_control_spans(
     .unwrap();
     let decoded: jackin_protocol::control::ControlRequest = serde_json::from_slice(&wire).unwrap();
     let operation = control_server_operation(&decoded.ctx, &decoded.msg);
-    let accepted = operation.is_some();
-    if let Some(Some(operation)) = operation {
+    let accepted = operation.is_ok();
+    if let Ok(Some(operation)) = operation {
         operation.complete(jackin_telemetry::schema::enums::OutcomeValue::Success, None);
     }
     drop(guard);
@@ -185,7 +185,7 @@ fn conformance_serialized_control_propagation_matrix_preserves_parentage_and_rej
     })
     .unwrap();
     let decoded: jackin_protocol::control::ControlRequest = serde_json::from_slice(&wire).unwrap();
-    if control_server_operation(&decoded.ctx, &decoded.msg).is_some() {
+    if control_server_operation(&decoded.ctx, &decoded.msg).is_ok() {
         control_reply_for_request(&mut mux, decoded.msg);
     }
     assert!(
@@ -204,7 +204,7 @@ async fn conformance_wire_real_capsule_control_status_preserves_parent_and_deliv
     {
         return;
     }
-    let _telemetry_guard = crate::test_support::telemetry_test_guard();
+    let _telemetry_guard = crate::test_support::telemetry_test_guard_async().await;
     let testbed = jackin_otlp_testbed::Testbed::start().expect("start OTLP testbed");
     jackin_diagnostics::init_wire_test_export(
         &testbed.endpoint(),
@@ -287,7 +287,7 @@ fn conformance_exec_command_rpc_spans_exclude_command_and_args() {
     let decoded: jackin_protocol::control::ControlRequest = serde_json::from_slice(&wire).unwrap();
     let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
     let guard = tracing::subscriber::set_default(subscriber);
-    if let Some(Some(server)) = control_server_operation(&decoded.ctx, &decoded.msg) {
+    if let Ok(Some(server)) = control_server_operation(&decoded.ctx, &decoded.msg) {
         server.complete(jackin_telemetry::schema::enums::OutcomeValue::Success, None);
     }
     let attrs = [
@@ -1082,6 +1082,140 @@ fn single_pane_tab_mux_with_size(rows: u16, cols: u16) -> Multiplexer {
     mux
 }
 
+fn assert_session_peer_authorization(
+    mux: &Multiplexer,
+    own: jackin_protocol::SessionIdentity,
+    own_capability: &str,
+    sibling_capability: &str,
+) {
+    assert!(control_request_allowed(
+        mux,
+        Some(own.uid),
+        Some(own_capability),
+        &ClientMsg::SessionSend {
+            session: 1,
+            text: "own".to_owned(),
+        }
+    ));
+    assert!(control_request_allowed(
+        mux,
+        Some(own.uid),
+        Some(own_capability),
+        &ClientMsg::StatusCapture { session_id: 1 }
+    ));
+    assert!(control_request_allowed(
+        mux,
+        Some(own.uid),
+        Some(own_capability),
+        &ClientMsg::ReportRuntimeEvent {
+            session_id: 1,
+            source_id: "hook-codex-1".to_owned(),
+            runtime: "codex".to_owned(),
+            event: "Stop".to_owned(),
+            payload: None,
+        }
+    ));
+    assert!(control_request_allowed(
+        mux,
+        Some(own.uid),
+        Some(own_capability),
+        &ClientMsg::Events { session: Some(1) }
+    ));
+    assert!(control_request_allowed(
+        mux,
+        Some(own.uid),
+        Some(own_capability),
+        &ClientMsg::ExecCommand {
+            command: "gh".to_owned(),
+            args: vec!["auth".to_owned(), "status".to_owned()],
+        }
+    ));
+    assert!(!control_request_allowed(
+        mux,
+        Some(own.uid),
+        Some(sibling_capability),
+        &ClientMsg::ExecCommand {
+            command: "gh".to_owned(),
+            args: Vec::new(),
+        }
+    ));
+    assert!(!control_request_allowed(
+        mux,
+        Some(own.uid),
+        Some(own_capability),
+        &ClientMsg::SessionSend {
+            session: 2,
+            text: "sibling".to_owned(),
+        }
+    ));
+    assert!(!control_request_allowed(
+        mux,
+        Some(own.uid),
+        Some(own_capability),
+        &ClientMsg::StatusCapture { session_id: 2 }
+    ));
+    assert!(!control_request_allowed(
+        mux,
+        Some(own.uid),
+        None,
+        &ClientMsg::Status
+    ));
+    assert!(!control_request_allowed(
+        mux,
+        Some(own.uid),
+        None,
+        &ClientMsg::Events { session: None }
+    ));
+    assert!(!control_request_allowed(
+        mux,
+        Some(own.uid),
+        None,
+        &ClientMsg::ExecCommand {
+            command: "op".to_owned(),
+            args: Vec::new(),
+        }
+    ));
+    assert!(!control_request_allowed(
+        mux,
+        None,
+        None,
+        &ClientMsg::Status
+    ));
+}
+
+fn assert_operator_and_unknown_peer_authorization(mux: &Multiplexer) {
+    assert!(control_request_allowed(
+        mux,
+        Some(0),
+        None,
+        &ClientMsg::Status
+    ));
+    assert!(control_request_allowed(
+        mux,
+        Some(0),
+        None,
+        &ClientMsg::ExecCommand {
+            command: "gh".to_owned(),
+            args: Vec::new(),
+        }
+    ));
+    assert!(control_request_allowed(
+        mux,
+        Some(9_999),
+        None,
+        &ClientMsg::Snapshot
+    ));
+    assert!(!control_request_allowed(
+        mux,
+        Some(9_999),
+        None,
+        &ClientMsg::ExecCommand {
+            command: "gh".to_owned(),
+            args: Vec::new(),
+        }
+    ));
+}
+
 #[test]
 fn socket_peer_credentials_scope_session_controls_and_attach() {
     let mut mux = single_pane_tab_mux();
@@ -1130,135 +1264,8 @@ fn socket_peer_credentials_scope_session_controls_and_attach() {
         "missing peer credentials fail closed"
     );
 
-    assert!(control_request_allowed(
-        &mux,
-        Some(own.uid),
-        Some(&own_capability),
-        &ClientMsg::SessionSend {
-            session: 1,
-            text: "own".to_owned(),
-        }
-    ));
-    assert!(control_request_allowed(
-        &mux,
-        Some(own.uid),
-        Some(&own_capability),
-        &ClientMsg::StatusCapture { session_id: 1 }
-    ));
-    assert!(control_request_allowed(
-        &mux,
-        Some(own.uid),
-        Some(&own_capability),
-        &ClientMsg::ReportRuntimeEvent {
-            session_id: 1,
-            source_id: "hook-codex-1".to_owned(),
-            runtime: "codex".to_owned(),
-            event: "Stop".to_owned(),
-            payload: None,
-        }
-    ));
-    assert!(control_request_allowed(
-        &mux,
-        Some(own.uid),
-        Some(&own_capability),
-        &ClientMsg::Events { session: Some(1) }
-    ));
-    assert!(control_request_allowed(
-        &mux,
-        Some(own.uid),
-        Some(&own_capability),
-        &ClientMsg::ExecCommand {
-            command: "gh".to_owned(),
-            args: vec!["auth".to_owned(), "status".to_owned()],
-        }
-    ));
-    assert!(!control_request_allowed(
-        &mux,
-        Some(own.uid),
-        Some(&sibling_capability),
-        &ClientMsg::ExecCommand {
-            command: "gh".to_owned(),
-            args: Vec::new(),
-        }
-    ));
-
-    assert!(
-        !control_request_allowed(
-            &mux,
-            Some(own.uid),
-            Some(&own_capability),
-            &ClientMsg::SessionSend {
-                session: 2,
-                text: "sibling".to_owned(),
-            }
-        ),
-        "a session peer cannot send input to a sibling"
-    );
-    assert!(
-        !control_request_allowed(
-            &mux,
-            Some(own.uid),
-            Some(&own_capability),
-            &ClientMsg::StatusCapture { session_id: 2 }
-        ),
-        "a session peer cannot capture a sibling"
-    );
-    assert!(!control_request_allowed(
-        &mux,
-        Some(own.uid),
-        None,
-        &ClientMsg::Status
-    ));
-    assert!(!control_request_allowed(
-        &mux,
-        Some(own.uid),
-        None,
-        &ClientMsg::Events { session: None }
-    ));
-    assert!(!control_request_allowed(
-        &mux,
-        Some(own.uid),
-        None,
-        &ClientMsg::ExecCommand {
-            command: "op".to_owned(),
-            args: Vec::new(),
-        }
-    ));
-    assert!(
-        !control_request_allowed(&mux, None, None, &ClientMsg::Status),
-        "missing or invalid peer authentication fails closed"
-    );
-
-    assert!(control_request_allowed(
-        &mux,
-        Some(0),
-        None,
-        &ClientMsg::Status
-    ));
-    assert!(control_request_allowed(
-        &mux,
-        Some(0),
-        None,
-        &ClientMsg::ExecCommand {
-            command: "gh".to_owned(),
-            args: Vec::new(),
-        }
-    ));
-    assert!(control_request_allowed(
-        &mux,
-        Some(9_999),
-        None,
-        &ClientMsg::Snapshot
-    ));
-    assert!(!control_request_allowed(
-        &mux,
-        Some(9_999),
-        None,
-        &ClientMsg::ExecCommand {
-            command: "gh".to_owned(),
-            args: Vec::new(),
-        }
-    ));
+    assert_session_peer_authorization(&mux, own, &own_capability, &sibling_capability);
+    assert_operator_and_unknown_peer_authorization(&mux);
 }
 
 #[tokio::test]
@@ -1674,10 +1681,13 @@ fn open_usage_dialog_refreshes_visible_relative_timestamp_from_cache() {
     session.usage_capability = Some(capability.clone());
     mux.session_supervisor.sessions.insert(1, session);
     mux.session_supervisor.tabs[0] = Tab::new_single("Codex", 1, "test");
-    let now_epoch = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .expect("system time after epoch")
-        .as_secs() as i64;
+    let now_epoch = i64::try_from(
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system time after epoch")
+            .as_secs(),
+    )
+    .unwrap_or(i64::MAX);
     let cached = jackin_protocol::control::FocusedUsageView {
         focused_agent: Some("codex".to_owned()),
         focused_provider: Some("OpenAI".to_owned()),
@@ -3593,7 +3603,9 @@ fn read_packed_git_ref_oid_does_not_cache_truncated_read() {
     let padding_per_line = "# padding to fill packed-refs to the cap byte limit aaaaaaaaaa\n";
     // Target one byte OVER the cap so metadata.len() > cap triggers
     // the real truncation path (not the exactly-cap edge case).
-    let target_size = PACKED_REFS_MAX_BYTES as usize + 1;
+    let target_size = usize::try_from(PACKED_REFS_MAX_BYTES)
+        .unwrap_or(usize::MAX)
+        .saturating_add(1);
     let mut buf = String::with_capacity(target_size);
     while buf.len() + real_line.len() + padding_per_line.len() <= target_size {
         buf.push_str(padding_per_line);
@@ -4551,7 +4563,7 @@ fn pointer_shape_updates_only_when_shape_changes() {
         None,
         mux.status.status_bar.instance_id_label(),
     )
-    .and_then(|layout| layout.left_region)
+    .and_then(|layout| layout.left)
     .expect("branch context should fit");
 
     mux.update_pointer_shape_for_mouse(23, hit.start - 1, SGR_NO_BUTTON_MOTION);
@@ -4829,7 +4841,7 @@ fn bottom_container_click_opens_container_info_without_copying() {
         None,
         mux.status.status_bar.instance_id_label(),
     )
-    .and_then(|layout| layout.container_region)
+    .and_then(|layout| layout.container)
     .expect("container should fit");
 
     let press_row = mux.render.term_rows - 1;
@@ -4881,7 +4893,7 @@ fn bottom_context_click_opens_github_context_dialog() {
         None,
         mux.status.status_bar.instance_id_label(),
     )
-    .and_then(|layout| layout.left_region)
+    .and_then(|layout| layout.left)
     .expect("GitHub context should fit");
 
     let press_row = mux.render.term_rows - 1;
@@ -5317,7 +5329,7 @@ fn conformance_wire_capsule_mouse_dispatch_counts_once_without_coordinates() -> 
         .filter_map(|point| point.value)
         .map(|value| match value {
             opentelemetry_proto::tonic::metrics::v1::number_data_point::Value::AsInt(value) => {
-                value as f64
+                value.to_string().parse::<f64>().unwrap_or_default()
             }
             opentelemetry_proto::tonic::metrics::v1::number_data_point::Value::AsDouble(value) => {
                 value
@@ -5344,7 +5356,7 @@ fn conformance_wire_capsule_mouse_dispatch_counts_once_without_coordinates() -> 
         .filter_map(|point| point.value)
         .map(|value| match value {
             opentelemetry_proto::tonic::metrics::v1::number_data_point::Value::AsInt(value) => {
-                value as f64
+                value.to_string().parse::<f64>().unwrap_or_default()
             }
             opentelemetry_proto::tonic::metrics::v1::number_data_point::Value::AsDouble(value) => {
                 value
@@ -5420,7 +5432,7 @@ fn apply_action_branch_context_bar_click_opens_container_info() {
         None,
         mux.status.status_bar.instance_id_label(),
     )
-    .and_then(|layout| layout.container_region)
+    .and_then(|layout| layout.container)
     .expect("container should fit");
 
     mux.apply_action(Action::BranchContextBarClick {
@@ -6804,7 +6816,7 @@ async fn modified_click_visible_url_sends_typed_protocol_frame() {
         &mut mux,
         Action::OpenVisibleUrlAt {
             row: inner.row,
-            col: inner.col + "visit https://exa".len() as u16,
+            col: inner.col + u16::try_from("visit https://exa".len()).unwrap_or(u16::MAX),
             button: 8,
         },
     );
@@ -6841,7 +6853,7 @@ async fn modified_click_in_mouse_enabled_pane_forwards_to_pty() {
         &mut mux,
         Action::OpenVisibleUrlAt {
             row: inner.row,
-            col: inner.col + "visit https://exa".len() as u16,
+            col: inner.col + u16::try_from("visit https://exa".len()).unwrap_or(u16::MAX),
             button: 8,
         },
     );
@@ -6881,7 +6893,7 @@ async fn modified_click_visible_file_path_sends_file_export_frames() {
         &mut mux,
         Action::OpenVisibleUrlAt {
             row: inner.row,
-            col: inner.col + "artifact report".len() as u16,
+            col: inner.col + u16::try_from("artifact report".len()).unwrap_or(u16::MAX),
             button: 8,
         },
     );
@@ -6930,7 +6942,7 @@ fn modified_click_plain_word_without_file_falls_through_quietly() {
         &mut mux,
         Action::OpenVisibleUrlAt {
             row: inner.row,
-            col: inner.col + "plain wo".len() as u16,
+            col: inner.col + u16::try_from("plain wo".len()).unwrap_or(u16::MAX),
             button: 8,
         },
     );
@@ -7039,7 +7051,7 @@ async fn modified_click_accepts_visible_mailto_token() {
         &mut mux,
         Action::OpenVisibleUrlAt {
             row: inner.row,
-            col: inner.col + "contact mailto:opera".len() as u16,
+            col: inner.col + u16::try_from("contact mailto:opera".len()).unwrap_or(u16::MAX),
             button: 8,
         },
     );
@@ -7078,7 +7090,7 @@ async fn modified_click_rejects_unsafe_visible_url_without_forwarding() {
         &mut mux,
         Action::OpenVisibleUrlAt {
             row: inner.row,
-            col: inner.col + "local file:///tmp/re".len() as u16,
+            col: inner.col + u16::try_from("local file:///tmp/re".len()).unwrap_or(u16::MAX),
             button: 8,
         },
     );
@@ -8654,16 +8666,8 @@ fn render_perf_probe() {
     }
     durations_us.sort_unstable();
     bytes.sort_unstable();
-    #[expect(
-        clippy::cast_sign_loss,
-        reason = "percentile q is 0.0..=1.0; index stays within v.len()"
-    )]
-    let pick = |v: &[u128], q: f64| v[((v.len() - 1) as f64 * q) as usize];
-    #[expect(
-        clippy::cast_sign_loss,
-        reason = "percentile q is 0.0..=1.0; index stays within v.len()"
-    )]
-    let pick_b = |v: &[usize], q: f64| v[((v.len() - 1) as f64 * q) as usize];
+    let pick = |v: &[u128], q: f64| v[percentile_index(v.len(), q)];
+    let pick_b = |v: &[usize], q: f64| v[percentile_index(v.len(), q)];
     {
         println!(
             "render_perf_probe: frames={} duration_us p50={} p95={} max={} bytes p50={} p95={} max={}",
@@ -8677,6 +8681,25 @@ fn render_perf_probe() {
         );
     }
     assert_frame_conformance(&mut mux, &client, "perf probe end");
+}
+
+#[must_use]
+fn percentile_index(len: usize, q: f64) -> usize {
+    if len == 0 {
+        return 0;
+    }
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "The test vector is bounded and percentile selection only needs a display index."
+    )]
+    let last = (len - 1) as f64;
+    #[expect(
+        clippy::cast_sign_loss,
+        clippy::cast_possible_truncation,
+        reason = "q is clamped to 0.0..=1.0, so the result is a valid test-vector index."
+    )]
+    let index = (last * q.clamp(0.0, 1.0)) as usize;
+    index
 }
 
 fn exit_dirty_selected_value(mux: &Multiplexer) -> usize {

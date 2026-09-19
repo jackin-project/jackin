@@ -13,6 +13,7 @@ pub struct PullRequestInfo {
 }
 
 impl PullRequestInfo {
+    #[must_use]
     pub fn number_label(&self) -> String {
         format!("#{}", self.number)
     }
@@ -71,30 +72,37 @@ impl PullRequestChecks {
     }
 
     #[cfg(test)]
+    #[must_use]
     pub fn passing(&self) -> usize {
         self.passing
     }
     #[cfg(test)]
+    #[must_use]
     pub fn failing(&self) -> usize {
         self.failing
     }
     #[cfg(test)]
+    #[must_use]
     pub fn pending(&self) -> usize {
         self.pending
     }
     #[cfg(test)]
+    #[must_use]
     pub fn skipped(&self) -> usize {
         self.skipped
     }
     #[cfg(test)]
+    #[must_use]
     pub fn cancelled(&self) -> usize {
         self.cancelled
     }
     #[cfg(test)]
+    #[must_use]
     pub fn total(&self) -> usize {
         self.total
     }
 
+    #[must_use]
     pub fn summary(&self) -> String {
         if self.total == 0 {
             return "(none)".to_owned();

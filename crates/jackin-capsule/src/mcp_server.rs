@@ -207,6 +207,10 @@ async fn handle_tool_call(params: &Value) -> Value {
 }
 
 /// Run the MCP stdio server. Reads JSON-RPC from stdin, writes to stdout.
+/// # Errors
+///
+/// Returns an error when the MCP stream cannot be read or a response cannot
+/// be written.
 pub async fn run() -> Result<()> {
     run_with_io(tokio::io::stdin(), tokio::io::stdout()).await
 }

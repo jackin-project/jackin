@@ -106,9 +106,12 @@ fn apply_pane_scrollbar(frame: &mut Frame<'_>, pane: &VisiblePane, offset: usize
     let track = termrock::scroll::vertical_scrollbar_area(border_area);
     let interior_rows = usize::from(track.height);
     let content_len = filled.saturating_add(interior_rows);
-    let top_offset = termrock::scroll::TailScroll::new(offset)
-        .to_top_offset(content_len, interior_rows)
-        .min(usize::from(u16::MAX)) as u16;
+    let top_offset = u16::try_from(
+        termrock::scroll::TailScroll::new(offset)
+            .to_top_offset(content_len, interior_rows)
+            .min(usize::from(u16::MAX)),
+    )
+    .unwrap_or(u16::MAX);
     let theme = termrock::style::DesignSystem::default();
     termrock::scroll::render_scrollbar(
         frame.buffer_mut(),

@@ -4,10 +4,10 @@
 //! Tests for `session`.
 use super::{
     AgentSpawnSpec, AgentState, EXPLICIT_CAPABILITY_ENV_NAMES, OscPolicy, SESSION_ENV_PASSTHROUGH,
-    Session, SessionEvent, SessionTerminal, agent_model_args, build_agent_command,
-    build_shell_command, child_exit_reason, emit_pty_exit, emit_pty_spawn, inject_status_env,
-    isolated_wrapper_args, osc8_uri_is_safe, pty_exit_error_type, pty_exit_reason,
-    validate_spawn_token_syntax,
+    Session, SessionEvent, SessionSpawnSpec, SessionTerminal, agent_model_args,
+    build_agent_command, build_shell_command, child_exit_reason, emit_pty_exit, emit_pty_spawn,
+    inject_status_env, isolated_wrapper_args, osc8_uri_is_safe, pty_exit_error_type,
+    pty_exit_reason, validate_spawn_token_syntax,
 };
 
 /// Primary-layout spawn spec for `agent`/`instance`.
@@ -1421,14 +1421,16 @@ async fn spawn_records_instance_identity_on_session() {
     };
 
     let (session, _id) = Session::spawn(
-        "Claude · Work",
-        Some("claude-work".to_owned()),
-        Some("work".to_owned()),
-        jackin_protocol::SessionIdentity {
-            uid: 2_001,
-            gid: 2_001,
+        SessionSpawnSpec {
+            label: "Claude · Work".to_owned(),
+            agent: Some("claude-work".to_owned()),
+            account_id: Some("work".to_owned()),
+            identity: jackin_protocol::SessionIdentity {
+                uid: 2_001,
+                gid: 2_001,
+            },
+            provider: None,
         },
-        None,
         command,
         terminal,
         event_tx,
@@ -1449,7 +1451,7 @@ async fn conformance_wire_real_pty_spawn_stream_and_exit_exclude_private_content
     {
         return;
     }
-    let _telemetry_guard = crate::test_support::telemetry_test_guard();
+    let _telemetry_guard = crate::test_support::telemetry_test_guard_async().await;
     let testbed = jackin_otlp_testbed::Testbed::start().expect("start OTLP testbed");
     jackin_diagnostics::init_wire_test_export(
         &testbed.endpoint(),
@@ -1469,14 +1471,16 @@ async fn conformance_wire_real_pty_spawn_stream_and_exit_exclude_private_content
     };
 
     let (_session, session_id) = Session::spawn(
-        "wire-private-tab-label",
-        Some("codex".to_owned()),
-        Some("acc-codex".to_owned()),
-        jackin_protocol::SessionIdentity {
-            uid: 2_002,
-            gid: 2_002,
+        SessionSpawnSpec {
+            label: "wire-private-tab-label".to_owned(),
+            agent: Some("codex".to_owned()),
+            account_id: Some("acc-codex".to_owned()),
+            identity: jackin_protocol::SessionIdentity {
+                uid: 2_002,
+                gid: 2_002,
+            },
+            provider: None,
         },
-        None,
         command,
         terminal,
         event_tx,

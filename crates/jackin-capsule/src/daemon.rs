@@ -366,7 +366,7 @@ fn handle_control_request(mux: &mut Multiplexer, request: ControlRequest) {
         }
         crate::attach_protocol::ControlReply::Once(reply_tx) => reply_tx,
     };
-    let Some(operation) = control_server_operation(&request.ctx, &request.msg) else {
+    let Ok(operation) = control_server_operation(&request.ctx, &request.msg) else {
         drop(reply_tx.send(ControlResponse {
             msg: ServerMsg::Unknown,
             operation: None,
@@ -553,12 +553,18 @@ const MAX_TABS: usize = 32;
 const MAX_SESSIONS: usize = 64;
 
 impl Multiplexer {
+    /// # Errors
+    ///
+    /// Returns an error when terminal, session, or credential initialization fails.
     pub fn new(rows: u16, cols: u16, launch_config: CapsuleConfig) -> io::Result<Self> {
         Self::with_clock(rows, cols, launch_config, Arc::new(SystemClock))
     }
 
     /// Construct a multiplexer with an injected clock (tests / deterministic
     /// lifecycle timestamps).
+    /// # Errors
+    ///
+    /// Returns an error when terminal, session, or credential initialization fails.
     pub fn with_clock(
         rows: u16,
         cols: u16,
@@ -1188,6 +1194,10 @@ async fn reject_invalid_attach_handshake(stream: &mut UnixStream) {
               deferred-parallel-pass plan as the launch fns — the inline shape \
               preserves captured-runtime state across stages."
 )]
+/// # Errors
+///
+/// Returns an error when daemon initialization, socket setup, session
+/// management, or the event loop fails.
 pub async fn run_daemon(
     initial_agent: String,
     launch_config: CapsuleConfig,
@@ -1470,7 +1480,8 @@ pub async fn run_daemon(
                 // race during this tick; the attach boundary owns one error.
                 let mut initial_frames = Vec::with_capacity(5);
                 initial_frames.push(encode_server(ServerFrame::Welcome {
-                    session_count: mux.session_supervisor.sessions.len() as u32,
+                    session_count: u32::try_from(mux.session_supervisor.sessions.len())
+                        .unwrap_or(u32::MAX),
                 }));
                 // Re-assert the attach-client-owned mouse/focus modes,
                 // then restore the focused session's modes (bracketed
@@ -1734,16 +1745,21 @@ pub async fn run_daemon(
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ControlServerOperationError {
+    RejectedTraceContext,
+}
+
 pub(crate) fn control_server_operation(
     context: &jackin_protocol::TelemetryContext,
     message: &ClientMsg,
-) -> Option<Option<jackin_telemetry::operation::OperationGuard>> {
+) -> Result<Option<jackin_telemetry::operation::OperationGuard>, ControlServerOperationError> {
     let extracted = jackin_telemetry::propagation::extract(context);
     if matches!(
         extracted,
         jackin_telemetry::propagation::ExtractOutcome::RejectRequest
     ) {
-        return None;
+        return Err(ControlServerOperationError::RejectedTraceContext);
     }
     let attrs = [
         jackin_telemetry::Attr {
@@ -1766,7 +1782,7 @@ pub(crate) fn control_server_operation(
         _ => jackin_telemetry::operation(&jackin_telemetry::operation::RPC_SERVER, &attrs),
     }
     .ok();
-    Some(operation)
+    Ok(operation)
 }
 
 mod control;

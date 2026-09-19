@@ -43,10 +43,10 @@ impl ColRange {
 }
 
 pub(crate) struct BranchContextBarLayout {
-    pub(crate) left_region: Option<ColRange>,
-    pub(crate) usage_region: Option<ColRange>,
-    pub(crate) debug_chip_region: Option<ColRange>,
-    pub(crate) container_region: Option<ColRange>,
+    pub(crate) left: Option<ColRange>,
+    pub(crate) usage: Option<ColRange>,
+    pub(crate) debug_chip: Option<ColRange>,
+    pub(crate) container: Option<ColRange>,
 }
 
 pub(crate) fn visible_branch(branch: Option<&str>, is_default_branch: bool) -> Option<&str> {
@@ -128,12 +128,12 @@ pub(crate) fn branch_context_bar_layout(
             .and_then(col_range)
     };
     Some(BranchContextBarLayout {
-        left_region: left_clickable
+        left: left_clickable
             .then(|| region(BranchBarSlot::Context))
             .flatten(),
-        usage_region: region(BranchBarSlot::Usage),
-        debug_chip_region: region(BranchBarSlot::RunId),
-        container_region: region(BranchBarSlot::Container),
+        usage: region(BranchBarSlot::Usage),
+        debug_chip: region(BranchBarSlot::RunId),
+        container: region(BranchBarSlot::Container),
     })
 }
 
@@ -380,16 +380,16 @@ pub(crate) fn branch_context_bar_hit(
         debug_run_id,
         container_name,
     )?;
-    if layout.debug_chip_region.is_some_and(|r| r.contains(col)) {
+    if layout.debug_chip.is_some_and(|r| r.contains(col)) {
         return Some(BranchContextBarHit::DebugChip);
     }
-    if layout.container_region.is_some_and(|r| r.contains(col)) {
+    if layout.container.is_some_and(|r| r.contains(col)) {
         return Some(BranchContextBarHit::Container);
     }
-    if layout.usage_region.is_some_and(|r| r.contains(col)) {
+    if layout.usage.is_some_and(|r| r.contains(col)) {
         return Some(BranchContextBarHit::UsageStatus);
     }
-    if layout.left_region.is_some_and(|r| r.contains(col)) {
+    if layout.left.is_some_and(|r| r.contains(col)) {
         return Some(BranchContextBarHit::Context);
     }
     None

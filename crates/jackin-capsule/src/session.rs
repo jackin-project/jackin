@@ -104,6 +104,21 @@ pub struct SessionProvider {
     pub env_overrides: Vec<(String, String)>,
 }
 
+/// Inputs that identify a session at PTY spawn time.
+#[derive(Debug, Clone)]
+pub struct SessionSpawnSpec {
+    /// Display label shown in the tab and pane chrome.
+    pub label: String,
+    /// Configured agent instance, or `None` for a shell session.
+    pub agent: Option<String>,
+    /// Owning account for the configured agent instance.
+    pub account_id: Option<String>,
+    /// Kernel identity assigned to the child process.
+    pub identity: jackin_protocol::SessionIdentity,
+    /// Provider routing and environment inherited by this session.
+    pub provider: Option<SessionProvider>,
+}
+
 /// A published public-state change emitted by [`Session::advance_status`].
 #[derive(Debug, Clone)]
 pub struct StatusTransition {
@@ -280,6 +295,7 @@ pub enum GitContext {
 }
 
 impl GitContext {
+    #[must_use]
     pub fn branch_name(&self) -> Option<&BranchName> {
         match self {
             Self::Branch { name, .. } => Some(name),
@@ -287,6 +303,7 @@ impl GitContext {
         }
     }
 
+    #[must_use]
     pub fn head(&self) -> Option<&Oid> {
         match self {
             Self::Detached { head } => Some(head),
@@ -297,6 +314,7 @@ impl GitContext {
         }
     }
 
+    #[must_use]
     pub fn is_present(&self) -> bool {
         !matches!(self, Self::Absent)
     }
@@ -310,6 +328,7 @@ impl GitContext {
 pub struct Oid(String);
 
 impl Oid {
+    #[must_use]
     pub fn parse(value: &str) -> Option<Self> {
         if matches!(value.len(), 40 | 64) && value.bytes().all(|b| b.is_ascii_hexdigit()) {
             Some(Self(value.to_owned()))
@@ -318,6 +337,7 @@ impl Oid {
         }
     }
 
+    #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -360,6 +380,7 @@ impl BranchName {
         }
     }
 
+    #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -429,17 +450,23 @@ impl Session {
               the multiplexer state. Inline shape preserves captured-runtime \
               state across the per-stage error-reporting branches."
     )]
+    /// # Errors
+    ///
+    /// Returns an error when the PTY cannot be opened or the session process
+    /// cannot be spawned.
     pub fn spawn(
-        label: impl Into<String>,
-        agent: Option<String>,
-        account_id: Option<String>,
-        identity: jackin_protocol::SessionIdentity,
-        provider: Option<SessionProvider>,
+        spec: SessionSpawnSpec,
         mut cmd: CommandBuilder,
         terminal: SessionTerminal,
         event_tx: mpsc::UnboundedSender<SessionEvent>,
     ) -> Result<(Self, u64)> {
-        let label = label.into();
+        let SessionSpawnSpec {
+            label,
+            agent,
+            account_id,
+            identity,
+            provider,
+        } = spec;
         let conversation_id = agent.as_ref().map(|_| uuid::Uuid::new_v4().to_string());
         // Per-tab trace: each pane/agent spawn is its own short trace on the
         // session timeline (shares the resource session.id).
@@ -695,6 +722,7 @@ impl Session {
 
     /// Tail-relative scrollback view offset. The grid is the single owner
     /// (D12); the session only delegates.
+    #[must_use]
     pub fn scrollback_offset(&self) -> usize {
         self.shadow_grid.scrollback()
     }
@@ -712,10 +740,11 @@ impl Session {
     pub fn clear_scrollback_and_request_screen_clear(&mut self) {
         self.scroll_to_live();
         self.shadow_grid.clear_scrollback();
-        self.send_input(b"\x0c");
+        let _sent = self.send_input(b"\x0c");
     }
 
     /// Number of scrollback lines currently retained for this pane.
+    #[must_use]
     pub fn scrollback_filled(&self) -> usize {
         self.shadow_grid.scrollback_len()
     }
@@ -769,10 +798,12 @@ impl Session {
         (!lines.is_empty()).then(|| lines.join("\n"))
     }
 
+    #[must_use]
     pub fn hyperlink_target_at_content_row(&self, row: usize, col: u16) -> Option<&str> {
         self.shadow_grid.hyperlink_target_at_content_row(row, col)
     }
 
+    #[must_use]
     pub fn send_input(&self, data: &[u8]) -> bool {
         // SendError fires when the writer task has exited (it owns the
         // receiver). The writer task emits SessionEvent::Exited before
@@ -875,6 +906,7 @@ impl Session {
     }
 
     /// Agent-authored terminal-protocol evidence for the evidence snapshot.
+    #[must_use]
     pub fn osc_evidence(&self) -> &crate::agent_status::evidence::OscEvidence {
         &self.osc
     }
@@ -882,6 +914,7 @@ impl Session {
     /// Plain-text rows of the current visible viewport (top to bottom), for the
     /// screen rule-pack engine. Operator scrollback never affects detection —
     /// only the live screen is read.
+    #[must_use]
     pub fn visible_screen_rows(&self) -> Vec<String> {
         let (_, cols) = self.shadow_grid.size();
         self.render_content_snapshot(cols)
@@ -1075,6 +1108,7 @@ impl Session {
     /// belong to jackin or to the pane. Actual PTY mouse forwarding
     /// also consults `mouse_protocol_mode()` so press-only programs
     /// do not receive motion events.
+    #[must_use]
     pub fn mouse_enabled(&self) -> bool {
         !matches!(
             self.shadow_grid.mouse_protocol_mode(),
@@ -1082,31 +1116,37 @@ impl Session {
         )
     }
 
+    #[must_use]
     pub fn mouse_protocol_encoding(&self) -> termpane::MouseProtocolEncoding {
         self.shadow_grid.mouse_protocol_encoding()
     }
 
+    #[must_use]
     pub fn mouse_protocol_mode(&self) -> termpane::MouseProtocolMode {
         self.shadow_grid.mouse_protocol_mode()
     }
 
     /// True when the session enabled DEC private mode `?1004` (focus
     /// event reporting).
+    #[must_use]
     pub fn focus_events_enabled(&self) -> bool {
         self.shadow_grid.focus_events()
     }
 
     /// True when the terminal is in the alternate screen.
+    #[must_use]
     pub fn alternate_screen(&self) -> bool {
         self.shadow_grid.alternate_screen()
     }
 
     /// True when the foreground program has bracketed-paste enabled.
+    #[must_use]
     pub fn bracketed_paste(&self) -> bool {
         self.shadow_grid.bracketed_paste()
     }
 
     /// True when the foreground program has application-cursor-keys mode on.
+    #[must_use]
     pub fn application_cursor(&self) -> bool {
         self.shadow_grid.application_cursor()
     }
@@ -1340,6 +1380,7 @@ impl Session {
         std::mem::take(&mut self.pending_passthrough)
     }
 
+    #[must_use]
     pub fn allow_frame_hyperlinks(&self) -> bool {
         self.osc_policy.allow_hyperlink()
     }
@@ -1355,11 +1396,13 @@ impl Session {
         }
     }
 
+    #[must_use]
     pub fn title(&self) -> Option<&str> {
         self.title.as_deref()
     }
 
     /// Most recently announced working directory (OSC 7), if any.
+    #[must_use]
     pub fn cwd(&self) -> Option<&str> {
         self.cwd.as_deref()
     }
@@ -1591,6 +1634,10 @@ fn parse_modify_other_keys(raw: &[u8]) -> Option<u16> {
 /// admitted instance. Shared by the PID-1 argv path and the
 /// `jackin-capsule new <target>` client path; the daemon re-resolves
 /// authoritatively at spawn time.
+/// # Errors
+///
+/// Returns an error when the value is empty, looks like a flag, or contains
+/// whitespace or control characters.
 pub fn validate_spawn_token_syntax(raw: &str) -> Result<&str, &'static str> {
     if raw.is_empty() {
         return Err("empty value");
@@ -1716,6 +1763,7 @@ fn is_folder_env(name: &str) -> bool {
 /// scrubbed and rejected from passthrough, then this instance's folder
 /// var is set to its own home: a stale or foreign value can never leak
 /// this pane into another account's credentials or history.
+#[must_use]
 pub fn build_agent_command(spec: &AgentSpawnSpec<'_>) -> CommandBuilder {
     let mut cmd = isolated_command(
         spec.identity,
@@ -1815,6 +1863,7 @@ fn apply_lane_env(
 /// Build a `CommandBuilder` for an interactive shell session.
 ///
 /// See `build_agent_command` for the `cwd` rationale.
+#[must_use]
 pub fn build_shell_command(
     env_passthrough: &[(String, String)],
     cwd: &Path,
@@ -1863,7 +1912,7 @@ fn isolated_command(
         // binary and entrypoint paths do not exist. The production path below
         // is exercised by the dedicated process-isolation boundary tests.
         let _ = (identity, instance);
-        return CommandBuilder::new(program);
+        CommandBuilder::new(program)
     }
     #[cfg(not(test))]
     {

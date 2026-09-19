@@ -255,5 +255,6 @@ pub(super) fn step_selectable(rows: &[PickerRow], from: usize, forward: bool) ->
 
 pub(super) fn dialog_list_row_clickable(row: u16, box_row: u16, visible_count: usize) -> bool {
     let first_item_row = box_row + 3;
-    row >= first_item_row && row < first_item_row + visible_count as u16
+    row >= first_item_row
+        && row < first_item_row.saturating_add(u16::try_from(visible_count).unwrap_or(u16::MAX))
 }

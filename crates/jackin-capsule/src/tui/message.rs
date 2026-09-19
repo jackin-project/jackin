@@ -116,6 +116,7 @@ pub struct InputDispatchContext {
     pub branch_context_hit: bool,
 }
 
+#[must_use]
 pub fn mouse_chrome_update_action(event: &InputEvent) -> Option<Action> {
     match event {
         InputEvent::MousePress { col, row, button }
@@ -128,6 +129,7 @@ pub fn mouse_chrome_update_action(event: &InputEvent) -> Option<Action> {
     }
 }
 
+#[must_use]
 pub fn input_event_action(event: &InputEvent, context: InputDispatchContext) -> Option<Action> {
     match event {
         InputEvent::Data(_) => None,
@@ -221,12 +223,13 @@ fn is_host_open_url_button(button: u8) -> bool {
     const CTRL_MODIFIER: u8 = 16;
     const MOTION_MODIFIER: u8 = 32;
 
-    let primary_button = button & 0b11 == 0;
+    let primary_button = button.trailing_zeros() >= 2;
     let modified = button & (ALT_MODIFIER | CTRL_MODIFIER) != 0;
     let motion = button & MOTION_MODIFIER != 0;
     primary_button && modified && !motion && !is_wheel_button(button)
 }
 
+#[must_use]
 pub fn prefix_command_action(cmd: &PrefixCommand) -> Option<Action> {
     match cmd {
         PrefixCommand::NewTab => Some(Action::OpenAgentPicker(PickerIntent::NewTab)),
@@ -371,6 +374,7 @@ pub(crate) fn palette_toggle_route(dialog_open: bool) -> PaletteToggleRoute {
     }
 }
 
+#[must_use]
 pub fn pane_button_motion_action(dragging: bool, selecting: bool, row: u16, col: u16) -> Action {
     if dragging {
         Action::DragMotion { row, col }
@@ -386,6 +390,7 @@ pub fn pane_button_motion_action(dragging: bool, selecting: bool, row: u16, col:
     }
 }
 
+#[must_use]
 pub fn mouse_release_action(
     dragging: bool,
     selecting: bool,
@@ -393,9 +398,9 @@ pub fn mouse_release_action(
     col: u16,
     button: u8,
 ) -> Action {
-    if dragging && (button & 0b11) == 0 {
+    if dragging && button.trailing_zeros() >= 2 {
         Action::EndDragResize
-    } else if selecting && (button & 0b11) == 0 {
+    } else if selecting && button.trailing_zeros() >= 2 {
         Action::FinalizeSelection
     } else {
         Action::ForwardMouse {
@@ -415,6 +420,7 @@ pub struct StatusBarClickState {
     pub menu_hit: bool,
 }
 
+#[must_use]
 pub fn status_bar_click_action(state: StatusBarClickState) -> Option<Action> {
     if let Some(idx) = state.tab
         && idx < state.tab_count

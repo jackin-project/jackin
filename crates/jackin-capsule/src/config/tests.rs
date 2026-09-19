@@ -34,6 +34,7 @@ fn instance_config(instances: &[(&str, &str, &str)]) -> CapsuleConfig {
         ..CapsuleConfig::default()
     };
     for (index, (id, _, _)) in instances.iter().enumerate() {
+        let index = u32::try_from(index).unwrap_or(u32::MAX);
         config
             .instance_home_dirs
             .insert((*id).to_owned(), format!("/home/agent/.slot-{index}"));
@@ -54,14 +55,14 @@ fn instance_config(instances: &[(&str, &str, &str)]) -> CapsuleConfig {
         config.instance_identities.insert(
             (*id).to_owned(),
             jackin_protocol::SessionIdentity {
-                uid: 2_000 + index as u32,
-                gid: 2_000 + index as u32,
+                uid: 2_000 + index,
+                gid: 2_000 + index,
             },
         );
     }
     config.shell_identity = Some(jackin_protocol::SessionIdentity {
-        uid: 2_000 + instances.len() as u32,
-        gid: 2_000 + instances.len() as u32,
+        uid: 2_000 + u32::try_from(instances.len()).unwrap_or(u32::MAX),
+        gid: 2_000 + u32::try_from(instances.len()).unwrap_or(u32::MAX),
     });
     config
 }

@@ -5,6 +5,7 @@
 use crate as _;
 
 /// reference operator-side files on click.
+#[must_use]
 pub fn osc8_uri_is_safe(uri: &str) -> bool {
     if uri.is_empty() {
         return true;
@@ -28,6 +29,7 @@ pub fn osc8_uri_is_safe(uri: &str) -> bool {
 /// pass. Returns `None` for any payload that does not parse as a
 /// `file://` URL — silently trusting arbitrary text would let an
 /// agent overwrite the pane title with whatever it pleased.
+#[must_use]
 pub fn parse_osc7(payload: &str) -> Option<String> {
     let url = url::Url::parse(payload).ok()?;
     if url.scheme() != "file" {
@@ -73,6 +75,7 @@ impl OscPolicy {
     /// Read policy from environment. Cached at `Session::spawn` time so a
     /// background pane cannot toggle the gate at runtime by `export`ing
     /// into a focused shell.
+    #[must_use]
     pub fn from_env() -> Self {
         Self::from_lookup(|name| std::env::var(name).ok())
     }
@@ -99,15 +102,19 @@ impl OscPolicy {
         }
     }
 
+    #[must_use]
     pub fn allow_title(self) -> bool {
         self.flags & ALLOW_TITLE != 0
     }
+    #[must_use]
     pub fn allow_osc52(self) -> bool {
         self.flags & ALLOW_OSC52 != 0
     }
+    #[must_use]
     pub fn allow_notify(self) -> bool {
         self.flags & ALLOW_NOTIFY != 0
     }
+    #[must_use]
     pub fn allow_hyperlink(self) -> bool {
         self.flags & ALLOW_HYPERLINK != 0
     }
@@ -120,12 +127,14 @@ impl OscPolicy {
     /// = "test-helpers")]` gate would break the default unit-test build
     /// invocation that integration tests rely on.
     #[doc(hidden)]
+    #[must_use]
     pub fn for_test_deny_all() -> Self {
         Self { flags: 0 }
     }
 
     /// Test-only constructor with every passthrough gate open.
     #[doc(hidden)]
+    #[must_use]
     pub fn for_test_allow_all() -> Self {
         Self {
             flags: ALLOW_TITLE | ALLOW_OSC52 | ALLOW_NOTIFY | ALLOW_HYPERLINK,

@@ -10,6 +10,10 @@
 use anyhow::{Context, Result};
 use jackin_protocol::CapsuleConfig;
 
+/// # Errors
+///
+/// Returns an error when the capsule configuration cannot be read, parsed, or
+/// validated.
 pub fn load() -> Result<CapsuleConfig> {
     let contents = std::fs::read_to_string(jackin_protocol::CAPSULE_CONFIG_PATH)
         .with_context(|| format!("reading {}", jackin_protocol::CAPSULE_CONFIG_PATH))?;
@@ -19,6 +23,7 @@ pub fn load() -> Result<CapsuleConfig> {
     Ok(config)
 }
 
+#[must_use]
 pub fn load_optional() -> Option<CapsuleConfig> {
     let contents = match std::fs::read_to_string(jackin_protocol::CAPSULE_CONFIG_PATH) {
         Ok(contents) => contents,

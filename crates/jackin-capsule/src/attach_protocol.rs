@@ -158,14 +158,13 @@ pub(crate) async fn perform_handshake(
     // `MAX_CONCURRENT_CLIENTS` cap and lock out legitimate attaches.
     const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
 
-    let peer_uid = match stream.peer_cred() {
-        Ok(credentials) => credentials.uid(),
-        Err(_) => {
-            drop(client_permit);
-            return jackin_telemetry::spawn::DetachedCompletion::failure(
-                jackin_telemetry::schema::enums::ErrorType::RpcError,
-            );
-        }
+    let peer_uid = if let Ok(credentials) = stream.peer_cred() {
+        credentials.uid()
+    } else {
+        drop(client_permit);
+        return jackin_telemetry::spawn::DetachedCompletion::failure(
+            jackin_telemetry::schema::enums::ErrorType::RpcError,
+        );
     };
 
     let mut first = [0u8; 1];

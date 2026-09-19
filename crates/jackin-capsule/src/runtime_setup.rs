@@ -200,6 +200,10 @@ fn session_state_path(name: &str) -> Result<PathBuf> {
     Ok(session_state_dir()?.join(name))
 }
 
+/// # Errors
+///
+/// Returns an error when container initialization, hook installation, or
+/// agent setup fails.
 pub fn run() -> Result<()> {
     run_runtime_setup_concurrently(
         run_container_init_once,
@@ -337,6 +341,10 @@ fn install_git_trailer_hook_if_requested() -> Result<()> {
     Ok(())
 }
 
+/// # Errors
+///
+/// Returns an error when the commit-message path is missing or the hook cannot
+/// read, update, or write the message.
 pub fn run_prepare_commit_msg_hook(args: &[String]) -> Result<()> {
     let message_path = args
         .first()
@@ -1431,12 +1439,9 @@ fn record_recovered_degradation() {
 }
 
 fn read_cached_dco_identity() -> Option<(String, String)> {
-    let cache_path = match git_dco_identity_cache_path() {
-        Ok(path) => path,
-        Err(_) => {
-            record_recovered_degradation();
-            return None;
-        }
+    let Ok(cache_path) = git_dco_identity_cache_path() else {
+        record_recovered_degradation();
+        return None;
     };
     let content = match fs::read_to_string(cache_path) {
         Ok(content) => content,

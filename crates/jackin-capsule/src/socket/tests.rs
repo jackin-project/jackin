@@ -39,7 +39,7 @@ async fn read_control_msg_rejects_oversize_length_prefix() {
 async fn read_control_msg_rejects_malformed_json() {
     let (mut a, mut b) = UnixStream::pair().unwrap();
     let body = b"{not valid json";
-    let len_buf = (body.len() as u32).to_be_bytes();
+    let len_buf = u32::try_from(body.len()).unwrap_or(u32::MAX).to_be_bytes();
     a.write_all(&len_buf[1..]).await.unwrap();
     a.write_all(body).await.unwrap();
     a.shutdown().await.unwrap();
@@ -51,7 +51,7 @@ async fn read_control_msg_rejects_malformed_json() {
 async fn read_control_msg_decodes_known_request() {
     let (mut a, mut b) = UnixStream::pair().unwrap();
     let body = br#"{"ctx":{"v":1},"msg":{"type":"status"}}"#;
-    let len_buf = (body.len() as u32).to_be_bytes();
+    let len_buf = u32::try_from(body.len()).unwrap_or(u32::MAX).to_be_bytes();
     a.write_all(&len_buf[1..]).await.unwrap();
     a.write_all(body).await.unwrap();
     a.shutdown().await.unwrap();
@@ -63,7 +63,7 @@ async fn read_control_msg_decodes_known_request() {
 async fn read_control_msg_decodes_unknown_variant_for_forward_compat() {
     let (mut a, mut b) = UnixStream::pair().unwrap();
     let body = br#"{"ctx":{"v":1},"msg":{"type":"future_query"}}"#;
-    let len_buf = (body.len() as u32).to_be_bytes();
+    let len_buf = u32::try_from(body.len()).unwrap_or(u32::MAX).to_be_bytes();
     a.write_all(&len_buf[1..]).await.unwrap();
     a.write_all(body).await.unwrap();
     a.shutdown().await.unwrap();

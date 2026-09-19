@@ -21,6 +21,11 @@ pub trait HookInstaller {
     /// (the config home for `Dir`-kind agents). Creates any missing
     /// directories and files; repairs stale configuration atomically via
     /// tmp-file + rename.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the hook files cannot be read, written, or
+    /// atomically replaced.
     fn install(&self, agent_home: &Path, config_dir: &Path) -> anyhow::Result<()>;
 
     /// Verify that the current state matches the expected hook/plugin
@@ -220,6 +225,7 @@ pub struct PluginInstaller {
 }
 
 impl PluginInstaller {
+    #[must_use]
     pub fn opencode() -> Self {
         Self {
             config_dir: "opencode",

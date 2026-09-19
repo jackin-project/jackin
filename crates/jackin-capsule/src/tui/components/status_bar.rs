@@ -92,14 +92,17 @@ impl Default for StatusBar {
 }
 
 impl StatusBar {
+    #[must_use]
     pub fn new() -> Self {
         Self::new_with_role_labels(String::new(), String::new(), String::new())
     }
 
+    #[must_use]
     pub fn new_with_role(role: String) -> Self {
         Self::new_with_role_labels(role, String::new(), String::new())
     }
 
+    #[must_use]
     pub fn new_with_role_labels(
         role: String,
         identity_label: String,
@@ -116,14 +119,17 @@ impl StatusBar {
         }
     }
 
+    #[must_use]
     pub fn container_name(&self) -> &str {
         &self.identity_label
     }
 
+    #[must_use]
     pub fn instance_id_label(&self) -> &str {
         &self.instance_id_label
     }
 
+    #[must_use]
     pub fn role(&self) -> &str {
         &self.role
     }
@@ -138,6 +144,7 @@ impl StatusBar {
 
     /// Return `true` when the (1-based) click at `(row, col)` falls
     /// inside the right-side menu button.
+    #[must_use]
     pub fn hint_at(&self, row: u16, col: u16) -> bool {
         if row != 1 {
             return false;
@@ -149,6 +156,7 @@ impl StatusBar {
     }
 
     /// Return the tab index clicked at column `c` (1-based), if any.
+    #[must_use]
     pub fn tab_at_col(&self, c: u16) -> Option<usize> {
         self.tab_regions
             .iter()
@@ -210,6 +218,7 @@ pub(crate) fn button_text_for(prefix_mode: PrefixMode) -> &'static str {
 /// Lay out row 0 of the status bar. This is the single source of truth for
 /// both `StatusBarWidget` painting and `StatusBar::refresh_click_regions`, so
 /// a click region computed from this plan lands on the cell the widget drew.
+#[must_use]
 pub fn status_bar_plan(
     cols: u16,
     tabs: &[Tab],
