@@ -724,6 +724,7 @@ fn test_mux(rows: u16, cols: u16) -> Multiplexer {
             instances: Vec::new(),
             agents: BTreeMap::new(),
             models: BTreeMap::new(),
+            efforts: BTreeMap::new(),
             auth_modes: BTreeMap::new(),
             accounts: BTreeMap::new(),
             labels: BTreeMap::new(),
@@ -9106,6 +9107,111 @@ fn two_claude_mux() -> Multiplexer {
         ("claude-personal".into(), "Personal Claude".into()),
     ]);
     mux
+}
+
+fn two_codex_mux() -> Multiplexer {
+    let mut mux = test_mux(24, 80);
+    mux.launch_env.launch_config.instances = vec!["codex-work".into(), "codex-personal".into()];
+    mux.launch_env.launch_config.agents = BTreeMap::from([
+        ("codex-work".into(), "codex".into()),
+        ("codex-personal".into(), "codex".into()),
+    ]);
+    mux.launch_env.launch_config.models = BTreeMap::from([
+        ("codex-work".into(), "k3".into()),
+        ("codex-personal".into(), "glm-5.3".into()),
+    ]);
+    mux.launch_env.launch_config.efforts = BTreeMap::from([
+        ("codex-work".into(), "max".into()),
+        ("codex-personal".into(), "low".into()),
+    ]);
+    mux.launch_env.launch_config.instance_home_dirs = BTreeMap::from([
+        ("codex-work".into(), "/home/agent/.codex".into()),
+        (
+            "codex-personal".into(),
+            "/home/agent/.codex-codex-personal".into(),
+        ),
+    ]);
+    mux.launch_env.launch_config.instance_forwarded_dirs = BTreeMap::from([
+        ("codex-work".into(), "/jackin/codex".into()),
+        (
+            "codex-personal".into(),
+            "/jackin/codex-codex-personal".into(),
+        ),
+    ]);
+    // A stale process-wide value must not win over either slot's routing map.
+    mux.launch_env.env_passthrough = vec![
+        (
+            jackin_core::CODEX_LANE_MODEL_ENV_NAME.into(),
+            "wrong-global-model".into(),
+        ),
+        (
+            jackin_core::CODEX_LANE_EFFORT_ENV_NAME.into(),
+            "high".into(),
+        ),
+    ];
+    mux
+}
+
+#[test]
+fn codex_session_launch_fans_model_and_effort_to_each_slot() {
+    let mux = two_codex_mux();
+    let stale_global_env = mux.launch_env.env_passthrough.clone();
+    let work = mux
+        .session_launch(Some("codex-work"), None, &stale_global_env, "test")
+        .expect("work slot launches");
+    let personal = mux
+        .session_launch(Some("codex-personal"), None, &stale_global_env, "test")
+        .expect("personal slot launches");
+
+    let argv = |command: &CommandBuilder| {
+        command
+            .get_argv()
+            .iter()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        argv(&work.cmd),
+        vec![
+            jackin_core::container_paths::ENTRYPOINT.to_owned(),
+            "-m".to_owned(),
+            "k3".to_owned()
+        ]
+    );
+    assert_eq!(
+        argv(&personal.cmd),
+        vec![
+            jackin_core::container_paths::ENTRYPOINT.to_owned(),
+            "-m".to_owned(),
+            "glm-5.3".to_owned()
+        ]
+    );
+    assert_eq!(
+        work.cmd
+            .get_env(jackin_core::CODEX_LANE_MODEL_ENV_NAME)
+            .and_then(|value| value.to_str()),
+        Some("k3")
+    );
+    assert_eq!(
+        work.cmd
+            .get_env(jackin_core::CODEX_LANE_EFFORT_ENV_NAME)
+            .and_then(|value| value.to_str()),
+        Some("max")
+    );
+    assert_eq!(
+        personal
+            .cmd
+            .get_env(jackin_core::CODEX_LANE_MODEL_ENV_NAME)
+            .and_then(|value| value.to_str()),
+        Some("glm-5.3")
+    );
+    assert_eq!(
+        personal
+            .cmd
+            .get_env(jackin_core::CODEX_LANE_EFFORT_ENV_NAME)
+            .and_then(|value| value.to_str()),
+        Some("low")
+    );
 }
 
 #[test]

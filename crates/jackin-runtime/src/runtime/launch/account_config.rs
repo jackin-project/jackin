@@ -3,6 +3,7 @@
 
 //! Materialize selected API account settings in the private capsule home.
 
+use std::collections::BTreeMap;
 use std::path::Path;
 
 use anyhow::Context as _;
@@ -13,17 +14,19 @@ pub(super) fn configure_accounts(
     root: &Path,
     config: &AppConfig,
     instances: &[jackin_config::ResolvedInstance],
-    slots: &std::collections::BTreeMap<String, crate::instance::ProvisionedInstanceAuth>,
+    slots: &BTreeMap<String, crate::instance::ProvisionedInstanceAuth>,
+    models: &BTreeMap<String, String>,
+    efforts: &BTreeMap<String, String>,
 ) -> anyhow::Result<()> {
     for instance in instances {
-        let slot = match instance.agent {
-            Agent::Codex | Agent::Opencode => slots.get(&instance.config_id).ok_or_else(|| {
-                anyhow::anyhow!(
+        let Some(slot) = slots.get(&instance.config_id) else {
+            if matches!(instance.agent, Agent::Codex | Agent::Opencode) {
+                anyhow::bail!(
                     "instance {:?} has no provisioned config slot",
                     instance.config_id
-                )
-            })?,
-            _ => continue,
+                );
+            }
+            continue;
         };
         anyhow::ensure!(
             slot.agent == instance.agent,
@@ -40,9 +43,22 @@ pub(super) fn configure_accounts(
             instance.account_id
         );
         match instance.agent {
-            Agent::Codex => configure_codex(root, config, instance, slot)?,
-            Agent::Opencode => configure_opencode(root, config, instance, slot)?,
-            _ => unreachable!("non-configured agent passed slot selection"),
+            Agent::Codex => configure_codex(
+                root,
+                config,
+                instance,
+                slot,
+                models.get(&instance.config_id).map(String::as_str),
+                efforts.get(&instance.config_id).map(String::as_str),
+            )?,
+            Agent::Opencode => configure_opencode(
+                root,
+                config,
+                instance,
+                slot,
+                models.get(&instance.config_id).map(String::as_str),
+            )?,
+            _ => {}
         }
     }
     Ok(())
@@ -53,6 +69,8 @@ fn configure_codex(
     config: &AppConfig,
     instance: &jackin_config::ResolvedInstance,
     slot: &crate::instance::ProvisionedInstanceAuth,
+    model: Option<&str>,
+    effort: Option<&str>,
 ) -> anyhow::Result<()> {
     let account = config
         .accounts
@@ -61,7 +79,7 @@ fn configure_codex(
     let AccountCredential::ApiKey { .. } = &account.credential else {
         return Ok(());
     };
-    let (base_url, model) = (instance.base_url.as_deref(), instance.model.as_deref());
+    let base_url = instance.base_url.as_deref();
     let cross_provider = account.provider != AiProvider::OpenAi;
     anyhow::ensure!(
         !cross_provider || model.is_some(),
@@ -99,12 +117,15 @@ fn configure_codex(
         .context("Codex model_providers must be a table")?;
     providers.insert("jackin_account".into(), provider.into());
     document.insert("model_provider".into(), "jackin_account".into());
-    if cross_provider {
-        document.remove("model_catalog_json");
-    }
     if let Some(model) = model {
         document.insert("model".into(), model.into());
         if let Some(catalog) = model_catalog(account.provider, model) {
+            if let Some(effort) = effort {
+                anyhow::ensure!(
+                    catalog_supports_effort(&catalog, effort),
+                    "Codex model {model:?} does not support reasoning effort {effort:?}"
+                );
+            }
             std::fs::write(
                 directory.join("account-models.json"),
                 serde_json::to_vec_pretty(&catalog)?,
@@ -115,8 +136,17 @@ fn configure_codex(
                 .to_string_lossy()
                 .into_owned();
             document.insert("model_catalog_json".into(), catalog_target.into());
-            document.insert("model_reasoning_effort".into(), "high".into());
+        } else {
+            document.remove("model_catalog_json");
         }
+    } else {
+        document.remove("model");
+        document.remove("model_catalog_json");
+    }
+    if let Some(effort) = effort {
+        document.insert("model_reasoning_effort".into(), effort.into());
+    } else {
+        document.remove("model_reasoning_effort");
     }
     std::fs::write(path, toml::to_string_pretty(&document)?)
         .context("write private Codex account configuration")
@@ -192,6 +222,7 @@ fn configure_opencode(
     config: &AppConfig,
     instance: &jackin_config::ResolvedInstance,
     slot: &crate::instance::ProvisionedInstanceAuth,
+    model: Option<&str>,
 ) -> anyhow::Result<()> {
     let account = config
         .accounts
@@ -200,7 +231,7 @@ fn configure_opencode(
     let AccountCredential::ApiKey { .. } = &account.credential else {
         return Ok(());
     };
-    let (base_url, model) = (instance.base_url.as_deref(), instance.model.as_deref());
+    let base_url = instance.base_url.as_deref();
     let (id, npm, default_url) = opencode_provider(account.provider)?;
     let credentials = account.credential_env(Agent::Opencode)?;
     let key = credentials
@@ -252,6 +283,18 @@ fn configure_opencode(
 /// <https://www.kimi.com/code/docs/en/third-party-tools/codex.html>
 /// <https://docs.z.ai/devpack/tool/codex>
 /// <https://platform.minimax.io/docs/token-plan/codex>
+fn catalog_supports_effort(catalog: &serde_json::Value, effort: &str) -> bool {
+    catalog["models"]
+        .as_array()
+        .and_then(|models| models.first())
+        .and_then(|model| model["supported_reasoning_levels"].as_array())
+        .is_some_and(|levels| {
+            levels
+                .iter()
+                .any(|level| level["effort"].as_str() == Some(effort))
+        })
+}
+
 fn model_catalog(provider: AiProvider, model: &str) -> Option<serde_json::Value> {
     let (context, modalities) = match (provider, model) {
         (AiProvider::Moonshot, "k3") => (1_048_576, vec!["text", "image"]),
@@ -265,6 +308,7 @@ fn model_catalog(provider: AiProvider, model: &str) -> Option<serde_json::Value>
         "default_reasoning_level": "high",
         "supported_reasoning_levels": [
             { "effort": "low", "description": "Light reasoning" },
+            { "effort": "medium", "description": "Balanced reasoning" },
             { "effort": "high", "description": "Enhanced reasoning" },
             { "effort": "max", "description": "Deep reasoning" }
         ],

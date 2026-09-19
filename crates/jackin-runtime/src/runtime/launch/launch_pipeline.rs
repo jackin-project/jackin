@@ -1463,13 +1463,6 @@ pub(crate) async fn load_role_with(
             merged_vars.push((k.clone(), v.clone()));
         }
     }
-    // Model and effort travel as the exact keys the in-container role hook
-    // writes into `$CODEX_HOME/config.toml` (Codex) or Claude Code reads from
-    // the environment, so the hook and the capsule daemon agree (D-078).
-    for (k, v) in super::lane_agent_env(agent, opts.model.as_deref(), opts.effort) {
-        merged_vars.retain(|(mk, _)| *mk != k);
-        merged_vars.push((k, v));
-    }
     inject_workspace_mise_env(&mut merged_vars, workspace);
 
     // On-demand credential bindings (jackin-exec). These were filtered out of

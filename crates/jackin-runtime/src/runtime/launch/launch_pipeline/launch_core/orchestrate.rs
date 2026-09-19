@@ -654,6 +654,8 @@ where
     let workspace_opt_owned = configured.workspace_opt.clone();
     let role_key_owned = role_key.to_owned();
     let github_ctx_owned = configured.github_ctx.clone();
+    let model_override_owned = opts.model.clone();
+    let effort_owned = opts.effort;
     let provision = resolve_provision_inputs(
         config,
         configured.workspace_opt.as_ref(),
@@ -686,11 +688,25 @@ where
                 &prepared.0.root,
                 &credentials,
             )?;
+            let models = super::super::super::capsule_setup::resolved_instance_models(
+                &config_owned,
+                &manifest_owned,
+                &instances,
+                agent,
+                model_override_owned.as_deref(),
+            )?;
+            let efforts = super::super::super::capsule_setup::resolved_instance_efforts(
+                &instances,
+                agent,
+                effort_owned,
+            );
             super::super::super::account_config::configure_accounts(
                 &prepared.0.root,
                 &config_owned,
                 &instances,
                 &prepared.0.auth.slots,
+                &models,
+                &efforts,
             )?;
             super::super::super::account_identity::record_account_configuration(
                 &prepared.0.root,

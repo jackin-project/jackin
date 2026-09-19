@@ -254,6 +254,7 @@ impl Multiplexer {
                     home_dir,
                     forwarded_dir,
                     model: config.model_for_instance(instance),
+                    effort: config.effort_for_instance(instance),
                     auth_mode: config.auth_mode_for_instance(instance),
                     env_passthrough,
                     cwd,
