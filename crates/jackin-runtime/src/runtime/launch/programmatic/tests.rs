@@ -265,6 +265,31 @@ fn launch_selection_without_defaults_synthesizes_ephemeral_default() {
 }
 
 #[test]
+fn launch_selection_reuses_existing_synthesized_template_without_replacing_it() {
+    let (mut config, _) = two_account_config();
+    let template_id = "private@codex";
+    let template = AgentConfiguration {
+        agent: Agent::Codex,
+        account: "private".to_owned(),
+        model: Some("template-model".to_owned()),
+        base_url: Some("https://template.example/v1".to_owned()),
+        display_label: Some("Private template".to_owned()),
+        invoked_via_wrapper: Some(jackin_config::WrapperSpec {
+            identity: "codex-wrapper".to_owned(),
+            args: vec!["--template".to_owned()],
+        }),
+    };
+    config
+        .agent_configurations
+        .insert(template_id.to_owned(), template.clone());
+
+    let selected = with_account_selection(&config, Agent::Codex, None, "codex", "private").unwrap();
+
+    assert_eq!(selected.default_launch, Some(vec![template_id.to_owned()]));
+    assert_eq!(selected.agent_configurations[template_id], template);
+}
+
+#[test]
 fn launch_selection_with_admitting_defaults_keeps_them() {
     let (mut config, workspace) = two_account_config();
     config.workspaces.get_mut("work").unwrap().default_launch =

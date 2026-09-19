@@ -13,19 +13,47 @@ pub(super) fn configure_accounts(
     root: &Path,
     config: &AppConfig,
     instances: &[jackin_config::ResolvedInstance],
+    slots: &std::collections::BTreeMap<String, crate::instance::ProvisionedInstanceAuth>,
 ) -> anyhow::Result<()> {
-    if let Some(instance) = instances
-        .iter()
-        .find(|instance| instance.agent == Agent::Opencode)
-    {
-        configure_opencode(root, config, instance)?;
+    for instance in instances {
+        let slot = match instance.agent {
+            Agent::Codex | Agent::Opencode => slots.get(&instance.config_id).ok_or_else(|| {
+                anyhow::anyhow!(
+                    "instance {:?} has no provisioned config slot",
+                    instance.config_id
+                )
+            })?,
+            _ => continue,
+        };
+        anyhow::ensure!(
+            slot.agent == instance.agent,
+            "provisioned config slot for {:?} belongs to {}, not {}",
+            instance.config_id,
+            slot.agent,
+            instance.agent
+        );
+        anyhow::ensure!(
+            slot.account_id == instance.account_id,
+            "provisioned config slot for {:?} belongs to account {:?}, not {:?}",
+            instance.config_id,
+            slot.account_id,
+            instance.account_id
+        );
+        match instance.agent {
+            Agent::Codex => configure_codex(root, config, instance, slot)?,
+            Agent::Opencode => configure_opencode(root, config, instance, slot)?,
+            _ => unreachable!("non-configured agent passed slot selection"),
+        }
     }
-    let Some(instance) = instances
-        .iter()
-        .find(|instance| instance.agent == Agent::Codex)
-    else {
-        return Ok(());
-    };
+    Ok(())
+}
+
+fn configure_codex(
+    root: &Path,
+    config: &AppConfig,
+    instance: &jackin_config::ResolvedInstance,
+    slot: &crate::instance::ProvisionedInstanceAuth,
+) -> anyhow::Result<()> {
     let account = config
         .accounts
         .get(&instance.account_id)
@@ -46,7 +74,10 @@ pub(super) fn configure_accounts(
         AiProvider::OpenAi => ("https://api.openai.com/v1", "OPENAI_API_KEY"),
         _ => anyhow::bail!("selected provider cannot authenticate Codex"),
     };
-    let directory = root.join("home/.codex");
+    // `container_home_rel` is computed by the auth provisioner from the same
+    // slot layout used by mounts and the Capsule's CODEX_HOME value. Never
+    // collapse multiple admitted Codex instances onto the primary home.
+    let directory = root.join("home").join(&slot.container_home_rel);
     std::fs::create_dir_all(&directory).context("create private Codex configuration directory")?;
     let path = directory.join("config.toml");
     let mut document: toml::Table = match std::fs::read_to_string(&path) {
@@ -79,10 +110,11 @@ pub(super) fn configure_accounts(
                 serde_json::to_vec_pretty(&catalog)?,
             )
             .context("write private Codex model metadata")?;
-            document.insert(
-                "model_catalog_json".into(),
-                "~/.codex/account-models.json".into(),
-            );
+            let catalog_target = Path::new(&slot.folder_target)
+                .join("account-models.json")
+                .to_string_lossy()
+                .into_owned();
+            document.insert("model_catalog_json".into(), catalog_target.into());
             document.insert("model_reasoning_effort".into(), "high".into());
         }
     }
@@ -159,6 +191,7 @@ fn configure_opencode(
     root: &Path,
     config: &AppConfig,
     instance: &jackin_config::ResolvedInstance,
+    slot: &crate::instance::ProvisionedInstanceAuth,
 ) -> anyhow::Result<()> {
     let account = config
         .accounts
@@ -174,7 +207,10 @@ fn configure_opencode(
         .keys()
         .next()
         .context("OpenCode account has no credential variable")?;
-    let directory = root.join("home/.config/opencode");
+    let directory = root.join("home").join(crate::instance::slot_home_rel(
+        ".config/opencode",
+        slot.slot_suffix.as_deref(),
+    ));
     std::fs::create_dir_all(&directory)
         .context("create private OpenCode configuration directory")?;
     let mut provider = serde_json::json!({

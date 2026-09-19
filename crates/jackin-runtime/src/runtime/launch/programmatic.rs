@@ -325,12 +325,13 @@ pub fn lane_agent_env(
 /// only covers hand-built configs that skipped validation.
 fn free_ephemeral_config_id(selected: &AppConfig, agent: Agent, id: &str) -> String {
     let base = format!("{id}@{}", agent.slug());
-    if selected
-        .agent_configurations
-        .get(&base)
-        .is_none_or(|existing| existing.agent == agent && existing.account == id)
-    {
-        return base;
+    match selected.agent_configurations.get(&base) {
+        // A hand-built config may use the synthesized ID even though
+        // persisted IDs normally reject `@`. Reuse it intact: replacing it
+        // would silently discard its model, endpoint, label, and wrapper.
+        Some(existing) if existing.agent == agent && existing.account == id => return base,
+        None => return base,
+        Some(_) => {}
     }
     let mut counter = 2_u32;
     while selected
@@ -406,17 +407,19 @@ pub fn with_account_selection(
         }
     }
     if let Some(config_id) = ephemeral_id {
-        selected.agent_configurations.insert(
-            config_id,
-            AgentConfiguration {
-                agent,
-                account: id.to_owned(),
-                model: None,
-                base_url: None,
-                display_label: None,
-                invoked_via_wrapper: None,
-            },
-        );
+        if !selected.agent_configurations.contains_key(&config_id) {
+            selected.agent_configurations.insert(
+                config_id,
+                AgentConfiguration {
+                    agent,
+                    account: id.to_owned(),
+                    model: None,
+                    base_url: None,
+                    display_label: None,
+                    invoked_via_wrapper: None,
+                },
+            );
+        }
     }
     let instances = jackin_config::resolve_launch(&selected, workspace, role, None, Some(agent))?;
     anyhow::ensure!(

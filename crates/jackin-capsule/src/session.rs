@@ -1728,7 +1728,7 @@ fn shell_executable() -> std::ffi::OsString {
 
 #[cfg(test)]
 fn shell_executable() -> std::ffi::OsString {
-    std::env::var_os("JACKIN_TEST_SHELL").unwrap_or_else(|| "/bin/zsh".into())
+    "/bin/sh".into()
 }
 
 /// Apply the stable pane terminal environment. The active outer terminal is

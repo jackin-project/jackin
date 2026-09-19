@@ -690,6 +690,7 @@ where
                 &prepared.0.root,
                 &config_owned,
                 &instances,
+                &prepared.0.auth.slots,
             )?;
             super::super::super::account_identity::record_account_configuration(
                 &prepared.0.root,
