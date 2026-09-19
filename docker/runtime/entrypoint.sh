@@ -127,7 +127,7 @@ esac
 
 # ── role runtime hooks ─────────────────────────────────────────────
 if [ -x /jackin/runtime/hooks/setup-once.sh ]; then
-    setup_once_marker="/jackin/state/hooks/setup-once.done"
+    setup_once_marker="${JACKIN_SESSION_STATE_DIR:-/jackin/state}/hooks/setup-once.done"
     if [ ! -e "$setup_once_marker" ]; then
         if ! mkdir -p "$(dirname "$setup_once_marker")"; then
             echo "[entrypoint] failed to create marker directory $(dirname "$setup_once_marker")" >&2

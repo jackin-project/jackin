@@ -6,6 +6,7 @@ use super::*;
 use jackin_core::Agent;
 #[cfg(unix)]
 use std::os::unix::fs::symlink;
+use std::process::Command;
 use tempfile::tempdir;
 #[test]
 fn renders_derived_dockerfile_with_workspace_and_entrypoint() {
@@ -833,8 +834,43 @@ fn entrypoint_sources_source_hook_so_exports_persist() {
 
 #[test]
 fn entrypoint_runs_setup_once_with_writable_marker() {
-    assert!(ENTRYPOINT_SH.contains("/jackin/state/hooks/setup-once.done"));
+    assert!(ENTRYPOINT_SH.contains(
+        "setup_once_marker=\"${JACKIN_SESSION_STATE_DIR:-/jackin/state}/hooks/setup-once.done\""
+    ));
+    assert!(!ENTRYPOINT_SH.contains("setup_once_marker=\"/jackin/state/hooks/setup-once.done\""));
     assert!(ENTRYPOINT_SH.contains("touch \"$setup_once_marker\""));
+}
+
+#[test]
+fn entrypoint_setup_once_marker_is_private_per_session() {
+    let fixture = tempdir().expect("marker fixture");
+    let assignment = ENTRYPOINT_SH
+        .lines()
+        .find(|line| line.contains("setup_once_marker=\"${JACKIN_SESSION_STATE_DIR"))
+        .expect("production setup-once marker assignment")
+        .trim();
+    let script = format!(
+        "set -eu\n{assignment}\nmkdir -p \"$(dirname \"$setup_once_marker\")\"\ntouch \"$setup_once_marker\"\nprintf '%s' \"$setup_once_marker\"\n"
+    );
+    let mut markers = Vec::new();
+    for session in ["41", "42"] {
+        let state = fixture.path().join(format!("session-{session}/state"));
+        let output = Command::new("bash")
+            .arg("-c")
+            .arg(&script)
+            .env("JACKIN_SESSION_STATE_DIR", &state)
+            .output()
+            .expect("run setup-once marker shell");
+        assert!(output.status.success(), "marker shell failed: {output:?}");
+        let marker = String::from_utf8(output.stdout).expect("marker path is UTF-8");
+        assert_eq!(
+            marker,
+            state.join("hooks/setup-once.done").display().to_string()
+        );
+        assert!(state.join("hooks/setup-once.done").is_file());
+        markers.push(marker);
+    }
+    assert_ne!(markers[0], markers[1], "session markers must not collide");
 }
 
 #[test]

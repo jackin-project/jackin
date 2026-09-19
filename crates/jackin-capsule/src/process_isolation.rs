@@ -9,12 +9,10 @@
 //! The session boundary is intentionally layered. On Landlock ABI 9 and
 //! newer, pathname Unix-socket resolution is denied outside explicitly
 //! writable session roots. Older kernels only get the ABI-3 filesystem rules;
-//! the daemon's kernel peer-UID authorization is then the control-socket
-//! boundary. `/jackin/state` remains a shared writable mount because the
-//! current runtime uses it for shared Git configuration and lifecycle state;
-//! it is a documented residual, not an instance-isolation claim. A future
-//! per-session state layout must remove that residual before this module can
-//! claim full writable-state isolation.
+//! the daemon's kernel peer-UID plus per-session bearer capability then gates
+//! the control socket. Mutable setup, temporary files, and git metadata live
+//! below one root allocated for the exact PTY session. There is no agent-child
+//! grant for capsule-wide state, `/tmp`, or shared GitHub CLI credentials.
 
 #[cfg(target_os = "linux")]
 use anyhow::Context;
@@ -115,12 +113,13 @@ mod linux {
     use anyhow::{Context, Result, bail};
     use jackin_protocol::CapsuleConfig;
     use std::ffi::CString;
+    use std::fs;
     use std::mem::size_of;
+    use std::os::unix::fs::PermissionsExt as _;
     use std::os::unix::process::CommandExt as _;
     use std::path::{Path, PathBuf};
 
     const CAP_DAC_OVERRIDE: u32 = 1;
-    const CAP_FOWNER: u32 = 3;
     const CAP_VERSION_3: u32 = 0x2008_0522;
     const PR_SET_KEEPCAPS: libc::c_int = 8;
     const PR_SET_NO_NEW_PRIVS: libc::c_int = 38;
@@ -214,8 +213,15 @@ mod linux {
             effective_uid == 0,
             "capsule isolation wrapper must start as root"
         );
+        let session_id = std::env::var(jackin_protocol::SESSION_ID_ENV)
+            .context("isolated session wrapper requires JACKIN_SESSION_ID")?
+            .parse::<u64>()
+            .context("isolated session wrapper has invalid JACKIN_SESSION_ID")?;
+        anyhow::ensure!(session_id > 0, "isolated session id cannot be zero");
+        let session_root = session_root_path(session_id);
+        prepare_session_root(&session_root)?;
         let cwd = std::env::current_dir().context("resolve isolated session cwd")?;
-        let rules = rules_for(config, instance, &cwd)?;
+        let rules = rules_for(config, instance, &cwd, &session_root)?;
         drop_privileges(identity)?;
         install_landlock(&rules)?;
 
@@ -227,6 +233,7 @@ mod linux {
         config: &CapsuleConfig,
         instance: Option<&str>,
         cwd: &Path,
+        session_root: &Path,
     ) -> Result<Vec<Rule>> {
         anyhow::ensure!(cwd.is_absolute(), "isolated session cwd must be absolute");
         anyhow::ensure!(
@@ -239,11 +246,7 @@ mod linux {
         // process-local Unix sockets. Sensitive `/jackin/run` sockets never
         // receive this bit.
         required_exact_rule(&mut rules, cwd, FULL_WITH_UNIX);
-        required_exact_rule(
-            &mut rules,
-            Path::new(jackin_core::container_paths::STATE_DIR),
-            FULL,
-        );
+        required_exact_rule(&mut rules, session_root, FULL_WITH_UNIX);
         for path in [
             format!(
                 "{}/entrypoint.sh",
@@ -274,10 +277,12 @@ mod linux {
         for path in ["/proc/self", "/proc/thread-self"] {
             optional_exact_rule(&mut rules, Path::new(path), READ_ONLY);
         }
-        optional_exact_rule(&mut rules, Path::new("/tmp"), FULL_WITH_UNIX);
+        // There is no broad /tmp grant. TMPDIR/TMP/TEMP point into the exact
+        // session root; an agent trying the host/container /tmp is denied.
 
         // Image-baked tools and shell configuration are shared, but are not
-        // account slots. Slot roots below are the only mutable account paths.
+        // account slots. They are read-only. Slot roots below are the only
+        // mutable account paths outside the private session root.
         for path in [
             "/home/agent/.oh-my-zsh",
             "/home/agent/.local/bin",
@@ -301,7 +306,7 @@ mod linux {
             "/home/agent/.zshrc",
             "/home/agent/.zshenv",
         ] {
-            optional_exact_rule(&mut rules, Path::new(path), FULL_WITH_UNIX);
+            optional_exact_rule(&mut rules, Path::new(path), READ_ONLY);
         }
         for path in [
             jackin_core::container_paths::CAPSULE_CONFIG,
@@ -314,9 +319,8 @@ mod linux {
         optional_exact_rule(
             &mut rules,
             Path::new(jackin_core::container_paths::CLIPBOARD_DIR),
-            FULL,
+            READ_ONLY,
         );
-        optional_exact_rule(&mut rules, Path::new("/home/agent/.config/gh"), FULL);
 
         if let Some(instance) = instance {
             let paths = config.mount_paths_for_instance(instance);
@@ -347,6 +351,45 @@ mod linux {
             }
         }
         Ok(rules)
+    }
+
+    fn session_root_path(session_id: u64) -> PathBuf {
+        Path::new(jackin_core::container_paths::SESSION_ROOTS_DIR).join(session_id.to_string())
+    }
+
+    /// Create the private tree before dropping UID and installing Landlock.
+    /// Session ids are process-local and restart from one, so a stale root is
+    /// removed only after rejecting symlinks/non-directories. The root is
+    /// never accepted from child input.
+    fn prepare_session_root(root: &Path) -> Result<()> {
+        match fs::symlink_metadata(root) {
+            Ok(metadata) if metadata.file_type().is_symlink() => {
+                bail!("isolated session root is a symlink: {}", root.display())
+            }
+            Ok(metadata) if !metadata.is_dir() => {
+                bail!(
+                    "isolated session root is not a directory: {}",
+                    root.display()
+                )
+            }
+            Ok(_) => fs::remove_dir_all(root)
+                .with_context(|| format!("clear stale isolated session root {}", root.display()))?,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => {
+                return Err(error)
+                    .with_context(|| format!("inspect isolated session root {}", root.display()));
+            }
+        }
+        fs::create_dir_all(root)
+            .with_context(|| format!("create isolated session root {}", root.display()))?;
+        for child in ["state", "tmp", "runtime", "cache"] {
+            fs::create_dir(root.join(child)).with_context(|| {
+                format!("create isolated session path {}/{}", root.display(), child)
+            })?;
+        }
+        fs::set_permissions(root, fs::Permissions::from_mode(0o700))
+            .with_context(|| format!("lock isolated session root {}", root.display()))?;
+        Ok(())
     }
 
     fn required_exact_rule(rules: &mut Vec<Rule>, path: &Path, access: u64) {
@@ -520,7 +563,7 @@ mod linux {
             return Err(std::io::Error::last_os_error()).context("drop session uid");
         }
 
-        let mask = (1u32 << CAP_DAC_OVERRIDE) | (1u32 << CAP_FOWNER);
+        let mask = retained_capability_mask();
         let header = CapUserHeader {
             version: CAP_VERSION_3,
             pid: 0,
@@ -542,9 +585,9 @@ mod linux {
         if unsafe { libc::syscall(libc::SYS_capset, &header, data.as_mut_ptr()) } != 0 {
             return Err(std::io::Error::last_os_error()).context("retain session DAC capabilities");
         }
-        for capability in [CAP_DAC_OVERRIDE, CAP_FOWNER] {
-            // SAFETY: this raises one of the two capabilities just installed
-            // in the calling process's ambient set.
+        for capability in [CAP_DAC_OVERRIDE] {
+            // SAFETY: this raises the one capability just installed in the
+            // calling process's ambient set.
             if unsafe { libc::prctl(PR_CAP_AMBIENT, PR_CAP_AMBIENT_RAISE, capability, 0, 0) } != 0 {
                 return Err(std::io::Error::last_os_error())
                     .context("make session DAC boundary capabilities survive exec");
@@ -565,6 +608,15 @@ mod linux {
         Ok(())
     }
 
+    /// DAC override is retained only because host bind mounts can be owned by
+    /// a different numeric UID than the per-session identity. Landlock remains
+    /// the path boundary. CAP_FOWNER is deliberately not retained: no session
+    /// operation needs to bypass ownership checks for chmod/chown/signal-like
+    /// ownership actions.
+    pub(super) const fn retained_capability_mask() -> u32 {
+        1u32 << CAP_DAC_OVERRIDE
+    }
+
     fn close_fd(fd: libc::c_int) {
         // SAFETY: callers pass file descriptors returned by the kernel and no
         // longer use them after this close.
@@ -578,7 +630,8 @@ mod linux {
 mod tests {
     use super::linux::{
         ACCESS_RESOLVE_UNIX, FULL, FULL_WITH_UNIX, READ_FILE_ONLY, Rule, access_for_abi,
-        add_execute_only_ancestors, drop_privileges, install_landlock, rules_for,
+        add_execute_only_ancestors, drop_privileges, install_landlock, retained_capability_mask,
+        rules_for,
     };
     use jackin_protocol::CapsuleConfig;
     use std::collections::BTreeMap;
@@ -602,8 +655,13 @@ mod tests {
             )]),
             ..CapsuleConfig::default()
         };
-        let rules = rules_for(&config, Some("slot-a"), Path::new("/workspace/project"))
-            .expect("construct exact Landlock rules");
+        let rules = rules_for(
+            &config,
+            Some("slot-a"),
+            Path::new("/workspace/project"),
+            Path::new("/jackin/run/sessions/1"),
+        )
+        .expect("construct exact Landlock rules");
         let paths = rules
             .iter()
             .map(|rule| rule.path.to_string_lossy().into_owned())
@@ -667,8 +725,13 @@ mod tests {
             )]),
             ..CapsuleConfig::default()
         };
-        let rules = rules_for(&config, Some("slot-a"), Path::new("/workspace/project"))
-            .expect("construct Landlock rules");
+        let rules = rules_for(
+            &config,
+            Some("slot-a"),
+            Path::new("/workspace/project"),
+            Path::new("/jackin/run/sessions/1"),
+        )
+        .expect("construct Landlock rules");
         for socket in [
             jackin_core::container_paths::CAPSULE_SOCKET,
             jackin_core::container_paths::HOST_SOCK,
@@ -691,7 +754,7 @@ mod tests {
     }
 
     #[test]
-    fn shared_state_residual_is_explicit_and_not_slot_isolation() {
+    fn shared_state_and_tmp_are_not_agent_grants_and_private_root_is_exact() {
         let config = CapsuleConfig {
             instances: vec!["slot-a".to_owned()],
             instance_mount_paths: BTreeMap::from([(
@@ -700,13 +763,30 @@ mod tests {
             )]),
             ..CapsuleConfig::default()
         };
-        let rules = rules_for(&config, Some("slot-a"), Path::new("/workspace/project"))
-            .expect("construct Landlock rules");
-        let state = rules
-            .iter()
-            .find(|rule| rule.path == Path::new(jackin_core::container_paths::STATE_DIR))
-            .expect("shared state rule");
-        assert_eq!(state.access, FULL);
+        let session_root = Path::new("/jackin/run/sessions/7");
+        let rules = rules_for(
+            &config,
+            Some("slot-a"),
+            Path::new("/workspace/project"),
+            session_root,
+        )
+        .expect("construct Landlock rules");
+        assert!(
+            rules
+                .iter()
+                .any(|rule| { rule.path == session_root && rule.access == FULL_WITH_UNIX })
+        );
+        assert!(!rules.iter().any(|rule| {
+            rule.path == Path::new(jackin_core::container_paths::STATE_DIR)
+                && rule.access & super::linux::WRITABLE != 0
+        }));
+        assert!(!rules.iter().any(|rule| {
+            rule.path == Path::new("/tmp") && rule.access & super::linux::WRITABLE != 0
+        }));
+        assert!(!rules.iter().any(|rule| {
+            rule.path == Path::new("/home/agent/.config/gh")
+                && rule.access & super::linux::WRITABLE != 0
+        }));
         assert!(
             rules.iter().any(|rule| {
                 rule.path == Path::new(jackin_core::container_paths::RUN_DIR)
@@ -714,6 +794,8 @@ mod tests {
             }),
             "run directory must remain traverse-only in the filesystem policy"
         );
+        assert_eq!(retained_capability_mask(), 1u32 << 1);
+        assert_eq!(retained_capability_mask() & (1u32 << 3), 0);
     }
 
     #[test]

@@ -17,8 +17,6 @@ use tempfile::Builder as TempfileBuilder;
 
 use jackin_core::container_paths;
 
-const CONTAINER_INIT_MARKER: &str = container_paths::CONTAINER_INIT_MARKER;
-
 // Container home for the `agent` user. Every default agent config/credential
 // location hangs off this. The per-agent resolvers below honor an agent's
 // standard config-dir env var (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`,
@@ -161,14 +159,46 @@ fn hermes_home_from(env: Option<&str>) -> PathBuf {
     env_or_agent_home(env, ".hermes")
 }
 const CAPSULE_RUNTIME_BIN: &str = container_paths::CAPSULE_BIN;
-const GIT_HOOKS_DIR: &str = container_paths::GIT_HOOKS_DIR;
-const GIT_HOOK_PATH: &str = container_paths::GIT_HOOK_PREPARE_COMMIT_MSG;
-const GIT_HOOK_MARKER: &str = container_paths::GIT_HOOK_PREPARE_COMMIT_MSG_MARKER;
-/// Cached DCO identity written at daemon startup so the hook never calls
-/// `git config` at commit time (avoids transient-empty-config silent skips).
-const GIT_DCO_IDENTITY_CACHE: &str = container_paths::GIT_DCO_IDENTITY_CACHE;
 #[cfg(debug_assertions)]
 const GIT_DCO_IDENTITY_CACHE_ENV: &str = "JACKIN_GIT_DCO_IDENTITY_CACHE";
+
+/// Resolve the mutable setup root supplied by the daemon for this PTY.
+/// Reject every path shape except `/jackin/run/sessions/<numeric>/state` so a
+/// compromised child cannot redirect setup writes into capsule-wide state.
+fn session_state_dir() -> Result<PathBuf> {
+    let raw = std::env::var_os(jackin_protocol::SESSION_STATE_DIR_ENV)
+        .context("isolated runtime setup requires JACKIN_SESSION_STATE_DIR")?;
+    let raw = raw
+        .to_str()
+        .context("JACKIN_SESSION_STATE_DIR must be UTF-8")?;
+    parse_session_state_dir(raw)
+}
+
+fn parse_session_state_dir(raw: &str) -> Result<PathBuf> {
+    let prefix = format!("{}/", container_paths::SESSION_ROOTS_DIR);
+    let relative = raw
+        .strip_prefix(&prefix)
+        .context("JACKIN_SESSION_STATE_DIR is outside the session roots")?;
+    let mut components = relative.split('/');
+    let session_id = components.next().unwrap_or_default();
+    let leaf = components.next().unwrap_or_default();
+    anyhow::ensure!(
+        !session_id.is_empty()
+            && session_id.parse::<u64>().is_ok()
+            && leaf == "state"
+            && components.next().is_none(),
+        "JACKIN_SESSION_STATE_DIR must name one numeric session state root"
+    );
+    Ok(PathBuf::from(raw))
+}
+
+fn session_state_path(name: &str) -> Result<PathBuf> {
+    anyhow::ensure!(
+        !name.is_empty() && !name.contains('/') && !name.contains('\\'),
+        "runtime setup path component is invalid"
+    );
+    Ok(session_state_dir()?.join(name))
+}
 
 pub fn run() -> Result<()> {
     run_runtime_setup_concurrently(
@@ -214,7 +244,7 @@ fn write_done_marker(marker: &Path, what: &str) -> Result<()> {
 }
 
 fn run_container_init_once() -> Result<()> {
-    let marker = Path::new(CONTAINER_INIT_MARKER);
+    let marker = session_state_path("container-init.done")?;
     if marker.exists() {
         return Ok(());
     }
@@ -257,7 +287,7 @@ fn run_container_init_once() -> Result<()> {
         ));
     }
 
-    write_done_marker(marker, "container init")?;
+    write_done_marker(&marker, "container init")?;
     Ok(())
 }
 
@@ -269,20 +299,28 @@ fn install_git_trailer_hook_if_requested() -> Result<()> {
         return Ok(());
     }
 
-    fs::create_dir_all(GIT_HOOKS_DIR)
-        .with_context(|| format!("failed to create git hooks dir {GIT_HOOKS_DIR}"))?;
+    let hooks_dir = session_state_path("git-hooks")?;
+    let hook_path = hooks_dir.join("prepare-commit-msg");
+    let hook_marker = hooks_dir.join("prepare-commit-msg.v3.done");
+
+    fs::create_dir_all(&hooks_dir)
+        .with_context(|| format!("failed to create git hooks dir {}", hooks_dir.display()))?;
     if !is_executable(CAPSULE_RUNTIME_BIN) {
         bail!("git trailer hook target {CAPSULE_RUNTIME_BIN} is not executable");
     }
-    remove_file_if_exists(GIT_HOOK_PATH)?;
-    symlink(CAPSULE_RUNTIME_BIN, GIT_HOOK_PATH)
-        .with_context(|| format!("failed to symlink {GIT_HOOK_PATH} to {CAPSULE_RUNTIME_BIN}"))?;
-    run_command(
-        "git",
-        &["config", "--global", "core.hooksPath", GIT_HOOKS_DIR],
-    )?;
-    fs::write(GIT_HOOK_MARKER, b"v3\n")
-        .with_context(|| format!("failed to write {GIT_HOOK_MARKER}"))?;
+    remove_file_if_exists(&hook_path)?;
+    symlink(CAPSULE_RUNTIME_BIN, &hook_path).with_context(|| {
+        format!(
+            "failed to symlink {} to {CAPSULE_RUNTIME_BIN}",
+            hook_path.display()
+        )
+    })?;
+    let hooks_dir = hooks_dir
+        .to_str()
+        .context("session hooks path is not UTF-8")?;
+    run_command("git", &["config", "--global", "core.hooksPath", hooks_dir])?;
+    fs::write(&hook_marker, b"v3\n")
+        .with_context(|| format!("failed to write {}", hook_marker.display()))?;
 
     let mut active = Vec::new();
     if env_is_one("JACKIN_GIT_COAUTHOR_TRAILER") {
@@ -1327,20 +1365,24 @@ fn dir_nonempty(path: &Path) -> Result<bool> {
 }
 
 fn git_trailer_hook_ready() -> bool {
-    if !is_executable(GIT_HOOK_PATH)
-        || !hook_points_to_capsule()
-        || !Path::new(GIT_HOOK_MARKER).exists()
-    {
+    let Ok(hooks_dir) = session_state_path("git-hooks") else {
+        return false;
+    };
+    let hook_path = hooks_dir.join("prepare-commit-msg");
+    let hook_marker = hooks_dir.join("prepare-commit-msg.v3.done");
+    if !is_executable(&hook_path) || !hook_points_to_capsule(&hook_path) || !hook_marker.exists() {
         return false;
     }
     let Ok(output) = runtime_setup_output("git", ["config", "--global", "core.hooksPath"]) else {
         return false;
     };
-    output.success && String::from_utf8_lossy(&output.stdout).trim_end() == GIT_HOOKS_DIR
+    output.success
+        && String::from_utf8_lossy(&output.stdout).trim_end()
+            == hooks_dir.to_string_lossy().as_ref()
 }
 
-fn hook_points_to_capsule() -> bool {
-    fs::read_link(GIT_HOOK_PATH).is_ok_and(|target| target == Path::new(CAPSULE_RUNTIME_BIN))
+fn hook_points_to_capsule(path: &Path) -> bool {
+    fs::read_link(path).is_ok_and(|target| target == Path::new(CAPSULE_RUNTIME_BIN))
 }
 
 fn coauthor_trailer_for_agent(agent: &str) -> Option<&'static str> {
@@ -1373,7 +1415,10 @@ fn cache_dco_identity_if_needed() {
         record_recovered_degradation();
         return;
     };
-    let cache_path = git_dco_identity_cache_path();
+    let Ok(cache_path) = git_dco_identity_cache_path() else {
+        record_recovered_degradation();
+        return;
+    };
     if let Err(_error) = fs::write(&cache_path, format!("{name}\n{email}\n")) {
         // A failed cache write means every commit shells out to live git
         // config — the exact failure this cache exists to prevent.
@@ -1386,7 +1431,14 @@ fn record_recovered_degradation() {
 }
 
 fn read_cached_dco_identity() -> Option<(String, String)> {
-    let content = match fs::read_to_string(git_dco_identity_cache_path()) {
+    let cache_path = match git_dco_identity_cache_path() {
+        Ok(path) => path,
+        Err(_) => {
+            record_recovered_degradation();
+            return None;
+        }
+    };
+    let content = match fs::read_to_string(cache_path) {
         Ok(content) => content,
         Err(error) if error.kind() == io::ErrorKind::NotFound => return None,
         Err(_error) => {
@@ -1400,12 +1452,12 @@ fn read_cached_dco_identity() -> Option<(String, String)> {
     Some((name, email))
 }
 
-fn git_dco_identity_cache_path() -> PathBuf {
+fn git_dco_identity_cache_path() -> Result<PathBuf> {
     #[cfg(debug_assertions)]
     if let Some(path) = std::env::var_os(GIT_DCO_IDENTITY_CACHE_ENV) {
-        return PathBuf::from(path);
+        return Ok(PathBuf::from(path));
     }
-    PathBuf::from(GIT_DCO_IDENTITY_CACHE)
+    session_state_path("git-dco-identity")
 }
 
 fn git_config_value(key: &str) -> Option<String> {

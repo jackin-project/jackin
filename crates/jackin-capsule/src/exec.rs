@@ -327,7 +327,11 @@ fn exec_control_request(
     ctx: jackin_protocol::TelemetryContext,
 ) -> ControlRequest {
     let msg = ClientMsg::ExecCommand { command, args };
-    ControlRequest { ctx, msg }
+    ControlRequest {
+        ctx,
+        session_capability: None,
+        msg,
+    }
 }
 
 /// Run `jackin-exec` and return the result as a captured struct instead of

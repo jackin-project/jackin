@@ -34,7 +34,7 @@ use pty_exit::{error_type as pty_exit_error_type, reason as pty_exit_reason};
 /// and every other terminal extension the operator's outer terminal
 /// understands would vanish at the multiplexer boundary.
 use jackin_core::container_paths;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 
@@ -147,6 +147,10 @@ pub struct Session {
     /// compares the peer UID with this value; it is not inferred from a wire
     /// session id supplied by the caller.
     pub identity: jackin_protocol::SessionIdentity,
+    /// Random bearer capability for this exact PTY session. Duplicate panes
+    /// may intentionally share an instance UID, so UID alone cannot authorize
+    /// a target-scoped control RPC.
+    pub(crate) control_capability: String,
     pub conversation_id: Option<String>,
     pub provider: Option<SessionProvider>,
     /// Published effective state. Authored solely by evidence arbitration on the
@@ -457,7 +461,8 @@ impl Session {
         // Session id must exist before the child spawns so the agent-status
         // reporter env can carry it. (Assigned here, used for the Session below.)
         let sid = next_id();
-        inject_status_env(&mut cmd, sid, agent.as_deref());
+        let control_capability = uuid::Uuid::new_v4().to_string();
+        inject_status_env(&mut cmd, sid, agent.as_deref(), &control_capability);
 
         let mut child = slave
             .spawn_command(cmd)
@@ -615,6 +620,7 @@ impl Session {
                 account_id,
                 usage_capability: None,
                 identity,
+                control_capability,
                 conversation_id,
                 provider,
                 state: AgentState::Unknown,
@@ -1530,6 +1536,7 @@ impl Session {
                 uid: 65_534,
                 gid: 65_534,
             },
+            control_capability: uuid::Uuid::new_v4().to_string(),
             conversation_id: None,
             provider,
             state: AgentState::Unknown,
@@ -1602,7 +1609,30 @@ pub fn validate_spawn_token_syntax(raw: &str) -> Result<&str, &'static str> {
 /// hook/plugin reporters can address this session; shell panes get only the
 /// socket var (no runtime to report for). State is never authored from these —
 /// reporters forward events, the daemon maps and gates them.
-fn inject_status_env(cmd: &mut CommandBuilder, session_id: u64, agent: Option<&str>) {
+fn inject_status_env(
+    cmd: &mut CommandBuilder,
+    session_id: u64,
+    agent: Option<&str>,
+    control_capability: &str,
+) {
+    let session_root = session_root_path(session_id);
+    let session_state = session_root.join("state");
+    let session_tmp = session_root.join("tmp");
+    let session_runtime = session_root.join("runtime");
+    let session_cache = session_root.join("cache");
+    // These paths are allocated by the root wrapper before Landlock is
+    // installed. Every mutable setup/cache path is therefore private to this
+    // PTY, never the capsule-wide state or host /tmp.
+    cmd.env("JACKIN_SESSION_ROOT", &session_root);
+    cmd.env(jackin_protocol::SESSION_STATE_DIR_ENV, &session_state);
+    cmd.env("TMPDIR", &session_tmp);
+    cmd.env("TMP", &session_tmp);
+    cmd.env("TEMP", &session_tmp);
+    cmd.env("XDG_RUNTIME_DIR", &session_runtime);
+    cmd.env("XDG_CACHE_HOME", &session_cache);
+    cmd.env("GIT_CONFIG_GLOBAL", session_root.join("gitconfig"));
+    cmd.env(jackin_protocol::SESSION_CAPABILITY_ENV, control_capability);
+    cmd.env("JACKIN_SESSION_ID", session_id.to_string());
     cmd.env("JACKIN_STATUS_SOCKET", crate::socket::SOCKET_PATH);
     if let Some(runtime) = agent {
         cmd.env("JACKIN_SESSION_ID", session_id.to_string());
@@ -1612,10 +1642,16 @@ fn inject_status_env(cmd: &mut CommandBuilder, session_id: u64, agent: Option<&s
             format!("hook-{runtime}-{session_id}"),
         );
     } else {
-        cmd.env_remove("JACKIN_SESSION_ID");
         cmd.env_remove("JACKIN_AGENT_RUNTIME");
         cmd.env_remove("JACKIN_STATUS_SOURCE");
     }
+}
+
+/// Canonical private root for one daemon-assigned session id. The wrapper
+/// derives the same path from the trusted numeric id rather than accepting a
+/// caller-supplied filesystem path.
+pub(crate) fn session_root_path(session_id: u64) -> PathBuf {
+    Path::new(container_paths::SESSION_ROOTS_DIR).join(session_id.to_string())
 }
 
 /// Authority grade for a runtime's semantic source. `opencode` and the flagged

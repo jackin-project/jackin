@@ -109,6 +109,7 @@ fn serialized_control_spans(
     let guard = tracing::subscriber::set_default(subscriber);
     let wire = serde_json::to_vec(&jackin_protocol::control::ControlRequest {
         ctx: context,
+        session_capability: None,
         msg: ClientMsg::Status,
     })
     .unwrap();
@@ -179,6 +180,7 @@ fn conformance_serialized_control_propagation_matrix_preserves_parentage_and_rej
             invocation_id: Some("not-a-uuid".to_owned()),
             ..jackin_protocol::TelemetryContext::v1()
         },
+        session_capability: None,
         msg: ClientMsg::UsageRefreshFocused,
     })
     .unwrap();
@@ -215,6 +217,7 @@ async fn conformance_wire_real_capsule_control_status_preserves_parent_and_deliv
             traceparent: Some(format!("00-{trace_id}-{parent_id}-01")),
             ..jackin_protocol::TelemetryContext::v1()
         },
+        session_capability: None,
         msg: ClientMsg::Status,
     };
     let wire = serde_json::to_vec(&request).expect("serialize control request");
@@ -227,6 +230,7 @@ async fn conformance_wire_real_capsule_control_status_preserves_parent_and_deliv
         &mut mux,
         ControlRequest {
             ctx: decoded.ctx,
+            session_capability: decoded.session_capability,
             msg: decoded.msg,
             peer_uid: 0,
             reply: crate::attach_protocol::ControlReply::Once(reply_tx),
@@ -272,6 +276,7 @@ fn conformance_exec_command_rpc_spans_exclude_command_and_args() {
     let argument_secret = "PRIVATE_ARGUMENT_PAYLOAD";
     let request = jackin_protocol::control::ControlRequest {
         ctx: jackin_protocol::TelemetryContext::v1(),
+        session_capability: None,
         msg: ClientMsg::ExecCommand {
             command: command_secret.to_owned(),
             args: vec![argument_secret.to_owned()],
@@ -1094,6 +1099,13 @@ fn socket_peer_credentials_scope_session_controls_and_attach() {
     sibling_session.identity = sibling;
     mux.session_supervisor.sessions.insert(1, own_session);
     mux.session_supervisor.sessions.insert(2, sibling_session);
+    let own_capability = mux
+        .session_supervisor
+        .sessions
+        .get(1)
+        .expect("own session")
+        .control_capability
+        .clone();
 
     assert!(
         attach_peer_is_authorized(&mux, Some(0)),
@@ -1111,6 +1123,7 @@ fn socket_peer_credentials_scope_session_controls_and_attach() {
     assert!(control_request_allowed(
         &mux,
         Some(own.uid),
+        Some(&own_capability),
         &ClientMsg::SessionSend {
             session: 1,
             text: "own".to_owned(),
@@ -1119,11 +1132,13 @@ fn socket_peer_credentials_scope_session_controls_and_attach() {
     assert!(control_request_allowed(
         &mux,
         Some(own.uid),
+        Some(&own_capability),
         &ClientMsg::StatusCapture { session_id: 1 }
     ));
     assert!(control_request_allowed(
         &mux,
         Some(own.uid),
+        Some(&own_capability),
         &ClientMsg::ReportRuntimeEvent {
             session_id: 1,
             source_id: "hook-codex-1".to_owned(),
@@ -1135,6 +1150,7 @@ fn socket_peer_credentials_scope_session_controls_and_attach() {
     assert!(control_request_allowed(
         &mux,
         Some(own.uid),
+        Some(&own_capability),
         &ClientMsg::Events { session: Some(1) }
     ));
 
@@ -1142,6 +1158,7 @@ fn socket_peer_credentials_scope_session_controls_and_attach() {
         !control_request_allowed(
             &mux,
             Some(own.uid),
+            Some(&own_capability),
             &ClientMsg::SessionSend {
                 session: 2,
                 text: "sibling".to_owned(),
@@ -1153,6 +1170,7 @@ fn socket_peer_credentials_scope_session_controls_and_attach() {
         !control_request_allowed(
             &mux,
             Some(own.uid),
+            Some(&own_capability),
             &ClientMsg::StatusCapture { session_id: 2 }
         ),
         "a session peer cannot capture a sibling"
@@ -1160,30 +1178,39 @@ fn socket_peer_credentials_scope_session_controls_and_attach() {
     assert!(!control_request_allowed(
         &mux,
         Some(own.uid),
+        None,
         &ClientMsg::Status
     ));
     assert!(!control_request_allowed(
         &mux,
         Some(own.uid),
+        None,
         &ClientMsg::Events { session: None }
     ));
     assert!(!control_request_allowed(
         &mux,
         Some(own.uid),
+        None,
         &ClientMsg::ExecCommand {
             command: "op".to_owned(),
             args: Vec::new(),
         }
     ));
     assert!(
-        !control_request_allowed(&mux, None, &ClientMsg::Status),
+        !control_request_allowed(&mux, None, None, &ClientMsg::Status),
         "missing or invalid peer authentication fails closed"
     );
 
-    assert!(control_request_allowed(&mux, Some(0), &ClientMsg::Status));
+    assert!(control_request_allowed(
+        &mux,
+        Some(0),
+        None,
+        &ClientMsg::Status
+    ));
     assert!(control_request_allowed(
         &mux,
         Some(9_999),
+        None,
         &ClientMsg::Snapshot
     ));
 }
@@ -1214,6 +1241,7 @@ async fn unauthorized_session_control_returns_unknown_without_sibling_input() {
         &mut mux,
         ControlRequest {
             ctx: jackin_protocol::TelemetryContext::v1(),
+            session_capability: None,
             peer_uid: own.uid,
             msg: ClientMsg::SessionSend {
                 session: 2,
@@ -9079,6 +9107,7 @@ fn subscribe_events(
         mux,
         ControlRequest {
             ctx: jackin_protocol::TelemetryContext::v1(),
+            session_capability: None,
             msg: ClientMsg::Events { session },
             peer_uid: 0,
             reply: crate::attach_protocol::ControlReply::Stream(tx),

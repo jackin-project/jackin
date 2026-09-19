@@ -103,6 +103,15 @@ pub const CAPSULE_CONFIG_PATH: &str = container_paths::CAPSULE_CONFIG;
 /// credentials. Single source of truth so the mount side and the connect side
 /// cannot drift.
 pub const HOST_SOCK_CONTAINER_PATH: &str = container_paths::HOST_SOCK;
+
+/// Environment variable carrying the daemon-issued bearer capability for one
+/// child session's target-scoped control RPCs. It is never a host passthrough.
+pub const SESSION_CAPABILITY_ENV: &str = "JACKIN_SESSION_CAPABILITY";
+
+/// Daemon-assigned numeric session id consumed by the root isolation wrapper.
+pub const SESSION_ID_ENV: &str = "JACKIN_SESSION_ID";
+/// Private mutable setup/state root allocated for one session.
+pub const SESSION_STATE_DIR_ENV: &str = "JACKIN_SESSION_STATE_DIR";
 /// Bounded, non-secret auth-mode carrier from Capsule config to runtime setup.
 pub const AUTH_MODE_ENV: &str = "JACKIN_AUTH_MODE";
 

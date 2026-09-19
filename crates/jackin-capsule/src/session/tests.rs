@@ -1224,24 +1224,41 @@ fn clear_runtime_authority_drops_state_and_counters() {
 #[test]
 fn agent_session_gets_status_reporter_env() {
     let mut cmd = CommandBuilder::new("/bin/true");
-    inject_status_env(&mut cmd, 42, Some("codex"));
+    inject_status_env(&mut cmd, 42, Some("codex"), "test-capability");
     let get = |k| cmd.get_env(k).and_then(|v| v.to_str());
     assert_eq!(get("JACKIN_SESSION_ID"), Some("42"));
     assert_eq!(get("JACKIN_AGENT_RUNTIME"), Some("codex"));
     assert_eq!(get("JACKIN_STATUS_SOURCE"), Some("hook-codex-42"));
     assert_eq!(get("JACKIN_STATUS_SOCKET"), Some("/jackin/run/jackin.sock"));
+    assert_eq!(
+        get(jackin_protocol::SESSION_CAPABILITY_ENV),
+        Some("test-capability")
+    );
+    assert_eq!(get("TMPDIR"), Some("/jackin/run/sessions/42/tmp"));
+    assert_eq!(
+        get("JACKIN_SESSION_STATE_DIR"),
+        Some("/jackin/run/sessions/42/state")
+    );
 }
 
 #[test]
-fn shell_session_gets_only_status_socket() {
+fn shell_session_gets_private_paths_and_no_agent_status_identity() {
     let mut cmd = CommandBuilder::new("/bin/zsh");
-    inject_status_env(&mut cmd, 7, None);
-    assert!(cmd.get_env("JACKIN_SESSION_ID").is_none());
+    inject_status_env(&mut cmd, 7, None, "shell-capability");
+    assert_eq!(
+        cmd.get_env("JACKIN_SESSION_ID").and_then(|v| v.to_str()),
+        Some("7")
+    );
     assert!(cmd.get_env("JACKIN_AGENT_RUNTIME").is_none());
     assert!(cmd.get_env("JACKIN_STATUS_SOURCE").is_none());
     assert_eq!(
         cmd.get_env("JACKIN_STATUS_SOCKET").and_then(|v| v.to_str()),
         Some("/jackin/run/jackin.sock")
+    );
+    assert_eq!(
+        cmd.get_env(jackin_protocol::SESSION_CAPABILITY_ENV)
+            .and_then(|v| v.to_str()),
+        Some("shell-capability")
     );
 }
 

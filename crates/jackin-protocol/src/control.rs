@@ -25,6 +25,11 @@ use crate::agent_status::AgentStatusReport;
 pub struct ControlRequest {
     /// Cross-process trace and product correlation.
     pub ctx: TelemetryContext,
+    /// Optional daemon-issued capability inherited by a session child. Host
+    /// operator requests leave this unset; the daemon never trusts a target
+    /// session id without matching this value for a session peer.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_capability: Option<String>,
     /// Requested control operation.
     pub msg: ClientMsg,
 }
