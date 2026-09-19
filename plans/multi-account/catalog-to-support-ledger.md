@@ -490,4 +490,3 @@ Routing contract (**D**, code.claude.com docs fetched 2026-09-17):
   row only when no cell references it.
 - Link check: every relative link in this file must resolve; re-run the check below
   after edits.
-
