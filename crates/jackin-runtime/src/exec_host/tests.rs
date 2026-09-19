@@ -391,12 +391,18 @@ async fn non_linux_capsule_daemon_peer_authentication_fails_closed() {
 
 #[cfg(target_os = "linux")]
 #[test]
-fn container_init_peer_status_requires_innermost_nspid_one() {
+fn container_init_peer_status_requires_exact_direct_container_nspid() {
     assert!(peer_is_container_init_process_status(
         "Name:\tjackin-capsule\nNSpid:\t424242\t1\n"
     ));
     assert!(!peer_is_container_init_process_status(
         "Name:\tagent\nNSpid:\t424243\t37\n"
+    ));
+    assert!(!peer_is_container_init_process_status(
+        "Name:\tnested-init\nNSpid:\t424244\t9\t1\n"
+    ));
+    assert!(!peer_is_container_init_process_status(
+        "Name:\tmalformed\nNSpid:\t1\n"
     ));
     assert!(!peer_is_container_init_process_status("Name:\tno-nspid\n"));
 }

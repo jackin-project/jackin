@@ -204,6 +204,7 @@ async fn conformance_wire_real_capsule_control_status_preserves_parent_and_deliv
     {
         return;
     }
+    let _telemetry_guard = crate::test_support::telemetry_test_guard();
     let testbed = jackin_otlp_testbed::Testbed::start().expect("start OTLP testbed");
     jackin_diagnostics::init_wire_test_export(
         &testbed.endpoint(),
@@ -770,6 +771,8 @@ fn conformance_wire_generated_codename_reaches_child_without_export() -> Result<
         return Ok(());
     }
 
+    let _telemetry_guard = crate::test_support::telemetry_test_guard();
+
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(2)
         .enable_all()
@@ -1106,6 +1109,13 @@ fn socket_peer_credentials_scope_session_controls_and_attach() {
         .expect("own session")
         .control_capability
         .clone();
+    let sibling_capability = mux
+        .session_supervisor
+        .sessions
+        .get(2)
+        .expect("sibling session")
+        .control_capability
+        .clone();
 
     assert!(
         attach_peer_is_authorized(&mux, Some(0)),
@@ -1152,6 +1162,24 @@ fn socket_peer_credentials_scope_session_controls_and_attach() {
         Some(own.uid),
         Some(&own_capability),
         &ClientMsg::Events { session: Some(1) }
+    ));
+    assert!(control_request_allowed(
+        &mux,
+        Some(own.uid),
+        Some(&own_capability),
+        &ClientMsg::ExecCommand {
+            command: "gh".to_owned(),
+            args: vec!["auth".to_owned(), "status".to_owned()],
+        }
+    ));
+    assert!(!control_request_allowed(
+        &mux,
+        Some(own.uid),
+        Some(&sibling_capability),
+        &ClientMsg::ExecCommand {
+            command: "gh".to_owned(),
+            args: Vec::new(),
+        }
     ));
 
     assert!(
@@ -1209,9 +1237,27 @@ fn socket_peer_credentials_scope_session_controls_and_attach() {
     ));
     assert!(control_request_allowed(
         &mux,
+        Some(0),
+        None,
+        &ClientMsg::ExecCommand {
+            command: "gh".to_owned(),
+            args: Vec::new(),
+        }
+    ));
+    assert!(control_request_allowed(
+        &mux,
         Some(9_999),
         None,
         &ClientMsg::Snapshot
+    ));
+    assert!(!control_request_allowed(
+        &mux,
+        Some(9_999),
+        None,
+        &ClientMsg::ExecCommand {
+            command: "gh".to_owned(),
+            args: Vec::new(),
+        }
     ));
 }
 
@@ -1259,6 +1305,44 @@ async fn unauthorized_session_control_returns_unknown_without_sibling_input() {
     );
 }
 
+#[tokio::test]
+async fn unauthorized_exec_is_rejected_before_picker_mutation() {
+    let mut mux = single_pane_tab_mux();
+    let identity = jackin_protocol::SessionIdentity {
+        uid: 2_121,
+        gid: 2_121,
+    };
+    mux.launch_env.launch_config.instance_identities =
+        BTreeMap::from([("agent".to_owned(), identity)]);
+    let (mut session, _session_rx) = test_session_with_agent(24, 80, Some("codex".to_owned()));
+    session.identity = identity;
+    mux.session_supervisor.sessions.insert(1, session);
+    let initial_dialog_count = mux.control.dialog_stack.len();
+
+    let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
+    handle_control_request(
+        &mut mux,
+        ControlRequest {
+            ctx: jackin_protocol::TelemetryContext::v1(),
+            session_capability: None,
+            peer_uid: identity.uid,
+            msg: ClientMsg::ExecCommand {
+                command: "gh".to_owned(),
+                args: vec!["auth".to_owned(), "status".to_owned()],
+            },
+            reply: crate::attach_protocol::ControlReply::Once(reply_tx),
+        },
+    );
+
+    let response = reply_rx.await.expect("authorization response");
+    assert!(matches!(response.msg, ServerMsg::Unknown));
+    assert_eq!(mux.control.dialog_stack.len(), initial_dialog_count);
+    assert!(
+        mux.control.pending_exec_reply.is_none(),
+        "unauthorized ExecCommand must not retain a deferred picker reply"
+    );
+}
+
 fn frame_contains_screen_erase(frame: &[u8]) -> bool {
     frame.windows(b"\x1b[2J".len()).any(|w| w == b"\x1b[2J")
 }
@@ -1289,6 +1373,21 @@ fn control_reply_for_request_shapes_usage_variants() {
 
 #[test]
 fn control_reply_exposes_typed_telemetry_health() {
+    const CHILD: &str = "JACKIN_CAPSULE_TELEMETRY_HEALTH_CHILD";
+    if std::env::var_os(CHILD).is_none() {
+        let status = Command::new(std::env::current_exe().expect("current test executable"))
+            .args([
+                "--exact",
+                "daemon::tests::control_reply_exposes_typed_telemetry_health",
+                "--nocapture",
+            ])
+            .env(CHILD, "1")
+            .status()
+            .expect("spawn isolated telemetry health test");
+        assert!(status.success(), "isolated telemetry health test failed");
+        return;
+    }
+    let _telemetry_guard = crate::test_support::telemetry_test_guard();
     let mut mux = single_pane_tab_mux();
     let reply = control_reply_for_request(&mut mux, ClientMsg::TelemetryHealth);
     let ServerMsg::TelemetryHealth { report } = reply else {
@@ -5098,6 +5197,7 @@ fn tab_bar_focus_mode_arrows_switch_tabs_then_esc_returns_to_agent() {
 
 #[test]
 fn capsule_widget_focus_lifecycle_is_exported_without_runtime_identity() {
+    let _telemetry_guard = crate::test_support::telemetry_test_guard();
     let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(true);
     tracing::subscriber::with_default(subscriber, || {
         let mut mux = test_mux(40, 80);
@@ -5152,6 +5252,8 @@ fn conformance_wire_capsule_mouse_dispatch_counts_once_without_coordinates() -> 
         anyhow::ensure!(status.success(), "isolated Capsule mouse test failed");
         return Ok(());
     }
+
+    let _telemetry_guard = crate::test_support::telemetry_test_guard();
 
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(2)

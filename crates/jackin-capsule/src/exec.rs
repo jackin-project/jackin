@@ -325,13 +325,20 @@ fn exec_control_request(
     command: String,
     args: Vec<String>,
     ctx: jackin_protocol::TelemetryContext,
+    session_capability: Option<String>,
 ) -> ControlRequest {
     let msg = ClientMsg::ExecCommand { command, args };
     ControlRequest {
         ctx,
-        session_capability: None,
+        session_capability,
         msg,
     }
+}
+
+fn inherited_session_capability() -> Option<String> {
+    std::env::var(jackin_protocol::SESSION_CAPABILITY_ENV)
+        .ok()
+        .filter(|value| !value.is_empty())
 }
 
 /// Run `jackin-exec` and return the result as a captured struct instead of
@@ -370,7 +377,9 @@ pub async fn run_capture(args: &[String]) -> Result<ExecCapture> {
         jackin_telemetry::propagation::inject(&mut ctx);
     }
     let request = match msg {
-        ClientMsg::ExecCommand { command, args } => exec_control_request(command, args, ctx),
+        ClientMsg::ExecCommand { command, args } => {
+            exec_control_request(command, args, ctx, inherited_session_capability())
+        }
         _ => unreachable!("constructed ExecCommand above"),
     };
     let result = async {

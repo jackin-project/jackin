@@ -163,6 +163,7 @@ mod linux {
         | ACCESS_TRUNCATE;
     pub(super) const FULL: u64 = READ_ONLY | WRITABLE;
     const FULL_WITH_UNIX: u64 = FULL | ACCESS_RESOLVE_UNIX;
+    const READ_ONLY_WITH_UNIX: u64 = READ_ONLY | ACCESS_RESOLVE_UNIX;
 
     // Pass only the ABI-1 prefix to create_ruleset. ABI 3 accepts this
     // prefix, and this boundary does not use the later network/scoped fields;
@@ -310,11 +311,20 @@ mod linux {
         }
         for path in [
             jackin_core::container_paths::CAPSULE_CONFIG,
-            jackin_core::container_paths::HOST_SOCK,
-            jackin_core::container_paths::USAGE_SOCK,
             jackin_core::container_paths::USAGE_ACCOUNTS,
         ] {
             optional_exact_rule(&mut rules, Path::new(path), READ_ONLY);
+        }
+        // These are exact socket inodes, not writable roots. ABI 9 needs the
+        // explicit pathname-socket right for connect(2); older kernels strip
+        // it in `access_for_abi` and retain the ABI-3 fail-closed filesystem
+        // policy.
+        for path in [
+            jackin_core::container_paths::CAPSULE_SOCKET,
+            jackin_core::container_paths::HOST_SOCK,
+            jackin_core::container_paths::USAGE_SOCK,
+        ] {
+            optional_exact_rule(&mut rules, Path::new(path), READ_ONLY_WITH_UNIX);
         }
         optional_exact_rule(
             &mut rules,
@@ -488,8 +498,12 @@ mod linux {
                 allowed_access: if rule.path.is_dir() {
                     access_for_abi(rule.access, abi)
                 } else {
-                    rule.access
-                        & (ACCESS_EXECUTE | ACCESS_WRITE_FILE | ACCESS_READ_FILE | ACCESS_TRUNCATE)
+                    access_for_abi(rule.access, abi)
+                        & (ACCESS_EXECUTE
+                            | ACCESS_WRITE_FILE
+                            | ACCESS_READ_FILE
+                            | ACCESS_TRUNCATE
+                            | ACCESS_RESOLVE_UNIX)
                 },
                 parent_fd: parent,
             };
@@ -535,6 +549,22 @@ mod linux {
             access
         } else {
             access & !ACCESS_RESOLVE_UNIX
+        }
+    }
+
+    // Keep production constants/functions private. The Linux-only unit tests
+    // live beside, rather than inside, this implementation module, so expose
+    // a test-only view instead of widening the production API.
+    #[cfg(test)]
+    pub(super) mod test_support {
+        pub(crate) const ACCESS_RESOLVE_UNIX: u64 = super::ACCESS_RESOLVE_UNIX;
+        pub(crate) const FULL_WITH_UNIX: u64 = super::FULL_WITH_UNIX;
+        pub(crate) const READ_ONLY: u64 = super::READ_ONLY;
+        pub(crate) const READ_ONLY_WITH_UNIX: u64 = super::READ_ONLY_WITH_UNIX;
+        pub(crate) const WRITABLE: u64 = super::WRITABLE;
+
+        pub(crate) fn access_for_abi(access: u64, abi: libc::c_long) -> u64 {
+            super::access_for_abi(access, abi)
         }
     }
 
@@ -629,9 +659,8 @@ mod linux {
 #[cfg(all(test, target_os = "linux"))]
 mod tests {
     use super::linux::{
-        ACCESS_RESOLVE_UNIX, FULL, FULL_WITH_UNIX, READ_FILE_ONLY, Rule, access_for_abi,
-        add_execute_only_ancestors, drop_privileges, install_landlock, retained_capability_mask,
-        rules_for,
+        FULL, READ_FILE_ONLY, Rule, add_execute_only_ancestors, drop_privileges, install_landlock,
+        retained_capability_mask, rules_for, test_support,
     };
     use jackin_protocol::CapsuleConfig;
     use std::collections::BTreeMap;
@@ -639,6 +668,9 @@ mod tests {
     use std::mem::size_of;
     use std::os::unix::fs::PermissionsExt as _;
     use std::path::Path;
+    use test_support::{
+        ACCESS_RESOLVE_UNIX, FULL_WITH_UNIX, READ_ONLY, READ_ONLY_WITH_UNIX, access_for_abi,
+    };
 
     #[test]
     fn landlock_rules_are_exact_for_selected_slot_and_exclude_secret_roots() {
@@ -712,6 +744,8 @@ mod tests {
     fn socket_resolution_is_only_granted_to_non_sensitive_roots_on_abi9() {
         assert_eq!(access_for_abi(FULL_WITH_UNIX, 3), FULL);
         assert_eq!(access_for_abi(FULL_WITH_UNIX, 9), FULL_WITH_UNIX);
+        assert_eq!(access_for_abi(READ_ONLY_WITH_UNIX, 3), READ_ONLY);
+        assert_eq!(access_for_abi(READ_ONLY_WITH_UNIX, 9), READ_ONLY_WITH_UNIX);
         assert_eq!(
             access_for_abi(super::linux::TRAVERSE, 9),
             super::linux::TRAVERSE
@@ -739,9 +773,9 @@ mod tests {
         ] {
             assert!(
                 rules.iter().all(|rule| {
-                    rule.path != Path::new(socket) || rule.access & ACCESS_RESOLVE_UNIX == 0
+                    rule.path != Path::new(socket) || rule.access & ACCESS_RESOLVE_UNIX != 0
                 }),
-                "sensitive socket received ResolveUnix: {socket}"
+                "RPC socket is missing ResolveUnix: {socket}"
             );
         }
         assert!(
@@ -778,14 +812,14 @@ mod tests {
         );
         assert!(!rules.iter().any(|rule| {
             rule.path == Path::new(jackin_core::container_paths::STATE_DIR)
-                && rule.access & super::linux::WRITABLE != 0
+                && rule.access & test_support::WRITABLE != 0
         }));
         assert!(!rules.iter().any(|rule| {
-            rule.path == Path::new("/tmp") && rule.access & super::linux::WRITABLE != 0
+            rule.path == Path::new("/tmp") && rule.access & test_support::WRITABLE != 0
         }));
         assert!(!rules.iter().any(|rule| {
             rule.path == Path::new("/home/agent/.config/gh")
-                && rule.access & super::linux::WRITABLE != 0
+                && rule.access & test_support::WRITABLE != 0
         }));
         assert!(
             rules.iter().any(|rule| {

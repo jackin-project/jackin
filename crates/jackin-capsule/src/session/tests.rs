@@ -1449,6 +1449,7 @@ async fn conformance_wire_real_pty_spawn_stream_and_exit_exclude_private_content
     {
         return;
     }
+    let _telemetry_guard = crate::test_support::telemetry_test_guard();
     let testbed = jackin_otlp_testbed::Testbed::start().expect("start OTLP testbed");
     jackin_diagnostics::init_wire_test_export(
         &testbed.endpoint(),
