@@ -141,7 +141,7 @@ pub enum AccountCredential {
         /// Exact host configuration directory.
         directory: PathBuf,
         /// Explicit XDG roots for clients that split state across
-        /// data/config/cache homes (Amp, OpenCode, and future XDG-root
+        /// data/config/cache homes (Amp, `OpenCode`, and future XDG-root
         /// clients). Absolute directories; validated.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         xdg_roots: Option<XdgRoots>,
