@@ -1,4 +1,4 @@
-version = "v1alpha11"
+version = "v1alpha12"
 
 [bootstrap]
 version = 1

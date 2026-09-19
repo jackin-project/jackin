@@ -7,6 +7,7 @@ use crate::schema::WorkspaceConfig;
 use crate::{AppConfig, ConfigError, ConfigResult};
 use jackin_core::{Agent, AuthForwardMode, EnvValue, WorkspaceName};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest as _, Sha256};
 use std::{
     collections::{BTreeMap, BTreeSet},
     path::{Path, PathBuf},
@@ -495,6 +496,85 @@ impl AccountConfig {
             }
         }
         Ok(env)
+    }
+}
+
+/// Stable, secret-free identity for the credential source used by an account.
+///
+/// The fields intentionally mirror `same_credential_source`: API-key model
+/// overrides do not identify a credential source, while the full persisted
+/// `EnvValue` does. The digest lets removal tombstones survive without keeping
+/// literal credentials in a second config field.
+pub(crate) fn account_source_fingerprint(account: &AccountConfig) -> String {
+    let mut digest = Sha256::new();
+    hash_component(&mut digest, account.provider.slug());
+    match &account.credential {
+        AccountCredential::Profile {
+            agent,
+            directory,
+            xdg_roots,
+        } => {
+            hash_component(&mut digest, "profile");
+            hash_component(&mut digest, agent.slug());
+            hash_component(&mut digest, &directory.to_string_lossy());
+            if let Some(roots) = xdg_roots {
+                hash_component(&mut digest, "xdg_roots");
+                hash_component(&mut digest, &roots.data.to_string_lossy());
+                hash_component(&mut digest, &roots.config.to_string_lossy());
+                hash_component(&mut digest, &roots.cache.to_string_lossy());
+            } else {
+                hash_component(&mut digest, "no_xdg_roots");
+            }
+        }
+        AccountCredential::ApiKey {
+            value, base_url, ..
+        } => {
+            hash_component(&mut digest, "api_key");
+            hash_env_value(&mut digest, value);
+            hash_optional_component(&mut digest, base_url.as_deref());
+        }
+        AccountCredential::OAuthToken { agent, value } => {
+            hash_component(&mut digest, "oauth_token");
+            hash_component(&mut digest, agent.slug());
+            hash_env_value(&mut digest, value);
+        }
+    }
+    hex::encode(digest.finalize())
+}
+
+fn hash_component(digest: &mut Sha256, value: &str) {
+    digest.update(u64::try_from(value.len()).unwrap_or(u64::MAX).to_be_bytes());
+    digest.update(value.as_bytes());
+}
+
+fn hash_optional_component(digest: &mut Sha256, value: Option<&str>) {
+    match value {
+        Some(value) => {
+            hash_component(digest, "some");
+            hash_component(digest, value);
+        }
+        None => hash_component(digest, "none"),
+    }
+}
+
+fn hash_env_value(digest: &mut Sha256, value: &EnvValue) {
+    match value {
+        EnvValue::Plain(value) => {
+            hash_component(digest, "plain");
+            hash_component(digest, value);
+        }
+        EnvValue::Extended(value) => {
+            hash_component(digest, "extended");
+            hash_component(digest, &value.value);
+            hash_component(digest, if value.on_demand { "true" } else { "false" });
+        }
+        EnvValue::OpRef(value) => {
+            hash_component(digest, "op_ref");
+            hash_component(digest, &value.op);
+            hash_component(digest, &value.path);
+            hash_optional_component(digest, value.account.as_deref());
+            hash_component(digest, if value.on_demand { "true" } else { "false" });
+        }
     }
 }
 /// Validate a stable, filesystem-safe account identifier.

@@ -16,8 +16,9 @@ use anyhow::Context as _;
 use jackin_core::{EnvValue, JackinPaths, WorkspaceName};
 use toml_edit::{DocumentMut, Item, Table};
 
+use crate::accounts::account_source_fingerprint;
 use crate::app_config::AppConfig;
-use crate::app_config::persist::{load_split_config, validate_reserved_env_names};
+use crate::app_config::persist::{load_split_config_locked, validate_reserved_env_names};
 use crate::auth::GithubAuthMode;
 use crate::migrations;
 use crate::persist::{
@@ -163,7 +164,11 @@ fn bootstrap_scan_accounts(config: &mut AppConfig, home: &Path) -> BootstrapRepo
     let scan = crate::discover_default_accounts(home);
     report.issues = scan.issues;
     let mut register = |id: String, account: crate::AccountConfig| {
-        if config.accounts.contains_key(&id) {
+        if config.accounts.contains_key(&id)
+            || config
+                .account_scan_exclusions
+                .contains(&account_source_fingerprint(&account))
+        {
             return;
         }
         config.accounts.insert(id.clone(), account.clone());
@@ -237,32 +242,22 @@ fn scan_source_registered(
     })
 }
 
-/// Consume an installer `fresh_install` marker, returning whether one ran.
+/// Read an installer `fresh_install` marker without changing it.
 ///
-/// Reads the current file, clears the marker via an atomic rewrite, and
-/// reports whether the caller must run the first bootstrap scan. Any
-/// other content is preserved byte-for-byte (marker table keys only).
-fn take_fresh_install_marker(path: &Path) -> crate::ConfigResult<bool> {
+/// The marker is cleared only in the same successful write that commits the
+/// bootstrap result, so a failed bootstrap remains retryable.
+fn has_fresh_install_marker(path: &Path) -> crate::ConfigResult<bool> {
     let raw =
         std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
-    let mut doc: DocumentMut = raw
+    let doc: DocumentMut = raw
         .parse()
         .with_context(|| format!("parsing {}", path.display()))?;
-    let marked = doc
+    Ok(doc
         .get("bootstrap")
         .and_then(Item::as_table_like)
         .and_then(|table| table.get("fresh_install"))
         .and_then(Item::as_bool)
-        .unwrap_or(false);
-    if !marked {
-        return Ok(false);
-    }
-    if let Some(table) = doc.get_mut("bootstrap").and_then(Item::as_table_like_mut) {
-        table.insert("fresh_install", toml_edit::value(false));
-    }
-    atomic_write(path, &doc.to_string())
-        .with_context(|| format!("writing {} without fresh-install marker", path.display()))?;
-    Ok(true)
+        .unwrap_or(false))
 }
 
 /// Comment-preserving mutator for `config.toml` and split workspace files.
@@ -302,15 +297,15 @@ impl ConfigEditor {
             initial.validate_accounts()?;
             atomic_write(&paths.config_file, &toml::to_string_pretty(&initial)?)?;
         }
-        migrations::migrate_config_file_if_needed(&paths.config_file)?;
-        if take_fresh_install_marker(&paths.config_file)? {
+        migrations::migrate_config_file_if_needed_locked(&paths.config_file)?;
+        if has_fresh_install_marker(&paths.config_file)? {
             // Installer-created empty config: run the first scan exactly
             // once, then clear the marker. The file is installer-shaped
             // (no operator comments to preserve), so a typed round-trip
             // write is safe.
             let raw = std::fs::read_to_string(&paths.config_file)
                 .with_context(|| format!("reading {}", paths.config_file.display()))?;
-            let mut config = load_split_config(paths, Some(raw))?;
+            let mut config = load_split_config_locked(paths, Some(raw))?;
             report = bootstrap_scan_accounts(&mut config, &paths.home_dir);
             report.fresh_install = true;
             config.bootstrap = Some(crate::BootstrapState::initialized());
@@ -319,7 +314,7 @@ impl ConfigEditor {
         }
         let raw = std::fs::read_to_string(&paths.config_file)
             .with_context(|| format!("reading {}", paths.config_file.display()))?;
-        drop(load_split_config(paths, Some(raw))?);
+        drop(load_split_config_locked(paths, Some(raw))?);
         let raw = std::fs::read_to_string(&paths.config_file)
             .with_context(|| format!("reading {}", paths.config_file.display()))?;
         let doc: DocumentMut = raw
@@ -386,12 +381,16 @@ impl ConfigEditor {
             }
         }
         let existing: AppConfig = toml::from_str(&self.doc.to_string())?;
+        let excluded = existing.account_scan_exclusions;
         let mut known = existing.accounts;
         for (id, account) in candidates {
             // Skip-on-collision in both dimensions: an operator
             // registration (same ID, or same credential source under
             // another ID) always wins over scan synthesis.
-            if known.contains_key(&id) || scan_source_registered(&known, &account) {
+            if known.contains_key(&id)
+                || excluded.contains(&account_source_fingerprint(&account))
+                || scan_source_registered(&known, &account)
+            {
                 continue;
             }
             self.upsert_account(&id, &account)?;
@@ -419,6 +418,7 @@ impl ConfigEditor {
     ) -> crate::ConfigResult<BootstrapReport> {
         let mut report = BootstrapReport::default();
         let existing: AppConfig = toml::from_str(&self.doc.to_string())?;
+        let excluded = existing.account_scan_exclusions;
         let mut known = existing.accounts;
         let home = self.home_dir.clone();
         for directory in &plan.directories {
@@ -438,7 +438,10 @@ impl ConfigEditor {
                             xdg_roots: None,
                         },
                     };
-                    if known.contains_key(&id) || scan_source_registered(&known, &account) {
+                    if known.contains_key(&id)
+                        || excluded.contains(&account_source_fingerprint(&account))
+                        || scan_source_registered(&known, &account)
+                    {
                         continue;
                     }
                     self.upsert_account(&id, &account)?;
@@ -475,7 +478,10 @@ impl ConfigEditor {
             let Some((id, account)) = seeded else {
                 continue;
             };
-            if known.contains_key(&id) || scan_source_registered(&known, &account) {
+            if known.contains_key(&id)
+                || excluded.contains(&account_source_fingerprint(&account))
+                || scan_source_registered(&known, &account)
+            {
                 continue;
             }
             self.upsert_account(&id, &account)?;

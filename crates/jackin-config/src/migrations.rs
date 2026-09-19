@@ -15,7 +15,7 @@ use std::path::Path;
 use anyhow::Context;
 use toml_edit::DocumentMut;
 
-use crate::persist::atomic_write;
+use crate::persist::{acquire_config_write_lock, atomic_write, config_file_for_workspace_path};
 use crate::versions::{CURRENT_CONFIG_VERSION, CURRENT_WORKSPACE_VERSION, LEGACY_VERSION};
 
 /// Transform applied to a TOML document for one version step.
@@ -102,8 +102,15 @@ pub const CONFIG_MIGRATIONS: &[MigrationStep] = &[
     // an upgrade never rescans or resurrects removed accounts.
     MigrationStep {
         from: "v1alpha10",
-        to: CURRENT_CONFIG_VERSION,
+        to: "v1alpha11",
         migrate: stamp_bootstrap_initialized,
+    },
+    // v1alpha11 → v1alpha12: persist secret-free scan exclusions so a
+    // deliberate account removal is not undone by an explicit rescan.
+    MigrationStep {
+        from: "v1alpha11",
+        to: CURRENT_CONFIG_VERSION,
+        migrate: noop_migration,
     },
 ];
 /// Ordered per-workspace file migration chain from [`LEGACY_VERSION`] to current.
@@ -349,6 +356,11 @@ impl std::fmt::Display for KubernetesVersion {
 
 /// Migrate a global `config.toml` to the current schema if needed.
 pub fn migrate_config_file_if_needed(path: &Path) -> crate::ConfigResult<bool> {
+    let _lock = acquire_config_write_lock(path)?;
+    migrate_config_file_if_needed_locked(path)
+}
+
+pub(crate) fn migrate_config_file_if_needed_locked(path: &Path) -> crate::ConfigResult<bool> {
     let result = migrate_file_if_needed(path, "config", CURRENT_CONFIG_VERSION, CONFIG_MIGRATIONS);
     emit_migration_result("global", CURRENT_CONFIG_VERSION, CONFIG_MIGRATIONS, &result);
     result
@@ -358,6 +370,12 @@ pub fn migrate_config_file_if_needed(path: &Path) -> crate::ConfigResult<bool> {
 
 /// Migrate a split workspace file to the current schema if needed.
 pub fn migrate_workspace_file_if_needed(path: &Path) -> crate::ConfigResult<bool> {
+    let config_file = config_file_for_workspace_path(path);
+    let _lock = acquire_config_write_lock(&config_file)?;
+    migrate_workspace_file_if_needed_locked(path)
+}
+
+pub(crate) fn migrate_workspace_file_if_needed_locked(path: &Path) -> crate::ConfigResult<bool> {
     let result = migrate_file_if_needed(
         path,
         "workspace config",

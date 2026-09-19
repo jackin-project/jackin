@@ -17,7 +17,10 @@ use toml_edit::DocumentMut;
 use super::AppConfig;
 use crate::editor::ConfigEditor;
 use crate::migrations;
-use crate::persist::{atomic_write, validate_workspace_file_stem};
+use crate::persist::{
+    acquire_config_write_lock, atomic_write, config_file_for_workspace_path,
+    validate_workspace_file_stem,
+};
 use crate::schema::WorkspaceConfig;
 use crate::validation::validate_workspace_config;
 use crate::versions::{CURRENT_CONFIG_VERSION, CURRENT_WORKSPACE_VERSION};
@@ -414,6 +417,14 @@ pub fn load_split_config(
     paths: &JackinPaths,
     contents_opt: Option<String>,
 ) -> crate::ConfigResult<AppConfig> {
+    let _lock = acquire_config_write_lock(&paths.config_file)?;
+    load_split_config_locked(paths, contents_opt)
+}
+
+pub(crate) fn load_split_config_locked(
+    paths: &JackinPaths,
+    contents_opt: Option<String>,
+) -> crate::ConfigResult<AppConfig> {
     // Capture legacy per-workspace `op_account` from the raw TOML before
     // the typed parse below drops it: `WorkspaceConfig` no longer has that
     // field (it moved onto each op ref in v1alpha5), so a typed round-trip
@@ -440,7 +451,7 @@ pub fn load_split_config(
         migrate_legacy_workspaces(paths, &config, &legacy_workspaces, &legacy_op_accounts)?;
     }
 
-    config.workspaces = load_workspace_files(&paths.workspaces_dir)?;
+    config.workspaces = load_workspace_files_locked(&paths.workspaces_dir)?;
     Ok(config)
 }
 
@@ -469,6 +480,14 @@ fn migrate_embedded_op_accounts(doc: &mut DocumentMut) -> crate::ConfigResult<()
 
 /// Read and migrate every `*.toml` workspace file under `workspaces_dir`.
 pub fn load_workspace_files(
+    workspaces_dir: &Path,
+) -> crate::ConfigResult<BTreeMap<String, WorkspaceConfig>> {
+    let config_file = config_file_for_workspace_path(&workspaces_dir.join("workspace.toml"));
+    let _lock = acquire_config_write_lock(&config_file)?;
+    load_workspace_files_locked(workspaces_dir)
+}
+
+fn load_workspace_files_locked(
     workspaces_dir: &Path,
 ) -> crate::ConfigResult<BTreeMap<String, WorkspaceConfig>> {
     let mut workspaces = BTreeMap::new();
@@ -501,7 +520,7 @@ pub fn load_workspace_files(
         })?;
         let name = WorkspaceName::parse(stem)
             .with_context(|| format!("invalid workspace filename {}", path.display()))?;
-        migrations::migrate_workspace_file_if_needed(&path)?;
+        migrations::migrate_workspace_file_if_needed_locked(&path)?;
         let raw = std::fs::read_to_string(&path)
             .with_context(|| format!("reading workspace config {}", path.display()))?;
         let workspace = toml::from_str(&raw)
@@ -685,11 +704,11 @@ pub fn config_needs_split_migration(raw: &str) -> crate::ConfigResult<bool> {
     Ok(version == migrations::SchemaVersion::Legacy && has_legacy_workspaces)
 }
 
-fn load_config_contents(paths: &JackinPaths) -> crate::ConfigResult<Option<String>> {
+fn load_config_contents_locked(paths: &JackinPaths) -> crate::ConfigResult<Option<String>> {
     match std::fs::read_to_string(&paths.config_file) {
         Ok(raw) if config_needs_split_migration(&raw)? => Ok(Some(raw)),
         Ok(_) => {
-            migrations::migrate_config_file_if_needed(&paths.config_file)?;
+            migrations::migrate_config_file_if_needed_locked(&paths.config_file)?;
             std::fs::read_to_string(&paths.config_file)
                 .with_context(|| {
                     format!("re-reading {} after migration", paths.config_file.display())
@@ -709,8 +728,9 @@ impl AppConfig {
     pub fn load_or_init(paths: &JackinPaths) -> crate::ConfigResult<Self> {
         let loaded = (|| {
             paths.ensure_base_dirs()?;
-            let contents_opt = load_config_contents(paths)?;
-            load_split_config(paths, contents_opt)
+            let _lock = acquire_config_write_lock(&paths.config_file)?;
+            let contents_opt = load_config_contents_locked(paths)?;
+            load_split_config_locked(paths, contents_opt)
         })();
         let mut config = crate::telemetry::finish_operation(
             jackin_telemetry::schema::enums::ConfigScope::Global,
