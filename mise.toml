@@ -652,6 +652,14 @@ jq -e \
 printf 'version=%s\nsource_commit=%s\n' "$version" "$source_commit"
 '''
 
+[tasks.verify-preview-package]
+description = "Verify the complete six-payload Homebrew preview package handoff"
+run = '''
+set -euo pipefail
+: "${VELNOR_VERIFIED_PACKAGE_DIR:?missing VELNOR_VERIFIED_PACKAGE_DIR}"
+cargo xtask release-verify-package
+'''
+
 [tasks.renovate-upstream-sources]
 description = "Verify the pinned mise release ships both construct architectures (guards the construct installer URLs and the MISE_VERSION customManager)"
 run = '''
