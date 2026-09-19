@@ -944,8 +944,10 @@ fn focused_usage_cache_selects_the_exact_account_capability() {
     };
     let mut personal_view = codex_cached_usage_view();
     personal_view.status_bar_label = "personal account".to_owned();
+    personal_view.account.account_label = "same@example.test".to_owned();
     let mut work_view = codex_cached_usage_view();
     work_view.status_bar_label = "work account".to_owned();
+    work_view.account.account_label = "same@example.test".to_owned();
 
     let mut cache = UsageCache::default();
     cache.insert_snapshot_for_capability_for_test(

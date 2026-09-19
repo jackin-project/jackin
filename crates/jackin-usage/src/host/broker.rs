@@ -1619,7 +1619,12 @@ fn publication_identity_metadata(
         let capability = capability_for_binding(binding);
         let identity_kind = match binding.identity.as_ref().map(|identity| &identity.subject) {
             Some(CanonicalAccountSubject::ProviderId(_)) => UsageIdentityKindV1::ProviderAccountId,
-            Some(CanonicalAccountSubject::ProviderStableHandle(_)) => {
+            Some(
+                CanonicalAccountSubject::ProviderStableHandle(_)
+                | CanonicalAccountSubject::SourceCapability(_),
+            ) => {
+                // Wire V1 has no separate source-scoped kind; both are stable
+                // non-secret handles and never carry the capability itself.
                 UsageIdentityKindV1::ProviderStableHandle
             }
             None => UsageIdentityKindV1::ProviderAccountId,

@@ -1,5 +1,7 @@
 use std::sync::Mutex;
 
+use jackin_protocol::control::UsageConfidence;
+
 use super::*;
 
 type ResolverCall = (Option<String>, Option<String>, Vec<String>);
@@ -274,6 +276,106 @@ fn disc_scope_capsule_uses_only_forwarded_capabilities() {
         UsageCredentialKind::ForwardedCapability
     );
     assert!(resolver.calls.lock().unwrap().is_empty());
+}
+
+#[test]
+fn disc_same_provider_sources_with_same_labels_keep_source_capabilities_distinct() {
+    let catalog = discover_usage_sources(
+        &UsageDiscoveryScope::Capsule {
+            forwarded_accounts: vec![
+                ForwardedUsageAccount {
+                    surface_id: "codex".to_owned(),
+                    capability_id: "capability-a".to_owned(),
+                    account_label: Some("same@example.test".to_owned()),
+                },
+                ForwardedUsageAccount {
+                    surface_id: "codex".to_owned(),
+                    capability_id: "capability-b".to_owned(),
+                    account_label: Some("same@example.test".to_owned()),
+                },
+            ],
+        },
+        &NoEnvResolver,
+    )
+    .unwrap();
+
+    let validated = validate_usage_sources(catalog, &NoEnvResolver);
+
+    assert_eq!(validated.accounts.len(), 2);
+    assert_eq!(validated.bindings.len(), 2);
+    assert_eq!(
+        validated
+            .accounts
+            .iter()
+            .map(|account| account.account_key.as_str())
+            .collect::<BTreeSet<_>>()
+            .len(),
+        2
+    );
+    assert!(validated.accounts.iter().all(|account| {
+        matches!(
+            account.identity.subject,
+            CanonicalAccountSubject::SourceCapability(_)
+        )
+    }));
+    assert!(
+        validated
+            .accounts
+            .iter()
+            .all(|account| account.source_ids.len() == 1)
+    );
+}
+
+#[test]
+fn disc_unresolved_same_labels_do_not_overwrite_discovered_views() {
+    let temp = tempfile::tempdir().unwrap();
+    let catalog = discover_usage_sources(
+        &UsageDiscoveryScope::Capsule {
+            forwarded_accounts: vec![
+                ForwardedUsageAccount {
+                    surface_id: "codex".to_owned(),
+                    capability_id: "capability-a".to_owned(),
+                    account_label: None,
+                },
+                ForwardedUsageAccount {
+                    surface_id: "codex".to_owned(),
+                    capability_id: "capability-b".to_owned(),
+                    account_label: None,
+                },
+            ],
+        },
+        &NoEnvResolver,
+    )
+    .unwrap();
+    let validated = validate_usage_sources(catalog, &NoEnvResolver);
+    let bindings = validated.bindings.clone();
+
+    let mut runtime = HostUsageRuntime::new();
+    runtime
+        .open(crate::host::HostRuntimeConfig::under_data_dir(temp.path()))
+        .unwrap();
+    runtime.discovery = Some(validated);
+
+    for (index, binding) in bindings.iter().enumerate() {
+        let mut view = FocusedUsageView::unavailable("fixture", index as i64);
+        view.focused_agent = Some("codex".to_owned());
+        view.focused_provider = Some("OpenAI".to_owned());
+        view.account.provider_label = "OpenAI / Codex".to_owned();
+        view.account.account_label = "same@example.test".to_owned();
+        view.confidence = UsageConfidence::Authoritative;
+        view.status_bar_label = format!("source-{index}");
+        runtime.record_discovered_snapshot(binding, view);
+    }
+
+    assert_eq!(runtime.discovered_views.len(), 2);
+    assert_eq!(
+        runtime
+            .discovered_views
+            .values()
+            .map(|view| view.status_bar_label.as_str())
+            .collect::<BTreeSet<_>>(),
+        BTreeSet::from(["source-0", "source-1"])
+    );
 }
 
 fn write_codex_only_global(config_root: &Path, codex_root: &Path) {

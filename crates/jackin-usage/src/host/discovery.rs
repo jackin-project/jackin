@@ -995,10 +995,11 @@ fn validate_usage_sources_with_reader(
                         account_label
                             .as_ref()
                             .filter(|label| !label.trim().is_empty())
-                            .map(|label| {
-                                CanonicalAccountSubject::ProviderStableHandle(
-                                    label.trim().to_owned(),
-                                )
+                            .map(|_| {
+                                // A label is presentation evidence only. Keep
+                                // source identity when the provider did not
+                                // return a stronger canonical subject.
+                                CanonicalAccountSubject::SourceCapability(capability_id.clone())
                             })
                     });
                 let Some(subject) = subject else {
@@ -1700,10 +1701,11 @@ impl HostUsageRuntime {
         binding: &ValidatedCredentialBinding,
         mut view: FocusedUsageView,
     ) {
-        let identity = binding
-            .identity
-            .clone()
-            .or_else(|| CanonicalAccountIdentity::from_view(binding.surface, &view));
+        let identity = binding.identity.clone().or_else(|| {
+            CanonicalAccountIdentity::from_view(binding.surface, &view).map(|_| {
+                CanonicalAccountIdentity::source_capability(binding.surface, &binding.capability_id)
+            })
+        });
         let Some(identity) = identity else {
             let error = view.last_error.clone();
             let kind = if error.is_some() {

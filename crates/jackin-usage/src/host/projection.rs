@@ -305,7 +305,8 @@ fn project_account(
         canonical_account_id,
         identity_kind: match entry.identity.subject {
             CanonicalAccountSubject::ProviderId(_) => UsageIdentityKindV1::ProviderAccountId,
-            CanonicalAccountSubject::ProviderStableHandle(_) => {
+            CanonicalAccountSubject::ProviderStableHandle(_)
+            | CanonicalAccountSubject::SourceCapability(_) => {
                 UsageIdentityKindV1::ProviderStableHandle
             }
         },
