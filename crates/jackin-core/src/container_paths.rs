@@ -18,6 +18,11 @@ pub const STATE_DIR: &str = "/jackin/state";
 /// Ephemeral runtime sockets, clipboard staging, usage handoff JSON.
 pub const RUN_DIR: &str = "/jackin/run";
 
+/// Private roots allocated by the capsule supervisor for each PTY session.
+/// Agent children receive only their own numeric child below this directory;
+/// the parent remains traverse-only in the Landlock policy.
+pub const SESSION_ROOTS_DIR: &str = "/jackin/run/sessions";
+
 /// Host-repo mount points inside the container (`/jackin/host/...`).
 pub const HOST_DIR: &str = "/jackin/host";
 

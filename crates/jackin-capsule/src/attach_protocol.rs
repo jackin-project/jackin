@@ -42,6 +42,9 @@ pub(crate) struct AttachHandshake {
 
 pub(crate) struct ControlRequest {
     pub(crate) ctx: jackin_protocol::TelemetryContext,
+    /// Daemon-issued session capability copied from the wire envelope. It is
+    /// checked with the kernel peer UID before target-scoped dispatch.
+    pub(crate) session_capability: Option<String>,
     pub(crate) msg: jackin_protocol::control::ClientMsg,
     /// Kernel-authenticated peer identity. The wire request remains unchanged;
     /// this metadata is added only after the daemon accepts the socket.
@@ -272,9 +275,15 @@ async fn perform_control_handshake(
         );
     };
     if request.msg.is_subscription() {
-        let completion =
-            serve_control_subscription(stream, request.ctx, request.msg, peer_uid, control_tx)
-                .await;
+        let completion = serve_control_subscription(
+            stream,
+            request.ctx,
+            request.session_capability,
+            request.msg,
+            peer_uid,
+            control_tx,
+        )
+        .await;
         drop(client_permit);
         return completion;
     }
@@ -282,6 +291,7 @@ async fn perform_control_handshake(
     if control_tx
         .send(ControlRequest {
             ctx: request.ctx,
+            session_capability: request.session_capability,
             msg: request.msg,
             peer_uid,
             reply: ControlReply::Once(reply_tx),
@@ -326,6 +336,7 @@ async fn perform_control_handshake(
 async fn serve_control_subscription(
     mut stream: UnixStream,
     ctx: jackin_protocol::TelemetryContext,
+    session_capability: Option<String>,
     msg: jackin_protocol::control::ClientMsg,
     peer_uid: u32,
     control_tx: mpsc::UnboundedSender<ControlRequest>,
@@ -334,6 +345,7 @@ async fn serve_control_subscription(
     if control_tx
         .send(ControlRequest {
             ctx,
+            session_capability,
             msg,
             peer_uid,
             reply: ControlReply::Stream(event_tx),

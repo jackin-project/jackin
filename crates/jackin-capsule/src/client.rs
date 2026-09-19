@@ -603,6 +603,9 @@ async fn connect_and_send(
     let result = stream
         .write_all(&control_frame(&ControlRequest {
             ctx,
+            session_capability: std::env::var(jackin_protocol::SESSION_CAPABILITY_ENV)
+                .ok()
+                .filter(|value| !value.is_empty()),
             msg: request.clone(),
         }))
         .await;

@@ -39,6 +39,7 @@ pub(crate) fn attach_peer_is_authorized(mux: &Multiplexer, peer_uid: Option<u32>
 pub(crate) fn control_request_allowed(
     mux: &Multiplexer,
     peer_uid: Option<u32>,
+    session_capability: Option<&str>,
     message: &ClientMsg,
 ) -> bool {
     let Some(peer_uid) = peer_uid else {
@@ -78,8 +79,30 @@ pub(crate) fn control_request_allowed(
         mux.session_supervisor
             .sessions
             .get(session_id)
-            .is_some_and(|session| session.identity.uid == peer_uid)
+            .is_some_and(|session| {
+                session.identity.uid == peer_uid
+                    && capability_matches(&session.control_capability, session_capability)
+            })
     })
+}
+
+/// Compare the fixed-format session bearer without an early exit on the
+/// secret bytes. The socket is local, but keeping the comparison uniform costs
+/// nothing and avoids turning the authorization branch into a token oracle.
+fn capability_matches(expected: &str, presented: Option<&str>) -> bool {
+    let Some(presented) = presented else {
+        return false;
+    };
+    let expected = expected.as_bytes();
+    let presented = presented.as_bytes();
+    let max = expected.len().max(presented.len());
+    let mut difference = expected.len() ^ presented.len();
+    for index in 0..max {
+        let left = expected.get(index).copied().unwrap_or(0);
+        let right = presented.get(index).copied().unwrap_or(0);
+        difference |= usize::from(left ^ right);
+    }
+    difference == 0
 }
 
 fn configured_session_uid(mux: &Multiplexer, peer_uid: u32) -> bool {

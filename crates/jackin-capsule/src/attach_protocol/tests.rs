@@ -34,6 +34,7 @@ async fn control_socket_exports_client_parent_server_and_completes_after_reply_w
         .in_scope(|| jackin_telemetry::propagation::inject(&mut context));
     let request = jackin_protocol::control::ControlRequest {
         ctx: context,
+        session_capability: None,
         msg: jackin_protocol::control::ClientMsg::Status,
     };
     let (mut server, mut client) = UnixStream::pair().expect("control socket pair");
@@ -115,6 +116,7 @@ async fn control_socket_marks_server_failure_when_peer_closes_before_reply() {
         Some("00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01".to_owned());
     let request = jackin_protocol::control::ControlRequest {
         ctx: context,
+        session_capability: None,
         msg: jackin_protocol::control::ClientMsg::Status,
     };
     let (mut server, mut client) = UnixStream::pair().expect("control socket pair");

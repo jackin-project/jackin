@@ -339,7 +339,12 @@ pub(super) struct ControlRouting {
 }
 
 fn handle_control_request(mux: &mut Multiplexer, request: ControlRequest) {
-    if !control_request_allowed(mux, Some(request.peer_uid), &request.msg) {
+    if !control_request_allowed(
+        mux,
+        Some(request.peer_uid),
+        request.session_capability.as_deref(),
+        &request.msg,
+    ) {
         let _error = jackin_telemetry::record_error(RPC_ERROR);
         match request.reply {
             crate::attach_protocol::ControlReply::Once(reply_tx) => {
