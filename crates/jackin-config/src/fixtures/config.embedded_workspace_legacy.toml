@@ -1,0 +1,16 @@
+# SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+# SPDX-License-Identifier: Apache-2.0
+
+version = "v1alpha12"
+account_scan_exclusions = ["removed-account-fingerprint"]
+
+[workspaces.legacy]
+version = "v1alpha8"
+workdir = "/workspace/legacy"
+
+[[workspaces.legacy.mounts]]
+src = "/host/legacy"
+dst = "/workspace/legacy"
+
+[workspaces.legacy.roles.builder.codex]
+auth_forward = "sync"

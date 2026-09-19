@@ -325,6 +325,7 @@ fn parse_global_config(
         migrations::CONFIG_MIGRATIONS,
     )?;
     migrate_embedded_op_accounts(&mut doc).map_err(|_| ConfigSourceIssue::Malformed)?;
+    migrate_embedded_workspaces(&mut doc)?;
     let mut config: AppConfig =
         toml::from_str(&doc.to_string()).map_err(|_| ConfigSourceIssue::Malformed)?;
     let raw_embedded = std::mem::take(&mut config.workspaces);
@@ -441,6 +442,11 @@ pub(crate) fn load_split_config_locked(
                 .parse()
                 .context("parsing embedded workspace configuration")?;
             migrate_embedded_op_accounts(&mut doc)?;
+            migrate_embedded_workspaces(&mut doc).map_err(|issue| {
+                ConfigError::msg(format!(
+                    "migrating embedded workspace configuration: {issue:?}"
+                ))
+            })?;
             toml::from_str(&doc.to_string())?
         }
         None => AppConfig::default(),
@@ -455,7 +461,32 @@ pub(crate) fn load_split_config_locked(
     Ok(config)
 }
 
-/// Upgrade embedded legacy fields before strict `WorkspaceConfig` deserialization.
+/// Run the complete workspace migration chain before strict deserialization.
+fn migrate_embedded_workspaces(doc: &mut DocumentMut) -> Result<(), ConfigSourceIssue> {
+    let Some(workspaces) = doc
+        .get_mut("workspaces")
+        .and_then(toml_edit::Item::as_table_mut)
+    else {
+        return Ok(());
+    };
+    for (_, item) in workspaces.iter_mut() {
+        let Some(table) = item.as_table_mut() else {
+            continue;
+        };
+        let mut workspace = DocumentMut::new();
+        *workspace.as_table_mut() = table.clone();
+        let workspace = migrate_document_in_memory(
+            &workspace.to_string(),
+            "workspace config",
+            CURRENT_WORKSPACE_VERSION,
+            migrations::WORKSPACE_MIGRATIONS,
+        )?;
+        *table = workspace.as_table().clone();
+    }
+    Ok(())
+}
+
+/// Upgrade embedded legacy `op_account` fields before strict deserialization.
 fn migrate_embedded_op_accounts(doc: &mut DocumentMut) -> crate::ConfigResult<()> {
     let Some(workspaces) = doc
         .get_mut("workspaces")

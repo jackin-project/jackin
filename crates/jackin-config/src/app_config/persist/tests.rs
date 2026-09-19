@@ -336,6 +336,66 @@ TOKEN = { op = "op://v/i/f", path = "Work/Claude/token" }
 }
 
 #[test]
+fn embedded_workspace_runs_supported_migrations_before_deserialization() {
+    let raw = include_str!("../../fixtures/config.embedded_workspace_legacy.toml");
+    let (config, embedded) = parse_global_config(raw.as_bytes()).unwrap();
+
+    assert_eq!(config.version, CURRENT_CONFIG_VERSION);
+    assert_eq!(
+        config.account_scan_exclusions,
+        std::collections::BTreeSet::from(["removed-account-fingerprint".to_owned()])
+    );
+    let workspace = embedded.get("legacy").unwrap();
+    assert_eq!(workspace.version, CURRENT_WORKSPACE_VERSION);
+    assert!(workspace.roles.is_empty());
+}
+
+#[test]
+fn split_embedded_workspace_migration_preserves_global_fields_and_is_idempotent() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    paths.ensure_base_dirs().unwrap();
+    let raw = include_str!("../../fixtures/config.embedded_workspace_legacy.toml");
+
+    let config = load_split_config(&paths, Some(raw.to_owned())).unwrap();
+    assert_eq!(config.version, CURRENT_CONFIG_VERSION);
+    assert!(
+        config
+            .account_scan_exclusions
+            .contains("removed-account-fingerprint")
+    );
+
+    let global = std::fs::read_to_string(&paths.config_file).unwrap();
+    let global_value: toml::Value = toml::from_str(&global).unwrap();
+    assert_eq!(
+        global_value["version"].as_str(),
+        Some(CURRENT_CONFIG_VERSION)
+    );
+    assert_eq!(
+        global_value["account_scan_exclusions"][0].as_str(),
+        Some("removed-account-fingerprint")
+    );
+
+    let workspace_path = paths.workspaces_dir.join("legacy.toml");
+    let workspace = std::fs::read_to_string(&workspace_path).unwrap();
+    let workspace_value: toml::Value = toml::from_str(&workspace).unwrap();
+    assert_eq!(
+        workspace_value["version"].as_str(),
+        Some(CURRENT_WORKSPACE_VERSION)
+    );
+    assert!(
+        !workspace.contains("codex"),
+        "legacy agent table survived: {workspace}"
+    );
+
+    let global_before = std::fs::read(&paths.config_file).unwrap();
+    let workspace_before = std::fs::read(&workspace_path).unwrap();
+    load_split_config(&paths, Some(raw.to_owned())).unwrap();
+    assert_eq!(global_before, std::fs::read(&paths.config_file).unwrap());
+    assert_eq!(workspace_before, std::fs::read(&workspace_path).unwrap());
+}
+
+#[test]
 fn legacy_non_string_op_account_bails_loudly() {
     // A present-but-non-string op_account is operator data; it must
     // surface, not be silently dropped (mirrors the v1alpha7 migration).
