@@ -20,13 +20,13 @@ use jackin_usage::host::{
 
 #[test]
 fn resolved_launch_inventory_deduplicates_only_launch_agents() {
-    let config = jackin_protocol::CapsuleConfig {
+    let config = CapsuleConfig {
         instances: vec![
             "work@claude".to_owned(),
             "work@codex".to_owned(),
             "work@claude".to_owned(),
         ],
-        ..jackin_protocol::CapsuleConfig::default()
+        ..CapsuleConfig::default()
     };
 
     assert_eq!(
@@ -60,7 +60,7 @@ fn launch_usage_capabilities_preserve_account_identity_and_provider_surface() {
         );
     }
 
-    let mut launch_config = jackin_protocol::CapsuleConfig {
+    let mut launch_config = CapsuleConfig {
         instances: vec![
             "personal-codex".to_owned(),
             "work-codex".to_owned(),
@@ -76,7 +76,7 @@ fn launch_usage_capabilities_preserve_account_identity_and_provider_surface() {
             ("work-codex".to_owned(), "work-openai".to_owned()),
             ("routed-codex".to_owned(), "routed-zai".to_owned()),
         ]),
-        ..jackin_protocol::CapsuleConfig::default()
+        ..CapsuleConfig::default()
     };
 
     populate_launch_usage_capabilities(&config, &mut launch_config);
@@ -181,7 +181,7 @@ fn launch_discovery_relay_uses_distinct_canonical_ids_for_same_surface() -> Resu
 
     let allowed = forwarded.iter().cloned().collect::<BTreeSet<_>>();
     let canonical = canonical_capabilities_for_launch(&discovery, &sources, &allowed);
-    let mut launch_config = jackin_protocol::CapsuleConfig {
+    let mut launch_config = CapsuleConfig {
         instances: vec!["personal@codex".to_owned(), "work@codex".to_owned()],
         accounts: BTreeMap::from([
             ("personal@codex".to_owned(), "personal-openai".to_owned()),
@@ -203,7 +203,7 @@ fn launch_discovery_relay_uses_distinct_canonical_ids_for_same_surface() -> Resu
                 },
             ),
         ]),
-        ..jackin_protocol::CapsuleConfig::default()
+        ..CapsuleConfig::default()
     };
 
     canonical.apply_to_launch_config(&mut launch_config);
@@ -430,7 +430,13 @@ async fn usage_relay_authorizes_only_exact_forwarded_account() {
     let socket = temp.path().join("usage.sock");
     let allowed = capability("allowed");
     let denied = capability("denied");
-    let relay = start(socket.clone(), broker, vec![allowed.clone()]).unwrap();
+    let relay = start(
+        socket.clone(),
+        broker,
+        vec![allowed.clone()],
+        BTreeMap::from([(current_peer(temp.path()), allowed.clone())]),
+    )
+    .unwrap();
 
     let denied_response = send(
         &socket,
@@ -510,7 +516,12 @@ async fn usage_relay_bind_failure_is_inactive_and_never_probes() {
     fs::create_dir(&long_dir).unwrap();
     let socket = long_dir.join("usage.sock");
 
-    let guard = start_guard(socket.clone(), broker, vec![capability("allowed")]);
+    let guard = start_guard(
+        socket.clone(),
+        broker,
+        vec![capability("allowed")],
+        BTreeMap::new(),
+    );
 
     assert!(guard.task.is_none());
     assert!(!socket.exists());
@@ -522,11 +533,13 @@ async fn usage_relay_impossible_socket_path_skips_discovery() {
     let temp = tempfile::tempdir().unwrap();
     let paths = JackinPaths::resolve_with_env(temp.path(), None, None);
     let socket_dir = temp.path().join("x".repeat(120));
+    let launch_config = CapsuleConfig::default();
 
     let (guard, _) = prepare_for_container(UsageRelayLaunch {
         paths: &paths,
         workspace_name: Some("fixture"),
         role_key: "role",
+        launch_config: &launch_config,
         forwarded_sources: ForwardedUsageSources {
             selected_account_ids: BTreeSet::new(),
             selected_account_surfaces: BTreeMap::new(),
@@ -540,6 +553,11 @@ async fn usage_relay_impossible_socket_path_skips_discovery() {
 
     assert!(guard.task.is_none());
     assert!(!guard.socket_path.as_ref().unwrap().exists());
+}
+
+fn current_peer(path: &Path) -> (u32, u32) {
+    let metadata = fs::metadata(path).unwrap();
+    (metadata.uid(), metadata.gid())
 }
 
 async fn send(socket: &Path, operation: UsageBrokerOperation) -> UsageBrokerResponse {

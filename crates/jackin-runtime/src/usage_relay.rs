@@ -13,6 +13,7 @@ use std::sync::Arc;
 use anyhow::{Context as _, Result};
 use jackin_config::AppConfig;
 use jackin_core::{JackinPaths, UsageCredentialEnvName, WorkspaceName};
+use jackin_protocol::CapsuleConfig;
 use jackin_protocol::usage_broker::{
     USAGE_BROKER_MAX_FRAME_BYTES, USAGE_BROKER_PROTOCOL_VERSION, UsageAccountCapability,
     UsageBrokerOperation, UsageBrokerRequest, UsageBrokerResponse, UsageCoordinationError,
@@ -131,6 +132,8 @@ pub struct UsageRelayLaunch<'a> {
     pub workspace_name: Option<&'a str>,
     /// Effective role key.
     pub role_key: &'a str,
+    /// Host-validated launch config carrying per-session Unix identities.
+    pub launch_config: &'a CapsuleConfig,
     /// Exact credential sources proven to enter this Capsule.
     pub forwarded_sources: ForwardedUsageSources,
     /// Per-container host socket directory already mounted at `/jackin/run`.
@@ -151,9 +154,7 @@ pub struct ResolvedLaunchUsageInventory {
 
 /// Project the resolved launch configuration into the Capsule usage boundary.
 #[must_use]
-pub fn resolved_launch_usage_inventory(
-    config: &jackin_protocol::CapsuleConfig,
-) -> ResolvedLaunchUsageInventory {
+pub fn resolved_launch_usage_inventory(config: &CapsuleConfig) -> ResolvedLaunchUsageInventory {
     let mut instances = config.instances.clone();
     instances.sort();
     instances.dedup();
@@ -220,10 +221,7 @@ pub(crate) struct CanonicalLaunchUsageCapabilities {
 }
 
 impl CanonicalLaunchUsageCapabilities {
-    pub(crate) fn apply_to_launch_config(
-        &self,
-        launch_config: &mut jackin_protocol::CapsuleConfig,
-    ) {
+    pub(crate) fn apply_to_launch_config(&self, launch_config: &mut CapsuleConfig) {
         let replacements = launch_config
             .instances
             .iter()
@@ -250,6 +248,36 @@ impl CanonicalLaunchUsageCapabilities {
             }
         }
     }
+}
+
+type RelayPeerCapabilities = BTreeMap<(u32, u32), UsageAccountCapability>;
+
+fn peer_capabilities_for_launch(
+    launch_config: &CapsuleConfig,
+    canonical: &CanonicalLaunchUsageCapabilities,
+) -> Result<RelayPeerCapabilities> {
+    let mut peer_capabilities = BTreeMap::new();
+    for instance_id in &launch_config.instances {
+        let Some(identity) = launch_config.identity_for_instance(instance_id) else {
+            continue;
+        };
+        let Some(alias) = launch_config.usage_capabilities.get(instance_id) else {
+            continue;
+        };
+        let Some(capability) = canonical
+            .by_account_surface
+            .get(&(alias.account_id.clone(), alias.surface_id.clone()))
+        else {
+            continue;
+        };
+        anyhow::ensure!(
+            peer_capabilities
+                .insert((identity.uid, identity.gid), capability.clone())
+                .is_none(),
+            "multiple usage instances share Unix identity {identity:?}"
+        );
+    }
+    Ok(peer_capabilities)
 }
 
 /// Derive source proof from credentials actually provisioned for this launch.
@@ -289,7 +317,7 @@ pub fn forwarded_sources_from_launch(
 pub fn forwarded_sources_from_launch_config(
     state: &crate::instance::RoleState,
     resolved_env: &jackin_env::ResolvedEnv,
-    launch_config: &jackin_protocol::CapsuleConfig,
+    launch_config: &CapsuleConfig,
 ) -> ForwardedUsageSources {
     let mut sources = forwarded_sources_from_launch(state, resolved_env);
     sources.selected_account_ids = launch_config.accounts.values().cloned().collect();
@@ -308,10 +336,7 @@ pub fn forwarded_sources_from_launch_config(
 /// every admitted instance. An unknown account or provider leaves that entry
 /// absent; the Capsule then fails closed for usage refresh instead of falling
 /// back to a same-surface account.
-pub fn populate_launch_usage_capabilities(
-    config: &AppConfig,
-    launch_config: &mut jackin_protocol::CapsuleConfig,
-) {
+pub fn populate_launch_usage_capabilities(config: &AppConfig, launch_config: &mut CapsuleConfig) {
     for instance_id in &launch_config.instances {
         let Some(account_id) = launch_config.accounts.get(instance_id) else {
             continue;
@@ -346,6 +371,7 @@ pub(crate) async fn prepare_for_container(
     let paths = launch.paths.clone();
     let workspace_name = launch.workspace_name.map(str::to_owned);
     let role_key = launch.role_key.to_owned();
+    let launch_config = launch.launch_config;
     let forwarded_sources = launch.forwarded_sources;
     let socket_dir = launch.socket_dir;
     let socket_path = socket_dir.join(RELAY_SOCKET);
@@ -381,13 +407,15 @@ pub(crate) async fn prepare_for_container(
             CanonicalLaunchUsageCapabilities::default(),
         ));
     }
+    let peer_capabilities =
+        peer_capabilities_for_launch(launch_config, &canonical_launch_usage_capabilities)?;
     if let Some(parent) = socket_path.parent() {
         fs::create_dir_all(parent)
             .with_context(|| format!("creating usage relay directory {}", parent.display()))?;
         fs::set_permissions(parent, fs::Permissions::from_mode(0o700))?;
     }
     Ok((
-        start_guard(socket_path, client, capabilities),
+        start_guard(socket_path, client, capabilities, peer_capabilities),
         canonical_launch_usage_capabilities,
     ))
 }
@@ -420,10 +448,7 @@ pub async fn prepare_for_docker_container(
 }
 
 impl PreparedUsageRelay {
-    pub(crate) fn apply_to_launch_config(
-        &self,
-        launch_config: &mut jackin_protocol::CapsuleConfig,
-    ) {
+    pub(crate) fn apply_to_launch_config(&self, launch_config: &mut CapsuleConfig) {
         self.canonical_launch_usage_capabilities
             .apply_to_launch_config(launch_config);
     }
@@ -525,8 +550,9 @@ fn start_guard(
     socket_path: PathBuf,
     client: UsageBrokerClient,
     capabilities: Vec<UsageAccountCapability>,
+    peer_capabilities: RelayPeerCapabilities,
 ) -> UsageRelayGuard {
-    let task = start(socket_path.clone(), client, capabilities).ok();
+    let task = start(socket_path.clone(), client, capabilities, peer_capabilities).ok();
     UsageRelayGuard {
         task,
         socket_path: Some(socket_path),
@@ -611,6 +637,7 @@ pub fn start(
     socket_path: PathBuf,
     broker: UsageBrokerClient,
     capabilities: Vec<UsageAccountCapability>,
+    peer_capabilities: BTreeMap<(u32, u32), UsageAccountCapability>,
 ) -> Result<tokio::task::JoinHandle<()>> {
     let allowlist = UsageCapabilitySet::new(capabilities);
     drop(fs::remove_file(&socket_path));
@@ -620,7 +647,8 @@ pub fn start(
     Ok(jackin_telemetry::spawn::spawn_stream(
         "usage_relay.connection",
         async move {
-            if let Err(_error) = run_listener(listener, broker, allowlist).await {
+            if let Err(_error) = run_listener(listener, broker, allowlist, peer_capabilities).await
+            {
                 let _recorded = jackin_telemetry::record_error(
                     jackin_telemetry::schema::enums::ErrorType::RpcError,
                 );
@@ -633,15 +661,17 @@ async fn run_listener(
     listener: UnixListener,
     broker: UsageBrokerClient,
     allowlist: UsageCapabilitySet,
+    peer_capabilities: RelayPeerCapabilities,
 ) -> Result<()> {
     loop {
         let (stream, _) = listener.accept().await?;
         let broker = broker.clone();
         let allowlist = allowlist.clone();
+        let peer_capabilities = peer_capabilities.clone();
         drop(jackin_telemetry::spawn::spawn_stream(
             "usage_relay.request",
             async move {
-                drop(handle_connection(stream, broker, allowlist).await);
+                drop(handle_connection(stream, broker, allowlist, peer_capabilities).await);
             },
         ));
     }
@@ -651,7 +681,12 @@ async fn handle_connection(
     stream: UnixStream,
     broker: UsageBrokerClient,
     allowlist: UsageCapabilitySet,
+    peer_capabilities: RelayPeerCapabilities,
 ) -> Result<()> {
+    let peer = stream
+        .peer_cred()
+        .ok()
+        .map(|credentials| (credentials.uid(), credentials.gid()));
     let (reader, mut writer) = stream.into_split();
     let mut bytes = Vec::new();
     let mut reader = BufReader::new(reader)
@@ -667,7 +702,11 @@ async fn handle_connection(
                     if request.protocol_version == USAGE_BROKER_PROTOCOL_VERSION
                         && request.build_id == env!("CARGO_PKG_VERSION") =>
                 {
-                    dispatch(request.operation, broker, allowlist).await
+                    if peer_authorized(peer, &request.operation, &allowlist, &peer_capabilities) {
+                        dispatch(request.operation, broker, allowlist).await
+                    } else {
+                        error_response(UsageCoordinationErrorKind::Unauthorized)
+                    }
                 }
                 _ => error_response(UsageCoordinationErrorKind::ProtocolMismatch),
             }
@@ -680,6 +719,39 @@ async fn handle_connection(
     response.push(b'\n');
     writer.write_all(&response).await?;
     Ok(())
+}
+
+fn peer_authorized(
+    peer: Option<(u32, u32)>,
+    operation: &UsageBrokerOperation,
+    allowlist: &UsageCapabilitySet,
+    peer_capabilities: &RelayPeerCapabilities,
+) -> bool {
+    let Some(capability) = operation_capability(operation) else {
+        return false;
+    };
+    let Some((uid, gid)) = peer else {
+        return false;
+    };
+    allowlist.authorize(capability).is_ok()
+        && (uid == 0 || peer_capabilities.get(&(uid, gid)) == Some(capability))
+}
+
+fn operation_capability(operation: &UsageBrokerOperation) -> Option<&UsageAccountCapability> {
+    match operation {
+        UsageBrokerOperation::CurrentForCapability { capability }
+        | UsageBrokerOperation::RefreshForCapability { capability, .. }
+        | UsageBrokerOperation::JoinForCapability { capability, .. }
+        | UsageBrokerOperation::Current { capability }
+        | UsageBrokerOperation::Refresh { capability, .. }
+        | UsageBrokerOperation::Join { capability, .. } => Some(capability),
+        UsageBrokerOperation::CurrentProjection
+        | UsageBrokerOperation::RequestRefresh { .. }
+        | UsageBrokerOperation::JoinPublication { .. }
+        | UsageBrokerOperation::CurrentProjectionForSurface
+        | UsageBrokerOperation::RequestRefreshForSurface { .. }
+        | UsageBrokerOperation::JoinPublicationForSurface { .. } => None,
+    }
 }
 
 async fn dispatch(

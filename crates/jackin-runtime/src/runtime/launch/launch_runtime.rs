@@ -926,6 +926,7 @@ pub(crate) async fn launch_role_runtime(
             workspace_name: (!sibling_auth_prewarm.workspace_name.is_empty())
                 .then_some(sibling_auth_prewarm.workspace_name),
             role_key: sibling_auth_prewarm.role_key,
+            launch_config: &capsule_config,
             forwarded_sources: crate::usage_relay::forwarded_sources_from_launch_config(
                 state,
                 resolved_env,
