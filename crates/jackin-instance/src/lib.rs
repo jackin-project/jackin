@@ -299,9 +299,9 @@ pub fn slot_home_rel(rel: &str, suffix: Option<&str>) -> String {
 /// folder-var kind. `Dir` agents point at their config home; `Parent`
 /// agents (`GEMINI_CLI_HOME`) point at a unique parent whose
 /// `credential_dir` child is the home; `XdgRoot` agents point at the
-/// XDG root (the first home-rel component), matching the unset-var
-/// default for primary slots. Agents without a folder var resolve the
-/// plain home; the target is unused because they admit one slot.
+/// XDG data root (the parent of the credential directory), matching the
+/// client's `XDG_DATA_HOME + <agent>/` lookup. Agents without a folder var
+/// resolve the plain home; the target is unused because they admit one slot.
 fn slot_home_and_target(
     agent: jackin_core::Agent,
     home_rel: &str,
@@ -323,7 +323,13 @@ fn slot_home_and_target(
         }
         (Some(FolderVarKind::Parent), None) => (home_rel.to_owned(), "/home/agent".to_owned()),
         (Some(FolderVarKind::XdgRoot), _) => {
-            let root = home_rel.split('/').next().unwrap_or(home_rel);
+            // The client appends its own durable subdirectory (`amp/` or
+            // `opencode/`) to XDG_DATA_HOME. Exporting only `.local` would
+            // leave the runtime variable and the mounted `.local/share/...`
+            // tree describing different paths.
+            let root = home_rel
+                .rsplit_once('/')
+                .map_or(home_rel, |(parent, _)| parent);
             (
                 slot_home_rel(home_rel, suffix),
                 format!("/home/agent/{root}"),
@@ -448,6 +454,9 @@ pub struct InstanceAuthBinding {
     pub account_id: String,
     pub mode: AuthForwardMode,
     pub sync_source_dir: Option<PathBuf>,
+    /// Explicit XDG roots from the selected profile, if any. These are
+    /// selected-instance data, never ambient process-environment state.
+    pub xdg_roots: Option<jackin_config::XdgRoots>,
 }
 
 impl InstanceAuthBinding {
@@ -468,6 +477,7 @@ impl InstanceAuthBinding {
             account_id,
             mode,
             sync_source_dir,
+            xdg_roots: None,
         }
     }
 }
@@ -558,8 +568,19 @@ fn validate_selected_account_sources(
     host_home: &Path,
 ) -> anyhow::Result<()> {
     for binding in bindings {
+        let xdg_data_dir = (binding.agent == jackin_core::Agent::Amp)
+            .then(|| {
+                binding
+                    .xdg_roots
+                    .as_ref()
+                    .map(|roots| roots.data.join("amp"))
+            })
+            .flatten();
+        let source = xdg_data_dir
+            .as_deref()
+            .or(binding.sync_source_dir.as_deref());
         if binding.mode == AuthForwardMode::Sync
-            && let Some(source) = &binding.sync_source_dir
+            && let Some(source) = source
         {
             validate_sync_source_dir(binding.agent, source, host_home)?;
         }
@@ -1150,7 +1171,7 @@ impl RoleState {
         let (slot, outcome) = provision_result?;
         anyhow::ensure!(
             !(mode == AuthForwardMode::Sync
-                && binding.sync_source_dir.is_some()
+                && (binding.sync_source_dir.is_some() || binding.xdg_roots.is_some())
                 && outcome == AuthProvisionOutcome::HostMissing),
             "selected {agent} account credentials disappeared during provisioning"
         );
@@ -1245,6 +1266,11 @@ impl RoleState {
     ) -> anyhow::Result<(ProvisionedInstanceAuth, AuthProvisionOutcome)> {
         let mode = binding.mode;
         let sync_source_dir = binding.sync_source_dir.as_deref();
+        let xdg_data_dir = binding
+            .xdg_roots
+            .as_ref()
+            .map(|roots| roots.data.join("amp"));
+        let credential_source_dir = xdg_data_dir.as_deref().or(sync_source_dir);
         let (store, home_rel) = agent_slot_dirs(binding.agent);
         let layout = slot_layout(binding.agent, store, home_rel, suffix);
         let amp_dir = root.join(&layout.store_rel);
@@ -1253,16 +1279,18 @@ impl RoleState {
         std::fs::create_dir_all(&amp_dir)?;
         std::fs::create_dir_all(&amp_home_dir)?;
         std::fs::create_dir_all(&amp_config_dir)?;
-        if mode == AuthForwardMode::Sync
-            && let Some(source) = sync_source_dir
-        {
-            let settings = source.join("config/amp/settings.json");
-            if settings.is_file() {
+        if mode == AuthForwardMode::Sync {
+            let settings = binding
+                .xdg_roots
+                .as_ref()
+                .map(|roots| roots.config.join("amp/settings.json"))
+                .or_else(|| sync_source_dir.map(|source| source.join("config/amp/settings.json")));
+            if let Some(settings) = settings.filter(|path| path.is_file()) {
                 std::fs::copy(settings, amp_config_dir.join("settings.json"))?;
             }
         }
         let secrets_json_path = amp_dir.join("secrets.json");
-        let (outcome, secrets_json) = if let Some(source_dir) = sync_source_dir {
+        let (outcome, secrets_json) = if let Some(source_dir) = credential_source_dir {
             Self::provision_amp_auth_from_source_dir(&secrets_json_path, mode, source_dir)?
         } else {
             Self::provision_amp_auth(&secrets_json_path, mode, host_home)?

@@ -53,6 +53,7 @@ fn unknown_account_rejected() {
         account_id: "ghost".into(),
         model: None,
         base_url: None,
+        xdg_roots: None,
         label: "Ghost".into(),
         synthesized: true,
     }];

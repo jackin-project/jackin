@@ -1029,6 +1029,36 @@ fn xdg_roots_validate_amp_only_and_absolute() {
 }
 
 #[test]
+fn resolved_amp_profile_carries_explicit_xdg_roots() {
+    let roots = XdgRoots {
+        data: PathBuf::from("/srv/amp/data"),
+        config: PathBuf::from("/srv/amp/config"),
+        cache: PathBuf::from("/srv/amp/cache"),
+    };
+    let mut cfg = AppConfig::default();
+    cfg.accounts.insert(
+        "amp-profile".into(),
+        AccountConfig {
+            enabled: true,
+            name: "Amp profile".into(),
+            provider: AiProvider::Amp,
+            credential: AccountCredential::Profile {
+                agent: Agent::Amp,
+                directory: PathBuf::from("/srv/amp/data/amp"),
+                xdg_roots: Some(roots.clone()),
+            },
+        },
+    );
+    cfg.account_bindings
+        .insert(Agent::Amp, "amp-profile".into());
+
+    let instances = resolve_launch(&cfg, None, "role", None, Some(Agent::Amp)).unwrap();
+
+    assert_eq!(instances.len(), 1);
+    assert_eq!(instances[0].xdg_roots, Some(roots));
+}
+
+#[test]
 fn new_schema_round_trips_through_toml() {
     let (mut cfg, ws) = launch_fixture();
     cfg.default_launch = Some(vec!["claude-a".into()]);

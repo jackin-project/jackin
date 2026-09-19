@@ -313,6 +313,12 @@ fn newest_kimi_env_credentials(dir: &Path) -> Option<PathBuf> {
             if !is_env_grant {
                 return None;
             }
+            // A newer directory with a `.json` suffix is not a credential
+            // file.  Keep it out of the mtime ordering so it cannot hide a
+            // valid live grant when the selected path is read below.
+            if !entry.file_type().ok()?.is_file() {
+                return None;
+            }
             let mtime = entry
                 .metadata()
                 .and_then(|m| m.modified())

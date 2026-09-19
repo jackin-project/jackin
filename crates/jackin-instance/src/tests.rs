@@ -699,6 +699,75 @@ fn parent_kind_slots_isolate_under_a_unique_parent() {
 }
 
 #[test]
+fn xdg_root_slots_export_the_durable_data_parent() {
+    let (amp_home, amp_target) =
+        slot_home_and_target(jackin_core::Agent::Amp, ".local/share/amp", None);
+    assert_eq!(amp_home, ".local/share/amp");
+    assert_eq!(amp_target, "/home/agent/.local/share");
+
+    let (opencode_home, opencode_target) =
+        slot_home_and_target(jackin_core::Agent::Opencode, ".local/share/opencode", None);
+    assert_eq!(opencode_home, ".local/share/opencode");
+    assert_eq!(opencode_target, "/home/agent/.local/share");
+}
+
+#[test]
+fn amp_binding_provisions_credentials_from_selected_xdg_roots() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let manifest = simple_manifest(&temp);
+    let data = temp.path().join("selected-xdg/data");
+    let config = temp.path().join("selected-xdg/config");
+    let cache = temp.path().join("selected-xdg/cache");
+    std::fs::create_dir_all(data.join("amp")).unwrap();
+    std::fs::create_dir_all(config.join("amp")).unwrap();
+    std::fs::create_dir_all(&cache).unwrap();
+    std::fs::write(
+        data.join("amp/secrets.json"),
+        r#"{"apiKey@https://ampcode.com/":"fixture-key"}"#,
+    )
+    .unwrap();
+    std::fs::write(config.join("amp/settings.json"), r#"{"theme":"fixture"}"#).unwrap();
+
+    let mut binding = InstanceAuthBinding::new(
+        "selected",
+        jackin_core::Agent::Amp,
+        AuthForwardMode::Sync,
+        None,
+    );
+    binding.xdg_roots = Some(jackin_config::XdgRoots {
+        data,
+        config,
+        cache,
+    });
+    let (state, _) = RoleState::prepare_for_bindings(
+        &paths,
+        "jk-selected-xdg",
+        &manifest,
+        &[binding],
+        &GithubAuthContext::default(),
+        temp.path().join("host-home").as_path(),
+        jackin_core::Agent::Amp,
+    )
+    .unwrap();
+
+    let slot = state
+        .auth
+        .slots
+        .get("selected@amp")
+        .expect("selected Amp slot missing");
+    assert_eq!(slot.folder_target, "/home/agent/.local/share");
+    assert_eq!(
+        std::fs::read_to_string(state.root.join("amp/secrets.json")).unwrap(),
+        r#"{"apiKey@https://ampcode.com/":"fixture-key"}"#
+    );
+    assert_eq!(
+        std::fs::read_to_string(state.root.join("home/.config/amp/settings.json")).unwrap(),
+        r#"{"theme":"fixture"}"#
+    );
+}
+
+#[test]
 fn colliding_sanitized_suffixes_get_numeric_tails() {
     // `a@b` and `a-b` sanitize identically; secondary slots must still
     // land in distinct dirs.

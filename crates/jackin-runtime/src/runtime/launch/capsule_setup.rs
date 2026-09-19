@@ -63,6 +63,7 @@ pub(crate) fn instance_auth_bindings(
                 account.source_directory().map(Path::to_path_buf),
             );
             binding.key = instance.config_id.clone();
+            binding.xdg_roots = instance.xdg_roots.clone();
             Ok(binding)
         })
         .collect()

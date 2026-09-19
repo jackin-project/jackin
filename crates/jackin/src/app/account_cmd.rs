@@ -143,6 +143,11 @@ fn import_zshrc_accounts(
         .iter()
         .map(|candidate| (candidate.line, candidate.var.as_str()))
         .collect();
+    let consumed_wrappers: std::collections::BTreeSet<(usize, &str)> = report
+        .unapplied_zshrc_wrappers
+        .iter()
+        .map(|candidate| (candidate.line, candidate.var.as_str()))
+        .collect();
     for entry in &import.unresolved {
         // Machine-consumed `op read` lines need no operator action (seeded,
         // or skipped because the account already exists). Everything else
@@ -150,6 +155,11 @@ fn import_zshrc_accounts(
         // shell text, so it never reaches operator output.
         if entry.kind == jackin_config::UnresolvedKind::OpRead
             && consumed_op_reads.contains(&(entry.line, entry.name.as_str()))
+        {
+            continue;
+        }
+        if entry.kind == jackin_config::UnresolvedKind::FunctionCall
+            && consumed_wrappers.contains(&(entry.line, entry.name.as_str()))
         {
             continue;
         }
@@ -171,6 +181,23 @@ fn import_zshrc_accounts(
                 candidate.line, candidate.var
             );
         }
+    }
+    for model in &report.unapplied_zshrc_models {
+        eprintln!(
+            "zshrc: model profile {} was parsed but has no matching persisted API-key account",
+            model.name
+        );
+    }
+    for wrapper in &report.unapplied_zshrc_wrappers {
+        eprintln!(
+            "zshrc line {}: wrapper for {} was parsed but is not supported by the launch path",
+            wrapper.line, wrapper.var
+        );
+    }
+    for _ in &report.unapplied_zshrc_xdg_roots {
+        eprintln!(
+            "zshrc: Amp XDG roots were parsed but no credentials were found under XDG_DATA_HOME/amp"
+        );
     }
     Ok(report)
 }

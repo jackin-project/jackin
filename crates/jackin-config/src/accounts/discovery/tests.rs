@@ -344,6 +344,34 @@ fn kimi_discovery_prefers_live_env_grant_over_drained_base_file() {
 }
 
 #[test]
+fn kimi_discovery_ignores_newer_env_grant_directories() {
+    let home = tempfile::tempdir().unwrap();
+    let directory = home.path().join(".kimi-code");
+    let credentials = directory.join("credentials");
+    std::fs::create_dir_all(&credentials).unwrap();
+    std::fs::write(
+        credentials.join("kimi-code.json"),
+        r#"{"access_token":"","refresh_token":"","expires_at":0,"scope":"kimi-code"}"#,
+    )
+    .unwrap();
+    let valid = credentials.join("kimi-code-env-valid.json");
+    std::fs::write(
+        &valid,
+        r#"{"access_token":"fixture-live","refresh_token":"fixture-refresh","expires_at":9999999999,"scope":"kimi-code"}"#,
+    )
+    .unwrap();
+    let newer_directory = credentials.join("kimi-code-env-newer.json");
+    std::fs::create_dir(&newer_directory).unwrap();
+    filetime::set_file_mtime(&valid, filetime::FileTime::from_unix_time(1, 0)).unwrap();
+    filetime::set_file_mtime(&newer_directory, filetime::FileTime::from_unix_time(2, 0)).unwrap();
+
+    let found = inspect_directory(Agent::Kimi, &directory, home.path(), |_| false)
+        .unwrap()
+        .unwrap();
+    assert_eq!(found.evidence, CredentialEvidence::File(valid));
+}
+
+#[test]
 fn oauth_discovery_keeps_only_nonempty_subscription_reference() {
     let name = jackin_core::CLAUDE_CODE_OAUTH_TOKEN_ENV_NAME;
     for (value, expected) in [("", false), (" ", false), ("fixture-token", true)] {

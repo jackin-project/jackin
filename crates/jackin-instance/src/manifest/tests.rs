@@ -69,6 +69,7 @@ fn admitted_instances_default_empty_and_validate_tabs() {
             account_id: "personal".to_owned(),
             model: None,
             base_url: None,
+            xdg_roots: None,
             label: "Claude · Personal".to_owned(),
             synthesized: true,
         }),
