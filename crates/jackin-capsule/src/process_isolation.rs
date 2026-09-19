@@ -592,23 +592,6 @@ mod linux {
         }
     }
 
-    // Keep production constants/functions private. The Linux-only unit tests
-    // live beside, rather than inside, this implementation module, so expose
-    // a test-only view instead of widening the production API.
-    #[cfg(test)]
-    pub(super) mod test_support {
-        pub(crate) const ACCESS_RESOLVE_UNIX: u64 = super::ACCESS_RESOLVE_UNIX;
-        pub(crate) const FULL_WITH_UNIX: u64 = super::FULL_WITH_UNIX;
-        pub(crate) const NULL_DEVICE: u64 = super::NULL_DEVICE;
-        pub(crate) const READ_ONLY: u64 = super::READ_ONLY;
-        pub(crate) const READ_ONLY_WITH_UNIX: u64 = super::READ_ONLY_WITH_UNIX;
-        pub(crate) const WRITABLE: u64 = super::WRITABLE;
-
-        pub(crate) fn access_for_abi(access: u64, abi: libc::c_long) -> u64 {
-            super::access_for_abi(access, abi)
-        }
-    }
-
     pub(super) fn drop_privileges(identity: SessionIdentity) -> Result<()> {
         anyhow::ensure!(
             identity.uid > 0 && identity.gid > 0,
@@ -681,7 +664,7 @@ mod linux {
 
     /// DAC override is retained only because host bind mounts can be owned by
     /// a different numeric UID than the per-session identity. Landlock remains
-    /// the path boundary. CAP_FOWNER is deliberately not retained: no session
+    /// the path boundary. `CAP_FOWNER` is deliberately not retained: no session
     /// operation needs to bypass ownership checks for chmod/chown/signal-like
     /// ownership actions.
     pub(super) const fn retained_capability_mask() -> u32 {
@@ -693,6 +676,23 @@ mod linux {
         // longer use them after this close.
         unsafe {
             libc::close(fd);
+        }
+    }
+
+    // Keep production constants/functions private. The Linux-only unit tests
+    // live beside, rather than inside, this implementation module, so expose
+    // a test-only view instead of widening the production API.
+    #[cfg(test)]
+    pub(super) mod test_support {
+        pub(crate) const ACCESS_RESOLVE_UNIX: u64 = super::ACCESS_RESOLVE_UNIX;
+        pub(crate) const FULL_WITH_UNIX: u64 = super::FULL_WITH_UNIX;
+        pub(crate) const NULL_DEVICE: u64 = super::NULL_DEVICE;
+        pub(crate) const READ_ONLY: u64 = super::READ_ONLY;
+        pub(crate) const READ_ONLY_WITH_UNIX: u64 = super::READ_ONLY_WITH_UNIX;
+        pub(crate) const WRITABLE: u64 = super::WRITABLE;
+
+        pub(crate) fn access_for_abi(access: u64, abi: libc::c_long) -> u64 {
+            super::access_for_abi(access, abi)
         }
     }
 }
@@ -1008,22 +1008,22 @@ mod tests {
             unsafe { libc::close(write_fd) };
             // SAFETY: the child must terminate without running parent-side
             // Rust destructors after fork.
-            unsafe { libc::_exit(if result.is_ok() { 0 } else { 1 }) };
+            unsafe { libc::_exit(i32::from(result.is_err())) };
         }
         // SAFETY: the parent owns no use for the pipe's write end.
         unsafe { libc::close(write_fd) };
         let mut status = [0u8; 1];
-        // SAFETY: `status` points to one writable byte and `read_fd` is valid.
-        assert_eq!(
-            unsafe { libc::read(read_fd, status.as_mut_ptr().cast(), 1) },
-            1
-        );
+        // SAFETY: `status` points to one writable byte and `read_fd` is the
+        // pipe's valid read end.
+        let bytes_read = unsafe { libc::read(read_fd, status.as_mut_ptr().cast(), 1) };
+        assert_eq!(bytes_read, 1);
         // SAFETY: `read_fd` is no longer used after receiving the result.
         unsafe { libc::close(read_fd) };
         let mut wait_status = 0;
         // SAFETY: `wait_status` is writable and `child` is the pid returned by
         // fork.
-        assert_eq!(unsafe { libc::waitpid(child, &mut wait_status, 0) }, child);
+        let wait_result = unsafe { libc::waitpid(child, &raw mut wait_status, 0) };
+        assert_eq!(wait_result, child);
         assert_eq!(status[0], 1, "isolated runtime setup probe failed");
         assert!(libc::WIFEXITED(wait_status));
         assert_eq!(libc::WEXITSTATUS(wait_status), 0);
@@ -1154,29 +1154,31 @@ mod tests {
             unsafe { libc::close(write_fd) };
             // SAFETY: the child must terminate without running parent-side
             // Rust destructors after fork.
-            unsafe { libc::_exit(if result.is_ok() { 0 } else { 1 }) };
+            unsafe { libc::_exit(i32::from(result.is_err())) };
         }
         // SAFETY: the parent owns no use for the pipe's write end.
         unsafe { libc::close(write_fd) };
         let mut status = [0u8; 1];
-        // SAFETY: status points to one writable byte and read_fd is valid.
-        assert_eq!(
-            unsafe { libc::read(read_fd, status.as_mut_ptr().cast(), 1) },
-            1
-        );
+        // SAFETY: `status` points to one writable byte and `read_fd` is the
+        // pipe's valid read end.
+        let bytes_read = unsafe { libc::read(read_fd, status.as_mut_ptr().cast(), 1) };
+        assert_eq!(bytes_read, 1);
         // SAFETY: read_fd is no longer used after receiving the result.
         unsafe { libc::close(read_fd) };
         let mut wait_status = 0;
-        // SAFETY: wait_status is writable and child is the pid returned by fork.
-        assert_eq!(unsafe { libc::waitpid(child, &mut wait_status, 0) }, child);
+        // SAFETY: `wait_status` is writable and `child` is the pid returned by
+        // fork.
+        let wait_result = unsafe { libc::waitpid(child, &raw mut wait_status, 0) };
+        assert_eq!(wait_result, child);
         assert_eq!(status[0], 1, "isolation probe failed inside child");
         assert!(libc::WIFEXITED(wait_status));
         assert_eq!(libc::WEXITSTATUS(wait_status), 0);
     }
 
     fn open(path: &Path, flags: libc::c_int) -> libc::c_int {
-        let path = std::ffi::CString::new(path.to_string_lossy().as_bytes())
-            .expect("test path contains no NUL");
+        let Ok(path) = std::ffi::CString::new(path.to_string_lossy().as_bytes()) else {
+            return -1;
+        };
         // SAFETY: `path` is NUL-terminated and remains alive through open;
         // the test requests a bounded mode for a possible new file.
         unsafe { libc::open(path.as_ptr(), flags, 0o600) }
