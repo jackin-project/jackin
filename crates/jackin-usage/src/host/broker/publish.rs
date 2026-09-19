@@ -24,7 +24,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex};
 
 use jackin_protocol::control::{
-    FocusedUsageView, QuotaBucketView, StatusSlot, UsageSnapshotStatus,
+    FocusedUsageView, QuotaBucketView, StatusSlot, UsageSeverity, UsageSnapshotStatus,
 };
 use jackin_protocol::usage_broker::{
     UsageAccountCapability, UsageAccountV1, UsageCoordinationErrorKind, UsageFreshnessPhaseV1,
@@ -35,6 +35,8 @@ use jackin_protocol::usage_broker::{
 };
 
 use crate::coordinator::{FileProjectionStateStore, ProjectionStateEnvelope, UsageCoordinator};
+
+use super::super::projection::metric_groups_for_view;
 
 /// Server-side incremental publisher. Cheap to clone; all state is shared.
 #[derive(Debug, Clone)]
@@ -244,7 +246,11 @@ fn merge_views(
         provider.accounts.push(account);
     }
     for provider in &mut providers {
-        provider.freshness = aggregate_freshness(any_active, &provider.accounts);
+        let provider_active = ordered
+            .iter()
+            .filter(|view| view.capability.surface_id == provider.provider_id)
+            .any(|view| view.phase.is_active());
+        provider.freshness = aggregate_freshness(provider_active, &provider.accounts);
     }
     projection.providers = providers;
 }
@@ -336,6 +342,17 @@ fn account_for_view(
         .as_ref()
         .map(|snapshot| windows_for_snapshot(&view.capability.account_id, snapshot))
         .unwrap_or_default();
+    let metric_groups = snapshot
+        .as_ref()
+        .and_then(|snapshot| {
+            metric_groups_for_view(
+                &view.capability.account_id,
+                snapshot,
+                snapshot.account.plan_label.as_deref(),
+            )
+            .ok()
+        })
+        .unwrap_or_default();
     let issues = view
         .error
         .as_ref()
@@ -374,7 +391,7 @@ fn account_for_view(
         },
         provenance_count: identity_metadata.map_or(1, |metadata| metadata.provenance_count),
         windows,
-        metric_groups: Vec::new(),
+        metric_groups,
         credential_expires_at_epoch: None,
         issues,
     }
@@ -443,7 +460,7 @@ fn window_for_bucket(
         used_percent,
         used_raw_percent,
         reset_at_epoch: bucket.resets_at,
-        quota_state: quota_state_for_status(bucket.status),
+        quota_state: quota_state_for_bucket(bucket),
         pace_label: bucket.pace_label.clone(),
         runs_out_label: None,
     }
@@ -464,9 +481,25 @@ fn money_used_raw_percent(bucket: &QuotaBucketView) -> Option<i32> {
     Some(i32::try_from(raw).unwrap_or(if raw < 0 { i32::MIN } else { i32::MAX }))
 }
 
-const fn quota_state_for_status(status: UsageSnapshotStatus) -> UsageQuotaStateV1 {
-    match status {
-        UsageSnapshotStatus::Fresh | UsageSnapshotStatus::Stale => UsageQuotaStateV1::Available,
+fn quota_state_for_bucket(bucket: &QuotaBucketView) -> UsageQuotaStateV1 {
+    match bucket.status {
+        UsageSnapshotStatus::Fresh | UsageSnapshotStatus::Stale => {
+            if bucket.remaining_percent == Some(0) || money_is_exhausted(bucket) {
+                UsageQuotaStateV1::Exhausted
+            } else {
+                match bucket.severity {
+                    UsageSeverity::Danger => UsageQuotaStateV1::Exhausted,
+                    UsageSeverity::Warn => UsageQuotaStateV1::Warning,
+                    UsageSeverity::Normal => {
+                        if bucket_has_quantity(bucket) {
+                            UsageQuotaStateV1::Available
+                        } else {
+                            UsageQuotaStateV1::Unknown
+                        }
+                    }
+                }
+            }
+        }
         UsageSnapshotStatus::NeedsLogin | UsageSnapshotStatus::NeedsSecret => {
             UsageQuotaStateV1::NoPermission
         }
@@ -474,6 +507,26 @@ const fn quota_state_for_status(status: UsageSnapshotStatus) -> UsageQuotaStateV
         UsageSnapshotStatus::Unavailable => UsageQuotaStateV1::Unavailable,
         UsageSnapshotStatus::Error => UsageQuotaStateV1::Error,
     }
+}
+
+fn money_is_exhausted(bucket: &QuotaBucketView) -> bool {
+    match (bucket.used_money.as_ref(), bucket.limit_money.as_ref()) {
+        (Some(used), Some(limit)) => {
+            used.currency == limit.currency
+                && used.exponent == limit.exponent
+                && limit.amount_minor > 0
+                && used.amount_minor >= limit.amount_minor
+        }
+        _ => false,
+    }
+}
+
+fn bucket_has_quantity(bucket: &QuotaBucketView) -> bool {
+    bucket.remaining_percent.is_some()
+        || bucket.used_money.is_some()
+        || bucket.limit_money.is_some()
+        || bucket.used_label.is_some()
+        || bucket.limit_label.is_some()
 }
 
 fn issue_code(kind: UsageCoordinationErrorKind) -> String {
@@ -513,8 +566,9 @@ mod tests {
 
     use jackin_protocol::control::{Money, UsageConfidence, UsageSeverity, UsageSource};
     use jackin_protocol::usage_broker::{
-        UsageAccountCapability, UsageIdentityKindV1, UsageLifecycleV1,
-        UsageProjectionRefreshStateV1, UsageProjectionSchemaV1,
+        UsageAccountCapability, UsageFreshnessPhaseV1, UsageIdentityKindV1, UsageLifecycleV1,
+        UsageMetricValueV1, UsageProjectionRefreshStateV1, UsageProjectionSchemaV1,
+        UsageQuotaStateV1,
     };
 
     use super::*;
@@ -733,7 +787,129 @@ mod tests {
         assert_eq!(window.used_raw_percent, Some(120));
         assert_eq!(window.remaining_percent, None);
         assert_eq!(window.remaining_raw_percent, None);
+        assert_eq!(window.quota_state, UsageQuotaStateV1::Exhausted);
+        match &projection.providers[0].accounts[0].metric_groups[1].value {
+            UsageMetricValueV1::SpendCap {
+                cap,
+                spent,
+                remaining,
+            } => {
+                assert_eq!(cap, &Some(Money::new(10_000, "USD", 2)));
+                assert_eq!(spent, &Some(Money::new(12_000, "USD", 2)));
+                assert_eq!(remaining, &Some(Money::new(0, "USD", 2)));
+            }
+            other => panic!("expected structured spend-cap value, got {other:?}"),
+        }
         window.validate(0).unwrap();
+    }
+
+    #[test]
+    fn publication_marks_empty_and_stale_quota_states_without_fabrication() {
+        let capability = capability();
+        let mut empty = fresh_view();
+        empty.status = UsageSnapshotStatus::Fresh;
+        empty.buckets = vec![QuotaBucketView {
+            label: "Provider-defined".to_owned(),
+            used_label: None,
+            limit_label: None,
+            remaining_percent: None,
+            reset_label: None,
+            resets_at: None,
+            status_slot: None,
+            pace_label: None,
+            status: UsageSnapshotStatus::Fresh,
+            used_money: None,
+            limit_money: None,
+            severity: UsageSeverity::Normal,
+        }];
+        let unknown_projection = {
+            let views = [UsageGenerationView {
+                capability: capability.clone(),
+                generation: 1,
+                phase: UsageRefreshPhase::Completed,
+                snapshot: Some(empty),
+                error: None,
+                retry_at_epoch: None,
+            }];
+            let mut projection = empty_projection();
+            merge_views(&mut projection, &views, &BTreeMap::new());
+            projection
+        };
+        assert_eq!(
+            unknown_projection.providers[0].accounts[0].windows[0].quota_state,
+            UsageQuotaStateV1::Unknown
+        );
+
+        let mut stale = fresh_view();
+        stale.status = UsageSnapshotStatus::Stale;
+        stale.buckets[0].status = UsageSnapshotStatus::Stale;
+        let views = [UsageGenerationView {
+            capability,
+            generation: 2,
+            phase: UsageRefreshPhase::Completed,
+            snapshot: Some(stale),
+            error: None,
+            retry_at_epoch: None,
+        }];
+        let mut projection = empty_projection();
+        merge_views(&mut projection, &views, &BTreeMap::new());
+        let account = &projection.providers[0].accounts[0];
+        assert_eq!(account.freshness.phase, UsageFreshnessPhaseV1::Stale);
+        assert!(account.freshness.is_stale);
+        assert_eq!(account.windows[0].quota_state, UsageQuotaStateV1::Available);
+    }
+
+    #[test]
+    fn publication_refreshing_is_scoped_to_provider_surface() {
+        let stalled = UsageAccountCapability {
+            account_id: "stalled".to_owned(),
+            surface_id: "claude".to_owned(),
+        };
+        let healthy = UsageAccountCapability {
+            account_id: "healthy".to_owned(),
+            surface_id: "codex".to_owned(),
+        };
+        let views = [
+            UsageGenerationView {
+                capability: stalled,
+                generation: 2,
+                phase: UsageRefreshPhase::Updating,
+                snapshot: None,
+                error: None,
+                retry_at_epoch: None,
+            },
+            UsageGenerationView {
+                capability: healthy,
+                generation: 1,
+                phase: UsageRefreshPhase::Completed,
+                snapshot: Some(fresh_view()),
+                error: None,
+                retry_at_epoch: None,
+            },
+        ];
+        let mut projection = empty_projection();
+        merge_views(&mut projection, &views, &BTreeMap::new());
+
+        assert_eq!(
+            projection.refresh_state,
+            UsageProjectionRefreshStateV1::Refreshing
+        );
+        assert_eq!(
+            projection
+                .providers
+                .iter()
+                .find(|provider| provider.provider_id == "claude")
+                .map(|provider| provider.freshness.phase),
+            Some(UsageFreshnessPhaseV1::Refreshing)
+        );
+        assert_eq!(
+            projection
+                .providers
+                .iter()
+                .find(|provider| provider.provider_id == "codex")
+                .map(|provider| provider.freshness.phase),
+            Some(UsageFreshnessPhaseV1::Current)
+        );
     }
 
     #[test]

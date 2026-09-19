@@ -19,7 +19,13 @@ impl UsageCache {
         target: &UsageRefreshTarget,
         state: &jackin_protocol::usage_broker::UsageGenerationView,
     ) {
-        if target.capability != state.capability {
+        if target.capability != state.capability
+            || !capability_matches_surface(
+                &target.agent,
+                target.provider.as_deref(),
+                &state.capability,
+            )
+        {
             return;
         }
         let mut view = state.snapshot.clone().unwrap_or_else(|| {
@@ -39,9 +45,11 @@ impl UsageCache {
         });
         if let Some(error) = &state.error {
             view.last_error = Some(error.message.clone());
-            if !view.buckets.is_empty() {
-                view.status = UsageSnapshotStatus::Stale;
-            }
+            view.status = if view.buckets.is_empty() {
+                UsageSnapshotStatus::Error
+            } else {
+                UsageSnapshotStatus::Stale
+            };
         }
         if view.focused_agent.is_none() {
             view.focused_agent = Some(target.agent.clone());
@@ -65,6 +73,13 @@ impl UsageCache {
         target: &UsageRefreshTarget,
         error: &jackin_protocol::usage_broker::UsageCoordinationError,
     ) {
+        if !capability_matches_surface(
+            &target.agent,
+            target.provider.as_deref(),
+            &target.capability,
+        ) {
+            return;
+        }
         let cache_key = target.cache_key();
         let cached = self.snapshots.entry(cache_key).or_insert_with(|| {
             let mut view = FocusedUsageView::unavailable(&error.message, now_epoch());
@@ -73,9 +88,11 @@ impl UsageCache {
             CachedUsage { view }
         });
         cached.view.last_error = Some(error.message.clone());
-        if !cached.view.buckets.is_empty() {
-            cached.view.status = UsageSnapshotStatus::Stale;
-        }
+        cached.view.status = if cached.view.buckets.is_empty() {
+            UsageSnapshotStatus::Error
+        } else {
+            UsageSnapshotStatus::Stale
+        };
     }
 }
 

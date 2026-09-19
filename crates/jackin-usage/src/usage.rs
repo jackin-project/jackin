@@ -455,6 +455,9 @@ impl UsageCache {
         let Some(capability) = capability else {
             return Some("refreshing".to_owned());
         };
+        if !capability_matches_surface(agent, focused_provider, capability) {
+            return Some("usage unavailable".to_owned());
+        }
         Some(
             cached_usage_for_capability(&self.snapshots, agent, focused_provider, capability)
                 .map_or_else(
@@ -507,6 +510,9 @@ impl UsageCache {
         let Some(capability) = capability else {
             return cached_refreshing_view(agent, focused_provider, now);
         };
+        if !capability_matches_surface(agent, focused_provider, capability) {
+            return cached_unavailable_view(agent, focused_provider, now);
+        }
         if let Some(view) =
             self.cached_focused_usage_view_for_capability(agent, focused_provider, capability)
         {
@@ -870,6 +876,17 @@ pub(crate) fn resolve_surface(agent: &str, provider: Option<&str>) -> UsageSurfa
         "opencode" => UsageSurface::OpenCode,
         _ => UsageSurface::Unsupported,
     }
+}
+
+/// A session capability is an authority for exactly one provider surface. A
+/// presentation-tab override must not reuse it under another surface because
+/// that would route the refresh and cache entry under the wrong provider.
+pub(crate) fn capability_matches_surface(
+    agent: &str,
+    provider: Option<&str>,
+    capability: &jackin_protocol::usage_broker::UsageAccountCapability,
+) -> bool {
+    resolve_surface(agent, provider).id() == Some(capability.surface_id.as_str())
 }
 
 /// Split an optional provider fetch into its `(data, error)` pair: `None` token

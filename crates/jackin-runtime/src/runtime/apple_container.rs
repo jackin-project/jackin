@@ -287,6 +287,7 @@ pub async fn launch(args: AppleContainerLaunch<'_>) -> Result<()> {
         .filter(|(key, _)| key != "JACKIN_CAPSULE_FORCE_DAEMON" && key != "JACKIN_DEBUG")
         .cloned()
         .collect::<Vec<_>>();
+    let mut capsule_config = capsule_config.clone();
     // Mirror the Docker path: list on-demand credential var names so the
     // in-container MCP tool advertises which commands need jackin-exec.
     let names = super::launch::exec_binding_names(&capsule_config.exec_bindings);
@@ -297,10 +298,7 @@ pub async fn launch(args: AppleContainerLaunch<'_>) -> Result<()> {
     // socket dir bind-mount to /jackin/run: carries Capsule's launch config
     // (agent.toml, which the daemon requires at startup) and host.sock.
     let socket_dir = paths.jackin_home.join("sockets").join(container_name);
-    let capsule_config_contents = super::launch::capsule_config_contents(capsule_config)
-        .context("serializing Capsule launch config for /jackin/run/agent.toml")?;
-    super::launch::prepare_socket_dir(&socket_dir, &capsule_config_contents)?;
-    let _usage_relay_guard =
+    let (usage_relay_guard, canonical_launch_usage_capabilities) =
         crate::usage_relay::prepare_for_container(crate::usage_relay::UsageRelayLaunch {
             paths,
             workspace_name,
@@ -308,12 +306,17 @@ pub async fn launch(args: AppleContainerLaunch<'_>) -> Result<()> {
             forwarded_sources: crate::usage_relay::forwarded_sources_from_launch_config(
                 state,
                 resolved_env,
-                capsule_config,
+                &capsule_config,
             ),
             socket_dir: socket_dir.clone(),
         })
         .await
         .context("starting scoped usage relay")?;
+    canonical_launch_usage_capabilities.apply_to_launch_config(&mut capsule_config);
+    let capsule_config_contents = super::launch::capsule_config_contents(&capsule_config)
+        .context("serializing Capsule launch config for /jackin/run/agent.toml")?;
+    super::launch::prepare_socket_dir(&socket_dir, &capsule_config_contents)?;
+    let _usage_relay_guard = usage_relay_guard;
     let mut container_mounts = mounts.to_vec();
     container_mounts.push(crate::usage_relay::apple_runtime_mount(socket_dir));
 

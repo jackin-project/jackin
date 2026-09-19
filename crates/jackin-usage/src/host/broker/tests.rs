@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::os::unix::fs::symlink;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Barrier};
@@ -177,6 +177,7 @@ fn forwarded_scope_selects_only_accounts_backed_by_forwarded_sources() {
         scope,
         &ForwardedUsageSources {
             selected_account_ids: BTreeSet::new(),
+            selected_account_surfaces: BTreeMap::new(),
             profile_surface_ids: BTreeSet::from(["amp".to_owned()]),
             env_keys: BTreeSet::new(),
         },
@@ -188,6 +189,7 @@ fn forwarded_scope_selects_only_accounts_backed_by_forwarded_sources() {
         scope,
         &ForwardedUsageSources {
             selected_account_ids: BTreeSet::new(),
+            selected_account_surfaces: BTreeMap::new(),
             profile_surface_ids: BTreeSet::new(),
             env_keys: BTreeSet::from(["AMP_API_KEY".to_owned()]),
         },
@@ -199,6 +201,10 @@ fn forwarded_scope_selects_only_accounts_backed_by_forwarded_sources() {
         scope,
         &ForwardedUsageSources {
             selected_account_ids: BTreeSet::from(["account-profile".to_owned()]),
+            selected_account_surfaces: BTreeMap::from([(
+                "account-profile".to_owned(),
+                "amp".to_owned(),
+            )]),
             profile_surface_ids: BTreeSet::from(["amp".to_owned()]),
             env_keys: BTreeSet::new(),
         },
@@ -210,6 +216,10 @@ fn forwarded_scope_selects_only_accounts_backed_by_forwarded_sources() {
         scope,
         &ForwardedUsageSources {
             selected_account_ids: BTreeSet::from(["account-env".to_owned()]),
+            selected_account_surfaces: BTreeMap::from([(
+                "account-env".to_owned(),
+                "amp".to_owned(),
+            )]),
             profile_surface_ids: BTreeSet::new(),
             env_keys: BTreeSet::from(["AMP_API_KEY".to_owned()]),
         },
@@ -221,6 +231,7 @@ fn forwarded_scope_selects_only_accounts_backed_by_forwarded_sources() {
         scope,
         &ForwardedUsageSources {
             selected_account_ids: BTreeSet::from(["account-does-not-exist".to_owned()]),
+            selected_account_surfaces: BTreeMap::new(),
             profile_surface_ids: BTreeSet::from(["amp".to_owned()]),
             env_keys: BTreeSet::from(["AMP_API_KEY".to_owned()]),
         },

@@ -69,9 +69,11 @@ impl HostUsageRuntime {
         if let Some(mut view) = state.snapshot {
             if let Some(error) = &state.error {
                 view.last_error = Some(error.message.clone());
-                if !view.buckets.is_empty() {
-                    view.status = UsageSnapshotStatus::Stale;
-                }
+                view.status = if view.buckets.is_empty() {
+                    UsageSnapshotStatus::Error
+                } else {
+                    UsageSnapshotStatus::Stale
+                };
             }
             let binding = self.discovery.as_ref().and_then(|discovery| {
                 discovery
@@ -270,6 +272,10 @@ pub struct ForwardedUsageSources {
     /// Exact configured account ids admitted to this Capsule. A provider
     /// surface alone is never sufficient when several accounts share it.
     pub selected_account_ids: BTreeSet<String>,
+    /// Provider surface paired with each selected configured account id. This
+    /// lets the runtime replace the config alias with the canonical authority
+    /// discovered for that exact account.
+    pub selected_account_surfaces: BTreeMap<String, String>,
     /// Surface ids with a successfully forwarded profile directory.
     pub profile_surface_ids: BTreeSet<String>,
     /// Governed provider env names present in the Capsule's resolved environment.
@@ -319,15 +325,17 @@ pub fn forwarded_usage_capabilities(
     discovery
         .bindings
         .iter()
-        .filter(|binding| binding.provenance.contains(scope_label))
         .filter(|binding| {
-            sources.selected_account_ids.is_empty()
-                || binding.provenance.iter().any(|provenance| {
+            if sources.selected_account_ids.is_empty() {
+                binding.provenance.contains(scope_label)
+            } else {
+                binding.provenance.iter().any(|provenance| {
                     sources
                         .selected_account_ids
                         .iter()
                         .any(|account_id| provenance == &format!("account {account_id}"))
                 })
+            }
         })
         .filter(|binding| forwarding_requirement(binding).is_forwarded(sources))
         .map(capability_for_binding)

@@ -918,8 +918,25 @@ pub(crate) async fn launch_role_runtime(
     // root:root 0755. The root capsule supervisor owns the socket and its
     // normalized launch config; session clients use the separate host.sock
     // capability path.
+    let mut capsule_config = (*capsule_config).clone();
     let socket_dir = paths.jackin_home.join("sockets").join(*container_name);
-    let capsule_config_contents = super::capsule_config_contents(capsule_config)
+    let prepared_usage_relay =
+        crate::usage_relay::prepare_for_docker_container(crate::usage_relay::UsageRelayLaunch {
+            paths,
+            workspace_name: (!sibling_auth_prewarm.workspace_name.is_empty())
+                .then_some(sibling_auth_prewarm.workspace_name),
+            role_key: sibling_auth_prewarm.role_key,
+            forwarded_sources: crate::usage_relay::forwarded_sources_from_launch_config(
+                state,
+                resolved_env,
+                &capsule_config,
+            ),
+            socket_dir: socket_dir.clone(),
+        })
+        .await
+        .context("starting scoped usage relay")?;
+    prepared_usage_relay.apply_to_launch_config(&mut capsule_config);
+    let capsule_config_contents = super::capsule_config_contents(&capsule_config)
         .context("serializing Capsule launch config for /jackin/run/agent.toml")?;
     // Runtime passwd/group entries for the slot UIDs so `getpwuid` works in
     // agent tools even though the image only bakes UID 1000. Consumed via
@@ -1010,21 +1027,6 @@ pub(crate) async fn launch_role_runtime(
         },
     );
     prepare_socket_dir_result?;
-    let prepared_usage_relay =
-        crate::usage_relay::prepare_for_docker_container(crate::usage_relay::UsageRelayLaunch {
-            paths,
-            workspace_name: (!sibling_auth_prewarm.workspace_name.is_empty())
-                .then_some(sibling_auth_prewarm.workspace_name),
-            role_key: sibling_auth_prewarm.role_key,
-            forwarded_sources: crate::usage_relay::forwarded_sources_from_launch_config(
-                state,
-                resolved_env,
-                ctx.capsule_config,
-            ),
-            socket_dir: socket_dir.clone(),
-        })
-        .await
-        .context("starting scoped usage relay")?;
     // Start the jackin-exec host credential resolver for this container's
     // on-demand bindings. Its socket lands in the dir just prepared (bind-
     // mounted to /jackin/run), so the in-container capsule reaches it at
@@ -1075,7 +1077,7 @@ pub(crate) async fn launch_role_runtime(
     // bare agent slug is ambiguous when several admitted instances share
     // the runtime, and the daemon's spawn gate rejects it — so resolve to
     // an exact instance config ID whenever instances are admitted.
-    run_args.push(initial_daemon_argv(*agent, capsule_config));
+    run_args.push(initial_daemon_argv(*agent, &capsule_config));
     jackin_diagnostics::active_timing_started(
         jackin_diagnostics::DiagnosticStage::Capsule,
         "docker_run_role",

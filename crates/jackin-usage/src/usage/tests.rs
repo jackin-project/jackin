@@ -840,6 +840,99 @@ fn usage_cache_keeps_account_snapshots_isolated_across_one_provider_target() {
 }
 
 #[test]
+fn usage_cache_rejects_provider_surface_capability_mismatch() {
+    let capability = jackin_protocol::usage_broker::UsageAccountCapability {
+        account_id: "account-codex".to_owned(),
+        surface_id: "codex".to_owned(),
+    };
+    let target = UsageRefreshTarget {
+        agent: "codex".to_owned(),
+        provider: Some("Claude".to_owned()),
+        capability: capability.clone(),
+    };
+    let state = jackin_protocol::usage_broker::UsageGenerationView {
+        capability,
+        generation: 1,
+        phase: jackin_protocol::usage_broker::UsageRefreshPhase::Completed,
+        snapshot: Some(codex_cached_usage_view()),
+        error: None,
+        retry_at_epoch: None,
+    };
+    let mut cache = UsageCache::default();
+
+    cache.adopt_broker_generation(&target, &state);
+    assert!(cache.snapshots.is_empty());
+    assert_eq!(
+        cache
+            .focused_snapshot_for_capability(
+                Some("codex"),
+                Some("Claude"),
+                Some(&target.capability),
+            )
+            .status,
+        UsageSnapshotStatus::Unavailable
+    );
+}
+
+#[test]
+fn empty_broker_error_snapshot_is_error_not_fresh() {
+    let target = UsageRefreshTarget {
+        agent: "codex".to_owned(),
+        provider: Some("OpenAI".to_owned()),
+        capability: jackin_protocol::usage_broker::UsageAccountCapability {
+            account_id: "account-codex".to_owned(),
+            surface_id: "codex".to_owned(),
+        },
+    };
+    let mut empty = codex_cached_usage_view();
+    empty.status = UsageSnapshotStatus::Fresh;
+    empty.buckets.clear();
+    let error = jackin_protocol::usage_broker::UsageCoordinationError {
+        kind: jackin_protocol::usage_broker::UsageCoordinationErrorKind::ProviderUnavailable,
+        message: "fixture provider unavailable".to_owned(),
+    };
+    let state = jackin_protocol::usage_broker::UsageGenerationView {
+        capability: target.capability.clone(),
+        generation: 1,
+        phase: jackin_protocol::usage_broker::UsageRefreshPhase::Completed,
+        snapshot: Some(empty.clone()),
+        error: Some(error.clone()),
+        retry_at_epoch: None,
+    };
+    let mut cache = UsageCache::default();
+    cache.adopt_broker_generation(&target, &state);
+    assert_eq!(
+        cache
+            .focused_snapshot_for_capability(
+                Some("codex"),
+                Some("OpenAI"),
+                Some(&target.capability),
+            )
+            .status,
+        UsageSnapshotStatus::Error
+    );
+
+    let mut second = UsageCache::default();
+    second.insert_snapshot_for_capability_for_test(
+        "codex",
+        Some("OpenAI"),
+        &target.capability,
+        empty,
+    );
+    second.adopt_broker_error(&target, &error);
+    assert_eq!(
+        second
+            .focused_snapshot_for_capability(
+                Some("codex"),
+                Some("OpenAI"),
+                Some(&target.capability),
+            )
+            .status,
+        UsageSnapshotStatus::Error
+    );
+}
+
+#[test]
 fn focused_usage_cache_selects_the_exact_account_capability() {
     let personal = jackin_protocol::usage_broker::UsageAccountCapability {
         account_id: "account-personal".to_owned(),

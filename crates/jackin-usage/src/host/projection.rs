@@ -296,7 +296,11 @@ fn project_account(
         .enumerate()
         .map(|(window_rank, bucket)| project_window(&canonical_account_id, bucket, window_rank))
         .collect::<Result<Vec<_>, _>>()?;
-    let metric_groups = project_groups(entry, &canonical_account_id)?;
+    let metric_groups = project_groups(
+        &entry.view,
+        entry.plan_label.as_deref(),
+        &canonical_account_id,
+    )?;
     Ok(UsageAccountV1 {
         canonical_account_id,
         identity_kind: match entry.identity.subject {
@@ -409,34 +413,46 @@ fn money_used_raw_percent(bucket: &QuotaBucketView) -> Option<i32> {
 /// last success is set exactly when the view holds usable data. Scope labels,
 /// balances, token totals, and rate limits stay unset until provider
 /// collectors supply them; nothing is inferred.
+pub(crate) fn metric_groups_for_view(
+    canonical_account_id: &str,
+    view: &jackin_protocol::control::FocusedUsageView,
+    plan_label: Option<&str>,
+) -> Result<Vec<UsageMetricGroupV1>, String> {
+    project_groups(view, plan_label, canonical_account_id)
+}
+
 fn project_groups(
-    entry: &AccountCatalogEntry,
+    view: &jackin_protocol::control::FocusedUsageView,
+    plan_label: Option<&str>,
     canonical_account_id: &str,
 ) -> Result<Vec<UsageMetricGroupV1>, String> {
     let mut groups = Vec::new();
-    for bucket in &entry.view.buckets {
+    for bucket in &view.buckets {
         let rank = groups.len();
         groups.push(project_window_group(
-            entry,
             canonical_account_id,
             bucket,
+            view.status,
+            view.fetched_at_epoch,
             rank,
         )?);
         if bucket.used_money.is_some() || bucket.limit_money.is_some() {
             let rank = groups.len();
             groups.push(project_spend_group(
-                entry,
                 canonical_account_id,
                 bucket,
+                view.status,
+                view.fetched_at_epoch,
                 rank,
             )?);
         }
     }
-    if let Some(plan_label) = entry.plan_label.as_deref() {
+    if let Some(plan_label) = plan_label {
         let rank = groups.len();
         groups.push(project_plan_group(
-            entry,
             canonical_account_id,
+            view.status,
+            view.fetched_at_epoch,
             plan_label,
             rank,
         )?);
@@ -463,15 +479,16 @@ fn group_epochs(view_fetched_at: i64, usable: bool) -> (Option<i64>, Option<i64>
 }
 
 fn project_window_group(
-    entry: &AccountCatalogEntry,
     canonical_account_id: &str,
     bucket: &QuotaBucketView,
+    view_status: UsageSnapshotStatus,
+    view_fetched_at: i64,
     rank: usize,
 ) -> Result<UsageMetricGroupV1, String> {
     let window = project_window(canonical_account_id, bucket, rank)?;
-    let phase = group_phase(bucket.status, entry.view.status);
+    let phase = group_phase(bucket.status, view_status);
     let (observed_at_epoch, last_success_at_epoch) =
-        group_epochs(entry.view.fetched_at_epoch, view_is_usable(bucket.status));
+        group_epochs(view_fetched_at, view_is_usable(bucket.status));
     Ok(UsageMetricGroupV1 {
         group_id: group_id(canonical_account_id, rank),
         rank: group_rank(rank)?,
@@ -479,7 +496,7 @@ fn project_window_group(
         label: bucket.label.clone(),
         scope: UsageMetricScopeV1::default(),
         observed_at_epoch,
-        fetched_at_epoch: entry.view.fetched_at_epoch,
+        fetched_at_epoch: view_fetched_at,
         last_success_at_epoch,
         phase,
         is_stale: phase == UsageFreshnessPhaseV1::Stale,
@@ -499,14 +516,15 @@ fn project_window_group(
 }
 
 fn project_spend_group(
-    entry: &AccountCatalogEntry,
     canonical_account_id: &str,
     bucket: &QuotaBucketView,
+    view_status: UsageSnapshotStatus,
+    view_fetched_at: i64,
     rank: usize,
 ) -> Result<UsageMetricGroupV1, String> {
-    let phase = group_phase(bucket.status, entry.view.status);
+    let phase = group_phase(bucket.status, view_status);
     let (observed_at_epoch, last_success_at_epoch) =
-        group_epochs(entry.view.fetched_at_epoch, view_is_usable(bucket.status));
+        group_epochs(view_fetched_at, view_is_usable(bucket.status));
     let quota_state = spend_quota_state(bucket);
     Ok(UsageMetricGroupV1 {
         group_id: group_id(canonical_account_id, rank),
@@ -515,7 +533,7 @@ fn project_spend_group(
         label: format!("{} spend", bucket.label),
         scope: UsageMetricScopeV1::default(),
         observed_at_epoch,
-        fetched_at_epoch: entry.view.fetched_at_epoch,
+        fetched_at_epoch: view_fetched_at,
         last_success_at_epoch,
         phase,
         is_stale: phase == UsageFreshnessPhaseV1::Stale,
@@ -532,16 +550,15 @@ fn project_spend_group(
 }
 
 fn project_plan_group(
-    entry: &AccountCatalogEntry,
     canonical_account_id: &str,
+    view_status: UsageSnapshotStatus,
+    view_fetched_at: i64,
     plan_label: &str,
     rank: usize,
 ) -> Result<UsageMetricGroupV1, String> {
-    let phase = group_phase(entry.view.status, entry.view.status);
-    let (observed_at_epoch, last_success_at_epoch) = group_epochs(
-        entry.view.fetched_at_epoch,
-        view_is_usable(entry.view.status),
-    );
+    let phase = group_phase(view_status, view_status);
+    let (observed_at_epoch, last_success_at_epoch) =
+        group_epochs(view_fetched_at, view_is_usable(view_status));
     Ok(UsageMetricGroupV1 {
         group_id: group_id(canonical_account_id, rank),
         rank: group_rank(rank)?,
@@ -549,7 +566,7 @@ fn project_plan_group(
         label: "Plan".to_owned(),
         scope: UsageMetricScopeV1::default(),
         observed_at_epoch,
-        fetched_at_epoch: entry.view.fetched_at_epoch,
+        fetched_at_epoch: view_fetched_at,
         last_success_at_epoch,
         phase,
         is_stale: phase == UsageFreshnessPhaseV1::Stale,
