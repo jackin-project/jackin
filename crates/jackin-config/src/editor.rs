@@ -143,13 +143,12 @@ fn profile_scan_candidate(
 }
 
 /// Map the shell variable stem used by [`crate::ModelProfile`] to a provider.
-/// Provider slugs are accepted directly; legacy shell names remain aliases.
+/// Only canonical provider slugs from the provider catalog are accepted.
 fn zshrc_provider(stem: &str) -> Option<crate::AiProvider> {
-    match stem {
-        "kimi" => Some(crate::AiProvider::Moonshot),
-        "gemini" => Some(crate::AiProvider::Google),
-        _ => stem.parse().ok(),
-    }
+    crate::AiProvider::ALL
+        .iter()
+        .copied()
+        .find(|provider| provider.slug() == stem)
 }
 
 /// Synthesize the registry entry for an environment-provided API key.
