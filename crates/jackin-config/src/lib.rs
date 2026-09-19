@@ -45,7 +45,8 @@ pub use accounts::discovery::{
     discover_environment_oauth_accounts,
 };
 pub use accounts::{
-    AccountConfig, AccountCredential, AiProvider, resolve_account, validate_account_id,
+    AccountConfig, AccountCredential, AiProvider, BOOTSTRAP_VERSION, BootstrapState,
+    resolve_account, validate_account_id,
 };
 pub use error::{ConfigError, ConfigResult};
 

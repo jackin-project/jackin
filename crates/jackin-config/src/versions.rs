@@ -8,7 +8,7 @@
 //! these constants are the shared reference point.
 
 /// Current on-disk `config.toml` schema version string.
-pub const CURRENT_CONFIG_VERSION: &str = "v1alpha10";
+pub const CURRENT_CONFIG_VERSION: &str = "v1alpha11";
 /// Current per-workspace file schema version string.
 pub const CURRENT_WORKSPACE_VERSION: &str = "v1alpha9";
 /// Sentinel for files that predate a `version` field.
