@@ -391,10 +391,16 @@ impl Multiplexer {
                 .account_for_instance(id)
                 .map(str::to_owned)
         });
-        let (mut session, id) = Session::spawn(
+        let identity = agent
+            .as_deref()
+            .and_then(|id| self.launch_env.launch_config.identity_for_instance(id))
+            .or(self.launch_env.launch_config.shell_identity)
+            .ok_or_else(|| anyhow::anyhow!("spawn target has no isolated Unix identity"))?;
+        let (session, id) = Session::spawn(
             &launch.label,
             agent.clone(),
             account_id.clone(),
+            identity,
             provider_label.map(|label| crate::session::SessionProvider {
                 label: label.to_owned(),
                 env_overrides: env_overrides.to_vec(),

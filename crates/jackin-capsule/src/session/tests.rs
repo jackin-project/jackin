@@ -1376,6 +1376,10 @@ async fn spawn_records_instance_identity_on_session() {
         "Claude · Work",
         Some("claude-work".to_owned()),
         Some("work".to_owned()),
+        jackin_protocol::SessionIdentity {
+            uid: 2_001,
+            gid: 2_001,
+        },
         None,
         command,
         terminal,
@@ -1419,6 +1423,10 @@ async fn conformance_wire_real_pty_spawn_stream_and_exit_exclude_private_content
         "wire-private-tab-label",
         Some("codex".to_owned()),
         Some("acc-codex".to_owned()),
+        jackin_protocol::SessionIdentity {
+            uid: 2_002,
+            gid: 2_002,
+        },
         None,
         command,
         terminal,

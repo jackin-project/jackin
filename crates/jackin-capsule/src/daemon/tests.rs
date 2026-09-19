@@ -228,6 +228,7 @@ async fn conformance_wire_real_capsule_control_status_preserves_parent_and_deliv
         ControlRequest {
             ctx: decoded.ctx,
             msg: decoded.msg,
+            peer_uid: 0,
             reply: crate::attach_protocol::ControlReply::Once(reply_tx),
         },
     );
@@ -1071,6 +1072,163 @@ fn single_pane_tab_mux_with_size(rows: u16, cols: u16) -> Multiplexer {
     // attach burst does, so tests observe only their own state changes.
     drop(mux.compose_pending_frame());
     mux
+}
+
+#[test]
+fn socket_peer_credentials_scope_session_controls_and_attach() {
+    let mut mux = single_pane_tab_mux();
+    let own = jackin_protocol::SessionIdentity {
+        uid: 2_101,
+        gid: 2_101,
+    };
+    let sibling = jackin_protocol::SessionIdentity {
+        uid: 2_102,
+        gid: 2_102,
+    };
+    mux.launch_env.launch_config.instance_identities =
+        BTreeMap::from([("own".to_owned(), own), ("sibling".to_owned(), sibling)]);
+    let (mut own_session, _own_rx) = test_session_with_agent(24, 80, Some("codex".to_owned()));
+    own_session.identity = own;
+    let (mut sibling_session, _sibling_rx) =
+        test_session_with_agent(24, 80, Some("claude".to_owned()));
+    sibling_session.identity = sibling;
+    mux.session_supervisor.sessions.insert(1, own_session);
+    mux.session_supervisor.sessions.insert(2, sibling_session);
+
+    assert!(
+        attach_peer_is_authorized(&mux, Some(0)),
+        "operator attach stays valid"
+    );
+    assert!(
+        !attach_peer_is_authorized(&mux, Some(own.uid)),
+        "an admitted session UID cannot attach"
+    );
+    assert!(
+        !attach_peer_is_authorized(&mux, None),
+        "missing peer credentials fail closed"
+    );
+
+    assert!(control_request_allowed(
+        &mux,
+        Some(own.uid),
+        &ClientMsg::SessionSend {
+            session: 1,
+            text: "own".to_owned(),
+        }
+    ));
+    assert!(control_request_allowed(
+        &mux,
+        Some(own.uid),
+        &ClientMsg::StatusCapture { session_id: 1 }
+    ));
+    assert!(control_request_allowed(
+        &mux,
+        Some(own.uid),
+        &ClientMsg::ReportRuntimeEvent {
+            session_id: 1,
+            source_id: "hook-codex-1".to_owned(),
+            runtime: "codex".to_owned(),
+            event: "Stop".to_owned(),
+            payload: None,
+        }
+    ));
+    assert!(control_request_allowed(
+        &mux,
+        Some(own.uid),
+        &ClientMsg::Events { session: Some(1) }
+    ));
+
+    assert!(
+        !control_request_allowed(
+            &mux,
+            Some(own.uid),
+            &ClientMsg::SessionSend {
+                session: 2,
+                text: "sibling".to_owned(),
+            }
+        ),
+        "a session peer cannot send input to a sibling"
+    );
+    assert!(
+        !control_request_allowed(
+            &mux,
+            Some(own.uid),
+            &ClientMsg::StatusCapture { session_id: 2 }
+        ),
+        "a session peer cannot capture a sibling"
+    );
+    assert!(!control_request_allowed(
+        &mux,
+        Some(own.uid),
+        &ClientMsg::Status
+    ));
+    assert!(!control_request_allowed(
+        &mux,
+        Some(own.uid),
+        &ClientMsg::Events { session: None }
+    ));
+    assert!(!control_request_allowed(
+        &mux,
+        Some(own.uid),
+        &ClientMsg::ExecCommand {
+            command: "op".to_owned(),
+            args: Vec::new(),
+        }
+    ));
+    assert!(
+        !control_request_allowed(&mux, None, &ClientMsg::Status),
+        "missing or invalid peer authentication fails closed"
+    );
+
+    assert!(control_request_allowed(&mux, Some(0), &ClientMsg::Status));
+    assert!(control_request_allowed(
+        &mux,
+        Some(9_999),
+        &ClientMsg::Snapshot
+    ));
+}
+
+#[tokio::test]
+async fn unauthorized_session_control_returns_unknown_without_sibling_input() {
+    let mut mux = single_pane_tab_mux();
+    let own = jackin_protocol::SessionIdentity {
+        uid: 2_111,
+        gid: 2_111,
+    };
+    let sibling = jackin_protocol::SessionIdentity {
+        uid: 2_112,
+        gid: 2_112,
+    };
+    mux.launch_env.launch_config.instance_identities =
+        BTreeMap::from([("own".to_owned(), own), ("sibling".to_owned(), sibling)]);
+    let (mut own_session, _own_rx) = test_session_with_agent(24, 80, Some("codex".to_owned()));
+    own_session.identity = own;
+    let (mut sibling_session, mut sibling_rx) =
+        test_session_with_agent(24, 80, Some("claude".to_owned()));
+    sibling_session.identity = sibling;
+    mux.session_supervisor.sessions.insert(1, own_session);
+    mux.session_supervisor.sessions.insert(2, sibling_session);
+
+    let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
+    handle_control_request(
+        &mut mux,
+        ControlRequest {
+            ctx: jackin_protocol::TelemetryContext::v1(),
+            peer_uid: own.uid,
+            msg: ClientMsg::SessionSend {
+                session: 2,
+                text: "must-not-reach-sibling".to_owned(),
+            },
+            reply: crate::attach_protocol::ControlReply::Once(reply_tx),
+        },
+    );
+
+    let response = reply_rx.await.expect("authorization response");
+    assert!(matches!(response.msg, ServerMsg::Unknown));
+    assert!(
+        sibling_rx.try_recv().is_err(),
+        "unauthorized sibling input must not reach its PTY"
+    );
 }
 
 fn frame_contains_screen_erase(frame: &[u8]) -> bool {
@@ -8922,6 +9080,7 @@ fn subscribe_events(
         ControlRequest {
             ctx: jackin_protocol::TelemetryContext::v1(),
             msg: ClientMsg::Events { session },
+            peer_uid: 0,
             reply: crate::attach_protocol::ControlReply::Stream(tx),
         },
     );
