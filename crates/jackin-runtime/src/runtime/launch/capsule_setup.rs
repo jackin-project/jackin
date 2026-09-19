@@ -108,6 +108,73 @@ pub(crate) fn apply_account_models(
     Ok(())
 }
 
+/// Resolve the exact model map used by both account materialization and the
+/// Capsule. The role model is the base, the selected account model replaces it
+/// when present, and a launch model override fans out to every admitted slot
+/// for the selected runtime.
+pub(crate) fn resolved_instance_models(
+    config: &jackin_config::AppConfig,
+    manifest: &jackin_manifest::RoleManifest,
+    instances: &[jackin_config::ResolvedInstance],
+    selected_agent: jackin_core::Agent,
+    model_override: Option<&str>,
+) -> anyhow::Result<std::collections::BTreeMap<String, String>> {
+    let mut launch = jackin_protocol::CapsuleConfig::default();
+    for instance in instances {
+        if let Some(model) = manifest.agent_model(instance.agent) {
+            let model = if instance.agent == jackin_core::Agent::Opencode {
+                let account = config
+                    .accounts
+                    .get(&instance.account_id)
+                    .ok_or_else(|| anyhow::anyhow!("unknown account {:?}", instance.account_id))?;
+                super::account_config::opencode_model(account.provider, model)?
+            } else {
+                model.to_owned()
+            };
+            launch.models.insert(instance.config_id.clone(), model);
+        }
+    }
+    apply_account_models(&mut launch, config, instances)?;
+    if let Some(model) = model_override
+        .map(str::trim)
+        .filter(|model| !model.is_empty())
+    {
+        for instance in instances
+            .iter()
+            .filter(|instance| instance.agent == selected_agent)
+        {
+            let model = if instance.agent == jackin_core::Agent::Opencode {
+                let account = config
+                    .accounts
+                    .get(&instance.account_id)
+                    .ok_or_else(|| anyhow::anyhow!("unknown account {:?}", instance.account_id))?;
+                super::account_config::opencode_model(account.provider, model)?
+            } else {
+                model.to_owned()
+            };
+            launch.models.insert(instance.config_id.clone(), model);
+        }
+    }
+    Ok(launch.models)
+}
+
+/// Fan out one requested effort to the same runtime's admitted slots. The
+/// Capsule owns this map so no process-wide env value can make two slots
+/// disagree.
+pub(crate) fn resolved_instance_efforts(
+    instances: &[jackin_config::ResolvedInstance],
+    selected_agent: jackin_core::Agent,
+    effort: Option<jackin_core::ReasoningEffort>,
+) -> std::collections::BTreeMap<String, String> {
+    effort.map_or_else(std::collections::BTreeMap::new, |effort| {
+        instances
+            .iter()
+            .filter(|instance| instance.agent == selected_agent)
+            .map(|instance| (instance.config_id.clone(), effort.as_str().to_owned()))
+            .collect()
+    })
+}
+
 /// Fill the per-instance container dirs from prepared role-state
 /// slots, keyed by instance config ID. The folder-var target comes
 /// straight from the slot; the forwarded dir joins `/jackin` with the
@@ -198,6 +265,7 @@ pub(crate) fn capsule_config(
             .collect(),
         agents,
         models,
+        efforts: std::collections::BTreeMap::new(),
         auth_modes: std::collections::BTreeMap::new(),
         accounts,
         labels,

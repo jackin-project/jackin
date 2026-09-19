@@ -39,6 +39,14 @@ pub const JACKIN_GIT_DCO_ENV_NAME: &str = "JACKIN_GIT_DCO";
 /// and `no` suppress explicit jackin❯ host-open URL actions while leaving
 /// normal terminal OSC 8 passthrough under `JACKIN_OSC_HYPERLINK`.
 pub const JACKIN_OPEN_LINKS_ENV_NAME: &str = "JACKIN_OPEN_LINKS";
+/// Codex model selected for one Capsule pane by the role hook contract.
+pub const CODEX_LANE_MODEL_ENV_NAME: &str = "JACKIN_LANE_CODEX_MODEL";
+/// Codex reasoning effort selected for one Capsule pane by the role hook contract.
+pub const CODEX_LANE_EFFORT_ENV_NAME: &str = "JACKIN_LANE_CODEX_EFFORT";
+/// Claude model selected for one Capsule pane.
+pub const CLAUDE_MODEL_ENV_NAME: &str = "ANTHROPIC_MODEL";
+/// Claude reasoning effort selected for one Capsule pane.
+pub const CLAUDE_EFFORT_ENV_NAME: &str = "CLAUDE_CODE_EFFORT_LEVEL";
 /// Z.AI API key env name.
 pub const ZAI_API_KEY_ENV_NAME: &str = "ZAI_API_KEY";
 /// Anthropic API key env name (Claude `api_key` mode).
@@ -227,6 +235,10 @@ pub const RESERVED_RUNTIME_ENV_VARS: &[(&str, Option<&str>)] = &[
     (JACKIN_FIREWALL_INSTALLED_ENV_NAME, None),
     (JACKIN_NETWORK_ENFORCEMENT_ENV_NAME, None),
     (JACKIN_SUDO_ENV_NAME, None),
+    (CODEX_LANE_MODEL_ENV_NAME, None),
+    (CODEX_LANE_EFFORT_ENV_NAME, None),
+    (CLAUDE_MODEL_ENV_NAME, None),
+    (CLAUDE_EFFORT_ENV_NAME, None),
 ];
 
 /// Returns `true` if `name` is a runtime-reserved env var name.

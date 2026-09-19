@@ -1612,6 +1612,7 @@ pub struct AgentSpawnSpec<'a> {
     pub home_dir: &'a str,
     pub forwarded_dir: &'a str,
     pub model: Option<&'a str>,
+    pub effort: Option<&'a str>,
     pub auth_mode: Option<&'a str>,
     pub env_passthrough: &'a [(String, String)],
     pub cwd: &'a Path,
@@ -1662,6 +1663,7 @@ pub fn build_agent_command(spec: &AgentSpawnSpec<'_>) -> CommandBuilder {
             cmd.env(k, v);
         }
     }
+    apply_lane_env(&mut cmd, spec.agent, spec.model, spec.effort);
     if let Some(agent) = jackin_core::Agent::from_slug(spec.agent)
         && let Some(var) = agent.runtime().state_paths().folder_env_var
     {
@@ -1694,6 +1696,43 @@ fn agent_model_args<'a>(agent: &str, model: Option<&'a str>) -> Vec<&'a str> {
         "claude" | "kimi" => vec!["--model", model],
         "codex" | "opencode" | "grok" => vec!["-m", model],
         _ => Vec::new(),
+    }
+}
+
+/// Inject model and reasoning settings for this instance only. The host launch
+/// env is intentionally not used: two same-agent slots may route to different
+/// endpoints/models, so a process-wide value would make the hook and child
+/// command disagree.
+fn apply_lane_env(
+    cmd: &mut CommandBuilder,
+    agent: &str,
+    model: Option<&str>,
+    effort: Option<&str>,
+) {
+    for name in [
+        jackin_core::CODEX_LANE_MODEL_ENV_NAME,
+        jackin_core::CODEX_LANE_EFFORT_ENV_NAME,
+        jackin_core::CLAUDE_MODEL_ENV_NAME,
+        jackin_core::CLAUDE_EFFORT_ENV_NAME,
+    ] {
+        cmd.env_remove(name);
+    }
+    let (model_env, effort_env) = match agent {
+        "codex" => (
+            jackin_core::CODEX_LANE_MODEL_ENV_NAME,
+            jackin_core::CODEX_LANE_EFFORT_ENV_NAME,
+        ),
+        "claude" => (
+            jackin_core::CLAUDE_MODEL_ENV_NAME,
+            jackin_core::CLAUDE_EFFORT_ENV_NAME,
+        ),
+        _ => return,
+    };
+    if let Some(model) = model.map(str::trim).filter(|model| !model.is_empty()) {
+        cmd.env(model_env, model);
+    }
+    if let Some(effort) = effort {
+        cmd.env(effort_env, effort);
     }
 }
 

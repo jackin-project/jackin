@@ -278,13 +278,13 @@ fn validate_on_demand_bindings(
 }
 
 /// Env var carrying the Codex model to the in-container role hook (`SCHED-014`).
-pub const CODEX_LANE_MODEL_ENV: &str = "JACKIN_LANE_CODEX_MODEL";
+pub const CODEX_LANE_MODEL_ENV: &str = jackin_core::CODEX_LANE_MODEL_ENV_NAME;
 /// Env var carrying the Codex reasoning effort to the same role hook.
-pub const CODEX_LANE_EFFORT_ENV: &str = "JACKIN_LANE_CODEX_EFFORT";
+pub const CODEX_LANE_EFFORT_ENV: &str = jackin_core::CODEX_LANE_EFFORT_ENV_NAME;
 /// Env var Claude Code reads for its model.
-pub const CLAUDE_MODEL_ENV: &str = "ANTHROPIC_MODEL";
+pub const CLAUDE_MODEL_ENV: &str = jackin_core::CLAUDE_MODEL_ENV_NAME;
 /// Env var Claude Code reads for its reasoning effort.
-pub const CLAUDE_EFFORT_ENV: &str = "CLAUDE_CODE_EFFORT_LEVEL";
+pub const CLAUDE_EFFORT_ENV: &str = jackin_core::CLAUDE_EFFORT_ENV_NAME;
 
 /// Container env that pins `model` and reasoning effort for `agent`.
 ///

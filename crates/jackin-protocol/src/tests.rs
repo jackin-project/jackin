@@ -140,6 +140,7 @@ fn capsule_config_accessors_are_keyed_by_instance_config_id() {
     let config = CapsuleConfig {
         instances: vec!["claude-work".to_owned(), "claude-personal".to_owned()],
         models: BTreeMap::from([("claude-work".to_owned(), "opus-4-6".to_owned())]),
+        efforts: BTreeMap::from([("claude-work".to_owned(), "max".to_owned())]),
         auth_modes: BTreeMap::from([
             ("claude-work".to_owned(), "api_key".to_owned()),
             ("claude-personal".to_owned(), "sync".to_owned()),
@@ -152,6 +153,8 @@ fn capsule_config_accessors_are_keyed_by_instance_config_id() {
     );
     assert_eq!(config.model_for_instance("claude-work"), Some("opus-4-6"));
     assert_eq!(config.model_for_instance("claude-personal"), None);
+    assert_eq!(config.effort_for_instance("claude-work"), Some("max"));
+    assert_eq!(config.effort_for_instance("claude-personal"), None);
     assert_eq!(
         config.auth_mode_for_instance("claude-personal"),
         Some("sync")

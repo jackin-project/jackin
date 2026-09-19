@@ -174,6 +174,52 @@ fn account_models_prefix_opencode_and_skip_missing() {
 }
 
 #[test]
+fn launch_model_and_effort_overrides_fan_out_to_every_codex_slot() {
+    let temp = tempfile::tempdir().unwrap();
+    let manifest = manifest_with(&temp, &["codex"]);
+    let mut config = AppConfig::default();
+    config
+        .accounts
+        .insert("work".into(), api_key_account(AiProvider::OpenAi, None));
+    config
+        .accounts
+        .insert("personal".into(), api_key_account(AiProvider::OpenAi, None));
+    let instances = [
+        instance("codex-work", Agent::Codex, "work"),
+        instance("codex-personal", Agent::Codex, "personal"),
+    ];
+
+    let models = resolved_instance_models(
+        &config,
+        &manifest,
+        &instances,
+        Agent::Codex,
+        Some("gpt-5.6-luna"),
+    )
+    .unwrap();
+    let efforts = resolved_instance_efforts(
+        &instances,
+        Agent::Codex,
+        Some(jackin_core::ReasoningEffort::Max),
+    );
+
+    assert_eq!(
+        models,
+        std::collections::BTreeMap::from([
+            ("codex-work".into(), "gpt-5.6-luna".into()),
+            ("codex-personal".into(), "gpt-5.6-luna".into()),
+        ])
+    );
+    assert_eq!(
+        efforts,
+        std::collections::BTreeMap::from([
+            ("codex-work".into(), "max".into()),
+            ("codex-personal".into(), "max".into()),
+        ])
+    );
+}
+
+#[test]
 fn capsule_config_fans_manifest_models_out_per_instance() {
     let temp = tempfile::tempdir().unwrap();
     let manifest = manifest_with(&temp, &["claude", "codex"]);

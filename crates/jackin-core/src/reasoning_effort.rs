@@ -6,7 +6,7 @@
 //!
 //! Effort is a launch decision, not a role property: the same role runs at a
 //! different effort depending on the lane that launched it. The vocabulary is
-//! closed (`low` / `medium` / `high`) so a caller cannot smuggle an
+//! closed (`low` / `medium` / `high` / `max`) so a caller cannot smuggle an
 //! agent-specific spelling through the programmatic launch surface — each
 //! runtime maps the closed set onto its own knob at launch time.
 
@@ -23,11 +23,13 @@ pub enum ReasoningEffort {
     Medium,
     /// Slowest, most deliberate setting.
     High,
+    /// Maximum supported reasoning setting.
+    Max,
 }
 
 impl ReasoningEffort {
     /// Every effort level, in ascending order.
-    pub const ALL: [Self; 3] = [Self::Low, Self::Medium, Self::High];
+    pub const ALL: [Self; 4] = [Self::Low, Self::Medium, Self::High, Self::Max];
 
     /// Canonical lowercase spelling, which is also the value written to
     /// `model_reasoning_effort` in a Codex `config.toml` and to
@@ -38,6 +40,7 @@ impl ReasoningEffort {
             Self::Low => "low",
             Self::Medium => "medium",
             Self::High => "high",
+            Self::Max => "max",
         }
     }
 }
@@ -59,7 +62,7 @@ impl fmt::Display for ParseReasoningEffortError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "unknown reasoning effort {:?}; expected one of: low, medium, high",
+            "unknown reasoning effort {:?}; expected one of: low, medium, high, max",
             self.input
         )
     }
@@ -75,6 +78,7 @@ impl FromStr for ReasoningEffort {
             "low" => Ok(Self::Low),
             "medium" => Ok(Self::Medium),
             "high" => Ok(Self::High),
+            "max" => Ok(Self::Max),
             _ => Err(ParseReasoningEffortError {
                 input: s.to_owned(),
             }),

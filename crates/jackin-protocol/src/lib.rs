@@ -159,8 +159,12 @@ pub struct CapsuleConfig {
     /// have no credential envelope to consult.
     pub agents: BTreeMap<String, String>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    /// Per-instance model override, keyed by instance config ID.
+    /// Effective per-instance model, keyed by instance config ID.
     pub models: BTreeMap<String, String>,
+    /// Effective per-instance reasoning effort, keyed by instance config ID.
+    /// Values use the closed `low|medium|high|max` vocabulary.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub efforts: BTreeMap<String, String>,
     /// Resolved per-instance auth modes (`sync|api_key|oauth_token|ignore`),
     /// keyed by instance config ID.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
@@ -297,6 +301,12 @@ impl CapsuleConfig {
     /// Per-instance model override for an instance config ID.
     pub fn model_for_instance(&self, instance: &str) -> Option<&str> {
         self.models.get(instance).map(String::as_str)
+    }
+
+    /// Per-instance reasoning effort for an instance config ID.
+    #[must_use]
+    pub fn effort_for_instance(&self, instance: &str) -> Option<&str> {
+        self.efforts.get(instance).map(String::as_str)
     }
 
     /// Resolved bounded authentication mode for an instance config ID.
