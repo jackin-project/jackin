@@ -2010,6 +2010,24 @@ fn attach_failure_error_preserves_command_context() {
     assert!(error.contains("command failed: docker exec"), "{error}");
 }
 
+fn codex_trust_slot(
+    account_id: &str,
+    container_home_rel: &str,
+) -> crate::instance::ProvisionedInstanceAuth {
+    crate::instance::ProvisionedInstanceAuth {
+        agent: jackin_core::Agent::Codex,
+        account_id: account_id.to_owned(),
+        mode: jackin_config::AuthForwardMode::ApiKey,
+        home_dir: None,
+        credential_paths: Vec::new(),
+        forward_auth: false,
+        slot_suffix: None,
+        container_home_rel: container_home_rel.to_owned(),
+        container_store_rel: "codex".to_owned(),
+        folder_target: format!("/home/agent/{container_home_rel}"),
+    }
+}
+
 /// A Codex-authed role state rooted at `root` plus a workspace whose
 /// workdir (`/workspace`) and single mount (`/workspace/repo`) are the two
 /// paths `seed_codex_project_trust` should mark trusted.
@@ -2025,18 +2043,7 @@ fn codex_trust_fixture(root: &Path) -> (RoleState, jackin_config::ResolvedWorksp
         auth: crate::instance::ProvisionedAuth {
             slots: std::collections::BTreeMap::from([(
                 "work@codex".to_owned(),
-                crate::instance::ProvisionedInstanceAuth {
-                    agent: jackin_core::Agent::Codex,
-                    account_id: "work".to_owned(),
-                    mode: jackin_config::AuthForwardMode::ApiKey,
-                    home_dir: None,
-                    credential_paths: Vec::new(),
-                    forward_auth: false,
-                    slot_suffix: None,
-                    container_home_rel: ".codex".to_owned(),
-                    container_store_rel: "codex".to_owned(),
-                    folder_target: "/home/agent/.codex".to_owned(),
-                },
+                codex_trust_slot("work", ".codex"),
             )]),
         },
         auth_outcomes: std::collections::BTreeMap::new(),
@@ -2057,6 +2064,40 @@ fn codex_trust_fixture(root: &Path) -> (RoleState, jackin_config::ResolvedWorksp
         mount_heal: jackin_config::MountHealReport::default(),
     };
     (state, workspace)
+}
+
+#[test]
+fn seed_codex_project_trust_seeds_every_codex_slot() {
+    let temp = tempdir().unwrap();
+    let root = temp.path().join("state");
+    let primary = root.join("home/.codex");
+    let secondary = root.join("home/.codex-personal");
+    std::fs::create_dir_all(&primary).unwrap();
+    std::fs::create_dir_all(&secondary).unwrap();
+    std::fs::write(&primary.join("config.toml"), "model = \"work-model\"\n").unwrap();
+    std::fs::write(
+        secondary.join("config.toml"),
+        "model = \"personal-model\"\n",
+    )
+    .unwrap();
+    let (mut state, workspace) = codex_trust_fixture(&root);
+    state.auth.slots.insert(
+        "personal@codex".to_owned(),
+        codex_trust_slot("personal", ".codex-personal"),
+    );
+
+    seed_codex_project_trust(&state, &workspace).unwrap();
+
+    for (path, model) in [
+        (&primary.join("config.toml"), "work-model"),
+        (&secondary.join("config.toml"), "personal-model"),
+    ] {
+        let config = std::fs::read_to_string(path).unwrap();
+        assert!(config.contains(&format!("model = \"{model}\"")));
+        assert!(config.contains("[projects.\"/workspace\"]"));
+        assert!(config.contains("[projects.\"/workspace/repo\"]"));
+        assert_eq!(config.matches("trust_level = \"trusted\"").count(), 2);
+    }
 }
 
 #[test]
