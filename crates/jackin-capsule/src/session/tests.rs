@@ -764,6 +764,7 @@ fn amp_command_exports_xdg_data_home_as_durable_parent() {
         home_dir: "/home/agent/.local/share",
         forwarded_dir: "/jackin/amp",
         model: None,
+        effort: None,
         auth_mode: Some("sync"),
         env_passthrough: &empty,
         cwd: Path::new("/workspace"),
