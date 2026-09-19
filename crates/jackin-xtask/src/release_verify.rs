@@ -18,6 +18,9 @@ const CERTIFICATE_IDENTITY_REGEXP: &str = "https://github.com/jackin-project/jac
 const CERTIFICATE_OIDC_ISSUER: &str = "https://token.actions.githubusercontent.com";
 const GITHUB_REPO: &str = "jackin-project/jackin";
 
+mod package;
+pub(crate) use package::{ReleaseVerifyPackageArgs, run_package};
+
 #[derive(Debug, Args)]
 pub(crate) struct ReleaseVerifyArgs {
     /// Release archive to verify.

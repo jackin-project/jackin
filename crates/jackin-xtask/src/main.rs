@@ -190,6 +190,12 @@ enum Command {
     /// Use as `cargo xtask release-verify <archive>.tar.gz` or `.zip` (usage menu-bar).
     #[command(name = "release-verify")]
     ReleaseVerify(release_verify::ReleaseVerifyArgs),
+    /// Verify the complete six-payload preview package handoff.
+    ///
+    /// Use as `cargo xtask release-verify-package` with
+    /// `VELNOR_VERIFIED_PACKAGE_DIR` set.
+    #[command(name = "release-verify-package")]
+    ReleaseVerifyPackage(release_verify::ReleaseVerifyPackageArgs),
     /// Build, package, sign, and describe every release target for one crate.
     #[command(name = "release-archives")]
     ReleaseArchives(release_archive::ReleaseArchivesArgs),
@@ -327,6 +333,7 @@ fn main() -> ExitCode {
         Command::TelemetryBench(args) => telemetry_bench::run(args),
         Command::ProfileMatrix(args) => profile_matrix::run(args),
         Command::ReleaseVerify(args) => release_verify::run(args),
+        Command::ReleaseVerifyPackage(args) => release_verify::run_package(args),
         Command::ReleaseArchives(args) => release_archive::run(args),
         Command::Health(args) => health::run(args),
         Command::Lint { command, strict } => run_lint(command, strict),
