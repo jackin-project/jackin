@@ -69,7 +69,7 @@ fn fresh_session_setup_paths_are_private_and_validated() {
         state.join("git-hooks/prepare-commit-msg.v3.done"),
         Path::new("/jackin/run/sessions/42/state/git-hooks/prepare-commit-msg.v3.done")
     );
-    assert_ne!(state, Path::new(jackin_core::container_paths::STATE_DIR));
+    assert_ne!(state, Path::new(container_paths::STATE_DIR));
     for invalid in [
         "/jackin/state",
         "/jackin/run/sessions/current/state",
