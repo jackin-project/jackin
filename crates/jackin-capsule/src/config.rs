@@ -304,11 +304,25 @@ fn validate_agent_credentials(
         }
     }
     for (instance, entry) in credentials.iter() {
+        let Some(expected_agent) = config.agent_for_instance(instance) else {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "protected account credentials name an instance without an agent runtime",
+            ));
+        };
+        let Some(expected_account) = config.account_for_instance(instance) else {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "protected account credentials name an instance without an account",
+            ));
+        };
         if !config.instances.contains(instance)
             || !matches!(
                 config.auth_mode_for_instance(instance),
                 Some("api_key" | "oauth_token")
             )
+            || entry.agent != expected_agent
+            || entry.account_id != expected_account
             || entry
                 .env
                 .iter()

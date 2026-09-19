@@ -46,15 +46,56 @@ pub fn run_isolated_command(args: &[String]) -> Result<()> {
         let program_args = &args[4..];
 
         let config = crate::config::load()?;
-        let expected = instance
-            .and_then(|id| config.identity_for_instance(id))
-            .or(config.shell_identity);
+        let expected = admitted_identity(&config, instance);
         anyhow::ensure!(
             expected == Some(identity),
             "isolated session identity is not admitted for this target"
         );
 
         linux::run(&config, instance, identity, program, program_args)
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn admitted_identity(
+    config: &jackin_protocol::CapsuleConfig,
+    instance: Option<&str>,
+) -> Option<jackin_protocol::SessionIdentity> {
+    match instance {
+        Some(id) => config.identity_for_instance(id),
+        None => config.shell_identity,
+    }
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod admission_tests {
+    use super::admitted_identity;
+    use jackin_protocol::{CapsuleConfig, SessionIdentity};
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn unknown_instance_never_falls_back_to_shell_identity() {
+        let config = CapsuleConfig {
+            shell_identity: Some(SessionIdentity {
+                uid: 3000,
+                gid: 3000,
+            }),
+            instance_identities: BTreeMap::from([(
+                "known".to_owned(),
+                SessionIdentity {
+                    uid: 3001,
+                    gid: 3001,
+                },
+            )]),
+            ..CapsuleConfig::default()
+        };
+
+        assert_eq!(
+            admitted_identity(&config, Some("known")),
+            config.instance_identities.get("known").copied()
+        );
+        assert_eq!(admitted_identity(&config, Some("missing")), None);
+        assert_eq!(admitted_identity(&config, None), config.shell_identity);
     }
 }
 

@@ -19,6 +19,18 @@ fn instance_config(instances: &[(&str, &str, &str)]) -> CapsuleConfig {
             .iter()
             .map(|(id, mode, _)| ((*id).to_owned(), (*mode).to_owned()))
             .collect(),
+        accounts: instances
+            .iter()
+            .map(|(id, _, _)| {
+                let account = match *id {
+                    "claude-work" => "acc-work",
+                    "claude-personal" => "acc-personal",
+                    "codex-work" => "acc-codex",
+                    _ => id,
+                };
+                ((*id).to_owned(), account.to_owned())
+            })
+            .collect(),
         ..CapsuleConfig::default()
     };
     for (index, (id, _, _)) in instances.iter().enumerate() {
@@ -80,7 +92,7 @@ fn protected_credentials_reject_profile_mode_and_arbitrary_environment() {
         "instances": {
             "claude-work": {
                 "agent": "claude",
-                "account_id": "acc-1",
+                "account_id": "acc-work",
                 "env": {"ANTHROPIC_API_KEY": "fixture"},
             },
         },
@@ -95,7 +107,7 @@ fn protected_credentials_reject_profile_mode_and_arbitrary_environment() {
         "instances": {
             "claude-work": {
                 "agent": "claude",
-                "account_id": "acc-1",
+                "account_id": "acc-work",
                 "env": {"LD_PRELOAD": "/evil"},
             },
         },
@@ -116,7 +128,7 @@ fn protected_credentials_required_for_secret_auth_modes() {
             "instances": {
                 "claude-work": {
                     "agent": "claude",
-                    "account_id": "acc-1",
+                    "account_id": "acc-work",
                     "env": {},
                 },
             },
@@ -250,6 +262,34 @@ fn several_instances_may_share_one_agent_with_isolated_env() {
         },
     }));
     validate_agent_credentials(&config, &half_empty).unwrap_err();
+}
+
+#[test]
+fn protected_credentials_must_match_admitted_agent_and_account() {
+    let config = instance_config(&[("claude-work", "api_key", "claude")]);
+    let swapped_agent = v2_credentials(serde_json::json!({
+        "schema_version": 2,
+        "instances": {
+            "claude-work": {
+                "agent": "codex",
+                "account_id": "acc-work",
+                "env": {"ANTHROPIC_API_KEY": "fixture"},
+            },
+        },
+    }));
+    assert!(validate_agent_credentials(&config, &swapped_agent).is_err());
+
+    let swapped_account = v2_credentials(serde_json::json!({
+        "schema_version": 2,
+        "instances": {
+            "claude-work": {
+                "agent": "claude",
+                "account_id": "acc-personal",
+                "env": {"ANTHROPIC_API_KEY": "fixture"},
+            },
+        },
+    }));
+    assert!(validate_agent_credentials(&config, &swapped_account).is_err());
 }
 
 #[test]
