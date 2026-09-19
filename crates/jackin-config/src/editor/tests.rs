@@ -1705,6 +1705,91 @@ fn removing_account_prunes_all_assignments_and_bindings() {
     assert!(workspace.roles["smith"].account_bindings.is_empty());
 }
 
+#[test]
+fn disabling_and_removing_accounts_prune_all_launch_scopes_atomically() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    paths.ensure_base_dirs().unwrap();
+
+    let work = profile_account();
+    let mut other = profile_account();
+    other.name = "Other".into();
+    other.credential = crate::AccountCredential::Profile {
+        agent: Agent::Claude,
+        directory: "/home/operator/.claude-other".into(),
+        xdg_roots: None,
+    };
+    let mut config = AppConfig::default();
+    config.accounts.insert("work".into(), work);
+    config.accounts.insert("other".into(), other);
+    for (id, account) in [("work-config", "work"), ("other-config", "other")] {
+        config.agent_configurations.insert(
+            id.into(),
+            crate::AgentConfiguration {
+                agent: Agent::Claude,
+                account: account.into(),
+                model: None,
+                base_url: None,
+                display_label: None,
+                invoked_via_wrapper: None,
+            },
+        );
+    }
+    config.default_launch = Some(vec!["work-config".into(), "other-config".into()]);
+
+    let mut workspace = WorkspaceConfig {
+        workdir: "/workspace/project".into(),
+        accounts: vec!["work".into(), "other".into()],
+        default_launch: Some(vec!["work-config".into(), "other-config".into()]),
+        ..Default::default()
+    };
+    workspace.roles.insert(
+        "smith".into(),
+        crate::WorkspaceRoleOverride {
+            default_launch: Some(vec!["work-config".into(), "other-config".into()]),
+            ..Default::default()
+        },
+    );
+    std::fs::write(&paths.config_file, toml::to_string_pretty(&config).unwrap()).unwrap();
+    std::fs::create_dir_all(&paths.workspaces_dir).unwrap();
+    std::fs::write(
+        paths.workspaces_dir.join("project.toml"),
+        toml::to_string_pretty(&workspace).unwrap(),
+    )
+    .unwrap();
+
+    let mut editor = ConfigEditor::open(&paths).unwrap();
+    let mut disabled = config.accounts["work"].clone();
+    disabled.enabled = false;
+    editor.upsert_account("work", &disabled).unwrap();
+    let config = editor.save().unwrap();
+    assert!(!config.accounts["work"].enabled);
+    assert!(!config.agent_configurations.contains_key("work-config"));
+    assert_eq!(
+        config.default_launch.as_deref(),
+        Some(["other-config".into()].as_slice())
+    );
+    let workspace = &config.workspaces["project"];
+    assert_eq!(
+        workspace.default_launch.as_deref(),
+        Some(["other-config".into()].as_slice())
+    );
+    assert_eq!(
+        workspace.roles["smith"].default_launch.as_deref(),
+        Some(["other-config".into()].as_slice())
+    );
+
+    let mut editor = ConfigEditor::open(&paths).unwrap();
+    editor.remove_account("other").unwrap();
+    let config = editor.save().unwrap();
+    assert!(!config.accounts.contains_key("other"));
+    assert!(config.agent_configurations.is_empty());
+    assert_eq!(config.default_launch, Some(Vec::new()));
+    let workspace = &config.workspaces["project"];
+    assert_eq!(workspace.default_launch, Some(Vec::new()));
+    assert_eq!(workspace.roles["smith"].default_launch, Some(Vec::new()));
+}
+
 fn account_workspace(source: &Path) -> WorkspaceConfig {
     WorkspaceConfig {
         workdir: "/workspace/project".into(),
@@ -1931,6 +2016,40 @@ fn open_detailed_consumes_installer_marker_exactly_once() {
 }
 
 #[test]
+fn failed_fresh_install_bootstrap_keeps_marker_for_retry() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    paths.ensure_base_dirs().unwrap();
+    std::fs::write(
+        &paths.config_file,
+        format!(
+            "version = \"{}\"\n\n[bootstrap]\nversion = 1\nfresh_install = true\n\n[accounts.bad]\nname = \"\"\nprovider = \"anthropic\"\n\n[accounts.bad.credential]\ntype = \"api_key\"\nvalue = \"$BAD\"\n",
+            crate::CURRENT_CONFIG_VERSION
+        ),
+    )
+    .unwrap();
+
+    let bootstrap_failure = ConfigEditor::open_detailed(&paths).err();
+    assert!(bootstrap_failure.is_some());
+    let raw = std::fs::read_to_string(&paths.config_file).unwrap();
+    assert!(raw.contains("fresh_install = true"), "{raw}");
+
+    std::fs::write(
+        &paths.config_file,
+        format!(
+            "version = \"{}\"\n\n[bootstrap]\nversion = 1\nfresh_install = true\n",
+            crate::CURRENT_CONFIG_VERSION
+        ),
+    )
+    .unwrap();
+    let (editor, report) = ConfigEditor::open_detailed(&paths).unwrap();
+    assert!(report.fresh_install);
+    editor.save().unwrap();
+    let raw = std::fs::read_to_string(&paths.config_file).unwrap();
+    assert!(!raw.contains("fresh_install = true"), "{raw}");
+}
+
+#[test]
 fn open_detailed_upgrade_never_resurrects_or_rescans() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
@@ -2000,6 +2119,41 @@ fn scan_for_accounts_imports_profiles_with_bootstrap_naming_and_dedupes() {
         .scan_for_accounts_with(&paths.home_dir, &BTreeMap::new())
         .unwrap();
     assert!(second.added_accounts.is_empty(), "{second:?}");
+}
+
+#[test]
+fn removed_account_stays_excluded_from_scan_after_reload() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    minimal_config_file(&paths);
+    claude_credentials_fixture(&paths.home_dir);
+
+    let mut editor = ConfigEditor::open(&paths).unwrap();
+    let first = editor
+        .scan_for_accounts_with(&paths.home_dir, &BTreeMap::new())
+        .unwrap();
+    assert!(first.added_accounts.contains(&"default-claude".to_owned()));
+    editor.save().unwrap();
+
+    let mut editor = ConfigEditor::open(&paths).unwrap();
+    editor.remove_account("default-claude").unwrap();
+    let removed = editor.save().unwrap();
+    assert!(!removed.accounts.contains_key("default-claude"));
+    assert_eq!(removed.account_scan_exclusions.len(), 1);
+
+    let mut editor = ConfigEditor::open(&paths).unwrap();
+    let report = editor
+        .scan_for_accounts_with(&paths.home_dir, &BTreeMap::new())
+        .unwrap();
+    assert!(report.added_accounts.is_empty(), "{report:?}");
+    let reloaded = editor.save().unwrap();
+    assert!(!reloaded.accounts.contains_key("default-claude"));
+    assert!(
+        !AppConfig::load_or_init(&paths)
+            .unwrap()
+            .accounts
+            .contains_key("default-claude")
+    );
 }
 
 #[test]

@@ -8,7 +8,7 @@
 //! resolution) lives in the child modules `mounts`, `persist`,
 //! `roles`, and `workspaces`.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use jackin_core::EnvValue;
 use serde::{Deserialize, Serialize};
@@ -35,6 +35,11 @@ pub struct AppConfig {
     /// Global explicit account selections by agent.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub account_bindings: BTreeMap<Agent, String>,
+    /// Secret-free fingerprints of account sources deliberately removed by
+    /// the operator. Explicit scans skip these sources until a direct account
+    /// registration clears the matching fingerprint.
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub account_scan_exclusions: BTreeSet<String>,
     /// Named agent/account/model templates (one launchable instance each).
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub agent_configurations: BTreeMap<String, crate::AgentConfiguration>,
@@ -117,6 +122,7 @@ impl Default for AppConfig {
             version: CURRENT_CONFIG_VERSION.to_owned(),
             accounts: BTreeMap::new(),
             account_bindings: BTreeMap::new(),
+            account_scan_exclusions: BTreeSet::new(),
             agent_configurations: BTreeMap::new(),
             default_launch: None,
             bootstrap: None,

@@ -14,6 +14,7 @@
 
 use anyhow::Context;
 use fs4::TryLockError;
+use std::ffi::OsStr;
 use std::fs::File;
 use std::io::{Read as _, Seek as _, Write as _};
 use std::path::{Path, PathBuf};
@@ -95,6 +96,23 @@ pub(crate) fn acquire_config_write_lock(
     writeln!(file, "{}", std::process::id())?;
     file.sync_all()?;
     Ok(ConfigWriteGuard { _file: file })
+}
+
+/// Resolve the global config file that owns a split workspace file's writer
+/// lock. Standalone migration callers use a sibling `config.toml`; normal
+/// split files use `<config-dir>/config.toml`.
+pub(crate) fn config_file_for_workspace_path(path: &Path) -> PathBuf {
+    let Some(parent) = path.parent() else {
+        return PathBuf::from("config.toml");
+    };
+    if parent.file_name() == Some(OsStr::new("workspaces")) {
+        parent.parent().map_or_else(
+            || parent.join("config.toml"),
+            |root| root.join("config.toml"),
+        )
+    } else {
+        parent.join("config.toml")
+    }
 }
 
 fn acquire_lock(
@@ -223,7 +241,7 @@ pub(crate) fn stage_atomic_write(path: &Path, contents: &str) -> crate::ConfigRe
     let counter = TMP_COUNTER.fetch_add(1, Ordering::Relaxed);
     let mut staged_name = path
         .file_name()
-        .map(std::ffi::OsStr::to_os_string)
+        .map(OsStr::to_os_string)
         .unwrap_or_default();
     staged_name.push(format!(".tmp.{}.{counter}", std::process::id()));
     let tmp = path.with_file_name(staged_name);

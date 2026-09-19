@@ -24,13 +24,23 @@ The split-workspace layout described in [Configuration File](/reference/runtime/
 
 | File | Current version | Owner | Migration mode |
 |---|---|---|---|
-| `~/.config/jackin/config.toml` | `v1alpha11` | jackin❯ | Automatic on startup |
+| `~/.config/jackin/config.toml` | `v1alpha12` | jackin❯ | Automatic on startup |
 | `~/.config/jackin/workspaces/<name>.toml` | `v1alpha10` | jackin❯ | Automatic on startup |
 | `jackin.role.toml` | `v1alpha7` | Role repository | Desktop: `jackin role migrate <role-repo-path>`; CI/automation: `jackin-role migrate <role-repo-path>` |
 
 ## Timeline
 
 Each entry is one upgrade path the current binary applies. <RepoFile path="crates/jackin/tests/migration_fixtures.rs">crates/jackin/tests/migration_fixtures.rs</RepoFile> walks every fixture on every CI run, so a regression breaks here before it breaks on a delayed operator's machine. Newest first; append, never edit.
+
+### Config `v1alpha12` — 2026-09-19
+
+| File kind | Predecessor | Migration mode | Fixture |
+|---|---|---|---|
+| Config (`config.toml`) | `v1alpha11` | Automatic on startup | <RepoFile path="crates/jackin/tests/fixtures/migrations/config/from-v1alpha11/meta.toml">crates/jackin/tests/fixtures/migrations/config/from-v1alpha11/meta.toml</RepoFile> |
+
+**Summary**: deliberate account removal records a secret-free credential-source
+fingerprint in `account_scan_exclusions`. Explicit account scans skip that
+source after reload; direct account registration clears the matching exclusion.
 
 ### Config `v1alpha11` and workspace `v1alpha10` — 2026-09-17
 

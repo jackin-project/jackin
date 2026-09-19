@@ -1,8 +1,9 @@
-version = "v1alpha12"
-# Operator comment preserved across the bootstrap-stamp migration.
+version = "v1alpha11"
+
 [accounts.personal]
 name = "Personal"
 provider = "anthropic"
+
 [accounts.personal.credential]
 type = "api_key"
 value = "$ANTHROPIC_API_KEY"
