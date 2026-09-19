@@ -1939,6 +1939,92 @@ fn account_credentials_are_scoped_to_selected_instance_and_mode() {
 }
 
 #[test]
+fn google_alias_is_scrubbed_from_siblings_while_selected_credential_is_injected() {
+    let credentials: jackin_protocol::AgentCredentialEnv =
+        serde_json::from_value(serde_json::json!({
+            "schema_version": 2,
+            "instances": {
+                "gemini-work": {
+                    "agent": "gemini",
+                    "account_id": "acc-work",
+                    "env": {"GEMINI_API_KEY": "work-secret"},
+                },
+                "gemini-personal": {
+                    "agent": "gemini",
+                    "account_id": "acc-personal",
+                    "env": {"GEMINI_API_KEY": "personal-secret"},
+                },
+            },
+        }))
+        .expect("v2 fixture must decode");
+    let ambient = vec![(
+        jackin_core::GOOGLE_API_KEY_ENV_NAME.to_owned(),
+        "ambient-secret".to_owned(),
+    )];
+
+    let mut unselected = build_agent_command(&spawn_spec(
+        "gemini",
+        "gemini-unselected",
+        Some("ignore"),
+        &ambient,
+    ));
+    super::apply_account_env(
+        &mut unselected,
+        "gemini-unselected",
+        Some("ignore"),
+        &credentials,
+    );
+    assert!(
+        unselected
+            .get_env(jackin_core::GOOGLE_API_KEY_ENV_NAME)
+            .is_none()
+    );
+    assert!(
+        unselected
+            .get_env(jackin_core::GEMINI_API_KEY_ENV_NAME)
+            .is_none()
+    );
+
+    let mut work = build_agent_command(&spawn_spec(
+        "gemini",
+        "gemini-work",
+        Some("api_key"),
+        &ambient,
+    ));
+    super::apply_account_env(&mut work, "gemini-work", Some("api_key"), &credentials);
+    assert_eq!(
+        work.get_env(jackin_core::GEMINI_API_KEY_ENV_NAME)
+            .and_then(|value| value.to_str()),
+        Some("work-secret")
+    );
+    assert!(work.get_env(jackin_core::GOOGLE_API_KEY_ENV_NAME).is_none());
+
+    let mut personal = build_agent_command(&spawn_spec(
+        "gemini",
+        "gemini-personal",
+        Some("api_key"),
+        &ambient,
+    ));
+    super::apply_account_env(
+        &mut personal,
+        "gemini-personal",
+        Some("api_key"),
+        &credentials,
+    );
+    assert_eq!(
+        personal
+            .get_env(jackin_core::GEMINI_API_KEY_ENV_NAME)
+            .and_then(|value| value.to_str()),
+        Some("personal-secret")
+    );
+    assert!(
+        personal
+            .get_env(jackin_core::GOOGLE_API_KEY_ENV_NAME)
+            .is_none()
+    );
+}
+
+#[test]
 fn unassigned_instance_cannot_inherit_another_instances_provider_key() {
     let credentials: jackin_protocol::AgentCredentialEnv =
         serde_json::from_value(serde_json::json!({

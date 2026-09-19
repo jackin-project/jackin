@@ -73,9 +73,10 @@ pub const XAI_API_KEY_ENV_NAME: &str = "XAI_API_KEY";
 /// Gemini API key env name (Antigravity `agy` + Gemini CLI `api_key` mode).
 ///
 /// Documented Google AI Studio key variable; both Google-fronted agents
-/// accept it. `GOOGLE_API_KEY` remains a recognized alias only in the
-/// config discovery scan, not here.
+/// accept it.
 pub const GEMINI_API_KEY_ENV_NAME: &str = "GEMINI_API_KEY";
+/// Google API key alias accepted by Google-fronted agents.
+pub const GOOGLE_API_KEY_ENV_NAME: &str = "GOOGLE_API_KEY";
 /// Cursor API key env name (`cursor-agent api_key` mode; verified in
 /// `cursor-agent --help` alongside `CURSOR_API_ENDPOINT`).
 pub const CURSOR_API_KEY_ENV_NAME: &str = "CURSOR_API_KEY";
@@ -184,6 +185,10 @@ pub const USAGE_CREDENTIAL_ENV_REGISTRY: &[UsageCredentialEnvName] = &[
     },
     UsageCredentialEnvName {
         name: GEMINI_API_KEY_ENV_NAME,
+        owner: UsageCredentialOwner::Google,
+    },
+    UsageCredentialEnvName {
+        name: GOOGLE_API_KEY_ENV_NAME,
         owner: UsageCredentialOwner::Google,
     },
     UsageCredentialEnvName {

@@ -178,6 +178,7 @@ fn new_provider_keys_are_discovered() {
             discover_environment_accounts(&env),
             [(provider, name.into())]
         );
+        assert!(jackin_core::is_account_env(name));
     }
     // Canonical name wins over the alias.
     let env = std::collections::BTreeMap::from([

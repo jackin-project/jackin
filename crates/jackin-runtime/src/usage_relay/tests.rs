@@ -324,6 +324,7 @@ fn forwarded_sources_include_only_provisioned_profiles_and_governed_env() {
     let resolved_env = jackin_env::ResolvedEnv {
         vars: vec![
             ("OPENAI_API_KEY".to_owned(), "secret".to_owned()),
+            ("GOOGLE_API_KEY".to_owned(), "alias-secret".to_owned()),
             ("UNRELATED".to_owned(), "value".to_owned()),
         ],
     };
@@ -335,7 +336,7 @@ fn forwarded_sources_include_only_provisioned_profiles_and_governed_env() {
     );
     assert_eq!(
         sources.env_keys,
-        BTreeSet::from(["OPENAI_API_KEY".to_owned()])
+        BTreeSet::from(["GOOGLE_API_KEY".to_owned(), "OPENAI_API_KEY".to_owned(),])
     );
 }
 

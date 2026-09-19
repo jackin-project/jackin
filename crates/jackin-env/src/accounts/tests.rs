@@ -232,6 +232,7 @@ fn generic_env_cannot_bypass_account_admission() {
         "kimi_auth_token",
         "MINIMAX_CODING_API_KEY",
         "Z_AI_API_KEY",
+        "GOOGLE_API_KEY",
     ] {
         cfg.env.insert(key.into(), EnvValue::from("test-bypass"));
     }
