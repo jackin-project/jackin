@@ -64,7 +64,7 @@ fn renders_runtime_finalization_in_one_layer() {
     ));
     assert!(
         dockerfile
-            .contains("cat /jackin/runtime/zsh-title-shim >> /home/agent/.zshrc ) \\\n    && install -d -o agent -g 0 /jackin/run /jackin/state"),
+            .contains("cat /jackin/runtime/zsh-title-shim >> /home/agent/.zshrc ) \\\n    && install -d -o agent -g 0 /jackin/run /jackin/state /jackin/account-credentials"),
         "runtime dir setup should share finalization and assign ownership at mkdir time: {dockerfile}"
     );
     assert!(
@@ -104,7 +104,9 @@ fn renders_runtime_finalization_in_one_layer() {
     assert!(!dockerfile.contains("chown agent:agent /jackin/run /jackin/state"));
     // Finalization is its own RUN now (default-home snapshot was pulled out).
     assert!(dockerfile.contains("\nRUN ( grep -q '__JACKIN_AUTO_TITLE_LOADED'"));
-    assert!(!dockerfile.contains("\nRUN install -d -o agent -g 0 /jackin/run /jackin/state"));
+    assert!(!dockerfile.contains(
+        "\nRUN install -d -o agent -g 0 /jackin/run /jackin/state /jackin/account-credentials"
+    ));
     assert_eq!(
         dockerfile
             .matches("\nRUN install -d -o agent -g 0 /jackin/default-home")
@@ -551,7 +553,9 @@ fn renders_dockerfile_targets_agent_user_not_claude() {
     assert!(dockerfile.contains("/home/agent"));
     assert!(!dockerfile.contains("groupmod "));
     assert!(!dockerfile.contains("usermod "));
-    assert!(dockerfile.contains("install -d -o agent -g 0 /jackin/run /jackin/state"));
+    assert!(dockerfile.contains(
+        "install -d -o agent -g 0 /jackin/run /jackin/state /jackin/account-credentials"
+    ));
     assert!(!dockerfile.contains("chown agent:agent /jackin/run /jackin/state"));
     assert!(!dockerfile.contains("chown -R agent:agent /jackin/state"));
     assert!(dockerfile.contains("ENTRYPOINT [\"/jackin/runtime/jackin-capsule\"]"));

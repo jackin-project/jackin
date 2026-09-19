@@ -35,6 +35,9 @@ const DEFAULT_AGENT: &str = "claude";
 )]
 async fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().collect();
+    if args.get(1).is_some_and(|arg| arg == "__isolated-exec") {
+        return jackin_capsule::process_isolation::run_isolated_command(&args[2..]);
+    }
     if invoked_as_prepare_commit_msg_hook(&args) {
         return runtime_setup::run_prepare_commit_msg_hook(&args[1..]);
     }

@@ -71,7 +71,7 @@ fn push_slot_auth_mounts(
     if matches!(slot.agent, Agent::Kimi | Agent::Hermes) {
         let store = root.join(&slot.container_store_rel);
         mounts.push(format!(
-            "{}:/jackin/{}",
+            "{}:/jackin/{}:ro",
             store.display(),
             slot.container_store_rel
         ));
@@ -81,15 +81,10 @@ fn push_slot_auth_mounts(
         let Some(file_name) = path.file_name().and_then(|name| name.to_str()) else {
             continue;
         };
-        // Auth mounts are bound RW at the docker level so future
-        // plumbing (symlink / bind re-mount) for live bidirectional
-        // sync — see `roadmap/live-auth-sync.mdx` — can rely on a
-        // writable target. The entrypoint currently `cp`s the file, so
-        // in-container rotation does not flow back today.
         let guarded = matches!(slot.agent, Agent::Claude) && !path.exists();
         if !guarded {
             mounts.push(format!(
-                "{}:/jackin/{}/{}",
+                "{}:/jackin/{}/{}:ro",
                 path.display(),
                 slot.container_store_rel,
                 file_name
@@ -114,10 +109,55 @@ pub(crate) fn agent_mounts(state: &crate::instance::RoleState) -> Vec<String> {
         state.root.join("state").display()
     )];
 
-    mounts.push(format!(
-        "{}:/run/jackin:ro",
-        state.root.join("credentials").display()
-    ));
+    for agent in Agent::ALL {
+        let mut slots: Vec<(&String, &crate::instance::ProvisionedInstanceAuth)> = state
+            .auth
+            .slots
+            .iter()
+            .filter(|(_, slot)| slot.agent == *agent)
+            .collect();
+        slots.sort_by(|(a_key, a), (b_key, b)| {
+            (a.slot_suffix.is_some(), *a_key).cmp(&(b.slot_suffix.is_some(), *b_key))
+        });
+        for (instance, slot) in slots {
+            let credential = state
+                .root
+                .join("credentials")
+                .join(jackin_protocol::account_credentials_filename(instance));
+            if credential.is_file() {
+                mounts.push(format!(
+                    "{}:{}:ro",
+                    credential.display(),
+                    jackin_protocol::account_credentials_container_path(instance)
+                ));
+            }
+            push_slot_home_mounts(&mut mounts, &state.root, *agent, slot);
+            push_slot_auth_mounts(&mut mounts, &state.root, slot);
+        }
+    }
+
+    mounts
+}
+
+/// Build the directory-only equivalent of [`agent_mounts`] for
+/// apple/container. That backend rejects single-file bind sources, so each
+/// slot's already-unique auth store is mounted read-only as a directory. The
+/// credentials transport is likewise a root-only directory mount; session
+/// Landlock rules contain no access rule for it.
+pub(crate) fn apple_agent_mounts(
+    state: &crate::instance::RoleState,
+) -> anyhow::Result<Vec<AppleContainerMount>> {
+    use jackin_core::Agent;
+
+    let credentials = state.root.join("credentials");
+    anyhow::ensure!(
+        credentials.is_dir(),
+        "per-instance credential directory is missing before apple/container launch"
+    );
+    let mut mounts = vec![
+        AppleContainerMount::new(state.root.join("state"), "/jackin/state", false),
+        AppleContainerMount::new(credentials, jackin_protocol::ACCOUNT_CREDENTIALS_DIR, true),
+    ];
 
     for agent in Agent::ALL {
         let mut slots: Vec<(&String, &crate::instance::ProvisionedInstanceAuth)> = state
@@ -130,12 +170,40 @@ pub(crate) fn agent_mounts(state: &crate::instance::RoleState) -> Vec<String> {
             (a.slot_suffix.is_some(), *a_key).cmp(&(b.slot_suffix.is_some(), *b_key))
         });
         for (_, slot) in slots {
-            push_slot_home_mounts(&mut mounts, &state.root, *agent, slot);
-            push_slot_auth_mounts(&mut mounts, &state.root, slot);
+            let paths = agent.runtime().state_paths();
+            let home = state.root.join("home");
+            mounts.push(AppleContainerMount::new(
+                home.join(&slot.container_home_rel),
+                format!("/home/agent/{}", slot.container_home_rel),
+                false,
+            ));
+            for entry in paths
+                .home_dirs()
+                .filter(|entry| *entry != paths.credential_dir)
+            {
+                let rel = crate::instance::slot_home_rel(entry, slot.slot_suffix.as_deref());
+                mounts.push(AppleContainerMount::new(
+                    home.join(&rel),
+                    format!("/home/agent/{rel}"),
+                    false,
+                ));
+            }
+            if slot.forward_auth {
+                let store = state.root.join(&slot.container_store_rel);
+                anyhow::ensure!(
+                    store.is_dir(),
+                    "private auth store is missing before apple/container launch: {}",
+                    store.display()
+                );
+                mounts.push(AppleContainerMount::new(
+                    store,
+                    format!("/jackin/{}", slot.container_store_rel),
+                    true,
+                ));
+            }
         }
     }
-
-    mounts
+    Ok(mounts)
 }
 
 pub(crate) fn github_config_mount(state: &crate::instance::RoleState) -> Option<String> {

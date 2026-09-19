@@ -12,18 +12,16 @@ fn envelope() -> jackin_protocol::AgentCredentialEnv {
 }
 
 #[test]
-fn credentials_writer_persists_v2_envelope_privately() {
+fn credentials_writer_persists_one_staged_file_privately() {
     let temp = tempfile::tempdir().unwrap();
     write_account_credentials(temp.path(), &envelope()).unwrap();
     let directory = temp.path().join("credentials");
-    let path = directory.join("account-credentials.json");
+    let path = directory.join(jackin_protocol::account_credentials_filename("work@claude"));
     let stored: serde_json::Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
-    assert_eq!(stored["schema_version"], 2);
-    assert_eq!(
-        stored["instances"]["work@claude"]["env"]["ANTHROPIC_API_KEY"],
-        "test-key"
-    );
-    assert_eq!(stored["instances"]["work@claude"]["account_id"], "work");
+    assert_eq!(stored["schema_version"], 1);
+    assert_eq!(stored["credential"]["env"]["ANTHROPIC_API_KEY"], "test-key");
+    assert_eq!(stored["credential"]["account_id"], "work");
+    assert_eq!(stored["instance"], "work@claude");
     let entries: Vec<_> = std::fs::read_dir(&directory).unwrap().collect();
     assert_eq!(entries.len(), 1, "atomic write must leave no temp files");
     #[cfg(unix)]
@@ -38,6 +36,21 @@ fn credentials_writer_persists_v2_envelope_privately() {
             0o600
         );
     }
+}
+
+#[test]
+fn credentials_writer_revokes_stale_instance_files() {
+    let temp = tempfile::tempdir().unwrap();
+    write_account_credentials(temp.path(), &envelope()).unwrap();
+    let empty = jackin_protocol::AgentCredentialEnv::default();
+    write_account_credentials(temp.path(), &empty).unwrap();
+    assert_eq!(
+        std::fs::read_dir(temp.path().join("credentials"))
+            .unwrap()
+            .count(),
+        0,
+        "revocation must remove every prior staged instance file"
+    );
 }
 
 #[test]

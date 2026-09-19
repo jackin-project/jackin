@@ -63,6 +63,13 @@ fn validate(config: &CapsuleConfig) -> Result<()> {
     if config.workdir.trim().is_empty() {
         anyhow::bail!("{} workdir is empty", jackin_protocol::CAPSULE_CONFIG_PATH);
     }
+    let is_descendant = |path: &str, root: &str| {
+        path == root
+            || path
+                .strip_prefix(root)
+                .is_some_and(|suffix| suffix.starts_with('/'))
+    };
+    let mut identities = std::collections::BTreeSet::new();
     for instance in &config.instances {
         let mode = config.auth_mode_for_instance(instance).ok_or_else(|| {
             anyhow::anyhow!("missing bounded auth mode for configured instance {instance}")
@@ -70,6 +77,116 @@ fn validate(config: &CapsuleConfig) -> Result<()> {
         if !matches!(mode, "sync" | "api_key" | "oauth_token" | "ignore") {
             anyhow::bail!("invalid bounded auth mode for configured instance {instance}");
         }
+        anyhow::ensure!(
+            config.agent_for_instance(instance).is_some()
+                && config.home_for_instance(instance).is_some()
+                && config.forwarded_for_instance(instance).is_some()
+                && config.identity_for_instance(instance).is_some()
+                && !config.mount_paths_for_instance(instance).is_empty(),
+            "instance {instance:?} is missing an admitted isolation record"
+        );
+        let Some(identity) = config.identity_for_instance(instance) else {
+            anyhow::bail!("instance {instance:?} has no Unix identity");
+        };
+        anyhow::ensure!(
+            identity.uid > 0 && identity.gid > 0 && identity.uid < 65_536 && identity.gid < 65_536,
+            "instance {instance:?} has an invalid non-root Unix identity"
+        );
+        anyhow::ensure!(
+            identities.insert((identity.uid, identity.gid)),
+            "duplicate Unix identity for configured instance {instance:?}"
+        );
+        let home = config
+            .home_for_instance(instance)
+            .ok_or_else(|| anyhow::anyhow!("instance {instance:?} has no private home path"))?;
+        anyhow::ensure!(
+            is_descendant(home, "/home/agent")
+                && !home.split('/').any(|component| component == ".."),
+            "instance {instance:?} has an invalid private home path"
+        );
+        let forwarded = config
+            .forwarded_for_instance(instance)
+            .ok_or_else(|| anyhow::anyhow!("instance {instance:?} has no private auth path"))?;
+        anyhow::ensure!(
+            forwarded.starts_with("/jackin/")
+                && !forwarded.split('/').any(|component| component == "..")
+                && ![
+                    jackin_core::container_paths::RUN_DIR,
+                    jackin_core::container_paths::STATE_DIR,
+                    jackin_core::container_paths::RUNTIME_DIR,
+                    jackin_core::container_paths::DEFAULT_HOME_DIR,
+                    jackin_protocol::ACCOUNT_CREDENTIALS_DIR,
+                ]
+                .iter()
+                .any(|root| is_descendant(forwarded, root)),
+            "instance {instance:?} has an invalid private auth path"
+        );
+        let path = config
+            .credential_file_for_instance(instance)
+            .ok_or_else(|| anyhow::anyhow!("instance {instance:?} has no credential file path"))?;
+        anyhow::ensure!(
+            path == jackin_protocol::account_credentials_container_path(instance),
+            "instance {instance:?} has an invalid credential mount path"
+        );
+        for path in config.mount_paths_for_instance(instance) {
+            let is_private_home = path.starts_with("/home/agent/") && is_descendant(path, home);
+            let is_forwarded_auth = is_descendant(path, forwarded);
+            anyhow::ensure!(
+                path != "/home/agent"
+                    && path != jackin_core::container_paths::JACKIN_ROOT
+                    && path != jackin_core::container_paths::RUN_DIR
+                    && path != jackin_core::container_paths::STATE_DIR
+                    && path != jackin_core::container_paths::RUNTIME_DIR
+                    && !is_descendant(path, jackin_protocol::ACCOUNT_CREDENTIALS_DIR)
+                    && (is_private_home || is_forwarded_auth)
+                    && !path.split('/').any(|component| component == ".."),
+                "instance {instance:?} has an invalid private mount path"
+            );
+        }
+    }
+    for (left_index, left_instance) in config.instances.iter().enumerate() {
+        for right_instance in config.instances.iter().skip(left_index + 1) {
+            for left_path in config.mount_paths_for_instance(left_instance) {
+                for right_path in config.mount_paths_for_instance(right_instance) {
+                    anyhow::ensure!(
+                        !(left_path == right_path
+                            || is_descendant(left_path, right_path)
+                            || is_descendant(right_path, left_path)),
+                        "private mount paths for instances {left_instance:?} and {right_instance:?} overlap"
+                    );
+                }
+            }
+        }
+    }
+    for instance in config.instance_credential_files.keys() {
+        anyhow::ensure!(
+            config.instances.contains(instance),
+            "credential file names an instance outside the configured allowlist"
+        );
+    }
+    for instance in config.instance_mount_paths.keys() {
+        anyhow::ensure!(
+            config.instances.contains(instance),
+            "mount paths name an instance outside the configured allowlist"
+        );
+    }
+    for instance in config.instance_home_dirs.keys() {
+        anyhow::ensure!(
+            config.instances.contains(instance),
+            "home paths name an instance outside the configured allowlist"
+        );
+    }
+    for instance in config.instance_forwarded_dirs.keys() {
+        anyhow::ensure!(
+            config.instances.contains(instance),
+            "forwarded paths name an instance outside the configured allowlist"
+        );
+    }
+    for instance in config.instance_identities.keys() {
+        anyhow::ensure!(
+            config.instances.contains(instance),
+            "Unix identities name an instance outside the configured allowlist"
+        );
     }
     if config
         .auth_modes
@@ -78,6 +195,17 @@ fn validate(config: &CapsuleConfig) -> Result<()> {
     {
         anyhow::bail!("auth mode names an instance outside the configured allowlist");
     }
+    let shell = config
+        .shell_identity
+        .ok_or_else(|| anyhow::anyhow!("capsule config has no isolated shell identity"))?;
+    anyhow::ensure!(
+        shell.uid > 0 && shell.gid > 0 && shell.uid < 65_536 && shell.gid < 65_536,
+        "capsule shell identity must be a non-root Unix identity"
+    );
+    anyhow::ensure!(
+        identities.insert((shell.uid, shell.gid)),
+        "shell identity overlaps an admitted instance identity"
+    );
     Ok(())
 }
 
@@ -88,43 +216,67 @@ mod tests;
 pub(crate) fn load_agent_credentials(
     config: &CapsuleConfig,
 ) -> std::io::Result<jackin_protocol::AgentCredentialEnv> {
-    let raw = match std::fs::read(jackin_core::container_paths::ACCOUNT_CREDENTIALS) {
-        Ok(raw) => raw,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            let credentials = jackin_protocol::AgentCredentialEnv::default();
-            validate_agent_credentials(config, &credentials)?;
-            return Ok(credentials);
+    let mut instances = std::collections::BTreeMap::new();
+    for (instance, path) in &config.instance_credential_files {
+        let expected = jackin_protocol::account_credentials_container_path(instance);
+        if path != &expected {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "protected account credential path is outside the admitted mount",
+            ));
         }
-        Err(error) => return Err(error),
-    };
-    let credentials = parse_agent_credentials(&raw)?;
+        let raw = match std::fs::read(path) {
+            Ok(raw) => raw,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(error) => return Err(error),
+        };
+        let staged = parse_staged_credential(&raw)?;
+        if staged.instance != *instance {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "protected account credential file does not match its admitted instance",
+            ));
+        }
+        if instances
+            .insert(instance.clone(), staged.credential)
+            .is_some()
+        {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "duplicate protected account credential instance",
+            ));
+        }
+    }
+    let credentials = jackin_protocol::AgentCredentialEnv::new(instances);
     validate_agent_credentials(config, &credentials)?;
     Ok(credentials)
 }
 
-/// Decode the staged protected-credentials file. Only the v2 envelope is
-/// accepted; anything else (v1 agent-keyed shape, missing or non-2 version,
-/// malformed JSON) is an explicit restart/upgrade error, never a silent
-/// misread. Diagnostics never carry file contents.
-fn parse_agent_credentials(raw: &[u8]) -> std::io::Result<jackin_protocol::AgentCredentialEnv> {
-    let credentials: jackin_protocol::AgentCredentialEnv =
-        serde_json::from_slice(raw).map_err(|_| {
+/// Decode one staged protected-credentials file. Anything else (a legacy
+/// container-wide envelope, missing version, or malformed JSON) is an
+/// explicit restart/upgrade error, never a silent misread. Diagnostics never
+/// carry file contents.
+fn parse_staged_credential(
+    raw: &[u8],
+) -> std::io::Result<jackin_protocol::StagedInstanceCredential> {
+    let credential: jackin_protocol::StagedInstanceCredential = serde_json::from_slice(raw)
+        .map_err(|_| {
             std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
-                "invalid protected account credentials: expected the v2 envelope \
-                 `{\"schema_version\":2,\"instances\":{...}}`; restart the container \
+                "invalid protected account credentials: expected a single-instance \
+                 staged credential file; restart the container \
                  from an upgraded host",
             )
         })?;
-    if credentials.schema_version() != 2 {
+    if credential.schema_version != 1 {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidData,
-            "unsupported protected account credentials schema: expected the v2 envelope \
-             `{\"schema_version\":2,\"instances\":{...}}`; restart the container \
+            "unsupported protected account credentials schema: expected the single-instance \
+             staged credential schema; restart the container \
              from an upgraded host",
         ));
     }
-    Ok(credentials)
+    Ok(credential)
 }
 
 fn validate_agent_credentials(

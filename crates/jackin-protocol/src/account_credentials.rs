@@ -77,3 +77,26 @@ impl std::fmt::Debug for AgentCredentialEnv {
         f.write_str("AgentCredentialEnv([REDACTED])")
     }
 }
+
+/// One on-disk credential transport unit. A file contains one admitted
+/// instance only; the former container-wide v2 envelope is not accepted for
+/// launch.
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StagedInstanceCredential {
+    /// Transport schema version.
+    pub schema_version: u16,
+    /// Instance ID expected by the mount/config entry.
+    pub instance: String,
+    /// The sole admitted instance credential entry.
+    pub credential: InstanceCredentialEnv,
+}
+
+impl std::fmt::Debug for StagedInstanceCredential {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("StagedInstanceCredential")
+            .field("schema_version", &self.schema_version)
+            .field("instance", &self.instance)
+            .field("credential", &"<redacted>")
+            .finish()
+    }
+}

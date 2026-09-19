@@ -49,11 +49,11 @@ pub fn account_configuration_fingerprint(
         })
         .collect::<anyhow::Result<std::collections::BTreeMap<_, _>>>()?;
     let bytes = serde_json::to_vec(&(
-        // v3 extends admission to the instance set: agent configurations and
+        // v4 extends admission to the instance set: agent configurations and
         // launch defaults select which instances resolve. v2 keeps Claude
         // metadata inside its directory mount; v1 containers pin a mutable
         // .claude.json inode and cannot support atomic replacement.
-        "account-config-v3",
+        "account-config-v4-isolated-sessions",
         accounts,
         &config.account_bindings,
         ws.map(|ws| &ws.account_bindings),
@@ -165,12 +165,29 @@ pub(super) fn write_account_credentials(
     let directory = root.join("credentials");
     std::fs::create_dir_all(&directory)?;
     std::fs::set_permissions(&directory, std::fs::Permissions::from_mode(0o700))?;
-    let mut file = tempfile::NamedTempFile::new_in(&directory)?;
-    file.as_file()
-        .set_permissions(std::fs::Permissions::from_mode(0o600))?;
-    file.write_all(&serde_json::to_vec(credentials)?)?;
-    file.as_file().sync_all()?;
-    file.persist(directory.join("account-credentials.json"))?;
+    for entry in std::fs::read_dir(&directory)? {
+        let entry = entry?;
+        let file_type = entry.file_type()?;
+        anyhow::ensure!(
+            file_type.is_file(),
+            "unexpected non-file entry in private credentials directory: {}",
+            entry.path().display()
+        );
+        std::fs::remove_file(entry.path())?;
+    }
+    for (instance, credential) in credentials.iter() {
+        let staged = jackin_protocol::StagedInstanceCredential {
+            schema_version: 1,
+            instance: instance.clone(),
+            credential: credential.clone(),
+        };
+        let mut file = tempfile::NamedTempFile::new_in(&directory)?;
+        file.as_file()
+            .set_permissions(std::fs::Permissions::from_mode(0o600))?;
+        file.write_all(&serde_json::to_vec(&staged)?)?;
+        file.as_file().sync_all()?;
+        file.persist(directory.join(jackin_protocol::account_credentials_filename(instance)))?;
+    }
     Ok(())
 }
 

@@ -5,7 +5,7 @@ use super::*;
 use std::collections::BTreeMap;
 
 fn instance_config(instances: &[(&str, &str, &str)]) -> CapsuleConfig {
-    CapsuleConfig {
+    let mut config = CapsuleConfig {
         workdir: "/workspace".to_owned(),
         instances: instances
             .iter()
@@ -20,7 +20,38 @@ fn instance_config(instances: &[(&str, &str, &str)]) -> CapsuleConfig {
             .map(|(id, mode, _)| ((*id).to_owned(), (*mode).to_owned()))
             .collect(),
         ..CapsuleConfig::default()
+    };
+    for (index, (id, _, _)) in instances.iter().enumerate() {
+        config
+            .instance_home_dirs
+            .insert((*id).to_owned(), format!("/home/agent/.slot-{index}"));
+        config
+            .instance_forwarded_dirs
+            .insert((*id).to_owned(), format!("/jackin/slot-{index}"));
+        config.instance_credential_files.insert(
+            (*id).to_owned(),
+            jackin_protocol::account_credentials_container_path(id),
+        );
+        config.instance_mount_paths.insert(
+            (*id).to_owned(),
+            vec![
+                format!("/home/agent/.slot-{index}"),
+                format!("/jackin/slot-{index}"),
+            ],
+        );
+        config.instance_identities.insert(
+            (*id).to_owned(),
+            jackin_protocol::SessionIdentity {
+                uid: 2_000 + index as u32,
+                gid: 2_000 + index as u32,
+            },
+        );
     }
+    config.shell_identity = Some(jackin_protocol::SessionIdentity {
+        uid: 2_000 + instances.len() as u32,
+        gid: 2_000 + instances.len() as u32,
+    });
+    config
 }
 
 fn v2_credentials(value: serde_json::Value) -> jackin_protocol::AgentCredentialEnv {
@@ -95,37 +126,38 @@ fn protected_credentials_required_for_secret_auth_modes() {
 }
 
 #[test]
-fn v2_envelope_is_accepted() {
-    let credentials = parse_agent_credentials(
+fn single_instance_staged_credential_is_accepted() {
+    let staged = parse_staged_credential(
         serde_json::json!({
-            "schema_version": 2,
-            "instances": {
-                "claude-work": {
-                    "agent": "claude",
-                    "account_id": "acc-1",
-                    "env": {"ANTHROPIC_API_KEY": "work-secret"},
-                },
+            "schema_version": 1,
+            "instance": "claude-work",
+            "credential": {
+                "agent": "claude",
+                "account_id": "acc-1",
+                "env": {"ANTHROPIC_API_KEY": "work-secret"},
             },
         })
         .to_string()
         .as_bytes(),
     )
     .unwrap();
-    assert_eq!(credentials.schema_version(), 2);
+    assert_eq!(staged.schema_version, 1);
     assert_eq!(
-        credentials
-            .for_instance("claude-work")
-            .and_then(|env| env.get("ANTHROPIC_API_KEY"))
+        staged
+            .credential
+            .env
+            .get("ANTHROPIC_API_KEY")
             .map(String::as_str),
         Some("work-secret")
     );
-    assert!(credentials.for_instance("claude-unknown").is_none());
+    assert_eq!(staged.instance, "claude-work");
 }
 
 #[test]
-fn non_v2_envelopes_reject_with_explicit_upgrade_error() {
-    let v1_shape = serde_json::json!({
-        "claude": {"ANTHROPIC_API_KEY": "v1-agent-keyed-secret"},
+fn invalid_staged_credentials_reject_with_explicit_upgrade_error() {
+    let old_envelope = serde_json::json!({
+        "schema_version": 2,
+        "instances": {},
     });
     let missing_version = serde_json::json!({
         "instances": {
@@ -141,17 +173,17 @@ fn non_v2_envelopes_reject_with_explicit_upgrade_error() {
         "instances": {},
     });
     for raw in [
-        v1_shape.to_string(),
+        old_envelope.to_string(),
         missing_version.to_string(),
         wrong_version.to_string(),
         "not json at all".to_owned(),
     ] {
-        let error = parse_agent_credentials(raw.as_bytes()).unwrap_err();
+        let error = parse_staged_credential(raw.as_bytes()).unwrap_err();
         assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
         let message = error.to_string();
         assert!(
-            message.contains("v2 envelope"),
-            "reject must name the expected v2 envelope: {message}"
+            message.contains("single-instance") || message.contains("staged"),
+            "reject must name the expected staged format: {message}"
         );
         assert!(
             message.contains("restart"),
@@ -218,6 +250,29 @@ fn several_instances_may_share_one_agent_with_isolated_env() {
         },
     }));
     validate_agent_credentials(&config, &half_empty).unwrap_err();
+}
+
+#[test]
+fn overlapping_private_mounts_are_rejected() {
+    let mut config = instance_config(&[
+        ("slot-a", "api_key", "claude"),
+        ("slot-b", "api_key", "codex"),
+    ]);
+    config
+        .instance_forwarded_dirs
+        .insert("slot-a".into(), "/jackin/shared".into());
+    config
+        .instance_forwarded_dirs
+        .insert("slot-b".into(), "/jackin/shared/child".into());
+    config.instance_mount_paths.insert(
+        "slot-a".into(),
+        vec!["/home/agent/.slot-0".into(), "/jackin/shared".into()],
+    );
+    config.instance_mount_paths.insert(
+        "slot-b".into(),
+        vec!["/home/agent/.slot-1".into(), "/jackin/shared/child".into()],
+    );
+    assert!(validate(&config).is_err());
 }
 
 #[test]
