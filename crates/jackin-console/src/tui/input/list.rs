@@ -710,7 +710,6 @@ pub fn handle_new_session_picker(state: &mut ManagerState<'_>, key: KeyEvent) ->
             sort_account_choices_by_id(&mut accounts);
             if accounts.is_empty() {
                 let message = new_session_no_account_message(agent, &container, state);
-                dispatch_manager(state, ManagerMessage::DismissInlineSessionPicker);
                 dispatch_manager(
                     state,
                     ManagerMessage::OpenListErrorPopup {
@@ -755,9 +754,10 @@ pub fn handle_new_session_picker(state: &mut ManagerState<'_>, key: KeyEvent) ->
 /// with a valid default keeps only the admitted/default accounts (commit
 /// dispatches with no picker when one remains), an agent with an
 /// explicitly invalid default is hidden everywhere (commit fails
-/// atomically instead of silently falling back), and an agent without a
-/// default keeps every eligible candidate (commit opens the picker when
-/// several remain). Defaults-regime pruning consults `default_launch`
+/// atomically instead of silently falling back) while the agent picker
+/// remains open, and an agent without a default keeps every eligible
+/// candidate (commit opens the picker when several remain). Defaults-regime
+/// pruning consults `default_launch`
 /// admission via `resolve_launch` — the same resolver the runtime
 /// provisions from — and reaches the legacy binding lookup only when no
 /// default is configured anywhere. See

@@ -462,8 +462,8 @@ fn new_session_commit_with_empty_providers_errors_instead_of_none() {
         "empty providers must not dispatch a session; got {outcome:?}"
     );
     assert!(
-        state.inline_new_session_picker.is_none(),
-        "the agent picker must close when commit fails"
+        state.inline_new_session_picker.is_some(),
+        "the agent picker must remain open when commit fails"
     );
     assert_no_eligible_account_popup(&state, "jackin-demo-architect");
 }
@@ -490,6 +490,10 @@ fn new_session_commit_ignores_accounts_offered_to_other_agents() {
     assert!(
         matches!(outcome, InputOutcome::Continue),
         "no candidate for Claude must not dispatch; got {outcome:?}"
+    );
+    assert!(
+        state.inline_new_session_picker.is_some(),
+        "the agent picker must remain open when no candidate matches"
     );
     assert_no_eligible_account_popup(&state, "jackin-demo-architect");
 }
@@ -636,13 +640,17 @@ fn new_session_open_invalid_role_binding_fails_atomically() {
         state.inline_account_picker.is_none(),
         "invalid binding must not open the picker as a fallback"
     );
+    assert!(
+        state.inline_new_session_picker.is_some(),
+        "invalid binding must keep the agent picker open"
+    );
     assert_no_eligible_account_popup(&state, "demo");
 }
 
 #[test]
-fn new_session_open_filters_unauthorized_global_default() {
-    // Global defaults cannot widen workspace access: `outside` is ignored
-    // and the two authorized candidates open the picker.
+fn new_session_open_unauthorized_global_default_fails_atomically() {
+    // An inherited global binding is still an explicit selection. It cannot
+    // widen workspace access or silently fall back to authorized candidates.
     let (mut state, mut config, paths, tmp) = running_session_state(|config| {
         config
             .account_bindings
@@ -656,16 +664,19 @@ fn new_session_open_filters_unauthorized_global_default() {
         jackin_core::Agent::Claude,
     );
 
-    assert!(matches!(outcome, InputOutcome::Continue));
-    let Some(picker) = &state.inline_account_picker else {
-        panic!("filtered global default must leave the picker open");
-    };
-    let ids: Vec<&str> = picker
-        .providers()
-        .iter()
-        .map(|account| account.id.as_str())
-        .collect();
-    assert_eq!(ids, vec!["a-claude", "z-claude"]);
+    assert!(
+        matches!(outcome, InputOutcome::Continue),
+        "unauthorized global default must not dispatch; got {outcome:?}"
+    );
+    assert!(
+        state.inline_account_picker.is_none(),
+        "unauthorized global default must not open an account fallback picker"
+    );
+    assert!(
+        state.inline_new_session_picker.is_some(),
+        "unauthorized global default must keep the agent picker open"
+    );
+    assert_no_eligible_account_popup(&state, "demo");
 }
 
 #[test]
@@ -695,6 +706,10 @@ fn new_session_open_unauthorized_workspace_default_fails() {
     assert!(
         state.inline_account_picker.is_none(),
         "unauthorized workspace default must not open the picker as a fallback"
+    );
+    assert!(
+        state.inline_new_session_picker.is_some(),
+        "unauthorized workspace default must keep the agent picker open"
     );
     assert_no_eligible_account_popup(&state, "demo");
 }
