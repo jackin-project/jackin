@@ -126,6 +126,10 @@ pub struct Session {
     /// sessions and sessions spawned before account stamping. Splits inherit
     /// this from the source pane's instance.
     pub account_id: Option<String>,
+    /// Kernel identity assigned to this session. Control-socket authorization
+    /// compares the peer UID with this value; it is not inferred from a wire
+    /// session id supplied by the caller.
+    pub identity: jackin_protocol::SessionIdentity,
     pub conversation_id: Option<String>,
     pub provider: Option<SessionProvider>,
     /// Published effective state. Authored solely by evidence arbitration on the
@@ -408,6 +412,7 @@ impl Session {
         label: impl Into<String>,
         agent: Option<String>,
         account_id: Option<String>,
+        identity: jackin_protocol::SessionIdentity,
         provider: Option<SessionProvider>,
         mut cmd: CommandBuilder,
         terminal: SessionTerminal,
@@ -591,6 +596,7 @@ impl Session {
                 label,
                 agent,
                 account_id,
+                identity,
                 conversation_id,
                 provider,
                 state: AgentState::Unknown,
@@ -1501,6 +1507,10 @@ impl Session {
             label,
             agent,
             account_id: None,
+            identity: jackin_protocol::SessionIdentity {
+                uid: 65_534,
+                gid: 65_534,
+            },
             conversation_id: None,
             provider,
             state: AgentState::Unknown,

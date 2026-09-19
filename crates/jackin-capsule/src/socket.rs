@@ -125,12 +125,11 @@ fn start_listener_at_inner_uninstrumented(path: &Path) -> Result<ListenerWithLim
     }
 
     let listener = UnixListener::bind(path)?;
-    // Lock the socket to owner-only. Without this, any in-container
-    // process that shares the agent uid (and any process running as a
-    // different uid if the umask is generous) can connect and inject
-    // `ClientFrame::Input` straight into the focused PTY. The attach
-    // channel has no authentication beyond file-mode. Hard error: the
-    // capsule always owns the socket file it just created.
+    // Lock the socket to owner-only as defense in depth. The daemon also
+    // authenticates each peer with Unix credentials because the session
+    // wrapper retains CAP_DAC_OVERRIDE, so file mode alone cannot identify an
+    // operator. Hard error: the capsule always owns the socket file it just
+    // created.
     std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
         .with_context(|| format!("locking socket {} to 0o600", path.display()))?;
     let (tx, rx) = mpsc::unbounded_channel();

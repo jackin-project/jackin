@@ -22,6 +22,9 @@ const RPC_ERROR: jackin_telemetry::schema::enums::ErrorType =
 /// spawned persistent attach task drops it.
 pub(crate) struct AttachHandshake {
     pub(crate) stream: UnixStream,
+    /// Kernel-authenticated peer identity captured before the handshake is
+    /// forwarded to the daemon loop. Session UIDs are never attach clients.
+    pub(crate) peer_uid: u32,
     pub(crate) rows: u16,
     pub(crate) cols: u16,
     pub(crate) spawn: Option<SpawnRequest>,
@@ -40,6 +43,9 @@ pub(crate) struct AttachHandshake {
 pub(crate) struct ControlRequest {
     pub(crate) ctx: jackin_protocol::TelemetryContext,
     pub(crate) msg: jackin_protocol::control::ClientMsg,
+    /// Kernel-authenticated peer identity. The wire request remains unchanged;
+    /// this metadata is added only after the daemon accepts the socket.
+    pub(crate) peer_uid: u32,
     pub(crate) reply: ControlReply,
 }
 
@@ -149,6 +155,16 @@ pub(crate) async fn perform_handshake(
     // `MAX_CONCURRENT_CLIENTS` cap and lock out legitimate attaches.
     const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
 
+    let peer_uid = match stream.peer_cred() {
+        Ok(credentials) => credentials.uid(),
+        Err(_) => {
+            drop(client_permit);
+            return jackin_telemetry::spawn::DetachedCompletion::failure(
+                jackin_telemetry::schema::enums::ErrorType::RpcError,
+            );
+        }
+    };
+
     let mut first = [0u8; 1];
     match tokio::time::timeout(HANDSHAKE_TIMEOUT, stream.read_exact(&mut first)).await {
         Ok(Ok(_)) => {}
@@ -168,6 +184,7 @@ pub(crate) async fn perform_handshake(
             stream,
             first[0],
             client_permit,
+            peer_uid,
             control_tx,
             HANDSHAKE_TIMEOUT,
         )
@@ -223,6 +240,7 @@ pub(crate) async fn perform_handshake(
     }
     let handshake = AttachHandshake {
         stream,
+        peer_uid,
         rows,
         cols,
         spawn,
@@ -244,6 +262,7 @@ async fn perform_control_handshake(
     mut stream: UnixStream,
     first_tag: u8,
     client_permit: tokio::sync::OwnedSemaphorePermit,
+    peer_uid: u32,
     control_tx: mpsc::UnboundedSender<ControlRequest>,
     timeout: Duration,
 ) -> jackin_telemetry::spawn::DetachedCompletion {
@@ -254,7 +273,8 @@ async fn perform_control_handshake(
     };
     if request.msg.is_subscription() {
         let completion =
-            serve_control_subscription(stream, request.ctx, request.msg, control_tx).await;
+            serve_control_subscription(stream, request.ctx, request.msg, peer_uid, control_tx)
+                .await;
         drop(client_permit);
         return completion;
     }
@@ -263,6 +283,7 @@ async fn perform_control_handshake(
         .send(ControlRequest {
             ctx: request.ctx,
             msg: request.msg,
+            peer_uid,
             reply: ControlReply::Once(reply_tx),
         })
         .is_err()
@@ -306,6 +327,7 @@ async fn serve_control_subscription(
     mut stream: UnixStream,
     ctx: jackin_protocol::TelemetryContext,
     msg: jackin_protocol::control::ClientMsg,
+    peer_uid: u32,
     control_tx: mpsc::UnboundedSender<ControlRequest>,
 ) -> jackin_telemetry::spawn::DetachedCompletion {
     let (event_tx, mut event_rx) = mpsc::unbounded_channel();
@@ -313,6 +335,7 @@ async fn serve_control_subscription(
         .send(ControlRequest {
             ctx,
             msg,
+            peer_uid,
             reply: ControlReply::Stream(event_tx),
         })
         .is_err()

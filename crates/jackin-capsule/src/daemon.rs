@@ -339,6 +339,21 @@ pub(super) struct ControlRouting {
 }
 
 fn handle_control_request(mux: &mut Multiplexer, request: ControlRequest) {
+    if !control_request_allowed(mux, Some(request.peer_uid), &request.msg) {
+        let _error = jackin_telemetry::record_error(RPC_ERROR);
+        match request.reply {
+            crate::attach_protocol::ControlReply::Once(reply_tx) => {
+                drop(reply_tx.send(ControlResponse {
+                    msg: ServerMsg::Unknown,
+                    operation: None,
+                    outcome: jackin_telemetry::schema::enums::OutcomeValue::Failure,
+                    error_type: Some(RPC_ERROR),
+                }));
+            }
+            crate::attach_protocol::ControlReply::Stream(_) => {}
+        }
+        return;
+    }
     let reply_tx = match request.reply {
         crate::attach_protocol::ControlReply::Stream(tx) => {
             handle_control_subscription(mux, &request.ctx, &request.msg, tx);
@@ -1325,6 +1340,7 @@ pub async fn run_daemon(
             Some(ready) = handshake_rx.recv() => {
                 let AttachHandshake {
                     stream,
+                    peer_uid,
                     rows,
                     cols,
                     spawn,
@@ -1334,6 +1350,12 @@ pub async fn run_daemon(
                     focus_session,
                     client_permit,
                 } = ready;
+                if !attach_peer_is_authorized(&mux, Some(peer_uid)) {
+                    let mut stream = stream;
+                    reject_invalid_attach_handshake(&mut stream).await;
+                    drop(client_permit);
+                    continue;
+                }
                 let extracted = context
                     .as_ref()
                     .map_or(jackin_telemetry::propagation::ExtractOutcome::LocalRoot, |ctx| {

@@ -160,11 +160,9 @@ async fn start_listener_caps_concurrent_clients_at_max() {
 
 #[tokio::test]
 async fn start_listener_locks_socket_and_parent_dir_to_owner_only() {
-    // Hard regression guard for the file-mode security contract
-    // documented at `start_listener_at`. Any refactor that drops
-    // either chmod silently exposes the attach channel to any
-    // in-container uid sharing the agent uid — the exact threat
-    // the comments name.
+    // Hard regression guard for the socket's defense-in-depth file-mode
+    // contract. Protocol peer authentication remains mandatory because
+    // session processes retain CAP_DAC_OVERRIDE.
     let tmp = tempfile::tempdir().expect("tempdir");
     let parent = tmp.path().join("run");
     let socket_path = parent.join("jackin.sock");

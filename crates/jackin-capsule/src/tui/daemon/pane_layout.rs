@@ -69,10 +69,16 @@ impl Multiplexer {
             .as_deref()
             .and_then(|id| self.launch_env.launch_config.account_for_instance(id))
             .map(str::to_owned);
+        let identity = instance
+            .as_deref()
+            .and_then(|id| self.launch_env.launch_config.identity_for_instance(id))
+            .or(self.launch_env.launch_config.shell_identity)
+            .ok_or_else(|| anyhow::anyhow!("split target has no isolated Unix identity"))?;
         let (session, new_id) = Session::spawn(
             &launch.label,
             instance,
             account_for_session,
+            identity,
             provider_label.map(|label| crate::session::SessionProvider {
                 label: label.to_owned(),
                 env_overrides: env_overrides.to_vec(),
