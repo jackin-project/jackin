@@ -526,3 +526,20 @@ fn process_execute_span_redacts_env_args_in_attr_input() {
     let redacted = redact_env_args(args);
     assert_eq!(redacted, vec!["-e", "FOO=<redacted>", "image"]);
 }
+
+#[test]
+fn build_stderr_summary_takes_tail_and_redacts_temp_paths() {
+    // BuildKit reports the cause at the end; the preamble is noise.
+    let stderr = b"#1 [internal] load build definition\n#4 naming to img done\n#4 DONE 0.0s\nERROR: failed to solve: open /tmp/.tmpAbC/Dockerfile: no such file\n";
+    let summary = summarize_build_stderr(stderr);
+
+    assert!(summary.contains("ERROR: failed to solve"), "{summary}");
+    assert!(!summary.contains("load build definition"), "{summary}");
+    assert!(!summary.contains("/tmp/"), "{summary}");
+    assert!(summary.contains("<redacted-path>"), "{summary}");
+}
+
+#[test]
+fn build_stderr_summary_reports_empty_capture() {
+    assert_eq!(summarize_build_stderr(b"\n  \n"), "(no stderr captured)");
+}

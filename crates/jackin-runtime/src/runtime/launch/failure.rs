@@ -50,15 +50,12 @@ pub(crate) fn launch_failure_cli_error(
     error: &anyhow::Error,
     run: Option<&jackin_diagnostics::RunDiagnostics>,
 ) -> anyhow::Error {
-    if stage != LaunchStage::DerivedImage {
-        return anyhow::anyhow!("{error:#}");
-    }
-    let _ = run;
-    if error.to_string().contains("Docker build command failed") {
-        anyhow::anyhow!("Docker build command failed: {error:#}")
-    } else {
-        anyhow::anyhow!("{error:#}")
-    }
+    // Rendering stays here (next to the stage-specific title/diagnosis),
+    // but the error itself passes through untouched: failures arrive
+    // fully rendered (`DockerBuildFailed` carries the redacted build
+    // stderr tail), and wrapping would only double prefixes or add paths.
+    let _ = (stage, run);
+    anyhow::anyhow!("{error:#}")
 }
 
 pub(crate) fn resolve_launch_role_source(

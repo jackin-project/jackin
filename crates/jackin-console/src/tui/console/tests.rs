@@ -34,15 +34,19 @@ use crate::tui::console::{ConsoleStage, ConsoleState, new_console_state};
 use crate::tui::debug::console_location_debug;
 use crate::tui::debug::key_debug_name_for_input;
 use crate::tui::message::{OnPromptFailure, PromptOutcome};
+use crate::tui::model::{store_pending_launch_plan, take_pending_launch_plan};
 use crate::tui::prompts::{
-    ConcreteAgentPickerChoices as AgentPickerChoices, prompt_agent_for_launch,
-    show_role_resolution_error,
+    ConcreteAgentPickerChoices as AgentPickerChoices, committed_role_prompt,
+    launch_with_committed_agent, prompt_agent_for_launch, show_role_resolution_error,
 };
 use crate::tui::run::{consumes_letter_input, is_on_main_screen, letter_input_state_for_console};
 use crate::tui::state::{
     EditorState, FileBrowserTarget, ManagerStage, Modal, SecretsScopeTag, TextInputTarget,
 };
-use jackin_config::{AppConfig, LoadWorkspaceInput, ResolvedWorkspace};
+use jackin_config::{
+    AppConfig, LoadWorkspaceInput, MountConfig, MountIsolation, ResolvedWorkspace, RoleSource,
+    WorkspaceConfig,
+};
 use jackin_core::{Agent, RoleSelector};
 use jackin_oppicker::ModalOutcome;
 
@@ -216,6 +220,7 @@ fn unresolved_workspace() -> ResolvedWorkspace {
         default_agent: None,
         keep_awake_enabled: false,
         git_pull_on_entry: false,
+        mount_heal: jackin_config::MountHealReport::default(),
     }
 }
 
@@ -294,5 +299,71 @@ fn prompt_agent_for_launch_clear_pending_drops_input() {
     assert!(
         matches!(ms.list_modal, Some(Modal::ErrorPopup { .. })),
         "Failed outcome must surface the error popup regardless of restore policy"
+    );
+}
+
+/// Config whose saved workspace can never resolve: its mount source is
+/// missing outside any cache root, so launch resolution fails hard.
+fn unresolvable_mount_config() -> (tempfile::TempDir, AppConfig) {
+    let temp = tempfile::tempdir().unwrap();
+    let mut config = AppConfig::default();
+    config.roles.insert(
+        "agent-smith".to_owned(),
+        RoleSource {
+            git: "https://example.invalid/org/repo.git".to_owned(),
+            trusted: true,
+            env: std::collections::BTreeMap::new(),
+        },
+    );
+    config.workspaces.insert(
+        "ws".to_owned(),
+        WorkspaceConfig {
+            workdir: "/workspace/project".to_owned(),
+            mounts: vec![MountConfig {
+                src: temp.path().join("gone").display().to_string(),
+                dst: "/workspace/project".to_owned(),
+                readonly: false,
+                isolation: MountIsolation::Shared,
+            }],
+            ..Default::default()
+        },
+    );
+    (temp, config)
+}
+
+#[test]
+fn committed_role_prompt_restores_pending_plan_on_resolve_error() {
+    // Resolution failures surface as an in-TUI popup with the console
+    // staying alive, so the taken plan must be restored — otherwise the
+    // still-visible role picker silently stops working.
+    let (temp, config) = unresolvable_mount_config();
+    let mut state = new_console_state(&AppConfig::default(), temp.path()).unwrap();
+    store_pending_launch_plan(&mut state, LoadWorkspaceInput::Saved("ws".into()));
+    let role = RoleSelector::new(None, "agent-smith");
+
+    let error = committed_role_prompt(&mut state, &config, temp.path(), role).unwrap_err();
+
+    assert!(error.to_string().contains("mount source does not exist"));
+    assert!(
+        take_pending_launch_plan(&mut state).is_some(),
+        "pending launch plan must be restored after a resolve error"
+    );
+}
+
+#[test]
+fn launch_with_committed_agent_restores_pending_plans_on_resolve_error() {
+    let (temp, config) = unresolvable_mount_config();
+    let mut state = new_console_state(&AppConfig::default(), temp.path()).unwrap();
+    store_pending_launch_plan(&mut state, LoadWorkspaceInput::Saved("ws".into()));
+    let role = RoleSelector::new(None, "agent-smith");
+    state.pending_launch_role = Some(role);
+
+    let error =
+        launch_with_committed_agent(&mut state, &config, temp.path(), Agent::Claude).unwrap_err();
+
+    assert!(error.to_string().contains("mount source does not exist"));
+    assert!(
+        crate::tui::model::take_pending_launch_and_role_plan(&mut state).is_some(),
+        "pending launch and role plans must be restored after a resolve error"
     );
 }

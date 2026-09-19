@@ -4,7 +4,7 @@
 //! Pure launch-resolution helpers for the host console.
 
 use jackin_config::{
-    AppConfig, LoadWorkspaceInput, MountConfig, ResolvedWorkspace, current_dir_workspace,
+    AppConfig, LoadWorkspaceInput, MountHealReport, ResolvedWorkspace, current_dir_workspace,
     resolve_load_workspace,
 };
 use jackin_core::{Agent, RoleSelector, WorkspaceName};
@@ -16,18 +16,22 @@ pub struct WorkspaceChoice {
     pub allowed_roles: Vec<RoleSelector>,
     pub default_role: Option<String>,
     pub last_role: Option<String>,
-    pub global_mounts: Vec<MountConfig>,
     pub input: LoadWorkspaceInput,
 }
 
 /// `Ok(None)` when a saved name went missing between keypress and
 /// dispatch (concurrent delete via the manager).
+///
+/// Global mounts are intentionally not resolved here: every caller follows
+/// with `resolve_load_workspace` (via `resolve_selected_workspace`), which
+/// is the single site that merges, heals, and validates the effective
+/// mounts. A redundant pre-check here would only fail earlier with a
+/// poorer error.
 pub fn build_workspace_choice(
     config: &AppConfig,
     cwd: &std::path::Path,
     input: &LoadWorkspaceInput,
 ) -> anyhow::Result<Option<WorkspaceChoice>> {
-    let global_mounts = crate::services::workspace::unscoped_global_mounts(config)?;
     match input {
         LoadWorkspaceInput::CurrentDir => {
             let current = current_dir_workspace(cwd)?;
@@ -41,11 +45,11 @@ pub fn build_workspace_choice(
                     default_agent: None,
                     keep_awake_enabled: false,
                     git_pull_on_entry: false,
+                    mount_heal: MountHealReport::default(),
                 },
                 allowed_roles: crate::workspace::configured_roles(config.roles.keys()),
                 default_role: None,
                 last_role: None,
-                global_mounts,
                 input: LoadWorkspaceInput::CurrentDir,
             }))
         }
@@ -65,11 +69,11 @@ pub fn build_workspace_choice(
                     default_agent: saved.default_agent,
                     keep_awake_enabled: saved.keep_awake.enabled,
                     git_pull_on_entry: saved.git_pull_on_entry,
+                    mount_heal: MountHealReport::default(),
                 },
                 allowed_roles,
                 default_role: saved.default_role.clone(),
                 last_role: saved.last_role.clone(),
-                global_mounts,
                 input: LoadWorkspaceInput::Saved(name.clone()),
             }))
         }

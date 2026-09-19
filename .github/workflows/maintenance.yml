@@ -6,7 +6,7 @@ on:
   pull_request:
     types: [closed]
   schedule:
-    - cron: '31 3 * * *'
+    - cron: "31 3 * * *"
   workflow_dispatch:
     inputs:
       pull_request_number:
@@ -35,27 +35,56 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number || inputs.pull_request_number }}
         run: |
           set -euo pipefail
+          delete_cache_id() {
+            local id="$1" error attempt
+            for attempt in 1 2 3; do
+              error="$(gh api --method DELETE "repos/$GITHUB_REPOSITORY/actions/caches/$id" 2>&1 >/dev/null)" && return 0
+              if grep -qi 'not found' <<<"$error"; then
+                return 0
+              fi
+              if grep -Eq 'HTTP 40[13]' <<<"$error"; then
+                echo "::error::cache delete refused for id $id ($error); refusing to retry an authorization failure" >&2
+                return 2
+              fi
+              if (( attempt < 3 )); then
+                sleep $((attempt * 2))
+              fi
+            done
+            echo "::error::failed to delete cache id $id after bounded retries" >&2
+            return 1
+          }
           ref="refs/pull/$PR_NUMBER/merge"
           encoded="$(printf '%s' "$ref" | jq -sRr @uri)"
-          cache_ids="$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/caches?ref=$encoded" --jq '.actions_caches[].id')"
-          if [[ -z "$cache_ids" ]]; then
+          listing="$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/caches?ref=$encoded" --jq '.actions_caches[].id')" || {
+            echo "::error::failed to list cache entries for $ref" >&2
+            exit 1
+          }
+          if [[ -z "$listing" ]]; then
             echo "No merge-ref cache entries found for $ref"
             exit 0
           fi
-          # shellcheck disable=SC2016
-          if ! printf '%s\n' "$cache_ids" | xargs -r -P 4 -n 1 bash -c '
-            repo="$1"
-            id="$2"
-            for delay in 1 2 4 8; do
-              if gh api --method DELETE "repos/$repo/actions/caches/$id" >/dev/null 2>&1; then
-                exit 0
+          mapfile -t cache_ids <<<"$listing"
+          deleted=0
+          failed=0
+          for id in "${cache_ids[@]}"; do
+            [[ -z "$id" ]] && continue
+            if (( deleted + failed >= 500 )); then
+              echo "::error::maintenance delete bound reached (500 cache deletes); rerun maintenance to continue" >&2
+              exit 1
+            fi
+            if delete_cache_id "$id"; then
+              deleted=$((deleted + 1))
+            else
+              status=$?
+              if (( status == 2 )); then
+                exit 1
               fi
-              sleep "$delay"
-            done
-            printf "::warning::failed to delete cache id %s after retries\\n" "$id" >&2
+              failed=$((failed + 1))
+            fi
+          done
+          if (( failed > 0 )); then
+            echo "::error::$failed closed-PR cache entries could not be deleted; rerun maintenance" >&2
             exit 1
-          ' _ "$GITHUB_REPOSITORY"; then
-            echo "::warning::some closed-PR cache entries could not be deleted; rerun maintenance"
           fi
   cache-budget:
     name: Cache retention
@@ -65,15 +94,110 @@ jobs:
     permissions:
       contents: read
       actions: write
+      pull-requests: read
     steps:
+      - name: Skip while CI producers are running
+        id: retention-gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          for workflow in ci-main.yml nightly.yml; do
+            if [[ "$(gh run list --repo "$GITHUB_REPOSITORY" --workflow "$workflow" --status in_progress --limit 1 --json databaseId --jq 'length')" != "0" ]]; then
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+              echo "$workflow is in_progress; skipping cache retention" >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+          done
+          echo "skip=false" >> "$GITHUB_OUTPUT"
       - name: Set up Velnor workflow runtime
-        if: ${{ runner.environment == 'github-hosted' }}
-        uses: tailrocks/velnor/.github/actions/setup-velnor-workflow@7fa4a0731ee8bedc5b02d90507d6dbe8b719153a
+        id: runtime
+        if: ${{ steps.retention-gate.outputs.skip != 'true' && runner.environment == 'github-hosted' }}
+        uses: tailrocks/velnor/.github/actions/setup-velnor-workflow@06050c9fa58fec8b5fd2c11c46756971e5270ec3
         with:
-          rev: 7fa4a0731ee8bedc5b02d90507d6dbe8b719153a
+          rev: 06050c9fa58fec8b5fd2c11c46756971e5270ec3
       - name: Set trusted workflow policy revision
-        run: echo "VELNOR_WORKFLOW_POLICY_REVISION=3bfd459772bc24161551e755a63a5a02517c63e4" >> "$GITHUB_ENV"
+        if: steps.retention-gate.outputs.skip != 'true'
+        run: echo "VELNOR_WORKFLOW_POLICY_REVISION=06050c9fa58fec8b5fd2c11c46756971e5270ec3" >> "$GITHUB_ENV"
+      - name: Sweep closed-PR merge-ref caches
+        if: steps.retention-gate.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          delete_cache_id() {
+            local id="$1" error attempt
+            for attempt in 1 2 3; do
+              error="$(gh api --method DELETE "repos/$GITHUB_REPOSITORY/actions/caches/$id" 2>&1 >/dev/null)" && return 0
+              if grep -qi 'not found' <<<"$error"; then
+                return 0
+              fi
+              if grep -Eq 'HTTP 40[13]' <<<"$error"; then
+                echo "::error::cache delete refused for id $id ($error); refusing to retry an authorization failure" >&2
+                return 2
+              fi
+              if (( attempt < 3 )); then
+                sleep $((attempt * 2))
+              fi
+            done
+            echo "::error::failed to delete cache id $id after bounded retries" >&2
+            return 1
+          }
+          failed=0
+          processed=0
+          all_refs="$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/caches?per_page=100" \
+            --jq '.actions_caches[].ref')" || {
+            echo "::error::failed to list cache scopes" >&2
+            exit 1
+          }
+          mapfile -t refs < <(printf '%s\n' "$all_refs" | grep -E '^refs/pull/[0-9]+/merge$' | sort -u)
+          if ((${#refs[@]} == 0)); then
+            echo "No merge-ref cache scopes found"
+            exit 0
+          fi
+          for ref in "${refs[@]}"; do
+            [[ -z "$ref" ]] && continue
+            pr="${ref#refs/pull/}"
+            pr="${pr%/merge}"
+            state="$(gh pr view "$pr" --json state --jq .state 2>/dev/null || echo unknown)"
+            if [[ "$state" != "CLOSED" ]]; then
+              continue
+            fi
+            encoded="$(printf '%s' "$ref" | jq -sRr @uri)"
+            listing="$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/caches?ref=$encoded" \
+              --jq '.actions_caches[].id')" || {
+              echo "::error::failed to list cache entries for $ref" >&2
+              exit 1
+            }
+            if [[ -z "$listing" ]]; then
+              continue
+            fi
+            mapfile -t cache_ids <<<"$listing"
+            echo "Sweeping $ref ($pr): ${#cache_ids[@]} entries"
+            for id in "${cache_ids[@]}"; do
+              [[ -z "$id" ]] && continue
+              if (( processed >= 500 )); then
+                echo "::error::maintenance delete bound reached (500 cache deletes); rerun maintenance to continue" >&2
+                exit 1
+              fi
+              if delete_cache_id "$id"; then
+                :
+              else
+                status=$?
+                if (( status == 2 )); then
+                  exit 1
+                fi
+                failed=$((failed + 1))
+              fi
+              processed=$((processed + 1))
+            done
+          done
+          if (( failed > 0 )); then
+            echo "::error::$failed closed-PR merge-ref cache entries could not be deleted; rerun maintenance" >&2
+            exit 1
+          fi
       - name: Collect Actions cache account
+        if: steps.retention-gate.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -84,19 +208,31 @@ jobs:
             > "$RUNNER_TEMP/cache-retention/entries.jsonl"
           jq -s '.' "$RUNNER_TEMP/cache-retention/entries.jsonl" \
             > "$RUNNER_TEMP/cache-retention/entries.json"
+          velnor-workflow cache-plan --mode=budget --entries "$RUNNER_TEMP/cache-retention/entries.json" \
+            > "$RUNNER_TEMP/cache-retention/budget.json"
           # `gh api --paginate --jq` runs the filter once per page and
           # concatenates the outputs: summing inside the filter prints one
           # number per page, and the total silently understates the account.
           # Slurp the page stream first, then take one total over every entry.
-          total="$(jq '[.[].size_in_bytes] | add // 0' "$RUNNER_TEMP/cache-retention/entries.json")"
+          total="$(jq '.total_held_bytes' "$RUNNER_TEMP/cache-retention/budget.json")"
           count="$(jq 'length' "$RUNNER_TEMP/cache-retention/entries.json")"
-          headroom="$(( "$(velnor-workflow cache-plan --mode=budget)" - total ))"
+          headroom="$(jq '.headroom_bytes' "$RUNNER_TEMP/cache-retention/budget.json")"
+          if (( headroom >= 0 && headroom < 536870912 )); then
+            echo "::warning::Actions cache headroom below 512 MiB ($headroom bytes remaining)" >&2
+          fi
           jq -n --argjson total "$total" --argjson count "$count" --argjson headroom "$headroom" \
+            --slurpfile budget "$RUNNER_TEMP/cache-retention/budget.json" \
             --arg captured_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-            '{captured_at: $captured_at, cache_count: $count, total_bytes: $total, headroom_bytes: $headroom}' \
+            '{captured_at: $captured_at, cache_count: $count, total_bytes: $total, headroom_bytes: $headroom, classes: $budget[0].classes}' \
             > "$RUNNER_TEMP/cache-retention/summary.json"
-          cat "$RUNNER_TEMP/cache-retention/summary.json" >> "$GITHUB_STEP_SUMMARY"
+          {
+            cat "$RUNNER_TEMP/cache-retention/summary.json"
+            echo "Per-class totals:"
+            jq -r '.classes[] | "  \(.id): \(.entry_count) entries, \(.held_bytes) bytes (budget \(.budget_bytes))"' \
+              "$RUNNER_TEMP/cache-retention/budget.json"
+          } >> "$GITHUB_STEP_SUMMARY"
       - name: Plan retention evictions
+        if: steps.retention-gate.outputs.skip != 'true'
         run: |
           set -euo pipefail
           # The plan is the generator's own retention policy, executed - never
@@ -122,22 +258,51 @@ jobs:
             echo "Retention plan: nothing to evict" >> "$GITHUB_STEP_SUMMARY"
           fi
       - name: Apply retention evictions
+        if: steps.retention-gate.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          delete_cache_id() {
+            local id="$1" error attempt
+            for attempt in 1 2 3; do
+              error="$(gh api --method DELETE "repos/$GITHUB_REPOSITORY/actions/caches/$id" 2>&1 >/dev/null)" && return 0
+              if grep -qi 'not found' <<<"$error"; then
+                return 0
+              fi
+              if grep -Eq 'HTTP 40[13]' <<<"$error"; then
+                echo "::error::cache delete refused for id $id ($error); refusing to retry an authorization failure" >&2
+                return 2
+              fi
+              if (( attempt < 3 )); then
+                sleep $((attempt * 2))
+              fi
+            done
+            echo "::error::failed to delete cache id $id after bounded retries" >&2
+            return 1
+          }
           evicted=0
           freed=0
           failed=0
           # The plan is applied verbatim, in its own order: generations beyond
           # their class bound first, then classes over budget, then the global
-          # sweep - which never touches a protected class.
+          # sweep - which never touches a protected class. The per-run delete
+          # bound stops the sweep instead of letting one run empty the
+          # account; the next run continues where this one stopped.
           while IFS=$'\t' read -r class reason id size key; do
-            if gh api --method DELETE "repos/$GITHUB_REPOSITORY/actions/caches/$id" >/dev/null; then
+            if (( evicted + failed >= 500 )); then
+              echo "::error::maintenance delete bound reached (500 cache deletes); rerun maintenance to continue" >&2
+              exit 1
+            fi
+            if delete_cache_id "$id"; then
               evicted=$((evicted + 1))
               freed=$((freed + size))
               echo "evicted id=$id class=$class reason=$reason size=$size key=$key"
             else
+              status=$?
+              if (( status == 2 )); then
+                exit 1
+              fi
               failed=$((failed + 1))
               echo "::warning::failed to evict cache id $id (class $class, key $key)" >&2
             fi
@@ -162,6 +327,7 @@ jobs:
             exit 1
           fi
       - name: Publish retention evidence
+        if: steps.retention-gate.outputs.skip != 'true'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: cache-retention-${{ github.run_id }}
@@ -169,6 +335,7 @@ jobs:
           if-no-files-found: error
           retention-days: 14
       - name: Enforce cache budget
+        if: steps.retention-gate.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |

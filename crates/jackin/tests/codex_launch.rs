@@ -76,6 +76,7 @@ fn codex_workspace(repo_dir: &Path) -> ResolvedWorkspace {
         default_agent: Some(Agent::Codex),
         keep_awake_enabled: false,
         git_pull_on_entry: false,
+        mount_heal: jackin_config::MountHealReport::default(),
     }
 }
 
@@ -307,6 +308,7 @@ plugins = []
         default_agent: Some(Agent::Claude),
         keep_awake_enabled: false,
         git_pull_on_entry: false,
+        mount_heal: jackin_config::MountHealReport::default(),
     };
     // Capture queue (role-specific, after 4-slot preamble):
     //   [0] capture_secret: gh auth token → empty (no gh session in test)

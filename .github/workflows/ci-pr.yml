@@ -4,18 +4,15 @@ run-name: CI / PR · ${{ github.event_name }} · ${{ github.ref_name }}
 
 on:
   pull_request:
-  merge_group:
   workflow_dispatch:
     inputs:
       runner:
         description: Execution backend
         required: false
-        default: both
+        default: github
         type: choice
         options:
-          - velnor
           - github
-          - both
       scope:
         description: Verification scope
         required: true
@@ -41,7 +38,7 @@ permissions:
 
 jobs:
   plan:
-    name: Planning
+    name: "Control / Planning"
     runs-on: ubuntu-26.04
     outputs:
       scope: ${{ steps.plan.outputs.scope }}
@@ -51,7 +48,6 @@ jobs:
       full_units: ${{ steps.plan.outputs.full_units }}
       bun_matrix: ${{ steps.plan.outputs.bun_matrix }}
       docker_matrix: ${{ steps.plan.outputs.docker_matrix }}
-      rust-2_matrix: ${{ steps.plan.outputs.rust-2_matrix }}
       rust_matrix: ${{ steps.plan.outputs.rust_matrix }}
       swift_matrix: ${{ steps.plan.outputs.swift_matrix }}
     steps:
@@ -61,12 +57,13 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - name: Set up Velnor workflow runtime
+        id: runtime
         if: ${{ runner.environment == 'github-hosted' }}
-        uses: tailrocks/velnor/.github/actions/setup-velnor-workflow@7fa4a0731ee8bedc5b02d90507d6dbe8b719153a
+        uses: tailrocks/velnor/.github/actions/setup-velnor-workflow@06050c9fa58fec8b5fd2c11c46756971e5270ec3
         with:
-          rev: 7fa4a0731ee8bedc5b02d90507d6dbe8b719153a
+          rev: 06050c9fa58fec8b5fd2c11c46756971e5270ec3
       - name: Set trusted workflow policy revision
-        run: echo "VELNOR_WORKFLOW_POLICY_REVISION=3bfd459772bc24161551e755a63a5a02517c63e4" >> "$GITHUB_ENV"
+        run: echo "VELNOR_WORKFLOW_POLICY_REVISION=06050c9fa58fec8b5fd2c11c46756971e5270ec3" >> "$GITHUB_ENV"
       - name: Select affected units
         id: plan
         env:
@@ -74,7 +71,6 @@ jobs:
           CI_SCOPE_OVERRIDE: ${{ github.event.inputs.scope || '' }}
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.inputs.base_sha || github.event.before || 'refs/heads/main' }}
           HEAD_SHA: ${{ github.sha }}
-          VELNOR_LANES: ${{ github.event.inputs.runner || 'both' }}
         run: |
           set -euo pipefail
           if [[ -z "${CI_SCOPE_OVERRIDE:-}" ]]; then unset CI_SCOPE_OVERRIDE; fi
@@ -83,7 +79,7 @@ jobs:
       - name: Prepare Velnor workflow runtime
         shell: bash
         env:
-          EXPECTED_REVISION: 7fa4a0731ee8bedc5b02d90507d6dbe8b719153a
+          EXPECTED_REVISION: 06050c9fa58fec8b5fd2c11c46756971e5270ec3
         run: |
           set -euo pipefail
           stage="$RUNNER_TEMP/velnor-workflow-runtime"
@@ -92,79 +88,2529 @@ jobs:
           src="$(command -v velnor-workflow)"
           install -m 0755 "$src" "$stage/velnor-workflow"
           digest="$(sha256sum "$stage/velnor-workflow" | awk '{print $1}')"
-          jq -n --arg repository "$GITHUB_REPOSITORY" --arg revision "$EXPECTED_REVISION" --arg head_branch "${{ github.ref_name }}" --arg platform "${{ runner.os }}-${{ runner.arch }}" --arg run_id "$GITHUB_RUN_ID" --arg job_id "${{ github.job }}" --arg binary_sha256 "$digest" '{repository: $repository, revision: $revision, head_branch: $head_branch, platform: $platform, run_id: $run_id, job_id: $job_id, binary_sha256: $binary_sha256}' > "$stage/manifest.json"
+          policy_src="${VELNOR_WORKFLOW_PINNED_BINARY:-$src}"
+          install -m 0755 "$policy_src" "$stage/velnor-workflow-policy"
+          policy_revision="$("$stage/velnor-workflow-policy" --revision)"
+          policy_closure="$("$stage/velnor-workflow-policy" --closure)"
+          [[ "$policy_closure" == "${{ steps.runtime.outputs.closure }}" ]] || { echo "::error::policy runtime reports closure $policy_closure, expected ${{ steps.runtime.outputs.closure }}" >&2; exit 1; }
+          policy_digest="$(sha256sum "$stage/velnor-workflow-policy" | awk '{print $1}')"
+          jq -n --arg repository "$GITHUB_REPOSITORY" --arg revision "$EXPECTED_REVISION" --arg closure "${{ steps.runtime.outputs.closure }}" --arg head_branch "${{ github.ref_name }}" --arg platform "${{ runner.os }}-${{ runner.arch }}" --arg run_id "$GITHUB_RUN_ID" --arg job_id "${{ github.job }}" --arg binary_sha256 "$digest" --arg policy_revision "$policy_revision" --arg policy_closure "$policy_closure" --arg policy_binary_sha256 "$policy_digest" '{repository: $repository, revision: $revision, closure: $closure, head_branch: $head_branch, platform: $platform, run_id: $run_id, job_id: $job_id, binary_sha256: $binary_sha256, policy_revision: $policy_revision, policy_closure: $policy_closure, policy_binary_sha256: $policy_binary_sha256}' > "$stage/manifest.json"
       - name: Publish Velnor workflow runtime
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: velnor-workflow-runtime-7fa4a0731ee8bedc5b02d90507d6dbe8b719153a-${{ runner.os }}-${{ runner.arch }}
+          name: velnor-workflow-runtime-06050c9fa58fec8b5fd2c11c46756971e5270ec3-${{ runner.os }}-${{ runner.arch }}
           path: ${{ runner.temp }}/velnor-workflow-runtime
           if-no-files-found: error
           retention-days: 7
-  group-bun:
-    name: "Bun / Packages"
-    if: ${{ always() && needs.plan.result == 'success' && needs.plan.outputs.bun_matrix != '[]' }}
+  github-bun-jackin-docs:
+    name: "Bun · Bun package (jackin-docs)"
+    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',bun-jackin-docs,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-bun.yml
     with:
+      unit: bun-jackin-docs
+      lane: github
       selected_units: ${{ needs.plan.outputs.units }}
       scope: ${{ needs.plan.outputs.scope }}
       full_units: ${{ needs.plan.outputs.full_units }}
       base_sha: ${{ needs.plan.outputs.base_sha }}
       head_sha: ${{ needs.plan.outputs.head_sha }}
-  group-docker:
-    name: "Docker / Images"
-    if: ${{ always() && needs.plan.result == 'success' && needs.plan.outputs.docker_matrix != '[]' }}
+      cache_paths: "~/.bun/install/cache"
+      cache_key_files: |
+        docs/package.json
+        docs/bun.lock
+      unit_admission: github
+  github-docker-docker-construct:
+    name: "Docker · Docker (docker/construct)"
+    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',docker-docker-construct,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-docker.yml
     with:
+      unit: docker-docker-construct
+      lane: github
       selected_units: ${{ needs.plan.outputs.units }}
       scope: ${{ needs.plan.outputs.scope }}
       full_units: ${{ needs.plan.outputs.full_units }}
       base_sha: ${{ needs.plan.outputs.base_sha }}
       head_sha: ${{ needs.plan.outputs.head_sha }}
-  group-rust:
-    name: Rust
-    if: ${{ always() && needs.plan.result == 'success' && needs.plan.outputs.rust_matrix != '[]' }}
+      unit_admission: github
+  github-rust-arrayref:
+    name: "Rust · arrayref"
+    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-arrayref,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
+      unit: rust-arrayref
+      lane: github
       selected_units: ${{ needs.plan.outputs.units }}
       scope: ${{ needs.plan.outputs.scope }}
       full_units: ${{ needs.plan.outputs.full_units }}
       base_sha: ${{ needs.plan.outputs.base_sha }}
       head_sha: ${{ needs.plan.outputs.head_sha }}
-  group-rust-2:
-    name: group-rust-2
-    if: ${{ always() && needs.plan.result == 'success' && needs.plan.outputs.rust-2_matrix != '[]' }}
+      mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
+      mbx_compat: bcf928c2915f
+      mbx_dependency_files: |
+        .cargo/**
+        rust-toolchain
+        rust-toolchain.toml
+        vendor/arrayref/Cargo.lock
+      mbx_freshness_files: |
+        mise.lock
+        vendor/arrayref/**/*.rs
+        vendor/arrayref/Cargo.lock
+        vendor/arrayref/benches/**
+        vendor/arrayref/examples/**
+        vendor/arrayref/src/**
+        vendor/arrayref/tests/**
+      cache_paths: |
+        ~/.cargo/registry
+        ~/.cargo/git
+      cache_key_files: |
+        .cargo/**
+        vendor/arrayref/Cargo.lock
+        rust-toolchain.toml
+        rust-toolchain
+      cargo_root: "vendor/arrayref"
+      cargo_net_offline: true
+      unit_admission: github
+  github-rust-jackin:
+    name: "Rust · jackin"
+    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
     needs: [plan]
-    uses: ./.github/workflows/ci-unit-rust-2.yml
+    uses: ./.github/workflows/ci-unit-rust.yml
     with:
+      unit: rust-jackin
+      lane: github
       selected_units: ${{ needs.plan.outputs.units }}
       scope: ${{ needs.plan.outputs.scope }}
       full_units: ${{ needs.plan.outputs.full_units }}
       base_sha: ${{ needs.plan.outputs.base_sha }}
       head_sha: ${{ needs.plan.outputs.head_sha }}
-  group-swift:
-    name: "Swift / Packages"
-    if: ${{ always() && needs.plan.result == 'success' && needs.plan.outputs.swift_matrix != '[]' }}
+      mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
+      mbx_compat: d3ce14be645e
+      mbx_dependency_files: |
+        .cargo/**
+        Cargo.lock
+        rust-toolchain
+        rust-toolchain.toml
+      mbx_freshness_files: |
+        crates/jackin-brand/**/*.rs
+        crates/jackin-brand/benches/**
+        crates/jackin-brand/examples/**
+        crates/jackin-brand/src/**
+        crates/jackin-brand/tests/**
+        crates/jackin-build-meta/**/*.rs
+        crates/jackin-build-meta/benches/**
+        crates/jackin-build-meta/examples/**
+        crates/jackin-build-meta/src/**
+        crates/jackin-build-meta/tests/**
+        crates/jackin-config/**/*.rs
+        crates/jackin-config/benches/**
+        crates/jackin-config/examples/**
+        crates/jackin-config/src/**
+        crates/jackin-config/tests/**
+        crates/jackin-console/**/*.rs
+        crates/jackin-console/benches/**
+        crates/jackin-console/examples/**
+        crates/jackin-console/src/**
+        crates/jackin-console/tests/**
+        crates/jackin-core/**/*.rs
+        crates/jackin-core/benches/**
+        crates/jackin-core/examples/**
+        crates/jackin-core/src/**
+        crates/jackin-core/tests/**
+        crates/jackin-diagnostics/**/*.rs
+        crates/jackin-diagnostics/benches/**
+        crates/jackin-diagnostics/build.rs
+        crates/jackin-diagnostics/examples/**
+        crates/jackin-diagnostics/src/**
+        crates/jackin-diagnostics/tests/**
+        crates/jackin-docker/**/*.rs
+        crates/jackin-docker/benches/**
+        crates/jackin-docker/build.rs
+        crates/jackin-docker/examples/**
+        crates/jackin-docker/src/**
+        crates/jackin-docker/tests/**
+        crates/jackin-env/**/*.rs
+        crates/jackin-env/benches/**
+        crates/jackin-env/examples/**
+        crates/jackin-env/src/**
+        crates/jackin-env/tests/**
+        crates/jackin-host/**/*.rs
+        crates/jackin-host/benches/**
+        crates/jackin-host/examples/**
+        crates/jackin-host/src/**
+        crates/jackin-host/tests/**
+        crates/jackin-image/**/*.rs
+        crates/jackin-image/benches/**
+        crates/jackin-image/build.rs
+        crates/jackin-image/examples/**
+        crates/jackin-image/src/**
+        crates/jackin-image/tests/**
+        crates/jackin-instance/**/*.rs
+        crates/jackin-instance/benches/**
+        crates/jackin-instance/examples/**
+        crates/jackin-instance/src/**
+        crates/jackin-instance/tests/**
+        crates/jackin-isolation/**/*.rs
+        crates/jackin-isolation/benches/**
+        crates/jackin-isolation/examples/**
+        crates/jackin-isolation/src/**
+        crates/jackin-isolation/tests/**
+        crates/jackin-launch/**/*.rs
+        crates/jackin-launch/benches/**
+        crates/jackin-launch/build.rs
+        crates/jackin-launch/examples/**
+        crates/jackin-launch/src/**
+        crates/jackin-launch/tests/**
+        crates/jackin-manifest/**/*.rs
+        crates/jackin-manifest/benches/**
+        crates/jackin-manifest/examples/**
+        crates/jackin-manifest/src/**
+        crates/jackin-manifest/tests/**
+        crates/jackin-oppicker/**/*.rs
+        crates/jackin-oppicker/benches/**
+        crates/jackin-oppicker/examples/**
+        crates/jackin-oppicker/src/**
+        crates/jackin-oppicker/tests/**
+        crates/jackin-otlp-testbed/**/*.rs
+        crates/jackin-otlp-testbed/benches/**
+        crates/jackin-otlp-testbed/examples/**
+        crates/jackin-otlp-testbed/src/**
+        crates/jackin-otlp-testbed/tests/**
+        crates/jackin-process/**/*.rs
+        crates/jackin-process/benches/**
+        crates/jackin-process/examples/**
+        crates/jackin-process/src/**
+        crates/jackin-process/tests/**
+        crates/jackin-protocol/**/*.rs
+        crates/jackin-protocol/benches/**
+        crates/jackin-protocol/examples/**
+        crates/jackin-protocol/src/**
+        crates/jackin-protocol/tests/**
+        crates/jackin-runtime/**/*.rs
+        crates/jackin-runtime/benches/**
+        crates/jackin-runtime/build.rs
+        crates/jackin-runtime/examples/**
+        crates/jackin-runtime/src/**
+        crates/jackin-runtime/tests/**
+        crates/jackin-telemetry/**/*.rs
+        crates/jackin-telemetry/benches/**
+        crates/jackin-telemetry/examples/**
+        crates/jackin-telemetry/src/**
+        crates/jackin-telemetry/tests/**
+        crates/jackin-test-support/**/*.rs
+        crates/jackin-test-support/benches/**
+        crates/jackin-test-support/examples/**
+        crates/jackin-test-support/src/**
+        crates/jackin-test-support/tests/**
+        crates/jackin-tui/**/*.rs
+        crates/jackin-tui/benches/**
+        crates/jackin-tui/examples/**
+        crates/jackin-tui/src/**
+        crates/jackin-tui/tests/**
+        crates/jackin-usage/**/*.rs
+        crates/jackin-usage/benches/**
+        crates/jackin-usage/examples/**
+        crates/jackin-usage/src/**
+        crates/jackin-usage/tests/**
+        crates/jackin-usage/tests/fixtures/contracts/usage-projection-v1-current.json
+        crates/jackin/**/*.rs
+        crates/jackin/benches/**
+        crates/jackin/build.rs
+        crates/jackin/examples/**
+        crates/jackin/src/**
+        crates/jackin/tests/**
+        docker/construct/Dockerfile
+        docker/runtime/agent-status/hooks/claude/report-hook.sh
+        docker/runtime/agent-status/hooks/codex/report-hook.sh
+        docker/runtime/agent-status/hooks/opencode/plugin.js
+        docker/runtime/agent-status/hooks/opencode/report-hook.sh
+        docker/runtime/entrypoint.sh
+        mise.lock
+      cache_paths: |
+        ~/.cargo/registry
+        ~/.cargo/git
+      cache_key_files: |
+        .cargo/**
+        Cargo.lock
+        rust-toolchain.toml
+        rust-toolchain
+      cargo_root: "crates/jackin"
+      cargo_net_offline: true
+      unit_dependencies: "rust-jackin-brand,rust-jackin-build-meta,rust-jackin-config,rust-jackin-console,rust-jackin-core,rust-jackin-diagnostics,rust-jackin-docker,rust-jackin-env,rust-jackin-image,rust-jackin-launch,rust-jackin-manifest,rust-jackin-otlp-testbed,rust-jackin-process,rust-jackin-protocol,rust-jackin-runtime,rust-jackin-telemetry,rust-jackin-test-support,rust-jackin-tui,rust-jackin-usage"
+      unit_admission: github
+  github-rust-jackin-agent-status:
+    name: "Rust · jackin-agent-status"
+    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-agent-status,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+    needs: [plan]
+    uses: ./.github/workflows/ci-unit-rust.yml
+    with:
+      unit: rust-jackin-agent-status
+      lane: github
+      selected_units: ${{ needs.plan.outputs.units }}
+      scope: ${{ needs.plan.outputs.scope }}
+      full_units: ${{ needs.plan.outputs.full_units }}
+      base_sha: ${{ needs.plan.outputs.base_sha }}
+      head_sha: ${{ needs.plan.outputs.head_sha }}
+      mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
+      mbx_compat: "0136c20345dc"
+      mbx_dependency_files: |
+        .cargo/**
+        Cargo.lock
+        rust-toolchain
+        rust-toolchain.toml
+      mbx_freshness_files: |
+        crates/jackin-agent-status/**/*.rs
+        crates/jackin-agent-status/benches/**
+        crates/jackin-agent-status/examples/**
+        crates/jackin-agent-status/src/**
+        crates/jackin-agent-status/tests/**
+        crates/jackin-core/**/*.rs
+        crates/jackin-core/benches/**
+        crates/jackin-core/examples/**
+        crates/jackin-core/src/**
+        crates/jackin-core/tests/**
+        crates/jackin-protocol/**/*.rs
+        crates/jackin-protocol/benches/**
+        crates/jackin-protocol/examples/**
+        crates/jackin-protocol/src/**
+        crates/jackin-protocol/tests/**
+        crates/jackin-telemetry/**/*.rs
+        crates/jackin-telemetry/benches/**
+        crates/jackin-telemetry/examples/**
+        crates/jackin-telemetry/src/**
+        crates/jackin-telemetry/tests/**
+        crates/jackin-usage/tests/fixtures/contracts/usage-projection-v1-current.json
+        mise.lock
+      cache_paths: |
+        ~/.cargo/registry
+        ~/.cargo/git
+      cache_key_files: |
+        .cargo/**
+        Cargo.lock
+        rust-toolchain.toml
+        rust-toolchain
+      cargo_root: "crates/jackin-agent-status"
+      cargo_net_offline: true
+      unit_dependencies: "rust-jackin-core,rust-jackin-protocol"
+      unit_admission: github
+  github-rust-jackin-brand:
+    name: "Rust · jackin-brand"
+    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-brand,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+    needs: [plan]
+    uses: ./.github/workflows/ci-unit-rust.yml
+    with:
+      unit: rust-jackin-brand
+      lane: github
+      selected_units: ${{ needs.plan.outputs.units }}
+      scope: ${{ needs.plan.outputs.scope }}
+      full_units: ${{ needs.plan.outputs.full_units }}
+      base_sha: ${{ needs.plan.outputs.base_sha }}
+      head_sha: ${{ needs.plan.outputs.head_sha }}
+      mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
+      mbx_compat: d02e671f4e30
+      mbx_dependency_files: |
+        .cargo/**
+        Cargo.lock
+        rust-toolchain
+        rust-toolchain.toml
+      mbx_freshness_files: |
+        crates/jackin-brand/**/*.rs
+        crates/jackin-brand/benches/**
+        crates/jackin-brand/examples/**
+        crates/jackin-brand/src/**
+        crates/jackin-brand/tests/**
+        mise.lock
+      cache_paths: |
+        ~/.cargo/registry
+        ~/.cargo/git
+      cache_key_files: |
+        .cargo/**
+        Cargo.lock
+        rust-toolchain.toml
+        rust-toolchain
+      cargo_root: "crates/jackin-brand"
+      cargo_net_offline: true
+      unit_admission: github
+  github-rust-jackin-build-meta:
+    name: "Rust · jackin-build-meta"
+    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-build-meta,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+    needs: [plan]
+    uses: ./.github/workflows/ci-unit-rust.yml
+    with:
+      unit: rust-jackin-build-meta
+      lane: github
+      selected_units: ${{ needs.plan.outputs.units }}
+      scope: ${{ needs.plan.outputs.scope }}
+      full_units: ${{ needs.plan.outputs.full_units }}
+      base_sha: ${{ needs.plan.outputs.base_sha }}
+      head_sha: ${{ needs.plan.outputs.head_sha }}
+      mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
+      mbx_compat: "201e0376245b"
+      mbx_dependency_files: |
+        .cargo/**
+        Cargo.lock
+        rust-toolchain
+        rust-toolchain.toml
+      mbx_freshness_files: |
+        crates/jackin-build-meta/**/*.rs
+        crates/jackin-build-meta/benches/**
+        crates/jackin-build-meta/examples/**
+        crates/jackin-build-meta/src/**
+        crates/jackin-build-meta/tests/**
+        crates/jackin-process/**/*.rs
+        crates/jackin-process/benches/**
+        crates/jackin-process/examples/**
+        crates/jackin-process/src/**
+        crates/jackin-process/tests/**
+        mise.lock
+      cache_paths: |
+        ~/.cargo/registry
+        ~/.cargo/git
+      cache_key_files: |
+        .cargo/**
+        Cargo.lock
+        rust-toolchain.toml
+        rust-toolchain
+      cargo_root: "crates/jackin-build-meta"
+      cargo_net_offline: true
+      unit_dependencies: rust-jackin-process
+      unit_admission: github
+  github-rust-jackin-capsule:
+    name: "Rust · jackin-capsule"
+    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-capsule,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+    needs: [plan]
+    uses: ./.github/workflows/ci-unit-rust.yml
+    with:
+      unit: rust-jackin-capsule
+      lane: github
+      selected_units: ${{ needs.plan.outputs.units }}
+      scope: ${{ needs.plan.outputs.scope }}
+      full_units: ${{ needs.plan.outputs.full_units }}
+      base_sha: ${{ needs.plan.outputs.base_sha }}
+      head_sha: ${{ needs.plan.outputs.head_sha }}
+      mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
+      mbx_compat: c4becf510ba2
+      mbx_dependency_files: |
+        .cargo/**
+        Cargo.lock
+        rust-toolchain
+        rust-toolchain.toml
+      mbx_freshness_files: |
+        crates/jackin-agent-status/**/*.rs
+        crates/jackin-agent-status/benches/**
+        crates/jackin-agent-status/examples/**
+        crates/jackin-agent-status/src/**
+        crates/jackin-agent-status/tests/**
+        crates/jackin-brand/**/*.rs
+        crates/jackin-brand/benches/**
+        crates/jackin-brand/examples/**
+        crates/jackin-brand/src/**
+        crates/jackin-brand/tests/**
+        crates/jackin-build-meta/**/*.rs
+        crates/jackin-build-meta/benches/**
+        crates/jackin-build-meta/examples/**
+        crates/jackin-build-meta/src/**
+        crates/jackin-build-meta/tests/**
+        crates/jackin-capsule/**/*.rs
+        crates/jackin-capsule/benches/**
+        crates/jackin-capsule/build.rs
+        crates/jackin-capsule/examples/**
+        crates/jackin-capsule/src/**
+        crates/jackin-capsule/src/daemon.rs
+        crates/jackin-capsule/tests/**
+        crates/jackin-config/**/*.rs
+        crates/jackin-config/benches/**
+        crates/jackin-config/examples/**
+        crates/jackin-config/src/**
+        crates/jackin-config/tests/**
+        crates/jackin-core/**/*.rs
+        crates/jackin-core/benches/**
+        crates/jackin-core/examples/**
+        crates/jackin-core/src/**
+        crates/jackin-core/tests/**
+        crates/jackin-diagnostics/**/*.rs
+        crates/jackin-diagnostics/benches/**
+        crates/jackin-diagnostics/build.rs
+        crates/jackin-diagnostics/examples/**
+        crates/jackin-diagnostics/src/**
+        crates/jackin-diagnostics/tests/**
+        crates/jackin-otlp-testbed/**/*.rs
+        crates/jackin-otlp-testbed/benches/**
+        crates/jackin-otlp-testbed/examples/**
+        crates/jackin-otlp-testbed/src/**
+        crates/jackin-otlp-testbed/tests/**
+        crates/jackin-process/**/*.rs
+        crates/jackin-process/benches/**
+        crates/jackin-process/examples/**
+        crates/jackin-process/src/**
+        crates/jackin-process/tests/**
+        crates/jackin-protocol/**/*.rs
+        crates/jackin-protocol/benches/**
+        crates/jackin-protocol/examples/**
+        crates/jackin-protocol/src/**
+        crates/jackin-protocol/tests/**
+        crates/jackin-telemetry/**/*.rs
+        crates/jackin-telemetry/benches/**
+        crates/jackin-telemetry/examples/**
+        crates/jackin-telemetry/src/**
+        crates/jackin-telemetry/tests/**
+        crates/jackin-tui/**/*.rs
+        crates/jackin-tui/benches/**
+        crates/jackin-tui/examples/**
+        crates/jackin-tui/src/**
+        crates/jackin-tui/tests/**
+        crates/jackin-usage/**/*.rs
+        crates/jackin-usage/benches/**
+        crates/jackin-usage/examples/**
+        crates/jackin-usage/src/**
+        crates/jackin-usage/tests/**
+        crates/jackin-usage/tests/fixtures/contracts/usage-projection-v1-current.json
+        mise.lock
+      cache_paths: |
+        ~/.cargo/registry
+        ~/.cargo/git
+      cache_key_files: |
+        .cargo/**
+        Cargo.lock
+        rust-toolchain.toml
+        rust-toolchain
+      cargo_root: "crates/jackin-capsule"
+      cargo_net_offline: true
+      unit_dependencies: "rust-jackin-agent-status,rust-jackin-brand,rust-jackin-build-meta,rust-jackin-core,rust-jackin-diagnostics,rust-jackin-otlp-testbed,rust-jackin-process,rust-jackin-protocol,rust-jackin-telemetry,rust-jackin-tui,rust-jackin-usage"
+      unit_admission: github
+  github-rust-jackin-config:
+    name: "Rust · jackin-config"
+    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-config,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+    needs: [plan]
+    uses: ./.github/workflows/ci-unit-rust.yml
+    with:
+      unit: rust-jackin-config
+      lane: github
+      selected_units: ${{ needs.plan.outputs.units }}
+      scope: ${{ needs.plan.outputs.scope }}
+      full_units: ${{ needs.plan.outputs.full_units }}
+      base_sha: ${{ needs.plan.outputs.base_sha }}
+      head_sha: ${{ needs.plan.outputs.head_sha }}
+      mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
+      mbx_compat: ac665ed71ac7
+      mbx_dependency_files: |
+        .cargo/**
+        Cargo.lock
+        rust-toolchain
+        rust-toolchain.toml
+      mbx_freshness_files: |
+        crates/jackin-config/**/*.rs
+        crates/jackin-config/benches/**
+        crates/jackin-config/examples/**
+        crates/jackin-config/src/**
+        crates/jackin-config/tests/**
+        crates/jackin-core/**/*.rs
+        crates/jackin-core/benches/**
+        crates/jackin-core/examples/**
+        crates/jackin-core/src/**
+        crates/jackin-core/tests/**
+        crates/jackin-diagnostics/**/*.rs
+        crates/jackin-diagnostics/benches/**
+        crates/jackin-diagnostics/build.rs
+        crates/jackin-diagnostics/examples/**
+        crates/jackin-diagnostics/src/**
+        crates/jackin-diagnostics/tests/**
+        crates/jackin-otlp-testbed/**/*.rs
+        crates/jackin-otlp-testbed/benches/**
+        crates/jackin-otlp-testbed/examples/**
+        crates/jackin-otlp-testbed/src/**
+        crates/jackin-otlp-testbed/tests/**
+        crates/jackin-telemetry/**/*.rs
+        crates/jackin-telemetry/benches/**
+        crates/jackin-telemetry/examples/**
+        crates/jackin-telemetry/src/**
+        crates/jackin-telemetry/tests/**
+        mise.lock
+      cache_paths: |
+        ~/.cargo/registry
+        ~/.cargo/git
+      cache_key_files: |
+        .cargo/**
+        Cargo.lock
+        rust-toolchain.toml
+        rust-toolchain
+      cargo_root: "crates/jackin-config"
+      cargo_net_offline: true
+      unit_dependencies: "rust-jackin-core,rust-jackin-diagnostics,rust-jackin-otlp-testbed,rust-jackin-telemetry"
+      unit_admission: github
+  github-rust-jackin-config-fuzz:
+    name: "Rust · jackin-config-fuzz"
+    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-config-fuzz,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+    needs: [plan]
+    uses: ./.github/workflows/ci-unit-rust.yml
+    with:
+      unit: rust-jackin-config-fuzz
+      lane: github
+      selected_units: ${{ needs.plan.outputs.units }}
+      scope: ${{ needs.plan.outputs.scope }}
+      full_units: ${{ needs.plan.outputs.full_units }}
+      base_sha: ${{ needs.plan.outputs.base_sha }}
+      head_sha: ${{ needs.plan.outputs.head_sha }}
+      mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
+      mbx_compat: b088cfe5e851
+      mbx_dependency_files: |
+        .cargo/**
+        Cargo.lock
+        crates/jackin-config/fuzz/Cargo.lock
+        rust-toolchain
+        rust-toolchain.toml
+      mbx_freshness_files: |
+        crates/jackin-config/**/*.rs
+        crates/jackin-config/benches/**
+        crates/jackin-config/examples/**
+        crates/jackin-config/fuzz/**/*.rs
+        crates/jackin-config/fuzz/Cargo.lock
+        crates/jackin-config/fuzz/benches/**
+        crates/jackin-config/fuzz/examples/**
+        crates/jackin-config/fuzz/src/**
+        crates/jackin-config/fuzz/tests/**
+        crates/jackin-config/src/**
+        crates/jackin-config/tests/**
+        crates/jackin-core/**/*.rs
+        crates/jackin-core/benches/**
+        crates/jackin-core/examples/**
+        crates/jackin-core/src/**
+        crates/jackin-core/tests/**
+        crates/jackin-diagnostics/**/*.rs
+        crates/jackin-diagnostics/benches/**
+        crates/jackin-diagnostics/build.rs
+        crates/jackin-diagnostics/examples/**
+        crates/jackin-diagnostics/src/**
+        crates/jackin-diagnostics/tests/**
+        crates/jackin-otlp-testbed/**/*.rs
+        crates/jackin-otlp-testbed/benches/**
+        crates/jackin-otlp-testbed/examples/**
+        crates/jackin-otlp-testbed/src/**
+        crates/jackin-otlp-testbed/tests/**
+        crates/jackin-telemetry/**/*.rs
+        crates/jackin-telemetry/benches/**
+        crates/jackin-telemetry/examples/**
+        crates/jackin-telemetry/src/**
+        crates/jackin-telemetry/tests/**
+        mise.lock
+      cache_paths: |
+        ~/.cargo/registry
+        ~/.cargo/git
+      cache_key_files: |
+        .cargo/**
+        crates/jackin-config/fuzz/Cargo.lock
+        rust-toolchain.toml
+        rust-toolchain
+      cargo_root: "crates/jackin-config/fuzz"
+      cargo_net_offline: true
+      unit_dependencies: rust-jackin-config
+      unit_admission: github
+  github-rust-jackin-console:
+    name: "Rust · jackin-console"
+    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-console,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+    needs: [plan]
+    uses: ./.github/workflows/ci-unit-rust.yml
+    with:
+      unit: rust-jackin-console
+      lane: github
+      selected_units: ${{ needs.plan.outputs.units }}
+      scope: ${{ needs.plan.outputs.scope }}
+      full_units: ${{ needs.plan.outputs.full_units }}
+      base_sha: ${{ needs.plan.outputs.base_sha }}
+      head_sha: ${{ needs.plan.outputs.head_sha }}
+      mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
+      mbx_compat: "6ae1e176229f"
+      mbx_dependency_files: |
+        .cargo/**
+        Cargo.lock
+        rust-toolchain
+        rust-toolchain.toml
+      mbx_freshness_files: |
+        crates/jackin-brand/**/*.rs
+        crates/jackin-brand/benches/**
+        crates/jackin-brand/examples/**
+        crates/jackin-brand/src/**
+        crates/jackin-brand/tests/**
+        crates/jackin-config/**/*.rs
+        crates/jackin-config/benches/**
+        crates/jackin-config/examples/**
+        crates/jackin-config/src/**
+        crates/jackin-config/tests/**
+        crates/jackin-console/**/*.rs
+        crates/jackin-console/benches/**
+        crates/jackin-console/examples/**
+        crates/jackin-console/src/**
+        crates/jackin-console/tests/**
+        crates/jackin-core/**/*.rs
+        crates/jackin-core/benches/**
+        crates/jackin-core/examples/**
+        crates/jackin-core/src/**
+        crates/jackin-core/tests/**
+        crates/jackin-diagnostics/**/*.rs
+        crates/jackin-diagnostics/benches/**
+        crates/jackin-diagnostics/build.rs
+        crates/jackin-diagnostics/examples/**
+        crates/jackin-diagnostics/src/**
+        crates/jackin-diagnostics/tests/**
+        crates/jackin-env/**/*.rs
+        crates/jackin-env/benches/**
+        crates/jackin-env/examples/**
+        crates/jackin-env/src/**
+        crates/jackin-env/tests/**
+        crates/jackin-oppicker/**/*.rs
+        crates/jackin-oppicker/benches/**
+        crates/jackin-oppicker/examples/**
+        crates/jackin-oppicker/src/**
+        crates/jackin-oppicker/tests/**
+        crates/jackin-otlp-testbed/**/*.rs
+        crates/jackin-otlp-testbed/benches/**
+        crates/jackin-otlp-testbed/examples/**
+        crates/jackin-otlp-testbed/src/**
+        crates/jackin-otlp-testbed/tests/**
+        crates/jackin-process/**/*.rs
+        crates/jackin-process/benches/**
+        crates/jackin-process/examples/**
+        crates/jackin-process/src/**
+        crates/jackin-process/tests/**
+        crates/jackin-protocol/**/*.rs
+        crates/jackin-protocol/benches/**
+        crates/jackin-protocol/examples/**
+        crates/jackin-protocol/src/**
+        crates/jackin-protocol/tests/**
+        crates/jackin-telemetry/**/*.rs
+        crates/jackin-telemetry/benches/**
+        crates/jackin-telemetry/examples/**
+        crates/jackin-telemetry/src/**
+        crates/jackin-telemetry/tests/**
+        crates/jackin-tui/**/*.rs
+        crates/jackin-tui/benches/**
+        crates/jackin-tui/examples/**
+        crates/jackin-tui/src/**
+        crates/jackin-tui/tests/**
+        crates/jackin-usage/tests/fixtures/contracts/usage-projection-v1-current.json
+        mise.lock
+      cache_paths: |
+        ~/.cargo/registry
+        ~/.cargo/git
+      cache_key_files: |
+        .cargo/**
+        Cargo.lock
+        rust-toolchain.toml
+        rust-toolchain
+      cargo_root: "crates/jackin-console"
+      cargo_net_offline: true
+      unit_dependencies: "rust-jackin-config,rust-jackin-core,rust-jackin-diagnostics,rust-jackin-env,rust-jackin-oppicker,rust-jackin-otlp-testbed,rust-jackin-protocol,rust-jackin-telemetry,rust-jackin-tui"
+      unit_admission: github
+  github-rust-jackin-core:
+    name: "Rust · jackin-core"
+    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-core,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+    needs: [plan]
+    uses: ./.github/workflows/ci-unit-rust.yml
+    with:
+      unit: rust-jackin-core
+      lane: github
+      selected_units: ${{ needs.plan.outputs.units }}
+      scope: ${{ needs.plan.outputs.scope }}
+      full_units: ${{ needs.plan.outputs.full_units }}
+      base_sha: ${{ needs.plan.outputs.base_sha }}
+      head_sha: ${{ needs.plan.outputs.head_sha }}
+      mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
+      mbx_compat: dcde12705c1e
+      mbx_dependency_files: |
+        .cargo/**
+        Cargo.lock
+        rust-toolchain
+        rust-toolchain.toml
+      mbx_freshness_files: |
+        crates/jackin-core/**/*.rs
+        crates/jackin-core/benches/**
+        crates/jackin-core/examples/**
+        crates/jackin-core/src/**
+        crates/jackin-core/tests/**
+        mise.lock
+      cache_paths: |
+        ~/.cargo/registry
+        ~/.cargo/git
+      cache_key_files: |
+        .cargo/**
+        Cargo.lock
+        rust-toolchain.toml
+        rust-toolchain
+      cargo_root: "crates/jackin-core"
+      cargo_net_offline: true
+      unit_admission: github
+  github-rust-jackin-dev:
+    name: "Rust · jackin-dev"
+    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-dev,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+    needs: [plan]
+    uses: ./.github/workflows/ci-unit-rust.yml
+    with:
+      unit: rust-jackin-dev
+      lane: github
+      selected_units: ${{ needs.plan.outputs.units }}
+      scope: ${{ needs.plan.outputs.scope }}
+      full_units: ${{ needs.plan.outputs.full_units }}
+      base_sha: ${{ needs.plan.outputs.base_sha }}
+      head_sha: ${{ needs.plan.outputs.head_sha }}
+      mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
+      mbx_compat: e1e49fbff2b1
+      mbx_dependency_files: |
+        .cargo/**
+        Cargo.lock
+        rust-toolchain
+        rust-toolchain.toml
+      mbx_freshness_files: |
+        crates/jackin-dev/**/*.rs
+        crates/jackin-dev/benches/**
+        crates/jackin-dev/examples/**
+        crates/jackin-dev/src/**
+        crates/jackin-dev/tests/**
+        mise.lock
+      cache_paths: |
+        ~/.cargo/registry
+        ~/.cargo/git
+      cache_key_files: |
+        .cargo/**
+        Cargo.lock
+        rust-toolchain.toml
+        rust-toolchain
+      cargo_root: "crates/jackin-dev"
+      cargo_net_offline: true
+      unit_admission: github
+  github-rust-jackin-diagnostics:
+    name: "Rust · jackin-diagnostics"
+    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-diagnostics,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+    needs: [plan]
+    uses: ./.github/workflows/ci-unit-rust.yml
+    with:
+      unit: rust-jackin-diagnostics
+      lane: github
+      selected_units: ${{ needs.plan.outputs.units }}
+      scope: ${{ needs.plan.outputs.scope }}
+      full_units: ${{ needs.plan.outputs.full_units }}
+      base_sha: ${{ needs.plan.outputs.base_sha }}
+      head_sha: ${{ needs.plan.outputs.head_sha }}
+      mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
+      mbx_compat: d2f8790af97e
+      mbx_dependency_files: |
+        .cargo/**
+        Cargo.lock
+        rust-toolchain
+        rust-toolchain.toml
+      mbx_freshness_files: |
+        crates/jackin-core/**/*.rs
+        crates/jackin-core/benches/**
+        crates/jackin-core/examples/**
+        crates/jackin-core/src/**
+        crates/jackin-core/tests/**
+        crates/jackin-diagnostics/**/*.rs
+        crates/jackin-diagnostics/benches/**
+        crates/jackin-diagnostics/build.rs
+        crates/jackin-diagnostics/examples/**
+        crates/jackin-diagnostics/src/**
+        crates/jackin-diagnostics/tests/**
+        crates/jackin-otlp-testbed/**/*.rs
+        crates/jackin-otlp-testbed/benches/**
+        crates/jackin-otlp-testbed/examples/**
+        crates/jackin-otlp-testbed/src/**
+        crates/jackin-otlp-testbed/tests/**
+        crates/jackin-telemetry/**/*.rs
+        crates/jackin-telemetry/benches/**
+        crates/jackin-telemetry/examples/**
+        crates/jackin-telemetry/src/**
+        crates/jackin-telemetry/tests/**
+        mise.lock
+      cache_paths: |
+        ~/.cargo/registry
+        ~/.cargo/git
+      cache_key_files: |
+        .cargo/**
+        Cargo.lock
+        rust-toolchain.toml
+        rust-toolchain
+      cargo_root: "crates/jackin-diagnostics"
+      cargo_net_offline: true
+      unit_dependencies: "rust-jackin-core,rust-jackin-otlp-testbed,rust-jackin-telemetry"
+      unit_admission: github
+  github-rust-jackin-docker:
+    name: "Rust · jackin-docker"
+    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-docker,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+    needs: [plan]
+    uses: ./.github/workflows/ci-unit-rust.yml
+    with:
+      unit: rust-jackin-docker
+      lane: github
+      selected_units: ${{ needs.plan.outputs.units }}
+      scope: ${{ needs.plan.outputs.scope }}
+      full_units: ${{ needs.plan.outputs.full_units }}
+      base_sha: ${{ needs.plan.outputs.base_sha }}
+      head_sha: ${{ needs.plan.outputs.head_sha }}
+      mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
+      mbx_compat: "957817cb0523"
+      mbx_dependency_files: |
+        .cargo/**
+        Cargo.lock
+        rust-toolchain
+        rust-toolchain.toml
+      mbx_freshness_files: |
+        crates/jackin-build-meta/**/*.rs
+        crates/jackin-build-meta/benches/**
+        crates/jackin-build-meta/examples/**
+        crates/jackin-build-meta/src/**
+        crates/jackin-build-meta/tests/**
+        crates/jackin-core/**/*.rs
+        crates/jackin-core/benches/**
+        crates/jackin-core/examples/**
+        crates/jackin-core/src/**
+        crates/jackin-core/tests/**
+        crates/jackin-diagnostics/**/*.rs
+        crates/jackin-diagnostics/benches/**
+        crates/jackin-diagnostics/build.rs
+        crates/jackin-diagnostics/examples/**
+        crates/jackin-diagnostics/src/**
+        crates/jackin-diagnostics/tests/**
+        crates/jackin-docker/**/*.rs
+        crates/jackin-docker/benches/**
+        crates/jackin-docker/build.rs
+        crates/jackin-docker/examples/**
+        crates/jackin-docker/src/**
+        crates/jackin-docker/tests/**
+        crates/jackin-otlp-testbed/**/*.rs
+        crates/jackin-otlp-testbed/benches/**
+        crates/jackin-otlp-testbed/examples/**
+        crates/jackin-otlp-testbed/src/**
+        crates/jackin-otlp-testbed/tests/**
+        crates/jackin-process/**/*.rs
+        crates/jackin-process/benches/**
+        crates/jackin-process/examples/**
+        crates/jackin-process/src/**
+        crates/jackin-process/tests/**
+        crates/jackin-telemetry/**/*.rs
+        crates/jackin-telemetry/benches/**
+        crates/jackin-telemetry/examples/**
+        crates/jackin-telemetry/src/**
+        crates/jackin-telemetry/tests/**
+        mise.lock
+      cache_paths: |
+        ~/.cargo/registry
+        ~/.cargo/git
+      cache_key_files: |
+        .cargo/**
+        Cargo.lock
+        rust-toolchain.toml
+        rust-toolchain
+      cargo_root: "crates/jackin-docker"
+      cargo_net_offline: true
+      unit_dependencies: "rust-jackin-build-meta,rust-jackin-core,rust-jackin-diagnostics,rust-jackin-otlp-testbed,rust-jackin-process,rust-jackin-telemetry"
+      unit_admission: github
+  github-rust-jackin-env:
+    name: "Rust · jackin-env"
+    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-env,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+    needs: [plan]
+    uses: ./.github/workflows/ci-unit-rust.yml
+    with:
+      unit: rust-jackin-env
+      lane: github
+      selected_units: ${{ needs.plan.outputs.units }}
+      scope: ${{ needs.plan.outputs.scope }}
+      full_units: ${{ needs.plan.outputs.full_units }}
+      base_sha: ${{ needs.plan.outputs.base_sha }}
+      head_sha: ${{ needs.plan.outputs.head_sha }}
+      mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
+      mbx_compat: e141aafd1bcf
+      mbx_dependency_files: |
+        .cargo/**
+        Cargo.lock
+        rust-toolchain
+        rust-toolchain.toml
+      mbx_freshness_files: |
+        crates/jackin-config/**/*.rs
+        crates/jackin-config/benches/**
+        crates/jackin-config/examples/**
+        crates/jackin-config/src/**
+        crates/jackin-config/tests/**
+        crates/jackin-core/**/*.rs
+        crates/jackin-core/benches/**
+        crates/jackin-core/examples/**
+        crates/jackin-core/src/**
+        crates/jackin-core/tests/**
+        crates/jackin-diagnostics/**/*.rs
+        crates/jackin-diagnostics/benches/**
+        crates/jackin-diagnostics/build.rs
+        crates/jackin-diagnostics/examples/**
+        crates/jackin-diagnostics/src/**
+        crates/jackin-diagnostics/tests/**
+        crates/jackin-env/**/*.rs
+        crates/jackin-env/benches/**
+        crates/jackin-env/examples/**
+        crates/jackin-env/src/**
+        crates/jackin-env/tests/**
+        crates/jackin-otlp-testbed/**/*.rs
+        crates/jackin-otlp-testbed/benches/**
+        crates/jackin-otlp-testbed/examples/**
+        crates/jackin-otlp-testbed/src/**
+        crates/jackin-otlp-testbed/tests/**
+        crates/jackin-process/**/*.rs
+        crates/jackin-process/benches/**
+        crates/jackin-process/examples/**
+        crates/jackin-process/src/**
+        crates/jackin-process/tests/**
+        crates/jackin-protocol/**/*.rs
+        crates/jackin-protocol/benches/**
+        crates/jackin-protocol/examples/**
+        crates/jackin-protocol/src/**
+        crates/jackin-protocol/tests/**
+        crates/jackin-telemetry/**/*.rs
+        crates/jackin-telemetry/benches/**
+        crates/jackin-telemetry/examples/**
+        crates/jackin-telemetry/src/**
+        crates/jackin-telemetry/tests/**
+        crates/jackin-usage/tests/fixtures/contracts/usage-projection-v1-current.json
+        mise.lock
+      cache_paths: |
+        ~/.cargo/registry
+        ~/.cargo/git
+      cache_key_files: |
+        .cargo/**
+        Cargo.lock
+        rust-toolchain.toml
+        rust-toolchain
+      cargo_root: "crates/jackin-env"
+      cargo_net_offline: true
+      unit_dependencies: "rust-jackin-config,rust-jackin-core,rust-jackin-diagnostics,rust-jackin-process,rust-jackin-protocol,rust-jackin-telemetry"
+      unit_admission: github
+  github-rust-jackin-env-fuzz:
+    name: "Rust · jackin-env-fuzz"
+    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-env-fuzz,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+    needs: [plan]
+    uses: ./.github/workflows/ci-unit-rust.yml
+    with:
+      unit: rust-jackin-env-fuzz
+      lane: github
+      selected_units: ${{ needs.plan.outputs.units }}
+      scope: ${{ needs.plan.outputs.scope }}
+      full_units: ${{ needs.plan.outputs.full_units }}
+      base_sha: ${{ needs.plan.outputs.base_sha }}
+      head_sha: ${{ needs.plan.outputs.head_sha }}
+      mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
+      mbx_compat: "53c2e64ba4d2"
+      mbx_dependency_files: |
+        .cargo/**
+        Cargo.lock
+        crates/jackin-env/fuzz/Cargo.lock
+        rust-toolchain
+        rust-toolchain.toml
+      mbx_freshness_files: |
+        crates/jackin-config/**/*.rs
+        crates/jackin-config/benches/**
+        crates/jackin-config/examples/**
+        crates/jackin-config/src/**
+        crates/jackin-config/tests/**
+        crates/jackin-core/**/*.rs
+        crates/jackin-core/benches/**
+        crates/jackin-core/examples/**
+        crates/jackin-core/src/**
+        crates/jackin-core/tests/**
+        crates/jackin-diagnostics/**/*.rs
+        crates/jackin-diagnostics/benches/**
+        crates/jackin-diagnostics/build.rs
+        crates/jackin-diagnostics/examples/**
+        crates/jackin-diagnostics/src/**
+        crates/jackin-diagnostics/tests/**
+        crates/jackin-env/**/*.rs
+        crates/jackin-env/benches/**
+        crates/jackin-env/examples/**
+        crates/jackin-env/fuzz/**/*.rs
+        crates/jackin-env/fuzz/Cargo.lock
+        crates/jackin-env/fuzz/benches/**
+        crates/jackin-env/fuzz/examples/**
+        crates/jackin-env/fuzz/src/**
+        crates/jackin-env/fuzz/tests/**
+        crates/jackin-env/src/**
+        crates/jackin-env/tests/**
+        crates/jackin-otlp-testbed/**/*.rs
+        crates/jackin-otlp-testbed/benches/**
+        crates/jackin-otlp-testbed/examples/**
+        crates/jackin-otlp-testbed/src/**
+        crates/jackin-otlp-testbed/tests/**
+        crates/jackin-process/**/*.rs
+        crates/jackin-process/benches/**
+        crates/jackin-process/examples/**
+        crates/jackin-process/src/**
+        crates/jackin-process/tests/**
+        crates/jackin-protocol/**/*.rs
+        crates/jackin-protocol/benches/**
+        crates/jackin-protocol/examples/**
+        crates/jackin-protocol/src/**
+        crates/jackin-protocol/tests/**
+        crates/jackin-telemetry/**/*.rs
+        crates/jackin-telemetry/benches/**
+        crates/jackin-telemetry/examples/**
+        crates/jackin-telemetry/src/**
+        crates/jackin-telemetry/tests/**
+        crates/jackin-usage/tests/fixtures/contracts/usage-projection-v1-current.json
+        mise.lock
+      cache_paths: |
+        ~/.cargo/registry
+        ~/.cargo/git
+      cache_key_files: |
+        .cargo/**
+        crates/jackin-env/fuzz/Cargo.lock
+        rust-toolchain.toml
+        rust-toolchain
+      cargo_root: "crates/jackin-env/fuzz"
+      cargo_net_offline: true
+      unit_dependencies: "rust-jackin-config,rust-jackin-core,rust-jackin-env"
+      unit_admission: github
+  github-rust-jackin-host:
+    name: "Rust · jackin-host"
+    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-host,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+    needs: [plan]
+    uses: ./.github/workflows/ci-unit-rust.yml
+    with:
+      unit: rust-jackin-host
+      lane: github
+      selected_units: ${{ needs.plan.outputs.units }}
+      scope: ${{ needs.plan.outputs.scope }}
+      full_units: ${{ needs.plan.outputs.full_units }}
+      base_sha: ${{ needs.plan.outputs.base_sha }}
+      head_sha: ${{ needs.plan.outputs.head_sha }}
+      mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
+      mbx_compat: "1938d1cd69a1"
+      mbx_dependency_files: |
+        .cargo/**
+        Cargo.lock
+        rust-toolchain
+        rust-toolchain.toml
+      mbx_freshness_files: |
+        crates/jackin-build-meta/**/*.rs
+        crates/jackin-build-meta/benches/**
+        crates/jackin-build-meta/examples/**
+        crates/jackin-build-meta/src/**
+        crates/jackin-build-meta/tests/**
+        crates/jackin-config/**/*.rs
+        crates/jackin-config/benches/**
+        crates/jackin-config/examples/**
+        crates/jackin-config/src/**
+        crates/jackin-config/tests/**
+        crates/jackin-core/**/*.rs
+        crates/jackin-core/benches/**
+        crates/jackin-core/examples/**
+        crates/jackin-core/src/**
+        crates/jackin-core/tests/**
+        crates/jackin-diagnostics/**/*.rs
+        crates/jackin-diagnostics/benches/**
+        crates/jackin-diagnostics/build.rs
+        crates/jackin-diagnostics/examples/**
+        crates/jackin-diagnostics/src/**
+        crates/jackin-diagnostics/tests/**
+        crates/jackin-docker/**/*.rs
+        crates/jackin-docker/benches/**
+        crates/jackin-docker/build.rs
+        crates/jackin-docker/examples/**
+        crates/jackin-docker/src/**
+        crates/jackin-docker/tests/**
+        crates/jackin-host/**/*.rs
+        crates/jackin-host/benches/**
+        crates/jackin-host/examples/**
+        crates/jackin-host/src/**
+        crates/jackin-host/tests/**
+        crates/jackin-manifest/**/*.rs
+        crates/jackin-manifest/benches/**
+        crates/jackin-manifest/examples/**
+        crates/jackin-manifest/src/**
+        crates/jackin-manifest/tests/**
+        crates/jackin-otlp-testbed/**/*.rs
+        crates/jackin-otlp-testbed/benches/**
+        crates/jackin-otlp-testbed/examples/**
+        crates/jackin-otlp-testbed/src/**
+        crates/jackin-otlp-testbed/tests/**
+        crates/jackin-process/**/*.rs
+        crates/jackin-process/benches/**
+        crates/jackin-process/examples/**
+        crates/jackin-process/src/**
+        crates/jackin-process/tests/**
+        crates/jackin-protocol/**/*.rs
+        crates/jackin-protocol/benches/**
+        crates/jackin-protocol/examples/**
+        crates/jackin-protocol/src/**
+        crates/jackin-protocol/tests/**
+        crates/jackin-telemetry/**/*.rs
+        crates/jackin-telemetry/benches/**
+        crates/jackin-telemetry/examples/**
+        crates/jackin-telemetry/src/**
+        crates/jackin-telemetry/tests/**
+        crates/jackin-test-support/**/*.rs
+        crates/jackin-test-support/benches/**
+        crates/jackin-test-support/examples/**
+        crates/jackin-test-support/src/**
+        crates/jackin-test-support/tests/**
+        crates/jackin-usage/tests/fixtures/contracts/usage-projection-v1-current.json
+        mise.lock
+      cache_paths: |
+        ~/.cargo/registry
+        ~/.cargo/git
+      cache_key_files: |
+        .cargo/**
+        Cargo.lock
+        rust-toolchain.toml
+        rust-toolchain
+      cargo_root: "crates/jackin-host"
+      cargo_net_offline: true
+      unit_dependencies: "rust-jackin-core,rust-jackin-diagnostics,rust-jackin-docker,rust-jackin-process,rust-jackin-protocol,rust-jackin-telemetry,rust-jackin-test-support"
+      unit_admission: github
+  github-rust-jackin-image:
+    name: "Rust · jackin-image"
+    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-image,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+    needs: [plan]
+    uses: ./.github/workflows/ci-unit-rust.yml
+    with:
+      unit: rust-jackin-image
+      lane: github
+      selected_units: ${{ needs.plan.outputs.units }}
+      scope: ${{ needs.plan.outputs.scope }}
+      full_units: ${{ needs.plan.outputs.full_units }}
+      base_sha: ${{ needs.plan.outputs.base_sha }}
+      head_sha: ${{ needs.plan.outputs.head_sha }}
+      mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
+      mbx_compat: "9439349c76c6"
+      mbx_dependency_files: |
+        .cargo/**
+        Cargo.lock
+        rust-toolchain
+        rust-toolchain.toml
+      mbx_freshness_files: |
+        crates/jackin-build-meta/**/*.rs
+        crates/jackin-build-meta/benches/**
+        crates/jackin-build-meta/examples/**
+        crates/jackin-build-meta/src/**
+        crates/jackin-build-meta/tests/**
+        crates/jackin-config/**/*.rs
+        crates/jackin-config/benches/**
+        crates/jackin-config/examples/**
+        crates/jackin-config/src/**
+        crates/jackin-config/tests/**
+        crates/jackin-core/**/*.rs
+        crates/jackin-core/benches/**
+        crates/jackin-core/examples/**
+        crates/jackin-core/src/**
+        crates/jackin-core/tests/**
+        crates/jackin-diagnostics/**/*.rs
+        crates/jackin-diagnostics/benches/**
+        crates/jackin-diagnostics/build.rs
+        crates/jackin-diagnostics/examples/**
+        crates/jackin-diagnostics/src/**
+        crates/jackin-diagnostics/tests/**
+        crates/jackin-docker/**/*.rs
+        crates/jackin-docker/benches/**
+        crates/jackin-docker/build.rs
+        crates/jackin-docker/examples/**
+        crates/jackin-docker/src/**
+        crates/jackin-docker/tests/**
+        crates/jackin-image/**/*.rs
+        crates/jackin-image/benches/**
+        crates/jackin-image/build.rs
+        crates/jackin-image/examples/**
+        crates/jackin-image/src/**
+        crates/jackin-image/tests/**
+        crates/jackin-manifest/**/*.rs
+        crates/jackin-manifest/benches/**
+        crates/jackin-manifest/examples/**
+        crates/jackin-manifest/src/**
+        crates/jackin-manifest/tests/**
+        crates/jackin-otlp-testbed/**/*.rs
+        crates/jackin-otlp-testbed/benches/**
+        crates/jackin-otlp-testbed/examples/**
+        crates/jackin-otlp-testbed/src/**
+        crates/jackin-otlp-testbed/tests/**
+        crates/jackin-process/**/*.rs
+        crates/jackin-process/benches/**
+        crates/jackin-process/examples/**
+        crates/jackin-process/src/**
+        crates/jackin-process/tests/**
+        crates/jackin-telemetry/**/*.rs
+        crates/jackin-telemetry/benches/**
+        crates/jackin-telemetry/examples/**
+        crates/jackin-telemetry/src/**
+        crates/jackin-telemetry/tests/**
+        docker/runtime/agent-status/hooks/claude/report-hook.sh
+        docker/runtime/agent-status/hooks/codex/report-hook.sh
+        docker/runtime/agent-status/hooks/opencode/plugin.js
+        docker/runtime/agent-status/hooks/opencode/report-hook.sh
+        docker/runtime/entrypoint.sh
+        mise.lock
+      cache_paths: |
+        ~/.cargo/registry
+        ~/.cargo/git
+      cache_key_files: |
+        .cargo/**
+        Cargo.lock
+        rust-toolchain.toml
+        rust-toolchain
+      cargo_root: "crates/jackin-image"
+      cargo_net_offline: true
+      unit_dependencies: "rust-jackin-build-meta,rust-jackin-core,rust-jackin-diagnostics,rust-jackin-docker,rust-jackin-manifest,rust-jackin-otlp-testbed,rust-jackin-process,rust-jackin-telemetry"
+      unit_admission: github
+  github-rust-jackin-instance:
+    name: "Rust · jackin-instance"
+    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-instance,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+    needs: [plan]
+    uses: ./.github/workflows/ci-unit-rust.yml
+    with:
+      unit: rust-jackin-instance
+      lane: github
+      selected_units: ${{ needs.plan.outputs.units }}
+      scope: ${{ needs.plan.outputs.scope }}
+      full_units: ${{ needs.plan.outputs.full_units }}
+      base_sha: ${{ needs.plan.outputs.base_sha }}
+      head_sha: ${{ needs.plan.outputs.head_sha }}
+      mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
+      mbx_compat: "152306f5b0f3"
+      mbx_dependency_files: |
+        .cargo/**
+        Cargo.lock
+        rust-toolchain
+        rust-toolchain.toml
+      mbx_freshness_files: |
+        crates/jackin-config/**/*.rs
+        crates/jackin-config/benches/**
+        crates/jackin-config/examples/**
+        crates/jackin-config/src/**
+        crates/jackin-config/tests/**
+        crates/jackin-core/**/*.rs
+        crates/jackin-core/benches/**
+        crates/jackin-core/examples/**
+        crates/jackin-core/src/**
+        crates/jackin-core/tests/**
+        crates/jackin-diagnostics/**/*.rs
+        crates/jackin-diagnostics/benches/**
+        crates/jackin-diagnostics/build.rs
+        crates/jackin-diagnostics/examples/**
+        crates/jackin-diagnostics/src/**
+        crates/jackin-diagnostics/tests/**
+        crates/jackin-instance/**/*.rs
+        crates/jackin-instance/benches/**
+        crates/jackin-instance/examples/**
+        crates/jackin-instance/src/**
+        crates/jackin-instance/tests/**
+        crates/jackin-manifest/**/*.rs
+        crates/jackin-manifest/benches/**
+        crates/jackin-manifest/examples/**
+        crates/jackin-manifest/src/**
+        crates/jackin-manifest/tests/**
+        crates/jackin-otlp-testbed/**/*.rs
+        crates/jackin-otlp-testbed/benches/**
+        crates/jackin-otlp-testbed/examples/**
+        crates/jackin-otlp-testbed/src/**
+        crates/jackin-otlp-testbed/tests/**
+        crates/jackin-process/**/*.rs
+        crates/jackin-process/benches/**
+        crates/jackin-process/examples/**
+        crates/jackin-process/src/**
+        crates/jackin-process/tests/**
+        crates/jackin-telemetry/**/*.rs
+        crates/jackin-telemetry/benches/**
+        crates/jackin-telemetry/examples/**
+        crates/jackin-telemetry/src/**
+        crates/jackin-telemetry/tests/**
+        mise.lock
+      cache_paths: |
+        ~/.cargo/registry
+        ~/.cargo/git
+      cache_key_files: |
+        .cargo/**
+        Cargo.lock
+        rust-toolchain.toml
+        rust-toolchain
+      cargo_root: "crates/jackin-instance"
+      cargo_net_offline: true
+      unit_dependencies: "rust-jackin-config,rust-jackin-core,rust-jackin-diagnostics,rust-jackin-manifest,rust-jackin-process,rust-jackin-telemetry"
+      unit_admission: github
+  github-rust-jackin-isolation:
+    name: "Rust · jackin-isolation"
+    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-isolation,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+    needs: [plan]
+    uses: ./.github/workflows/ci-unit-rust.yml
+    with:
+      unit: rust-jackin-isolation
+      lane: github
+      selected_units: ${{ needs.plan.outputs.units }}
+      scope: ${{ needs.plan.outputs.scope }}
+      full_units: ${{ needs.plan.outputs.full_units }}
+      base_sha: ${{ needs.plan.outputs.base_sha }}
+      head_sha: ${{ needs.plan.outputs.head_sha }}
+      mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
+      mbx_compat: "7822736c19fa"
+      mbx_dependency_files: |
+        .cargo/**
+        Cargo.lock
+        rust-toolchain
+        rust-toolchain.toml
+      mbx_freshness_files: |
+        crates/jackin-build-meta/**/*.rs
+        crates/jackin-build-meta/benches/**
+        crates/jackin-build-meta/examples/**
+        crates/jackin-build-meta/src/**
+        crates/jackin-build-meta/tests/**
+        crates/jackin-config/**/*.rs
+        crates/jackin-config/benches/**
+        crates/jackin-config/examples/**
+        crates/jackin-config/src/**
+        crates/jackin-config/tests/**
+        crates/jackin-core/**/*.rs
+        crates/jackin-core/benches/**
+        crates/jackin-core/examples/**
+        crates/jackin-core/src/**
+        crates/jackin-core/tests/**
+        crates/jackin-diagnostics/**/*.rs
+        crates/jackin-diagnostics/benches/**
+        crates/jackin-diagnostics/build.rs
+        crates/jackin-diagnostics/examples/**
+        crates/jackin-diagnostics/src/**
+        crates/jackin-diagnostics/tests/**
+        crates/jackin-docker/**/*.rs
+        crates/jackin-docker/benches/**
+        crates/jackin-docker/build.rs
+        crates/jackin-docker/examples/**
+        crates/jackin-docker/src/**
+        crates/jackin-docker/tests/**
+        crates/jackin-isolation/**/*.rs
+        crates/jackin-isolation/benches/**
+        crates/jackin-isolation/examples/**
+        crates/jackin-isolation/src/**
+        crates/jackin-isolation/tests/**
+        crates/jackin-manifest/**/*.rs
+        crates/jackin-manifest/benches/**
+        crates/jackin-manifest/examples/**
+        crates/jackin-manifest/src/**
+        crates/jackin-manifest/tests/**
+        crates/jackin-otlp-testbed/**/*.rs
+        crates/jackin-otlp-testbed/benches/**
+        crates/jackin-otlp-testbed/examples/**
+        crates/jackin-otlp-testbed/src/**
+        crates/jackin-otlp-testbed/tests/**
+        crates/jackin-process/**/*.rs
+        crates/jackin-process/benches/**
+        crates/jackin-process/examples/**
+        crates/jackin-process/src/**
+        crates/jackin-process/tests/**
+        crates/jackin-protocol/**/*.rs
+        crates/jackin-protocol/benches/**
+        crates/jackin-protocol/examples/**
+        crates/jackin-protocol/src/**
+        crates/jackin-protocol/tests/**
+        crates/jackin-telemetry/**/*.rs
+        crates/jackin-telemetry/benches/**
+        crates/jackin-telemetry/examples/**
+        crates/jackin-telemetry/src/**
+        crates/jackin-telemetry/tests/**
+        crates/jackin-test-support/**/*.rs
+        crates/jackin-test-support/benches/**
+        crates/jackin-test-support/examples/**
+        crates/jackin-test-support/src/**
+        crates/jackin-test-support/tests/**
+        crates/jackin-usage/tests/fixtures/contracts/usage-projection-v1-current.json
+        mise.lock
+      cache_paths: |
+        ~/.cargo/registry
+        ~/.cargo/git
+      cache_key_files: |
+        .cargo/**
+        Cargo.lock
+        rust-toolchain.toml
+        rust-toolchain
+      cargo_root: "crates/jackin-isolation"
+      cargo_net_offline: true
+      unit_dependencies: "rust-jackin-config,rust-jackin-core,rust-jackin-diagnostics,rust-jackin-docker,rust-jackin-process,rust-jackin-protocol,rust-jackin-telemetry,rust-jackin-test-support"
+      unit_admission: github
+  github-rust-jackin-launch:
+    name: "Rust · jackin-launch"
+    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-launch,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+    needs: [plan]
+    uses: ./.github/workflows/ci-unit-rust.yml
+    with:
+      unit: rust-jackin-launch
+      lane: github
+      selected_units: ${{ needs.plan.outputs.units }}
+      scope: ${{ needs.plan.outputs.scope }}
+      full_units: ${{ needs.plan.outputs.full_units }}
+      base_sha: ${{ needs.plan.outputs.base_sha }}
+      head_sha: ${{ needs.plan.outputs.head_sha }}
+      mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
+      mbx_compat: fc9dafc6230a
+      mbx_dependency_files: |
+        .cargo/**
+        Cargo.lock
+        rust-toolchain
+        rust-toolchain.toml
+      mbx_freshness_files: |
+        crates/jackin-brand/**/*.rs
+        crates/jackin-brand/benches/**
+        crates/jackin-brand/examples/**
+        crates/jackin-brand/src/**
+        crates/jackin-brand/tests/**
+        crates/jackin-build-meta/**/*.rs
+        crates/jackin-build-meta/benches/**
+        crates/jackin-build-meta/examples/**
+        crates/jackin-build-meta/src/**
+        crates/jackin-build-meta/tests/**
+        crates/jackin-core/**/*.rs
+        crates/jackin-core/benches/**
+        crates/jackin-core/examples/**
+        crates/jackin-core/src/**
+        crates/jackin-core/tests/**
+        crates/jackin-diagnostics/**/*.rs
+        crates/jackin-diagnostics/benches/**
+        crates/jackin-diagnostics/build.rs
+        crates/jackin-diagnostics/examples/**
+        crates/jackin-diagnostics/src/**
+        crates/jackin-diagnostics/tests/**
+        crates/jackin-launch/**/*.rs
+        crates/jackin-launch/benches/**
+        crates/jackin-launch/build.rs
+        crates/jackin-launch/examples/**
+        crates/jackin-launch/src/**
+        crates/jackin-launch/tests/**
+        crates/jackin-otlp-testbed/**/*.rs
+        crates/jackin-otlp-testbed/benches/**
+        crates/jackin-otlp-testbed/examples/**
+        crates/jackin-otlp-testbed/src/**
+        crates/jackin-otlp-testbed/tests/**
+        crates/jackin-process/**/*.rs
+        crates/jackin-process/benches/**
+        crates/jackin-process/examples/**
+        crates/jackin-process/src/**
+        crates/jackin-process/tests/**
+        crates/jackin-telemetry/**/*.rs
+        crates/jackin-telemetry/benches/**
+        crates/jackin-telemetry/examples/**
+        crates/jackin-telemetry/src/**
+        crates/jackin-telemetry/tests/**
+        crates/jackin-tui/**/*.rs
+        crates/jackin-tui/benches/**
+        crates/jackin-tui/examples/**
+        crates/jackin-tui/src/**
+        crates/jackin-tui/tests/**
+        mise.lock
+      cache_paths: |
+        ~/.cargo/registry
+        ~/.cargo/git
+      cache_key_files: |
+        .cargo/**
+        Cargo.lock
+        rust-toolchain.toml
+        rust-toolchain
+      cargo_root: "crates/jackin-launch"
+      cargo_net_offline: true
+      unit_dependencies: "rust-jackin-brand,rust-jackin-build-meta,rust-jackin-core,rust-jackin-diagnostics,rust-jackin-telemetry,rust-jackin-tui"
+      unit_admission: github
+  github-rust-jackin-manifest:
+    name: "Rust · jackin-manifest"
+    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-manifest,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+    needs: [plan]
+    uses: ./.github/workflows/ci-unit-rust.yml
+    with:
+      unit: rust-jackin-manifest
+      lane: github
+      selected_units: ${{ needs.plan.outputs.units }}
+      scope: ${{ needs.plan.outputs.scope }}
+      full_units: ${{ needs.plan.outputs.full_units }}
+      base_sha: ${{ needs.plan.outputs.base_sha }}
+      head_sha: ${{ needs.plan.outputs.head_sha }}
+      mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
+      mbx_compat: "61626c088a43"
+      mbx_dependency_files: |
+        .cargo/**
+        Cargo.lock
+        rust-toolchain
+        rust-toolchain.toml
+      mbx_freshness_files: |
+        crates/jackin-config/**/*.rs
+        crates/jackin-config/benches/**
+        crates/jackin-config/examples/**
+        crates/jackin-config/src/**
+        crates/jackin-config/tests/**
+        crates/jackin-core/**/*.rs
+        crates/jackin-core/benches/**
+        crates/jackin-core/examples/**
+        crates/jackin-core/src/**
+        crates/jackin-core/tests/**
+        crates/jackin-diagnostics/**/*.rs
+        crates/jackin-diagnostics/benches/**
+        crates/jackin-diagnostics/build.rs
+        crates/jackin-diagnostics/examples/**
+        crates/jackin-diagnostics/src/**
+        crates/jackin-diagnostics/tests/**
+        crates/jackin-manifest/**/*.rs
+        crates/jackin-manifest/benches/**
+        crates/jackin-manifest/examples/**
+        crates/jackin-manifest/src/**
+        crates/jackin-manifest/tests/**
+        crates/jackin-otlp-testbed/**/*.rs
+        crates/jackin-otlp-testbed/benches/**
+        crates/jackin-otlp-testbed/examples/**
+        crates/jackin-otlp-testbed/src/**
+        crates/jackin-otlp-testbed/tests/**
+        crates/jackin-telemetry/**/*.rs
+        crates/jackin-telemetry/benches/**
+        crates/jackin-telemetry/examples/**
+        crates/jackin-telemetry/src/**
+        crates/jackin-telemetry/tests/**
+        mise.lock
+      cache_paths: |
+        ~/.cargo/registry
+        ~/.cargo/git
+      cache_key_files: |
+        .cargo/**
+        Cargo.lock
+        rust-toolchain.toml
+        rust-toolchain
+      cargo_root: "crates/jackin-manifest"
+      cargo_net_offline: true
+      unit_dependencies: "rust-jackin-config,rust-jackin-core"
+      unit_admission: github
+  github-rust-jackin-manifest-fuzz:
+    name: "Rust · jackin-manifest-fuzz"
+    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-manifest-fuzz,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+    needs: [plan]
+    uses: ./.github/workflows/ci-unit-rust.yml
+    with:
+      unit: rust-jackin-manifest-fuzz
+      lane: github
+      selected_units: ${{ needs.plan.outputs.units }}
+      scope: ${{ needs.plan.outputs.scope }}
+      full_units: ${{ needs.plan.outputs.full_units }}
+      base_sha: ${{ needs.plan.outputs.base_sha }}
+      head_sha: ${{ needs.plan.outputs.head_sha }}
+      mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
+      mbx_compat: "7b74fa1f7422"
+      mbx_dependency_files: |
+        .cargo/**
+        Cargo.lock
+        crates/jackin-manifest/fuzz/Cargo.lock
+        rust-toolchain
+        rust-toolchain.toml
+      mbx_freshness_files: |
+        crates/jackin-config/**/*.rs
+        crates/jackin-config/benches/**
+        crates/jackin-config/examples/**
+        crates/jackin-config/src/**
+        crates/jackin-config/tests/**
+        crates/jackin-core/**/*.rs
+        crates/jackin-core/benches/**
+        crates/jackin-core/examples/**
+        crates/jackin-core/src/**
+        crates/jackin-core/tests/**
+        crates/jackin-diagnostics/**/*.rs
+        crates/jackin-diagnostics/benches/**
+        crates/jackin-diagnostics/build.rs
+        crates/jackin-diagnostics/examples/**
+        crates/jackin-diagnostics/src/**
+        crates/jackin-diagnostics/tests/**
+        crates/jackin-manifest/**/*.rs
+        crates/jackin-manifest/benches/**
+        crates/jackin-manifest/examples/**
+        crates/jackin-manifest/fuzz/**/*.rs
+        crates/jackin-manifest/fuzz/Cargo.lock
+        crates/jackin-manifest/fuzz/benches/**
+        crates/jackin-manifest/fuzz/examples/**
+        crates/jackin-manifest/fuzz/src/**
+        crates/jackin-manifest/fuzz/tests/**
+        crates/jackin-manifest/src/**
+        crates/jackin-manifest/tests/**
+        crates/jackin-otlp-testbed/**/*.rs
+        crates/jackin-otlp-testbed/benches/**
+        crates/jackin-otlp-testbed/examples/**
+        crates/jackin-otlp-testbed/src/**
+        crates/jackin-otlp-testbed/tests/**
+        crates/jackin-telemetry/**/*.rs
+        crates/jackin-telemetry/benches/**
+        crates/jackin-telemetry/examples/**
+        crates/jackin-telemetry/src/**
+        crates/jackin-telemetry/tests/**
+        mise.lock
+      cache_paths: |
+        ~/.cargo/registry
+        ~/.cargo/git
+      cache_key_files: |
+        .cargo/**
+        crates/jackin-manifest/fuzz/Cargo.lock
+        rust-toolchain.toml
+        rust-toolchain
+      cargo_root: "crates/jackin-manifest/fuzz"
+      cargo_net_offline: true
+      unit_dependencies: rust-jackin-manifest
+      unit_admission: github
+  github-rust-jackin-oppicker:
+    name: "Rust · jackin-oppicker"
+    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-oppicker,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+    needs: [plan]
+    uses: ./.github/workflows/ci-unit-rust.yml
+    with:
+      unit: rust-jackin-oppicker
+      lane: github
+      selected_units: ${{ needs.plan.outputs.units }}
+      scope: ${{ needs.plan.outputs.scope }}
+      full_units: ${{ needs.plan.outputs.full_units }}
+      base_sha: ${{ needs.plan.outputs.base_sha }}
+      head_sha: ${{ needs.plan.outputs.head_sha }}
+      mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
+      mbx_compat: ce5cb537e557
+      mbx_dependency_files: |
+        .cargo/**
+        Cargo.lock
+        rust-toolchain
+        rust-toolchain.toml
+      mbx_freshness_files: |
+        crates/jackin-core/**/*.rs
+        crates/jackin-core/benches/**
+        crates/jackin-core/examples/**
+        crates/jackin-core/src/**
+        crates/jackin-core/tests/**
+        crates/jackin-oppicker/**/*.rs
+        crates/jackin-oppicker/benches/**
+        crates/jackin-oppicker/examples/**
+        crates/jackin-oppicker/src/**
+        crates/jackin-oppicker/tests/**
+        crates/jackin-telemetry/**/*.rs
+        crates/jackin-telemetry/benches/**
+        crates/jackin-telemetry/examples/**
+        crates/jackin-telemetry/src/**
+        crates/jackin-telemetry/tests/**
+        mise.lock
+      cache_paths: |
+        ~/.cargo/registry
+        ~/.cargo/git
+      cache_key_files: |
+        .cargo/**
+        Cargo.lock
+        rust-toolchain.toml
+        rust-toolchain
+      cargo_root: "crates/jackin-oppicker"
+      cargo_net_offline: true
+      unit_dependencies: "rust-jackin-core,rust-jackin-telemetry"
+      unit_admission: github
+  github-rust-jackin-otlp-testbed:
+    name: "Rust · jackin-otlp-testbed"
+    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-otlp-testbed,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+    needs: [plan]
+    uses: ./.github/workflows/ci-unit-rust.yml
+    with:
+      unit: rust-jackin-otlp-testbed
+      lane: github
+      selected_units: ${{ needs.plan.outputs.units }}
+      scope: ${{ needs.plan.outputs.scope }}
+      full_units: ${{ needs.plan.outputs.full_units }}
+      base_sha: ${{ needs.plan.outputs.base_sha }}
+      head_sha: ${{ needs.plan.outputs.head_sha }}
+      mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
+      mbx_compat: "2de16054537a"
+      mbx_dependency_files: |
+        .cargo/**
+        Cargo.lock
+        rust-toolchain
+        rust-toolchain.toml
+      mbx_freshness_files: |
+        crates/jackin-otlp-testbed/**/*.rs
+        crates/jackin-otlp-testbed/benches/**
+        crates/jackin-otlp-testbed/examples/**
+        crates/jackin-otlp-testbed/src/**
+        crates/jackin-otlp-testbed/tests/**
+        crates/jackin-telemetry/**/*.rs
+        crates/jackin-telemetry/benches/**
+        crates/jackin-telemetry/examples/**
+        crates/jackin-telemetry/src/**
+        crates/jackin-telemetry/tests/**
+        mise.lock
+      cache_paths: |
+        ~/.cargo/registry
+        ~/.cargo/git
+      cache_key_files: |
+        .cargo/**
+        Cargo.lock
+        rust-toolchain.toml
+        rust-toolchain
+      cargo_root: "crates/jackin-otlp-testbed"
+      cargo_net_offline: true
+      unit_dependencies: rust-jackin-telemetry
+      unit_admission: github
+  github-rust-jackin-pr-trailers:
+    name: "Rust · jackin-pr-trailers"
+    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-pr-trailers,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+    needs: [plan]
+    uses: ./.github/workflows/ci-unit-rust.yml
+    with:
+      unit: rust-jackin-pr-trailers
+      lane: github
+      selected_units: ${{ needs.plan.outputs.units }}
+      scope: ${{ needs.plan.outputs.scope }}
+      full_units: ${{ needs.plan.outputs.full_units }}
+      base_sha: ${{ needs.plan.outputs.base_sha }}
+      head_sha: ${{ needs.plan.outputs.head_sha }}
+      mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
+      mbx_compat: "88c266e7aaf8"
+      mbx_dependency_files: |
+        .cargo/**
+        Cargo.lock
+        rust-toolchain
+        rust-toolchain.toml
+      mbx_freshness_files: |
+        crates/jackin-pr-trailers/**/*.rs
+        crates/jackin-pr-trailers/benches/**
+        crates/jackin-pr-trailers/examples/**
+        crates/jackin-pr-trailers/src/**
+        crates/jackin-pr-trailers/tests/**
+        crates/jackin-process/**/*.rs
+        crates/jackin-process/benches/**
+        crates/jackin-process/examples/**
+        crates/jackin-process/src/**
+        crates/jackin-process/tests/**
+        mise.lock
+      cache_paths: |
+        ~/.cargo/registry
+        ~/.cargo/git
+      cache_key_files: |
+        .cargo/**
+        Cargo.lock
+        rust-toolchain.toml
+        rust-toolchain
+      cargo_root: "crates/jackin-pr-trailers"
+      cargo_net_offline: true
+      unit_dependencies: rust-jackin-process
+      unit_admission: github
+  github-rust-jackin-process:
+    name: "Rust · jackin-process"
+    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-process,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+    needs: [plan]
+    uses: ./.github/workflows/ci-unit-rust.yml
+    with:
+      unit: rust-jackin-process
+      lane: github
+      selected_units: ${{ needs.plan.outputs.units }}
+      scope: ${{ needs.plan.outputs.scope }}
+      full_units: ${{ needs.plan.outputs.full_units }}
+      base_sha: ${{ needs.plan.outputs.base_sha }}
+      head_sha: ${{ needs.plan.outputs.head_sha }}
+      mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
+      mbx_compat: ec2e781e5306
+      mbx_dependency_files: |
+        .cargo/**
+        Cargo.lock
+        rust-toolchain
+        rust-toolchain.toml
+      mbx_freshness_files: |
+        crates/jackin-process/**/*.rs
+        crates/jackin-process/benches/**
+        crates/jackin-process/examples/**
+        crates/jackin-process/src/**
+        crates/jackin-process/tests/**
+        mise.lock
+      cache_paths: |
+        ~/.cargo/registry
+        ~/.cargo/git
+      cache_key_files: |
+        .cargo/**
+        Cargo.lock
+        rust-toolchain.toml
+        rust-toolchain
+      cargo_root: "crates/jackin-process"
+      cargo_net_offline: true
+      unit_admission: github
+  github-rust-jackin-protocol:
+    name: "Rust · jackin-protocol"
+    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-protocol,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+    needs: [plan]
+    uses: ./.github/workflows/ci-unit-rust.yml
+    with:
+      unit: rust-jackin-protocol
+      lane: github
+      selected_units: ${{ needs.plan.outputs.units }}
+      scope: ${{ needs.plan.outputs.scope }}
+      full_units: ${{ needs.plan.outputs.full_units }}
+      base_sha: ${{ needs.plan.outputs.base_sha }}
+      head_sha: ${{ needs.plan.outputs.head_sha }}
+      mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
+      mbx_compat: "5289191f6e9d"
+      mbx_dependency_files: |
+        .cargo/**
+        Cargo.lock
+        rust-toolchain
+        rust-toolchain.toml
+      mbx_freshness_files: |
+        crates/jackin-core/**/*.rs
+        crates/jackin-core/benches/**
+        crates/jackin-core/examples/**
+        crates/jackin-core/src/**
+        crates/jackin-core/tests/**
+        crates/jackin-protocol/**/*.rs
+        crates/jackin-protocol/benches/**
+        crates/jackin-protocol/examples/**
+        crates/jackin-protocol/src/**
+        crates/jackin-protocol/tests/**
+        crates/jackin-telemetry/**/*.rs
+        crates/jackin-telemetry/benches/**
+        crates/jackin-telemetry/examples/**
+        crates/jackin-telemetry/src/**
+        crates/jackin-telemetry/tests/**
+        crates/jackin-usage/tests/fixtures/contracts/usage-projection-v1-current.json
+        mise.lock
+      cache_paths: |
+        ~/.cargo/registry
+        ~/.cargo/git
+      cache_key_files: |
+        .cargo/**
+        Cargo.lock
+        rust-toolchain.toml
+        rust-toolchain
+      cargo_root: "crates/jackin-protocol"
+      cargo_net_offline: true
+      unit_dependencies: "rust-jackin-core,rust-jackin-telemetry"
+      unit_admission: github
+  github-rust-jackin-protocol-fuzz:
+    name: "Rust · jackin-protocol-fuzz"
+    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-protocol-fuzz,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+    needs: [plan]
+    uses: ./.github/workflows/ci-unit-rust.yml
+    with:
+      unit: rust-jackin-protocol-fuzz
+      lane: github
+      selected_units: ${{ needs.plan.outputs.units }}
+      scope: ${{ needs.plan.outputs.scope }}
+      full_units: ${{ needs.plan.outputs.full_units }}
+      base_sha: ${{ needs.plan.outputs.base_sha }}
+      head_sha: ${{ needs.plan.outputs.head_sha }}
+      mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
+      mbx_compat: "9e797d68ae6b"
+      mbx_dependency_files: |
+        .cargo/**
+        Cargo.lock
+        crates/jackin-protocol/fuzz/Cargo.lock
+        rust-toolchain
+        rust-toolchain.toml
+      mbx_freshness_files: |
+        crates/jackin-core/**/*.rs
+        crates/jackin-core/benches/**
+        crates/jackin-core/examples/**
+        crates/jackin-core/src/**
+        crates/jackin-core/tests/**
+        crates/jackin-protocol/**/*.rs
+        crates/jackin-protocol/benches/**
+        crates/jackin-protocol/examples/**
+        crates/jackin-protocol/fuzz/**/*.rs
+        crates/jackin-protocol/fuzz/Cargo.lock
+        crates/jackin-protocol/fuzz/benches/**
+        crates/jackin-protocol/fuzz/examples/**
+        crates/jackin-protocol/fuzz/src/**
+        crates/jackin-protocol/fuzz/tests/**
+        crates/jackin-protocol/src/**
+        crates/jackin-protocol/tests/**
+        crates/jackin-telemetry/**/*.rs
+        crates/jackin-telemetry/benches/**
+        crates/jackin-telemetry/examples/**
+        crates/jackin-telemetry/src/**
+        crates/jackin-telemetry/tests/**
+        crates/jackin-usage/tests/fixtures/contracts/usage-projection-v1-current.json
+        mise.lock
+      cache_paths: |
+        ~/.cargo/registry
+        ~/.cargo/git
+      cache_key_files: |
+        .cargo/**
+        crates/jackin-protocol/fuzz/Cargo.lock
+        rust-toolchain.toml
+        rust-toolchain
+      cargo_root: "crates/jackin-protocol/fuzz"
+      cargo_net_offline: true
+      unit_dependencies: rust-jackin-protocol
+      unit_admission: github
+  github-rust-jackin-runtime:
+    name: "Rust · jackin-runtime"
+    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-runtime,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+    needs: [plan]
+    uses: ./.github/workflows/ci-unit-rust.yml
+    with:
+      unit: rust-jackin-runtime
+      lane: github
+      selected_units: ${{ needs.plan.outputs.units }}
+      scope: ${{ needs.plan.outputs.scope }}
+      full_units: ${{ needs.plan.outputs.full_units }}
+      base_sha: ${{ needs.plan.outputs.base_sha }}
+      head_sha: ${{ needs.plan.outputs.head_sha }}
+      mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
+      mbx_compat: dcd7fa647741
+      mbx_dependency_files: |
+        .cargo/**
+        Cargo.lock
+        rust-toolchain
+        rust-toolchain.toml
+      mbx_freshness_files: |
+        crates/jackin-brand/**/*.rs
+        crates/jackin-brand/benches/**
+        crates/jackin-brand/examples/**
+        crates/jackin-brand/src/**
+        crates/jackin-brand/tests/**
+        crates/jackin-build-meta/**/*.rs
+        crates/jackin-build-meta/benches/**
+        crates/jackin-build-meta/examples/**
+        crates/jackin-build-meta/src/**
+        crates/jackin-build-meta/tests/**
+        crates/jackin-config/**/*.rs
+        crates/jackin-config/benches/**
+        crates/jackin-config/examples/**
+        crates/jackin-config/src/**
+        crates/jackin-config/tests/**
+        crates/jackin-core/**/*.rs
+        crates/jackin-core/benches/**
+        crates/jackin-core/examples/**
+        crates/jackin-core/src/**
+        crates/jackin-core/tests/**
+        crates/jackin-diagnostics/**/*.rs
+        crates/jackin-diagnostics/benches/**
+        crates/jackin-diagnostics/build.rs
+        crates/jackin-diagnostics/examples/**
+        crates/jackin-diagnostics/src/**
+        crates/jackin-diagnostics/tests/**
+        crates/jackin-docker/**/*.rs
+        crates/jackin-docker/benches/**
+        crates/jackin-docker/build.rs
+        crates/jackin-docker/examples/**
+        crates/jackin-docker/src/**
+        crates/jackin-docker/tests/**
+        crates/jackin-env/**/*.rs
+        crates/jackin-env/benches/**
+        crates/jackin-env/examples/**
+        crates/jackin-env/src/**
+        crates/jackin-env/tests/**
+        crates/jackin-host/**/*.rs
+        crates/jackin-host/benches/**
+        crates/jackin-host/examples/**
+        crates/jackin-host/src/**
+        crates/jackin-host/tests/**
+        crates/jackin-image/**/*.rs
+        crates/jackin-image/benches/**
+        crates/jackin-image/build.rs
+        crates/jackin-image/examples/**
+        crates/jackin-image/src/**
+        crates/jackin-image/tests/**
+        crates/jackin-instance/**/*.rs
+        crates/jackin-instance/benches/**
+        crates/jackin-instance/examples/**
+        crates/jackin-instance/src/**
+        crates/jackin-instance/tests/**
+        crates/jackin-isolation/**/*.rs
+        crates/jackin-isolation/benches/**
+        crates/jackin-isolation/examples/**
+        crates/jackin-isolation/src/**
+        crates/jackin-isolation/tests/**
+        crates/jackin-launch/**/*.rs
+        crates/jackin-launch/benches/**
+        crates/jackin-launch/build.rs
+        crates/jackin-launch/examples/**
+        crates/jackin-launch/src/**
+        crates/jackin-launch/tests/**
+        crates/jackin-manifest/**/*.rs
+        crates/jackin-manifest/benches/**
+        crates/jackin-manifest/examples/**
+        crates/jackin-manifest/src/**
+        crates/jackin-manifest/tests/**
+        crates/jackin-otlp-testbed/**/*.rs
+        crates/jackin-otlp-testbed/benches/**
+        crates/jackin-otlp-testbed/examples/**
+        crates/jackin-otlp-testbed/src/**
+        crates/jackin-otlp-testbed/tests/**
+        crates/jackin-process/**/*.rs
+        crates/jackin-process/benches/**
+        crates/jackin-process/examples/**
+        crates/jackin-process/src/**
+        crates/jackin-process/tests/**
+        crates/jackin-protocol/**/*.rs
+        crates/jackin-protocol/benches/**
+        crates/jackin-protocol/examples/**
+        crates/jackin-protocol/src/**
+        crates/jackin-protocol/tests/**
+        crates/jackin-runtime/**/*.rs
+        crates/jackin-runtime/benches/**
+        crates/jackin-runtime/build.rs
+        crates/jackin-runtime/examples/**
+        crates/jackin-runtime/src/**
+        crates/jackin-runtime/tests/**
+        crates/jackin-telemetry/**/*.rs
+        crates/jackin-telemetry/benches/**
+        crates/jackin-telemetry/examples/**
+        crates/jackin-telemetry/src/**
+        crates/jackin-telemetry/tests/**
+        crates/jackin-test-support/**/*.rs
+        crates/jackin-test-support/benches/**
+        crates/jackin-test-support/examples/**
+        crates/jackin-test-support/src/**
+        crates/jackin-test-support/tests/**
+        crates/jackin-tui/**/*.rs
+        crates/jackin-tui/benches/**
+        crates/jackin-tui/examples/**
+        crates/jackin-tui/src/**
+        crates/jackin-tui/tests/**
+        crates/jackin-usage/**/*.rs
+        crates/jackin-usage/benches/**
+        crates/jackin-usage/examples/**
+        crates/jackin-usage/src/**
+        crates/jackin-usage/tests/**
+        crates/jackin-usage/tests/fixtures/contracts/usage-projection-v1-current.json
+        docker/runtime/agent-status/hooks/claude/report-hook.sh
+        docker/runtime/agent-status/hooks/codex/report-hook.sh
+        docker/runtime/agent-status/hooks/opencode/plugin.js
+        docker/runtime/agent-status/hooks/opencode/report-hook.sh
+        docker/runtime/entrypoint.sh
+        mise.lock
+      cache_paths: |
+        ~/.cargo/registry
+        ~/.cargo/git
+      cache_key_files: |
+        .cargo/**
+        Cargo.lock
+        rust-toolchain.toml
+        rust-toolchain
+      cargo_root: "crates/jackin-runtime"
+      cargo_net_offline: true
+      unit_dependencies: "rust-jackin-brand,rust-jackin-build-meta,rust-jackin-config,rust-jackin-core,rust-jackin-diagnostics,rust-jackin-docker,rust-jackin-env,rust-jackin-host,rust-jackin-image,rust-jackin-instance,rust-jackin-isolation,rust-jackin-launch,rust-jackin-manifest,rust-jackin-otlp-testbed,rust-jackin-process,rust-jackin-protocol,rust-jackin-telemetry,rust-jackin-test-support,rust-jackin-usage"
+      unit_admission: github
+  github-rust-jackin-telemetry:
+    name: "Rust · jackin-telemetry"
+    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-telemetry,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+    needs: [plan]
+    uses: ./.github/workflows/ci-unit-rust.yml
+    with:
+      unit: rust-jackin-telemetry
+      lane: github
+      selected_units: ${{ needs.plan.outputs.units }}
+      scope: ${{ needs.plan.outputs.scope }}
+      full_units: ${{ needs.plan.outputs.full_units }}
+      base_sha: ${{ needs.plan.outputs.base_sha }}
+      head_sha: ${{ needs.plan.outputs.head_sha }}
+      mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
+      mbx_compat: ff244ba9592a
+      mbx_dependency_files: |
+        .cargo/**
+        Cargo.lock
+        rust-toolchain
+        rust-toolchain.toml
+      mbx_freshness_files: |
+        crates/jackin-telemetry/**/*.rs
+        crates/jackin-telemetry/benches/**
+        crates/jackin-telemetry/examples/**
+        crates/jackin-telemetry/src/**
+        crates/jackin-telemetry/tests/**
+        mise.lock
+      cache_paths: |
+        ~/.cargo/registry
+        ~/.cargo/git
+      cache_key_files: |
+        .cargo/**
+        Cargo.lock
+        rust-toolchain.toml
+        rust-toolchain
+      cargo_root: "crates/jackin-telemetry"
+      cargo_net_offline: true
+      unit_admission: github
+  github-rust-jackin-test-support:
+    name: "Rust · jackin-test-support"
+    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-test-support,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+    needs: [plan]
+    uses: ./.github/workflows/ci-unit-rust.yml
+    with:
+      unit: rust-jackin-test-support
+      lane: github
+      selected_units: ${{ needs.plan.outputs.units }}
+      scope: ${{ needs.plan.outputs.scope }}
+      full_units: ${{ needs.plan.outputs.full_units }}
+      base_sha: ${{ needs.plan.outputs.base_sha }}
+      head_sha: ${{ needs.plan.outputs.head_sha }}
+      mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
+      mbx_compat: d89a72a37283
+      mbx_dependency_files: |
+        .cargo/**
+        Cargo.lock
+        rust-toolchain
+        rust-toolchain.toml
+      mbx_freshness_files: |
+        crates/jackin-config/**/*.rs
+        crates/jackin-config/benches/**
+        crates/jackin-config/examples/**
+        crates/jackin-config/src/**
+        crates/jackin-config/tests/**
+        crates/jackin-core/**/*.rs
+        crates/jackin-core/benches/**
+        crates/jackin-core/examples/**
+        crates/jackin-core/src/**
+        crates/jackin-core/tests/**
+        crates/jackin-diagnostics/**/*.rs
+        crates/jackin-diagnostics/benches/**
+        crates/jackin-diagnostics/build.rs
+        crates/jackin-diagnostics/examples/**
+        crates/jackin-diagnostics/src/**
+        crates/jackin-diagnostics/tests/**
+        crates/jackin-manifest/**/*.rs
+        crates/jackin-manifest/benches/**
+        crates/jackin-manifest/examples/**
+        crates/jackin-manifest/src/**
+        crates/jackin-manifest/tests/**
+        crates/jackin-otlp-testbed/**/*.rs
+        crates/jackin-otlp-testbed/benches/**
+        crates/jackin-otlp-testbed/examples/**
+        crates/jackin-otlp-testbed/src/**
+        crates/jackin-otlp-testbed/tests/**
+        crates/jackin-telemetry/**/*.rs
+        crates/jackin-telemetry/benches/**
+        crates/jackin-telemetry/examples/**
+        crates/jackin-telemetry/src/**
+        crates/jackin-telemetry/tests/**
+        crates/jackin-test-support/**/*.rs
+        crates/jackin-test-support/benches/**
+        crates/jackin-test-support/examples/**
+        crates/jackin-test-support/src/**
+        crates/jackin-test-support/tests/**
+        mise.lock
+      cache_paths: |
+        ~/.cargo/registry
+        ~/.cargo/git
+      cache_key_files: |
+        .cargo/**
+        Cargo.lock
+        rust-toolchain.toml
+        rust-toolchain
+      cargo_root: "crates/jackin-test-support"
+      cargo_net_offline: true
+      unit_dependencies: "rust-jackin-core,rust-jackin-manifest"
+      unit_admission: github
+  github-rust-jackin-tui:
+    name: "Rust · jackin-tui"
+    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-tui,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+    needs: [plan]
+    uses: ./.github/workflows/ci-unit-rust.yml
+    with:
+      unit: rust-jackin-tui
+      lane: github
+      selected_units: ${{ needs.plan.outputs.units }}
+      scope: ${{ needs.plan.outputs.scope }}
+      full_units: ${{ needs.plan.outputs.full_units }}
+      base_sha: ${{ needs.plan.outputs.base_sha }}
+      head_sha: ${{ needs.plan.outputs.head_sha }}
+      mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
+      mbx_compat: a5a99d6e3015
+      mbx_dependency_files: |
+        .cargo/**
+        Cargo.lock
+        rust-toolchain
+        rust-toolchain.toml
+      mbx_freshness_files: |
+        crates/jackin-brand/**/*.rs
+        crates/jackin-brand/benches/**
+        crates/jackin-brand/examples/**
+        crates/jackin-brand/src/**
+        crates/jackin-brand/tests/**
+        crates/jackin-tui/**/*.rs
+        crates/jackin-tui/benches/**
+        crates/jackin-tui/examples/**
+        crates/jackin-tui/src/**
+        crates/jackin-tui/tests/**
+        mise.lock
+      cache_paths: |
+        ~/.cargo/registry
+        ~/.cargo/git
+      cache_key_files: |
+        .cargo/**
+        Cargo.lock
+        rust-toolchain.toml
+        rust-toolchain
+      cargo_root: "crates/jackin-tui"
+      cargo_net_offline: true
+      unit_dependencies: rust-jackin-brand
+      unit_admission: github
+  github-rust-jackin-usage:
+    name: "Rust · jackin-usage"
+    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-usage,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+    needs: [plan]
+    uses: ./.github/workflows/ci-unit-rust.yml
+    with:
+      unit: rust-jackin-usage
+      lane: github
+      selected_units: ${{ needs.plan.outputs.units }}
+      scope: ${{ needs.plan.outputs.scope }}
+      full_units: ${{ needs.plan.outputs.full_units }}
+      base_sha: ${{ needs.plan.outputs.base_sha }}
+      head_sha: ${{ needs.plan.outputs.head_sha }}
+      mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
+      mbx_compat: "6a295ff463e3"
+      mbx_dependency_files: |
+        .cargo/**
+        Cargo.lock
+        rust-toolchain
+        rust-toolchain.toml
+      mbx_freshness_files: |
+        crates/jackin-config/**/*.rs
+        crates/jackin-config/benches/**
+        crates/jackin-config/examples/**
+        crates/jackin-config/src/**
+        crates/jackin-config/tests/**
+        crates/jackin-core/**/*.rs
+        crates/jackin-core/benches/**
+        crates/jackin-core/examples/**
+        crates/jackin-core/src/**
+        crates/jackin-core/tests/**
+        crates/jackin-diagnostics/**/*.rs
+        crates/jackin-diagnostics/benches/**
+        crates/jackin-diagnostics/build.rs
+        crates/jackin-diagnostics/examples/**
+        crates/jackin-diagnostics/src/**
+        crates/jackin-diagnostics/tests/**
+        crates/jackin-otlp-testbed/**/*.rs
+        crates/jackin-otlp-testbed/benches/**
+        crates/jackin-otlp-testbed/examples/**
+        crates/jackin-otlp-testbed/src/**
+        crates/jackin-otlp-testbed/tests/**
+        crates/jackin-protocol/**/*.rs
+        crates/jackin-protocol/benches/**
+        crates/jackin-protocol/examples/**
+        crates/jackin-protocol/src/**
+        crates/jackin-protocol/tests/**
+        crates/jackin-telemetry/**/*.rs
+        crates/jackin-telemetry/benches/**
+        crates/jackin-telemetry/examples/**
+        crates/jackin-telemetry/src/**
+        crates/jackin-telemetry/tests/**
+        crates/jackin-usage/**/*.rs
+        crates/jackin-usage/benches/**
+        crates/jackin-usage/examples/**
+        crates/jackin-usage/src/**
+        crates/jackin-usage/tests/**
+        crates/jackin-usage/tests/fixtures/contracts/usage-projection-v1-current.json
+        mise.lock
+      cache_paths: |
+        ~/.cargo/registry
+        ~/.cargo/git
+      cache_key_files: |
+        .cargo/**
+        Cargo.lock
+        rust-toolchain.toml
+        rust-toolchain
+      cargo_root: "crates/jackin-usage"
+      cargo_net_offline: true
+      unit_dependencies: "rust-jackin-config,rust-jackin-core,rust-jackin-diagnostics,rust-jackin-otlp-testbed,rust-jackin-protocol,rust-jackin-telemetry"
+      unit_admission: github
+  github-rust-jackin-usage-ffi:
+    name: "Rust · jackin-usage-ffi"
+    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-usage-ffi,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+    needs: [plan]
+    uses: ./.github/workflows/ci-unit-rust.yml
+    with:
+      unit: rust-jackin-usage-ffi
+      lane: github
+      selected_units: ${{ needs.plan.outputs.units }}
+      scope: ${{ needs.plan.outputs.scope }}
+      full_units: ${{ needs.plan.outputs.full_units }}
+      base_sha: ${{ needs.plan.outputs.base_sha }}
+      head_sha: ${{ needs.plan.outputs.head_sha }}
+      mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
+      mbx_compat: da77e8553386
+      mbx_dependency_files: |
+        .cargo/**
+        Cargo.lock
+        rust-toolchain
+        rust-toolchain.toml
+      mbx_freshness_files: |
+        crates/jackin-config/**/*.rs
+        crates/jackin-config/benches/**
+        crates/jackin-config/examples/**
+        crates/jackin-config/src/**
+        crates/jackin-config/tests/**
+        crates/jackin-core/**/*.rs
+        crates/jackin-core/benches/**
+        crates/jackin-core/examples/**
+        crates/jackin-core/src/**
+        crates/jackin-core/tests/**
+        crates/jackin-diagnostics/**/*.rs
+        crates/jackin-diagnostics/benches/**
+        crates/jackin-diagnostics/build.rs
+        crates/jackin-diagnostics/examples/**
+        crates/jackin-diagnostics/src/**
+        crates/jackin-diagnostics/tests/**
+        crates/jackin-env/**/*.rs
+        crates/jackin-env/benches/**
+        crates/jackin-env/examples/**
+        crates/jackin-env/src/**
+        crates/jackin-env/tests/**
+        crates/jackin-otlp-testbed/**/*.rs
+        crates/jackin-otlp-testbed/benches/**
+        crates/jackin-otlp-testbed/examples/**
+        crates/jackin-otlp-testbed/src/**
+        crates/jackin-otlp-testbed/tests/**
+        crates/jackin-process/**/*.rs
+        crates/jackin-process/benches/**
+        crates/jackin-process/examples/**
+        crates/jackin-process/src/**
+        crates/jackin-process/tests/**
+        crates/jackin-protocol/**/*.rs
+        crates/jackin-protocol/benches/**
+        crates/jackin-protocol/examples/**
+        crates/jackin-protocol/src/**
+        crates/jackin-protocol/tests/**
+        crates/jackin-telemetry/**/*.rs
+        crates/jackin-telemetry/benches/**
+        crates/jackin-telemetry/examples/**
+        crates/jackin-telemetry/src/**
+        crates/jackin-telemetry/tests/**
+        crates/jackin-usage-ffi/**/*.rs
+        crates/jackin-usage-ffi/benches/**
+        crates/jackin-usage-ffi/examples/**
+        crates/jackin-usage-ffi/src/**
+        crates/jackin-usage-ffi/tests/**
+        crates/jackin-usage/**/*.rs
+        crates/jackin-usage/benches/**
+        crates/jackin-usage/examples/**
+        crates/jackin-usage/src/**
+        crates/jackin-usage/tests/**
+        crates/jackin-usage/tests/fixtures/contracts/usage-projection-v1-current.json
+        mise.lock
+      cache_paths: |
+        ~/.cargo/registry
+        ~/.cargo/git
+      cache_key_files: |
+        .cargo/**
+        Cargo.lock
+        rust-toolchain.toml
+        rust-toolchain
+      cargo_root: "crates/jackin-usage-ffi"
+      cargo_net_offline: true
+      unit_dependencies: "rust-jackin-config,rust-jackin-core,rust-jackin-env,rust-jackin-protocol,rust-jackin-telemetry,rust-jackin-usage"
+      unit_admission: github
+  github-rust-jackin-xtask:
+    name: "Rust · jackin-xtask"
+    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-xtask,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+    needs: [plan]
+    uses: ./.github/workflows/ci-unit-rust.yml
+    with:
+      unit: rust-jackin-xtask
+      lane: github
+      selected_units: ${{ needs.plan.outputs.units }}
+      scope: ${{ needs.plan.outputs.scope }}
+      full_units: ${{ needs.plan.outputs.full_units }}
+      base_sha: ${{ needs.plan.outputs.base_sha }}
+      head_sha: ${{ needs.plan.outputs.head_sha }}
+      mise_tools: "aqua:nextest-rs/nextest/cargo-nextest github:open-telemetry/weaver"
+      mbx_compat: b23749d5c34f
+      mbx_dependency_files: |
+        .cargo/**
+        Cargo.lock
+        rust-toolchain
+        rust-toolchain.toml
+      mbx_freshness_files: |
+        crates/jackin-process/**/*.rs
+        crates/jackin-process/benches/**
+        crates/jackin-process/examples/**
+        crates/jackin-process/src/**
+        crates/jackin-process/tests/**
+        crates/jackin-xtask/**/*.rs
+        crates/jackin-xtask/benches/**
+        crates/jackin-xtask/examples/**
+        crates/jackin-xtask/src/**
+        crates/jackin-xtask/tests/**
+        mise.lock
+      cache_paths: |
+        ~/.cargo/registry
+        ~/.cargo/git
+      cache_key_files: |
+        .cargo/**
+        Cargo.lock
+        rust-toolchain.toml
+        rust-toolchain
+      cargo_root: "crates/jackin-xtask"
+      cargo_net_offline: true
+      unit_dependencies: rust-jackin-process
+      unit_admission: github
+  github-rust-policy:
+    name: "Rust · Rust dependency policy"
+    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-policy,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+    needs: [plan]
+    uses: ./.github/workflows/ci-unit-rust.yml
+    with:
+      unit: rust-policy
+      lane: github
+      selected_units: ${{ needs.plan.outputs.units }}
+      scope: ${{ needs.plan.outputs.scope }}
+      full_units: ${{ needs.plan.outputs.full_units }}
+      base_sha: ${{ needs.plan.outputs.base_sha }}
+      head_sha: ${{ needs.plan.outputs.head_sha }}
+      mbx_compat: c6927d9c7ae8
+      mbx_dependency_files: |
+        .cargo/**
+        Cargo.lock
+        deny.toml
+      mbx_freshness_files: |
+        .cargo/audit.toml
+        .cargo/deny.toml
+        Cargo.lock
+        audit.toml
+        deny.toml
+      cargo_bin_tools: "cargo-deny,cargo-audit"
+      cache_paths: |
+        ~/.cargo/registry
+        ~/.cargo/git
+      cache_key_files: |
+        .cargo/**
+        Cargo.lock
+        rust-toolchain.toml
+        rust-toolchain
+      unit_admission: github
+  github-swift-package-native-design-prototypes-unifiedagentusage:
+    name: "Swift · Apple · Swift package (native/Design/Prototypes/UnifiedAgentUsage)"
+    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',swift-package-native-design-prototypes-unifiedagentusage,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-swift.yml
     with:
+      unit: swift-package-native-design-prototypes-unifiedagentusage
+      lane: github
       selected_units: ${{ needs.plan.outputs.units }}
       scope: ${{ needs.plan.outputs.scope }}
       full_units: ${{ needs.plan.outputs.full_units }}
       base_sha: ${{ needs.plan.outputs.base_sha }}
       head_sha: ${{ needs.plan.outputs.head_sha }}
+      cache_paths: "~/.swiftpm"
+      cache_key_files: |
+        native/Design/Prototypes/UnifiedAgentUsage/Package.swift
+        native/Design/Prototypes/UnifiedAgentUsage/Package.resolved
+        native/Design/Prototypes/UnifiedAgentUsage/.swiftpm/Package.resolved
+      apple_executor: true
+      unit_admission: github
+  github-swift-package-native:
+    name: "Swift · Apple · "
+    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',swift-package-native,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+    needs: [plan]
+    uses: ./.github/workflows/ci-unit-swift.yml
+    with:
+      unit: swift-package-native
+      lane: github
+      selected_units: ${{ needs.plan.outputs.units }}
+      scope: ${{ needs.plan.outputs.scope }}
+      full_units: ${{ needs.plan.outputs.full_units }}
+      base_sha: ${{ needs.plan.outputs.base_sha }}
+      head_sha: ${{ needs.plan.outputs.head_sha }}
+      mise_tools: "cargo-binstall rust cargo:sccache cargo:boltffi_cli"
+      apple_executor: true
+      unit_dependencies: rust-jackin-usage-ffi
+      unit_admission: github
   ci-required:
     name: ci-required
     if: ${{ always() }}
-    needs: [plan, group-bun, group-docker, group-rust, group-rust-2, group-swift]
+    needs: [plan, github-bun-jackin-docs, github-docker-docker-construct, github-rust-arrayref, github-rust-jackin, github-rust-jackin-agent-status, github-rust-jackin-brand, github-rust-jackin-build-meta, github-rust-jackin-capsule, github-rust-jackin-config, github-rust-jackin-config-fuzz, github-rust-jackin-console, github-rust-jackin-core, github-rust-jackin-dev, github-rust-jackin-diagnostics, github-rust-jackin-docker, github-rust-jackin-env, github-rust-jackin-env-fuzz, github-rust-jackin-host, github-rust-jackin-image, github-rust-jackin-instance, github-rust-jackin-isolation, github-rust-jackin-launch, github-rust-jackin-manifest, github-rust-jackin-manifest-fuzz, github-rust-jackin-oppicker, github-rust-jackin-otlp-testbed, github-rust-jackin-pr-trailers, github-rust-jackin-process, github-rust-jackin-protocol, github-rust-jackin-protocol-fuzz, github-rust-jackin-runtime, github-rust-jackin-telemetry, github-rust-jackin-test-support, github-rust-jackin-tui, github-rust-jackin-usage, github-rust-jackin-usage-ffi, github-rust-jackin-xtask, github-rust-policy, github-swift-package-native-design-prototypes-unifiedagentusage, github-swift-package-native]
     runs-on: ubuntu-26.04
     timeout-minutes: 5
     steps:
       - name: Validate generated stack results
         env:
           NEEDS_JSON: ${{ toJSON(needs) }}
+          SELECTED_UNITS: ${{ needs.plan.outputs.units }}
+          LANE_ADMITTED_GITHUB: ${{ github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == '')) }}
         shell: bash
         run: |
           set -euo pipefail
@@ -176,73 +2622,809 @@ jobs:
             echo "required CI prerequisite plan did not pass: $result" >&2
             exit 1
           fi
-          matrix="$(jq -r --arg key 'bun_matrix' --arg empty '[]' '.plan.outputs[$key] // $empty' <<<"$NEEDS_JSON")"
-          result="$(result_for_job group-bun)"
-          if [[ "$matrix" != '[]' ]]; then
-            if [[ "$result" != success ]]; then
-              echo "selected CI group group-bun did not pass: $result" >&2
-              exit 1
+          selected=",$SELECTED_UNITS,"
+          if [[ "$selected" == *",bun-jackin-docs,"* ]]; then
+            result="$(result_for_job github-bun-jackin-docs)"
+            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+              case "$result" in
+                success) ;;
+                *) echo "selected CI job github-bun-jackin-docs did not pass: $result" >&2; exit 1 ;;
+              esac
+            else
+              case "$result" in
+                skipped) ;;
+                *) echo "selected CI job github-bun-jackin-docs ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+              esac
             fi
           else
+            result="$(result_for_job github-bun-jackin-docs)"
             case "$result" in
               success|skipped) ;;
-              *) echo "unselected CI group group-bun failed unexpectedly: $result" >&2; exit 1 ;;
+              *) echo "unselected CI job github-bun-jackin-docs failed unexpectedly: $result" >&2; exit 1 ;;
             esac
           fi
-          matrix="$(jq -r --arg key 'docker_matrix' --arg empty '[]' '.plan.outputs[$key] // $empty' <<<"$NEEDS_JSON")"
-          result="$(result_for_job group-docker)"
-          if [[ "$matrix" != '[]' ]]; then
-            if [[ "$result" != success ]]; then
-              echo "selected CI group group-docker did not pass: $result" >&2
-              exit 1
+          if [[ "$selected" == *",docker-docker-construct,"* ]]; then
+            result="$(result_for_job github-docker-docker-construct)"
+            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+              case "$result" in
+                success) ;;
+                *) echo "selected CI job github-docker-docker-construct did not pass: $result" >&2; exit 1 ;;
+              esac
+            else
+              case "$result" in
+                skipped) ;;
+                *) echo "selected CI job github-docker-docker-construct ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+              esac
             fi
           else
+            result="$(result_for_job github-docker-docker-construct)"
             case "$result" in
               success|skipped) ;;
-              *) echo "unselected CI group group-docker failed unexpectedly: $result" >&2; exit 1 ;;
+              *) echo "unselected CI job github-docker-docker-construct failed unexpectedly: $result" >&2; exit 1 ;;
             esac
           fi
-          matrix="$(jq -r --arg key 'rust_matrix' --arg empty '[]' '.plan.outputs[$key] // $empty' <<<"$NEEDS_JSON")"
-          result="$(result_for_job group-rust)"
-          if [[ "$matrix" != '[]' ]]; then
-            if [[ "$result" != success ]]; then
-              echo "selected CI group group-rust did not pass: $result" >&2
-              exit 1
+          if [[ "$selected" == *",rust-arrayref,"* ]]; then
+            result="$(result_for_job github-rust-arrayref)"
+            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+              case "$result" in
+                success) ;;
+                *) echo "selected CI job github-rust-arrayref did not pass: $result" >&2; exit 1 ;;
+              esac
+            else
+              case "$result" in
+                skipped) ;;
+                *) echo "selected CI job github-rust-arrayref ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+              esac
             fi
           else
+            result="$(result_for_job github-rust-arrayref)"
             case "$result" in
               success|skipped) ;;
-              *) echo "unselected CI group group-rust failed unexpectedly: $result" >&2; exit 1 ;;
+              *) echo "unselected CI job github-rust-arrayref failed unexpectedly: $result" >&2; exit 1 ;;
             esac
           fi
-          matrix="$(jq -r --arg key 'rust-2_matrix' --arg empty '[]' '.plan.outputs[$key] // $empty' <<<"$NEEDS_JSON")"
-          result="$(result_for_job group-rust-2)"
-          if [[ "$matrix" != '[]' ]]; then
-            if [[ "$result" != success ]]; then
-              echo "selected CI group group-rust-2 did not pass: $result" >&2
-              exit 1
+          if [[ "$selected" == *",rust-jackin,"* ]]; then
+            result="$(result_for_job github-rust-jackin)"
+            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+              case "$result" in
+                success) ;;
+                *) echo "selected CI job github-rust-jackin did not pass: $result" >&2; exit 1 ;;
+              esac
+            else
+              case "$result" in
+                skipped) ;;
+                *) echo "selected CI job github-rust-jackin ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+              esac
             fi
           else
+            result="$(result_for_job github-rust-jackin)"
             case "$result" in
               success|skipped) ;;
-              *) echo "unselected CI group group-rust-2 failed unexpectedly: $result" >&2; exit 1 ;;
+              *) echo "unselected CI job github-rust-jackin failed unexpectedly: $result" >&2; exit 1 ;;
             esac
           fi
-          matrix="$(jq -r --arg key 'swift_matrix' --arg empty '[]' '.plan.outputs[$key] // $empty' <<<"$NEEDS_JSON")"
-          result="$(result_for_job group-swift)"
-          if [[ "$matrix" != '[]' ]]; then
-            if [[ "$result" != success ]]; then
-              echo "selected CI group group-swift did not pass: $result" >&2
-              exit 1
+          if [[ "$selected" == *",rust-jackin-agent-status,"* ]]; then
+            result="$(result_for_job github-rust-jackin-agent-status)"
+            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+              case "$result" in
+                success) ;;
+                *) echo "selected CI job github-rust-jackin-agent-status did not pass: $result" >&2; exit 1 ;;
+              esac
+            else
+              case "$result" in
+                skipped) ;;
+                *) echo "selected CI job github-rust-jackin-agent-status ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+              esac
             fi
           else
+            result="$(result_for_job github-rust-jackin-agent-status)"
             case "$result" in
               success|skipped) ;;
-              *) echo "unselected CI group group-swift failed unexpectedly: $result" >&2; exit 1 ;;
+              *) echo "unselected CI job github-rust-jackin-agent-status failed unexpectedly: $result" >&2; exit 1 ;;
+            esac
+          fi
+          if [[ "$selected" == *",rust-jackin-brand,"* ]]; then
+            result="$(result_for_job github-rust-jackin-brand)"
+            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+              case "$result" in
+                success) ;;
+                *) echo "selected CI job github-rust-jackin-brand did not pass: $result" >&2; exit 1 ;;
+              esac
+            else
+              case "$result" in
+                skipped) ;;
+                *) echo "selected CI job github-rust-jackin-brand ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+              esac
+            fi
+          else
+            result="$(result_for_job github-rust-jackin-brand)"
+            case "$result" in
+              success|skipped) ;;
+              *) echo "unselected CI job github-rust-jackin-brand failed unexpectedly: $result" >&2; exit 1 ;;
+            esac
+          fi
+          if [[ "$selected" == *",rust-jackin-build-meta,"* ]]; then
+            result="$(result_for_job github-rust-jackin-build-meta)"
+            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+              case "$result" in
+                success) ;;
+                *) echo "selected CI job github-rust-jackin-build-meta did not pass: $result" >&2; exit 1 ;;
+              esac
+            else
+              case "$result" in
+                skipped) ;;
+                *) echo "selected CI job github-rust-jackin-build-meta ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+              esac
+            fi
+          else
+            result="$(result_for_job github-rust-jackin-build-meta)"
+            case "$result" in
+              success|skipped) ;;
+              *) echo "unselected CI job github-rust-jackin-build-meta failed unexpectedly: $result" >&2; exit 1 ;;
+            esac
+          fi
+          if [[ "$selected" == *",rust-jackin-capsule,"* ]]; then
+            result="$(result_for_job github-rust-jackin-capsule)"
+            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+              case "$result" in
+                success) ;;
+                *) echo "selected CI job github-rust-jackin-capsule did not pass: $result" >&2; exit 1 ;;
+              esac
+            else
+              case "$result" in
+                skipped) ;;
+                *) echo "selected CI job github-rust-jackin-capsule ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+              esac
+            fi
+          else
+            result="$(result_for_job github-rust-jackin-capsule)"
+            case "$result" in
+              success|skipped) ;;
+              *) echo "unselected CI job github-rust-jackin-capsule failed unexpectedly: $result" >&2; exit 1 ;;
+            esac
+          fi
+          if [[ "$selected" == *",rust-jackin-config,"* ]]; then
+            result="$(result_for_job github-rust-jackin-config)"
+            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+              case "$result" in
+                success) ;;
+                *) echo "selected CI job github-rust-jackin-config did not pass: $result" >&2; exit 1 ;;
+              esac
+            else
+              case "$result" in
+                skipped) ;;
+                *) echo "selected CI job github-rust-jackin-config ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+              esac
+            fi
+          else
+            result="$(result_for_job github-rust-jackin-config)"
+            case "$result" in
+              success|skipped) ;;
+              *) echo "unselected CI job github-rust-jackin-config failed unexpectedly: $result" >&2; exit 1 ;;
+            esac
+          fi
+          if [[ "$selected" == *",rust-jackin-config-fuzz,"* ]]; then
+            result="$(result_for_job github-rust-jackin-config-fuzz)"
+            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+              case "$result" in
+                success) ;;
+                *) echo "selected CI job github-rust-jackin-config-fuzz did not pass: $result" >&2; exit 1 ;;
+              esac
+            else
+              case "$result" in
+                skipped) ;;
+                *) echo "selected CI job github-rust-jackin-config-fuzz ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+              esac
+            fi
+          else
+            result="$(result_for_job github-rust-jackin-config-fuzz)"
+            case "$result" in
+              success|skipped) ;;
+              *) echo "unselected CI job github-rust-jackin-config-fuzz failed unexpectedly: $result" >&2; exit 1 ;;
+            esac
+          fi
+          if [[ "$selected" == *",rust-jackin-console,"* ]]; then
+            result="$(result_for_job github-rust-jackin-console)"
+            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+              case "$result" in
+                success) ;;
+                *) echo "selected CI job github-rust-jackin-console did not pass: $result" >&2; exit 1 ;;
+              esac
+            else
+              case "$result" in
+                skipped) ;;
+                *) echo "selected CI job github-rust-jackin-console ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+              esac
+            fi
+          else
+            result="$(result_for_job github-rust-jackin-console)"
+            case "$result" in
+              success|skipped) ;;
+              *) echo "unselected CI job github-rust-jackin-console failed unexpectedly: $result" >&2; exit 1 ;;
+            esac
+          fi
+          if [[ "$selected" == *",rust-jackin-core,"* ]]; then
+            result="$(result_for_job github-rust-jackin-core)"
+            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+              case "$result" in
+                success) ;;
+                *) echo "selected CI job github-rust-jackin-core did not pass: $result" >&2; exit 1 ;;
+              esac
+            else
+              case "$result" in
+                skipped) ;;
+                *) echo "selected CI job github-rust-jackin-core ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+              esac
+            fi
+          else
+            result="$(result_for_job github-rust-jackin-core)"
+            case "$result" in
+              success|skipped) ;;
+              *) echo "unselected CI job github-rust-jackin-core failed unexpectedly: $result" >&2; exit 1 ;;
+            esac
+          fi
+          if [[ "$selected" == *",rust-jackin-dev,"* ]]; then
+            result="$(result_for_job github-rust-jackin-dev)"
+            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+              case "$result" in
+                success) ;;
+                *) echo "selected CI job github-rust-jackin-dev did not pass: $result" >&2; exit 1 ;;
+              esac
+            else
+              case "$result" in
+                skipped) ;;
+                *) echo "selected CI job github-rust-jackin-dev ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+              esac
+            fi
+          else
+            result="$(result_for_job github-rust-jackin-dev)"
+            case "$result" in
+              success|skipped) ;;
+              *) echo "unselected CI job github-rust-jackin-dev failed unexpectedly: $result" >&2; exit 1 ;;
+            esac
+          fi
+          if [[ "$selected" == *",rust-jackin-diagnostics,"* ]]; then
+            result="$(result_for_job github-rust-jackin-diagnostics)"
+            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+              case "$result" in
+                success) ;;
+                *) echo "selected CI job github-rust-jackin-diagnostics did not pass: $result" >&2; exit 1 ;;
+              esac
+            else
+              case "$result" in
+                skipped) ;;
+                *) echo "selected CI job github-rust-jackin-diagnostics ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+              esac
+            fi
+          else
+            result="$(result_for_job github-rust-jackin-diagnostics)"
+            case "$result" in
+              success|skipped) ;;
+              *) echo "unselected CI job github-rust-jackin-diagnostics failed unexpectedly: $result" >&2; exit 1 ;;
+            esac
+          fi
+          if [[ "$selected" == *",rust-jackin-docker,"* ]]; then
+            result="$(result_for_job github-rust-jackin-docker)"
+            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+              case "$result" in
+                success) ;;
+                *) echo "selected CI job github-rust-jackin-docker did not pass: $result" >&2; exit 1 ;;
+              esac
+            else
+              case "$result" in
+                skipped) ;;
+                *) echo "selected CI job github-rust-jackin-docker ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+              esac
+            fi
+          else
+            result="$(result_for_job github-rust-jackin-docker)"
+            case "$result" in
+              success|skipped) ;;
+              *) echo "unselected CI job github-rust-jackin-docker failed unexpectedly: $result" >&2; exit 1 ;;
+            esac
+          fi
+          if [[ "$selected" == *",rust-jackin-env,"* ]]; then
+            result="$(result_for_job github-rust-jackin-env)"
+            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+              case "$result" in
+                success) ;;
+                *) echo "selected CI job github-rust-jackin-env did not pass: $result" >&2; exit 1 ;;
+              esac
+            else
+              case "$result" in
+                skipped) ;;
+                *) echo "selected CI job github-rust-jackin-env ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+              esac
+            fi
+          else
+            result="$(result_for_job github-rust-jackin-env)"
+            case "$result" in
+              success|skipped) ;;
+              *) echo "unselected CI job github-rust-jackin-env failed unexpectedly: $result" >&2; exit 1 ;;
+            esac
+          fi
+          if [[ "$selected" == *",rust-jackin-env-fuzz,"* ]]; then
+            result="$(result_for_job github-rust-jackin-env-fuzz)"
+            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+              case "$result" in
+                success) ;;
+                *) echo "selected CI job github-rust-jackin-env-fuzz did not pass: $result" >&2; exit 1 ;;
+              esac
+            else
+              case "$result" in
+                skipped) ;;
+                *) echo "selected CI job github-rust-jackin-env-fuzz ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+              esac
+            fi
+          else
+            result="$(result_for_job github-rust-jackin-env-fuzz)"
+            case "$result" in
+              success|skipped) ;;
+              *) echo "unselected CI job github-rust-jackin-env-fuzz failed unexpectedly: $result" >&2; exit 1 ;;
+            esac
+          fi
+          if [[ "$selected" == *",rust-jackin-host,"* ]]; then
+            result="$(result_for_job github-rust-jackin-host)"
+            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+              case "$result" in
+                success) ;;
+                *) echo "selected CI job github-rust-jackin-host did not pass: $result" >&2; exit 1 ;;
+              esac
+            else
+              case "$result" in
+                skipped) ;;
+                *) echo "selected CI job github-rust-jackin-host ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+              esac
+            fi
+          else
+            result="$(result_for_job github-rust-jackin-host)"
+            case "$result" in
+              success|skipped) ;;
+              *) echo "unselected CI job github-rust-jackin-host failed unexpectedly: $result" >&2; exit 1 ;;
+            esac
+          fi
+          if [[ "$selected" == *",rust-jackin-image,"* ]]; then
+            result="$(result_for_job github-rust-jackin-image)"
+            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+              case "$result" in
+                success) ;;
+                *) echo "selected CI job github-rust-jackin-image did not pass: $result" >&2; exit 1 ;;
+              esac
+            else
+              case "$result" in
+                skipped) ;;
+                *) echo "selected CI job github-rust-jackin-image ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+              esac
+            fi
+          else
+            result="$(result_for_job github-rust-jackin-image)"
+            case "$result" in
+              success|skipped) ;;
+              *) echo "unselected CI job github-rust-jackin-image failed unexpectedly: $result" >&2; exit 1 ;;
+            esac
+          fi
+          if [[ "$selected" == *",rust-jackin-instance,"* ]]; then
+            result="$(result_for_job github-rust-jackin-instance)"
+            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+              case "$result" in
+                success) ;;
+                *) echo "selected CI job github-rust-jackin-instance did not pass: $result" >&2; exit 1 ;;
+              esac
+            else
+              case "$result" in
+                skipped) ;;
+                *) echo "selected CI job github-rust-jackin-instance ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+              esac
+            fi
+          else
+            result="$(result_for_job github-rust-jackin-instance)"
+            case "$result" in
+              success|skipped) ;;
+              *) echo "unselected CI job github-rust-jackin-instance failed unexpectedly: $result" >&2; exit 1 ;;
+            esac
+          fi
+          if [[ "$selected" == *",rust-jackin-isolation,"* ]]; then
+            result="$(result_for_job github-rust-jackin-isolation)"
+            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+              case "$result" in
+                success) ;;
+                *) echo "selected CI job github-rust-jackin-isolation did not pass: $result" >&2; exit 1 ;;
+              esac
+            else
+              case "$result" in
+                skipped) ;;
+                *) echo "selected CI job github-rust-jackin-isolation ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+              esac
+            fi
+          else
+            result="$(result_for_job github-rust-jackin-isolation)"
+            case "$result" in
+              success|skipped) ;;
+              *) echo "unselected CI job github-rust-jackin-isolation failed unexpectedly: $result" >&2; exit 1 ;;
+            esac
+          fi
+          if [[ "$selected" == *",rust-jackin-launch,"* ]]; then
+            result="$(result_for_job github-rust-jackin-launch)"
+            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+              case "$result" in
+                success) ;;
+                *) echo "selected CI job github-rust-jackin-launch did not pass: $result" >&2; exit 1 ;;
+              esac
+            else
+              case "$result" in
+                skipped) ;;
+                *) echo "selected CI job github-rust-jackin-launch ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+              esac
+            fi
+          else
+            result="$(result_for_job github-rust-jackin-launch)"
+            case "$result" in
+              success|skipped) ;;
+              *) echo "unselected CI job github-rust-jackin-launch failed unexpectedly: $result" >&2; exit 1 ;;
+            esac
+          fi
+          if [[ "$selected" == *",rust-jackin-manifest,"* ]]; then
+            result="$(result_for_job github-rust-jackin-manifest)"
+            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+              case "$result" in
+                success) ;;
+                *) echo "selected CI job github-rust-jackin-manifest did not pass: $result" >&2; exit 1 ;;
+              esac
+            else
+              case "$result" in
+                skipped) ;;
+                *) echo "selected CI job github-rust-jackin-manifest ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+              esac
+            fi
+          else
+            result="$(result_for_job github-rust-jackin-manifest)"
+            case "$result" in
+              success|skipped) ;;
+              *) echo "unselected CI job github-rust-jackin-manifest failed unexpectedly: $result" >&2; exit 1 ;;
+            esac
+          fi
+          if [[ "$selected" == *",rust-jackin-manifest-fuzz,"* ]]; then
+            result="$(result_for_job github-rust-jackin-manifest-fuzz)"
+            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+              case "$result" in
+                success) ;;
+                *) echo "selected CI job github-rust-jackin-manifest-fuzz did not pass: $result" >&2; exit 1 ;;
+              esac
+            else
+              case "$result" in
+                skipped) ;;
+                *) echo "selected CI job github-rust-jackin-manifest-fuzz ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+              esac
+            fi
+          else
+            result="$(result_for_job github-rust-jackin-manifest-fuzz)"
+            case "$result" in
+              success|skipped) ;;
+              *) echo "unselected CI job github-rust-jackin-manifest-fuzz failed unexpectedly: $result" >&2; exit 1 ;;
+            esac
+          fi
+          if [[ "$selected" == *",rust-jackin-oppicker,"* ]]; then
+            result="$(result_for_job github-rust-jackin-oppicker)"
+            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+              case "$result" in
+                success) ;;
+                *) echo "selected CI job github-rust-jackin-oppicker did not pass: $result" >&2; exit 1 ;;
+              esac
+            else
+              case "$result" in
+                skipped) ;;
+                *) echo "selected CI job github-rust-jackin-oppicker ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+              esac
+            fi
+          else
+            result="$(result_for_job github-rust-jackin-oppicker)"
+            case "$result" in
+              success|skipped) ;;
+              *) echo "unselected CI job github-rust-jackin-oppicker failed unexpectedly: $result" >&2; exit 1 ;;
+            esac
+          fi
+          if [[ "$selected" == *",rust-jackin-otlp-testbed,"* ]]; then
+            result="$(result_for_job github-rust-jackin-otlp-testbed)"
+            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+              case "$result" in
+                success) ;;
+                *) echo "selected CI job github-rust-jackin-otlp-testbed did not pass: $result" >&2; exit 1 ;;
+              esac
+            else
+              case "$result" in
+                skipped) ;;
+                *) echo "selected CI job github-rust-jackin-otlp-testbed ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+              esac
+            fi
+          else
+            result="$(result_for_job github-rust-jackin-otlp-testbed)"
+            case "$result" in
+              success|skipped) ;;
+              *) echo "unselected CI job github-rust-jackin-otlp-testbed failed unexpectedly: $result" >&2; exit 1 ;;
+            esac
+          fi
+          if [[ "$selected" == *",rust-jackin-pr-trailers,"* ]]; then
+            result="$(result_for_job github-rust-jackin-pr-trailers)"
+            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+              case "$result" in
+                success) ;;
+                *) echo "selected CI job github-rust-jackin-pr-trailers did not pass: $result" >&2; exit 1 ;;
+              esac
+            else
+              case "$result" in
+                skipped) ;;
+                *) echo "selected CI job github-rust-jackin-pr-trailers ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+              esac
+            fi
+          else
+            result="$(result_for_job github-rust-jackin-pr-trailers)"
+            case "$result" in
+              success|skipped) ;;
+              *) echo "unselected CI job github-rust-jackin-pr-trailers failed unexpectedly: $result" >&2; exit 1 ;;
+            esac
+          fi
+          if [[ "$selected" == *",rust-jackin-process,"* ]]; then
+            result="$(result_for_job github-rust-jackin-process)"
+            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+              case "$result" in
+                success) ;;
+                *) echo "selected CI job github-rust-jackin-process did not pass: $result" >&2; exit 1 ;;
+              esac
+            else
+              case "$result" in
+                skipped) ;;
+                *) echo "selected CI job github-rust-jackin-process ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+              esac
+            fi
+          else
+            result="$(result_for_job github-rust-jackin-process)"
+            case "$result" in
+              success|skipped) ;;
+              *) echo "unselected CI job github-rust-jackin-process failed unexpectedly: $result" >&2; exit 1 ;;
+            esac
+          fi
+          if [[ "$selected" == *",rust-jackin-protocol,"* ]]; then
+            result="$(result_for_job github-rust-jackin-protocol)"
+            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+              case "$result" in
+                success) ;;
+                *) echo "selected CI job github-rust-jackin-protocol did not pass: $result" >&2; exit 1 ;;
+              esac
+            else
+              case "$result" in
+                skipped) ;;
+                *) echo "selected CI job github-rust-jackin-protocol ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+              esac
+            fi
+          else
+            result="$(result_for_job github-rust-jackin-protocol)"
+            case "$result" in
+              success|skipped) ;;
+              *) echo "unselected CI job github-rust-jackin-protocol failed unexpectedly: $result" >&2; exit 1 ;;
+            esac
+          fi
+          if [[ "$selected" == *",rust-jackin-protocol-fuzz,"* ]]; then
+            result="$(result_for_job github-rust-jackin-protocol-fuzz)"
+            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+              case "$result" in
+                success) ;;
+                *) echo "selected CI job github-rust-jackin-protocol-fuzz did not pass: $result" >&2; exit 1 ;;
+              esac
+            else
+              case "$result" in
+                skipped) ;;
+                *) echo "selected CI job github-rust-jackin-protocol-fuzz ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+              esac
+            fi
+          else
+            result="$(result_for_job github-rust-jackin-protocol-fuzz)"
+            case "$result" in
+              success|skipped) ;;
+              *) echo "unselected CI job github-rust-jackin-protocol-fuzz failed unexpectedly: $result" >&2; exit 1 ;;
+            esac
+          fi
+          if [[ "$selected" == *",rust-jackin-runtime,"* ]]; then
+            result="$(result_for_job github-rust-jackin-runtime)"
+            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+              case "$result" in
+                success) ;;
+                *) echo "selected CI job github-rust-jackin-runtime did not pass: $result" >&2; exit 1 ;;
+              esac
+            else
+              case "$result" in
+                skipped) ;;
+                *) echo "selected CI job github-rust-jackin-runtime ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+              esac
+            fi
+          else
+            result="$(result_for_job github-rust-jackin-runtime)"
+            case "$result" in
+              success|skipped) ;;
+              *) echo "unselected CI job github-rust-jackin-runtime failed unexpectedly: $result" >&2; exit 1 ;;
+            esac
+          fi
+          if [[ "$selected" == *",rust-jackin-telemetry,"* ]]; then
+            result="$(result_for_job github-rust-jackin-telemetry)"
+            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+              case "$result" in
+                success) ;;
+                *) echo "selected CI job github-rust-jackin-telemetry did not pass: $result" >&2; exit 1 ;;
+              esac
+            else
+              case "$result" in
+                skipped) ;;
+                *) echo "selected CI job github-rust-jackin-telemetry ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+              esac
+            fi
+          else
+            result="$(result_for_job github-rust-jackin-telemetry)"
+            case "$result" in
+              success|skipped) ;;
+              *) echo "unselected CI job github-rust-jackin-telemetry failed unexpectedly: $result" >&2; exit 1 ;;
+            esac
+          fi
+          if [[ "$selected" == *",rust-jackin-test-support,"* ]]; then
+            result="$(result_for_job github-rust-jackin-test-support)"
+            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+              case "$result" in
+                success) ;;
+                *) echo "selected CI job github-rust-jackin-test-support did not pass: $result" >&2; exit 1 ;;
+              esac
+            else
+              case "$result" in
+                skipped) ;;
+                *) echo "selected CI job github-rust-jackin-test-support ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+              esac
+            fi
+          else
+            result="$(result_for_job github-rust-jackin-test-support)"
+            case "$result" in
+              success|skipped) ;;
+              *) echo "unselected CI job github-rust-jackin-test-support failed unexpectedly: $result" >&2; exit 1 ;;
+            esac
+          fi
+          if [[ "$selected" == *",rust-jackin-tui,"* ]]; then
+            result="$(result_for_job github-rust-jackin-tui)"
+            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+              case "$result" in
+                success) ;;
+                *) echo "selected CI job github-rust-jackin-tui did not pass: $result" >&2; exit 1 ;;
+              esac
+            else
+              case "$result" in
+                skipped) ;;
+                *) echo "selected CI job github-rust-jackin-tui ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+              esac
+            fi
+          else
+            result="$(result_for_job github-rust-jackin-tui)"
+            case "$result" in
+              success|skipped) ;;
+              *) echo "unselected CI job github-rust-jackin-tui failed unexpectedly: $result" >&2; exit 1 ;;
+            esac
+          fi
+          if [[ "$selected" == *",rust-jackin-usage,"* ]]; then
+            result="$(result_for_job github-rust-jackin-usage)"
+            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+              case "$result" in
+                success) ;;
+                *) echo "selected CI job github-rust-jackin-usage did not pass: $result" >&2; exit 1 ;;
+              esac
+            else
+              case "$result" in
+                skipped) ;;
+                *) echo "selected CI job github-rust-jackin-usage ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+              esac
+            fi
+          else
+            result="$(result_for_job github-rust-jackin-usage)"
+            case "$result" in
+              success|skipped) ;;
+              *) echo "unselected CI job github-rust-jackin-usage failed unexpectedly: $result" >&2; exit 1 ;;
+            esac
+          fi
+          if [[ "$selected" == *",rust-jackin-usage-ffi,"* ]]; then
+            result="$(result_for_job github-rust-jackin-usage-ffi)"
+            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+              case "$result" in
+                success) ;;
+                *) echo "selected CI job github-rust-jackin-usage-ffi did not pass: $result" >&2; exit 1 ;;
+              esac
+            else
+              case "$result" in
+                skipped) ;;
+                *) echo "selected CI job github-rust-jackin-usage-ffi ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+              esac
+            fi
+          else
+            result="$(result_for_job github-rust-jackin-usage-ffi)"
+            case "$result" in
+              success|skipped) ;;
+              *) echo "unselected CI job github-rust-jackin-usage-ffi failed unexpectedly: $result" >&2; exit 1 ;;
+            esac
+          fi
+          if [[ "$selected" == *",rust-jackin-xtask,"* ]]; then
+            result="$(result_for_job github-rust-jackin-xtask)"
+            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+              case "$result" in
+                success) ;;
+                *) echo "selected CI job github-rust-jackin-xtask did not pass: $result" >&2; exit 1 ;;
+              esac
+            else
+              case "$result" in
+                skipped) ;;
+                *) echo "selected CI job github-rust-jackin-xtask ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+              esac
+            fi
+          else
+            result="$(result_for_job github-rust-jackin-xtask)"
+            case "$result" in
+              success|skipped) ;;
+              *) echo "unselected CI job github-rust-jackin-xtask failed unexpectedly: $result" >&2; exit 1 ;;
+            esac
+          fi
+          if [[ "$selected" == *",rust-policy,"* ]]; then
+            result="$(result_for_job github-rust-policy)"
+            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+              case "$result" in
+                success) ;;
+                *) echo "selected CI job github-rust-policy did not pass: $result" >&2; exit 1 ;;
+              esac
+            else
+              case "$result" in
+                skipped) ;;
+                *) echo "selected CI job github-rust-policy ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+              esac
+            fi
+          else
+            result="$(result_for_job github-rust-policy)"
+            case "$result" in
+              success|skipped) ;;
+              *) echo "unselected CI job github-rust-policy failed unexpectedly: $result" >&2; exit 1 ;;
+            esac
+          fi
+          if [[ "$selected" == *",swift-package-native-design-prototypes-unifiedagentusage,"* ]]; then
+            result="$(result_for_job github-swift-package-native-design-prototypes-unifiedagentusage)"
+            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+              case "$result" in
+                success) ;;
+                *) echo "selected CI job github-swift-package-native-design-prototypes-unifiedagentusage did not pass: $result" >&2; exit 1 ;;
+              esac
+            else
+              case "$result" in
+                skipped) ;;
+                *) echo "selected CI job github-swift-package-native-design-prototypes-unifiedagentusage ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+              esac
+            fi
+          else
+            result="$(result_for_job github-swift-package-native-design-prototypes-unifiedagentusage)"
+            case "$result" in
+              success|skipped) ;;
+              *) echo "unselected CI job github-swift-package-native-design-prototypes-unifiedagentusage failed unexpectedly: $result" >&2; exit 1 ;;
+            esac
+          fi
+          if [[ "$selected" == *",swift-package-native,"* ]]; then
+            result="$(result_for_job github-swift-package-native)"
+            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+              case "$result" in
+                success) ;;
+                *) echo "selected CI job github-swift-package-native did not pass: $result" >&2; exit 1 ;;
+              esac
+            else
+              case "$result" in
+                skipped) ;;
+                *) echo "selected CI job github-swift-package-native ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+              esac
+            fi
+          else
+            result="$(result_for_job github-swift-package-native)"
+            case "$result" in
+              success|skipped) ;;
+              *) echo "unselected CI job github-swift-package-native failed unexpectedly: $result" >&2; exit 1 ;;
             esac
           fi
   required:
-    name: Required
+    name: "Control / Required"
     if: ${{ always() }}
     needs: [ci-required]
     runs-on: ubuntu-26.04

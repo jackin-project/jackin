@@ -264,6 +264,7 @@ pub(super) async fn restore_hardline_instance(
         let input = resolve_ad_hoc_restore_input(manifest, &cwd)?;
         workspace::resolve_load_workspace(config, &class, &cwd, input, &[])?
     };
+    super::emit_mount_heal_notices(&workspace);
 
     let opts = runtime::LoadOptions {
         agent: Some(manifest.agent()?),

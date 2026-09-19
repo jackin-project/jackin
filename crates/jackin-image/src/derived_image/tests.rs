@@ -1304,17 +1304,14 @@ fn jackin_construct_image_override_handles_digest_pinned_from() {
     );
 }
 
-#[cfg(unix)]
-#[test]
-fn rejects_symlinks_in_repo_build_context() {
-    let repo = tempdir().unwrap();
+fn minimal_role_repo(repo: &Path) {
     std::fs::write(
-        repo.path().join("Dockerfile"),
+        repo.join("Dockerfile"),
         "FROM projectjackin/construct:0.1-trixie\n",
     )
     .unwrap();
     std::fs::write(
-        repo.path().join("jackin.role.toml"),
+        repo.join("jackin.role.toml"),
         r#"version = "v1alpha3"
 dockerfile = "Dockerfile"
 
@@ -1323,6 +1320,17 @@ plugins = []
 "#,
     )
     .unwrap();
+}
+
+#[cfg(unix)]
+#[test]
+fn dereferences_contained_symlinks_in_repo_build_context() {
+    // Contained symlinks (CLAUDE.md -> AGENTS.md repo conventions) copy
+    // their target content instead of failing the build.
+    let repo = tempdir().unwrap();
+    minimal_role_repo(repo.path());
+    std::fs::write(repo.path().join("AGENTS.md"), "agents\n").unwrap();
+    symlink("AGENTS.md", repo.path().join("CLAUDE.md")).unwrap();
     std::fs::write(repo.path().join("shared.txt"), "hello\n").unwrap();
     symlink(
         repo.path().join("shared.txt"),
@@ -1331,11 +1339,93 @@ plugins = []
     .unwrap();
 
     let validated = jackin_manifest::validate_role_repo(repo.path()).unwrap();
+    let build = create_derived_build_context(repo.path(), &validated, None, None).unwrap();
+
+    assert_eq!(
+        std::fs::read_to_string(build.context_dir.join("CLAUDE.md")).unwrap(),
+        "agents\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(build.context_dir.join("linked.txt")).unwrap(),
+        "hello\n"
+    );
+    assert!(
+        !std::fs::symlink_metadata(build.context_dir.join("CLAUDE.md"))
+            .unwrap()
+            .file_type()
+            .is_symlink()
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn rejects_escaping_symlinks_in_repo_build_context() {
+    let repo = tempdir().unwrap();
+    minimal_role_repo(repo.path());
+    let outside = tempdir().unwrap();
+    std::fs::write(outside.path().join("secret.txt"), "secret\n").unwrap();
+    symlink(
+        outside.path().join("secret.txt"),
+        repo.path().join("linked.txt"),
+    )
+    .unwrap();
+
+    let validated = jackin_manifest::validate_role_repo(repo.path()).unwrap();
     let error = create_derived_build_context(repo.path(), &validated, None, None)
-        .expect_err("symlinks should be rejected");
+        .expect_err("escaping symlinks should be rejected");
 
     assert!(error.to_string().contains("symlink"));
     assert!(error.to_string().contains("linked.txt"));
+}
+
+#[cfg(unix)]
+#[test]
+fn rejects_dangling_symlinks_in_repo_build_context() {
+    let repo = tempdir().unwrap();
+    minimal_role_repo(repo.path());
+    symlink(
+        repo.path().join("missing.txt"),
+        repo.path().join("linked.txt"),
+    )
+    .unwrap();
+
+    let validated = jackin_manifest::validate_role_repo(repo.path()).unwrap();
+    let error = create_derived_build_context(repo.path(), &validated, None, None)
+        .expect_err("dangling symlinks should be rejected");
+
+    assert!(error.to_string().contains("symlink"));
+    assert!(error.to_string().contains("linked.txt"));
+}
+
+#[cfg(unix)]
+#[test]
+fn dereferences_contained_hook_symlinks_in_build_context() {
+    let repo = tempdir().unwrap();
+    minimal_role_repo(repo.path());
+    std::fs::create_dir_all(repo.path().join("hooks")).unwrap();
+    std::fs::write(repo.path().join("hooks/shared.sh"), "#!/bin/sh\n").unwrap();
+    symlink("shared.sh", repo.path().join("hooks/source.sh")).unwrap();
+    std::fs::write(
+        repo.path().join("jackin.role.toml"),
+        r#"version = "v1alpha5"
+dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+
+[hooks]
+source = "hooks/source.sh"
+"#,
+    )
+    .unwrap();
+
+    let validated = jackin_manifest::validate_role_repo(repo.path()).unwrap();
+    let build = create_derived_build_context(repo.path(), &validated, None, None).unwrap();
+
+    assert_eq!(
+        std::fs::read_to_string(build.context_dir.join("hooks/source.sh")).unwrap(),
+        "#!/bin/sh\n"
+    );
 }
 
 #[test]

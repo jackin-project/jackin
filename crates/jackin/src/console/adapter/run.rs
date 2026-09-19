@@ -14,6 +14,7 @@ use crate::console::terminal::{
 use crate::console::{ConsoleOutcome, ConsoleStage, ConsoleState, InstanceActionHandler};
 use jackin_console::tui::components::error_popup::{
     instance_action_failed_error_message, instance_action_failed_error_title,
+    launch_failed_error_message, launch_failed_error_title,
 };
 use jackin_console::tui::components::status_popup::{
     instance_action_busy_message, instance_action_busy_title,
@@ -268,6 +269,10 @@ where
     }
 }
 
+#[expect(
+    clippy::large_enum_variant,
+    reason = "Exit carries the resolved launch outcome (workspace + role + agent) by value exactly once per committed launch; boxing saves nothing measurable"
+)]
 enum ConsoleLoopFlow {
     Continue,
     Exit(Option<ConsoleOutcome>),
@@ -712,6 +717,24 @@ where
     Ok(())
 }
 
+/// Surface a launch-dispatch failure as an in-TUI error popup.
+///
+/// Launch resolution can fail for operator-fixable reasons (a deleted
+/// project directory, a disallowed role); killing the whole console over
+/// it strands the operator outside the very UI that could fix the config.
+/// Mirrors the instance-action failure pattern above: report inline, stay
+/// alive.
+fn show_launch_dispatch_error(state: &mut ConsoleState, error: &anyhow::Error) {
+    let ConsoleStage::Manager(ms) = &mut state.stage;
+    crate::console::adapter::update_manager(
+        ms,
+        crate::console::adapter::ManagerMessage::OpenListErrorPopup {
+            title: launch_failed_error_title().into(),
+            message: launch_failed_error_message(error),
+        },
+    );
+}
+
 async fn handle_input_outcome<B, H, R>(
     terminal: &mut ratatui::Terminal<B>,
     state: &mut ConsoleState,
@@ -744,11 +767,15 @@ where
             return Ok(ConsoleLoopFlow::Exit(None));
         }
         crate::console::adapter::InputOutcome::LaunchNamed(name) => {
-            if let Some(outcome) =
-                dispatch_launch_input(terminal, state, inputs, LoadWorkspaceInput::Saved(name))
-                    .await?
+            match dispatch_launch_input(terminal, state, inputs, LoadWorkspaceInput::Saved(name))
+                .await
             {
-                return Ok(ConsoleLoopFlow::Exit(Some(outcome)));
+                Ok(Some(outcome)) => return Ok(ConsoleLoopFlow::Exit(Some(outcome))),
+                Ok(None) => {}
+                Err(error) => {
+                    show_launch_dispatch_error(state, &error);
+                    *needs_redraw = true;
+                }
             }
         }
         crate::console::adapter::InputOutcome::PrewarmNamed(name) => {
@@ -757,23 +784,35 @@ where
             ))));
         }
         crate::console::adapter::InputOutcome::LaunchCurrentDir => {
-            if let Some(outcome) =
-                dispatch_launch_input(terminal, state, inputs, LoadWorkspaceInput::CurrentDir)
-                    .await?
+            match dispatch_launch_input(terminal, state, inputs, LoadWorkspaceInput::CurrentDir)
+                .await
             {
-                return Ok(ConsoleLoopFlow::Exit(Some(outcome)));
+                Ok(Some(outcome)) => return Ok(ConsoleLoopFlow::Exit(Some(outcome))),
+                Ok(None) => {}
+                Err(error) => {
+                    show_launch_dispatch_error(state, &error);
+                    *needs_redraw = true;
+                }
             }
         }
         crate::console::adapter::InputOutcome::LaunchWithAgent(role) => {
-            if let Some(outcome) = dispatch_committed_role(terminal, state, inputs, role).await? {
-                return Ok(ConsoleLoopFlow::Exit(Some(outcome)));
+            match dispatch_committed_role(terminal, state, inputs, role).await {
+                Ok(Some(outcome)) => return Ok(ConsoleLoopFlow::Exit(Some(outcome))),
+                Ok(None) => {}
+                Err(error) => {
+                    show_launch_dispatch_error(state, &error);
+                    *needs_redraw = true;
+                }
             }
         }
         crate::console::adapter::InputOutcome::LaunchWithRuntimeAgent(agent) => {
-            if let Some(outcome) =
-                launch_with_committed_agent(state, inputs.config, inputs.cwd, agent)?
-            {
-                return Ok(ConsoleLoopFlow::Exit(Some(outcome)));
+            match launch_with_committed_agent(state, inputs.config, inputs.cwd, agent) {
+                Ok(Some(outcome)) => return Ok(ConsoleLoopFlow::Exit(Some(outcome))),
+                Ok(None) => {}
+                Err(error) => {
+                    show_launch_dispatch_error(state, &error);
+                    *needs_redraw = true;
+                }
             }
         }
         crate::console::adapter::InputOutcome::NewSessionWithAccount {
@@ -797,12 +836,19 @@ where
             let Some(input) = take_pending_launch_plan(state) else {
                 return Ok(ConsoleLoopFlow::Exit(None));
             };
-            let workspace = jackin_console::services::launch::resolve_account_launch_workspace(
+            let workspace = match jackin_console::services::launch::resolve_account_launch_workspace(
                 inputs.config,
                 inputs.cwd,
                 &input,
                 &selector,
-            )?;
+            ) {
+                Ok(workspace) => workspace,
+                Err(error) => {
+                    show_launch_dispatch_error(state, &error);
+                    *needs_redraw = true;
+                    return Ok(ConsoleLoopFlow::Continue);
+                }
+            };
             let Some(workspace) = workspace else {
                 return Ok(ConsoleLoopFlow::Exit(None));
             };

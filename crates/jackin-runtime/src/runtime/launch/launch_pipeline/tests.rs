@@ -140,6 +140,7 @@ agents = ["codex"]
             default_agent: None,
             keep_awake_enabled: false,
             git_pull_on_entry: false,
+            mount_heal: jackin_config::MountHealReport::default(),
         };
 
         let container_name = "jk-harness-agentsmith".to_owned();

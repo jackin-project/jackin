@@ -797,13 +797,25 @@ fn copy_declared_hook_files(
                 entry.path
             ))
         })?;
-        if metadata.file_type().is_symlink() {
-            return Err(ImageError::SymlinkInBuildContext {
-                path: entry.path.to_owned(),
-            }
-            .into());
-        }
-        if !metadata.is_file() {
+        // A hook symlink that stays inside the repo (shared script
+        // conventions) copies its target content; only escaping or
+        // dangling links are refused.
+        let effective_src = if metadata.file_type().is_symlink() {
+            let canonical_root = std::fs::canonicalize(repo_dir).map_err(|e| {
+                ImageError::msg(format!(
+                    "failed to inspect hook {} for derived build context: {e}",
+                    entry.path
+                ))
+            })?;
+            contained_symlink_target(&src, &canonical_root).ok_or_else(|| {
+                ImageError::SymlinkInBuildContext {
+                    path: entry.path.to_owned(),
+                }
+            })?
+        } else {
+            src
+        };
+        if !std::fs::metadata(&effective_src).is_ok_and(|meta| meta.is_file()) {
             return Err(ImageError::HookNotRegularFile {
                 path: entry.path.to_owned(),
             }
@@ -813,7 +825,7 @@ fn copy_declared_hook_files(
         if let Some(parent) = dst.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        std::fs::copy(&src, &dst).map_err(|e| {
+        std::fs::copy(&effective_src, &dst).map_err(|e| {
             ImageError::msg(format!(
                 "failed to copy hook {} into derived build context: {e}",
                 entry.path
@@ -882,7 +894,24 @@ fn ensure_runtime_assets_are_included(
     Ok(())
 }
 
+/// Resolve `link` to its canonical target when it exists and stays within
+/// `canonical_root`.
+///
+/// Canonicalization resolves chained links and normalizes `..`, so the
+/// containment check is exact rather than lexical. Returns `None` for
+/// dangling links, loops, and targets escaping the repo — the cases the
+/// build context must refuse.
+fn contained_symlink_target(link: &Path, canonical_root: &Path) -> Option<PathBuf> {
+    let target = std::fs::canonicalize(link).ok()?;
+    target.starts_with(canonical_root).then_some(target)
+}
+
 fn copy_dir_all(from: &Path, to: &Path) -> anyhow::Result<()> {
+    let canonical_root = std::fs::canonicalize(from)?;
+    copy_dir_all_under_root(from, to, &canonical_root)
+}
+
+fn copy_dir_all_under_root(from: &Path, to: &Path, canonical_root: &Path) -> anyhow::Result<()> {
     std::fs::create_dir_all(to)?;
     for entry in std::fs::read_dir(from)? {
         let entry = entry?;
@@ -894,14 +923,29 @@ fn copy_dir_all(from: &Path, to: &Path) -> anyhow::Result<()> {
         let destination = to.join(entry.file_name());
 
         if file_type.is_dir() {
-            copy_dir_all(&entry.path(), &destination)?;
+            copy_dir_all_under_root(&entry.path(), &destination, canonical_root)?;
         } else if file_type.is_file() {
             std::fs::copy(entry.path(), destination)?;
         } else if file_type.is_symlink() {
-            return Err(ImageError::RoleRepoSymlink {
-                path: entry.path().display().to_string(),
+            // Contained symlinks (CLAUDE.md -> AGENTS.md repo conventions)
+            // dereference to their target content; only escaping, dangling,
+            // or non-file/dir targets are rejected.
+            let target =
+                contained_symlink_target(&entry.path(), canonical_root).ok_or_else(|| {
+                    ImageError::RoleRepoSymlink {
+                        path: entry.path().display().to_string(),
+                    }
+                })?;
+            if target.is_dir() {
+                copy_dir_all_under_root(&target, &destination, canonical_root)?;
+            } else if target.is_file() {
+                std::fs::copy(&target, destination)?;
+            } else {
+                return Err(ImageError::RoleRepoSymlink {
+                    path: entry.path().display().to_string(),
+                }
+                .into());
             }
-            .into());
         }
     }
 
