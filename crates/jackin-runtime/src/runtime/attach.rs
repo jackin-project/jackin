@@ -491,14 +491,12 @@ fn require_current_instance_admission(
     if let Some(configuration) = config.agent_configurations.get(&target_id) {
         anyhow::ensure!(
             configuration.agent == agent && configuration.account == target.account_id,
-            "live instance {:?} no longer matches the current agent/account configuration",
-            target_id
+            "live instance {target_id:?} no longer matches the current agent/account configuration"
         );
     } else {
         anyhow::ensure!(
             target_id == format!("{}@{}", target.account_id, agent.slug()),
-            "live instance {:?} no longer exists in the current account configuration",
-            target_id
+            "live instance {target_id:?} no longer exists in the current account configuration"
         );
     }
 
