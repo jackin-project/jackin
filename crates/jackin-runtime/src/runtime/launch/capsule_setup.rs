@@ -176,6 +176,35 @@ pub(crate) fn resolved_instance_efforts(
     })
 }
 
+fn forwarded_credential_mount_paths(
+    agent: jackin_core::Agent,
+    slot: &crate::instance::ProvisionedInstanceAuth,
+) -> Vec<String> {
+    if matches!(agent, jackin_core::Agent::Kimi | jackin_core::Agent::Hermes) {
+        return vec![format!(
+            "{}/{}",
+            jackin_core::container_paths::JACKIN_ROOT,
+            slot.container_store_rel
+        )];
+    }
+
+    let include_missing_credentials = agent != jackin_core::Agent::Claude;
+    slot.credential_paths
+        .iter()
+        .filter_map(|path| {
+            let file_name = path.file_name()?.to_str()?;
+            (include_missing_credentials || path.exists()).then(|| {
+                format!(
+                    "{}/{}/{}",
+                    jackin_core::container_paths::JACKIN_ROOT,
+                    slot.container_store_rel,
+                    file_name
+                )
+            })
+        })
+        .collect()
+}
+
 /// Fill the per-instance container dirs from prepared role-state
 /// slots, keyed by instance config ID. The folder-var target comes
 /// straight from the slot; the forwarded dir joins `/jackin` with the
@@ -235,30 +264,7 @@ pub(crate) fn apply_instance_dirs(
                 }),
         );
         if slot.forward_auth {
-            if matches!(
-                instance.agent,
-                jackin_core::Agent::Kimi | jackin_core::Agent::Hermes
-            ) {
-                mount_paths.push(format!(
-                    "{}/{}",
-                    jackin_core::container_paths::JACKIN_ROOT,
-                    slot.container_store_rel
-                ));
-            } else {
-                for path in &slot.credential_paths {
-                    let Some(file_name) = path.file_name().and_then(|name| name.to_str()) else {
-                        continue;
-                    };
-                    if !(matches!(instance.agent, jackin_core::Agent::Claude) && !path.exists()) {
-                        mount_paths.push(format!(
-                            "{}/{}/{}",
-                            jackin_core::container_paths::JACKIN_ROOT,
-                            slot.container_store_rel,
-                            file_name
-                        ));
-                    }
-                }
-            }
+            mount_paths.extend(forwarded_credential_mount_paths(instance.agent, slot));
         }
         launch
             .instance_mount_paths

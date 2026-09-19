@@ -2098,7 +2098,7 @@ fn seed_codex_project_trust_seeds_every_codex_slot() {
     let secondary = root.join("home/.codex-personal");
     std::fs::create_dir_all(&primary).unwrap();
     std::fs::create_dir_all(&secondary).unwrap();
-    std::fs::write(&primary.join("config.toml"), "model = \"work-model\"\n").unwrap();
+    std::fs::write(primary.join("config.toml"), "model = \"work-model\"\n").unwrap();
     std::fs::write(
         secondary.join("config.toml"),
         "model = \"personal-model\"\n",
@@ -2117,7 +2117,7 @@ fn seed_codex_project_trust_seeds_every_codex_slot() {
         (&secondary.join("config.toml"), "personal-model"),
     ] {
         let config = std::fs::read_to_string(path).unwrap();
-        assert!(config.contains(&format!("model = \"{model}\"")));
+        assert!(config.contains(format!("model = \"{model}\"").as_str()));
         assert!(config.contains("[projects.\"/workspace\"]"));
         assert!(config.contains("[projects.\"/workspace/repo\"]"));
         assert_eq!(config.matches("trust_level = \"trusted\"").count(), 2);

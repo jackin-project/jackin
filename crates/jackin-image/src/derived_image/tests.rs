@@ -855,6 +855,10 @@ fn entrypoint_setup_once_marker_is_private_per_session() {
     let mut markers = Vec::new();
     for session in ["41", "42"] {
         let state = fixture.path().join(format!("session-{session}/state"));
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "this fixture executes the generated shell to verify its marker path"
+        )]
         let output = Command::new("bash")
             .arg("-c")
             .arg(&script)

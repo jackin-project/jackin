@@ -149,7 +149,9 @@ fn account_cli_onboards_and_enforces_workspace_assignments() -> anyhow::Result<(
         .success()
         .stdout(predicate::str::contains("default-codex").not());
     command(home)?.args(["account", "scan"]).assert().success();
-    assert!(registry(home)?.accounts.contains_key("default-codex"));
+    // Explicit scans honor the tombstone created by `account remove`; a
+    // deliberately removed discovered profile must not be resurrected.
+    assert!(!registry(home)?.accounts.contains_key("default-codex"));
     Ok(())
 }
 

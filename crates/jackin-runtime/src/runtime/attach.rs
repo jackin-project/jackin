@@ -421,7 +421,7 @@ pub(super) async fn reconnect_or_create_session_with_focus(
     if let Some(flag) = host_alt_screen_exec_flag() {
         args.insert(1, flag);
     }
-    insert_run_as_user(&mut args, run_as_user.as_deref());
+    insert_run_as_user(&mut args, run_as_user);
     if let Some(ref id) = focus_arg {
         args.push("--focus");
         args.push(id);
@@ -662,7 +662,7 @@ pub async fn spawn_shell_session(
         container_paths::CAPSULE_BIN,
         "new",
     ];
-    insert_run_as_user(&mut args, run_as_user.as_deref());
+    insert_run_as_user(&mut args, run_as_user);
     if let Some(flag) = host_alt_screen_exec_flag() {
         args.insert(1, flag);
     }
@@ -771,7 +771,7 @@ pub async fn spawn_agent_session(
 
     let run_as_user = Some(crate::runtime::identity::CAPSULE_SUPERVISOR_USER);
     let mut exec_args = vec!["exec", "--workdir", workdir, "-it"];
-    insert_run_as_user(&mut exec_args, run_as_user.as_deref());
+    insert_run_as_user(&mut exec_args, run_as_user);
     // Git policy and non-account session environment outlive `exec_args`.
     let env_flags: Vec<String> = git_policy_env_pairs(git_coauthor_trailer, git_dco)
         .into_iter()

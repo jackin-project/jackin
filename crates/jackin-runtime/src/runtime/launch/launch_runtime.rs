@@ -953,20 +953,20 @@ pub(crate) async fn launch_role_runtime(
         let mut passwd = String::new();
         let mut group = String::new();
         for (index, identity) in capsule_config.instance_identities.values().enumerate() {
-            let _ = writeln!(
+            writeln!(
                 passwd,
                 "jackin-slot-{index}:x:{}:{}:jackin slot {index}:/home/agent:/bin/zsh",
                 identity.uid, identity.gid
-            );
-            let _ = writeln!(group, "jackin-slot-{index}:x:{}:", identity.gid);
+            )?;
+            writeln!(group, "jackin-slot-{index}:x:{}:", identity.gid)?;
         }
         if let Some(identity) = capsule_config.shell_identity {
-            let _ = writeln!(
+            writeln!(
                 passwd,
                 "jackin-shell:x:{}:{}:jackin shell:/home/agent:/bin/zsh",
                 identity.uid, identity.gid
-            );
-            let _ = writeln!(group, "jackin-shell:x:{}:", identity.gid);
+            )?;
+            writeln!(group, "jackin-shell:x:{}:", identity.gid)?;
         }
         Some((passwd, group))
     };
