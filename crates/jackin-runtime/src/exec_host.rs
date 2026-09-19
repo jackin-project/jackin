@@ -105,6 +105,21 @@ enum CallerAuth {
     TestPeer,
 }
 
+/// Ensure the host can authenticate the capsule daemon before enabling a
+/// credential relay with configured bindings.
+pub(crate) fn ensure_caller_auth_supported() -> Result<()> {
+    #[cfg(target_os = "linux")]
+    {
+        Ok(())
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        anyhow::bail!(
+            "host credential relay is disabled on non-Linux hosts: capsule daemon peer authentication is unavailable"
+        )
+    }
+}
+
 async fn run_listener(
     sock_path: &Path,
     allowed_bindings: &[ExecBinding],
@@ -362,9 +377,7 @@ fn authenticate_capsule_daemon_peer(stream: &UnixStream) -> Result<()> {
 
 #[cfg(not(target_os = "linux"))]
 fn authenticate_capsule_daemon_peer(_stream: &UnixStream) -> Result<()> {
-    anyhow::bail!(
-        "host credential relay is disabled on non-Linux hosts: capsule daemon peer authentication is unavailable"
-    )
+    ensure_caller_auth_supported()
 }
 
 #[cfg(target_os = "linux")]

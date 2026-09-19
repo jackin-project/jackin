@@ -238,6 +238,15 @@ pub struct AppleContainerLaunch<'a> {
     pub debug: bool,
 }
 
+fn validate_exec_bindings(bindings: &[jackin_protocol::ExecBinding]) -> Result<()> {
+    if bindings.is_empty() {
+        return Ok(());
+    }
+
+    crate::exec_host::ensure_caller_auth_supported()
+        .context("apple-container does not support on-demand credential bindings")
+}
+
 /// Full launch path for the `apple-container` backend.
 ///
 /// Called from `load_role_with` after the image build step when the resolved
@@ -264,6 +273,8 @@ pub async fn launch(args: AppleContainerLaunch<'_>) -> Result<()> {
         resolved_env,
         debug,
     } = args;
+
+    validate_exec_bindings(&capsule_config.exec_bindings)?;
 
     // Probe container CLI availability.
     let version = probe_version().await;
@@ -370,12 +381,15 @@ pub async fn launch(args: AppleContainerLaunch<'_>) -> Result<()> {
     manifest.write(&container_state)?;
     // Start the host.sock credential resolver before the blocking attach call.
     // Detached on purpose: the spawned task runs for the session independently
-    // of this handle (matches the Docker launch path).
-    drop(crate::exec_host::start_for_container(
-        &paths.jackin_home,
-        container_name,
-        &capsule_config.exec_bindings,
-    ));
+    // of this handle (matches the Docker launch path). No socket is needed
+    // when the workspace declares no on-demand credentials.
+    if !capsule_config.exec_bindings.is_empty() {
+        drop(crate::exec_host::start_for_container(
+            &paths.jackin_home,
+            container_name,
+            &capsule_config.exec_bindings,
+        ));
+    }
 
     // Wait for capsule daemon readiness.
     wait_for_capsule(container_name).await?;
@@ -517,5 +531,39 @@ pub async fn probe_version() -> Option<String> {
         Some(v)
     } else {
         None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_binding() -> jackin_protocol::ExecBinding {
+        jackin_protocol::ExecBinding {
+            name: "TOKEN".to_owned(),
+            kind: jackin_protocol::ExecKind::Op,
+            source: "op://vault/item/field".to_owned(),
+        }
+    }
+
+    #[test]
+    fn empty_exec_bindings_are_supported() {
+        validate_exec_bindings(&[]).expect("no credential relay is required");
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_exec_bindings_are_supported() {
+        validate_exec_bindings(&[test_binding()]).expect("Linux peer auth is available");
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    #[test]
+    fn non_linux_exec_bindings_are_rejected_explicitly() {
+        let error = validate_exec_bindings(&[test_binding()])
+            .expect_err("non-Linux peer auth is unavailable");
+        let message = format!("{error:#}");
+        assert!(message.contains("apple-container does not support on-demand credential bindings"));
+        assert!(message.contains("peer authentication is unavailable"));
     }
 }
