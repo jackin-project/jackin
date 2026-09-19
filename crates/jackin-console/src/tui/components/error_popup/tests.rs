@@ -159,6 +159,15 @@ fn list_instance_error_helpers_use_standard_wording() {
 }
 
 #[test]
+fn launch_failed_popup_names_cause() {
+    assert_eq!(launch_failed_error_title(), "Launch failed");
+    assert_eq!(
+        launch_failed_error_message(anyhow::anyhow!("mount source does not exist: /gone")),
+        "Could not start the launch.\n\nmount source does not exist: /gone"
+    );
+}
+
+#[test]
 fn instance_action_failed_title_names_in_place_actions() {
     assert_eq!(
         instance_action_failed_error_title(WorkspaceInstanceAction::Stop),

@@ -23,8 +23,12 @@ pub enum DockerError {
     CommandFailedCapturedSuppressed { program: String, args: String },
     #[error("command failed: {program} {args} (see stderr above)")]
     CommandFailedSeeStderr { program: String, args: String },
-    #[error("Docker build command failed")]
-    DockerBuildFailed,
+    #[error("Docker build command failed: {stderr}")]
+    DockerBuildFailed {
+        /// Redacted tail of the build stderr (last lines carry the cause;
+        /// local temp paths are scrubbed so CLI errors stay path-free).
+        stderr: String,
+    },
     #[error("exec in {container} returned Detached — attach_stdout was set but exec ran detached")]
     ExecDetached { container: String },
     #[error("exec in {container} exited with code {exit_code}: {output}")]

@@ -4,7 +4,7 @@
 //! Console-owned workspace and mount helpers.
 
 use jackin_config::{
-    AppConfig, GlobalMountRow, MountConfig, MountEntry, MountIsolation, find_sensitive_mounts,
+    AppConfig, GlobalMountRow, MountConfig, MountIsolation, find_sensitive_mounts,
 };
 use jackin_core::RoleSelector;
 
@@ -84,21 +84,6 @@ pub fn global_rows_for_picker(
         },
         |role| config.resolve_mount_rows(role),
     )
-}
-
-/// Extract unscoped global Docker mounts for launch-time console choices.
-pub fn unscoped_global_mounts(config: &AppConfig) -> anyhow::Result<Vec<MountConfig>> {
-    let mounts = config
-        .docker
-        .mounts
-        .iter()
-        .filter_map(|(name, entry)| match entry {
-            MountEntry::Mount(mount) => Some((name.clone(), MountConfig::from(mount.clone()))),
-            MountEntry::Scoped(_) => None,
-        })
-        .collect::<Vec<_>>();
-
-    Ok(AppConfig::expand_and_validate_named_mounts(&mounts)?)
 }
 
 #[must_use]

@@ -84,7 +84,6 @@ fn docker_build_env_always_enables_buildkit_with_plain_progress() {
         vec![
             ("DOCKER_BUILDKIT".to_owned(), "1".to_owned()),
             ("BUILDKIT_PROGRESS".to_owned(), "plain".to_owned()),
-            ("BUILDX_NO_DEFAULT_ATTESTATIONS".to_owned(), "1".to_owned(),),
         ]
     );
 }
@@ -215,7 +214,7 @@ fn parse_docker_build_steps_extracts_completed_buildkit_lines() {
     let steps = parse_docker_build_steps(
         r#"
 run: jk-run-test
-command: docker buildx build .
+command: docker build .
 
 ----- stdout -----
 #0 building with "orbstack" instance using docker driver
@@ -395,13 +394,13 @@ fn validated_test_repo(
     (cached_repo, validated_repo)
 }
 
-fn recorded_buildx_build(runner: &FakeRunner) -> &str {
+fn recorded_docker_build(runner: &FakeRunner) -> &str {
     runner
         .run_recorded
         .iter()
-        .find(|command| command.contains("buildx build "))
+        .find(|command| command.contains("docker build "))
         .map(String::as_str)
-        .expect("expected buildx build command")
+        .expect("expected docker build command")
 }
 
 #[tokio::test]
@@ -431,7 +430,7 @@ async fn published_stale_role_base_build_keeps_layer_cache() {
     .unwrap();
 
     assert_eq!(base, role_base_image_name(&selector, None, Some("abc123")));
-    let build = recorded_buildx_build(&runner);
+    let build = recorded_docker_build(&runner);
     assert!(
         !build.contains(" --pull "),
         "published-stale role-base builds should preserve Docker layer cache: {build}"
@@ -464,7 +463,7 @@ async fn explicit_rebuild_role_base_still_pulls_default_construct() {
     .await
     .unwrap();
 
-    let build = recorded_buildx_build(&runner);
+    let build = recorded_docker_build(&runner);
     assert!(
         build.contains(" --pull "),
         "explicit rebuild should keep full base refresh semantics: {build}"

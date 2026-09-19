@@ -63,7 +63,6 @@ pub fn docker_build_env() -> Vec<(String, String)> {
     vec![
         ("DOCKER_BUILDKIT".to_owned(), "1".to_owned()),
         ("BUILDKIT_PROGRESS".to_owned(), "plain".to_owned()),
-        ("BUILDX_NO_DEFAULT_ATTESTATIONS".to_owned(), "1".to_owned()),
     ]
 }
 

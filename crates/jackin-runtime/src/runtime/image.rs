@@ -81,20 +81,20 @@ pub(crate) struct PreparedRuntimeBinaries {
     jackin_capsule_src: String,
 }
 
-pub(super) fn local_image_buildx_args() -> Vec<&'static str> {
+pub(super) fn local_image_build_args() -> Vec<&'static str> {
     // Runtime image builds consume local-only base tags such as
-    // `jk_<role>__base:<sha>` and PR-local construct images. A docker-container
-    // buildx builder cannot see the host Docker image store, so use the
-    // Docker-driver default builder. The global context flag keeps buildx from
-    // rejecting `default` when DOCKER_HOST or another active context is set.
-    vec![
-        "--context",
-        "default",
-        "buildx",
-        "build",
-        "--builder",
-        "default",
-    ]
+    // `jk_<role>__base:<sha>` and PR-local construct images, so they must
+    // run against the host image store of the daemon jackin launches
+    // against. Plain `docker build` (with DOCKER_BUILDKIT=1 from
+    // `docker_build_env`) does exactly that: it always uses the ambient
+    // endpoint — the same DOCKER_HOST-or-active-context resolution the API
+    // client uses — with the Docker driver, regardless of the current
+    // buildx builder. Forcing `--builder default`/`--context default`
+    // instead breaks every non-default context (OrbStack has no `default`
+    // socket) and can land images in a daemon the launcher never talks to.
+    // Attestations stay off: local single-platform loads have no
+    // provenance consumer.
+    vec!["build", "--provenance", "false", "--sbom", "false"]
 }
 
 #[expect(

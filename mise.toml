@@ -136,6 +136,14 @@ run = "cargo xtask desktop bindings-check"
 description = "Build the arm64 static JackinUsageFFI XCFramework"
 run = "cargo xtask desktop xcframework"
 
+[tasks.swift-package-native-ci]
+description = "CI gate for native SwiftPM package (xcframework then build/test)"
+run = '''
+set -euo pipefail
+mise run desktop-xcframework
+cd native && swift build && swift test --parallel
+'''
+
 [tasks.desktop-generate]
 description = "Regenerate the jackin❯ desktop Xcode project"
 run = "xcodegen generate --spec native/project.yml"
@@ -167,10 +175,17 @@ run = "cd native && periphery scan --project JackinDesktop.xcodeproj --schemes J
 [tasks.desktop-build]
 description = "Build JackinDesktop.app (prints absolute path + how to run)"
 usage = '''
-arg "<version>" help="CFBundleShortVersionString (e.g. 0.6.0)" default="0.6.0"
-arg "<build>" help="CFBundleVersion numeric build (e.g. 1)" default="1"
+arg "[version]" help="CFBundleShortVersionString (e.g. 0.6.0)"
+arg "[build]" help="CFBundleVersion numeric build (e.g. 1)"
 '''
-run = 'cargo xtask desktop build --version "$usage_version" --build "$usage_build"'
+run = '''
+set -eu
+# Explicit args win; the release workflow exports JACKIN_APP_* via
+# desktop-release-env; otherwise the previous defaults apply.
+version="${usage_version:-${JACKIN_APP_VERSION:-0.6.0}}"
+build="${usage_build:-${JACKIN_APP_BUILD:-1}}"
+cargo xtask desktop build --version "$version" --build "$build"
+'''
 
 [tasks.desktop-verify]
 description = "Fail-closed verify of JackinDesktop.app (prints path + run hint)"
@@ -329,23 +344,135 @@ arg "[version]" help="Expected CFBundleShortVersionString"
 arg "[build]" help="Expected CFBundleVersion numeric build"
 '''
 run = '''
-set -euo pipefail
-args=("$usage_app")
-if [ -n "${usage_out_zip:-}" ]; then args+=("$usage_out_zip"); fi
-if [ -n "${usage_version:-}" ]; then args+=(--version "$usage_version"); fi
-if [ -n "${usage_build:-}" ]; then args+=(--build "$usage_build"); fi
-cargo xtask desktop sign-notarize "${args[@]}"
+set -eu
+# CI imports an ephemeral signing keychain when the release job maps the
+# P12 secret; local runs use the login keychain and skip the import.
+# Credentials are deleted before this process exits (success, failure,
+# interrupt, or termination).
+if [ -n "${DEVELOPER_ID_APPLICATION_P12_BASE64:-}" ]; then
+  : "${DEVELOPER_ID_APPLICATION_P12_PASSWORD:?missing DEVELOPER_ID_APPLICATION_P12_PASSWORD}"
+  : "${APP_STORE_CONNECT_API_KEY_P8:?missing APP_STORE_CONNECT_API_KEY_P8}"
+  : "${APP_STORE_CONNECT_KEY_ID:?missing APP_STORE_CONNECT_KEY_ID}"
+  : "${APP_STORE_CONNECT_ISSUER_ID:?missing APP_STORE_CONNECT_ISSUER_ID}"
+  keychain_path="${RUNNER_TEMP:-${TMPDIR:-/tmp}}/jackin-signing.keychain-db"
+  keychain_password="$(openssl rand -base64 32)"
+  p12_path="${RUNNER_TEMP:-${TMPDIR:-/tmp}}/developer-id.p12"
+  p8_path="${RUNNER_TEMP:-${TMPDIR:-/tmp}}/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8"
+  cleanup_signing() {
+    security delete-keychain "$keychain_path" 2>/dev/null || true
+    rm -f "$p12_path" "$p8_path"
+  }
+  trap cleanup_signing EXIT INT TERM
+  printf '%s' "$DEVELOPER_ID_APPLICATION_P12_BASE64" | base64 --decode > "$p12_path"
+  printf '%s' "$APP_STORE_CONNECT_API_KEY_P8" > "$p8_path"
+  security create-keychain -p "$keychain_password" "$keychain_path"
+  security set-keychain-settings -lut 21600 "$keychain_path"
+  security unlock-keychain -p "$keychain_password" "$keychain_path"
+  security import "$p12_path" -P "$DEVELOPER_ID_APPLICATION_P12_PASSWORD" -A -t cert -f pkcs12 \
+    -k "$keychain_path" -T /usr/bin/codesign
+  old_ifs=$IFS; IFS='
+'
+  # Newline-split only: IFS above keeps keychain paths with spaces intact.
+  # shellcheck disable=SC2046,SC2086
+  security list-keychain -d user -s "$keychain_path" $(security list-keychain -d user | tr -d '"')
+  IFS=$old_ifs
+  security set-key-partition-list -S apple-tool:,apple:,codesign: -s \
+    -k "$keychain_password" "$keychain_path"
+  identity="$(security find-identity -v -p codesigning "$keychain_path" | awk -F'"' '/Developer ID Application/ {print $2; exit}')"
+  [ -n "$identity" ] || { echo "no Developer ID Application identity in imported keychain" >&2; exit 1; }
+  export DEVELOPER_ID_APPLICATION="$identity"
+  export APP_STORE_CONNECT_API_KEY_PATH="$p8_path"
+fi
+set -- "${usage_app:-native/dist/JackinDesktop.app}"
+if [ -n "${usage_out_zip:-}" ]; then set -- "$@" "$usage_out_zip"; fi
+if [ -n "${usage_version:-}" ]; then set -- "$@" --version "$usage_version"; fi
+if [ -n "${usage_build:-}" ]; then set -- "$@" --build "$usage_build"; fi
+cargo xtask desktop sign-notarize "$@"
 '''
 
 [tasks.desktop-release-state]
 description = "Print independent Desktop release/cask state KEY=value lines"
 usage = '''
-arg "<version>" help="Release version without leading v"
+arg "[version]" help="Release version without leading v"
 arg "<repo>" help="GitHub owner/name" default="jackin-project/jackin"
 arg "<tap>" help="Homebrew tap owner/name" default="jackin-project/homebrew-tap"
 '''
-run = 'cargo xtask desktop release-state "$usage_version" --repo "$usage_repo" --tap "$usage_tap"'
+run = '''
+set -eu
+version="${usage_version:-${JACKIN_APP_VERSION:-}}"
+[ -n "$version" ] || { echo "version required: pass a version or set JACKIN_APP_VERSION" >&2; exit 1; }
+cargo xtask desktop release-state "$version" --repo "$usage_repo" --tap "$usage_tap"
+'''
 
 [tasks.desktop-bootstrap-secrets]
 description = "Bootstrap release-macos Apple secrets into GitHub (never prints secret values)"
 run = "cargo xtask desktop bootstrap-secrets"
+
+[tasks.desktop-release-env]
+description = "Derive JACKIN_APP_VERSION/BUILD for the release workflow (dispatch fixture, tag, or manifest)"
+run = '''
+set -eu
+# Dispatch drills assemble a fixed fixture (no secrets, no external
+# writes); tag pushes derive the immutable version + commit-count build.
+if [ "${GITHUB_EVENT_NAME:-}" = "workflow_dispatch" ]; then
+  version="0.0.0"
+  build="1"
+else
+  if [ "${GITHUB_REF_TYPE:-}" = "tag" ]; then
+    version="${GITHUB_REF_NAME#v}"
+  else
+    version="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)"
+    case "$version" in
+      *-dev*) echo "Cannot release a dev version ($version)" >&2; exit 1;;
+    esac
+  fi
+  # CFBundleVersion needs full history; the checkout is shallow, and this
+  # repository is public so an unauthenticated unshallow is safe.
+  if [ "$(git rev-parse --is-shallow-repository 2>/dev/null || echo false)" = "true" ]; then
+    git fetch --unshallow --quiet
+  fi
+  build="$(git rev-list --count HEAD)"
+  case "$build" in
+    ''|*[!0-9]*) echo "CFBundleVersion commit count is not numeric" >&2; exit 1;;
+  esac
+fi
+# Stable X.Y.Z: digits and exactly two dots, no empty part.
+case "$version" in
+  ''|*[!0-9.]*|.*|*.|*..*) echo "Stable app version must be X.Y.Z (got $version)" >&2; exit 1;;
+esac
+dots="$(printf '%s' "$version" | tr -cd '.' )"
+# NOTE: shell length expansion is banned in this file — mise renders task
+# scripts as templates first, so that syntax breaks task parsing.
+# Match the two dots with a glob instead.
+case "$dots" in
+  '..') ;;
+  *) echo "Stable app version must be X.Y.Z (got $version)" >&2; exit 1;;
+esac
+if [ -n "${GITHUB_ENV:-}" ]; then
+  printf 'JACKIN_APP_VERSION=%s\nJACKIN_APP_BUILD=%s\n' "$version" "$build" >> "$GITHUB_ENV"
+fi
+printf 'JACKIN_APP_VERSION=%s\nJACKIN_APP_BUILD=%s\n' "$version" "$build"
+'''
+
+[tasks.renovate-upstream-sources]
+description = "Verify the pinned mise release ships both construct architectures (guards the construct installer URLs and the MISE_VERSION customManager)"
+run = '''
+set -eu
+. ./docker/construct/versions.env
+if [ -z "${MISE_VERSION:-}" ]; then
+  echo "::error::MISE_VERSION is empty"
+  exit 1
+fi
+# The standalone installer (https://mise.run) the construct
+# Dockerfile pipes to `sh` downloads these exact release assets.
+for arch in x64 arm64; do
+  url="https://github.com/jdx/mise/releases/download/v${MISE_VERSION}/mise-v${MISE_VERSION}-linux-${arch}.tar.gz"
+  if ! curl --fail --silent --show-error --location --head \
+    --retry 5 --retry-all-errors --retry-delay 2 \
+    --connect-timeout 15 --max-time 60 \
+    -o /dev/null "$url"; then
+    echo "::error::${url} did not resolve — mise v${MISE_VERSION} is missing the linux-${arch} release asset"
+    exit 1
+  fi
+done
+'''

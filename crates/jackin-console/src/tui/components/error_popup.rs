@@ -132,6 +132,14 @@ pub fn op_read_failed_error_popup_state(
     error_popup_state("1Password read failed", error.to_string())
 }
 
+pub fn launch_failed_error_title() -> &'static str {
+    "Launch failed"
+}
+
+pub fn launch_failed_error_message(error: impl std::fmt::Display) -> String {
+    format!("Could not start the launch.\n\n{error:#}")
+}
+
 pub fn role_resolution_error_title() -> &'static str {
     "Role resolution failed"
 }

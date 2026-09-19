@@ -2,41 +2,138 @@ schema = 1
 
 [generator]
 repository = "jackin-project/jackin"
+# D19 pin: the velnor-workflow commit that rendered this tree (generic
+# CI/CD capabilities superseding the #994 static-file restore).
+revision = "06050c9fa58fec8b5fd2c11c46756971e5270ec3"
 
-# Vendored generator inputs are never scan evidence: the download-ci-xtask
-# runtime ships package.json manifests that must not select a Node unit.
 [scan]
-exclude = [".github-gen/sources/**"]
+exclude = ["native/Package.swift", "native/.swiftpm/**"]
 
-# Runner placement: `runners` is the available backends. `automatic` is the
-# lanes that run on PR/push/schedule without a dispatch choice. Both lanes
-# schedule in parallel on pull_request (same-repo) and on main push/schedule.
-# `automatic_lanes` only feeds static workflows that read
-# vars.VELNOR_AUTOMATIC_LANES; it must not keep generated PR CI GitHub-only.
+# Runner placement: keep both backends for manual dispatch; automatic events
+# (main push/schedule, same-repo PR) must stay GitHub-only so ci-required is
+# not blocked by queued self-hosted jobs when the Velnor fleet is unavailable.
 [workflow]
-runners = "both"
-automatic = "both"
-default_dispatch_runner = "both"
+runners = "github"
+automatic = "github"
+default_dispatch_runner = "github"
 automatic_lanes = "github"
 github_runner = "ubuntu-26.04"
 macos_runner = "macos-26"
 velnor_labels = ["self-hosted", "velnor-target-mvp"]
-pull_request_on_velnor = true
 
-# Interim: adopted release-side workflows predate policy conformance (#965).
 [policy]
-exclude_workflows = [
-  "cache-cleanup.yml",
-  "construct.yml",
-  "docs.yml",
-  "hygiene.yml",
-  "jackin-dev.yml",
-  "preview.yml",
-  "release.yml",
-  "renovate.yml",
-  "renovate-validate.yml",
-  "reuse-compliance.yml",
-]
+ruleset_required_status_checks = ["ci-required"]
+ruleset_external_status_checks = ["DCO"]
+
+# Self-hosted Renovate: schedule + writer identity from the #994 copy
+# (renovate.yml: cron "0 6 * * *", secrets.RENOVATE_TOKEN, RENOVATE_GIT_AUTHOR).
+# lanes = "github": the copy defaulted to velnor, but velnor/both lanes
+# require [workflow] velnor_trusted_label, and no trusted-label fact exists in
+# this repo. Revisit for velnor/both once the fleet label is known.
+# The copy sets RENOVATE_ALLOWED_UNSAFE_EXECUTIONS=mise (intended: let
+# `mise lock` refresh mise.lock in Renovate PRs), but renovate.json
+# configures no post-upgrade execution, so the knob has no live effect and
+# nothing is lost by omitting it. If post-upgrade execution is ever
+# configured, [renovate] allowed_commands renders RENOVATE_ALLOWED_COMMANDS.
+[renovate]
+enabled = true
+reason = "Self-hosted Renovate writer for mise/cargo/docker/tool pins; validator gates renovate.json changes."
+schedule = "0 6 * * *"
+token = "RENOVATE_TOKEN"
+config = "renovate.json"
+validate = true
+lanes = "github"
+author = "Renovate Bot <renovate@whitesourcesoftware.com>"
+signoff = true
+
+[[declare]]
+primitive = "renovate"
+file = "renovate.yml"
+
+[[declare]]
+primitive = "renovate-validate"
+file = "renovate-validate.yml"
+
+# Desktop cadence (L5): the two heavier tiers from desktop-cadence.yml.
+# Merge tier runs the PR graph + UI tests (task desktop-merge, mise.toml);
+# scheduled tier runs the merge graph + dead-code scan (task desktop-scheduled).
+# Toolchain env (DEVELOPER_DIR, MACOSX_DEPLOYMENT_TARGET) is job-level in the
+# copy, so it travels as profile env; every tool id equals a mise.lock key.
+[[check_profile]]
+id = "desktop-merge"
+name = "Desktop merge cadence"
+runner = "macos"
+tools = ["cargo-binstall", "rust", "aqua:nextest-rs/nextest/cargo-nextest", "cargo:boltffi_cli", "xcodegen", "swiftlint", "xcbeautify", "ripgrep"]
+tasks = ["desktop-merge"]
+timeout_minutes = 90
+status = "required"
+[check_profile.env]
+CARGO_TERM_COLOR = "always"
+DEVELOPER_DIR = "/Applications/Xcode_26.6.app/Contents/Developer"
+MACOSX_DEPLOYMENT_TARGET = "26.0"
+
+[[check_profile]]
+id = "desktop-scheduled"
+name = "Desktop scheduled cadence"
+schedule = "41 4 * * 1"
+runner = "macos"
+tools = ["cargo-binstall", "rust", "aqua:nextest-rs/nextest/cargo-nextest", "cargo:boltffi_cli", "xcodegen", "swiftlint", "xcbeautify", "periphery", "ripgrep"]
+tasks = ["desktop-scheduled"]
+timeout_minutes = 90
+status = "required"
+[check_profile.env]
+CARGO_TERM_COLOR = "always"
+DEVELOPER_DIR = "/Applications/Xcode_26.6.app/Contents/Developer"
+MACOSX_DEPLOYMENT_TARGET = "26.0"
+
+# One file, one trigger set, faithful to the copy: the merge tier runs on
+# push-to-main + dispatch (copy desktop-cadence.yml push: branches: [main],
+# merge job gated on event != schedule); the scheduled tier keeps the
+# copy's Monday cron.
+[[declare]]
+primitive = "scheduled-checks"
+file = "desktop-merge.yml"
+[declare.args]
+profiles = ["desktop-merge"]
+name = "Desktop merge cadence"
+events = ["push"]
+branches = ["main"]
+
+[[declare]]
+primitive = "scheduled-checks"
+file = "desktop-scheduled.yml"
+[declare.args]
+profiles = ["desktop-scheduled"]
+name = "Desktop scheduled cadence"
+
+# Renovate upstream liveness (D2): the #994 renovate-validate.yml job that
+# verifies the pinned mise release still ships both construct architectures.
+# Product-owned (versions.env path + mise URLs) as task
+# renovate-upstream-sources; the generic primitive supplies triggers,
+# concurrency, and the runner. Complements the generic schema validator
+# (renovate-validate.yml), which passes --strict on this repo. The copy
+# scoped pull_request to branches [main]; the primitive renders a bare
+# pull_request (a superset that only runs the HEAD probe more often).
+[[check_profile]]
+id = "renovate-upstream-sources"
+name = "Renovate upstream sources"
+runner = "github"
+tasks = ["renovate-upstream-sources"]
+timeout_minutes = 10
+status = "required"
+[check_profile.env]
+# The probe needs only sh + curl: skip mise's whole-toolset install
+# (30 tools, ~9 cold minutes) before running the task.
+MISE_TASK_RUN_AUTO_INSTALL = "false"
+
+[[declare]]
+primitive = "scheduled-checks"
+file = "renovate-upstream-sources.yml"
+[declare.args]
+profiles = ["renovate-upstream-sources"]
+name = "Renovate upstream sources"
+events = ["push", "pull_request"]
+branches = ["main"]
 
 # Unit contracts the scan cannot derive. Command arrays are rejected by
 # velnor-workflow 721c2fed; typed capabilities only (`ci_tasks`, `mise_tools`).
@@ -47,20 +144,22 @@ id = "rust-jackin-xtask"
 mise_tools = ["github:open-telemetry/weaver"]
 
 # XCFramework must exist before `swift build` resolves the binary target.
-# A dedicated precursor unit runs first; depends_on orders the Swift unit.
-[[units]]
-id = "rust-desktop-xcframework"
-kind = "rust"
-root = "native"
-watch = ["native/**", "crates/jackin-xtask/**"]
-ci_tasks = ["desktop-xcframework"]
-mise_tools = ["cargo-binstall", "rust", "cargo:sccache", "cargo:boltffi_cli"]
-pinned_lockfile = true
-
+# Run desktop-xcframework in the same macOS job as swift-package-native so
+# the binary target path is populated on one runner (separate jobs do not
+# share target/xcframework).
+# capabilities = ["xcframework"]: Q4 obligation — without it this Apple-bound
+# unit renders ubuntu + Linux plan-artifact runtime (slice 9 split).
+# depends_on (F2): FFI touches select this Swift consumer; selection coupling
+# only, no forced serialization (the unit rebuilds the XCFramework in-job).
 [[units]]
 id = "swift-package-native"
-depends_on = ["rust-desktop-xcframework"]
+kind = "swift"
+root = "native"
+watch = ["native/**/*.swift", "native/Package.swift", "native/Package.resolved", "native/.swiftpm/Package.resolved", "crates/jackin-xtask/**"]
+ci_tasks = ["swift-package-native-ci"]
 mise_tools = ["cargo-binstall", "rust", "cargo:sccache", "cargo:boltffi_cli"]
+capabilities = ["xcframework"]
+depends_on = ["rust-jackin-usage-ffi"]
 
 # jackin-lints pins nightly via crates/jackin-lints/rust-toolchain.
 # dylint-link must be on PATH (rust + cargo-binstall).
@@ -68,115 +167,64 @@ mise_tools = ["cargo-binstall", "rust", "cargo:sccache", "cargo:boltffi_cli"]
 id = "rust-jackin-lints"
 mise_tools = ["rust", "cargo-binstall"]
 
-# Adopted release-side workflows: the repository owns the bytes under
-# .github-gen/sources/workflows; the generator owns the write into
-# .github/workflows. The 721c2fed generator rejects
-# .github/ci/workflow-templates and `static-workflow` declares.
+# Q4 obligation, second Swift unit (scanned): AppKit prototype, genuinely
+# Apple-bound, but scan evidence cannot prove it. Row-over-scan merge keeps
+# the scanned base and overrides the platform requirement only.
+[[units]]
+id = "swift-package-native-design-prototypes-unifiedagentusage"
+capabilities = ["xcode"]
 
-[[static_files]]
-file = ".github/workflows/cache-cleanup.yml"
-source = ".github-gen/sources/workflows/cache-cleanup.yml"
+# Desktop release (L10): tag-triggered tasks release over the canonical
+# desktop mise tasks. Each event runs exactly one self-contained job
+# (jobs share no filesystem): dispatch drills build/verify/release-state
+# with a fixed fixture and no secrets; tag pushes run the full pipeline
+# plus sign/notarize/attest. Versions derive in-job via
+# desktop-release-env (tag/manifest/fixture); secrets map by reference
+# and toolchain pins are explicit per job.
+[release]
+enabled = true
+reason = "Tag-triggered desktop release: drill-only build job plus self-contained publish job (build/verify/sign/attest)."
+kind = "tasks"
+modes = ["validate"]
+tag_pattern = "v[0-9]*"
 
-[[static_files]]
-file = ".github/workflows/construct.yml"
-source = ".github-gen/sources/workflows/construct.yml"
+[[release.job]]
+id = "build"
+tasks = ["desktop-release-env", "desktop-build", "desktop-verify", "desktop-release-state"]
+runner = "macos"
+modes = ["validate"]
+timeout_minutes = 90
 
-[[static_files]]
-file = ".github/workflows/desktop-cadence.yml"
-source = ".github-gen/sources/workflows/desktop-cadence.yml"
+[release.job.env]
+DEVELOPER_DIR = "/Applications/Xcode_26.6.app/Contents/Developer"
+MACOSX_DEPLOYMENT_TARGET = "26.0"
 
-[[static_files]]
-file = ".github/workflows/docs.yml"
-source = ".github-gen/sources/workflows/docs.yml"
+[[release.job]]
+id = "sign"
+name = "Sign release"
+tasks = ["desktop-release-env", "desktop-build", "desktop-verify", "desktop-release-state", "desktop-sign-notarize"]
+runner = "macos"
+modes = ["publish"]
+timeout_minutes = 90
+environment = "release-macos"
+attest_subjects = ["native/dist/jackin-desktop-*-aarch64-apple-darwin.zip"]
 
-[[static_files]]
-file = ".github/workflows/hygiene.yml"
-source = ".github-gen/sources/workflows/hygiene.yml"
+[release.job.permissions]
+contents = "read"
+id-token = "write"
+attestations = "write"
 
-[[static_files]]
-file = ".github/workflows/jackin-dev.yml"
-source = ".github-gen/sources/workflows/jackin-dev.yml"
+[release.job.env]
+DEVELOPER_DIR = "/Applications/Xcode_26.6.app/Contents/Developer"
+MACOSX_DEPLOYMENT_TARGET = "26.0"
+DEVELOPER_ID_APPLICATION_P12_BASE64 = "${{ secrets.DEVELOPER_ID_APPLICATION_P12_BASE64 }}"
+DEVELOPER_ID_APPLICATION_P12_PASSWORD = "${{ secrets.DEVELOPER_ID_APPLICATION_P12_PASSWORD }}"
+APP_STORE_CONNECT_API_KEY_P8 = "${{ secrets.APP_STORE_CONNECT_API_KEY_P8 }}"
+APP_STORE_CONNECT_KEY_ID = "${{ secrets.APP_STORE_CONNECT_KEY_ID }}"
+APP_STORE_CONNECT_ISSUER_ID = "${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}"
+EXPECTED_CERT_SHA256 = "${{ vars.JACKIN_DEVELOPER_ID_CERT_SHA256 }}"
+EXPECTED_TEAM_ID = "${{ vars.JACKIN_DEVELOPER_ID_TEAM_ID }}"
 
-[[static_files]]
-file = ".github/workflows/preview.yml"
-source = ".github-gen/sources/workflows/preview.yml"
-
-[[static_files]]
-file = ".github/workflows/release.yml"
-source = ".github-gen/sources/workflows/release.yml"
-
-[[static_files]]
-file = ".github/workflows/renovate-validate.yml"
-source = ".github-gen/sources/workflows/renovate-validate.yml"
-
-[[static_files]]
-file = ".github/workflows/renovate.yml"
-source = ".github-gen/sources/workflows/renovate.yml"
-
-[[static_files]]
-file = ".github/workflows/reuse-compliance.yml"
-source = ".github-gen/sources/workflows/reuse-compliance.yml"
-
-# Composite actions the generated workflows reference: the repository owns the
-# bytes under .github-gen/sources, the generator owns the write into
-# .github/actions.
-
-[[static_files]]
-file = ".github/actions/aggregate-needs/action.yml"
-source = ".github-gen/sources/actions/aggregate-needs/action.yml"
-
-[[static_files]]
-file = ".github/actions/build-release-archive/action.yml"
-source = ".github-gen/sources/actions/build-release-archive/action.yml"
-
-[[static_files]]
-file = ".github/actions/cache-cargo-registry/action.yml"
-source = ".github-gen/sources/actions/cache-cargo-registry/action.yml"
-
-[[static_files]]
-file = ".github/actions/check-deployed-docs/action.yml"
-source = ".github-gen/sources/actions/check-deployed-docs/action.yml"
-
-[[static_files]]
-file = ".github/actions/download-ci-xtask/action.yml"
-source = ".github-gen/sources/actions/download-ci-xtask/action.yml"
-
-[[static_files]]
-file = ".github/actions/download-ci-xtask/runtime/.gitignore"
-source = ".github-gen/sources/actions/download-ci-xtask/runtime/.gitignore"
-
-[[static_files]]
-file = ".github/actions/download-ci-xtask/runtime/dist/index.js"
-source = ".github-gen/sources/actions/download-ci-xtask/runtime/dist/index.js"
-
-[[static_files]]
-file = ".github/actions/download-ci-xtask/runtime/dist/package.json"
-source = ".github-gen/sources/actions/download-ci-xtask/runtime/dist/package.json"
-
-[[static_files]]
-file = ".github/actions/download-ci-xtask/runtime/package-lock.json"
-source = ".github-gen/sources/actions/download-ci-xtask/runtime/package-lock.json"
-
-[[static_files]]
-file = ".github/actions/download-ci-xtask/runtime/package.json"
-source = ".github-gen/sources/actions/download-ci-xtask/runtime/package.json"
-
-[[static_files]]
-file = ".github/actions/download-ci-xtask/runtime/src/index.js"
-source = ".github-gen/sources/actions/download-ci-xtask/runtime/src/index.js"
-
-[[static_files]]
-file = ".github/actions/download-ci-xtask/runtime/test/index.test.js"
-source = ".github-gen/sources/actions/download-ci-xtask/runtime/test/index.test.js"
-
-[[static_files]]
-file = ".github/actions/download-codebook/action.yml"
-source = ".github-gen/sources/actions/download-codebook/action.yml"
-
-[[static_files]]
-file = ".github/actions/sign-and-attest-archive/action.yml"
-source = ".github-gen/sources/actions/sign-and-attest-archive/action.yml"
-
-[[static_files]]
-file = ".github/actions/sign-capsule-manifest/action.yml"
-source = ".github-gen/sources/actions/sign-capsule-manifest/action.yml"
+[[declare]]
+primitive = "release"
+file = "release.yml"

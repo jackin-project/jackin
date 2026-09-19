@@ -100,6 +100,7 @@ agents = ["amp"]
         default_agent: Some(Agent::Amp),
         keep_awake_enabled: false,
         git_pull_on_entry: false,
+        mount_heal: jackin_config::MountHealReport::default(),
     };
     // Capture queue (role-specific, after 4-slot preamble):
     //   [0] capture_secret: gh auth token → empty (no gh session in test)
@@ -258,6 +259,7 @@ agents = ["amp"]
         default_agent: Some(Agent::Amp),
         keep_awake_enabled: false,
         git_pull_on_entry: false,
+        mount_heal: jackin_config::MountHealReport::default(),
     };
     // Capture queue (role-specific, after 4-slot preamble):
     //   [0] capture_secret: gh auth token → empty (no gh session in test)
