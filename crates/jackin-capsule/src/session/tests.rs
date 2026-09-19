@@ -5,8 +5,8 @@
 use super::{
     AgentSpawnSpec, AgentState, OscPolicy, Session, SessionEvent, SessionTerminal,
     agent_model_args, build_agent_command, build_shell_command, child_exit_reason, emit_pty_exit,
-    emit_pty_spawn, inject_status_env, osc8_uri_is_safe, pty_exit_error_type, pty_exit_reason,
-    validate_spawn_token_syntax,
+    emit_pty_spawn, inject_status_env, isolated_wrapper_args, osc8_uri_is_safe,
+    pty_exit_error_type, pty_exit_reason, validate_spawn_token_syntax,
 };
 
 /// Primary-layout spawn spec for `agent`/`instance`.
@@ -35,6 +35,10 @@ fn spawn_spec<'a>(
         env_passthrough,
         cwd: Path::new("/workspace"),
         codename: "test",
+        identity: jackin_protocol::SessionIdentity {
+            uid: 2_000,
+            gid: 2_000,
+        },
     }
 }
 
@@ -89,7 +93,7 @@ impl MasterPty for NullMasterPty {
         Ok(Box::new(std::io::sink()))
     }
     #[cfg(unix)]
-    fn process_group_leader(&self) -> Option<nix::libc::pid_t> {
+    fn process_group_leader(&self) -> Option<libc::pid_t> {
         None
     }
     #[cfg(unix)]
@@ -128,7 +132,7 @@ impl MasterPty for RecordingMasterPty {
         self.inner.take_writer()
     }
     #[cfg(unix)]
-    fn process_group_leader(&self) -> Option<nix::libc::pid_t> {
+    fn process_group_leader(&self) -> Option<libc::pid_t> {
         self.inner.process_group_leader()
     }
     #[cfg(unix)]
@@ -781,6 +785,32 @@ fn amp_command_exports_xdg_data_home_as_durable_parent() {
 }
 
 #[test]
+fn isolated_wrapper_carries_instance_identity_into_session_exec() {
+    let args = isolated_wrapper_args(
+        jackin_protocol::SessionIdentity {
+            uid: 2_017,
+            gid: 2_017,
+        },
+        Some("claude-personal"),
+        "/jackin/runtime/entrypoint.sh",
+    );
+    let args = args
+        .iter()
+        .map(|arg| arg.to_string_lossy().into_owned())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        args,
+        vec![
+            "__isolated-exec",
+            "claude-personal",
+            "2017",
+            "2017",
+            "/jackin/runtime/entrypoint.sh",
+        ]
+    );
+}
+
+#[test]
 fn build_agent_command_injects_only_bounded_auth_mode() {
     let env = vec![(
         jackin_protocol::AUTH_MODE_ENV.to_owned(),
@@ -820,7 +850,15 @@ fn build_agent_command_advertises_truecolor() {
 #[test]
 fn build_shell_command_advertises_truecolor() {
     let env = vec![("COLORTERM".to_owned(), "false".to_owned())];
-    let cmd = build_shell_command(&env, Path::new("/workspace"), "test");
+    let cmd = build_shell_command(
+        &env,
+        Path::new("/workspace"),
+        "test",
+        jackin_protocol::SessionIdentity {
+            uid: 2_000,
+            gid: 2_000,
+        },
+    );
 
     assert_eq!(
         cmd.get_env("COLORTERM").and_then(|value| value.to_str()),
@@ -857,7 +895,15 @@ fn agent_model_args_match_cli_contracts() {
 #[test]
 fn build_shell_command_removes_stale_agent_env() {
     let env = vec![("JACKIN_AGENT".to_owned(), "claude".to_owned())];
-    let cmd = build_shell_command(&env, Path::new("/workspace"), "test");
+    let cmd = build_shell_command(
+        &env,
+        Path::new("/workspace"),
+        "test",
+        jackin_protocol::SessionIdentity {
+            uid: 2_000,
+            gid: 2_000,
+        },
+    );
 
     assert!(cmd.get_env("JACKIN_AGENT").is_none());
 }
@@ -1578,7 +1624,7 @@ impl MasterPty for FaultMasterPty {
         }))
     }
     #[cfg(unix)]
-    fn process_group_leader(&self) -> Option<nix::libc::pid_t> {
+    fn process_group_leader(&self) -> Option<libc::pid_t> {
         None
     }
     #[cfg(unix)]
@@ -1819,7 +1865,15 @@ fn account_credentials_are_scoped_to_selected_instance_and_mode() {
         cmd.get_env("ANTHROPIC_API_KEY").and_then(|v| v.to_str()),
         Some("personal-secret")
     );
-    let shell = build_shell_command(&hostile_passthrough, Path::new("/workspace"), "test");
+    let shell = build_shell_command(
+        &hostile_passthrough,
+        Path::new("/workspace"),
+        "test",
+        jackin_protocol::SessionIdentity {
+            uid: 2_000,
+            gid: 2_000,
+        },
+    );
     assert!(shell.get_env("ANTHROPIC_API_KEY").is_none());
 }
 
@@ -1880,6 +1934,10 @@ fn secondary_instance_gets_its_own_home_and_forwarded_dir() {
         env_passthrough: &hostile,
         cwd: Path::new("/workspace"),
         codename: "test",
+        identity: jackin_protocol::SessionIdentity {
+            uid: 2_001,
+            gid: 2_001,
+        },
     };
     let cmd = build_agent_command(&spec);
     let env = |name: &str| cmd.get_env(name).and_then(|v| v.to_str());
@@ -1907,6 +1965,10 @@ fn secondary_instance_gets_its_own_home_and_forwarded_dir() {
         env_passthrough: &hostile,
         cwd: Path::new("/workspace"),
         codename: "test",
+        identity: jackin_protocol::SessionIdentity {
+            uid: 2_002,
+            gid: 2_002,
+        },
     };
     let cmd = build_agent_command(&spec);
     let env = |name: &str| cmd.get_env(name).and_then(|v| v.to_str());

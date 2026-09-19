@@ -118,8 +118,8 @@ fn start_listener_at_inner_uninstrumented(path: &Path) -> Result<ListenerWithLim
         // Parent dir 0o700 so only the owner can list/connect. The socket
         // file itself gets 0o600 after bind, but on a system where the
         // parent dir is world-x an attacker can still enumerate the path.
-        // Lock both. The dir is host-owned and the capsule runs as that
-        // same UID (`--user` on docker run), so the owner can set this.
+        // Lock both. The dir is host-owned and the root capsule supervisor
+        // (`--user 0:0`) owns the bind-mounted socket path, so it can set this.
         std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o700))
             .with_context(|| format!("locking socket parent {} to 0o700", parent.display()))?;
     }

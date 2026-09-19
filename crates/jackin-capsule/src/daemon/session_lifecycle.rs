@@ -243,6 +243,9 @@ impl Multiplexer {
                 let forwarded_dir = config.forwarded_for_instance(instance).ok_or_else(|| {
                     anyhow::anyhow!("instance {instance:?} has no forwarded dir in launch config")
                 })?;
+                let identity = config.identity_for_instance(instance).ok_or_else(|| {
+                    anyhow::anyhow!("instance {instance:?} has no isolated Unix identity")
+                })?;
                 let label = crate::tui::model::visible_agent_label(
                     config.label_for_instance(instance),
                     Some(slug),
@@ -259,6 +262,7 @@ impl Multiplexer {
                     env_passthrough,
                     cwd,
                     codename,
+                    identity,
                 });
                 crate::session::apply_account_env(
                     &mut cmd,
@@ -270,7 +274,17 @@ impl Multiplexer {
             }
             None => Ok(SessionLaunch {
                 label: crate::tui::model::visible_agent_label(None, None, None),
-                cmd: build_shell_command(env_passthrough, cwd, codename),
+                cmd: build_shell_command(
+                    env_passthrough,
+                    cwd,
+                    codename,
+                    self.launch_env
+                        .launch_config
+                        .shell_identity
+                        .ok_or_else(|| {
+                            anyhow::anyhow!("launch config has no isolated shell identity")
+                        })?,
+                ),
             }),
         }
     }

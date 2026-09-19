@@ -95,6 +95,8 @@ pub async fn check_dns(container_name: &str) {
         "container",
         [
             "exec",
+            "--user",
+            crate::runtime::identity::CAPSULE_SUPERVISOR_USER,
             container_name,
             "sh",
             "-c",
@@ -134,7 +136,15 @@ pub async fn wait_for_capsule(container_name: &str) -> Result<()> {
 
         let output = crate::process_telemetry::exec_async(&jackin_process::ExecRequest::new(
             "container",
-            ["exec", container_name, "sh", "-c", check_cmd],
+            [
+                "exec",
+                "--user",
+                crate::runtime::identity::CAPSULE_SUPERVISOR_USER,
+                container_name,
+                "sh",
+                "-c",
+                check_cmd,
+            ],
         ))
         .await;
 
@@ -155,7 +165,14 @@ pub async fn wait_for_capsule(container_name: &str) -> Result<()> {
 /// can record an attach outcome — a non-zero exit distinguishes a crash from a
 /// clean detach.
 pub async fn attach(container_name: &str, focus_session: Option<u64>) -> Result<Option<i32>> {
-    let mut args: Vec<&str> = vec!["exec", "-it", container_name, container_paths::CAPSULE_BIN];
+    let mut args: Vec<&str> = vec![
+        "exec",
+        "--user",
+        crate::runtime::identity::CAPSULE_SUPERVISOR_USER,
+        "-it",
+        container_name,
+        container_paths::CAPSULE_BIN,
+    ];
 
     let focus_str;
     if let Some(id) = focus_session {
@@ -306,6 +323,7 @@ pub async fn launch(args: AppleContainerLaunch<'_>) -> Result<()> {
 
     let spec = crate::apple_container_client::AppleContainerSpec {
         image: image.to_owned(),
+        user: crate::runtime::identity::CAPSULE_SUPERVISOR_USER.to_owned(),
         env,
         env_file: host_env_file.as_ref().map(|file| file.path().to_path_buf()),
         mounts: container_mounts,

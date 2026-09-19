@@ -1623,6 +1623,8 @@ pub struct AgentSpawnSpec<'a> {
     pub env_passthrough: &'a [(String, String)],
     pub cwd: &'a Path,
     pub codename: &'a str,
+    /// Identity admitted by the host for this instance.
+    pub identity: jackin_protocol::SessionIdentity,
 }
 
 /// Whether `name` is an agent config-folder env var
@@ -1652,7 +1654,11 @@ fn is_folder_env(name: &str) -> bool {
 /// var is set to its own home: a stale or foreign value can never leak
 /// this pane into another account's credentials or history.
 pub fn build_agent_command(spec: &AgentSpawnSpec<'_>) -> CommandBuilder {
-    let mut cmd = CommandBuilder::new(container_paths::ENTRYPOINT);
+    let mut cmd = isolated_command(
+        spec.identity,
+        Some(spec.instance),
+        container_paths::ENTRYPOINT,
+    );
     for arg in agent_model_args(spec.agent, spec.model) {
         cmd.arg(arg);
     }
@@ -1749,8 +1755,10 @@ pub fn build_shell_command(
     env_passthrough: &[(String, String)],
     cwd: &Path,
     codename: &str,
+    identity: jackin_protocol::SessionIdentity,
 ) -> CommandBuilder {
-    let mut cmd = CommandBuilder::new(shell_executable());
+    let shell = shell_executable();
+    let mut cmd = isolated_command(identity, None, &shell);
     for name in jackin_core::account_env_names() {
         cmd.env_remove(name);
     }
@@ -1764,6 +1772,48 @@ pub fn build_shell_command(
     apply_terminal_env(&mut cmd);
     cmd.cwd(cwd);
     cmd
+}
+
+/// Build the internal root-supervisor wrapper command. The wrapper validates
+/// the identity against the launch config, installs Landlock, drops to the
+/// slot UID, and only then executes the requested program.
+fn isolated_command(
+    identity: jackin_protocol::SessionIdentity,
+    instance: Option<&str>,
+    program: impl AsRef<std::ffi::OsStr>,
+) -> CommandBuilder {
+    #[cfg(test)]
+    {
+        // Session unit tests run on the host, where the container-only capsule
+        // binary and entrypoint paths do not exist. The production path below
+        // is exercised by the dedicated process-isolation boundary tests.
+        let _ = (identity, instance);
+        return CommandBuilder::new(program);
+    }
+    #[cfg(not(test))]
+    {
+        let mut cmd = CommandBuilder::new(container_paths::CAPSULE_BIN);
+        cmd.args(isolated_wrapper_args(identity, instance, program));
+        cmd
+    }
+}
+
+/// Exact argv passed to the capsule root supervisor for one session. Kept
+/// pure so tests can prove the admitted identity is actually wired into the
+/// production spawn command even though host-side PTY tests bypass the
+/// container-only wrapper.
+fn isolated_wrapper_args(
+    identity: jackin_protocol::SessionIdentity,
+    instance: Option<&str>,
+    program: impl AsRef<std::ffi::OsStr>,
+) -> Vec<std::ffi::OsString> {
+    vec![
+        "__isolated-exec".into(),
+        instance.unwrap_or("-").into(),
+        identity.uid.to_string().into(),
+        identity.gid.to_string().into(),
+        program.as_ref().to_owned(),
+    ]
 }
 
 #[cfg(not(test))]

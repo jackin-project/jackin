@@ -186,7 +186,12 @@ pub(crate) fn apply_instance_dirs(
     instances: &[jackin_config::ResolvedInstance],
     slots: &std::collections::BTreeMap<String, crate::instance::ProvisionedInstanceAuth>,
 ) -> anyhow::Result<()> {
-    for instance in instances {
+    const FIRST_SESSION_UID: u32 = 2_000;
+    anyhow::ensure!(
+        instances.len() < 1_000,
+        "too many admitted instances for the capsule session UID range"
+    );
+    for (index, instance) in instances.iter().enumerate() {
         let slot = slots.get(&instance.config_id).ok_or_else(|| {
             anyhow::anyhow!(
                 "instance {:?} has no provisioned auth slot in role state",
@@ -204,7 +209,66 @@ pub(crate) fn apply_instance_dirs(
                 slot.container_store_rel
             ),
         );
+        launch.instance_credential_files.insert(
+            instance.config_id.clone(),
+            jackin_protocol::account_credentials_container_path(&instance.config_id),
+        );
+        launch.instance_identities.insert(
+            instance.config_id.clone(),
+            jackin_protocol::SessionIdentity {
+                uid: FIRST_SESSION_UID + index as u32,
+                gid: FIRST_SESSION_UID + index as u32,
+            },
+        );
+
+        let paths = instance.agent.runtime().state_paths();
+        let mut mount_paths = vec![format!("/home/agent/{}", slot.container_home_rel)];
+        mount_paths.extend(
+            paths
+                .home_dirs()
+                .filter(|entry| *entry != paths.credential_dir)
+                .map(|entry| {
+                    format!(
+                        "/home/agent/{}",
+                        crate::instance::slot_home_rel(entry, slot.slot_suffix.as_deref())
+                    )
+                }),
+        );
+        if slot.forward_auth {
+            if matches!(
+                instance.agent,
+                jackin_core::Agent::Kimi | jackin_core::Agent::Hermes
+            ) {
+                mount_paths.push(format!(
+                    "{}/{}",
+                    jackin_core::container_paths::JACKIN_ROOT,
+                    slot.container_store_rel
+                ));
+            } else {
+                for path in &slot.credential_paths {
+                    let Some(file_name) = path.file_name().and_then(|name| name.to_str()) else {
+                        continue;
+                    };
+                    if !(matches!(instance.agent, jackin_core::Agent::Claude) && !path.exists()) {
+                        mount_paths.push(format!(
+                            "{}/{}/{}",
+                            jackin_core::container_paths::JACKIN_ROOT,
+                            slot.container_store_rel,
+                            file_name
+                        ));
+                    }
+                }
+            }
+        }
+        launch
+            .instance_mount_paths
+            .insert(instance.config_id.clone(), mount_paths);
     }
+    let shell_uid = FIRST_SESSION_UID + instances.len() as u32;
+    launch.shell_identity = Some(jackin_protocol::SessionIdentity {
+        uid: shell_uid,
+        gid: shell_uid,
+    });
     Ok(())
 }
 
@@ -275,6 +339,10 @@ pub(crate) fn capsule_config(
         // prepared; the manifest alone does not carry slot layout.
         instance_home_dirs: std::collections::BTreeMap::new(),
         instance_forwarded_dirs: std::collections::BTreeMap::new(),
+        instance_credential_files: std::collections::BTreeMap::new(),
+        instance_mount_paths: std::collections::BTreeMap::new(),
+        instance_identities: std::collections::BTreeMap::new(),
+        shell_identity: None,
         claude_marketplaces: Vec::new(),
         claude_plugins: Vec::new(),
         // Populated by the launch pipeline once the operator env is known; the

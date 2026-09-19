@@ -14,7 +14,9 @@
 #![deny(missing_docs)]
 
 mod account_credentials;
-pub use account_credentials::{AgentCredentialEnv, InstanceCredentialEnv};
+pub use account_credentials::{
+    AgentCredentialEnv, InstanceCredentialEnv, StagedInstanceCredential,
+};
 
 use jackin_core::container_paths;
 
@@ -116,6 +118,11 @@ pub const INSTANCE_ENV: &str = "JACKIN_INSTANCE";
 /// from here instead of hardcoded per-agent constants.
 pub const INSTANCE_FORWARDED_DIR_ENV: &str = "JACKIN_FORWARDED_DIR";
 
+/// Container-side directory containing one read-only credential file per
+/// admitted secret-bearing instance. The capsule supervisor reads these files;
+/// agent sessions never receive the directory as an unrestricted mount.
+pub const ACCOUNT_CREDENTIALS_DIR: &str = "/jackin/account-credentials";
+
 /// Filename the capsule writes the operator's dirty-exit choice to, under the
 /// per-instance state dir, for the host to read and execute on cleanup.
 pub const EXIT_ACTION_FILENAME: &str = "exit-action.json";
@@ -124,6 +131,38 @@ pub const EXIT_ACTION_FILENAME: &str = "exit-action.json";
 /// mount makes this readable from outside the container at
 /// `<data_dir>/<container>/state/exit-action.json`.
 pub const EXIT_ACTION_PATH: &str = container_paths::EXIT_ACTION;
+
+/// Stable, path-safe filename for one instance's staged credential file.
+/// Encoding every byte avoids collisions and makes hostile config IDs inert.
+#[must_use]
+pub fn account_credentials_filename(instance: &str) -> String {
+    let mut encoded = String::with_capacity(instance.len() * 2 + 5);
+    encoded.push_str("acct-");
+    for byte in instance.as_bytes() {
+        encoded.push_str(&format!("{byte:02x}"));
+    }
+    encoded.push_str(".json");
+    encoded
+}
+
+/// Container-side path for one staged instance credential file.
+#[must_use]
+pub fn account_credentials_container_path(instance: &str) -> String {
+    format!(
+        "{}/{}",
+        ACCOUNT_CREDENTIALS_DIR,
+        account_credentials_filename(instance)
+    )
+}
+
+/// Unix identity used by exactly one capsule session class.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SessionIdentity {
+    /// Effective and filesystem UID after the supervisor drops privilege.
+    pub uid: u32,
+    /// Effective and filesystem GID after the supervisor drops privilege.
+    pub gid: u32,
+}
 
 /// The operator's choice for dirty isolated work at in-capsule exit. Decided
 /// inside the capsule (the dirty-exit modal); the host only **executes** it,
@@ -232,6 +271,26 @@ pub struct CapsuleConfig {
     /// entry fails the spawn closed.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub instance_forwarded_dirs: BTreeMap<String, String>,
+    /// Read-only per-instance credential file paths. Secret-bearing admitted
+    /// instances have exactly one entry; a container-wide credential file is
+    /// invalid and is never represented here.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub instance_credential_files: BTreeMap<String, String>,
+    /// Mount paths owned by each instance. The session boundary uses this
+    /// allowlist to prevent a sibling from reaching another slot's home or
+    /// auth handoff, including when host bind mounts share numeric ownership.
+    /// The separate `instance_credential_files` are deliberately omitted:
+    /// only the root supervisor may read those files; selected credentials
+    /// reach an agent through its already-admitted environment.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub instance_mount_paths: BTreeMap<String, Vec<String>>,
+    /// Distinct Unix identity per admitted instance.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub instance_identities: BTreeMap<String, SessionIdentity>,
+    /// Identity used for an unscoped interactive shell. It receives no
+    /// instance credential/home allowlist.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shell_identity: Option<SessionIdentity>,
 }
 
 /// A Claude plugin marketplace the capsule registers at container start via
@@ -360,6 +419,28 @@ impl CapsuleConfig {
         self.instance_forwarded_dirs
             .get(instance)
             .map(String::as_str)
+    }
+
+    /// Read-only staged credential file for an instance.
+    #[must_use]
+    pub fn credential_file_for_instance(&self, instance: &str) -> Option<&str> {
+        self.instance_credential_files
+            .get(instance)
+            .map(String::as_str)
+    }
+
+    /// Unix identity for an admitted instance.
+    #[must_use]
+    pub fn identity_for_instance(&self, instance: &str) -> Option<SessionIdentity> {
+        self.instance_identities.get(instance).copied()
+    }
+
+    /// Container paths belonging to an admitted instance.
+    #[must_use]
+    pub fn mount_paths_for_instance(&self, instance: &str) -> &[String] {
+        self.instance_mount_paths
+            .get(instance)
+            .map_or(&[][..], Vec::as_slice)
     }
 
     /// Resolve a spawn target to its admitted instance config ID. An exact

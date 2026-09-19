@@ -18,9 +18,6 @@ pub const STATE_DIR: &str = "/jackin/state";
 /// Ephemeral runtime sockets, clipboard staging, usage handoff JSON.
 pub const RUN_DIR: &str = "/jackin/run";
 
-/// Protected host-resolved account credentials, mounted read-only.
-pub const ACCOUNT_CREDENTIALS: &str = "/run/jackin/account-credentials.json";
-
 /// Host-repo mount points inside the container (`/jackin/host/...`).
 pub const HOST_DIR: &str = "/jackin/host";
 

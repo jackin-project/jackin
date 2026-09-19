@@ -1608,7 +1608,8 @@ where
         cleanup,
     } = input;
     if backend == super::super::super::Backend::AppleContainer {
-        let mounts = super::super::super::build_workspace_mounts(&materialized)?;
+        let mut mounts = super::super::super::build_workspace_mounts(&materialized)?;
+        mounts.extend(super::super::super::apple_agent_mounts(&state)?);
         cleanup.run(docker).await;
         crate::runtime::apple_container::launch(
             crate::runtime::apple_container::AppleContainerLaunch {

@@ -27,6 +27,7 @@ pub mod output;
 pub mod perf_budgets;
 pub mod pid1;
 pub mod pr_context;
+pub mod process_isolation;
 mod process_telemetry;
 pub mod protocol;
 pub mod pull_request;

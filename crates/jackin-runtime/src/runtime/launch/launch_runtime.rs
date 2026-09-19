@@ -617,22 +617,13 @@ pub(crate) async fn launch_role_runtime(
         );
     }
 
-    // Run the container as the host operator's UID (group 0). Matching the host
-    // UID makes host-owned bind mounts transparently read/write, and the
-    // derived image bakes that same UID into image-owned `/home/agent` paths —
-    // see `identity::host_run_as_user`. `HOME` is set explicitly so shells and
-    // the agent CLIs resolve the bind-mounted home even before any passwd lookup.
-    let run_as_user = crate::runtime::identity::host_run_as_user();
-    if let Some(ref user) = run_as_user {
-        run_args.extend_from_slice(&[
-            "--user",
-            user.as_str(),
-            "--group-add",
-            "0",
-            "-e",
-            "HOME=/home/agent",
-        ]);
-    }
+    // The capsule supervisor must start as root so it can create a distinct
+    // Unix identity and install the required per-session Landlock boundary.
+    // Agent sessions immediately drop to their admitted slot identity before
+    // executing any agent code. DAC capabilities are retained only so shared
+    // host workspaces remain writable; Landlock denies those capabilities from
+    // reaching sibling home/auth paths.
+    run_args.extend_from_slice(&["--user", "0:0", "-e", "HOME=/home/agent"]);
 
     run_args.extend_from_slice(&[
         // JACKIN_* runtime metadata is injected by jackin, not declared in role manifests.
@@ -924,33 +915,43 @@ pub(crate) async fn launch_role_runtime(
     run_args.extend_from_slice(&["--label", &image_label]);
     // Host-side bind-mount of the daemon's socket directory. Pre-create
     // host-side so Docker does not materialise the target itself as
-    // root:root 0755. The dir is owned by the host operator (this process)
-    // and the container runs as that same UID/GID (`--user`), so the `agent`
-    // user creates jackin.sock with no special directory mode. The socket
-    // file itself gets 0o600 from inside the capsule. The same directory
-    // carries Capsule's normalized launch config.
+    // root:root 0755. The root capsule supervisor owns the socket and its
+    // normalized launch config; session clients use the separate host.sock
+    // capability path.
     let socket_dir = paths.jackin_home.join("sockets").join(*container_name);
     let capsule_config_contents = super::capsule_config_contents(capsule_config)
         .context("serializing Capsule launch config for /jackin/run/agent.toml")?;
-    // Runtime passwd/group entries for the host UID/GID so `getpwuid`/`$HOME`
-    // resolve to the `agent` user inside the container even though the image
-    // only bakes UID 1000. Consumed via `libnss-extrausers` (see
-    // docker/construct). Shared files depend only on the host UID/GID; written
-    // atomically (per-container temp + rename) so a concurrent launch can't
-    // read torn files at mount time, and only when the bytes actually change
-    // so the rename can't swap the inode out from under a live `:ro` bind
-    // mount in an already-running container.
+    // Runtime passwd/group entries for the slot UIDs so `getpwuid` works in
+    // agent tools even though the image only bakes UID 1000. Consumed via
+    // libnss-extrausers (see docker/construct). Written atomically per
+    // container so a concurrent launch cannot read torn files.
     let extrausers_passwd = paths.jackin_home.join("extrausers").join("passwd");
     let extrausers_group = paths.jackin_home.join("extrausers").join("group");
-    let extrausers_entries = match (
-        crate::runtime::identity::host_uid(),
-        crate::runtime::identity::host_gid(),
-    ) {
-        (Some(uid), Some(gid)) => Some((
-            format!("agent:x:{uid}:{gid}:agent:/home/agent:/bin/zsh\n"),
-            format!("agent-host:x:{gid}:agent\n"),
-        )),
-        _ => None,
+    let extrausers_entries = if capsule_config.instance_identities.is_empty()
+        && capsule_config.shell_identity.is_none()
+    {
+        None
+    } else {
+        use std::fmt::Write as _;
+        let mut passwd = String::new();
+        let mut group = String::new();
+        for (index, identity) in capsule_config.instance_identities.values().enumerate() {
+            let _ = writeln!(
+                passwd,
+                "jackin-slot-{index}:x:{}:{}:jackin slot {index}:/home/agent:/bin/zsh",
+                identity.uid, identity.gid
+            );
+            let _ = writeln!(group, "jackin-slot-{index}:x:{}:", identity.gid);
+        }
+        if let Some(identity) = capsule_config.shell_identity {
+            let _ = writeln!(
+                passwd,
+                "jackin-shell:x:{}:{}:jackin shell:/home/agent:/bin/zsh",
+                identity.uid, identity.gid
+            );
+            let _ = writeln!(group, "jackin-shell:x:{}:", identity.gid);
+        }
+        Some((passwd, group))
     };
     let extrausers_tmp = extrausers_passwd.with_file_name(format!("passwd.{container_name}.tmp"));
     let extrausers_group_tmp =

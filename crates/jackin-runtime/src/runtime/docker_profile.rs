@@ -298,8 +298,8 @@ pub struct EffectiveGrants {
     /// Configured container username. Only `"root"` is load-bearing — it is
     /// compared against `sudo` for the mutually-exclusive check and feeds the
     /// network-enforcement label; the default `"agent"` is an inert sentinel.
-    /// The actual `--user` flag is governed by `identity::host_run_as_user`, not
-    /// this field.
+    /// The actual `--user` flag is the fixed root capsule-supervisor identity,
+    /// not this field. This field remains role grant metadata.
     pub user: String,
     pub sudo: bool,
     pub system_writes: bool,

@@ -198,15 +198,18 @@ model = "gpt-5"
     let credentials_path = paths
         .data_dir
         .join(recorded_role_container_name(run_cmd))
-        .join("credentials/account-credentials.json");
+        .join(format!(
+            "credentials/{}",
+            jackin_protocol::account_credentials_filename("codex-main")
+        ));
     let credentials: serde_json::Value =
         serde_json::from_slice(&std::fs::read(&credentials_path).unwrap()).unwrap();
-    assert_eq!(credentials["schema_version"], 2);
+    assert_eq!(credentials["schema_version"], 1);
     assert_eq!(
-        credentials["instances"]["codex-main"]["env"]["OPENAI_API_KEY"],
+        credentials["credential"]["env"]["OPENAI_API_KEY"],
         "test-openai-key"
     );
-    assert_eq!(credentials["instances"].as_object().unwrap().len(), 1);
+    assert_eq!(credentials["instance"], "codex-main");
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt as _;

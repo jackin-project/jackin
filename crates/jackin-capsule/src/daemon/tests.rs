@@ -582,7 +582,7 @@ impl MasterPty for NullMasterPty {
     }
 
     #[cfg(unix)]
-    fn process_group_leader(&self) -> Option<nix::libc::pid_t> {
+    fn process_group_leader(&self) -> Option<libc::pid_t> {
         None
     }
 
@@ -736,6 +736,13 @@ fn test_mux(rows: u16, cols: u16) -> Multiplexer {
             isolated_worktrees: Vec::new(),
             instance_home_dirs: BTreeMap::new(),
             instance_forwarded_dirs: BTreeMap::new(),
+            instance_credential_files: BTreeMap::new(),
+            instance_mount_paths: BTreeMap::new(),
+            instance_identities: BTreeMap::new(),
+            shell_identity: Some(jackin_protocol::SessionIdentity {
+                uid: 2_000,
+                gid: 2_000,
+            }),
         },
     )
     .unwrap_or_else(|error| panic!("test multiplexer construction failed: {error}"))
@@ -9085,6 +9092,46 @@ fn daemon_session_boundary_keeps_account_credentials_per_instance() {
         ("work".into(), "/jackin/claude".into()),
         ("personal".into(), "/jackin/opencode".into()),
     ]);
+    mux.launch_env.launch_config.instance_credential_files = BTreeMap::from([
+        (
+            "work".into(),
+            jackin_protocol::account_credentials_container_path("work"),
+        ),
+        (
+            "personal".into(),
+            jackin_protocol::account_credentials_container_path("personal"),
+        ),
+    ]);
+    mux.launch_env.launch_config.instance_mount_paths = BTreeMap::from([
+        (
+            "work".into(),
+            vec!["/home/agent/.claude".into(), "/jackin/claude".into()],
+        ),
+        (
+            "personal".into(),
+            vec!["/home/agent/.local".into(), "/jackin/opencode".into()],
+        ),
+    ]);
+    mux.launch_env.launch_config.instance_identities = BTreeMap::from([
+        (
+            "work".into(),
+            jackin_protocol::SessionIdentity {
+                uid: 2_000,
+                gid: 2_000,
+            },
+        ),
+        (
+            "personal".into(),
+            jackin_protocol::SessionIdentity {
+                uid: 2_001,
+                gid: 2_001,
+            },
+        ),
+    ]);
+    mux.launch_env.launch_config.shell_identity = Some(jackin_protocol::SessionIdentity {
+        uid: 2_002,
+        gid: 2_002,
+    });
     mux.launch_env.agent_credentials = serde_json::from_value(serde_json::json!({
         "schema_version": 2,
         "instances": {
@@ -9153,6 +9200,53 @@ fn two_claude_mux() -> Multiplexer {
             "/jackin/claude-claude-personal".into(),
         ),
     ]);
+    mux.launch_env.launch_config.auth_modes = BTreeMap::from([
+        ("claude-work".into(), "sync".into()),
+        ("claude-personal".into(), "sync".into()),
+    ]);
+    mux.launch_env.launch_config.instance_credential_files = BTreeMap::from([
+        (
+            "claude-work".into(),
+            jackin_protocol::account_credentials_container_path("claude-work"),
+        ),
+        (
+            "claude-personal".into(),
+            jackin_protocol::account_credentials_container_path("claude-personal"),
+        ),
+    ]);
+    mux.launch_env.launch_config.instance_mount_paths = BTreeMap::from([
+        (
+            "claude-work".into(),
+            vec!["/home/agent/.claude".into(), "/jackin/claude".into()],
+        ),
+        (
+            "claude-personal".into(),
+            vec![
+                "/home/agent/.claude-claude-personal".into(),
+                "/jackin/claude-claude-personal".into(),
+            ],
+        ),
+    ]);
+    mux.launch_env.launch_config.instance_identities = BTreeMap::from([
+        (
+            "claude-work".into(),
+            jackin_protocol::SessionIdentity {
+                uid: 2_000,
+                gid: 2_000,
+            },
+        ),
+        (
+            "claude-personal".into(),
+            jackin_protocol::SessionIdentity {
+                uid: 2_001,
+                gid: 2_001,
+            },
+        ),
+    ]);
+    mux.launch_env.launch_config.shell_identity = Some(jackin_protocol::SessionIdentity {
+        uid: 2_002,
+        gid: 2_002,
+    });
     mux.launch_env.launch_config.labels = BTreeMap::from([
         ("claude-work".into(), "Claude · Work".into()),
         ("claude-personal".into(), "Personal Claude".into()),

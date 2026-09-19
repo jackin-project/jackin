@@ -423,6 +423,25 @@ fn instance_dirs_come_from_slots_and_fail_closed() {
         config.forwarded_for_instance("claude-personal"),
         Some("/jackin/claude-claude-personal")
     );
+    assert_eq!(
+        config.credential_file_for_instance("claude-work"),
+        Some("/jackin/account-credentials/acct-636c617564652d776f726b.json")
+    );
+    assert_eq!(
+        config.identity_for_instance("claude-work").unwrap().uid,
+        2_000
+    );
+    assert_eq!(
+        config.identity_for_instance("claude-personal").unwrap().uid,
+        2_001
+    );
+    assert_eq!(config.shell_identity.unwrap().uid, 2_002);
+    assert!(
+        config
+            .mount_paths_for_instance("claude-work")
+            .iter()
+            .all(|path| !path.starts_with(jackin_protocol::ACCOUNT_CREDENTIALS_DIR))
+    );
 
     let mut config = jackin_protocol::CapsuleConfig::default();
     let missing = vec![instance("ghost", Agent::Claude, "work")];

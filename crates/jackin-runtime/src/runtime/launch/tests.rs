@@ -936,13 +936,13 @@ plugins = []
     assert!(
         mounts
             .iter()
-            .any(|m| m.contains("/jackin/claude/account.json") && !m.ends_with(":ro")),
+            .any(|m| m.contains("/jackin/claude/account.json") && m.ends_with(":ro")),
         "account.json mount missing under /jackin/claude/: {mounts:?}",
     );
     assert!(
         mounts
             .iter()
-            .any(|m| m.contains("/jackin/claude/credentials.json") && !m.ends_with(":ro")),
+            .any(|m| m.contains("/jackin/claude/credentials.json") && m.ends_with(":ro")),
         "credentials.json mount missing under /jackin/claude/: {mounts:?}",
     );
 }
@@ -1120,7 +1120,7 @@ agents = ["codex"]
     assert!(
         mounts
             .iter()
-            .any(|m| m.contains("/jackin/codex/auth.json") && !m.ends_with(":ro")),
+            .any(|m| m.contains("/jackin/codex/auth.json") && m.ends_with(":ro")),
         "auth.json handoff missing: {mounts:?}"
     );
 }
@@ -1202,6 +1202,30 @@ async fn agent_mounts_for_two_claude_slots_isolates_homes_and_handoffs() {
         assert!(
             mounts.iter().any(|m| m.contains(expected)),
             "mount {expected} missing: {mounts:?}"
+        );
+    }
+    for mount in mounts
+        .iter()
+        .filter(|mount| mount.contains(":/jackin/claude"))
+    {
+        assert!(
+            mount.ends_with(":ro"),
+            "every Claude auth handoff must be read-only: {mount}"
+        );
+    }
+    std::fs::create_dir_all(state.root.join("credentials")).unwrap();
+    let apple_mounts = apple_agent_mounts(&state).unwrap();
+    assert!(apple_mounts.iter().any(|mount| {
+        mount.target == std::path::Path::new(jackin_protocol::ACCOUNT_CREDENTIALS_DIR)
+            && mount.readonly
+    }));
+    for mount in apple_mounts
+        .iter()
+        .filter(|mount| mount.target.to_string_lossy().starts_with("/jackin/claude"))
+    {
+        assert!(
+            mount.readonly,
+            "Apple auth store must be read-only: {mount:?}"
         );
     }
     // The two slots stage their own source credentials, not copies
@@ -1328,7 +1352,7 @@ agents = ["amp"]
     assert!(
         mounts
             .iter()
-            .any(|m| m.contains("/jackin/amp/secrets.json") && !m.ends_with(":ro")),
+            .any(|m| m.contains("/jackin/amp/secrets.json") && m.ends_with(":ro")),
         "secrets.json handoff missing: {mounts:?}"
     );
 }
@@ -3104,21 +3128,19 @@ model = "gpt-5"
     assert!(run_cmd.contains("/home/agent/.codex"));
     let container_name = launched_role_container_name(&runner);
     let credentials: serde_json::Value = serde_json::from_slice(
-        &std::fs::read(
-            paths
-                .data_dir
-                .join(&container_name)
-                .join("credentials/account-credentials.json"),
-        )
+        &std::fs::read(paths.data_dir.join(&container_name).join(format!(
+            "credentials/{}",
+            jackin_protocol::account_credentials_filename("codex-main")
+        )))
         .unwrap(),
     )
     .unwrap();
-    assert_eq!(credentials["schema_version"], 2);
+    assert_eq!(credentials["schema_version"], 1);
     assert_eq!(
-        credentials["instances"]["codex-main"]["env"]["OPENAI_API_KEY"],
+        credentials["credential"]["env"]["OPENAI_API_KEY"],
         "test-openai-key"
     );
-    assert_eq!(credentials["instances"].as_object().unwrap().len(), 1);
+    assert_eq!(credentials["instance"], "codex-main");
     assert!(!run_cmd.contains("test-openai-key"));
     let codex_config = std::fs::read_to_string(
         paths
@@ -3239,21 +3261,19 @@ model = "gpt-5"
 
     let container_name = launched_role_container_name(&runner);
     let credentials: serde_json::Value = serde_json::from_slice(
-        &std::fs::read(
-            paths
-                .data_dir
-                .join(&container_name)
-                .join("credentials/account-credentials.json"),
-        )
+        &std::fs::read(paths.data_dir.join(&container_name).join(format!(
+            "credentials/{}",
+            jackin_protocol::account_credentials_filename("claude-selected")
+        )))
         .unwrap(),
     )
     .unwrap();
-    assert_eq!(credentials["schema_version"], 2);
+    assert_eq!(credentials["schema_version"], 1);
     assert_eq!(
-        credentials["instances"]["claude-selected"]["env"]["ANTHROPIC_API_KEY"],
+        credentials["credential"]["env"]["ANTHROPIC_API_KEY"],
         "claude-key"
     );
-    assert_eq!(credentials["instances"].as_object().unwrap().len(), 1);
+    assert_eq!(credentials["instance"], "claude-selected");
 
     let capsule_config_path = paths
         .jackin_home
@@ -3943,29 +3963,29 @@ plugins = []
         .iter()
         .find(|call| call.contains("docker run -d") && call.contains("jackin.kind=role"))
         .unwrap();
-    if let Some(run_as_user) = crate::runtime::identity::host_run_as_user() {
-        assert!(
-            run_call.contains(&format!("--user {run_as_user} --group-add 0")),
-            "role docker run must use host UID/GID plus supplementary group 0: {run_call}"
-        );
-        assert!(
-            run_call.contains("/var/lib/extrausers/passwd:ro"),
-            "role docker run must mount runtime passwd entry: {run_call}"
-        );
-        assert!(
-            run_call.contains("/var/lib/extrausers/group:ro"),
-            "role docker run must mount runtime group entry: {run_call}"
-        );
+    assert!(
+        run_call.contains("--user 0:0"),
+        "role docker run must start the root capsule supervisor: {run_call}"
+    );
+    assert!(
+        !run_call.contains("--group-add 0"),
+        "role docker run must not make every session a shared group-0 process: {run_call}"
+    );
+    assert!(
+        run_call.contains("/var/lib/extrausers/passwd:ro"),
+        "role docker run must mount runtime passwd entry: {run_call}"
+    );
+    assert!(
+        run_call.contains("/var/lib/extrausers/group:ro"),
+        "role docker run must mount runtime group entry: {run_call}"
+    );
 
-        let passwd = std::fs::read_to_string(paths.jackin_home.join("extrausers/passwd")).unwrap();
-        let group = std::fs::read_to_string(paths.jackin_home.join("extrausers/group")).unwrap();
-        let (uid, gid) = run_as_user.split_once(':').unwrap();
-        assert_eq!(
-            passwd,
-            format!("agent:x:{uid}:{gid}:agent:/home/agent:/bin/zsh\n")
-        );
-        assert_eq!(group, format!("agent-host:x:{gid}:agent\n"));
-    }
+    let passwd = std::fs::read_to_string(paths.jackin_home.join("extrausers/passwd")).unwrap();
+    let group = std::fs::read_to_string(paths.jackin_home.join("extrausers/group")).unwrap();
+    assert!(passwd.contains("jackin-slot-0:x:2000:2000:"), "{passwd}");
+    assert!(passwd.contains("jackin-shell:x:2001:2001:"), "{passwd}");
+    assert!(group.contains("jackin-slot-0:x:2000:"), "{group}");
+    assert!(group.contains("jackin-shell:x:2001:"), "{group}");
 }
 
 #[tokio::test]
@@ -7627,18 +7647,18 @@ plugins = []
     assert!(!observed.contents.contains("super-secret-zai-key"));
     #[cfg(unix)]
     assert_eq!(observed.mode, 0o600);
-    let credentials_path = paths
-        .data_dir
-        .join(&container_name)
-        .join("credentials/account-credentials.json");
+    let credentials_path = paths.data_dir.join(&container_name).join(format!(
+        "credentials/{}",
+        jackin_protocol::account_credentials_filename("claude-main")
+    ));
     let credentials: serde_json::Value =
         serde_json::from_slice(&std::fs::read(&credentials_path).unwrap()).unwrap();
-    assert_eq!(credentials["schema_version"], 2);
+    assert_eq!(credentials["schema_version"], 1);
     assert_eq!(
-        credentials["instances"]["claude-main"]["env"]["ANTHROPIC_AUTH_TOKEN"],
+        credentials["credential"]["env"]["ANTHROPIC_AUTH_TOKEN"],
         "super-secret-zai-key"
     );
-    assert_eq!(credentials["instances"].as_object().unwrap().len(), 1);
+    assert_eq!(credentials["instance"], "claude-main");
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt as _;
