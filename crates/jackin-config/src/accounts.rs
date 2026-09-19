@@ -343,6 +343,11 @@ impl AccountConfig {
         }
     }
 
+    fn is_valid_http_endpoint(url: &str) -> bool {
+        (url.starts_with("https://") || url.starts_with("http://"))
+            && !url.contains(char::is_whitespace)
+    }
+
     fn validate(&self, id: &str) -> ConfigResult<()> {
         validate_account_id(id)?;
         if self.name.trim().is_empty() {
@@ -400,10 +405,10 @@ impl AccountConfig {
                     "account {id:?} has an empty model"
                 )));
             }
-            if base_url.as_deref().is_some_and(|url| {
-                !(url.starts_with("https://") || url.starts_with("http://"))
-                    || url.contains(char::is_whitespace)
-            }) {
+            if base_url
+                .as_deref()
+                .is_some_and(|url| !Self::is_valid_http_endpoint(url))
+            {
                 return Err(ConfigError::msg(format!(
                     "account {id:?} requires an HTTP(S) endpoint"
                 )));
@@ -437,9 +442,47 @@ impl AccountConfig {
     /// # Errors
     /// Rejects incompatible agent/provider combinations.
     pub fn credential_env(&self, agent: Agent) -> ConfigResult<BTreeMap<String, EnvValue>> {
+        self.credential_env_for_endpoint(agent, None)
+    }
+
+    /// Build unresolved credential environment for one resolved instance.
+    ///
+    /// `base_url` is the effective instance endpoint. When it is `None`, the
+    /// account endpoint or provider default is used. Endpoint-bearing
+    /// variables are only emitted for clients whose credential contract uses
+    /// environment routing; private provider-config clients apply the same
+    /// value in their instance-specific config file.
+    ///
+    /// # Errors
+    /// Rejects incompatible agent/provider combinations and invalid or
+    /// unsupported endpoint overrides.
+    pub fn credential_env_for_instance(
+        &self,
+        agent: Agent,
+        base_url: Option<&str>,
+    ) -> ConfigResult<BTreeMap<String, EnvValue>> {
+        self.credential_env_for_endpoint(agent, base_url)
+    }
+
+    fn credential_env_for_endpoint(
+        &self,
+        agent: Agent,
+        endpoint_override: Option<&str>,
+    ) -> ConfigResult<BTreeMap<String, EnvValue>> {
         if !self.supports_agent(agent) {
             return Err(ConfigError::msg(format!(
                 "account {:?} cannot authenticate {agent}",
+                self.name
+            )));
+        }
+        let account_endpoint = match &self.credential {
+            AccountCredential::ApiKey { base_url, .. } => base_url.as_deref(),
+            AccountCredential::Profile { .. } | AccountCredential::OAuthToken { .. } => None,
+        };
+        let endpoint = endpoint_override.or(account_endpoint);
+        if endpoint.is_some_and(|url| !Self::is_valid_http_endpoint(url)) {
+            return Err(ConfigError::msg(format!(
+                "account {:?} requires an HTTP(S) endpoint",
                 self.name
             )));
         }
@@ -451,7 +494,7 @@ impl AccountConfig {
             }
             AccountCredential::ApiKey {
                 value,
-                base_url,
+                base_url: _,
                 model,
             } => {
                 if matches!(
@@ -480,7 +523,7 @@ impl AccountConfig {
                     }
                 }
                 let default_url = self.default_api_url(agent);
-                if matches!(agent, Agent::Omp | Agent::Hermes) && base_url.is_some() {
+                if matches!(agent, Agent::Omp | Agent::Hermes) && endpoint.is_some() {
                     return Err(ConfigError::msg(format!(
                         "account {:?} has an endpoint override for {agent}, but that provider configuration is unsupported",
                         self.name
@@ -491,7 +534,7 @@ impl AccountConfig {
                 // above until their provider-config writers exist; neither
                 // client receives an endpoint through ambient env.
                 if !matches!(agent, Agent::Opencode | Agent::Omp | Agent::Hermes)
-                    && let Some(url) = base_url.as_deref().or(default_url)
+                    && let Some(url) = endpoint.or(default_url)
                 {
                     let name = match agent {
                         Agent::Claude => "ANTHROPIC_BASE_URL",
@@ -759,10 +802,11 @@ impl AgentConfiguration {
                 "configuration {id:?} has an empty model"
             )));
         }
-        if self.base_url.as_deref().is_some_and(|url| {
-            !(url.starts_with("https://") || url.starts_with("http://"))
-                || url.contains(char::is_whitespace)
-        }) {
+        if self
+            .base_url
+            .as_deref()
+            .is_some_and(|url| !AccountConfig::is_valid_http_endpoint(url))
+        {
             return Err(ConfigError::msg(format!(
                 "configuration {id:?} requires an HTTP(S) endpoint"
             )));

@@ -56,7 +56,8 @@ where
             .accounts
             .get(&instance.account_id)
             .ok_or_else(|| anyhow::anyhow!("unknown account {:?}", instance.account_id))?;
-        let declarations = account.credential_env(instance.agent)?;
+        let declarations =
+            account.credential_env_for_instance(instance.agent, instance.base_url.as_deref())?;
         if declarations
             .values()
             .any(|value| matches!(value, jackin_core::EnvValue::OpRef(_)))

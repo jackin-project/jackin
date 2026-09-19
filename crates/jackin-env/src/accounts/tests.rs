@@ -39,6 +39,22 @@ fn configuration(agent: Agent, account: &str) -> AgentConfiguration {
     }
 }
 
+fn configuration_with_endpoint(
+    agent: Agent,
+    account: &str,
+    model: Option<&str>,
+    base_url: &str,
+) -> AgentConfiguration {
+    AgentConfiguration {
+        agent,
+        account: account.into(),
+        model: model.map(str::to_owned),
+        base_url: Some(base_url.into()),
+        display_label: None,
+        invoked_via_wrapper: None,
+    }
+}
+
 fn launch(cfg: &AppConfig, ids: &[&str]) -> Vec<jackin_config::ResolvedInstance> {
     let ids: Vec<String> = ids.iter().map(ToString::to_string).collect();
     jackin_config::resolve_launch(cfg, None, "role", Some(&ids), None).unwrap()
@@ -150,6 +166,130 @@ fn same_agent_instances_keep_only_their_own_vars() {
         env.instance("claude-personal").unwrap().account_id,
         "personal"
     );
+}
+
+#[test]
+fn same_account_claude_and_kimi_instances_keep_distinct_endpoints() {
+    let mut cfg = AppConfig::default();
+    cfg.accounts.insert(
+        "shared".into(),
+        AccountConfig {
+            enabled: true,
+            name: "Shared Kimi".into(),
+            provider: AiProvider::Moonshot,
+            credential: AccountCredential::ApiKey {
+                value: EnvValue::from("shared-secret"),
+                base_url: Some("https://account.example/v1".into()),
+                model: Some("k3".into()),
+            },
+        },
+    );
+    cfg.agent_configurations.insert(
+        "claude".into(),
+        configuration_with_endpoint(
+            Agent::Claude,
+            "shared",
+            Some("k3"),
+            "https://claude.example/v1",
+        ),
+    );
+    cfg.agent_configurations.insert(
+        "kimi".into(),
+        configuration_with_endpoint(Agent::Kimi, "shared", None, "https://kimi.example/v1"),
+    );
+
+    let instances = launch(&cfg, &["claude", "kimi"]);
+    let env = resolve_instance_env_with(&cfg, &instances, None, "role", &NoSecrets, |_| {
+        Err(std::env::VarError::NotPresent)
+    })
+    .unwrap();
+
+    let claude = env.instance("claude").unwrap();
+    assert_eq!(claude.agent, "claude");
+    assert_eq!(claude.account_id, "shared");
+    assert_eq!(
+        claude.env,
+        BTreeMap::from([
+            ("ANTHROPIC_AUTH_TOKEN".into(), "shared-secret".into()),
+            (
+                "ANTHROPIC_BASE_URL".into(),
+                "https://claude.example/v1".into(),
+            ),
+            ("ANTHROPIC_MODEL".into(), "k3".into()),
+            ("ANTHROPIC_DEFAULT_OPUS_MODEL".into(), "k3".into()),
+            ("ANTHROPIC_DEFAULT_SONNET_MODEL".into(), "k3".into()),
+            ("ANTHROPIC_DEFAULT_HAIKU_MODEL".into(), "k3".into()),
+        ])
+    );
+
+    let kimi = env.instance("kimi").unwrap();
+    assert_eq!(kimi.agent, "kimi");
+    assert_eq!(kimi.account_id, "shared");
+    assert_eq!(
+        kimi.env,
+        BTreeMap::from([
+            ("KIMI_API_KEY".into(), "shared-secret".into()),
+            ("KIMI_BASE_URL".into(), "https://kimi.example/v1".into()),
+        ])
+    );
+    assert!(
+        !claude
+            .env
+            .values()
+            .any(|value| value == "https://kimi.example/v1")
+    );
+    assert!(
+        !kimi
+            .env
+            .values()
+            .any(|value| value == "https://claude.example/v1")
+    );
+    assert!(
+        !claude
+            .env
+            .values()
+            .any(|value| value == "https://account.example/v1")
+    );
+    assert!(
+        !kimi
+            .env
+            .values()
+            .any(|value| value == "https://account.example/v1")
+    );
+}
+
+#[test]
+fn invalid_instance_endpoint_fails_before_secret_resolution() {
+    let mut cfg = AppConfig::default();
+    cfg.accounts.insert(
+        "shared".into(),
+        AccountConfig {
+            enabled: true,
+            name: "Shared Anthropic".into(),
+            provider: AiProvider::Anthropic,
+            credential: AccountCredential::ApiKey {
+                value: EnvValue::from("$SHARED_TOKEN"),
+                base_url: Some("https://account.example/v1".into()),
+                model: None,
+            },
+        },
+    );
+    let instances = vec![jackin_config::ResolvedInstance {
+        config_id: "claude".into(),
+        agent: Agent::Claude,
+        account_id: "shared".into(),
+        model: None,
+        base_url: Some("ftp://invalid.example/v1".into()),
+        xdg_roots: None,
+        label: "Claude".into(),
+        synthesized: false,
+    }];
+
+    let error = resolve_instance_env_with(&cfg, &instances, None, "role", &NoSecrets, |_| {
+        panic!("invalid endpoint must not resolve a fallback secret")
+    })
+    .unwrap_err();
+    assert!(error.to_string().contains("HTTP(S) endpoint"), "{error:?}");
 }
 
 #[test]
