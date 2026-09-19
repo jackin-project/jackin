@@ -438,9 +438,13 @@ pub(crate) fn load_split_config_locked(
 
     let mut config: AppConfig = match contents_opt {
         Some(c) => {
-            let mut doc: DocumentMut = c
-                .parse()
-                .context("parsing embedded workspace configuration")?;
+            let mut doc = migrate_document_in_memory(
+                &c,
+                "config",
+                CURRENT_CONFIG_VERSION,
+                migrations::CONFIG_MIGRATIONS,
+            )
+            .map_err(|issue| ConfigError::msg(format!("migrating embedded config: {issue:?}")))?;
             migrate_embedded_op_accounts(&mut doc)?;
             migrate_embedded_workspaces(&mut doc).map_err(|issue| {
                 ConfigError::msg(format!(

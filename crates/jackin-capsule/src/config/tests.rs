@@ -317,6 +317,37 @@ fn overlapping_private_mounts_are_rejected() {
 }
 
 #[test]
+fn xdg_agent_allows_its_paired_config_root_without_widening_home_access() {
+    let mut config = instance_config(&[("amp", "sync", "amp")]);
+    config
+        .instance_home_dirs
+        .insert("amp".into(), "/home/agent/.local/share".into());
+    config
+        .instance_forwarded_dirs
+        .insert("amp".into(), "/jackin/amp".into());
+    config.instance_mount_paths.insert(
+        "amp".into(),
+        vec![
+            "/home/agent/.local/share/amp".into(),
+            "/home/agent/.config/amp".into(),
+            "/jackin/amp".into(),
+        ],
+    );
+
+    validate(&config).unwrap();
+
+    config.instance_mount_paths.insert(
+        "amp".into(),
+        vec![
+            "/home/agent/.local/share/amp".into(),
+            "/home/agent/.config/opencode".into(),
+            "/jackin/amp".into(),
+        ],
+    );
+    assert!(validate(&config).is_err());
+}
+
+#[test]
 fn unknown_instances_are_rejected() {
     let config = instance_config(&[("claude-work", "api_key", "claude")]);
     let credentials = v2_credentials(serde_json::json!({

@@ -1817,7 +1817,7 @@ fn agent_model_args<'a>(agent: &str, model: Option<&'a str>) -> Vec<&'a str> {
         return Vec::new();
     };
     match agent {
-        "claude" | "kimi" => vec!["--model", model],
+        "claude" | "kimi" | "omp" | "hermes" => vec!["--model", model],
         "codex" | "opencode" | "grok" => vec!["-m", model],
         _ => Vec::new(),
     }
