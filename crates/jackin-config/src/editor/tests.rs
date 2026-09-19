@@ -651,6 +651,176 @@ fn editor_save_atomic_staging_failure_preserves_every_original_file() {
 }
 
 #[test]
+fn editor_save_second_commit_failure_rolls_back_every_original_file() {
+    #[cfg(unix)]
+    use std::os::unix::fs::PermissionsExt;
+
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    paths.ensure_base_dirs().unwrap();
+    std::fs::write(
+        &paths.config_file,
+        "# global comment\n[env]\nGLOBAL = \"before\"\n",
+    )
+    .unwrap();
+    std::fs::create_dir_all(&paths.workspaces_dir).unwrap();
+    let workspace_path = paths.workspaces_dir.join("prod.toml");
+    std::fs::write(
+        &workspace_path,
+        "# workspace comment\nworkdir = \"/workspace/prod\"\n\n[[mounts]]\nsrc = \"/workspace/prod\"\ndst = \"/workspace/prod\"\n",
+    )
+    .unwrap();
+
+    AppConfig::load_or_init(&paths).unwrap();
+    let global_before = std::fs::read(&paths.config_file).unwrap();
+    let workspace_before = std::fs::read(&workspace_path).unwrap();
+    #[cfg(unix)]
+    let global_mode_before = std::fs::metadata(&paths.config_file)
+        .unwrap()
+        .permissions()
+        .mode();
+    #[cfg(unix)]
+    let workspace_mode_before = std::fs::metadata(&workspace_path)
+        .unwrap()
+        .permissions()
+        .mode();
+    let mut editor = ConfigEditor::open(&paths).unwrap();
+    editor
+        .set_env_var(&EnvScope::Global, "GLOBAL", "after".into())
+        .unwrap();
+    editor
+        .set_env_var(
+            &EnvScope::Workspace("prod".to_owned()),
+            "LOCAL",
+            "after".into(),
+        )
+        .unwrap();
+
+    let mut commit_number = 0;
+    let err = editor
+        .save_with_stager_and_committer(stage_atomic_write, |write| {
+            commit_number += 1;
+            if commit_number == 2 {
+                return Err(std::io::Error::other("injected second-commit failure").into());
+            }
+            write.commit()
+        })
+        .unwrap_err();
+    assert!(err.to_string().contains("injected second-commit failure"));
+    assert_eq!(std::fs::read(&paths.config_file).unwrap(), global_before);
+    assert_eq!(std::fs::read(&workspace_path).unwrap(), workspace_before);
+    #[cfg(unix)]
+    {
+        assert_eq!(
+            std::fs::metadata(&paths.config_file)
+                .unwrap()
+                .permissions()
+                .mode(),
+            global_mode_before
+        );
+        assert_eq!(
+            std::fs::metadata(&workspace_path)
+                .unwrap()
+                .permissions()
+                .mode(),
+            workspace_mode_before
+        );
+    }
+
+    let leftovers: Vec<_> = std::fs::read_dir(&paths.config_dir)
+        .unwrap()
+        .chain(std::fs::read_dir(&paths.workspaces_dir).unwrap())
+        .filter_map(Result::ok)
+        .filter(|entry| {
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
+            name.contains(".tmp.") || name.contains(".jackin-rollback.")
+        })
+        .collect();
+    assert!(
+        leftovers.is_empty(),
+        "leftover transaction files: {leftovers:?}"
+    );
+
+    // The failed editor released its lock only after rollback completed; a
+    // fresh editor can immediately publish the same tree again.
+    ConfigEditor::open(&paths).unwrap().save().unwrap();
+}
+
+#[test]
+fn editor_save_keeps_exclusive_lock_during_publication() {
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    paths.ensure_base_dirs().unwrap();
+    std::fs::write(&paths.config_file, "[env]\nGLOBAL = \"before\"\n").unwrap();
+    AppConfig::load_or_init(&paths).unwrap();
+
+    let (go_tx, go_rx) = mpsc::channel();
+    let (attempt_tx, attempt_rx) = mpsc::channel();
+    let (opened_tx, opened_rx) = mpsc::channel();
+    let probe_paths = paths.clone();
+    let probe = std::thread::spawn(move || {
+        go_rx.recv().unwrap();
+        attempt_tx.send(()).unwrap();
+        opened_tx
+            .send(ConfigEditor::open(&probe_paths).is_ok())
+            .unwrap();
+    });
+
+    let editor = ConfigEditor::open(&paths).unwrap();
+    let mut commit_number = 0;
+    editor
+        .save_with_stager_and_committer(stage_atomic_write, |write| {
+            commit_number += 1;
+            if commit_number == 1 {
+                go_tx.send(()).unwrap();
+                attempt_rx.recv().unwrap();
+                assert!(
+                    opened_rx.recv_timeout(Duration::from_millis(50)).is_err(),
+                    "a second editor observed publication before the first released its lock"
+                );
+            }
+            write.commit()
+        })
+        .unwrap();
+    probe.join().unwrap();
+    assert!(opened_rx.recv_timeout(Duration::from_secs(1)).unwrap());
+}
+
+#[test]
+fn editor_save_repeated_is_byte_idempotent_for_global_and_workspace_files() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    paths.ensure_base_dirs().unwrap();
+    std::fs::write(&paths.config_file, "[env]\nGLOBAL = \"value\"\n").unwrap();
+    std::fs::create_dir_all(&paths.workspaces_dir).unwrap();
+    let workspace_path = paths.workspaces_dir.join("prod.toml");
+    std::fs::write(
+        &workspace_path,
+        "workdir = \"/workspace/prod\"\n\n[[mounts]]\nsrc = \"/workspace/prod\"\ndst = \"/workspace/prod\"\n",
+    )
+    .unwrap();
+
+    AppConfig::load_or_init(&paths).unwrap();
+    ConfigEditor::open(&paths).unwrap().save().unwrap();
+    let global_after_first_save = std::fs::read(&paths.config_file).unwrap();
+    let workspace_after_first_save = std::fs::read(&workspace_path).unwrap();
+
+    ConfigEditor::open(&paths).unwrap().save().unwrap();
+    assert_eq!(
+        std::fs::read(&paths.config_file).unwrap(),
+        global_after_first_save
+    );
+    assert_eq!(
+        std::fs::read(&workspace_path).unwrap(),
+        workspace_after_first_save
+    );
+}
+
+#[test]
 fn editor_save_rejects_invalid_workspace_stem_before_any_write() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
