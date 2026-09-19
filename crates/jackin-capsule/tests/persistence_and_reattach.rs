@@ -127,6 +127,7 @@ async fn control_channel_status_roundtrip() {
     client
         .write_all(&frame(&ControlRequest {
             ctx: TelemetryContext::v1(),
+            session_capability: None,
             msg: ClientMsg::Status,
         }))
         .await
