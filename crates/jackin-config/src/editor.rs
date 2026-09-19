@@ -27,6 +27,14 @@ use crate::persist::{
 };
 use crate::schema::{MountConfig, WorkspaceConfig, WorkspaceEdit};
 
+use std::fs::File;
+use std::sync::atomic::{AtomicU64, Ordering};
+
+// A publication spans the global file and zero or more workspace files.  The
+// staged files are individually atomic, but the set is not; this counter names
+// rollback siblings without colliding with another editor process.
+static ROLLBACK_COUNTER: AtomicU64 = AtomicU64::new(0);
+
 /// Which env map a setter/remover targets in the config tree.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EnvScope {
@@ -312,6 +320,220 @@ pub struct ConfigEditor {
     removed_workspaces: BTreeSet<String>,
 }
 
+struct PendingWrite {
+    target: PathBuf,
+    staged: StagedWrite,
+}
+
+struct OriginalFile {
+    target: PathBuf,
+    backup: Option<PathBuf>,
+    protected: bool,
+}
+
+#[expect(
+    clippy::disallowed_methods,
+    reason = "rollback durability requires synchronous directory fsync on this blocking config path"
+)]
+fn sync_parent_directory(path: &Path) -> crate::ConfigResult<()> {
+    if let Some(parent) = path.parent() {
+        File::open(parent)
+            .with_context(|| format!("opening parent directory {}", parent.display()))?
+            .sync_all()
+            .with_context(|| format!("syncing parent directory {}", parent.display()))?;
+    }
+    Ok(())
+}
+
+fn next_rollback_path(target: &Path) -> crate::ConfigResult<PathBuf> {
+    let name = target
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("config");
+    for _ in 0..1024 {
+        let counter = ROLLBACK_COUNTER.fetch_add(1, Ordering::Relaxed);
+        let candidate = target.with_file_name(format!(
+            ".{name}.jackin-rollback.{}.{}",
+            std::process::id(),
+            counter
+        ));
+        match std::fs::symlink_metadata(&candidate) {
+            Ok(_) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                return Ok(candidate);
+            }
+            Err(error) => return Err(error.into()),
+        }
+    }
+    Err(anyhow::anyhow!(
+        "could not allocate a rollback path beside {}",
+        target.display()
+    )
+    .into())
+}
+
+fn transaction_failure(primary: ConfigError, recovery: ConfigError) -> ConfigError {
+    ConfigError::Other(anyhow::anyhow!(
+        "configuration publication failed: {primary}; rollback failed: {recovery}"
+    ))
+}
+
+fn rollback_publication(
+    originals: &[OriginalFile],
+    attempted: &BTreeSet<PathBuf>,
+) -> crate::ConfigResult<()> {
+    let mut failures = Vec::new();
+    for original in originals.iter().rev() {
+        if attempted.contains(&original.target) && !original.protected {
+            match std::fs::symlink_metadata(&original.target) {
+                Ok(metadata) if metadata.file_type().is_dir() => failures.push(format!(
+                    "cannot remove directory at {} during rollback",
+                    original.target.display()
+                )),
+                Ok(_) => {
+                    if let Err(error) = std::fs::remove_file(&original.target) {
+                        failures.push(format!("removing {}: {error}", original.target.display()));
+                    }
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) => {
+                    failures.push(format!("checking {}: {error}", original.target.display()));
+                }
+            }
+        }
+
+        if let Some(backup) = &original.backup {
+            match std::fs::symlink_metadata(&original.target) {
+                Ok(_) => failures.push(format!(
+                    "{} still exists before restoring {}",
+                    original.target.display(),
+                    backup.display()
+                )),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                    if let Err(error) = std::fs::rename(backup, &original.target) {
+                        failures.push(format!(
+                            "restoring {} -> {}: {error}",
+                            backup.display(),
+                            original.target.display()
+                        ));
+                    }
+                }
+                Err(error) => failures.push(format!(
+                    "checking {} before restore: {error}",
+                    original.target.display()
+                )),
+            }
+        }
+
+        if let Err(error) = sync_parent_directory(&original.target) {
+            failures.push(format!("syncing {}: {error}", original.target.display()));
+        }
+    }
+
+    if failures.is_empty() {
+        Ok(())
+    } else {
+        Err(anyhow::anyhow!(
+            "rollback left recoverable publication state: {}",
+            failures.join("; ")
+        )
+        .into())
+    }
+}
+
+fn backup_originals(
+    targets: impl IntoIterator<Item = PathBuf>,
+) -> crate::ConfigResult<Vec<OriginalFile>> {
+    let mut originals = Vec::new();
+    for target in targets {
+        let (exists, protected) = match std::fs::symlink_metadata(&target) {
+            Ok(metadata) => (true, metadata.file_type().is_dir()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => (false, false),
+            Err(error) => {
+                let primary: ConfigError = anyhow::Error::new(error)
+                    .context(format!("checking publication target {}", target.display()))
+                    .into();
+                if let Err(recovery) = rollback_publication(&originals, &BTreeSet::new()) {
+                    return Err(transaction_failure(primary, recovery));
+                }
+                return Err(primary);
+            }
+        };
+        let backup = if exists && !protected {
+            let backup = match next_rollback_path(&target) {
+                Ok(backup) => backup,
+                Err(primary) => {
+                    if let Err(recovery) = rollback_publication(&originals, &BTreeSet::new()) {
+                        return Err(transaction_failure(primary, recovery));
+                    }
+                    return Err(primary);
+                }
+            };
+            if let Err(error) = std::fs::rename(&target, &backup) {
+                let primary: ConfigError = anyhow::Error::new(error)
+                    .context(format!(
+                        "moving {} to its rollback sibling {}",
+                        target.display(),
+                        backup.display()
+                    ))
+                    .into();
+                if let Err(recovery) = rollback_publication(&originals, &BTreeSet::new()) {
+                    return Err(transaction_failure(primary, recovery));
+                }
+                return Err(primary);
+            }
+            Some(backup)
+        } else {
+            None
+        };
+        originals.push(OriginalFile {
+            target,
+            backup,
+            protected,
+        });
+    }
+    Ok(originals)
+}
+
+fn discard_backups(originals: &[OriginalFile]) -> crate::ConfigResult<()> {
+    for original in originals {
+        let Some(backup) = &original.backup else {
+            continue;
+        };
+        if let Err(error) = std::fs::remove_file(backup) {
+            return Err(ConfigError::Other(anyhow::Error::new(error).context(
+                format!("removing rollback sibling {}", backup.display()),
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn apply_xdg_profile_candidate(
+    editor: &mut ConfigEditor,
+    known: &mut BTreeMap<String, crate::AccountConfig>,
+    report: &mut BootstrapReport,
+    roots: &crate::XdgRoots,
+    candidate: Option<(String, crate::AccountConfig)>,
+) -> crate::ConfigResult<()> {
+    let Some((id, account)) = candidate else {
+        report.unapplied_zshrc_xdg_roots.push(roots.clone());
+        return Ok(());
+    };
+    if scan_source_registered(known, &account) {
+        return Ok(());
+    }
+    if known.contains_key(&id) {
+        report.unapplied_zshrc_xdg_roots.push(roots.clone());
+        return Ok(());
+    }
+    editor.upsert_account(&id, &account)?;
+    known.insert(id.clone(), account.clone());
+    report.added_accounts.push(id.clone());
+    report.added.push((id, account));
+    Ok(())
+}
+
 impl ConfigEditor {
     /// Loads the existing config file as a `DocumentMut`. Performs both
     /// schema-version and split-workspace migration before reading, so the
@@ -506,24 +728,14 @@ impl ConfigEditor {
             let directory = roots.data.join("amp");
             match crate::discover_account_directory(jackin_core::Agent::Amp, &directory, &home) {
                 Ok(Some(found)) => {
-                    let (id, account) = profile_account_candidate(
+                    let candidate = profile_account_candidate(
                         "custom-amp".to_owned(),
                         jackin_core::Agent::Amp,
                         found.directory,
                         "Amp custom".to_owned(),
                         Some(roots.clone()),
-                    )
-                    .expect("Amp has a native provider");
-                    if known.contains_key(&id) {
-                        if !scan_source_registered(&known, &account) {
-                            report.unapplied_zshrc_xdg_roots.push(roots.clone());
-                        }
-                    } else if !scan_source_registered(&known, &account) {
-                        self.upsert_account(&id, &account)?;
-                        known.insert(id.clone(), account.clone());
-                        report.added_accounts.push(id.clone());
-                        report.added.push((id, account));
-                    }
+                    );
+                    apply_xdg_profile_candidate(self, &mut known, &mut report, roots, candidate)?;
                 }
                 Ok(None) => report.unapplied_zshrc_xdg_roots.push(roots.clone()),
                 Err(error) => report.issues.push(crate::DiscoveryIssue {
@@ -616,9 +828,21 @@ impl ConfigEditor {
         self.save_with_stager(stage_atomic_write)
     }
 
-    fn save_with_stager<F>(self, mut stage: F) -> crate::ConfigResult<AppConfig>
+    fn save_with_stager<F>(self, stage: F) -> crate::ConfigResult<AppConfig>
     where
         F: FnMut(&Path, &str) -> crate::ConfigResult<StagedWrite>,
+    {
+        self.save_with_stager_and_committer(stage, StagedWrite::commit)
+    }
+
+    fn save_with_stager_and_committer<S, C>(
+        self,
+        mut stage: S,
+        mut commit: C,
+    ) -> crate::ConfigResult<AppConfig>
+    where
+        S: FnMut(&Path, &str) -> crate::ConfigResult<StagedWrite>,
+        C: FnMut(StagedWrite) -> crate::ConfigResult<()>,
     {
         for name in self
             .workspace_docs
@@ -646,21 +870,65 @@ impl ConfigEditor {
             jackin_telemetry::schema::enums::ConfigOperation::Save,
             (|| {
                 std::fs::create_dir_all(&self.workspaces_dir)?;
-                let mut staged = Vec::with_capacity(self.workspace_docs.len() + 1);
-                staged.push(stage(&self.path, &global_contents)?);
-                for (name, doc) in &self.workspace_docs {
-                    staged.push(stage(&self.workspace_file(name), &doc.to_string())?);
-                }
-                for write in staged {
-                    write.commit()?;
-                }
                 for removed in &self.removed_workspaces {
                     let path = self.workspace_file(removed);
-                    match std::fs::remove_file(&path) {
-                        Ok(()) => {}
-                        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-                        Err(e) => return Err(e.into()),
+                    if let Ok(metadata) = std::fs::symlink_metadata(&path)
+                        && metadata.file_type().is_dir()
+                    {
+                        return Err(std::io::Error::other(format!(
+                            "cannot remove workspace directory {}",
+                            path.display()
+                        ))
+                        .into());
                     }
+                }
+                let mut staged = Vec::with_capacity(self.workspace_docs.len() + 1);
+                staged.push(PendingWrite {
+                    target: self.path.clone(),
+                    staged: stage(&self.path, &global_contents)?,
+                });
+                for (name, doc) in &self.workspace_docs {
+                    let target = self.workspace_file(name);
+                    staged.push(PendingWrite {
+                        target: target.clone(),
+                        staged: stage(&target, &doc.to_string())?,
+                    });
+                }
+
+                let mut targets = BTreeSet::new();
+                targets.insert(self.path.clone());
+                targets.extend(
+                    self.workspace_docs
+                        .keys()
+                        .map(|name| self.workspace_file(name)),
+                );
+                targets.extend(
+                    self.removed_workspaces
+                        .iter()
+                        .map(|name| self.workspace_file(name)),
+                );
+                let originals = backup_originals(targets)?;
+                let mut attempted = BTreeSet::new();
+                let mut commit_error = None;
+                for pending in staged {
+                    attempted.insert(pending.target.clone());
+                    if let Err(error) = commit(pending.staged) {
+                        commit_error = Some(error);
+                        break;
+                    }
+                }
+
+                if let Some(error) = commit_error {
+                    if let Err(recovery) = rollback_publication(&originals, &attempted) {
+                        return Err(transaction_failure(error, recovery));
+                    }
+                    return Err(error);
+                }
+
+                if let Err(error) = discard_backups(&originals) {
+                    return Err(anyhow::Error::new(error)
+                        .context("configuration committed but rollback cleanup failed")
+                        .into());
                 }
                 Ok(config)
             })(),
