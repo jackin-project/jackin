@@ -390,6 +390,36 @@ fn account_choices_for_instances_dedupe_and_sort() {
 }
 
 #[test]
+fn live_account_choices_preserve_duplicate_agent_instances_and_ids() {
+    let temp = tempfile::tempdir().unwrap();
+    let config = admission_config(temp.path());
+    let rows = account_choices_for_live_instances(
+        &config,
+        &[
+            LiveInstanceAdmission {
+                instance_id: "claude-z".into(),
+                agent: Agent::Claude,
+                account_id: "z-claude".into(),
+            },
+            LiveInstanceAdmission {
+                instance_id: "claude-a".into(),
+                agent: Agent::Claude,
+                account_id: "a-claude".into(),
+            },
+        ],
+    );
+
+    assert_eq!(
+        rows.iter()
+            .map(|row| row.instance_id.as_deref())
+            .collect::<Vec<_>>(),
+        vec![Some("claude-a"), Some("claude-z")]
+    );
+    assert!(rows.iter().all(|row| row.agents == vec![Agent::Claude]));
+    assert!(rows[0].label().contains("instance claude-a"));
+}
+
+#[test]
 fn resolve_committed_agent_launch_carries_admitted_accounts() {
     let temp = tempfile::tempdir().unwrap();
     let project_dir = temp.path().canonicalize().unwrap();

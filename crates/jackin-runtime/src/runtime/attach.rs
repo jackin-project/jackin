@@ -370,6 +370,15 @@ pub(crate) fn require_current_account_admission(
     let root = paths.data_dir.join(container_name);
     let manifest = InstanceManifest::read(&root)
         .context("cannot verify this container's account policy; recreate it with `jackin load`")?;
+    current_account_admission(paths, &root, &manifest)?;
+    Ok(())
+}
+
+fn current_account_admission(
+    paths: &JackinPaths,
+    root: &std::path::Path,
+    manifest: &InstanceManifest,
+) -> anyhow::Result<(jackin_config::AppConfig, Option<jackin_core::WorkspaceName>)> {
     let snapshot = jackin_config::load_read_only_config_snapshot(paths)
         .context("cannot read current account policy")?;
     anyhow::ensure!(
@@ -383,14 +392,119 @@ pub(crate) fn require_current_account_admission(
         .transpose()?;
     anyhow::ensure!(
         super::account_admission_matches(
-            &root,
+            root,
             &snapshot.config,
             workspace.as_ref(),
             &manifest.role_key
         )?,
         "container account policy changed or cannot be verified; recreate it with `jackin load`"
     );
-    Ok(())
+    Ok((snapshot.config, workspace))
+}
+
+/// Revalidate a requested new-session target against the manifest captured by
+/// the live container and the current host account policy. The exact config ID
+/// is selected before entering this function; the function never resolves an
+/// account by provider/name and never silently substitutes a same-agent row.
+///
+/// Empty admission is retained only for pre-admission manifests and cannot
+/// satisfy an explicit live-picker target. Such manifests retain the old
+/// unqualified agent path, whose capsule-side resolver still rejects an
+/// ambiguous slug.
+fn require_current_instance_admission(
+    paths: &JackinPaths,
+    container_name: &str,
+    agent: jackin_core::Agent,
+    requested_instance_id: Option<&str>,
+) -> anyhow::Result<(InstanceManifest, Option<String>)> {
+    let root = paths.data_dir.join(container_name);
+    let manifest = InstanceManifest::read(&root).context(
+        "cannot verify this container's live instance admission; recreate it with `jackin load`",
+    )?;
+    if manifest.admitted_instances.is_empty() {
+        anyhow::ensure!(
+            requested_instance_id.is_none(),
+            "requested instance is not admitted by the live container manifest; recreate it with `jackin load`"
+        );
+        current_account_admission(paths, &root, &manifest)?;
+        return Ok((manifest, None));
+    }
+
+    let target = if let Some(requested) = requested_instance_id {
+        manifest
+            .admitted_instances
+            .iter()
+            .find(|admitted| admitted.config_id == requested)
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "instance {requested:?} is not admitted by the live container manifest"
+                )
+            })?
+    } else {
+        let mut matches = manifest
+            .admitted_instances
+            .iter()
+            .filter(|admitted| admitted.agent == agent);
+        let Some(target) = matches.next() else {
+            anyhow::bail!("agent {agent} is not admitted by the live container manifest");
+        };
+        anyhow::ensure!(
+            matches.next().is_none(),
+            "agent {agent} has multiple live instances; select an exact instance ID"
+        );
+        target
+    };
+    anyhow::ensure!(
+        target.agent == agent,
+        "instance {:?} is admitted for {}, not {}",
+        target.config_id,
+        target.agent,
+        agent
+    );
+    let target_id = target.config_id.clone();
+
+    let (config, workspace) = current_account_admission(paths, &root, &manifest)?;
+
+    let account = config.accounts.get(&target.account_id).ok_or_else(|| {
+        anyhow::anyhow!(
+            "admitted account {:?} is no longer registered",
+            target.account_id
+        )
+    })?;
+    anyhow::ensure!(
+        account.enabled && account.supports_agent(agent),
+        "admitted account {:?} no longer authorizes {}",
+        target.account_id,
+        agent
+    );
+    if let Some(workspace) = workspace.as_ref() {
+        anyhow::ensure!(
+            config
+                .workspaces
+                .get(workspace.as_str())
+                .is_some_and(|workspace| workspace.accounts.contains(&target.account_id)),
+            "admitted account {:?} is no longer assigned to workspace {:?}",
+            target.account_id,
+            workspace
+        );
+    }
+    if let Some(configuration) = config.agent_configurations.get(&target_id) {
+        anyhow::ensure!(
+            configuration.agent == agent && configuration.account == target.account_id,
+            "live instance {:?} no longer matches the current agent/account configuration",
+            target_id
+        );
+    } else {
+        anyhow::ensure!(
+            target_id == format!("{}@{}", target.account_id, agent.slug()),
+            "live instance {:?} no longer exists in the current account configuration",
+            target_id
+        );
+    }
+
+    // The capsule receives the same exact ID and performs the final immutable
+    // launch-config admission check before creating the PTY.
+    Ok((manifest, Some(target_id)))
 }
 
 pub(super) async fn reconnect_or_create_session_with_focus(
@@ -593,10 +707,21 @@ async fn require_container_reachable(
     docker: &impl DockerApi,
     stopped_hint: &str,
 ) -> anyhow::Result<()> {
+    require_container_running(paths, container_name, docker, stopped_hint).await?;
+    require_current_account_admission(paths, container_name)
+}
+
+/// Verify only the Docker lifecycle state. New-agent sessions call this
+/// before their single fresh manifest/policy admission gate so that target
+/// selection and revalidation remain one pre-exec decision.
+async fn require_container_running(
+    paths: &JackinPaths,
+    container_name: &str,
+    docker: &impl DockerApi,
+    stopped_hint: &str,
+) -> anyhow::Result<()> {
     match docker.inspect_container_state(container_name).await {
-        ContainerState::Running | ContainerState::Paused | ContainerState::Restarting => {
-            require_current_account_admission(paths, container_name)
-        }
+        ContainerState::Running | ContainerState::Paused | ContainerState::Restarting => Ok(()),
         ContainerState::NotFound => {
             if let Some(message) = missing_restore_message(paths, container_name)? {
                 anyhow::bail!("{message}");
@@ -708,7 +833,7 @@ pub async fn spawn_shell_session(
 #[expect(
     clippy::too_many_arguments,
     reason = "Spawning a single agent session requires every caller-supplied \
-              parameter (paths, container_name, manifest, agent, \
+              parameter (paths, container_name, requested_instance_id, agent, \
               env_overrides, git config, docker, runner, ...) to flow through to \
               the container bring-up path; bundling into a config struct would be \
               a parallel pass that requires restructuring the spawn path. Named- \
@@ -717,7 +842,7 @@ pub async fn spawn_shell_session(
 pub async fn spawn_agent_session(
     paths: &JackinPaths,
     container_name: &str,
-    manifest: Option<&InstanceManifest>,
+    requested_instance_id: Option<&str>,
     agent: jackin_core::Agent,
     env_overrides: &[(String, String)],
     git_coauthor_trailer: bool,
@@ -731,7 +856,7 @@ pub async fn spawn_agent_session(
             .any(|(name, _)| jackin_env::is_account_env(name)),
         "account credential and routing overrides are not allowed; select an assigned account and recreate the container"
     );
-    require_container_reachable(
+    require_container_running(
         paths,
         container_name,
         docker,
@@ -739,9 +864,14 @@ pub async fn spawn_agent_session(
     )
     .await?;
 
-    let workdir = manifest.map_or("/workspace", |manifest| manifest.workdir.as_str());
+    let (live_manifest, admitted_instance_id) =
+        require_current_instance_admission(paths, container_name, agent, requested_instance_id)?;
+    let workdir = live_manifest.workdir.as_str();
+    let spawn_target = admitted_instance_id
+        .as_deref()
+        .unwrap_or_else(|| agent.slug());
 
-    // Agent selection travels as `jackin-capsule new <agent>` argv; the
+    // Instance selection travels as `jackin-capsule new <instance-id>` argv; the
     // git policy toggles are session env consumed by the spawned entrypoint.
     // Each transport encodes them only on the path that consumes it.
     set_role_terminal_title(paths, container_name);
@@ -753,7 +883,7 @@ pub async fn spawn_agent_session(
                 .map(|(name, value)| (name.to_owned(), value.to_owned()))
                 .collect();
         session_env_overrides.extend(env_overrides.iter().cloned());
-        let spawn_request = SpawnRequest::agent(agent.slug())?;
+        let spawn_request = SpawnRequest::instance(spawn_target)?;
         let result = super::host_attach::run_host_attach_session(
             paths,
             container_name,
@@ -782,7 +912,7 @@ pub async fn spawn_agent_session(
         exec_args.push(flag.as_str());
     }
     exec_args.push(container_name);
-    exec_args.extend_from_slice(&[container_paths::CAPSULE_BIN, "new", agent.slug()]);
+    exec_args.extend_from_slice(&[container_paths::CAPSULE_BIN, "new", spawn_target]);
     if let Some(flag) = host_alt_screen_exec_flag() {
         exec_args.insert(1, flag);
     }

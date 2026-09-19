@@ -878,13 +878,13 @@ where
         crate::console::adapter::InputOutcome::NewSessionWithAccount {
             container,
             agent,
-            account,
+            instance_id,
         } => {
             return Ok(ConsoleLoopFlow::Exit(Some(
                 ConsoleOutcome::NewSessionWithAccount {
                     container,
                     agent,
-                    account,
+                    instance_id,
                 },
             )));
         }

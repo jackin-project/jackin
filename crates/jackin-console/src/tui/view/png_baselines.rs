@@ -563,6 +563,7 @@ fn account_picker() -> (ManagerState<'static>, AppConfig, PathBuf) {
             name: "Work".into(),
             provider: jackin_config::AiProvider::Anthropic,
             agents: vec![jackin_core::Agent::Claude],
+            instance_id: None,
         }],
     ));
     (state, config, cwd)

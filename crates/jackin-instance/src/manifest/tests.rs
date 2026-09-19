@@ -6,7 +6,7 @@ use super::*;
 use tempfile::tempdir;
 
 #[test]
-fn manifest_v2_backend_roundtrips_and_legacy_v1_deserializes() {
+fn manifest_v3_backend_roundtrips_and_legacy_v1_deserializes() {
     let manifest = InstanceManifest::new_with_backend(
         NewInstanceManifest {
             container_base: "jackin-x",
@@ -32,7 +32,7 @@ fn manifest_v2_backend_roundtrips_and_legacy_v1_deserializes() {
             inner_docker_enabled: false,
         }),
     );
-    // A v2 apple-container manifest survives a serialize -> deserialize round trip.
+    // A v3 apple-container manifest survives a serialize -> deserialize round trip.
     let json = serde_json::to_string(&manifest).unwrap();
     assert_eq!(
         serde_json::from_str::<InstanceManifest>(&json).unwrap(),
@@ -62,7 +62,7 @@ fn admitted_instances_default_empty_and_validate_tabs() {
     assert!(!manifest.admits_instance("claude-work"));
 
     manifest.set_admitted_instances([
-        AdmittedInstance::new("claude-work", "work"),
+        AdmittedInstance::new("claude-work", Agent::Claude, "work"),
         AdmittedInstance::from(&jackin_config::ResolvedInstance {
             config_id: "claude-personal".to_owned(),
             agent: Agent::Claude,
@@ -83,6 +83,11 @@ fn admitted_instances_default_empty_and_validate_tabs() {
         Some("personal")
     );
     assert_eq!(manifest.account_for_instance("codex-work"), None);
+    assert_eq!(
+        manifest.agent_for_instance("claude-work"),
+        Some(Agent::Claude)
+    );
+    assert_eq!(manifest.agent_for_instance("codex-work"), None);
 
     // Admission survives a serialize -> deserialize round trip.
     let json = serde_json::to_string(&manifest).unwrap();
@@ -160,7 +165,7 @@ fn writes_manifest_under_jackin_state_dir() {
     manifest.write(temp.path()).unwrap();
 
     let body = std::fs::read_to_string(temp.path().join(".jackin/instance.json")).unwrap();
-    assert!(body.contains(r#""version": 2"#));
+    assert!(body.contains(r#""version": 3"#));
     assert!(body.contains(r#""status": "running""#));
     assert!(body.contains(r#""role_key": "org/agent""#));
 }
@@ -380,7 +385,7 @@ fn instance_manifest_write_replaces_partial_file() {
     std::fs::write(state_dir.join(".jackin/instance.json"), b"{ partial").unwrap();
     sample_manifest().write(state_dir).unwrap();
     let body = std::fs::read_to_string(state_dir.join(".jackin/instance.json")).unwrap();
-    assert!(body.contains(r#""version": 2"#));
+    assert!(body.contains(r#""version": 3"#));
     assert!(!body.contains("partial"));
 }
 

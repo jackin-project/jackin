@@ -169,7 +169,7 @@ pub(super) async fn handle_console_instance_action(
             let result = runtime::spawn_agent_session(
                 paths,
                 &container,
-                Some(&manifest),
+                None,
                 selected_agent,
                 &[],
                 config.git.coauthor_trailer,

@@ -205,7 +205,7 @@ impl Multiplexer {
         env_overrides: &[(String, String)],
     ) -> Result<u64> {
         match request {
-            SpawnRequest::Agent(target) => {
+            SpawnRequest::Instance(target) => {
                 let id = self.spawn_session(Some(target), env_overrides, None)?;
                 self.note_agent_started();
                 Ok(id)

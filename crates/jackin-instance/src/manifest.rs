@@ -21,7 +21,7 @@ pub use jackin_core::{
     InstanceIndexEntry, InstanceQuery, InstanceStatus, SessionRecord, SessionStatus,
 };
 
-pub const INSTANCE_MANIFEST_VERSION: u32 = 2;
+pub const INSTANCE_MANIFEST_VERSION: u32 = 3;
 pub const INSTANCE_INDEX_VERSION: u32 = 1;
 const INSTANCE_INDEX_FILE: &str = "instances.json";
 const INSTANCE_INDEX_LOCK_FILE: &str = "instances.json.lock";
@@ -142,21 +142,25 @@ pub struct InstanceManifest {
     pub admitted_instances: Vec<AdmittedInstance>,
 }
 
-/// One launch-admitted instance: its config ID and owning account ID.
+/// One launch-admitted instance: its exact config ID, agent runtime, and
+/// owning account ID.
 /// Identifiers only — never credential material.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AdmittedInstance {
     /// Instance config ID (`"claude-work"`).
     pub config_id: String,
+    /// Agent runtime bound to the instance config.
+    pub agent: Agent,
     /// Owning account ID (`"work"`).
     pub account_id: String,
 }
 
 impl AdmittedInstance {
     /// Record one admitted instance.
-    pub fn new(config_id: impl Into<String>, account_id: impl Into<String>) -> Self {
+    pub fn new(config_id: impl Into<String>, agent: Agent, account_id: impl Into<String>) -> Self {
         Self {
             config_id: config_id.into(),
+            agent,
             account_id: account_id.into(),
         }
     }
@@ -164,7 +168,11 @@ impl AdmittedInstance {
 
 impl From<&jackin_config::ResolvedInstance> for AdmittedInstance {
     fn from(instance: &jackin_config::ResolvedInstance) -> Self {
-        Self::new(instance.config_id.clone(), instance.account_id.clone())
+        Self::new(
+            instance.config_id.clone(),
+            instance.agent,
+            instance.account_id.clone(),
+        )
     }
 }
 
@@ -269,6 +277,14 @@ impl InstanceManifest {
             .iter()
             .find(|admitted| admitted.config_id == config_id)
             .map(|admitted| admitted.account_id.as_str())
+    }
+
+    /// Agent runtime for an admitted instance config ID.
+    pub fn agent_for_instance(&self, config_id: &str) -> Option<Agent> {
+        self.admitted_instances
+            .iter()
+            .find(|admitted| admitted.config_id == config_id)
+            .map(|admitted| admitted.agent)
     }
 
     /// Project this manifest to the lightweight index entry stored in

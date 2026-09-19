@@ -95,6 +95,7 @@ pub type ManagerInstanceRefreshSnapshot = crate::tui::subscriptions::InstanceRef
     jackin_core::InstanceIndexEntry,
     jackin_core::SessionRecord,
     jackin_protocol::InstanceSnapshot,
+    crate::services::launch::LiveInstanceAdmission,
 >;
 pub type ManagerConfigSaveResult =
     crate::tui::subscriptions::ConfigSaveResult<AppConfig, jackin_config::RoleSource>;
@@ -254,17 +255,15 @@ pub struct ManagerState<'a> {
     /// `container_base`, the agent picker, and a provider list. The list is
     /// currently always empty: host config cannot prove which `ZAI_API_KEY`
     /// the already-running daemon captured, so provider choice for a running
-    /// container is made in the multiplexer (daemon-owned), not here. The
-    /// field stays so a future daemon-queried list can populate it.
+    /// container is made from the last live manifest admission refresh.
     pub inline_new_session_picker: Option<(
         String,
         AgentChoiceState,
         Vec<crate::services::launch::AccountChoice>,
     )>,
     /// Provider picker shown after the agent is committed in
-    /// `inline_new_session_picker` when its provider list has 2+ entries.
-    /// Dormant while that list is always empty (see above); kept wired for
-    /// the future daemon-queried flow. Context is the target `container`.
+    /// `inline_new_session_picker` when its live admission list has 2+
+    /// entries. Context is the target `container`.
     pub inline_account_picker: Option<AccountPickerState<String>>,
     /// Provider picker for the initial workspace launch (before the container
     /// exists). Shown after the operator commits an agent choice and
@@ -337,6 +336,11 @@ pub struct ManagerState<'a> {
     /// Containers whose manifests could not be read during the last
     /// `refresh_instances` pass. Cleared on every successful index load.
     pub(in crate::tui) instance_session_errors: HashSet<String>,
+    /// Exact account/agent/config-ID admissions read from live manifests,
+    /// keyed by `container_base`. Missing means the live manifest could not
+    /// prove an admission set, so the new-session picker must offer nothing.
+    pub live_instance_admissions:
+        HashMap<String, Vec<crate::services::launch::LiveInstanceAdmission>>,
     /// Live tab/pane snapshot per running instance keyed by
     /// `container_base`. Populated each `refresh_instances` tick by
     /// fetching from the daemon's bind-mounted socket at

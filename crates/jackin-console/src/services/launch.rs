@@ -236,11 +236,21 @@ pub struct AccountChoice {
     pub name: String,
     pub provider: jackin_config::AiProvider,
     pub agents: Vec<Agent>,
+    /// Exact live launch instance. `None` for pre-container launch rows.
+    pub instance_id: Option<String>,
 }
 
 impl AccountChoice {
     pub fn label(&self) -> String {
-        format!("{} · {} ({})", self.name, self.provider, self.id)
+        self.instance_id.as_deref().map_or_else(
+            || format!("{} · {} ({})", self.name, self.provider, self.id),
+            |instance_id| {
+                format!(
+                    "{} · {} ({}) · instance {instance_id}",
+                    self.name, self.provider, self.id
+                )
+            },
+        )
     }
 }
 
@@ -256,7 +266,19 @@ fn account_row(id: &str, account: &AccountConfig) -> AccountChoice {
             .copied()
             .filter(|agent| account.supports_agent(*agent))
             .collect(),
+        instance_id: None,
     }
+}
+
+/// One exact account/agent binding admitted by a live container manifest.
+/// This is deliberately separate from [`ResolvedInstance`]: the console
+/// refresh service must not re-resolve mutable host defaults to describe a
+/// running container.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LiveInstanceAdmission {
+    pub instance_id: String,
+    pub agent: Agent,
+    pub account_id: String,
 }
 
 /// List only registered accounts authorized by the saved workspace.
@@ -324,6 +346,35 @@ pub fn account_choices_for_instances(
         .collect();
     choices.sort_by_key(|choice| choice.id.clone());
     choices.dedup_by_key(|choice| choice.id.clone());
+    choices
+}
+
+/// Build live-session rows from the manifest's admitted instance set.
+/// Duplicate accounts remain distinct because `instance_id` is the routing
+/// identity; a later picker commit must never collapse them back to account ID.
+#[must_use]
+pub fn account_choices_for_live_instances(
+    config: &AppConfig,
+    admissions: &[LiveInstanceAdmission],
+) -> Vec<AccountChoice> {
+    let mut choices: Vec<AccountChoice> = admissions
+        .iter()
+        .filter_map(|admission| {
+            let account = config.accounts.get(&admission.account_id)?;
+            if !account.enabled || !account.supports_agent(admission.agent) {
+                return None;
+            }
+            let mut choice = account_row(&admission.account_id, account);
+            choice.agents = vec![admission.agent];
+            choice.instance_id = Some(admission.instance_id.clone());
+            Some(choice)
+        })
+        .collect();
+    choices.sort_by(|left, right| {
+        left.id
+            .cmp(&right.id)
+            .then_with(|| left.instance_id.cmp(&right.instance_id))
+    });
     choices
 }
 

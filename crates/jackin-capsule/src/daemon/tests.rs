@@ -2519,7 +2519,7 @@ fn resize_shrink_then_grow_does_not_panic() {
 fn initial_spawn_request_is_data_only_agent_or_shell() {
     assert_eq!(
         initial_spawn_request("codex"),
-        SpawnRequest::Agent("codex".to_owned())
+        SpawnRequest::Instance("codex".to_owned())
     );
     assert_eq!(initial_spawn_request(""), SpawnRequest::Shell);
 }
@@ -2530,7 +2530,7 @@ fn spawn_request_rejects_agent_outside_allowlist_before_pty_spawn() {
     mux.launch_env.available_instances = vec!["codex".to_owned()];
 
     let err = mux
-        .spawn_request(SpawnRequest::Agent("claude".to_owned()), &[])
+        .spawn_request(SpawnRequest::Instance("claude".to_owned()), &[])
         .unwrap_err();
 
     assert!(err.to_string().contains("rejected spawn target \"claude\""));

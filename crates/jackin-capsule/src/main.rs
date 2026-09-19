@@ -172,7 +172,7 @@ connecting as a client.",
                             ));
                             None
                         } else {
-                            match token.map(SpawnRequest::agent) {
+                            match token.map(SpawnRequest::instance) {
                                 None => None,
                                 Some(Ok(req)) => Some(req),
                                 Some(Err(reason)) => {

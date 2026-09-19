@@ -15,10 +15,7 @@ use crate::tui::components::error_popup::{
 use crate::tui::components::github_picker::GithubOpenPlan;
 use crate::tui::layout::list_body_area;
 use crate::tui::message::ConsoleInstanceAction;
-use crate::tui::prompts::{
-    AgentDefaultResolution, no_eligible_account_message, resolve_agent_default,
-    sort_account_choices_by_id,
-};
+use crate::tui::prompts::{no_eligible_account_message, sort_account_choices_by_id};
 use crate::tui::screens::workspaces::update::{
     PreviewPaneActionPlan, SelectedInstanceActionPlan, SelectedInstancePurgeConfirmPlan,
     WorkspaceInstanceAction, WorkspaceInstanceLookupEntry, WorkspaceInstanceLookupScope,
@@ -169,9 +166,8 @@ pub fn handle_list_key(
 }
 
 /// Open the new-session agent picker for the selected instance row: a live
-/// container gets the agent picker with the host-config provider list
-/// prepared (stable order + per-agent binding defaults), anything else gets
-/// the create-workspace or instance-unavailable path.
+/// container gets the agent picker with rows read from its admitted manifest,
+/// anything else gets the create-workspace or instance-unavailable path.
 fn open_new_session_picker(state: &mut ManagerState<'_>, config: &AppConfig) -> anyhow::Result<()> {
     match workspace_list_new_session_open_plan(
         workspace_list_new_session_plan(state.selected_row()),
@@ -193,28 +189,13 @@ fn open_new_session_picker(state: &mut ManagerState<'_>, config: &AppConfig) -> 
     ) {
         WorkspaceListNewSessionOpenPlan::OpenPicker { container } => {
             let picker = AgentChoiceState::with_choices(jackin_core::Agent::ALL.to_vec());
-            let accounts = if let Some(instance) = state
-                .instances
-                .iter()
-                .find(|instance| instance.container_base == container)
-            {
-                let workspace = instance
-                    .workspace_name
-                    .as_deref()
-                    .map(jackin_core::WorkspaceName::parse)
-                    .transpose()?;
-                let mut accounts =
-                    crate::services::launch::account_choices(config, workspace.as_ref());
-                prepare_new_session_accounts(
-                    config,
-                    workspace.as_ref(),
-                    &instance.role_key,
-                    &mut accounts,
-                );
-                accounts
-            } else {
-                Vec::new()
-            };
+            let accounts = state
+                .live_instance_admissions
+                .get(&container)
+                .map(|admissions| {
+                    crate::services::launch::account_choices_for_live_instances(config, admissions)
+                })
+                .unwrap_or_default();
             apply_inline_new_session_picker_plan(state, container, picker, accounts);
         }
         WorkspaceListNewSessionOpenPlan::OpenCreateWorkspace => {
@@ -686,12 +667,11 @@ pub fn handle_inline_agent_picker(state: &mut ManagerState<'_>, key: KeyEvent) -
 }
 
 /// Handle key events while the new-session agent picker is open in the left
-/// sidebar. Commit filters the stored provider list — prepared at open time
-/// in stable id order with per-agent binding defaults pruned in (see
-/// `prepare_new_session_accounts`) — to the committed agent: an empty result
-/// opens an actionable error popup instead of dispatching an account-less
-/// session, a single candidate dispatches directly, and several open the
-/// account picker. Cancel/Esc dismisses.
+/// sidebar. Commit filters the stored live admission rows to the selected
+/// agent: an empty result opens an actionable error popup instead of
+/// dispatching an account-less session, a single candidate dispatches its
+/// exact instance ID directly, and several open the account picker.
+/// Cancel/Esc dismisses.
 pub fn handle_new_session_picker(state: &mut ManagerState<'_>, key: KeyEvent) -> InputOutcome {
     let Some((container, picker, providers)) = state.inline_new_session_picker.as_mut() else {
         return InputOutcome::Continue;
@@ -726,11 +706,35 @@ pub fn handle_new_session_picker(state: &mut ManagerState<'_>, key: KeyEvent) ->
                     context,
                     agent,
                     account,
-                } => InputOutcome::NewSessionWithAccount {
-                    container: context,
-                    agent,
-                    account: account.map(|account| account.id),
-                },
+                } => {
+                    let Some(account) = account else {
+                        let message = new_session_no_account_message(agent, &context, state);
+                        dispatch_manager(
+                            state,
+                            ManagerMessage::OpenListErrorPopup {
+                                title: no_eligible_account_error_title().into(),
+                                message,
+                            },
+                        );
+                        return InputOutcome::Continue;
+                    };
+                    let Some(instance_id) = account.instance_id else {
+                        let message = new_session_no_account_message(agent, &context, state);
+                        dispatch_manager(
+                            state,
+                            ManagerMessage::OpenListErrorPopup {
+                                title: no_eligible_account_error_title().into(),
+                                message,
+                            },
+                        );
+                        return InputOutcome::Continue;
+                    };
+                    InputOutcome::NewSessionWithAccount {
+                        container: context,
+                        agent,
+                        instance_id,
+                    }
+                }
                 InlineAccountFollowupPlan::OpenAccountPicker(picker) => {
                     apply_inline_account_picker_plan(state, picker);
                     InputOutcome::Continue
@@ -742,63 +746,6 @@ pub fn handle_new_session_picker(state: &mut ManagerState<'_>, key: KeyEvent) ->
             InputOutcome::Continue
         }
         InlinePickerPlan::Continue => InputOutcome::Continue,
-    }
-}
-
-/// Prepare the stored provider list for the new-session picker: stable
-/// id-ascending order, then per-agent default pruning.
-///
-/// The commit handler (`handle_new_session_picker`) runs without config
-/// access, so the open path resolves the default for every agent up front
-/// and encodes the outcome in each account's offered-agent list: an agent
-/// with a valid default keeps only the admitted/default accounts (commit
-/// dispatches with no picker when one remains), an agent with an
-/// explicitly invalid default is hidden everywhere (commit fails
-/// atomically instead of silently falling back) while the agent picker
-/// remains open, and an agent without a default keeps every eligible
-/// candidate (commit opens the picker when several remain). Defaults-regime
-/// pruning consults `default_launch`
-/// admission via `resolve_launch` — the same resolver the runtime
-/// provisions from — and reaches the legacy binding lookup only when no
-/// default is configured anywhere. See
-/// `crate::tui::prompts::select_launch_account` for the precedence rules.
-fn prepare_new_session_accounts(
-    config: &AppConfig,
-    workspace: Option<&jackin_core::WorkspaceName>,
-    role: &str,
-    accounts: &mut [crate::services::launch::AccountChoice],
-) {
-    sort_account_choices_by_id(accounts);
-    for agent in jackin_core::Agent::ALL.iter().copied() {
-        match crate::services::launch::admitted_account_choices(config, workspace, role, agent) {
-            Ok(Some(admitted)) => {
-                for account in accounts.iter_mut() {
-                    if !admitted.iter().any(|kept| kept.id == account.id) {
-                        account.agents.retain(|candidate| *candidate != agent);
-                    }
-                }
-            }
-            Err(_) => {
-                for account in accounts.iter_mut() {
-                    account.agents.retain(|candidate| *candidate != agent);
-                }
-            }
-            Ok(None) => match resolve_agent_default(config, workspace, role, agent) {
-                AgentDefaultResolution::Launch(default) => {
-                    for account in accounts.iter_mut() {
-                        if account.id != default {
-                            account.agents.retain(|candidate| *candidate != agent);
-                        }
-                    }
-                }
-                AgentDefaultResolution::Invalid(_) => {
-                    for account in accounts.iter_mut() {
-                        account.agents.retain(|candidate| *candidate != agent);
-                    }
-                }
-                AgentDefaultResolution::NoDefault => {}
-            },
-        }
     }
 }
 
@@ -840,10 +787,21 @@ pub fn handle_inline_account_picker(state: &mut ManagerState<'_>, key: KeyEvent)
             provider,
         } => {
             dispatch_manager(state, ManagerMessage::DismissInlineAccountPicker);
+            let Some(instance_id) = provider.instance_id else {
+                let message = new_session_no_account_message(agent, &context, state);
+                dispatch_manager(
+                    state,
+                    ManagerMessage::OpenListErrorPopup {
+                        title: no_eligible_account_error_title().into(),
+                        message,
+                    },
+                );
+                return InputOutcome::Continue;
+            };
             InputOutcome::NewSessionWithAccount {
                 container: context,
                 agent,
-                account: Some(provider.id),
+                instance_id,
             }
         }
         AccountPickerOutcome::Cancel => {

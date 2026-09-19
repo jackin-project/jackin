@@ -123,10 +123,10 @@ fn unknown_client_tag_is_rejected() {
 }
 
 #[test]
-fn spawn_request_agent_rejects_empty_slug() {
-    SpawnRequest::agent("").expect_err("empty slug must be rejected at construction");
-    let ok = SpawnRequest::agent("claude").expect("non-empty slug");
-    assert!(matches!(ok, SpawnRequest::Agent(s) if s == "claude"));
+fn spawn_request_instance_rejects_empty_target() {
+    SpawnRequest::instance("").expect_err("empty target must be rejected at construction");
+    let ok = SpawnRequest::instance("claude-work").expect("non-empty target");
+    assert!(matches!(ok, SpawnRequest::Instance(s) if s == "claude-work"));
 }
 
 #[test]

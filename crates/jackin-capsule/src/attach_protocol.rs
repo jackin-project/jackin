@@ -478,13 +478,13 @@ pub(crate) fn initial_spawn_request(initial_agent: &str) -> SpawnRequest {
     if initial_agent.is_empty() {
         SpawnRequest::Shell
     } else {
-        SpawnRequest::Agent(initial_agent.to_owned())
+        SpawnRequest::Instance(initial_agent.to_owned())
     }
 }
 
 pub(crate) fn spawn_request_label(request: &SpawnRequest) -> String {
     match request {
-        SpawnRequest::Agent(agent) => format!("agent {agent:?}"),
+        SpawnRequest::Instance(target) => format!("instance {target:?}"),
         SpawnRequest::Shell => "shell".to_owned(),
     }
 }

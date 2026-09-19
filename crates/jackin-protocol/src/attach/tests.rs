@@ -92,7 +92,7 @@ fn hello_with_spawn_agent_and_env_roundtrips() {
     let bytes = encode_client(ClientFrame::Hello {
         rows: 50,
         cols: 200,
-        spawn: Some(SpawnRequest::Agent("codex".to_owned())),
+        spawn: Some(SpawnRequest::Instance("codex".to_owned())),
         env: vec![
             ("JACKIN_GIT_COAUTHOR_TRAILER".to_owned(), "1".to_owned()),
             ("JACKIN_GIT_DCO".to_owned(), "1".to_owned()),
@@ -111,7 +111,7 @@ fn hello_with_spawn_agent_and_env_roundtrips() {
         ClientFrame::Hello {
             rows: 50,
             cols: 200,
-            spawn: Some(SpawnRequest::Agent("codex".to_owned())),
+            spawn: Some(SpawnRequest::Instance("codex".to_owned())),
             env: vec![
                 ("JACKIN_GIT_COAUTHOR_TRAILER".to_owned(), "1".to_owned()),
                 ("JACKIN_GIT_DCO".to_owned(), "1".to_owned()),

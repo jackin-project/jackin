@@ -171,6 +171,7 @@ impl ManagerState<'_> {
             current_dir_expanded: false,
             instance_sessions: HashMap::new(),
             instance_session_errors: HashSet::new(),
+            live_instance_admissions: HashMap::new(),
             instance_snapshots: HashMap::new(),
             preview_focused: false,
             preview_pane_cursor: HashMap::new(),
@@ -873,6 +874,7 @@ impl ManagerState<'_> {
         self.instances = snapshot.instances;
         self.instance_sessions = snapshot.sessions;
         self.instance_session_errors = snapshot.session_errors;
+        self.live_instance_admissions = snapshot.admissions;
         self.instance_snapshots = snapshot.snapshots;
         self.instances_refresh_interval = snapshot.next_interval;
         self.instances_last_error = None;
@@ -890,6 +892,7 @@ impl ManagerState<'_> {
         self.instances.clear();
         self.instance_sessions.clear();
         self.instance_session_errors.clear();
+        self.live_instance_admissions.clear();
         self.expanded_workspaces.clear();
         // Mirror the Ok-branch cleanup of the snapshot-derived
         // surfaces — without this they accumulate stale entries keyed

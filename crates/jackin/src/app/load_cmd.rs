@@ -323,9 +323,9 @@ async fn dispatch_console_outcome(
         console::ConsoleOutcome::NewSessionWithAccount {
             container,
             agent,
-            account,
+            instance_id,
         } => {
-            return console_outcome_new_session(container, agent, account, &mut ctx).await;
+            return console_outcome_new_session(container, agent, instance_id, &mut ctx).await;
         }
         console::ConsoleOutcome::LaunchWithAccount {
             selector,
@@ -389,15 +389,9 @@ async fn console_outcome_instance_action(
 async fn console_outcome_new_session(
     container: String,
     agent: jackin_core::Agent,
-    account: Option<String>,
+    instance_id: String,
     ctx: &mut ConsoleLaunchCtx<'_>,
 ) -> Result<()> {
-    let manifest = instance::InstanceManifest::read(&ctx.paths.data_dir.join(&container))
-        .with_context(|| {
-            format!(
-                "cannot start a new agent session in `{container}` because its instance manifest is missing"
-            )
-        })?;
     runtime::reconcile_keep_awake_when_configured(
         ctx.paths,
         ctx.docker,
@@ -405,68 +399,22 @@ async fn console_outcome_new_session(
         any_keep_awake_enabled(ctx.config),
     )
     .await;
-    let workspace_name = manifest
-        .workspace_name
-        .as_deref()
-        .map(jackin_core::WorkspaceName::parse)
-        .transpose()?;
-    let scoped;
-    let selected_config = if let Some(id) = &account {
-        scoped = runtime::with_account_selection(
-            ctx.config,
-            agent,
-            workspace_name.as_ref(),
-            &manifest.role_key,
-            id,
-        )?;
-        &scoped
-    } else {
-        &*ctx.config
-    };
-    jackin_config::resolve_account(
-        selected_config,
+    // The picker selected an exact live admission. Runtime re-reads both the
+    // manifest and the persisted host config; it must reject drift instead of
+    // rebuilding the container or resolving the account again from mutable
+    // defaults.
+    let result = runtime::spawn_agent_session(
+        ctx.paths,
+        &container,
+        Some(&instance_id),
         agent,
-        workspace_name.as_ref(),
-        &manifest.role_key,
-    )?;
-    let result = if runtime::account_configuration_matches(
-        &ctx.paths.data_dir.join(&container),
-        selected_config,
-        workspace_name.as_ref(),
-        &manifest.role_key,
-    )? {
-        runtime::spawn_agent_session(
-            ctx.paths,
-            &container,
-            Some(&manifest),
-            agent,
-            &[],
-            ctx.config.git.coauthor_trailer,
-            ctx.config.git.dco,
-            ctx.docker,
-            ctx.runner,
-        )
-        .await
-    } else {
-        let selector = RoleSelector::parse(&manifest.role_key)?;
-        let cwd = std::env::current_dir()?;
-        let input = if let Some(name) = &manifest.workspace_name {
-            LoadWorkspaceInput::Saved(name.clone())
-        } else {
-            super::restore::resolve_ad_hoc_restore_input(&manifest, &cwd)?
-        };
-        let workspace = resolve_load_workspace(ctx.config, &selector, &cwd, input, &[])?;
-        super::emit_mount_heal_notices(&workspace);
-        let mut opts = runtime::LoadOptions::for_launch(ctx.debug);
-        opts.agent = Some(agent);
-        opts.account = account;
-        opts.role_branch = manifest.role_source_ref.clone();
-        opts.restore_role_source_git = Some(manifest.role_source_git.clone());
-        runtime::load_role(
-            ctx.paths, ctx.config, &selector, &workspace, ctx.docker, ctx.runner, &opts,
-        )
-        .await
-    };
+        &[],
+        ctx.config.git.coauthor_trailer,
+        ctx.config.git.dco,
+        ctx.docker,
+        ctx.runner,
+    )
+    .await;
     runtime::reconcile_keep_awake_when_configured(
         ctx.paths,
         ctx.docker,
@@ -672,7 +620,7 @@ pub(super) async fn handle_hardline(
         let result = runtime::spawn_agent_session(
             &paths,
             &container,
-            Some(&manifest),
+            None,
             selected_agent,
             &[],
             config.git.coauthor_trailer,

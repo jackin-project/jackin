@@ -82,6 +82,56 @@ fn write_admission_fixture(
     std::fs::write(root.join("account-admission.sha256"), digest).unwrap();
 }
 
+fn provision_duplicate_agent_admission(
+    paths: &JackinPaths,
+    container_name: &str,
+) -> jackin_config::AppConfig {
+    use jackin_config::{AccountConfig, AccountCredential, AgentConfiguration, AiProvider};
+
+    let mut config = jackin_config::AppConfig::default();
+    for (id, name) in [("work", "Work"), ("personal", "Personal")] {
+        config.accounts.insert(
+            id.into(),
+            AccountConfig {
+                enabled: true,
+                name: name.into(),
+                provider: AiProvider::Anthropic,
+                credential: AccountCredential::ApiKey {
+                    value: format!("{id}-key").into(),
+                    base_url: None,
+                    model: None,
+                },
+            },
+        );
+    }
+    for (id, account) in [("claude-work", "work"), ("claude-personal", "personal")] {
+        config.agent_configurations.insert(
+            id.into(),
+            AgentConfiguration {
+                agent: jackin_core::Agent::Claude,
+                account: account.into(),
+                model: None,
+                base_url: None,
+                display_label: None,
+                invoked_via_wrapper: None,
+            },
+        );
+    }
+    write_admission_fixture(paths, container_name, &config, None);
+    let root = paths.data_dir.join(container_name);
+    let mut manifest = InstanceManifest::read(&root).unwrap();
+    manifest.set_admitted_instances([
+        crate::instance::AdmittedInstance::new("claude-work", jackin_core::Agent::Claude, "work"),
+        crate::instance::AdmittedInstance::new(
+            "claude-personal",
+            jackin_core::Agent::Claude,
+            "personal",
+        ),
+    ]);
+    manifest.write(&root).unwrap();
+    config
+}
+
 fn ensure_socket_parent(paths: &JackinPaths, container_name: &str) -> PathBuf {
     let socket_path = super::super::snapshot::socket_path(paths, container_name);
     std::fs::create_dir_all(socket_path.parent().unwrap()).unwrap();
@@ -325,29 +375,6 @@ async fn hardline_detach_with_live_sessions_preserves_runtime_resources() {
 async fn hardline_new_session_execs_entrypoint_in_running_container() {
     let (_tmp, paths) = test_paths();
     let container_name = "jk-k7p9m2xq-workspace-agentsmith";
-    let manifest = InstanceManifest::new(crate::instance::NewInstanceManifest {
-        container_base: container_name,
-        workspace_name: Some("workspace"),
-        workspace_label: "workspace",
-        workdir: "/workspace/project",
-        host_workdir_fingerprint: "sha256:test",
-        role_key: "agent-smith",
-        role_display_name: "Agent Smith",
-        agent_runtime: jackin_core::Agent::Claude,
-        role_source_git: "https://example.invalid/agent-smith.git",
-        role_source_ref: None,
-        image_tag: "jk-agent-smith",
-        docker: crate::instance::DockerResources {
-            role_container: container_name.to_owned(),
-            dind_container: Some(format!("{container_name}-dind")),
-            network: format!("{container_name}-net"),
-            certs_volume: Some(format!("{container_name}-dind-certs")),
-        },
-        role_git_sha: None,
-        base_image_ref: None,
-        base_image_digest: None,
-        supported_agents: vec![],
-    });
     provision_account_admission(&paths, container_name);
     let docker = FakeDockerClient {
         inspect_queue: std::cell::RefCell::new(VecDeque::from([
@@ -362,7 +389,7 @@ async fn hardline_new_session_execs_entrypoint_in_running_container() {
     spawn_agent_session(
         &paths,
         container_name,
-        Some(&manifest),
+        None,
         jackin_core::Agent::Codex,
         &[("EDITOR".into(), "vim".into())],
         false,
@@ -383,7 +410,7 @@ async fn hardline_new_session_execs_entrypoint_in_running_container() {
         runner.recorded.iter().any(|call| {
             call.contains("docker exec")
                 && !call.contains("JACKIN_AGENT=")
-                && call.contains("--workdir /workspace/project")
+                && call.contains("--workdir /workspace")
                 && call.contains("jk-k7p9m2xq-workspace-agentsmith")
                 && call.contains("jackin-capsule")
                 && call.contains("new")
@@ -398,29 +425,6 @@ async fn hardline_new_session_execs_entrypoint_in_running_container() {
 async fn hardline_new_session_forwards_coauthor_trailer_env_when_enabled() {
     let (_tmp, paths) = test_paths();
     let container_name = "jk-k7p9m2xq-workspace-agentsmith";
-    let manifest = InstanceManifest::new(crate::instance::NewInstanceManifest {
-        container_base: container_name,
-        workspace_name: Some("workspace"),
-        workspace_label: "workspace",
-        workdir: "/workspace/project",
-        host_workdir_fingerprint: "sha256:test",
-        role_key: "agent-smith",
-        role_display_name: "Agent Smith",
-        agent_runtime: jackin_core::Agent::Claude,
-        role_source_git: "https://example.invalid/agent-smith.git",
-        role_source_ref: None,
-        image_tag: "jk-agent-smith",
-        docker: crate::instance::DockerResources {
-            role_container: container_name.to_owned(),
-            dind_container: Some(format!("{container_name}-dind")),
-            network: format!("{container_name}-net"),
-            certs_volume: Some(format!("{container_name}-dind-certs")),
-        },
-        role_git_sha: None,
-        base_image_ref: None,
-        base_image_digest: None,
-        supported_agents: vec![],
-    });
     provision_account_admission(&paths, container_name);
     let docker = FakeDockerClient {
         inspect_queue: std::cell::RefCell::new(VecDeque::from([
@@ -435,7 +439,7 @@ async fn hardline_new_session_forwards_coauthor_trailer_env_when_enabled() {
     spawn_agent_session(
         &paths,
         container_name,
-        Some(&manifest),
+        None,
         jackin_core::Agent::Claude,
         &[],
         true,
@@ -475,29 +479,6 @@ async fn hardline_new_session_forwards_coauthor_trailer_env_when_enabled() {
 async fn hardline_new_session_forwards_dco_env_when_enabled() {
     let (_tmp, paths) = test_paths();
     let container_name = "jk-k7p9m2xq-workspace-agentsmith";
-    let manifest = InstanceManifest::new(crate::instance::NewInstanceManifest {
-        container_base: container_name,
-        workspace_name: Some("workspace"),
-        workspace_label: "workspace",
-        workdir: "/workspace/project",
-        host_workdir_fingerprint: "sha256:test",
-        role_key: "agent-smith",
-        role_display_name: "Agent Smith",
-        agent_runtime: jackin_core::Agent::Claude,
-        role_source_git: "https://example.invalid/agent-smith.git",
-        role_source_ref: None,
-        image_tag: "jk-agent-smith",
-        docker: crate::instance::DockerResources {
-            role_container: container_name.to_owned(),
-            dind_container: Some(format!("{container_name}-dind")),
-            network: format!("{container_name}-net"),
-            certs_volume: Some(format!("{container_name}-dind-certs")),
-        },
-        role_git_sha: None,
-        base_image_ref: None,
-        base_image_digest: None,
-        supported_agents: vec![],
-    });
     provision_account_admission(&paths, container_name);
     let docker = FakeDockerClient {
         inspect_queue: std::cell::RefCell::new(VecDeque::from([
@@ -512,7 +493,7 @@ async fn hardline_new_session_forwards_dco_env_when_enabled() {
     spawn_agent_session(
         &paths,
         container_name,
-        Some(&manifest),
+        None,
         jackin_core::Agent::Claude,
         &[],
         false,
@@ -537,6 +518,75 @@ async fn hardline_new_session_forwards_dco_env_when_enabled() {
             .iter()
             .any(|call| call.contains("JACKIN_GIT_COAUTHOR_TRAILER")),
         "coauthor trailer env must be absent when disabled; recorded: {:?}",
+        runner.recorded
+    );
+}
+
+#[tokio::test]
+async fn new_session_routes_exact_duplicate_agent_instance_and_rejects_unknown_id() {
+    let (_tmp, paths) = test_paths();
+    let container_name = "jk-duplicate-agent";
+    let _config = provision_duplicate_agent_admission(&paths, container_name);
+    let docker = FakeDockerClient {
+        inspect_queue: std::cell::RefCell::new(VecDeque::from([
+            ContainerState::Running,
+            ContainerState::Running,
+            ContainerState::Running,
+        ])),
+        ..Default::default()
+    };
+    let mut runner = FakeRunner::default();
+
+    spawn_agent_session(
+        &paths,
+        container_name,
+        Some("claude-personal"),
+        jackin_core::Agent::Claude,
+        &[],
+        false,
+        false,
+        &docker,
+        &mut runner,
+    )
+    .await
+    .unwrap();
+    assert!(
+        runner.recorded.iter().any(|call| {
+            call.contains("jackin-capsule new claude-personal")
+                && !call.contains("jackin-capsule new claude-work")
+        }),
+        "exact live instance ID must reach capsule: {:?}",
+        runner.recorded
+    );
+
+    let (_tmp, paths) = test_paths();
+    let container_name = "jk-duplicate-agent-missing";
+    let _config = provision_duplicate_agent_admission(&paths, container_name);
+    let docker = FakeDockerClient {
+        inspect_queue: std::cell::RefCell::new(VecDeque::from([ContainerState::Running])),
+        ..Default::default()
+    };
+    let mut runner = FakeRunner::default();
+    let error = spawn_agent_session(
+        &paths,
+        container_name,
+        Some("claude-removed"),
+        jackin_core::Agent::Claude,
+        &[],
+        false,
+        false,
+        &docker,
+        &mut runner,
+    )
+    .await
+    .expect_err("unknown live instance ID must be rejected before exec");
+    assert!(error.to_string().contains("not admitted"), "{error:#}");
+    assert!(
+        !runner
+            .recorded
+            .iter()
+            .any(|call| call.contains("docker exec")),
+        "unknown target must not execute capsule: {:?}",
         runner.recorded
     );
 }

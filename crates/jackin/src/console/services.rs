@@ -460,6 +460,7 @@ pub(super) mod instances {
 
         let mut sessions = HashMap::new();
         let mut session_errors = HashSet::new();
+        let mut admissions = HashMap::new();
         let mut snapshot_targets: Vec<String> = Vec::new();
         let mut recovered_failure = false;
 
@@ -467,10 +468,25 @@ pub(super) mod instances {
             if is_live_instance_status(entry.status) {
                 let state_dir = paths.data_dir.join(&entry.container_base);
                 match jackin_runtime::instance::InstanceManifest::read(&state_dir) {
-                    Ok(manifest) if !manifest.sessions.is_empty() => {
-                        sessions.insert(entry.container_base.clone(), manifest.sessions);
+                    Ok(manifest) => {
+                        admissions.insert(
+                            entry.container_base.clone(),
+                            manifest
+                                .admitted_instances
+                                .iter()
+                                .map(|admitted| {
+                                    jackin_console::services::launch::LiveInstanceAdmission {
+                                        instance_id: admitted.config_id.clone(),
+                                        agent: admitted.agent,
+                                        account_id: admitted.account_id.clone(),
+                                    }
+                                })
+                                .collect(),
+                        );
+                        if !manifest.sessions.is_empty() {
+                            sessions.insert(entry.container_base.clone(), manifest.sessions);
+                        }
                     }
-                    Ok(_) => {}
                     Err(_) => {
                         recovered_failure = true;
                         session_errors.insert(entry.container_base.clone());
@@ -508,6 +524,7 @@ pub(super) mod instances {
             instances,
             sessions,
             session_errors,
+            admissions,
             snapshots,
             next_interval: instance_refresh_interval(exec_fallback_seen),
         })

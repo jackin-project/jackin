@@ -224,7 +224,7 @@ pub enum ConsoleInputOutcome<RoleSelector, Agent, InstanceAction, Provider> {
     NewSessionWithAccount {
         container: String,
         agent: Agent,
-        account: Provider,
+        instance_id: String,
     },
     LaunchWithAccount {
         selector: RoleSelector,
@@ -281,7 +281,7 @@ pub enum ConsoleOutcome<RoleSelector, Workspace, Agent, Provider> {
     NewSessionWithAccount {
         container: String,
         agent: Agent,
-        account: Provider,
+        instance_id: String,
     },
     /// Initial launch with a provider selected before the container exists.
     LaunchWithAccount {
