@@ -773,6 +773,10 @@ fn amp_command_exports_xdg_data_home_as_durable_parent() {
         env_passthrough: &empty,
         cwd: Path::new("/workspace"),
         codename: "test",
+        identity: jackin_protocol::SessionIdentity {
+            uid: 2_000,
+            gid: 2_000,
+        },
     };
     let command = build_agent_command(&spec);
 
