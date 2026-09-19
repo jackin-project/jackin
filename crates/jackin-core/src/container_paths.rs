@@ -69,6 +69,8 @@ pub const CAPSULE_SOCKET: &str = "/jackin/run/jackin.sock";
 pub const HOST_SOCK: &str = "/jackin/run/host.sock";
 /// Scoped per-container usage broker relay.
 pub const USAGE_SOCK: &str = "/jackin/run/usage.sock";
+/// Read-only client certificates for the role's Docker-in-Docker sidecar.
+pub const DIND_CERTS_CLIENT_DIR: &str = "/jackin/run/dind-certs/client";
 /// Per-session agent config materialised for the capsule.
 pub const CAPSULE_CONFIG: &str = "/jackin/run/agent.toml";
 /// Clipboard staging directory under the run tree.

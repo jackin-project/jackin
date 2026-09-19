@@ -357,6 +357,15 @@ mod linux {
         ] {
             optional_exact_rule(&mut rules, Path::new(path), READ_ONLY_WITH_UNIX);
         }
+        // Docker clients in the agent session use the mounted DinD client
+        // certificates. The parent `/jackin/run` rule is traverse-only, so
+        // this exact mount must be readable without exposing other runtime
+        // state or sockets.
+        optional_exact_rule(
+            &mut rules,
+            Path::new(jackin_core::container_paths::DIND_CERTS_CLIENT_DIR),
+            READ_ONLY,
+        );
         optional_exact_rule(
             &mut rules,
             Path::new(jackin_core::container_paths::CLIPBOARD_DIR),
@@ -896,6 +905,30 @@ mod tests {
         assert!(!rules.iter().any(|rule| {
             rule.path.starts_with(Path::new("/dev/"))
                 && rule.path != Path::new("/dev/null")
+                && rule.access & test_support::WRITABLE != 0
+        }));
+    }
+
+    #[test]
+    fn dind_client_cert_mount_is_exactly_read_only() {
+        let rules = rules_for(
+            &CapsuleConfig::default(),
+            None,
+            Path::new("/workspace/project"),
+            Path::new("/jackin/run/sessions/1"),
+        )
+        .expect("construct DinD isolation rules");
+
+        let certs = rules
+            .iter()
+            .find(|rule| {
+                rule.path == Path::new(jackin_core::container_paths::DIND_CERTS_CLIENT_DIR)
+            })
+            .expect("exact DinD client-cert mount rule");
+        assert_eq!(certs.access, READ_ONLY);
+        assert!(!certs.required);
+        assert!(!rules.iter().any(|rule| {
+            rule.path == Path::new(jackin_core::container_paths::DIND_CERTS_CLIENT_DIR)
                 && rule.access & test_support::WRITABLE != 0
         }));
     }

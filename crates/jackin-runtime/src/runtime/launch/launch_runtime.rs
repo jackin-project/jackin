@@ -448,7 +448,10 @@ pub(crate) async fn launch_role_runtime(
     let class_label = format!("jackin.class={}", selector.key());
     let display_label = format!("jackin.display.name={agent_display_name}");
     let docker_host = format!("DOCKER_HOST=tcp://{dind}:2376");
-    let docker_cert_path = "DOCKER_CERT_PATH=/jackin/run/dind-certs/client";
+    let docker_cert_path = format!(
+        "DOCKER_CERT_PATH={}",
+        jackin_core::container_paths::DIND_CERTS_CLIENT_DIR
+    );
     let dind_hostname = format!("{}={dind}", jackin_core::JACKIN_DIND_HOSTNAME_ENV_NAME);
     let role_container_name_env = format!(
         "{}={container_name}",
@@ -476,7 +479,10 @@ pub(crate) async fn launch_role_runtime(
     let git_author_email = format!("GIT_AUTHOR_EMAIL={}", git.user_email);
     let agent_specific_mounts = super::agent_mounts(state);
     let gh_config_mount = super::github_config_mount(state);
-    let certs_agent_mount = format!("{certs_volume}:/jackin/run/dind-certs/client:ro");
+    let certs_agent_mount = format!(
+        "{certs_volume}:{}:ro",
+        jackin_core::container_paths::DIND_CERTS_CLIENT_DIR
+    );
 
     // Start detached with a persistent TTY, then attach separately.  This
     // decouples the container's lifetime from the foreground attach, so
@@ -645,7 +651,7 @@ pub(crate) async fn launch_role_runtime(
             "-e",
             "DOCKER_TLS_VERIFY=1",
             "-e",
-            docker_cert_path,
+            docker_cert_path.as_str(),
             "-e",
             &dind_hostname,
         ]);
