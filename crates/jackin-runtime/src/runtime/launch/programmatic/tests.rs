@@ -252,6 +252,17 @@ fn launch_selection_without_defaults_synthesizes_ephemeral_default() {
     assert_eq!(instances[0].agent, Agent::Codex);
     assert_eq!(instances[0].account_id, "private");
     assert_eq!(instances[0].config_id, "private@codex");
+    assert_eq!(
+        selected.agent_configurations["private@codex"],
+        AgentConfiguration {
+            agent: Agent::Codex,
+            account: "private".to_owned(),
+            model: None,
+            base_url: None,
+            display_label: None,
+            invoked_via_wrapper: None,
+        }
+    );
     // The ephemeral default lives on the clone only.
     assert_eq!(config.agent_configurations.len(), 2);
     assert!(config.default_launch.is_none());
@@ -262,6 +273,44 @@ fn launch_selection_without_defaults_synthesizes_ephemeral_default() {
             .is_some(),
         "the legacy binding stays in place for the auth-mode path"
     );
+}
+
+#[test]
+fn launch_selection_preserves_existing_account_agent_template() {
+    let (mut config, workspace) = two_account_config();
+    let template = AgentConfiguration {
+        agent: Agent::Codex,
+        account: "private".to_owned(),
+        model: Some("gpt-5.6-codex".to_owned()),
+        base_url: Some("https://gateway.example/v1".to_owned()),
+        display_label: Some("Private via gateway".to_owned()),
+        invoked_via_wrapper: Some(jackin_config::WrapperSpec {
+            identity: "codex-wrapper".to_owned(),
+            args: vec!["--profile".to_owned(), "private".to_owned()],
+        }),
+    };
+    config
+        .agent_configurations
+        .insert("private@codex".to_owned(), template.clone());
+
+    let selected =
+        with_account_selection(&config, Agent::Codex, Some(&workspace), "codex", "private")
+            .unwrap();
+
+    assert_eq!(
+        selected.agent_configurations.get("private@codex"),
+        Some(&template),
+        "an existing account@agent template must not be replaced by defaults"
+    );
+    let instances =
+        jackin_config::resolve_launch(&selected, Some(&workspace), "codex", None, None).unwrap();
+    assert_eq!(instances.len(), 1);
+    assert_eq!(instances[0].model.as_deref(), Some("gpt-5.6-codex"));
+    assert_eq!(
+        instances[0].base_url.as_deref(),
+        Some("https://gateway.example/v1")
+    );
+    assert_eq!(instances[0].label, "Private via gateway");
 }
 
 #[test]
