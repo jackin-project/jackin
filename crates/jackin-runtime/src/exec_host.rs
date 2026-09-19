@@ -31,9 +31,10 @@
 //! `SO_PEERCRED` (`UnixStream::peer_cred`) and accepts only the container's
 //! init process (`NSpid` innermost PID 1), which is the capsule daemon. That
 //! binds credential resolution to the daemon path that already enforces the
-//! operator picker. Non-Linux hosts do not expose this same-kernel
-//! identity check here; Docker Desktop and the future reactive daemon remain
-//! the tracked residuals.
+//! operator picker. Non-Linux hosts fail closed: the relay is disabled until
+//! an equivalent peer-identity mechanism is implemented for that backend.
+//! File permissions and an operator binding allowlist are not a substitute
+//! for authenticating the in-container caller.
 
 use anyhow::{Context as _, Result};
 use jackin_protocol::control::frame;
@@ -98,6 +99,8 @@ enum CallerAuth {
     CapsuleDaemon,
     #[cfg(all(test, target_os = "linux"))]
     PeerPid(u32),
+    #[cfg(all(test, not(target_os = "linux")))]
+    TestPeer,
 }
 
 async fn run_listener(
@@ -331,6 +334,8 @@ fn authenticate_caller(stream: &UnixStream, caller_auth: CallerAuth) -> Result<(
             );
             Ok(())
         }
+        #[cfg(all(test, not(target_os = "linux")))]
+        CallerAuth::TestPeer => Ok(()),
     }
 }
 
@@ -355,7 +360,9 @@ fn authenticate_capsule_daemon_peer(stream: &UnixStream) -> Result<()> {
 
 #[cfg(not(target_os = "linux"))]
 fn authenticate_capsule_daemon_peer(_stream: &UnixStream) -> Result<()> {
-    Ok(())
+    anyhow::bail!(
+        "host credential relay is disabled on non-Linux hosts: capsule daemon peer authentication is unavailable"
+    )
 }
 
 #[cfg(target_os = "linux")]
