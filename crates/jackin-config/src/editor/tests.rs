@@ -2478,6 +2478,89 @@ fn removed_account_stays_excluded_from_scan_after_reload() {
 }
 
 #[test]
+fn removed_amp_xdg_profile_stays_excluded_from_shell_scan() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    minimal_config_file(&paths);
+    let data = temp.path().join("xdg-data");
+    let config = temp.path().join("xdg-config");
+    let cache = temp.path().join("xdg-cache");
+    std::fs::create_dir_all(data.join("amp")).unwrap();
+    std::fs::create_dir_all(&config).unwrap();
+    std::fs::create_dir_all(&cache).unwrap();
+    std::fs::write(
+        data.join("amp/secrets.json"),
+        r#"{"apiKey@https://ampcode.com/":"fixture-key"}"#,
+    )
+    .unwrap();
+    let plan = crate::import_plan(&crate::parse_zshrc_source(&format!(
+        "XDG_DATA_HOME={}\nXDG_CONFIG_HOME={}\nXDG_CACHE_HOME={}\n",
+        data.display(),
+        config.display(),
+        cache.display()
+    )));
+
+    let mut editor = ConfigEditor::open(&paths).unwrap();
+    assert!(
+        editor
+            .apply_zshrc_plan(&plan)
+            .unwrap()
+            .added_accounts
+            .contains(&"custom-amp".to_owned())
+    );
+    editor.save().unwrap();
+
+    let mut editor = ConfigEditor::open(&paths).unwrap();
+    editor.remove_account("custom-amp").unwrap();
+    let removed = editor.save().unwrap();
+    assert_eq!(removed.account_scan_exclusions.len(), 1);
+
+    let mut editor = ConfigEditor::open(&paths).unwrap();
+    let report = editor.apply_zshrc_plan(&plan).unwrap();
+    assert!(report.added_accounts.is_empty(), "{report:?}");
+    let reloaded = editor.save().unwrap();
+    assert!(!reloaded.accounts.contains_key("custom-amp"));
+}
+
+#[test]
+fn removed_api_key_endpoint_account_stays_excluded_from_environment_scan() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    minimal_config_file(&paths);
+    let account = crate::AccountConfig {
+        enabled: true,
+        name: "OpenAI endpoint".into(),
+        provider: crate::AiProvider::OpenAi,
+        credential: crate::AccountCredential::ApiKey {
+            value: EnvValue::from("$OPENAI_API_KEY"),
+            base_url: Some("https://proxy.example/v1".into()),
+            model: Some("gpt-endpoint".into()),
+        },
+    };
+    let mut editor = ConfigEditor::open(&paths).unwrap();
+    editor.upsert_account("openai-api-key", &account).unwrap();
+    editor.save().unwrap();
+
+    let mut editor = ConfigEditor::open(&paths).unwrap();
+    editor.remove_account("openai-api-key").unwrap();
+    editor.save().unwrap();
+
+    let mut editor = ConfigEditor::open(&paths).unwrap();
+    let report = editor
+        .scan_for_accounts_with(
+            &paths.home_dir,
+            &BTreeMap::from([("OPENAI_API_KEY".to_owned(), "fixture".to_owned())]),
+        )
+        .unwrap();
+    assert!(
+        !report.added_accounts.contains(&"openai-api-key".to_owned()),
+        "{report:?}"
+    );
+    let reloaded = editor.save().unwrap();
+    assert!(!reloaded.accounts.contains_key("openai-api-key"));
+}
+
+#[test]
 fn scan_for_accounts_reads_live_home_and_environment() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());

@@ -159,21 +159,16 @@ pub struct AdmittedInstance {
 }
 
 /// Host registration state for an already admitted running instance.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RegistrationState {
     /// Registration is currently enabled and resolvable.
+    #[default]
     Current,
     /// Registration remains known but is disabled for new grants.
     Disabled,
     /// Registration was removed or no longer resolves to the recorded entry.
     Removed,
-}
-
-impl Default for RegistrationState {
-    fn default() -> Self {
-        Self::Current
-    }
 }
 
 impl RegistrationState {

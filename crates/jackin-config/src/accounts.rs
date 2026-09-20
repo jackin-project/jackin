@@ -560,10 +560,10 @@ impl AccountConfig {
 
 /// Stable, secret-free identity for the credential source used by an account.
 ///
-/// The fields intentionally mirror `same_credential_source`: API-key model
-/// overrides do not identify a credential source, while the full persisted
-/// `EnvValue` does. The digest lets removal tombstones survive without keeping
-/// literal credentials in a second config field.
+/// The fields intentionally mirror `same_credential_source`: API-key model and
+/// endpoint overrides do not identify a credential source, while the full
+/// persisted `EnvValue` does. The digest lets removal tombstones survive
+/// without keeping literal credentials in a second config field.
 pub(crate) fn account_source_fingerprint(account: &AccountConfig) -> String {
     let mut digest = Sha256::new();
     hash_component(&mut digest, account.provider.slug());
@@ -585,12 +585,9 @@ pub(crate) fn account_source_fingerprint(account: &AccountConfig) -> String {
                 hash_component(&mut digest, "no_xdg_roots");
             }
         }
-        AccountCredential::ApiKey {
-            value, base_url, ..
-        } => {
+        AccountCredential::ApiKey { value, .. } => {
             hash_component(&mut digest, "api_key");
             hash_env_value(&mut digest, value);
-            hash_optional_component(&mut digest, base_url.as_deref());
         }
         AccountCredential::OAuthToken { agent, value } => {
             hash_component(&mut digest, "oauth_token");

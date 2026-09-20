@@ -753,6 +753,7 @@ pub(crate) fn recover_pending_publication(config_file: &Path) -> crate::ConfigRe
 fn apply_xdg_profile_candidate(
     editor: &mut ConfigEditor,
     known: &mut BTreeMap<String, crate::AccountConfig>,
+    excluded: &BTreeSet<String>,
     report: &mut BootstrapReport,
     roots: &crate::XdgRoots,
     candidate: Option<(String, crate::AccountConfig)>,
@@ -761,7 +762,9 @@ fn apply_xdg_profile_candidate(
         report.unapplied_zshrc_xdg_roots.push(roots.clone());
         return Ok(());
     };
-    if scan_source_registered(known, &account) {
+    if excluded.contains(&account_source_fingerprint(&account))
+        || scan_source_registered(known, &account)
+    {
         return Ok(());
     }
     if known.contains_key(&id) {
@@ -999,6 +1002,7 @@ impl ConfigEditor {
                         apply_xdg_profile_candidate(
                             self,
                             &mut known,
+                            &excluded,
                             &mut report,
                             roots,
                             Some(candidate),

@@ -146,6 +146,44 @@ fn scan_seeds_zshrc_overrides_alongside_defaults() {
 }
 
 #[test]
+fn scan_persists_existing_account_model_and_endpoint_updates() {
+    let temp = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    drop(AppConfig::load_or_init(&paths).unwrap());
+    let account = AccountConfig {
+        enabled: true,
+        name: "OpenAI".into(),
+        provider: AiProvider::OpenAi,
+        credential: AccountCredential::ApiKey {
+            value: EnvValue::from("$OPENAI_API_KEY"),
+            base_url: None,
+            model: None,
+        },
+    };
+    let mut editor = ConfigEditor::open(&paths).unwrap();
+    editor.upsert_account("openai-api-key", &account).unwrap();
+    editor.save().unwrap();
+    std::fs::write(
+        paths.home_dir.join(".zshrc"),
+        "OPENAI_MODEL=gpt-5\nOPENAI_BASE_URL=https://proxy.example/v1\n",
+    )
+    .unwrap();
+
+    let config = AppConfig::load_or_init(&paths).unwrap();
+    handle(AccountCommand::Scan, &config, &paths).unwrap();
+
+    let config = AppConfig::load_or_init(&paths).unwrap();
+    let AccountCredential::ApiKey {
+        model, base_url, ..
+    } = &config.accounts["openai-api-key"].credential
+    else {
+        panic!("expected API-key account");
+    };
+    assert_eq!(model.as_deref(), Some("gpt-5"));
+    assert_eq!(base_url.as_deref(), Some("https://proxy.example/v1"));
+}
+
+#[test]
 fn listing_redacts_secret_and_endpoint() {
     let account = AccountConfig {
         enabled: true,

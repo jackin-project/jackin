@@ -241,7 +241,7 @@ fn existing_relay_keeps_materialized_capability_while_new_relay_excludes_it() {
     let existing = UsageCapabilitySet::new([removed.clone()]);
     let recreated = UsageCapabilitySet::new(std::iter::empty());
 
-    assert!(existing.authorize(&removed).is_ok());
+    existing.authorize(&removed).unwrap();
     assert_eq!(
         recreated.authorize(&removed).unwrap_err().kind,
         UsageCoordinationErrorKind::Unauthorized
