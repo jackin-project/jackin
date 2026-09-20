@@ -234,7 +234,8 @@ fn is_daemon_entrypoint_args(args: &[String]) -> bool {
         // the client-mode dispatch match in `main`).
         Some(
             "status" | "snapshot" | "send" | "events" | "usage" | "agents" | "runtime-setup"
-            | "mcp-server" | "prepare-commit-msg" | "new" | "--version" | "-V" | "--help" | "-h",
+            | "mcp-server" | "prepare-commit-msg" | "new" | "usage-relay-proxy" | "--version"
+            | "-V" | "--help" | "-h",
         ) => false,
         // Anything else is the initial agent slug → daemon entrypoint.
         Some(_) => true,
@@ -288,7 +289,7 @@ fn parse_focus_flag(args: &[String]) -> Option<u64> {
         Some(
             "status" | "snapshot" | "send" | "events" | "attach-proxy" | "usage" | "agents"
             | "runtime-setup" | "mcp-server" | "prepare-commit-msg" | "sudo-provision"
-            | "firewall-apply" | "--version" | "-V" | "--help" | "-h",
+            | "firewall-apply" | "usage-relay-proxy" | "--version" | "-V" | "--help" | "-h",
         ) => args.len(),
         // `jackin-capsule --focus 5` (no subcommand) or no args at
         // all — scan from index 1.
@@ -333,4 +334,18 @@ fn resolve_initial_agent(args: &[String], supported_agents: &[String]) -> Result
     let validated = validate_agent_slug(raw, supported_agents)
         .map_err(|reason| anyhow::anyhow!("initial agent argv {raw:?} rejected: {reason}"))?;
     Ok(validated.to_owned())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn usage_relay_proxy_is_client_not_daemon_entrypoint() {
+        let args = ["jackin-capsule", "usage-relay-proxy"]
+            .into_iter()
+            .map(str::to_owned)
+            .collect::<Vec<_>>();
+        assert!(!is_daemon_entrypoint_args(&args));
+    }
 }

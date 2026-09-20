@@ -52,9 +52,9 @@ pub(crate) fn apple_runtime_mount(
     socket_dir: PathBuf,
 ) -> crate::apple_container_client::AppleContainerMount {
     crate::apple_container_client::AppleContainerMount::new(
-        socket_dir,
-        jackin_core::container_paths::RUN_DIR,
-        false,
+        socket_dir.join(jackin_protocol::CAPSULE_CONFIG_FILENAME),
+        jackin_protocol::CAPSULE_CONFIG_PATH,
+        true,
     )
 }
 
@@ -316,6 +316,33 @@ pub fn start_docker_tunnel(
     )
 }
 
+const CAPSULE_SUPERVISOR_USER: &str = "0:0";
+
+/// Start the Apple Container stdio tunnel after the Capsule is running.
+pub fn start_apple_tunnel(
+    container_name: &str,
+    prepared: PreparedUsageRelay,
+) -> Result<UsageRelayGuard> {
+    start_tunnel_with_command(
+        prepared.broker,
+        prepared.capabilities,
+        "container",
+        apple_tunnel_args(container_name),
+    )
+}
+
+fn apple_tunnel_args(container_name: &str) -> Vec<String> {
+    vec![
+        "exec".to_owned(),
+        "-i".to_owned(),
+        "--user".to_owned(),
+        CAPSULE_SUPERVISOR_USER.to_owned(),
+        container_name.to_owned(),
+        jackin_core::container_paths::CAPSULE_BIN.to_owned(),
+        "usage-relay-proxy".to_owned(),
+    ]
+}
+
 /// Test seam for a real container proxy command using production tunnel framing.
 #[doc(hidden)]
 pub fn start_docker_tunnel_with_command(
@@ -324,6 +351,18 @@ pub fn start_docker_tunnel_with_command(
     capabilities: Vec<UsageAccountCapability>,
     proxy_command: &[String],
 ) -> Result<UsageRelayGuard> {
+    let mut args = vec!["exec".to_owned(), "-i".to_owned()];
+    args.push(container_name.to_owned());
+    args.extend_from_slice(proxy_command);
+    start_tunnel_with_command(broker, capabilities, "docker", args)
+}
+
+fn start_tunnel_with_command(
+    broker: UsageBrokerClient,
+    capabilities: Vec<UsageAccountCapability>,
+    program: &str,
+    args: Vec<String>,
+) -> Result<UsageRelayGuard> {
     if capabilities.is_empty() {
         return Ok(UsageRelayGuard {
             task: None,
@@ -331,13 +370,7 @@ pub fn start_docker_tunnel_with_command(
             shutdown: None,
         });
     }
-    let mut args = vec![
-        "exec".to_owned(),
-        "-i".to_owned(),
-        container_name.to_owned(),
-    ];
-    args.extend_from_slice(proxy_command);
-    let request = jackin_process::ExecRequest::new("docker", args)
+    let request = jackin_process::ExecRequest::new(program, args)
         .stdin_mode(jackin_process::StdioMode::Capture)
         .stdout_mode(jackin_process::StdioMode::Capture)
         .stderr_mode(jackin_process::StdioMode::Inherit);

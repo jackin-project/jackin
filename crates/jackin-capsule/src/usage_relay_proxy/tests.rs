@@ -14,7 +14,15 @@ async fn broker_client_stdio_proxy_multiplexes_out_of_order_responses() {
     let (mut host_response_writer, proxy_input) = tokio::io::duplex(64 * 1024);
     let (proxy_output, host_request_reader) = tokio::io::duplex(64 * 1024);
     let proxy_socket = socket.clone();
-    let proxy = tokio::spawn(async move { run_at(&proxy_socket, proxy_input, proxy_output).await });
+    let proxy = tokio::spawn(async move {
+        run_at(
+            &proxy_socket,
+            DEFAULT_CAPSULE_SUPERVISOR_PID,
+            proxy_input,
+            proxy_output,
+        )
+        .await
+    });
     wait_for_socket(&socket).await;
 
     let first = tokio::spawn(send_request(socket.clone(), "claude"));
@@ -84,4 +92,65 @@ async fn wait_for_socket(socket: &Path) {
         tokio::time::sleep(Duration::from_millis(10)).await;
     }
     panic!("usage proxy socket was not created");
+}
+
+#[test]
+fn supervisor_peer_allows_only_exact_root_supervisor() {
+    assert!(!supervisor_peer_allows(2, None));
+    assert!(!supervisor_peer_allows(
+        2,
+        Some(PeerIdentity {
+            pid: Some(1),
+            uid: 0,
+            gid: 0,
+        }),
+    ));
+    assert!(!supervisor_peer_allows(
+        2,
+        Some(PeerIdentity {
+            pid: Some(3),
+            uid: 0,
+            gid: 0,
+        }),
+    ));
+    assert!(!supervisor_peer_allows(
+        2,
+        Some(PeerIdentity {
+            pid: Some(2),
+            uid: 2_001,
+            gid: 0,
+        }),
+    ));
+    assert!(!supervisor_peer_allows(
+        2,
+        Some(PeerIdentity {
+            pid: Some(2),
+            uid: 0,
+            gid: 1,
+        }),
+    ));
+    assert!(supervisor_peer_allows(
+        2,
+        Some(PeerIdentity {
+            pid: Some(2),
+            uid: 0,
+            gid: 0,
+        }),
+    ));
+    assert!(supervisor_peer_allows(
+        1,
+        Some(PeerIdentity {
+            pid: Some(1),
+            uid: 0,
+            gid: 0,
+        }),
+    ));
+    assert!(supervisor_peer_allows(
+        2,
+        Some(PeerIdentity {
+            pid: Some(9),
+            uid: 2_001,
+            gid: 2_001,
+        }),
+    ));
 }

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::os::unix::fs::MetadataExt as _;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -84,7 +84,7 @@ async fn docker_relay_guard_closes_child_stdin_and_reaps_proxy() -> Result<()> {
 }
 
 #[test]
-fn usage_mount_uses_only_existing_runtime_directory_for_both_backends() {
+fn usage_mounts_preserve_backend_transport_contract() {
     let socket_dir = PathBuf::from("/host/jackin/sockets/fixture");
 
     let docker = docker_runtime_mount(&socket_dir).unwrap();
@@ -92,10 +92,31 @@ fn usage_mount_uses_only_existing_runtime_directory_for_both_backends() {
     assert!(!docker.contains("usage-shared"));
 
     let apple = apple_runtime_mount(socket_dir.clone());
-    assert_eq!(apple.source, socket_dir);
-    assert_eq!(apple.target, PathBuf::from("/jackin/run"));
-    assert!(!apple.readonly);
-    assert!(!apple.source.to_string_lossy().contains("usage-shared"));
+    assert_eq!(
+        apple.source,
+        socket_dir.join(jackin_protocol::CAPSULE_CONFIG_FILENAME)
+    );
+    assert_eq!(
+        apple.target,
+        PathBuf::from(jackin_protocol::CAPSULE_CONFIG_PATH)
+    );
+    assert!(apple.readonly);
+}
+
+#[test]
+fn apple_usage_tunnel_executes_the_guest_proxy_as_the_supervisor() {
+    assert_eq!(
+        apple_tunnel_args("fixture"),
+        [
+            "exec",
+            "-i",
+            "--user",
+            "0:0",
+            "fixture",
+            "/jackin/runtime/jackin-capsule",
+            "usage-relay-proxy",
+        ]
+    );
 }
 
 #[test]
