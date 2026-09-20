@@ -43,4 +43,9 @@ dep-info-basedir = "."
 # mise tasks delegate to it via this alias (singular only; the plural
 # "xtasks" was dropped).
 [alias]
-xtask = "run --quiet --package jackin-xtask --"
+# `--locked`: the entrypoint must never rewrite Cargo.lock as a side effect.
+# Without it, any xtask run (including the pre-commit hook's
+# `clippy-affected`) normalizes the lockfile in the worktree, which both
+# dirties the tree and trips hk's fail_on_fix. Update the lock explicitly
+# with `cargo update` / `cargo generate-lockfile` instead.
+xtask = "run --quiet --locked --package jackin-xtask --"
