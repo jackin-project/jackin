@@ -847,6 +847,26 @@ async fn daemon_pty_lifecycle_reaches_shutdown_after_last_session_exit() -> Resu
     use tokio::net::UnixStream;
     use tokio::time::{Duration, timeout};
 
+    const CHILD: &str = "JACKIN_PTY_LIFECYCLE_CHILD";
+    if std::env::var_os(CHILD).is_none() {
+        let shell = if Path::new("/bin/zsh").is_file() {
+            "/bin/zsh"
+        } else {
+            "/bin/sh"
+        };
+        let status = Command::new(std::env::current_exe()?)
+            .args([
+                "--exact",
+                "daemon::tests::daemon_pty_lifecycle_reaches_shutdown_after_last_session_exit",
+                "--nocapture",
+            ])
+            .env(CHILD, "1")
+            .env("JACKIN_TEST_SHELL", shell)
+            .status()?;
+        anyhow::ensure!(status.success(), "isolated PTY lifecycle test failed");
+        return Ok(());
+    }
+
     let root = tempfile::tempdir()?;
     let workdir = root.path().join("workspace");
     std::fs::create_dir(&workdir)?;
@@ -893,7 +913,8 @@ async fn daemon_pty_lifecycle_reaches_shutdown_after_last_session_exit() -> Resu
             let mut tag = [0u8; 1];
             client.read_exact(&mut tag).await?;
             let frame = read_server_frame(&mut client, tag[0])
-                .await?
+                .await
+                .map_err(|error| anyhow::anyhow!("reading Welcome: {error}"))?
                 .ok_or_else(|| anyhow::anyhow!("daemon closed before Welcome"))?;
             match frame {
                 ServerFrame::Welcome { session_count } => {
