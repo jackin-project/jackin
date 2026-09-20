@@ -46,11 +46,11 @@ jobs:
           persist-credentials: false
       - name: Set up Velnor workflow runtime
         id: runtime
-        uses: tailrocks/velnor/.github/actions/setup-velnor-workflow@e717de39b97558117e7e4f55c20216c8a4e4b1fc
+        uses: tailrocks/velnor/.github/actions/setup-velnor-workflow@4fa7a3a85f141a6bb95bc9bdf0eef9e3ddde165d
         with:
-          rev: e717de39b97558117e7e4f55c20216c8a4e4b1fc
+          rev: 4fa7a3a85f141a6bb95bc9bdf0eef9e3ddde165d
       - name: Set trusted workflow policy revision
-        run: echo "VELNOR_WORKFLOW_POLICY_REVISION=e717de39b97558117e7e4f55c20216c8a4e4b1fc" >> "$GITHUB_ENV"
+        run: echo "VELNOR_WORKFLOW_POLICY_REVISION=4fa7a3a85f141a6bb95bc9bdf0eef9e3ddde165d" >> "$GITHUB_ENV"
       - name: Set up Mise
         uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
@@ -430,11 +430,11 @@ jobs:
           persist-credentials: false
       - name: Set up Velnor workflow runtime
         id: runtime
-        uses: tailrocks/velnor/.github/actions/setup-velnor-workflow@e717de39b97558117e7e4f55c20216c8a4e4b1fc
+        uses: tailrocks/velnor/.github/actions/setup-velnor-workflow@4fa7a3a85f141a6bb95bc9bdf0eef9e3ddde165d
         with:
-          rev: e717de39b97558117e7e4f55c20216c8a4e4b1fc
+          rev: 4fa7a3a85f141a6bb95bc9bdf0eef9e3ddde165d
       - name: Set trusted workflow policy revision
-        run: echo "VELNOR_WORKFLOW_POLICY_REVISION=e717de39b97558117e7e4f55c20216c8a4e4b1fc" >> "$GITHUB_ENV"
+        run: echo "VELNOR_WORKFLOW_POLICY_REVISION=4fa7a3a85f141a6bb95bc9bdf0eef9e3ddde165d" >> "$GITHUB_ENV"
       - name: Set up Mise
         uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
@@ -779,19 +779,12 @@ jobs:
           publication_lock_path=".package-release-publication-lock.json"
           publication_lock_sha="${VELNOR_PUBLICATION_LOCK_SHA:-}"
           publication_lock_acquired=0
-          publication_lock_retain="${VELNOR_PUBLICATION_LOCK_RETAIN:-0}"
           publication_lock_released="${VELNOR_PUBLICATION_LOCK_RELEASED:-0}"
           if [ -n "$publication_lock_sha" ]; then
             publication_lock_acquired=1
           fi
           publication_lock_token="${GITHUB_REPOSITORY}:${GITHUB_WORKFLOW:-unknown}:${GITHUB_RUN_ID:-unknown}:${GITHUB_RUN_ATTEMPT:-unknown}"
 
-          mark_publication_lock_retain() {
-            publication_lock_retain=1
-            if [ -n "${GITHUB_ENV:-}" ]; then
-              printf 'VELNOR_PUBLICATION_LOCK_RETAIN=1\n' >> "$GITHUB_ENV"
-            fi
-          }
 
           mark_publication_lock_released() {
             publication_lock_released=1
@@ -799,13 +792,6 @@ jobs:
             publication_lock_sha=""
             if [ -n "${GITHUB_ENV:-}" ]; then
               printf 'VELNOR_PUBLICATION_LOCK_RELEASED=1\nVELNOR_PUBLICATION_LOCK_RETAIN=0\n' >> "$GITHUB_ENV"
-            fi
-          }
-
-          clear_publication_lock_retain() {
-            publication_lock_retain=0
-            if [ -n "${GITHUB_ENV:-}" ]; then
-              printf 'VELNOR_PUBLICATION_LOCK_RETAIN=0\n' >> "$GITHUB_ENV"
             fi
           }
 
@@ -1029,7 +1015,6 @@ jobs:
             done < "$names_file"
           }
 
-          {
 
           # This permanent branch is the repository-wide lock namespace for generated
           # publication writers. The Contents API create-without-sha operation is
@@ -1040,12 +1025,14 @@ jobs:
           publication_lock_path=".package-release-publication-lock.json"
           publication_lock_sha="${VELNOR_PUBLICATION_LOCK_SHA:-}"
           publication_lock_acquired=0
-          publication_lock_retain="${VELNOR_PUBLICATION_LOCK_RETAIN:-0}"
           publication_lock_released="${VELNOR_PUBLICATION_LOCK_RELEASED:-0}"
           if [ -n "$publication_lock_sha" ]; then
             publication_lock_acquired=1
           fi
           publication_lock_token="${GITHUB_REPOSITORY}:${GITHUB_WORKFLOW:-unknown}:${GITHUB_RUN_ID:-unknown}:${GITHUB_RUN_ATTEMPT:-unknown}"
+
+
+          publication_lock_retain="${VELNOR_PUBLICATION_LOCK_RETAIN:-0}"
 
           mark_publication_lock_retain() {
             publication_lock_retain=1
@@ -1054,19 +1041,20 @@ jobs:
             fi
           }
 
+          clear_publication_lock_retain() {
+            publication_lock_retain=0
+            if [ -n "${GITHUB_ENV:-}" ]; then
+              printf 'VELNOR_PUBLICATION_LOCK_RETAIN=0\n' >> "$GITHUB_ENV"
+            fi
+          }
+
+
           mark_publication_lock_released() {
             publication_lock_released=1
             publication_lock_acquired=0
             publication_lock_sha=""
             if [ -n "${GITHUB_ENV:-}" ]; then
               printf 'VELNOR_PUBLICATION_LOCK_RELEASED=1\nVELNOR_PUBLICATION_LOCK_RETAIN=0\n' >> "$GITHUB_ENV"
-            fi
-          }
-
-          clear_publication_lock_retain() {
-            publication_lock_retain=0
-            if [ -n "${GITHUB_ENV:-}" ]; then
-              printf 'VELNOR_PUBLICATION_LOCK_RETAIN=0\n' >> "$GITHUB_ENV"
             fi
           }
 
@@ -1211,6 +1199,7 @@ jobs:
           fi
           printf 'VELNOR_PUBLICATION_LOCK_SHA=%s\n' "$publication_lock_sha" >> "$GITHUB_ENV"
 
+          {
             printf '%s\n' 'release-manifest.json'
             printf '%s\n' 'identity.json'
             printf '%s\n' 'jackin-aarch64-apple-darwin.tar.gz'
@@ -1731,12 +1720,14 @@ jobs:
           publication_lock_path=".package-release-publication-lock.json"
           publication_lock_sha="${VELNOR_PUBLICATION_LOCK_SHA:-}"
           publication_lock_acquired=0
-          publication_lock_retain="${VELNOR_PUBLICATION_LOCK_RETAIN:-0}"
           publication_lock_released="${VELNOR_PUBLICATION_LOCK_RELEASED:-0}"
           if [ -n "$publication_lock_sha" ]; then
             publication_lock_acquired=1
           fi
           publication_lock_token="${GITHUB_REPOSITORY}:${GITHUB_WORKFLOW:-unknown}:${GITHUB_RUN_ID:-unknown}:${GITHUB_RUN_ATTEMPT:-unknown}"
+
+
+          publication_lock_retain="${VELNOR_PUBLICATION_LOCK_RETAIN:-0}"
 
           mark_publication_lock_retain() {
             publication_lock_retain=1
@@ -1745,19 +1736,20 @@ jobs:
             fi
           }
 
+          clear_publication_lock_retain() {
+            publication_lock_retain=0
+            if [ -n "${GITHUB_ENV:-}" ]; then
+              printf 'VELNOR_PUBLICATION_LOCK_RETAIN=0\n' >> "$GITHUB_ENV"
+            fi
+          }
+
+
           mark_publication_lock_released() {
             publication_lock_released=1
             publication_lock_acquired=0
             publication_lock_sha=""
             if [ -n "${GITHUB_ENV:-}" ]; then
               printf 'VELNOR_PUBLICATION_LOCK_RELEASED=1\nVELNOR_PUBLICATION_LOCK_RETAIN=0\n' >> "$GITHUB_ENV"
-            fi
-          }
-
-          clear_publication_lock_retain() {
-            publication_lock_retain=0
-            if [ -n "${GITHUB_ENV:-}" ]; then
-              printf 'VELNOR_PUBLICATION_LOCK_RETAIN=0\n' >> "$GITHUB_ENV"
             fi
           }
 
@@ -3071,12 +3063,14 @@ jobs:
           publication_lock_path=".package-release-publication-lock.json"
           publication_lock_sha="${VELNOR_PUBLICATION_LOCK_SHA:-}"
           publication_lock_acquired=0
-          publication_lock_retain="${VELNOR_PUBLICATION_LOCK_RETAIN:-0}"
           publication_lock_released="${VELNOR_PUBLICATION_LOCK_RELEASED:-0}"
           if [ -n "$publication_lock_sha" ]; then
             publication_lock_acquired=1
           fi
           publication_lock_token="${GITHUB_REPOSITORY}:${GITHUB_WORKFLOW:-unknown}:${GITHUB_RUN_ID:-unknown}:${GITHUB_RUN_ATTEMPT:-unknown}"
+
+
+          publication_lock_retain="${VELNOR_PUBLICATION_LOCK_RETAIN:-0}"
 
           mark_publication_lock_retain() {
             publication_lock_retain=1
@@ -3085,19 +3079,20 @@ jobs:
             fi
           }
 
+          clear_publication_lock_retain() {
+            publication_lock_retain=0
+            if [ -n "${GITHUB_ENV:-}" ]; then
+              printf 'VELNOR_PUBLICATION_LOCK_RETAIN=0\n' >> "$GITHUB_ENV"
+            fi
+          }
+
+
           mark_publication_lock_released() {
             publication_lock_released=1
             publication_lock_acquired=0
             publication_lock_sha=""
             if [ -n "${GITHUB_ENV:-}" ]; then
               printf 'VELNOR_PUBLICATION_LOCK_RELEASED=1\nVELNOR_PUBLICATION_LOCK_RETAIN=0\n' >> "$GITHUB_ENV"
-            fi
-          }
-
-          clear_publication_lock_retain() {
-            publication_lock_retain=0
-            if [ -n "${GITHUB_ENV:-}" ]; then
-              printf 'VELNOR_PUBLICATION_LOCK_RETAIN=0\n' >> "$GITHUB_ENV"
             fi
           }
 
