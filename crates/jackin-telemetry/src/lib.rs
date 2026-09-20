@@ -31,8 +31,9 @@ pub use event::{
 };
 pub use health::{FacadeHealth, Signal, facade_health, record_export_rejection};
 pub use metric::{
-    Counter, Gauge, Histogram, InstrumentDef, InstrumentKind, MeterInstallError, MeterReservation,
-    UpDownCounter, counter, gauge, histogram, install, reserve_meter, up_down_counter,
+    Counter, Gauge, Histogram, InstrumentDef, InstrumentKind, MeterInstallError, MeterInstallation,
+    MeterReservation, UpDownCounter, counter, gauge, histogram, install, reserve_meter,
+    up_down_counter,
 };
 pub use operation::{
     OperationGuard, SpanDef, autonomous_cycle_operation, autonomous_root_operation, operation,
