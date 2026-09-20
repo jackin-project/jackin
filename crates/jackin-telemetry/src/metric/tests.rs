@@ -313,7 +313,10 @@ fn detached_meter_installation_keeps_generation_until_drop() {
     first_installation.detach();
 
     let second_provider = SdkMeterProvider::builder().build();
-    assert!(install(&second_provider.meter("blocked-generation"),).is_err());
+    assert!(matches!(
+        install(&second_provider.meter("blocked-generation")),
+        Err(MeterInstallError)
+    ));
 
     drop(first_installation);
     let _second_installation = install(&second_provider.meter("next-generation"))

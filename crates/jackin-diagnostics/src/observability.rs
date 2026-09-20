@@ -516,7 +516,7 @@ mod otlp {
         logger: SdkLoggerProvider,
         meter: SdkMeterProvider,
         generation: u64,
-        _meter_installation: Option<jackin_telemetry::MeterInstallation>,
+        meter_installation: Option<jackin_telemetry::MeterInstallation>,
     }
 
     impl OtlpProviders {
@@ -532,7 +532,7 @@ mod otlp {
         /// errors stay quiet — by then the data is already flushed-or-lost and a
         /// second notice adds only noise.
         fn flush_and_shutdown(&mut self, deadline: std::time::Instant) -> bool {
-            if let Some(installation) = self._meter_installation.as_mut() {
+            if let Some(installation) = self.meter_installation.as_mut() {
                 installation.detach();
             }
             #[cfg(test)]
@@ -1303,7 +1303,7 @@ mod otlp {
                 logger: logger_provider,
                 meter: meter_provider,
                 generation,
-                _meter_installation: Some(meter_installation),
+                meter_installation: Some(meter_installation),
             });
         } else {
             drop(meter_reservation);
@@ -1408,7 +1408,7 @@ mod otlp {
                 logger: logger_provider,
                 meter: meter_provider,
                 generation,
-                _meter_installation: Some(meter_installation),
+                meter_installation: Some(meter_installation),
             });
         } else {
             drop(meter_reservation);
