@@ -4,37 +4,55 @@ Proof levels: `implemented` < `fixture_verified` < `container_verified` <
 `live_verified`. Also: `failed`, `unavailable` (credentials), `unsupported`
 (genuinely, with evidence), `not_run`.
 
-## PR #1002 exact-head audit
+## Current exact-head audit — 2026-09-20
 
-Audit target: PR #1002, source head
-`176dcc0632f977a78d58443bde1b3ceb40304606`, audited in the separate worktree
-`/private/tmp/jackin-pr1002-evidence` on branch `audit/pr1002-evidence` after a
-normal merge of the latest `feat/multi-account-support`.
-The initial evidence below was collected at `1c8b99077a5fe82cbfd19e6b5803a0a2db67d8ba`;
-the focused fixture and documentation gates were rerun after synchronization.
-The GitHub review query was performed before this edit: PR #1002 had no review
-entries and one connector comment reporting a review-usage limit. That comment
-is not implementation evidence.
+Audit target: live PR #1002 source branch `feat/multi-account-support` at
+`ca128f8a80907319ea6d5648cf172ed81e33b1d4` (`ca128f8`). GitHub still reports
+that commit as the open PR's current head. This evidence ledger is carried by
+PR #1005, whose starting head was `33810907904ccc4b0858e9479d71da54c8df0719`
+(`3381090`) with base `feat/multi-account-support` at the same `ca128f8` commit;
+the starting tree differed from that source head only in these two ledger files.
+The audit worktree is `/private/tmp/jackin-pr1002-evidence` on
+`audit/pr1002-evidence`.
+
+The GitHub review query for #1002 was repeated on 2026-09-20: reviews and inline
+review comments were empty; the only issue comment was the Codex usage-limit
+notice. Its hosted checks were mixed (in progress, cancelled, and failed), so
+they are not substituted for local evidence. No live provider call, container
+run, GUI/keychain run, or native-client comparison was performed here. Those
+surfaces remain `not_run`.
+
+The live #1002 PR description still contains older synchronized-gate claims of
+`563 passed` and `1055 passed, 1 skipped`; those are historical PR-body values,
+not current evidence. They are superseded by the exact-source counts below.
 
 The historical `/tmp` artifacts named by this document are absent in the audit
 filesystem, including `/tmp/review-providers.md`, `/tmp/lane-*.md`,
 `/tmp/tracer/evidence.md`, `/tmp/split.log`, and
 `/tmp/provider-catalog-ledger.md`. Historical claims that cite them are kept as
 historical claims only; this audit does not re-issue their `container_verified`
-or `live_verified` labels. No live provider call or container run was performed
-for this audit, so no row below claims either proof level.
+or `live_verified` labels.
 
-Evidence runs and their source heads:
+Evidence runs and their source heads, all observed on 2026-09-20 unless stated:
 
-- Initial-head `AUDIT-R`: `cargo nextest run -p jackin-runtime -p jackin-console -p jackin-capsule -p jackin-instance -p jackin-core -p jackin --all-features` at `1c8b99077a5fe82cbfd19e6b5803a0a2db67d8ba` — **3826 passed, 1 skipped, 1 timed out**, exit 100. The timeout was `crates/jackin-console/src/tui/view/png_baselines/tests.rs::png_baselines_screens_match` after 360 seconds; it is recorded as failed, not silently converted to pass.
-- Initial-head focused follow-up: `cargo nextest run -p jackin-console --all-features -j1 -E 'test(png_baselines_screens_match)'` — **1 passed**, exit 0, 153.035 seconds. This does not erase the failed aggregate `AUDIT-R` gate; it shows the timeout is not reproduced in the isolated test.
-- Synchronized-head `AUDIT-F`: `cargo nextest run -p jackin-config -p jackin-env -p jackin-protocol -p jackin-usage --all-features` at `176dcc0632f977a78d58443bde1b3ceb40304606` — **1057 passed, 1 skipped**, exit 0.
-- Synchronized-head config/instance fixture gate: `cargo nextest run -p jackin-instance -p jackin-config --all-features` — **567 passed**, exit 0.
-- Synchronized-head roadmap gate: `cargo xtask roadmap audit` — **pass**, 18 `meta.json` files resolved.
-- Synchronized-head research gate: `cargo xtask research check` — **pass**, 63 `meta.json` files resolved.
-- Synchronized-head repository-link gate: `cargo xtask docs repo-links` — **failed** on two pre-existing references to `.github/workflows/preview.yml` in `docs/content/roadmap/(isolation-security)/security-threat-model-and-signed-releases.mdx:22,64`; neither changed file is under `docs/`.
+- Current exact-source `AUDIT-F`: `cargo nextest run -p jackin-config -p jackin-env -p jackin-protocol -p jackin-usage --all-features` at `ca128f8a80907319ea6d5648cf172ed81e33b1d4` — **1059 passed, 1 skipped**, exit 0 (5 binaries, 16.084 seconds). This is the exact current #1002 source tree.
+- Current exact-source config/instance fixture gate: `cargo nextest run -p jackin-instance -p jackin-config --all-features` at `ca128f8a80907319ea6d5648cf172ed81e33b1d4` — **567 passed**, exit 0 (2 binaries, 21.135 seconds). Counts are per command and overlap on `jackin-config`; they are not additive.
+- Current exact-source broad fixture/console gate: `cargo nextest run -p jackin-runtime -p jackin-console -p jackin-capsule -p jackin-instance -p jackin-core -p jackin --all-features` at `ca128f8a80907319ea6d5648cf172ed81e33b1d4` — **3836 passed**, exit 0 (41 binaries, 200.269 seconds). This is `CURRENT-R`; it is separate from historical `AUDIT-R` below.
+- Current audit-tree MDX build (final rerun): `cd docs && bun run build` — MDX/Vite compilation completed, but static prerender failed when its preview server refused the request for `/og/research/context/techniques/09-output-discipline.webp`; exit 1. A prior same-tree attempt failed the same way on another generated `/og/...webp` route. No live or provider evidence is implied.
+- Current audit-tree type gate: `cd docs && bun run types:check` — **pass** (`fumadocs-mdx` generated files; `tsc --noEmit` reported no errors).
+- Current audit-tree docs tests: `cd docs && bun test` — **18 passed, 0 failed** across 2 files, exit 0.
+- Current roadmap gate: `cargo xtask roadmap audit` — **pass**, 18 `meta.json` files resolved.
+- Current research gate: `cargo xtask research check` — **pass**, 63 `meta.json` files resolved.
+- Current repository-link gate: `cargo xtask docs repo-links` — **failed** on two pre-existing references to `.github/workflows/preview.yml` in `docs/content/roadmap/(isolation-security)/security-threat-model-and-signed-releases.mdx:22,64`; neither changed file is under `docs/`.
 
-Review disposition at the synchronized audit head: the four active review
+The previous synchronized audit at `176dcc0632f977a78d58443bde1b3ceb40304606`
+reported **1057 passed, 1 skipped** for its fixture command. That is stale
+176-era evidence, not a current #1002 result; the current count above supersedes
+it. The earlier aggregate at `1c8b99077a5fe82cbfd19e6b5803a0a2db67d8ba` remains
+historical `AUDIT-R`: **3826 passed, 1 skipped, 1 timed out**, exit 100, with
+the focused PNG rerun **1 passed**. Its run date was not retained.
+
+Review disposition for the current #1005 review surfaces: the four active review
 findings on this PR are reflected as open evidence gaps below. D13 is not
 marked implemented without Docker argv/inspect/image-history evidence; F22 is
 not marked implemented without OpenRouter history coverage; F28 is not marked
@@ -50,7 +68,18 @@ gate failed; `unavailable` means the required credential/access was absent;
 `not_run` means no sufficient evidence was found or executed. `fixture_verified`
 does not imply service, container, or live-provider proof.
 
-## Spine
+## Current exact-head evidence
+
+The current source-level evidence is the three exact-source nextest runs above.
+The required container, live-provider, GUI/keychain, native-client, and
+independent-review surfaces remain `not_run`; no status below upgrades them.
+
+## Historical lane spine (retained, not current verification)
+
+The following lane rows preserve earlier reports for provenance. Their `/tmp`
+artifacts are absent, their counts and SHAs are not current unless explicitly
+labelled `AUDIT-F`, and their historical `implemented`/`fixture_verified`
+dispositions do not re-issue current proof.
 
 | Requirement | Owner | Test / scenario | Result / artifact | Proof | Status |
 |---|---|---|---|---|---|
@@ -75,8 +104,12 @@ does not imply service, container, or live-provider proof.
 
 ## Checklist A–H (from jackin-implementation-and-verification.md)
 
-Every requirement is listed once. Test names are repository paths at the exact
-target head; `AUDIT-F` and `AUDIT-R` refer to the aggregate results above.
+Every requirement is listed once. Test names are repository paths in the current
+source tree. `AUDIT-F` means the current exact-source fixture run at `ca128f8`;
+`CURRENT-R` means the current exact-source broad fixture/console run at
+`ca128f8`; `AUDIT-R` means the historical aggregate at `1c8b9907`, not a
+current run. A row citing `AUDIT-R` retains historical evidence only; its
+gap/disposition text controls current status.
 
 ### A. Initialization, registration, discovery
 
@@ -254,7 +287,7 @@ target head; `AUDIT-F` and `AUDIT-R` refer to the aggregate results above.
 | H01 | Existing configuration converts or fails actionably without silent loss | `crates/jackin-config/src/migrations/tests.rs::config_migrations_chain_reaches_current`, `account_schema_preserves_existing_registry_and_assignments`, `v1alpha10_to_current_stamps_initialized_sentinel_without_touching_accounts`; AUDIT-F pass | fixture_verified | implemented | No user-home migration. |
 | H02 | Schema transition is atomic/idempotent and obsolete path is removed | `crates/jackin-config/src/migrations/tests.rs::prop_config_migration_idempotent`, `prop_workspace_migration_idempotent`, `rejects_when_migration_path_was_removed`; `crates/jackin-config/src/editor/tests.rs::editor_save_atomic_staging_failure_preserves_every_original_file`; AUDIT-F pass | fixture_verified | implemented | No compatibility-shim audit beyond exact-head source inspection. |
 | H03 | Protocol/build mismatch gives restart/upgrade error | `crates/jackin-capsule/src/config/tests.rs::invalid_staged_credentials_reject_with_explicit_upgrade_error`, `protected_credentials_reject_profile_mode_and_arbitrary_environment`; AUDIT-R pass | fixture_verified | implemented | Error text is fixture-verified. |
-| H04 | Unit, integration, format, lint, docs, and snapshot gates pass | `AUDIT-F` passed 1055/1 skipped; `AUDIT-R` passed 3826/1 skipped but timed out at `crates/jackin-console/src/tui/view/png_baselines/tests.rs::png_baselines_screens_match` after 360s and exited 100; focused rerun of that test passed once in 153.035s | fixture_verified (partial) | failed | Aggregate gate still failed; isolated rerun does not authorize an all-gates pass. |
+| H04 | Unit, integration, format, lint, docs, and snapshot gates pass | Current `AUDIT-F` passed **1059/1 skipped** at `ca128f8`; current config/instance fixture gate passed **567**; current `CURRENT-R` passed **3836** across 41 binaries; current MDX/Vite build reached static prerender but exited 1 on a preview-server connection refusal; current type gate passed; docs tests passed **18/18**; roadmap/research passed; repo-links failed on two pre-existing `preview.yml` references. Historical `AUDIT-R` passed 3826/1 skipped but timed out at `crates/jackin-console/src/tui/view/png_baselines/tests.rs::png_baselines_screens_match` after 360s and exited 100; its focused rerun passed once in 153.035s. | fixture_verified (partial) | failed | Current aggregate/docs gate is not green; isolated historical rerun does not authorize an all-gates pass. |
 | H05 | Apple Silicon macOS 26 plus OrbStack usage-broker E2E with JUnit | No current exact-head `cargo xtask ci --e2e` run or JUnit artifact; historical `target/nextest/docker-e2e/junit.xml` and `/tmp` evidence are absent | — | not_run | Mandatory container gate blocker: rerun on the target Mac and attach current JUnit. |
 | H06 | Live provider/account matrix records identity and real fields | No current live-provider command or artifact; historical provider matrix is not independently reproducible here | — | not_run | Mandatory live matrix blocker; configured credentials and native outputs must be captured without secrets. |
 | H07 | Two-Claude-plus-one-Codex real-account container scenario | `/tmp/tracer/evidence.md` and `/tmp/split.log` absent; no current target-head container/TUI run | — | not_run | Mandatory scenario blocker; do not reuse historical `live_verified` label. |
@@ -262,7 +295,7 @@ target head; `AUDIT-F` and `AUDIT-R` refer to the aggregate results above.
 | H09 | Provider fields compare with native command/dashboard and timestamp | No current native command/dashboard capture or timestamped comparison | — | not_run | Mandatory comparison blocker; fixture parsers do not satisfy it. |
 | H10 | Independent reviewer checks implementation and proof | `gh pr view 1002` returned `reviews: []`; `/tmp/review-providers.md` absent; this audit is an evidence pass, not an independent second reviewer | — | not_run | Mandatory reviewer sign-off remains open. |
 | H11 | Limitations are precise states, not fabricated numbers | `crates/jackin-usage/src/usage/antigravity/tests.rs::gated_snapshot_reports_unsupported_without_running_usage`; `crates/jackin-usage/src/host/tests.rs::unavailable_and_refreshing_never_invent_percent`; `crates/jackin-usage/src/usage/openrouter/tests.rs::openrouter_credits_403_is_typed_scope_denial`; AUDIT-F pass | fixture_verified | implemented | Current ledger distinguishes unavailable, unsupported, failed, and not_run. |
-| H12 | Final handoff names exact SHA, commands, results, fixtures, live coverage, blockers | This audit record names the starting SHA, worktree, commands, aggregate results, absent artifacts, and remaining blockers; final commit SHA is reported with the handoff | implemented | implemented | Do not mark any unrun row passed; final SHA is the signed audit commit. |
+| H12 | Final handoff names exact SHA, commands, results, fixtures, live coverage, blockers | This audit record names the starting #1002 and #1005 SHAs, worktree, commands, aggregate results, absent artifacts, and remaining blockers; the signed commit SHA is reported with the handoff | implemented | implemented | Do not mark any unrun row passed. |
 
 ### Current provider disposition for this audit
 
@@ -299,12 +332,23 @@ mandatory H05–H10 gaps above remain separate from these optional provider lane
 ## Historical evidence retained for provenance only
 
 Everything below this boundary is a report from an earlier lane, not current
-verification of PR #1002 at `176dcc0632f977a78d58443bde1b3ceb40304606`.
+verification of PR #1002 at `ca128f8a80907319ea6d5648cf172ed81e33b1d4`.
 Historical values such as `pass`, `container`, or `live` preserve what the
-earlier lane reported; they do not upgrade the exact-head `not_run` gaps in H05–
-H10 or the current provider table above. The referenced `/tmp` and `target`
+earlier lane reported; they do not upgrade the current `not_run` gaps in H05–H10
+or the current provider table above. The referenced `/tmp` and `target`
 artifacts are not present in this audit worktree. A missing source SHA or raw
 artifact is recorded as missing instead of being inferred.
+
+### Superseded 176-era synchronized audit
+
+The prior synchronized audit used source head
+`176dcc0632f977a78d58443bde1b3ceb40304606`. Its recorded fixture results were
+**1057 passed, 1 skipped** and **567 passed** for the config/instance gate;
+roadmap reported 18 resolved `meta.json` files, research reported 63, and the
+repository-link gate reported the same two pre-existing `preview.yml` errors.
+The prior record did not retain a run date or raw artifacts. These values are
+historical-only and must not be read as validation of current #1002 head
+`ca128f8`.
 
 ### Historical provider lanes
 
