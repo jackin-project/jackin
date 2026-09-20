@@ -189,14 +189,32 @@ fn first_start_discovers_once_and_does_not_grant_workspace_access() {
     let cfg = AppConfig::load_or_init(&paths).unwrap();
     assert!(cfg.accounts.contains_key("default-codex"));
     assert!(cfg.account_bindings.is_empty());
+    assert_eq!(
+        cfg.bootstrap,
+        Some(BootstrapState {
+            version: BOOTSTRAP_VERSION,
+            fresh_install: false,
+        })
+    );
+    let fresh_config = std::fs::read_to_string(&paths.config_file).unwrap();
+    assert!(
+        fresh_config.contains("[bootstrap]"),
+        "fresh config omitted bootstrap sentinel:\n{fresh_config}"
+    );
     let mut editor = ConfigEditor::open(&paths).unwrap();
     editor.remove_account("default-codex").unwrap();
     editor.save().unwrap();
+    let reloaded = AppConfig::load_or_init(&paths).unwrap();
+    assert_eq!(
+        reloaded.bootstrap,
+        Some(BootstrapState {
+            version: BOOTSTRAP_VERSION,
+            fresh_install: false,
+        })
+    );
     assert!(
-        !AppConfig::load_or_init(&paths)
-            .unwrap()
-            .accounts
-            .contains_key("default-codex")
+        !reloaded.accounts.contains_key("default-codex"),
+        "removed discovered account was resurrected"
     );
 }
 
