@@ -48,7 +48,7 @@ to be filled. Source of truth for item text is the companion doc.)
 | Muse | pass | pass | broker-only | live (native auth resolution green) | `.config/muse`, keychain resolved |
 | Cursor | pass | pass | broker-only | live (stored-token auth green) | file+keychain lineages |
 | Grok/xAI | pass | pass | broker-only | live (token refresh OK) | 1.0.30, embedded principal |
-| OpenRouter | pass | pass | broker-only | unavail (no key configured) | provider only, exact model IDs |
+| OpenRouter | pass | pass | broker-only | unavail (no key configured) | ordinary-key `/key` usage; exact model IDs; Management-key credits/activity not configured |
 | omp | pass | pass | broker-only | unavail (NOT installed) | broker file is not authz |
 | Hermes | pass | pass | broker-only | unavail (NOT installed) | `hermes --tui` |
 | OpenCode | pass | pass | broker-only | unavail (CLI present, 0 credentials) | 1.18.30, auth.json absent locally |

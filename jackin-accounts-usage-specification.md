@@ -114,6 +114,13 @@ Absence from a stale/offline catalog is an unverified model, not proof of remova
 
 The same account can have multiple named configurations with different models. Those configurations share billing/account identity, not independent account balances.
 
+OpenRouter ordinary-key usage comes from `GET /api/v1/key` and includes the key cap,
+remaining amount, period spend, and BYOK attribution. Account credits and completed
+activity history use `GET /api/v1/credits` and `GET /api/v1/activity`, which require a
+Management key. Until the separate optional billing-credential source is configured,
+the usage view keeps ordinary-key rows and reports that management-only enrichment is
+unavailable; it must not retry with the inference key or infer history from live usage.
+
 ## 5. Discovery and first initialization
 
 ### Bootstrap state machine

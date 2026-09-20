@@ -186,7 +186,7 @@ per §3.1 except the three rows in §3.3.
 | Provider | Usage source | Status | Ev | Proof |
 |---|---|---|---|---|
 | `opencode`, `opencode-go` | `GET https://opencode.ai/zen/go/v1/usage` (rolling/weekly/monthly; no Zen-balance/live-model fields) | `implemented` [opencode.rs](../../crates/jackin-usage/src/usage/opencode.rs) | **S**+**R** (endpoint known via reference collectors, not vendor-documented) | `implemented` |
-| `openrouter` | `planned GET https://openrouter.ai/api/v1/auth/key` (key-scoped usage/limit); `/credits` needs a management key and stays out of key scope | `planned` — no openrouter collector in `crates/jackin-usage/src/usage/` ([U12](#9-u-register-exact-missing-proofs)) | **D** (ref-contracts-D: `{base}/credits`, `{base}/key` request shapes) | `not_run` |
+| `openrouter` | `GET https://openrouter.ai/api/v1/key` (ordinary-key cap, remaining, period spend and BYOK); `/credits` and delayed `/activity` require a Management key | `implemented` [openrouter.rs](../../crates/jackin-usage/src/usage/openrouter.rs) and wired through the canonical OpenRouter surface; management-only enrichment remains unavailable under the current account credential contract ([U12](#9-u-register-exact-missing-proofs)) | **D** (official key, credits and activity contracts) | `fixture_verified` |
 
 ## 4. omp (oh-my-pi)
 
@@ -267,7 +267,7 @@ private/reference-grade until vendor-documented or Mac-live-verified
 | `minimax-code` | `GET {base}/v1/token_plan/remains` (Global `api.minimax.io` / China `api.minimaxi.com`) | `implemented` [minimax.rs](../../crates/jackin-usage/src/usage/minimax.rs); attribution wiring `planned` | **S** |
 | `minimax-code-cn` | same remains API on CN host | `planned` — verify CN-host behavior ([U3](#9-u-register-exact-missing-proofs)) | **U** |
 | `opencode-go` | `GET https://opencode.ai/zen/go/v1/usage` | `implemented` [opencode.rs](../../crates/jackin-usage/src/usage/opencode.rs); attribution wiring `planned` | **R** |
-| `openrouter` | `planned GET {base}/api/v1/auth/key` (key-scoped) | `planned` — no openrouter collector ([U12](#9-u-register-exact-missing-proofs)) | **D** (ref-contracts-D) |
+| `openrouter` | `GET {base}/key` (ordinary-key cap, remaining and period spend); `/credits` and delayed `/activity` require a Management key | `implemented` [openrouter.rs](../../crates/jackin-usage/src/usage/openrouter.rs); management-only enrichment remains unavailable under the current account credential contract ([U12](#9-u-register-exact-missing-proofs)) | **D** (official key, credits and activity contracts) |
 | `github-copilot` | `planned api.github.com copilot quota` | `planned` ([U11](#9-u-register-exact-missing-proofs)) | **R** |
 | `google-antigravity` | `planned daily-cloudcode-pa :retrieveUserQuotaSummary`; bind identity | `planned` — see also native [antigravity.rs](../../crates/jackin-usage/src/usage/antigravity.rs) (`agy -p /usage --output-format json`) ([U11](#9-u-register-exact-missing-proofs)) | **R** |
 | `google-gemini-cli` | `planned` cloudcode-pa Code Assist quota; OAuth only | `planned` ([U11](#9-u-register-exact-missing-proofs)) | **R** |
@@ -377,7 +377,7 @@ subscription-plans table (cells marked not-documented stay open questions).
 | `minimax`, `minimax-oauth` | Token Plan remains + PAYG balance endpoints; scope-split; OAuth grant path to verify | `implemented` [minimax.rs](../../crates/jackin-usage/src/usage/minimax.rs) for key path; OAuth path `planned` ([U8](#9-u-register-exact-missing-proofs)); attribution wiring `planned` | **S**+**D** |
 | `minimax-cn` | same on CN host | `planned` — verify CN host ([U3](#9-u-register-exact-missing-proofs)) | **S**+**U** |
 | `opencode-go` | `GET https://opencode.ai/zen/go/v1/usage` | `implemented` [opencode.rs](../../crates/jackin-usage/src/usage/opencode.rs); attribution wiring `planned` | **S**+**R** |
-| `openrouter` | `planned GET /api/v1/auth/key` key-scoped; `/credits` needs mgmt key; exact model persisted | `planned` — no openrouter collector ([U12](#9-u-register-exact-missing-proofs)) | **S**+**D** (ref-contracts-D) |
+| `openrouter` | `GET /api/v1/key` key-scoped; `/credits` and delayed `/activity` need a Management key; exact model persisted | `implemented` [openrouter.rs](../../crates/jackin-usage/src/usage/openrouter.rs); management-only enrichment remains unavailable under the current account credential contract ([U12](#9-u-register-exact-missing-proofs)) | **S**+**D** (official key, credits and activity contracts) |
 | `openai-api` | `none:` org usage/costs APIs need separate reporting authority; no key-scoped balance | — | **S** |
 | `xai` | `none:` xAI API mgmt reporting separate; no key-scoped quota evidenced | — | **S** |
 | `deepseek` | `none:` no key-scoped quota API evidenced (balance endpoint unverified here — [U9](#9-u-register-exact-missing-proofs)) | — | **S** |
@@ -476,7 +476,7 @@ Routing contract (**D**, code.claude.com docs fetched 2026-09-17):
 | U9 | hermes `deepseek` usage | Missing: verify whether a key-scoped balance endpoint exists; currently `none` by absence of evidence. |
 | U10 | opencode `opencode-zen` (hermes row) / Zen balance | Missing: any Zen balance/live-model endpoint; do not invent. Currently `none` with reason. |
 | U11 | every `planned` **R** usage row (§4.2, §5.3, §6, §7) | Missing: Mac-live verification of each private/reference endpoint (URL + method + auth + response shape) before claiming support; lands in [ledger.md](./ledger.md) provider lanes. |
-| U12 | opencode/omp/hermes `openrouter` usage | Missing: jackin-usage openrouter collector (`GET /api/v1/auth/key` key-scoped; `/credits` needs mgmt key — key scope only). No code in `crates/jackin-usage/src/usage/` yet. |
+| U12 | opencode/omp/hermes `openrouter` management enrichment | Ordinary-key `/key` usage is implemented and wired. Missing by contract: a separate Management-key source in `AccountCredential`/usage discovery for `/credits` and completed-day `/activity`; a 403 is a scoped partial result, not an invalid ordinary key. |
 
 ## 10. Maintenance
 

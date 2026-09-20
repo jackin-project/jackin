@@ -10,6 +10,11 @@
 //! the public `GET {base}/models` catalog; a stale omission is `Unverified`,
 //! never a rejection. A null key cap means no configured cap, not infinite
 //! credit — no percentage bar is drawn without a matching denominator.
+//!
+//! Completed activity history (`GET {base}/activity`) is Management-key-only.
+//! The current account credential contract supplies an inference key, not a
+//! separate Management key, so history remains explicitly unavailable rather
+//! than being fetched with the wrong scope or inferred from live key usage.
 
 #[cfg_attr(
     not(test),
@@ -457,7 +462,7 @@ pub(crate) fn openrouter_snapshot(agent: &str, key: Option<&str>, now: i64) -> F
         return usage_view(UsageViewInput {
             agent,
             provider: Some("OpenRouter"),
-            surface: UsageSurface::Unsupported,
+            surface: UsageSurface::OpenRouter,
             account_label: "OpenRouter key missing".to_owned(),
             username: None,
             plan_label: None,
@@ -531,7 +536,7 @@ pub(crate) fn openrouter_snapshot(agent: &str, key: Option<&str>, now: i64) -> F
     usage_view(UsageViewInput {
         agent,
         provider: Some("OpenRouter"),
-        surface: UsageSurface::Unsupported,
+        surface: UsageSurface::OpenRouter,
         account_label: "OpenRouter key".to_owned(),
         username: None,
         plan_label: quota.as_ref().and_then(|quota| quota.plan_label.clone()),

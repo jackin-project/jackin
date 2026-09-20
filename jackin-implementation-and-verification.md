@@ -216,14 +216,14 @@ For every item below, add the implementation test name/path and result to the ex
 - [ ] F19 Cursor fixtures cover personal/internal vs Enterprise admin authorization, pooled/personal caps, credits and distinct actual/estimated money units.
 - [ ] F20 Grok fixtures cover weekly/monthly provider periods, current billing, prepaid/on-demand bounds, RPC/HTTP failures and auth precedence.
 - [ ] F21 Muse fixtures cover MSP cached/changed usage, observedAtMs, over-100% values and optional internal key-response sanitization.
-- [ ] F22 OpenRouter fixtures cover successful /key with /credits 403, management-scope mismatch, null cap, BYOK, models and optional delayed history.
+- [x] F22 OpenRouter fixtures cover successful /key with /credits 403, management-scope mismatch, null cap, BYOK, models, and the ordinary-key credential/discovery path. Delayed history remains management-key-only under U12.
 - [ ] F23 OpenCode Go fixtures cover rolling/weekly/monthly status/percent/reset values; don't invent per-model quota from a shared response.
 - [ ] F24 omp/Hermes usage is attributed to underlying provider accounts; their local counters do not become an independent subscription budget.
 - [ ] F25 Optional enrichment failure preserves successful primary quota and records partial status; one malformed provider cannot blank all rows.
 - [ ] F26 Fresh quota plus old balance/history retains separate timestamps; wrong-account/org/project/region enrichment is rejected; optional timeout does not delay primary publication.
 - [ ] F27 Switching account A to B with the same log directory never assigns A's history to B; ownerless cached totals are reclassified before first multi-account display even offline.
 - [ ] F28 Shared/copied/fork/subagent/release-channel events are deduplicated; local measured totals and provider-wide totals are not added twice.
-- [ ] F29 Explicit scope fixtures cover Claude inference-only tokens, Z.AI MCP vs coding windows, Cursor Grok Bot vs Grok Build, OpenRouter completed-day history, and Go 1%-versus-fraction/entitlement responses.
+- [ ] F29 Explicit scope fixtures cover Claude inference-only tokens, Z.AI MCP vs coding windows, Cursor Grok Bot vs Grok Build, and OpenRouter completed-day history. OpenRouter history is blocked by the missing separate Management-key source (U12); Go 1%-versus-fraction/entitlement responses remain pending.
 
 ### G. Broker scheduling, UI and process behavior
 
@@ -327,7 +327,7 @@ TUI snapshots live in the Console and Capsule crates. Review changed frames usin
 |---|---|---|---|---|---|---|---|
 | C09/D01/D02/E01/H07 | Real three-account shared container | Filled during execution | User Mac + OrbStack | Correct account in each TUI/tab; no account D | Not executed in research | Live/container | Not started |
 | G06/H05 | 2/20-client broker tests | Current jackin❯ SHA | Required Mac lane | One shared generation | Not executed in research | Process/container | Not started |
-| F22 | OpenRouter key success, management denied | Versioned fixture | Local test server | Key usage shown; balance permission message | Implement test | Fixture | Not started |
+| F22 | OpenRouter key success, management denied | Versioned fixture | Local test server | Key usage shown; balance permission message | `jackin-usage` parser, dispatch, discovery, cache/error tests pass | Fixture | Verified; completed-day activity remains U12 |
 | F14/D08 | Antigravity identity and isolated auth | Installed `agy` version | Linux container on Mac | Selected account provenance; correct usage | Needs local proof | Live/container | Not started |
 
 ## 7. Definition of done

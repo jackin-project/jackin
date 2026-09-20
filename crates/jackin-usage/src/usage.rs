@@ -286,6 +286,7 @@ pub(crate) enum UsageSurface {
     Kimi,
     Minimax,
     OpenCode,
+    OpenRouter,
     Unsupported,
 }
 
@@ -300,6 +301,7 @@ impl UsageSurface {
             Self::Kimi => Some("kimi"),
             Self::Minimax => Some("minimax"),
             Self::OpenCode => Some("opencode"),
+            Self::OpenRouter => Some("openrouter"),
             Self::Unsupported => None,
         }
     }
@@ -314,6 +316,7 @@ impl UsageSurface {
             Self::Kimi => "Kimi",
             Self::Minimax => "MiniMax",
             Self::OpenCode => "OpenCode",
+            Self::OpenRouter => "OpenRouter",
             Self::Unsupported => "Usage",
         }
     }
@@ -328,6 +331,7 @@ impl UsageSurface {
             Self::Kimi => "Kimi",
             Self::Minimax => "MiniMax",
             Self::OpenCode => "OpenCode",
+            Self::OpenRouter => "OpenRouter",
             Self::Unsupported => "Usage",
         }
     }
@@ -343,6 +347,7 @@ impl UsageSurface {
         Self::Kimi,
         Self::Minimax,
         Self::OpenCode,
+        Self::OpenRouter,
         Self::Unsupported,
     ];
 
@@ -361,6 +366,7 @@ impl UsageSurface {
             Self::Zai => &["glm", "z.ai", "zai"],
             Self::Kimi => &["kimi"],
             Self::Minimax => &["minimax"],
+            Self::OpenRouter => &["openrouter"],
             Self::OpenCode | Self::Unsupported => &[],
         }
     }
@@ -814,6 +820,7 @@ pub fn provider_credential_snapshot(
         "zai" => provider_key_snapshot("codex", UsageSurface::Zai, key_name, Some(secret), now),
         "kimi" => kimi_snapshot("kimi", Some(secret), now),
         "minimax" => minimax_snapshot("codex", Some(secret), now),
+        "openrouter" => openrouter::openrouter_snapshot("opencode", Some(secret), now),
         "grok" => grok_snapshot_from_rpc_result(
             "grok",
             now,
@@ -866,6 +873,9 @@ pub(crate) fn resolve_surface(agent: &str, provider: Option<&str>) -> UsageSurfa
     }
     if matches!(provider, Some("MiniMax")) {
         return UsageSurface::Minimax;
+    }
+    if matches!(provider, Some("OpenRouter")) {
+        return UsageSurface::OpenRouter;
     }
     match agent {
         "claude" => UsageSurface::Claude,
