@@ -286,22 +286,25 @@ fn inspect_store(
 
 /// Inspect a store and retain every source-bound account candidate.
 ///
-/// `OpenCode` candidates are keyed by the provider entry in `auth.json`.  A
-/// database row is not launchable by the current profile provisioner, so it
-/// is rejected instead of registering an account that later copies a
-/// different file or silently starts without credentials.
+/// `OpenCode` candidates are keyed by the provider entry in `auth.json`.
+/// Database-only stores are not launchable by the current profile contract, so
+/// they are rejected instead of registering candidates with no materializable
+/// source. A sibling database is ignored when a single usable `auth.json`
+/// entry supplies the source-bound profile.
 fn inspect_store_accounts(
     agent: Agent,
     directory: &Path,
 ) -> Result<Vec<DiscoveredAccount>, DiscoveryError> {
     use super::stores::{hermes, omp, opencode};
-    if agent == Agent::Opencode && directory.join("opencode.db").is_file() {
-        return Err(DiscoveryError::Unsupported(
-            "OpenCode database credentials require a source-bound auth.json profile",
-        ));
+    if agent == Agent::Opencode {
+        opencode::validate_opencode_auth_layout(directory).map_err(map_store_error)?;
     }
     let candidates = match agent {
-        Agent::Opencode => opencode::enumerate_opencode_store(directory),
+        // The database parser remains available for audit fixtures, but its
+        // row identity cannot cross the profile boundary. A valid auth.json
+        // entry is the only source currently materialized for launch/usage;
+        // ignore a sibling database rather than mixing two identity systems.
+        Agent::Opencode => opencode::enumerate_opencode_auth(&directory.join("auth.json")),
         Agent::Omp => omp::enumerate_omp_credentials(&directory.join("agent/agent.db")),
         Agent::Hermes => hermes::enumerate_hermes_store(directory),
         _ => unreachable!("stores-backed agents only"),
@@ -309,6 +312,11 @@ fn inspect_store_accounts(
     match candidates {
         Ok(candidates) => {
             if agent == Agent::Opencode {
+                if candidates.is_empty() && directory.join("opencode.db").is_file() {
+                    return Err(DiscoveryError::Unsupported(
+                        "OpenCode database credentials require a source-bound auth.json profile",
+                    ));
+                }
                 let mut accounts = Vec::with_capacity(candidates.len());
                 for candidate in candidates {
                     let provider = opencode_provider(&candidate.provider).ok_or(

@@ -1359,12 +1359,30 @@ fn opencode_profile_identity(
     path: &Path,
 ) -> ProfileValidation {
     match reader.read(path) {
-        ProfileReadOutcome::Missing => ProfileValidation::Missing,
+        ProfileReadOutcome::Missing => {
+            if path
+                .parent()
+                .is_some_and(|parent| parent.join("opencode.db").is_file())
+            {
+                // Database-only OpenCode stores have no materializable auth
+                // source. Do not advertise a usage profile until the database
+                // credential identity can be carried through launch binding.
+                ProfileValidation::Malformed
+            } else {
+                ProfileValidation::Missing
+            }
+        }
         ProfileReadOutcome::Denied => ProfileValidation::Denied,
         ProfileReadOutcome::Bytes(bytes) => {
             let Ok(value) = serde_json::from_slice::<serde_json::Value>(&bytes) else {
                 return ProfileValidation::Malformed;
             };
+            let Some(entries) = value.as_object() else {
+                return ProfileValidation::Malformed;
+            };
+            if entries.len() != 1 {
+                return ProfileValidation::Malformed;
+            }
             let entry = value.get("opencode-go");
             let Some(entry) = entry else {
                 return ProfileValidation::Missing;

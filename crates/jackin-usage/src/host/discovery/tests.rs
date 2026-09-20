@@ -94,6 +94,42 @@ impl ProviderCredentialEnvResolver for FakeEnvResolver {
     }
 }
 
+#[test]
+fn opencode_profile_requires_one_auth_entry_and_ignores_sibling_database() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("opencode");
+    std::fs::create_dir_all(&root).unwrap();
+    let auth = root.join("auth.json");
+    let reader = RecordingProfileReader::default();
+
+    std::fs::write(
+        &auth,
+        r#"{"anthropic":{"type":"api","key":"fixture-a"},"opencode-go":{"type":"api","key":"fixture-go"}}"#,
+    )
+    .unwrap();
+    assert!(matches!(
+        opencode_profile_identity(&reader, &auth),
+        ProfileValidation::Malformed
+    ));
+
+    std::fs::write(
+        &auth,
+        r#"{"opencode-go":{"type":"api","key":"fixture-go"}}"#,
+    )
+    .unwrap();
+    std::fs::write(root.join("opencode.db"), b"database fixture").unwrap();
+    assert!(matches!(
+        opencode_profile_identity(&reader, &auth),
+        ProfileValidation::Anonymous(Some(_))
+    ));
+
+    std::fs::remove_file(&auth).unwrap();
+    assert!(matches!(
+        opencode_profile_identity(&reader, &auth),
+        ProfileValidation::Malformed
+    ));
+}
+
 fn write_registry(config_root: &Path, entries: &[(&str, Agent, &Path)]) {
     let mut config = AppConfig::default();
     for (id, agent, directory) in entries {

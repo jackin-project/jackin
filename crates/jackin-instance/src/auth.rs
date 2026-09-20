@@ -135,19 +135,14 @@ pub(crate) fn validate_sync_source_dir_for_provider(
     }
 }
 
-/// Validate the exact `OpenCode` credential that will be staged. Database
-/// credentials are enumerated for audit visibility but are not launchable by
-/// the profile provisioner, so accepting them here would create an account
-/// that cannot be bound to a source identity.
+/// Validate the exact `OpenCode` credential that will be staged. A single
+/// usable `auth.json` entry is the source-bound materialization. A sibling
+/// database may coexist in a normal `OpenCode` data directory, but database-only
+/// profiles fail because there is no launchable source to stage.
 fn validate_opencode_source_dir(
     source_dir: &Path,
     provider: Option<AiProvider>,
 ) -> Result<(), SyncSourceValidationError> {
-    if source_dir.join("opencode.db").is_file() {
-        return Err(SyncSourceValidationError::new(
-            "OpenCode database credentials are unsupported; select a source folder with auth.json only.",
-        ));
-    }
     let auth_path = source_dir.join("auth.json");
     let content = std::fs::read_to_string(&auth_path).map_err(|_| {
         SyncSourceValidationError::new(format!(
@@ -176,7 +171,10 @@ fn validate_opencode_source_dir(
 }
 
 /// Return the one provider entry that may cross the role-state boundary.
-/// Values remain borrowed so validation does not copy secrets.
+/// Values remain borrowed so validation does not copy secrets. Multi-entry
+/// files are rejected even when one entry could be filtered: the persisted
+/// account model has no raw store-key field, so filtering would still permit
+/// same-directory identities to collapse during later scans.
 fn select_opencode_auth_entry(
     value: &serde_json::Value,
     provider: Option<AiProvider>,
@@ -184,34 +182,33 @@ fn select_opencode_auth_entry(
     let entries = value
         .as_object()
         .ok_or("the top-level value is not an object")?;
+    if entries.len() != 1 {
+        return Err("multiple provider entries are unsupported");
+    }
+    let Some((entry_key, entry)) = entries.iter().next() else {
+        return Err("no provider credential exists");
+    };
     if let Some(provider) = provider {
-        let key = opencode_provider_key(provider);
-        let entry = entries
-            .get(key)
-            .ok_or("the selected provider credential is missing")?;
-        if !usable_opencode_auth_entry(entry) {
-            return Err("the selected provider credential is empty or unsupported");
+        let key = opencode_provider_key(provider)?;
+        if entry_key != key {
+            return Err("the selected provider credential is missing");
         }
-        return Ok((key, entry));
+    } else if entry_key != "opencode-go" {
+        return Err(
+            "source-bound OpenCode profiles currently support only the opencode-go auth entry",
+        );
     }
-
-    let mut usable = entries
-        .iter()
-        .filter(|(_, entry)| usable_opencode_auth_entry(entry));
-    let first = usable
-        .next()
-        .ok_or("no usable provider credential exists")?;
-    if usable.next().is_some() {
-        return Err("multiple provider credentials require a source-bound identity");
+    if !usable_opencode_auth_entry(entry) {
+        return Err("the selected provider credential is empty or unsupported");
     }
-    Ok((first.0.as_str(), first.1))
+    Ok((entry_key.as_str(), entry))
 }
 
-fn opencode_provider_key(provider: AiProvider) -> &'static str {
+fn opencode_provider_key(provider: AiProvider) -> Result<&'static str, &'static str> {
     if provider == AiProvider::Opencode {
-        "opencode-go"
+        Ok("opencode-go")
     } else {
-        provider.slug()
+        Err("source-bound OpenCode profiles currently support only the opencode-go auth entry")
     }
 }
 

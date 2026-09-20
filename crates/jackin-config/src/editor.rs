@@ -967,32 +967,50 @@ impl ConfigEditor {
             }
         }
         if let Some(roots) = &plan.xdg_roots {
-            let directory = roots.data.join("amp");
-            let provider = crate::AiProvider::Amp;
-            match crate::discover_account_directory(jackin_core::Agent::Amp, &directory, &home) {
-                Ok(Some(found)) => {
-                    let candidate = profile_account_candidate(
-                        "custom-amp".to_owned(),
-                        jackin_core::Agent::Amp,
-                        provider,
-                        found.directory,
-                        "Amp custom".to_owned(),
-                        Some(roots.clone()),
-                    );
-                    apply_xdg_profile_candidate(
-                        self,
-                        &mut known,
-                        &mut report,
-                        roots,
-                        Some(candidate),
-                    )?;
+            let opencode_data = roots.data.join("opencode");
+            let opencode_config = roots.config.join("opencode");
+            if opencode_data.exists() || opencode_config.exists() {
+                // The generic XDG triple is currently an Amp profile contract.
+                // OpenCode's data root has provider-keyed auth and may also
+                // contain a database; without an explicit source directory,
+                // importing it as Amp would persist an unrelated identity.
+                report.unapplied_zshrc_xdg_roots.push(roots.clone());
+                report.issues.push(crate::DiscoveryIssue {
+                    agent: jackin_core::Agent::Opencode,
+                    directory: opencode_data,
+                    error: crate::DiscoveryError::Unsupported(
+                        "OpenCode XDG roots from shell imports require an explicit profile directory",
+                    ),
+                });
+            } else {
+                let directory = roots.data.join("amp");
+                let provider = crate::AiProvider::Amp;
+                match crate::discover_account_directory(jackin_core::Agent::Amp, &directory, &home)
+                {
+                    Ok(Some(found)) => {
+                        let candidate = profile_account_candidate(
+                            "custom-amp".to_owned(),
+                            jackin_core::Agent::Amp,
+                            provider,
+                            found.directory,
+                            "Amp custom".to_owned(),
+                            Some(roots.clone()),
+                        );
+                        apply_xdg_profile_candidate(
+                            self,
+                            &mut known,
+                            &mut report,
+                            roots,
+                            Some(candidate),
+                        )?;
+                    }
+                    Ok(None) => report.unapplied_zshrc_xdg_roots.push(roots.clone()),
+                    Err(error) => report.issues.push(crate::DiscoveryIssue {
+                        agent: jackin_core::Agent::Amp,
+                        directory,
+                        error,
+                    }),
                 }
-                Ok(None) => report.unapplied_zshrc_xdg_roots.push(roots.clone()),
-                Err(error) => report.issues.push(crate::DiscoveryIssue {
-                    agent: jackin_core::Agent::Amp,
-                    directory,
-                    error,
-                }),
             }
         }
         for op_ref in &plan.op_refs {

@@ -102,7 +102,7 @@ fn validate_single_file_agents() {
 }
 
 #[test]
-fn opencode_source_validation_is_provider_bound_and_rejects_ambiguous_or_db_layouts() {
+fn opencode_source_validation_is_provider_bound_and_rejects_ambiguous_or_db_only_layouts() {
     let temp = tempdir().unwrap();
     let source = temp.path().join("opencode");
     std::fs::create_dir_all(&source).unwrap();
@@ -115,11 +115,23 @@ fn opencode_source_validation_is_provider_bound_and_rejects_ambiguous_or_db_layo
     )
     .unwrap();
 
-    validate_sync_source_dir_for_provider(
-        Agent::Opencode,
+    for provider in [
         Some(AiProvider::Anthropic),
-        &source,
-        temp.path(),
+        Some(AiProvider::Opencode),
+        None,
+    ] {
+        let error =
+            validate_sync_source_dir_for_provider(Agent::Opencode, provider, &source, temp.path())
+                .unwrap_err();
+        assert!(
+            error.to_string().contains("multiple provider entries"),
+            "{error}"
+        );
+    }
+
+    std::fs::write(
+        source.join("auth.json"),
+        r#"{"opencode-go":{"type":"api","key":"opencode-sentinel"}}"#,
     )
     .unwrap();
     validate_sync_source_dir_for_provider(
@@ -129,10 +141,6 @@ fn opencode_source_validation_is_provider_bound_and_rejects_ambiguous_or_db_layo
         temp.path(),
     )
     .unwrap();
-    let error = validate_sync_source_dir(Agent::Opencode, &source, temp.path()).unwrap_err();
-    assert!(error.to_string().contains("source-bound"), "{error}");
-
-    std::fs::write(source.join("opencode.db"), b"database fixture").unwrap();
     let error = validate_sync_source_dir_for_provider(
         Agent::Opencode,
         Some(AiProvider::Anthropic),
@@ -140,7 +148,52 @@ fn opencode_source_validation_is_provider_bound_and_rejects_ambiguous_or_db_layo
         temp.path(),
     )
     .unwrap_err();
-    assert!(error.to_string().contains("database"), "{error}");
+    assert!(
+        error.to_string().contains("only the opencode-go"),
+        "{error}"
+    );
+    validate_sync_source_dir(Agent::Opencode, &source, temp.path()).unwrap();
+
+    std::fs::write(
+        source.join("auth.json"),
+        r#"{"zai":{"type":"api","key":"zai-sentinel"}}"#,
+    )
+    .unwrap();
+    let error = validate_sync_source_dir_for_provider(
+        Agent::Opencode,
+        Some(AiProvider::Zai),
+        &source,
+        temp.path(),
+    )
+    .unwrap_err();
+    assert!(
+        error.to_string().contains("only the opencode-go"),
+        "{error}"
+    );
+
+    std::fs::write(
+        source.join("auth.json"),
+        r#"{"opencode-go":{"type":"api","key":"opencode-sentinel"}}"#,
+    )
+    .unwrap();
+    std::fs::write(source.join("opencode.db"), b"database fixture").unwrap();
+    validate_sync_source_dir_for_provider(
+        Agent::Opencode,
+        Some(AiProvider::Opencode),
+        &source,
+        temp.path(),
+    )
+    .unwrap();
+
+    std::fs::remove_file(source.join("auth.json")).unwrap();
+    let error = validate_sync_source_dir_for_provider(
+        Agent::Opencode,
+        Some(AiProvider::Opencode),
+        &source,
+        temp.path(),
+    )
+    .unwrap_err();
+    assert!(error.to_string().contains("expected auth.json"), "{error}");
 }
 
 #[test]
@@ -542,9 +595,10 @@ fn sync_source_dir_copies_direct_opencode_auth_json() {
     std::fs::create_dir_all(&source_dir).unwrap();
     std::fs::write(
         source_dir.join("auth.json"),
-        r#"{"opencode-go":{"type":"api","key":"workspace"},"anthropic":{"type":"api","key":"unrelated"}}"#,
+        r#"{"opencode-go":{"type":"api","key":"workspace"}}"#,
     )
     .unwrap();
+    std::fs::write(source_dir.join("opencode.db"), b"database fixture").unwrap();
 
     let (outcome, mounted) = RoleState::provision_opencode_auth_from_source_dir(
         &auth_json,
@@ -562,32 +616,33 @@ fn sync_source_dir_copies_direct_opencode_auth_json() {
         staged.pointer("/opencode-go/key").and_then(|v| v.as_str()),
         Some("workspace")
     );
-    assert!(staged.get("anthropic").is_none());
 }
 
 #[test]
-fn sync_source_dir_stages_only_selected_opencode_entry() {
+fn sync_source_dir_rejects_multi_entry_without_writing() {
     let temp = tempdir().unwrap();
     let auth_json = temp.path().join("auth.json");
     let source_dir = temp.path().join("opencode-work");
     std::fs::create_dir_all(&source_dir).unwrap();
+    std::fs::write(&auth_json, b"existing-staged-auth").unwrap();
     std::fs::write(
         source_dir.join("auth.json"),
         r#"{"openai":{"type":"api","key":"openai-sentinel"},"zai":{"type":"api","key":"zai-sentinel"}}"#,
     )
     .unwrap();
 
-    RoleState::provision_opencode_auth_from_source_dir(
+    let error = RoleState::provision_opencode_auth_from_source_dir(
         &auth_json,
         AuthForwardMode::Sync,
         &source_dir,
         Some(AiProvider::Zai),
     )
-    .unwrap();
-    let staged = std::fs::read_to_string(&auth_json).unwrap();
-    assert!(staged.contains("zai-sentinel"));
-    assert!(!staged.contains("openai-sentinel"));
-    assert!(!staged.contains("opencode-go"));
+    .unwrap_err();
+    assert!(
+        error.to_string().contains("multiple provider entries"),
+        "{error}"
+    );
+    assert_eq!(std::fs::read(&auth_json).unwrap(), b"existing-staged-auth");
 }
 
 #[test]
