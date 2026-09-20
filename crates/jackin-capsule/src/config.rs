@@ -395,6 +395,211 @@ fn parse_staged_credential(
     Ok(credential)
 }
 
+const ANTHROPIC_AUTH_TOKEN_ENV_NAME: &str = "ANTHROPIC_AUTH_TOKEN";
+const ANTHROPIC_BASE_URL_ENV_NAME: &str = "ANTHROPIC_BASE_URL";
+const ANTHROPIC_DEFAULT_OPUS_MODEL_ENV_NAME: &str = "ANTHROPIC_DEFAULT_OPUS_MODEL";
+const ANTHROPIC_DEFAULT_SONNET_MODEL_ENV_NAME: &str = "ANTHROPIC_DEFAULT_SONNET_MODEL";
+const ANTHROPIC_DEFAULT_HAIKU_MODEL_ENV_NAME: &str = "ANTHROPIC_DEFAULT_HAIKU_MODEL";
+const OPENAI_BASE_URL_ENV_NAME: &str = "OPENAI_BASE_URL";
+const KIMI_BASE_URL_ENV_NAME: &str = "KIMI_BASE_URL";
+
+/// Return the exact account-owned environment names that one admitted agent
+/// may receive. `provider_surface` is the selected account's usage surface
+/// when the host carried that authority into the Capsule config. A missing
+/// surface uses the agent's closed compatibility contract so unsupported
+/// provider variables still cannot cross an agent boundary.
+pub(crate) fn allowed_account_env_names(
+    agent_slug: &str,
+    auth_mode: &str,
+    provider_surface: Option<&str>,
+) -> Result<BTreeSet<&'static str>> {
+    let agent = jackin_core::Agent::from_slug(agent_slug)
+        .ok_or_else(|| anyhow::anyhow!("unknown agent runtime {agent_slug:?}"))?;
+    if let Some(surface) = provider_surface
+        && !matches!(
+            surface,
+            "claude"
+                | "codex"
+                | "amp"
+                | "grok"
+                | "zai"
+                | "kimi"
+                | "minimax"
+                | "opencode"
+                | "google"
+                | "cursor"
+                | "meta"
+                | "openrouter"
+        )
+    {
+        anyhow::bail!("unknown provider surface {surface:?}");
+    }
+
+    let mut allowed = BTreeSet::new();
+    match auth_mode {
+        "sync" | "ignore" => return Ok(allowed),
+        "oauth_token" => {
+            if agent != jackin_core::Agent::Claude
+                || provider_surface.is_some_and(|surface| surface != "claude")
+            {
+                return Ok(allowed);
+            }
+            allowed.insert(jackin_core::CLAUDE_CODE_OAUTH_TOKEN_ENV_NAME);
+            // An explicit Claude endpoint override is part of the OAuth
+            // account contract and is still scoped to the selected pane.
+            allowed.insert(ANTHROPIC_BASE_URL_ENV_NAME);
+            return Ok(allowed);
+        }
+        "api_key" => {}
+        _ => anyhow::bail!("invalid auth mode {auth_mode:?}"),
+    }
+
+    match agent {
+        jackin_core::Agent::Claude => {
+            allowed.extend([
+                jackin_core::CLAUDE_MODEL_ENV_NAME,
+                ANTHROPIC_DEFAULT_OPUS_MODEL_ENV_NAME,
+                ANTHROPIC_DEFAULT_SONNET_MODEL_ENV_NAME,
+                ANTHROPIC_DEFAULT_HAIKU_MODEL_ENV_NAME,
+            ]);
+            match provider_surface {
+                None | Some("claude") => {
+                    allowed.insert(jackin_core::ANTHROPIC_API_KEY_ENV_NAME);
+                    allowed.insert(ANTHROPIC_BASE_URL_ENV_NAME);
+                }
+                Some("kimi" | "zai" | "minimax") => {
+                    allowed.insert(ANTHROPIC_AUTH_TOKEN_ENV_NAME);
+                    allowed.insert(ANTHROPIC_BASE_URL_ENV_NAME);
+                }
+                Some(_) => return Ok(BTreeSet::new()),
+            }
+        }
+        jackin_core::Agent::Codex => match provider_surface {
+            None => {
+                allowed.extend([
+                    jackin_core::OPENAI_API_KEY_ENV_NAME,
+                    jackin_core::KIMI_API_KEY_ENV_NAME,
+                    jackin_core::MINIMAX_API_KEY_ENV_NAME,
+                    OPENAI_BASE_URL_ENV_NAME,
+                ]);
+            }
+            Some("codex" | "zai") => {
+                allowed.insert(jackin_core::OPENAI_API_KEY_ENV_NAME);
+                allowed.insert(OPENAI_BASE_URL_ENV_NAME);
+            }
+            Some("kimi") => {
+                allowed.insert(jackin_core::KIMI_API_KEY_ENV_NAME);
+                allowed.insert(OPENAI_BASE_URL_ENV_NAME);
+            }
+            Some("minimax") => {
+                allowed.insert(jackin_core::MINIMAX_API_KEY_ENV_NAME);
+                allowed.insert(OPENAI_BASE_URL_ENV_NAME);
+            }
+            Some(_) => return Ok(BTreeSet::new()),
+        },
+        jackin_core::Agent::Opencode | jackin_core::Agent::Omp | jackin_core::Agent::Hermes => {
+            match provider_surface {
+                Some(surface) => {
+                    if let Some(name) = multi_provider_key(surface) {
+                        allowed.insert(name);
+                    }
+                }
+                None => allowed.extend(MULTI_PROVIDER_ENV_NAMES),
+            }
+        }
+        jackin_core::Agent::Amp => insert_native_key(
+            &mut allowed,
+            provider_surface,
+            "amp",
+            jackin_core::AMP_API_KEY_ENV_NAME,
+        ),
+        jackin_core::Agent::Kimi => insert_native_key(
+            &mut allowed,
+            provider_surface,
+            "kimi",
+            jackin_core::KIMI_API_KEY_ENV_NAME,
+        ),
+        jackin_core::Agent::Grok => insert_native_key(
+            &mut allowed,
+            provider_surface,
+            "grok",
+            jackin_core::XAI_API_KEY_ENV_NAME,
+        ),
+        jackin_core::Agent::Antigravity | jackin_core::Agent::Gemini => insert_native_key(
+            &mut allowed,
+            provider_surface,
+            "google",
+            jackin_core::GEMINI_API_KEY_ENV_NAME,
+        ),
+        jackin_core::Agent::Cursor => insert_native_key(
+            &mut allowed,
+            provider_surface,
+            "cursor",
+            jackin_core::CURSOR_API_KEY_ENV_NAME,
+        ),
+        jackin_core::Agent::Muse => insert_native_key(
+            &mut allowed,
+            provider_surface,
+            "meta",
+            jackin_core::META_API_KEY_ENV_NAME,
+        ),
+    }
+    if agent == jackin_core::Agent::Kimi {
+        allowed.insert(KIMI_BASE_URL_ENV_NAME);
+    }
+    Ok(allowed)
+}
+
+const MULTI_PROVIDER_ENV_NAMES: [&str; 11] = [
+    jackin_core::ANTHROPIC_API_KEY_ENV_NAME,
+    jackin_core::OPENAI_API_KEY_ENV_NAME,
+    jackin_core::XAI_API_KEY_ENV_NAME,
+    "MOONSHOT_API_KEY",
+    "ZHIPU_API_KEY",
+    jackin_core::MINIMAX_API_KEY_ENV_NAME,
+    jackin_core::GEMINI_API_KEY_ENV_NAME,
+    jackin_core::CURSOR_API_KEY_ENV_NAME,
+    jackin_core::META_API_KEY_ENV_NAME,
+    jackin_core::OPENROUTER_API_KEY_ENV_NAME,
+    jackin_core::OPENCODE_API_KEY_ENV_NAME,
+];
+
+fn multi_provider_key(surface: &str) -> Option<&'static str> {
+    match surface {
+        "claude" => Some(jackin_core::ANTHROPIC_API_KEY_ENV_NAME),
+        "codex" => Some(jackin_core::OPENAI_API_KEY_ENV_NAME),
+        "grok" => Some(jackin_core::XAI_API_KEY_ENV_NAME),
+        "kimi" => Some("MOONSHOT_API_KEY"),
+        "zai" => Some("ZHIPU_API_KEY"),
+        "minimax" => Some(jackin_core::MINIMAX_API_KEY_ENV_NAME),
+        "google" => Some(jackin_core::GEMINI_API_KEY_ENV_NAME),
+        "cursor" => Some(jackin_core::CURSOR_API_KEY_ENV_NAME),
+        "meta" => Some(jackin_core::META_API_KEY_ENV_NAME),
+        "openrouter" => Some(jackin_core::OPENROUTER_API_KEY_ENV_NAME),
+        "opencode" => Some(jackin_core::OPENCODE_API_KEY_ENV_NAME),
+        "amp" => None,
+        _ => None,
+    }
+}
+
+fn insert_native_key(
+    allowed: &mut BTreeSet<&'static str>,
+    provider_surface: Option<&str>,
+    expected_surface: &str,
+    key: &'static str,
+) {
+    if provider_surface.is_none_or(|surface| surface == expected_surface) {
+        allowed.insert(key);
+    }
+}
+
+fn is_protected_credential_name(name: &str) -> bool {
+    name == ANTHROPIC_AUTH_TOKEN_ENV_NAME
+        || jackin_core::USAGE_CREDENTIAL_ENV_REGISTRY
+            .iter()
+            .any(|entry| entry.name == name)
+}
+
 fn validate_agent_credentials(
     config: &CapsuleConfig,
     credentials: &jackin_protocol::AgentCredentialEnv,
@@ -432,6 +637,24 @@ fn validate_agent_credentials(
                 "protected account credentials name an instance without an account",
             ));
         };
+        let allowed = allowed_account_env_names(
+            expected_agent,
+            config.auth_mode_for_instance(instance).unwrap_or_default(),
+            config
+                .usage_capability_for_instance(instance)
+                .map(|capability| capability.surface_id.as_str()),
+        )
+        .map_err(|_| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "protected account credentials have an invalid agent/provider contract",
+            )
+        })?;
+        let credential_key_count = entry
+            .env
+            .keys()
+            .filter(|name| allowed.contains(name.as_str()) && is_protected_credential_name(name))
+            .count();
         if !config.instances.contains(instance)
             || !matches!(
                 config.auth_mode_for_instance(instance),
@@ -439,10 +662,11 @@ fn validate_agent_credentials(
             )
             || entry.agent != expected_agent
             || entry.account_id != expected_account
+            || credential_key_count != 1
             || entry
                 .env
                 .iter()
-                .any(|(name, value)| !jackin_core::is_account_env(name) || value.trim().is_empty())
+                .any(|(name, value)| !allowed.contains(name.as_str()) || value.trim().is_empty())
         {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,

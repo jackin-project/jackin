@@ -1997,8 +1997,33 @@ pub(crate) fn apply_account_env(
         return;
     }
     if let Some(env) = credentials.for_instance(instance) {
+        let Some(entry) = credentials.instance(instance) else {
+            return;
+        };
+        let Some(command_agent) = command
+            .get_env("JACKIN_AGENT")
+            .and_then(|value| value.to_str())
+        else {
+            return;
+        };
+        // `config::validate_agent_credentials` is the authoritative launch
+        // gate. Keep the same closed agent policy here as a second boundary
+        // so a hand-built credential envelope cannot inject a foreign
+        // provider key even if it bypasses config loading.
+        if entry.agent != command_agent {
+            return;
+        }
+        let Ok(allowed) = crate::config::allowed_account_env_names(
+            &entry.agent,
+            auth_mode.unwrap_or_default(),
+            None,
+        ) else {
+            return;
+        };
         for (name, value) in env {
-            command.env(name, value);
+            if allowed.contains(name.as_str()) {
+                command.env(name, value);
+            }
         }
     }
 }

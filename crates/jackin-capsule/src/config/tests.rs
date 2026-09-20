@@ -174,6 +174,158 @@ fn protected_credentials_reject_profile_mode_and_arbitrary_environment() {
 }
 
 #[test]
+fn protected_credentials_reject_foreign_codex_provider_and_oauth_keys() {
+    let mut config = instance_config(&[("codex-work", "api_key", "codex")]);
+    config.usage_capabilities.insert(
+        "codex-work".to_owned(),
+        jackin_protocol::usage_broker::UsageAccountCapability {
+            account_id: "acc-codex".to_owned(),
+            surface_id: "zai".to_owned(),
+        },
+    );
+    let routed = v2_credentials(serde_json::json!({
+        "schema_version": 2,
+        "instances": {
+            "codex-work": {
+                "agent": "codex",
+                "account_id": "acc-codex",
+                "env": {
+                    "OPENAI_API_KEY": "selected-zai-key",
+                    "OPENAI_BASE_URL": "https://api.z.ai/api/v1"
+                },
+            },
+        },
+    }));
+    validate_agent_credentials(&config, &routed).unwrap();
+
+    let foreign = v2_credentials(serde_json::json!({
+        "schema_version": 2,
+        "instances": {
+            "codex-work": {
+                "agent": "codex",
+                "account_id": "acc-codex",
+                "env": {
+                    "OPENAI_API_KEY": "selected-zai-key",
+                    "CLAUDE_CODE_OAUTH_TOKEN": "foreign-claude-sentinel",
+                    "GEMINI_API_KEY": "foreign-google-sentinel"
+                },
+            },
+        },
+    }));
+    let error = validate_agent_credentials(&config, &foreign).unwrap_err();
+    assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
+    assert!(!error.to_string().contains("foreign-claude-sentinel"));
+
+    config.usage_capabilities.clear();
+    let routed_without_provider_capability = v2_credentials(serde_json::json!({
+        "schema_version": 2,
+        "instances": {
+            "codex-work": {
+                "agent": "codex",
+                "account_id": "acc-codex",
+                "env": {
+                    "KIMI_API_KEY": "selected-kimi-key",
+                    "OPENAI_BASE_URL": "https://api.kimi.com/coding/v1"
+                },
+            },
+        },
+    }));
+    validate_agent_credentials(&config, &routed_without_provider_capability).unwrap();
+
+    let ambiguous_without_provider_capability = v2_credentials(serde_json::json!({
+        "schema_version": 2,
+        "instances": {
+            "codex-work": {
+                "agent": "codex",
+                "account_id": "acc-codex",
+                "env": {
+                    "KIMI_API_KEY": "selected-kimi-key",
+                    "OPENAI_API_KEY": "foreign-openai-sentinel"
+                },
+            },
+        },
+    }));
+    assert!(validate_agent_credentials(&config, &ambiguous_without_provider_capability).is_err());
+}
+
+#[test]
+fn protected_credentials_reject_foreign_opencode_provider_and_oauth_keys() {
+    let mut config = instance_config(&[("opencode-work", "api_key", "opencode")]);
+    config.usage_capabilities.insert(
+        "opencode-work".to_owned(),
+        jackin_protocol::usage_broker::UsageAccountCapability {
+            account_id: "opencode-work".to_owned(),
+            surface_id: "claude".to_owned(),
+        },
+    );
+    let valid = v2_credentials(serde_json::json!({
+        "schema_version": 2,
+        "instances": {
+            "opencode-work": {
+                "agent": "opencode",
+                "account_id": "opencode-work",
+                "env": {"ANTHROPIC_API_KEY": "selected-anthropic-key"},
+            },
+        },
+    }));
+    validate_agent_credentials(&config, &valid).unwrap();
+
+    let foreign = v2_credentials(serde_json::json!({
+        "schema_version": 2,
+        "instances": {
+            "opencode-work": {
+                "agent": "opencode",
+                "account_id": "opencode-work",
+                "env": {
+                    "ANTHROPIC_API_KEY": "selected-anthropic-key",
+                    "CLAUDE_CODE_OAUTH_TOKEN": "foreign-claude-sentinel",
+                    "OPENAI_API_KEY": "foreign-codex-sentinel"
+                },
+            },
+        },
+    }));
+    let error = validate_agent_credentials(&config, &foreign).unwrap_err();
+    assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
+    assert!(!error.to_string().contains("foreign-claude-sentinel"));
+}
+
+#[test]
+fn protected_credentials_bind_claude_oauth_to_its_auth_family() {
+    let config = instance_config(&[("claude-work", "oauth_token", "claude")]);
+    let valid = v2_credentials(serde_json::json!({
+        "schema_version": 2,
+        "instances": {
+            "claude-work": {
+                "agent": "claude",
+                "account_id": "acc-work",
+                "env": {
+                    "CLAUDE_CODE_OAUTH_TOKEN": "selected-oauth-token",
+                    "ANTHROPIC_BASE_URL": "https://anthropic.example"
+                },
+            },
+        },
+    }));
+    validate_agent_credentials(&config, &valid).unwrap();
+
+    let foreign = v2_credentials(serde_json::json!({
+        "schema_version": 2,
+        "instances": {
+            "claude-work": {
+                "agent": "claude",
+                "account_id": "acc-work",
+                "env": {
+                    "CLAUDE_CODE_OAUTH_TOKEN": "selected-oauth-token",
+                    "OPENAI_API_KEY": "foreign-codex-sentinel"
+                },
+            },
+        },
+    }));
+    let error = validate_agent_credentials(&config, &foreign).unwrap_err();
+    assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
+    assert!(!error.to_string().contains("foreign-codex-sentinel"));
+}
+
+#[test]
 fn protected_credentials_required_for_secret_auth_modes() {
     for mode in ["api_key", "oauth_token"] {
         let config = instance_config(&[("claude-work", mode, "claude")]);
