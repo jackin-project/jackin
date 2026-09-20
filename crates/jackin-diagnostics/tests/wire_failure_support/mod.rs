@@ -116,7 +116,9 @@ fn assert_wire_requests(testbed: &jackin_otlp_testbed::Testbed, expected_request
         .map(|record| record.event_name.clone())
         .collect();
     let health = jackin_diagnostics::telemetry_health_snapshot();
-    panic!(
+    // NOTE: assert!, not panic! — clippy::panic is denied (-D warnings).
+    assert!(
+        counts_match && records_match,
         "wire request mismatch: expected {expected_requests} requests per signal \
          with one `{validate_event}` log record each; got traces={} (spans per request: {spans_per_request:?}, span names: {span_names:?}), \
          logs={} (records per request: {records_per_request:?}, event names: {event_names:?}), \
