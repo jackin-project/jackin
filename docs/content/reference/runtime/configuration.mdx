@@ -56,6 +56,8 @@ schema reference; `docs_commands` compares them with the serde structs. */}
 {/* config-key: AccountConfig.name */}
 {/* config-key: AccountConfig.provider */}
 {/* config-key: AccountConfig.credential */}
+{/* config-key: ProfileSelector.entry */}
+{/* config-key: ProfileSelector.profile */}
 {/* config-key: AgentConfiguration.account */}
 {/* config-key: AgentConfiguration.agent */}
 {/* config-key: AgentConfiguration.base_url */}
@@ -214,6 +216,31 @@ Role selections must belong to the workspace allowlist. A global `account_bindin
 API credentials can use literal values, environment references, or 1Password `EnvValue` references. Supported cross-provider accounts can set `base_url` and `model`. Credential routing derives from the selected account; ordinary operator environment layers cannot override governed account credentials.
 
 `ConfigEditor` owns atomic registry and assignment edits. Account removal prunes references. Profile discovery runs once at first initialization; explicit rescanning is available through `jackin account scan`. See [Agent Accounts](/guides/authentication/agents/) for setup and the breaking migration.
+
+Multi-provider profile stores (`omp` and `hermes`) can pin the exact provider
+entry and optional profile label selected from the source store:
+
+```toml
+[accounts.omp-work]
+name = "Omp work"
+provider = "openai"
+
+[accounts.omp-work.credential]
+type = "profile"
+agent = "omp"
+directory = "/Users/operator/.omp"
+
+[accounts.omp-work.credential.source_selector]
+entry = "openai"
+profile = "work"
+```
+
+`source_selector.entry` is the exact provider/account key in the source store.
+`source_selector.profile` is the optional exact profile label when that store
+exposes one. These are the canonical field names; unknown selector fields are
+rejected. Launch verifies the stored identity before forwarding the whole source
+directory. A missing selector is accepted only when discovery proves the source
+contains exactly one account; ambiguous or changed stores fail closed.
 
 Named agent configurations describe launchable instances — one agent plus one
 account plus optional model/endpoint overrides. Several configurations may share
