@@ -131,6 +131,93 @@ fn different_accounts_resolve_into_separate_instance_environments() {
 }
 
 #[test]
+fn routed_codex_configuration_model_overrides_missing_account_model() {
+    let mut cfg = AppConfig::default();
+    cfg.accounts.insert(
+        "work".into(),
+        AccountConfig {
+            enabled: true,
+            name: "Work".into(),
+            provider: AiProvider::Moonshot,
+            credential: AccountCredential::ApiKey {
+                value: EnvValue::from("work-secret"),
+                base_url: Some("https://account.example/v1".into()),
+                model: None,
+            },
+        },
+    );
+    cfg.agent_configurations.insert(
+        "codex-work".into(),
+        configuration_with_endpoint(
+            Agent::Codex,
+            "work",
+            Some("k3-256k"),
+            "https://route.example/v1",
+        ),
+    );
+
+    let instances = launch(&cfg, &["codex-work"]);
+    assert_eq!(instances[0].model.as_deref(), Some("k3-256k"));
+    assert_eq!(
+        instances[0].base_url.as_deref(),
+        Some("https://route.example/v1")
+    );
+    let env = resolve_instance_env_with(&cfg, &instances, None, "role", &NoSecrets, |_| {
+        Err(std::env::VarError::NotPresent)
+    })
+    .expect("configuration model must satisfy routed Codex credential validation");
+
+    assert_eq!(
+        env.for_instance("codex-work").unwrap(),
+        &BTreeMap::from([
+            ("KIMI_API_KEY".into(), "work-secret".into()),
+            ("OPENAI_BASE_URL".into(), "https://route.example/v1".into(),),
+        ])
+    );
+}
+
+#[test]
+fn routed_opencode_cli_model_can_be_applied_after_credential_resolution() {
+    let mut cfg = AppConfig::default();
+    cfg.accounts.insert(
+        "work".into(),
+        AccountConfig {
+            enabled: true,
+            name: "Work".into(),
+            provider: AiProvider::Moonshot,
+            credential: AccountCredential::ApiKey {
+                value: EnvValue::from("work-secret"),
+                base_url: Some("https://account.example/v1".into()),
+                model: None,
+            },
+        },
+    );
+    cfg.agent_configurations.insert(
+        "opencode-work".into(),
+        configuration_with_endpoint(Agent::Opencode, "work", None, "https://route.example/v1"),
+    );
+
+    // The CLI model is not part of ResolvedInstance; it is fanned out later
+    // into the private OpenCode configuration. Credential resolution must not
+    // reject the launch before that model reaches its consumer.
+    let instances = launch(&cfg, &["opencode-work"]);
+    assert!(instances[0].model.is_none());
+    let env = resolve_instance_env_with(&cfg, &instances, None, "role", &NoSecrets, |_| {
+        Err(std::env::VarError::NotPresent)
+    })
+    .expect("credential resolution must defer the later OpenCode CLI model");
+
+    let instance = env.for_instance("opencode-work").unwrap();
+    assert_eq!(instance["MOONSHOT_API_KEY"], "work-secret");
+    assert!(!instance.values().any(|value| value == DEFERRED_MODEL));
+    assert!(
+        !instance
+            .values()
+            .any(|value| value == "https://route.example/v1")
+    );
+}
+
+#[test]
 fn same_agent_instances_keep_only_their_own_vars() {
     let mut cfg = AppConfig::default();
     for (id, key) in [("work", "work-key"), ("personal", "personal-key")] {

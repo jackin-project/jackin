@@ -72,6 +72,16 @@ fn configure_for_test(
     configure_accounts(root, config, instances, &slots, &models, &BTreeMap::new())
 }
 
+fn configure_with_models(
+    root: &Path,
+    config: &AppConfig,
+    instances: &[jackin_config::ResolvedInstance],
+    models: &BTreeMap<String, String>,
+) -> anyhow::Result<()> {
+    let slots = slots_for(instances);
+    configure_accounts(root, config, instances, &slots, models, &BTreeMap::new())
+}
+
 fn instance(
     config_id: &str,
     agent: Agent,
@@ -258,6 +268,90 @@ fn configuration_model_override_wins_over_account_default() {
     let contents = std::fs::read_to_string(temp.path().join("home/.codex/config.toml")).unwrap();
     let parsed: toml::Value = toml::from_str(&contents).unwrap();
     assert_eq!(parsed["model"].as_str(), Some("k3-256k"));
+}
+
+#[test]
+fn codex_configuration_model_override_routes_without_account_model() {
+    let temp = tempfile::tempdir().unwrap();
+    let mut config = AppConfig::default();
+    config.accounts.insert(
+        "work".into(),
+        jackin_config::AccountConfig {
+            enabled: true,
+            name: "Work".into(),
+            provider: AiProvider::Moonshot,
+            credential: AccountCredential::ApiKey {
+                value: "work-secret".into(),
+                base_url: Some("https://account.example/v1".into()),
+                model: None,
+            },
+        },
+    );
+    let instances = [instance(
+        "codex-work",
+        Agent::Codex,
+        "work",
+        Some("k3-256k"),
+        Some("https://route.example/v1"),
+    )];
+
+    // Empty here is intentional: the writer must preserve the effective
+    // ResolvedInstance model instead of silently falling back to the account.
+    configure_with_models(temp.path(), &config, &instances, &BTreeMap::new()).unwrap();
+    let contents = std::fs::read_to_string(temp.path().join("home/.codex/config.toml")).unwrap();
+    let parsed: toml::Value = toml::from_str(&contents).unwrap();
+    assert_eq!(parsed["model"].as_str(), Some("k3-256k"));
+    assert_eq!(
+        parsed["model_providers"]["jackin_account"]["base_url"].as_str(),
+        Some("https://route.example/v1")
+    );
+    assert_eq!(
+        parsed["model_providers"]["jackin_account"]["env_key"].as_str(),
+        Some("KIMI_API_KEY")
+    );
+    assert!(!contents.contains("work-secret"));
+}
+
+#[test]
+fn opencode_cli_model_routes_without_account_model() {
+    let temp = tempfile::tempdir().unwrap();
+    let mut config = AppConfig::default();
+    config.accounts.insert(
+        "work".into(),
+        jackin_config::AccountConfig {
+            enabled: true,
+            name: "Work".into(),
+            provider: AiProvider::Moonshot,
+            credential: AccountCredential::ApiKey {
+                value: "work-secret".into(),
+                base_url: Some("https://account.example/v1".into()),
+                model: None,
+            },
+        },
+    );
+    let instances = [instance(
+        "opencode-work",
+        Agent::Opencode,
+        "work",
+        None,
+        Some("https://route.example/v1"),
+    )];
+    let models = BTreeMap::from([("opencode-work".into(), "k3".into())]);
+
+    configure_with_models(temp.path(), &config, &instances, &models).unwrap();
+    let contents =
+        std::fs::read_to_string(temp.path().join("home/.config/opencode/opencode.json")).unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(&contents).unwrap();
+    assert_eq!(parsed["model"], "kimi-for-coding/k3");
+    assert_eq!(
+        parsed["provider"]["kimi-for-coding"]["options"]["baseURL"],
+        "https://route.example/v1"
+    );
+    assert_eq!(
+        parsed["provider"]["kimi-for-coding"]["options"]["apiKey"],
+        "{env:MOONSHOT_API_KEY}"
+    );
+    assert!(!contents.contains("work-secret"));
 }
 
 #[test]

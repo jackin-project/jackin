@@ -10,6 +10,24 @@ use anyhow::Context as _;
 use jackin_config::{AccountCredential, AiProvider, AppConfig};
 use jackin_core::Agent;
 
+fn account_with_effective_model(
+    account: &jackin_config::AccountConfig,
+    model: Option<&str>,
+) -> jackin_config::AccountConfig {
+    let Some(model) = model else {
+        return account.clone();
+    };
+    let mut account = account.clone();
+    if let AccountCredential::ApiKey {
+        model: account_model,
+        ..
+    } = &mut account.credential
+    {
+        *account_model = Some(model.to_owned());
+    }
+    account
+}
+
 pub(super) fn configure_accounts(
     root: &Path,
     config: &AppConfig,
@@ -42,22 +60,20 @@ pub(super) fn configure_accounts(
             slot.account_id,
             instance.account_id
         );
+        let model = models
+            .get(&instance.config_id)
+            .map(String::as_str)
+            .or(instance.model.as_deref());
         match instance.agent {
             Agent::Codex => configure_codex(
                 root,
                 config,
                 instance,
                 slot,
-                models.get(&instance.config_id).map(String::as_str),
+                model,
                 efforts.get(&instance.config_id).map(String::as_str),
             )?,
-            Agent::Opencode => configure_opencode(
-                root,
-                config,
-                instance,
-                slot,
-                models.get(&instance.config_id).map(String::as_str),
-            )?,
+            Agent::Opencode => configure_opencode(root, config, instance, slot, model)?,
             _ => {}
         }
     }
@@ -233,7 +249,8 @@ fn configure_opencode(
     };
     let base_url = instance.base_url.as_deref();
     let (id, npm, default_url) = opencode_provider(account.provider)?;
-    let credentials = account.credential_env(Agent::Opencode)?;
+    let credential_account = account_with_effective_model(account, model);
+    let credentials = credential_account.credential_env(Agent::Opencode)?;
     let key = credentials
         .keys()
         .next()
