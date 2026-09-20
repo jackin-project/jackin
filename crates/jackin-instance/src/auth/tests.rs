@@ -3,7 +3,8 @@
 
 //! Tests for `instance/auth` — tests.
 use super::{
-    Agent, AuthProvisionOutcome, RoleState, validate_sync_source_dir,
+    Agent, AuthProvisionOutcome, PermissionRepairFailure, RoleState,
+    inject_permission_repair_failure, repair_permissions, validate_sync_source_dir,
     validate_sync_source_dir_for_provider,
 };
 use crate::PrepareResolvers;
@@ -40,6 +41,29 @@ fn claude_keychain_service_name_matches_claude_scheme() {
 }
 
 const TEST_CREDENTIALS: &str = r#"{"claudeAiOauth":{"accessToken":"test","refreshToken":"test"}}"#;
+
+#[cfg(unix)]
+#[test]
+fn credential_permission_repair_fails_closed_on_injected_failures() {
+    let temp = tempdir().unwrap();
+    let path = temp.path().join("credential.json");
+    std::fs::write(&path, TEST_CREDENTIALS).unwrap();
+
+    for failure in [
+        PermissionRepairFailure::Stat,
+        PermissionRepairFailure::Chmod,
+        PermissionRepairFailure::Verify,
+    ] {
+        let _guard = inject_permission_repair_failure(failure);
+        let error = repair_permissions(&path).expect_err("injected failure must abort repair");
+        assert!(
+            error
+                .to_string()
+                .contains("injected credential permission repair failure"),
+            "unexpected error for {failure:?}: {error:#}"
+        );
+    }
+}
 
 // ── Source-folder validation ────────────────────────────────────────
 
