@@ -2,7 +2,7 @@
 title: "Verifying Releases"
 ---
 
-Every jackin❯ release publishes signed artifacts alongside the binaries. This page explains what is available and how to use it.
+Release channels have different artifact contracts. Stable tagged releases currently cover the macOS desktop ZIP; the rolling preview release publishes six CLI/capsule payload archives with provenance sidecars. This page explains what is available and how to use it.
 
 ## What you need to do
 
@@ -10,23 +10,22 @@ Nothing. When jackin❯ downloads `jackin-capsule` for the first time (or after 
 
 The verification tools described below are for operators who want to audit a download themselves, integrate jackin❯ into a supply chain policy, or confirm the integrity of any release asset manually.
 
-## What is published per release
+## Stable tagged desktop release
 
-Each release includes the following assets for every binary archive (CLI/capsule `.tar.gz` and the macOS usage menu-bar `.zip` use the same sidecar layout):
+The tag-triggered <RepoFile path=".github/workflows/release.yml">.github/workflows/release.yml</RepoFile> lane is limited to the arm64 macOS desktop ZIP. It Developer ID signs, notarizes, staples, and GitHub-attests that ZIP. It does not publish CLI or capsule tarballs, archive cosign bundles, SBOM sidecars, or `capsule-manifest.json`.
 
-| Asset | Purpose |
+| Asset | Verification |
 |---|---|
-| `<name>.tar.gz` or `<name>.zip` | The binary / app archive |
-| `<name>.…sha256` | SHA256 digest of the archive (suffix `.tar.gz.sha256` or `.zip.sha256`) |
-| `<name>.…bundle` | Cosign keyless signature bundle |
-| `<name>.…sbom.json` | CycloneDX SBOM (software bill of materials) |
+| `jackin-desktop-<version>-aarch64-apple-darwin.zip` | Developer ID signature, notarization, stapled ticket, and GitHub build attestation |
 
-The capsule binary additionally has a signed manifest:
+## Rolling preview package
 
-| Asset | Purpose |
-|---|---|
-| `capsule-manifest.json` | Version + per-architecture SHA256 digests |
-| `capsule-manifest.json.bundle` | Cosign keyless signature bundle for the manifest |
+The generated <RepoFile path=".github/workflows/preview.yml">.github/workflows/preview.yml</RepoFile> lane publishes exactly six payload archives:
+
+- four CLI tarballs: macOS arm64, macOS x86_64, Linux arm64, and Linux x86_64
+- two Linux capsule tarballs: arm64 and x86_64
+
+Each preview payload has three sidecars: `<payload>.sha256`, `<payload>.bundle`, and `<payload>.sbom.json`. The package also includes `SHA256SUMS`, `capsule-manifest.json` plus `capsule-manifest.json.bundle`, `release-manifest.json`, and `identity.json`. GitHub build provenance covers the six payloads and the declared supporting assets.
 
 ## Verify with SLSA provenance (GitHub Attestations)
 
@@ -36,19 +35,17 @@ Requires `gh` CLI (already installed if you used Homebrew to install jackin❯).
 gh attestation verify <file> --repo jackin-project/jackin
 ```
 
-This checks that the file was produced by a jackin❯ GitHub Actions run and is linked to the source commit. No extra tools required.
+Use this for the stable desktop ZIP, any preview payload, or any declared preview supporting asset. It checks that the file was produced by the corresponding jackin❯ GitHub Actions run and is linked to the source commit. No extra tools required.
 
 ## Verify everything with one local gate
 
-From a checkout of this repository, download an archive and its sidecars, then run:
+From a checkout of this repository, download a rolling-preview payload and its three sidecars, then run:
 
 ```sh
 cargo xtask release-verify <file>.tar.gz
-# or, for the usage menu-bar app:
-cargo xtask release-verify jackin-desktop-<VERSION>-aarch64-apple-darwin.zip
 ```
 
-The gate checks the archive against the sibling `.sha256` sidecar, verifies the `.bundle` with the same cosign identity and issuer policy shown below, verifies the GitHub artifact attestation for `jackin-project/jackin`, and parses the `.sbom.json` sidecar. Extension-agnostic: any archive path with those three siblings works.
+The gate checks a preview payload against its sibling `.sha256` sidecar, verifies the `.bundle` with the same cosign identity and issuer policy shown below, verifies the GitHub artifact attestation for `jackin-project/jackin`, and parses the `.sbom.json` sidecar. Any preview payload archive path with those three siblings works; the stable desktop ZIP follows the Apple signing/notarization and direct attestation contract above.
 
 For example:
 
@@ -76,7 +73,7 @@ cosign verify-blob \
   <file>
 ```
 
-This verifies the keyless OIDC signature, confirms the certificate was issued to a jackin❯ GitHub Actions workflow, and checks the Sigstore transparency log entry.
+Preview payloads and `capsule-manifest.json` use this keyless OIDC signature path. It confirms the certificate was issued to a jackin❯ GitHub Actions workflow and checks the Sigstore transparency log entry; the stable desktop ZIP uses Apple signing/notarization plus GitHub attestation instead.
 
 To verify the capsule manifest specifically:
 
@@ -90,7 +87,7 @@ cosign verify-blob \
 
 ## Inspect the SBOM
 
-The `.sbom.json` files are CycloneDX JSON documents listing the binary's file-level and ELF-level dependencies.
+Preview payload `.sbom.json` files are CycloneDX JSON documents listing the binary's file-level and ELF-level dependencies.
 
 ```sh
 # Inspect raw content
@@ -102,4 +99,4 @@ cyclonedx validate --input-file <file>.sbom.json
 
 ## Download release assets
 
-All assets are available at `https://github.com/jackin-project/jackin/releases`. Preview builds are published to the `preview` rolling tag; stable releases use versioned `v<version>` tags.
+Stable desktop releases use versioned `v<version>` tags. Preview builds publish the six-payload package to the `preview` rolling tag. Both are available at `https://github.com/jackin-project/jackin/releases`, but their verification contracts differ as described above.
