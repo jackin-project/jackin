@@ -44,7 +44,7 @@ fn facade_reservation_failure_child() {
     use opentelemetry::metrics::MeterProvider as _;
 
     let existing_provider = opentelemetry_sdk::metrics::SdkMeterProvider::builder().build();
-    jackin_telemetry::install(&existing_provider.meter("preexisting-facade"))
+    let _installation = jackin_telemetry::install(&existing_provider.meter("preexisting-facade"))
         .expect("preexisting facade meter must install");
     let error = jackin_diagnostics::init_tracing(false, "facade-rollback")
         .expect_err("facade collision must reject activation");

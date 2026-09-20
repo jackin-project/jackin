@@ -3,7 +3,7 @@
 
 use std::{
     collections::HashMap,
-    sync::{Mutex, OnceLock},
+    sync::{Mutex, OnceLock, RwLock, atomic::AtomicU64},
 };
 
 use opentelemetry::{
@@ -92,8 +92,12 @@ struct InstalledInstruments {
     _health: ObservableCounter<u64>,
 }
 
-static INSTRUMENTS: OnceLock<InstalledInstruments> = OnceLock::new();
-static METER_RESERVED: Mutex<bool> = Mutex::new(false);
+static INSTRUMENTS: RwLock<Option<InstalledInstruments>> = RwLock::new(None);
+static METER_STATE: Mutex<MeterState> = Mutex::new(MeterState {
+    reserved: false,
+    active_generation: None,
+});
+static NEXT_METER_GENERATION: AtomicU64 = AtomicU64::new(1);
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 enum DimensionValue {
     Str(String),
@@ -107,6 +111,12 @@ enum DimensionValue {
 type SeriesIdentity = Vec<(&'static str, DimensionValue)>;
 type SeriesByInstrument = HashMap<&'static str, Vec<SeriesIdentity>>;
 static SERIES: OnceLock<Mutex<SeriesByInstrument>> = OnceLock::new();
+
+#[derive(Debug)]
+struct MeterState {
+    reserved: bool,
+    active_generation: Option<u64>,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MeterInstallError;
@@ -126,40 +136,94 @@ pub struct MeterReservation {
 }
 
 impl MeterReservation {
-    pub fn commit(mut self) -> Result<(), MeterInstallError> {
+    pub fn commit(mut self) -> Result<MeterInstallation, MeterInstallError> {
         let instruments = self.instruments.take().ok_or(MeterInstallError)?;
-        let result = INSTRUMENTS.set(instruments).map_err(|_| MeterInstallError);
-        *METER_RESERVED
+        let mut state = METER_STATE
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) = false;
-        result
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if !state.reserved || state.active_generation.is_some() {
+            state.reserved = false;
+            return Err(MeterInstallError);
+        }
+
+        let generation = NEXT_METER_GENERATION.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        *INSTRUMENTS
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(instruments);
+        state.reserved = false;
+        state.active_generation = Some(generation);
+        Ok(MeterInstallation { generation })
     }
 }
 
 impl Drop for MeterReservation {
     fn drop(&mut self) {
         if self.instruments.is_some() {
-            *METER_RESERVED
+            METER_STATE
                 .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner) = false;
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .reserved = false;
+        }
+    }
+}
+
+/// Owns the installed facade instruments for one meter-provider lifecycle.
+///
+/// Dropping the installation removes the provider-bound instruments and clears
+/// their bounded-series registry, allowing a later provider to be installed in
+/// the same process without retaining state from the retired provider.
+#[must_use = "the meter installation must live as long as its meter provider"]
+#[derive(Debug)]
+pub struct MeterInstallation {
+    generation: u64,
+}
+
+impl Drop for MeterInstallation {
+    fn drop(&mut self) {
+        let mut state = METER_STATE
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if state.active_generation != Some(self.generation) {
+            return;
+        }
+        INSTRUMENTS
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take();
+        state.active_generation = None;
+        if let Some(series) = SERIES.get() {
+            series
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .clear();
         }
     }
 }
 
 pub fn reserve_meter(meter: &Meter) -> Result<MeterReservation, MeterInstallError> {
-    let mut reserved = METER_RESERVED
+    {
+        let state = METER_STATE
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if state.active_generation.is_some() || state.reserved {
+            return Err(MeterInstallError);
+        }
+    }
+
+    let instruments = build_instruments(meter);
+    let mut state = METER_STATE
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    if INSTRUMENTS.get().is_some() || *reserved {
+    if state.active_generation.is_some() || state.reserved {
         return Err(MeterInstallError);
     }
-    *reserved = true;
+    state.reserved = true;
     Ok(MeterReservation {
-        instruments: Some(build_instruments(meter)),
+        instruments: Some(instruments),
     })
 }
 
-pub fn install(meter: &Meter) -> Result<(), MeterInstallError> {
+pub fn install(meter: &Meter) -> Result<MeterInstallation, MeterInstallError> {
     reserve_meter(meter)?.commit()
 }
 
@@ -451,7 +515,10 @@ pub const fn up_down_counter(def: &'static InstrumentDef) -> UpDownCounter {
 impl Counter {
     pub fn add(self, value: u64, attrs: &[Attr<'_>]) -> Result<(), Rejection> {
         reject_identity_dimensions(attrs)?;
-        let Some(instruments) = INSTRUMENTS.get() else {
+        let instruments = INSTRUMENTS
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let Some(instruments) = instruments.as_ref() else {
             return Ok(());
         };
         validate_instrument(self.0, InstrumentKind::Counter)
@@ -469,7 +536,10 @@ impl Counter {
 impl Histogram {
     pub fn record(self, value: f64, attrs: &[Attr<'_>]) -> Result<(), Rejection> {
         reject_identity_dimensions(attrs)?;
-        let Some(instruments) = INSTRUMENTS.get() else {
+        let instruments = INSTRUMENTS
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let Some(instruments) = instruments.as_ref() else {
             return Ok(());
         };
         validate_instrument(self.0, InstrumentKind::Histogram)
@@ -488,7 +558,10 @@ impl Histogram {
 impl Gauge {
     pub fn record(self, value: f64, attrs: &[Attr<'_>]) -> Result<(), Rejection> {
         reject_identity_dimensions(attrs)?;
-        let Some(instruments) = INSTRUMENTS.get() else {
+        let instruments = INSTRUMENTS
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let Some(instruments) = instruments.as_ref() else {
             return Ok(());
         };
         validate_instrument(self.0, InstrumentKind::Gauge)
@@ -507,7 +580,10 @@ impl Gauge {
 impl UpDownCounter {
     pub fn add(self, value: i64, attrs: &[Attr<'_>]) -> Result<(), Rejection> {
         reject_identity_dimensions(attrs)?;
-        let Some(instruments) = INSTRUMENTS.get() else {
+        let instruments = INSTRUMENTS
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let Some(instruments) = instruments.as_ref() else {
             return Ok(());
         };
         validate_instrument(self.0, InstrumentKind::UpDownCounter)
