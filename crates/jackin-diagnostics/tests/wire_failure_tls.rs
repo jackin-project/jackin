@@ -65,6 +65,6 @@ fn metric_tls_failure_child() {
     tracing::subscriber::set_global_default(tracing_subscriber::registry())
         .expect("failed activation must not install a subscriber");
     let provider = opentelemetry_sdk::metrics::SdkMeterProvider::builder().build();
-    jackin_telemetry::install(&provider.meter("post-failure-facade"))
+    let _installation = jackin_telemetry::install(&provider.meter("post-failure-facade"))
         .expect("failed activation must release the facade reservation");
 }

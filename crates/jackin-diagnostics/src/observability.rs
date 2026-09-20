@@ -516,6 +516,7 @@ mod otlp {
         logger: SdkLoggerProvider,
         meter: SdkMeterProvider,
         generation: u64,
+        _meter_installation: Option<jackin_telemetry::MeterInstallation>,
     }
 
     impl OtlpProviders {
@@ -1278,11 +1279,14 @@ mod otlp {
             .try_init()
             .map_err(|e| anyhow::anyhow!("tracing subscriber already installed: {e}"));
         if installed.is_ok() {
-            if let Err(error) = meter_reservation.commit() {
-                cleanup_partial(&tracer_provider, &logger_provider, Some(&meter_provider));
-                rollback_runtime();
-                return Err(error.into());
-            }
+            let meter_installation = match meter_reservation.commit() {
+                Ok(installation) => installation,
+                Err(error) => {
+                    cleanup_partial(&tracer_provider, &logger_provider, Some(&meter_provider));
+                    rollback_runtime();
+                    return Err(error.into());
+                }
+            };
             let generation = health::set_active_signals();
             *PROVIDERS
                 .lock()
@@ -1291,6 +1295,7 @@ mod otlp {
                 logger: logger_provider,
                 meter: meter_provider,
                 generation,
+                _meter_installation: Some(meter_installation),
             });
         } else {
             drop(meter_reservation);
@@ -1379,11 +1384,14 @@ mod otlp {
             .try_init()
             .map_err(|e| anyhow::anyhow!("tracing subscriber already installed: {e}"));
         if installed.is_ok() {
-            if let Err(error) = meter_reservation.commit() {
-                cleanup_partial(&tracer_provider, &logger_provider, Some(&meter_provider));
-                rollback_runtime();
-                return Err(error.into());
-            }
+            let meter_installation = match meter_reservation.commit() {
+                Ok(installation) => installation,
+                Err(error) => {
+                    cleanup_partial(&tracer_provider, &logger_provider, Some(&meter_provider));
+                    rollback_runtime();
+                    return Err(error.into());
+                }
+            };
             let generation = health::set_active_signals();
             *PROVIDERS
                 .lock()
@@ -1392,6 +1400,7 @@ mod otlp {
                 logger: logger_provider,
                 meter: meter_provider,
                 generation,
+                _meter_installation: Some(meter_installation),
             });
         } else {
             drop(meter_reservation);
@@ -1873,6 +1882,7 @@ mod otlp {
         let succeeded = providers
             .as_ref()
             .is_none_or(|providers| providers.flush_and_shutdown(deadline));
+        drop(providers);
         if let Some(runtime) = runtime {
             // Providers have already flushed and shut down under the deadline.
             // Waiting for retired tonic driver tasks can deadlock process exit;

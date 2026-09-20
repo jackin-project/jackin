@@ -139,6 +139,7 @@ fn provider_shutdown_order_is_tracer_logger_meter() {
         logger: export.logger_provider,
         meter,
         generation,
+        _meter_installation: None,
     };
     super::SHUTDOWN_ORDER.lock().expect("order lock").clear();
     assert!(
