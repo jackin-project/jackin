@@ -246,7 +246,8 @@ fn is_daemon_entrypoint_args(args: &[String]) -> bool {
         // the client-mode dispatch match in `main`).
         Some(
             "status" | "snapshot" | "send" | "events" | "usage" | "agents" | "runtime-setup"
-            | "mcp-server" | "prepare-commit-msg" | "new" | "--version" | "-V" | "--help" | "-h",
+            | "mcp-server" | "prepare-commit-msg" | "new" | "usage-relay-proxy" | "--version"
+            | "-V" | "--help" | "-h",
         ) => false,
         // Anything else is the initial agent slug → daemon entrypoint.
         Some(_) => true,

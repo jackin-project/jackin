@@ -101,7 +101,7 @@ fn usage_relay_binds_session_peer_to_its_capability() {
         ]),
         ..CapsuleConfig::default()
     };
-    let authorization = UsageRelayAuthorization::from_config(&config).unwrap();
+    let authorization = UsageRelayAuthorization::from_config(&config, 1).unwrap();
     let peer_a = PeerIdentity {
         pid: None,
         uid: 2_001,
@@ -154,14 +154,14 @@ fn usage_relay_rejects_agent_root_but_accepts_capsule_supervisor() {
         )]),
         ..CapsuleConfig::default()
     };
-    let authorization = UsageRelayAuthorization::from_config(&config).unwrap();
+    let authorization = UsageRelayAuthorization::from_config(&config, 2).unwrap();
     let operation = UsageBrokerOperation::CurrentForCapability {
         capability: account,
     };
 
     assert!(!authorization.authorizes(
         Some(PeerIdentity {
-            pid: Some(2),
+            pid: Some(1),
             uid: 0,
             gid: 0,
         }),
@@ -177,15 +177,35 @@ fn usage_relay_rejects_agent_root_but_accepts_capsule_supervisor() {
     ));
     assert!(!authorization.authorizes(
         Some(PeerIdentity {
-            pid: Some(1),
+            pid: Some(3),
             uid: 0,
             gid: 1,
         }),
         &operation,
     ));
+    assert!(!authorization.authorizes(
+        Some(PeerIdentity {
+            pid: Some(2),
+            uid: 2_001,
+            gid: 0,
+        }),
+        &operation,
+    ));
     assert!(authorization.authorizes(
         Some(PeerIdentity {
-            pid: Some(1),
+            pid: Some(2),
+            uid: 0,
+            gid: 0,
+        }),
+        &operation,
+    ));
+
+    // The root identity must not fall through to a config-provided peer map.
+    let mut malformed = authorization.clone();
+    malformed.by_peer.insert((0, 0), capability("account-a"));
+    assert!(!malformed.authorizes(
+        Some(PeerIdentity {
+            pid: Some(3),
             uid: 0,
             gid: 0,
         }),
@@ -208,7 +228,7 @@ fn usage_relay_rejects_host_only_catalog_reconciliation() {
         )]),
         ..CapsuleConfig::default()
     };
-    let authorization = UsageRelayAuthorization::from_config(&config).unwrap();
+    let authorization = UsageRelayAuthorization::from_config(&config, 1).unwrap();
     let operation = UsageBrokerOperation::ReconcileCatalog {
         expected_projection_id: None,
         catalog_revision: "catalog-2".to_owned(),

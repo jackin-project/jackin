@@ -35,20 +35,35 @@ struct PeerIdentity {
     gid: u32,
 }
 
-const CAPSULE_SUPERVISOR_PID: u32 = 1;
+const DEFAULT_CAPSULE_SUPERVISOR_PID: u32 = 1;
 
 /// Immutable capability binding loaded from the host-validated Capsule config.
 /// Session peers get exactly one capability through their kernel UID/GID; the
-/// root Capsule supervisor may use the launch-wide set for daemon refreshes.
-#[derive(Debug, Clone, Default)]
+/// root Capsule supervisor at the launch-provided PID may use the launch-wide
+/// set for daemon refreshes.
+#[derive(Debug, Clone)]
 struct UsageRelayAuthorization {
+    supervisor_pid: u32,
     by_peer: BTreeMap<(u32, u32), UsageAccountCapability>,
     launch_capabilities: BTreeSet<UsageAccountCapability>,
 }
 
+impl Default for UsageRelayAuthorization {
+    fn default() -> Self {
+        Self {
+            supervisor_pid: DEFAULT_CAPSULE_SUPERVISOR_PID,
+            by_peer: BTreeMap::new(),
+            launch_capabilities: BTreeSet::new(),
+        }
+    }
+}
+
 impl UsageRelayAuthorization {
-    fn from_config(config: &CapsuleConfig) -> Result<Self> {
-        let mut authorization = Self::default();
+    fn from_config(config: &CapsuleConfig, supervisor_pid: u32) -> Result<Self> {
+        let mut authorization = Self {
+            supervisor_pid,
+            ..Self::default()
+        };
         for (instance, capability) in &config.usage_capabilities {
             anyhow::ensure!(
                 config
@@ -84,8 +99,11 @@ impl UsageRelayAuthorization {
         let Some(peer) = peer else {
             return false;
         };
-        if peer.uid == 0 && peer.gid == 0 && peer.pid == Some(CAPSULE_SUPERVISOR_PID) {
-            return self.launch_capabilities.contains(capability);
+        if peer.uid == 0 || peer.gid == 0 {
+            return peer.uid == 0
+                && peer.gid == 0
+                && peer.pid == Some(self.supervisor_pid)
+                && self.launch_capabilities.contains(capability);
         }
         self.by_peer.get(&(peer.uid, peer.gid)) == Some(capability)
     }
@@ -93,6 +111,7 @@ impl UsageRelayAuthorization {
     #[cfg(test)]
     fn for_peer(peer: PeerIdentity, capability: UsageAccountCapability) -> Self {
         Self {
+            supervisor_pid: DEFAULT_CAPSULE_SUPERVISOR_PID,
             by_peer: BTreeMap::from([((peer.uid, peer.gid), capability.clone())]),
             launch_capabilities: BTreeSet::from([capability]),
         }
@@ -130,7 +149,21 @@ fn operation_capability(operation: &UsageBrokerOperation) -> Option<&UsageAccoun
 /// Bind the Capsule-local scoped usage socket and bridge requests over stdio.
 pub(crate) async fn run() -> Result<()> {
     let config = crate::config::load().context("loading Capsule config for usage relay")?;
-    let authorization = UsageRelayAuthorization::from_config(&config)
+    let supervisor_pid = match std::env::var(jackin_protocol::CAPSULE_SUPERVISOR_PID_ENV) {
+        Ok(value) => value.parse::<u32>().with_context(|| {
+            format!(
+                "invalid {} value {value:?}",
+                jackin_protocol::CAPSULE_SUPERVISOR_PID_ENV
+            )
+        })?,
+        Err(std::env::VarError::NotPresent) => DEFAULT_CAPSULE_SUPERVISOR_PID,
+        Err(error) => return Err(error.into()),
+    };
+    anyhow::ensure!(
+        supervisor_pid > 0,
+        "Capsule supervisor PID must be positive"
+    );
+    let authorization = UsageRelayAuthorization::from_config(&config, supervisor_pid)
         .context("building usage relay session authorization")?;
     run_at(
         Path::new(jackin_core::container_paths::USAGE_SOCK),

@@ -927,18 +927,16 @@ pub(crate) async fn launch_role_runtime(
     let mut capsule_config = (*capsule_config).clone();
     let socket_dir = paths.jackin_home.join("sockets").join(*container_name);
     let prepared_usage_relay =
-        crate::usage_relay::prepare_for_docker_container(crate::usage_relay::UsageRelayLaunch {
+        crate::usage_relay::prepare_for_stdio_tunnel(crate::usage_relay::UsageRelayLaunch {
             paths,
             workspace_name: (!sibling_auth_prewarm.workspace_name.is_empty())
                 .then_some(sibling_auth_prewarm.workspace_name),
             role_key: sibling_auth_prewarm.role_key,
-            launch_config: &capsule_config,
             forwarded_sources: crate::usage_relay::forwarded_sources_from_launch_config(
                 state,
                 resolved_env,
                 &capsule_config,
             ),
-            socket_dir: socket_dir.clone(),
         })
         .await
         .context("starting scoped usage relay")?;

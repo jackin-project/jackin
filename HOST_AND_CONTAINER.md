@@ -49,21 +49,22 @@ count. Provider-supplied `Retry-After` is preserved; otherwise one persisted loc
 backoff is shared across processes.
 
 The global broker socket, account catalog, credential sources, and state tree are
-never mounted into a container. Each Capsule receives only its isolated socket
-directory and a relay at `/jackin/run/usage.sock`; the relay's immutable allowlist is
-derived from credential capabilities actually forwarded at launch. Credentials
-created only inside a Capsule are not monitored until a separate secure-enrollment
-design exists. The former writable `/jackin/usage-shared` snapshot/cooldown/lock tree
-is removed and is not a fallback.
+never mounted into a container. Each Capsule receives only its launch config and a
+local relay at `/jackin/run/usage.sock`; the relay's immutable allowlist is derived
+from credential capabilities actually forwarded at launch. Credentials created only
+inside a Capsule are not monitored until a separate secure-enrollment design exists.
+The former writable `/jackin/usage-shared` snapshot/cooldown/lock tree is removed
+and is not a fallback.
 
 The Docker relay proxy does not treat container root as the supervisor: launch-wide
 capabilities require the kernel peer tuple `(pid=1, uid=0, gid=0)`, which is the
 Capsule daemon. Session peers remain bound to their exact configured `(uid, gid)`.
-The Apple-container backend uses the host relay directly; its launch contract runs
-the Capsule supervisor as `root:root` and does not provision sudo for session
-identities, so that backend retains an explicit `root:root` supervisor residual.
-If Apple-container ever grants sessions a supported path to UID 0, the direct host
-relay must gain a distinct supervisor credential before that profile is enabled.
+The Apple-container backend uses the same guest-local proxy over a host-started
+stdio tunnel. Its launch metadata identifies the Capsule supervisor as
+`(pid=2, uid=0, gid=0)` under Apple `vminitd` PID 1; all other root peers are
+rejected before the launch-wide capability allowlist is consulted. Apple host
+socket relays are not used for usage because they do not preserve guest peer
+credentials.
 
 ## Container path convention: everything jackin❯ owns lives under `/jackin/` (hard rule)
 
