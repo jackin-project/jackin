@@ -159,13 +159,13 @@ pub(crate) fn capsule_config(
 }
 
 /// Create the per-container socket dir and write Capsule's launch config
-/// (`agent.toml`) into it. The dir is bind-mounted to `/jackin/run`, so the
-/// in-container capsule reads `agent.toml` at startup and the host.sock
-/// credential-resolver socket lands beside it. Shared by both launch paths:
-/// the apple-container path (`apple_container::launch`) and the Docker path
-/// (`launch_role_runtime`, which calls it inside its socket-dir `spawn_blocking`
-/// alongside the extrausers passwd write). The directory is private before the
-/// config write, including when no host credential listener will be started.
+/// (`agent.toml`) into it. Docker bind-mounts the directory to `/jackin/run`;
+/// Apple Container mounts the config and any host sockets as individual files.
+/// Shared by both launch paths: the apple-container path
+/// (`apple_container::launch`) and the Docker path (`launch_role_runtime`,
+/// which calls it inside its socket-dir `spawn_blocking` alongside the
+/// extrausers passwd write). The directory is private before the config write,
+/// including when no host credential listener will be started.
 pub(crate) fn prepare_socket_dir(
     socket_dir: &Path,
     capsule_config_contents: &str,
