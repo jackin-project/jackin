@@ -3,6 +3,8 @@
 
 use std::fs;
 
+use serde_json::Value;
+
 use super::*;
 
 fn known_legacy_snapshot() -> RollingReleaseSnapshot {
@@ -102,15 +104,15 @@ fn known_legacy_release_archives_bytes_as_unverified_evidence() {
     let archive =
         archive_known_legacy_rolling_release(&snapshot, downloaded.path(), transaction.path())
             .unwrap();
-    let metadata: serde_json::Value =
+    let metadata: Value =
         serde_json::from_slice(&fs::read(archive.join("metadata.json")).unwrap()).unwrap();
     assert_eq!(
         metadata["schema"],
-        serde_json::Value::String(LEGACY_ARCHIVE_SCHEMA.to_owned())
+        Value::String(LEGACY_ARCHIVE_SCHEMA.to_owned())
     );
     assert_eq!(
         metadata["verification_status"],
-        serde_json::Value::String("unverified-legacy-bytes".to_owned())
+        Value::String("unverified-legacy-bytes".to_owned())
     );
     assert_eq!(
         metadata["assets"].as_object().unwrap().len(),
@@ -121,7 +123,7 @@ fn known_legacy_release_archives_bytes_as_unverified_evidence() {
             .as_object()
             .unwrap()
             .values()
-            .all(|asset| asset["matches_expected"] == serde_json::Value::Bool(false))
+            .all(|asset| asset["matches_expected"] == Value::Bool(false))
     );
     for name in snapshot.assets.keys() {
         assert_eq!(

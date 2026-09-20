@@ -6,20 +6,45 @@
     dead_code,
     reason = "exercised by unit tests; workflow template will call via xtask next"
 )]
+#![expect(
+    clippy::disallowed_methods,
+    clippy::print_stdout,
+    reason = "preview migration is host-side release CLI work"
+)]
 
 use std::{
     collections::BTreeMap,
-    fs,
+    env, fs,
     io::Read,
     path::{Path, PathBuf},
+    thread,
+    time::Duration,
 };
 
-use anyhow::{Context, Result, ensure};
+use anyhow::{Context, Result, bail, ensure};
+use clap::{Args, Subcommand};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use sha2::{Digest, Sha256};
 
 #[cfg(test)]
 mod tests;
+
+#[derive(Debug, Subcommand)]
+pub(crate) enum PreviewCommand {
+    /// Archive and retire the one known invalid rolling preview release.
+    #[command(name = "migrate-legacy")]
+    MigrateLegacy(MigrateLegacyArgs),
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct MigrateLegacyArgs {}
+
+pub(crate) fn run(command: PreviewCommand) -> Result<()> {
+    match command {
+        PreviewCommand::MigrateLegacy(_) => migrate_legacy_preview(),
+    }
+}
 
 const LEGACY_ARCHIVE_SCHEMA: &str = "jackin.preview-legacy-archive.v1";
 const LEGACY_SOURCE_REPOSITORY: &str = "jackin-project/jackin";
@@ -150,6 +175,61 @@ pub(crate) struct RollingReleaseSnapshot {
     pub(crate) assets: BTreeMap<String, String>,
 }
 
+#[derive(Debug, Deserialize)]
+struct GithubRelease {
+    id: u64,
+    tag_name: String,
+    name: String,
+    body: Option<String>,
+    draft: bool,
+    prerelease: bool,
+    assets: Vec<GithubReleaseAsset>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GithubReleaseAsset {
+    name: String,
+    digest: Option<String>,
+}
+
+impl GithubRelease {
+    fn snapshot(&self, tag_target: String) -> Result<RollingReleaseSnapshot> {
+        let mut assets = BTreeMap::new();
+        for asset in &self.assets {
+            let digest = asset
+                .digest
+                .as_deref()
+                .with_context(|| format!("rolling preview asset has no digest: {}", asset.name))?;
+            let digest = digest.strip_prefix("sha256:").with_context(|| {
+                format!("rolling preview asset digest is not SHA256: {}", asset.name)
+            })?;
+            ensure!(
+                digest.len() == 64 && is_lower_hex(digest),
+                "rolling preview asset digest is invalid: {}",
+                asset.name
+            );
+            ensure!(
+                assets
+                    .insert(asset.name.clone(), digest.to_owned())
+                    .is_none(),
+                "rolling preview release contains a duplicate asset: {}",
+                asset.name
+            );
+        }
+        Ok(RollingReleaseSnapshot {
+            source_repository: LEGACY_SOURCE_REPOSITORY.to_owned(),
+            tag_name: self.tag_name.clone(),
+            release_id: self.id,
+            release_name: self.name.clone(),
+            release_body: self.body.clone().unwrap_or_default(),
+            tag_target,
+            draft: self.draft,
+            prerelease: self.prerelease,
+            assets,
+        })
+    }
+}
+
 #[derive(Debug, Serialize)]
 struct LegacyArchiveMetadata {
     schema: String,
@@ -172,6 +252,257 @@ fn known_legacy_assets() -> BTreeMap<String, String> {
         .iter()
         .map(|(name, digest)| ((*name).to_owned(), (*digest).to_owned()))
         .collect()
+}
+
+fn migrate_legacy_preview() -> Result<()> {
+    let repository =
+        env::var("GITHUB_REPOSITORY").unwrap_or_else(|_| LEGACY_SOURCE_REPOSITORY.to_owned());
+    ensure!(
+        repository == LEGACY_SOURCE_REPOSITORY,
+        "preview migration must run in {LEGACY_SOURCE_REPOSITORY}, got {repository}"
+    );
+    let token = env::var("GH_TOKEN")
+        .or_else(|_| env::var("UPDATER_TOKEN"))
+        .context("GH_TOKEN or UPDATER_TOKEN is required for preview migration")?;
+    ensure!(!token.is_empty(), "preview migration token is empty");
+    let source_checkout = match env::var_os("VELNOR_SOURCE_CHECKOUT_DIR") {
+        Some(path) => PathBuf::from(path),
+        None => env::current_dir().context("locating preview migration checkout")?,
+    };
+
+    let Some(release) = github_release_by_tag(&token)? else {
+        ensure!(
+            git_tag_target(&source_checkout, &token, LEGACY_TAG)?.is_none(),
+            "rolling preview tag exists without a release; refusing unverified mutation"
+        );
+        println!("preview migration: no rolling release or tag is present");
+        return Ok(());
+    };
+
+    // A current-contract release is handled by the generic typed publisher.
+    // Only the exact, known invalid fingerprint enters this destructive path.
+    let names = release_asset_names(&release)?;
+    if names.contains("release-manifest.json") && names.contains("identity.json") {
+        println!("preview migration: rolling release already uses the current contract");
+        return Ok(());
+    }
+
+    let tag_target = git_tag_target(&source_checkout, &token, LEGACY_TAG)?
+        .context("known legacy rolling release tag is missing")?;
+    let snapshot = release.snapshot(tag_target.clone())?;
+    ensure_known_legacy_rolling_release(&snapshot)?;
+
+    let runner_temp = env::var_os("RUNNER_TEMP").map_or_else(env::temp_dir, PathBuf::from);
+    fs::create_dir_all(&runner_temp)
+        .with_context(|| format!("creating runner temp directory {}", runner_temp.display()))?;
+    let transaction = tempfile::Builder::new()
+        .prefix("jackin-preview-legacy-migration-")
+        .tempdir_in(&runner_temp)
+        .context("creating preview migration transaction")?;
+    let downloaded = transaction.path().join("downloaded-assets");
+    fs::create_dir(&downloaded).context("creating preview migration download directory")?;
+    download_rolling_release(&token, &downloaded)?;
+    let archive = archive_known_legacy_rolling_release(&snapshot, &downloaded, transaction.path())?;
+    println!(
+        "::notice::archived known invalid rolling preview as unverified evidence at {}",
+        archive.display()
+    );
+    // Keep the transaction archive if any later observation or mutation step
+    // fails. It is never used as trusted package input.
+    let _transaction_root = transaction.keep();
+
+    let current_release = github_release_by_tag(&token)?
+        .context("rolling preview disappeared before migration mutation")?;
+    let current_target = git_tag_target(&source_checkout, &token, LEGACY_TAG)?
+        .context("rolling preview tag disappeared before migration mutation")?;
+    ensure!(
+        current_release.snapshot(current_target.clone())? == snapshot,
+        "rolling preview changed during migration; refusing mutation"
+    );
+
+    delete_rolling_release(&token, snapshot.release_id)?;
+    wait_for_release_absent(&token)?;
+    let tag_after_release_delete = git_tag_target(&source_checkout, &token, LEGACY_TAG)?
+        .context("rolling preview tag disappeared after release deletion")?;
+    ensure!(
+        tag_after_release_delete == snapshot.tag_target,
+        "rolling preview tag changed during migration; refusing mutation"
+    );
+    delete_rolling_tag(&token)?;
+    wait_for_tag_absent(&source_checkout, &token)?;
+    println!("preview migration: retired the known invalid rolling release and tag");
+
+    Ok(())
+}
+
+fn release_asset_names(release: &GithubRelease) -> Result<std::collections::BTreeSet<String>> {
+    let mut names = std::collections::BTreeSet::new();
+    for asset in &release.assets {
+        ensure!(
+            names.insert(asset.name.clone()),
+            "rolling preview release contains a duplicate asset: {}",
+            asset.name
+        );
+    }
+    Ok(names)
+}
+
+fn github_release_by_tag(token: &str) -> Result<Option<GithubRelease>> {
+    let endpoint = format!("repos/{LEGACY_SOURCE_REPOSITORY}/releases/tags/{LEGACY_TAG}");
+    let Some(value) = github_api_json(&endpoint, token)? else {
+        return Ok(None);
+    };
+    serde_json::from_value(value)
+        .context("parsing the rolling preview GitHub release")
+        .map(Some)
+}
+
+fn github_api_json(endpoint: &str, token: &str) -> Result<Option<Value>> {
+    let mut command = crate::cmd::command("gh");
+    command
+        .args(["api", "--repo", LEGACY_SOURCE_REPOSITORY, "-i", endpoint])
+        .env("GH_TOKEN", token);
+    let response = crate::cmd::output_raw(&mut command).context("querying GitHub API")?;
+    let text = String::from_utf8(response.stdout).context("GitHub API response is not UTF-8")?;
+    let status_line = text
+        .lines()
+        .rev()
+        .find(|line| line.starts_with("HTTP/"))
+        .context("GitHub API response omitted an HTTP status")?;
+    let status = status_line
+        .split_whitespace()
+        .nth(1)
+        .context("GitHub API status is missing")?
+        .parse::<u16>()
+        .context("GitHub API status is invalid")?;
+    let body = text
+        .rsplit_once("\r\n\r\n")
+        .or_else(|| text.rsplit_once("\n\n"))
+        .map_or(text.as_str(), |(_, body)| body);
+    if status == 404 {
+        return Ok(None);
+    }
+    ensure!(
+        response.success && (200..300).contains(&status),
+        "GitHub API request failed with HTTP {status}"
+    );
+    serde_json::from_str(body)
+        .context("parsing GitHub API JSON response")
+        .map(Some)
+}
+
+fn git_tag_target(source_checkout: &Path, token: &str, tag: &str) -> Result<Option<String>> {
+    for refspec in [format!("refs/tags/{tag}^{{}}"), format!("refs/tags/{tag}")] {
+        let mut command = crate::cmd::command("git");
+        command
+            .args([
+                "-C",
+                source_checkout
+                    .to_str()
+                    .context("source checkout path is not UTF-8")?,
+                "ls-remote",
+                "origin",
+                &refspec,
+            ])
+            .env("GIT_CONFIG_COUNT", "1")
+            .env("GIT_CONFIG_KEY_0", "http.extraheader")
+            .env(
+                "GIT_CONFIG_VALUE_0",
+                format!("AUTHORIZATION: bearer {token}"),
+            );
+        let output = crate::cmd::output(&mut command).context("reading rolling preview tag")?;
+        let Some(line) = String::from_utf8(output)
+            .context("rolling preview tag response is not UTF-8")?
+            .lines()
+            .next()
+            .map(str::to_owned)
+        else {
+            continue;
+        };
+        let sha = line
+            .split_whitespace()
+            .next()
+            .context("rolling preview tag response omitted its object")?;
+        ensure!(
+            sha.len() == 40 && is_lower_hex(sha),
+            "rolling preview tag object is not a commit SHA"
+        );
+        return Ok(Some(sha.to_owned()));
+    }
+    Ok(None)
+}
+
+fn download_rolling_release(token: &str, destination: &Path) -> Result<()> {
+    let mut command = crate::cmd::command("gh");
+    command
+        .args([
+            "release",
+            "download",
+            LEGACY_TAG,
+            "--repo",
+            LEGACY_SOURCE_REPOSITORY,
+            "--dir",
+        ])
+        .arg(destination)
+        .args(["--clobber"])
+        .env("GH_TOKEN", token);
+    crate::cmd::run(&mut command).context("downloading known legacy preview assets")
+}
+
+fn delete_rolling_release(token: &str, release_id: u64) -> Result<()> {
+    let endpoint = format!("repos/{LEGACY_SOURCE_REPOSITORY}/releases/{release_id}");
+    let mut command = crate::cmd::command("gh");
+    command
+        .args([
+            "api",
+            "--method",
+            "DELETE",
+            "--repo",
+            LEGACY_SOURCE_REPOSITORY,
+            &endpoint,
+        ])
+        .env("GH_TOKEN", token);
+    crate::cmd::run(&mut command).context("deleting known legacy preview release")
+}
+
+fn delete_rolling_tag(token: &str) -> Result<()> {
+    let endpoint = format!("repos/{LEGACY_SOURCE_REPOSITORY}/git/refs/tags/{LEGACY_TAG}");
+    let mut command = crate::cmd::command("gh");
+    command
+        .args([
+            "api",
+            "--method",
+            "DELETE",
+            "--repo",
+            LEGACY_SOURCE_REPOSITORY,
+            &endpoint,
+        ])
+        .env("GH_TOKEN", token);
+    crate::cmd::run(&mut command).context("deleting known legacy preview tag")
+}
+
+fn wait_for_release_absent(token: &str) -> Result<()> {
+    for attempt in 0..5 {
+        if github_release_by_tag(token)?.is_none() {
+            return Ok(());
+        }
+        if attempt < 4 {
+            thread::sleep(Duration::from_secs(1));
+        }
+    }
+    bail!("known legacy preview release is still visible after deletion")
+}
+
+fn wait_for_tag_absent(source_checkout: &Path, token: &str) -> Result<()> {
+    for attempt in 0..5 {
+        if git_tag_target(source_checkout, token, LEGACY_TAG)?.is_none() {
+            return Ok(());
+        }
+        if attempt < 4 {
+            thread::sleep(Duration::from_secs(1));
+        }
+    }
+    bail!("known legacy preview tag is still visible after deletion")
 }
 
 /// Refuse every invalid rolling release except the one known legacy fingerprint.
@@ -345,6 +676,12 @@ fn sync_file(path: &Path) -> Result<()> {
         .with_context(|| format!("opening {} for sync", path.display()))?
         .sync_all()
         .with_context(|| format!("syncing {}", path.display()))
+}
+
+fn is_lower_hex(value: &str) -> bool {
+    value
+        .bytes()
+        .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
 
 /// Whether a changed path can alter the shipped Homebrew preview binaries.

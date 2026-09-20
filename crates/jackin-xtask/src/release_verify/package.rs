@@ -534,7 +534,8 @@ fn verify_archive(package_dir: &Path, payload: PreviewPayload) -> Result<()> {
     verify_sha256_file(&archive, &checksum)?;
     verify_cosign_bundle(&archive, &bundle)
         .with_context(|| format!("verifying archive cosign bundle for {}", payload.name))?;
-    verify_sbom(&sbom).with_context(|| format!("verifying archive SBOM for {}", payload.name))?;
+    verify_sbom(&archive, &sbom)
+        .with_context(|| format!("verifying archive SBOM for {}", payload.name))?;
     Ok(())
 }
 

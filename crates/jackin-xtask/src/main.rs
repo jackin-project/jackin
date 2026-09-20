@@ -38,6 +38,7 @@ mod pty_fixture;
 mod ratchet;
 mod readme_freshness;
 mod release_archive;
+mod release_sbom;
 mod release_verify;
 mod report;
 mod schema;
@@ -103,7 +104,7 @@ enum Command {
     /// Validate and activate the prepared Rust toolchain used by CI.
     #[command(name = "ci-toolchain", subcommand)]
     CiToolchain(ci_toolchain::CiToolchainCommand),
-    /// Perform resilient GitHub API and release operations for CI.
+    /// Perform resilient GitHub API operations for CI.
     #[command(name = "github", subcommand)]
     Github(github::GithubCommand),
     /// Construct base-image build and publish tasks.
@@ -196,6 +197,9 @@ enum Command {
     /// `VELNOR_VERIFIED_PACKAGE_DIR` set.
     #[command(name = "release-verify-package")]
     ReleaseVerifyPackage(release_verify::ReleaseVerifyPackageArgs),
+    /// Preview-package migration operations.
+    #[command(subcommand)]
+    Preview(preview::PreviewCommand),
     /// Build, package, sign, and describe every release target for one crate.
     #[command(name = "release-archives")]
     ReleaseArchives(release_archive::ReleaseArchivesArgs),
@@ -332,6 +336,7 @@ fn main() -> ExitCode {
         Command::TelemetryRegistry(args) => telemetry_registry::run(args),
         Command::TelemetryBench(args) => telemetry_bench::run(args),
         Command::ProfileMatrix(args) => profile_matrix::run(args),
+        Command::Preview(command) => preview::run(command),
         Command::ReleaseVerify(args) => release_verify::run(args),
         Command::ReleaseVerifyPackage(args) => release_verify::run_package(args),
         Command::ReleaseArchives(args) => release_archive::run(args),

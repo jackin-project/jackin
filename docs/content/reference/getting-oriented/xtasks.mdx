@@ -76,14 +76,12 @@ Repo-internal automation belongs in this binary, not in shell scripts or one-off
 
 ## Preview package publication
 
-The old `cargo xtask github publish-preview` publisher is retired and fails closed. It
-must not delete or recreate the rolling `preview` release or tag. Preview publication
-is owned by the typed package-release workflow:
+Preview publication is owned by the typed package-release workflow:
 
 1. `mise run release-preview-package` builds the source-bound six-payload package.
 2. `mise run verify-preview-package` verifies the handoff and its provenance.
 3. The generated preview workflow stages and publishes the verified package, then
    creates the Homebrew consumer update PR.
 
-Do not restore the retired publisher or add a cleanup-tag fallback. A malformed rolling
-release is handled only by the Jackin-specific, fingerprint-guarded migration path.
+A malformed rolling release is handled only by the Jackin-specific,
+fingerprint-guarded migration path before the typed publisher runs.

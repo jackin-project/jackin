@@ -335,17 +335,7 @@ fn sign(archive: &Path) -> Result<()> {
 }
 
 fn write_sbom(archive: &Path) -> Result<()> {
-    let output = sidecar(archive, "sbom.json");
-    cmd::run_stdout_file(
-        cmd::command("syft").args([
-            OsStr::new("scan"),
-            archive.as_os_str(),
-            OsStr::new("-o"),
-            OsStr::new("cyclonedx-json"),
-        ]),
-        &output,
-    )
-    .with_context(|| format!("generating SBOM for {}", archive.display()))
+    crate::release_sbom::generate(archive, &sidecar(archive, "sbom.json"))
 }
 
 fn sidecar(archive: &Path, suffix: &str) -> PathBuf {

@@ -63,8 +63,11 @@ pub(crate) fn run(args: ReleaseVerifyArgs) -> Result<()> {
         println!("ok: GitHub artifact attestation verifies");
     }
 
-    verify_sbom(&sbom_path)?;
-    println!("ok: SBOM parses {}", sbom_path.display());
+    verify_sbom(&archive, &sbom_path)?;
+    println!(
+        "ok: SBOM schema and archive binding verify {}",
+        sbom_path.display()
+    );
     Ok(())
 }
 
@@ -163,17 +166,8 @@ fn verify_github_attestation(archive: &Path) -> Result<()> {
     )
 }
 
-fn verify_sbom(path: &Path) -> Result<()> {
-    ensure!(
-        path.is_file(),
-        "SBOM sidecar does not exist: {}",
-        path.display()
-    );
-    let content =
-        fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
-    serde_json::from_str::<serde_json::Value>(&content)
-        .with_context(|| format!("parsing SBOM JSON {}", path.display()))?;
-    Ok(())
+fn verify_sbom(archive: &Path, path: &Path) -> Result<()> {
+    crate::release_sbom::verify(archive, path)
 }
 
 fn path_arg(path: &Path) -> Result<&str> {

@@ -661,6 +661,12 @@ description = "Verify the complete six-payload Homebrew preview package handoff"
 run = '''
 set -euo pipefail
 : "${VELNOR_VERIFIED_PACKAGE_DIR:?missing VELNOR_VERIFIED_PACKAGE_DIR}"
+# The generated publish job invokes this task before the immutable release
+# publication step. Retire only the exact known-invalid rolling release there;
+# producer and downloaded-package verification remain non-mutating.
+if [ "${PACKAGE_DIR:-}" = "package" ]; then
+  cargo xtask preview migrate-legacy
+fi
 cargo xtask release-verify-package
 '''
 

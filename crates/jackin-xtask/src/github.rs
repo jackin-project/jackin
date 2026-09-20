@@ -4,7 +4,6 @@
 use std::env;
 use std::fs;
 use std::io::{self, Write};
-use std::path::PathBuf;
 use std::process::Command;
 use std::thread;
 use std::time::Duration;
@@ -15,21 +14,11 @@ use serde::Deserialize;
 
 use crate::{cmd, docs};
 
-#[cfg(test)]
-mod tests;
-
 #[derive(Subcommand, Debug)]
 pub(crate) enum GithubCommand {
     /// Reuse a successful Pages deployment with identical site inputs.
     #[command(name = "docs-deployment-reuse")]
     DocsDeploymentReuse(DocsDeploymentReuseArgs),
-    /// Retired rolling-preview publisher; always fails closed.
-    ///
-    /// Preview publication is owned by the typed package-release workflow.
-    /// Keeping this command name makes stale callers fail with an actionable
-    /// error instead of reaching an unsafe legacy release/tag mutation path.
-    #[command(name = "publish-preview")]
-    PublishPreview(PublishPreviewArgs),
 }
 
 #[derive(Args, Debug)]
@@ -40,20 +29,6 @@ pub(crate) struct DocsDeploymentReuseArgs {
     environment: String,
     #[arg(long)]
     github_output: bool,
-}
-
-#[derive(Args, Debug)]
-pub(crate) struct PublishPreviewArgs {
-    #[arg(long)]
-    repository: String,
-    #[arg(long, default_value = "preview")]
-    tag: String,
-    #[arg(long)]
-    version: String,
-    #[arg(long)]
-    sha: String,
-    #[arg(long, default_value = "artifacts")]
-    assets: PathBuf,
 }
 
 #[derive(Deserialize)]
@@ -70,7 +45,6 @@ struct DeploymentStatus {
 pub(crate) fn run(command: GithubCommand) -> Result<()> {
     match command {
         GithubCommand::DocsDeploymentReuse(args) => docs_deployment_reuse(args),
-        GithubCommand::PublishPreview(args) => retired_publish_preview(args),
     }
 }
 
@@ -155,12 +129,6 @@ fn has_commit(sha: &str) -> bool {
 fn fetch_commit(sha: &str) -> bool {
     cmd::output_raw(Command::new("git").args(["fetch", "--no-tags", "--depth=1", "origin", sha]))
         .is_ok_and(|result| result.success)
-}
-
-fn retired_publish_preview(_args: PublishPreviewArgs) -> Result<()> {
-    bail!(
-        "github publish-preview is retired and performs no release or tag mutation; use the typed package-release workflow (`mise run release-preview-package`, then `mise run verify-preview-package`)"
-    )
 }
 
 fn write_output(name: &str, value: &str) -> Result<()> {
