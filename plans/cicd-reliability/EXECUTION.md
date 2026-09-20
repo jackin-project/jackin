@@ -45,6 +45,7 @@ Goal: Jackin + upstream Velnor CI/CD — green pre-merge predicts green main, se
 ## Slices landed
 
 - 2026-09-21: PR #1007 blocker fixed — `33b91891` fmt-only (`crates/jackin-xtask/src/desktop/tests.rs`), pushed to `codex/ci-performance-campaign`; xtask unit failed rustfmt --check → ci-required FAILURE. Enabling condition: no pre-commit fmt enforcement. Comment: PR #1007 comment 5752641444. VERIFIED: rerun 35537475111 xtask job success; zero failed jobs at 21:08Z check.
+- 2026-09-21: Slice `diag-harden` → PR #1014 (branch `cicd/integration`, Jackin's integration branch): test-only wire-count actionability + EXECUTION.md. Attempt-2 green confirms transient; attempt-1 preserved.
 
 ## Decisions
 
