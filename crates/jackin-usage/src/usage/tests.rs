@@ -3288,7 +3288,11 @@ fn opencode_auth_and_usage_contract_is_typed_without_secret_identity() {
     let path = dir.path().join("auth.json");
     fs::write(
         &path,
-        serde_json::json!({"opencode-go": {"type": "api", "key": "secret-not-output"}}).to_string(),
+        serde_json::json!({
+            "anthropic": {"type": "api", "key": "unrelated-sentinel"},
+            "opencode-go": {"type": "api", "key": "secret-not-output"}
+        })
+        .to_string(),
     )
     .expect("auth fixture");
     assert_eq!(
@@ -3317,6 +3321,14 @@ fn opencode_auth_and_usage_contract_is_typed_without_secret_identity() {
     )
     .expect("malformed auth fixture");
     load_opencode_api_key(&path).unwrap_err();
+    fs::write(
+        &path,
+        serde_json::json!({"anthropic": {"type": "api", "key": "unrelated-sentinel"}}).to_string(),
+    )
+    .expect("foreign-only auth fixture");
+    let error = load_opencode_api_key(&path).unwrap_err();
+    assert!(error.contains("opencode-go credential is missing"));
+    assert!(!error.contains("unrelated-sentinel"));
 }
 
 #[test]

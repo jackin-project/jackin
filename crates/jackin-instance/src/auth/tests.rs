@@ -2,9 +2,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! Tests for `instance/auth` — tests.
-use super::{Agent, AuthProvisionOutcome, RoleState, validate_sync_source_dir};
+use super::{
+    Agent, AuthProvisionOutcome, RoleState, validate_sync_source_dir,
+    validate_sync_source_dir_for_provider,
+};
 use crate::PrepareResolvers;
-use jackin_config::AuthForwardMode;
+use jackin_config::{AiProvider, AuthForwardMode};
 use jackin_core::JackinPaths;
 use tempfile::tempdir;
 
@@ -82,7 +85,12 @@ fn validate_single_file_agents() {
         validate_sync_source_dir(agent, &dir, temp.path())
             .expect_err("empty credential file must be rejected");
         // Non-empty credential file is accepted.
-        std::fs::write(dir.join(name), "{\"token\":\"x\"}").unwrap();
+        let valid = if agent == Agent::Opencode {
+            r#"{"opencode-go":{"type":"api","key":"x"}}"#
+        } else {
+            "{\"token\":\"x\"}"
+        };
+        std::fs::write(dir.join(name), valid).unwrap();
         validate_sync_source_dir(agent, &dir, temp.path()).unwrap_or_else(|_| {
             panic!("valid {name} must be accepted");
         });
@@ -91,6 +99,48 @@ fn validate_single_file_agents() {
         std::fs::create_dir_all(&bad).unwrap();
         validate_sync_source_dir(agent, &bad, temp.path()).unwrap_err();
     }
+}
+
+#[test]
+fn opencode_source_validation_is_provider_bound_and_rejects_ambiguous_or_db_layouts() {
+    let temp = tempdir().unwrap();
+    let source = temp.path().join("opencode");
+    std::fs::create_dir_all(&source).unwrap();
+    std::fs::write(
+        source.join("auth.json"),
+        r#"{
+            "anthropic":{"type":"api","key":"anthropic-sentinel"},
+            "opencode-go":{"type":"api","key":"opencode-sentinel"}
+        }"#,
+    )
+    .unwrap();
+
+    validate_sync_source_dir_for_provider(
+        Agent::Opencode,
+        Some(AiProvider::Anthropic),
+        &source,
+        temp.path(),
+    )
+    .unwrap();
+    validate_sync_source_dir_for_provider(
+        Agent::Opencode,
+        Some(AiProvider::Opencode),
+        &source,
+        temp.path(),
+    )
+    .unwrap();
+    let error = validate_sync_source_dir(Agent::Opencode, &source, temp.path()).unwrap_err();
+    assert!(error.to_string().contains("source-bound"), "{error}");
+
+    std::fs::write(source.join("opencode.db"), b"database fixture").unwrap();
+    let error = validate_sync_source_dir_for_provider(
+        Agent::Opencode,
+        Some(AiProvider::Anthropic),
+        &source,
+        temp.path(),
+    )
+    .unwrap_err();
+    assert!(error.to_string().contains("database"), "{error}");
 }
 
 #[test]
@@ -490,19 +540,54 @@ fn sync_source_dir_copies_direct_opencode_auth_json() {
     let auth_json = temp.path().join("auth.json");
     let source_dir = temp.path().join("opencode-work");
     std::fs::create_dir_all(&source_dir).unwrap();
-    let expected = r#"{"provider":{"credential":"workspace"}}"#;
-    std::fs::write(source_dir.join("auth.json"), expected).unwrap();
+    std::fs::write(
+        source_dir.join("auth.json"),
+        r#"{"opencode-go":{"type":"api","key":"workspace"},"anthropic":{"type":"api","key":"unrelated"}}"#,
+    )
+    .unwrap();
 
     let (outcome, mounted) = RoleState::provision_opencode_auth_from_source_dir(
         &auth_json,
         AuthForwardMode::Sync,
         &source_dir,
+        Some(AiProvider::Opencode),
     )
     .unwrap();
 
     assert_eq!(outcome, AuthProvisionOutcome::Synced);
     assert_eq!(mounted.as_deref(), Some(auth_json.as_path()));
-    assert_eq!(std::fs::read_to_string(&auth_json).unwrap(), expected);
+    let staged: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&auth_json).unwrap()).unwrap();
+    assert_eq!(
+        staged.pointer("/opencode-go/key").and_then(|v| v.as_str()),
+        Some("workspace")
+    );
+    assert!(staged.get("anthropic").is_none());
+}
+
+#[test]
+fn sync_source_dir_stages_only_selected_opencode_entry() {
+    let temp = tempdir().unwrap();
+    let auth_json = temp.path().join("auth.json");
+    let source_dir = temp.path().join("opencode-work");
+    std::fs::create_dir_all(&source_dir).unwrap();
+    std::fs::write(
+        source_dir.join("auth.json"),
+        r#"{"openai":{"type":"api","key":"openai-sentinel"},"zai":{"type":"api","key":"zai-sentinel"}}"#,
+    )
+    .unwrap();
+
+    RoleState::provision_opencode_auth_from_source_dir(
+        &auth_json,
+        AuthForwardMode::Sync,
+        &source_dir,
+        Some(AiProvider::Zai),
+    )
+    .unwrap();
+    let staged = std::fs::read_to_string(&auth_json).unwrap();
+    assert!(staged.contains("zai-sentinel"));
+    assert!(!staged.contains("openai-sentinel"));
+    assert!(!staged.contains("opencode-go"));
 }
 
 #[test]

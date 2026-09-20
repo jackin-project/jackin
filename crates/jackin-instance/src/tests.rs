@@ -782,7 +782,7 @@ fn opencode_binding_uses_selected_xdg_data_and_cache_roots() {
     std::fs::create_dir_all(&cache).unwrap();
     std::fs::write(
         data.join("opencode/auth.json"),
-        r#"{"https://opencode.ai/api":{"key":"fixture-key"}}"#,
+        r#"{"opencode-go":{"type":"api","key":"fixture-key"}}"#,
     )
     .unwrap();
 
@@ -815,9 +815,21 @@ fn opencode_binding_uses_selected_xdg_data_and_cache_roots() {
         .expect("selected OpenCode slot missing");
     assert_eq!(slot.cache_source_dir.as_deref(), Some(cache.as_path()));
     assert_eq!(slot.container_cache_rel.as_deref(), Some(".cache/opencode"));
+    let staged: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(state.root.join("opencode/auth.json")).unwrap(),
+    )
+    .unwrap();
     assert_eq!(
-        std::fs::read_to_string(state.root.join("opencode/auth.json")).unwrap(),
-        r#"{"https://opencode.ai/api":{"key":"fixture-key"}}"#
+        staged
+            .pointer("/opencode-go/type")
+            .and_then(|value| value.as_str()),
+        Some("api")
+    );
+    assert_eq!(
+        staged
+            .pointer("/opencode-go/key")
+            .and_then(|value| value.as_str()),
+        Some("fixture-key")
     );
 }
 

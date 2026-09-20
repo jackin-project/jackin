@@ -23,7 +23,8 @@ use super::{
     HostMissingReason, RoleState,
 };
 use crate::{InstanceError, SyncSourceValidationError};
-use jackin_config::{AuthForwardMode, GithubAuthMode};
+use anyhow::Context;
+use jackin_config::{AiProvider, AuthForwardMode, GithubAuthMode};
 use jackin_core::Agent;
 use std::path::Path;
 
@@ -41,6 +42,20 @@ use std::path::Path;
 /// otherwise unused.
 pub fn validate_sync_source_dir(
     agent: Agent,
+    source_dir: &Path,
+    host_home: &Path,
+) -> Result<(), SyncSourceValidationError> {
+    validate_sync_source_dir_for_provider(agent, None, source_dir, host_home)
+}
+
+/// Validate one sync source with the selected provider identity when the
+/// agent has a multi-provider store. `OpenCode`'s `auth.json` is a single
+/// source file containing several independent credentials; the provider must
+/// therefore travel with the account binding or an ambiguous source is
+/// rejected before launch.
+pub(crate) fn validate_sync_source_dir_for_provider(
+    agent: Agent,
+    provider: Option<AiProvider>,
     source_dir: &Path,
     host_home: &Path,
 ) -> Result<(), SyncSourceValidationError> {
@@ -68,7 +83,7 @@ pub fn validate_sync_source_dir(
         }
         Agent::Codex => require_credential_file(source_dir, "auth.json", "Codex"),
         Agent::Grok => require_credential_file(source_dir, "auth.json", "Grok"),
-        Agent::Opencode => require_credential_file(source_dir, "auth.json", "OpenCode"),
+        Agent::Opencode => validate_opencode_source_dir(source_dir, provider),
         // Sync carries prefs only; the OAuth grant stays in the host Keychain.
         Agent::Antigravity => require_credential_file(source_dir, "settings.json", "Antigravity"),
         Agent::Gemini => require_credential_file(source_dir, "oauth_creds.json", "Gemini"),
@@ -117,6 +132,105 @@ pub fn validate_sync_source_dir(
                 )))
             }
         }
+    }
+}
+
+/// Validate the exact `OpenCode` credential that will be staged. Database
+/// credentials are enumerated for audit visibility but are not launchable by
+/// the profile provisioner, so accepting them here would create an account
+/// that cannot be bound to a source identity.
+fn validate_opencode_source_dir(
+    source_dir: &Path,
+    provider: Option<AiProvider>,
+) -> Result<(), SyncSourceValidationError> {
+    if source_dir.join("opencode.db").is_file() {
+        return Err(SyncSourceValidationError::new(
+            "OpenCode database credentials are unsupported; select a source folder with auth.json only.",
+        ));
+    }
+    let auth_path = source_dir.join("auth.json");
+    let content = std::fs::read_to_string(&auth_path).map_err(|_| {
+        SyncSourceValidationError::new(format!(
+            "Not an OpenCode config folder: expected auth.json directly inside {}.",
+            source_dir.display()
+        ))
+    })?;
+    if content.trim().is_empty() {
+        return Err(SyncSourceValidationError::new(format!(
+            "OpenCode credential auth.json in {} is empty.",
+            source_dir.display()
+        )));
+    }
+    let value = serde_json::from_str::<serde_json::Value>(&content).map_err(|_| {
+        SyncSourceValidationError::new(
+            "OpenCode auth.json is malformed; no credentials were selected.",
+        )
+    })?;
+    select_opencode_auth_entry(&value, provider)
+        .map(|_| ())
+        .map_err(|reason| {
+            SyncSourceValidationError::new(format!(
+                "OpenCode auth.json cannot be selected safely: {reason}."
+            ))
+        })
+}
+
+/// Return the one provider entry that may cross the role-state boundary.
+/// Values remain borrowed so validation does not copy secrets.
+fn select_opencode_auth_entry(
+    value: &serde_json::Value,
+    provider: Option<AiProvider>,
+) -> Result<(&str, &serde_json::Value), &'static str> {
+    let entries = value
+        .as_object()
+        .ok_or("the top-level value is not an object")?;
+    if let Some(provider) = provider {
+        let key = opencode_provider_key(provider);
+        let entry = entries
+            .get(key)
+            .ok_or("the selected provider credential is missing")?;
+        if !usable_opencode_auth_entry(entry) {
+            return Err("the selected provider credential is empty or unsupported");
+        }
+        return Ok((key, entry));
+    }
+
+    let mut usable = entries
+        .iter()
+        .filter(|(_, entry)| usable_opencode_auth_entry(entry));
+    let first = usable
+        .next()
+        .ok_or("no usable provider credential exists")?;
+    if usable.next().is_some() {
+        return Err("multiple provider credentials require a source-bound identity");
+    }
+    Ok((first.0.as_str(), first.1))
+}
+
+fn opencode_provider_key(provider: AiProvider) -> &'static str {
+    if provider == AiProvider::Opencode {
+        "opencode-go"
+    } else {
+        provider.slug()
+    }
+}
+
+fn usable_opencode_auth_entry(entry: &serde_json::Value) -> bool {
+    let Some(kind) = entry.get("type").and_then(serde_json::Value::as_str) else {
+        return false;
+    };
+    match kind {
+        "api" => entry
+            .get("key")
+            .and_then(serde_json::Value::as_str)
+            .is_some_and(|key| !key.trim().is_empty()),
+        "oauth" => ["access", "refresh"].into_iter().any(|field| {
+            entry
+                .get(field)
+                .and_then(serde_json::Value::as_str)
+                .is_some_and(|token| !token.trim().is_empty())
+        }),
+        _ => false,
     }
 }
 
@@ -867,6 +981,7 @@ impl RoleState {
             auth_json,
             mode,
             &host_home.join(".local/share/opencode/auth.json"),
+            None,
         )
     }
 
@@ -874,15 +989,68 @@ impl RoleState {
         auth_json: &Path,
         mode: AuthForwardMode,
         source_dir: &Path,
+        provider: Option<AiProvider>,
     ) -> anyhow::Result<(AuthProvisionOutcome, Option<std::path::PathBuf>)> {
-        Self::provision_opencode_auth_from_path(auth_json, mode, &source_dir.join("auth.json"))
+        Self::provision_opencode_auth_from_path(
+            auth_json,
+            mode,
+            &source_dir.join("auth.json"),
+            provider,
+        )
     }
 
     fn provision_opencode_auth_from_path(
         auth_json: &Path,
         mode: AuthForwardMode,
         host_auth_json: &Path,
+        provider: Option<AiProvider>,
     ) -> anyhow::Result<(AuthProvisionOutcome, Option<std::path::PathBuf>)> {
+        if mode == AuthForwardMode::Sync {
+            reject_symlink(auth_json)?;
+            let content = match std::fs::read_to_string(host_auth_json) {
+                Ok(content) if content.trim().is_empty() => {
+                    if auth_json.exists() {
+                        repair_permissions(auth_json);
+                    }
+                    return Ok((
+                        AuthProvisionOutcome::HostMissing,
+                        auth_json.exists().then(|| auth_json.to_path_buf()),
+                    ));
+                }
+                Ok(content) => content,
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                    if auth_json.exists() {
+                        repair_permissions(auth_json);
+                    }
+                    return Ok((
+                        AuthProvisionOutcome::HostMissing,
+                        auth_json.exists().then(|| auth_json.to_path_buf()),
+                    ));
+                }
+                Err(error) => {
+                    return Err(
+                        anyhow::Error::new(error).context("failed to read OpenCode auth.json")
+                    );
+                }
+            };
+            let value = serde_json::from_str::<serde_json::Value>(&content)
+                .map_err(|_| anyhow::anyhow!("OpenCode auth.json is malformed"))?;
+            let (key, entry) = select_opencode_auth_entry(&value, provider).map_err(|reason| {
+                anyhow::anyhow!("OpenCode auth.json cannot be selected safely: {reason}")
+            })?;
+            let mut selected = serde_json::Map::new();
+            selected.insert(key.to_owned(), entry.clone());
+            let selected = serde_json::to_vec(&serde_json::Value::Object(selected))
+                .context("serializing selected OpenCode credential")?;
+            let unchanged = std::fs::read(auth_json).is_ok_and(|existing| existing == selected);
+            if unchanged {
+                repair_permissions(auth_json);
+            } else {
+                write_private_bytes(auth_json, &selected)
+                    .context("writing selected OpenCode credential")?;
+            }
+            return Ok((AuthProvisionOutcome::Synced, Some(auth_json.to_path_buf())));
+        }
         provision_single_file_credential(
             auth_json,
             host_auth_json,
