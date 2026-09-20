@@ -310,6 +310,51 @@ fn rotated_catalog_revision_rejects_in_flight_broker_result() {
 }
 
 #[test]
+fn broker_catalog_admits_current_identity_and_rejects_stale_identity() {
+    use crate::host::{CanonicalAccountIdentity, CanonicalAccountSubject, HostSurfaceId};
+
+    let binding = ValidatedCredentialBinding {
+        surface: HostSurfaceId::Claude,
+        identity: Some(CanonicalAccountIdentity {
+            surface: HostSurfaceId::Claude,
+            subject: CanonicalAccountSubject::ProviderId("provider-account".to_owned()),
+        }),
+        source_id: "source-0001".to_owned(),
+        capability_id: "capability-0001".to_owned(),
+        provenance: BTreeSet::from(["account work".to_owned()]),
+        source: ValidatedCredentialSource::Capability,
+    };
+    let stale = capability_for_binding(&binding, Some("generation-stale"));
+    let current = capability_for_binding(&binding, Some("generation-current"));
+    assert_ne!(stale, current);
+
+    let temp = tempfile::tempdir().unwrap();
+    let executor: Arc<dyn UsageProviderExecutor> = Arc::new(CountingExecutor {
+        calls: AtomicUsize::new(0),
+    });
+    let client = ensure_usage_broker_with_executor(
+        UsageBrokerConfig::for_data_dir(temp.path().to_owned()),
+        executor,
+    )
+    .unwrap();
+    client
+        .reconcile_catalog(
+            "generation-current".to_owned(),
+            vec![UsageCatalogEntry {
+                capability: current.clone(),
+                revision: "credential-current".to_owned(),
+            }],
+        )
+        .unwrap();
+
+    assert_eq!(client.current(current).unwrap().generation, 0);
+    assert_eq!(
+        client.current(stale).unwrap_err().kind,
+        UsageCoordinationErrorKind::CatalogRevoked
+    );
+}
+
+#[test]
 fn usage_broker_twenty_clients_join_one_generation_and_probe() {
     let temp = tempfile::tempdir().unwrap();
     let executor = Arc::new(CountingExecutor {
