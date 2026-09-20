@@ -6,7 +6,7 @@ use super::*;
 use tempfile::tempdir;
 
 #[test]
-fn manifest_v3_backend_roundtrips_and_legacy_v1_deserializes() {
+fn manifest_v3_backend_roundtrips_and_omitted_backend_deserializes() {
     let manifest = InstanceManifest::new_with_backend(
         NewInstanceManifest {
             container_base: "jackin-x",
@@ -43,8 +43,7 @@ fn manifest_v3_backend_roundtrips_and_legacy_v1_deserializes() {
         Some(BackendResources::AppleContainer(_))
     ));
 
-    // A legacy v1 manifest (no `backend` key) still deserializes — `backend`
-    // defaults to None so every pre-existing on-disk instance keeps loading.
+    // `backend` is optional for v3 Docker manifests.
     let mut obj = serde_json::to_value(&manifest)
         .unwrap()
         .as_object()
@@ -56,7 +55,7 @@ fn manifest_v3_backend_roundtrips_and_legacy_v1_deserializes() {
 }
 
 #[test]
-fn admitted_instances_default_empty_and_validate_tabs() {
+fn admitted_instances_empty_is_explicit_and_validate_tabs() {
     let mut manifest = sample_manifest();
     assert!(manifest.admitted_instances.is_empty());
     assert!(!manifest.admits_instance("claude-work"));
@@ -96,16 +95,61 @@ fn admitted_instances_default_empty_and_validate_tabs() {
         manifest
     );
 
-    // Manifests written before admission tracking still deserialize —
-    // `admitted_instances` defaults to empty ("unknown", not "deny all").
+    // Admission is required by the v3 manifest schema; omission is malformed.
     let mut obj = serde_json::to_value(&manifest)
         .unwrap()
         .as_object()
         .unwrap()
         .clone();
     obj.remove("admitted_instances");
-    let legacy: InstanceManifest = serde_json::from_value(serde_json::Value::Object(obj)).unwrap();
-    assert!(legacy.admitted_instances.is_empty());
+    let error =
+        serde_json::from_value::<InstanceManifest>(serde_json::Value::Object(obj)).unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("missing field `admitted_instances`")
+    );
+}
+
+#[test]
+fn manifest_read_rejects_pre_v3_versions() {
+    let temp = tempdir().unwrap();
+    let state_dir = temp.path();
+    std::fs::create_dir_all(state_dir.join(".jackin")).unwrap();
+    let mut value = serde_json::to_value(sample_manifest()).unwrap();
+    value["version"] = serde_json::json!(2);
+    std::fs::write(
+        state_dir.join(".jackin/instance.json"),
+        serde_json::to_vec(&value).unwrap(),
+    )
+    .unwrap();
+
+    let error = InstanceManifest::read(state_dir).unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("unsupported instance manifest version 2")
+    );
+}
+
+#[test]
+fn manifest_read_rejects_malformed_admission_records() {
+    let temp = tempdir().unwrap();
+    let state_dir = temp.path();
+    std::fs::create_dir_all(state_dir.join(".jackin")).unwrap();
+    let mut value = serde_json::to_value(sample_manifest()).unwrap();
+    value["admitted_instances"] = serde_json::json!([{
+        "config_id": "claude-work",
+        "account_id": "work"
+    }]);
+    std::fs::write(
+        state_dir.join(".jackin/instance.json"),
+        serde_json::to_vec(&value).unwrap(),
+    )
+    .unwrap();
+
+    let error = InstanceManifest::read_optional(state_dir).unwrap_err();
+    assert!(format!("{error:#}").contains("missing field `agent`"));
 }
 
 fn sample_manifest() -> InstanceManifest {

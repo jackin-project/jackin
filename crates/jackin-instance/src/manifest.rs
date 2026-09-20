@@ -136,9 +136,8 @@ pub struct InstanceManifest {
     /// Instances admitted at launch, in launch order. Host-side tab
     /// validation checks spawned tabs against this set so a tab can never
     /// reference an instance (or account) the launch did not authorize.
-    /// Empty for manifests written before admission tracking — "unknown",
-    /// not "deny all".
-    #[serde(default)]
+    /// The field is required by the v3 manifest contract. An empty vector is
+    /// an explicit v3 admission set, never a legacy-manifest fallback.
     pub admitted_instances: Vec<AdmittedInstance>,
 }
 
@@ -255,16 +254,12 @@ impl InstanceManifest {
 
     /// Record the launch-admitted instances, in launch order. Called by the
     /// host launch path once instances resolve; kept out of
-    /// [`NewInstanceManifest`] so admission stays optional for restore and
-    /// test fixtures.
+    /// [`NewInstanceManifest`] so admission can be staged before persistence.
     pub fn set_admitted_instances(&mut self, admitted: impl IntoIterator<Item = AdmittedInstance>) {
         self.admitted_instances = admitted.into_iter().collect();
     }
 
-    /// Whether `config_id` was admitted at launch. An empty admission set
-    /// (a manifest written before admission tracking) admits nothing here —
-    /// callers that must distinguish "unknown" from "denied" check
-    /// `admitted_instances.is_empty()` first.
+    /// Whether `config_id` was admitted at launch.
     pub fn admits_instance(&self, config_id: &str) -> bool {
         self.admitted_instances
             .iter()
@@ -372,8 +367,7 @@ impl InstanceManifest {
         let path = state_dir.join(".jackin/instance.json");
         let bytes = std::fs::read(&path)
             .with_context(|| format!("reading instance manifest at {}", path.display()))?;
-        serde_json::from_slice(&bytes)
-            .with_context(|| format!("parsing instance manifest at {}", path.display()))
+        Self::parse_and_validate(&bytes, &path)
     }
 
     /// `Ok(None)` when the manifest file does not exist; `Err(_)` for
@@ -383,13 +377,23 @@ impl InstanceManifest {
     pub fn read_optional(state_dir: &Path) -> anyhow::Result<Option<Self>> {
         let path = state_dir.join(".jackin/instance.json");
         match std::fs::read(&path) {
-            Ok(bytes) => Ok(Some(serde_json::from_slice(&bytes).with_context(|| {
-                format!("parsing instance manifest at {}", path.display())
-            })?)),
+            Ok(bytes) => Ok(Some(Self::parse_and_validate(&bytes, &path)?)),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
             Err(error) => Err(anyhow::Error::new(error)
                 .context(format!("reading instance manifest at {}", path.display()))),
         }
+    }
+
+    fn parse_and_validate(bytes: &[u8], path: &Path) -> anyhow::Result<Self> {
+        let manifest: Self = serde_json::from_slice(bytes)
+            .with_context(|| format!("parsing instance manifest at {}", path.display()))?;
+        anyhow::ensure!(
+            manifest.version == INSTANCE_MANIFEST_VERSION,
+            "unsupported instance manifest version {} at {}",
+            manifest.version,
+            path.display()
+        );
+        Ok(manifest)
     }
 
     /// Collapses [`Self::read_optional`]'s three outcomes into the two
