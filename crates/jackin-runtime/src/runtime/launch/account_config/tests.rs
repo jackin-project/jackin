@@ -848,6 +848,88 @@ fn journal_persist_failures_after_renames_restore_previous_directory() {
 
 #[cfg(unix)]
 #[test]
+fn forged_prepared_journal_cannot_delete_a_sibling_directory() {
+    let temp = tempfile::tempdir().unwrap();
+    let parent = temp.path().join("home");
+    let keep = parent.join("keep");
+    std::fs::create_dir_all(keep.join("nested")).unwrap();
+    std::fs::write(keep.join("nested/important.txt"), b"keep this").unwrap();
+
+    let publication = begin_private_config_publication(temp.path(), &parent).unwrap();
+    let transaction = PrivateConfigTransaction {
+        schema_version: PRIVATE_CONFIG_TRANSACTION_VERSION,
+        target: ".codex".into(),
+        transaction_id: "1-0".into(),
+        staged: "keep".into(),
+        previous: None,
+        cleanup: None,
+        phase: PrivateConfigTransactionPhase::Prepared,
+    };
+    private_config_persist_transaction(&publication, &transaction).unwrap();
+
+    let error = private_config_recover_transaction(&publication).unwrap_err();
+    assert!(
+        format!("{error:#}").contains("staged path is not bound"),
+        "{error:#}"
+    );
+    assert_eq!(
+        std::fs::read(keep.join("nested/important.txt")).unwrap(),
+        b"keep this"
+    );
+    assert!(parent.join(PRIVATE_CONFIG_TRANSACTION_FILE).is_file());
+}
+
+#[cfg(unix)]
+#[test]
+fn first_publication_cleanup_recovers_after_stage_unlink_before_sync() {
+    let temp = tempfile::tempdir().unwrap();
+    let (config, instances) =
+        codex_fixture(AiProvider::Moonshot, "k3", "https://provider.example/v1");
+
+    {
+        let _failure = inject_private_config_failure(
+            PrivateConfigFailurePoint::SimulatedCrashAfterFirstPublicationCleanup,
+        );
+        let error = configure_for_test(temp.path(), &config, &instances).unwrap_err();
+        assert!(
+            format!("{error:#}").contains("first-publication cleanup"),
+            "{error:#}"
+        );
+    }
+
+    let directory = temp.path().join("home/.codex");
+    let parent = directory.parent().unwrap();
+    assert!(!directory.exists());
+    assert!(parent.join(PRIVATE_CONFIG_TRANSACTION_FILE).is_file());
+    let journal: PrivateConfigTransaction = serde_json::from_slice(
+        &std::fs::read(parent.join(PRIVATE_CONFIG_TRANSACTION_FILE)).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        journal.phase,
+        PrivateConfigTransactionPhase::FirstPublicationCleanupPrepared
+    );
+    assert!(!std::fs::read_dir(parent).unwrap().any(|entry| {
+        entry
+            .unwrap()
+            .file_name()
+            .to_string_lossy()
+            .starts_with(".jackin-private-config-stage-")
+    }));
+
+    let publication = begin_private_config_publication(temp.path(), parent).unwrap();
+    private_config_recover_transaction(&publication).unwrap();
+    assert!(!parent.join(PRIVATE_CONFIG_TRANSACTION_FILE).exists());
+    assert!(!directory.exists());
+    drop(publication);
+
+    configure_for_test(temp.path(), &config, &instances).unwrap();
+    assert!(directory.join("config.toml").is_file());
+    assert_no_private_config_swap_artifacts(parent);
+}
+
+#[cfg(unix)]
+#[test]
 fn previous_moved_recovery_is_idempotent_after_previous_deletion() {
     let temp = tempfile::tempdir().unwrap();
     let (config, instances) =
@@ -857,11 +939,17 @@ fn previous_moved_recovery_is_idempotent_after_previous_deletion() {
     let before = std::fs::read(directory.join("config.toml")).unwrap();
     let parent = directory.parent().unwrap();
     let publication = begin_private_config_publication(temp.path(), parent).unwrap();
+    let transaction_id = "1-0";
     let transaction = PrivateConfigTransaction {
         schema_version: PRIVATE_CONFIG_TRANSACTION_VERSION,
         target: ".codex".into(),
-        staged: ".jackin-private-config-stage-already-gone".into(),
-        previous: Some(".jackin-private-config-previous-already-gone".into()),
+        transaction_id: transaction_id.into(),
+        staged: private_config_artifact_name("stage", ".codex", transaction_id),
+        previous: Some(private_config_artifact_name(
+            "previous",
+            ".codex",
+            transaction_id,
+        )),
         cleanup: None,
         phase: PrivateConfigTransactionPhase::PreviousMoved,
     };
@@ -920,9 +1008,9 @@ fn installed_recovery_quarantines_surviving_target_before_restoring_previous() {
     let parent = directory.parent().unwrap();
     let publication = begin_private_config_publication(temp.path(), parent).unwrap();
     let target = private_config_name(".codex").unwrap();
-    let previous_name =
-        private_config_allocate_sibling(&publication.parent, "jackin-private-config-previous")
-            .unwrap();
+    let transaction_id =
+        private_config_allocate_transaction_id(&publication.parent, ".codex").unwrap();
+    let previous_name = private_config_artifact_name("previous", ".codex", &transaction_id);
     let previous = private_config_name(&previous_name).unwrap();
     renameat(
         &publication.parent,
@@ -931,7 +1019,7 @@ fn installed_recovery_quarantines_surviving_target_before_restoring_previous() {
         previous.as_c_str(),
     )
     .unwrap();
-    let mut staged = private_config_stage(&publication.parent).unwrap();
+    let mut staged = private_config_stage(&publication.parent, ".codex", &transaction_id).unwrap();
     private_config_write_file_at(
         &staged.directory,
         "config.toml",
@@ -952,6 +1040,7 @@ fn installed_recovery_quarantines_surviving_target_before_restoring_previous() {
     let transaction = PrivateConfigTransaction {
         schema_version: PRIVATE_CONFIG_TRANSACTION_VERSION,
         target: ".codex".into(),
+        transaction_id,
         staged: staged_name,
         previous: Some(previous_name),
         cleanup: None,

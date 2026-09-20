@@ -35,7 +35,7 @@ use nix::sys::stat::{Mode, SFlag, fchmod, fstatat, mkdirat};
 use nix::unistd::{UnlinkatFlags, unlinkat};
 
 static PRIVATE_CONFIG_SWAP_COUNTER: AtomicU64 = AtomicU64::new(0);
-const PRIVATE_CONFIG_TRANSACTION_VERSION: u8 = 2;
+const PRIVATE_CONFIG_TRANSACTION_VERSION: u8 = 3;
 const PRIVATE_CONFIG_TRANSACTION_FILE: &str = ".jackin-private-config-transaction";
 #[cfg(unix)]
 const PRIVATE_CONFIG_LOCK_FILE: &str = ".jackin-private-config-lock";
@@ -53,6 +53,8 @@ enum PrivateConfigFailurePoint {
     #[cfg(test)]
     SimulatedCrashDuringRollbackCleanup,
     #[cfg(test)]
+    SimulatedCrashAfterFirstPublicationCleanup,
+    #[cfg(test)]
     JournalAfterPreviousMoved,
     #[cfg(test)]
     JournalAfterInstalled,
@@ -62,6 +64,7 @@ enum PrivateConfigFailurePoint {
 struct PrivateConfigTransaction {
     schema_version: u8,
     target: String,
+    transaction_id: String,
     staged: String,
     previous: Option<String>,
     cleanup: Option<String>,
@@ -71,6 +74,7 @@ struct PrivateConfigTransaction {
 #[derive(serde::Deserialize, serde::Serialize, Clone, Copy, Debug, Eq, PartialEq)]
 enum PrivateConfigTransactionPhase {
     Prepared,
+    FirstPublicationCleanupPrepared,
     PreviousMoved,
     Installed,
     RollbackPrepared,
@@ -92,6 +96,9 @@ fn maybe_inject_private_config_failure(point: PrivateConfigFailurePoint) -> anyh
     if PRIVATE_CONFIG_FAILURE.with(|failure| {
         let failure = failure.get();
         failure == Some(point)
+            || (matches!(point, PrivateConfigFailurePoint::AfterPreviousRename)
+                && failure
+                    == Some(PrivateConfigFailurePoint::SimulatedCrashAfterFirstPublicationCleanup))
             || (matches!(point, PrivateConfigFailurePoint::AfterInstall)
                 && failure == Some(PrivateConfigFailurePoint::SimulatedCrashDuringRollbackCleanup))
     }) {
@@ -116,6 +123,18 @@ fn maybe_inject_private_config_cleanup_failure() -> anyhow::Result<()> {
 }
 
 #[cfg(unix)]
+fn maybe_inject_private_config_after_cleanup_failure() -> anyhow::Result<()> {
+    #[cfg(test)]
+    if PRIVATE_CONFIG_FAILURE.with(|failure| {
+        failure.get() == Some(PrivateConfigFailurePoint::SimulatedCrashAfterFirstPublicationCleanup)
+    }) {
+        anyhow::bail!("simulated process crash after first-publication cleanup");
+    }
+
+    Ok(())
+}
+
+#[cfg(unix)]
 struct PrivateConfigPublication {
     parent_path: PathBuf,
     parent: File,
@@ -130,6 +149,18 @@ fn private_config_name(name: &str) -> anyhow::Result<CString> {
         "private config entry must be a single file name: {name:?}"
     );
     CString::new(name.as_bytes()).context("private config entry contains NUL")
+}
+
+#[cfg(unix)]
+fn private_config_target_component(name: &str) -> anyhow::Result<CString> {
+    let name = private_config_name(name)?;
+    anyhow::ensure!(
+        name.to_bytes() != PRIVATE_CONFIG_TRANSACTION_FILE.as_bytes()
+            && name.to_bytes() != PRIVATE_CONFIG_LOCK_FILE.as_bytes()
+            && !name.to_bytes().starts_with(b".jackin-private-config-"),
+        "private config target is reserved: {name:?}"
+    );
+    Ok(name)
 }
 
 #[cfg(unix)]
@@ -470,21 +501,70 @@ fn private_config_remove_file_at(directory: &File, name: &str) -> anyhow::Result
 }
 
 #[cfg(unix)]
-fn private_config_allocate_sibling(parent: &File, prefix: &str) -> anyhow::Result<String> {
+fn private_config_artifact_name(kind: &str, target: &str, transaction_id: &str) -> String {
+    format!(".jackin-private-config-{kind}-{target}-{transaction_id}")
+}
+
+#[cfg(unix)]
+fn private_config_validate_transaction_id(transaction_id: &str) -> anyhow::Result<()> {
+    let mut components = transaction_id.split('-');
+    let process_id = components
+        .next()
+        .context("private config transaction has no process id")?
+        .parse::<u32>()
+        .context("private config transaction process id is not numeric")?;
+    let counter = components
+        .next()
+        .context("private config transaction has no counter")?
+        .parse::<u64>()
+        .context("private config transaction counter is not numeric")?;
+    anyhow::ensure!(
+        components.next().is_none(),
+        "private config transaction id has extra components"
+    );
+    anyhow::ensure!(
+        process_id != 0,
+        "private config transaction process id is zero"
+    );
+    anyhow::ensure!(
+        format!("{process_id}-{counter}") == transaction_id,
+        "private config transaction id is not canonical"
+    );
+    Ok(())
+}
+
+#[cfg(unix)]
+fn private_config_allocate_transaction_id(parent: &File, target: &str) -> anyhow::Result<String> {
+    private_config_target_component(target)?;
     for _ in 0..128 {
-        let name = format!(
-            ".{prefix}-{}-{}",
+        let transaction_id = format!(
+            "{}-{}",
             std::process::id(),
             PRIVATE_CONFIG_SWAP_COUNTER.fetch_add(1, Ordering::Relaxed)
         );
-        let name_c = private_config_name(&name)?;
-        match fstatat(parent, name_c.as_c_str(), AtFlags::AT_SYMLINK_NOFOLLOW) {
-            Ok(_) => {}
-            Err(nix::errno::Errno::ENOENT) => return Ok(name),
-            Err(error) => return Err(error.into()),
+        let names = [
+            private_config_artifact_name("stage", target, &transaction_id),
+            private_config_artifact_name("previous", target, &transaction_id),
+            private_config_artifact_name("rollback", target, &transaction_id),
+            private_config_artifact_name("previous-cleanup", target, &transaction_id),
+        ];
+        let mut available = true;
+        for name in names {
+            let name = private_config_name(&name)?;
+            match fstatat(parent, name.as_c_str(), AtFlags::AT_SYMLINK_NOFOLLOW) {
+                Ok(_) => {
+                    available = false;
+                    break;
+                }
+                Err(nix::errno::Errno::ENOENT) => {}
+                Err(error) => return Err(error.into()),
+            }
+        }
+        if available {
+            return Ok(transaction_id);
         }
     }
-    anyhow::bail!("could not allocate a private config swap path")
+    anyhow::bail!("could not allocate a private config transaction id")
 }
 
 #[cfg(unix)]
@@ -512,49 +592,96 @@ impl Drop for PrivateConfigStage<'_> {
 }
 
 #[cfg(unix)]
-fn private_config_stage(parent: &File) -> anyhow::Result<PrivateConfigStage<'_>> {
-    for _ in 0..128 {
-        let name = private_config_name(&format!(
-            ".jackin-private-config-stage-{}-{}",
-            std::process::id(),
-            PRIVATE_CONFIG_SWAP_COUNTER.fetch_add(1, Ordering::Relaxed)
-        ))?;
-        match mkdirat(parent, name.as_c_str(), Mode::from_bits_truncate(0o700)) {
-            Ok(()) => {
-                let Some(directory) = open_private_config_directory(parent, name.as_c_str())?
-                else {
-                    anyhow::bail!("created private config stage disappeared");
-                };
-                return Ok(PrivateConfigStage {
-                    parent,
-                    name,
-                    directory,
-                    armed: true,
-                });
-            }
-            Err(nix::errno::Errno::EEXIST) => {}
-            Err(error) => return Err(error.into()),
-        }
-    }
-    anyhow::bail!("could not allocate a private config staging directory")
+fn private_config_stage<'a>(
+    parent: &'a File,
+    target: &str,
+    transaction_id: &str,
+) -> anyhow::Result<PrivateConfigStage<'a>> {
+    private_config_validate_transaction_id(transaction_id)?;
+    let name = private_config_name(&private_config_artifact_name(
+        "stage",
+        target,
+        transaction_id,
+    ))?;
+    mkdirat(parent, name.as_c_str(), Mode::from_bits_truncate(0o700))
+        .context("create private config staging directory")?;
+    let Some(directory) = open_private_config_directory(parent, name.as_c_str())? else {
+        anyhow::bail!("created private config stage disappeared");
+    };
+    Ok(PrivateConfigStage {
+        parent,
+        name,
+        directory,
+        armed: true,
+    })
 }
 
 #[cfg(unix)]
 fn private_config_transaction_names(
     transaction: &PrivateConfigTransaction,
 ) -> anyhow::Result<(CString, CString, Option<CString>, Option<CString>)> {
-    let target = private_config_name(&transaction.target)?;
-    let staged = private_config_name(&transaction.staged)?;
+    let target = private_config_target_component(&transaction.target)?;
+    private_config_validate_transaction_id(&transaction.transaction_id)?;
+    let expected_staged =
+        private_config_artifact_name("stage", &transaction.target, &transaction.transaction_id);
+    anyhow::ensure!(
+        transaction.staged == expected_staged,
+        "private config transaction staged path is not bound to its target and id"
+    );
+    let staged = private_config_name(&expected_staged)?;
+    let expected_previous =
+        private_config_artifact_name("previous", &transaction.target, &transaction.transaction_id);
     let previous = transaction
         .previous
         .as_deref()
-        .map(private_config_name)
+        .map(|name| {
+            anyhow::ensure!(
+                name == expected_previous,
+                "private config transaction previous path is not bound to its target and id"
+            );
+            private_config_name(name)
+        })
         .transpose()?;
-    let cleanup = transaction
-        .cleanup
-        .as_deref()
-        .map(private_config_name)
-        .transpose()?;
+    let cleanup_kind = match transaction.phase {
+        PrivateConfigTransactionPhase::RollbackPrepared
+        | PrivateConfigTransactionPhase::RollbackTargetQuarantined
+        | PrivateConfigTransactionPhase::RollbackTargetRemoved
+        | PrivateConfigTransactionPhase::RollbackRestored => Some("rollback"),
+        PrivateConfigTransactionPhase::PreviousCleanupPrepared
+        | PrivateConfigTransactionPhase::PreviousQuarantined => Some("previous-cleanup"),
+        PrivateConfigTransactionPhase::Prepared
+        | PrivateConfigTransactionPhase::FirstPublicationCleanupPrepared
+        | PrivateConfigTransactionPhase::PreviousMoved
+        | PrivateConfigTransactionPhase::Installed => None,
+    };
+    let cleanup = if let Some(kind) = cleanup_kind {
+        let expected =
+            private_config_artifact_name(kind, &transaction.target, &transaction.transaction_id);
+        anyhow::ensure!(
+            transaction.cleanup.as_deref() == Some(expected.as_str()),
+            "private config transaction cleanup path is not bound to its target, id, and phase"
+        );
+        Some(private_config_name(&expected)?)
+    } else {
+        anyhow::ensure!(
+            transaction.cleanup.is_none(),
+            "private config transaction phase has a cleanup path"
+        );
+        None
+    };
+    match transaction.phase {
+        PrivateConfigTransactionPhase::PreviousMoved
+        | PrivateConfigTransactionPhase::PreviousCleanupPrepared
+        | PrivateConfigTransactionPhase::PreviousQuarantined => anyhow::ensure!(
+            previous.is_some(),
+            "private config transaction phase has no previous path"
+        ),
+        PrivateConfigTransactionPhase::FirstPublicationCleanupPrepared => anyhow::ensure!(
+            previous.is_none(),
+            "first private config publication cleanup has a previous path"
+        ),
+        _ => {}
+    }
     anyhow::ensure!(
         transaction.target != PRIVATE_CONFIG_TRANSACTION_FILE
             && transaction.staged != PRIVATE_CONFIG_TRANSACTION_FILE
@@ -598,6 +725,7 @@ fn private_config_persist_transaction(
             maybe_inject_private_config_failure(PrivateConfigFailurePoint::JournalAfterInstalled)?;
         }
         PrivateConfigTransactionPhase::Prepared
+        | PrivateConfigTransactionPhase::FirstPublicationCleanupPrepared
         | PrivateConfigTransactionPhase::RollbackPrepared
         | PrivateConfigTransactionPhase::RollbackTargetQuarantined
         | PrivateConfigTransactionPhase::RollbackTargetRemoved
@@ -626,6 +754,7 @@ fn private_config_remove_tree_and_sync(
     name: &CStr,
 ) -> anyhow::Result<()> {
     private_config_remove_tree_at(&publication.parent, name)?;
+    maybe_inject_private_config_after_cleanup_failure()?;
     publication.parent.sync_all()?;
     Ok(())
 }
@@ -636,10 +765,11 @@ fn private_config_prepare_rollback(
     transaction: &mut PrivateConfigTransaction,
 ) -> anyhow::Result<()> {
     if transaction.cleanup.is_none() {
-        transaction.cleanup = Some(private_config_allocate_sibling(
-            &publication.parent,
-            "jackin-private-config-rollback",
-        )?);
+        transaction.cleanup = Some(private_config_artifact_name(
+            "rollback",
+            &transaction.target,
+            &transaction.transaction_id,
+        ));
     }
     transaction.phase = PrivateConfigTransactionPhase::RollbackPrepared;
     private_config_persist_transaction(publication, transaction)
@@ -727,7 +857,7 @@ fn private_config_rollback_transaction(
 #[cfg(unix)]
 fn private_config_recover_prepared(
     publication: &PrivateConfigPublication,
-    transaction: &PrivateConfigTransaction,
+    transaction: &mut PrivateConfigTransaction,
     target: &CStr,
     staged: &CStr,
     previous: Option<&CStr>,
@@ -768,12 +898,36 @@ fn private_config_recover_prepared(
         }
     } else {
         anyhow::ensure!(
-            target_exists || staged_exists,
-            "prepared private config transaction lost both live and staged directories"
+            !(target_exists && staged_exists),
+            "prepared first private config publication has live and staged directories"
         );
         if staged_exists {
+            transaction.phase = PrivateConfigTransactionPhase::FirstPublicationCleanupPrepared;
+            private_config_persist_transaction(publication, transaction)?;
             private_config_remove_tree_and_sync(publication, staged)?;
+        } else {
+            anyhow::ensure!(
+                target_exists,
+                "prepared private config transaction lost both live and staged directories"
+            );
         }
+    }
+    publication.parent.sync_all()?;
+    Ok(())
+}
+
+#[cfg(unix)]
+fn private_config_recover_first_publication_cleanup(
+    publication: &PrivateConfigPublication,
+    target: &CStr,
+    staged: &CStr,
+) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        !private_config_directory_exists(&publication.parent, target)?,
+        "first private config cleanup found a live target"
+    );
+    if private_config_directory_exists(&publication.parent, staged)? {
+        private_config_remove_tree_and_sync(publication, staged)?;
     }
     publication.parent.sync_all()?;
     Ok(())
@@ -985,12 +1139,19 @@ fn private_config_recover_transaction(
     match transaction.phase {
         PrivateConfigTransactionPhase::Prepared => private_config_recover_prepared(
             publication,
-            &transaction,
+            &mut transaction,
             target.as_c_str(),
             staged.as_c_str(),
             previous.as_deref(),
             cleanup.as_deref(),
         )?,
+        PrivateConfigTransactionPhase::FirstPublicationCleanupPrepared => {
+            private_config_recover_first_publication_cleanup(
+                publication,
+                target.as_c_str(),
+                staged.as_c_str(),
+            )?;
+        }
         PrivateConfigTransactionPhase::PreviousMoved => {
             private_config_recover_previous_moved(
                 publication,
@@ -1068,6 +1229,10 @@ fn private_config_abort_transaction(
     let rollback_result = if installed || target_exists {
         private_config_rollback_transaction(publication, transaction, target, staged, previous)
     } else {
+        if previous.is_none() {
+            transaction.phase = PrivateConfigTransactionPhase::FirstPublicationCleanupPrepared;
+            private_config_persist_transaction(publication, transaction)?;
+        }
         if private_config_directory_exists(&publication.parent, staged)? {
             private_config_remove_tree_and_sync(publication, staged)?;
         }
@@ -1096,6 +1261,8 @@ fn private_config_abort_transaction(
 #[cfg(unix)]
 fn private_config_prepare_stage<'a>(
     parent: &'a File,
+    target: &str,
+    transaction_id: &str,
     existing: Option<&File>,
     files: &[(&'static str, Vec<u8>)],
     remove_files: &[&str],
@@ -1107,7 +1274,7 @@ fn private_config_prepare_stage<'a>(
                 .map(|metadata| metadata.permissions().mode())
         })
         .transpose()?;
-    let staged = private_config_stage(parent)?;
+    let staged = private_config_stage(parent, target, transaction_id)?;
     if let Some(existing) = existing {
         private_config_copy_tree(existing, &staged.directory)?;
         fchmod(
@@ -1134,10 +1301,11 @@ fn private_config_cleanup_previous(
     transaction: &mut PrivateConfigTransaction,
     previous: &CStr,
 ) -> anyhow::Result<()> {
-    transaction.cleanup = Some(private_config_allocate_sibling(
-        &publication.parent,
-        "jackin-private-config-previous-cleanup",
-    )?);
+    transaction.cleanup = Some(private_config_artifact_name(
+        "previous-cleanup",
+        &transaction.target,
+        &transaction.transaction_id,
+    ));
     transaction.phase = PrivateConfigTransactionPhase::PreviousCleanupPrepared;
     if let Err(error) = private_config_persist_transaction(publication, transaction) {
         return Err(
@@ -1198,15 +1366,26 @@ fn publish_private_config_directory_locked(
     remove_files: &[&str],
 ) -> anyhow::Result<()> {
     let target = private_config_target_name(publication, directory)?;
+    let target_name = target
+        .to_str()
+        .context("private config target is not valid UTF-8")?;
     let existing = open_private_config_directory(&publication.parent, target.as_c_str())?;
-    let mut staged =
-        private_config_prepare_stage(&publication.parent, existing.as_ref(), files, remove_files)?;
+    let transaction_id = private_config_allocate_transaction_id(&publication.parent, target_name)?;
+    let mut staged = private_config_prepare_stage(
+        &publication.parent,
+        target_name,
+        &transaction_id,
+        existing.as_ref(),
+        files,
+        remove_files,
+    )?;
 
     let previous_name = if existing.is_some() {
-        Some(private_config_allocate_sibling(
-            &publication.parent,
-            "jackin-private-config-previous",
-        )?)
+        Some(private_config_artifact_name(
+            "previous",
+            target_name,
+            &transaction_id,
+        ))
     } else {
         None
     };
@@ -1217,6 +1396,7 @@ fn publish_private_config_directory_locked(
     let mut transaction = PrivateConfigTransaction {
         schema_version: PRIVATE_CONFIG_TRANSACTION_VERSION,
         target: target.to_string_lossy().into_owned(),
+        transaction_id,
         staged: staged.name.to_string_lossy().into_owned(),
         previous: previous_name,
         cleanup: None,
@@ -1346,7 +1526,7 @@ fn private_config_target_name(
         .file_name()
         .and_then(|name| name.to_str())
         .context("private config directory name is not valid UTF-8")?;
-    private_config_name(target_name)
+    private_config_target_component(target_name)
 }
 
 #[cfg(unix)]
