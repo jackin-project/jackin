@@ -262,50 +262,17 @@ fn bootstrap_scan_accounts(config: &mut AppConfig, home: &Path) -> BootstrapRepo
 }
 
 /// Whether `candidate`'s credential source is already registered under any
-/// ID. Mirrors the `upsert_account` duplicate-source rule (same match arms
-/// as `editor::accounts`, which this module cannot reuse) so scans skip
-/// instead of erroring when the operator renamed an account ID.
+/// ID. Uses the same source fingerprint as `upsert_account` so scans skip
+/// instead of erroring when the operator renamed an account ID or used a path
+/// alias.
 fn scan_source_registered(
     accounts: &BTreeMap<String, crate::AccountConfig>,
     candidate: &crate::AccountConfig,
 ) -> bool {
-    use crate::AccountCredential;
-    accounts.values().any(|registered| {
-        if registered.provider != candidate.provider {
-            return false;
-        }
-        match (&candidate.credential, &registered.credential) {
-            (
-                AccountCredential::Profile {
-                    agent: a,
-                    directory: x,
-                    xdg_roots: rx,
-                },
-                AccountCredential::Profile {
-                    agent: b,
-                    directory: y,
-                    xdg_roots: ry,
-                },
-            ) => a == b && x == y && rx == ry,
-            (
-                AccountCredential::ApiKey {
-                    value: x,
-                    base_url: a,
-                    ..
-                },
-                AccountCredential::ApiKey {
-                    value: y,
-                    base_url: b,
-                    ..
-                },
-            ) => x == y && a == b,
-            (
-                AccountCredential::OAuthToken { agent: a, value: x },
-                AccountCredential::OAuthToken { agent: b, value: y },
-            ) => a == b && x == y,
-            _ => false,
-        }
-    })
+    let candidate_fingerprint = account_source_fingerprint(candidate);
+    accounts
+        .values()
+        .any(|registered| account_source_fingerprint(registered) == candidate_fingerprint)
 }
 
 /// Read an installer `fresh_install` marker without changing it.
@@ -753,6 +720,7 @@ pub(crate) fn recover_pending_publication(config_file: &Path) -> crate::ConfigRe
 fn apply_xdg_profile_candidate(
     editor: &mut ConfigEditor,
     known: &mut BTreeMap<String, crate::AccountConfig>,
+    excluded: &BTreeSet<String>,
     report: &mut BootstrapReport,
     roots: &crate::XdgRoots,
     candidate: Option<(String, crate::AccountConfig)>,
@@ -761,7 +729,9 @@ fn apply_xdg_profile_candidate(
         report.unapplied_zshrc_xdg_roots.push(roots.clone());
         return Ok(());
     };
-    if scan_source_registered(known, &account) {
+    if excluded.contains(&account_source_fingerprint(&account))
+        || scan_source_registered(known, &account)
+    {
         return Ok(());
     }
     if known.contains_key(&id) {
@@ -999,6 +969,7 @@ impl ConfigEditor {
                         apply_xdg_profile_candidate(
                             self,
                             &mut known,
+                            &excluded,
                             &mut report,
                             roots,
                             Some(candidate),
