@@ -280,6 +280,16 @@ mod linux {
         // receive this bit.
         required_exact_rule(&mut rules, &cwd, FULL_WITH_UNIX);
         required_exact_rule(&mut rules, &session_root, FULL_WITH_UNIX);
+        for mount in &config.workspace_mounts {
+            let mount = validate_workspace_mount_boundary(config, mount)?;
+            // `:ro` dsts are still enforced by the bind mount itself; the
+            // Landlock grant may be write-capable.
+            required_exact_rule(&mut rules, &mount, FULL_WITH_UNIX);
+        }
+        for target in &config.worktree_git_targets {
+            let target = validate_worktree_git_target(target)?;
+            required_exact_rule(&mut rules, &target, FULL_WITH_UNIX);
+        }
         if require_runtime_files {
             for path in [
                 format!(
@@ -416,7 +426,7 @@ mod linux {
     /// private mount destination, including a path supplied by a stale or
     /// hostile launch config.
     fn normalize_existing_path(path: &Path) -> Result<PathBuf> {
-        anyhow::ensure!(path.is_absolute(), "isolated session cwd must be absolute");
+        anyhow::ensure!(path.is_absolute(), "isolated session path must be absolute");
         let normalized = jackin_core::container_paths::normalize_path(path);
         match fs::canonicalize(&normalized) {
             Ok(path) => Ok(path),
@@ -428,20 +438,70 @@ mod linux {
     fn validate_cwd_boundary(config: &CapsuleConfig, cwd: &Path) -> Result<PathBuf> {
         let lexical_cwd = jackin_core::container_paths::normalize_path(cwd);
         let cwd = normalize_existing_path(&lexical_cwd)?;
+        ensure_no_protected_overlap(config, "isolated session cwd", &lexical_cwd, &cwd)?;
+        Ok(cwd)
+    }
+
+    fn validate_workspace_mount_boundary(config: &CapsuleConfig, mount: &str) -> Result<PathBuf> {
+        let lexical_mount = jackin_core::container_paths::normalize_path(Path::new(mount));
+        let mount = normalize_existing_path(&lexical_mount)?;
+        ensure_no_protected_overlap(
+            config,
+            "isolated session workspace mount",
+            &lexical_mount,
+            &mount,
+        )?;
+        Ok(mount)
+    }
+
+    /// Aux git dirs live under `/jackin/host` by construction
+    /// (`/jackin/host/<dst>/.git`), a subtree the workspace boundary policy
+    /// can never admit. Grant exactly strict descendants of that root so git
+    /// can follow the worktree gitdir pointer; anything else fails closed.
+    fn validate_worktree_git_target(target: &str) -> Result<PathBuf> {
+        anyhow::ensure!(
+            !target.split('/').any(|component| component == ".."),
+            "isolated session worktree git target {target} must not contain .."
+        );
+        let lexical_target = jackin_core::container_paths::normalize_path(Path::new(target));
+        let target = normalize_existing_path(&lexical_target)?;
+        for candidate in [&lexical_target, &target] {
+            anyhow::ensure!(
+                is_strict_descendant(candidate, Path::new(jackin_core::container_paths::HOST_DIR)),
+                "isolated session worktree git target {} is outside {}",
+                candidate.display(),
+                jackin_core::container_paths::HOST_DIR
+            );
+        }
+        Ok(target)
+    }
+
+    fn is_strict_descendant(path: &Path, root: &Path) -> bool {
+        let path = jackin_core::container_paths::normalize_path(path);
+        let root = jackin_core::container_paths::normalize_path(root);
+        path != root && jackin_core::container_paths::path_is_ancestor_or_equal(&root, &path)
+    }
+
+    fn ensure_no_protected_overlap(
+        config: &CapsuleConfig,
+        label: &str,
+        lexical: &Path,
+        canonical: &Path,
+    ) -> Result<()> {
         for protected_root in ["/home/agent", jackin_core::container_paths::JACKIN_ROOT] {
             let lexical_root =
                 jackin_core::container_paths::normalize_path(Path::new(protected_root));
             anyhow::ensure!(
-                !jackin_core::container_paths::paths_overlap(&lexical_cwd, &lexical_root),
-                "isolated session cwd {} overlaps protected root {}",
-                lexical_cwd.display(),
+                !jackin_core::container_paths::paths_overlap(lexical, &lexical_root),
+                "{label} {} overlaps protected root {}",
+                lexical.display(),
                 lexical_root.display()
             );
             let protected_root = normalize_existing_path(&lexical_root)?;
             anyhow::ensure!(
-                !jackin_core::container_paths::paths_overlap(&cwd, &protected_root),
-                "isolated session cwd {} overlaps protected root {}",
-                cwd.display(),
+                !jackin_core::container_paths::paths_overlap(canonical, &protected_root),
+                "{label} {} overlaps protected root {}",
+                canonical.display(),
                 protected_root.display()
             );
         }
@@ -449,21 +509,21 @@ mod linux {
             for path in paths {
                 let lexical_mount = jackin_core::container_paths::normalize_path(Path::new(path));
                 anyhow::ensure!(
-                    !jackin_core::container_paths::paths_overlap(&lexical_cwd, &lexical_mount),
-                    "isolated session cwd {} overlaps protected mount destination {} for instance {instance}",
-                    lexical_cwd.display(),
+                    !jackin_core::container_paths::paths_overlap(lexical, &lexical_mount),
+                    "{label} {} overlaps protected mount destination {} for instance {instance}",
+                    lexical.display(),
                     lexical_mount.display()
                 );
                 let mount = normalize_existing_path(&lexical_mount)?;
                 anyhow::ensure!(
-                    !jackin_core::container_paths::paths_overlap(&cwd, &mount),
-                    "isolated session cwd {} overlaps protected mount destination {} for instance {instance}",
-                    cwd.display(),
+                    !jackin_core::container_paths::paths_overlap(canonical, &mount),
+                    "{label} {} overlaps protected mount destination {} for instance {instance}",
+                    canonical.display(),
                     mount.display()
                 );
             }
         }
-        Ok(cwd)
+        Ok(())
     }
 
     fn session_root_path(session_id: u64) -> PathBuf {
@@ -881,6 +941,40 @@ mod tests {
     }
 
     #[test]
+    fn mount_boundaries_reject_existing_symlink_alias_to_protected_root() {
+        let temp = tempfile::tempdir().expect("symlink fixture");
+        let alias = temp.path().join("home-alias");
+        std::os::unix::fs::symlink("/home", &alias).expect("protected-root symlink");
+        let alias = alias.to_string_lossy().into_owned();
+
+        let config = CapsuleConfig {
+            workspace_mounts: vec![alias.clone()],
+            ..CapsuleConfig::default()
+        };
+        let error = rules_for_test(
+            &config,
+            None,
+            Path::new("/workspace/project"),
+            Path::new("/jackin/run/sessions/1"),
+        )
+        .expect_err("symlink alias dst to protected root must be rejected");
+        assert!(error.to_string().contains("protected"));
+
+        let config = CapsuleConfig {
+            worktree_git_targets: vec![alias],
+            ..CapsuleConfig::default()
+        };
+        let error = rules_for_test(
+            &config,
+            None,
+            Path::new("/workspace/project"),
+            Path::new("/jackin/run/sessions/1"),
+        )
+        .expect_err("symlink alias git target must be rejected");
+        assert!(error.to_string().contains("outside"));
+    }
+
+    #[test]
     fn cwd_boundary_rejects_ancestor_of_any_private_mount_destination() {
         let config = CapsuleConfig {
             instance_mount_paths: BTreeMap::from([(
@@ -896,6 +990,111 @@ mod tests {
             Path::new("/jackin/run/sessions/1"),
         )
         .expect_err("cwd ancestor of private mount must be rejected");
+        assert!(error.to_string().contains("mount destination"));
+    }
+
+    #[test]
+    fn workspace_mounts_and_git_targets_gain_full_access_outside_cwd() {
+        let config = CapsuleConfig {
+            workspace_mounts: vec!["/workspace/other".to_owned()],
+            worktree_git_targets: vec!["/jackin/host/workspace/other/.git".to_owned()],
+            ..CapsuleConfig::default()
+        };
+        let rules = rules_for_test(
+            &config,
+            None,
+            Path::new("/workspace/project"),
+            Path::new("/jackin/run/sessions/1"),
+        )
+        .expect("dst outside cwd and aux git target must be granted");
+        for path in ["/workspace/other", "/jackin/host/workspace/other/.git"] {
+            let rule = rules
+                .iter()
+                .find(|rule| rule.path == Path::new(path))
+                .unwrap_or_else(|| panic!("missing Landlock rule for {path}"));
+            assert_eq!(rule.access, FULL_WITH_UNIX, "wrong access for {path}");
+            assert!(rule.required, "rule for {path} must be required");
+        }
+    }
+
+    #[test]
+    fn hostile_worktree_git_targets_are_rejected() {
+        for target in [
+            "/jackin/run/x",
+            "/home/agent/x",
+            "/jackin/host",
+            "/workspace/x",
+            "/jackin/host/../run/x",
+            "/jackin/host/a/../b",
+            "relative/path",
+            "",
+        ] {
+            let config = CapsuleConfig {
+                worktree_git_targets: vec![target.to_owned()],
+                ..CapsuleConfig::default()
+            };
+            let error = rules_for_test(
+                &config,
+                None,
+                Path::new("/workspace/project"),
+                Path::new("/jackin/run/sessions/1"),
+            )
+            .unwrap_err();
+            let message = error.to_string();
+            assert!(
+                message.contains("outside")
+                    || message.contains("must not contain")
+                    || message.contains("absolute"),
+                "unexpected rejection for {target:?}: {message}"
+            );
+        }
+    }
+
+    #[test]
+    fn hostile_workspace_mounts_are_rejected() {
+        for dst in [
+            "/",
+            "/home",
+            "/home/agent",
+            "/home/agent/.claude",
+            "/jackin",
+            "/jackin/run",
+            "/workspace/../jackin",
+            "relative/path",
+            "",
+        ] {
+            let config = CapsuleConfig {
+                workspace_mounts: vec![dst.to_owned()],
+                ..CapsuleConfig::default()
+            };
+            let error = rules_for_test(
+                &config,
+                None,
+                Path::new("/workspace/project"),
+                Path::new("/jackin/run/sessions/1"),
+            )
+            .unwrap_err();
+            let message = error.to_string();
+            assert!(
+                message.contains("protected") || message.contains("absolute"),
+                "unexpected rejection for {dst:?}: {message}"
+            );
+        }
+        let config = CapsuleConfig {
+            workspace_mounts: vec!["/workspace".to_owned()],
+            instance_mount_paths: BTreeMap::from([(
+                "canary".to_owned(),
+                vec!["/workspace/private-slot".to_owned()],
+            )]),
+            ..CapsuleConfig::default()
+        };
+        let error = rules_for_test(
+            &config,
+            None,
+            Path::new("/workspace/project"),
+            Path::new("/jackin/run/sessions/1"),
+        )
+        .expect_err("dst ancestor of private mount must be rejected");
         assert!(error.to_string().contains("mount destination"));
     }
 

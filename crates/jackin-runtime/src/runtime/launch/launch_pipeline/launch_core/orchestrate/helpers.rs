@@ -91,12 +91,29 @@ pub(super) fn workspace_launch_config(
         .filter(|mount| !mount.isolation.is_shared())
         .map(|mount| mount.dst.clone())
         .collect();
+    let workspace_mounts = materialized
+        .mounts
+        .iter()
+        .map(|mount| mount.dst.clone())
+        .collect();
+    let worktree_git_targets = materialized
+        .mounts
+        .iter()
+        .filter_map(|mount| {
+            mount
+                .worktree_aux
+                .as_ref()
+                .map(|aux| aux.host_git_target.clone())
+        })
+        .collect();
     let mut launch_config = crate::runtime::launch::capsule_config(
         selector,
         &workspace.workdir,
         &validated_repo.manifest,
         dirty_exit_policy,
         isolated_worktrees,
+        workspace_mounts,
+        worktree_git_targets,
         &instances,
     );
     launch_config.auth_modes =

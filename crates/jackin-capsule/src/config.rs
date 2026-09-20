@@ -94,19 +94,59 @@ fn normalize_existing_path(path: &Path) -> Result<PathBuf> {
 fn validate_workdir_boundary(config: &CapsuleConfig) -> Result<()> {
     let lexical_workdir = jackin_core::container_paths::normalize_path(Path::new(&config.workdir));
     let workdir = normalize_existing_path(&lexical_workdir)?;
+    ensure_no_protected_overlap(config, "capsule workdir", &lexical_workdir, &workdir)?;
+    for mount in &config.workspace_mounts {
+        let lexical_mount = jackin_core::container_paths::normalize_path(Path::new(mount));
+        let mount = normalize_existing_path(&lexical_mount)?;
+        ensure_no_protected_overlap(config, "capsule workspace mount", &lexical_mount, &mount)?;
+    }
+    for target in &config.worktree_git_targets {
+        validate_worktree_git_target(target)?;
+    }
+    Ok(())
+}
+
+/// Aux git dirs live under `/jackin/host` by construction
+/// (`/jackin/host/<dst>/.git`), a subtree the workspace boundary policy can
+/// never admit. Admit exactly strict descendants of that root so in-container
+/// git can follow the worktree gitdir pointer; anything else fails closed.
+fn validate_worktree_git_target(target: &str) -> Result<()> {
+    anyhow::ensure!(
+        !target.split('/').any(|component| component == ".."),
+        "capsule worktree git target {target} must not contain .."
+    );
+    let lexical_target = jackin_core::container_paths::normalize_path(Path::new(target));
+    let target = normalize_existing_path(&lexical_target)?;
+    for candidate in [&lexical_target, &target] {
+        let candidate = candidate.to_string_lossy();
+        anyhow::ensure!(
+            is_strict_descendant(&candidate, jackin_core::container_paths::HOST_DIR),
+            "capsule worktree git target {candidate} is outside {}",
+            jackin_core::container_paths::HOST_DIR
+        );
+    }
+    Ok(())
+}
+
+fn ensure_no_protected_overlap(
+    config: &CapsuleConfig,
+    label: &str,
+    lexical: &Path,
+    canonical: &Path,
+) -> Result<()> {
     for protected_root in ["/home/agent", jackin_core::container_paths::JACKIN_ROOT] {
         let lexical_root = jackin_core::container_paths::normalize_path(Path::new(protected_root));
         anyhow::ensure!(
-            !jackin_core::container_paths::paths_overlap(&lexical_workdir, &lexical_root),
-            "capsule workdir {} overlaps protected root {}",
-            lexical_workdir.display(),
+            !jackin_core::container_paths::paths_overlap(lexical, &lexical_root),
+            "{label} {} overlaps protected root {}",
+            lexical.display(),
             lexical_root.display()
         );
         let protected_root = normalize_existing_path(&lexical_root)?;
         anyhow::ensure!(
-            !jackin_core::container_paths::paths_overlap(&workdir, &protected_root),
-            "capsule workdir {} overlaps protected root {}",
-            workdir.display(),
+            !jackin_core::container_paths::paths_overlap(canonical, &protected_root),
+            "{label} {} overlaps protected root {}",
+            canonical.display(),
             protected_root.display()
         );
     }
@@ -114,16 +154,16 @@ fn validate_workdir_boundary(config: &CapsuleConfig) -> Result<()> {
         for path in paths {
             let lexical_mount = jackin_core::container_paths::normalize_path(Path::new(path));
             anyhow::ensure!(
-                !jackin_core::container_paths::paths_overlap(&lexical_workdir, &lexical_mount),
-                "capsule workdir {} overlaps protected mount destination {} for instance {instance}",
-                lexical_workdir.display(),
+                !jackin_core::container_paths::paths_overlap(lexical, &lexical_mount),
+                "{label} {} overlaps protected mount destination {} for instance {instance}",
+                lexical.display(),
                 lexical_mount.display()
             );
             let mount = normalize_existing_path(&lexical_mount)?;
             anyhow::ensure!(
-                !jackin_core::container_paths::paths_overlap(&workdir, &mount),
-                "capsule workdir {} overlaps protected mount destination {} for instance {instance}",
-                workdir.display(),
+                !jackin_core::container_paths::paths_overlap(canonical, &mount),
+                "{label} {} overlaps protected mount destination {} for instance {instance}",
+                canonical.display(),
                 mount.display()
             );
         }
