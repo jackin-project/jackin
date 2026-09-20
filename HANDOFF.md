@@ -1,6 +1,6 @@
 # Handoff
 
-Handoff snapshot: `2026-09-20T15:52:12Z`.
+Handoff snapshot: `2026-09-20T15:53:18Z`.
 
 This document preserves the in-progress integration/release goal. It is a continuation point, not a completion claim.
 
@@ -42,7 +42,7 @@ Primary references:
 
 - Repository: `/Users/donbeave/Projects/jackin-project/jackin`
 - Branch: `feat/multi-account-support`
-- Implementation/handoff merge baseline `39b4267da4a30213f20dbcd9cb59ab1d4dc7f071`; this final handoff metadata commit changes only `HANDOFF.md`. Verify the final branch SHA with `git rev-parse HEAD` and `git ls-remote` after push.
+- Implementation/handoff merge baseline `39b4267da4a30213f20dbcd9cb59ab1d4dc7f071`; subsequent handoff commits change only `HANDOFF.md`. Verify the final branch SHA with `git rev-parse HEAD` and `git ls-remote` after push.
 - Handoff merge commit: `39b4267da4a30213f20dbcd9cb59ab1d4dc7f071` (`merge: preserve corrected handoff`); it keeps the first pushed handoff commit as an ancestor without force-push.
 - Implementation baseline immediately before the handoff document: `d3e5f38b37c3437db26343c3e339892dea818e73` (`docs(config): repair current schema contract`)
 - Tree: clean; no staged, unstaged, or untracked files at this snapshot.
@@ -62,7 +62,7 @@ The following was refreshed from GitHub at `2026-09-20T15:49Z`; the non-#1002 ro
 
 | PR | Head | Base | State / disposition |
 |---|---|---|---|
-| [#1002](https://github.com/jackin-project/jackin/pull/1002) | `39b4267d` | `main` at stale `41796158` | Starting-scope feature; open, conflicting/dirty. Policy run `35520889714` failed generated-tree; DCO passed. |
+| [#1002](https://github.com/jackin-project/jackin/pull/1002) | current feature `HEAD` (handoff-only commits after `39b4267d`) | `main` at stale `41796158` | Starting-scope feature; open, conflicting/dirty. Last completed Policy run `35520889714` at the pre-final metadata head failed generated-tree; each handoff-only push starts a new run. DCO passed on the last observed head. |
 | [#1004](https://github.com/jackin-project/jackin/pull/1004) | `073ebbc5` | `main` at stale `41796158` | Goal release-verification PR; open, stale/conflicting/unknown merge state. Candidate work exists separately at `9edc8824`. |
 | [#1005](https://github.com/jackin-project/jackin/pull/1005) | `f38cb9ea` | feature at stale `3218706c` | Goal evidence PR; open/unstable and stale. Must update evidence to final SHAs and rerun exact checks. |
 | [#1007](https://github.com/jackin-project/jackin/pull/1007) | `f4054488` | `main` at stale `3d510aac` | Goal-created draft CI/generated-tree PR; currently zero-diff/no-op. It must become real final generated work before merge. |
@@ -332,7 +332,7 @@ All commands below ran on implementation baseline `d3e5f38b37c3437db26343c3e3398
 ### Not run, failing, or still required
 
 - Full workspace test/nextest matrix, complete capsule package without fail-fast, matching capsule build/export/container E2E, native macOS release path, and complete TUI/PTY acceptance.
-- Current exact #1002 required CI: DCO passes; Policy/generated-tree fails because the generated tree cannot render collapsed Rust jobs with disagreeing member tool sets; current `ci-required` proof is absent.
+- Last completed #1002 required-check observation at the pre-final metadata head: DCO passed; Policy/generated-tree failed because the generated tree cannot render collapsed Rust jobs with disagreeing member tool sets; current `ci-required` proof is absent. Recheck the final handoff-only head before any merge action.
 - Final Velnor generation/policy/actionlint from current source `386a5b63` and its provisioned immutable runtime.
 - Preview package build, `release-verify`, manifest/identity/checksum/attestation verification, public release publication, rolling-tag migration, tap updater, tap CI, formula audit/test, clean install, upgrade, and installed version/resource proof.
 - Live optional provider/container/native evidence.
