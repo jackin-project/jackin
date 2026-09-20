@@ -17,12 +17,13 @@ use jackin_core::{EnvValue, JackinPaths, WorkspaceName};
 use toml_edit::{DocumentMut, Item, Table};
 
 use crate::app_config::AppConfig;
-use crate::app_config::persist::{load_split_config, validate_reserved_env_names};
+use crate::app_config::persist::{
+    load_config_contents, load_split_config_locked, validate_reserved_env_names,
+};
 use crate::auth::GithubAuthMode;
-use crate::migrations;
 use crate::persist::{
-    ConfigWriteGuard, StagedWrite, acquire_config_write_lock, atomic_write, stage_atomic_write,
-    validate_workspace_file_stem,
+    ConfigWriteGuard, StagedWrite, acquire_config_write_lock, commit_staged_config,
+    stage_atomic_write, stage_delete, validate_workspace_file_stem,
 };
 use crate::schema::{MountConfig, WorkspaceConfig, WorkspaceEdit};
 
@@ -79,8 +80,17 @@ impl ConfigEditor {
     /// the write lock, avoiding recursive editor acquisition.
     pub fn open(paths: &JackinPaths) -> crate::ConfigResult<Self> {
         let lock = acquire_config_write_lock(&paths.config_file)?;
+        Self::open_with_lock(paths, lock)
+    }
+
+    pub(crate) fn open_with_lock(
+        paths: &JackinPaths,
+        lock: ConfigWriteGuard,
+    ) -> crate::ConfigResult<Self> {
         paths.ensure_base_dirs()?;
-        if !paths.config_file.exists() {
+        let initial_contents = if paths.config_file.exists() {
+            None
+        } else {
             let mut initial = AppConfig::default();
             initial.sync_builtin_agents();
             for discovered in crate::discover_default_accounts(&paths.home_dir).accounts {
@@ -133,12 +143,23 @@ impl ConfigEditor {
                 );
             }
             initial.validate_accounts()?;
-            atomic_write(&paths.config_file, &toml::to_string_pretty(&initial)?)?;
+            Some(toml::to_string_pretty(&initial)?)
+        };
+        let raw = match initial_contents.as_ref() {
+            Some(contents) => Some(contents.clone()),
+            None => load_config_contents(paths)?,
+        };
+        let mut loaded = load_split_config_locked(paths, raw)?;
+        if let Some(contents) = initial_contents {
+            loaded.add_pending_write(paths.config_file.clone(), contents);
         }
-        migrations::migrate_config_file_if_needed(&paths.config_file)?;
-        let raw = std::fs::read_to_string(&paths.config_file)
-            .with_context(|| format!("reading {}", paths.config_file.display()))?;
-        drop(load_split_config(paths, Some(raw))?);
+        if loaded.has_pending_writes() {
+            // Match `validate_candidate`'s editor contract. Workspace geometry
+            // remains editable through create/edit; account and reserved-env
+            // semantics must pass before migration bytes are committed.
+            loaded.validate_for_editor()?;
+        }
+        drop(loaded.commit()?);
         let raw = std::fs::read_to_string(&paths.config_file)
             .with_context(|| format!("reading {}", paths.config_file.display()))?;
         let doc: DocumentMut = raw
@@ -205,17 +226,13 @@ impl ConfigEditor {
                 for (name, doc) in &self.workspace_docs {
                     staged.push(stage(&self.workspace_file(name), &doc.to_string())?);
                 }
-                for write in staged {
-                    write.commit()?;
-                }
+                let mut deletes = Vec::with_capacity(self.removed_workspaces.len());
                 for removed in &self.removed_workspaces {
-                    let path = self.workspace_file(removed);
-                    match std::fs::remove_file(&path) {
-                        Ok(()) => {}
-                        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-                        Err(e) => return Err(e.into()),
+                    if let Some(delete) = stage_delete(&self.workspace_file(removed))? {
+                        deletes.push(delete);
                     }
                 }
+                commit_staged_config(&mut staged, &mut deletes)?;
                 Ok(config)
             })(),
         )
