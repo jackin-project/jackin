@@ -274,10 +274,7 @@ fn launch_selection_reuses_existing_synthesized_template_without_replacing_it() 
         model: Some("template-model".to_owned()),
         base_url: Some("https://template.example/v1".to_owned()),
         display_label: Some("Private template".to_owned()),
-        invoked_via_wrapper: Some(jackin_config::WrapperSpec {
-            identity: "codex-wrapper".to_owned(),
-            args: vec!["--template".to_owned()],
-        }),
+        invoked_via_wrapper: None,
     };
     config
         .agent_configurations
@@ -287,6 +284,53 @@ fn launch_selection_reuses_existing_synthesized_template_without_replacing_it() 
 
     assert_eq!(selected.default_launch, Some(vec![template_id.to_owned()]));
     assert_eq!(selected.agent_configurations[template_id], template);
+    let instance = jackin_config::resolve_launch(&selected, None, "codex", None, None)
+        .unwrap()
+        .pop()
+        .expect("the preserved template must remain launchable");
+    assert_eq!(instance.model.as_deref(), Some("template-model"));
+    assert_eq!(
+        instance.base_url.as_deref(),
+        Some("https://template.example/v1")
+    );
+    assert_eq!(instance.label, "Private template");
+}
+
+#[test]
+fn launch_selection_rejects_wrapper_template_before_any_selection_is_admitted() {
+    let (mut config, _) = two_account_config();
+    let template_id = "private@codex";
+    let template = AgentConfiguration {
+        agent: Agent::Codex,
+        account: "private".to_owned(),
+        model: Some("template-model".to_owned()),
+        base_url: Some("https://template.example/v1".to_owned()),
+        display_label: Some("Private template".to_owned()),
+        invoked_via_wrapper: Some(jackin_config::WrapperSpec {
+            identity: "codex-wrapper".to_owned(),
+            args: vec!["--template".to_owned()],
+        }),
+    };
+    config
+        .agent_configurations
+        .insert(template_id.to_owned(), template.clone());
+
+    let error = with_account_selection(&config, Agent::Codex, None, "codex", "private")
+        .expect_err("an unsupported wrapper must fail before launch selection succeeds");
+    assert!(
+        error
+            .to_string()
+            .contains("declares an unsupported shell wrapper"),
+        "unexpected wrapper rejection: {error:#}"
+    );
+    assert!(
+        config.default_launch.is_none(),
+        "failed selection must not mutate the caller's config"
+    );
+    assert_eq!(
+        config.agent_configurations[template_id], template,
+        "failed selection must not replace the template or discard its settings"
+    );
 }
 
 #[test]

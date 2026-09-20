@@ -12,6 +12,38 @@ fn envelope() -> jackin_protocol::AgentCredentialEnv {
     .unwrap()
 }
 
+fn replacement_envelope() -> jackin_protocol::AgentCredentialEnv {
+    serde_json::from_str(
+        r#"{"schema_version":2,"instances":{"new-a@claude":{"agent":"claude","account_id":"new-a","env":{"ANTHROPIC_API_KEY":"new-a-key"}},"new-b@claude":{"agent":"claude","account_id":"new-b","env":{"ANTHROPIC_API_KEY":"new-b-key"}}}}"#,
+    )
+    .unwrap()
+}
+
+fn credential_snapshot(root: &Path) -> std::collections::BTreeMap<String, Vec<u8>> {
+    std::fs::read_dir(root.join("credentials"))
+        .unwrap()
+        .map(|entry| {
+            let entry = entry.unwrap();
+            (
+                entry.file_name().to_string_lossy().into_owned(),
+                std::fs::read(entry.path()).unwrap(),
+            )
+        })
+        .collect()
+}
+
+fn assert_no_swap_artifacts(root: &Path) {
+    let artifacts: Vec<_> = std::fs::read_dir(root)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .filter(|name| name.starts_with(".credentials-"))
+        .collect();
+    assert!(
+        artifacts.is_empty(),
+        "credential swap artifacts remain: {artifacts:?}"
+    );
+}
+
 #[test]
 fn credentials_writer_persists_one_staged_file_privately() {
     let temp = tempfile::tempdir().unwrap();
@@ -138,6 +170,81 @@ fn credentials_writer_revokes_stale_instance_files() {
         0,
         "revocation must remove every prior staged instance file"
     );
+}
+
+#[test]
+fn credentials_writer_staging_failure_preserves_complete_previous_set() {
+    let temp = tempfile::tempdir().unwrap();
+    write_account_credentials(temp.path(), &envelope()).unwrap();
+    let before = credential_snapshot(temp.path());
+
+    {
+        let _failure = inject_credential_write_failure(CredentialWriteFailure::StagedFile(0));
+        let error = write_account_credentials(temp.path(), &replacement_envelope()).unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("injected credential publication failure")
+        );
+    }
+    assert_eq!(credential_snapshot(temp.path()), before);
+    assert_no_swap_artifacts(temp.path());
+
+    write_account_credentials(temp.path(), &replacement_envelope()).unwrap();
+    assert_eq!(credential_snapshot(temp.path()).len(), 2);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        assert_eq!(
+            std::fs::metadata(temp.path().join("credentials"))
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777,
+            0o700
+        );
+        for entry in std::fs::read_dir(temp.path().join("credentials")).unwrap() {
+            assert_eq!(
+                entry.unwrap().metadata().unwrap().permissions().mode() & 0o777,
+                0o600
+            );
+        }
+    }
+    assert_no_swap_artifacts(temp.path());
+}
+
+#[test]
+fn credentials_writer_rolls_back_after_moving_previous_directory() {
+    let temp = tempfile::tempdir().unwrap();
+    write_account_credentials(temp.path(), &envelope()).unwrap();
+    let before = credential_snapshot(temp.path());
+
+    let _failure = inject_credential_write_failure(CredentialWriteFailure::PreviousRename);
+    let error = write_account_credentials(temp.path(), &replacement_envelope()).unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("injected credential publication failure")
+    );
+    assert_eq!(credential_snapshot(temp.path()), before);
+    assert_no_swap_artifacts(temp.path());
+}
+
+#[test]
+fn credentials_writer_rolls_back_after_install_before_cleanup() {
+    let temp = tempfile::tempdir().unwrap();
+    write_account_credentials(temp.path(), &envelope()).unwrap();
+    let before = credential_snapshot(temp.path());
+
+    let _failure = inject_credential_write_failure(CredentialWriteFailure::Install);
+    let error = write_account_credentials(temp.path(), &replacement_envelope()).unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("injected credential publication failure")
+    );
+    assert_eq!(credential_snapshot(temp.path()), before);
+    assert_no_swap_artifacts(temp.path());
 }
 
 #[test]

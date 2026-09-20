@@ -176,11 +176,12 @@ pub struct XdgRoots {
     /// Cache home (`XDG_CACHE_HOME` equivalent).
     pub cache: PathBuf,
 }
-/// Shell-wrapper invocation identifying how an agent is launched.
+/// Shell-wrapper invocation found while importing shell configuration.
 ///
-/// Value type for the agent-invoked-via-wrapper schema home on
-/// [`AgentConfiguration`]: the wiring lane stores the extracted call-site spec
-/// there so launches can reproduce the wrapper invocation.
+/// The current capsule launch protocol deliberately does not execute arbitrary
+/// host shell functions or helper commands. A configuration carrying this
+/// provenance is therefore rejected before a [`ResolvedInstance`] is created;
+/// its identity and arguments are never transported into the capsule.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct WrapperSpec {
@@ -767,9 +768,9 @@ pub struct AgentConfiguration {
     /// Explicit instance label; default derives `{Agent} · {account name}`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub display_label: Option<String>,
-    /// Shell wrapper this instance is invoked through, extracted from
-    /// wrapper call sites in shell configuration. Launches reproduce the
-    /// wrapper invocation instead of calling the agent binary directly.
+    /// Imported shell-wrapper provenance. Arbitrary wrappers are not a safe
+    /// capsule launch transport, so configurations carrying this field fail
+    /// validation and launch resolution before any instance is admitted.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub invoked_via_wrapper: Option<WrapperSpec>,
 }
@@ -827,6 +828,17 @@ impl AgentConfiguration {
         {
             return Err(ConfigError::msg(format!(
                 "configuration {id:?} has an empty display label"
+            )));
+        }
+        self.validate_launch_transport(id)?;
+        Ok(())
+    }
+
+    /// Reject launch settings the capsule cannot execute safely.
+    fn validate_launch_transport(&self, id: &str) -> ConfigResult<()> {
+        if self.invoked_via_wrapper.is_some() {
+            return Err(ConfigError::msg(format!(
+                "configuration {id:?} declares an unsupported shell wrapper; jackin capsule launches cannot execute arbitrary host wrappers safely"
             )));
         }
         Ok(())
@@ -1106,6 +1118,7 @@ fn bind_explicit(
         .agent_configurations
         .get(id)
         .ok_or_else(|| ConfigError::msg(format!("unknown agent configuration {id:?}")))?;
+    config.validate_launch_transport(id)?;
     if let Some(w) = ws
         && !w.accounts.contains(&config.account)
     {
