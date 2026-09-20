@@ -12,7 +12,7 @@ use jackin_protocol::usage_broker::{
 };
 use jackin_usage::host::{
     HostUsageRuntime, UsageBrokerClient, UsageBrokerConfig, UsageDiscoveryScope,
-    usage_broker_capabilities,
+    ValidatedUsageDiscovery,
 };
 
 use crate::discovery::DesktopCredentialResolver;
@@ -68,28 +68,37 @@ impl UsageMenuBarBridge {
             let discovery = guard.validated_discovery();
             drop(guard);
             let fallback = broker_config.client();
-            let (client, capabilities) = if live {
+            let broker = if live {
                 discovery.map_or_else(
-                    || (fallback.clone(), Vec::new()),
+                    || DesktopBroker {
+                        client: fallback.clone(),
+                        capabilities: Vec::new(),
+                        config: broker_config.clone(),
+                        scope: discovery_scope.clone(),
+                    },
                     |discovery| {
-                        let capabilities = usage_broker_capabilities(&discovery);
-                        let client = jackin_usage::host::ensure_usage_broker_process(
+                        self.activate_broker(
                             broker_config.clone(),
-                            &discovery_scope,
+                            discovery_scope.clone(),
+                            discovery,
                         )
-                        .unwrap_or_else(|_| fallback.clone());
-                        (client, capabilities)
+                        .unwrap_or_else(|_| DesktopBroker {
+                            client: fallback.clone(),
+                            capabilities: Vec::new(),
+                            config: broker_config.clone(),
+                            scope: discovery_scope.clone(),
+                        })
                     },
                 )
             } else {
-                (fallback, Vec::new())
+                DesktopBroker {
+                    client: fallback,
+                    capabilities: Vec::new(),
+                    config: broker_config.clone(),
+                    scope: discovery_scope.clone(),
+                }
             };
-            *self.broker_lock()? = Some(DesktopBroker {
-                client,
-                capabilities,
-                config: broker_config,
-                scope: discovery_scope,
-            });
+            *self.broker_lock()? = Some(broker);
             Ok(())
         })
     }
@@ -470,17 +479,31 @@ impl UsageMenuBarBridge {
         let Some(discovery) = discovery else {
             return Ok(());
         };
-        let capabilities = usage_broker_capabilities(&discovery);
-        let client =
-            jackin_usage::host::ensure_usage_broker_process(current.config.clone(), &current.scope)
-                .unwrap_or(current.client);
-        *self.broker_lock()? = Some(DesktopBroker {
-            client,
-            capabilities,
-            config: current.config,
-            scope: current.scope,
-        });
+        let refreshed = self
+            .activate_broker(current.config, current.scope, discovery)
+            .map_err(map_coordination_err)?;
+        *self.broker_lock()? = Some(refreshed);
         Ok(())
+    }
+
+    fn activate_broker(
+        &self,
+        config: UsageBrokerConfig,
+        scope: UsageDiscoveryScope,
+        discovery: ValidatedUsageDiscovery,
+    ) -> Result<DesktopBroker, UsageCoordinationError> {
+        let handle = jackin_usage::host::ensure_usage_broker(
+            config.clone(),
+            scope.clone(),
+            discovery,
+            self.credential_resolver.clone(),
+        )?;
+        Ok(DesktopBroker {
+            client: handle.client,
+            capabilities: handle.capabilities,
+            config,
+            scope,
+        })
     }
 
     fn lock(&self) -> Result<std::sync::MutexGuard<'_, HostUsageRuntime>, UsageBridgeError> {
