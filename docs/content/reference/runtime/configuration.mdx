@@ -104,6 +104,8 @@ schema reference; `docs_commands` compares them with the serde structs. */}
 {/* config-key: MountConfig.isolation */}
 {/* config-key: MountConfig.readonly */}
 {/* config-key: MountConfig.src */}
+{/* config-key: ProfileSelector.entry */}
+{/* config-key: ProfileSelector.profile */}
 {/* config-key: RoleSource.env */}
 {/* config-key: RoleSource.git */}
 {/* config-key: RoleSource.trusted */}
@@ -198,6 +200,25 @@ provider = "openai"
 type = "api_key"
 value = "$WORK_OPENAI_KEY"
 ```
+
+Multi-provider profile stores (`omp` and `hermes`) can pin the exact provider
+entry and optional profile label selected from the source store:
+
+```toml
+[accounts.omp-work.credential]
+type = "profile"
+agent = "omp"
+directory = "/Users/operator/.omp"
+
+[accounts.omp-work.credential.source_selector]
+entry = "openai"
+profile = "work"
+```
+
+`source_selector.entry` is the provider/account key in the source store.
+`source_selector.profile` is the optional profile label when that store
+distinguishes profiles. These are the canonical field names; unknown selector
+fields are rejected.
 
 A workspace file authorizes accounts and selects the account each agent uses:
 
