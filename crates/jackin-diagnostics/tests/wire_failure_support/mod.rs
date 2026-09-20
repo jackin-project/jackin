@@ -66,10 +66,21 @@ fn assert_wire_requests(testbed: &jackin_otlp_testbed::Testbed, expected_request
     let counts_match = traces.len() == expected_requests
         && logs.len() == expected_requests
         && metrics.len() == expected_requests;
+    // Per-request distribution, not just the flattened total: retries re-send
+    // the identical batch, so every captured log request must carry exactly
+    // one matching record. A 0/1/2 split across three requests with total 3
+    // is retry-payload corruption and must fail (PR #1014 Codex P2).
     let records_match = log_records.len() == expected_requests
-        && log_records
-            .iter()
-            .all(|record| record.event_name == validate_event);
+        && logs.len() == expected_requests
+        && logs.iter().all(|request| {
+            let records: Vec<_> = request
+                .resource_logs
+                .iter()
+                .flat_map(|resource| resource.scope_logs.iter())
+                .flat_map(|scope| scope.log_records.iter())
+                .collect();
+            records.len() == 1 && records[0].event_name == validate_event
+        });
     if counts_match && records_match {
         return;
     }
