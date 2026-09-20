@@ -930,7 +930,12 @@ fn validate_config_semantics(config: &AppConfig) -> crate::ConfigResult<()> {
 
 fn validate_editor_config_semantics(config: &AppConfig) -> crate::ConfigResult<()> {
     validate_reserved_env_names(config)?;
-    config.validate_accounts()
+    // Multi-account × #1006 reconciliation: the open-path gate keeps the
+    // pre-multi-account scope (registry + bindings). Launch-instance
+    // references stay enforced at save/load boundaries, so the editor can
+    // open a config whose instance account is not registered yet and
+    // repair it via `upsert_account` + `save`.
+    config.validate_registry_and_bindings()
 }
 
 /// `true` when `raw` still embeds non-empty `[workspaces]` tables.

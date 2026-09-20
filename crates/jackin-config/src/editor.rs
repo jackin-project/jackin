@@ -417,9 +417,11 @@ impl ConfigEditor {
             loaded.add_pending_write(paths.config_file.clone(), serialized);
         }
         if loaded.has_pending_writes() {
-            // Match `validate_candidate`'s editor contract. Workspace geometry
-            // remains editable through create/edit; account and reserved-env
-            // semantics must pass before migration bytes are committed.
+            // Registry, binding, and reserved-env semantics must pass before
+            // migration bytes are committed. Workspace geometry remains
+            // editable through create/edit, and launch-instance references
+            // are enforced at save/load instead, so the editor can open a
+            // config whose instance account is not registered yet for repair.
             loaded.validate_for_editor()?;
         }
         drop(loaded.commit()?);

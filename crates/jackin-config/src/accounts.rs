@@ -1223,23 +1223,7 @@ impl AppConfig {
         for (id, config) in &self.agent_configurations {
             config.validate(id, &self.accounts)?;
         }
-        let check = |bindings: &BTreeMap<Agent, String>,
-                     allowed: Option<&Vec<String>>|
-         -> ConfigResult<()> {
-            for (agent, id) in bindings {
-                let account = self
-                    .accounts
-                    .get(id)
-                    .ok_or_else(|| ConfigError::msg(format!("unknown account {id:?}")))?;
-                if !account.supports_agent(*agent) || allowed.is_some_and(|ids| !ids.contains(id)) {
-                    return Err(ConfigError::msg(format!(
-                        "account {id:?} is not authorized for {agent}"
-                    )));
-                }
-            }
-            Ok(())
-        };
-        check(&self.account_bindings, None)?;
+        self.check_account_bindings(&self.account_bindings, None)?;
         self.validate_launch_list(self.default_launch.as_deref(), None)?;
         for ws in self.workspaces.values() {
             let mut seen = BTreeSet::new();
@@ -1250,11 +1234,60 @@ impl AppConfig {
                     )));
                 }
             }
-            check(&ws.account_bindings, Some(&ws.accounts))?;
+            self.check_account_bindings(&ws.account_bindings, Some(&ws.accounts))?;
             self.validate_launch_list(ws.default_launch.as_deref(), Some(&ws.accounts))?;
             for role in ws.roles.values() {
-                check(&role.account_bindings, Some(&ws.accounts))?;
+                self.check_account_bindings(&role.account_bindings, Some(&ws.accounts))?;
                 self.validate_launch_list(role.default_launch.as_deref(), Some(&ws.accounts))?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Validate registry credentials plus binding and allowlist integrity.
+    ///
+    /// This is the editor-open migration gate scope: it covers everything
+    /// the pre-multi-account gate enforced, while launch-instance
+    /// references (`agent_configurations`, `default_launch`) are left to
+    /// save/load validation, so the editor stays usable as a repair tool
+    /// for a config whose instance account is not registered yet.
+    pub(crate) fn validate_registry_and_bindings(&self) -> ConfigResult<()> {
+        for (id, account) in &self.accounts {
+            account.validate(id)?;
+        }
+        self.check_account_bindings(&self.account_bindings, None)?;
+        for ws in self.workspaces.values() {
+            let mut seen = BTreeSet::new();
+            for id in &ws.accounts {
+                if !self.accounts.contains_key(id) || !seen.insert(id) {
+                    return Err(ConfigError::msg(format!(
+                        "unknown or duplicate workspace account {id:?}"
+                    )));
+                }
+            }
+            self.check_account_bindings(&ws.account_bindings, Some(&ws.accounts))?;
+            for role in ws.roles.values() {
+                self.check_account_bindings(&role.account_bindings, Some(&ws.accounts))?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Reject bindings that name unknown accounts or escape the workspace allowlist.
+    fn check_account_bindings(
+        &self,
+        bindings: &BTreeMap<Agent, String>,
+        allowed: Option<&Vec<String>>,
+    ) -> ConfigResult<()> {
+        for (agent, id) in bindings {
+            let account = self
+                .accounts
+                .get(id)
+                .ok_or_else(|| ConfigError::msg(format!("unknown account {id:?}")))?;
+            if !account.supports_agent(*agent) || allowed.is_some_and(|ids| !ids.contains(id)) {
+                return Err(ConfigError::msg(format!(
+                    "account {id:?} is not authorized for {agent}"
+                )));
             }
         }
         Ok(())

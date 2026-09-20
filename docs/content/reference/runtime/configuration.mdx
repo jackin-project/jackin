@@ -78,6 +78,8 @@ schema reference; `docs_commands` compares them with the serde structs. */}
 {/* config-key: XdgRoots.cache */}
 {/* config-key: XdgRoots.config */}
 {/* config-key: XdgRoots.data */}
+{/* config-key: ProfileSelector.entry */}
+{/* config-key: ProfileSelector.profile */}
 {/* config-key: AppConfig.dirty_exit_policy */}
 {/* config-key: AppConfig.docker */}
 {/* config-key: AppConfig.env */}
@@ -256,6 +258,22 @@ get a slot suffix. Reusing or nesting configured cache roots across selected
 instances is rejected because it would break per-instance isolation. Without
 an explicit cache root, jackin creates the equivalent cache directory under
 the instance's managed `home/` state.
+
+Omp and Hermes profile accounts pin an immutable `source_selector` so launch
+re-resolves the exact store entry instead of falling back to whichever entry
+happens to enumerate first:
+
+```toml
+[accounts.omp-main.credential.source_selector]
+entry = "openai"
+profile = "work"
+```
+
+`entry` is the exact provider/account key in the source store and is always
+required. `profile` is the exact profile label, set only when the source store
+exposes profiles and omitted otherwise. Both reject blank values. A profile
+account without a selector stays valid only when its source proves it contains
+exactly one account at launch.
 
 The `[bootstrap]` sentinel records first-run initialization. A missing config
 file scans once on creation; an installer-created empty config carries

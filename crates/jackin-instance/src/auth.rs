@@ -1008,11 +1008,17 @@ mod auth_directory {
     use nix::sys::stat::{FileStat, Mode, SFlag, fchmod, fstat, fstatat, mkdirat};
     use nix::unistd::{UnlinkatFlags, fsync, geteuid, unlinkat};
     use serde::{Deserialize, Serialize};
-    use std::ffi::{CStr, CString, OsString};
+    use std::ffi::{CStr, CString};
     use std::fs::File;
     use std::io::{Read, Write};
     use std::os::fd::OwnedFd;
-    use std::os::unix::ffi::{OsStrExt, OsStringExt};
+    use std::os::unix::ffi::OsStrExt;
+    // `/private` alias expansion below is macOS-only; keep these imports gated
+    // so Linux builds do not trip unused-import denial.
+    #[cfg(target_os = "macos")]
+    use std::ffi::OsString;
+    #[cfg(target_os = "macos")]
+    use std::os::unix::ffi::OsStringExt;
     use std::path::{Path, PathBuf};
     use std::sync::atomic::Ordering;
 

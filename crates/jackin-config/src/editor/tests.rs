@@ -132,6 +132,45 @@ fn open_leaves_semantically_invalid_migration_unchanged() {
 }
 
 #[test]
+fn open_admits_dangling_launch_instance_account_for_repair() {
+    // Multi-account × #1006 reconciliation: unlike dangling bindings
+    // (above), a launch instance referencing a not-yet-registered account
+    // must not brick the editor — the account is added through the editor
+    // itself, and instance references are enforced at save/load instead.
+    // The versionless fixture forces a pending schema migration so the
+    // open-path gate actually runs.
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    paths.ensure_base_dirs().unwrap();
+    std::fs::write(
+        &paths.config_file,
+        "default_launch = [\"amp-main\"]\n\n[agent_configurations.amp-main]\nagent = \"amp\"\naccount = \"amp-profile\"\n",
+    )
+    .unwrap();
+
+    let mut editor = ConfigEditor::open(&paths).unwrap();
+    editor
+        .upsert_account(
+            "amp-profile",
+            &crate::AccountConfig {
+                enabled: true,
+                name: "Amp profile".into(),
+                provider: crate::AiProvider::Amp,
+                credential: crate::AccountCredential::ApiKey {
+                    value: EnvValue::from("test-amp-key"),
+                    base_url: None,
+                    model: None,
+                },
+            },
+        )
+        .unwrap();
+    let config = editor.save().unwrap();
+    assert!(config.accounts.contains_key("amp-profile"));
+    let reloaded = AppConfig::load_or_init(&paths).unwrap();
+    assert_eq!(config.accounts, reloaded.accounts);
+}
+
+#[test]
 fn open_leaves_every_workspace_file_unchanged_on_later_split_conflict() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
