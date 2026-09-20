@@ -32,8 +32,62 @@ type Pending = Arc<Mutex<BTreeMap<u64, oneshot::Sender<UsageBrokerResponse>>>>;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 struct PeerIdentity {
     pid: Option<u32>,
+    start_time: Option<u64>,
     uid: u32,
     gid: u32,
+}
+
+/// Supervisor binding pinned at relay startup.
+///
+/// PID alone is forgeable through PID reuse: if the supervisor exits, another
+/// root process can inherit its PID number and pass a `peer.pid ==
+/// supervisor_pid` check. The kernel process start time cannot be recycled
+/// the same way, so the supervisor peer must match `(pid, start_time)`.
+/// A token cannot replace this: any root process can read another process's
+/// environment or root-only files, while `SO_PEERCRED` pid + `/proc` start
+/// time are kernel-supplied and unforgeable by the peer. Matching fails
+/// closed: an unknown start time on either side denies the supervisor path.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct SupervisorIdentity {
+    pid: u32,
+    start_time: Option<u64>,
+}
+
+impl SupervisorIdentity {
+    fn matches(self, peer: PeerIdentity) -> bool {
+        peer.uid == 0
+            && peer.gid == 0
+            && peer.pid == Some(self.pid)
+            && self.start_time.is_some()
+            && peer.start_time == self.start_time
+    }
+}
+
+/// Kernel process start time (`/proc/<pid>/stat` field 22, clock ticks since
+/// boot) used to disambiguate PID reuse. Returns `None` when the start time
+/// cannot be verified (missing process, unreadable `/proc`, non-Linux
+/// platform); callers must treat `None` as "not the supervisor".
+fn process_start_time(pid: u32) -> Option<u64> {
+    #[cfg(target_os = "linux")]
+    {
+        let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+        parse_proc_stat_start_time(&stat)
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = pid;
+        None
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn parse_proc_stat_start_time(stat: &str) -> Option<u64> {
+    // `comm` (field 2) may contain spaces and ')', so split after its
+    // closing paren; remaining fields start at field 3 (state).
+    let after_comm = stat.rsplit_once(')')?.1;
+    let mut fields = after_comm.split_ascii_whitespace();
+    // Field 22 (starttime) is the 20th field after `comm`.
+    fields.nth(19)?.parse::<u64>().ok()
 }
 
 /// Immutable capability binding loaded from the host-validated Capsule config.
@@ -78,7 +132,7 @@ impl UsageRelayAuthorization {
 
     fn authorizes(
         &self,
-        supervisor_pid: u32,
+        supervisor: SupervisorIdentity,
         peer: Option<PeerIdentity>,
         operation: &UsageBrokerOperation,
     ) -> bool {
@@ -88,7 +142,7 @@ impl UsageRelayAuthorization {
         let Some(peer) = peer else {
             return false;
         };
-        if peer.uid == 0 && peer.gid == 0 && peer.pid == Some(supervisor_pid) {
+        if supervisor.matches(peer) {
             return self.launch_capabilities.contains(capability);
         }
         self.by_peer.get(&(peer.uid, peer.gid)) == Some(capability)
@@ -107,6 +161,7 @@ impl From<SessionIdentity> for PeerIdentity {
     fn from(identity: SessionIdentity) -> Self {
         Self {
             pid: None,
+            start_time: None,
             uid: identity.uid,
             gid: identity.gid,
         }
@@ -138,7 +193,7 @@ pub(crate) async fn run() -> Result<()> {
         .context("building usage relay session authorization")?;
     run_at(
         Path::new(jackin_core::container_paths::USAGE_SOCK),
-        load_supervisor_pid()?,
+        load_supervisor_identity()?,
         authorization,
         tokio::io::stdin(),
         tokio::io::stdout(),
@@ -146,8 +201,16 @@ pub(crate) async fn run() -> Result<()> {
     .await
 }
 
-fn load_supervisor_pid() -> Result<u32> {
-    parse_supervisor_pid(std::env::var(jackin_protocol::CAPSULE_SUPERVISOR_PID_ENV))
+fn load_supervisor_identity() -> Result<SupervisorIdentity> {
+    let pid = parse_supervisor_pid(std::env::var(jackin_protocol::CAPSULE_SUPERVISOR_PID_ENV))?;
+    // Pin (pid, start_time) now: a later root process reusing this PID gets a
+    // different start time and fails `matches`. If the start time is
+    // unverifiable the binding carries `None` and the supervisor path denies
+    // while session peers keep working.
+    Ok(SupervisorIdentity {
+        pid,
+        start_time: process_start_time(pid),
+    })
 }
 
 fn parse_supervisor_pid(variable: Result<String, std::env::VarError>) -> Result<u32> {
@@ -168,27 +231,31 @@ fn parse_supervisor_pid(variable: Result<String, std::env::VarError>) -> Result<
     Ok(supervisor_pid)
 }
 
-fn supervisor_peer_allows(supervisor_pid: u32, peer: Option<PeerIdentity>) -> bool {
+fn supervisor_peer_allows(supervisor: SupervisorIdentity, peer: Option<PeerIdentity>) -> bool {
     let Some(peer) = peer else {
         return false;
     };
     if peer.uid == 0 || peer.gid == 0 {
-        return peer.uid == 0 && peer.gid == 0 && peer.pid == Some(supervisor_pid);
+        return supervisor.matches(peer);
     }
     true
 }
 
 fn peer_identity(stream: &UnixStream) -> Option<PeerIdentity> {
-    stream.peer_cred().ok().map(|credentials| PeerIdentity {
-        pid: credentials.pid().and_then(|pid| u32::try_from(pid).ok()),
-        uid: credentials.uid(),
-        gid: credentials.gid(),
+    stream.peer_cred().ok().map(|credentials| {
+        let pid = credentials.pid().and_then(|pid| u32::try_from(pid).ok());
+        PeerIdentity {
+            pid,
+            start_time: pid.and_then(process_start_time),
+            uid: credentials.uid(),
+            gid: credentials.gid(),
+        }
     })
 }
 
 async fn run_at<R, W>(
     socket_path: &Path,
-    supervisor_pid: u32,
+    supervisor: SupervisorIdentity,
     authorization: UsageRelayAuthorization,
     input: R,
     output: W,
@@ -197,20 +264,12 @@ where
     R: AsyncRead + Unpin + Send + 'static,
     W: AsyncWrite + Unpin + Send + 'static,
 {
-    run_at_with_peer(
-        socket_path,
-        supervisor_pid,
-        authorization,
-        None,
-        input,
-        output,
-    )
-    .await
+    run_at_with_peer(socket_path, supervisor, authorization, None, input, output).await
 }
 
 async fn run_at_with_peer<R, W>(
     socket_path: &Path,
-    supervisor_pid: u32,
+    supervisor: SupervisorIdentity,
     authorization: UsageRelayAuthorization,
     forced_peer: Option<PeerIdentity>,
     input: R,
@@ -276,7 +335,7 @@ where
                         request_id,
                         requests,
                         pending,
-                        supervisor_pid,
+                        supervisor,
                         authorization,
                         peer,
                     ),
@@ -299,7 +358,7 @@ async fn handle_local(
     request_id: u64,
     requests: mpsc::Sender<UsageRelayTunnelRequest>,
     pending: Pending,
-    supervisor_pid: u32,
+    supervisor: SupervisorIdentity,
     authorization: Arc<UsageRelayAuthorization>,
     peer: Option<PeerIdentity>,
 ) {
@@ -307,11 +366,10 @@ async fn handle_local(
         let mut reader = BufReader::new(&mut stream);
         read_frame::<_, UsageBrokerRequest>(&mut reader).await
     };
-    let supervisor_ok = supervisor_peer_allows(supervisor_pid, peer);
+    let supervisor_ok = supervisor_peer_allows(supervisor, peer);
     let response = match request {
         Ok(request)
-            if supervisor_ok
-                && authorization.authorizes(supervisor_pid, peer, &request.operation) =>
+            if supervisor_ok && authorization.authorizes(supervisor, peer, &request.operation) =>
         {
             let (response_tx, response_rx) = oneshot::channel();
             pending.lock().await.insert(request_id, response_tx);
