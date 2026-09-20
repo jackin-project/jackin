@@ -31,26 +31,26 @@ pub(crate) struct AffectedCratesArgs {
 }
 
 #[derive(Deserialize)]
-struct Metadata {
+pub(crate) struct Metadata {
     packages: Vec<Package>,
     workspace_members: BTreeSet<String>,
     resolve: Option<Resolve>,
 }
 
 #[derive(Deserialize)]
-struct Package {
+pub(crate) struct Package {
     id: String,
     name: String,
     manifest_path: PathBuf,
 }
 
 #[derive(Deserialize)]
-struct Resolve {
+pub(crate) struct Resolve {
     nodes: Vec<Node>,
 }
 
 #[derive(Deserialize)]
-struct Node {
+pub(crate) struct Node {
     id: String,
     deps: Vec<Dependency>,
     #[serde(default)]
@@ -58,17 +58,17 @@ struct Node {
 }
 
 #[derive(Deserialize)]
-struct Dependency {
+pub(crate) struct Dependency {
     pkg: String,
 }
 
-struct WorkspaceGraph {
-    names: BTreeMap<String, String>,
-    package_names: BTreeMap<String, String>,
-    roots: BTreeMap<String, PathBuf>,
-    dependents: BTreeMap<String, BTreeSet<String>>,
-    resolved_dependencies: BTreeMap<String, BTreeSet<String>>,
-    resolved_features: BTreeMap<String, BTreeSet<String>>,
+pub(crate) struct WorkspaceGraph {
+    pub(crate) names: BTreeMap<String, String>,
+    pub(crate) package_names: BTreeMap<String, String>,
+    pub(crate) roots: BTreeMap<String, PathBuf>,
+    pub(crate) dependents: BTreeMap<String, BTreeSet<String>>,
+    pub(crate) resolved_dependencies: BTreeMap<String, BTreeSet<String>>,
+    pub(crate) resolved_features: BTreeMap<String, BTreeSet<String>>,
 }
 
 pub(crate) fn run(args: AffectedCratesArgs) -> Result<()> {
@@ -106,20 +106,29 @@ pub(crate) fn run(args: AffectedCratesArgs) -> Result<()> {
     Ok(())
 }
 
-fn cargo_metadata(snapshot: Option<&Path>) -> Result<Metadata> {
+pub(crate) fn cargo_metadata(snapshot: Option<&Path>) -> Result<Metadata> {
+    cargo_metadata_inner(snapshot, true)
+}
+
+/// Online variant for local entry points (pre-commit hook): dev checkouts
+/// routinely lack cached manifests for non-host platforms, so `--offline`
+/// metadata fails where a build succeeds. `--locked` still holds.
+pub(crate) fn cargo_metadata_online() -> Result<Metadata> {
+    cargo_metadata_inner(None, false)
+}
+
+fn cargo_metadata_inner(snapshot: Option<&Path>, offline: bool) -> Result<Metadata> {
     if let Some(path) = snapshot {
         let contents = std::fs::read(path)
             .with_context(|| format!("reading Cargo metadata snapshot {}", path.display()))?;
         return serde_json::from_slice(&contents)
             .with_context(|| format!("parsing Cargo metadata snapshot {}", path.display()));
     }
-    let output = cmd::output(cmd::command("cargo").args([
-        "metadata",
-        "--format-version",
-        "1",
-        "--locked",
-        "--offline",
-    ]))?;
+    let mut args = vec!["metadata", "--format-version", "1", "--locked"];
+    if offline {
+        args.push("--offline");
+    }
+    let output = cmd::output(cmd::command("cargo").args(args))?;
     serde_json::from_slice(&output).context("parsing cargo metadata")
 }
 
@@ -142,7 +151,7 @@ fn changed_paths(base: &str, head: &str) -> Result<Vec<PathBuf>> {
 }
 
 impl WorkspaceGraph {
-    fn from_metadata(metadata: Metadata) -> Result<Self> {
+    pub(crate) fn from_metadata(metadata: Metadata) -> Result<Self> {
         let package_names = metadata
             .packages
             .iter()
@@ -206,8 +215,35 @@ impl WorkspaceGraph {
         })
     }
 
-    fn all_names(&self) -> Vec<String> {
+    pub(crate) fn all_names(&self) -> Vec<String> {
         let mut names = self.names.values().cloned().collect::<Vec<_>>();
+        names.sort();
+        names
+    }
+
+    /// Workspace-relative crate directories by package id, for mapping
+    /// changed paths (and nested-package path dependencies) to members.
+    pub(crate) fn member_roots(&self) -> &BTreeMap<String, PathBuf> {
+        &self.roots
+    }
+
+    /// Package name for a workspace member id.
+    pub(crate) fn member_name(&self, id: &str) -> Option<&str> {
+        self.names.get(id).map(String::as_str)
+    }
+
+    /// Names of members whose resolved forward closure contains a package
+    /// with this name. Used to pull in members affected by an on-disk
+    /// change to a non-member package (e.g. the `[patch]`-replaced
+    /// `vendor/arrayref`).
+    pub(crate) fn members_depending_on_package(&self, package: &str) -> Vec<String> {
+        let changed = BTreeSet::from([package.to_owned()]);
+        let mut names = self
+            .names
+            .keys()
+            .filter(|id| self.depends_on_changed_package(id, &changed))
+            .filter_map(|id| self.names.get(id).cloned())
+            .collect::<Vec<_>>();
         names.sort();
         names
     }
@@ -217,7 +253,7 @@ impl WorkspaceGraph {
         self.affected_with_dependencies(paths, None, None)
     }
 
-    fn affected_with_dependencies(
+    pub(crate) fn affected_with_dependencies(
         &self,
         paths: &[PathBuf],
         changed_lock_packages: Option<&BTreeSet<String>>,
@@ -380,8 +416,15 @@ impl WorkspaceGraph {
 fn changed_lock_packages(base: &str, head: &str) -> Result<BTreeSet<String>> {
     let base_lock = git_file(base, Path::new("Cargo.lock"))?;
     let head_lock = git_file(head, Path::new("Cargo.lock"))?;
-    let base_packages = lock_packages(&base_lock)?;
-    let head_packages = lock_packages(&head_lock)?;
+    changed_lock_packages_from_contents(&base_lock, &head_lock)
+}
+
+pub(crate) fn changed_lock_packages_from_contents(
+    base: &[u8],
+    head: &[u8],
+) -> Result<BTreeSet<String>> {
+    let base_packages = lock_packages(base)?;
+    let head_packages = lock_packages(head)?;
     Ok(base_packages
         .iter()
         .filter(|(identity, value)| head_packages.get(*identity) != Some(*value))
@@ -395,8 +438,17 @@ fn changed_lock_packages(base: &str, head: &str) -> Result<BTreeSet<String>> {
 }
 
 fn changed_workspace_dependencies(base: &str, head: &str) -> Result<Option<BTreeSet<String>>> {
-    let mut base_manifest = manifest_value(&git_file(base, Path::new("Cargo.toml"))?)?;
-    let mut head_manifest = manifest_value(&git_file(head, Path::new("Cargo.toml"))?)?;
+    let base_manifest = git_file(base, Path::new("Cargo.toml"))?;
+    let head_manifest = git_file(head, Path::new("Cargo.toml"))?;
+    changed_workspace_dependencies_from_contents(&base_manifest, &head_manifest)
+}
+
+pub(crate) fn changed_workspace_dependencies_from_contents(
+    base: &[u8],
+    head: &[u8],
+) -> Result<Option<BTreeSet<String>>> {
+    let mut base_manifest = manifest_value(base)?;
+    let mut head_manifest = manifest_value(head)?;
     let base_dependencies = take_workspace_dependencies(&mut base_manifest);
     let head_dependencies = take_workspace_dependencies(&mut head_manifest);
     if base_manifest != head_manifest {
@@ -445,7 +497,7 @@ fn dependency_package_name(name: &str, value: &toml::Value) -> String {
         .to_owned()
 }
 
-fn git_file(revision: &str, path: &Path) -> Result<Vec<u8>> {
+pub(crate) fn git_file(revision: &str, path: &Path) -> Result<Vec<u8>> {
     let object = format!("{revision}:{}", path.to_string_lossy());
     cmd::output(cmd::command("git").args(["show", &object]))
 }
@@ -511,7 +563,7 @@ fn is_docker_test_input(path: &Path) -> bool {
     path == Path::new("docker-bake.hcl") || path.starts_with("docker")
 }
 
-fn is_documentation(path: &Path) -> bool {
+pub(crate) fn is_documentation(path: &Path) -> bool {
     matches!(
         path.extension().and_then(|extension| extension.to_str()),
         Some("md" | "mdx")
