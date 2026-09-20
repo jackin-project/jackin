@@ -844,13 +844,15 @@ pub struct WrapperCallSite {
 ///
 /// Groups every `*MODEL*`, `*_PROFILE*`, and `*_BASE_URL` (plus `_API_BASE` /
 /// `_API_URL`) literal by the lowercased first `_`-separated segment of the
-/// variable name (`KIMI_MODEL` + `KIMI_BASE_URL` → `kimi`). Maps onto
-/// `AccountCredential::ApiKey { model, base_url }` defaults and the matching
-/// `AgentConfiguration` overrides. Model IDs and endpoint URLs are not
-/// secrets; key/token literals never enter a profile.
+/// variable name (`MOONSHOT_MODEL` + `MOONSHOT_BASE_URL` → `moonshot`). Maps
+/// onto `AccountCredential::ApiKey { model, base_url }` defaults and the
+/// matching `AgentConfiguration` overrides. Consumers match the lowercased
+/// stem against the canonical provider slug; legacy agent aliases are not
+/// normalized here. Model IDs and endpoint URLs are not secrets; key/token
+/// literals never enter a profile.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ModelProfile {
-    /// Lowercased variable stem (`kimi`, `anthropic`, …).
+    /// Lowercased canonical provider slug (`moonshot`, `anthropic`, …).
     pub name: String,
     /// Explicit model identifier, if the group carries one.
     pub model: Option<String>,
