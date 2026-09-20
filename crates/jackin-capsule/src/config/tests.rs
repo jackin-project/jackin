@@ -106,6 +106,45 @@ fn workdir_boundary_preserves_workspace_and_rejects_private_mount_ancestors() {
     );
 }
 
+fn isolated_entry(dst: &str) -> jackin_protocol::IsolatedWorktree {
+    jackin_protocol::IsolatedWorktree {
+        dst: dst.to_owned(),
+        readonly: false,
+        worktree: false,
+        shared: true,
+    }
+}
+
+#[test]
+fn isolated_worktrees_reject_protected_and_private_destinations() {
+    let mut valid = instance_config(&[("codex-work", "api_key", "codex")]);
+    valid.isolated_worktrees = vec![
+        isolated_entry("/workspace/extra"),
+        isolated_entry("/jackin/work/jackin"),
+    ];
+    validate(&valid).unwrap();
+
+    for hostile in [
+        "",
+        "/home/agent/evil",
+        "/jackin/run/evil",
+        "/jackin/state/evil",
+        "/jackin/runtime/evil",
+        "/jackin/host/evil",
+        "/home/agent/.slot-0",
+        "relative/path",
+        "/workspace/../home/agent",
+        "/",
+    ] {
+        let mut invalid = valid.clone();
+        invalid.isolated_worktrees = vec![isolated_entry(hostile)];
+        assert!(
+            validate(&invalid).is_err(),
+            "hostile destination must be rejected: {hostile:?}"
+        );
+    }
+}
+
 #[test]
 fn instance_boundary_rejects_protected_root_aliases() {
     let mut invalid_home = instance_config(&[("codex-work", "api_key", "codex")]);

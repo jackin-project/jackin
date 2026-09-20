@@ -88,8 +88,12 @@ pub(super) fn workspace_launch_config(
     let isolated_worktrees = materialized
         .mounts
         .iter()
-        .filter(|mount| !mount.isolation.is_shared())
-        .map(|mount| mount.dst.clone())
+        .map(|mount| jackin_protocol::IsolatedWorktree {
+            dst: mount.dst.clone(),
+            readonly: mount.readonly,
+            worktree: mount.worktree_aux.is_some(),
+            shared: mount.isolation.is_shared(),
+        })
         .collect();
     let mut launch_config = crate::runtime::launch::capsule_config(
         selector,

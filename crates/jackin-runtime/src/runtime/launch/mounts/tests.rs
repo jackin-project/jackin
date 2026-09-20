@@ -145,6 +145,80 @@ fn workspace_mount_strings_order_by_depth_and_harden_gitdir_overrides() {
 }
 
 #[test]
+fn workspace_mount_destinations_cover_shared_and_worktree_git_targets() {
+    let aux = WorktreeAuxMounts {
+        host_git_dir: "/host/repo/.git".to_owned(),
+        host_git_target: "/jackin/host/wt/.git".to_owned(),
+        git_file_override: "/host/overrides/git".to_owned(),
+        git_file_target: "/wt/.git".to_owned(),
+        gitdir_back_override: "/host/overrides/gitdir".to_owned(),
+        gitdir_back_target: "/jackin/host/wt/.git/worktrees/fixture/gitdir".to_owned(),
+    };
+    let workspace = MaterializedWorkspace {
+        workdir: "/work".to_owned(),
+        mounts: vec![
+            MaterializedMount {
+                bind_src: "/host/shallow".to_owned(),
+                dst: "/work".to_owned(),
+                readonly: false,
+                isolation: MountIsolation::Shared,
+                worktree_aux: None,
+            },
+            MaterializedMount {
+                bind_src: "/host/deep".to_owned(),
+                dst: "/work/deep".to_owned(),
+                readonly: true,
+                isolation: MountIsolation::Shared,
+                worktree_aux: None,
+            },
+            MaterializedMount {
+                bind_src: "/host/wt".to_owned(),
+                dst: "/wt".to_owned(),
+                readonly: false,
+                isolation: MountIsolation::Worktree,
+                worktree_aux: Some(aux.clone()),
+            },
+        ],
+        keep_awake_enabled: false,
+    };
+
+    // Docker mount order (shallowest destination first), with the worktree
+    // git-dir target exposed alongside its mount.
+    assert_eq!(
+        workspace_mount_destinations(&workspace),
+        vec![
+            WorkspaceMountDestination {
+                bind_src: "/host/wt".to_owned(),
+                dst: "/wt".to_owned(),
+                readonly: false,
+                worktree_aux: Some(aux),
+            },
+            WorkspaceMountDestination {
+                bind_src: "/host/shallow".to_owned(),
+                dst: "/work".to_owned(),
+                readonly: false,
+                worktree_aux: None,
+            },
+            WorkspaceMountDestination {
+                bind_src: "/host/deep".to_owned(),
+                dst: "/work/deep".to_owned(),
+                readonly: true,
+                worktree_aux: None,
+            },
+        ]
+    );
+    let destinations = workspace_mount_destinations(&workspace);
+    assert_eq!(
+        destinations[0]
+            .worktree_aux
+            .as_ref()
+            .map(|aux| aux.host_git_target.as_str()),
+        Some("/jackin/host/wt/.git")
+    );
+    assert_eq!(destinations[1].worktree_aux, None);
+}
+
+#[test]
 fn apple_workspace_mounts_reject_worktree_file_overlays() {
     let shared = MaterializedWorkspace {
         workdir: "/work".to_owned(),

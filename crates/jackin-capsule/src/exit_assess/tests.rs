@@ -5,7 +5,7 @@ use super::{
     DirtyRepo, ExitDecision, assess_dirty, decide_exit, exit_action_json, policy_is_ask,
     write_exit_action_to,
 };
-use jackin_protocol::{CapsuleConfig, ExitAction};
+use jackin_protocol::{CapsuleConfig, ExitAction, IsolatedWorktree};
 
 fn repo(path: &str) -> DirtyRepo {
     DirtyRepo {
@@ -106,7 +106,12 @@ async fn decide_exit_drains_for_keep_and_discard_policies() {
     for policy in ["keep", "discard"] {
         let config = CapsuleConfig {
             dirty_exit_policy: Some(policy.to_owned()),
-            isolated_worktrees: vec!["/jackin/work/jackin".to_owned()],
+            isolated_worktrees: vec![IsolatedWorktree {
+                dst: "/jackin/work/jackin".to_owned(),
+                readonly: false,
+                worktree: true,
+                shared: false,
+            }],
             ..CapsuleConfig::default()
         };
         assert_eq!(decide_exit(&config).await, ExitDecision::Drain, "{policy}");

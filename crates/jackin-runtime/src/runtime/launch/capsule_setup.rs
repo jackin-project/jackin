@@ -369,7 +369,7 @@ pub(crate) fn capsule_config(
     workdir: &str,
     manifest: &jackin_manifest::RoleManifest,
     dirty_exit_policy: &str,
-    isolated_worktrees: Vec<String>,
+    isolated_worktrees: Vec<jackin_protocol::IsolatedWorktree>,
     instances: &[jackin_config::ResolvedInstance],
 ) -> jackin_protocol::CapsuleConfig {
     let mut models = std::collections::BTreeMap::new();

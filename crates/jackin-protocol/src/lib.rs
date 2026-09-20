@@ -270,11 +270,14 @@ pub struct CapsuleConfig {
     /// not depend on `jackin-config`'s `DirtyExitPolicy`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dirty_exit_policy: Option<String>,
-    /// Container-side paths of isolated `worktree`/`clone` mounts the daemon
-    /// assesses for dirty/unpushed work at last-session exit. `shared` mounts are
-    /// never listed (host-owned).
+    /// Every workspace bind-mount destination (`shared`, `worktree`, and
+    /// `clone` mounts). The session Landlock boundary grants each `dst`
+    /// (read-only or full per `readonly`) plus the worktree git target when
+    /// `worktree` is set. The dirty-exit assessment covers non-`shared`
+    /// entries only: shared mounts are host-owned and host cleanup never
+    /// deletes them, so listing their dirt under keep/discard would mislead.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub isolated_worktrees: Vec<String>,
+    pub isolated_worktrees: Vec<IsolatedWorktree>,
     /// Value the daemon assigns to the agent's folder env var
     /// (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`, …) when spawning this
     /// instance, keyed by instance config ID. Primary slots carry the
@@ -318,6 +321,25 @@ pub struct CapsuleConfig {
     /// instance credential/home allowlist.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shell_identity: Option<SessionIdentity>,
+}
+
+/// One workspace bind-mount destination admitted into the session Landlock
+/// boundary. Covers `shared`, `worktree`, and `clone` mounts alike: every
+/// destination outside the session cwd needs an exact rule or Landlock
+/// denies the valid mount.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct IsolatedWorktree {
+    /// Container-side mount destination.
+    pub dst: String,
+    /// Whether the bind mount is read-only (`:ro`).
+    pub readonly: bool,
+    /// Whether this mount carries worktree git aux mounts (the host `.git/`
+    /// bind under `/jackin/host/...` plus the `:ro` pointer overrides).
+    /// True exactly for `worktree`-isolated mounts.
+    pub worktree: bool,
+    /// Whether this is a host-owned `shared` bind. The dirty-exit assessment
+    /// skips shared entries; host cleanup never deletes them.
+    pub shared: bool,
 }
 
 /// A Claude plugin marketplace the capsule registers at container start via

@@ -10,7 +10,7 @@ use std::path::Path;
 use jackin_config::AppConfig;
 
 use crate::apple_container_client::AppleContainerMount;
-use crate::isolation::materialize::MaterializedWorkspace;
+use crate::isolation::materialize::{MaterializedWorkspace, WorktreeAuxMounts};
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub(crate) enum AppleContainerMountError {
@@ -255,7 +255,7 @@ pub(crate) fn github_config_mount(state: &crate::instance::RoleState) -> Option<
 /// different repo entirely.
 pub(crate) fn build_workspace_mount_strings(workspace: &MaterializedWorkspace) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
-    for mount in crate::isolation::materialize::mount_order_for_docker(workspace) {
+    for mount in workspace_mount_destinations(workspace) {
         let suffix = if mount.readonly { ":ro" } else { "" };
         out.push(format!("{}:{}{}", mount.bind_src, mount.dst, suffix));
         if let Some(aux) = &mount.worktree_aux {
@@ -271,6 +271,40 @@ pub(crate) fn build_workspace_mount_strings(workspace: &MaterializedWorkspace) -
         }
     }
     out
+}
+
+/// Owned workspace mount spec in docker mount order: the single source of
+/// mount topology behind [`build_workspace_mount_strings`]. The launch
+/// pipeline also reads these destinations (`dst`, `readonly`, and the
+/// worktree aux `host_git_target`) to stamp the capsule config, so session
+/// Landlock rules cover bind mounts outside the workdir — including
+/// worktree-isolated git admin dirs under `/jackin/host/...`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct WorkspaceMountDestination {
+    /// Host source of the workspace bind mount. Host-side only: never
+    /// stamped into the capsule config.
+    pub bind_src: String,
+    /// Container path of the workspace bind mount.
+    pub dst: String,
+    /// Whether the bind mount is read-only (`:ro`).
+    pub readonly: bool,
+    /// Worktree auxiliary mounts, when this mount is worktree-isolated.
+    pub worktree_aux: Option<WorktreeAuxMounts>,
+}
+
+/// Expose every workspace mount destination in docker mount order.
+pub(crate) fn workspace_mount_destinations(
+    workspace: &MaterializedWorkspace,
+) -> Vec<WorkspaceMountDestination> {
+    crate::isolation::materialize::mount_order_for_docker(workspace)
+        .into_iter()
+        .map(|mount| WorkspaceMountDestination {
+            bind_src: mount.bind_src.clone(),
+            dst: mount.dst.clone(),
+            readonly: mount.readonly,
+            worktree_aux: mount.worktree_aux.clone(),
+        })
+        .collect()
 }
 
 /// The container backend selected for a launch.

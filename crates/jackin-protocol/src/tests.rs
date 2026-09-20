@@ -136,6 +136,34 @@ fn identity_wire_records_default_account_to_none_for_old_peers() {
 }
 
 #[test]
+fn isolated_worktrees_round_trip_with_mount_flags() {
+    let config = CapsuleConfig {
+        workdir: "/workspace".to_owned(),
+        isolated_worktrees: vec![
+            IsolatedWorktree {
+                dst: "/wt".to_owned(),
+                readonly: false,
+                worktree: true,
+                shared: false,
+            },
+            IsolatedWorktree {
+                dst: "/work/deep".to_owned(),
+                readonly: true,
+                worktree: false,
+                shared: true,
+            },
+        ],
+        ..CapsuleConfig::default()
+    };
+    let decoded: CapsuleConfig =
+        serde_json::from_str(&serde_json::to_string(&config).expect("encode")).expect("decode");
+    assert_eq!(decoded.isolated_worktrees, config.isolated_worktrees);
+    assert!(decoded.isolated_worktrees[0].worktree);
+    assert!(decoded.isolated_worktrees[1].readonly);
+    assert!(decoded.isolated_worktrees[1].shared);
+}
+
+#[test]
 fn capsule_config_accessors_are_keyed_by_instance_config_id() {
     let config = CapsuleConfig {
         instances: vec!["claude-work".to_owned(), "claude-personal".to_owned()],

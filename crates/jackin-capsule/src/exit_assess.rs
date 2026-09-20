@@ -121,17 +121,25 @@ pub fn policy_is_ask(config: &CapsuleConfig) -> bool {
     config.dirty_exit_policy.as_deref().unwrap_or("ask") == "ask"
 }
 
-/// Assess every isolated worktree in `config`; return those with uncommitted or
-/// unpushed work. Empty when nothing is dirty (or there are no isolated mounts).
+/// Assess every non-`shared` workspace mount in `config`; return those with
+/// uncommitted or unpushed work. Empty when nothing is dirty (or there are no
+/// assessed mounts). Shared mounts are skipped: they are host-owned, host
+/// cleanup never deletes them, and listing their (routinely dirty) state
+/// under keep/discard would mislead. The git helpers tolerate errors
+/// (non-repos yield no changes), so assessment stays total.
 pub async fn assess_dirty(config: &CapsuleConfig) -> Vec<DirtyRepo> {
     let mut runner = GitRunner;
     let mut dirty = Vec::new();
-    for path in &config.isolated_worktrees {
-        let changed = changed_files(path, &mut runner).await;
-        let unpushed = unpushed_commit_count(path, &mut runner).await;
+    for entry in config
+        .isolated_worktrees
+        .iter()
+        .filter(|entry| !entry.shared)
+    {
+        let changed = changed_files(&entry.dst, &mut runner).await;
+        let unpushed = unpushed_commit_count(&entry.dst, &mut runner).await;
         if !changed.is_empty() || unpushed > 0 {
             dirty.push(DirtyRepo {
-                path: path.clone(),
+                path: entry.dst.clone(),
                 changed,
                 unpushed,
             });

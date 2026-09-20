@@ -28,9 +28,9 @@ Missing live credentials stay explicit gaps, never passes.
 
 | ID | Defect | Evidence | Status |
 |---|---|---|---|
-| D-UI1 | Console `from_projection` drops `metric_groups`, plan, issues, cred-expiry, quota_state, raw % | `crates/jackin-console/src/tui/screens/usage.rs:176-214` vs `jackin-protocol/src/usage_broker.rs:894-1006` | BLOCKED, repair dispatched |
-| D-UI2 | Capsule one tab per provider; same-provider accounts collapse; 7-surface hardcode excludes Cursor/OpenRouter/Copilot/Antigravity/Gemini/OpenCode/omp/Hermes | `crates/jackin-usage/src/usage/view.rs:493-552`, `control.rs:921-935`, `dialog/usage.rs:119-137` | BLOCKED, repair dispatched |
-| D-SEC1 | P1 review: Landlock grants only cwd; workspace mounts outside workdir + worktree git dir `/jackin/host/...` denied | `crates/jackin-capsule/src/process_isolation.rs:249-398`, thread 4057673954 | BLOCKED, repair dispatched |
+| D-UI1 | Console `from_projection` dropped `metric_groups`, plan, issues, cred-expiry, quota_state, raw % | Fixed in 2667023b: UsageMetricGroup mirrors V1 field-for-field; 25/25 usage tests + full console 1335 pass + clippy -D warnings clean (author + independent rerun) | LANDED, pushed |
+| D-UI2 | Capsule one tab per provider; same-provider accounts collapse; 7-surface hardcode | Agent v1: per-account id-keyed tabs in tree (uncommitted); review found strip labels still bare provider (duplicates indistinguishable) + focus/refresh resolve by label via SwitchUsageProvider; followup dispatched for id-threading + label disambiguation | BLOCKED, followup running |
+| D-SEC1 | P1 review: Landlock grants only cwd; workspace/worktree mounts denied | Agent v1: isolated dsts + git targets wired (in tree, uncommitted); review found shared outside-workdir mounts still uncovered (user dst passes through, materialize.rs) + ro over-grant; followup dispatched for {dst,readonly,worktree} struct + full coverage | BLOCKED, followup running |
 | D-SEC2 | No durable multi-file publication journal; crash-between-renames skew unrecovered | `persist.rs` TODO, `TODO.md:78-83` | BLOCKED, design needed |
 | D-SEC3 | Teardown uses bare `remove_dir_all` (symlink/replacement races) | `cleanup.rs`, `isolation/cleanup.rs` | UNVERIFIED, needs repro |
 | D-BR1 | Broker: no cancel; join timeout keeps ownership; lease acquired post-discovery (stale catalog risk, per WS5/HANDOFF) | `coordinator`, `broker.rs`, `view.rs:1-16` | UNVERIFIED, needs repro |

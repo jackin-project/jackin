@@ -408,6 +408,35 @@ mod linux {
                 }
             }
         }
+
+        // Auxiliary workspace destinations outside the session cwd (shared,
+        // worktree, and clone bind mounts) and their worktree git admin
+        // dirs. Without exact rules Landlock denies these valid mounts and
+        // git operations fail.
+        for entry in &config.isolated_worktrees {
+            let (lexical_mount, mount) = validate_auxiliary_mount_destination(config, &entry.dst)?;
+            if mount == cwd {
+                continue;
+            }
+            let access = if entry.readonly {
+                READ_ONLY
+            } else {
+                FULL_WITH_UNIX
+            };
+            required_exact_rule(&mut rules, &mount, access);
+            if entry.worktree {
+                // Derived worktree git target. The host bind-mounts it
+                // read-write unconditionally, so the grant is FULL; the two
+                // `:ro` pointer-file overlays need no rules of their own:
+                // `<dst>/.git` sits under the workspace grant and the
+                // `gitdir` back-pointer under this git-dir grant (Landlock
+                // unions rights, so narrower rules beneath would be
+                // redundant). Required: a worktree entry without its git
+                // target means host/container skew, which fails closed.
+                let git_target = worktree_git_target(config, &lexical_mount)?;
+                required_exact_rule(&mut rules, &git_target, FULL);
+            }
+        }
         Ok(rules)
     }
 
@@ -464,6 +493,121 @@ mod linux {
             }
         }
         Ok(cwd)
+    }
+
+    /// Validate an auxiliary isolated-workspace destination the same way the
+    /// session cwd is validated: absolute, canonicalized when present, and
+    /// never overlapping agent-private homes, sensitive capsule roots, or
+    /// another slot's private mount. There is no blanket `/jackin` rejection:
+    /// `/jackin/work/...` destinations are legitimate workspaces. Returns the
+    /// lexical and canonicalized forms; the worktree git target is derived
+    /// from the lexical form because the host builds it from the same literal
+    /// destination string.
+    fn validate_auxiliary_mount_destination(
+        config: &CapsuleConfig,
+        mount: &str,
+    ) -> Result<(PathBuf, PathBuf)> {
+        anyhow::ensure!(
+            Path::new(mount).is_absolute(),
+            "isolated workspace destination {mount} must be absolute"
+        );
+        anyhow::ensure!(
+            !mount.split('/').any(|component| component == ".."),
+            "isolated workspace destination {mount} must not contain `..`"
+        );
+        let lexical_mount = jackin_core::container_paths::normalize_path(Path::new(mount));
+        let mount = normalize_existing_path(&lexical_mount)?;
+        for protected_root in [
+            "/home/agent",
+            jackin_core::container_paths::RUN_DIR,
+            jackin_core::container_paths::STATE_DIR,
+            jackin_core::container_paths::RUNTIME_DIR,
+            jackin_core::container_paths::DEFAULT_HOME_DIR,
+            jackin_core::container_paths::HOST_DIR,
+            jackin_protocol::ACCOUNT_CREDENTIALS_DIR,
+        ] {
+            let lexical_root =
+                jackin_core::container_paths::normalize_path(Path::new(protected_root));
+            anyhow::ensure!(
+                !jackin_core::container_paths::paths_overlap(&lexical_mount, &lexical_root),
+                "isolated workspace destination {} overlaps protected root {}",
+                lexical_mount.display(),
+                lexical_root.display()
+            );
+            let protected_root = normalize_existing_path(&lexical_root)?;
+            anyhow::ensure!(
+                !jackin_core::container_paths::paths_overlap(&mount, &protected_root),
+                "isolated workspace destination {} overlaps protected root {}",
+                mount.display(),
+                protected_root.display()
+            );
+        }
+        for (instance, paths) in &config.instance_mount_paths {
+            for path in paths {
+                let lexical_private = jackin_core::container_paths::normalize_path(Path::new(path));
+                anyhow::ensure!(
+                    !jackin_core::container_paths::paths_overlap(&lexical_mount, &lexical_private),
+                    "isolated workspace destination {} overlaps protected mount destination {} for instance {instance}",
+                    lexical_mount.display(),
+                    lexical_private.display()
+                );
+                let private = normalize_existing_path(&lexical_private)?;
+                anyhow::ensure!(
+                    !jackin_core::container_paths::paths_overlap(&mount, &private),
+                    "isolated workspace destination {} overlaps protected mount destination {} for instance {instance}",
+                    mount.display(),
+                    private.display()
+                );
+            }
+        }
+        Ok((lexical_mount, mount))
+    }
+
+    /// Derive the worktree git-dir target for an admitted lexical mount
+    /// destination. Mirrors the host-side layout (`/jackin/host/<dst
+    /// stripped of slashes>/.git`, see `WorktreeAuxMounts`): the per-worktree
+    /// admin dir lives natively below it, so one exact rule covers git
+    /// metadata without widening to the `/jackin/host` parent.
+    fn worktree_git_target(config: &CapsuleConfig, mount: &Path) -> Result<PathBuf> {
+        let rel = mount
+            .strip_prefix(Path::new("/"))
+            .context("isolated workspace destination must be absolute")?;
+        anyhow::ensure!(
+            !rel.as_os_str().is_empty(),
+            "isolated workspace destination {} has no worktree git target",
+            mount.display()
+        );
+        let host_dir = Path::new(jackin_core::container_paths::HOST_DIR);
+        let lexical_target = host_dir.join(rel).join(".git");
+        let target = normalize_existing_path(&lexical_target)?;
+        for candidate in [&lexical_target, &target] {
+            anyhow::ensure!(
+                *candidate != host_dir
+                    && jackin_core::container_paths::path_is_ancestor_or_equal(host_dir, candidate),
+                "worktree git target {} escapes {}",
+                candidate.display(),
+                host_dir.display()
+            );
+        }
+        for (instance, paths) in &config.instance_mount_paths {
+            for path in paths {
+                let lexical_private = jackin_core::container_paths::normalize_path(Path::new(path));
+                anyhow::ensure!(
+                    !jackin_core::container_paths::paths_overlap(&lexical_target, &lexical_private),
+                    "worktree git target {} overlaps protected mount destination {} for instance {instance}",
+                    lexical_target.display(),
+                    lexical_private.display()
+                );
+                let private = normalize_existing_path(&lexical_private)?;
+                anyhow::ensure!(
+                    !jackin_core::container_paths::paths_overlap(&target, &private),
+                    "worktree git target {} overlaps protected mount destination {} for instance {instance}",
+                    target.display(),
+                    private.display()
+                );
+            }
+        }
+        Ok(target)
     }
 
     fn session_root_path(session_id: u64) -> PathBuf {
@@ -767,7 +911,7 @@ mod tests {
         retained_capability_mask, rules_for, rules_for_test, test_support,
     };
     use anyhow::Context as _;
-    use jackin_protocol::CapsuleConfig;
+    use jackin_protocol::{CapsuleConfig, IsolatedWorktree};
     use std::collections::BTreeMap;
     use std::fs;
     use std::mem::size_of;
@@ -916,6 +1060,161 @@ mod tests {
         assert!(!rules.iter().any(|rule| {
             rule.path == Path::new("/") && rule.access & test_support::WRITABLE != 0
         }));
+    }
+
+    fn isolated_entry(dst: &str, readonly: bool, worktree: bool, shared: bool) -> IsolatedWorktree {
+        IsolatedWorktree {
+            dst: dst.to_owned(),
+            readonly,
+            worktree,
+            shared,
+        }
+    }
+
+    #[test]
+    fn auxiliary_workspace_mount_and_worktree_git_dir_receive_scoped_rules() {
+        let config = CapsuleConfig {
+            isolated_worktrees: vec![
+                isolated_entry("/workspace/extra", false, true, false),
+                isolated_entry("/workspace/project", false, false, true),
+                isolated_entry("/workspace/ro-shared", true, false, true),
+                isolated_entry("/wt-clone", false, false, false),
+            ],
+            ..CapsuleConfig::default()
+        };
+        let rules = rules_for(
+            &config,
+            None,
+            Path::new("/workspace/project"),
+            Path::new("/jackin/run/sessions/1"),
+        )
+        .expect("auxiliary mounts must be admitted");
+
+        // Outside-workdir bind mount: full workspace grant, required.
+        let extra = rules
+            .iter()
+            .find(|rule| rule.path == Path::new("/workspace/extra"))
+            .expect("auxiliary mount rule");
+        assert_eq!(extra.access, FULL_WITH_UNIX);
+        assert!(extra.required);
+        // Derived worktree git admin dir: full file access without socket
+        // resolution (git metadata never legitimately holds sockets).
+        // Required: a worktree entry without its git target is host skew.
+        let git_target = rules
+            .iter()
+            .find(|rule| rule.path == Path::new("/jackin/host/workspace/extra/.git"))
+            .expect("worktree git target rule");
+        assert_eq!(git_target.access, FULL);
+        assert!(git_target.required);
+        // Read-only shared mount: read-only grant, required, no git target.
+        let ro = rules
+            .iter()
+            .find(|rule| rule.path == Path::new("/workspace/ro-shared"))
+            .expect("read-only mount rule");
+        assert_eq!(ro.access, READ_ONLY);
+        assert!(ro.required);
+        assert!(!rules.iter().any(|rule| {
+            rule.path == Path::new("/jackin/host/workspace/ro-shared/.git")
+                && rule.access != super::linux::TRAVERSE
+        }));
+        // Clone mount (no aux): full grant, no git target.
+        let clone = rules
+            .iter()
+            .find(|rule| rule.path == Path::new("/wt-clone"))
+            .expect("clone mount rule");
+        assert_eq!(clone.access, FULL_WITH_UNIX);
+        assert!(clone.required);
+        assert!(!rules.iter().any(|rule| {
+            rule.path == Path::new("/jackin/host/wt-clone/.git")
+                && rule.access != super::linux::TRAVERSE
+        }));
+        // The destination equal to the cwd reuses the cwd rule, not a duplicate.
+        assert_eq!(
+            rules
+                .iter()
+                .filter(|rule| rule.path == Path::new("/workspace/project"))
+                .count(),
+            1
+        );
+        // An unlisted path gets no grant (traverse-only ancestors at most).
+        assert!(!rules.iter().any(|rule| {
+            rule.path == Path::new("/workspace/other") && rule.access != super::linux::TRAVERSE
+        }));
+        // No broadening of /proc, /tmp, or the exact socket rules.
+        assert!(!rules.iter().any(|rule| {
+            rule.path == Path::new("/proc") && rule.access != super::linux::TRAVERSE
+        }));
+        assert!(!rules.iter().any(|rule| {
+            rule.path == Path::new("/tmp") && rule.access != super::linux::TRAVERSE
+        }));
+        for socket in [
+            jackin_core::container_paths::CAPSULE_SOCKET,
+            jackin_core::container_paths::HOST_SOCK,
+            jackin_core::container_paths::USAGE_SOCK,
+        ] {
+            assert_eq!(
+                rules
+                    .iter()
+                    .find(|rule| rule.path == Path::new(socket))
+                    .unwrap_or_else(|| panic!("socket rule for {socket}"))
+                    .access,
+                READ_ONLY_WITH_UNIX
+            );
+        }
+    }
+
+    #[test]
+    fn hostile_auxiliary_mount_destinations_are_rejected() {
+        for hostile in [
+            "/home/agent/evil",
+            "/jackin/run/evil",
+            "/jackin/state/evil",
+            "/jackin/runtime/evil",
+            "/jackin/host/evil",
+            "relative/path",
+            "/workspace/../home/agent",
+            "/",
+        ] {
+            let config = CapsuleConfig {
+                isolated_worktrees: vec![isolated_entry(hostile, false, false, true)],
+                ..CapsuleConfig::default()
+            };
+            assert!(
+                rules_for_test(
+                    &config,
+                    None,
+                    Path::new("/workspace/project"),
+                    Path::new("/jackin/run/sessions/1"),
+                )
+                .is_err(),
+                "hostile destination must be rejected: {hostile}"
+            );
+        }
+    }
+
+    #[test]
+    fn auxiliary_mount_destination_rejects_private_mount_overlap() {
+        let config = CapsuleConfig {
+            isolated_worktrees: vec![isolated_entry(
+                "/workspace/private-slot",
+                false,
+                false,
+                true,
+            )],
+            instance_mount_paths: BTreeMap::from([(
+                "canary".to_owned(),
+                vec!["/workspace/private-slot".to_owned()],
+            )]),
+            ..CapsuleConfig::default()
+        };
+        let error = rules_for_test(
+            &config,
+            None,
+            Path::new("/workspace/project"),
+            Path::new("/jackin/run/sessions/1"),
+        )
+        .expect_err("auxiliary mount overlapping a private mount must be rejected");
+        assert!(error.to_string().contains("mount destination"));
     }
 
     #[test]

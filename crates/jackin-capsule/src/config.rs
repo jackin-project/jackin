@@ -245,11 +245,81 @@ fn validate_instance(
     Ok(())
 }
 
+/// Reject an auxiliary isolated-workspace destination whose recursive grant
+/// could cover capsule state, agent-private homes, or an admitted private
+/// mount destination. Mirrors [`validate_workdir_boundary`] without the
+/// blanket `/jackin` rejection: `/jackin/work/...` destinations are
+/// legitimate workspaces.
+fn validate_isolated_worktrees(config: &CapsuleConfig) -> Result<()> {
+    for entry in &config.isolated_worktrees {
+        let mount = entry.dst.as_str();
+        anyhow::ensure!(
+            !mount.trim().is_empty(),
+            "capsule isolated workspace destination is empty"
+        );
+        anyhow::ensure!(
+            Path::new(mount).is_absolute(),
+            "capsule isolated workspace destination {mount} must be absolute"
+        );
+        anyhow::ensure!(
+            !mount.split('/').any(|component| component == ".."),
+            "capsule isolated workspace destination {mount} must not contain `..`"
+        );
+        let lexical_mount = jackin_core::container_paths::normalize_path(Path::new(mount));
+        let normalized = normalize_existing_path(&lexical_mount)?;
+        for protected_root in [
+            "/home/agent",
+            jackin_core::container_paths::RUN_DIR,
+            jackin_core::container_paths::STATE_DIR,
+            jackin_core::container_paths::RUNTIME_DIR,
+            jackin_core::container_paths::DEFAULT_HOME_DIR,
+            jackin_core::container_paths::HOST_DIR,
+            jackin_protocol::ACCOUNT_CREDENTIALS_DIR,
+        ] {
+            let lexical_root =
+                jackin_core::container_paths::normalize_path(Path::new(protected_root));
+            anyhow::ensure!(
+                !jackin_core::container_paths::paths_overlap(&lexical_mount, &lexical_root),
+                "capsule isolated workspace destination {} overlaps protected root {}",
+                lexical_mount.display(),
+                lexical_root.display()
+            );
+            let protected_root = normalize_existing_path(&lexical_root)?;
+            anyhow::ensure!(
+                !jackin_core::container_paths::paths_overlap(&normalized, &protected_root),
+                "capsule isolated workspace destination {} overlaps protected root {}",
+                normalized.display(),
+                protected_root.display()
+            );
+        }
+        for (instance, paths) in &config.instance_mount_paths {
+            for path in paths {
+                let lexical_private = jackin_core::container_paths::normalize_path(Path::new(path));
+                anyhow::ensure!(
+                    !jackin_core::container_paths::paths_overlap(&lexical_mount, &lexical_private),
+                    "capsule isolated workspace destination {} overlaps protected mount destination {} for instance {instance}",
+                    lexical_mount.display(),
+                    lexical_private.display()
+                );
+                let private = normalize_existing_path(&lexical_private)?;
+                anyhow::ensure!(
+                    !jackin_core::container_paths::paths_overlap(&normalized, &private),
+                    "capsule isolated workspace destination {} overlaps protected mount destination {} for instance {instance}",
+                    normalized.display(),
+                    private.display()
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
 fn validate(config: &CapsuleConfig) -> Result<()> {
     if config.workdir.trim().is_empty() {
         anyhow::bail!("{} workdir is empty", jackin_protocol::CAPSULE_CONFIG_PATH);
     }
     validate_workdir_boundary(config)?;
+    validate_isolated_worktrees(config)?;
     let mut identities = BTreeSet::new();
     for instance in &config.instances {
         validate_instance(config, instance, &mut identities)?;
