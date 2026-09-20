@@ -1,3 +1,4 @@
+//! Hook-test module doc three.
 //! Hook-test module doc two.
 //! Hook-test module doc.
 //! jackin-brand: renderer-neutral jackin❯ identity and product-domain color tokens.
