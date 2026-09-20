@@ -149,7 +149,7 @@ struct AdmittedIdentity<'a> {
     account_id: &'a str,
 }
 
-/// Hash the persisted admitted identities and their selected revisions.
+/// Hash account admission, selected bindings, and credential declarations.
 /// Values are hashed in memory; only the digest is stored with an instance.
 ///
 /// # Errors
