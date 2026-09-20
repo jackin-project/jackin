@@ -57,7 +57,7 @@ pub fn handle_list_key(
     if key.code == KeyCode::Char('u') {
         if state.usage.screen.is_none() {
             state.usage.screen = Some(crate::tui::state::UsageScreenState::open_with_snapshot(
-                state.usage_accounts.clone(),
+                state.usage_projection.clone(),
                 state.usage_notice.clone(),
             ));
         }

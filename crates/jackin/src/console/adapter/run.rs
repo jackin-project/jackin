@@ -59,10 +59,10 @@ pub struct ConsoleRunOptions<'a> {
 /// refresh only) the batch bypasses the broker success cadence; shared
 /// rate-limit/`Retry-After` deadlines are still honored broker-side and
 /// active generations are joined rather than duplicated.
-pub(crate) fn load_console_usage_state(
+pub(crate) fn load_console_usage_projection(
     paths: &JackinPaths,
     force_refresh: bool,
-) -> anyhow::Result<jackin_console::tui::state::UsageScreenState> {
+) -> anyhow::Result<jackin_protocol::usage_broker::UsageProjectionV1> {
     use jackin_usage::host::{
         HostProbePolicy, HostRuntimeConfig, HostUsageRuntime, UsageBrokerConfig,
         UsageDiscoveryScope, ensure_usage_broker_process, request_usage_batch,
@@ -113,7 +113,7 @@ pub(crate) fn load_console_usage_state(
     let projection = runtime
         .canonical_projection("und")
         .map_err(anyhow::Error::msg)?;
-    Ok(jackin_console::tui::screens::usage::UsageScreenState::from_projection(&projection))
+    Ok(projection)
 }
 
 /// Execute one due Console Usage refresh: poll a completed worker result (if
@@ -138,10 +138,10 @@ pub(crate) fn execute_usage_refresh_effect(
     let mut changed = false;
     if let Some(outcome) = screen.poll_refresh() {
         match outcome {
-            Ok((accounts, notice)) => {
-                manager.usage_accounts.clone_from(&accounts);
-                manager.usage_notice.clone_from(&notice);
-                screen.apply_refresh(accounts, notice, now);
+            Ok(projection) => {
+                manager.usage_projection = Some(projection.clone());
+                screen.apply_refresh(projection, now);
+                manager.usage_notice.clone_from(&screen.notice);
             }
             Err(message) => {
                 let notice = format!("Usage unavailable: {message}");
@@ -156,8 +156,7 @@ pub(crate) fn execute_usage_refresh_effect(
         let paths = paths.clone();
         screen.begin_refresh(jackin_console::tui::runtime::spawn_blocking_subscription(
             move || {
-                let outcome = load_console_usage_state(&paths, plan.force)
-                    .map(|usage| (usage.accounts, usage.notice))
+                let outcome = load_console_usage_projection(&paths, plan.force)
                     .map_err(|error| error.to_string());
                 (plan.generation, outcome)
             },
@@ -189,9 +188,13 @@ fn poll_startup_usage(
     *rx = None;
     if let ConsoleStage::Manager(manager) = &mut state.stage {
         match outcome {
-            Ok((accounts, notice)) => {
-                manager.usage_accounts = accounts;
-                manager.usage_notice = notice;
+            Ok(projection) => {
+                manager.usage_projection = Some(projection.clone());
+                manager.usage_notice =
+                    jackin_console::tui::screens::usage::UsageScreenState::from_projection(
+                        &projection,
+                    )
+                    .notice;
             }
             Err(error) => {
                 manager.usage_notice = Some(format!("Usage unavailable: {error}"));
@@ -1209,8 +1212,7 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
     let paths_for_usage_startup = paths.clone();
     let mut startup_usage_rx = Some(jackin_console::tui::runtime::spawn_blocking_subscription(
         move || {
-            load_console_usage_state(&paths_for_usage_startup, false)
-                .map(|usage| (usage.accounts, usage.notice))
+            load_console_usage_projection(&paths_for_usage_startup, false)
                 .map_err(|error| error.to_string())
         },
     ));

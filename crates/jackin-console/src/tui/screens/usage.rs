@@ -9,7 +9,10 @@
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use crossterm::event::{KeyCode, KeyEvent};
-use jackin_protocol::usage_broker::{UsageFreshnessPhaseV1, UsageLifecycleV1, UsagePercent};
+use jackin_protocol::usage_broker::{
+    UsageAccountV1, UsageFreshnessPhaseV1, UsageLifecycleV1, UsagePercent, UsageProjectionV1,
+    UsageProviderV1, UsageUnresolvedV1,
+};
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
@@ -28,10 +31,9 @@ use crate::tui::state::ManagerState;
 /// burst — at most one refresh is ever in flight.
 pub const USAGE_HEARTBEAT_INTERVAL: Duration = Duration::from_mins(2);
 
-/// Completed background refresh payload: canonical rows plus the
-/// projection-level notice. Produced off the UI thread by
-/// `load_console_usage_state` in the console adapter.
-pub type UsageRefreshOutcome = Result<(Vec<UsageAccount>, Option<String>), String>;
+/// Completed background refresh payload. Keep the canonical publication
+/// intact across the adapter, screen state, and renderer.
+pub type UsageRefreshOutcome = Result<UsageProjectionV1, String>;
 
 /// One due Usage refresh, following the instance-refresh effect+subscription
 /// pattern: the worker tags its outcome with `generation` and
@@ -48,63 +50,102 @@ pub struct UsageRefreshRequest {
     pub force: bool,
 }
 
+/// Stable navigation key. Display labels never participate in selection;
+/// account rename and provider/account reorder keep the selected destination.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct UsageWindow {
-    pub window_id: String,
-    pub label: String,
-    pub value: String,
-    pub reset: String,
-    pub remaining_percent: Option<u8>,
-    pub used_percent: Option<u8>,
-    pub reset_at_epoch: Option<i64>,
+pub enum UsageEntryId {
+    Account {
+        provider_id: String,
+        canonical_account_id: String,
+    },
+    Unresolved {
+        provider_id: String,
+        capability_id: String,
+    },
 }
 
-impl UsageWindow {
-    /// Meter geometry input. Providers report exactly one representation;
-    /// `used` is mirrored to `remaining` without inventing precision.
-    /// `None` means unknown — callers must render no bar at all.
+/// A borrowed row from the canonical projection. This is navigation-only;
+/// usage facts stay on `UsageAccountV1` and are never copied into a UI DTO.
+#[derive(Debug, Clone, Copy)]
+pub enum UsageEntryRef<'a> {
+    Account {
+        provider: &'a UsageProviderV1,
+        account: &'a UsageAccountV1,
+    },
+    Unresolved {
+        provider: Option<&'a UsageProviderV1>,
+        entry: &'a UsageUnresolvedV1,
+    },
+}
+
+impl<'a> UsageEntryRef<'a> {
     #[must_use]
-    pub fn meter_percent(&self) -> Option<u8> {
-        self.remaining_percent.or_else(|| {
-            self.used_percent
-                .map(|used| 100_u8.saturating_sub(used.min(100)))
-        })
+    pub fn id(self) -> UsageEntryId {
+        match self {
+            Self::Account { provider, account } => UsageEntryId::Account {
+                provider_id: provider.provider_id.clone(),
+                canonical_account_id: account.canonical_account_id.clone(),
+            },
+            Self::Unresolved { entry, .. } => UsageEntryId::Unresolved {
+                provider_id: entry.provider_id.clone(),
+                capability_id: entry.capability_id.clone(),
+            },
+        }
+    }
+
+    #[must_use]
+    pub fn provider_id(self) -> &'_ str {
+        match self {
+            Self::Account { provider, .. } => &provider.provider_id,
+            Self::Unresolved { entry, .. } => &entry.provider_id,
+        }
+    }
+
+    #[must_use]
+    pub fn provider_label(self) -> String {
+        match self {
+            Self::Account { provider, .. } => provider.display_name.clone(),
+            Self::Unresolved { provider, entry } => provider.map_or_else(
+                || well_known_provider_name(&entry.provider_id),
+                |provider| provider.display_name.clone(),
+            ),
+        }
+    }
+
+    #[must_use]
+    pub fn account(self) -> Option<&'a UsageAccountV1> {
+        match self {
+            Self::Account { account, .. } => Some(account),
+            Self::Unresolved { .. } => None,
+        }
+    }
+
+    #[must_use]
+    pub fn unresolved(self) -> Option<&'a UsageUnresolvedV1> {
+        match self {
+            Self::Account { .. } => None,
+            Self::Unresolved { entry, .. } => Some(entry),
+        }
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct UsageAccount {
-    pub provider_id: String,
-    /// Canonical account id; the capability id while `unresolved`.
-    pub canonical_account_id: String,
-    pub unresolved: bool,
-    pub provider: String,
-    pub account: String,
-    pub status: String,
-    pub lifecycle: UsageLifecycleV1,
-    pub freshness_phase: UsageFreshnessPhaseV1,
-    pub last_good_at_epoch: Option<i64>,
-    pub is_stale: bool,
-    pub windows: Vec<UsageWindow>,
-}
-
-impl UsageAccount {
-    /// Stable selection identity across rename/reorder. Display labels
-    /// never participate: renames keep the id, and unresolved rows anchor
-    /// on their capability id.
-    #[must_use]
-    pub fn stable_id(&self) -> String {
-        format!("{}:{}", self.provider_id, self.canonical_account_id)
-    }
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum UsageFocus {
+    #[default]
+    List,
+    Detail,
 }
 
 #[derive(Debug, Default)]
 pub struct UsageScreenState {
-    pub accounts: Vec<UsageAccount>,
+    /// Complete canonical host inventory. `None` means the first snapshot has
+    /// not arrived; an empty projection is distinct from not-yet-loaded.
+    pub projection: Option<UsageProjectionV1>,
     pub selected: usize,
-    pub selected_id: Option<String>,
-    pub detail: bool,
-    pub scroll: u16,
+    pub selected_id: Option<UsageEntryId>,
+    pub focus: UsageFocus,
+    pub list_scroll: u16,
+    pub detail_scroll: u16,
     pub notice: Option<String>,
     pub generated_at_epoch: Option<i64>,
     pub refresh_due: bool,
@@ -121,11 +162,12 @@ pub struct UsageScreenState {
 impl Clone for UsageScreenState {
     fn clone(&self) -> Self {
         Self {
-            accounts: self.accounts.clone(),
+            projection: self.projection.clone(),
             selected: self.selected,
             selected_id: self.selected_id.clone(),
-            detail: self.detail,
-            scroll: self.scroll,
+            focus: self.focus,
+            list_scroll: self.list_scroll,
+            detail_scroll: self.detail_scroll,
             notice: self.notice.clone(),
             generated_at_epoch: self.generated_at_epoch,
             refresh_due: self.refresh_due,
@@ -139,11 +181,12 @@ impl Clone for UsageScreenState {
 
 impl PartialEq for UsageScreenState {
     fn eq(&self, other: &Self) -> bool {
-        self.accounts == other.accounts
+        self.projection == other.projection
             && self.selected == other.selected
             && self.selected_id == other.selected_id
-            && self.detail == other.detail
-            && self.scroll == other.scroll
+            && self.focus == other.focus
+            && self.list_scroll == other.list_scroll
+            && self.detail_scroll == other.detail_scroll
             && self.notice == other.notice
             && self.generated_at_epoch == other.generated_at_epoch
             && self.refresh_due == other.refresh_due
@@ -160,118 +203,24 @@ impl UsageScreenState {
     /// first broker read lands right after open. Selection starts at
     /// Overview; refreshes re-anchor by stable id from there.
     #[must_use]
-    pub fn open_with_snapshot(accounts: Vec<UsageAccount>, notice: Option<String>) -> Self {
+    pub fn open_with_snapshot(
+        projection: Option<UsageProjectionV1>,
+        notice: Option<String>,
+    ) -> Self {
         Self {
-            accounts,
-            notice,
+            notice: notice.or_else(|| projection_notice(projection.as_ref())),
+            projection,
             refresh_due: true,
             ..Self::default()
         }
     }
 
-    /// Project the Rust-owned canonical publication into Console rows.
-    ///
-    /// The Console owns only layout. Provider/account identity, lifecycle,
-    /// ordering, and quota labels remain in the protocol projection.
-    pub fn from_projection(projection: &jackin_protocol::usage_broker::UsageProjectionV1) -> Self {
-        let mut accounts = Vec::new();
-        for provider in &projection.providers {
-            for account in &provider.accounts {
-                let mut status = account
-                    .status_label
-                    .clone()
-                    .unwrap_or_else(|| lifecycle_label(account.lifecycle).to_owned());
-                if account.freshness.is_stale && account.lifecycle == UsageLifecycleV1::Available {
-                    status = "stale".to_owned();
-                }
-                let windows = account
-                    .windows
-                    .iter()
-                    .map(|window| UsageWindow {
-                        window_id: window.window_id.clone(),
-                        label: window.label.clone(),
-                        value: window.value_label.clone(),
-                        reset: window.reset_label.clone(),
-                        remaining_percent: window.remaining_percent.map(UsagePercent::get),
-                        used_percent: window.used_percent.map(UsagePercent::get),
-                        reset_at_epoch: window.reset_at_epoch,
-                    })
-                    .collect();
-                accounts.push(UsageAccount {
-                    provider_id: provider.provider_id.clone(),
-                    canonical_account_id: account.canonical_account_id.clone(),
-                    unresolved: false,
-                    provider: provider.display_name.clone(),
-                    account: account.display_label.clone(),
-                    status,
-                    lifecycle: account.lifecycle,
-                    freshness_phase: account.freshness.phase,
-                    last_good_at_epoch: account.freshness.last_good_at_epoch,
-                    is_stale: account.freshness.is_stale,
-                    windows,
-                });
-            }
-        }
-
-        for unresolved in &projection.unresolved {
-            let provider_name = projection
-                .providers
-                .iter()
-                .find(|p| p.provider_id == unresolved.provider_id)
-                .map_or_else(
-                    || well_known_provider_name(&unresolved.provider_id),
-                    |p| p.display_name.clone(),
-                );
-            let account_label = format!("Unresolved ({})", unresolved.capability_id);
-            let mut status = lifecycle_label(unresolved.state).to_owned();
-            if let Some(issue) = unresolved
-                .issues
-                .first()
-                .filter(|issue| !issue.message.trim().is_empty())
-            {
-                status.push_str(" · ");
-                status.push_str(issue.message.trim());
-            }
-            accounts.push(UsageAccount {
-                provider_id: unresolved.provider_id.clone(),
-                canonical_account_id: unresolved.capability_id.clone(),
-                unresolved: true,
-                provider: provider_name,
-                account: account_label,
-                status,
-                lifecycle: unresolved.state,
-                freshness_phase: UsageFreshnessPhaseV1::Failed,
-                last_good_at_epoch: None,
-                is_stale: false,
-                windows: Vec::new(),
-            });
-        }
-
-        let mut provider_order = Vec::new();
-        for account in &accounts {
-            if !provider_order.contains(&account.provider) {
-                provider_order.push(account.provider.clone());
-            }
-        }
-        accounts.sort_by_key(|account| {
-            provider_order
-                .iter()
-                .position(|p| p == &account.provider)
-                .unwrap_or(usize::MAX)
-        });
-
-        let notice = if projection.unresolved.is_empty() {
-            None
-        } else {
-            Some(format!(
-                "{} configured capability(s) unresolved",
-                projection.unresolved.len()
-            ))
-        };
+    /// Retain the Rust-owned canonical publication without projecting its
+    /// account facts into a Console-specific structure.
+    pub fn from_projection(projection: &UsageProjectionV1) -> Self {
         Self {
-            accounts,
-            notice,
-            generated_at_epoch: Some(projection.generated_at_epoch),
+            projection: Some(projection.clone()),
+            notice: projection_notice(Some(projection)),
             ..Self::default()
         }
     }
@@ -279,20 +228,15 @@ impl UsageScreenState {
     /// Apply a completed background refresh, re-anchoring selection by
     /// stable id so renames/reorders keep the operator's row. A removed
     /// selection falls back to Overview with an inline notice.
-    pub fn apply_refresh(
-        &mut self,
-        accounts: Vec<UsageAccount>,
-        notice: Option<String>,
-        now: Instant,
-    ) {
-        self.accounts = accounts;
-        self.notice = notice;
+    pub fn apply_refresh(&mut self, projection: UsageProjectionV1, now: Instant) {
+        self.notice = projection_notice(Some(&projection));
+        self.projection = Some(projection);
         self.last_refresh_at = Some(now);
         self.refresh_due = false;
         match &self.selected_id {
             None => self.selected = 0,
             Some(id) => {
-                if let Some(pos) = self.accounts.iter().position(|a| &a.stable_id() == id) {
+                if let Some(pos) = self.entries().iter().position(|entry| &entry.id() == id) {
                     self.selected = pos.saturating_add(1);
                 } else {
                     self.selected = 0;
@@ -308,7 +252,7 @@ impl UsageScreenState {
                 }
             }
         }
-        self.selected = self.selected.min(self.accounts.len());
+        self.selected = self.selected.min(self.entries().len());
     }
 
     /// Record a failed background refresh. The timer still advances so a
@@ -383,10 +327,11 @@ impl UsageScreenState {
     }
 
     pub fn move_selection(&mut self, delta: isize) {
-        if self.accounts.is_empty() {
+        let entries = self.entries();
+        if entries.is_empty() {
             return;
         }
-        let len = self.accounts.len().saturating_add(1);
+        let len = entries.len().saturating_add(1);
         let current = self.selected.min(len - 1);
         self.selected = if delta.is_negative() {
             current.saturating_sub(delta.unsigned_abs())
@@ -395,19 +340,103 @@ impl UsageScreenState {
                 .saturating_add(delta.cast_unsigned())
                 .min(len.saturating_sub(1))
         };
-        self.selected_id = self
-            .accounts
+        self.selected_id = entries
             .get(self.selected.saturating_sub(1))
             .filter(|_| self.selected > 0)
-            .map(UsageAccount::stable_id);
+            .map(|entry| entry.id());
     }
 
-    pub fn selected_account(&self) -> Option<&UsageAccount> {
-        (self.selected > 0).then(|| self.accounts.get(self.selected - 1))?
+    #[must_use]
+    pub fn entries(&self) -> Vec<UsageEntryRef<'_>> {
+        let Some(projection) = self.projection.as_ref() else {
+            return Vec::new();
+        };
+        let mut entries = Vec::new();
+        for provider in &projection.providers {
+            entries.extend(
+                provider
+                    .accounts
+                    .iter()
+                    .map(|account| UsageEntryRef::Account { provider, account }),
+            );
+            entries.extend(
+                projection
+                    .unresolved
+                    .iter()
+                    .filter(|entry| entry.provider_id == provider.provider_id)
+                    .map(|entry| UsageEntryRef::Unresolved {
+                        provider: Some(provider),
+                        entry,
+                    }),
+            );
+        }
+        entries.extend(
+            projection
+                .unresolved
+                .iter()
+                .filter(|entry| {
+                    !projection
+                        .providers
+                        .iter()
+                        .any(|provider| provider.provider_id == entry.provider_id)
+                })
+                .map(|entry| UsageEntryRef::Unresolved {
+                    provider: None,
+                    entry,
+                }),
+        );
+        entries
+    }
+
+    #[must_use]
+    pub fn selected_entry(&self) -> Option<UsageEntryRef<'_>> {
+        (self.selected > 0)
+            .then(|| self.entries().get(self.selected - 1).copied())
+            .flatten()
     }
 
     fn overview_selected(&self) -> bool {
         self.selected == 0
+    }
+}
+
+fn projection_notice(projection: Option<&UsageProjectionV1>) -> Option<String> {
+    let unresolved = projection?.unresolved.len();
+    (unresolved > 0).then(|| format!("{unresolved} configured capability(s) unresolved"))
+}
+
+fn entry_label(entry: UsageEntryRef<'_>, unresolved_number: usize) -> String {
+    match entry {
+        UsageEntryRef::Account { account, .. } => account.display_label.clone(),
+        UsageEntryRef::Unresolved { .. } => format!("Unresolved account {unresolved_number}"),
+    }
+}
+
+fn entry_status_label(entry: UsageEntryRef<'_>) -> String {
+    match entry {
+        UsageEntryRef::Account { account, .. } => {
+            let status = account
+                .status_label
+                .clone()
+                .unwrap_or_else(|| lifecycle_label(account.lifecycle).to_owned());
+            if account.freshness.is_stale && account.lifecycle == UsageLifecycleV1::Available {
+                "stale".to_owned()
+            } else {
+                status
+            }
+        }
+        UsageEntryRef::Unresolved { entry, .. } => {
+            let mut status = lifecycle_label(entry.state).to_owned();
+            if let Some(issue) = entry
+                .issues
+                .first()
+                .filter(|issue| !issue.message.trim().is_empty())
+            {
+                status.push_str(" · ");
+                status.push_str(issue.message.trim());
+            }
+            status
+        }
     }
 }
 
@@ -426,11 +455,16 @@ fn lifecycle_label(lifecycle: UsageLifecycleV1) -> &'static str {
 /// Operator-facing freshness age for one account. Pure over an explicit
 /// `now` so tests stay deterministic; render passes wall-clock time.
 #[must_use]
-pub fn freshness_age_label(now_epoch: i64, account: &UsageAccount) -> String {
-    if account.freshness_phase == UsageFreshnessPhaseV1::Refreshing {
+pub fn freshness_age_label(
+    now_epoch: i64,
+    phase: UsageFreshnessPhaseV1,
+    last_good_at_epoch: Option<i64>,
+    is_stale: bool,
+) -> String {
+    if phase == UsageFreshnessPhaseV1::Refreshing {
         return "refreshing…".to_owned();
     }
-    let Some(last_good) = account.last_good_at_epoch else {
+    let Some(last_good) = last_good_at_epoch else {
         return "never updated".to_owned();
     };
     let age_secs = now_epoch.saturating_sub(last_good).max(0);
@@ -443,9 +477,9 @@ pub fn freshness_age_label(now_epoch: i64, account: &UsageAccount) -> String {
     } else {
         format!("{}d ago", age_secs / 86_400)
     };
-    if account.is_stale
+    if is_stale
         || matches!(
-            account.freshness_phase,
+            phase,
             UsageFreshnessPhaseV1::Stale | UsageFreshnessPhaseV1::Failed
         )
     {
@@ -480,38 +514,81 @@ pub fn handle_key(state: &mut ManagerState<'_>, key: KeyEvent) {
         return;
     };
     match key.code {
-        KeyCode::Esc | KeyCode::Char('q') => state.usage.visible = false,
-        KeyCode::Up | KeyCode::Char('k') => screen.move_selection(-1),
-        KeyCode::Down | KeyCode::Char('j') => screen.move_selection(1),
-        KeyCode::Enter => screen.detail = !screen.detail,
+        KeyCode::Esc | KeyCode::Left => match screen.focus {
+            UsageFocus::Detail => screen.focus = UsageFocus::List,
+            UsageFocus::List => state.usage.visible = false,
+        },
+        KeyCode::Char('q') => state.usage.visible = false,
+        KeyCode::Tab | KeyCode::Right => {
+            screen.focus = match screen.focus {
+                UsageFocus::List => UsageFocus::Detail,
+                UsageFocus::Detail => UsageFocus::List,
+            };
+        }
+        KeyCode::Up | KeyCode::Char('k') if screen.focus == UsageFocus::List => {
+            screen.move_selection(-1);
+        }
+        KeyCode::Down | KeyCode::Char('j') if screen.focus == UsageFocus::List => {
+            screen.move_selection(1);
+        }
+        KeyCode::Up | KeyCode::Char('k') => {
+            screen.detail_scroll = screen.detail_scroll.saturating_sub(1);
+        }
+        KeyCode::Down | KeyCode::Char('j') => {
+            screen.detail_scroll = screen.detail_scroll.saturating_add(1);
+        }
+        KeyCode::Enter => {
+            screen.focus = match screen.focus {
+                UsageFocus::List => UsageFocus::Detail,
+                UsageFocus::Detail => UsageFocus::List,
+            };
+        }
         KeyCode::Char('r') => {
             screen.refresh_due = true;
             screen.force_refresh_pending = true;
         }
-        KeyCode::PageUp => screen.scroll = screen.scroll.saturating_sub(5),
+        KeyCode::PageUp if screen.focus == UsageFocus::List => {
+            screen.list_scroll = screen.list_scroll.saturating_sub(5);
+        }
+        KeyCode::PageDown if screen.focus == UsageFocus::List => {
+            screen.list_scroll = screen.list_scroll.saturating_add(5);
+        }
+        KeyCode::PageUp => screen.detail_scroll = screen.detail_scroll.saturating_sub(5),
         KeyCode::PageDown => {
-            screen.scroll = screen.scroll.saturating_add(5);
+            screen.detail_scroll = screen.detail_scroll.saturating_add(5);
         }
         _ => {}
     }
 }
 
+const USAGE_COMPACT_BREAKPOINT: u16 = 84;
+
 pub fn render(frame: &mut Frame<'_>, area: Rect, state: &ManagerState<'_>) {
     let body = crate::tui::view::workspace_frame_areas(area).body;
+    let Some(screen) = state.usage.screen.as_ref() else {
+        return;
+    };
+    if body.width < USAGE_COMPACT_BREAKPOINT {
+        match screen.focus {
+            UsageFocus::List => render_account_list(frame, body, state, true),
+            UsageFocus::Detail => render_detail(frame, body, state, true),
+        }
+        return;
+    }
     let columns = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Percentage(30), Constraint::Percentage(70)])
         .split(body);
-    render_account_list(frame, columns[0], state);
-    render_detail(frame, columns[1], state);
+    render_account_list(frame, columns[0], state, screen.focus == UsageFocus::List);
+    render_detail(frame, columns[1], state, screen.focus == UsageFocus::Detail);
 }
 
-fn render_account_list(frame: &mut Frame<'_>, area: Rect, state: &ManagerState<'_>) {
+fn render_account_list(frame: &mut Frame<'_>, area: Rect, state: &ManagerState<'_>, focused: bool) {
     let Some(screen) = state.usage.screen.as_ref() else {
         return;
     };
-    let focused = true;
     let block = Block::default()
+        .title(" Accounts ")
         .borders(Borders::ALL)
         .border_style(if focused {
             Style::default().fg(Color::Green)
@@ -520,9 +597,10 @@ fn render_account_list(frame: &mut Frame<'_>, area: Rect, state: &ManagerState<'
         });
     let inner = block.inner(area);
     frame.render_widget(block, area);
-    if screen.accounts.is_empty() {
+    let entries = screen.entries();
+    if entries.is_empty() {
         frame.render_widget(
-            Paragraph::new("No providers configured.\n\nPress R to refresh.")
+            Paragraph::new(empty_inventory_message(screen))
                 .style(Style::default().fg(Color::DarkGray))
                 .wrap(Wrap { trim: false }),
             inner,
@@ -532,90 +610,97 @@ fn render_account_list(frame: &mut Frame<'_>, area: Rect, state: &ManagerState<'
     let mut lines = Vec::new();
     let meter_width = inner.width.saturating_sub(8) as usize;
     let now = now_epoch();
-    lines.push(Line::from(Span::styled(
-        format!(
-            "{}Overview",
-            if screen.overview_selected() {
-                "▸  "
-            } else {
-                "   "
-            }
-        ),
-        row_style(screen.overview_selected()),
-    )));
-    lines.push(Line::from(""));
-    for (index, account) in screen.accounts.iter().enumerate() {
-        if index == 0 || screen.accounts[index - 1].provider != account.provider {
+    lines.push(selected_row_line(
+        "Overview",
+        screen.overview_selected(),
+        inner.width,
+    ));
+    let mut prior_provider: Option<String> = None;
+    for (index, entry) in entries.iter().copied().enumerate() {
+        let provider = entry.provider_label();
+        if prior_provider.as_deref() != Some(provider.as_str()) {
             lines.push(Line::from(Span::styled(
-                format!("  {}", account.provider),
+                format!("  {provider}"),
                 Style::default()
                     .fg(Color::Green)
                     .add_modifier(Modifier::BOLD),
             )));
+            prior_provider = Some(provider);
         }
         let selected = index.saturating_add(1) == screen.selected;
-        let cursor = if selected { "▸ " } else { "  " };
-        let summary = account
-            .windows
-            .first()
-            .and_then(UsageWindow::meter_percent)
-            .map_or_else(
-                || account.status.clone(),
-                |percent| format!("{percent}% left"),
-            );
+        let label = entry_display_label(&entries, index);
+        lines.push(selected_row_line(&label, selected, inner.width));
+        let status = entry_status_label(entry);
+        let summary = entry
+            .account()
+            .and_then(|account| account.windows.first())
+            .map_or_else(|| status.clone(), |window| window.value_label.clone());
+        let freshness = entry.account().map_or_else(
+            || "never updated".to_owned(),
+            |account| {
+                freshness_age_label(
+                    now,
+                    account.freshness.phase,
+                    account.freshness.last_good_at_epoch,
+                    account.freshness.is_stale,
+                )
+            },
+        );
         lines.push(Line::from(Span::styled(
-            format!("  {cursor}{}", account.account),
-            row_style(selected),
-        )));
-        lines.push(Line::from(Span::styled(
-            format!(
-                "      {} · {} · {}",
-                account.status,
-                summary,
-                freshness_age_label(now, account)
-            ),
+            format!("    {status} · {summary} · {freshness}"),
             Style::default().fg(Color::DarkGray),
         )));
-        if let Some(window) = account.windows.first()
-            && let Some(bar) = meter_line(meter_width, window.meter_percent())
+        if let Some(window) = entry.account().and_then(|account| account.windows.first())
+            && let Some(bar) = meter_line(meter_width, window_meter_percent(window))
         {
             lines.push(Line::from(Span::styled(
                 bar,
-                meter_style(window.meter_percent().unwrap_or(0)),
+                meter_style(window_meter_percent(window).unwrap_or(0)),
             )));
         }
     }
+    let selected_line = selected_list_line(&lines, screen.selected);
+    let visible_height = usize::from(inner.height);
+    let mut scroll = usize::from(screen.list_scroll);
+    if selected_line < scroll {
+        scroll = selected_line;
+    } else if selected_line >= scroll.saturating_add(visible_height) && visible_height > 0 {
+        scroll = selected_line
+            .saturating_add(1)
+            .saturating_sub(visible_height);
+    }
     frame.render_widget(
         Paragraph::new(lines)
-            .scroll((screen.scroll, 0))
+            .scroll((u16::try_from(scroll).unwrap_or(u16::MAX), 0))
             .wrap(Wrap { trim: false }),
         inner,
     );
 }
 
-fn render_detail(frame: &mut Frame<'_>, area: Rect, state: &ManagerState<'_>) {
+fn render_detail(frame: &mut Frame<'_>, area: Rect, state: &ManagerState<'_>, focused: bool) {
     let Some(screen) = state.usage.screen.as_ref() else {
         return;
     };
     let now = now_epoch();
-    let Some(account) = screen.selected_account() else {
-        if screen.accounts.is_empty() {
+    let Some(entry) = screen.selected_entry() else {
+        if screen.entries().is_empty() {
             frame.render_widget(
-                Paragraph::new("No providers configured.\n\nPress R to refresh.")
-                    .block(panel("Overview"))
+                Paragraph::new(empty_inventory_message(screen))
+                    .block(panel("Overview", focused))
                     .wrap(Wrap { trim: false }),
                 area,
             );
             return;
         }
-        let mut lines = vec![Line::from("Status    available"), Line::from("")];
+        let mut lines = Vec::new();
         if screen.refresh_in_flight() {
             lines.push(refreshing_line());
             lines.push(Line::from(""));
         }
         let width = area.width.saturating_sub(8).max(8) as usize;
-        for account in &screen.accounts {
-            append_overview_account(&mut lines, account, width, now);
+        let entries = screen.entries();
+        for index in 0..entries.len() {
+            append_overview_account(&mut lines, &entries, index, width, now);
         }
         if let Some(notice) = &screen.notice {
             lines.push(Line::from(Span::styled(
@@ -625,27 +710,52 @@ fn render_detail(frame: &mut Frame<'_>, area: Rect, state: &ManagerState<'_>) {
         }
         frame.render_widget(
             Paragraph::new(lines)
-                .block(panel("Overview"))
-                .scroll((screen.scroll, 0))
+                .block(panel("Overview", focused))
+                .scroll((screen.detail_scroll, 0))
                 .wrap(Wrap { trim: false }),
             area,
         );
         return;
     };
-    let title = if screen.detail { "Account" } else { "Overview" };
-    let mut lines = vec![
-        Line::from(format!("Provider  {}", account.provider)),
-        Line::from(format!("Account   {}", account.account)),
-        Line::from(format!("Status    {}", account.status)),
-        Line::from(format!("Freshness {}", freshness_age_label(now, account))),
-        Line::from(""),
-        Line::from("Limits"),
-    ];
+    let label = entry_display_label(&screen.entries(), screen.selected.saturating_sub(1));
+    let provider_label = entry.provider_label();
+    let status = entry_status_label(entry);
+    let mut lines = vec![Line::from(format!("Provider  {provider_label}"))];
+    lines.push(Line::from(format!("Account   {label}")));
+    lines.push(Line::from(format!("Status    {status}")));
+    if let Some(account) = entry.account() {
+        lines.push(Line::from(format!(
+            "Freshness {}",
+            freshness_age_label(
+                now,
+                account.freshness.phase,
+                account.freshness.last_good_at_epoch,
+                account.freshness.is_stale,
+            )
+        )));
+        if let Some(plan) = &account.plan_label {
+            lines.push(Line::from(format!("Plan      {plan}")));
+        }
+        if !account.issues.is_empty() {
+            lines.extend(
+                account
+                    .issues
+                    .iter()
+                    .map(|issue| Line::from(format!("{}: {}", issue.code, issue.message))),
+            );
+        }
+    }
+    lines.push(Line::from(""));
+    lines.push(Line::from("Limits"));
     if screen.refresh_in_flight() {
         lines.push(refreshing_line());
         lines.push(Line::from(""));
     }
-    for window in &account.windows {
+    for window in entry
+        .account()
+        .into_iter()
+        .flat_map(|account| account.windows.iter())
+    {
         lines.push(Line::from(Span::styled(
             format!("  {}", window.label),
             Style::default()
@@ -653,19 +763,24 @@ fn render_detail(frame: &mut Frame<'_>, area: Rect, state: &ManagerState<'_>) {
                 .add_modifier(Modifier::BOLD),
         )));
         let width = area.width.saturating_sub(8).max(8) as usize;
-        if let Some(bar) = meter_line(width, window.meter_percent()) {
+        if let Some(bar) = meter_line(width, window_meter_percent(window)) {
             lines.push(Line::from(Span::styled(
                 bar,
-                meter_style(window.meter_percent().unwrap_or(0)),
+                meter_style(window_meter_percent(window).unwrap_or(0)),
             )));
         }
-        let detail = if window.reset.is_empty() {
-            format!("  {}", window.value)
+        let detail = if window.reset_label.is_empty() {
+            format!("  {}", window.value_label)
         } else {
-            format!("  {} · {}", window.value, window.reset)
+            format!("  {} · {}", window.value_label, window.reset_label)
         };
         lines.push(Line::from(detail));
         lines.push(Line::from(""));
+    }
+    if entry.account().is_none() {
+        lines.push(Line::from(
+            "No quota data is available for this account yet.",
+        ));
     }
     if let Some(notice) = &screen.notice {
         lines.push(Line::from(Span::styled(
@@ -675,8 +790,8 @@ fn render_detail(frame: &mut Frame<'_>, area: Rect, state: &ManagerState<'_>) {
     }
     frame.render_widget(
         Paragraph::new(lines)
-            .block(panel(title))
-            .scroll((screen.scroll, 0))
+            .block(panel("Account", focused))
+            .scroll((screen.detail_scroll, 0))
             .wrap(Wrap { trim: false }),
         area,
     );
@@ -689,66 +804,186 @@ fn refreshing_line() -> Line<'static> {
     ))
 }
 
-fn append_overview_window(lines: &mut Vec<Line<'static>>, window: &UsageWindow, width: usize) {
+fn empty_inventory_message(screen: &UsageScreenState) -> String {
+    if screen.projection.is_none() {
+        return screen.notice.as_ref().map_or_else(
+            || "Loading account inventory…\n\nPress R to refresh.".to_owned(),
+            |error| format!("Usage inventory unavailable: {error}\n\nPress R to retry."),
+        );
+    }
+    if screen.entries().is_empty() {
+        return "No accounts configured.\n\nPress R to refresh; use Settings to add an account."
+            .to_owned();
+    }
+    String::new()
+}
+
+fn append_overview_window(
+    lines: &mut Vec<Line<'static>>,
+    window: &jackin_protocol::usage_broker::UsageLimitWindowV1,
+    width: usize,
+) {
     if !window.label.is_empty() {
         lines.push(Line::from(Span::styled(
             format!("  {}", window.label),
             Style::default().fg(Color::DarkGray),
         )));
     }
-    if let Some(bar) = meter_line(width, window.meter_percent()) {
+    let meter_percent = window_meter_percent(window);
+    if let Some(bar) = meter_line(width, meter_percent) {
         lines.push(Line::from(Span::styled(
             bar,
-            meter_style(window.meter_percent().unwrap_or(0)),
+            meter_style(meter_percent.unwrap_or(0)),
         )));
     }
-    let detail = if window.reset.is_empty() {
-        format!("  {}", window.value)
+    let detail = if window.reset_label.is_empty() {
+        format!("  {}", window.value_label)
     } else {
-        format!("  {} · {}", window.value, window.reset)
+        format!("  {} · {}", window.value_label, window.reset_label)
     };
     lines.push(Line::from(detail));
 }
 
 fn append_overview_account(
     lines: &mut Vec<Line<'static>>,
-    account: &UsageAccount,
+    entries: &[UsageEntryRef<'_>],
+    index: usize,
     width: usize,
     now_epoch: i64,
 ) {
+    let Some(entry) = entries.get(index).copied() else {
+        return;
+    };
+    let label = entry_display_label(entries, index);
     lines.push(Line::from(Span::styled(
-        format!("{} · {}", account.provider, account.account),
+        format!("{} · {label}", entry.provider_label()),
         Style::default().fg(Color::White),
     )));
-    lines.push(Line::from(Span::styled(
-        format!("  {}", freshness_age_label(now_epoch, account)),
-        Style::default().fg(Color::DarkGray),
-    )));
-    if account.windows.is_empty() {
-        lines.push(Line::from(format!("  {}", account.status)));
-    } else {
-        for window in &account.windows {
-            append_overview_window(lines, window, width);
+    if let Some(account) = entry.account() {
+        lines.push(Line::from(Span::styled(
+            format!(
+                "  {}",
+                freshness_age_label(
+                    now_epoch,
+                    account.freshness.phase,
+                    account.freshness.last_good_at_epoch,
+                    account.freshness.is_stale,
+                )
+            ),
+            Style::default().fg(Color::DarkGray),
+        )));
+        if account.windows.is_empty() {
+            lines.push(Line::from(format!("  {}", entry_status_label(entry))));
+        } else {
+            for window in &account.windows {
+                append_overview_window(lines, window, width);
+            }
         }
+    } else {
+        lines.push(Line::from(format!("  {}", entry_status_label(entry))));
     }
     lines.push(Line::from(""));
 }
 
-fn panel(title: &'static str) -> Block<'static> {
-    Block::default()
-        .title(format!(" {title} "))
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::DarkGray))
+fn entry_display_label(entries: &[UsageEntryRef<'_>], index: usize) -> String {
+    let Some(entry) = entries.get(index).copied() else {
+        return "Account".to_owned();
+    };
+    let Some(account) = entry.account() else {
+        let ordinal = entries[..index]
+            .iter()
+            .filter(|candidate| {
+                candidate.provider_id() == entry.provider_id() && candidate.account().is_none()
+            })
+            .count()
+            .saturating_add(1);
+        return format!("Unresolved account {ordinal}");
+    };
+
+    let duplicate_indices = entries
+        .iter()
+        .enumerate()
+        .filter_map(|(candidate_index, candidate)| {
+            let candidate_account = candidate.account()?;
+            (candidate.provider_id() == entry.provider_id()
+                && candidate_account.display_label == account.display_label)
+                .then_some(candidate_index)
+        })
+        .collect::<Vec<_>>();
+    if duplicate_indices.len() <= 1 {
+        return account.display_label.clone();
+    }
+    let ordinal = duplicate_indices
+        .iter()
+        .position(|candidate_index| *candidate_index == index)
+        .unwrap_or(0)
+        .saturating_add(1);
+    format!("{} ({ordinal})", account.display_label)
 }
 
-fn row_style(selected: bool) -> Style {
-    if selected {
+fn selected_row_line(label: &str, selected: bool, width: u16) -> Line<'static> {
+    let marker = if selected { "▸ " } else { "  " };
+    let text = truncate_to_cols(&format!("{marker}{label}"), usize::from(width));
+    let padding = usize::from(width).saturating_sub(termrock::text::display_cols(&text));
+    let style = if selected {
         Style::default()
-            .fg(Color::Green)
+            .fg(Color::Black)
+            .bg(Color::Green)
             .add_modifier(Modifier::BOLD)
     } else {
         Style::default().fg(Color::White)
+    };
+    Line::from(Span::styled(
+        format!("{text}{}", " ".repeat(padding)),
+        style,
+    ))
+}
+
+fn truncate_to_cols(text: &str, max_cols: usize) -> String {
+    if termrock::text::display_cols(text) <= max_cols {
+        return text.to_owned();
     }
+    if max_cols == 0 {
+        return String::new();
+    }
+    let content_cols = max_cols.saturating_sub(1);
+    let mut truncated = String::new();
+    for character in text.chars() {
+        let mut next = truncated.clone();
+        next.push(character);
+        if termrock::text::display_cols(&next) > content_cols {
+            break;
+        }
+        truncated.push(character);
+    }
+    truncated.push('…');
+    truncated
+}
+
+fn selected_list_line(lines: &[Line<'_>], _selected: usize) -> usize {
+    lines
+        .iter()
+        .position(|line| line.spans.iter().any(|span| span.content.starts_with("▸ ")))
+        .unwrap_or(0)
+}
+
+fn window_meter_percent(window: &jackin_protocol::usage_broker::UsageLimitWindowV1) -> Option<u8> {
+    window.remaining_percent.map(UsagePercent::get).or_else(|| {
+        window
+            .used_percent
+            .map(|used| 100_u8.saturating_sub(used.get().min(100)))
+    })
+}
+
+fn panel(title: &'static str, focused: bool) -> Block<'static> {
+    Block::default()
+        .title(format!(" {title} "))
+        .borders(Borders::ALL)
+        .border_style(if focused {
+            Style::default().fg(Color::Green)
+        } else {
+            Style::default().fg(Color::DarkGray)
+        })
 }
 
 /// Meter bar for a known percent. `None` renders no bar: unknown quota

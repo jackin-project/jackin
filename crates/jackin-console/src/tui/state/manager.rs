@@ -176,7 +176,7 @@ impl ManagerState<'_> {
             preview_focused: false,
             preview_pane_cursor: HashMap::new(),
             usage: super::UsageRouteState::default(),
-            usage_accounts: Vec::new(),
+            usage_projection: None,
             usage_notice: None,
         }
     }

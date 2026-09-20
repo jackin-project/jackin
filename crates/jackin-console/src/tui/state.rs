@@ -47,7 +47,7 @@ pub use crate::tui::screens::settings::model::{
     SettingsEnvTextTarget, SettingsGeneralState, SettingsHoverTarget, SettingsTab,
     SettingsTrustRow, SettingsTrustState,
 };
-pub use crate::tui::screens::usage::{UsageAccount, UsageScreenState};
+pub use crate::tui::screens::usage::{UsageEntryId, UsageFocus, UsageScreenState};
 
 /// Console-owned Usage route state: the persistent screen plus its
 /// visibility. Grouped so `ManagerState` stays under the excessive-bools
@@ -366,8 +366,9 @@ pub struct ManagerState<'a> {
     /// refreshes continue offscreen and selection survives a close/reopen
     /// round-trip.
     pub usage: UsageRouteState,
-    /// Rust-owned usage rows staged before the Usage route is opened.
-    pub usage_accounts: Vec<UsageAccount>,
+    /// Last canonical host usage publication, retained intact before the
+    /// Usage route is opened.
+    pub usage_projection: Option<jackin_protocol::usage_broker::UsageProjectionV1>,
     /// Rust-owned usage discovery notice shown by the Usage route.
     pub usage_notice: Option<String>,
 }
