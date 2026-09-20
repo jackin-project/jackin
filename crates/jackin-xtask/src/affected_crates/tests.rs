@@ -216,3 +216,33 @@ fn routes_docker_inputs_only_to_the_jackin_e2e_owner() {
         ["jackin"]
     );
 }
+
+#[test]
+fn members_depending_on_package_covers_transitive_closure() {
+    assert_eq!(
+        graph().members_depending_on_package("serde"),
+        ["core", "jackin", "runtime"]
+            .into_iter()
+            .map(str::to_owned)
+            .collect::<Vec<_>>()
+    );
+    assert!(graph().members_depending_on_package("absent").is_empty());
+}
+
+#[test]
+fn lock_and_manifest_splits_match_git_backed_originals() {
+    let base_lock = b"[[package]]\nname = \"serde\"\nversion = \"1.0.0\"\n";
+    let head_lock = b"[[package]]\nname = \"serde\"\nversion = \"1.1.0\"\n";
+    let changed = changed_lock_packages_from_contents(base_lock, head_lock).expect("diff");
+    assert_eq!(changed, BTreeSet::from(["serde".to_owned()]));
+
+    let base = b"[workspace]\nmembers = []\n[workspace.dependencies]\nserde = \"1\"\n";
+    let head = b"[workspace]\nmembers = []\n[workspace.dependencies]\nserde = \"2\"\n";
+    let changed = changed_workspace_dependencies_from_contents(base, head).expect("diff");
+    assert_eq!(changed, Some(BTreeSet::from(["serde".to_owned()])));
+
+    let restructured =
+        b"[workspace]\nmembers = [\"crates/a\"]\n[workspace.dependencies]\nserde = \"1\"\n";
+    let changed = changed_workspace_dependencies_from_contents(base, restructured).expect("diff");
+    assert_eq!(changed, None);
+}

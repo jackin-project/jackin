@@ -1,0 +1,120 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
+// Pre-commit hooks for jackin (hk 2.0.1; pinned in mise.toml [tools] and
+// mise.lock, and in the Pkl URLs below).
+//
+// Install once per machine (Git 2.54+; idempotent):
+//   mise run hooks-install        # hk install --global --mise
+// Repos without hk.pkl are skipped, so the global install is a no-op
+// everywhere else. GUI git clients work: the launcher records mise's
+// absolute path, so no shell activation or PATH setup is needed. See
+// CONTRIBUTING.md ("Git hooks") for the full contract.
+//
+// Hook mode is REVIEW, not auto-stage: fixers run against the staged
+// snapshot (stash = "git" isolates staged content, including untracked
+// files, and restores afterwards with backup patches under
+// $HK_STATE_DIR/patches/), fixes are left unstaged, and the hook fails so
+// the author reviews the diff, stages, and retries. `hk fix` applies the
+// same fixes outside a commit.
+//
+// Single source of truth: every step below invokes the same command CI
+// runs (mise tasks or `cargo xtask`), never a divergent copy. Documented
+// divergences:
+//   - clippy runs per-package over the affected closure
+//     (`cargo xtask clippy-affected`) with the exact CI flags
+//     (--locked --profile test --all-targets --all-features -p <pkg> --
+//     -D warnings, cf. .github/ci/project.toml per-unit commands) instead
+//     of CI's workspace-wide `cargo clippy` (cf. the lint partition in
+//     crates/jackin-xtask/src/ci.rs). The closure (changed members +
+//     reverse dependents + detached fuzz/arrayref packages + cross-crate
+//     file inputs, widened to workspace when unprovable) is implemented in
+//     crates/jackin-xtask/src/clippy_affected.rs and proven by its tests.
+//     Full workspace Clippy stays in CI / `mise run lint`.
+//   - `hk check --all` runs the clippy step scoped by `git status`, not
+//     literally over every file; on a clean tree it skips green.
+amends "package://github.com/jdx/hk/releases/download/v2.0.1/hk@2.0.1#/Config.pkl"
+
+steps {
+  ["fmt"] {
+    // Everything `cargo fmt --check` can observe: sources, manifests
+    // (cargo fmt normalizes them), formatting rules, and the toolchain
+    // that provides rustfmt. Same command as `mise run fmt` (the CI
+    // format gate); fix side is `mise run fmt-fix`.
+    glob = List("**/*.rs", "**/Cargo.toml", "rustfmt.toml", ".rustfmt.toml", "rust-toolchain.toml")
+    check = "mise run fmt"
+    fix = "mise run fmt-fix"
+  }
+  ["clippy"] {
+    // Trigger on anything except the statically Clippy-irrelevant set;
+    // `cargo xtask clippy-affected` re-derives the exact closure (member
+    // reverse-dependents, detached fuzz/arrayref packages, cross-crate
+    // file inputs) and skips when nothing relevant changed. Runs after
+    // fmt so diagnostics describe formatted sources.
+    glob = "**/*"
+    exclude = List(
+      "native/**",
+      ".github/**",
+      "docs/**",
+      "research/**",
+      "roadmap/**",
+      "plans/**",
+      "prompts/**",
+      ".firecrawl/**",
+      "scripts/**",
+      "**/*.md",
+      "**/*.mdx",
+      "mise.toml",
+      "mise.lock",
+      "hk.pkl",
+      "flaky-tests.toml",
+      ".config/nextest.toml",
+      "rustfmt.toml",
+      ".rustfmt.toml"
+    )
+    check = "mise run clippy-affected"
+    depends = "fmt"
+  }
+  ["xtask-lint"] {
+    // Whole-repo gates (`cargo xtask lint --strict`: ratchet families,
+    // headers, agent files, container paths, telemetry registry, arch).
+    // Audited hook-safe: worktree scans only, no fetch, no origin/main
+    // ref (readme-freshness is a separate subcommand and is NOT part of
+    // the umbrella). No glob: the inputs span too many file kinds to
+    // gate soundly, so it always runs. Same command CI runs via the
+    // `cargo xtask ci --only lint` partition.
+    check = "cargo xtask lint --strict"
+  }
+  ["actionlint"] {
+    // Tightened to *.yml: CI (crates/jackin-xtask/src/ci.rs) lints *.yml
+    // only, while the hk builtin also matches *.yaml.
+    glob = ".github/workflows/*.yml"
+    check = "actionlint {{files}}"
+  }
+  ["swiftlint"] {
+    // Same command as `mise run desktop-lint` (do not pass files: an
+    // explicit path list would disable SwiftLint's nested-config
+    // discovery). Skipped where swiftlint is unavailable (non-macOS).
+    glob = "native/**/*.swift"
+    condition = "exec('command -v swiftlint >/dev/null 2>&1')"
+    check = "mise run desktop-lint"
+  }
+  ["swift-format"] {
+    // Same commands as `mise run desktop-format-check` /
+    // `mise run desktop-format`. Skipped where xcrun is unavailable
+    // (non-macOS); nothing here assumes macOS unconditionally.
+    glob = "native/**/*.swift"
+    condition = "exec('command -v xcrun >/dev/null 2>&1')"
+    check = "mise run desktop-format-check"
+    fix = "mise run desktop-format"
+  }
+}
+
+hooks {
+  ["pre-commit"] {
+    fix = true
+    stash = "git"
+    stage = false
+    fail_on_fix = true
+  }
+}
