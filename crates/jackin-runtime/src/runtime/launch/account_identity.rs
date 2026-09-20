@@ -142,6 +142,13 @@ fn configured_workspace<'a>(
         .transpose()
 }
 
+#[derive(serde::Serialize)]
+struct AdmittedIdentity<'a> {
+    config_id: &'a str,
+    agent: jackin_core::Agent,
+    account_id: &'a str,
+}
+
 /// Hash the persisted admitted identities and their selected revisions.
 /// Values are hashed in memory; only the digest is stored with an instance.
 ///
@@ -153,8 +160,8 @@ pub fn account_configuration_fingerprint(
     role: &str,
     admitted: &[AdmittedInstance],
 ) -> anyhow::Result<String> {
-    // `role` remains an input because it identifies the admission scope; role
-    // defaults and bindings are intentionally not hashed after admission.
+    // `role` remains an input for the shared call shape; role defaults and
+    // bindings are intentionally not hashed after admission.
     let _ = role;
     let ws = configured_workspace(config, workspace)?;
     let mut admitted = admitted.to_vec();
@@ -164,6 +171,14 @@ pub fn account_configuration_fingerprint(
             .then(left.agent.slug().cmp(right.agent.slug()))
             .then(left.account_id.cmp(&right.account_id))
     });
+    let admitted_identities = admitted
+        .iter()
+        .map(|instance| AdmittedIdentity {
+            config_id: &instance.config_id,
+            agent: instance.agent,
+            account_id: &instance.account_id,
+        })
+        .collect::<Vec<_>>();
     let mut credential_revisions = std::collections::BTreeMap::new();
     let mut capability_revisions = std::collections::BTreeMap::new();
     for instance in &admitted {
@@ -190,12 +205,6 @@ pub fn account_configuration_fingerprint(
                     configuration.invoked_via_wrapper.clone(),
                 )
             });
-        let binding = ws
-            .and_then(|workspace| workspace.roles.get(role))
-            .and_then(|role| role.account_bindings.get(&instance.agent))
-            .or_else(|| ws.and_then(|workspace| workspace.account_bindings.get(&instance.agent)))
-            .or_else(|| config.account_bindings.get(&instance.agent))
-            .cloned();
         capability_revisions.insert(
             instance.config_id.clone(),
             (
@@ -209,13 +218,12 @@ pub fn account_configuration_fingerprint(
                         .iter()
                         .any(|account_id| account_id == &instance.account_id)
                 }),
-                binding,
             ),
         );
     }
     let bytes = serde_json::to_vec(&(
-        "account-config-v5-admitted-revisions",
-        admitted,
+        "account-config-v6-admitted-revisions",
+        admitted_identities,
         credential_revisions,
         capability_revisions,
     ))?;

@@ -2,7 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-use crate::instance::{AdmittedInstance, DockerResources, InstanceManifest, NewInstanceManifest};
+use crate::instance::{
+    AdmittedInstance, DockerResources, InstanceManifest, NewInstanceManifest, RegistrationState,
+};
 use jackin_config::{AccountConfig, AccountCredential, AgentConfiguration, AiProvider, AppConfig};
 use jackin_core::{Agent, EnvValue};
 
@@ -365,6 +367,42 @@ fn fingerprint_ignores_unrelated_account_lifecycle_changes() {
         before,
         account_configuration_fingerprint(&selected_capability_change, None, "role", &admitted)
             .unwrap()
+    );
+}
+
+#[test]
+fn fingerprint_excludes_manifest_state_labels_and_ambient_bindings() {
+    let (base, admitted) = admitted_fingerprint_fixture();
+    let before = account_configuration_fingerprint(&base, None, "role", &admitted).unwrap();
+
+    let mut state_changed = admitted.clone();
+    state_changed[0].registration_state = RegistrationState::Disabled;
+    assert_eq!(
+        before,
+        account_configuration_fingerprint(&base, None, "role", &state_changed).unwrap()
+    );
+
+    let mut labels_changed = base.clone();
+    labels_changed
+        .agent_configurations
+        .get_mut("b-instance")
+        .unwrap()
+        .display_label = Some("renamed instance".into());
+    assert_eq!(
+        before,
+        account_configuration_fingerprint(&labels_changed, None, "role", &admitted).unwrap()
+    );
+
+    let mut ambient_changed = labels_changed;
+    ambient_changed
+        .accounts
+        .insert("d".into(), api_key_account("d"));
+    ambient_changed
+        .account_bindings
+        .insert(Agent::Claude, "d".into());
+    assert_eq!(
+        before,
+        account_configuration_fingerprint(&ambient_changed, None, "role", &admitted).unwrap()
     );
 }
 
