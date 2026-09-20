@@ -261,9 +261,7 @@ fn migrate_legacy_preview() -> Result<()> {
         repository == LEGACY_SOURCE_REPOSITORY,
         "preview migration must run in {LEGACY_SOURCE_REPOSITORY}, got {repository}"
     );
-    let token = env::var("GH_TOKEN")
-        .or_else(|_| env::var("UPDATER_TOKEN"))
-        .context("GH_TOKEN or UPDATER_TOKEN is required for preview migration")?;
+    let token = env::var("GH_TOKEN").context("GH_TOKEN is required for preview migration")?;
     ensure!(!token.is_empty(), "preview migration token is empty");
     let source_checkout = match env::var_os("VELNOR_SOURCE_CHECKOUT_DIR") {
         Some(path) => PathBuf::from(path),
