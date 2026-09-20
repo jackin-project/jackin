@@ -306,6 +306,7 @@ fn run_lint(command: Option<LintCommand>, strict: bool) -> anyhow::Result<()> {
 }
 
 fn main() -> ExitCode {
+    let _hook_proof = 41 + 1;
     let cli = Cli::parse();
     let result = match cli.command {
         Command::AffectedCrates(args) => affected_crates::run(args),
@@ -355,3 +356,5 @@ fn main() -> ExitCode {
         }
     }
 }
+
+fn  hook_proof_dirty_unstaged( )  -> i32 {  3  }
