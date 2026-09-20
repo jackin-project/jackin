@@ -46,11 +46,11 @@ jobs:
           persist-credentials: false
       - name: Set up Velnor workflow runtime
         id: runtime
-        uses: tailrocks/velnor/.github/actions/setup-velnor-workflow@89f82dd8b287f46a3cf4c0920f341f6ca6c736db
+        uses: tailrocks/velnor/.github/actions/setup-velnor-workflow@e717de39b97558117e7e4f55c20216c8a4e4b1fc
         with:
-          rev: 89f82dd8b287f46a3cf4c0920f341f6ca6c736db
+          rev: e717de39b97558117e7e4f55c20216c8a4e4b1fc
       - name: Set trusted workflow policy revision
-        run: echo "VELNOR_WORKFLOW_POLICY_REVISION=89f82dd8b287f46a3cf4c0920f341f6ca6c736db" >> "$GITHUB_ENV"
+        run: echo "VELNOR_WORKFLOW_POLICY_REVISION=e717de39b97558117e7e4f55c20216c8a4e4b1fc" >> "$GITHUB_ENV"
       - name: Set up Mise
         uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
@@ -403,6 +403,7 @@ jobs:
       PACKAGE_DIR: package
       VELNOR_VERIFIED_PACKAGE_DIR: ${{ github.workspace }}/package
       VELNOR_PACKAGE_CHANNEL: preview
+      VELNOR_PUBLICATION_LOCK_BRANCH: package-release-lock
       EXPECTED_SOURCE_REPOSITORY: "jackin-project/jackin"
       EXPECTED_SOURCE_REF: "refs/heads/main"
       EXPECTED_MANIFEST_SCHEMA: velnor.package-release.v1
@@ -414,7 +415,6 @@ jobs:
       CONSUMER_REPOSITORY: "jackin-project/homebrew-tap"
       CONSUMER_BRANCH: main
       UPDATER: "./scripts/package-update.sh"
-      UPDATER_TOKEN: ${{ secrets.TAP_TOKEN }}
       UPDATE_COMMIT_MESSAGE: "chore: update verified jackin preview"
     concurrency:
       group: jackin-package-release-preview
@@ -430,11 +430,11 @@ jobs:
           persist-credentials: false
       - name: Set up Velnor workflow runtime
         id: runtime
-        uses: tailrocks/velnor/.github/actions/setup-velnor-workflow@89f82dd8b287f46a3cf4c0920f341f6ca6c736db
+        uses: tailrocks/velnor/.github/actions/setup-velnor-workflow@e717de39b97558117e7e4f55c20216c8a4e4b1fc
         with:
-          rev: 89f82dd8b287f46a3cf4c0920f341f6ca6c736db
+          rev: e717de39b97558117e7e4f55c20216c8a4e4b1fc
       - name: Set trusted workflow policy revision
-        run: echo "VELNOR_WORKFLOW_POLICY_REVISION=89f82dd8b287f46a3cf4c0920f341f6ca6c736db" >> "$GITHUB_ENV"
+        run: echo "VELNOR_WORKFLOW_POLICY_REVISION=e717de39b97558117e7e4f55c20216c8a4e4b1fc" >> "$GITHUB_ENV"
       - name: Set up Mise
         uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
@@ -762,6 +762,197 @@ jobs:
           do
             gh attestation verify "$payload" --repo "$GITHUB_REPOSITORY" --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/preview.yml" --source-ref "$EXPECTED_SOURCE_REF" --source-digest "$EXPECTED_SOURCE_COMMIT"
           done
+      - name: Acquire package publication lock
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          transaction_dir="$(mktemp -d)"
+          publication_lock_handoff=0
+
+          # This permanent branch is the repository-wide lock namespace for generated
+          # publication writers. The Contents API create-without-sha operation is
+          # create-only: an existing lock is never taken over, including after a stale
+          # or abandoned run. Only the owner that still has the exact blob SHA may
+          # delete the lock file; the branch itself is intentionally retained.
+          publication_lock_branch="${VELNOR_PUBLICATION_LOCK_BRANCH:?missing VELNOR_PUBLICATION_LOCK_BRANCH}"
+          publication_lock_path=".package-release-publication-lock.json"
+          publication_lock_sha="${VELNOR_PUBLICATION_LOCK_SHA:-}"
+          publication_lock_acquired=0
+          publication_lock_retain="${VELNOR_PUBLICATION_LOCK_RETAIN:-0}"
+          publication_lock_released="${VELNOR_PUBLICATION_LOCK_RELEASED:-0}"
+          if [ -n "$publication_lock_sha" ]; then
+            publication_lock_acquired=1
+          fi
+          publication_lock_token="${GITHUB_REPOSITORY}:${GITHUB_WORKFLOW:-unknown}:${GITHUB_RUN_ID:-unknown}:${GITHUB_RUN_ATTEMPT:-unknown}"
+
+          mark_publication_lock_retain() {
+            publication_lock_retain=1
+            if [ -n "${GITHUB_ENV:-}" ]; then
+              printf 'VELNOR_PUBLICATION_LOCK_RETAIN=1\n' >> "$GITHUB_ENV"
+            fi
+          }
+
+          mark_publication_lock_released() {
+            publication_lock_released=1
+            publication_lock_acquired=0
+            publication_lock_sha=""
+            if [ -n "${GITHUB_ENV:-}" ]; then
+              printf 'VELNOR_PUBLICATION_LOCK_RELEASED=1\nVELNOR_PUBLICATION_LOCK_RETAIN=0\n' >> "$GITHUB_ENV"
+            fi
+          }
+
+          clear_publication_lock_retain() {
+            publication_lock_retain=0
+            if [ -n "${GITHUB_ENV:-}" ]; then
+              printf 'VELNOR_PUBLICATION_LOCK_RETAIN=0\n' >> "$GITHUB_ENV"
+            fi
+          }
+
+          publication_lock_http_status() {
+            awk '/^HTTP\/[0-9.]+ [0-9]+/ {print $2; exit}' "$1"
+          }
+
+          ensure_publication_lock_branch() {
+            local response="$transaction_dir/publication-lock-branch"
+            local response_http
+            if gh api --repo "$GITHUB_REPOSITORY" -i \
+              "repos/$GITHUB_REPOSITORY/git/ref/heads/$publication_lock_branch" > "$response" 2>/dev/null; then
+              response_http="$(publication_lock_http_status "$response")"
+              if [ "$response_http" = 200 ]; then
+                return 0
+              fi
+              return 1
+            fi
+            response_http="$(publication_lock_http_status "$response")"
+            if [ "$response_http" != 404 ]; then
+              return 1
+            fi
+            if ! gh api --method POST --repo "$GITHUB_REPOSITORY" "repos/$GITHUB_REPOSITORY/git/refs" \
+              -f "ref=refs/heads/$publication_lock_branch" -f "sha=$EXPECTED_SOURCE_COMMIT" >/dev/null; then
+              return 1
+            fi
+            if ! gh api --repo "$GITHUB_REPOSITORY" -i \
+              "repos/$GITHUB_REPOSITORY/git/ref/heads/$publication_lock_branch" > "$response" 2>/dev/null; then
+              return 1
+            fi
+            response_http="$(publication_lock_http_status "$response")"
+            if [ "$response_http" = 200 ]; then
+              return 0
+            fi
+            return 1
+          }
+
+          acquire_publication_lock() {
+            local payload="$transaction_dir/publication-lock.json"
+            local encoded lock_response
+            if ! ensure_publication_lock_branch; then
+              return 1
+            fi
+            if ! jq -cn \
+              --arg token "$publication_lock_token" \
+              --arg repository "$GITHUB_REPOSITORY" \
+              --arg run "${GITHUB_RUN_ID:-unknown}" \
+              --arg attempt "${GITHUB_RUN_ATTEMPT:-unknown}" \
+              '{schema: 1, token: $token, repository: $repository, run: $run, attempt: $attempt}' > "$payload"; then
+              return 1
+            fi
+            if ! encoded="$(base64 < "$payload" | tr -d '\n')"; then
+              return 1
+            fi
+            if ! lock_response="$(gh api --method PUT --repo "$GITHUB_REPOSITORY" \
+              "repos/$GITHUB_REPOSITORY/contents/$publication_lock_path" \
+              -f "message=Acquire Velnor publication lock $publication_lock_token" \
+              -f "content=$encoded" -f "branch=$publication_lock_branch")"; then
+              echo "::error::Velnor publication lock is held; refusing release validation and mutation" >&2
+              return 1
+            fi
+            if ! publication_lock_sha="$(jq -er '.content.sha | strings | select(test("^[0-9a-f]{40}$"))' <<<"$lock_response")"; then
+              echo "::error::Velnor publication lock response did not contain an exact lock SHA; manual recovery is required" >&2
+              return 1
+            fi
+            publication_lock_acquired=1
+          }
+
+          assert_publication_lock() {
+            local lock_response current_sha
+            if [ "$publication_lock_acquired" != 1 ] || [ -z "$publication_lock_sha" ]; then
+              return 1
+            fi
+            if ! lock_response="$(gh api --repo "$GITHUB_REPOSITORY" \
+              "repos/$GITHUB_REPOSITORY/contents/$publication_lock_path?ref=$publication_lock_branch")"; then
+              return 1
+            fi
+            if ! jq -e --arg path "$publication_lock_path" \
+              '.type == "file" and .path == $path' <<<"$lock_response" >/dev/null; then
+              return 1
+            fi
+            if ! current_sha="$(jq -er '.sha | strings | select(test("^[0-9a-f]{40}$"))' <<<"$lock_response")"; then
+              return 1
+            fi
+            if [ "$current_sha" != "$publication_lock_sha" ]; then
+              return 1
+            fi
+            return 0
+          }
+
+          release_publication_lock() {
+            if [ "$publication_lock_acquired" = 0 ] || [ "$publication_lock_released" = 1 ]; then
+              return 0
+            fi
+            if ! assert_publication_lock; then
+              echo "::error::Velnor publication lock ownership changed; retaining lock for manual recovery" >&2
+              return 1
+            fi
+            if ! gh api --method DELETE --repo "$GITHUB_REPOSITORY" \
+              "repos/$GITHUB_REPOSITORY/contents/$publication_lock_path" \
+              -f "message=Release Velnor publication lock $publication_lock_token" \
+              -f "sha=$publication_lock_sha" -f "branch=$publication_lock_branch" >/dev/null; then
+              echo "::error::Velnor publication lock release failed; retaining lock for manual recovery" >&2
+              return 1
+            fi
+            mark_publication_lock_released
+          }
+
+          cleanup_publication_lock_acquisition() {
+            local status="$1"
+            trap - EXIT
+            if [ "$publication_lock_acquired" = 1 ] && [ "$publication_lock_handoff" = 0 ]; then
+              if ! release_publication_lock; then
+                status=1
+              fi
+            fi
+            if ! rm -rf -- "$transaction_dir"; then
+              status=1
+            fi
+            exit "$status"
+          }
+          trap 'cleanup_publication_lock_acquisition "$?"' EXIT
+
+          if [ "$publication_lock_acquired" = 0 ]; then
+            if ! acquire_publication_lock; then
+              echo "::error::Velnor publication lock could not be acquired; refusing publication" >&2
+              exit 1
+            fi
+          fi
+          if ! assert_publication_lock; then
+            echo "::error::Velnor publication lock could not be verified; refusing publication" >&2
+            exit 1
+          fi
+          if [ -z "${GITHUB_ENV:-}" ]; then
+            echo "::error::GITHUB_ENV is unavailable; refusing publication without a lock handoff" >&2
+            exit 1
+          fi
+          printf 'VELNOR_PUBLICATION_LOCK_SHA=%s\n' "$publication_lock_sha" >> "$GITHUB_ENV"
+          publication_lock_handoff=1
+      - name: Run pre-publish migration tasks
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VELNOR_SOURCE_CHECKOUT_DIR: ${{ github.workspace }}/source
+        working-directory: source
+        run: |
+          set -euo pipefail
+          mise run 'migrate-preview-legacy'
       - name: Publish immutable source-bound release
         id: publish
         env:
@@ -789,10 +980,23 @@ jobs:
 
           remote_tag_sha() {
             local tag_name="$1"
-            local sha
-            sha="$(git -C source -c "http.extraheader=AUTHORIZATION: bearer $GH_TOKEN" ls-remote origin "refs/tags/$tag_name^{}" | awk 'NR == 1 {print $1}')"
+            local refs sha
+            if ! refs="$(git -C source -c "http.extraheader=AUTHORIZATION: bearer $GH_TOKEN" ls-remote origin "refs/tags/$tag_name^{}")"; then
+              return 1
+            fi
+            if ! sha="$(awk 'NR == 1 {print $1}' <<<"$refs")"; then
+              return 1
+            fi
             if [ -z "$sha" ]; then
-              sha="$(git -C source -c "http.extraheader=AUTHORIZATION: bearer $GH_TOKEN" ls-remote origin "refs/tags/$tag_name" | awk 'NR == 1 {print $1}')"
+              if ! refs="$(git -C source -c "http.extraheader=AUTHORIZATION: bearer $GH_TOKEN" ls-remote origin "refs/tags/$tag_name")"; then
+                return 1
+              fi
+              if ! sha="$(awk 'NR == 1 {print $1}' <<<"$refs")"; then
+                return 1
+              fi
+            fi
+            if [ -n "$sha" ] && ! [[ "$sha" =~ ^[0-9a-f]{40}$ ]]; then
+              return 1
             fi
             printf '%s\n' "$sha"
           }
@@ -826,6 +1030,187 @@ jobs:
           }
 
           {
+
+          # This permanent branch is the repository-wide lock namespace for generated
+          # publication writers. The Contents API create-without-sha operation is
+          # create-only: an existing lock is never taken over, including after a stale
+          # or abandoned run. Only the owner that still has the exact blob SHA may
+          # delete the lock file; the branch itself is intentionally retained.
+          publication_lock_branch="${VELNOR_PUBLICATION_LOCK_BRANCH:?missing VELNOR_PUBLICATION_LOCK_BRANCH}"
+          publication_lock_path=".package-release-publication-lock.json"
+          publication_lock_sha="${VELNOR_PUBLICATION_LOCK_SHA:-}"
+          publication_lock_acquired=0
+          publication_lock_retain="${VELNOR_PUBLICATION_LOCK_RETAIN:-0}"
+          publication_lock_released="${VELNOR_PUBLICATION_LOCK_RELEASED:-0}"
+          if [ -n "$publication_lock_sha" ]; then
+            publication_lock_acquired=1
+          fi
+          publication_lock_token="${GITHUB_REPOSITORY}:${GITHUB_WORKFLOW:-unknown}:${GITHUB_RUN_ID:-unknown}:${GITHUB_RUN_ATTEMPT:-unknown}"
+
+          mark_publication_lock_retain() {
+            publication_lock_retain=1
+            if [ -n "${GITHUB_ENV:-}" ]; then
+              printf 'VELNOR_PUBLICATION_LOCK_RETAIN=1\n' >> "$GITHUB_ENV"
+            fi
+          }
+
+          mark_publication_lock_released() {
+            publication_lock_released=1
+            publication_lock_acquired=0
+            publication_lock_sha=""
+            if [ -n "${GITHUB_ENV:-}" ]; then
+              printf 'VELNOR_PUBLICATION_LOCK_RELEASED=1\nVELNOR_PUBLICATION_LOCK_RETAIN=0\n' >> "$GITHUB_ENV"
+            fi
+          }
+
+          clear_publication_lock_retain() {
+            publication_lock_retain=0
+            if [ -n "${GITHUB_ENV:-}" ]; then
+              printf 'VELNOR_PUBLICATION_LOCK_RETAIN=0\n' >> "$GITHUB_ENV"
+            fi
+          }
+
+          publication_lock_http_status() {
+            awk '/^HTTP\/[0-9.]+ [0-9]+/ {print $2; exit}' "$1"
+          }
+
+          ensure_publication_lock_branch() {
+            local response="$transaction_dir/publication-lock-branch"
+            local response_http
+            if gh api --repo "$GITHUB_REPOSITORY" -i \
+              "repos/$GITHUB_REPOSITORY/git/ref/heads/$publication_lock_branch" > "$response" 2>/dev/null; then
+              response_http="$(publication_lock_http_status "$response")"
+              if [ "$response_http" = 200 ]; then
+                return 0
+              fi
+              return 1
+            fi
+            response_http="$(publication_lock_http_status "$response")"
+            if [ "$response_http" != 404 ]; then
+              return 1
+            fi
+            if ! gh api --method POST --repo "$GITHUB_REPOSITORY" "repos/$GITHUB_REPOSITORY/git/refs" \
+              -f "ref=refs/heads/$publication_lock_branch" -f "sha=$EXPECTED_SOURCE_COMMIT" >/dev/null; then
+              return 1
+            fi
+            if ! gh api --repo "$GITHUB_REPOSITORY" -i \
+              "repos/$GITHUB_REPOSITORY/git/ref/heads/$publication_lock_branch" > "$response" 2>/dev/null; then
+              return 1
+            fi
+            response_http="$(publication_lock_http_status "$response")"
+            if [ "$response_http" = 200 ]; then
+              return 0
+            fi
+            return 1
+          }
+
+          acquire_publication_lock() {
+            local payload="$transaction_dir/publication-lock.json"
+            local encoded lock_response
+            if ! ensure_publication_lock_branch; then
+              return 1
+            fi
+            if ! jq -cn \
+              --arg token "$publication_lock_token" \
+              --arg repository "$GITHUB_REPOSITORY" \
+              --arg run "${GITHUB_RUN_ID:-unknown}" \
+              --arg attempt "${GITHUB_RUN_ATTEMPT:-unknown}" \
+              '{schema: 1, token: $token, repository: $repository, run: $run, attempt: $attempt}' > "$payload"; then
+              return 1
+            fi
+            if ! encoded="$(base64 < "$payload" | tr -d '\n')"; then
+              return 1
+            fi
+            if ! lock_response="$(gh api --method PUT --repo "$GITHUB_REPOSITORY" \
+              "repos/$GITHUB_REPOSITORY/contents/$publication_lock_path" \
+              -f "message=Acquire Velnor publication lock $publication_lock_token" \
+              -f "content=$encoded" -f "branch=$publication_lock_branch")"; then
+              echo "::error::Velnor publication lock is held; refusing release validation and mutation" >&2
+              return 1
+            fi
+            if ! publication_lock_sha="$(jq -er '.content.sha | strings | select(test("^[0-9a-f]{40}$"))' <<<"$lock_response")"; then
+              echo "::error::Velnor publication lock response did not contain an exact lock SHA; manual recovery is required" >&2
+              return 1
+            fi
+            publication_lock_acquired=1
+          }
+
+          assert_publication_lock() {
+            local lock_response current_sha
+            if [ "$publication_lock_acquired" != 1 ] || [ -z "$publication_lock_sha" ]; then
+              return 1
+            fi
+            if ! lock_response="$(gh api --repo "$GITHUB_REPOSITORY" \
+              "repos/$GITHUB_REPOSITORY/contents/$publication_lock_path?ref=$publication_lock_branch")"; then
+              return 1
+            fi
+            if ! jq -e --arg path "$publication_lock_path" \
+              '.type == "file" and .path == $path' <<<"$lock_response" >/dev/null; then
+              return 1
+            fi
+            if ! current_sha="$(jq -er '.sha | strings | select(test("^[0-9a-f]{40}$"))' <<<"$lock_response")"; then
+              return 1
+            fi
+            if [ "$current_sha" != "$publication_lock_sha" ]; then
+              return 1
+            fi
+            return 0
+          }
+
+          release_publication_lock() {
+            if [ "$publication_lock_acquired" = 0 ] || [ "$publication_lock_released" = 1 ]; then
+              return 0
+            fi
+            if ! assert_publication_lock; then
+              echo "::error::Velnor publication lock ownership changed; retaining lock for manual recovery" >&2
+              return 1
+            fi
+            if ! gh api --method DELETE --repo "$GITHUB_REPOSITORY" \
+              "repos/$GITHUB_REPOSITORY/contents/$publication_lock_path" \
+              -f "message=Release Velnor publication lock $publication_lock_token" \
+              -f "sha=$publication_lock_sha" -f "branch=$publication_lock_branch" >/dev/null; then
+              echo "::error::Velnor publication lock release failed; retaining lock for manual recovery" >&2
+              return 1
+            fi
+            mark_publication_lock_released
+          }
+
+          immutable_publication_mutated=0
+          immutable_publication_handoff=0
+          cleanup_immutable_publication() {
+            local status="$1"
+            trap - EXIT
+            if [ "$publication_lock_acquired" = 1 ] && [ "$immutable_publication_mutated" = 0 ] && [ "$immutable_publication_handoff" = 0 ] && [ "$publication_lock_retain" = 0 ]; then
+              if ! release_publication_lock; then
+                status=1
+              fi
+            elif [ "$publication_lock_acquired" = 1 ] && [ "$immutable_publication_handoff" = 0 ]; then
+              echo "::error::immutable publication failed after mutation; retaining publication lock for manual recovery" >&2
+              status=1
+            fi
+            if ! rm -rf -- "$transaction_dir"; then
+              status=1
+            fi
+            exit "$status"
+          }
+          trap 'cleanup_immutable_publication "$?"' EXIT
+
+          if [ "$publication_lock_acquired" = 0 ]; then
+            if ! acquire_publication_lock; then
+              echo "::error::Velnor publication lock could not be acquired; refusing immutable release validation and mutation" >&2
+              exit 1
+            fi
+          fi
+          if ! assert_publication_lock; then
+            echo "::error::Velnor publication lock could not be verified; refusing immutable release validation and mutation" >&2
+            exit 1
+          fi
+          if [ -z "${GITHUB_ENV:-}" ]; then
+            echo "::error::GITHUB_ENV is unavailable; refusing to publish without the held lock handoff" >&2
+            exit 1
+          fi
+          printf 'VELNOR_PUBLICATION_LOCK_SHA=%s\n' "$publication_lock_sha" >> "$GITHUB_ENV"
+
             printf '%s\n' 'release-manifest.json'
             printf '%s\n' 'identity.json'
             printf '%s\n' 'jackin-aarch64-apple-darwin.tar.gz'
@@ -857,7 +1242,10 @@ jobs:
             printf '%s\n' 'capsule-manifest.json.bundle'
           } | LC_ALL=C sort > "$expected_assets"
 
-          tag_sha="$(remote_tag_sha "$tag")"
+          if ! tag_sha="$(remote_tag_sha "$tag")"; then
+            echo "::error::immutable release tag lookup failed" >&2
+            exit 1
+          fi
           if [ -n "$tag_sha" ] && [ "$tag_sha" != "$EXPECTED_SOURCE_COMMIT" ]; then
             echo "::error::immutable release tag resolves to an unexpected source commit" >&2
             exit 1
@@ -869,12 +1257,21 @@ jobs:
           response_http="$(awk 'NR == 1 {print $2; exit}' "$release_json")"
           case "$response_http" in
             404)
+              if ! assert_publication_lock; then
+                echo "::error::Velnor publication lock ownership changed before immutable release creation" >&2
+                exit 1
+              fi
+              immutable_publication_mutated=1
+              mark_publication_lock_retain
               if [ -n "$tag_sha" ]; then
                 gh release create "$tag" --repo "$GITHUB_REPOSITORY" --verify-tag --draft "${release_flags[@]}" --title "$title" --notes "Verified immutable package release $version from $EXPECTED_SOURCE_COMMIT"
               else
                 gh release create "$tag" --repo "$GITHUB_REPOSITORY" --target "$EXPECTED_SOURCE_COMMIT" --draft "${release_flags[@]}" --title "$title" --notes "Verified immutable package release $version from $EXPECTED_SOURCE_COMMIT"
               fi
-              tag_sha="$(remote_tag_sha "$tag")"
+              if ! tag_sha="$(remote_tag_sha "$tag")"; then
+                echo "::error::new immutable release tag lookup failed" >&2
+                exit 1
+              fi
               [ "$tag_sha" = "$EXPECTED_SOURCE_COMMIT" ] || { echo "::error::new immutable release tag does not resolve to the verified source commit" >&2; exit 1; }
               ;;
             200)
@@ -914,6 +1311,12 @@ jobs:
           if [ "$immutable_public" = 0 ]; then
             while IFS= read -r asset_name; do
               if ! grep -Fqx -- "$asset_name" "$existing_assets"; then
+                if ! assert_publication_lock; then
+                  echo "::error::Velnor publication lock ownership changed before immutable asset upload" >&2
+                  exit 1
+                fi
+                immutable_publication_mutated=1
+                mark_publication_lock_retain
                 gh release upload "$tag" --repo "$GITHUB_REPOSITORY" "$PACKAGE_DIR/$asset_name"
               fi
             done < "$expected_assets"
@@ -928,6 +1331,12 @@ jobs:
               exit 1
             }
             verify_asset_bytes "$tag" "$expected_assets" "$PACKAGE_DIR" "$download_dir"
+            if ! assert_publication_lock; then
+              echo "::error::Velnor publication lock ownership changed before immutable release publication" >&2
+              exit 1
+            fi
+            immutable_publication_mutated=1
+            mark_publication_lock_retain
             gh api --method PATCH --repo "$GITHUB_REPOSITORY" \
               "repos/$GITHUB_REPOSITORY/releases/$(jq -er '.id' <<<"$staged_body")" \
               -F draft=false -F "prerelease=$RELEASE_PRERELEASE" -F make_latest=false >/dev/null
@@ -942,9 +1351,13 @@ jobs:
             echo "::error::immutable release asset set is not exact after publication" >&2
             exit 1
           }
-          final_tag_sha="$(remote_tag_sha "$tag")"
+          if ! final_tag_sha="$(remote_tag_sha "$tag")"; then
+            echo "::error::immutable release tag lookup failed after publication" >&2
+            exit 1
+          fi
           [ "$final_tag_sha" = "$EXPECTED_SOURCE_COMMIT" ] || { echo "::error::immutable tag does not resolve to the verified source commit" >&2; exit 1; }
           printf 'immutable_tag=%s\n' "$tag" >> "$GITHUB_OUTPUT"
+          immutable_publication_handoff=1
       - name: Download and re-verify published release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -1299,44 +1712,269 @@ jobs:
           old_prerelease=""
           old_source_commit=""
           old_version=""
+          owner_draft=""
+          owner_tag_sha=""
+          owner_name=""
+          owner_body=""
+          owner_source_commit=""
+          owner_assets="$transaction_dir/owner-assets"
           candidate_version="$(jq -er '.version | strings' "$published_dir/release-manifest.json")"
           had_release=0
           mutated=0
 
+          # This permanent branch is the repository-wide lock namespace for generated
+          # publication writers. The Contents API create-without-sha operation is
+          # create-only: an existing lock is never taken over, including after a stale
+          # or abandoned run. Only the owner that still has the exact blob SHA may
+          # delete the lock file; the branch itself is intentionally retained.
+          publication_lock_branch="${VELNOR_PUBLICATION_LOCK_BRANCH:?missing VELNOR_PUBLICATION_LOCK_BRANCH}"
+          publication_lock_path=".package-release-publication-lock.json"
+          publication_lock_sha="${VELNOR_PUBLICATION_LOCK_SHA:-}"
+          publication_lock_acquired=0
+          publication_lock_retain="${VELNOR_PUBLICATION_LOCK_RETAIN:-0}"
+          publication_lock_released="${VELNOR_PUBLICATION_LOCK_RELEASED:-0}"
+          if [ -n "$publication_lock_sha" ]; then
+            publication_lock_acquired=1
+          fi
+          publication_lock_token="${GITHUB_REPOSITORY}:${GITHUB_WORKFLOW:-unknown}:${GITHUB_RUN_ID:-unknown}:${GITHUB_RUN_ATTEMPT:-unknown}"
+
+          mark_publication_lock_retain() {
+            publication_lock_retain=1
+            if [ -n "${GITHUB_ENV:-}" ]; then
+              printf 'VELNOR_PUBLICATION_LOCK_RETAIN=1\n' >> "$GITHUB_ENV"
+            fi
+          }
+
+          mark_publication_lock_released() {
+            publication_lock_released=1
+            publication_lock_acquired=0
+            publication_lock_sha=""
+            if [ -n "${GITHUB_ENV:-}" ]; then
+              printf 'VELNOR_PUBLICATION_LOCK_RELEASED=1\nVELNOR_PUBLICATION_LOCK_RETAIN=0\n' >> "$GITHUB_ENV"
+            fi
+          }
+
+          clear_publication_lock_retain() {
+            publication_lock_retain=0
+            if [ -n "${GITHUB_ENV:-}" ]; then
+              printf 'VELNOR_PUBLICATION_LOCK_RETAIN=0\n' >> "$GITHUB_ENV"
+            fi
+          }
+
+          publication_lock_http_status() {
+            awk '/^HTTP\/[0-9.]+ [0-9]+/ {print $2; exit}' "$1"
+          }
+
+          ensure_publication_lock_branch() {
+            local response="$transaction_dir/publication-lock-branch"
+            local response_http
+            if gh api --repo "$GITHUB_REPOSITORY" -i \
+              "repos/$GITHUB_REPOSITORY/git/ref/heads/$publication_lock_branch" > "$response" 2>/dev/null; then
+              response_http="$(publication_lock_http_status "$response")"
+              if [ "$response_http" = 200 ]; then
+                return 0
+              fi
+              return 1
+            fi
+            response_http="$(publication_lock_http_status "$response")"
+            if [ "$response_http" != 404 ]; then
+              return 1
+            fi
+            if ! gh api --method POST --repo "$GITHUB_REPOSITORY" "repos/$GITHUB_REPOSITORY/git/refs" \
+              -f "ref=refs/heads/$publication_lock_branch" -f "sha=$EXPECTED_SOURCE_COMMIT" >/dev/null; then
+              return 1
+            fi
+            if ! gh api --repo "$GITHUB_REPOSITORY" -i \
+              "repos/$GITHUB_REPOSITORY/git/ref/heads/$publication_lock_branch" > "$response" 2>/dev/null; then
+              return 1
+            fi
+            response_http="$(publication_lock_http_status "$response")"
+            if [ "$response_http" = 200 ]; then
+              return 0
+            fi
+            return 1
+          }
+
+          acquire_publication_lock() {
+            local payload="$transaction_dir/publication-lock.json"
+            local encoded lock_response
+            if ! ensure_publication_lock_branch; then
+              return 1
+            fi
+            if ! jq -cn \
+              --arg token "$publication_lock_token" \
+              --arg repository "$GITHUB_REPOSITORY" \
+              --arg run "${GITHUB_RUN_ID:-unknown}" \
+              --arg attempt "${GITHUB_RUN_ATTEMPT:-unknown}" \
+              '{schema: 1, token: $token, repository: $repository, run: $run, attempt: $attempt}' > "$payload"; then
+              return 1
+            fi
+            if ! encoded="$(base64 < "$payload" | tr -d '\n')"; then
+              return 1
+            fi
+            if ! lock_response="$(gh api --method PUT --repo "$GITHUB_REPOSITORY" \
+              "repos/$GITHUB_REPOSITORY/contents/$publication_lock_path" \
+              -f "message=Acquire Velnor publication lock $publication_lock_token" \
+              -f "content=$encoded" -f "branch=$publication_lock_branch")"; then
+              echo "::error::Velnor publication lock is held; refusing release validation and mutation" >&2
+              return 1
+            fi
+            if ! publication_lock_sha="$(jq -er '.content.sha | strings | select(test("^[0-9a-f]{40}$"))' <<<"$lock_response")"; then
+              echo "::error::Velnor publication lock response did not contain an exact lock SHA; manual recovery is required" >&2
+              return 1
+            fi
+            publication_lock_acquired=1
+          }
+
+          assert_publication_lock() {
+            local lock_response current_sha
+            if [ "$publication_lock_acquired" != 1 ] || [ -z "$publication_lock_sha" ]; then
+              return 1
+            fi
+            if ! lock_response="$(gh api --repo "$GITHUB_REPOSITORY" \
+              "repos/$GITHUB_REPOSITORY/contents/$publication_lock_path?ref=$publication_lock_branch")"; then
+              return 1
+            fi
+            if ! jq -e --arg path "$publication_lock_path" \
+              '.type == "file" and .path == $path' <<<"$lock_response" >/dev/null; then
+              return 1
+            fi
+            if ! current_sha="$(jq -er '.sha | strings | select(test("^[0-9a-f]{40}$"))' <<<"$lock_response")"; then
+              return 1
+            fi
+            if [ "$current_sha" != "$publication_lock_sha" ]; then
+              return 1
+            fi
+            return 0
+          }
+
+          release_publication_lock() {
+            if [ "$publication_lock_acquired" = 0 ] || [ "$publication_lock_released" = 1 ]; then
+              return 0
+            fi
+            if ! assert_publication_lock; then
+              echo "::error::Velnor publication lock ownership changed; retaining lock for manual recovery" >&2
+              return 1
+            fi
+            if ! gh api --method DELETE --repo "$GITHUB_REPOSITORY" \
+              "repos/$GITHUB_REPOSITORY/contents/$publication_lock_path" \
+              -f "message=Release Velnor publication lock $publication_lock_token" \
+              -f "sha=$publication_lock_sha" -f "branch=$publication_lock_branch" >/dev/null; then
+              echo "::error::Velnor publication lock release failed; retaining lock for manual recovery" >&2
+              return 1
+            fi
+            mark_publication_lock_released
+          }
+
           remote_tag_sha() {
             local tag_name="$1"
-            local sha
-            sha="$(git -C source -c "http.extraheader=AUTHORIZATION: bearer $GH_TOKEN" ls-remote origin "refs/tags/$tag_name^{}" | awk 'NR == 1 {print $1}')"
+            local refs sha
+            if ! refs="$(git -C source -c "http.extraheader=AUTHORIZATION: bearer $GH_TOKEN" ls-remote origin "refs/tags/$tag_name^{}")"; then
+              return 1
+            fi
+            if ! sha="$(awk 'NR == 1 {print $1}' <<<"$refs")"; then
+              return 1
+            fi
             if [ -z "$sha" ]; then
-              sha="$(git -C source -c "http.extraheader=AUTHORIZATION: bearer $GH_TOKEN" ls-remote origin "refs/tags/$tag_name" | awk 'NR == 1 {print $1}')"
+              if ! refs="$(git -C source -c "http.extraheader=AUTHORIZATION: bearer $GH_TOKEN" ls-remote origin "refs/tags/$tag_name")"; then
+                return 1
+              fi
+              if ! sha="$(awk 'NR == 1 {print $1}' <<<"$refs")"; then
+                return 1
+              fi
+            fi
+            if [ -n "$sha" ] && ! [[ "$sha" =~ ^[0-9a-f]{40}$ ]]; then
+              return 1
             fi
             printf '%s\n' "$sha"
+          }
+
+          read_rolling_asset_set() {
+            local output="$1"
+            local asset_set
+            if ! asset_set="$(gh api --paginate --repo "$GITHUB_REPOSITORY" \
+              "repos/$GITHUB_REPOSITORY/releases/$rolling_release_id/assets" \
+              --jq '.[] | if (type == "object" and (.id | type == "number" and floor == . and . > 0) and (.name | type == "string" and length > 0 and test("^[-A-Za-z0-9._+~]+$")) and (.digest | type == "string" and test("^sha256:[0-9a-f]{64}$"))) then [.id, .name, .digest] | @tsv else error("invalid rolling release asset") end')"; then
+              return 1
+            fi
+            if [ -n "$asset_set" ]; then
+              if ! LC_ALL=C sort <<<"$asset_set" > "$output"; then
+                return 1
+              fi
+            else
+              if ! : > "$output"; then
+                return 1
+              fi
+            fi
+            if ! awk -F '\t' '
+              NF == 3 && ++ids[$1] == 1 && ++names[$2] == 1 { next }
+              { exit 1 }
+            ' "$output"; then
+              return 1
+            fi
+          }
+
+          assert_asset_names() {
+            local asset_set="$1"
+            local expected_names="$2"
+            local actual_names="$transaction_dir/asset-names"
+            if ! cut -f2 "$asset_set" | LC_ALL=C sort > "$actual_names"; then
+              return 1
+            fi
+            cmp -s "$expected_names" "$actual_names"
+          }
+
+          assert_release_absent() {
+            local response="$transaction_dir/release-absence"
+            local response_http
+            if gh api --repo "$GITHUB_REPOSITORY" -i \
+              "repos/$GITHUB_REPOSITORY/releases/$rolling_release_id" > "$response" 2>/dev/null; then
+              echo "::error::rolling release still exists after DELETE" >&2
+              return 1
+            fi
+            if ! response_http="$(awk '/^HTTP\/[0-9.]+ [0-9]+/ {print $2; exit}' "$response")"; then
+              return 1
+            fi
+            if [ "$response_http" != 404 ]; then
+              echo "::error::rolling release DELETE was not verified as HTTP 404" >&2
+              return 1
+            fi
           }
 
           validate_existing_rolling_release() {
             local body="$1"
             local source_dir="$2"
+            local expected_draft="${3:-false}"
             local manifest="$source_dir/release-manifest.json"
             local identity="$source_dir/identity.json"
             local manifest_assets="$transaction_dir/live-manifest-assets"
             local downloaded_assets="$transaction_dir/live-downloaded-assets"
+            local body_assets="$transaction_dir/body-assets"
+            local manifest_names="$transaction_dir/manifest-names"
+            local body_names="$transaction_dir/body-names"
+            local manifest_digests="$transaction_dir/manifest-digests"
+            local api_digests="$transaction_dir/api-digests"
             local name expected_digest actual_digest api_digest
 
-            jq -e --arg tag "$rolling_tag" --argjson prerelease "$RELEASE_PRERELEASE" '
-              (.draft | type == "boolean") and .prerelease == $prerelease and .tag_name == $tag and
+            if ! jq -e --arg tag "$rolling_tag" --argjson prerelease "$RELEASE_PRERELEASE" --argjson draft "$expected_draft" '
+              (.draft == $draft) and .prerelease == $prerelease and .tag_name == $tag and
               (.id | type == "number") and
               (.assets | type == "array" and length > 0) and
               ((.assets | map(.name)) as $names |
                 ($names | unique | length) == ($names | length)) and
               (.assets | all(.[];
                   type == "object" and
-                  (.name | type == "string") and
+                  (.id | type == "number" and floor == . and . > 0) and
+                  (.name | type == "string" and length > 0 and test("^[-A-Za-z0-9._+~]+$")) and
                   (.digest | type == "string" and test("^sha256:[0-9a-f]{64}$"))))
-            ' <<<"$body" >/dev/null
-            test -s "$manifest"
-            test -s "$identity"
+            ' <<<"$body" >/dev/null; then
+              return 1
+            fi
+            if ! test -s "$manifest" || ! test -s "$identity"; then
+              return 1
+            fi
 
-            jq -e '
+            if ! jq -e '
               keys == ["assets","schema","source_commit","source_ref","source_repository","supporting_assets","version"] and
               (.assets | type == "array" and
                 all(.[];
@@ -1352,10 +1990,16 @@ jobs:
                   (.sha256 | type == "string" and test("^[0-9a-f]{64}$")))) and
               ((.assets + .supporting_assets | map(.name)) as $names |
                 ($names | unique | length) == ($names | length))
-            ' "$manifest" >/dev/null
+            ' "$manifest" >/dev/null; then
+              return 1
+            fi
 
-            old_source_commit="$(jq -er '.source_commit | strings' "$manifest")"
-            old_version="$(jq -er '.version | strings' "$manifest")"
+            if ! old_source_commit="$(jq -er '.source_commit | strings' "$manifest")"; then
+              return 1
+            fi
+            if ! old_version="$(jq -er '.version | strings' "$manifest")"; then
+              return 1
+            fi
             [[ "$old_source_commit" =~ ^[0-9a-f]{40}$ ]] || {
               echo "::error::existing rolling manifest source_commit is not 40 lowercase hex" >&2
               return 1
@@ -1376,30 +2020,48 @@ jobs:
               echo "::error::existing rolling manifest version does not bind to its source" >&2
               return 1
             }
-            jq -e \
+            if ! jq -e \
               --arg schema "$EXPECTED_MANIFEST_SCHEMA" \
               --arg repository "$EXPECTED_SOURCE_REPOSITORY" \
               --arg source_ref "$EXPECTED_SOURCE_REF" \
               --arg commit "$old_source_commit" \
               --slurpfile rolling_manifest "$manifest" \
               '.schema == $schema and .source_repository == $repository and
-               .source_ref == $source_ref and .source_commit == $commit' "$manifest" >/dev/null
-            jq -e \
+               .source_ref == $source_ref and .source_commit == $commit' "$manifest" >/dev/null; then
+              return 1
+            fi
+            if ! jq -e \
               --arg repository "$EXPECTED_SOURCE_REPOSITORY" \
               --arg source_ref "$EXPECTED_SOURCE_REF" \
               --arg commit "$old_source_commit" \
               --slurpfile rolling_manifest "$manifest" \
               'keys == ["manifest","source_digest","source_ref","source_repository"] and
                .source_repository == $repository and .source_ref == $source_ref and
-               .source_digest == $commit and .manifest == $rolling_manifest[0]' "$identity" >/dev/null
-            jq -e --arg name "$RELEASE_TITLE_PREFIX $old_version" '.name == $name' <<<"$body" >/dev/null
+               .source_digest == $commit and .manifest == $rolling_manifest[0]' "$identity" >/dev/null; then
+              return 1
+            fi
+            if ! jq -e --arg name "$RELEASE_TITLE_PREFIX $old_version" '.name == $name' <<<"$body" >/dev/null; then
+              return 1
+            fi
 
-            {
+            if ! jq -r '(.assets[] | .name), (.supporting_assets[] | .name)' "$manifest" > "$manifest_names"; then
+              return 1
+            fi
+            if ! {
               printf '%s\n' "release-manifest.json" "identity.json"
-              jq -r '(.assets[] | .name), (.supporting_assets[] | .name)' "$manifest"
-            } | LC_ALL=C sort > "$manifest_assets"
-            jq -r '.assets[].name' <<<"$body" | LC_ALL=C sort > "$old_assets"
-            find "$source_dir" -maxdepth 1 -type f -printf '%f\n' | LC_ALL=C sort > "$downloaded_assets"
+              cat "$manifest_names"
+            } | LC_ALL=C sort > "$manifest_assets"; then
+              return 1
+            fi
+            if ! jq -r '.assets[].name' <<<"$body" > "$body_names"; then
+              return 1
+            fi
+            if ! LC_ALL=C sort "$body_names" > "$old_assets"; then
+              return 1
+            fi
+            if ! find "$source_dir" -maxdepth 1 -type f -printf '%f\n' | LC_ALL=C sort > "$downloaded_assets"; then
+              return 1
+            fi
             cmp -s "$manifest_assets" "$old_assets" || {
               echo "::error::existing rolling release assets are not exactly covered by its manifest" >&2
               return 1
@@ -1409,21 +2071,47 @@ jobs:
               return 1
             }
 
+            if ! jq -r '(.assets[] | [.name, .sha256] | @tsv), (.supporting_assets[] | [.name, .sha256] | @tsv)' "$manifest" > "$manifest_digests"; then
+              return 1
+            fi
             while IFS=$'\t' read -r name expected_digest; do
-              test -s "$source_dir/$name"
-              actual_digest="$(sha256sum -- "$source_dir/$name" | awk '{print $1}')"
+              if ! test -s "$source_dir/$name"; then
+                return 1
+              fi
+              if ! actual_digest="$(sha256sum -- "$source_dir/$name" | awk '{print $1}')"; then
+                return 1
+              fi
               [ "$actual_digest" = "$expected_digest" ] || {
                 echo "::error::existing rolling manifest digest mismatch: $name" >&2
                 return 1
               }
-            done < <(jq -r '(.assets[] | [.name, .sha256] | @tsv), (.supporting_assets[] | [.name, .sha256] | @tsv)' "$manifest")
+            done < "$manifest_digests"
+            if ! jq -r '.assets[] | [.name, .digest] | @tsv' <<<"$body" > "$api_digests"; then
+              return 1
+            fi
             while IFS=$'\t' read -r name api_digest; do
-              actual_digest="$(sha256sum -- "$source_dir/$name" | awk '{print $1}')"
+              if ! actual_digest="$(sha256sum -- "$source_dir/$name" | awk '{print $1}')"; then
+                return 1
+              fi
               [ "$api_digest" = "sha256:$actual_digest" ] || {
                 echo "::error::existing rolling GitHub asset digest mismatch: $name" >&2
                 return 1
               }
-            done < <(jq -r '.assets[] | [.name, .digest] | @tsv' <<<"$body")
+            done < "$api_digests"
+
+            if ! read_rolling_asset_set "$body_assets"; then
+              return 1
+            fi
+            if ! jq -r '.assets[] | [.id, .name, .digest] | @tsv' <<<"$body" | LC_ALL=C sort > "$body_assets.expected"; then
+              return 1
+            fi
+            if ! cmp -s "$body_assets.expected" "$body_assets"; then
+              echo "::error::existing rolling release asset set changed during validation" >&2
+              return 1
+            fi
+            if ! cp -- "$body_assets" "$owner_assets"; then
+              return 1
+            fi
 
             if ! git -C source cat-file -e "${old_source_commit}^{commit}"; then
               echo "::error::existing rolling source commit is not present in the checked-out history" >&2
@@ -1435,25 +2123,43 @@ jobs:
             fi
           }
 
-          discard_stale_rolling_draft() {
-            local stale_tag_sha
-            echo "::warning::discarding incomplete rolling draft and retrying publication" >&2
-            gh api --method DELETE --repo "$GITHUB_REPOSITORY" "repos/$GITHUB_REPOSITORY/releases/$rolling_release_id" >/dev/null
-            stale_tag_sha="$(remote_tag_sha "$rolling_tag")"
-            if [ -n "$stale_tag_sha" ]; then
-              gh api --method DELETE --repo "$GITHUB_REPOSITORY" "repos/$GITHUB_REPOSITORY/git/refs/tags/$rolling_tag" >/dev/null
+          assert_rolling_ownership() {
+            local expected_draft="$1"
+            local expected_tag_sha="$2"
+            local expected_name="$3"
+            local expected_body="$4"
+            local expected_source_commit="$5"
+            local current_body current_tag_sha current_assets
+            if ! assert_publication_lock; then
+              echo "::error::Velnor publication lock ownership changed; refusing release mutation" >&2
+              return 1
             fi
-            had_release=0
-            rolling_release_id=""
-            old_tag_sha=""
-            old_name=""
-            old_body=""
-            old_draft=""
-            old_prerelease=""
-            old_source_commit=""
-            old_version=""
-            : > "$old_assets"
-            rm -rf -- "$rollback_dir"
+            if [ -z "$rolling_release_id" ] || [ -z "$expected_tag_sha" ] || [ -z "$expected_source_commit" ] || ! test -f "$owner_assets"; then
+              return 1
+            fi
+            if ! current_body="$(gh api --repo "$GITHUB_REPOSITORY" "repos/$GITHUB_REPOSITORY/releases/$rolling_release_id")"; then
+              return 1
+            fi
+            jq -e \
+              --arg id "$rolling_release_id" \
+              --arg tag "$rolling_tag" \
+              --arg name "$expected_name" \
+              --arg body "$expected_body" \
+              --argjson prerelease "$RELEASE_PRERELEASE" \
+              --argjson draft "$expected_draft" \
+              '(.id | tostring) == $id and .draft == $draft and .prerelease == $prerelease and
+               .tag_name == $tag and .name == $name and (.body // "") == $body' <<<"$current_body" >/dev/null || return 1
+            if ! current_tag_sha="$(remote_tag_sha "$rolling_tag")"; then
+              return 1
+            fi
+            if [ "$current_tag_sha" != "$expected_tag_sha" ] || [ "$current_tag_sha" != "$expected_source_commit" ]; then
+              return 1
+            fi
+            current_assets="$transaction_dir/current-assets"
+            if ! read_rolling_asset_set "$current_assets"; then
+              return 1
+            fi
+            cmp -s "$owner_assets" "$current_assets"
           }
 
           verify_restored_assets() {
@@ -1515,65 +2221,269 @@ jobs:
             done < "$expected_names"
           }
 
+          replace_owned_asset_after_delete() {
+            local asset_id="$1"
+            local asset_name="$2"
+            local expected="$transaction_dir/expected-after-delete"
+            local current="$transaction_dir/current-assets"
+            if ! awk -F '\t' -v id="$asset_id" -v name="$asset_name" '
+              $1 == id && $2 == name { removed++; next }
+              { print }
+              END { if (removed != 1) exit 1 }
+            ' "$owner_assets" | LC_ALL=C sort > "$expected"; then
+              return 1
+            fi
+            if ! read_rolling_asset_set "$current"; then
+              return 1
+            fi
+            if ! cmp -s "$expected" "$current"; then
+              echo "::error::rollback asset set drifted after DELETE" >&2
+              return 1
+            fi
+            if ! mv -- "$current" "$owner_assets"; then
+              return 1
+            fi
+          }
+
+          replace_owned_asset_after_upload() {
+            local asset_name="$1"
+            local source_file="$2"
+            local expected="$transaction_dir/expected-before-upload"
+            local current="$transaction_dir/current-assets"
+            local source_digest uploaded_digest uploaded_count
+            if ! source_digest="$(sha256sum -- "$source_file" | awk '{print $1}')"; then
+              return 1
+            fi
+            if ! awk -F '\t' -v name="$asset_name" '$2 != name { print }' "$owner_assets" | LC_ALL=C sort > "$expected"; then
+              return 1
+            fi
+            if ! read_rolling_asset_set "$current"; then
+              return 1
+            fi
+            if ! awk -F '\t' -v name="$asset_name" '$2 != name { print }' "$current" | LC_ALL=C sort | cmp -s - "$expected"; then
+              echo "::error::rollback asset set drifted after upload" >&2
+              return 1
+            fi
+            if ! uploaded_count="$(awk -F '\t' -v name="$asset_name" '$2 == name { count++; digest = $3 } END { if (count != 1) exit 1; print digest }' "$current")"; then
+              return 1
+            fi
+            uploaded_digest="$uploaded_count"
+            if [ "$uploaded_digest" != "sha256:$source_digest" ]; then
+              echo "::error::rollback uploaded asset digest differs: $asset_name" >&2
+              return 1
+            fi
+            if ! mv -- "$current" "$owner_assets"; then
+              return 1
+            fi
+          }
+
+          assert_asset_set_matches_files() {
+            local asset_set="$1"
+            local source_dir="$2"
+            local expected_names="$3"
+            local asset_id asset_name asset_digest expected_digest
+            if ! assert_asset_names "$asset_set" "$expected_names"; then
+              return 1
+            fi
+            while IFS=$'\t' read -r asset_id asset_name asset_digest; do
+              if ! expected_digest="$(sha256sum -- "$source_dir/$asset_name" | awk '{print $1}')"; then
+                return 1
+              fi
+              if [ "$asset_digest" != "sha256:$expected_digest" ]; then
+                echo "::error::owned asset digest differs: $asset_name" >&2
+                return 1
+              fi
+            done < "$asset_set"
+          }
+
+          adopt_owned_asset_set_from_files() {
+            local source_dir="$1"
+            local expected_names="$2"
+            local refreshed="$transaction_dir/refreshed-assets"
+            if ! read_rolling_asset_set "$refreshed"; then
+              return 1
+            fi
+            if ! assert_asset_set_matches_files "$refreshed" "$source_dir" "$expected_names"; then
+              return 1
+            fi
+            if ! mv -- "$refreshed" "$owner_assets"; then
+              return 1
+            fi
+          }
+
+          asset_was_in_old_set() (
+            local asset_name="$1"
+            local grep_status
+            set +e
+            grep -Fqx -- "$asset_name" "$old_assets"
+            grep_status="$?"
+            case "$grep_status" in
+              0) exit 0 ;;
+              1) exit 1 ;;
+              *) exit 2 ;;
+            esac
+          )
+
           rollback() {
             local status="$1"
+            local current_tag_sha
             trap - ERR
             if [ "$mutated" = 1 ]; then
               set +e
               rollback_status=0
-              if [ "$had_release" = 1 ]; then
+              if [ -z "$rolling_release_id" ] || [ -z "$owner_draft" ] || [ -z "$owner_tag_sha" ]; then
+                rollback_status=1
+              elif ! assert_rolling_ownership "$owner_draft" "$owner_tag_sha" "$owner_name" "$owner_body" "$owner_source_commit"; then
+                echo "::error::rolling preview ownership changed; refusing rollback mutation" >&2
+                rollback_status=1
+              elif [ "$had_release" = 1 ]; then
                 # Keep the rollback release hidden while restoring its complete old set.
-                if gh api --method PATCH --repo "$GITHUB_REPOSITORY" "repos/$GITHUB_REPOSITORY/releases/$rolling_release_id" -F draft=true >/dev/null; then
-                  while IFS=$'\t' read -r asset_id asset_name; do
-                    if ! grep -Fqx -- "$asset_name" "$old_assets"; then
-                      gh api --method DELETE --repo "$GITHUB_REPOSITORY" "repos/$GITHUB_REPOSITORY/releases/assets/$asset_id" >/dev/null || rollback_status=1
-                    fi
-                  done < <(gh api --paginate --repo "$GITHUB_REPOSITORY" "repos/$GITHUB_REPOSITORY/releases/$rolling_release_id/assets" --jq '.[] | [.id, .name] | @tsv')
-                  while IFS= read -r asset_name; do
-                    if ! gh release upload "$rolling_tag" --repo "$GITHUB_REPOSITORY" --clobber "$rollback_dir/$asset_name"; then
-                      rollback_status=1
-                    fi
-                  done < "$old_assets"
-                  restore_dir="$rollback_dir"
-                  restore_assets="$old_assets"
-                  if ! verify_restored_assets "$restore_dir" "$restore_assets"; then
+                if ! gh api --method PATCH --repo "$GITHUB_REPOSITORY" "repos/$GITHUB_REPOSITORY/releases/$rolling_release_id" -F draft=true >/dev/null; then
+                  rollback_status=1
+                else
+                  owner_draft=true
+                  if ! assert_rolling_ownership "$owner_draft" "$owner_tag_sha" "$owner_name" "$owner_body" "$owner_source_commit"; then
+                    echo "::error::rolling preview ownership changed after hiding release; refusing rollback mutation" >&2
                     rollback_status=1
                   fi
-                  rollback_ready=1
-                  if [ "$rollback_status" -ne 0 ]; then
-                    rollback_ready=0
+                  if [ "$rollback_status" -eq 0 ]; then
+                    while IFS=$'\t' read -r asset_id asset_name asset_digest; do
+                      if [ -z "$asset_id" ] || [ -z "$asset_name" ] || ! [[ "$asset_digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+                        rollback_status=1
+                        break
+                      fi
+                      asset_status=0
+                      asset_was_in_old_set "$asset_name"
+                      asset_status="$?"
+                      case "$asset_status" in
+                        0) continue ;;
+                        1) ;;
+                        *)
+                          rollback_status=1
+                          break
+                          ;;
+                      esac
+                      if ! assert_rolling_ownership "$owner_draft" "$owner_tag_sha" "$owner_name" "$owner_body" "$owner_source_commit" \
+                        || ! gh api --method DELETE --repo "$GITHUB_REPOSITORY" "repos/$GITHUB_REPOSITORY/releases/assets/$asset_id" >/dev/null \
+                        || ! replace_owned_asset_after_delete "$asset_id" "$asset_name"; then
+                        rollback_status=1
+                        break
+                      fi
+                    done < "$owner_assets"
                   fi
-                  if [ -n "$old_tag_sha" ] && ! gh api --method PATCH --repo "$GITHUB_REPOSITORY" "repos/$GITHUB_REPOSITORY/git/refs/tags/$rolling_tag" -f "sha=$old_tag_sha" -F force=true >/dev/null; then
-                    rollback_ready=0
+                  if [ "$rollback_status" -eq 0 ]; then
+                    while IFS= read -r asset_name; do
+                      if ! assert_rolling_ownership "$owner_draft" "$owner_tag_sha" "$owner_name" "$owner_body" "$owner_source_commit" \
+                        || ! gh release upload "$rolling_tag" --repo "$GITHUB_REPOSITORY" --clobber "$rollback_dir/$asset_name" \
+                        || ! replace_owned_asset_after_upload "$asset_name" "$rollback_dir/$asset_name"; then
+                        rollback_status=1
+                        break
+                      fi
+                    done < "$old_assets"
                   fi
-                  if [ "$rollback_ready" = 1 ]; then
-                    gh api --method PATCH --repo "$GITHUB_REPOSITORY" "repos/$GITHUB_REPOSITORY/releases/$rolling_release_id" \
-                      -f "name=$old_name" -f "body=$old_body" -F "draft=$old_draft" -F "prerelease=$old_prerelease" -F make_latest=false >/dev/null || rollback_status=1
-                  else
+                  if [ "$rollback_status" -eq 0 ] && ! verify_restored_assets "$rollback_dir" "$old_assets"; then
+                    rollback_status=1
+                  fi
+                  if [ "$rollback_status" -eq 0 ] && ! assert_rolling_ownership "$owner_draft" "$owner_tag_sha" "$owner_name" "$owner_body" "$owner_source_commit"; then
+                    echo "::error::rolling preview ownership changed before tag rollback; refusing force-move" >&2
+                    rollback_status=1
+                  fi
+                  if [ "$rollback_status" -eq 0 ]; then
+                    if ! current_tag_sha="$(remote_tag_sha "$rolling_tag")"; then
+                      rollback_status=1
+                    elif [ "$current_tag_sha" = "$old_tag_sha" ]; then
+                      :
+                    elif ! assert_publication_lock; then
+                      rollback_status=1
+                    elif [ "$current_tag_sha" = "$owner_tag_sha" ] && gh api --method PATCH --repo "$GITHUB_REPOSITORY" "repos/$GITHUB_REPOSITORY/git/refs/tags/$rolling_tag" -f "sha=$old_tag_sha" -F force=true >/dev/null; then
+                      owner_tag_sha="$old_tag_sha"
+                    else
+                      echo "::error::rolling preview tag changed before rollback; refusing force-move" >&2
+                      rollback_status=1
+                    fi
+                  fi
+                  if [ "$rollback_status" -eq 0 ] && ! assert_rolling_ownership "$owner_draft" "$old_tag_sha" "$owner_name" "$owner_body" "$old_source_commit"; then
+                    echo "::error::rolling preview ownership changed before metadata rollback; refusing mutation" >&2
+                    rollback_status=1
+                  fi
+                  if [ "$rollback_status" -eq 0 ] && ! gh api --method PATCH --repo "$GITHUB_REPOSITORY" "repos/$GITHUB_REPOSITORY/releases/$rolling_release_id" \
+                    -f "name=$old_name" -f "body=$old_body" -F "draft=$old_draft" -F "prerelease=$old_prerelease" -F make_latest=false >/dev/null; then
+                    rollback_status=1
+                  fi
+                  if [ "$rollback_status" -eq 0 ]; then
+                    owner_draft="$old_draft"
+                    owner_tag_sha="$old_tag_sha"
+                    owner_name="$old_name"
+                    owner_body="$old_body"
+                    owner_source_commit="$old_source_commit"
+                    if ! assert_rolling_ownership "$owner_draft" "$owner_tag_sha" "$owner_name" "$owner_body" "$owner_source_commit"; then
+                      rollback_status=1
+                    fi
+                  fi
+                fi
+              else
+                if ! assert_publication_lock; then
+                  rollback_status=1
+                elif ! gh api --method DELETE --repo "$GITHUB_REPOSITORY" "repos/$GITHUB_REPOSITORY/releases/$rolling_release_id" >/dev/null; then
+                  rollback_status=1
+                elif ! assert_release_absent; then
+                  rollback_status=1
+                elif ! current_tag_sha="$(remote_tag_sha "$rolling_tag")"; then
+                  rollback_status=1
+                elif [ -z "$current_tag_sha" ]; then
+                  :
+                elif [ "$current_tag_sha" = "$owner_tag_sha" ] && [ "$current_tag_sha" = "$owner_source_commit" ]; then
+                  if ! assert_publication_lock; then
+                    rollback_status=1
+                  elif ! gh api --method DELETE --repo "$GITHUB_REPOSITORY" "repos/$GITHUB_REPOSITORY/git/refs/tags/$rolling_tag" >/dev/null; then
+                    rollback_status=1
+                  elif ! current_tag_sha="$(remote_tag_sha "$rolling_tag")"; then
+                    rollback_status=1
+                  elif [ -n "$current_tag_sha" ]; then
                     rollback_status=1
                   fi
                 else
+                  echo "::error::new rolling preview tag changed before rollback; refusing delete" >&2
                   rollback_status=1
-                fi
-              else
-                if [ -n "$rolling_release_id" ]; then
-                  gh api --method DELETE --repo "$GITHUB_REPOSITORY" "repos/$GITHUB_REPOSITORY/releases/$rolling_release_id" >/dev/null || rollback_status=1
-                fi
-                if [ -n "$(remote_tag_sha "$rolling_tag")" ]; then
-                  gh api --method DELETE --repo "$GITHUB_REPOSITORY" "repos/$GITHUB_REPOSITORY/git/refs/tags/$rolling_tag" >/dev/null || rollback_status=1
                 fi
               fi
               if [ "$rollback_status" -ne 0 ]; then
                 echo "::error::rolling preview publication failed and rollback was incomplete" >&2
+                publication_lock_retain=1
                 status=1
               else
                 echo "::warning::rolling preview publication failed; previous release restored" >&2
+                clear_publication_lock_retain
               fi
             fi
             exit "$status"
           }
+          cleanup_publication() {
+            local status="$1"
+            trap - EXIT
+            if [ "$publication_lock_acquired" = 1 ] && [ "$publication_lock_retain" = 0 ]; then
+              if ! release_publication_lock; then
+                status=1
+              fi
+            fi
+            if ! rm -rf -- "$transaction_dir"; then
+              status=1
+            fi
+            exit "$status"
+          }
           trap 'rollback "$?"' ERR
-          trap 'rm -rf -- "$transaction_dir"' EXIT
+          trap 'cleanup_publication "$?"' EXIT
+
+          if [ "$publication_lock_acquired" = 0 ]; then
+            if ! acquire_publication_lock; then
+              echo "::error::Velnor publication lock could not be acquired; refusing release validation and mutation" >&2
+              exit 1
+            fi
+          fi
+          if ! assert_publication_lock; then
+            echo "::error::Velnor publication lock could not be verified; refusing release validation and mutation" >&2
+            exit 1
+          fi
 
           {
             printf '%s\n' 'release-manifest.json'
@@ -1612,10 +2522,19 @@ jobs:
             echo "::error::verified immutable staging release is missing" >&2
             exit 1
           fi
-          jq -e --arg tag "$staged_tag" --argjson prerelease "$RELEASE_PRERELEASE" '(.draft | not) and .prerelease == $prerelease and .tag_name == $tag' <<<"$staged_body" >/dev/null
-          jq -r '.assets[].name' <<<"$staged_body" | LC_ALL=C sort > "$staged_assets"
+          if ! jq -e --arg tag "$staged_tag" --argjson prerelease "$RELEASE_PRERELEASE" '(.draft | not) and .prerelease == $prerelease and .tag_name == $tag' <<<"$staged_body" >/dev/null; then
+            echo "::error::verified immutable staging release identity is invalid" >&2
+            exit 1
+          fi
+          if ! jq -r '.assets[].name' <<<"$staged_body" | LC_ALL=C sort > "$staged_assets"; then
+            echo "::error::verified immutable staging release assets are invalid" >&2
+            exit 1
+          fi
           cmp -s "$expected_assets" "$staged_assets" || { echo "::error::immutable staging release asset set is not exact" >&2; exit 1; }
-          staged_tag_sha="$(remote_tag_sha "$staged_tag")"
+          if ! staged_tag_sha="$(remote_tag_sha "$staged_tag")"; then
+            echo "::error::immutable staging tag lookup failed" >&2
+            exit 1
+          fi
           [ "$staged_tag_sha" = "$EXPECTED_SOURCE_COMMIT" ] || { echo "::error::immutable staging tag does not resolve to the verified source commit" >&2; exit 1; }
 
           if gh api --repo "$GITHUB_REPOSITORY" -i "repos/$GITHUB_REPOSITORY/releases/tags/$rolling_tag" > "$rolling_response" 2>/dev/null; then
@@ -1626,37 +2545,39 @@ jobs:
             200)
               awk 'body {print; next} /^\r?$/ {body = 1}' "$rolling_response" > "$rolling_body"
               had_release=1
-              jq -e --arg tag "$rolling_tag" '(.draft | type == "boolean") and .tag_name == $tag and (.id | type == "number")' "$rolling_body" >/dev/null
+              if ! jq -e --arg tag "$rolling_tag" --argjson prerelease "$RELEASE_PRERELEASE" \
+                '(.draft | type == "boolean") and .prerelease == $prerelease and .tag_name == $tag and (.id | type == "number")' "$rolling_body" >/dev/null; then
+                echo "::error::existing rolling release failed immutable validation; refusing mutation" >&2
+                exit 1
+              fi
               rolling_release_id="$(jq -er '.id' "$rolling_body")"
               old_name="$(jq -er '.name | strings' "$rolling_body")"
               old_body="$(jq -r '.body // ""' "$rolling_body")"
               old_draft="$(jq -er '.draft | tostring' "$rolling_body")"
               old_prerelease="$(jq -er '.prerelease | tostring' "$rolling_body")"
-              old_tag_sha="$(remote_tag_sha "$rolling_tag")"
-              if ! [[ "$old_tag_sha" =~ ^[0-9a-f]{40}$ ]]; then
-                if [ "$old_draft" = true ]; then
-                  discard_stale_rolling_draft
-                else
-                  echo "::error::rolling release tag is not a commit ref" >&2
-                  exit 1
-                fi
-              elif [ "$old_draft" = true ] && [ "$old_prerelease" != "$RELEASE_PRERELEASE" ]; then
-                discard_stale_rolling_draft
-              elif ! mkdir -p "$rollback_dir" || ! gh release download "$rolling_tag" --repo "$GITHUB_REPOSITORY" --dir "$rollback_dir" --clobber; then
-                if [ "$old_draft" = true ]; then
-                  discard_stale_rolling_draft
-                else
-                  echo "::error::existing rolling release could not be downloaded" >&2
-                  exit 1
-                fi
-              elif ! validate_existing_rolling_release "$rolling_body" "$rollback_dir"; then
-                if [ "$old_draft" = true ]; then
-                  discard_stale_rolling_draft
-                else
-                  echo "::error::existing rolling release failed immutable validation" >&2
-                  exit 1
-                fi
+              if ! old_tag_sha="$(remote_tag_sha "$rolling_tag")"; then
+                echo "::error::existing rolling tag lookup failed; refusing mutation" >&2
+                exit 1
               fi
+              if ! [[ "$old_tag_sha" =~ ^[0-9a-f]{40}$ ]]; then
+                echo "::error::existing public rolling release failed immutable validation; refusing mutation" >&2
+                exit 1
+              elif ! mkdir -p "$rollback_dir" || ! gh release download "$rolling_tag" --repo "$GITHUB_REPOSITORY" --dir "$rollback_dir" --clobber; then
+                echo "::error::existing rolling release failed immutable validation; refusing mutation" >&2
+                exit 1
+              fi
+              if ! validate_existing_rolling_release "$rolling_body" "$rollback_dir" "$old_draft"; then
+                echo "::error::existing rolling release failed immutable validation; refusing mutation" >&2
+                exit 1
+              fi
+              # A validated current-contract draft is already a recoverable transaction:
+              # keep its release, tag, metadata, and asset ledger so rollback can restore
+              # the exact bytes. GitHub cannot undelete a release or tag.
+              owner_draft="$old_draft"
+              owner_tag_sha="$old_tag_sha"
+              owner_name="$old_name"
+              owner_body="$old_body"
+              owner_source_commit="$old_source_commit"
               if [ "$had_release" = 1 ]; then
                 old_version_order="${old_version%%+*}"
                 candidate_version_order="${candidate_version%%+*}"
@@ -1670,7 +2591,11 @@ jobs:
 
               ;;
             404)
-              test -z "$(remote_tag_sha "$rolling_tag")" || { echo "::error::rolling tag exists without a release; refusing to overwrite it" >&2; exit 1; }
+              if ! rolling_tag_sha="$(remote_tag_sha "$rolling_tag")"; then
+                echo "::error::rolling tag lookup failed; refusing to overwrite it" >&2
+                exit 1
+              fi
+              test -z "$rolling_tag_sha" || { echo "::error::rolling tag exists without a release; refusing to overwrite it" >&2; exit 1; }
               ;;
             *)
               echo "::error::rolling release preflight failed with HTTP $rolling_http" >&2
@@ -1680,20 +2605,57 @@ jobs:
 
           if [ "$had_release" = 0 ]; then
             mutated=1
+            mark_publication_lock_retain
             create_json="$(gh api --method POST --repo "$GITHUB_REPOSITORY" "repos/$GITHUB_REPOSITORY/releases" \
               -f "tag_name=$rolling_tag" -f "target_commitish=$EXPECTED_SOURCE_COMMIT" \
               -f "name=$RELEASE_TITLE_PREFIX $candidate_version" \
               -f "body=Verified package release from $EXPECTED_SOURCE_COMMIT" \
               -F draft=true -F "prerelease=$RELEASE_PRERELEASE" -F make_latest=false)"
             rolling_release_id="$(jq -er '.id' <<<"$create_json")"
+            owner_draft=true
+            owner_tag_sha="$EXPECTED_SOURCE_COMMIT"
+            owner_name="$RELEASE_TITLE_PREFIX $candidate_version"
+            owner_body="Verified package release from $EXPECTED_SOURCE_COMMIT"
+            owner_source_commit="$EXPECTED_SOURCE_COMMIT"
+            created_assets="$transaction_dir/created-assets"
+            if ! read_rolling_asset_set "$created_assets"; then
+              echo "::error::new rolling preview asset ownership could not be established; refusing mutation" >&2
+              false
+            fi
+            if [ -s "$created_assets" ]; then
+              echo "::error::new rolling preview unexpectedly contains assets; refusing mutation" >&2
+              false
+            fi
+            if ! cp -- "$created_assets" "$owner_assets"; then
+              echo "::error::new rolling preview asset ownership could not be recorded; refusing mutation" >&2
+              false
+            fi
+            if ! assert_rolling_ownership "$owner_draft" "$owner_tag_sha" "$owner_name" "$owner_body" "$owner_source_commit"; then
+              echo "::error::new rolling preview ownership could not be established; refusing mutation" >&2
+              false
+            fi
           else
             mutated=1
+            mark_publication_lock_retain
+            if ! assert_rolling_ownership "$owner_draft" "$owner_tag_sha" "$owner_name" "$owner_body" "$owner_source_commit"; then
+              echo "::error::rolling preview ownership changed before publication; refusing mutation" >&2
+              false
+            fi
             gh api --method PATCH --repo "$GITHUB_REPOSITORY" "repos/$GITHUB_REPOSITORY/releases/$rolling_release_id" -F draft=true >/dev/null
+            owner_draft=true
+            if ! assert_rolling_ownership "$owner_draft" "$owner_tag_sha" "$owner_name" "$owner_body" "$owner_source_commit"; then
+              echo "::error::rolling preview ownership changed after publication was hidden; refusing mutation" >&2
+              false
+            fi
           fi
 
           # The immutable source-bound release is the candidate staging record.  Copy its
           # already-verified files only while the rolling release remains a draft; draft
           # publication is the visibility boundary, so readers never see mixed assets.
+          if ! assert_rolling_ownership "$owner_draft" "$owner_tag_sha" "$owner_name" "$owner_body" "$owner_source_commit"; then
+            echo "::error::rolling preview ownership changed before asset publication; refusing mutation" >&2
+            false
+          fi
           gh release upload "$rolling_tag" --repo "$GITHUB_REPOSITORY" --clobber \
             "$published_dir/release-manifest.json" \
             "$published_dir/identity.json" \
@@ -1727,28 +2689,82 @@ jobs:
 
 
           rolling_stage_json="$(gh api --repo "$GITHUB_REPOSITORY" "repos/$GITHUB_REPOSITORY/releases/$rolling_release_id")"
-          jq -e --arg tag "$rolling_tag" --argjson prerelease "$RELEASE_PRERELEASE" '.draft == true and .prerelease == $prerelease and .tag_name == $tag' <<<"$rolling_stage_json" >/dev/null
-          jq -r '.assets[].name' <<<"$rolling_stage_json" | LC_ALL=C sort > "$rolling_staged_assets"
-          cmp -s "$expected_assets" "$rolling_staged_assets" || { echo "::error::staged rolling release asset set is not exact" >&2; exit 1; }
+          if ! adopt_owned_asset_set_from_files "$published_dir" "$expected_assets"; then
+            echo "::error::rolling staged asset set is not exactly the verified package" >&2
+            false
+          fi
+          if ! jq -e --arg tag "$rolling_tag" --argjson prerelease "$RELEASE_PRERELEASE" '.draft == true and .prerelease == $prerelease and .tag_name == $tag' <<<"$rolling_stage_json" >/dev/null; then
+            echo "::error::staged rolling release identity is invalid" >&2
+            false
+          fi
+          if ! jq -r '.assets[].name' <<<"$rolling_stage_json" | LC_ALL=C sort > "$rolling_staged_assets"; then
+            echo "::error::staged rolling release assets are invalid" >&2
+            false
+          fi
+          if ! cmp -s "$expected_assets" "$rolling_staged_assets"; then
+            echo "::error::staged rolling release asset set is not exact" >&2
+            false
+          fi
 
           if [ "$had_release" = 1 ]; then
+            if ! assert_rolling_ownership "$owner_draft" "$owner_tag_sha" "$owner_name" "$owner_body" "$owner_source_commit"; then
+              echo "::error::rolling preview ownership changed before tag publication; refusing force-move" >&2
+              false
+            fi
             gh api --method PATCH --repo "$GITHUB_REPOSITORY" "repos/$GITHUB_REPOSITORY/git/refs/tags/$rolling_tag" -f "sha=$EXPECTED_SOURCE_COMMIT" -F force=true >/dev/null
+            owner_tag_sha="$EXPECTED_SOURCE_COMMIT"
+            owner_source_commit="$EXPECTED_SOURCE_COMMIT"
+            if ! assert_rolling_ownership "$owner_draft" "$owner_tag_sha" "$owner_name" "$owner_body" "$owner_source_commit"; then
+              echo "::error::rolling preview ownership changed after tag publication; refusing mutation" >&2
+              false
+            fi
+          fi
+          if ! assert_rolling_ownership "$owner_draft" "$owner_tag_sha" "$owner_name" "$owner_body" "$owner_source_commit"; then
+            echo "::error::rolling preview ownership changed before release publication; refusing mutation" >&2
+            false
           fi
           gh api --method PATCH --repo "$GITHUB_REPOSITORY" "repos/$GITHUB_REPOSITORY/releases/$rolling_release_id" \
             -f "name=$RELEASE_TITLE_PREFIX $candidate_version" \
             -f "body=Verified package release from $EXPECTED_SOURCE_COMMIT" \
             -F draft=false -F "prerelease=$RELEASE_PRERELEASE" -F make_latest=false >/dev/null
+          owner_draft=false
+          owner_name="$RELEASE_TITLE_PREFIX $candidate_version"
+          owner_body="Verified package release from $EXPECTED_SOURCE_COMMIT"
+          owner_source_commit="$EXPECTED_SOURCE_COMMIT"
+          if ! assert_rolling_ownership "$owner_draft" "$EXPECTED_SOURCE_COMMIT" "$owner_name" "$owner_body" "$owner_source_commit"; then
+            echo "::error::rolling preview ownership changed after release publication; refusing mutation" >&2
+            false
+          fi
 
-          new_tag_sha="$(remote_tag_sha "$rolling_tag")"
-          [ "$new_tag_sha" = "$EXPECTED_SOURCE_COMMIT" ] || { echo "::error::rolling tag does not resolve to the verified source commit" >&2; exit 1; }
+          if ! new_tag_sha="$(remote_tag_sha "$rolling_tag")"; then
+            echo "::error::rolling tag lookup failed after publication" >&2
+            false
+          fi
+          if [ "$new_tag_sha" != "$EXPECTED_SOURCE_COMMIT" ]; then
+            echo "::error::rolling tag does not resolve to the verified source commit" >&2
+            false
+          fi
           rolling_post_json="$(gh api --repo "$GITHUB_REPOSITORY" "repos/$GITHUB_REPOSITORY/releases/tags/$rolling_tag")"
-          jq -e --arg tag "$rolling_tag" --argjson prerelease "$RELEASE_PRERELEASE" '(.draft | not) and .prerelease == $prerelease and .tag_name == $tag' <<<"$rolling_post_json" >/dev/null
-          jq -r '.assets[].name' <<<"$rolling_post_json" | LC_ALL=C sort > "$rolling_published_assets"
-          cmp -s "$expected_assets" "$rolling_published_assets" || { echo "::error::rolling release asset set is not exact after publication" >&2; exit 1; }
+          if ! jq -e --arg tag "$rolling_tag" --argjson prerelease "$RELEASE_PRERELEASE" '(.draft | not) and .prerelease == $prerelease and .tag_name == $tag' <<<"$rolling_post_json" >/dev/null; then
+            echo "::error::rolling release identity is not exact after publication" >&2
+            false
+          fi
+          if ! jq -r '.assets[].name' <<<"$rolling_post_json" | LC_ALL=C sort > "$rolling_published_assets"; then
+            echo "::error::rolling release assets are invalid after publication" >&2
+            false
+          fi
+          if ! cmp -s "$expected_assets" "$rolling_published_assets"; then
+            echo "::error::rolling release asset set is not exact after publication" >&2
+            false
+          fi
           rm -rf -- "$transaction_dir/rolling-published"
           mkdir -p "$transaction_dir/rolling-published"
           gh release download "$rolling_tag" --repo "$GITHUB_REPOSITORY" --dir "$transaction_dir/rolling-published" --clobber
           export VELNOR_VERIFIED_PACKAGE_DIR="$transaction_dir/rolling-published"
+
+          (
+            trap - ERR
+            trap - EXIT
                     set -euo pipefail
                     dir="$VELNOR_VERIFIED_PACKAGE_DIR"
                     test -d "$dir"
@@ -2018,6 +3034,8 @@ jobs:
                     printf 'version=%s\n' "$version" >> "$GITHUB_OUTPUT"
                     printf 'source_commit=%s\n' "$source_commit" >> "$GITHUB_OUTPUT"
 
+          )
+
           for payload in \
             'jackin-aarch64-apple-darwin.tar.gz' \
             'jackin-x86_64-apple-darwin.tar.gz' \
@@ -2028,7 +3046,187 @@ jobs:
           do
             gh attestation verify "$transaction_dir/rolling-published/$payload" --repo "$GITHUB_REPOSITORY" --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/preview.yml" --source-ref "$EXPECTED_SOURCE_REF" --source-digest "$EXPECTED_SOURCE_COMMIT"
           done
-          trap 'rm -rf -- "$transaction_dir"' EXIT
+          if ! assert_rolling_ownership "$owner_draft" "$EXPECTED_SOURCE_COMMIT" "$owner_name" "$owner_body" "$owner_source_commit"; then
+            echo "::error::rolling preview ownership changed before lock release; refusing to release the publication lock" >&2
+            false
+          fi
+          # Every rolling byte, attestation, and final ownership check is verified. The
+          # lock is safe to release; failures before this point retain it for recovery.
+          clear_publication_lock_retain
+          # cleanup_publication releases the exact lock only after rollback or successful completion.
+      - name: Finalize package publication lock
+        if: ${{ always() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          transaction_dir="$(mktemp -d)"
+
+          # This permanent branch is the repository-wide lock namespace for generated
+          # publication writers. The Contents API create-without-sha operation is
+          # create-only: an existing lock is never taken over, including after a stale
+          # or abandoned run. Only the owner that still has the exact blob SHA may
+          # delete the lock file; the branch itself is intentionally retained.
+          publication_lock_branch="${VELNOR_PUBLICATION_LOCK_BRANCH:?missing VELNOR_PUBLICATION_LOCK_BRANCH}"
+          publication_lock_path=".package-release-publication-lock.json"
+          publication_lock_sha="${VELNOR_PUBLICATION_LOCK_SHA:-}"
+          publication_lock_acquired=0
+          publication_lock_retain="${VELNOR_PUBLICATION_LOCK_RETAIN:-0}"
+          publication_lock_released="${VELNOR_PUBLICATION_LOCK_RELEASED:-0}"
+          if [ -n "$publication_lock_sha" ]; then
+            publication_lock_acquired=1
+          fi
+          publication_lock_token="${GITHUB_REPOSITORY}:${GITHUB_WORKFLOW:-unknown}:${GITHUB_RUN_ID:-unknown}:${GITHUB_RUN_ATTEMPT:-unknown}"
+
+          mark_publication_lock_retain() {
+            publication_lock_retain=1
+            if [ -n "${GITHUB_ENV:-}" ]; then
+              printf 'VELNOR_PUBLICATION_LOCK_RETAIN=1\n' >> "$GITHUB_ENV"
+            fi
+          }
+
+          mark_publication_lock_released() {
+            publication_lock_released=1
+            publication_lock_acquired=0
+            publication_lock_sha=""
+            if [ -n "${GITHUB_ENV:-}" ]; then
+              printf 'VELNOR_PUBLICATION_LOCK_RELEASED=1\nVELNOR_PUBLICATION_LOCK_RETAIN=0\n' >> "$GITHUB_ENV"
+            fi
+          }
+
+          clear_publication_lock_retain() {
+            publication_lock_retain=0
+            if [ -n "${GITHUB_ENV:-}" ]; then
+              printf 'VELNOR_PUBLICATION_LOCK_RETAIN=0\n' >> "$GITHUB_ENV"
+            fi
+          }
+
+          publication_lock_http_status() {
+            awk '/^HTTP\/[0-9.]+ [0-9]+/ {print $2; exit}' "$1"
+          }
+
+          ensure_publication_lock_branch() {
+            local response="$transaction_dir/publication-lock-branch"
+            local response_http
+            if gh api --repo "$GITHUB_REPOSITORY" -i \
+              "repos/$GITHUB_REPOSITORY/git/ref/heads/$publication_lock_branch" > "$response" 2>/dev/null; then
+              response_http="$(publication_lock_http_status "$response")"
+              if [ "$response_http" = 200 ]; then
+                return 0
+              fi
+              return 1
+            fi
+            response_http="$(publication_lock_http_status "$response")"
+            if [ "$response_http" != 404 ]; then
+              return 1
+            fi
+            if ! gh api --method POST --repo "$GITHUB_REPOSITORY" "repos/$GITHUB_REPOSITORY/git/refs" \
+              -f "ref=refs/heads/$publication_lock_branch" -f "sha=$EXPECTED_SOURCE_COMMIT" >/dev/null; then
+              return 1
+            fi
+            if ! gh api --repo "$GITHUB_REPOSITORY" -i \
+              "repos/$GITHUB_REPOSITORY/git/ref/heads/$publication_lock_branch" > "$response" 2>/dev/null; then
+              return 1
+            fi
+            response_http="$(publication_lock_http_status "$response")"
+            if [ "$response_http" = 200 ]; then
+              return 0
+            fi
+            return 1
+          }
+
+          acquire_publication_lock() {
+            local payload="$transaction_dir/publication-lock.json"
+            local encoded lock_response
+            if ! ensure_publication_lock_branch; then
+              return 1
+            fi
+            if ! jq -cn \
+              --arg token "$publication_lock_token" \
+              --arg repository "$GITHUB_REPOSITORY" \
+              --arg run "${GITHUB_RUN_ID:-unknown}" \
+              --arg attempt "${GITHUB_RUN_ATTEMPT:-unknown}" \
+              '{schema: 1, token: $token, repository: $repository, run: $run, attempt: $attempt}' > "$payload"; then
+              return 1
+            fi
+            if ! encoded="$(base64 < "$payload" | tr -d '\n')"; then
+              return 1
+            fi
+            if ! lock_response="$(gh api --method PUT --repo "$GITHUB_REPOSITORY" \
+              "repos/$GITHUB_REPOSITORY/contents/$publication_lock_path" \
+              -f "message=Acquire Velnor publication lock $publication_lock_token" \
+              -f "content=$encoded" -f "branch=$publication_lock_branch")"; then
+              echo "::error::Velnor publication lock is held; refusing release validation and mutation" >&2
+              return 1
+            fi
+            if ! publication_lock_sha="$(jq -er '.content.sha | strings | select(test("^[0-9a-f]{40}$"))' <<<"$lock_response")"; then
+              echo "::error::Velnor publication lock response did not contain an exact lock SHA; manual recovery is required" >&2
+              return 1
+            fi
+            publication_lock_acquired=1
+          }
+
+          assert_publication_lock() {
+            local lock_response current_sha
+            if [ "$publication_lock_acquired" != 1 ] || [ -z "$publication_lock_sha" ]; then
+              return 1
+            fi
+            if ! lock_response="$(gh api --repo "$GITHUB_REPOSITORY" \
+              "repos/$GITHUB_REPOSITORY/contents/$publication_lock_path?ref=$publication_lock_branch")"; then
+              return 1
+            fi
+            if ! jq -e --arg path "$publication_lock_path" \
+              '.type == "file" and .path == $path' <<<"$lock_response" >/dev/null; then
+              return 1
+            fi
+            if ! current_sha="$(jq -er '.sha | strings | select(test("^[0-9a-f]{40}$"))' <<<"$lock_response")"; then
+              return 1
+            fi
+            if [ "$current_sha" != "$publication_lock_sha" ]; then
+              return 1
+            fi
+            return 0
+          }
+
+          release_publication_lock() {
+            if [ "$publication_lock_acquired" = 0 ] || [ "$publication_lock_released" = 1 ]; then
+              return 0
+            fi
+            if ! assert_publication_lock; then
+              echo "::error::Velnor publication lock ownership changed; retaining lock for manual recovery" >&2
+              return 1
+            fi
+            if ! gh api --method DELETE --repo "$GITHUB_REPOSITORY" \
+              "repos/$GITHUB_REPOSITORY/contents/$publication_lock_path" \
+              -f "message=Release Velnor publication lock $publication_lock_token" \
+              -f "sha=$publication_lock_sha" -f "branch=$publication_lock_branch" >/dev/null; then
+              echo "::error::Velnor publication lock release failed; retaining lock for manual recovery" >&2
+              return 1
+            fi
+            mark_publication_lock_released
+          }
+
+          cleanup_publication_lock_finalizer() {
+            local status="$1"
+            trap - EXIT
+            if ! rm -rf -- "$transaction_dir"; then
+              status=1
+            fi
+            exit "$status"
+          }
+          trap 'cleanup_publication_lock_finalizer "$?"' EXIT
+
+          if [ "$publication_lock_acquired" = 0 ] || [ "$publication_lock_released" = 1 ]; then
+            exit 0
+          fi
+          if [ "$publication_lock_retain" = 1 ]; then
+            echo "::warning::Velnor publication lock retained for manual recovery after an uncertain remote mutation" >&2
+            exit 0
+          fi
+          if ! release_publication_lock; then
+            echo "::error::Velnor publication lock finalizer could not release its owned lock" >&2
+            exit 1
+          fi
       - name: Checkout consumer repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -2042,6 +3240,7 @@ jobs:
         env:
           RELEASE_ASSET_TAG: ${{ steps.publish.outputs.immutable_tag }}
           GH_TOKEN: ${{ secrets.TAP_TOKEN }}
+          UPDATER_TOKEN: ${{ secrets.TAP_TOKEN }}
         run: |
           set -euo pipefail
           cd consumer
@@ -2054,7 +3253,18 @@ jobs:
               gh pr close "$stale_pr_url" --repo "$CONSUMER_REPOSITORY" --comment "Superseded by immutable package release $RELEASE_ASSET_TAG"
             fi
           done < <(gh pr list --repo "$CONSUMER_REPOSITORY" --head "$stale_branch" --base "$CONSUMER_BRANCH" --state open --json url --jq '.[].url')
-          remote_branch_sha="$(git -c "http.extraheader=AUTHORIZATION: bearer $UPDATER_TOKEN" ls-remote origin "refs/heads/$automation_branch" | awk 'NR == 1 {print $1}')"
+          if ! remote_branch_refs="$(git -c "http.extraheader=AUTHORIZATION: bearer $UPDATER_TOKEN" ls-remote origin "refs/heads/$automation_branch")"; then
+            echo "::error::consumer automation branch lookup failed; refusing branch mutation" >&2
+            exit 1
+          fi
+          if ! remote_branch_sha="$(awk 'NF >= 2 {print $1; exit}' <<<"$remote_branch_refs")"; then
+            echo "::error::consumer automation branch response could not be parsed; refusing branch mutation" >&2
+            exit 1
+          fi
+          if [ -n "$remote_branch_sha" ] && ! [[ "$remote_branch_sha" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::consumer automation branch response contained an invalid object ID" >&2
+            exit 1
+          fi
           if [ -n "$remote_branch_sha" ]; then
             git -c "http.extraheader=AUTHORIZATION: bearer $UPDATER_TOKEN" fetch origin "refs/heads/$automation_branch:refs/remotes/origin/$automation_branch"
             git switch --detach "origin/$automation_branch"

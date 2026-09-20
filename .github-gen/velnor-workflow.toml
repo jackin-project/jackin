@@ -3,8 +3,8 @@ schema = 2
 [generator]
 repository = "jackin-project/jackin"
 # D19 pin: immutable Velnor source for this generated tree. The matching
-# published runtime is velnor-workflow-runtime-v1-bb4a5289c42335a4.
-revision = "89f82dd8b287f46a3cf4c0920f341f6ca6c736db"
+# published runtime is velnor-workflow-runtime-v1-5516ca5f89713177.
+revision = "e717de39b97558117e7e4f55c20216c8a4e4b1fc"
 
 [scan]
 exclude = ["native/Package.swift", "native/.swiftpm/**"]
@@ -233,7 +233,9 @@ primitive = "package-release"
 file = "preview.yml"
 [declare.args]
 build_tasks = ["release-preview-package"]
+pre_publish_tasks = ["migrate-preview-legacy"]
 verify_tasks = ["verify-preview-package"]
+publication_lock_branch = "package-release-lock"
 package_dir = "dist/package"
 manifest_schema = "velnor.package-release.v1"
 source_repository = "jackin-project/jackin"
