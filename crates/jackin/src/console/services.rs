@@ -485,18 +485,8 @@ pub(super) mod instances {
         let mut exec_fallback_seen = false;
         let snapshot_results = fetch_snapshots_parallel(paths, &snapshot_targets);
         for (container, result) in snapshot_results {
-            match result {
-                Ok((Some(snapshot), transport)) => {
-                    exec_fallback_seen |= transport == SnapshotTransport::DockerExecFallback;
-                    snapshots.insert(container, snapshot);
-                }
-                Ok((None, transport)) => {
-                    exec_fallback_seen |= transport == SnapshotTransport::DockerExecFallback;
-                }
-                Err(_) => {
-                    recovered_failure = true;
-                }
-            }
+            recovered_failure |=
+                apply_snapshot_result(container, result, &mut snapshots, &mut exec_fallback_seen);
         }
 
         if recovered_failure {
@@ -651,14 +641,26 @@ pub(super) mod instances {
         }
     }
 
-    #[expect(
-        clippy::excessive_nesting,
-        reason = "Snapshot fan-out walks chunks of containers, each chunk \
-                  spawns a thread, each thread joins a panic-payload match — \
-                  the nesting mirrors the chunk → thread → join-result arms. \
-                  Flattening requires extracting the per-chunk join to a helper; \
-                  deferred-parallel-pass."
-    )]
+    fn apply_snapshot_result(
+        container: String,
+        result: anyhow::Result<(
+            Option<jackin_runtime::runtime::snapshot::InstanceSnapshot>,
+            SnapshotTransport,
+        )>,
+        snapshots: &mut HashMap<String, jackin_runtime::runtime::snapshot::InstanceSnapshot>,
+        exec_fallback_seen: &mut bool,
+    ) -> bool {
+        let Ok((snapshot, transport)) = result else {
+            return true;
+        };
+
+        *exec_fallback_seen |= transport == SnapshotTransport::DockerExecFallback;
+        if let Some(snapshot) = snapshot {
+            snapshots.insert(container, snapshot);
+        }
+        false
+    }
+
     fn fetch_snapshots_parallel(
         paths: &jackin_core::JackinPaths,
         targets: &[String],
@@ -666,45 +668,48 @@ pub(super) mod instances {
         const SNAPSHOT_FANOUT_CHUNK: usize = 8;
         let mut results = Vec::with_capacity(targets.len());
         for chunk in targets.chunks(SNAPSHOT_FANOUT_CHUNK) {
-            let chunk_results = std::thread::scope(|s| {
-                #[expect(
-                    clippy::needless_collect,
-                    reason = "documented residual allow; prefer expect when site is lint-true"
-                )]
-                let handles: Vec<_> = chunk
-                    .iter()
-                    .map(|container| {
-                        let container = container.clone();
-                        jackin_telemetry::spawn::thread_scoped_joined(s, move || {
-                            let result =
-                                jackin_runtime::runtime::snapshot::fetch_snapshot_with_transport(
-                                    paths, &container,
-                                );
-                            (container, result)
-                        })
-                    })
-                    .collect();
-                handles
-                    .into_iter()
-                    .map(|h| match h.join() {
-                        Ok(pair) => pair,
-                        Err(panic_payload) => {
-                            let detail = panic_payload
-                                .downcast_ref::<&'static str>()
-                                .map(|s| (*s).to_owned())
-                                .or_else(|| panic_payload.downcast_ref::<String>().cloned())
-                                .unwrap_or_else(|| "<non-string panic payload>".to_owned());
-                            (
-                                "<unknown-container>".to_owned(),
-                                Err(anyhow::anyhow!("snapshot worker thread panicked: {detail}")),
-                            )
-                        }
-                    })
-                    .collect::<Vec<_>>()
-            });
-            results.extend(chunk_results);
+            results.extend(fetch_snapshot_chunk(paths, chunk));
         }
         results
+    }
+
+    fn fetch_snapshot_chunk(
+        paths: &jackin_core::JackinPaths,
+        chunk: &[String],
+    ) -> Vec<SnapshotFetchResult> {
+        std::thread::scope(|scope| {
+            let mut handles = Vec::with_capacity(chunk.len());
+            for container in chunk {
+                let container = container.clone();
+                handles.push(jackin_telemetry::spawn::thread_scoped_joined(
+                    scope,
+                    move || {
+                        let result =
+                            jackin_runtime::runtime::snapshot::fetch_snapshot_with_transport(
+                                paths, &container,
+                            );
+                        (container, result)
+                    },
+                ));
+            }
+            handles.into_iter().map(join_snapshot_worker).collect()
+        })
+    }
+
+    fn join_snapshot_worker(
+        handle: std::thread::ScopedJoinHandle<'_, SnapshotFetchResult>,
+    ) -> SnapshotFetchResult {
+        handle.join().unwrap_or_else(|panic_payload| {
+            let detail = panic_payload
+                .downcast_ref::<&'static str>()
+                .map(|s| (*s).to_owned())
+                .or_else(|| panic_payload.downcast_ref::<String>().cloned())
+                .unwrap_or_else(|| "<non-string panic payload>".to_owned());
+            (
+                "<unknown-container>".to_owned(),
+                Err(anyhow::anyhow!("snapshot worker thread panicked: {detail}")),
+            )
+        })
     }
 }
 pub(super) mod role_load {

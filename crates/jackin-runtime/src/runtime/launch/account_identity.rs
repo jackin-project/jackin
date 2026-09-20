@@ -8,7 +8,7 @@
 )]
 
 use crate::instance::{AdmittedInstance, InstanceManifest};
-use jackin_config::AppConfig;
+use jackin_config::{AppConfig, ConfigGeneration, ConfigReadGuard, ReadOnlyConfigSnapshot};
 use jackin_core::WorkspaceName;
 use sha2::{Digest as _, Sha256};
 use std::fmt::Write as _;
@@ -16,6 +16,56 @@ use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 const ACCOUNT_FINGERPRINT_FILE: &str = "account-config.sha256";
+
+/// Immutable persisted-config revision held from launch account resolution
+/// through credential publication and admission recording.
+pub(super) struct AccountConfigRevision {
+    generation: ConfigGeneration,
+    _read_guard: ConfigReadGuard,
+}
+
+impl AccountConfigRevision {
+    pub(super) fn acquire(paths: &jackin_core::JackinPaths) -> anyhow::Result<Self> {
+        let before = verified_config_snapshot(paths)?;
+        let read_guard = jackin_config::acquire_config_read_lock(&paths.config_file)?;
+        let after = verified_config_snapshot(paths)?;
+        anyhow::ensure!(
+            before.generation == after.generation,
+            "configuration changed while starting launch; retry"
+        );
+        Ok(Self {
+            generation: after.generation,
+            _read_guard: read_guard,
+        })
+    }
+
+    fn current_snapshot(
+        &self,
+        paths: &jackin_core::JackinPaths,
+    ) -> anyhow::Result<ReadOnlyConfigSnapshot> {
+        let snapshot = verified_config_snapshot(paths)?;
+        anyhow::ensure!(
+            snapshot.generation == self.generation,
+            "configuration changed during launch; aborting credential publication"
+        );
+        Ok(snapshot)
+    }
+
+    pub(super) fn ensure_current(&self, paths: &jackin_core::JackinPaths) -> anyhow::Result<()> {
+        self.current_snapshot(paths).map(drop)
+    }
+}
+
+fn verified_config_snapshot(
+    paths: &jackin_core::JackinPaths,
+) -> anyhow::Result<ReadOnlyConfigSnapshot> {
+    let snapshot = jackin_config::load_read_only_config_snapshot(paths)?;
+    anyhow::ensure!(
+        snapshot.diagnostics.is_empty(),
+        "cannot authorize launch from invalid persisted configuration"
+    );
+    Ok(snapshot)
+}
 
 static CREDENTIAL_SWAP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
@@ -268,27 +318,43 @@ pub fn account_configuration_matches(
         )?)
 }
 
+pub(super) struct AccountConfigurationRecord<'a> {
+    pub(super) root: &'a Path,
+    pub(super) paths: &'a jackin_core::JackinPaths,
+    pub(super) revision: &'a AccountConfigRevision,
+    pub(super) config: &'a AppConfig,
+    pub(super) admission_config: &'a AppConfig,
+    pub(super) workspace: Option<&'a WorkspaceName>,
+    pub(super) role: &'a str,
+    pub(super) admitted: &'a [AdmittedInstance],
+}
+
 pub(super) fn record_account_configuration(
-    root: &Path,
-    paths: &jackin_core::JackinPaths,
-    config: &AppConfig,
-    workspace: Option<&WorkspaceName>,
-    role: &str,
-    admitted: &[AdmittedInstance],
+    record: AccountConfigurationRecord<'_>,
 ) -> anyhow::Result<()> {
-    std::fs::write(
-        root.join(ACCOUNT_FINGERPRINT_FILE),
-        account_configuration_fingerprint(config, workspace, role, admitted)?,
-    )?;
-    let snapshot = jackin_config::load_read_only_config_snapshot(paths)?;
+    let AccountConfigurationRecord {
+        root,
+        paths,
+        revision,
+        config,
+        admission_config,
+        workspace,
+        role,
+        admitted,
+    } = record;
+    let selected_fingerprint =
+        account_configuration_fingerprint(config, workspace, role, admitted)?;
+    let admission_fingerprint =
+        account_configuration_fingerprint(admission_config, workspace, role, admitted)?;
+    let snapshot = revision.current_snapshot(paths)?;
     anyhow::ensure!(
-        snapshot.diagnostics.is_empty(),
-        "cannot record account policy from invalid persisted configuration"
+        admission_fingerprint
+            == account_configuration_fingerprint(&snapshot.config, workspace, role, admitted)?,
+        "account configuration changed during launch; aborting credential publication"
     );
-    std::fs::write(
-        root.join("account-admission.sha256"),
-        account_configuration_fingerprint(&snapshot.config, workspace, role, admitted)?,
-    )?;
+    std::fs::write(root.join(ACCOUNT_FINGERPRINT_FILE), selected_fingerprint)?;
+    std::fs::write(root.join("account-admission.sha256"), admission_fingerprint)?;
+    revision.ensure_current(paths)?;
     Ok(())
 }
 

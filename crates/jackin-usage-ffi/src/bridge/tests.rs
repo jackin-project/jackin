@@ -10,11 +10,12 @@ use jackin_protocol::control::{
     FocusedAccountHeader, FocusedUsageView, QuotaBucketView, StatusSlot, UsageConfidence,
     UsageSeverity, UsageSnapshotStatus, UsageSource,
 };
+use jackin_protocol::usage_broker::{UsageAccountCapability, UsageCoordinationErrorKind};
 use jackin_usage::coordinator::{ProviderProbeOutcome, UsageProviderExecutor};
 use jackin_usage::host::HostUsageRuntime;
 use jackin_usage::host::{
-    ForwardedUsageAccount, HostProbePolicy, HostRuntimeConfig, UsageDiscoveryScope,
-    ensure_usage_broker_with_executor, usage_broker_capabilities,
+    ForwardedUsageAccount, HostProbePolicy, HostRuntimeConfig, UsageBrokerConfig,
+    UsageDiscoveryScope, ensure_usage_broker_with_executor, usage_broker_capabilities,
 };
 
 use crate::dto::UsageFormatPrefsDto;
@@ -61,6 +62,24 @@ fn open_bridge(dir: &std::path::Path) -> UsageMenuBarBridge {
         })
         .expect("open");
     bridge
+}
+
+#[test]
+fn open_runtime_publishes_catalog_before_broker_admission() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let broker = ensure_usage_broker_with_executor(
+        UsageBrokerConfig::for_data_dir(dir.path().to_owned()),
+        Arc::new(BlockingBrokerExecutor::new()),
+    )
+    .expect("test broker");
+
+    let _bridge = open_bridge(dir.path());
+    let synthetic = UsageAccountCapability {
+        account_id: "not-in-desktop-discovery".to_owned(),
+        surface_id: "claude".to_owned(),
+    };
+    let error = broker.current(synthetic).expect_err("catalog fence");
+    assert_eq!(error.kind, UsageCoordinationErrorKind::CatalogRevoked);
 }
 
 struct BlockingBrokerExecutor {
@@ -176,6 +195,21 @@ fn broker_client_refresh_returns_immediately_and_joins_one_generation() {
     assert!(started.elapsed() < Duration::from_secs(1));
     executor.wait_started();
     assert!(bridge.refresh_in_progress().unwrap());
+    let catalog_client = bridge
+        .broker
+        .lock()
+        .unwrap()
+        .as_ref()
+        .unwrap()
+        .client
+        .clone();
+    let revoked = catalog_client
+        .current(UsageAccountCapability {
+            account_id: "not-in-forwarded-scope".to_owned(),
+            surface_id: "claude".to_owned(),
+        })
+        .expect_err("rotation must fence removed capabilities");
+    assert_eq!(revoked.kind, UsageCoordinationErrorKind::CatalogRevoked);
     bridge.refresh(None, true).unwrap();
     executor.release();
 
