@@ -4,7 +4,7 @@ schema = 1
 repository = "jackin-project/jackin"
 # D19 pin: immutable Velnor source for this generated tree. The matching
 # published runtime is velnor-workflow-runtime-v1-8b96d5108550dfa6.
-revision = "e94b48406c4ed206fce2bbf39b788264e72cf39c"
+revision = "4fa7a3a85f141a6bb95bc9bdf0eef9e3ddde165d"
 
 [scan]
 exclude = ["native/Package.swift", "native/.swiftpm/**"]
