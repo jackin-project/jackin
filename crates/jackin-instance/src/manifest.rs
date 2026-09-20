@@ -152,6 +152,40 @@ pub struct AdmittedInstance {
     pub agent: Agent,
     /// Owning account ID (`"work"`).
     pub account_id: String,
+    /// Current host-registration state observed after launch. This never
+    /// changes the recorded identity or materialized session credentials.
+    #[serde(default)]
+    pub registration_state: RegistrationState,
+}
+
+/// Host registration state for an already admitted running instance.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RegistrationState {
+    /// Registration is currently enabled and resolvable.
+    Current,
+    /// Registration remains known but is disabled for new grants.
+    Disabled,
+    /// Registration was removed or no longer resolves to the recorded entry.
+    Removed,
+}
+
+impl Default for RegistrationState {
+    fn default() -> Self {
+        Self::Current
+    }
+}
+
+impl RegistrationState {
+    /// Stable operator-facing state label.
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Current => "current",
+            Self::Disabled => "disabled",
+            Self::Removed => "removed",
+        }
+    }
 }
 
 impl AdmittedInstance {
@@ -161,6 +195,7 @@ impl AdmittedInstance {
             config_id: config_id.into(),
             agent,
             account_id: account_id.into(),
+            registration_state: RegistrationState::Current,
         }
     }
 }
@@ -280,6 +315,32 @@ impl InstanceManifest {
             .iter()
             .find(|admitted| admitted.config_id == config_id)
             .map(|admitted| admitted.agent)
+    }
+
+    /// Mark one admitted instance's host registration without changing its
+    /// recorded config, agent, account, labels, or tab admission.
+    pub fn mark_registration_state(&mut self, config_id: &str, state: RegistrationState) -> bool {
+        let Some(admitted) = self
+            .admitted_instances
+            .iter_mut()
+            .find(|admitted| admitted.config_id == config_id)
+        else {
+            return false;
+        };
+        if admitted.registration_state == state {
+            return false;
+        }
+        admitted.registration_state = state;
+        true
+    }
+
+    /// Registration state for one admitted instance.
+    #[must_use]
+    pub fn registration_state_for_instance(&self, config_id: &str) -> Option<RegistrationState> {
+        self.admitted_instances
+            .iter()
+            .find(|admitted| admitted.config_id == config_id)
+            .map(|admitted| admitted.registration_state)
     }
 
     /// Project this manifest to the lightweight index entry stored in
