@@ -1,5 +1,39 @@
 # Handoff
 
+## Delivery to next agent — 2026-09-21
+
+The user ended this agent's work and requested all commits and pending changes
+on `refactor/holla-parity`. This branch carries the complete ancestry of
+`feat/multi-account-support` through `81ed457c` plus the final WIP checkpoints.
+Do not treat this delivery as completion of the accounts goal or authorization
+to merge without its required gates. PR #1002 remains open and unmerged.
+
+- Core/environment verification at `81ed457c` passed: 199 nextest tests across
+  two binaries; `rtk cargo clippy -p jackin-core -p jackin-env --all-targets
+  --locked -- -D warnings` also passed.
+- Full Capsule command `rtk cargo nextest run -p jackin-capsule --locked
+  --no-fail-fast` failed compilation: duplicate functions in
+  `crates/jackin-capsule/src/daemon/tests.rs` and duplicate
+  `unauthorized_response` in `crates/jackin-capsule/src/usage_relay_proxy.rs`
+  (lines 340 and 406 at this checkpoint). No Capsule pass is claimed.
+- Final pending patches include Console lifetime/borrow compile repairs,
+  partial credential source/publication changes in `jackin-instance/src/auth.rs`,
+  partial private account config publisher wiring, and coordinator persistence
+  failure tests. These changes were interrupted and remain unverified.
+- Agent execution failed with: `You've hit your usage limit. Visit
+  https://chatgpt.com/codex/settings/usage to purchase more credits or try again
+  at 7:29 AM.` The response did not identify a timezone. Independent review,
+  provider-doc reconciliation, detailed ledger expansion, and integration fixture
+  work did not complete. No capacity or model-setting inference is warranted.
+- The requirement ledger still needs individual requirement rows. The PR body
+  still needs a truthful update; an unpublished draft may remain at
+  `/tmp/jackin-1002-pr-body.md`. Current hosted CI must be inspected afresh.
+- Resume from the source and acceptance files named below. Finish the structural
+  repairs, canonical/shared usage presentation and provider dispatch gaps;
+  then execute required deterministic, container, native and authenticated gates.
+  Missing macOS 26 and two authenticated Claude accounts remain mandatory-proof
+  gaps. Do not substitute this host's macOS 27 or synthetic fixtures for them.
+
 ## Active accounts goal — 2026-09-21
 
 The current objective is to complete, independently verify, merge PR
@@ -16,11 +50,12 @@ Current integration state:
   branch. It was fast-forwarded to `2a318440ce2e02a15a76530812f375ee4998a0f3`.
 - Current fetched main is `fce94cea` and includes the Apple relay supervisor
   isolation change. Normal merge commit `a4930735` integrates it into the existing feature branch
-  and has been pushed. Generated CI artifacts remain a stale checkpoint pending
-  the ownership-state repair described below.
-- The PR remains open. Its current remote head has a failed Policy check
-  ([run 35521088323](https://github.com/jackin-project/jackin/actions/runs/35521088323))
-  and successful DCO; these do not prove functional readiness.
+  and has been pushed. Commit `31428386` regenerated CI using the pinned main
+  inputs; deterministic generation, generated-tree check, actionlint, and local
+  Policy passed. Hosted checks on the current candidate still need verification.
+- The PR remains open at pushed checkpoint `81ed457c`, with base `fce94cea`
+  (refreshed 2026-09-21). Earlier failed Policy runs are historical evidence,
+  not the current candidate's result. No functional readiness is claimed.
 - The requirement-to-evidence source of truth is
   [the accounts ledger](plans/multi-account/ledger.md). Its historical counts and
   incomplete checklist are being reconciled against current source and actual runs.
@@ -47,12 +82,13 @@ implementation and verification from this inventory:
   core/telemetry/diagnostics passed 293 tests; protocol passed 120, with only its
   intentionally ignored corpus-rewrite utility skipped. See the
   [working-tree evidence](plans/multi-account/evidence/2026-09-21-main-sync.md).
-- Console now retains the canonical projection through startup and refresh, but
-  its tests still instantiate removed local DTOs. Convert those tests before
-  claiming a Console build. Rich metric-group rendering and Capsule's scoped
-  canonical overview remain unfinished.
-- Environment boundary changes and same-agent Capsule session tests passed
-  rustfmt/diff checks only. Their Cargo verification is pending.
+- Console retains the canonical projection through startup and refresh.
+  Commit `6a68e619` converted its tests from removed DTOs; it remains an unverified
+  checkpoint, with compile repairs in progress. Rich metric-group rendering and
+  Capsule's scoped canonical overview remain unfinished.
+- Core/environment boundary tests passed at `81ed457c`: 199 tests, two binaries,
+  using `rtk cargo nextest run -p jackin-core -p jackin-env --locked --no-fail-fast`.
+  Clippy, independent boundary review, and full Capsule tests are in progress.
 - Auth source no-follow/identity races, stale credential publication, private
   Codex/OpenCode config publication, broker refresh ownership/CAS, and complete
   runtime lease coverage remain open. The audit identified real defects; repair
@@ -65,15 +101,18 @@ implementation and verification from this inventory:
   Repository self-hosted runner inventory returned zero runners. Claude status
   probes found no authenticated default/custom profile; Codex, Cursor, and Kimi
   have some local authentication evidence but no completed usage/container proof.
-- CI regeneration is blocked at this checkpoint. Velnor source
-  `4fa7a3a85f14` was built with the matching `af140ad4d8d84326` runtime closure;
-  generation failed with `cannot prove ownership of existing generated file:
-  .github/actionlint.yaml; it differs from current output and has no recorded
-  state`. The previously committed feature artifacts are retained where their
-  merge conflicts could not be regenerated. They are explicitly stale checkpoint
-  inputs, not a final conflict repair or green Policy claim. Resume by restoring
-  a valid ownership-state baseline and regenerating from the canonical typed
-  inputs. Required CI, independent final review, merge, and main smoke remain open.
+- CI regeneration is repaired in `31428386`. Velnor source `4fa7a3a85f14`
+  uses the matching `af140ad4d8d84326` runtime closure. The committed ownership
+  state already contained `actionlint.yaml`; generation required no manual state
+  deletion. Two generations followed by `--check`, actionlint, and local Policy
+  (11/11 rules) passed. Canonical main inputs omit `preview.yml`, so the generator
+  removed it. Current hosted CI, independent final review, merge, and main smoke
+  remain open.
+- The second immediate checkpoint saved unfinished code separately:
+  `fb84635a` contains private config publication helpers not yet wired into their
+  callers; `81ed457c` contains coordinator store-failure recovery without its
+  regression tests. These are WIP, not completed security repairs. Both owners
+  resumed implementation after the user-requested push.
 
 ## Historical handoff
 
