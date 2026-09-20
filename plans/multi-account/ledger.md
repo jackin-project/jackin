@@ -28,8 +28,8 @@ Evidence runs and their source heads:
 
 - Initial-head `AUDIT-R`: `cargo nextest run -p jackin-runtime -p jackin-console -p jackin-capsule -p jackin-instance -p jackin-core -p jackin --all-features` at `1c8b99077a5fe82cbfd19e6b5803a0a2db67d8ba` — **3826 passed, 1 skipped, 1 timed out**, exit 100. The timeout was `crates/jackin-console/src/tui/view/png_baselines/tests.rs::png_baselines_screens_match` after 360 seconds; it is recorded as failed, not silently converted to pass.
 - Initial-head focused follow-up: `cargo nextest run -p jackin-console --all-features -j1 -E 'test(png_baselines_screens_match)'` — **1 passed**, exit 0, 153.035 seconds. This does not erase the failed aggregate `AUDIT-R` gate; it shows the timeout is not reproduced in the isolated test.
-- Synchronized-head `AUDIT-F`: `cargo nextest run -p jackin-config -p jackin-env -p jackin-protocol -p jackin-usage --all-features` at `176dcc0632f977a78d58443bde1b3ceb40304606` — **1055 passed, 1 skipped**, exit 0.
-- Synchronized-head config/instance fixture gate: `cargo nextest run -p jackin-instance -p jackin-config --all-features` — **563 passed**, exit 0.
+- Synchronized-head `AUDIT-F`: `cargo nextest run -p jackin-config -p jackin-env -p jackin-protocol -p jackin-usage --all-features` at `176dcc0632f977a78d58443bde1b3ceb40304606` — **1057 passed, 1 skipped**, exit 0.
+- Synchronized-head config/instance fixture gate: `cargo nextest run -p jackin-instance -p jackin-config --all-features` — **567 passed**, exit 0.
 - Synchronized-head roadmap gate: `cargo xtask roadmap audit` — **pass**, 18 `meta.json` files resolved.
 - Synchronized-head research gate: `cargo xtask research check` — **pass**, 63 `meta.json` files resolved.
 - Synchronized-head repository-link gate: `cargo xtask docs repo-links` — **failed** on two pre-existing references to `.github/workflows/preview.yml` in `docs/content/roadmap/(isolation-security)/security-threat-model-and-signed-releases.mdx:22,64`; neither changed file is under `docs/`.
