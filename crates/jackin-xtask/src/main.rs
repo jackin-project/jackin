@@ -355,3 +355,9 @@ fn main() -> ExitCode {
         }
     }
 }
+
+/// Hook-proof clean marker.
+#[allow(dead_code)]
+fn hook_proof_clean() -> i32 {
+    41 + 1
+}
