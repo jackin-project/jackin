@@ -42,16 +42,33 @@ Goal: Jackin + upstream Velnor CI/CD — green pre-merge predicts green main, se
 - Perf ground truth: mise `[tools]` lists 15 `cargo:`-backed tools with `cargo.binstall=true` (binstall-first, source fallback) — source-fallback path is the desktop-merge compile-time suspect.
 - Runtime model (Velnor main `runtime.rs`): `CiUnit.commands(lane, scope)` over 4 string arrays; `run --config/--scope/--unit`, NO phase selector. Phase split = typed phase model + runtime phase flag + generator multi-step emit (velnor-arch detail pending synthesis).
 - Fragile pattern to remove: `prerequisite_commands` matches `command.contains(" clippy ")` + `replacen(" clippy ", " check ")` — exactly the substring detection the goal forbids. Non-full affected-scope units run only check prerequisites (no tests); #1012 diagnostics ran tests ⇒ was full unit.
-- Velnor main RED: CI/main 35535449676 (59396040) + Preview failed; Runtime products green. Policy job 106143544517: committed tree differs from base-pin render (`project.toml`, `ci-main.yml`, `ci-pr.yml`, `preview.yml`, `release.yml`, generator-state — "rerun gen"), candidate-path fallback then 15-min timeout waiting for `velnor-workflow-candidate-8881e50b88c80c40-Linux-X64` (never published). Preview run 35535449623: `Resolve preview identity` failed. Runtime releases exist (latest `velnor-workflow-runtime-v1-92e3ae31fd276e74`); Jackin pin 4fa7a3a → af140ad4 exists. Upstream regen + candidate publication owned as follow-up (needs slot).
+- Velnor main RED: root = PR #968 regenerated tree without promoting pin (stuck at 38dbf85e); push-event Policy polls 15 min for candidate keyed by unmatchable merge SHA (futile by design); Preview fails generated-tree fast. Fix = `promote --rev HEAD` at tip (velnor-promote-fix in flight, /tmp/velnor-promote, no push); structural follow-up = fail-fast Acquire on non-PR events. Runtime product for 59396040 exists (run 35535449251).
+- Velnor main RED (superseded note): CI/main 35535449676 (59396040) + Preview failed; Runtime products green. Policy job 106143544517: committed tree differs from base-pin render (`project.toml`, `ci-main.yml`, `ci-pr.yml`, `preview.yml`, `release.yml`, generator-state — "rerun gen"), candidate-path fallback then 15-min timeout waiting for `velnor-workflow-candidate-8881e50b88c80c40-Linux-X64` (never published). Preview run 35535449623: `Resolve preview identity` failed. Runtime releases exist (latest `velnor-workflow-runtime-v1-92e3ae31fd276e74`); Jackin pin 4fa7a3a → af140ad4 exists. Upstream regen + candidate publication owned as follow-up (needs slot).
 
 ## Slices landed
 
 - 2026-09-21: PR #1007 blocker fixed — `33b91891` fmt-only (`crates/jackin-xtask/src/desktop/tests.rs`), pushed to `codex/ci-performance-campaign`; xtask unit failed rustfmt --check → ci-required FAILURE. Enabling condition: no pre-commit fmt enforcement. Comment: PR #1007 comment 5752641444. VERIFIED: rerun 35537475111 xtask job success; zero failed jobs at 21:08Z check.
 - 2026-09-21: Slice `diag-harden` → PR #1014 (branch `cicd/integration`, Jackin's integration branch): test-only wire-count actionability + EXECUTION.md. Attempt-2 green confirms transient; attempt-1 preserved.
+- 2026-09-21: PR #1014 CI caught `clippy::panic` on the new helper's `panic!` (job 106151006979) — fixed with `assert!` + same message (`1f12d1a5`), verified with exact CI clippy/fmt/nextest flags. PROCESS LESSON: every implementer brief must require local verification with exact CI flags (fmt, clippy `-D warnings`, nextest); pre-commit hooks would have caught this. Ledger + child payloads persisted under plans/cicd-reliability/.
+- 2026-09-21: PR #1014 Policy FAIL `generated-tree` (run 35538495995): branch changed scanned inputs without regenerating `.github/ci/.github-actions-generator-state`. NOT main drift — passing PRs #1002/#1013 (same base `fce94cea`) all commit regenerated state. Root cause: implementer slice omitted the regen step; enabling condition = no local gate runs `velnor-workflow --check` before push. Fix: regen with the pinned published runtime only (never hand-edit). PROCESS LESSON: every branch touching the Jackin tree must end with pinned-generator regen + commit of the state file; verify with `--check`.
+
+## Integrated synthesis (parent, 2026-09-21 — workflow synthesis dropped 4 payloads; recovered from session logs)
+
+- Inventory (complete): 40k runs 05-31..09-20, classes C1–C15 in FAILURE_LEDGER.md + gaps GAP-1..4. Main CI 42 runs (21F/10C/11S), desktop 13 (5F/1C/7S).
+- Parity: merge queue unsupported (generator test forbids merge_group; ruleset has no MQ rule); gate passes vacuously on empty selection (NO min-units guard — gap); desktop-ci referenced by no workflow (main-only); scope_for_event already handles merge_group→full.
+- Hooks: hk-first decision (mise-native, one Pkl, stash isolation, global --mise install); nextest/desktop stay out of hooks. VERIFICATION PENDING (hk-verify agent).
+- Velnor-arch: split sites mapped (scan/rust.rs phase tags, Unit/CiUnit phase vec, ir.rs per-phase steps or run --phase, replace :2569 substring rewrite); HEAD already emits fmt-clippy-nextest order (pin renders old order); s1 (Jackin) vs s2 (Velnor) compat open.
+- Perf: desktop mise HIT yet 26 tools rebuilt ~9.5min EVERY run (cache ineffective); sccache installed but unwired; bindings-check boltffi 7m56s; cancel attribution confirmed.
+- Baseline: regen live-verified read-only; runtime release covers linux-x64/arm64 + macos-arm64; toolchains recorded.
+- #1012 parity answer (parent): flaky test passed on PR (122/122, job 106101859590), failed attempt-1 main on identical tree+commands, green attempt-2. NOT selection.
 
 ## Decisions
 
-(none yet — synthesis pending)
+- D1: hk-first CONFIRMED (independent hk-verify vs live docs 2026-09-21): prek capable but hk wins — mise-env provisioning via global launcher (prek isolated-env ignores mise.toml pins; system hooks need ambient PATH, fails GUI git), one Pkl shared editor/hook/CI + profiles/diagnostics, stash isolation incl. untracked + backup patches. Narrowings: PREK_HOME cost applies to managed hooks only; CI-parity shape is a wash. Corrections: no as-is builtins for clippy/swiftlint (customize to exact CI flags); swift-format custom (no builtin); non-macOS swift skip strategy needed; lockfile pins hk version + mise.lock; CI parity via generator inputs, never hand-edit.
+- D1a (clippy placement): verifier proposed pre-push-only for clippy (cold cost) — REJECTED by goal §7 (pre-push-only insufficient). Resolution: pre-commit clippy with PROVEN dependency-closure scoping (changed packages + reverse dependents from cargo metadata); workspace fallback documented. Implementer must prove closure correctness.
+- D2: Velnor work in fresh /tmp clones on branch `cicd/rust-phases`; existing velnor checkout untouched (foreign branch + uncommitted work).
+- D3: Jackin integration branch `cicd/integration` (PR #1014 open); parent owns git for both repos.
+- D4: Phase split = typed phase model + `run --phase` + per-phase steps; kills `contains(" clippy ")` rewrite.
 
 ## Slices
 
