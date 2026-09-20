@@ -1,6 +1,6 @@
 # Handoff
 
-Handoff snapshot: `2026-09-20T15:53:18Z`.
+Handoff snapshot: `2026-09-20T15:55:18Z`.
 
 This document preserves the in-progress integration/release goal. It is a continuation point, not a completion claim.
 
@@ -49,7 +49,7 @@ Primary references:
 - No tag points at HEAD.
 - Current `origin/main`: `a5e1022725e9fc25602e3f248fa5420de8a0a7db`.
 - Merge base with main: `41796158b1e45535ae4e74d5ff048cb5bb4e0488`.
-- Divergence: feature is 140 commits ahead and 4 commits behind current main.
+- Implementation baseline divergence is 140 commits ahead and 4 commits behind current main. The larger raw ahead count now includes only handoff-document commits; do not mistake those metadata commits for additional feature scope.
 - Missing main commits are the merges for #1006, #1008, #1010, and #1011: `3d510aac`, `1622769c`, `0163d1b7`, and `a5e10227`.
 - PR #1002 is therefore conflicting/dirty against its stale base and is not merge-ready.
 - The implementation diff before adding this handoff was 445 files, approximately 64,435 additions and 5,785 deletions. The current PR diff is 446 files / 64,811 additions / 5,785 deletions because this handoff is now committed. It is a large integration branch; do not rebase it.
