@@ -10,17 +10,20 @@ ledger for the multi-account plan, not published documentation
 
 ## Current #1002 audit provenance — 2026-09-20
 
-The live GitHub head of PR #1002 is `feat/multi-account-support` at
-`72feee236162468aeeeb416e8139a97db06538eb` (`72feee23`). The companion evidence
+The current GitHub head of PR #1002 is `feat/multi-account-support` at
+`a73743ab5cc39b24d39173c1393d713734d8f856` (`a73743ab`). The companion evidence
 ledger repair in PR #1005 started at
 `cefa882f6c3f5a3b4f0ce52a2052a05cb4706756` (`cefa882f`) and was pushed as signed
-commit `128aaa4d53a861b0ce5175d2f4d775c4b7cc088f` (`128aaa4d`), still based on the
-unsynchronized `ca128f8a80907319ea6d5648cf172ed81e33b1d4` (`ca128f8`) source
-tree; no merge was performed. `AUDIT-F` in this file means the PR #1005
+commit `128aaa4d53a861b0ce5175d2f4d775c4b7cc088f` (`128aaa4d`). Its original
+`AUDIT-F` evidence baseline used the pre-merge
+`ca128f8a80907319ea6d5648cf172ed81e33b1d4` (`ca128f8`) source tree. A normal
+merge of current #1002 `a73743ab` has now been performed into this branch; no
+rebase or force-push was used. `AUDIT-F` in this file means the PR #1005
 baseline fixture run at `ca128f8`: `cargo nextest run -p jackin-config -p
 jackin-env -p jackin-protocol -p jackin-usage --all-features` — **1059 passed,
-1 skipped**, exit 0 on 2026-09-20. A separate live-head recheck at `72feee23`
-produced **1069 passed, 1 skipped** for that command. No current container,
+1 skipped**, exit 0 on 2026-09-20. The prior pre-sync coordinator recheck at
+`72feee23` produced **1069 passed, 1 skipped** for that command; neither count
+is a current `a73743ab` result. No current container,
 live-provider, GUI/keychain, or native-client verification exists; those
 dispositions remain `not_run` in [ledger.md](./ledger.md).
 
@@ -83,7 +86,7 @@ this ledger is the spec) · `blocked` (cannot be done; exact reason given).
 Also: `failed`, `unavailable` (credentials), `unsupported` (genuinely, with
 evidence), `not_run`. In this ledger `implemented` means the cited code was
 inspected in this tree; fixture/container/live verification is tracked in
-[ledger.md](./ledger.md). At current #1002 head `ca128f8`, provider fixture
+[ledger.md](./ledger.md). At the pre-merge #1005 baseline `ca128f8`, provider fixture
 tests passed in `AUDIT-F` (**1059 passed, 1 skipped**); no current container or
 live-provider artifact was available. Historical lane claims are not re-issued
 by that audit.
@@ -212,7 +215,7 @@ per §3.1 except the three rows in §3.3.
 | Provider | Usage source | Status | Ev | Proof |
 |---|---|---|---|---|
 | `opencode`, `opencode-go` | `GET https://opencode.ai/zen/go/v1/usage` (rolling/weekly/monthly; no Zen-balance/live-model fields) | `implemented` [opencode.rs](../../crates/jackin-usage/src/usage/opencode.rs) | **S**+**R** (endpoint known via reference collectors, not vendor-documented) | `implemented` |
-| `openrouter` | `GET https://openrouter.ai/api/v1/auth/key` (key-scoped usage/limit); `/credits` needs a management key and stays out of key scope | `implemented` collector in [openrouter.rs](../../crates/jackin-usage/src/usage/openrouter.rs); host credential dispatch is blocked because `provider_credential_snapshot` has no `openrouter` arm and falls through to `unsupported_snapshot` ([U12](#9-u-register-exact-missing-proofs)) | **D** (ref-contracts-D: `{base}/credits`, `{base}/key` request shapes) | `fixture_verified` (`openrouter/tests.rs`, current `AUDIT-F` at `ca128f8`, included in 1059/1); container/live `not_run` |
+| `openrouter` | `GET https://openrouter.ai/api/v1/auth/key` (key-scoped usage/limit); `/credits` needs a management key and stays out of key scope | `implemented` collector in [openrouter.rs](../../crates/jackin-usage/src/usage/openrouter.rs); host credential dispatch is blocked because `provider_credential_snapshot` has no `openrouter` arm and falls through to `unsupported_snapshot` ([U12](#9-u-register-exact-missing-proofs)) | **D** (ref-contracts-D: `{base}/credits`, `{base}/key` request shapes) | `fixture_verified` (`openrouter/tests.rs`, pre-merge #1005 `AUDIT-F` at `ca128f8`, included in 1059/1); container/live `not_run` |
 
 ## 4. omp (oh-my-pi)
 
@@ -502,7 +505,7 @@ Routing contract (**D**, code.claude.com docs fetched 2026-09-17):
 | U9 | hermes `deepseek` usage | Missing: verify whether a key-scoped balance endpoint exists; currently `none` by absence of evidence. |
 | U10 | opencode `opencode-zen` (hermes row) / Zen balance | Missing: any Zen balance/live-model endpoint; do not invent. Currently `none` with reason. |
 | U11 | every `planned` **R** usage row (§4.2, §5.3, §6, §7) | Missing: Mac-live verification of each private/reference endpoint (URL + method + auth + response shape) before claiming support; lands in [ledger.md](./ledger.md) provider lanes. |
-| U12 | opencode/omp/hermes `openrouter` usage | Collector exists at `crates/jackin-usage/src/usage/openrouter.rs`; its fixture parser tests passed in current `AUDIT-F` at #1002 head `ca128f8` (the 1059/1 aggregate). Missing: host/broker credential dispatch and attribution from `HostSurfaceId::OpenRouter` into that collector; `provider_credential_snapshot` currently falls through to `unsupported_snapshot`. `/credits` still requires a management key and is not promoted into key scope. |
+| U12 | opencode/omp/hermes `openrouter` usage | Collector exists at `crates/jackin-usage/src/usage/openrouter.rs`; its fixture parser tests passed in the pre-merge #1005 baseline `AUDIT-F` at `ca128f8` (the 1059/1 aggregate). Missing: host/broker credential dispatch and attribution from `HostSurfaceId::OpenRouter` into that collector; `provider_credential_snapshot` currently falls through to `unsupported_snapshot`. `/credits` still requires a management key and is not promoted into key scope. |
 
 ## 10. Maintenance
 
