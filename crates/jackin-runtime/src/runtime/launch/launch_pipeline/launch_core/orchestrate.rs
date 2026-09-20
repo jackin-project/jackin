@@ -651,8 +651,6 @@ where
     let container_name_owned = container_name.to_owned();
     let manifest_owned = validated_repo.manifest.clone();
     let config_owned = config.clone();
-    let workspace_opt_owned = configured.workspace_opt.clone();
-    let role_key_owned = role_key.to_owned();
     let github_ctx_owned = configured.github_ctx.clone();
     let model_override_owned = opts.model.clone();
     let effort_owned = opts.effort;
@@ -707,13 +705,6 @@ where
                 &prepared.0.auth.slots,
                 &models,
                 &efforts,
-            )?;
-            super::super::super::account_identity::record_account_configuration(
-                &prepared.0.root,
-                &paths_owned,
-                &config_owned,
-                workspace_opt_owned.as_ref(),
-                &role_key_owned,
             )?;
             Ok(prepared)
         })
@@ -1188,6 +1179,8 @@ struct ActiveLaunch<'a, D, R> {
     resolved_env: jackin_env::ResolvedEnv,
     rebuild: bool,
     git_pull_join: Option<super::super::DeferredGitPull>,
+    account_revision: super::super::super::account_identity::AccountConfigRevision,
+    admission_config: jackin_config::AppConfig,
     initialized: LaunchInitialized,
 }
 
@@ -1281,6 +1274,10 @@ where
         early_sidecar_result,
     )
     .await?;
+    if let Err(error) = launch.account_revision.ensure_current(launch.paths) {
+        launch.initialized.cleanup.run(launch.docker).await;
+        return Err(error);
+    }
     // Record the admitted instances on the manifest now that resolution
     // succeeded, and persist immediately: all downstream paths (docker,
     // detached, apple-container) read the same manifest file.
@@ -1292,6 +1289,26 @@ where
         &prepared.container_state,
         &mut prepared.instance_manifest,
         InstanceStatus::Active,
+    ) {
+        launch.initialized.cleanup.run(launch.docker).await;
+        return Err(error);
+    }
+    let admitted_instances = trust
+        .instances
+        .iter()
+        .map(AdmittedInstance::from)
+        .collect::<Vec<_>>();
+    if let Err(error) = super::super::super::account_identity::record_account_configuration(
+        super::super::super::account_identity::AccountConfigurationRecord {
+            root: &trust.environment.state.root,
+            paths: launch.paths,
+            revision: &launch.account_revision,
+            config: launch.config,
+            admission_config: &launch.admission_config,
+            workspace: trust.environment.workspace_opt.as_ref(),
+            role: &launch.role_key,
+            admitted: &admitted_instances,
+        },
     ) {
         launch.initialized.cleanup.run(launch.docker).await;
         return Err(error);
@@ -1334,6 +1351,10 @@ where
     D: DockerApi,
     R: CommandRunner,
 {
+    if let Err(error) = launch.account_revision.ensure_current(launch.paths) {
+        launch.initialized.cleanup.run(launch.docker).await;
+        return Err(error);
+    }
     let launched = launch_runtime(LaunchRuntime {
         paths: launch.paths,
         config: launch.config,
@@ -1742,6 +1763,8 @@ where
         rebuild,
         restore_pinned_sha: _,
         git_pull_join,
+        account_revision,
+        admission_config,
         ..
     } = ctx;
     let initialized = initialize_launch(InitializeLaunch {
@@ -1787,6 +1810,8 @@ where
         resolved_env,
         rebuild,
         git_pull_join,
+        account_revision,
+        admission_config,
         initialized,
     };
     // Start the sidecar future before image materialization so network/DinD

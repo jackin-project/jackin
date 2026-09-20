@@ -79,6 +79,8 @@ pub enum EnvScope {
 pub struct BootstrapReport {
     /// True when a fresh-install scan ran during this open.
     pub fresh_install: bool,
+    /// True when the editor contains a scan mutation that must be saved.
+    pub changed: bool,
     /// Account IDs registered by the bootstrap scan.
     pub added_accounts: Vec<String>,
     /// Full `(id, account)` pairs for `added_accounts`, in the same order.
@@ -113,6 +115,7 @@ fn profile_account_candidate(
     directory: PathBuf,
     name: String,
     xdg_roots: Option<crate::XdgRoots>,
+    source_selector: Option<crate::ProfileSelector>,
 ) -> (String, crate::AccountConfig) {
     (
         id,
@@ -124,6 +127,7 @@ fn profile_account_candidate(
                 agent,
                 directory,
                 xdg_roots,
+                source_selector,
             },
         },
     )
@@ -154,6 +158,7 @@ fn profile_scan_candidate(
             format!("{} default", discovered.agent.label())
         },
         None,
+        discovered.source_selector.clone(),
     ))
 }
 
@@ -171,8 +176,9 @@ fn zshrc_provider(stem: &str) -> Option<crate::AiProvider> {
 fn env_scan_candidate(
     provider: crate::AiProvider,
     variable: &str,
+    base_url: Option<String>,
 ) -> (String, crate::AccountConfig) {
-    api_key_scan_candidate(provider, EnvValue::from(format!("${variable}")))
+    api_key_scan_candidate(provider, EnvValue::from(format!("${variable}")), base_url)
 }
 
 /// Synthesize the registry entry for a provider API key with an explicit
@@ -180,6 +186,7 @@ fn env_scan_candidate(
 fn api_key_scan_candidate(
     provider: crate::AiProvider,
     value: EnvValue,
+    base_url: Option<String>,
 ) -> (String, crate::AccountConfig) {
     let id = format!("{}-api-key", provider.slug());
     let account = crate::AccountConfig {
@@ -188,7 +195,7 @@ fn api_key_scan_candidate(
         provider,
         credential: crate::AccountCredential::ApiKey {
             value,
-            base_url: None,
+            base_url,
             model: None,
         },
     };
@@ -230,16 +237,18 @@ fn bootstrap_scan_accounts(config: &mut AppConfig, home: &Path) -> BootstrapRepo
     let scan = crate::discover_default_accounts(home);
     report.issues = scan.issues;
     let mut register = |id: String, account: crate::AccountConfig| {
-        if config.accounts.contains_key(&id)
-            || config
-                .account_scan_exclusions
-                .contains(&account_source_fingerprint(&account))
-        {
+        if scan_candidate_is_blocked(
+            &config.accounts,
+            &config.account_scan_exclusions,
+            &id,
+            &account,
+        ) {
             return;
         }
         config.accounts.insert(id.clone(), account.clone());
         report.added_accounts.push(id.clone());
         report.added.push((id, account));
+        report.changed = true;
     };
     for discovered in scan.accounts {
         if let Some((id, account)) = profile_scan_candidate(&discovered) {
@@ -249,8 +258,11 @@ fn bootstrap_scan_accounts(config: &mut AppConfig, home: &Path) -> BootstrapRepo
     let environment = std::env::vars_os()
         .filter_map(|(name, value)| Some((name.into_string().ok()?, value.into_string().ok()?)))
         .collect();
-    for (provider, variable) in crate::discover_environment_accounts(&environment) {
-        let (id, account) = env_scan_candidate(provider, &variable);
+    for candidate in
+        crate::accounts::discovery::discover_environment_account_candidates(&environment)
+    {
+        let (id, account) =
+            env_scan_candidate(candidate.provider, &candidate.variable, candidate.base_url);
         register(id, account);
     }
     for (agent, variable) in crate::discover_environment_oauth_accounts(&environment) {
@@ -262,50 +274,30 @@ fn bootstrap_scan_accounts(config: &mut AppConfig, home: &Path) -> BootstrapRepo
 }
 
 /// Whether `candidate`'s credential source is already registered under any
-/// ID. Mirrors the `upsert_account` duplicate-source rule (same match arms
-/// as `editor::accounts`, which this module cannot reuse) so scans skip
-/// instead of erroring when the operator renamed an account ID.
+/// ID. Uses the same source fingerprint as `upsert_account` so scans skip
+/// instead of erroring when the operator renamed an account ID or used a path
+/// alias.
 fn scan_source_registered(
     accounts: &BTreeMap<String, crate::AccountConfig>,
     candidate: &crate::AccountConfig,
 ) -> bool {
-    use crate::AccountCredential;
-    accounts.values().any(|registered| {
-        if registered.provider != candidate.provider {
-            return false;
-        }
-        match (&candidate.credential, &registered.credential) {
-            (
-                AccountCredential::Profile {
-                    agent: a,
-                    directory: x,
-                    xdg_roots: rx,
-                },
-                AccountCredential::Profile {
-                    agent: b,
-                    directory: y,
-                    xdg_roots: ry,
-                },
-            ) => a == b && x == y && rx == ry,
-            (
-                AccountCredential::ApiKey {
-                    value: x,
-                    base_url: a,
-                    ..
-                },
-                AccountCredential::ApiKey {
-                    value: y,
-                    base_url: b,
-                    ..
-                },
-            ) => x == y && a == b,
-            (
-                AccountCredential::OAuthToken { agent: a, value: x },
-                AccountCredential::OAuthToken { agent: b, value: y },
-            ) => a == b && x == y,
-            _ => false,
-        }
-    })
+    let candidate_fingerprint = account_source_fingerprint(candidate);
+    accounts
+        .values()
+        .any(|registered| account_source_fingerprint(registered) == candidate_fingerprint)
+}
+
+/// Apply the same ID, tombstone, and credential-source collision policy to
+/// every discovery helper.
+fn scan_candidate_is_blocked(
+    known: &BTreeMap<String, crate::AccountConfig>,
+    excluded: &BTreeSet<String>,
+    id: &str,
+    account: &crate::AccountConfig,
+) -> bool {
+    known.contains_key(id)
+        || excluded.contains(&account_source_fingerprint(account))
+        || scan_source_registered(known, account)
 }
 
 /// Read an installer `fresh_install` marker without changing it.
@@ -753,6 +745,7 @@ pub(crate) fn recover_pending_publication(config_file: &Path) -> crate::ConfigRe
 fn apply_xdg_profile_candidate(
     editor: &mut ConfigEditor,
     known: &mut BTreeMap<String, crate::AccountConfig>,
+    excluded: &BTreeSet<String>,
     report: &mut BootstrapReport,
     roots: &crate::XdgRoots,
     candidate: Option<(String, crate::AccountConfig)>,
@@ -761,17 +754,19 @@ fn apply_xdg_profile_candidate(
         report.unapplied_zshrc_xdg_roots.push(roots.clone());
         return Ok(());
     };
-    if scan_source_registered(known, &account) {
-        return Ok(());
-    }
-    if known.contains_key(&id) {
-        report.unapplied_zshrc_xdg_roots.push(roots.clone());
+    let is_excluded = excluded.contains(&account_source_fingerprint(&account));
+    let source_registered = scan_source_registered(known, &account);
+    if scan_candidate_is_blocked(known, excluded, &id, &account) {
+        if known.contains_key(&id) && !is_excluded && !source_registered {
+            report.unapplied_zshrc_xdg_roots.push(roots.clone());
+        }
         return Ok(());
     }
     editor.upsert_account(&id, &account)?;
     known.insert(id.clone(), account.clone());
     report.added_accounts.push(id.clone());
     report.added.push((id, account));
+    report.changed = true;
     Ok(())
 }
 
@@ -876,8 +871,14 @@ impl ConfigEditor {
                 candidates.push(candidate);
             }
         }
-        for (provider, variable) in crate::discover_environment_accounts(environment) {
-            candidates.push(env_scan_candidate(provider, &variable));
+        for candidate in
+            crate::accounts::discovery::discover_environment_account_candidates(environment)
+        {
+            candidates.push(env_scan_candidate(
+                candidate.provider,
+                &candidate.variable,
+                candidate.base_url,
+            ));
         }
         for (agent, variable) in crate::discover_environment_oauth_accounts(environment) {
             if let Some(candidate) = oauth_scan_candidate(agent, &variable) {
@@ -891,16 +892,14 @@ impl ConfigEditor {
             // Skip-on-collision in both dimensions: an operator
             // registration (same ID, or same credential source under
             // another ID) always wins over scan synthesis.
-            if known.contains_key(&id)
-                || excluded.contains(&account_source_fingerprint(&account))
-                || scan_source_registered(&known, &account)
-            {
+            if scan_candidate_is_blocked(&known, &excluded, &id, &account) {
                 continue;
             }
             self.upsert_account(&id, &account)?;
             known.insert(id.clone(), account.clone());
             report.added_accounts.push(id.clone());
             report.added.push((id, account));
+            report.changed = true;
         }
         Ok(report)
     }
@@ -926,11 +925,61 @@ impl ConfigEditor {
         let excluded = existing.account_scan_exclusions;
         let mut known = existing.accounts;
         let home = self.home_dir.clone();
-        for directory in &plan.directories {
+        self.apply_zshrc_directories(&plan.directories, &home, &mut known, &excluded, &mut report)?;
+        self.apply_zshrc_xdg_roots(
+            plan.xdg_roots.as_ref(),
+            &home,
+            &mut known,
+            &excluded,
+            &mut report,
+        )?;
+        self.apply_zshrc_op_refs(
+            &plan.op_refs,
+            &plan.models,
+            &mut known,
+            &excluded,
+            &mut report,
+        )?;
+        self.apply_zshrc_models(&plan.models, &mut known, &mut report)?;
+        // Arbitrary shell wrappers cannot safely be executed or serialized
+        // into the current launch protocol. Retain the parsed call sites in
+        // the report so callers surface them instead of dropping them.
+        report.unapplied_zshrc_wrappers = plan.wrappers.clone();
+        Ok(report)
+    }
+
+    fn register_zshrc_account(
+        &mut self,
+        known: &mut BTreeMap<String, crate::AccountConfig>,
+        excluded: &BTreeSet<String>,
+        report: &mut BootstrapReport,
+        id: String,
+        account: crate::AccountConfig,
+    ) -> crate::ConfigResult<()> {
+        if scan_candidate_is_blocked(known, excluded, &id, &account) {
+            return Ok(());
+        }
+        self.upsert_account(&id, &account)?;
+        known.insert(id.clone(), account.clone());
+        report.added_accounts.push(id.clone());
+        report.added.push((id, account));
+        report.changed = true;
+        Ok(())
+    }
+
+    fn apply_zshrc_directories(
+        &mut self,
+        directories: &[crate::DirectoryCandidate],
+        home: &Path,
+        known: &mut BTreeMap<String, crate::AccountConfig>,
+        excluded: &BTreeSet<String>,
+        report: &mut BootstrapReport,
+    ) -> crate::ConfigResult<()> {
+        for directory in directories {
             let Some(provider) = crate::AiProvider::for_agent(directory.agent) else {
                 continue;
             };
-            match crate::discover_account_directory(directory.agent, &directory.directory, &home) {
+            match crate::discover_account_directory(directory.agent, &directory.directory, home) {
                 Ok(Some(found)) => {
                     // Shell overrides are distinct profiles from the
                     // default-home discovery entry. Reusing
@@ -945,18 +994,10 @@ impl ConfigEditor {
                             agent: directory.agent,
                             directory: found.directory,
                             xdg_roots: None,
+                            source_selector: found.source_selector,
                         },
                     };
-                    if known.contains_key(&id)
-                        || excluded.contains(&account_source_fingerprint(&account))
-                        || scan_source_registered(&known, &account)
-                    {
-                        continue;
-                    }
-                    self.upsert_account(&id, &account)?;
-                    known.insert(id.clone(), account.clone());
-                    report.added_accounts.push(id.clone());
-                    report.added.push((id, account));
+                    self.register_zshrc_account(known, excluded, report, id, account)?;
                 }
                 Ok(None) => {}
                 Err(error) => report.issues.push(crate::DiscoveryIssue {
@@ -966,54 +1007,78 @@ impl ConfigEditor {
                 }),
             }
         }
-        if let Some(roots) = &plan.xdg_roots {
-            let opencode_data = roots.data.join("opencode");
-            let opencode_config = roots.config.join("opencode");
-            if opencode_data.exists() || opencode_config.exists() {
-                // The generic XDG triple is currently an Amp profile contract.
-                // OpenCode's data root has provider-keyed auth and may also
-                // contain a database; without an explicit source directory,
-                // importing it as Amp would persist an unrelated identity.
-                report.unapplied_zshrc_xdg_roots.push(roots.clone());
-                report.issues.push(crate::DiscoveryIssue {
-                    agent: jackin_core::Agent::Opencode,
-                    directory: opencode_data,
-                    error: crate::DiscoveryError::Unsupported(
-                        "OpenCode XDG roots from shell imports require an explicit profile directory",
-                    ),
-                });
-            } else {
-                let directory = roots.data.join("amp");
-                let provider = crate::AiProvider::Amp;
-                match crate::discover_account_directory(jackin_core::Agent::Amp, &directory, &home)
-                {
-                    Ok(Some(found)) => {
-                        let candidate = profile_account_candidate(
-                            "custom-amp".to_owned(),
-                            jackin_core::Agent::Amp,
-                            provider,
-                            found.directory,
-                            "Amp custom".to_owned(),
-                            Some(roots.clone()),
-                        );
-                        apply_xdg_profile_candidate(
-                            self,
-                            &mut known,
-                            &mut report,
-                            roots,
-                            Some(candidate),
-                        )?;
-                    }
-                    Ok(None) => report.unapplied_zshrc_xdg_roots.push(roots.clone()),
-                    Err(error) => report.issues.push(crate::DiscoveryIssue {
-                        agent: jackin_core::Agent::Amp,
-                        directory,
-                        error,
-                    }),
+        Ok(())
+    }
+
+    fn apply_zshrc_xdg_roots(
+        &mut self,
+        roots: Option<&crate::XdgRoots>,
+        home: &Path,
+        known: &mut BTreeMap<String, crate::AccountConfig>,
+        excluded: &BTreeSet<String>,
+        report: &mut BootstrapReport,
+    ) -> crate::ConfigResult<()> {
+        let Some(roots) = roots else {
+            return Ok(());
+        };
+        let opencode_data = roots.data.join("opencode");
+        let opencode_config = roots.config.join("opencode");
+        if opencode_data.exists() || opencode_config.exists() {
+            // The generic XDG triple is currently an Amp profile contract.
+            // OpenCode's data root has provider-keyed auth and may also
+            // contain a database; without an explicit source directory,
+            // importing it as Amp would persist an unrelated identity.
+            report.unapplied_zshrc_xdg_roots.push(roots.clone());
+            report.issues.push(crate::DiscoveryIssue {
+                agent: jackin_core::Agent::Opencode,
+                directory: opencode_data,
+                error: crate::DiscoveryError::Unsupported(
+                    "OpenCode XDG roots from shell imports require an explicit profile directory",
+                ),
+            });
+        } else {
+            let directory = roots.data.join("amp");
+            let provider = crate::AiProvider::Amp;
+            match crate::discover_account_directory(jackin_core::Agent::Amp, &directory, home) {
+                Ok(Some(found)) => {
+                    let candidate = profile_account_candidate(
+                        "custom-amp".to_owned(),
+                        jackin_core::Agent::Amp,
+                        provider,
+                        found.directory,
+                        "Amp custom".to_owned(),
+                        Some(roots.clone()),
+                        found.source_selector,
+                    );
+                    apply_xdg_profile_candidate(
+                        self,
+                        known,
+                        excluded,
+                        report,
+                        roots,
+                        Some(candidate),
+                    )?;
                 }
+                Ok(None) => report.unapplied_zshrc_xdg_roots.push(roots.clone()),
+                Err(error) => report.issues.push(crate::DiscoveryIssue {
+                    agent: jackin_core::Agent::Amp,
+                    directory,
+                    error,
+                }),
             }
         }
-        for op_ref in &plan.op_refs {
+        Ok(())
+    }
+
+    fn apply_zshrc_op_refs(
+        &mut self,
+        op_refs: &[crate::OpReadCandidate],
+        models: &[crate::ModelProfile],
+        known: &mut BTreeMap<String, crate::AccountConfig>,
+        excluded: &BTreeSet<String>,
+        report: &mut BootstrapReport,
+    ) -> crate::ConfigResult<()> {
+        for op_ref in op_refs {
             if op_ref.reference.on_demand {
                 continue;
             }
@@ -1025,7 +1090,13 @@ impl ConfigEditor {
                 crate::discover_environment_accounts(&probe)
                     .into_iter()
                     .next()
-                    .map(|(provider, _)| api_key_scan_candidate(provider, value))
+                    .map(|(provider, _)| {
+                        let base_url = models
+                            .iter()
+                            .find(|model| zshrc_provider(&model.name) == Some(provider))
+                            .and_then(|model| model.base_url.clone());
+                        api_key_scan_candidate(provider, value, base_url)
+                    })
             } else {
                 oauth_scan_candidate_with_value(jackin_core::Agent::Claude, value)
             };
@@ -1034,18 +1105,18 @@ impl ConfigEditor {
             let Some((id, account)) = seeded else {
                 continue;
             };
-            if known.contains_key(&id)
-                || excluded.contains(&account_source_fingerprint(&account))
-                || scan_source_registered(&known, &account)
-            {
-                continue;
-            }
-            self.upsert_account(&id, &account)?;
-            known.insert(id.clone(), account.clone());
-            report.added_accounts.push(id.clone());
-            report.added.push((id, account));
+            self.register_zshrc_account(known, excluded, report, id, account)?;
         }
-        for model in &plan.models {
+        Ok(())
+    }
+
+    fn apply_zshrc_models(
+        &mut self,
+        models: &[crate::ModelProfile],
+        known: &mut BTreeMap<String, crate::AccountConfig>,
+        report: &mut BootstrapReport,
+    ) -> crate::ConfigResult<()> {
+        for model in models {
             let Some(provider) = zshrc_provider(&model.name) else {
                 report.unapplied_zshrc_models.push(model.clone());
                 continue;
@@ -1055,7 +1126,7 @@ impl ConfigEditor {
                 report.unapplied_zshrc_models.push(model.clone());
                 continue;
             };
-            let mut account = existing;
+            let mut account = existing.clone();
             let crate::AccountCredential::ApiKey {
                 model: account_model,
                 base_url: account_url,
@@ -1071,14 +1142,13 @@ impl ConfigEditor {
             if model.base_url.is_some() {
                 *account_url = model.base_url.clone();
             }
-            self.upsert_account(&id, &account)?;
-            known.insert(id, account);
+            if account != existing {
+                self.upsert_account(&id, &account)?;
+                known.insert(id, account);
+                report.changed = true;
+            }
         }
-        // Arbitrary shell wrappers cannot safely be executed or serialized
-        // into the current launch protocol. Retain the parsed call sites in
-        // the report so callers surface them instead of dropping them.
-        report.unapplied_zshrc_wrappers = plan.wrappers.clone();
-        Ok(report)
+        Ok(())
     }
 
     /// Atomic write + return a fresh `AppConfig` parsed from the

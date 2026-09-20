@@ -1974,6 +1974,7 @@ fn profile_account() -> crate::AccountConfig {
             agent: Agent::Claude,
             directory: "/home/operator/.claude-work".into(),
             xdg_roots: None,
+            source_selector: None,
         },
     }
 }
@@ -2064,6 +2065,7 @@ fn disabling_and_removing_accounts_prune_all_launch_scopes_atomically() {
         agent: Agent::Claude,
         directory: "/home/operator/.claude-other".into(),
         xdg_roots: None,
+        source_selector: None,
     };
     let mut config = AppConfig::default();
     config.accounts.insert("work".into(), work);
@@ -2502,6 +2504,298 @@ fn removed_account_stays_excluded_from_scan_after_reload() {
     );
 }
 
+#[cfg(unix)]
+#[test]
+fn removed_amp_xdg_account_stays_excluded_after_symlinked_shell_scan() {
+    use std::os::unix::fs::symlink;
+
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    minimal_config_file(&paths);
+    let root = temp.path().join("xdg");
+    let alias = temp.path().join("xdg-alias");
+    let data = root.join("data");
+    let config = root.join("config");
+    let cache = root.join("cache");
+    std::fs::create_dir_all(data.join("amp")).unwrap();
+    std::fs::create_dir_all(&config).unwrap();
+    std::fs::create_dir_all(&cache).unwrap();
+    std::fs::write(
+        data.join("amp/secrets.json"),
+        r#"{"apiKey@https://ampcode.com/":"fixture-key"}"#,
+    )
+    .unwrap();
+    symlink(&root, &alias).unwrap();
+
+    let account = crate::AccountConfig {
+        enabled: true,
+        name: "Amp removed".into(),
+        provider: crate::AiProvider::Amp,
+        credential: crate::AccountCredential::Profile {
+            agent: Agent::Amp,
+            directory: data.join("amp"),
+            xdg_roots: Some(crate::XdgRoots {
+                data: data.clone(),
+                config: config.clone(),
+                cache: cache.clone(),
+            }),
+            source_selector: None,
+        },
+    };
+    let mut editor = ConfigEditor::open(&paths).unwrap();
+    editor.upsert_account("custom-amp", &account).unwrap();
+    editor.save().unwrap();
+
+    let mut editor = ConfigEditor::open(&paths).unwrap();
+    editor.remove_account("custom-amp").unwrap();
+    editor.save().unwrap();
+
+    let plan = crate::import_plan(&crate::parse_zshrc_source(&format!(
+        "XDG_DATA_HOME={}/./data\nXDG_CONFIG_HOME={}/config/..//config\nXDG_CACHE_HOME={}/cache\n",
+        alias.display(),
+        alias.display(),
+        alias.display()
+    )));
+    let mut editor = ConfigEditor::open(&paths).unwrap();
+    let report = editor.apply_zshrc_plan(&plan).unwrap();
+    assert!(report.added_accounts.is_empty(), "{report:?}");
+    assert!(report.unapplied_zshrc_xdg_roots.is_empty(), "{report:?}");
+    assert!(!editor.save().unwrap().accounts.contains_key("custom-amp"));
+}
+
+#[cfg(unix)]
+#[test]
+fn removed_opencode_account_stays_excluded_after_symlinked_home_scan() {
+    use std::os::unix::fs::symlink;
+
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    minimal_config_file(&paths);
+    let real_home = paths.home_dir.clone();
+    let alias_home = temp.path().join("home-alias");
+    let directory = real_home.join(".local/share/opencode");
+    std::fs::create_dir_all(&directory).unwrap();
+    std::fs::write(
+        directory.join("auth.json"),
+        r#"{"opencode-go":{"type":"api","key":"fixture-key"}}"#,
+    )
+    .unwrap();
+    symlink(&real_home, &alias_home).unwrap();
+
+    let account = crate::AccountConfig {
+        enabled: true,
+        name: "OpenCode removed".into(),
+        provider: crate::AiProvider::Opencode,
+        credential: crate::AccountCredential::Profile {
+            agent: Agent::Opencode,
+            directory: real_home.join(".local/share/./opencode"),
+            xdg_roots: None,
+            source_selector: None,
+        },
+    };
+    let mut editor = ConfigEditor::open(&paths).unwrap();
+    editor.upsert_account("removed-opencode", &account).unwrap();
+    editor.save().unwrap();
+
+    let mut editor = ConfigEditor::open(&paths).unwrap();
+    editor.remove_account("removed-opencode").unwrap();
+    editor.save().unwrap();
+
+    let mut editor = ConfigEditor::open(&paths).unwrap();
+    let report = editor
+        .scan_for_accounts_with(&alias_home.join("."), &BTreeMap::new())
+        .unwrap();
+    assert!(
+        !report
+            .added_accounts
+            .contains(&"default-opencode-opencode".to_owned()),
+        "{report:?}"
+    );
+    assert!(
+        !editor
+            .save()
+            .unwrap()
+            .accounts
+            .contains_key("default-opencode-opencode")
+    );
+}
+
+#[test]
+fn removed_amp_xdg_profile_stays_excluded_from_shell_scan() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    minimal_config_file(&paths);
+    let data = temp.path().join("xdg-data");
+    let config = temp.path().join("xdg-config");
+    let cache = temp.path().join("xdg-cache");
+    std::fs::create_dir_all(data.join("amp")).unwrap();
+    std::fs::create_dir_all(&config).unwrap();
+    std::fs::create_dir_all(&cache).unwrap();
+    std::fs::write(
+        data.join("amp/secrets.json"),
+        r#"{"apiKey@https://ampcode.com/":"fixture-key"}"#,
+    )
+    .unwrap();
+    let plan = crate::import_plan(&crate::parse_zshrc_source(&format!(
+        "XDG_DATA_HOME={}\nXDG_CONFIG_HOME={}\nXDG_CACHE_HOME={}\n",
+        data.display(),
+        config.display(),
+        cache.display()
+    )));
+
+    let mut editor = ConfigEditor::open(&paths).unwrap();
+    assert!(
+        editor
+            .apply_zshrc_plan(&plan)
+            .unwrap()
+            .added_accounts
+            .contains(&"custom-amp".to_owned())
+    );
+    editor.save().unwrap();
+
+    let mut editor = ConfigEditor::open(&paths).unwrap();
+    editor.remove_account("custom-amp").unwrap();
+    let removed = editor.save().unwrap();
+    assert_eq!(removed.account_scan_exclusions.len(), 1);
+
+    let mut editor = ConfigEditor::open(&paths).unwrap();
+    let report = editor.apply_zshrc_plan(&plan).unwrap();
+    assert!(report.added_accounts.is_empty(), "{report:?}");
+    let reloaded = editor.save().unwrap();
+    assert!(!reloaded.accounts.contains_key("custom-amp"));
+}
+
+#[test]
+fn removed_api_key_endpoint_account_stays_excluded_from_environment_scan() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    minimal_config_file(&paths);
+    let account = crate::AccountConfig {
+        enabled: true,
+        name: "OpenAI endpoint".into(),
+        provider: crate::AiProvider::OpenAi,
+        credential: crate::AccountCredential::ApiKey {
+            value: EnvValue::from("$OPENAI_API_KEY"),
+            base_url: Some("https://proxy.example/v1".into()),
+            model: Some("gpt-endpoint".into()),
+        },
+    };
+    let mut editor = ConfigEditor::open(&paths).unwrap();
+    editor.upsert_account("openai-api-key", &account).unwrap();
+    editor.save().unwrap();
+
+    let mut editor = ConfigEditor::open(&paths).unwrap();
+    editor.remove_account("openai-api-key").unwrap();
+    editor.save().unwrap();
+
+    let mut editor = ConfigEditor::open(&paths).unwrap();
+    let report = editor
+        .scan_for_accounts_with(
+            &paths.home_dir,
+            &BTreeMap::from([
+                ("OPENAI_API_KEY".to_owned(), "fixture".to_owned()),
+                (
+                    "OPENAI_BASE_URL".to_owned(),
+                    "https://proxy.example/v1".to_owned(),
+                ),
+            ]),
+        )
+        .unwrap();
+    assert!(
+        !report.added_accounts.contains(&"openai-api-key".to_owned()),
+        "{report:?}"
+    );
+    let reloaded = editor.save().unwrap();
+    assert!(!reloaded.accounts.contains_key("openai-api-key"));
+}
+
+#[test]
+fn environment_accounts_with_distinct_endpoints_keep_distinct_sources() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    minimal_config_file(&paths);
+    let existing = crate::AccountConfig {
+        enabled: true,
+        name: "OpenAI proxy A".into(),
+        provider: crate::AiProvider::OpenAi,
+        credential: crate::AccountCredential::ApiKey {
+            value: EnvValue::from("$OPENAI_API_KEY"),
+            base_url: Some("https://proxy-a.example/v1".into()),
+            model: Some("model-a".into()),
+        },
+    };
+    let mut editor = ConfigEditor::open(&paths).unwrap();
+    editor.upsert_account("openai-proxy-a", &existing).unwrap();
+    editor.save().unwrap();
+
+    let mut editor = ConfigEditor::open(&paths).unwrap();
+    let report = editor
+        .scan_for_accounts_with(
+            &paths.home_dir,
+            &BTreeMap::from([
+                ("OPENAI_API_KEY".to_owned(), "fixture-key".to_owned()),
+                (
+                    "OPENAI_BASE_URL".to_owned(),
+                    "https://proxy-b.example/v1".to_owned(),
+                ),
+            ]),
+        )
+        .unwrap();
+    assert!(report.added_accounts.contains(&"openai-api-key".to_owned()));
+}
+
+#[test]
+fn removed_environment_account_with_endpoint_stays_excluded() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    minimal_config_file(&paths);
+    let environment = BTreeMap::from([
+        ("OPENAI_API_KEY".to_owned(), "fixture-key".to_owned()),
+        (
+            "OPENAI_BASE_URL".to_owned(),
+            "https://proxy.example/v1".to_owned(),
+        ),
+    ]);
+
+    let mut editor = ConfigEditor::open(&paths).unwrap();
+    let first = editor
+        .scan_for_accounts_with(&paths.home_dir, &environment)
+        .unwrap();
+    assert!(first.added_accounts.contains(&"openai-api-key".to_owned()));
+    let (_, account) = first
+        .added
+        .iter()
+        .find(|(id, _)| id == "openai-api-key")
+        .unwrap();
+    assert!(matches!(
+        &account.credential,
+        crate::AccountCredential::ApiKey {
+            base_url: Some(url),
+            ..
+        } if url == "https://proxy.example/v1"
+    ));
+    editor.save().unwrap();
+
+    let mut editor = ConfigEditor::open(&paths).unwrap();
+    editor.remove_account("openai-api-key").unwrap();
+    let removed = editor.save().unwrap();
+    assert_eq!(removed.account_scan_exclusions.len(), 1);
+
+    let mut editor = ConfigEditor::open(&paths).unwrap();
+    let second = editor
+        .scan_for_accounts_with(&paths.home_dir, &environment)
+        .unwrap();
+    assert!(second.added_accounts.is_empty(), "{second:?}");
+    assert!(!second.changed);
+    assert!(
+        !editor
+            .save()
+            .unwrap()
+            .accounts
+            .contains_key("openai-api-key")
+    );
+}
+
 #[test]
 fn scan_for_accounts_reads_live_home_and_environment() {
     let temp = tempdir().unwrap();
@@ -2529,6 +2823,7 @@ fn scan_for_accounts_never_overwrites_operator_id_registrations() {
         agent: Agent::Claude,
         directory: temp.path().join("elsewhere"),
         xdg_roots: None,
+        source_selector: None,
     };
     editor.upsert_account("default-claude", &operator).unwrap();
     let report = editor
@@ -2554,6 +2849,7 @@ fn scan_for_accounts_skips_sources_registered_under_other_ids() {
         agent: Agent::Claude,
         directory: paths.home_dir.join(".claude"),
         xdg_roots: None,
+        source_selector: None,
     };
     editor.upsert_account("mine", &renamed).unwrap();
     let report = editor
@@ -2606,6 +2902,7 @@ fn profile_scan_candidate_skips_agents_without_native_billing() {
             agent,
             provider: crate::AiProvider::for_agent(agent),
             directory: "/tmp/store".into(),
+            source_selector: None,
             evidence: crate::CredentialEvidence::File("/tmp/store/auth.json".into()),
         };
         assert!(profile_scan_candidate(&discovered).is_none());
@@ -2614,6 +2911,7 @@ fn profile_scan_candidate_skips_agents_without_native_billing() {
         agent: Agent::Claude,
         provider: Some(crate::AiProvider::Anthropic),
         directory: "/tmp/claude".into(),
+        source_selector: None,
         evidence: crate::CredentialEvidence::File("/tmp/claude/.credentials.json".into()),
     };
     let (id, account) = profile_scan_candidate(&discovered).unwrap();
@@ -2627,6 +2925,7 @@ fn profile_scan_candidate_preserves_opencode_store_provider_identity() {
         agent: Agent::Opencode,
         provider: Some(crate::AiProvider::Zai),
         directory: "/tmp/opencode".into(),
+        source_selector: None,
         evidence: crate::CredentialEvidence::File("/tmp/opencode/auth.json".into()),
     };
     let (id, account) = profile_scan_candidate(&discovered).unwrap();
@@ -2775,6 +3074,7 @@ fn apply_zshrc_plan_persists_canonical_model_and_reports_unsupported_wrapper() {
     let report = editor.apply_zshrc_plan(&plan).unwrap();
 
     assert!(report.unapplied_zshrc_models.is_empty(), "{report:?}");
+    assert!(report.changed);
     assert_eq!(report.unapplied_zshrc_wrappers.len(), 1);
     assert_eq!(report.unapplied_zshrc_wrappers[0].var, "KIMI_API_KEY");
     let config = editor.save().unwrap();
@@ -2786,6 +3086,46 @@ fn apply_zshrc_plan_persists_canonical_model_and_reports_unsupported_wrapper() {
             base_url: Some("https://api.kimi.example/v1".into()),
             model: Some("kimi-k2".into()),
         }
+    );
+}
+
+#[test]
+fn removed_op_ref_account_keeps_model_endpoint_tombstone_identity() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    minimal_config_file(&paths);
+    let plan = crate::import_plan(&crate::parse_zshrc_source(
+        "MOONSHOT_MODEL=kimi-k2\nMOONSHOT_BASE_URL=https://proxy.example/v1\nKIMI_API_KEY=$(op read op://vault/item/field)\n",
+    ));
+
+    let mut editor = ConfigEditor::open(&paths).unwrap();
+    let first = editor.apply_zshrc_plan(&plan).unwrap();
+    assert!(
+        first
+            .added_accounts
+            .contains(&"moonshot-api-key".to_owned())
+    );
+    editor.save().unwrap();
+
+    let mut editor = ConfigEditor::open(&paths).unwrap();
+    editor.remove_account("moonshot-api-key").unwrap();
+    editor.save().unwrap();
+
+    let mut editor = ConfigEditor::open(&paths).unwrap();
+    let second = editor.apply_zshrc_plan(&plan).unwrap();
+    assert!(second.added_accounts.is_empty(), "{second:?}");
+    assert!(
+        second
+            .unapplied_zshrc_models
+            .iter()
+            .any(|model| model.name == "moonshot")
+    );
+    assert!(
+        !editor
+            .save()
+            .unwrap()
+            .accounts
+            .contains_key("moonshot-api-key")
     );
 }
 
@@ -2891,10 +3231,51 @@ fn apply_zshrc_plan_persists_amp_xdg_roots_with_discovered_credentials() {
             agent: Agent::Amp,
             directory,
             xdg_roots: Some(_),
+            source_selector: None,
         } if directory == &data.join("amp")
     ));
     let config = editor.save().unwrap();
     assert!(config.accounts.contains_key("custom-amp"));
+}
+
+#[test]
+fn removed_amp_xdg_account_stays_excluded_from_zshrc_scan() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    minimal_config_file(&paths);
+    let data = temp.path().join("xdg-data");
+    let config = temp.path().join("xdg-config");
+    let cache = temp.path().join("xdg-cache");
+    std::fs::create_dir_all(data.join("amp")).unwrap();
+    std::fs::create_dir_all(&config).unwrap();
+    std::fs::create_dir_all(&cache).unwrap();
+    std::fs::write(
+        data.join("amp/secrets.json"),
+        r#"{"apiKey@https://ampcode.com/":"fixture-key"}"#,
+    )
+    .unwrap();
+    let source = format!(
+        "XDG_DATA_HOME={}\nXDG_CONFIG_HOME={}\nXDG_CACHE_HOME={}\n",
+        data.display(),
+        config.display(),
+        cache.display()
+    );
+    let plan = crate::import_plan(&crate::parse_zshrc_source(&source));
+
+    let mut editor = ConfigEditor::open(&paths).unwrap();
+    let first = editor.apply_zshrc_plan(&plan).unwrap();
+    assert!(first.added_accounts.contains(&"custom-amp".to_owned()));
+    editor.save().unwrap();
+
+    let mut editor = ConfigEditor::open(&paths).unwrap();
+    editor.remove_account("custom-amp").unwrap();
+    editor.save().unwrap();
+
+    let mut editor = ConfigEditor::open(&paths).unwrap();
+    let second = editor.apply_zshrc_plan(&plan).unwrap();
+    assert!(second.added_accounts.is_empty(), "{second:?}");
+    assert!(second.unapplied_zshrc_xdg_roots.is_empty(), "{second:?}");
+    assert!(!editor.save().unwrap().accounts.contains_key("custom-amp"));
 }
 
 #[test]

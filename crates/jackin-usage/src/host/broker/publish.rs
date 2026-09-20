@@ -27,11 +27,12 @@ use jackin_protocol::control::{
     FocusedUsageView, QuotaBucketView, StatusSlot, UsageSeverity, UsageSnapshotStatus,
 };
 use jackin_protocol::usage_broker::{
-    UsageAccountCapability, UsageAccountV1, UsageCoordinationErrorKind, UsageFreshnessPhaseV1,
-    UsageFreshnessV1, UsageGenerationView, UsageIdentityKindV1, UsageIssueRecoverabilityV1,
-    UsageIssueScopeV1, UsageIssueV1, UsageLifecycleV1, UsageLimitWindowV1, UsageMembershipStateV1,
-    UsagePercent, UsageProjectionRefreshStateV1, UsageProjectionV1, UsageProviderV1,
-    UsageQuotaStateV1, UsageRefreshPhase, UsageWindowCategoryV1,
+    UsageAccountCapability, UsageAccountV1, UsageCatalogEntry, UsageCoordinationError,
+    UsageCoordinationErrorKind, UsageFreshnessPhaseV1, UsageFreshnessV1, UsageGenerationView,
+    UsageIdentityKindV1, UsageIssueRecoverabilityV1, UsageIssueScopeV1, UsageIssueV1,
+    UsageLifecycleV1, UsageLimitWindowV1, UsageMembershipStateV1, UsagePercent,
+    UsageProjectionRefreshStateV1, UsageProjectionV1, UsageProviderV1, UsageQuotaStateV1,
+    UsageRefreshPhase, UsageWindowCategoryV1,
 };
 
 use crate::coordinator::{FileProjectionStateStore, ProjectionStateEnvelope, UsageCoordinator};
@@ -46,6 +47,10 @@ pub(crate) struct ProjectionPublisher {
     store: FileProjectionStateStore,
     known: Arc<Mutex<BTreeSet<UsageAccountCapability>>>,
     published: Arc<Mutex<BTreeMap<UsageAccountCapability, PublishedAccount>>>,
+    catalog: Arc<Mutex<Option<BTreeMap<UsageAccountCapability, String>>>>,
+    /// Serializes catalog replacement with incremental publication and
+    /// observed-capability admission.
+    catalog_lifecycle: Arc<Mutex<()>>,
     identity_metadata: BTreeMap<UsageAccountCapability, AccountIdentityMetadata>,
 }
 
@@ -77,8 +82,41 @@ impl ProjectionPublisher {
             store,
             known: Arc::new(Mutex::new(BTreeSet::new())),
             published: Arc::new(Mutex::new(BTreeMap::new())),
+            catalog: Arc::new(Mutex::new(None)),
+            catalog_lifecycle: Arc::new(Mutex::new(())),
             identity_metadata: BTreeMap::new(),
         }
+    }
+
+    /// Attach the last durable catalog. Existing materialized projection rows
+    /// are observed; newly admitted catalog members are not, so discovery
+    /// cannot expand the manifest/tab surface by itself.
+    pub(crate) fn with_catalog(self, entries: impl IntoIterator<Item = UsageCatalogEntry>) -> Self {
+        let catalog = entries
+            .into_iter()
+            .map(|entry| (entry.capability, entry.revision))
+            .collect::<BTreeMap<_, _>>();
+        if let (Ok(projection), Ok(mut known)) = (self.projection.lock(), self.known.lock()) {
+            known.extend(
+                projection
+                    .providers
+                    .iter()
+                    .flat_map(|provider| {
+                        provider
+                            .accounts
+                            .iter()
+                            .map(|account| UsageAccountCapability {
+                                account_id: account.canonical_account_id.clone(),
+                                surface_id: provider.provider_id.clone(),
+                            })
+                    })
+                    .filter(|capability| catalog.contains_key(capability)),
+            );
+        }
+        if let Ok(mut current) = self.catalog.lock() {
+            *current = Some(catalog);
+        }
+        self
     }
 
     /// Attach the immutable host-discovery identity evidence used by the
@@ -95,17 +133,105 @@ impl ProjectionPublisher {
     /// Record one capability served by the broker. Only observed capabilities
     /// are ever merged into a publication.
     pub(crate) fn observe(&self, capability: &UsageAccountCapability) {
-        if let Ok(mut known) = self.known.lock() {
+        let Ok(_catalog_lifecycle) = self.catalog_lifecycle.lock() else {
+            return;
+        };
+        let admitted = self.catalog.lock().is_ok_and(|catalog| {
+            catalog
+                .as_ref()
+                .is_none_or(|catalog| catalog.contains_key(capability))
+        });
+        if admitted && let Ok(mut known) = self.known.lock() {
             known.insert(capability.clone());
         }
     }
 
     /// Capabilities observed so far, in settled order.
     pub(crate) fn known_capabilities(&self) -> Vec<UsageAccountCapability> {
-        self.known
+        let Ok(_catalog_lifecycle) = self.catalog_lifecycle.lock() else {
+            return Vec::new();
+        };
+        self.known_capabilities_locked()
+    }
+
+    fn known_capabilities_locked(&self) -> Vec<UsageAccountCapability> {
+        let known = self
+            .known
             .lock()
-            .map(|known| known.iter().cloned().collect())
-            .unwrap_or_default()
+            .map(|known| known.iter().cloned().collect::<Vec<_>>())
+            .unwrap_or_default();
+        let Ok(catalog) = self.catalog.lock() else {
+            return Vec::new();
+        };
+        catalog.as_ref().map_or(known.clone(), |catalog| {
+            known
+                .into_iter()
+                .filter(|capability| catalog.contains_key(capability))
+                .collect()
+        })
+    }
+
+    /// Replace the broker catalog and publish the revocation transaction.
+    pub(crate) fn reconcile_catalog(
+        &self,
+        catalog_revision: String,
+        entries: Vec<UsageCatalogEntry>,
+        now_epoch: i64,
+    ) -> Result<UsageProjectionV1, UsageCoordinationError> {
+        let _catalog_lifecycle = self
+            .catalog_lifecycle
+            .lock()
+            .map_err(|_| publisher_unavailable())?;
+        self.coordinator
+            .reconcile_catalog(entries.iter().cloned(), now_epoch)?;
+        let catalog = entries
+            .iter()
+            .map(|entry| (entry.capability.clone(), entry.revision.clone()))
+            .collect::<BTreeMap<_, _>>();
+        if let Ok(mut current) = self.catalog.lock() {
+            *current = Some(catalog.clone());
+        } else {
+            return Err(publisher_unavailable());
+        }
+        if let Ok(mut known) = self.known.lock() {
+            known.retain(|capability| catalog.contains_key(capability));
+        } else {
+            return Err(publisher_unavailable());
+        }
+        if let Ok(mut published) = self.published.lock() {
+            published.retain(|capability, _| catalog.contains_key(capability));
+        } else {
+            return Err(publisher_unavailable());
+        }
+        let Ok(mut projection) = self.projection.lock() else {
+            return Err(publisher_unavailable());
+        };
+        let previous = projection.clone();
+        let mut next = projection.clone();
+        retain_revoked_accounts(&mut next, &previous, &catalog);
+        next.discovery_revision = catalog_revision;
+        next.broker_generation = next.broker_generation.saturating_add(1);
+        next.projection_id = format!("{}:{}", next.broker_instance_id, next.broker_generation);
+        next.generated_at_epoch = now_epoch;
+        next.refresh_state = UsageProjectionRefreshStateV1::Idle;
+        if next.validate().is_err() {
+            return Err(publisher_unavailable());
+        }
+        let envelope = ProjectionStateEnvelope {
+            schema_version: 2,
+            catalog_revision: next.discovery_revision.clone(),
+            catalog: catalog_entries(&catalog),
+            broker_instance_id: next.broker_instance_id.clone(),
+            projection: next.clone(),
+            aliases: Vec::new(),
+            retry_deadline_epoch: None,
+            success_deadline_epoch: None,
+        };
+        self.store
+            .store(&envelope)
+            .map_err(|_| publisher_unavailable())?;
+        *projection = next.clone();
+        Ok(next)
     }
 
     /// Merge every observed account's latest state and publish when anything
@@ -114,7 +240,10 @@ impl ProjectionPublisher {
     /// Each account is read independently: one unreadable account is skipped
     /// without affecting the others.
     pub(crate) fn publish_due(&self, now_epoch: i64) -> bool {
-        let capabilities = self.known_capabilities();
+        let Ok(_catalog_lifecycle) = self.catalog_lifecycle.lock() else {
+            return false;
+        };
+        let capabilities = self.known_capabilities_locked();
         if capabilities.is_empty() {
             return false;
         }
@@ -158,8 +287,14 @@ impl ProjectionPublisher {
         let Ok(mut projection) = self.projection.lock() else {
             return false;
         };
+        let previous = projection.clone();
         let mut next = projection.clone();
         merge_views(&mut next, &views, &self.identity_metadata);
+        if let Ok(catalog) = self.catalog.lock()
+            && let Some(catalog) = catalog.as_ref()
+        {
+            retain_revoked_accounts(&mut next, &previous, catalog);
+        }
         next.broker_generation = next.broker_generation.saturating_add(1);
         next.projection_id = format!("{}:{}", next.broker_instance_id, next.broker_generation);
         next.generated_at_epoch = now_epoch;
@@ -167,8 +302,14 @@ impl ProjectionPublisher {
             return false;
         }
         let envelope = ProjectionStateEnvelope {
-            schema_version: 1,
+            schema_version: 2,
             catalog_revision: next.discovery_revision.clone(),
+            catalog: self
+                .catalog
+                .lock()
+                .ok()
+                .and_then(|catalog| catalog.as_ref().map(catalog_entries))
+                .unwrap_or_default(),
             broker_instance_id: next.broker_instance_id.clone(),
             projection: next.clone(),
             aliases: Vec::new(),
@@ -184,6 +325,103 @@ impl ProjectionPublisher {
         }
         true
     }
+}
+
+fn retain_revoked_accounts(
+    projection: &mut UsageProjectionV1,
+    previous: &UsageProjectionV1,
+    catalog: &BTreeMap<UsageAccountCapability, String>,
+) {
+    for provider in &mut projection.providers {
+        provider.accounts.retain(|account| {
+            let capability = UsageAccountCapability {
+                account_id: account.canonical_account_id.clone(),
+                surface_id: provider.provider_id.clone(),
+            };
+            !(catalog.contains_key(&capability) && is_revoked_tombstone(account))
+        });
+        for account in &mut provider.accounts {
+            if !catalog.contains_key(&UsageAccountCapability {
+                account_id: account.canonical_account_id.clone(),
+                surface_id: provider.provider_id.clone(),
+            }) {
+                mark_revoked(account);
+            }
+        }
+    }
+    projection
+        .providers
+        .retain(|provider| !provider.accounts.is_empty());
+
+    for previous_provider in &previous.providers {
+        for previous_account in &previous_provider.accounts {
+            let capability = UsageAccountCapability {
+                account_id: previous_account.canonical_account_id.clone(),
+                surface_id: previous_provider.provider_id.clone(),
+            };
+            if catalog.contains_key(&capability)
+                || projection.providers.iter().any(|provider| {
+                    provider.provider_id == capability.surface_id
+                        && provider
+                            .accounts
+                            .iter()
+                            .any(|account| account.canonical_account_id == capability.account_id)
+                })
+            {
+                continue;
+            }
+            let mut account = previous_account.clone();
+            mark_revoked(&mut account);
+            if let Some(provider) = projection
+                .providers
+                .iter_mut()
+                .find(|provider| provider.provider_id == capability.surface_id)
+            {
+                provider.accounts.push(account);
+            } else {
+                let mut provider = previous_provider.clone();
+                provider.accounts = vec![account];
+                projection.providers.push(provider);
+            }
+        }
+    }
+
+    projection
+        .providers
+        .sort_by(|left, right| left.provider_id.cmp(&right.provider_id));
+    for (provider_rank, provider) in projection.providers.iter_mut().enumerate() {
+        provider.rank = u32::try_from(provider_rank).unwrap_or(u32::MAX);
+        provider
+            .accounts
+            .sort_by(|left, right| left.canonical_account_id.cmp(&right.canonical_account_id));
+        for (account_rank, account) in provider.accounts.iter_mut().enumerate() {
+            account.rank = u32::try_from(account_rank).unwrap_or(u32::MAX);
+        }
+    }
+}
+
+fn mark_revoked(account: &mut UsageAccountV1) {
+    account.status_label = Some("removed".to_owned());
+    account.lifecycle = UsageLifecycleV1::Unavailable;
+    account.freshness.phase = UsageFreshnessPhaseV1::Failed;
+    account.freshness.is_stale = true;
+}
+
+fn is_revoked_tombstone(account: &UsageAccountV1) -> bool {
+    account.status_label.as_deref() == Some("removed")
+        && account.lifecycle == UsageLifecycleV1::Unavailable
+        && account.freshness.phase == UsageFreshnessPhaseV1::Failed
+        && account.freshness.is_stale
+}
+
+fn catalog_entries(catalog: &BTreeMap<UsageAccountCapability, String>) -> Vec<UsageCatalogEntry> {
+    catalog
+        .iter()
+        .map(|(capability, revision)| UsageCatalogEntry {
+            capability: capability.clone(),
+            revision: revision.clone(),
+        })
+        .collect()
 }
 
 /// Rebuild provider/account rows from per-account generation views.
@@ -533,6 +771,7 @@ fn issue_code(kind: UsageCoordinationErrorKind) -> String {
     match kind {
         UsageCoordinationErrorKind::Unavailable => "unavailable",
         UsageCoordinationErrorKind::Unauthorized => "unauthorized",
+        UsageCoordinationErrorKind::CatalogRevoked => "catalog_revoked",
         UsageCoordinationErrorKind::OwnerLost => "owner_lost",
         UsageCoordinationErrorKind::WaitTimeout => "wait_timeout",
         UsageCoordinationErrorKind::CorruptState => "corrupt_state",
@@ -545,6 +784,13 @@ fn issue_code(kind: UsageCoordinationErrorKind) -> String {
     .to_owned()
 }
 
+fn publisher_unavailable() -> UsageCoordinationError {
+    UsageCoordinationError {
+        kind: UsageCoordinationErrorKind::Unavailable,
+        message: "usage projection publisher is unavailable".to_owned(),
+    }
+}
+
 const fn issue_recoverability(kind: UsageCoordinationErrorKind) -> UsageIssueRecoverabilityV1 {
     match kind {
         UsageCoordinationErrorKind::NeedsSecret | UsageCoordinationErrorKind::Unauthorized => {
@@ -552,7 +798,8 @@ const fn issue_recoverability(kind: UsageCoordinationErrorKind) -> UsageIssueRec
         }
         UsageCoordinationErrorKind::ProtocolMismatch
         | UsageCoordinationErrorKind::CorruptState
-        | UsageCoordinationErrorKind::OwnerLost => UsageIssueRecoverabilityV1::Terminal,
+        | UsageCoordinationErrorKind::OwnerLost
+        | UsageCoordinationErrorKind::CatalogRevoked => UsageIssueRecoverabilityV1::Terminal,
         _ => UsageIssueRecoverabilityV1::Retryable,
     }
 }
@@ -663,6 +910,58 @@ mod tests {
             unresolved: Vec::new(),
             issues: Vec::new(),
         }
+    }
+
+    #[test]
+    fn catalog_reconciliation_publishes_removed_tombstone_atomically() {
+        let temp = tempfile::tempdir().unwrap();
+        let account = capability();
+        let catalog_entry = UsageCatalogEntry {
+            capability: account.clone(),
+            revision: "credential-a".to_owned(),
+        };
+        let coordinator = Arc::new(UsageCoordinator::with_catalog(
+            Arc::new(ImmediateExecutor),
+            Arc::new(MemoryStore::default()),
+            UsageCoordinatorConfig::default(),
+            [catalog_entry.clone()],
+        ));
+        let projection = Arc::new(Mutex::new(empty_projection()));
+        let store = FileProjectionStateStore::under_data_dir(temp.path());
+        let publisher = ProjectionPublisher::new(
+            Arc::clone(&coordinator),
+            Arc::clone(&projection),
+            store.clone(),
+        )
+        .with_catalog([catalog_entry.clone()]);
+
+        let queued = coordinator
+            .request_refresh(&account, 0, true, 1_000)
+            .unwrap();
+        assert_eq!(
+            coordinator
+                .join_generation(&account, queued.generation, Duration::from_secs(1), 1_001)
+                .unwrap()
+                .phase,
+            UsageRefreshPhase::Completed
+        );
+        publisher.observe(&account);
+        assert!(publisher.publish_due(1_001));
+
+        let removed = publisher
+            .reconcile_catalog("catalog-2".to_owned(), Vec::new(), 1_002)
+            .unwrap();
+        let account_row = &removed.providers[0].accounts[0];
+        assert_eq!(account_row.canonical_account_id, account.account_id);
+        assert_eq!(account_row.display_label, "account@example.test");
+        assert_eq!(account_row.status_label.as_deref(), Some("removed"));
+        assert_eq!(account_row.lifecycle, UsageLifecycleV1::Unavailable);
+        assert_eq!(account_row.freshness.phase, UsageFreshnessPhaseV1::Failed);
+        assert_eq!(removed.discovery_revision, "catalog-2");
+
+        let persisted = store.load().unwrap().unwrap();
+        assert!(persisted.catalog.is_empty());
+        assert_eq!(persisted.projection, removed);
     }
 
     fn account_with_retry(id: &str, retry_at_epoch: Option<i64>) -> UsageAccountV1 {
@@ -956,5 +1255,94 @@ mod tests {
         assert!(publisher.publish_due(1_003));
         assert_eq!(projection.lock().unwrap().broker_generation, 1);
         assert!(!publisher.publish_due(1_004));
+    }
+
+    #[test]
+    fn catalog_publication_retains_removed_rows_without_expanding_to_new_members() {
+        let temp = tempfile::tempdir().unwrap();
+        let account_a = capability();
+        let account_b = UsageAccountCapability {
+            account_id: "account-b".to_owned(),
+            surface_id: "claude".to_owned(),
+        };
+        let coordinator = Arc::new(UsageCoordinator::with_catalog(
+            Arc::new(ImmediateExecutor),
+            Arc::new(MemoryStore::default()),
+            UsageCoordinatorConfig::default(),
+            [
+                UsageCatalogEntry {
+                    capability: account_a.clone(),
+                    revision: "revision-a".to_owned(),
+                },
+                UsageCatalogEntry {
+                    capability: account_b.clone(),
+                    revision: "revision-b".to_owned(),
+                },
+            ],
+        ));
+        let projection = Arc::new(Mutex::new(empty_projection()));
+        let publisher = ProjectionPublisher::new(
+            Arc::clone(&coordinator),
+            Arc::clone(&projection),
+            FileProjectionStateStore::under_data_dir(temp.path()),
+        )
+        .with_catalog([
+            UsageCatalogEntry {
+                capability: account_a.clone(),
+                revision: "revision-a".to_owned(),
+            },
+            UsageCatalogEntry {
+                capability: account_b.clone(),
+                revision: "revision-b".to_owned(),
+            },
+        ]);
+
+        let queued = coordinator
+            .request_refresh(&account_a, 0, true, 1_000)
+            .unwrap();
+        coordinator
+            .join_generation(&account_a, queued.generation, Duration::from_secs(2), 1_001)
+            .unwrap();
+        publisher.observe(&account_a);
+        assert!(publisher.publish_due(1_002));
+        assert_eq!(projection.lock().unwrap().providers[0].accounts.len(), 1);
+
+        let current = publisher
+            .reconcile_catalog(
+                "catalog-2".to_owned(),
+                vec![UsageCatalogEntry {
+                    capability: account_b.clone(),
+                    revision: "revision-b".to_owned(),
+                }],
+                1_003,
+            )
+            .unwrap();
+        let removed = current
+            .providers
+            .iter()
+            .flat_map(|provider| provider.accounts.iter())
+            .find(|account| account.canonical_account_id == account_a.account_id)
+            .expect("removed account remains visible as a tombstone");
+        assert_eq!(removed.status_label.as_deref(), Some("removed"));
+        assert_eq!(removed.lifecycle, UsageLifecycleV1::Unavailable);
+        assert!(publisher.known_capabilities().is_empty());
+        let persisted = FileProjectionStateStore::under_data_dir(temp.path())
+            .load()
+            .unwrap()
+            .unwrap();
+        assert_eq!(persisted.catalog.len(), 1);
+        assert_eq!(persisted.catalog[0].capability, account_b);
+
+        let reintroduced = publisher
+            .reconcile_catalog(
+                "catalog-3".to_owned(),
+                vec![UsageCatalogEntry {
+                    capability: account_a,
+                    revision: "revision-a".to_owned(),
+                }],
+                1_004,
+            )
+            .unwrap();
+        assert!(reintroduced.providers.is_empty());
     }
 }

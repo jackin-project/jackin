@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{enumerate_hermes_store, parse_simple_yaml};
+use super::{enumerate_hermes_store, parse_simple_yaml, validate_single_profile_store};
 use crate::accounts::stores::{CredentialKind, StoreCandidate, StoreError, StoreKind};
 
 #[test]
@@ -82,6 +82,25 @@ fn skips_profiles_without_provider_or_secret() {
     )
     .unwrap();
     assert!(enumerate_hermes_store(dir.path()).unwrap().is_empty());
+}
+
+#[test]
+fn whole_store_validator_rejects_multiple_profiles() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        dir.path().join("config.yaml"),
+        "profiles:\n  personal:\n    provider: anthropic\n  work:\n    provider: openai\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.path().join("auth.json"),
+        r#"{"anthropic":{"type":"api","key":"personal-sentinel"},"openai":{"type":"api","key":"work-sentinel"}}"#,
+    )
+    .unwrap();
+    assert_eq!(
+        validate_single_profile_store(dir.path()).unwrap_err(),
+        StoreError::Unsupported("Hermes credential store contains multiple profiles")
+    );
 }
 
 #[test]

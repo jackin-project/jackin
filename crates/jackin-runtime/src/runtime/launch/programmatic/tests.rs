@@ -162,6 +162,7 @@ fn launch_selection_rejects_accounts_outside_workspace_allowlist() {
                 agent: Agent::Codex,
                 directory: "/private/codex".into(),
                 xdg_roots: None,
+                source_selector: None,
             },
         },
     );
@@ -200,6 +201,7 @@ fn codex_profile_account(name: &str) -> jackin_config::AccountConfig {
             agent: Agent::Codex,
             directory: format!("/profiles/{name}").into(),
             xdg_roots: None,
+            source_selector: None,
         },
     }
 }

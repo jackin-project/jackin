@@ -11,7 +11,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use jackin_protocol::control::FocusedUsageView;
 use jackin_protocol::usage_broker::{
-    UsageAccountCapability, UsageCoordinationError, UsageProjectionV1, UsageRefreshPhase,
+    UsageAccountCapability, UsageCatalogEntry, UsageCoordinationError, UsageProjectionV1,
+    UsageRefreshPhase,
 };
 use nix::fcntl::{OFlag, open, openat, renameat};
 use nix::sys::stat::Mode;
@@ -22,7 +23,14 @@ const ACCOUNT_STATE_SCHEMA_VERSION: u32 = 1;
 const MAX_ACCOUNT_STATE_BYTES: u64 = 512 * 1024;
 const MAX_CLOCK_SKEW_SECS: i64 = 300;
 const MAX_DISPLAY_CHARS: usize = 256;
-const PROJECTION_STATE_SCHEMA_VERSION: u32 = 1;
+/// Exact durable projection envelope schema.
+///
+/// Schema v1 is deliberately not migrated: it did not carry the admitted
+/// catalog required to fence removed credentials. Loading v1 quarantines the
+/// file and lets the broker rebuild an empty projection from the current host
+/// catalog. This is the migration contract; no serde default may hide a
+/// missing or unknown catalog.
+const PROJECTION_STATE_SCHEMA_VERSION: u32 = 2;
 static STATE_TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 /// Complete durable state for one canonical account.
@@ -101,6 +109,11 @@ pub trait AccountStateStore: Send + Sync {
     /// Atomically replace one account envelope.
     fn store(&self, envelope: &AccountStateEnvelope, now_epoch: i64)
     -> Result<(), StateStoreError>;
+
+    /// Remove durable state for one revoked capability.
+    fn purge(&self, _capability: &UsageAccountCapability) -> Result<(), StateStoreError> {
+        Ok(())
+    }
 }
 
 /// One atomic publication envelope for projection and broker metadata.
@@ -114,6 +127,8 @@ pub struct ProjectionStateEnvelope {
     pub aliases: Vec<ProjectionAlias>,
     /// Current discovery catalog revision.
     pub catalog_revision: String,
+    /// Exact capability catalog committed with the publication.
+    pub catalog: Vec<UsageCatalogEntry>,
     /// Broker-owned retry deadline.
     pub retry_deadline_epoch: Option<i64>,
     /// Broker-owned success/cadence deadline.
@@ -146,8 +161,10 @@ impl FileProjectionStateStore {
         }
     }
 
-    /// Read one validated envelope. Corrupt bytes are quarantined and treated
-    /// as unavailable rather than being rendered or used for provider work.
+    /// Read one exact v2 envelope. Corrupt, v1, and future bytes are
+    /// quarantined and treated as unavailable rather than being rendered or
+    /// used for provider work. The caller deliberately rebuilds from the
+    /// current host catalog after this fail-closed reset.
     pub fn load(&self) -> Result<Option<ProjectionStateEnvelope>, StateStoreError> {
         let bytes = match fs::read(&self.path) {
             Ok(bytes) => bytes,
@@ -157,21 +174,23 @@ impl FileProjectionStateStore {
         let envelope = match serde_json::from_slice::<ProjectionStateEnvelope>(&bytes) {
             Ok(envelope) if envelope.schema_version == PROJECTION_STATE_SCHEMA_VERSION => envelope,
             Ok(_) | Err(_) => {
-                self.quarantine();
+                self.quarantine()?;
                 return Err(StateStoreError::Corrupt);
             }
         };
-        envelope
-            .projection
-            .validate()
-            .map_err(|_| StateStoreError::Corrupt)?;
+        if envelope.projection.validate().is_err() {
+            self.quarantine()?;
+            return Err(StateStoreError::Corrupt);
+        }
         Ok(Some(envelope))
     }
 
     /// Atomically replace one publication envelope and sync its directory.
     pub fn store(&self, envelope: &ProjectionStateEnvelope) -> Result<(), StateStoreError> {
-        let mut envelope = envelope.clone();
-        envelope.schema_version = PROJECTION_STATE_SCHEMA_VERSION;
+        if envelope.schema_version != PROJECTION_STATE_SCHEMA_VERSION {
+            return Err(StateStoreError::Corrupt);
+        }
+        let envelope = envelope.clone();
         envelope
             .projection
             .validate()
@@ -214,10 +233,10 @@ impl FileProjectionStateStore {
         fsync(&directory).map_err(|_| StateStoreError::Unavailable)
     }
 
-    fn quarantine(&self) {
+    fn quarantine(&self) -> Result<(), StateStoreError> {
         let suffix = chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default();
         let quarantined = self.path.with_extension(format!("corrupt.{suffix}"));
-        let _ignored = fs::rename(&self.path, quarantined);
+        fs::rename(&self.path, quarantined).map_err(|_| StateStoreError::Unavailable)
     }
 }
 
@@ -343,6 +362,17 @@ impl AccountStateStore for FileAccountStateStore {
                 unlinkat(&directory, temporary.as_str(), UnlinkatFlags::NoRemoveDir);
         }
         write_result
+    }
+
+    fn purge(&self, capability: &UsageAccountCapability) -> Result<(), StateStoreError> {
+        validate_capability(capability)?;
+        let directory = self.open_accounts_dir()?;
+        let filename = state_filename(capability);
+        match unlinkat(&directory, filename.as_str(), UnlinkatFlags::NoRemoveDir) {
+            Ok(()) => fsync(&directory).map_err(|_| StateStoreError::Unavailable),
+            Err(nix::errno::Errno::ENOENT) => Ok(()),
+            Err(_) => Err(StateStoreError::Unavailable),
+        }
     }
 }
 

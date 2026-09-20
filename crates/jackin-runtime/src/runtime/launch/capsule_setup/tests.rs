@@ -2,7 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-use jackin_config::{AccountConfig, AccountCredential, AiProvider, AppConfig, AuthForwardMode};
+use jackin_config::{
+    AccountConfig, AccountCredential, AiProvider, AppConfig, AuthForwardMode, ProfileSelector,
+};
 use jackin_core::Agent;
 
 fn api_key_account(provider: AiProvider, model: Option<&str>) -> AccountConfig {
@@ -71,6 +73,7 @@ fn selections_are_keyed_by_config_id() {
                 agent: Agent::Codex,
                 directory: "/accounts/personal".into(),
                 xdg_roots: None,
+                source_selector: None,
             },
         },
     );
@@ -314,6 +317,7 @@ fn instance_bindings_keep_launch_order_and_config_id_keys() {
                 agent: Agent::Codex,
                 directory: "/accounts/personal".into(),
                 xdg_roots: None,
+                source_selector: None,
             },
         },
     );
@@ -350,6 +354,7 @@ fn opencode_profile_binding_carries_source_provider_identity() {
                 agent: Agent::Opencode,
                 directory: "/profiles/opencode".into(),
                 xdg_roots: None,
+                source_selector: None,
             },
         },
     );
@@ -363,6 +368,39 @@ fn opencode_profile_binding_carries_source_provider_identity() {
     assert_eq!(
         bindings[0].sync_source_dir,
         Some("/profiles/opencode".into())
+    );
+}
+
+#[test]
+fn omp_profile_binding_carries_immutable_store_selector() {
+    let mut config = AppConfig::default();
+    config.accounts.insert(
+        "omp-work".into(),
+        AccountConfig {
+            enabled: true,
+            name: "Omp work".into(),
+            provider: AiProvider::OpenAi,
+            credential: AccountCredential::Profile {
+                agent: Agent::Omp,
+                directory: "/profiles/omp".into(),
+                xdg_roots: None,
+                source_selector: Some(ProfileSelector {
+                    entry: "openai".into(),
+                    profile: Some("work".into()),
+                }),
+            },
+        },
+    );
+
+    let bindings =
+        instance_auth_bindings(&config, &[instance("omp-work", Agent::Omp, "omp-work")]).unwrap();
+    assert_eq!(bindings[0].source_provider, Some(AiProvider::OpenAi));
+    assert_eq!(
+        bindings[0].source_selector,
+        Some(ProfileSelector {
+            entry: "openai".into(),
+            profile: Some("work".into()),
+        })
     );
 }
 
@@ -385,6 +423,7 @@ fn instance_bindings_carry_roots_only_for_selected_instances() {
                     agent: Agent::Amp,
                     directory: format!("/{account_id}/amp").into(),
                     xdg_roots: Some(roots.clone()),
+                    source_selector: None,
                 },
             },
         );

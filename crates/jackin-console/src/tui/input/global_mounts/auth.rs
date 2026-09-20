@@ -597,10 +597,26 @@ fn persist_settings_auth_form(
             let Some(agent) = crate::tui::auth_config::auth_kind_agent(form.kind) else {
                 return;
             };
+            let source_selector = auth
+                .editing_account
+                .as_ref()
+                .and_then(|id| auth.pending.get(id))
+                .and_then(|account| match &account.credential {
+                    AccountCredential::Profile {
+                        agent: existing_agent,
+                        directory: existing_directory,
+                        source_selector,
+                        ..
+                    } if *existing_agent == agent && *existing_directory == directory => {
+                        source_selector.clone()
+                    }
+                    _ => None,
+                });
             AccountCredential::Profile {
                 agent,
                 directory,
                 xdg_roots: None,
+                source_selector,
             }
         }
         AuthMode::ApiKey => {

@@ -14,7 +14,7 @@ use std::time::{Duration, Instant};
 
 use jackin_protocol::control::{FocusedUsageView, UsageSnapshotStatus};
 use jackin_protocol::usage_broker::{
-    UsageAccountCapability, UsageCoordinationError, UsageCoordinationErrorKind,
+    UsageAccountCapability, UsageCatalogEntry, UsageCoordinationError, UsageCoordinationErrorKind,
     UsageGenerationView, UsageRefreshPhase,
 };
 
@@ -58,6 +58,15 @@ pub trait UsageProviderExecutor: Send + Sync {
     /// timeouts; the coordinator retains generation ownership until this call
     /// actually returns.
     fn probe(&self, capability: &UsageAccountCapability, generation: u64) -> ProviderProbeOutcome;
+
+    /// Reconcile provider bindings before a new catalog revision can start
+    /// work. A failed reconciliation does not admit the new catalog.
+    fn reconcile_catalog(
+        &self,
+        _entries: &[UsageCatalogEntry],
+    ) -> Result<(), UsageCoordinationError> {
+        Ok(())
+    }
 }
 
 /// Coordinator scheduling policy.
@@ -168,10 +177,17 @@ struct AccountEntry {
     history: VecDeque<UsageGenerationView>,
     recovery_pending: bool,
     cadence: AccountCadence,
+    catalog_revision: Option<String>,
+    revoked: bool,
 }
 
 impl AccountEntry {
-    fn new(envelope: AccountStateEnvelope, recovery_pending: bool, now_epoch: i64) -> Self {
+    fn new(
+        envelope: AccountStateEnvelope,
+        recovery_pending: bool,
+        now_epoch: i64,
+        catalog_revision: Option<String>,
+    ) -> Self {
         let mut history = VecDeque::new();
         if envelope.phase.is_terminal() {
             history.push_back(generation_view(&envelope));
@@ -185,6 +201,8 @@ impl AccountEntry {
                 low_power: false,
                 next_due_epoch: now_epoch,
             },
+            catalog_revision,
+            revoked: false,
         }
     }
 
@@ -200,10 +218,14 @@ impl AccountEntry {
 struct CoordinatorState {
     accounts: BTreeMap<UsageAccountCapability, AccountEntry>,
     blocked: BTreeMap<UsageAccountCapability, UsageCoordinationError>,
+    catalog: Option<BTreeMap<UsageAccountCapability, String>>,
 }
 
 struct Shared {
     state: Mutex<CoordinatorState>,
+    /// Catalog replacement is a transaction boundary. Executor bindings and
+    /// in-memory revision fencing must never observe two rotations interleaved.
+    catalog_lifecycle: Mutex<()>,
     changed: Condvar,
     executor: Arc<dyn UsageProviderExecutor>,
     store: Arc<dyn AccountStateStore>,
@@ -215,6 +237,7 @@ struct ProbeJob {
     capability: UsageAccountCapability,
     generation: u64,
     started_at_epoch: i64,
+    catalog_revision: Option<String>,
 }
 
 enum WorkerMessage {
@@ -247,13 +270,43 @@ impl UsageCoordinator {
         store: Arc<dyn AccountStateStore>,
         config: UsageCoordinatorConfig,
     ) -> Self {
+        Self::start(executor, store, config, None)
+    }
+
+    /// Start a coordinator with the catalog from the last durable broker
+    /// publication. The broker reconciles it with current discovery before
+    /// admitting new work.
+    #[must_use]
+    pub fn with_catalog(
+        executor: Arc<dyn UsageProviderExecutor>,
+        store: Arc<dyn AccountStateStore>,
+        config: UsageCoordinatorConfig,
+        catalog: impl IntoIterator<Item = UsageCatalogEntry>,
+    ) -> Self {
+        let catalog = catalog
+            .into_iter()
+            .map(|entry| (entry.capability, entry.revision))
+            .collect();
+        Self::start(executor, store, config, Some(catalog))
+    }
+
+    fn start(
+        executor: Arc<dyn UsageProviderExecutor>,
+        store: Arc<dyn AccountStateStore>,
+        config: UsageCoordinatorConfig,
+        catalog: Option<BTreeMap<UsageAccountCapability, String>>,
+    ) -> Self {
         let config = UsageCoordinatorConfig {
             max_concurrency: config.max_concurrency.max(1),
             queue_capacity: config.queue_capacity.max(1),
             ..config
         };
         let shared = Arc::new(Shared {
-            state: Mutex::new(CoordinatorState::default()),
+            state: Mutex::new(CoordinatorState {
+                catalog,
+                ..CoordinatorState::default()
+            }),
+            catalog_lifecycle: Mutex::new(()),
             changed: Condvar::new(),
             executor,
             store,
@@ -280,6 +333,90 @@ impl UsageCoordinator {
         }
     }
 
+    /// Reconcile the live broker catalog with the last durable catalog.
+    /// Removed capabilities are fenced in memory and purged from durable
+    /// account state. Revision changes fence old work and discard its
+    /// materialized result before the capability can refresh again.
+    pub fn reconcile_catalog(
+        &self,
+        entries: impl IntoIterator<Item = UsageCatalogEntry>,
+        now_epoch: i64,
+    ) -> Result<(), UsageCoordinationError> {
+        let entries = entries.into_iter().collect::<Vec<_>>();
+        let _catalog_lifecycle = self
+            .shared
+            .catalog_lifecycle
+            .lock()
+            .map_err(|_| unavailable_error())?;
+        self.shared.executor.reconcile_catalog(&entries)?;
+        let next = entries
+            .into_iter()
+            .map(|entry| (entry.capability, entry.revision))
+            .collect::<BTreeMap<_, _>>();
+        let mut state = self.shared.state.lock().map_err(|_| unavailable_error())?;
+        let previous = state.catalog.clone().unwrap_or_else(|| {
+            state
+                .accounts
+                .iter()
+                .map(|(capability, entry)| {
+                    (
+                        capability.clone(),
+                        entry.catalog_revision.clone().unwrap_or_default(),
+                    )
+                })
+                .collect()
+        });
+        let mut purge = BTreeSet::new();
+        for (capability, revision) in &previous {
+            if next
+                .get(capability)
+                .is_none_or(|current| current != revision)
+            {
+                purge.insert(capability.clone());
+            }
+        }
+        for (capability, entry) in &state.accounts {
+            if next
+                .get(capability)
+                .is_none_or(|revision| entry.catalog_revision.as_ref() != Some(revision))
+            {
+                purge.insert(capability.clone());
+            }
+        }
+        for capability in state.blocked.keys() {
+            if !next.contains_key(capability) {
+                purge.insert(capability.clone());
+            }
+        }
+        for capability in &purge {
+            self.shared.store.purge(capability).map_err(state_error)?;
+            state.blocked.remove(capability);
+        }
+
+        let account_capabilities = state.accounts.keys().cloned().collect::<Vec<_>>();
+        for capability in account_capabilities {
+            let Some(entry) = state.accounts.get_mut(&capability) else {
+                continue;
+            };
+            match next.get(&capability) {
+                None => {
+                    revoke_entry(entry, now_epoch);
+                    state.blocked.remove(&capability);
+                }
+                Some(revision)
+                    if entry.revoked || entry.catalog_revision.as_ref() != Some(revision) =>
+                {
+                    reset_entry(entry, now_epoch, revision.clone());
+                    state.blocked.remove(&capability);
+                }
+                Some(_) => {}
+            }
+        }
+        state.catalog = Some(next);
+        self.shared.changed.notify_all();
+        Ok(())
+    }
+
     /// Read current state without dispatching provider work.
     pub fn current(
         &self,
@@ -291,11 +428,15 @@ impl UsageCoordinator {
         if let Some(error) = state.blocked.get(capability) {
             return Err(error.clone());
         }
-        state
+        let entry = state
             .accounts
             .get(capability)
-            .map(|entry| generation_view(&entry.envelope))
-            .ok_or_else(unavailable_error)
+            .ok_or_else(unavailable_error)?;
+        // Read-only access retains the materialized last-good view after
+        // revocation. New work and new loads are fenced below; an existing
+        // session may keep displaying its immutable materialized result until
+        // it explicitly stops or recreates.
+        Ok(generation_view(&entry.envelope))
     }
 
     /// Start or join one generation. A stale observed generation always adopts
@@ -316,6 +457,9 @@ impl UsageCoordinator {
             .accounts
             .get_mut(capability)
             .ok_or_else(unavailable_error)?;
+        if entry.revoked {
+            return Err(catalog_revoked_error());
+        }
         if entry.envelope.phase.is_active()
             || (!entry.recovery_pending && observed_generation < entry.envelope.generation)
         {
@@ -357,29 +501,27 @@ impl UsageCoordinator {
             return Err(error);
         }
         let queued = generation_view(&entry.envelope);
+        let catalog_revision = entry.catalog_revision.clone();
         drop(state);
 
         let job = ProbeJob {
             capability: capability.clone(),
             generation,
             started_at_epoch: now_epoch,
+            catalog_revision,
         };
         match self.jobs.try_send(WorkerMessage::Probe(job)) {
             Ok(()) => Ok(queued),
-            Err(
-                TrySendError::Full(WorkerMessage::Probe(job))
-                | TrySendError::Disconnected(WorkerMessage::Probe(job)),
-            ) => self.fail_without_probe(
-                &job.capability,
-                job.generation,
-                UsageCoordinationErrorKind::Unavailable,
-                "usage coordinator queue is unavailable",
-                now_epoch,
-            ),
-            Err(
-                TrySendError::Full(WorkerMessage::Shutdown)
-                | TrySendError::Disconnected(WorkerMessage::Shutdown),
-            ) => Err(unavailable_error()),
+            Err(TrySendError::Full(message) | TrySendError::Disconnected(message)) => match message
+            {
+                WorkerMessage::Probe(job) => self.fail_without_probe(
+                    &job,
+                    UsageCoordinationErrorKind::Unavailable,
+                    "usage coordinator queue is unavailable",
+                    now_epoch,
+                ),
+                WorkerMessage::Shutdown => Err(unavailable_error()),
+            },
         }
     }
 
@@ -418,6 +560,9 @@ impl UsageCoordinator {
             .accounts
             .get_mut(capability)
             .ok_or_else(unavailable_error)?;
+        if entry.revoked {
+            return Err(catalog_revoked_error());
+        }
         entry.cadence.activity = activity;
         entry.cadence.low_power = low_power;
         let deadline = cadence_deadline(
@@ -459,7 +604,8 @@ impl UsageCoordinator {
                     .accounts
                     .iter()
                     .filter(|(capability, entry)| {
-                        !state.blocked.contains_key(*capability)
+                        !entry.revoked
+                            && !state.blocked.contains_key(*capability)
                             && now_epoch >= entry.cadence.next_due_epoch
                     })
                     .map(|(capability, entry)| (capability.clone(), entry.envelope.generation))
@@ -574,6 +720,9 @@ impl UsageCoordinator {
                 .accounts
                 .get(capability)
                 .ok_or_else(unavailable_error)?;
+            if entry.revoked {
+                return Err(catalog_revoked_error());
+            }
             if let Some(terminal) = entry
                 .history
                 .iter()
@@ -618,12 +767,30 @@ impl UsageCoordinator {
             if let Some(error) = state.blocked.get(capability) {
                 return Err(error.clone());
             }
+            if state
+                .catalog
+                .as_ref()
+                .is_some_and(|catalog| !catalog.contains_key(capability))
+            {
+                return Err(catalog_revoked_error());
+            }
         }
         let loaded = self.shared.store.load(capability, now_epoch);
         let mut state = self.shared.state.lock().map_err(|_| unavailable_error())?;
         if state.accounts.contains_key(capability) {
             return Ok(());
         }
+        if state
+            .catalog
+            .as_ref()
+            .is_some_and(|catalog| !catalog.contains_key(capability))
+        {
+            return Err(catalog_revoked_error());
+        }
+        let catalog_revision = state
+            .catalog
+            .as_ref()
+            .and_then(|catalog| catalog.get(capability).cloned());
         match loaded {
             Ok(envelope) => {
                 let mut envelope =
@@ -648,7 +815,7 @@ impl UsageCoordinator {
                 }
                 state.accounts.insert(
                     capability.clone(),
-                    AccountEntry::new(envelope, recovery_pending, now_epoch),
+                    AccountEntry::new(envelope, recovery_pending, now_epoch, catalog_revision),
                 );
                 Ok(())
             }
@@ -662,22 +829,13 @@ impl UsageCoordinator {
 
     fn fail_without_probe(
         &self,
-        capability: &UsageAccountCapability,
-        generation: u64,
+        job: &ProbeJob,
         kind: UsageCoordinationErrorKind,
         message: &str,
         now_epoch: i64,
     ) -> Result<UsageGenerationView, UsageCoordinationError> {
-        finish_failure(
-            &self.shared,
-            capability,
-            generation,
-            kind,
-            message,
-            None,
-            now_epoch,
-        );
-        self.current(capability, now_epoch)
+        finish_failure(&self.shared, job, kind, message, None, now_epoch);
+        self.current(&job.capability, now_epoch)
     }
 }
 
@@ -721,8 +879,7 @@ fn execute_probe(shared: &Arc<Shared>, job: ProbeJob) {
     if started.elapsed() > shared.config.provider_timeout {
         finish_failure(
             shared,
-            &job.capability,
-            job.generation,
+            &job,
             UsageCoordinationErrorKind::ProviderTimeout,
             "usage provider probe timed out",
             None,
@@ -736,8 +893,7 @@ fn execute_probe(shared: &Arc<Shared>, job: ProbeJob) {
         }
         Ok(ProviderProbeOutcome::Success(_)) => finish_failure(
             shared,
-            &job.capability,
-            job.generation,
+            &job,
             UsageCoordinationErrorKind::ProviderUnavailable,
             "usage provider returned no quota data",
             None,
@@ -749,8 +905,7 @@ fn execute_probe(shared: &Arc<Shared>, job: ProbeJob) {
             retry_at_epoch,
         }) => finish_failure(
             shared,
-            &job.capability,
-            job.generation,
+            &job,
             kind,
             &message,
             retry_at_epoch,
@@ -758,8 +913,7 @@ fn execute_probe(shared: &Arc<Shared>, job: ProbeJob) {
         ),
         Err(_) => finish_failure(
             shared,
-            &job.capability,
-            job.generation,
+            &job,
             UsageCoordinationErrorKind::OwnerLost,
             "usage provider worker failed",
             None,
@@ -775,7 +929,9 @@ fn mark_updating(shared: &Arc<Shared>, job: &ProbeJob) -> bool {
     let Some(entry) = state.accounts.get_mut(&job.capability) else {
         return false;
     };
-    if entry.envelope.generation != job.generation
+    if entry.revoked
+        || entry.catalog_revision != job.catalog_revision
+        || entry.envelope.generation != job.generation
         || entry.envelope.phase != UsageRefreshPhase::Queued
     {
         return false;
@@ -808,7 +964,11 @@ fn finish_success(
     let Some(entry) = state.accounts.get_mut(&job.capability) else {
         return;
     };
-    if entry.envelope.generation != job.generation || !entry.envelope.phase.is_active() {
+    if entry.revoked
+        || entry.catalog_revision != job.catalog_revision
+        || entry.envelope.generation != job.generation
+        || !entry.envelope.phase.is_active()
+    {
         return;
     }
     let view = sanitize_usage_view(view);
@@ -828,8 +988,7 @@ fn finish_success(
 
 fn finish_failure(
     shared: &Arc<Shared>,
-    capability: &UsageAccountCapability,
-    generation: u64,
+    job: &ProbeJob,
     kind: UsageCoordinationErrorKind,
     message: &str,
     retry_at_epoch: Option<i64>,
@@ -838,10 +997,14 @@ fn finish_failure(
     let Ok(mut state) = shared.state.lock() else {
         return;
     };
-    let Some(entry) = state.accounts.get_mut(capability) else {
+    let Some(entry) = state.accounts.get_mut(&job.capability) else {
         return;
     };
-    if entry.envelope.generation != generation || !entry.envelope.phase.is_active() {
+    if entry.revoked
+        || entry.catalog_revision != job.catalog_revision
+        || entry.envelope.generation != job.generation
+        || !entry.envelope.phase.is_active()
+    {
         return;
     }
     entry.envelope.phase = UsageRefreshPhase::Failed;
@@ -852,8 +1015,8 @@ fn finish_failure(
     let retry_at_epoch = if policy::is_retryable(kind) {
         policy::retry_deadline(
             shared.config.retry_policy,
-            capability,
-            generation,
+            &job.capability,
+            job.generation,
             consecutive_failures,
             retry_at_epoch,
             finished_at_epoch,
@@ -869,7 +1032,7 @@ fn finish_failure(
     }
     entry.envelope.success_deadline_epoch = None;
     entry.envelope.consecutive_failures = consecutive_failures;
-    persist_terminal(shared, &mut state, capability, finished_at_epoch);
+    persist_terminal(shared, &mut state, &job.capability, finished_at_epoch);
 }
 
 fn persist_terminal(
@@ -889,6 +1052,41 @@ fn persist_terminal(
         entry.record_terminal();
     }
     shared.changed.notify_all();
+}
+
+fn revoke_entry(entry: &mut AccountEntry, now_epoch: i64) {
+    entry.envelope.generation = entry.envelope.generation.saturating_add(1);
+    entry.envelope.phase = UsageRefreshPhase::Failed;
+    entry.envelope.terminal_result = None;
+    entry.envelope.terminal_error = Some(catalog_revoked_error());
+    entry.envelope.started_at_epoch = None;
+    entry.envelope.completed_at_epoch = Some(now_epoch);
+    entry.envelope.rate_limit_deadline_epoch = None;
+    entry.envelope.retry_deadline_epoch = None;
+    entry.envelope.success_deadline_epoch = None;
+    entry.recovery_pending = false;
+    entry.catalog_revision = None;
+    entry.revoked = true;
+    entry.record_terminal();
+}
+
+fn reset_entry(entry: &mut AccountEntry, now_epoch: i64, revision: String) {
+    entry.envelope.generation = entry.envelope.generation.saturating_add(1);
+    entry.envelope.phase = UsageRefreshPhase::Idle;
+    entry.envelope.terminal_result = None;
+    entry.envelope.last_good = None;
+    entry.envelope.terminal_error = None;
+    entry.envelope.started_at_epoch = None;
+    entry.envelope.completed_at_epoch = None;
+    entry.envelope.rate_limit_deadline_epoch = None;
+    entry.envelope.retry_deadline_epoch = None;
+    entry.envelope.success_deadline_epoch = None;
+    entry.envelope.consecutive_failures = 0;
+    entry.history.clear();
+    entry.recovery_pending = false;
+    entry.cadence.next_due_epoch = now_epoch;
+    entry.catalog_revision = Some(revision);
+    entry.revoked = false;
 }
 
 fn data_bearing(view: &FocusedUsageView) -> bool {
@@ -964,6 +1162,13 @@ fn unavailable_error() -> UsageCoordinationError {
     coordination_error(
         UsageCoordinationErrorKind::Unavailable,
         "usage coordinator is unavailable",
+    )
+}
+
+fn catalog_revoked_error() -> UsageCoordinationError {
+    coordination_error(
+        UsageCoordinationErrorKind::CatalogRevoked,
+        "usage account capability was removed from the current broker catalog",
     )
 }
 

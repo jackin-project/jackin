@@ -4,11 +4,12 @@
 //! Entry point: [`InstanceManifest`] — on-disk instance record.
 
 use anyhow::Context;
-use jackin_config::{AuthForwardMode, GithubAuthMode};
+use jackin_config::{AuthForwardMode, GithubAuthMode, ProfileSelector};
 use jackin_core::JackinPaths;
 use jackin_manifest::RoleManifest;
 use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
+use std::ffi::OsString;
+use std::path::{Component, Path, PathBuf};
 
 mod auth;
 pub use auth::validate_sync_source_dir;
@@ -20,7 +21,7 @@ mod process_telemetry;
 pub use manifest::{
     AdmittedInstance, AppleContainerResources, BackendResources, DockerResources, InstanceIndex,
     InstanceIndexEntry, InstanceManifest, InstanceQuery, InstanceStatus, NewInstanceManifest,
-    SessionRecord, SessionStatus,
+    RegistrationState, SessionRecord, SessionStatus,
 };
 pub use naming::{class_family_matches, container_name_with_id, new_container_name, runtime_slug};
 
@@ -496,6 +497,8 @@ pub struct InstanceAuthBinding {
     /// Provider key selected from a multi-provider source store. This is
     /// required to filter `OpenCode` auth.json before it enters role state.
     pub source_provider: Option<jackin_config::AiProvider>,
+    /// Immutable entry/profile identity selected from an Omp or Hermes store.
+    pub source_selector: Option<ProfileSelector>,
     /// Explicit XDG roots from the selected profile, if any. These are
     /// selected-instance data, never ambient process-environment state.
     pub xdg_roots: Option<jackin_config::XdgRoots>,
@@ -520,6 +523,7 @@ impl InstanceAuthBinding {
             mode,
             sync_source_dir,
             source_provider: None,
+            source_selector: None,
             xdg_roots: None,
         }
     }
@@ -615,11 +619,12 @@ fn validate_selected_account_sources(
         if xdg_root_agent(binding.agent)
             && let Some(roots) = &binding.xdg_roots
         {
+            let cache_root = canonical_xdg_cache_root(&roots.cache)?;
             if let Some((previous_root, previous_key)) =
                 configured_cache_roots.iter().find(|(previous_root, _)| {
-                    roots.cache == **previous_root
-                        || roots.cache.starts_with(previous_root)
-                        || previous_root.starts_with(&roots.cache)
+                    cache_root == **previous_root
+                        || cache_root.starts_with(previous_root)
+                        || previous_root.starts_with(&cache_root)
                 })
             {
                 anyhow::bail!(
@@ -629,7 +634,7 @@ fn validate_selected_account_sources(
                     previous_root.display()
                 );
             }
-            configured_cache_roots.insert(roots.cache.clone(), binding.key.clone());
+            configured_cache_roots.insert(cache_root, binding.key.clone());
         }
         let xdg_data_dir = xdg_root_agent(binding.agent)
             .then(|| {
@@ -645,15 +650,60 @@ fn validate_selected_account_sources(
         if binding.mode == AuthForwardMode::Sync
             && let Some(source) = source
         {
-            auth::validate_sync_source_dir_for_provider(
+            auth::validate_sync_source_dir_for_selection(
                 binding.agent,
                 binding.source_provider,
+                binding.source_selector.as_ref(),
                 source,
                 host_home,
             )?;
         }
     }
     Ok(())
+}
+
+/// Compare XDG cache roots by their filesystem identity, not their spelling.
+/// Reject parent traversal before canonicalization so a missing path cannot
+/// smuggle an unresolved `..` through the fallback normalization.
+fn canonical_xdg_cache_root(path: &Path) -> anyhow::Result<PathBuf> {
+    anyhow::ensure!(
+        !path
+            .components()
+            .any(|component| matches!(component, Component::ParentDir)),
+        "XDG cache root contains parent traversal: {}",
+        path.display()
+    );
+    let mut normalized = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::CurDir => {}
+            Component::RootDir => normalized.push(Path::new("/")),
+            Component::Prefix(prefix) => normalized.push(prefix.as_os_str()),
+            Component::Normal(component) => normalized.push(component),
+            Component::ParentDir => unreachable!("parent traversal rejected above"),
+        }
+    }
+    if let Ok(canonical) = std::fs::canonicalize(&normalized) {
+        return Ok(canonical);
+    }
+
+    let mut ancestor = normalized.clone();
+    let mut missing = Vec::<OsString>::new();
+    while !ancestor.exists() {
+        let Some(name) = ancestor.file_name().map(OsString::from) else {
+            return Ok(normalized);
+        };
+        missing.push(name);
+        if !ancestor.pop() {
+            return Ok(normalized);
+        }
+    }
+
+    let mut resolved = std::fs::canonicalize(&ancestor).unwrap_or(ancestor);
+    for name in missing.iter().rev() {
+        resolved.push(name);
+    }
+    Ok(resolved)
 }
 
 #[derive(Debug, Clone)]
@@ -1634,9 +1684,21 @@ impl RoleState {
         std::fs::create_dir_all(&omp_home_dir)?;
         let agent_db_path = omp_dir.join("agent.db");
         let (outcome, agent_db) = if let Some(source_dir) = sync_source_dir {
-            Self::provision_omp_auth_from_source_dir(&agent_db_path, mode, source_dir)?
+            Self::provision_omp_auth_from_source_dir(
+                &agent_db_path,
+                mode,
+                source_dir,
+                binding.source_provider,
+                binding.source_selector.as_ref(),
+            )?
         } else {
-            Self::provision_omp_auth(&agent_db_path, mode, host_home)?
+            Self::provision_omp_auth(
+                &agent_db_path,
+                mode,
+                host_home,
+                binding.source_provider,
+                binding.source_selector.as_ref(),
+            )?
         };
         let credential_paths = agent_db.into_iter().collect::<Vec<_>>();
         let forward_auth = !credential_paths.is_empty();
@@ -1666,9 +1728,21 @@ impl RoleState {
         std::fs::create_dir_all(&hermes_dir)?;
         std::fs::create_dir_all(&hermes_home_dir)?;
         let (outcome, forward_auth) = if let Some(source_dir) = sync_source_dir {
-            Self::provision_hermes_auth_from_source_dir(&hermes_dir, mode, source_dir)?
+            Self::provision_hermes_auth_from_source_dir(
+                &hermes_dir,
+                mode,
+                source_dir,
+                binding.source_provider,
+                binding.source_selector.as_ref(),
+            )?
         } else {
-            Self::provision_hermes_auth(&hermes_dir, mode, host_home)?
+            Self::provision_hermes_auth(
+                &hermes_dir,
+                mode,
+                host_home,
+                binding.source_provider,
+                binding.source_selector.as_ref(),
+            )?
         };
         let slot = ProvisionedInstanceAuth::new(
             binding,

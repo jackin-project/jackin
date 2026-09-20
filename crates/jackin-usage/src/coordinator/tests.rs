@@ -13,6 +13,7 @@ use super::*;
 #[derive(Default)]
 struct MemoryStore {
     states: Mutex<BTreeMap<UsageAccountCapability, AccountStateEnvelope>>,
+    purges: Mutex<Vec<UsageAccountCapability>>,
     load_error: Mutex<Option<StateStoreError>>,
     store_error: Mutex<Option<StateStoreError>>,
 }
@@ -41,6 +42,12 @@ impl AccountStateStore for MemoryStore {
             .lock()
             .unwrap()
             .insert(envelope.capability.clone(), envelope.clone());
+        Ok(())
+    }
+
+    fn purge(&self, capability: &UsageAccountCapability) -> Result<(), StateStoreError> {
+        self.states.lock().unwrap().remove(capability);
+        self.purges.lock().unwrap().push(capability.clone());
         Ok(())
     }
 }
@@ -85,6 +92,14 @@ impl GateExecutor {
         changed.notify_all();
     }
 
+    fn wait_idle(&self) {
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while self.active.load(Ordering::SeqCst) != 0 {
+            assert!(Instant::now() < deadline, "provider probe did not finish");
+            std::thread::yield_now();
+        }
+    }
+
     fn set_outcome(&self, outcome: ProviderProbeOutcome) {
         *self.outcome.lock().unwrap() = outcome;
     }
@@ -106,7 +121,11 @@ impl UsageProviderExecutor for GateExecutor {
         let (permit_lock, permit_changed) = &self.permits;
         let mut permits = permit_lock.lock().unwrap();
         while *permits == 0 {
-            permits = permit_changed.wait(permits).unwrap();
+            let (next, wait) = permit_changed
+                .wait_timeout(permits, Duration::from_secs(2))
+                .unwrap();
+            permits = next;
+            assert!(!wait.timed_out(), "provider probe permit was not released");
         }
         *permits -= 1;
         self.active.fetch_sub(1, Ordering::SeqCst);
@@ -193,6 +212,42 @@ fn coordinator_winner_joiner_and_force_join_share_one_generation() {
     let terminal = join_ok(&coordinator, &account, 1, 1_001);
     assert_eq!(terminal.phase, UsageRefreshPhase::Completed);
     assert_eq!(executor.calls.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn coordinator_revisioned_capabilities_do_not_join_in_flight_probe() {
+    let executor = Arc::new(GateExecutor::new(ProviderProbeOutcome::success(
+        quota_view(1_000, 80),
+    )));
+    let coordinator = coordinator(
+        Arc::clone(&executor),
+        Arc::new(MemoryStore::default()),
+        UsageCoordinatorConfig::default(),
+    );
+    let old_catalog_capability = capability("account-a:catalog-old");
+    let current_catalog_capability = capability("account-a:catalog-current");
+
+    let old = coordinator
+        .request_refresh(&old_catalog_capability, 0, true, 1_000)
+        .unwrap();
+    executor.wait_started(1);
+    let current = coordinator
+        .request_refresh(&current_catalog_capability, 0, true, 1_000)
+        .unwrap();
+    executor.wait_started(2);
+
+    assert_eq!(old.generation, 1);
+    assert_eq!(current.generation, 1);
+    executor.release(2);
+    assert_eq!(
+        join_ok(&coordinator, &old_catalog_capability, 1, 1_001).phase,
+        UsageRefreshPhase::Completed
+    );
+    assert_eq!(
+        join_ok(&coordinator, &current_catalog_capability, 1, 1_001).phase,
+        UsageRefreshPhase::Completed
+    );
+    assert_eq!(executor.calls.load(Ordering::SeqCst), 2);
 }
 
 #[test]
@@ -494,8 +549,8 @@ fn coordinator_rate_limit_without_provider_deadline_uses_shared_backoff() {
     }));
     let store = Arc::new(MemoryStore::default());
     let coordinator = coordinator(
-        Arc::clone(&executor),
-        Arc::clone(&store),
+        Arc::<GateExecutor>::clone(&executor),
+        Arc::<MemoryStore>::clone(&store),
         UsageCoordinatorConfig::default(),
     );
     let account = capability("account-a");
@@ -595,8 +650,8 @@ fn coordinator_recovers_persisted_owner_loss_once_without_a_herd() {
         .unwrap()
         .insert(account.clone(), abandoned);
     let coordinator = coordinator(
-        Arc::clone(&executor),
-        Arc::clone(&store),
+        Arc::<GateExecutor>::clone(&executor),
+        Arc::<MemoryStore>::clone(&store),
         UsageCoordinatorConfig::default(),
     );
 
@@ -615,6 +670,180 @@ fn coordinator_recovers_persisted_owner_loss_once_without_a_herd() {
     let terminal = join_ok(&coordinator, &account, 5, 1_002);
     assert_eq!(terminal.phase, UsageRefreshPhase::Completed);
     assert_eq!(executor.calls.load(Ordering::SeqCst), 1);
+}
+
+fn catalog_entry(account: &UsageAccountCapability, revision: &str) -> UsageCatalogEntry {
+    UsageCatalogEntry {
+        capability: account.clone(),
+        revision: revision.to_owned(),
+    }
+}
+
+#[test]
+fn catalog_revocation_retains_materialized_last_good_but_fences_late_result() {
+    let executor = Arc::new(GateExecutor::new(ProviderProbeOutcome::success(
+        quota_view(1_000, 80),
+    )));
+    let store = Arc::new(MemoryStore::default());
+    let account = capability("account-a");
+    let coordinator = UsageCoordinator::with_catalog(
+        Arc::<GateExecutor>::clone(&executor),
+        Arc::<MemoryStore>::clone(&store),
+        UsageCoordinatorConfig::default(),
+        [catalog_entry(&account, "revision-a")],
+    );
+
+    let first = coordinator
+        .request_refresh(&account, 0, true, 1_000)
+        .unwrap();
+    executor.wait_started(1);
+    executor.release(1);
+    let first = join_ok(&coordinator, &account, first.generation, 1_001);
+    assert_eq!(first.phase, UsageRefreshPhase::Completed);
+
+    let second = coordinator
+        .request_refresh(&account, first.generation, true, 1_002)
+        .unwrap();
+    executor.wait_started(2);
+    coordinator
+        .reconcile_catalog([], 1_003)
+        .expect("catalog removal is durable");
+    let revoked = coordinator.current(&account, 1_003).unwrap();
+    assert_eq!(revoked.phase, UsageRefreshPhase::Failed);
+    assert_eq!(revoked.generation, second.generation + 1);
+    assert_eq!(
+        revoked.error.as_ref().unwrap().kind,
+        UsageCoordinationErrorKind::CatalogRevoked
+    );
+    assert_eq!(
+        revoked.snapshot.as_ref().unwrap().buckets[0].remaining_percent,
+        Some(80)
+    );
+    assert!(
+        coordinator.is_idle(),
+        "revocation must clear active ownership"
+    );
+    assert_eq!(
+        coordinator
+            .join_generation(
+                &account,
+                second.generation,
+                Duration::from_millis(20),
+                1_003,
+            )
+            .unwrap_err()
+            .kind,
+        UsageCoordinationErrorKind::CatalogRevoked
+    );
+    assert!(store.purges.lock().unwrap().contains(&account));
+
+    executor.release(1);
+    executor.wait_idle();
+    let after_late_result = coordinator.current(&account, 1_004).unwrap();
+    assert_eq!(
+        after_late_result.error.as_ref().unwrap().kind,
+        UsageCoordinationErrorKind::CatalogRevoked
+    );
+    assert_eq!(after_late_result.generation, revoked.generation);
+    assert_eq!(
+        after_late_result.snapshot.as_ref().unwrap().buckets[0].remaining_percent,
+        Some(80)
+    );
+    assert_eq!(
+        coordinator
+            .request_refresh(&account, revoked.generation, true, 1_004)
+            .unwrap_err()
+            .kind,
+        UsageCoordinationErrorKind::CatalogRevoked
+    );
+}
+
+#[test]
+fn catalog_revision_change_purges_old_state_and_allows_only_new_revision() {
+    let executor = Arc::new(ImmediateExecutor::new(ProviderProbeOutcome::success(
+        quota_view(1_000, 80),
+    )));
+    let store = Arc::new(MemoryStore::default());
+    let account = capability("account-a");
+    let coordinator = UsageCoordinator::with_catalog(
+        Arc::<ImmediateExecutor>::clone(&executor),
+        Arc::<MemoryStore>::clone(&store),
+        UsageCoordinatorConfig::default(),
+        [catalog_entry(&account, "revision-a")],
+    );
+    let first = coordinator
+        .request_refresh(&account, 0, true, 1_000)
+        .unwrap();
+    assert_eq!(
+        join_ok(&coordinator, &account, first.generation, 1_001).phase,
+        UsageRefreshPhase::Completed
+    );
+
+    coordinator
+        .reconcile_catalog([catalog_entry(&account, "revision-b")], 1_002)
+        .unwrap();
+    let reset = coordinator.current(&account, 1_002).unwrap();
+    assert_eq!(reset.phase, UsageRefreshPhase::Idle);
+    assert!(reset.snapshot.is_none());
+    assert!(reset.error.is_none());
+    assert_eq!(
+        store.purges.lock().unwrap().as_slice(),
+        std::slice::from_ref(&account)
+    );
+
+    let next = coordinator
+        .request_refresh(&account, reset.generation, true, 1_003)
+        .unwrap();
+    assert_eq!(
+        join_ok(&coordinator, &account, next.generation, 1_004).phase,
+        UsageRefreshPhase::Completed
+    );
+    assert_eq!(executor.calls.load(Ordering::SeqCst), 2);
+}
+
+#[test]
+fn catalog_purge_prevents_restart_resurrection() {
+    let temp = tempfile::tempdir().unwrap();
+    let store = Arc::new(FileAccountStateStore::at(temp.path().join("accounts")));
+    let account = capability("account-a");
+    let executor = Arc::new(ImmediateExecutor::new(ProviderProbeOutcome::success(
+        quota_view(1_000, 80),
+    )));
+    let first = UsageCoordinator::new(
+        Arc::<ImmediateExecutor>::clone(&executor),
+        Arc::<FileAccountStateStore>::clone(&store),
+        UsageCoordinatorConfig::default(),
+    );
+    let generation = first
+        .request_refresh(&account, 0, true, 1_000)
+        .unwrap()
+        .generation;
+    assert_eq!(
+        join_ok(&first, &account, generation, 1_001).phase,
+        UsageRefreshPhase::Completed
+    );
+    drop(first);
+
+    let second = UsageCoordinator::with_catalog(
+        Arc::<ImmediateExecutor>::clone(&executor),
+        Arc::<FileAccountStateStore>::clone(&store),
+        UsageCoordinatorConfig::default(),
+        [catalog_entry(&account, "revision-a")],
+    );
+    second.reconcile_catalog([], 1_002).unwrap();
+    assert_eq!(store.load(&account, 1_002).unwrap(), None);
+    drop(second);
+
+    let restarted = UsageCoordinator::with_catalog(
+        Arc::<ImmediateExecutor>::clone(&executor),
+        store,
+        UsageCoordinatorConfig::default(),
+        std::iter::empty::<UsageCatalogEntry>(),
+    );
+    assert_eq!(
+        restarted.current(&account, 1_003).unwrap_err().kind,
+        UsageCoordinationErrorKind::CatalogRevoked
+    );
 }
 
 #[test]

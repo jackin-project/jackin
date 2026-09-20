@@ -24,7 +24,7 @@ use super::{
 };
 use crate::{InstanceError, SyncSourceValidationError};
 use anyhow::Context;
-use jackin_config::{AiProvider, AuthForwardMode, GithubAuthMode};
+use jackin_config::{AiProvider, AuthForwardMode, GithubAuthMode, ProfileSelector};
 use jackin_core::Agent;
 use std::path::Path;
 
@@ -59,6 +59,19 @@ pub(crate) fn validate_sync_source_dir_for_provider(
     source_dir: &Path,
     host_home: &Path,
 ) -> Result<(), SyncSourceValidationError> {
+    validate_sync_source_dir_for_selection(agent, provider, None, source_dir, host_home)
+}
+
+/// Validate one sync source with both its provider and immutable store
+/// selector. Omp and Hermes are only accepted when discovery proves the
+/// source still contains exactly the selected one-account store.
+pub(crate) fn validate_sync_source_dir_for_selection(
+    agent: Agent,
+    provider: Option<AiProvider>,
+    selector: Option<&ProfileSelector>,
+    source_dir: &Path,
+    host_home: &Path,
+) -> Result<(), SyncSourceValidationError> {
     if !source_dir.is_dir() {
         return Err(SyncSourceValidationError::new(format!(
             "{} is not a directory.",
@@ -89,33 +102,10 @@ pub(crate) fn validate_sync_source_dir_for_provider(
         Agent::Gemini => require_credential_file(source_dir, "oauth_creds.json", "Gemini"),
         Agent::Cursor => require_credential_file(source_dir, "auth.json", "Cursor"),
         Agent::Muse => require_credential_file(source_dir, "auth.json", "Muse"),
-        // SQLite store: byte content, so only presence is validated here.
-        Agent::Omp => {
-            if source_dir.join("agent/agent.db").is_file() {
-                Ok(())
-            } else {
-                Err(SyncSourceValidationError::new(format!(
-                    "Not an omp config folder: expected agent/agent.db directly inside {}.",
-                    source_dir.display()
-                )))
-            }
-        }
-        // Best-effort layout (unverified upstream): any one of the known
-        // auth-bearing entries counts.
-        Agent::Hermes => {
-            if source_dir.join("auth.json").is_file()
-                || source_dir.join("config.yaml").is_file()
-                || source_dir.join(".env").is_file()
-                || source_dir.join("profiles").is_dir()
-            {
-                Ok(())
-            } else {
-                Err(SyncSourceValidationError::new(format!(
-                    "Not a Hermes config folder: {} must contain auth.json, config.yaml, \
-                     .env, or a profiles/ directory.",
-                    source_dir.display()
-                )))
-            }
+        // Store-backed agents are re-enumerated and must still resolve to the
+        // selected single-account source before their whole store is copied.
+        Agent::Omp | Agent::Hermes => {
+            validate_store_source_dir(agent, provider, selector, source_dir, host_home)
         }
         Agent::Amp => {
             require_credential_file(&amp_credentials_dir(source_dir), "secrets.json", "Amp")
@@ -133,6 +123,38 @@ pub(crate) fn validate_sync_source_dir_for_provider(
             }
         }
     }
+}
+
+/// Validate a stores-backed source through the same single-entry discovery
+/// boundary used for account registration. This keeps a source that changes
+/// after scan from silently selecting a different account at launch.
+fn validate_store_source_dir(
+    agent: Agent,
+    provider: Option<AiProvider>,
+    selector: Option<&ProfileSelector>,
+    source_dir: &Path,
+    host_home: &Path,
+) -> Result<(), SyncSourceValidationError> {
+    let found = jackin_config::discover_account_directory(agent, source_dir, host_home)
+        .map_err(|error| {
+            SyncSourceValidationError::new(format!("{agent} source rejected: {error}"))
+        })?
+        .ok_or_else(|| {
+            SyncSourceValidationError::new(format!(
+                "{agent} source has no usable single-account credential store"
+            ))
+        })?;
+    if provider.is_some_and(|expected| found.provider != Some(expected)) {
+        return Err(SyncSourceValidationError::new(format!(
+            "{agent} source provider no longer matches the selected account"
+        )));
+    }
+    if selector.is_some_and(|expected| found.source_selector.as_ref() != Some(expected)) {
+        return Err(SyncSourceValidationError::new(format!(
+            "{agent} source entry/profile no longer matches the selected account"
+        )));
+    }
+    Ok(())
 }
 
 /// Validate the exact `OpenCode` credential that will be staged. A single
@@ -1287,15 +1309,28 @@ impl RoleState {
         agent_db: &Path,
         mode: AuthForwardMode,
         host_home: &Path,
+        provider: Option<AiProvider>,
+        selector: Option<&ProfileSelector>,
     ) -> anyhow::Result<(AuthProvisionOutcome, Option<std::path::PathBuf>)> {
-        Self::provision_omp_auth_from_path(agent_db, mode, &host_home.join(".omp/agent/agent.db"))
+        Self::provision_omp_auth_from_source_dir(
+            agent_db,
+            mode,
+            &host_home.join(".omp"),
+            provider,
+            selector,
+        )
     }
 
     pub(super) fn provision_omp_auth_from_source_dir(
         agent_db: &Path,
         mode: AuthForwardMode,
         source_dir: &Path,
+        provider: Option<AiProvider>,
+        selector: Option<&ProfileSelector>,
     ) -> anyhow::Result<(AuthProvisionOutcome, Option<std::path::PathBuf>)> {
+        if mode == AuthForwardMode::Sync && source_dir.exists() {
+            validate_store_source_dir(Agent::Omp, provider, selector, source_dir, source_dir)?;
+        }
         Self::provision_omp_auth_from_path(agent_db, mode, &source_dir.join("agent/agent.db"))
     }
 
@@ -1317,15 +1352,28 @@ impl RoleState {
         hermes_dir: &Path,
         mode: AuthForwardMode,
         host_home: &Path,
+        provider: Option<AiProvider>,
+        selector: Option<&ProfileSelector>,
     ) -> anyhow::Result<(AuthProvisionOutcome, bool)> {
-        Self::provision_hermes_auth_from_source_dir(hermes_dir, mode, &host_home.join(".hermes"))
+        Self::provision_hermes_auth_from_source_dir(
+            hermes_dir,
+            mode,
+            &host_home.join(".hermes"),
+            provider,
+            selector,
+        )
     }
 
     pub(super) fn provision_hermes_auth_from_source_dir(
         hermes_dir: &Path,
         mode: AuthForwardMode,
         source_dir: &Path,
+        provider: Option<AiProvider>,
+        selector: Option<&ProfileSelector>,
     ) -> anyhow::Result<(AuthProvisionOutcome, bool)> {
+        if mode == AuthForwardMode::Sync && source_dir.exists() {
+            validate_store_source_dir(Agent::Hermes, provider, selector, source_dir, source_dir)?;
+        }
         provision_hermes_dir_credential(hermes_dir, source_dir, mode)
     }
 }

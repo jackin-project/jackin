@@ -65,6 +65,12 @@ pub(crate) fn instance_auth_bindings(
             binding.key = instance.config_id.clone();
             binding.xdg_roots = instance.xdg_roots.clone();
             binding.source_provider = account.source_directory().map(|_| account.provider);
+            binding.source_selector = match &account.credential {
+                jackin_config::AccountCredential::Profile {
+                    source_selector, ..
+                } => source_selector.clone(),
+                _ => None,
+            };
             Ok(binding)
         })
         .collect()
@@ -304,7 +310,8 @@ pub(crate) fn exec_binding_names(bindings: &[jackin_protocol::ExecBinding]) -> S
 /// credential values.
 pub(crate) fn capsule_config_contents(
     config: &jackin_protocol::CapsuleConfig,
-) -> Result<String, toml::ser::Error> {
+) -> anyhow::Result<String> {
+    validate_capsule_workdir(config)?;
     let mut projected = config.clone();
     for binding in &mut projected.exec_bindings {
         match binding.kind {
@@ -314,7 +321,47 @@ pub(crate) fn capsule_config_contents(
             }
         }
     }
-    toml::to_string(&projected)
+    Ok(toml::to_string(&projected)?)
+}
+
+/// Keep the host-to-capsule handoff fail-closed even when a caller constructs
+/// a `CapsuleConfig` without going through workspace validation. A recursive
+/// workspace Landlock grant must not overlap capsule roots or any private
+/// instance mount destination.
+fn validate_capsule_workdir(config: &jackin_protocol::CapsuleConfig) -> anyhow::Result<()> {
+    let workdir = Path::new(config.workdir.trim());
+    anyhow::ensure!(
+        !config.workdir.trim().is_empty() && workdir.is_absolute(),
+        "capsule workdir must be a non-empty absolute path"
+    );
+    let workdir = jackin_core::container_paths::normalize_path(workdir);
+    for protected_root in ["/home/agent", jackin_core::container_paths::JACKIN_ROOT] {
+        let protected_root =
+            jackin_core::container_paths::normalize_path(Path::new(protected_root));
+        anyhow::ensure!(
+            !jackin_core::container_paths::paths_overlap(&workdir, &protected_root),
+            "capsule workdir {} overlaps protected root {}",
+            workdir.display(),
+            protected_root.display()
+        );
+    }
+    for (instance, paths) in &config.instance_mount_paths {
+        for path in paths {
+            let mount = Path::new(path);
+            anyhow::ensure!(
+                mount.is_absolute(),
+                "private mount destination for instance {instance} must be absolute"
+            );
+            let mount = jackin_core::container_paths::normalize_path(mount);
+            anyhow::ensure!(
+                !jackin_core::container_paths::paths_overlap(&workdir, &mount),
+                "capsule workdir {} overlaps protected mount destination {} for instance {instance}",
+                workdir.display(),
+                mount.display()
+            );
+        }
+    }
+    Ok(())
 }
 
 pub(crate) fn capsule_config(

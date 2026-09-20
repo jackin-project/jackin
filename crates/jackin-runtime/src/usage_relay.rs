@@ -600,15 +600,16 @@ fn prepare_broker_client(
     let allowed = capabilities.iter().cloned().collect::<BTreeSet<_>>();
     let canonical_launch_usage_capabilities =
         canonical_capabilities_for_launch(&discovery, forwarded_sources, &allowed);
+    let client = jackin_usage::host::ensure_usage_broker(broker_config, scope, discovery, resolver)
+        .map(|handle| handle.client)
+        .unwrap_or(fallback);
     if capabilities.is_empty() {
         return (
-            fallback,
+            client,
             capabilities,
             CanonicalLaunchUsageCapabilities::default(),
         );
     }
-    let client =
-        jackin_usage::host::ensure_usage_broker_process(broker_config, &scope).unwrap_or(fallback);
     (client, capabilities, canonical_launch_usage_capabilities)
 }
 
@@ -755,6 +756,7 @@ fn operation_capability(operation: &UsageBrokerOperation) -> Option<&UsageAccoun
         UsageBrokerOperation::CurrentProjection
         | UsageBrokerOperation::RequestRefresh { .. }
         | UsageBrokerOperation::JoinPublication { .. }
+        | UsageBrokerOperation::ReconcileCatalog { .. }
         | UsageBrokerOperation::CurrentProjectionForSurface
         | UsageBrokerOperation::RequestRefreshForSurface { .. }
         | UsageBrokerOperation::JoinPublicationForSurface { .. } => None,
@@ -795,6 +797,7 @@ async fn dispatch(
         UsageBrokerOperation::CurrentProjection
         | UsageBrokerOperation::RequestRefresh { .. }
         | UsageBrokerOperation::JoinPublication { .. }
+        | UsageBrokerOperation::ReconcileCatalog { .. }
         | UsageBrokerOperation::CurrentProjectionForSurface
         | UsageBrokerOperation::RequestRefreshForSurface { .. }
         | UsageBrokerOperation::JoinPublicationForSurface { .. } => Err(UsageCoordinationError {

@@ -57,6 +57,8 @@ where
     )]
     pub restore_pinned_sha: Option<String>,
     pub git_pull_join: Option<super::DeferredGitPull>,
+    pub account_revision: super::super::account_identity::AccountConfigRevision,
+    pub admission_config: AppConfig,
 }
 
 /// Typed phase chain for the `jackin load` critical path.

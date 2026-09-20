@@ -253,6 +253,7 @@ agents = ["amp"]
                 agent: Agent::Amp,
                 directory: amp_dir,
                 xdg_roots: None,
+                source_selector: None,
             },
         },
     );

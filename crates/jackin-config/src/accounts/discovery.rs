@@ -8,13 +8,70 @@ use std::path::{Path, PathBuf};
 use jackin_core::Agent;
 use serde_json::Value;
 
-use super::AiProvider;
+use super::{AiProvider, ProfileSelector};
 
-/// Find provider API-key references in an explicit environment snapshot.
-/// Returns variable names only; values never leave this boundary.
-pub fn discover_environment_accounts(
+/// An environment API-key source plus its non-secret endpoint override.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct EnvironmentAccountCandidate {
+    /// Provider selected by the API-key variable.
+    pub provider: AiProvider,
+    /// Variable holding the credential reference.
+    pub variable: String,
+    /// Optional provider endpoint from the environment.
+    pub base_url: Option<String>,
+}
+
+fn endpoint_variables(provider: AiProvider) -> &'static [&'static str] {
+    match provider {
+        AiProvider::Anthropic => &["ANTHROPIC_BASE_URL"],
+        AiProvider::OpenAi => &["OPENAI_BASE_URL", "OPENAI_API_BASE", "OPENAI_API_URL"],
+        AiProvider::Amp => &["AMP_URL", "AMP_BASE_URL", "AMP_API_URL"],
+        AiProvider::Xai => &["XAI_BASE_URL", "XAI_API_BASE", "XAI_API_URL"],
+        AiProvider::Opencode => &["OPENCODE_BASE_URL", "OPENCODE_API_BASE", "OPENCODE_API_URL"],
+        AiProvider::Moonshot => &[
+            "KIMI_BASE_URL",
+            "KIMI_CODE_BASE_URL",
+            "MOONSHOT_BASE_URL",
+            "MOONSHOT_API_BASE",
+            "MOONSHOT_API_URL",
+        ],
+        AiProvider::Zai => &[
+            "ZAI_BASE_URL",
+            "Z_AI_BASE_URL",
+            "ZHIPU_BASE_URL",
+            "ZAI_API_BASE",
+            "ZAI_API_URL",
+        ],
+        AiProvider::Minimax => &["MINIMAX_BASE_URL", "MINIMAX_API_BASE", "MINIMAX_API_URL"],
+        AiProvider::Google => &[
+            "GEMINI_BASE_URL",
+            "GOOGLE_BASE_URL",
+            "GEMINI_API_BASE",
+            "GEMINI_API_URL",
+        ],
+        AiProvider::Cursor => &["CURSOR_BASE_URL", "CURSOR_API_BASE", "CURSOR_API_URL"],
+        AiProvider::Meta => &["META_BASE_URL", "META_API_BASE", "META_API_URL"],
+        AiProvider::OpenRouter => &["OPENROUTER_BASE_URL", "OPENROUTER_API_URL"],
+    }
+}
+
+fn environment_base_url(
+    provider: AiProvider,
     environment: &std::collections::BTreeMap<String, String>,
-) -> Vec<(AiProvider, String)> {
+) -> Option<String> {
+    endpoint_variables(provider).iter().find_map(|name| {
+        environment
+            .get(*name)
+            .filter(|value| !value.trim().is_empty())
+            .cloned()
+    })
+}
+
+/// Find provider API-key sources and their endpoint overrides in an explicit
+/// environment snapshot. Secret values never leave this boundary.
+pub(crate) fn discover_environment_account_candidates(
+    environment: &std::collections::BTreeMap<String, String>,
+) -> Vec<EnvironmentAccountCandidate> {
     [
         (AiProvider::Anthropic, &["ANTHROPIC_API_KEY"][..]),
         (AiProvider::OpenAi, &["OPENAI_API_KEY"][..]),
@@ -56,10 +113,25 @@ pub fn discover_environment_accounts(
             environment
                 .get(*name)
                 .filter(|value| !value.trim().is_empty())
-                .map(|_| (provider, (*name).to_owned()))
+                .map(|_| EnvironmentAccountCandidate {
+                    provider,
+                    variable: (*name).to_owned(),
+                    base_url: environment_base_url(provider, environment),
+                })
         })
     })
     .collect()
+}
+
+/// Find provider API-key references in an explicit environment snapshot.
+/// Returns variable names only; values never leave this boundary.
+pub fn discover_environment_accounts(
+    environment: &std::collections::BTreeMap<String, String>,
+) -> Vec<(AiProvider, String)> {
+    discover_environment_account_candidates(environment)
+        .into_iter()
+        .map(|candidate| (candidate.provider, candidate.variable))
+        .collect()
 }
 
 /// Discover supported subscription-token references without copying their values.
@@ -92,6 +164,8 @@ pub struct DiscoveredAccount {
     /// clients must carry this identity into the account registry; the
     /// directory alone is not an account selector.
     pub provider: Option<AiProvider>,
+    /// Immutable entry/profile identity for a multi-provider store.
+    pub source_selector: Option<ProfileSelector>,
     /// Selected source directory to store in the account registry.
     pub directory: PathBuf,
     /// Credential location which established this discovery.
@@ -204,6 +278,7 @@ fn inspect_directory(
             return Ok(Some(DiscoveredAccount {
                 agent,
                 provider: AiProvider::for_agent(agent),
+                source_selector: None,
                 directory: directory.to_path_buf(),
                 evidence: CredentialEvidence::Keychain("gemini".to_owned()),
             }));
@@ -252,6 +327,7 @@ fn inspect_directory(
         return Ok(Some(DiscoveredAccount {
             agent,
             provider: AiProvider::for_agent(agent),
+            source_selector: None,
             directory: directory.to_path_buf(),
             evidence: CredentialEvidence::File(file),
         }));
@@ -264,6 +340,7 @@ fn inspect_directory(
         return Ok(Some(DiscoveredAccount {
             agent,
             provider: AiProvider::for_agent(agent),
+            source_selector: None,
             directory: scope.normalized_config_dir,
             evidence: CredentialEvidence::Keychain(scope.service),
         }));
@@ -273,20 +350,32 @@ fn inspect_directory(
 
 /// Inspect a stores-backed agent directory via the `stores` enumerators.
 ///
-/// The first candidate's source file becomes the evidence location; secrets
-/// are dropped here and never leave the discovery boundary. An empty
-/// enumeration is an honest `Ok(None)` (no attributable credential found),
-/// and store failures map to the matching [`DiscoveryError`] category.
+/// A store is launchable only when exactly one candidate can be attributed to
+/// it. Selecting the first candidate from a multi-entry store would register
+/// an account whose later full-store mount exposes its siblings.
 fn inspect_store(
     agent: Agent,
     directory: &Path,
 ) -> Result<Option<DiscoveredAccount>, DiscoveryError> {
-    Ok(inspect_store_accounts(agent, directory)?.into_iter().next())
+    let mut accounts = inspect_store_accounts(agent, directory)?;
+    match accounts.len() {
+        0 => Ok(None),
+        1 => Ok(accounts.pop()),
+        _ => Err(DiscoveryError::Unsupported(match agent {
+            Agent::Omp => "omp credential store contains multiple entries",
+            Agent::Hermes => "Hermes credential store contains multiple profiles",
+            Agent::Opencode => "OpenCode auth store contains multiple entries",
+            _ => unreachable!("stores-backed agents only"),
+        })),
+    }
 }
 
 /// Inspect a store and retain every source-bound account candidate.
 ///
 /// `OpenCode` candidates are keyed by the provider entry in `auth.json`.
+/// Omp candidates use the provider/account entry plus optional profile label;
+/// Hermes candidates use the provider entry plus required profile name. Those
+/// exact dimensions are persisted as [`ProfileSelector`] values.
 /// Database-only stores are not launchable by the current profile contract, so
 /// they are rejected instead of registering candidates with no materializable
 /// source. A sibling database is ignored when a single usable `auth.json`
@@ -327,23 +416,47 @@ fn inspect_store_accounts(
                     accounts.push(DiscoveredAccount {
                         agent,
                         provider: Some(provider),
+                        source_selector: None,
                         directory: directory.to_path_buf(),
                         evidence: CredentialEvidence::File(candidate.source),
                     });
                 }
                 return Ok(accounts);
             }
-            Ok(candidates
-                .into_iter()
-                .next()
-                .map(|candidate| DiscoveredAccount {
+            let mut accounts = Vec::with_capacity(candidates.len());
+            for candidate in candidates {
+                let provider = candidate.provider.parse().map_err(|_| {
+                    DiscoveryError::Unsupported(
+                        "multi-provider store credential provider is not in jackin's catalog",
+                    )
+                })?;
+                let source_selector = Some(ProfileSelector {
+                    entry: candidate.provider,
+                    profile: candidate.profile,
+                });
+                accounts.push(DiscoveredAccount {
                     agent,
-                    provider: AiProvider::for_agent(agent),
+                    provider: Some(provider),
+                    source_selector,
                     directory: directory.to_path_buf(),
                     evidence: CredentialEvidence::File(candidate.source),
-                })
-                .into_iter()
-                .collect())
+                });
+            }
+            if matches!(agent, Agent::Omp | Agent::Hermes) && accounts.len() == 1 {
+                use super::stores::{hermes, omp};
+                match agent {
+                    Agent::Omp => {
+                        omp::validate_single_credential_store(directory)
+                            .map_err(map_store_error)?;
+                    }
+                    Agent::Hermes => {
+                        hermes::validate_single_profile_store(directory)
+                            .map_err(map_store_error)?;
+                    }
+                    _ => unreachable!("validated stores-backed agent"),
+                }
+            }
+            Ok(accounts)
         }
         Err(error) => Err(map_store_error(error)),
     }

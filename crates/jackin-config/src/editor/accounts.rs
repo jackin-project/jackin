@@ -176,41 +176,7 @@ impl ConfigEditor {
 }
 
 fn same_credential_source(left: &AccountConfig, right: &AccountConfig) -> bool {
-    use crate::AccountCredential;
-    if left.provider != right.provider {
-        return false;
-    }
-    match (&left.credential, &right.credential) {
-        (
-            AccountCredential::Profile {
-                agent: a,
-                directory: x,
-                xdg_roots: rx,
-            },
-            AccountCredential::Profile {
-                agent: b,
-                directory: y,
-                xdg_roots: ry,
-            },
-        ) => a == b && x == y && rx == ry,
-        (
-            AccountCredential::ApiKey {
-                value: x,
-                base_url: a,
-                ..
-            },
-            AccountCredential::ApiKey {
-                value: y,
-                base_url: b,
-                ..
-            },
-        ) => x == y && a == b,
-        (
-            AccountCredential::OAuthToken { agent: a, value: x },
-            AccountCredential::OAuthToken { agent: b, value: y },
-        ) => a == b && x == y,
-        _ => false,
-    }
+    account_source_fingerprint(left) == account_source_fingerprint(right)
 }
 fn remove_bindings(table: &mut toml_edit::Table, id: &str) {
     if let Some(bindings) = table

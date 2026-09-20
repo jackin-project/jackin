@@ -16,7 +16,7 @@
     reason = "attach flow emits intentional terminal spacing on stderr"
 )]
 
-use crate::instance::{InstanceManifest, InstanceStatus};
+use crate::instance::{InstanceIndex, InstanceManifest, InstanceStatus, RegistrationState};
 use anyhow::Context as _;
 use jackin_core::container_paths;
 use jackin_core::{CommandRunner, JACKIN_STATUS_CMD, RunOptions};
@@ -198,8 +198,6 @@ fn capsule_daemon_socket_connects(paths: &JackinPaths, container_name: &str) -> 
         .is_ok()
 }
 
-#[cfg(test)]
-use crate::instance::InstanceIndex;
 use jackin_core::JackinPaths;
 pub use jackin_docker::docker_client::ContainerState;
 
@@ -370,8 +368,73 @@ pub(crate) fn require_current_account_admission(
     let root = paths.data_dir.join(container_name);
     let manifest = InstanceManifest::read(&root)
         .context("cannot verify this container's account policy; recreate it with `jackin load`")?;
+    let manifest = refresh_registration_states(paths, &root, manifest)?;
     current_account_admission(paths, &root, &manifest)?;
     Ok(())
+}
+
+fn refresh_registration_states(
+    paths: &JackinPaths,
+    root: &std::path::Path,
+    mut manifest: InstanceManifest,
+) -> anyhow::Result<InstanceManifest> {
+    let snapshot = jackin_config::load_read_only_config_snapshot(paths)?;
+    if !snapshot.diagnostics.is_empty() {
+        return Ok(manifest);
+    }
+    let workspace = manifest
+        .workspace_name
+        .as_deref()
+        .map(jackin_core::WorkspaceName::parse)
+        .transpose()?;
+    let mut changed = false;
+    for admitted in manifest.admitted_instances.clone() {
+        let state =
+            registration_state_for_admission(&snapshot.config, workspace.as_ref(), &admitted);
+        changed |= manifest.mark_registration_state(&admitted.config_id, state);
+    }
+    if changed {
+        manifest.touch();
+        manifest.write(root)?;
+        InstanceIndex::update_manifest(&paths.data_dir, &manifest)?;
+    }
+    Ok(manifest)
+}
+
+fn registration_state_for_admission(
+    config: &jackin_config::AppConfig,
+    workspace: Option<&jackin_core::WorkspaceName>,
+    admitted: &crate::instance::AdmittedInstance,
+) -> RegistrationState {
+    let Some(account) = config.accounts.get(&admitted.account_id) else {
+        return RegistrationState::Removed;
+    };
+    if !account.enabled || !account.supports_agent(admitted.agent) {
+        return RegistrationState::Disabled;
+    }
+    if workspace.is_some_and(|workspace| {
+        !config
+            .workspaces
+            .get(workspace.as_str())
+            .is_some_and(|workspace| workspace.accounts.contains(&admitted.account_id))
+    }) {
+        return RegistrationState::Disabled;
+    }
+    match config.agent_configurations.get(&admitted.config_id) {
+        Some(configuration)
+            if configuration.agent == admitted.agent
+                && configuration.account == admitted.account_id =>
+        {
+            RegistrationState::Current
+        }
+        Some(_) => RegistrationState::Removed,
+        None if admitted.config_id
+            == format!("{}@{}", admitted.account_id, admitted.agent.slug()) =>
+        {
+            RegistrationState::Current
+        }
+        None => RegistrationState::Removed,
+    }
 }
 
 fn current_account_admission(
@@ -417,6 +480,7 @@ fn require_current_instance_admission(
     let manifest = InstanceManifest::read(&root).context(
         "cannot verify this container's live instance admission; recreate it with `jackin load`",
     )?;
+    let manifest = refresh_registration_states(paths, &root, manifest)?;
 
     let target = if let Some(requested) = requested_instance_id {
         manifest
@@ -450,6 +514,14 @@ fn require_current_instance_admission(
         agent
     );
     let target_id = target.config_id.clone();
+
+    if target.registration_state != RegistrationState::Current {
+        anyhow::bail!(
+            "container account policy changed: admitted account {:?} registration is {}; stop and recreate the instance before requesting a new session",
+            target.account_id,
+            target.registration_state.label()
+        );
+    }
 
     let (config, workspace) = current_account_admission(paths, &root, &manifest)?;
 
@@ -1253,6 +1325,16 @@ pub async fn inspect_hardline_instance(
             ]);
             if let Some(outcome) = &manifest.last_attach_outcome {
                 lines.push(format!("Last attach outcome: {outcome}"));
+            }
+            for admitted in &manifest.admitted_instances {
+                if admitted.registration_state != RegistrationState::Current {
+                    lines.push(format!(
+                        "Registration {} ({}): {}",
+                        admitted.config_id,
+                        admitted.account_id,
+                        admitted.registration_state.label()
+                    ));
+                }
             }
             if let Some(source_ref) = &manifest.role_source_ref {
                 lines.push(format!(

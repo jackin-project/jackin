@@ -72,6 +72,63 @@ fn v2_credentials(value: serde_json::Value) -> jackin_protocol::AgentCredentialE
 }
 
 #[test]
+fn workdir_boundary_rejects_root_ancestors_and_noncanonical_aliases() {
+    for workdir in ["/", "/home", "/jackin", "/home/agent", "/workspace/../"] {
+        let mut config = instance_config(&[]);
+        config.workdir = workdir.to_owned();
+        let error = validate(&config).unwrap_err();
+        assert!(
+            error.to_string().contains("protected root"),
+            "unexpected rejection for {workdir}: {error}"
+        );
+    }
+}
+
+#[test]
+fn workdir_boundary_preserves_workspace_and_rejects_private_mount_ancestors() {
+    let valid = instance_config(&[("codex-work", "api_key", "codex")]);
+    validate(&valid).unwrap();
+
+    let mut invalid = valid;
+    invalid.workdir = "/workspace".to_owned();
+    invalid.instance_mount_paths.insert(
+        "codex-work".to_owned(),
+        vec![
+            "/home/agent/.slot-0".to_owned(),
+            "/jackin/slot-0".to_owned(),
+            "/workspace/private-slot".to_owned(),
+        ],
+    );
+    let error = validate(&invalid).unwrap_err();
+    assert!(
+        error.to_string().contains("protected mount destination"),
+        "unexpected rejection: {error}"
+    );
+}
+
+#[test]
+fn instance_boundary_rejects_protected_root_aliases() {
+    let mut invalid_home = instance_config(&[("codex-work", "api_key", "codex")]);
+    invalid_home
+        .instance_home_dirs
+        .insert("codex-work".to_owned(), "/home/agent/".to_owned());
+    assert!(validate(&invalid_home).is_err());
+
+    let mut invalid_forwarded = instance_config(&[("codex-work", "api_key", "codex")]);
+    invalid_forwarded
+        .instance_forwarded_dirs
+        .insert("codex-work".to_owned(), "/jackin/".to_owned());
+    assert!(validate(&invalid_forwarded).is_err());
+
+    let mut invalid_mount = instance_config(&[("codex-work", "api_key", "codex")]);
+    invalid_mount.instance_mount_paths.insert(
+        "codex-work".to_owned(),
+        vec!["/home/agent/".to_owned(), "/jackin/slot-0".to_owned()],
+    );
+    assert!(validate(&invalid_mount).is_err());
+}
+
+#[test]
 fn auth_modes_are_complete_bounded_and_allowlisted() {
     let valid = instance_config(&[("codex-work", "api_key", "codex")]);
     validate(&valid).unwrap();

@@ -130,6 +130,42 @@ impl std::str::FromStr for AiProvider {
     }
 }
 
+/// Immutable selector for one entry in a multi-provider profile store.
+///
+/// `entry` is the store's provider/account key. `profile` is the optional
+/// profile label used by stores that distinguish profiles. The selector is
+/// persisted with the account so launch never falls back to whichever entry
+/// happens to enumerate first.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ProfileSelector {
+    /// Exact provider/account key in the source store.
+    pub entry: String,
+    /// Exact profile label, when the source store exposes one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub profile: Option<String>,
+}
+
+impl ProfileSelector {
+    fn validate(&self, id: &str) -> ConfigResult<()> {
+        if self.entry.trim().is_empty() || self.entry.contains('\0') {
+            return Err(ConfigError::msg(format!(
+                "account {id:?} has an invalid profile-store entry selector"
+            )));
+        }
+        if self
+            .profile
+            .as_deref()
+            .is_some_and(|profile| profile.trim().is_empty() || profile.contains('\0'))
+        {
+            return Err(ConfigError::msg(format!(
+                "account {id:?} has an invalid profile-store profile selector"
+            )));
+        }
+        Ok(())
+    }
+}
+
 /// Credential source. Secret values are redacted from Debug output.
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
@@ -145,6 +181,11 @@ pub enum AccountCredential {
         /// clients). Absolute directories; validated.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         xdg_roots: Option<XdgRoots>,
+        /// Immutable entry/profile identity for Omp and Hermes stores.
+        /// Missing selectors remain valid only for a source that proves it
+        /// contains exactly one account at launch.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        source_selector: Option<ProfileSelector>,
     },
     /// Provider API key, literal or an environment/1Password reference.
     ApiKey {
@@ -176,6 +217,7 @@ pub struct XdgRoots {
     /// Cache home (`XDG_CACHE_HOME` equivalent).
     pub cache: PathBuf,
 }
+
 /// Shell-wrapper invocation found while importing shell configuration.
 ///
 /// The current capsule launch protocol deliberately does not execute arbitrary
@@ -199,11 +241,13 @@ impl std::fmt::Debug for AccountCredential {
                 agent,
                 directory,
                 xdg_roots,
+                source_selector,
             } => f
                 .debug_struct("Profile")
                 .field("agent", agent)
                 .field("directory", directory)
                 .field("xdg_roots", xdg_roots)
+                .field("source_selector", source_selector)
                 .finish(),
             Self::ApiKey { .. } => f.write_str("ApiKey { value: [REDACTED] }"),
             Self::OAuthToken { agent, .. } => f
@@ -361,9 +405,18 @@ impl AccountConfig {
                 agent,
                 directory,
                 xdg_roots,
+                source_selector,
             } => {
                 if !directory.is_absolute() || !self.compatible_agent(*agent) {
                     return Err(ConfigError::msg(format!("invalid profile account {id:?}")));
+                }
+                if source_selector.is_some() && !matches!(agent, Agent::Omp | Agent::Hermes) {
+                    return Err(ConfigError::msg(format!(
+                        "account {id:?} has a store selector for unsupported agent {agent}"
+                    )));
+                }
+                if let Some(selector) = source_selector {
+                    selector.validate(id)?;
                 }
                 if let Some(roots) = xdg_roots {
                     let supports_xdg_roots = matches!(
@@ -563,7 +616,8 @@ impl AccountConfig {
 /// The fields intentionally mirror `same_credential_source`: API-key model
 /// overrides do not identify a credential source, while the full persisted
 /// `EnvValue` does. The digest lets removal tombstones survive without keeping
-/// literal credentials in a second config field.
+/// literal credentials in a second config field. Profile directories and XDG
+/// roots are canonicalized for identity before hashing.
 pub(crate) fn account_source_fingerprint(account: &AccountConfig) -> String {
     let mut digest = Sha256::new();
     hash_component(&mut digest, account.provider.slug());
@@ -572,17 +626,30 @@ pub(crate) fn account_source_fingerprint(account: &AccountConfig) -> String {
             agent,
             directory,
             xdg_roots,
+            source_selector,
         } => {
             hash_component(&mut digest, "profile");
             hash_component(&mut digest, agent.slug());
-            hash_component(&mut digest, &directory.to_string_lossy());
+            hash_path_component(&mut digest, directory);
             if let Some(roots) = xdg_roots {
                 hash_component(&mut digest, "xdg_roots");
-                hash_component(&mut digest, &roots.data.to_string_lossy());
-                hash_component(&mut digest, &roots.config.to_string_lossy());
-                hash_component(&mut digest, &roots.cache.to_string_lossy());
+                hash_path_component(&mut digest, &roots.data);
+                hash_path_component(&mut digest, &roots.config);
+                hash_path_component(&mut digest, &roots.cache);
             } else {
                 hash_component(&mut digest, "no_xdg_roots");
+            }
+            if let Some(selector) = source_selector {
+                hash_component(&mut digest, "source_selector");
+                hash_component(&mut digest, &selector.entry);
+                if let Some(profile) = &selector.profile {
+                    hash_component(&mut digest, "profile");
+                    hash_component(&mut digest, profile);
+                } else {
+                    hash_component(&mut digest, "no_profile");
+                }
+            } else {
+                hash_component(&mut digest, "no_source_selector");
             }
         }
         AccountCredential::ApiKey {
@@ -599,6 +666,11 @@ pub(crate) fn account_source_fingerprint(account: &AccountConfig) -> String {
         }
     }
     hex::encode(digest.finalize())
+}
+
+fn hash_path_component(digest: &mut Sha256, path: &Path) {
+    let canonical = crate::paths::canonical_path_identity(path);
+    hash_component(digest, canonical.to_string_lossy().as_ref());
 }
 
 fn hash_component(digest: &mut Sha256, value: &str) {

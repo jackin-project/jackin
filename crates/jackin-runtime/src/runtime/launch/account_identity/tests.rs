@@ -2,6 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use crate::instance::{
+    AdmittedInstance, DockerResources, InstanceManifest, NewInstanceManifest, RegistrationState,
+};
 use jackin_config::{AccountConfig, AccountCredential, AgentConfiguration, AiProvider, AppConfig};
 use jackin_core::{Agent, EnvValue};
 
@@ -247,51 +250,261 @@ fn credentials_writer_rolls_back_after_install_before_cleanup() {
     assert_no_swap_artifacts(temp.path());
 }
 
+fn api_key_account(id: &str) -> AccountConfig {
+    AccountConfig {
+        enabled: true,
+        name: id.into(),
+        provider: AiProvider::Anthropic,
+        credential: AccountCredential::ApiKey {
+            value: format!("{id}-key").into(),
+            base_url: None,
+            model: None,
+        },
+    }
+}
+
+fn admitted_fingerprint_fixture() -> (AppConfig, Vec<AdmittedInstance>) {
+    let mut config = AppConfig::default();
+    for account_id in ["a", "b", "c"] {
+        config
+            .accounts
+            .insert(account_id.into(), api_key_account(account_id));
+        config.agent_configurations.insert(
+            format!("{account_id}-instance"),
+            AgentConfiguration {
+                agent: Agent::Claude,
+                account: account_id.into(),
+                model: None,
+                base_url: None,
+                display_label: None,
+                invoked_via_wrapper: None,
+            },
+        );
+    }
+    config.default_launch = Some(
+        ["a-instance", "b-instance", "c-instance"]
+            .into_iter()
+            .map(str::to_owned)
+            .collect(),
+    );
+    let admitted = [
+        ("a-instance", "a"),
+        ("b-instance", "b"),
+        ("c-instance", "c"),
+    ]
+    .into_iter()
+    .map(|(config_id, account_id)| AdmittedInstance::new(config_id, Agent::Claude, account_id))
+    .collect();
+    (config, admitted)
+}
+
 #[test]
-fn fingerprint_covers_the_admitted_instance_set() {
-    let base = AppConfig::default();
-    let before = account_configuration_fingerprint(&base, None, "role").unwrap();
+fn fingerprint_ignores_unrelated_account_lifecycle_changes() {
+    let (base, admitted) = admitted_fingerprint_fixture();
+    let before = account_configuration_fingerprint(&base, None, "role", &admitted).unwrap();
     assert_eq!(
         before,
-        account_configuration_fingerprint(&base, None, "role").unwrap()
+        account_configuration_fingerprint(&base, None, "role", &admitted).unwrap()
     );
-    let mut with_config = base.clone();
-    with_config.agent_configurations.insert(
-        "primary".into(),
-        AgentConfiguration {
-            agent: Agent::Claude,
-            account: "work".into(),
-            model: None,
-            base_url: None,
-            display_label: None,
-            invoked_via_wrapper: None,
-        },
+
+    let mut added = base.clone();
+    added.accounts.insert("d".into(), api_key_account("d"));
+    assert_eq!(
+        before,
+        account_configuration_fingerprint(&added, None, "role", &admitted).unwrap()
     );
+
+    let mut renamed = added.clone();
+    renamed.accounts.get_mut("d").unwrap().name = "D renamed".into();
+    assert_eq!(
+        before,
+        account_configuration_fingerprint(&renamed, None, "role", &admitted).unwrap()
+    );
+
+    let mut disabled = renamed.clone();
+    disabled.accounts.get_mut("d").unwrap().enabled = false;
+    assert_eq!(
+        before,
+        account_configuration_fingerprint(&disabled, None, "role", &admitted).unwrap()
+    );
+
+    let mut unrelated_defaults = disabled.clone();
+    unrelated_defaults.default_launch = Some(vec!["unrelated-d".into()]);
+    assert_eq!(
+        before,
+        account_configuration_fingerprint(&unrelated_defaults, None, "role", &admitted).unwrap()
+    );
+
+    disabled.accounts.remove("d");
+    assert_eq!(
+        before,
+        account_configuration_fingerprint(&disabled, None, "role", &admitted).unwrap()
+    );
+
+    let mut selected_credential_change = base.clone();
+    selected_credential_change
+        .accounts
+        .get_mut("a")
+        .unwrap()
+        .credential = AccountCredential::ApiKey {
+        value: "rotated-a-key".into(),
+        base_url: None,
+        model: None,
+    };
     assert_ne!(
         before,
-        account_configuration_fingerprint(&with_config, None, "role").unwrap()
+        account_configuration_fingerprint(&selected_credential_change, None, "role", &admitted)
+            .unwrap()
     );
-    let mut with_default = base.clone();
-    with_default.default_launch = Some(vec!["primary".into()]);
+
+    let mut selected_capability_change = base;
+    selected_capability_change
+        .agent_configurations
+        .get_mut("b-instance")
+        .unwrap()
+        .model = Some("new-model".into());
     assert_ne!(
         before,
-        account_configuration_fingerprint(&with_default, None, "role").unwrap()
+        account_configuration_fingerprint(&selected_capability_change, None, "role", &admitted)
+            .unwrap()
+    );
+}
+
+#[test]
+fn fingerprint_excludes_manifest_state_labels_and_ambient_bindings() {
+    let (base, admitted) = admitted_fingerprint_fixture();
+    let before = account_configuration_fingerprint(&base, None, "role", &admitted).unwrap();
+
+    let mut state_changed = admitted.clone();
+    state_changed[0].registration_state = RegistrationState::Disabled;
+    assert_eq!(
+        before,
+        account_configuration_fingerprint(&base, None, "role", &state_changed).unwrap()
+    );
+
+    let mut labels_changed = base.clone();
+    labels_changed
+        .agent_configurations
+        .get_mut("b-instance")
+        .unwrap()
+        .display_label = Some("renamed instance".into());
+    assert_eq!(
+        before,
+        account_configuration_fingerprint(&labels_changed, None, "role", &admitted).unwrap()
+    );
+
+    let mut ambient_changed = labels_changed;
+    ambient_changed
+        .accounts
+        .insert("d".into(), api_key_account("d"));
+    ambient_changed
+        .account_bindings
+        .insert(Agent::Codex, "d".into());
+    assert_eq!(
+        before,
+        account_configuration_fingerprint(&ambient_changed, None, "role", &admitted).unwrap()
     );
 }
 
 #[test]
 fn configuration_match_roundtrip() {
     let temp = tempfile::tempdir().unwrap();
-    let config = AppConfig::default();
+    std::fs::create_dir_all(temp.path().join(".jackin")).unwrap();
+    let (config, admitted) = admitted_fingerprint_fixture();
+    let mut manifest = InstanceManifest::new(NewInstanceManifest {
+        container_base: "fixture",
+        workspace_name: None,
+        workspace_label: "fixture",
+        workdir: "/workspace",
+        host_workdir_fingerprint: "fixture",
+        role_key: "role",
+        role_display_name: "Role",
+        agent_runtime: Agent::Claude,
+        role_source_git: "",
+        role_source_ref: None,
+        image_tag: "fixture",
+        docker: DockerResources::from_container_name("fixture"),
+        role_git_sha: None,
+        base_image_ref: None,
+        base_image_digest: None,
+        supported_agents: vec![],
+    });
+    manifest.set_admitted_instances(admitted.iter().cloned());
+    manifest.write(temp.path()).unwrap();
     assert!(!account_configuration_matches(temp.path(), &config, None, "role").unwrap());
     assert!(!account_admission_matches(temp.path(), &config, None, "role").unwrap());
-    let current = account_configuration_fingerprint(&config, None, "role").unwrap();
+    let current = account_configuration_fingerprint(&config, None, "role", &admitted).unwrap();
     std::fs::write(temp.path().join(ACCOUNT_FINGERPRINT_FILE), &current).unwrap();
     std::fs::write(temp.path().join("account-admission.sha256"), &current).unwrap();
     assert!(account_configuration_matches(temp.path(), &config, None, "role").unwrap());
     assert!(account_admission_matches(temp.path(), &config, None, "role").unwrap());
     let mut rotated = config.clone();
-    rotated.default_launch = Some(vec!["other".into()]);
+    rotated.accounts.get_mut("a").unwrap().enabled = false;
     assert!(!account_configuration_matches(temp.path(), &rotated, None, "role").unwrap());
     assert!(!account_admission_matches(temp.path(), &rotated, None, "role").unwrap());
+}
+
+#[test]
+fn admission_record_rejects_rotation_between_staging_and_recording() {
+    let temp = tempfile::tempdir().unwrap();
+    let paths = jackin_core::JackinPaths::for_tests(temp.path());
+    paths.ensure_base_dirs().unwrap();
+    let (config, admitted) = admitted_fingerprint_fixture();
+    std::fs::write(&paths.config_file, toml::to_string(&config).unwrap()).unwrap();
+
+    let revision = AccountConfigRevision::acquire(&paths).unwrap();
+    let (rotation_started_tx, rotation_started_rx) = std::sync::mpsc::channel();
+    let (rotate_tx, rotate_rx) = std::sync::mpsc::channel();
+    let rotated_paths = paths.clone();
+    let mut rotated = config.clone();
+    if let AccountCredential::ApiKey { value, .. } =
+        &mut rotated.accounts.get_mut("a").unwrap().credential
+    {
+        *value = "rotated-a-key".into();
+    }
+    let rotation = std::thread::spawn(move || {
+        rotation_started_tx.send(()).unwrap();
+        rotate_rx.recv().unwrap();
+        std::fs::write(
+            &rotated_paths.config_file,
+            toml::to_string(&rotated).unwrap(),
+        )
+        .unwrap();
+    });
+    rotation_started_rx.recv().unwrap();
+
+    let credentials = jackin_env::resolve_instance_env_with(
+        &config,
+        &jackin_config::resolve_launch(&config, None, "role", None, Some(Agent::Claude)).unwrap(),
+        None,
+        "role",
+        &jackin_env::OpCli::new(),
+        |_| Err(std::env::VarError::NotPresent),
+    )
+    .unwrap();
+    let root = temp.path().join("instance");
+    write_account_credentials(&root, &credentials).unwrap();
+
+    rotate_tx.send(()).unwrap();
+    rotation.join().unwrap();
+
+    let error = record_account_configuration(AccountConfigurationRecord {
+        root: &root,
+        paths: &paths,
+        revision: &revision,
+        config: &config,
+        admission_config: &config,
+        workspace: None,
+        role: "role",
+        admitted: &admitted,
+    })
+    .unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("configuration changed during launch"),
+        "unexpected error: {error:#}"
+    );
+    assert!(!root.join(ACCOUNT_FINGERPRINT_FILE).exists());
+    assert!(!root.join("account-admission.sha256").exists());
 }

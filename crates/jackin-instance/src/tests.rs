@@ -5,6 +5,7 @@
 use super::*;
 use jackin_core::JackinPaths;
 use jackin_manifest::load_role_manifest;
+use std::path::PathBuf;
 use tempfile::tempdir;
 
 fn ignoring_resolvers() -> PrepareResolvers<'static> {
@@ -711,6 +712,63 @@ fn xdg_root_slots_export_the_durable_data_parent() {
     assert_eq!(opencode_target, "/home/agent/.local/share");
 }
 
+fn amp_binding_with_cache(key: &str, cache: PathBuf) -> InstanceAuthBinding {
+    let mut binding =
+        InstanceAuthBinding::new(key, jackin_core::Agent::Amp, AuthForwardMode::Ignore, None);
+    binding.xdg_roots = Some(jackin_config::XdgRoots {
+        data: cache.join("data"),
+        config: cache.join("config"),
+        cache,
+    });
+    binding
+}
+
+#[test]
+fn xdg_overlap_guard_still_rejects_repeated_cache_roots() {
+    let temp = tempdir().unwrap();
+    let cache = temp.path().join("cache");
+    std::fs::create_dir_all(&cache).unwrap();
+    let bindings = [
+        amp_binding_with_cache("first", cache.clone()),
+        amp_binding_with_cache("second", cache),
+    ];
+
+    let error = validate_selected_account_sources(&bindings, temp.path()).unwrap_err();
+    assert!(error.to_string().contains("overlap"), "{error}");
+}
+
+#[test]
+fn xdg_overlap_guard_rejects_dotdot_aliases() {
+    let temp = tempdir().unwrap();
+    let cache = temp.path().join("cache");
+    std::fs::create_dir_all(cache.join("nested")).unwrap();
+    let alias = cache.join("nested/..");
+    let bindings = [
+        amp_binding_with_cache("first", cache),
+        amp_binding_with_cache("second", alias),
+    ];
+
+    let error = validate_selected_account_sources(&bindings, temp.path()).unwrap_err();
+    assert!(error.to_string().contains("parent traversal"), "{error}");
+}
+
+#[cfg(unix)]
+#[test]
+fn xdg_overlap_guard_resolves_symlink_aliases() {
+    let temp = tempdir().unwrap();
+    let cache = temp.path().join("cache");
+    let alias = temp.path().join("cache-alias");
+    std::fs::create_dir_all(&cache).unwrap();
+    std::os::unix::fs::symlink(&cache, &alias).unwrap();
+    let bindings = [
+        amp_binding_with_cache("first", cache),
+        amp_binding_with_cache("second", alias),
+    ];
+
+    let error = validate_selected_account_sources(&bindings, temp.path()).unwrap_err();
+    assert!(error.to_string().contains("overlap"), "{error}");
+}
+
 #[test]
 fn amp_binding_provisions_credentials_from_selected_xdg_roots() {
     let temp = tempdir().unwrap();
@@ -831,6 +889,45 @@ fn opencode_binding_uses_selected_xdg_data_and_cache_roots() {
             .and_then(|value| value.as_str()),
         Some("fixture-key")
     );
+}
+
+#[cfg(unix)]
+#[test]
+fn xdg_cache_overlap_rejects_parent_traversal_and_symlink_aliases() {
+    use std::os::unix::fs::symlink;
+
+    let temp = tempdir().unwrap();
+    let real = temp.path().join("real-cache");
+    let alias = temp.path().join("cache-alias");
+    std::fs::create_dir_all(&real).unwrap();
+    symlink(&real, &alias).unwrap();
+
+    let binding_for = |key: &str, cache: PathBuf| {
+        let mut binding =
+            InstanceAuthBinding::new(key, jackin_core::Agent::Amp, AuthForwardMode::Ignore, None);
+        binding.xdg_roots = Some(jackin_config::XdgRoots {
+            data: temp.path().join(format!("{key}-data")),
+            config: temp.path().join(format!("{key}-config")),
+            cache,
+        });
+        binding
+    };
+
+    let error = validate_selected_account_sources(
+        &[
+            binding_for("first", real.clone()),
+            binding_for("second", alias),
+        ],
+        temp.path(),
+    )
+    .unwrap_err();
+    assert!(error.to_string().contains("overlap"), "{error:#}");
+
+    let traversal = real.join("..").join("real-cache");
+    let error =
+        validate_selected_account_sources(&[binding_for("traversal", traversal)], temp.path())
+            .unwrap_err();
+    assert!(error.to_string().contains("parent traversal"), "{error:#}");
 }
 
 #[test]

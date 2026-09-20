@@ -12,7 +12,8 @@ use jackin_protocol::control::{
     UsageSource,
 };
 use jackin_protocol::usage_broker::{
-    UsageFreshnessPhaseV1, UsageIdentityKindV1, UsageProjectionRefreshStateV1, UsageRefreshPhase,
+    UsageCatalogEntry, UsageFreshnessPhaseV1, UsageIdentityKindV1, UsageProjectionRefreshStateV1,
+    UsageRefreshPhase,
 };
 
 use super::*;
@@ -169,8 +170,14 @@ fn forwarded_scope_selects_only_accounts_backed_by_forwarded_sources() {
             },
         ],
     };
-    let profile_capability = capability_for_binding(&discovery.bindings[0]);
-    let env_capability = capability_for_binding(&discovery.bindings[1]);
+    let profile_capability = capability_for_binding(
+        &discovery.bindings[0],
+        discovery.config_generation.as_deref(),
+    );
+    let env_capability = capability_for_binding(
+        &discovery.bindings[1],
+        discovery.config_generation.as_deref(),
+    );
 
     let profile_only = forwarded_usage_capabilities(
         &discovery,
@@ -256,6 +263,98 @@ fn forwarded_scope_selects_only_accounts_backed_by_forwarded_sources() {
 }
 
 #[test]
+fn rotated_catalog_revision_rejects_in_flight_broker_result() {
+    use crate::host::{CanonicalAccountIdentity, CanonicalAccountSubject, HostSurfaceId};
+
+    let binding = ValidatedCredentialBinding {
+        surface: HostSurfaceId::Claude,
+        identity: Some(CanonicalAccountIdentity {
+            surface: HostSurfaceId::Claude,
+            subject: CanonicalAccountSubject::ProviderId("provider-account".to_owned()),
+        }),
+        source_id: "source-0001".to_owned(),
+        capability_id: "capability-0001".to_owned(),
+        provenance: BTreeSet::from(["account work".to_owned()]),
+        source: ValidatedCredentialSource::Capability,
+    };
+    let old_capability = capability_for_binding(&binding, Some("generation-old"));
+    let current_capability = capability_for_binding(&binding, Some("generation-current"));
+    assert_ne!(old_capability, current_capability);
+
+    let temp = tempfile::tempdir().unwrap();
+    let mut runtime = HostUsageRuntime::new();
+    runtime
+        .open(crate::host::HostRuntimeConfig::under_data_dir(temp.path()))
+        .unwrap();
+    runtime.discovery = Some(ValidatedUsageDiscovery {
+        config_generation: Some("generation-current".to_owned()),
+        accounts: Vec::new(),
+        diagnostics: Vec::new(),
+        candidates: Vec::new(),
+        bindings: vec![binding],
+    });
+
+    runtime
+        .apply_broker_generation(UsageGenerationView {
+            capability: old_capability,
+            generation: 1,
+            phase: UsageRefreshPhase::Completed,
+            snapshot: Some(quota_view()),
+            error: None,
+            retry_at_epoch: None,
+        })
+        .unwrap();
+
+    assert!(runtime.discovered_views.is_empty());
+    assert!(runtime.discovered_provider_views.is_empty());
+}
+
+#[test]
+fn broker_catalog_admits_current_identity_and_rejects_stale_identity() {
+    use crate::host::{CanonicalAccountIdentity, CanonicalAccountSubject, HostSurfaceId};
+
+    let binding = ValidatedCredentialBinding {
+        surface: HostSurfaceId::Claude,
+        identity: Some(CanonicalAccountIdentity {
+            surface: HostSurfaceId::Claude,
+            subject: CanonicalAccountSubject::ProviderId("provider-account".to_owned()),
+        }),
+        source_id: "source-0001".to_owned(),
+        capability_id: "capability-0001".to_owned(),
+        provenance: BTreeSet::from(["account work".to_owned()]),
+        source: ValidatedCredentialSource::Capability,
+    };
+    let stale = capability_for_binding(&binding, Some("generation-stale"));
+    let current = capability_for_binding(&binding, Some("generation-current"));
+    assert_ne!(stale, current);
+
+    let temp = tempfile::tempdir().unwrap();
+    let executor: Arc<dyn UsageProviderExecutor> = Arc::new(CountingExecutor {
+        calls: AtomicUsize::new(0),
+    });
+    let client = ensure_usage_broker_with_executor(
+        UsageBrokerConfig::for_data_dir(temp.path().to_owned()),
+        executor,
+    )
+    .unwrap();
+    client
+        .reconcile_catalog(
+            "generation-current".to_owned(),
+            vec![UsageCatalogEntry {
+                capability: current.clone(),
+                revision: "credential-current".to_owned(),
+            }],
+        )
+        .unwrap();
+
+    assert_eq!(client.current(current).unwrap().generation, 0);
+    assert_eq!(
+        client.current(stale).unwrap_err().kind,
+        UsageCoordinationErrorKind::CatalogRevoked
+    );
+}
+
+#[test]
 fn usage_broker_twenty_clients_join_one_generation_and_probe() {
     let temp = tempfile::tempdir().unwrap();
     let executor = Arc::new(CountingExecutor {
@@ -291,6 +390,69 @@ fn usage_broker_twenty_clients_join_one_generation_and_probe() {
 }
 
 #[test]
+fn concurrent_catalog_rotations_publish_one_complete_revision() {
+    let temp = tempfile::tempdir().unwrap();
+    let client = ensure_usage_broker_with_executor(
+        UsageBrokerConfig::for_data_dir(temp.path().to_owned()),
+        Arc::new(CountingExecutor {
+            calls: AtomicUsize::new(0),
+        }),
+    )
+    .unwrap();
+    let account_a = capability();
+    let account_b = second_capability();
+    let entry_a = UsageCatalogEntry {
+        capability: account_a.clone(),
+        revision: "entry-a".to_owned(),
+    };
+    let entry_b = UsageCatalogEntry {
+        capability: account_b.clone(),
+        revision: "entry-b".to_owned(),
+    };
+    let barrier = Arc::new(Barrier::new(3));
+    let first = {
+        let client = client.clone();
+        let barrier = Arc::clone(&barrier);
+        thread::spawn(move || {
+            barrier.wait();
+            client.reconcile_catalog("catalog-a".to_owned(), vec![entry_a])
+        })
+    };
+    let second = {
+        let client = client.clone();
+        let barrier = Arc::clone(&barrier);
+        thread::spawn(move || {
+            barrier.wait();
+            client.reconcile_catalog("catalog-b".to_owned(), vec![entry_b])
+        })
+    };
+    barrier.wait();
+    let first = first.join().unwrap().unwrap();
+    let second = second.join().unwrap().unwrap();
+    assert!(["catalog-a", "catalog-b"].contains(&first.discovery_revision.as_str()));
+    assert!(["catalog-a", "catalog-b"].contains(&second.discovery_revision.as_str()));
+
+    let final_projection = client.current_projection().unwrap();
+    match final_projection.discovery_revision.as_str() {
+        "catalog-a" => {
+            assert_eq!(client.current(account_a).unwrap().generation, 0);
+            assert_eq!(
+                client.current(account_b).unwrap_err().kind,
+                UsageCoordinationErrorKind::CatalogRevoked
+            );
+        }
+        "catalog-b" => {
+            assert_eq!(client.current(account_b).unwrap().generation, 0);
+            assert_eq!(
+                client.current(account_a).unwrap_err().kind,
+                UsageCoordinationErrorKind::CatalogRevoked
+            );
+        }
+        revision => panic!("mixed or unknown catalog revision: {revision}"),
+    }
+}
+
+#[test]
 fn usage_broker_handshake_mismatch_fails_before_provider_dispatch() {
     let temp = tempfile::tempdir().unwrap();
     let executor = Arc::new(CountingExecutor {
@@ -304,6 +466,47 @@ fn usage_broker_handshake_mismatch_fails_before_provider_dispatch() {
     let error = incompatible.refresh(capability(), 0, true).unwrap_err();
     assert_eq!(error.kind, UsageCoordinationErrorKind::ProtocolMismatch);
     assert_eq!(executor.calls.load(Ordering::SeqCst), 0);
+}
+
+#[test]
+fn existing_broker_reconcile_revokes_without_returning_stale_projection() {
+    let temp = tempfile::tempdir().unwrap();
+    let executor: Arc<dyn UsageProviderExecutor> = Arc::new(CountingExecutor {
+        calls: AtomicUsize::new(0),
+    });
+    let client = ensure_usage_broker_with_executor(
+        UsageBrokerConfig::for_data_dir(temp.path().to_owned()),
+        executor,
+    )
+    .unwrap();
+    let entry = UsageCatalogEntry {
+        capability: capability(),
+        revision: "credential-a".to_owned(),
+    };
+
+    let admitted = client
+        .reconcile_catalog("catalog-a".to_owned(), vec![entry.clone()])
+        .unwrap();
+    let queued = client.refresh(capability(), 0, true).unwrap();
+    let completed = client
+        .join(capability(), queued.generation, Duration::from_secs(2))
+        .unwrap();
+    assert_eq!(completed.phase, UsageRefreshPhase::Completed);
+
+    let removed = client
+        .reconcile_catalog("catalog-b".to_owned(), Vec::new())
+        .unwrap();
+    assert_eq!(removed.broker_instance_id, admitted.broker_instance_id);
+    assert_eq!(removed.discovery_revision, "catalog-b");
+    assert_eq!(
+        removed.providers[0].accounts[0].canonical_account_id,
+        capability().account_id
+    );
+    assert_eq!(
+        removed.providers[0].accounts[0].status_label.as_deref(),
+        Some("removed")
+    );
+    assert_eq!(client.current_projection().unwrap(), removed);
 }
 
 #[test]

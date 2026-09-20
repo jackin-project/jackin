@@ -25,7 +25,7 @@ fn short_test_paths() -> (TempDir, JackinPaths) {
 
 fn provision_account_admission(paths: &JackinPaths, container_name: &str) {
     let config = jackin_config::AppConfig::default();
-    write_admission_fixture(paths, container_name, &config, None);
+    write_admission_fixture(paths, container_name, &config, None, &[]);
 }
 
 fn provision_agent_admission(paths: &JackinPaths, container_name: &str, agent: jackin_core::Agent) {
@@ -58,14 +58,10 @@ fn provision_agent_admission(paths: &JackinPaths, container_name: &str, agent: j
             invoked_via_wrapper: None,
         },
     );
-    write_admission_fixture(paths, container_name, &config, None);
-
-    let root = paths.data_dir.join(container_name);
-    let mut manifest = InstanceManifest::read(&root).unwrap();
-    manifest.set_admitted_instances([crate::instance::AdmittedInstance::new(
+    let admitted = [crate::instance::AdmittedInstance::new(
         config_id, agent, account_id,
-    )]);
-    manifest.write(&root).unwrap();
+    )];
+    write_admission_fixture(paths, container_name, &config, None, &admitted);
 }
 
 fn write_admission_fixture(
@@ -73,6 +69,7 @@ fn write_admission_fixture(
     container_name: &str,
     config: &jackin_config::AppConfig,
     workspace: Option<&str>,
+    admitted: &[crate::instance::AdmittedInstance],
 ) {
     std::fs::create_dir_all(&paths.config_dir).unwrap();
     std::fs::write(
@@ -88,7 +85,7 @@ fn write_admission_fixture(
     );
     let root = paths.data_dir.join(container_name);
     std::fs::create_dir_all(&root).unwrap();
-    let manifest = InstanceManifest::new(crate::instance::NewInstanceManifest {
+    let mut manifest = InstanceManifest::new(crate::instance::NewInstanceManifest {
         container_base: container_name,
         workspace_name: workspace,
         workspace_label: "test",
@@ -111,14 +108,19 @@ fn write_admission_fixture(
         base_image_digest: None,
         supported_agents: vec![],
     });
+    manifest.set_admitted_instances(admitted.iter().cloned());
     manifest.write(&root).unwrap();
     let workspace = workspace
         .map(jackin_core::WorkspaceName::parse)
         .transpose()
         .unwrap();
-    let digest =
-        super::super::account_configuration_fingerprint(config, workspace.as_ref(), "agent-smith")
-            .unwrap();
+    let digest = super::super::launch::account_configuration_fingerprint(
+        config,
+        workspace.as_ref(),
+        "agent-smith",
+        &manifest.admitted_instances,
+    )
+    .unwrap();
     std::fs::write(root.join("account-admission.sha256"), digest).unwrap();
 }
 
@@ -157,18 +159,15 @@ fn provision_duplicate_agent_admission(
             },
         );
     }
-    write_admission_fixture(paths, container_name, &config, None);
-    let root = paths.data_dir.join(container_name);
-    let mut manifest = InstanceManifest::read(&root).unwrap();
-    manifest.set_admitted_instances([
+    let admitted = [
         crate::instance::AdmittedInstance::new("claude-work", jackin_core::Agent::Claude, "work"),
         crate::instance::AdmittedInstance::new(
             "claude-personal",
             jackin_core::Agent::Claude,
             "personal",
         ),
-    ]);
-    manifest.write(&root).unwrap();
+    ];
+    write_admission_fixture(paths, container_name, &config, None, &admitted);
     config
 }
 
@@ -1351,15 +1350,12 @@ async fn revoked_account_blocks_focused_attach_agent_and_shell_before_exec() {
                 ..WorkspaceConfig::default()
             },
         );
-        write_admission_fixture(&paths, name, &config, Some("project"));
-        let root = paths.data_dir.join(name);
-        let mut manifest = InstanceManifest::read(&root).unwrap();
-        manifest.set_admitted_instances([crate::instance::AdmittedInstance::new(
+        let admitted = [crate::instance::AdmittedInstance::new(
             "work@claude",
             jackin_core::Agent::Claude,
             "work",
-        )]);
-        manifest.write(&root).unwrap();
+        )];
+        write_admission_fixture(&paths, name, &config, Some("project"), &admitted);
         require_current_account_admission(&paths, name).unwrap();
         if disable {
             config.accounts.get_mut("work").unwrap().enabled = false;
@@ -1444,7 +1440,12 @@ fn missing_policy_and_changed_binding_deny_reconnect() {
     config
         .account_bindings
         .insert(jackin_core::Agent::Claude, "personal".into());
-    write_admission_fixture(&paths, name, &config, None);
+    let admitted = [crate::instance::AdmittedInstance::new(
+        "personal@claude",
+        jackin_core::Agent::Claude,
+        "personal",
+    )];
+    write_admission_fixture(&paths, name, &config, None, &admitted);
     require_current_account_admission(&paths, name).unwrap();
     config
         .account_bindings
@@ -1455,7 +1456,7 @@ fn missing_policy_and_changed_binding_deny_reconnect() {
     )
     .unwrap();
     assert!(require_current_account_admission(&paths, name).is_err());
-    write_admission_fixture(&paths, name, &config, None);
+    write_admission_fixture(&paths, name, &config, None, &[]);
     std::fs::remove_file(paths.data_dir.join(name).join("account-admission.sha256")).unwrap();
     assert!(require_current_account_admission(&paths, name).is_err());
 }

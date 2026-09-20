@@ -260,18 +260,14 @@ mod linux {
         session_root: &Path,
         require_runtime_files: bool,
     ) -> Result<Vec<Rule>> {
-        anyhow::ensure!(cwd.is_absolute(), "isolated session cwd must be absolute");
-        anyhow::ensure!(
-            !cwd.starts_with(Path::new(jackin_core::container_paths::JACKIN_ROOT))
-                && !cwd.starts_with(Path::new("/home/agent")),
-            "isolated session cwd cannot be a capsule or agent-private path"
-        );
+        let cwd = validate_cwd_boundary(config, cwd)?;
+        let session_root = normalize_existing_path(session_root)?;
         let mut rules = Vec::new();
         // The workspace and selected slot roots may contain legitimate
         // process-local Unix sockets. Sensitive `/jackin/run` sockets never
         // receive this bit.
-        required_exact_rule(&mut rules, cwd, FULL_WITH_UNIX);
-        required_exact_rule(&mut rules, session_root, FULL_WITH_UNIX);
+        required_exact_rule(&mut rules, &cwd, FULL_WITH_UNIX);
+        required_exact_rule(&mut rules, &session_root, FULL_WITH_UNIX);
         if require_runtime_files {
             for path in [
                 format!(
@@ -379,16 +375,16 @@ mod linux {
                 "admitted instance has no private home/auth mount paths"
             );
             for path in paths {
-                let path_ref = Path::new(path);
-                let access = if path_ref.is_dir() {
+                let path = normalize_existing_path(Path::new(path))?;
+                let access = if path.is_dir() {
                     FULL_WITH_UNIX
                 } else {
                     // Forwarded auth files are Docker/Apple read-only mounts;
                     // keep the Landlock grant read-only too.
                     READ_FILE_ONLY
                 };
-                required_exact_rule(&mut rules, path_ref, access);
-                if let Some(relative) = path.strip_prefix("/home/agent/") {
+                required_exact_rule(&mut rules, &path, access);
+                if let Ok(relative) = path.strip_prefix(Path::new("/home/agent/")) {
                     // Runtime setup may seed this selected slot from the
                     // image snapshot. Never allow the snapshot root itself:
                     // it contains every agent's default fragment.
@@ -401,6 +397,61 @@ mod linux {
             }
         }
         Ok(rules)
+    }
+
+    /// Existing cwd aliases are canonicalized before any recursive Landlock
+    /// grant is created. The grant must not overlap capsule-owned roots or any
+    /// private mount destination, including a path supplied by a stale or
+    /// hostile launch config.
+    fn normalize_existing_path(path: &Path) -> Result<PathBuf> {
+        anyhow::ensure!(path.is_absolute(), "isolated session cwd must be absolute");
+        let normalized = jackin_core::container_paths::normalize_path(path);
+        match fs::canonicalize(&normalized) {
+            Ok(path) => Ok(path),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(normalized),
+            Err(error) => Err(error.into()),
+        }
+    }
+
+    fn validate_cwd_boundary(config: &CapsuleConfig, cwd: &Path) -> Result<PathBuf> {
+        let lexical_cwd = jackin_core::container_paths::normalize_path(cwd);
+        let cwd = normalize_existing_path(&lexical_cwd)?;
+        for protected_root in ["/home/agent", jackin_core::container_paths::JACKIN_ROOT] {
+            let lexical_root =
+                jackin_core::container_paths::normalize_path(Path::new(protected_root));
+            anyhow::ensure!(
+                !jackin_core::container_paths::paths_overlap(&lexical_cwd, &lexical_root),
+                "isolated session cwd {} overlaps protected root {}",
+                lexical_cwd.display(),
+                lexical_root.display()
+            );
+            let protected_root = normalize_existing_path(&lexical_root)?;
+            anyhow::ensure!(
+                !jackin_core::container_paths::paths_overlap(&cwd, &protected_root),
+                "isolated session cwd {} overlaps protected root {}",
+                cwd.display(),
+                protected_root.display()
+            );
+        }
+        for (instance, paths) in &config.instance_mount_paths {
+            for path in paths {
+                let lexical_mount = jackin_core::container_paths::normalize_path(Path::new(path));
+                anyhow::ensure!(
+                    !jackin_core::container_paths::paths_overlap(&lexical_cwd, &lexical_mount),
+                    "isolated session cwd {} overlaps protected mount destination {} for instance {instance}",
+                    lexical_cwd.display(),
+                    lexical_mount.display()
+                );
+                let mount = normalize_existing_path(&lexical_mount)?;
+                anyhow::ensure!(
+                    !jackin_core::container_paths::paths_overlap(&cwd, &mount),
+                    "isolated session cwd {} overlaps protected mount destination {} for instance {instance}",
+                    cwd.display(),
+                    mount.display()
+                );
+            }
+        }
+        Ok(cwd)
     }
 
     fn session_root_path(session_id: u64) -> PathBuf {
@@ -781,6 +832,78 @@ mod tests {
                 .any(|rule| rule.path == Path::new("/jackin/runtime")
                     && rule.access == super::linux::TRAVERSE)
         );
+    }
+
+    #[test]
+    fn cwd_boundary_rejects_root_ancestors_and_noncanonical_aliases() {
+        let config = CapsuleConfig::default();
+        for cwd in ["/", "/home", "/jackin", "/workspace/../"] {
+            let error = rules_for_test(
+                &config,
+                None,
+                Path::new(cwd),
+                Path::new("/jackin/run/sessions/1"),
+            )
+            .expect_err("protected cwd must be rejected before rule construction");
+            assert!(
+                error.to_string().contains("protected"),
+                "unexpected cwd rejection for {cwd}: {error:#}"
+            );
+        }
+    }
+
+    #[test]
+    fn cwd_boundary_rejects_existing_symlink_alias_to_protected_root() {
+        let temp = tempfile::tempdir().expect("symlink fixture");
+        let alias = temp.path().join("home-alias");
+        std::os::unix::fs::symlink("/home", &alias).expect("protected-root symlink");
+
+        let error = rules_for_test(
+            &CapsuleConfig::default(),
+            None,
+            &alias,
+            Path::new("/jackin/run/sessions/1"),
+        )
+        .expect_err("symlink alias to protected root must be rejected");
+        assert!(error.to_string().contains("protected"));
+    }
+
+    #[test]
+    fn cwd_boundary_rejects_ancestor_of_any_private_mount_destination() {
+        let config = CapsuleConfig {
+            instance_mount_paths: BTreeMap::from([(
+                "canary".to_owned(),
+                vec!["/workspace/private-slot".to_owned()],
+            )]),
+            ..CapsuleConfig::default()
+        };
+        let error = rules_for_test(
+            &config,
+            None,
+            Path::new("/workspace"),
+            Path::new("/jackin/run/sessions/1"),
+        )
+        .expect_err("cwd ancestor of private mount must be rejected");
+        assert!(error.to_string().contains("mount destination"));
+    }
+
+    #[test]
+    fn valid_workspace_cwd_retains_full_access_for_workspace_only() {
+        let temp = tempfile::tempdir().expect("workspace fixture");
+        let workspace = temp.path().join("workspace");
+        let session_root = temp.path().join("session");
+        fs::create_dir(&workspace).expect("workspace");
+        fs::create_dir(&session_root).expect("session root");
+
+        let rules = rules_for_test(&CapsuleConfig::default(), None, &workspace, &session_root)
+            .expect("ordinary workspace cwd must remain valid");
+        let workspace = workspace.canonicalize().expect("canonical workspace");
+        assert!(rules.iter().any(|rule| {
+            rule.path == workspace && rule.access == FULL_WITH_UNIX && rule.required
+        }));
+        assert!(!rules.iter().any(|rule| {
+            rule.path == Path::new("/") && rule.access & test_support::WRITABLE != 0
+        }));
     }
 
     #[test]
