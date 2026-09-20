@@ -2132,24 +2132,117 @@ fn account_env_injection_is_bounded_by_agent_provider_and_auth_family() {
         Some("https://api.z.ai/api/anthropic")
     );
     assert!(routed_claude.get_env("OPENAI_API_KEY").is_none());
+}
 
-    let mut unproved_routed_claude = build_agent_command(&spawn_spec(
+#[test]
+fn moonshot_opencode_credential_requires_selected_surface_and_rejects_foreign_key() {
+    let credentials: jackin_protocol::AgentCredentialEnv =
+        serde_json::from_value(serde_json::json!({
+            "schema_version": 2,
+            "instances": {
+                "opencode-kimi": {
+                    "agent": "opencode",
+                    "account_id": "acc-kimi",
+                    "env": {
+                        "MOONSHOT_API_KEY": "selected-moonshot-key",
+                        "OPENAI_API_KEY": "foreign-openai-sentinel"
+                    },
+                },
+            },
+        }))
+        .expect("credential fixture must decode");
+    let empty: Vec<(String, String)> = Vec::new();
+
+    let mut selected = build_agent_command(&spawn_spec(
+        "opencode",
+        "opencode-kimi",
+        Some("api_key"),
+        &empty,
+    ));
+    super::apply_account_env(
+        &mut selected,
+        "opencode-kimi",
+        Some("api_key"),
+        Some("kimi"),
+        &credentials,
+    );
+    assert_eq!(
+        selected
+            .get_env(jackin_core::MOONSHOT_API_KEY_ENV_NAME)
+            .and_then(|value| value.to_str()),
+        Some("selected-moonshot-key")
+    );
+    assert!(selected.get_env("OPENAI_API_KEY").is_none());
+
+    let mut unselected = build_agent_command(&spawn_spec(
+        "opencode",
+        "opencode-kimi",
+        Some("api_key"),
+        &empty,
+    ));
+    super::apply_account_env(
+        &mut unselected,
+        "opencode-kimi",
+        Some("api_key"),
+        None,
+        &credentials,
+    );
+    assert!(unselected.get_env("MOONSHOT_API_KEY").is_none());
+}
+
+#[test]
+fn routed_claude_credentials_require_selected_surface() {
+    let credentials: jackin_protocol::AgentCredentialEnv =
+        serde_json::from_value(serde_json::json!({
+            "schema_version": 2,
+            "instances": {
+                "claude-routed": {
+                    "agent": "claude",
+                    "account_id": "acc-zai",
+                    "env": {
+                        "ANTHROPIC_AUTH_TOKEN": "selected-zai-token",
+                        "ANTHROPIC_BASE_URL": "https://api.z.ai/api/anthropic"
+                    },
+                },
+            },
+        }))
+        .expect("credential fixture must decode");
+    let empty: Vec<(String, String)> = Vec::new();
+    let mut selected = build_agent_command(&spawn_spec(
         "claude",
         "claude-routed",
         Some("api_key"),
         &empty,
     ));
     super::apply_account_env(
-        &mut unproved_routed_claude,
+        &mut selected,
+        "claude-routed",
+        Some("api_key"),
+        Some("zai"),
+        &credentials,
+    );
+    assert_eq!(
+        selected
+            .get_env("ANTHROPIC_AUTH_TOKEN")
+            .and_then(|value| value.to_str()),
+        Some("selected-zai-token")
+    );
+
+    let mut unselected = build_agent_command(&spawn_spec(
+        "claude",
+        "claude-routed",
+        Some("api_key"),
+        &empty,
+    ));
+    super::apply_account_env(
+        &mut unselected,
         "claude-routed",
         Some("api_key"),
         None,
         &credentials,
     );
     assert!(
-        unproved_routed_claude
-            .get_env("ANTHROPIC_AUTH_TOKEN")
-            .is_none(),
+        unselected.get_env("ANTHROPIC_AUTH_TOKEN").is_none(),
         "routed Claude credentials must not inject without a selected provider surface"
     );
 }

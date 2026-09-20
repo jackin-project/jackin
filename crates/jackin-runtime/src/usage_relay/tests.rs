@@ -134,6 +134,95 @@ fn launch_usage_capabilities_preserve_account_identity_and_provider_surface() {
 }
 
 #[test]
+fn staged_account_credential_proof_uses_exact_account_and_provider_surface() {
+    use jackin_config::{AccountConfig, AccountCredential, AiProvider, ResolvedInstance};
+    use jackin_core::Agent;
+    use jackin_protocol::{AgentCredentialEnv, InstanceCredentialEnv};
+
+    let mut config = AppConfig::default();
+    config.accounts.insert(
+        "claude-zai".to_owned(),
+        AccountConfig {
+            enabled: true,
+            name: "Claude Z.AI".to_owned(),
+            provider: AiProvider::Zai,
+            credential: AccountCredential::ApiKey {
+                value: "claude-zai-secret".into(),
+                base_url: Some("https://api.z.ai/api/anthropic".to_owned()),
+                model: None,
+            },
+        },
+    );
+    config.accounts.insert(
+        "kimi".to_owned(),
+        AccountConfig {
+            enabled: true,
+            name: "Kimi".to_owned(),
+            provider: AiProvider::Moonshot,
+            credential: AccountCredential::ApiKey {
+                value: "kimi-secret".into(),
+                base_url: Some("https://api.moonshot.ai/v1".to_owned()),
+                model: None,
+            },
+        },
+    );
+    let instances = vec![
+        ResolvedInstance {
+            config_id: "claude-zai".to_owned(),
+            agent: Agent::Claude,
+            account_id: "claude-zai".to_owned(),
+            model: None,
+            base_url: Some("https://api.z.ai/api/anthropic".to_owned()),
+            xdg_roots: None,
+            label: "Claude Z.AI".to_owned(),
+            synthesized: false,
+        },
+        ResolvedInstance {
+            config_id: "kimi-opencode".to_owned(),
+            agent: Agent::Opencode,
+            account_id: "kimi".to_owned(),
+            model: None,
+            base_url: Some("https://api.moonshot.ai/v1".to_owned()),
+            xdg_roots: None,
+            label: "Kimi".to_owned(),
+            synthesized: false,
+        },
+    ];
+    let credentials = AgentCredentialEnv::new(BTreeMap::from([
+        (
+            "claude-zai".to_owned(),
+            InstanceCredentialEnv {
+                agent: "claude".to_owned(),
+                account_id: "claude-zai".to_owned(),
+                env: BTreeMap::from([(
+                    "ANTHROPIC_AUTH_TOKEN".to_owned(),
+                    "claude-zai-secret".to_owned(),
+                )]),
+            },
+        ),
+        (
+            "kimi-opencode".to_owned(),
+            InstanceCredentialEnv {
+                agent: "opencode".to_owned(),
+                account_id: "kimi".to_owned(),
+                env: BTreeMap::from([(
+                    jackin_core::MOONSHOT_API_KEY_ENV_NAME.to_owned(),
+                    "kimi-secret".to_owned(),
+                )]),
+            },
+        ),
+    ]));
+
+    assert_eq!(
+        staged_selected_account_credentials(&config, &instances, &credentials),
+        BTreeSet::from([
+            ("claude-zai".to_owned(), "zai".to_owned()),
+            ("kimi".to_owned(), "kimi".to_owned()),
+        ])
+    );
+}
+
+#[test]
 fn credential_surface_survives_usage_authority_canonicalization() {
     use crate::instance::{AgentRuntimeState, GithubProvisionOutcome, ProvisionedAuth, RoleState};
     use jackin_core::Agent;
@@ -165,11 +254,14 @@ fn credential_surface_survives_usage_authority_canonicalization() {
         ..CapsuleConfig::default()
     };
 
-    let sources = forwarded_sources_from_launch_config(&state, &resolved_env, &launch_config);
+    let staged = BTreeSet::from([("account-zai".to_owned(), "zai".to_owned())]);
+    let sources =
+        forwarded_sources_from_launch_config(&state, &resolved_env, &launch_config, &staged);
     assert_eq!(
         sources.selected_account_surfaces,
         BTreeMap::from([("account-zai".to_owned(), "zai".to_owned())])
     );
+    assert_eq!(sources.selected_account_credentials, staged);
 
     CanonicalLaunchUsageCapabilities::default().apply_to_launch_config(&mut launch_config);
     assert!(launch_config.usage_capabilities.is_empty());
@@ -239,6 +331,7 @@ fn launch_discovery_relay_uses_distinct_canonical_ids_for_same_surface() -> Resu
             ("personal-openai".to_owned(), "codex".to_owned()),
             ("work-openai".to_owned(), "codex".to_owned()),
         ]),
+        selected_account_credentials: BTreeSet::new(),
         profile_surface_ids: BTreeSet::from(["codex".to_owned()]),
         env_keys: BTreeSet::new(),
     };
@@ -394,7 +487,7 @@ fn forwarded_sources_include_only_provisioned_profiles_and_governed_env() {
     use crate::instance::{
         AgentRuntimeState, AuthProvisionOutcome, GithubProvisionOutcome, ProvisionedAuth, RoleState,
     };
-    use jackin_core::Agent;
+    use jackin_core::{Agent, MOONSHOT_API_KEY_ENV_NAME};
 
     let temp = tempfile::tempdir().unwrap();
     let state = RoleState {
@@ -416,6 +509,10 @@ fn forwarded_sources_include_only_provisioned_profiles_and_governed_env() {
         vars: vec![
             ("OPENAI_API_KEY".to_owned(), "secret".to_owned()),
             ("GOOGLE_API_KEY".to_owned(), "alias-secret".to_owned()),
+            (
+                MOONSHOT_API_KEY_ENV_NAME.to_owned(),
+                "kimi-secret".to_owned(),
+            ),
             ("UNRELATED".to_owned(), "value".to_owned()),
         ],
     };
@@ -427,7 +524,11 @@ fn forwarded_sources_include_only_provisioned_profiles_and_governed_env() {
     );
     assert_eq!(
         sources.env_keys,
-        BTreeSet::from(["GOOGLE_API_KEY".to_owned(), "OPENAI_API_KEY".to_owned(),])
+        BTreeSet::from([
+            "GOOGLE_API_KEY".to_owned(),
+            "MOONSHOT_API_KEY".to_owned(),
+            "OPENAI_API_KEY".to_owned(),
+        ])
     );
 }
 
@@ -444,6 +545,7 @@ fn hermetic_layout_never_starts_host_usage_discovery() {
     let forwarded_sources = ForwardedUsageSources {
         selected_account_ids: BTreeSet::new(),
         selected_account_surfaces: BTreeMap::new(),
+        selected_account_credentials: BTreeSet::new(),
         profile_surface_ids: BTreeSet::new(),
         env_keys: BTreeSet::from(["ZAI_API_KEY".to_owned()]),
     };
@@ -635,6 +737,7 @@ async fn usage_relay_impossible_socket_path_skips_discovery() {
         forwarded_sources: ForwardedUsageSources {
             selected_account_ids: BTreeSet::new(),
             selected_account_surfaces: BTreeMap::new(),
+            selected_account_credentials: BTreeSet::new(),
             profile_surface_ids: BTreeSet::from(["claude".to_owned()]),
             env_keys: BTreeSet::new(),
         },

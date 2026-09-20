@@ -279,6 +279,10 @@ pub struct ForwardedUsageSources {
     /// lets the runtime replace the config alias with the canonical authority
     /// discovered for that exact account.
     pub selected_account_surfaces: BTreeMap<String, String>,
+    /// Exact `(account_id, provider_surface)` pairs whose selected credential
+    /// entries were staged for this Capsule. This is independent proof of
+    /// credential delivery; selected-surface metadata alone is not authority.
+    pub selected_account_credentials: BTreeSet<(String, String)>,
     /// Surface ids with a successfully forwarded profile directory.
     pub profile_surface_ids: BTreeSet<String>,
     /// Governed provider env names present in the Capsule's resolved environment.
@@ -294,27 +298,70 @@ struct ScopedCapability {
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum ForwardingRequirement {
     Profile(String),
-    Env(String),
-    Capability,
+    Env {
+        key: String,
+        account_surfaces: BTreeSet<(String, String)>,
+    },
+    Capability(BTreeSet<(String, String)>),
 }
 
 impl ForwardingRequirement {
     fn is_forwarded(&self, sources: &ForwardedUsageSources) -> bool {
         match self {
             Self::Profile(surface) => sources.profile_surface_ids.contains(surface),
-            Self::Env(key) => sources.env_keys.contains(key),
-            Self::Capability => false,
+            Self::Env {
+                key,
+                account_surfaces,
+            } => {
+                sources.env_keys.contains(key)
+                    || selected_account_credential_is_forwarded(account_surfaces, sources)
+            }
+            Self::Capability(account_surfaces) => {
+                selected_account_credential_is_forwarded(account_surfaces, sources)
+            }
         }
     }
 }
 
+fn selected_account_credential_is_forwarded(
+    account_surfaces: &BTreeSet<(String, String)>,
+    sources: &ForwardedUsageSources,
+) -> bool {
+    account_surfaces.iter().any(|(account_id, surface_id)| {
+        sources.selected_account_ids.contains(account_id)
+            && sources
+                .selected_account_surfaces
+                .get(account_id)
+                .is_some_and(|selected_surface| selected_surface == surface_id)
+            && sources
+                .selected_account_credentials
+                .contains(&(account_id.clone(), surface_id.clone()))
+    })
+}
+
+fn account_surface_pairs(binding: &ValidatedCredentialBinding) -> BTreeSet<(String, String)> {
+    binding
+        .provenance
+        .iter()
+        .filter_map(|provenance| provenance.strip_prefix("account "))
+        .filter(|account_id| !account_id.is_empty())
+        .map(|account_id| (account_id.to_owned(), binding.surface.id().to_owned()))
+        .collect()
+}
+
 fn forwarding_requirement(binding: &ValidatedCredentialBinding) -> ForwardingRequirement {
+    let account_surfaces = account_surface_pairs(binding);
     match &binding.source {
         ValidatedCredentialSource::Profile(_) => {
             ForwardingRequirement::Profile(binding.surface.id().to_owned())
         }
-        ValidatedCredentialSource::Env { key, .. } => ForwardingRequirement::Env(key.clone()),
-        ValidatedCredentialSource::Capability => ForwardingRequirement::Capability,
+        ValidatedCredentialSource::Env { key, .. } => ForwardingRequirement::Env {
+            key: key.clone(),
+            account_surfaces,
+        },
+        ValidatedCredentialSource::Capability => {
+            ForwardingRequirement::Capability(account_surfaces)
+        }
     }
 }
 

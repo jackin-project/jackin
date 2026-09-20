@@ -547,7 +547,7 @@ fn multi_provider_key(surface: &str) -> Option<&'static str> {
         "claude" => Some(jackin_core::ANTHROPIC_API_KEY_ENV_NAME),
         "codex" => Some(jackin_core::OPENAI_API_KEY_ENV_NAME),
         "grok" => Some(jackin_core::XAI_API_KEY_ENV_NAME),
-        "kimi" => Some("MOONSHOT_API_KEY"),
+        "kimi" => Some(jackin_core::MOONSHOT_API_KEY_ENV_NAME),
         "zai" => Some("ZHIPU_API_KEY"),
         "minimax" => Some(jackin_core::MINIMAX_API_KEY_ENV_NAME),
         "google" => Some(jackin_core::GEMINI_API_KEY_ENV_NAME),

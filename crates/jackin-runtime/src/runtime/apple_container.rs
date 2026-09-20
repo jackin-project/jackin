@@ -235,6 +235,9 @@ pub struct AppleContainerLaunch<'a> {
     pub capsule_config: &'a jackin_protocol::CapsuleConfig,
     pub state: &'a crate::instance::RoleState,
     pub resolved_env: &'a jackin_env::ResolvedEnv,
+    /// Secret-free proof of staged selected account credentials, keyed by
+    /// exact account and provider surface.
+    pub staged_account_credentials: &'a std::collections::BTreeSet<(String, String)>,
     pub debug: bool,
 }
 
@@ -271,6 +274,7 @@ pub async fn launch(args: AppleContainerLaunch<'_>) -> Result<()> {
         capsule_config,
         state,
         resolved_env,
+        staged_account_credentials,
         debug,
     } = args;
 
@@ -319,6 +323,7 @@ pub async fn launch(args: AppleContainerLaunch<'_>) -> Result<()> {
                 state,
                 resolved_env,
                 &capsule_config,
+                staged_account_credentials,
             ),
             socket_dir: socket_dir.clone(),
         })

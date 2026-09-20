@@ -353,7 +353,7 @@ impl AccountConfig {
                 AiProvider::Anthropic => "ANTHROPIC_API_KEY",
                 AiProvider::OpenAi => "OPENAI_API_KEY",
                 AiProvider::Xai => "XAI_API_KEY",
-                AiProvider::Moonshot => "MOONSHOT_API_KEY",
+                AiProvider::Moonshot => jackin_core::MOONSHOT_API_KEY_ENV_NAME,
                 AiProvider::Zai => "ZHIPU_API_KEY",
                 AiProvider::Minimax => "MINIMAX_API_KEY",
                 AiProvider::Google => "GEMINI_API_KEY",

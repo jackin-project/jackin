@@ -52,6 +52,9 @@ pub(crate) struct LaunchContext<'a> {
     pub(crate) agent: jackin_core::Agent,
     pub(crate) capsule_config: &'a jackin_protocol::CapsuleConfig,
     pub(crate) resolved_env: &'a jackin_env::ResolvedEnv,
+    /// Secret-free proof of staged selected account credentials, keyed by
+    /// exact account and provider surface.
+    pub(crate) staged_account_credentials: &'a std::collections::BTreeSet<(String, String)>,
     pub(crate) profile: crate::runtime::docker_profile::DockerSecurityProfile,
     pub(crate) profile_source: crate::runtime::docker_profile::ProfileSource,
     pub(crate) grants: &'a crate::runtime::docker_profile::EffectiveGrants,
@@ -360,6 +363,7 @@ pub(crate) async fn launch_role_runtime(
         agent,
         capsule_config,
         resolved_env,
+        staged_account_credentials,
         profile,
         profile_source,
         grants,
@@ -937,6 +941,7 @@ pub(crate) async fn launch_role_runtime(
                 state,
                 resolved_env,
                 &capsule_config,
+                staged_account_credentials,
             ),
             socket_dir: socket_dir.clone(),
         })

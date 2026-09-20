@@ -5,7 +5,6 @@
 
 /// Account routing names in addition to the provider credential catalog.
 pub const ACCOUNT_ROUTING_ENV_NAMES: &[&str] = &[
-    "MOONSHOT_API_KEY",
     "MINIMAX_API_TOKEN",
     "MINIMAX_CODING_API_KEY",
     "Z_AI_API_KEY",

@@ -13,12 +13,12 @@ use std::sync::Arc;
 use anyhow::{Context as _, Result};
 use jackin_config::AppConfig;
 use jackin_core::{JackinPaths, UsageCredentialEnvName, WorkspaceName};
-use jackin_protocol::CapsuleConfig;
 use jackin_protocol::usage_broker::{
     USAGE_BROKER_MAX_FRAME_BYTES, USAGE_BROKER_PROTOCOL_VERSION, UsageAccountCapability,
     UsageBrokerOperation, UsageBrokerRequest, UsageBrokerResponse, UsageCoordinationError,
     UsageCoordinationErrorKind, UsageRelayTunnelRequest, UsageRelayTunnelResponse,
 };
+use jackin_protocol::{AgentCredentialEnv, CapsuleConfig};
 use jackin_usage::coordinator::UsageCapabilitySet;
 use jackin_usage::host::{
     CachedProviderCredentialResolver, ForwardedUsageSources, HostSurfaceId,
@@ -138,6 +138,35 @@ pub struct UsageRelayLaunch<'a> {
     pub forwarded_sources: ForwardedUsageSources,
     /// Per-container host socket directory already mounted at `/jackin/run`.
     pub socket_dir: PathBuf,
+}
+
+/// Derive secret-free proof from the exact per-instance credential entries
+/// written by the launch credential stager. A provider surface is included
+/// only when the staged entry still names the admitted instance/account and
+/// the account's configured provider resolves to that same surface.
+#[must_use]
+pub(crate) fn staged_selected_account_credentials(
+    config: &AppConfig,
+    instances: &[jackin_config::ResolvedInstance],
+    credentials: &AgentCredentialEnv,
+) -> BTreeSet<(String, String)> {
+    credentials
+        .iter()
+        .filter_map(|(instance_id, credential)| {
+            let instance = instances
+                .iter()
+                .find(|instance| instance.config_id == *instance_id)?;
+            if instance.account_id != credential.account_id
+                || instance.agent.slug() != credential.agent
+                || credential.env.is_empty()
+            {
+                return None;
+            }
+            let account = config.accounts.get(&credential.account_id)?;
+            let surface = HostSurfaceId::from_provider_alias(account.provider.slug())?;
+            Some((credential.account_id.clone(), surface.id().to_owned()))
+        })
+        .collect()
 }
 
 /// Resolved Capsule launch membership used by usage presentation.
@@ -305,6 +334,7 @@ pub fn forwarded_sources_from_launch(
     ForwardedUsageSources {
         selected_account_ids: BTreeSet::new(),
         selected_account_surfaces: BTreeMap::new(),
+        selected_account_credentials: BTreeSet::new(),
         profile_surface_ids,
         env_keys,
     }
@@ -318,9 +348,11 @@ pub fn forwarded_sources_from_launch_config(
     state: &crate::instance::RoleState,
     resolved_env: &jackin_env::ResolvedEnv,
     launch_config: &CapsuleConfig,
+    staged_account_credentials: &BTreeSet<(String, String)>,
 ) -> ForwardedUsageSources {
     let mut sources = forwarded_sources_from_launch(state, resolved_env);
     sources.selected_account_ids = launch_config.accounts.values().cloned().collect();
+    sources.selected_account_credentials = staged_account_credentials.clone();
     for (instance_id, account_id) in &launch_config.accounts {
         if let Some(surface) = launch_config.credential_provider_surface_for_instance(instance_id) {
             sources

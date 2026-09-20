@@ -5,7 +5,7 @@
 
 use std::path::{Path, PathBuf};
 
-use jackin_core::Agent;
+use jackin_core::{Agent, MOONSHOT_API_KEY_ENV_NAME};
 use serde_json::Value;
 
 use super::{AiProvider, ProfileSelector};
@@ -80,7 +80,11 @@ pub(crate) fn discover_environment_account_candidates(
         (AiProvider::Opencode, &["OPENCODE_API_KEY"][..]),
         (
             AiProvider::Moonshot,
-            &["KIMI_API_KEY", "KIMI_CODE_API_KEY", "MOONSHOT_API_KEY"][..],
+            &[
+                "KIMI_API_KEY",
+                "KIMI_CODE_API_KEY",
+                MOONSHOT_API_KEY_ENV_NAME,
+            ][..],
         ),
         (
             AiProvider::Zai,

@@ -303,6 +303,44 @@ fn protected_credentials_reject_foreign_opencode_provider_and_oauth_keys() {
 }
 
 #[test]
+fn protected_credentials_admit_moonshot_opencode_key_and_reject_foreign_key() {
+    let mut config = instance_config(&[("opencode-kimi", "api_key", "opencode")]);
+    config
+        .credential_provider_surfaces
+        .insert("opencode-kimi".to_owned(), "kimi".to_owned());
+    let valid = v2_credentials(serde_json::json!({
+        "schema_version": 2,
+        "instances": {
+            "opencode-kimi": {
+                "agent": "opencode",
+                "account_id": "opencode-kimi",
+                "env": {
+                    "MOONSHOT_API_KEY": "selected-moonshot-key"
+                },
+            },
+        },
+    }));
+    validate_agent_credentials(&config, &valid).unwrap();
+
+    let foreign = v2_credentials(serde_json::json!({
+        "schema_version": 2,
+        "instances": {
+            "opencode-kimi": {
+                "agent": "opencode",
+                "account_id": "opencode-kimi",
+                "env": {
+                    "MOONSHOT_API_KEY": "selected-moonshot-key",
+                    "OPENAI_API_KEY": "foreign-openai-sentinel"
+                },
+            },
+        },
+    }));
+    let error = validate_agent_credentials(&config, &foreign).unwrap_err();
+    assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
+    assert!(!error.to_string().contains("foreign-openai-sentinel"));
+}
+
+#[test]
 fn protected_credentials_bind_claude_oauth_to_its_auth_family() {
     let config = instance_config(&[("claude-work", "oauth_token", "claude")]);
     let valid = v2_credentials(serde_json::json!({

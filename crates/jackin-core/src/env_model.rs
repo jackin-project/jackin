@@ -66,6 +66,8 @@ pub const MINIMAX_API_KEY_ENV_NAME: &str = "MINIMAX_API_KEY";
 pub const KIMI_CODE_API_KEY_ENV_NAME: &str = "KIMI_CODE_API_KEY";
 /// Alternate Kimi API key env name accepted by the Kimi Code CLI.
 pub const KIMI_API_KEY_ENV_NAME: &str = "KIMI_API_KEY";
+/// Moonshot API key env name used by multi-provider clients routing to Kimi.
+pub const MOONSHOT_API_KEY_ENV_NAME: &str = "MOONSHOT_API_KEY";
 /// `OpenCode` API key env name.
 pub const OPENCODE_API_KEY_ENV_NAME: &str = "OPENCODE_API_KEY";
 /// xAI API key env name (Grok Build).
@@ -161,6 +163,10 @@ pub const USAGE_CREDENTIAL_ENV_REGISTRY: &[UsageCredentialEnvName] = &[
     },
     UsageCredentialEnvName {
         name: KIMI_API_KEY_ENV_NAME,
+        owner: UsageCredentialOwner::Kimi,
+    },
+    UsageCredentialEnvName {
+        name: MOONSHOT_API_KEY_ENV_NAME,
         owner: UsageCredentialOwner::Kimi,
     },
     UsageCredentialEnvName {

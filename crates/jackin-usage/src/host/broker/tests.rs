@@ -185,6 +185,7 @@ fn forwarded_scope_selects_only_accounts_backed_by_forwarded_sources() {
         &ForwardedUsageSources {
             selected_account_ids: BTreeSet::new(),
             selected_account_surfaces: BTreeMap::new(),
+            selected_account_credentials: BTreeSet::new(),
             profile_surface_ids: BTreeSet::from(["amp".to_owned()]),
             env_keys: BTreeSet::new(),
         },
@@ -197,6 +198,7 @@ fn forwarded_scope_selects_only_accounts_backed_by_forwarded_sources() {
         &ForwardedUsageSources {
             selected_account_ids: BTreeSet::new(),
             selected_account_surfaces: BTreeMap::new(),
+            selected_account_credentials: BTreeSet::new(),
             profile_surface_ids: BTreeSet::new(),
             env_keys: BTreeSet::from(["AMP_API_KEY".to_owned()]),
         },
@@ -212,6 +214,7 @@ fn forwarded_scope_selects_only_accounts_backed_by_forwarded_sources() {
                 "account-profile".to_owned(),
                 "amp".to_owned(),
             )]),
+            selected_account_credentials: BTreeSet::new(),
             profile_surface_ids: BTreeSet::from(["amp".to_owned()]),
             env_keys: BTreeSet::new(),
         },
@@ -227,8 +230,12 @@ fn forwarded_scope_selects_only_accounts_backed_by_forwarded_sources() {
                 "account-env".to_owned(),
                 "amp".to_owned(),
             )]),
+            selected_account_credentials: BTreeSet::from([(
+                "account-env".to_owned(),
+                "amp".to_owned(),
+            )]),
             profile_surface_ids: BTreeSet::new(),
-            env_keys: BTreeSet::from(["AMP_API_KEY".to_owned()]),
+            env_keys: BTreeSet::new(),
         },
     );
     assert_eq!(selected_env, vec![env_capability]);
@@ -239,6 +246,7 @@ fn forwarded_scope_selects_only_accounts_backed_by_forwarded_sources() {
         &ForwardedUsageSources {
             selected_account_ids: BTreeSet::from(["account-does-not-exist".to_owned()]),
             selected_account_surfaces: BTreeMap::new(),
+            selected_account_credentials: BTreeSet::new(),
             profile_surface_ids: BTreeSet::from(["amp".to_owned()]),
             env_keys: BTreeSet::from(["AMP_API_KEY".to_owned()]),
         },
@@ -260,6 +268,102 @@ fn forwarded_scope_selects_only_accounts_backed_by_forwarded_sources() {
         UsageIdentityKindV1::ProviderStableHandle
     );
     assert_eq!(publication[&profile_capability].provenance_count, 2);
+}
+
+#[test]
+fn forwarded_scope_requires_exact_staged_proof_for_routed_claude_and_kimi() {
+    use crate::host::HostSurfaceId;
+
+    let scope = "workspace routed role test";
+    let discovery = ValidatedUsageDiscovery {
+        config_generation: Some("generation".to_owned()),
+        accounts: Vec::new(),
+        diagnostics: Vec::new(),
+        candidates: Vec::new(),
+        bindings: vec![
+            ValidatedCredentialBinding {
+                surface: HostSurfaceId::Zai,
+                identity: None,
+                source_id: "zai-source".to_owned(),
+                capability_id: "zai-capability".to_owned(),
+                provenance: BTreeSet::from([scope.to_owned(), "account claude-zai".to_owned()]),
+                source: ValidatedCredentialSource::Env {
+                    handle: super::super::OpaqueCredentialHandle::new("zai-handle"),
+                    key: "ANTHROPIC_AUTH_TOKEN".to_owned(),
+                },
+            },
+            ValidatedCredentialBinding {
+                surface: HostSurfaceId::Kimi,
+                identity: None,
+                source_id: "kimi-source".to_owned(),
+                capability_id: "kimi-capability".to_owned(),
+                provenance: BTreeSet::from([scope.to_owned(), "account kimi".to_owned()]),
+                source: ValidatedCredentialSource::Env {
+                    handle: super::super::OpaqueCredentialHandle::new("kimi-handle"),
+                    key: "MOONSHOT_API_KEY".to_owned(),
+                },
+            },
+        ],
+    };
+    let expected = discovery
+        .bindings
+        .iter()
+        .map(|binding| capability_for_binding(binding, Some("generation")))
+        .collect::<Vec<_>>();
+
+    let forwarded = forwarded_usage_capabilities(
+        &discovery,
+        scope,
+        &ForwardedUsageSources {
+            selected_account_ids: BTreeSet::from(["claude-zai".to_owned(), "kimi".to_owned()]),
+            selected_account_surfaces: BTreeMap::from([
+                ("claude-zai".to_owned(), "zai".to_owned()),
+                ("kimi".to_owned(), "kimi".to_owned()),
+            ]),
+            selected_account_credentials: BTreeSet::from([
+                ("claude-zai".to_owned(), "zai".to_owned()),
+                ("kimi".to_owned(), "kimi".to_owned()),
+            ]),
+            profile_surface_ids: BTreeSet::new(),
+            env_keys: BTreeSet::new(),
+        },
+    );
+    assert_eq!(forwarded, expected);
+
+    let metadata_only = forwarded_usage_capabilities(
+        &discovery,
+        scope,
+        &ForwardedUsageSources {
+            selected_account_ids: BTreeSet::from(["claude-zai".to_owned(), "kimi".to_owned()]),
+            selected_account_surfaces: BTreeMap::from([
+                ("claude-zai".to_owned(), "zai".to_owned()),
+                ("kimi".to_owned(), "kimi".to_owned()),
+            ]),
+            selected_account_credentials: BTreeSet::new(),
+            profile_surface_ids: BTreeSet::new(),
+            env_keys: BTreeSet::new(),
+        },
+    );
+    assert!(
+        metadata_only.is_empty(),
+        "surface metadata must not authorize account-owned credentials"
+    );
+
+    let without_routed_claude_proof = forwarded_usage_capabilities(
+        &discovery,
+        scope,
+        &ForwardedUsageSources {
+            selected_account_ids: BTreeSet::from(["claude-zai".to_owned(), "kimi".to_owned()]),
+            selected_account_surfaces: BTreeMap::from([
+                ("claude-zai".to_owned(), "zai".to_owned()),
+                ("kimi".to_owned(), "kimi".to_owned()),
+            ]),
+            selected_account_credentials: BTreeSet::from([("kimi".to_owned(), "kimi".to_owned())]),
+            profile_surface_ids: BTreeSet::new(),
+            env_keys: BTreeSet::new(),
+        },
+    );
+    assert_eq!(without_routed_claude_proof, vec![expected[1].clone()]);
 }
 
 #[test]
