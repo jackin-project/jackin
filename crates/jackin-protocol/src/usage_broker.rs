@@ -74,6 +74,8 @@ pub enum UsageCoordinationErrorKind {
     Unauthorized,
     /// The capability was removed or disabled from the current broker catalog.
     CatalogRevoked,
+    /// A catalog rotation was based on an obsolete publication lease.
+    CatalogRevisionConflict,
     /// The active generation owner disappeared.
     OwnerLost,
     /// A bounded generation wait expired while ownership remained active.
@@ -1061,6 +1063,9 @@ pub enum UsageBrokerOperation {
     /// A Capsule relay must reject this operation; it is never forwarded from
     /// an in-container caller.
     ReconcileCatalog {
+        /// Publication lease observed immediately before discovery started.
+        /// The broker rejects the rotation when this is no longer current.
+        expected_projection_id: Option<String>,
         /// Content-derived current discovery revision.
         catalog_revision: String,
         /// Current canonical capability entries.

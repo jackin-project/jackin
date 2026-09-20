@@ -11,8 +11,8 @@ use jackin_protocol::usage_broker::{
     UsageAccountCapability, UsageCoordinationError, UsageCoordinationErrorKind,
 };
 use jackin_usage::host::{
-    HostUsageRuntime, UsageBrokerClient, UsageBrokerConfig, UsageDiscoveryScope,
-    ValidatedUsageDiscovery,
+    HostSurfaceId, HostUsageRuntime, UsageBrokerClient, UsageBrokerConfig, UsageDiscoveryScope,
+    ValidatedUsageDiscovery, discover_usage_sources, validate_usage_sources,
 };
 
 use crate::discovery::DesktopCredentialResolver;
@@ -29,8 +29,8 @@ use crate::error::{UsageBridgeError, catch_entry};
 pub struct UsageMenuBarBridge {
     inner: Arc<Mutex<HostUsageRuntime>>,
     credential_resolver: Arc<DesktopCredentialResolver>,
-    broker: Mutex<Option<DesktopBroker>>,
-    broker_lifecycle: Mutex<()>,
+    broker: Arc<Mutex<Option<DesktopBroker>>>,
+    broker_lifecycle: Arc<Mutex<()>>,
     joiners: Arc<Mutex<BTreeSet<(UsageAccountCapability, u64)>>>,
 }
 
@@ -38,6 +38,7 @@ pub struct UsageMenuBarBridge {
 struct DesktopBroker {
     client: UsageBrokerClient,
     capabilities: Vec<UsageAccountCapability>,
+    catalog_lease: String,
     config: UsageBrokerConfig,
     scope: UsageDiscoveryScope,
 }
@@ -50,8 +51,8 @@ impl UsageMenuBarBridge {
         Self {
             inner: Arc::new(Mutex::new(HostUsageRuntime::new())),
             credential_resolver: Arc::new(DesktopCredentialResolver::default()),
-            broker: Mutex::new(None),
-            broker_lifecycle: Mutex::new(()),
+            broker: Arc::new(Mutex::new(None)),
+            broker_lifecycle: Arc::new(Mutex::new(())),
             joiners: Arc::new(Mutex::new(BTreeSet::new())),
         }
     }
@@ -68,6 +69,7 @@ impl UsageMenuBarBridge {
     /// List all host surfaces with enable flags.
     pub fn list_surfaces(&self) -> Result<Vec<SurfaceDescriptorDto>, UsageBridgeError> {
         catch_entry(|| {
+            let _lifecycle = self.lifecycle_lock()?;
             let guard = self.lock()?;
             Ok(guard
                 .list_surfaces()
@@ -81,6 +83,7 @@ impl UsageMenuBarBridge {
     /// Sanitized discovery diagnostics for the current catalog generation.
     pub fn discovery_diagnostics(&self) -> Result<Vec<DiscoveryDiagnosticDto>, UsageBridgeError> {
         catch_entry(|| {
+            let _lifecycle = self.lifecycle_lock()?;
             let guard = self.lock()?;
             Ok(guard
                 .discovery_diagnostics()
@@ -94,6 +97,7 @@ impl UsageMenuBarBridge {
     /// Enable or disable a surface for bar + refresh.
     pub fn set_enabled(&self, surface_id: String, enabled: bool) -> Result<(), UsageBridgeError> {
         catch_entry(|| {
+            let _lifecycle = self.lifecycle_lock()?;
             let mut guard = self.lock()?;
             guard
                 .set_enabled(&surface_id, enabled)
@@ -165,7 +169,12 @@ impl UsageMenuBarBridge {
                     .apply_broker_generation(state.clone())
                     .map_err(map_runtime_err)?;
                 if state.phase.is_active() {
-                    self.schedule_join(broker.client.clone(), capability, state.generation);
+                    self.schedule_join(
+                        broker.client.clone(),
+                        capability,
+                        state.generation,
+                        broker.catalog_lease.clone(),
+                    );
                 }
             }
             first_error.map_or(Ok(()), |error| Err(map_coordination_err(error)))
@@ -174,12 +183,16 @@ impl UsageMenuBarBridge {
 
     /// True while at least one Rust broker generation is queued/updating.
     pub fn refresh_in_progress(&self) -> Result<bool, UsageBridgeError> {
-        catch_entry(|| Ok(self.lock()?.broker_refresh_in_progress()))
+        catch_entry(|| {
+            let _lifecycle = self.lifecycle_lock()?;
+            Ok(self.lock()?.broker_refresh_in_progress())
+        })
     }
 
     /// Set refresh floor seconds (clamped ≥ 60 in Rust).
     pub fn set_refresh_floor_secs(&self, secs: u64) -> Result<(), UsageBridgeError> {
         catch_entry(|| {
+            let _lifecycle = self.lifecycle_lock()?;
             let mut guard = self.lock()?;
             guard.set_refresh_floor_secs(secs).map_err(map_runtime_err)
         })
@@ -188,6 +201,7 @@ impl UsageMenuBarBridge {
     /// Whether a non-forced refresh would probe the network.
     pub fn refresh_due(&self) -> Result<bool, UsageBridgeError> {
         catch_entry(|| {
+            let _lifecycle = self.lifecycle_lock()?;
             let guard = self.lock()?;
             Ok(guard.refresh_due())
         })
@@ -196,6 +210,7 @@ impl UsageMenuBarBridge {
     /// Snapshot for one enabled surface (selected multi-account when set).
     pub fn snapshot(&self, surface_id: String) -> Result<UsageViewDto, UsageBridgeError> {
         catch_entry(|| {
+            let _lifecycle = self.lifecycle_lock()?;
             let mut guard = self.lock()?;
             guard
                 .snapshot(&surface_id)
@@ -210,6 +225,7 @@ impl UsageMenuBarBridge {
         surface_id: Option<String>,
     ) -> Result<Vec<AccountDescriptorDto>, UsageBridgeError> {
         catch_entry(|| {
+            let _lifecycle = self.lifecycle_lock()?;
             let mut guard = self.lock()?;
             Ok(guard
                 .list_accounts(surface_id.as_deref())
@@ -223,6 +239,7 @@ impl UsageMenuBarBridge {
     /// Atomic, Rust-ordered provider/account projection for jackin❯ desktop.
     pub fn desktop_inventory(&self) -> Result<DesktopInventoryDto, UsageBridgeError> {
         catch_entry(|| {
+            let _lifecycle = self.lifecycle_lock()?;
             let mut guard = self.lock()?;
             guard
                 .desktop_inventory()
@@ -239,6 +256,7 @@ impl UsageMenuBarBridge {
         status_bar_max: u32,
     ) -> Result<DesktopProjectionDto, UsageBridgeError> {
         catch_entry(|| {
+            let _lifecycle = self.lifecycle_lock()?;
             let mut guard = self.lock()?;
             guard
                 .desktop_projection(status_bar_max)
@@ -254,6 +272,7 @@ impl UsageMenuBarBridge {
         account_key: String,
     ) -> Result<(), UsageBridgeError> {
         catch_entry(|| {
+            let _lifecycle = self.lifecycle_lock()?;
             let mut guard = self.lock()?;
             guard
                 .set_selected_account(&surface_id, &account_key)
@@ -264,6 +283,7 @@ impl UsageMenuBarBridge {
     /// Compact bar label for one surface.
     pub fn status_bar_label(&self, surface_id: String) -> Result<Option<String>, UsageBridgeError> {
         catch_entry(|| {
+            let _lifecycle = self.lifecycle_lock()?;
             let mut guard = self.lock()?;
             guard.status_bar_label(&surface_id).map_err(map_runtime_err)
         })
@@ -272,6 +292,7 @@ impl UsageMenuBarBridge {
     /// Merged menu-bar text for all enabled surfaces.
     pub fn merged_status_bar_label(&self) -> Result<String, UsageBridgeError> {
         catch_entry(|| {
+            let _lifecycle = self.lifecycle_lock()?;
             let mut guard = self.lock()?;
             guard.merged_status_bar_label().map_err(map_runtime_err)
         })
@@ -280,6 +301,7 @@ impl UsageMenuBarBridge {
     /// Short status-item label (worst enabled surface; remaining % by default).
     pub fn compact_status_bar_label(&self) -> Result<String, UsageBridgeError> {
         catch_entry(|| {
+            let _lifecycle = self.lifecycle_lock()?;
             let mut guard = self.lock()?;
             guard.compact_status_bar_label().map_err(map_runtime_err)
         })
@@ -289,6 +311,7 @@ impl UsageMenuBarBridge {
     pub fn set_format_prefs(&self, prefs: UsageFormatPrefsDto) -> Result<(), UsageBridgeError> {
         catch_entry(|| {
             let parsed = parse_format_prefs(prefs).map_err(map_runtime_err)?;
+            let _lifecycle = self.lifecycle_lock()?;
             let mut guard = self.lock()?;
             guard.set_format_prefs(parsed).map_err(map_runtime_err)
         })
@@ -300,6 +323,7 @@ impl UsageMenuBarBridge {
         surface_id: String,
     ) -> Result<Option<String>, UsageBridgeError> {
         catch_entry(|| {
+            let _lifecycle = self.lifecycle_lock()?;
             let mut guard = self.lock()?;
             guard
                 .compact_status_bar_label_for(&surface_id)
@@ -310,6 +334,7 @@ impl UsageMenuBarBridge {
     /// Worst-first multi-surface compact strip (joined with ` · `).
     pub fn compact_status_bar_strip(&self, max: u32) -> Result<String, UsageBridgeError> {
         catch_entry(|| {
+            let _lifecycle = self.lifecycle_lock()?;
             let mut guard = self.lock()?;
             guard.compact_status_bar_strip(max).map_err(map_runtime_err)
         })
@@ -318,6 +343,7 @@ impl UsageMenuBarBridge {
     /// Overview rows for every enabled surface (popover + Usage window).
     pub fn overview_rows(&self) -> Result<Vec<OverviewRowDto>, UsageBridgeError> {
         catch_entry(|| {
+            let _lifecycle = self.lifecycle_lock()?;
             let mut guard = self.lock()?;
             Ok(guard
                 .overview_rows()
@@ -333,6 +359,7 @@ impl UsageMenuBarBridge {
     /// Rust owns detection, ordering, and every display string.
     pub fn provider_glance_rows(&self) -> Result<Vec<ProviderGlanceRowDto>, UsageBridgeError> {
         catch_entry(|| {
+            let _lifecycle = self.lifecycle_lock()?;
             let mut guard = self.lock()?;
             Ok(guard
                 .provider_glance_rows()
@@ -352,6 +379,7 @@ impl UsageMenuBarBridge {
         max: u32,
     ) -> Result<Vec<ProviderGlanceRowDto>, UsageBridgeError> {
         catch_entry(|| {
+            let _lifecycle = self.lifecycle_lock()?;
             let mut guard = self.lock()?;
             Ok(guard
                 .status_bar_provider_glance_rows(max)
@@ -365,6 +393,7 @@ impl UsageMenuBarBridge {
     /// Next network refresh label (`Next update in …` / `Next update due`).
     pub fn next_refresh_label(&self) -> Result<String, UsageBridgeError> {
         catch_entry(|| {
+            let _lifecycle = self.lifecycle_lock()?;
             let guard = self.lock()?;
             Ok(guard.next_refresh_label())
         })
@@ -381,6 +410,7 @@ impl UsageMenuBarBridge {
         max: u32,
     ) -> Result<UsageEventBatchDto, UsageBridgeError> {
         catch_entry(|| {
+            let _lifecycle = self.lifecycle_lock()?;
             let mut guard = self.lock()?;
             let batch = guard.next_events(cursor, max).map_err(map_runtime_err)?;
             Ok(event_batch_dto(batch))
@@ -390,6 +420,7 @@ impl UsageMenuBarBridge {
     /// Refresh floor seconds (clamped policy).
     pub fn refresh_floor_secs(&self) -> Result<u64, UsageBridgeError> {
         catch_entry(|| {
+            let _lifecycle = self.lifecycle_lock()?;
             let guard = self.lock()?;
             Ok(guard.refresh_floor_secs())
         })
@@ -402,10 +433,9 @@ impl UsageMenuBarBridge {
             let mut guard = self.lock()?;
             guard.shutdown();
             *self.broker_lock()? = None;
-            self.joiners
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .clear();
+            if let Ok(mut joiners) = self.joiners.lock() {
+                joiners.clear();
+            }
             Ok(())
         })
     }
@@ -432,71 +462,79 @@ impl UsageMenuBarBridge {
     ) -> Result<(), UsageBridgeError> {
         let _lifecycle = self.lifecycle_lock()?;
         let discovery_scope = host_config.discovery_scope.clone();
-        let mut staged_runtime = self.lock()?.clone();
-        staged_runtime
-            .open_with_discovery(host_config, self.credential_resolver.as_ref())
-            .map_err(map_open_err)?;
-        let live = staged_runtime.live_probes_enabled();
-        let discovery = staged_runtime.validated_discovery();
+        let unknown = host_config
+            .enabled_surface_ids
+            .iter()
+            .filter(|id| HostSurfaceId::from_id(id).is_none())
+            .cloned()
+            .collect::<Vec<_>>();
+        if !unknown.is_empty() {
+            return Err(map_open_err(format!(
+                "unknown enabled surface ids: {}",
+                unknown.join(", ")
+            )));
+        }
+        let live = host_config.probe_policy == jackin_usage::host::HostProbePolicy::Live;
+        let catalog = discover_usage_sources(
+            &host_config.discovery_scope,
+            self.credential_resolver.as_ref(),
+        )
+        .map_err(map_open_err)?;
+        let discovery = validate_usage_sources(catalog, self.credential_resolver.as_ref());
         let fallback = broker_config.client();
         let broker = if live {
-            match discovery {
-                Some(discovery) => self
-                    .activate_broker(broker_config.clone(), discovery_scope.clone(), discovery)
-                    .map_err(map_coordination_err)?,
-                None => DesktopBroker {
-                    client: fallback,
-                    capabilities: Vec::new(),
-                    config: broker_config.clone(),
-                    scope: discovery_scope.clone(),
-                },
-            }
+            self.activate_broker(
+                broker_config.clone(),
+                discovery_scope.clone(),
+                discovery.clone(),
+            )
+            .map_err(map_coordination_err)?
         } else {
             DesktopBroker {
                 client: fallback,
                 capabilities: Vec::new(),
+                catalog_lease: "disabled".to_owned(),
                 config: broker_config.clone(),
                 scope: discovery_scope.clone(),
             }
         };
-        self.commit_runtime_and_broker(staged_runtime, broker)
+        let mut runtime = self.lock()?;
+        runtime
+            .open_with_validated_discovery(host_config, discovery)
+            .map_err(map_open_err)?;
+        *self.broker_lock()? = Some(broker);
+        Ok(())
     }
 
     fn reconcile_broker_catalog(&self) -> Result<(), UsageBridgeError> {
-        let current = self
-            .broker_lock()?
+        let mut broker_guard = self.broker_lock()?;
+        let current = broker_guard
             .clone()
             .ok_or(UsageBridgeError::RuntimeUnavailable)?;
-        let (staged_runtime, discovery) = {
-            let runtime = self.lock()?;
-            if !runtime.live_probes_enabled() {
-                return Ok(());
-            }
-            let mut staged_runtime = runtime.clone();
-            staged_runtime
-                .reconcile_discovery(self.credential_resolver.as_ref())
-                .map_err(map_runtime_err)?;
-            let discovery = staged_runtime.validated_discovery();
-            (staged_runtime, discovery)
-        };
-        let Some(discovery) = discovery else {
+        let mut runtime = self.lock()?;
+        if !runtime.live_probes_enabled() {
+            return Ok(());
+        }
+        let Some(staged) = runtime
+            .stage_discovery(self.credential_resolver.as_ref())
+            .map_err(map_runtime_err)?
+        else {
             return Ok(());
         };
+        if !staged.changed {
+            runtime
+                .commit_staged_discovery(staged)
+                .map_err(map_runtime_err)?;
+            return Ok(());
+        }
+        let discovery = staged.discovery.clone();
         let refreshed = self
             .activate_broker(current.config, current.scope, discovery)
             .map_err(map_coordination_err)?;
-        self.commit_runtime_and_broker(staged_runtime, refreshed)
-    }
-
-    fn commit_runtime_and_broker(
-        &self,
-        runtime: HostUsageRuntime,
-        broker: DesktopBroker,
-    ) -> Result<(), UsageBridgeError> {
-        let mut runtime_guard = self.lock()?;
-        let mut broker_guard = self.broker_lock()?;
-        *runtime_guard = runtime;
-        *broker_guard = Some(broker);
+        runtime
+            .commit_staged_discovery(staged)
+            .map_err(map_runtime_err)?;
+        *broker_guard = Some(refreshed);
         Ok(())
     }
 
@@ -515,6 +553,7 @@ impl UsageMenuBarBridge {
         Ok(DesktopBroker {
             client: handle.client,
             capabilities: handle.capabilities,
+            catalog_lease: handle.catalog_lease,
             config,
             scope,
         })
@@ -545,42 +584,68 @@ impl UsageMenuBarBridge {
         client: UsageBrokerClient,
         capability: UsageAccountCapability,
         generation: u64,
+        catalog_lease: String,
     ) {
         let key = (capability.clone(), generation);
         {
-            let mut joiners = self
-                .joiners
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let Ok(mut joiners) = self.joiners.lock() else {
+                return;
+            };
             if !joiners.insert(key.clone()) {
                 return;
             }
         }
         let runtime = Arc::clone(&self.inner);
+        let lifecycle = Arc::clone(&self.broker_lifecycle);
+        let broker = self.broker.clone();
         let joiners = Arc::clone(&self.joiners);
         let name = format!("desktop-usage-join-{}", capability.surface_id);
         let worker_key = key.clone();
         let worker = jackin_telemetry::spawn::thread_joined_named(name, move || {
             let result = client.join(capability.clone(), generation, Duration::from_secs(30));
-            let mut runtime = runtime
+            let Ok(_lifecycle) = lifecycle.lock() else {
+                if let Ok(mut joiners) = joiners.lock() {
+                    joiners.remove(&worker_key);
+                }
+                return;
+            };
+            let Ok(mut runtime) = runtime.lock() else {
+                if let Ok(mut joiners) = joiners.lock() {
+                    joiners.remove(&worker_key);
+                }
+                return;
+            };
+            let stale = broker
                 .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            match result {
-                Ok(state) => drop(runtime.apply_broker_generation(state)),
-                Err(error) => {
-                    drop(runtime.record_broker_error(&capability, &error));
+                .ok()
+                .and_then(|broker| {
+                    broker
+                        .as_ref()
+                        .map(|broker| broker.catalog_lease != catalog_lease)
+                })
+                .unwrap_or(true);
+            if stale {
+                let error = UsageCoordinationError {
+                    kind: UsageCoordinationErrorKind::CatalogRevoked,
+                    message: "usage refresh generation was fenced by catalog rotation".to_owned(),
+                };
+                drop(runtime.record_broker_error(&capability, &error));
+            } else {
+                match result {
+                    Ok(state) => drop(runtime.apply_broker_generation(state)),
+                    Err(error) => {
+                        drop(runtime.record_broker_error(&capability, &error));
+                    }
                 }
             }
-            joiners
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .remove(&worker_key);
+            if let Ok(mut joiners) = joiners.lock() {
+                joiners.remove(&worker_key);
+            }
         });
-        if worker.is_err() {
-            self.joiners
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .remove(&key);
+        if worker.is_err()
+            && let Ok(mut joiners) = self.joiners.lock()
+        {
+            joiners.remove(&key);
         }
     }
 }
@@ -598,6 +663,9 @@ fn map_coordination_err(error: UsageCoordinationError) -> UsageBridgeError {
         UsageCoordinationErrorKind::RateLimited => "coordination_rate_limited",
         UsageCoordinationErrorKind::ProtocolMismatch => "coordination_protocol_mismatch",
         UsageCoordinationErrorKind::CatalogRevoked => "coordination_catalog_revoked",
+        UsageCoordinationErrorKind::CatalogRevisionConflict => {
+            "coordination_catalog_revision_conflict"
+        }
     };
     UsageBridgeError::rejected(code, error.message)
 }

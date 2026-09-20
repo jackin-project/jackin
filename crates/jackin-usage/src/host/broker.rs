@@ -255,6 +255,8 @@ pub struct UsageBrokerHandle {
     pub client: UsageBrokerClient,
     /// Canonical accounts known to this discovery generation.
     pub capabilities: Vec<UsageAccountCapability>,
+    /// Publication lease fencing this activation's capability set.
+    pub catalog_lease: String,
     scoped_capabilities: BTreeMap<String, Vec<ScopedCapability>>,
 }
 
@@ -393,7 +395,7 @@ pub fn usage_broker_capabilities(
         .collect()
 }
 
-fn usage_catalog_entries(discovery: &ValidatedUsageDiscovery) -> Vec<UsageCatalogEntry> {
+pub(super) fn usage_catalog_entries(discovery: &ValidatedUsageDiscovery) -> Vec<UsageCatalogEntry> {
     let mut source_ids = BTreeMap::<UsageAccountCapability, BTreeSet<String>>::new();
     for binding in &discovery.bindings {
         let capability = capability_for_binding(binding, discovery.config_generation.as_deref());
@@ -609,7 +611,25 @@ impl UsageBrokerClient {
         catalog_revision: String,
         entries: Vec<UsageCatalogEntry>,
     ) -> Result<UsageProjectionV1, UsageCoordinationError> {
+        let expected_projection_id = self.current_projection()?.projection_id;
+        self.reconcile_catalog_if_projection(
+            Some(expected_projection_id),
+            catalog_revision,
+            entries,
+        )
+    }
+
+    /// Replace the catalog against an explicitly observed publication lease.
+    /// A stale caller is rejected by the broker rather than becoming the last
+    /// writer.
+    pub fn reconcile_catalog_if_projection(
+        &self,
+        expected_projection_id: Option<String>,
+        catalog_revision: String,
+        entries: Vec<UsageCatalogEntry>,
+    ) -> Result<UsageProjectionV1, UsageCoordinationError> {
         self.execute_projection(UsageBrokerOperation::ReconcileCatalog {
+            expected_projection_id,
             catalog_revision,
             entries,
         })
@@ -892,11 +912,40 @@ pub fn ensure_usage_broker(
         .clone()
         .unwrap_or_else(|| "empty".to_owned());
     let catalog = usage_catalog_entries(&discovery);
+    if catalog.is_empty() {
+        let probe_client = config.client();
+        if !connect_probe(&probe_client) {
+            return Ok(UsageBrokerHandle {
+                client: probe_client,
+                capabilities,
+                catalog_lease: "no-catalog".to_owned(),
+                scoped_capabilities,
+            });
+        }
+        let expected_projection_id = probe_client.current_projection()?.projection_id;
+        let projection = probe_client.reconcile_catalog_if_projection(
+            Some(expected_projection_id),
+            catalog_revision,
+            catalog,
+        )?;
+        return Ok(UsageBrokerHandle {
+            client: probe_client,
+            capabilities,
+            catalog_lease: projection.projection_id,
+            scoped_capabilities,
+        });
+    }
     let client = ensure_usage_broker_process(config, &scope)?;
-    client.reconcile_catalog(catalog_revision, catalog)?;
+    let expected_projection_id = client.current_projection()?.projection_id;
+    let projection = client.reconcile_catalog_if_projection(
+        Some(expected_projection_id),
+        catalog_revision,
+        catalog,
+    )?;
     Ok(UsageBrokerHandle {
         client,
         capabilities,
+        catalog_lease: projection.projection_id,
         scoped_capabilities,
     })
 }
@@ -1036,7 +1085,6 @@ fn run_usage_broker_service_with_executor_and_metadata(
             lease_duration: config.lease_duration,
             lease_renewal: config.lease_renewal,
         },
-        projection,
         publisher,
     });
     Ok(())
@@ -1105,7 +1153,6 @@ pub fn ensure_usage_broker_with_executor(
                 lease_duration,
                 lease_renewal,
             },
-            projection,
             publisher,
         });
     })
@@ -1126,7 +1173,6 @@ struct ServeConfig {
     lease_path: PathBuf,
     lease: BrokerLease,
     policy: ServePolicy,
-    projection: Arc<Mutex<UsageProjectionV1>>,
     publisher: publish::ProjectionPublisher,
 }
 
@@ -1138,7 +1184,6 @@ fn serve(config: ServeConfig) {
         lease_path,
         mut lease,
         policy,
-        projection,
         publisher,
     } = config;
     let (connections, receiver) = mpsc::sync_channel(BROKER_CONNECTION_QUEUE);
@@ -1147,7 +1192,6 @@ fn serve(config: ServeConfig) {
     let wait_pool = waits::WaitPool::new(
         Arc::clone(&coordinator),
         Arc::clone(&build_id),
-        Arc::clone(&projection),
         publisher.clone(),
     );
     let wait_pool = Arc::new(wait_pool);
@@ -1156,7 +1200,6 @@ fn serve(config: ServeConfig) {
         let receiver = Arc::clone(&receiver);
         let coordinator = Arc::clone(&coordinator);
         let build_id = Arc::clone(&build_id);
-        let projection = Arc::clone(&projection);
         let publisher = publisher.clone();
         let wait_pool = Arc::clone(&wait_pool);
         let worker = jackin_telemetry::spawn::thread_joined_named(
@@ -1171,14 +1214,7 @@ fn serve(config: ServeConfig) {
                 let Ok(stream) = stream else {
                     return;
                 };
-                handle_stream(
-                    stream,
-                    &coordinator,
-                    &build_id,
-                    &projection,
-                    &publisher,
-                    &wait_pool,
-                );
+                handle_stream(stream, &coordinator, &build_id, &publisher, &wait_pool);
             },
         );
         match worker {
@@ -1274,7 +1310,6 @@ fn handle_stream(
     mut stream: UnixStream,
     coordinator: &UsageCoordinator,
     build_id: &str,
-    projection: &Arc<Mutex<UsageProjectionV1>>,
     publisher: &publish::ProjectionPublisher,
     waits: &waits::WaitPool,
 ) {
@@ -1283,7 +1318,7 @@ fn handle_stream(
             waits.enqueue(stream, request);
             return;
         }
-        Ok(request) => dispatch(coordinator, request, build_id, projection, publisher),
+        Ok(request) => dispatch(coordinator, request, build_id, publisher),
         Err(error) => UsageBrokerResponse::Error { error },
     };
     write_response(&mut stream, response);
@@ -1347,7 +1382,6 @@ fn dispatch(
     coordinator: &UsageCoordinator,
     request: UsageBrokerRequest,
     build_id: &str,
-    projection: &Arc<Mutex<UsageProjectionV1>>,
     publisher: &publish::ProjectionPublisher,
 ) -> UsageBrokerResponse {
     if request.protocol_version != USAGE_BROKER_PROTOCOL_VERSION || request.build_id != build_id {
@@ -1357,10 +1391,12 @@ fn dispatch(
     }
     match &request.operation {
         UsageBrokerOperation::ReconcileCatalog {
+            expected_projection_id,
             catalog_revision,
             entries,
         } => {
-            return match publisher.reconcile_catalog(
+            return match publisher.reconcile_catalog_if_projection(
+                expected_projection_id.as_deref(),
                 catalog_revision.clone(),
                 entries.clone(),
                 chrono::Utc::now().timestamp(),
@@ -1371,15 +1407,15 @@ fn dispatch(
                 Err(error) => UsageBrokerResponse::Error { error },
             };
         }
-        UsageBrokerOperation::CurrentProjection => return read_projection(projection),
+        UsageBrokerOperation::CurrentProjection => return read_projection(publisher),
         UsageBrokerOperation::RequestRefresh {
             force,
             observed_projection_id: _,
-        } => return refresh_projection(coordinator, projection, publisher, *force),
+        } => return refresh_projection(coordinator, publisher, *force),
         UsageBrokerOperation::JoinPublication {
             projection_id,
             timeout_ms,
-        } => return join_publication(projection, publisher, projection_id, *timeout_ms),
+        } => return join_publication(publisher, projection_id, *timeout_ms),
         UsageBrokerOperation::CurrentProjectionForSurface
         | UsageBrokerOperation::RequestRefreshForSurface { .. }
         | UsageBrokerOperation::JoinPublicationForSurface { .. } => {
@@ -1447,14 +1483,12 @@ fn dispatch(
     }
 }
 
-fn read_projection(projection: &Arc<Mutex<UsageProjectionV1>>) -> UsageBrokerResponse {
-    match projection.lock() {
+fn read_projection(publisher: &publish::ProjectionPublisher) -> UsageBrokerResponse {
+    match publisher.current_projection() {
         Ok(projection) => UsageBrokerResponse::Projection {
-            projection: Box::new(projection.clone()),
+            projection: Box::new(projection),
         },
-        Err(_) => UsageBrokerResponse::Error {
-            error: unavailable(),
-        },
+        Err(error) => UsageBrokerResponse::Error { error },
     }
 }
 
@@ -1465,7 +1499,6 @@ fn read_projection(projection: &Arc<Mutex<UsageProjectionV1>>) -> UsageBrokerRes
 /// bypasses the success cooldown but never retry or rate-limit deadlines.
 fn refresh_projection(
     coordinator: &UsageCoordinator,
-    projection: &Arc<Mutex<UsageProjectionV1>>,
     publisher: &publish::ProjectionPublisher,
     force: bool,
 ) -> UsageBrokerResponse {
@@ -1484,7 +1517,7 @@ fn refresh_projection(
         let _ignored = coordinator.request_refresh_all(requests, force, now);
         publisher.publish_due(now);
     }
-    read_projection(projection)
+    read_projection(publisher)
 }
 
 /// Wait until one named publication settles or is superseded.
@@ -1494,18 +1527,15 @@ fn refresh_projection(
 /// is current and still refreshing. Expiry reports `WaitTimeout` without
 /// touching broker ownership: generations always run to terminal.
 fn join_publication(
-    projection: &Arc<Mutex<UsageProjectionV1>>,
     publisher: &publish::ProjectionPublisher,
     projection_id: &str,
     timeout_ms: u64,
 ) -> UsageBrokerResponse {
     let deadline = Instant::now() + Duration::from_millis(timeout_ms.min(30_000));
     loop {
-        let current = projection.lock().ok().map(|projection| projection.clone());
-        let Some(current) = current else {
-            return UsageBrokerResponse::Error {
-                error: unavailable(),
-            };
+        let current = match publisher.current_projection() {
+            Ok(current) => current,
+            Err(error) => return UsageBrokerResponse::Error { error },
         };
         if current.projection_id != projection_id
             || current.refresh_state != UsageProjectionRefreshStateV1::Refreshing

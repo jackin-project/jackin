@@ -409,31 +409,55 @@ fn concurrent_catalog_rotations_publish_one_complete_revision() {
         capability: account_b.clone(),
         revision: "entry-b".to_owned(),
     };
+    let lease = client.current_projection().unwrap().projection_id;
     let barrier = Arc::new(Barrier::new(3));
     let first = {
         let client = client.clone();
+        let lease = lease.clone();
         let barrier = Arc::clone(&barrier);
         thread::spawn(move || {
             barrier.wait();
-            client.reconcile_catalog("catalog-a".to_owned(), vec![entry_a])
+            client.reconcile_catalog_if_projection(
+                Some(lease),
+                "catalog-a".to_owned(),
+                vec![entry_a],
+            )
         })
     };
     let second = {
         let client = client.clone();
+        let lease = lease.clone();
         let barrier = Arc::clone(&barrier);
         thread::spawn(move || {
             barrier.wait();
-            client.reconcile_catalog("catalog-b".to_owned(), vec![entry_b])
+            client.reconcile_catalog_if_projection(
+                Some(lease),
+                "catalog-b".to_owned(),
+                vec![entry_b],
+            )
         })
     };
     barrier.wait();
-    let first = first.join().unwrap().unwrap();
-    let second = second.join().unwrap().unwrap();
-    assert!(["catalog-a", "catalog-b"].contains(&first.discovery_revision.as_str()));
-    assert!(["catalog-a", "catalog-b"].contains(&second.discovery_revision.as_str()));
+    let first = first.join().unwrap();
+    let second = second.join().unwrap();
+    let (winner, rejected) = match (first, second) {
+        (Ok(winner), Err(rejected)) | (Err(rejected), Ok(winner)) => (winner, rejected),
+        (Ok(_), Ok(_)) => panic!("two catalog rotations committed"),
+        (Err(first), Err(second)) => {
+            panic!("both catalog rotations rejected: {first:?}; {second:?}")
+        }
+    };
+    assert_eq!(
+        rejected.kind,
+        UsageCoordinationErrorKind::CatalogRevisionConflict
+    );
 
     let final_projection = client.current_projection().unwrap();
-    match final_projection.discovery_revision.as_str() {
+    assert_eq!(
+        final_projection.discovery_revision,
+        winner.discovery_revision
+    );
+    match winner.discovery_revision.as_str() {
         "catalog-a" => {
             assert_eq!(client.current(account_a).unwrap().generation, 0);
             assert_eq!(
@@ -450,6 +474,44 @@ fn concurrent_catalog_rotations_publish_one_complete_revision() {
         }
         revision => panic!("mixed or unknown catalog revision: {revision}"),
     }
+}
+
+#[test]
+fn catalog_cas_rejects_a_stale_rotation_after_a_newer_winner() {
+    let temp = tempfile::tempdir().unwrap();
+    let client = ensure_usage_broker_with_executor(
+        UsageBrokerConfig::for_data_dir(temp.path().to_owned()),
+        Arc::new(CountingExecutor {
+            calls: AtomicUsize::new(0),
+        }),
+    )
+    .unwrap();
+    let lease = client.current_projection().unwrap().projection_id;
+    let winning = UsageCatalogEntry {
+        capability: capability(),
+        revision: "entry-winning".to_owned(),
+    };
+    let stale = UsageCatalogEntry {
+        capability: second_capability(),
+        revision: "entry-stale".to_owned(),
+    };
+
+    let winner = client
+        .reconcile_catalog_if_projection(
+            Some(lease.clone()),
+            "catalog-winning".to_owned(),
+            vec![winning],
+        )
+        .unwrap();
+    let error = client
+        .reconcile_catalog_if_projection(Some(lease), "catalog-stale".to_owned(), vec![stale])
+        .unwrap_err();
+
+    assert_eq!(
+        error.kind,
+        UsageCoordinationErrorKind::CatalogRevisionConflict
+    );
+    assert_eq!(client.current_projection().unwrap(), winner);
 }
 
 #[test]

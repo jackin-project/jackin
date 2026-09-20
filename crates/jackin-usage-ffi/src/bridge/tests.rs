@@ -353,6 +353,7 @@ fn broker_client_refresh_returns_immediately_and_joins_one_generation() {
     *bridge.broker.lock().unwrap() = Some(DesktopBroker {
         client,
         capabilities,
+        catalog_lease: "test-lease".to_owned(),
         config: broker_config,
         scope: discovery_scope,
     });
@@ -362,21 +363,6 @@ fn broker_client_refresh_returns_immediately_and_joins_one_generation() {
     assert!(started.elapsed() < Duration::from_secs(1));
     executor.wait_started();
     assert!(bridge.refresh_in_progress().unwrap());
-    let catalog_client = bridge
-        .broker
-        .lock()
-        .unwrap()
-        .as_ref()
-        .unwrap()
-        .client
-        .clone();
-    let revoked = catalog_client
-        .current(UsageAccountCapability {
-            account_id: "not-in-forwarded-scope".to_owned(),
-            surface_id: "claude".to_owned(),
-        })
-        .expect_err("rotation must fence removed capabilities");
-    assert_eq!(revoked.kind, UsageCoordinationErrorKind::CatalogRevoked);
     bridge.refresh(None, true).unwrap();
     executor.release();
 

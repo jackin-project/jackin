@@ -49,6 +49,7 @@ fn response_round_trip_keeps_typed_sanitized_failure() {
 fn projection_operations_and_publication_response_round_trip() {
     let operations = [
         UsageBrokerOperation::ReconcileCatalog {
+            expected_projection_id: None,
             catalog_revision: "catalog-2".into(),
             entries: vec![UsageCatalogEntry {
                 capability: capability(),

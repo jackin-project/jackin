@@ -802,6 +802,45 @@ fn catalog_revision_change_purges_old_state_and_allows_only_new_revision() {
 }
 
 #[test]
+fn same_capability_revision_change_fences_in_flight_join_immediately() {
+    let executor = Arc::new(GateExecutor::new(ProviderProbeOutcome::success(
+        quota_view(1_000, 80),
+    )));
+    let coordinator = Arc::new(UsageCoordinator::with_catalog(
+        Arc::<GateExecutor>::clone(&executor),
+        Arc::new(MemoryStore::default()),
+        UsageCoordinatorConfig::default(),
+        [catalog_entry(&capability("account-a"), "revision-a")],
+    ));
+    let account = capability("account-a");
+    let generation = coordinator
+        .request_refresh(&account, 0, true, 1_000)
+        .unwrap()
+        .generation;
+    executor.wait_started(1);
+
+    let join_coordinator = Arc::clone(&coordinator);
+    let join_account = account.clone();
+    let started = Instant::now();
+    let joiner = std::thread::spawn(move || {
+        join_coordinator.join_generation(&join_account, generation, Duration::from_secs(2), 1_001)
+    });
+    coordinator
+        .reconcile_catalog([catalog_entry(&account, "revision-b")], 1_002)
+        .unwrap();
+    let error = joiner.join().unwrap().unwrap_err();
+    assert_eq!(error.kind, UsageCoordinationErrorKind::CatalogRevoked);
+    assert!(started.elapsed() < Duration::from_secs(1));
+    assert!(coordinator.is_idle());
+
+    executor.release(1);
+    executor.wait_idle();
+    let current = coordinator.current(&account, 1_003).unwrap();
+    assert_eq!(current.phase, UsageRefreshPhase::Idle);
+    assert!(current.snapshot.is_none());
+}
+
+#[test]
 fn catalog_purge_prevents_restart_resurrection() {
     let temp = tempfile::tempdir().unwrap();
     let store = Arc::new(FileAccountStateStore::at(temp.path().join("accounts")));

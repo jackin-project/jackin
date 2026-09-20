@@ -210,6 +210,7 @@ fn usage_relay_rejects_host_only_catalog_reconciliation() {
     };
     let authorization = UsageRelayAuthorization::from_config(&config).unwrap();
     let operation = UsageBrokerOperation::ReconcileCatalog {
+        expected_projection_id: None,
         catalog_revision: "catalog-2".to_owned(),
         entries: vec![UsageCatalogEntry {
             capability: account,

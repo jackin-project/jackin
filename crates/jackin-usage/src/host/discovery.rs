@@ -19,7 +19,7 @@ use jackin_protocol::control::FocusedUsageView;
 
 use super::{
     CanonicalAccountIdentity, CanonicalAccountSubject, HostSurfaceId, HostUsageRuntime,
-    discovered_account_keys,
+    StagedUsageDiscovery, discovered_account_keys,
 };
 
 /// Discovery boundary: Desktop may scan host config; Capsule sees capabilities only.
@@ -1674,6 +1674,74 @@ pub(super) fn refresh_credential_binding(
 }
 
 impl HostUsageRuntime {
+    /// Run one fresh, read-only discovery scan. A failed scan returns `None`
+    /// and never hands stale credentials back to broker rotation.
+    pub fn stage_discovery(
+        &mut self,
+        resolver: &dyn ProviderCredentialEnvResolver,
+    ) -> Result<Option<StagedUsageDiscovery>, String> {
+        self.require_open()?;
+        let Some(scope) = self.discovery_scope.clone() else {
+            return Ok(None);
+        };
+        resolver.begin_manual_retry();
+        let Ok(catalog) = discover_usage_sources(&scope, resolver) else {
+            self.push_event(
+                "discovery_failed",
+                None,
+                Some("current account discovery unavailable".to_owned()),
+            );
+            return Ok(None);
+        };
+        let discovered = validate_usage_sources(catalog, resolver);
+        let changed = self.discovery.as_ref().is_none_or(|current| {
+            super::broker::usage_catalog_entries(current)
+                != super::broker::usage_catalog_entries(&discovered)
+        });
+        Ok(Some(StagedUsageDiscovery {
+            base_generation: self.discovery_generation,
+            changed,
+            discovery: discovered,
+        }))
+    }
+
+    /// Commit a successful discovery stage after broker activation. The local
+    /// generation fence rejects an older scan even when its catalog revision
+    /// string happens to match the newer scan.
+    pub fn commit_staged_discovery(
+        &mut self,
+        staged: StagedUsageDiscovery,
+    ) -> Result<bool, String> {
+        self.require_open()?;
+        if staged.base_generation != self.discovery_generation {
+            return Err("stale usage discovery stage".to_owned());
+        }
+        if !staged.changed {
+            self.push_event("discovery_reconciled", None, Some("unchanged".to_owned()));
+            return Ok(false);
+        }
+        let current = discovered_account_keys(Some(&staged.discovery));
+        self.discovery = Some(staged.discovery);
+        self.discovery_generation = self.discovery_generation.saturating_add(1);
+        self.discovered_views.retain(|key, _| current.contains(key));
+        let active = self
+            .broker_phases
+            .iter()
+            .filter(|(_, phase)| phase.is_active())
+            .map(|(capability, _)| capability.clone())
+            .collect::<Vec<_>>();
+        self.broker_phases.clear();
+        for capability in active {
+            self.push_event(
+                "broker_phase_changed",
+                Some(&capability.surface_id),
+                Some("failed".to_owned()),
+            );
+        }
+        self.push_event("discovery_reconciled", None, Some("changed".to_owned()));
+        Ok(true)
+    }
+
     /// Rescan the retained Rust discovery scope without dispatching provider probes.
     ///
     /// This is the manual-refresh reconciliation boundary used before broker
@@ -1683,52 +1751,10 @@ impl HostUsageRuntime {
         &mut self,
         resolver: &dyn ProviderCredentialEnvResolver,
     ) -> Result<bool, String> {
-        self.require_open()?;
-        let Some(scope) = self.discovery_scope.clone() else {
+        let Some(staged) = self.stage_discovery(resolver)? else {
             return Ok(false);
         };
-        resolver.begin_manual_retry();
-        let Ok(catalog) = discover_usage_sources(&scope, resolver) else {
-            self.push_event(
-                "discovery_failed",
-                None,
-                Some("current account discovery unavailable".to_owned()),
-            );
-            return Ok(false);
-        };
-        let discovered = validate_usage_sources(catalog, resolver);
-        let changed = self
-            .discovery
-            .as_ref()
-            .map(|current| &current.config_generation)
-            != Some(&discovered.config_generation);
-        let admitted = changed.then(|| {
-            discovered
-                .bindings
-                .iter()
-                .map(|binding| {
-                    super::broker::capability_for_binding(
-                        binding,
-                        discovered.config_generation.as_deref(),
-                    )
-                })
-                .collect::<BTreeSet<_>>()
-        });
-        self.discovery = Some(discovered);
-        if changed {
-            let current = discovered_account_keys(self.discovery.as_ref());
-            self.discovered_views.retain(|key, _| current.contains(key));
-            if let Some(admitted) = admitted {
-                self.broker_phases
-                    .retain(|capability, _| admitted.contains(capability));
-            }
-        }
-        self.push_event(
-            "discovery_reconciled",
-            None,
-            Some(if changed { "changed" } else { "unchanged" }.to_owned()),
-        );
-        Ok(changed)
+        self.commit_staged_discovery(staged)
     }
 
     pub(super) fn record_discovered_snapshot(

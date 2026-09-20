@@ -67,6 +67,18 @@ pub trait UsageProviderExecutor: Send + Sync {
     ) -> Result<(), UsageCoordinationError> {
         Ok(())
     }
+
+    /// Validate a catalog without changing provider bindings.
+    ///
+    /// The publisher calls this before touching coordinator durable state.
+    /// Implementations that need external discovery or binding allocation can
+    /// reject here and retain the previous catalog unchanged.
+    fn validate_catalog(
+        &self,
+        _entries: &[UsageCatalogEntry],
+    ) -> Result<(), UsageCoordinationError> {
+        Ok(())
+    }
 }
 
 /// Coordinator scheduling policy.
@@ -166,12 +178,14 @@ impl UsageCapabilitySet {
 
 /// In-memory periodic cadence for one account. Due times are scheduling
 /// hints only; shared retry/rate-limit/success deadlines always win.
+#[derive(Clone)]
 struct AccountCadence {
     activity: UsageActivity,
     low_power: bool,
     next_due_epoch: i64,
 }
 
+#[derive(Clone)]
 struct AccountEntry {
     envelope: AccountStateEnvelope,
     history: VecDeque<UsageGenerationView>,
@@ -179,6 +193,10 @@ struct AccountEntry {
     cadence: AccountCadence,
     catalog_revision: Option<String>,
     revoked: bool,
+    /// Generations fenced by a catalog revision change. Keeping this separate
+    /// from terminal history makes an in-flight join wake and fail
+    /// immediately even when the capability id itself is unchanged.
+    fenced_generations: BTreeSet<u64>,
 }
 
 impl AccountEntry {
@@ -203,6 +221,7 @@ impl AccountEntry {
             },
             catalog_revision,
             revoked: false,
+            fenced_generations: BTreeSet::new(),
         }
     }
 
@@ -214,7 +233,7 @@ impl AccountEntry {
     }
 }
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 struct CoordinatorState {
     accounts: BTreeMap<UsageAccountCapability, AccountEntry>,
     blocked: BTreeMap<UsageAccountCapability, UsageCoordinationError>,
@@ -348,49 +367,55 @@ impl UsageCoordinator {
             .catalog_lifecycle
             .lock()
             .map_err(|_| unavailable_error())?;
-        self.shared.executor.reconcile_catalog(&entries)?;
-        let next = entries
-            .into_iter()
-            .map(|entry| (entry.capability, entry.revision))
-            .collect::<BTreeMap<_, _>>();
         let mut state = self.shared.state.lock().map_err(|_| unavailable_error())?;
+        validate_catalog_entries(&entries)?;
+        self.shared.executor.validate_catalog(&entries)?;
+        let previous_state = state.clone();
         let previous = state.catalog.clone().unwrap_or_else(|| {
             state
                 .accounts
                 .iter()
-                .map(|(capability, entry)| {
-                    (
-                        capability.clone(),
-                        entry.catalog_revision.clone().unwrap_or_default(),
-                    )
+                .filter_map(|(capability, entry)| {
+                    entry
+                        .catalog_revision
+                        .clone()
+                        .map(|revision| (capability.clone(), revision))
                 })
                 .collect()
         });
-        let mut purge = BTreeSet::new();
-        for (capability, revision) in &previous {
-            if next
-                .get(capability)
-                .is_none_or(|current| current != revision)
-            {
-                purge.insert(capability.clone());
-            }
-        }
-        for (capability, entry) in &state.accounts {
-            if next
-                .get(capability)
-                .is_none_or(|revision| entry.catalog_revision.as_ref() != Some(revision))
-            {
-                purge.insert(capability.clone());
-            }
-        }
-        for capability in state.blocked.keys() {
-            if !next.contains_key(capability) {
-                purge.insert(capability.clone());
-            }
-        }
+        let next = entries
+            .iter()
+            .cloned()
+            .map(|entry| (entry.capability, entry.revision))
+            .collect::<BTreeMap<_, _>>();
+        let purge = catalog_purge_set(&state, &previous, &next);
+        let preimages = purge
+            .iter()
+            .map(|capability| {
+                self.shared
+                    .store
+                    .load(capability, now_epoch)
+                    .map(|envelope| (capability.clone(), envelope))
+                    .map_err(state_error)
+            })
+            .collect::<Result<BTreeMap<_, _>, _>>()?;
+
         for capability in &purge {
-            self.shared.store.purge(capability).map_err(state_error)?;
-            state.blocked.remove(capability);
+            if let Err(error) = self.shared.store.purge(capability).map_err(state_error) {
+                restore_catalog_state(&self.shared, &preimages, now_epoch);
+                return Err(error);
+            }
+        }
+
+        let executor_result = self.shared.executor.reconcile_catalog(&entries);
+        if let Err(error) = executor_result {
+            restore_catalog_state(&self.shared, &preimages, now_epoch);
+            *state = previous_state;
+            let _rollback = self
+                .shared
+                .executor
+                .reconcile_catalog(&catalog_entries_from_map(&previous));
+            return Err(error);
         }
 
         let account_capabilities = state.accounts.keys().cloned().collect::<Vec<_>>();
@@ -423,6 +448,11 @@ impl UsageCoordinator {
         capability: &UsageAccountCapability,
         now_epoch: i64,
     ) -> Result<UsageGenerationView, UsageCoordinationError> {
+        let _catalog_lifecycle = self
+            .shared
+            .catalog_lifecycle
+            .lock()
+            .map_err(|_| unavailable_error())?;
         self.ensure_loaded(capability, now_epoch)?;
         let state = self.shared.state.lock().map_err(|_| unavailable_error())?;
         if let Some(error) = state.blocked.get(capability) {
@@ -448,6 +478,11 @@ impl UsageCoordinator {
         force: bool,
         now_epoch: i64,
     ) -> Result<UsageGenerationView, UsageCoordinationError> {
+        let catalog_lifecycle = self
+            .shared
+            .catalog_lifecycle
+            .lock()
+            .map_err(|_| unavailable_error())?;
         self.ensure_loaded(capability, now_epoch)?;
         let mut state = self.shared.state.lock().map_err(|_| unavailable_error())?;
         if let Some(error) = state.blocked.get(capability) {
@@ -510,6 +545,7 @@ impl UsageCoordinator {
             started_at_epoch: now_epoch,
             catalog_revision,
         };
+        drop(catalog_lifecycle);
         match self.jobs.try_send(WorkerMessage::Probe(job)) {
             Ok(()) => Ok(queued),
             Err(TrySendError::Full(message) | TrySendError::Disconnected(message)) => match message
@@ -551,6 +587,11 @@ impl UsageCoordinator {
         low_power: bool,
         now_epoch: i64,
     ) -> Result<(), UsageCoordinationError> {
+        let _catalog_lifecycle = self
+            .shared
+            .catalog_lifecycle
+            .lock()
+            .map_err(|_| unavailable_error())?;
         self.ensure_loaded(capability, now_epoch)?;
         let mut state = self.shared.state.lock().map_err(|_| unavailable_error())?;
         if let Some(error) = state.blocked.get(capability) {
@@ -580,6 +621,7 @@ impl UsageCoordinator {
     /// `None` when no account is tracked yet.
     #[must_use]
     pub fn next_due_epoch(&self) -> Option<i64> {
+        let _catalog_lifecycle = self.shared.catalog_lifecycle.lock().ok()?;
         self.shared.state.lock().ok().and_then(|state| {
             state
                 .accounts
@@ -595,23 +637,27 @@ impl UsageCoordinator {
     /// never produce a burst of missed polls. Returns the started or joined
     /// views; blocked accounts are skipped.
     pub fn poll_due(&self, now_epoch: i64) -> Vec<UsageGenerationView> {
-        let due: Vec<(UsageAccountCapability, u64)> = self
-            .shared
-            .state
-            .lock()
-            .map(|state| {
-                state
-                    .accounts
-                    .iter()
-                    .filter(|(capability, entry)| {
-                        !entry.revoked
-                            && !state.blocked.contains_key(*capability)
-                            && now_epoch >= entry.cadence.next_due_epoch
-                    })
-                    .map(|(capability, entry)| (capability.clone(), entry.envelope.generation))
-                    .collect()
-            })
-            .unwrap_or_default();
+        let due: Vec<(UsageAccountCapability, u64)> = {
+            let Ok(_catalog_lifecycle) = self.shared.catalog_lifecycle.lock() else {
+                return Vec::new();
+            };
+            self.shared
+                .state
+                .lock()
+                .map(|state| {
+                    state
+                        .accounts
+                        .iter()
+                        .filter(|(capability, entry)| {
+                            !entry.revoked
+                                && !state.blocked.contains_key(*capability)
+                                && now_epoch >= entry.cadence.next_due_epoch
+                        })
+                        .map(|(capability, entry)| (capability.clone(), entry.envelope.generation))
+                        .collect()
+                })
+                .unwrap_or_default()
+        };
         let mut views = Vec::with_capacity(due.len());
         for (capability, observed) in due {
             let Ok(view) = self.request_refresh(&capability, observed, false, now_epoch) else {
@@ -693,6 +739,9 @@ impl UsageCoordinator {
     /// Whether no queued or active generation is retained by this authority.
     #[must_use]
     pub fn is_idle(&self) -> bool {
+        let Ok(_catalog_lifecycle) = self.shared.catalog_lifecycle.lock() else {
+            return false;
+        };
         self.shared.state.lock().is_ok_and(|state| {
             state
                 .accounts
@@ -709,10 +758,22 @@ impl UsageCoordinator {
         timeout: Duration,
         now_epoch: i64,
     ) -> Result<UsageGenerationView, UsageCoordinationError> {
-        self.ensure_loaded(capability, now_epoch)?;
+        {
+            let _catalog_lifecycle = self
+                .shared
+                .catalog_lifecycle
+                .lock()
+                .map_err(|_| unavailable_error())?;
+            self.ensure_loaded(capability, now_epoch)?;
+        }
         let deadline = Instant::now() + timeout;
-        let mut state = self.shared.state.lock().map_err(|_| unavailable_error())?;
         loop {
+            let catalog_lifecycle = self
+                .shared
+                .catalog_lifecycle
+                .lock()
+                .map_err(|_| unavailable_error())?;
+            let state = self.shared.state.lock().map_err(|_| unavailable_error())?;
             if let Some(error) = state.blocked.get(capability) {
                 return Err(error.clone());
             }
@@ -721,6 +782,9 @@ impl UsageCoordinator {
                 .get(capability)
                 .ok_or_else(unavailable_error)?;
             if entry.revoked {
+                return Err(catalog_revoked_error());
+            }
+            if entry.fenced_generations.contains(&generation) {
                 return Err(catalog_revoked_error());
             }
             if let Some(terminal) = entry
@@ -739,12 +803,13 @@ impl UsageCoordinator {
                     "usage refresh is still updating",
                 ));
             };
+            drop(catalog_lifecycle);
             let (next_state, wait) = self
                 .shared
                 .changed
                 .wait_timeout(state, remaining)
                 .map_err(|_| unavailable_error())?;
-            state = next_state;
+            drop(next_state);
             if wait.timed_out() {
                 return Err(coordination_error(
                     UsageCoordinationErrorKind::WaitTimeout,
@@ -923,6 +988,9 @@ fn execute_probe(shared: &Arc<Shared>, job: ProbeJob) {
 }
 
 fn mark_updating(shared: &Arc<Shared>, job: &ProbeJob) -> bool {
+    let Ok(_catalog_lifecycle) = shared.catalog_lifecycle.lock() else {
+        return false;
+    };
     let Ok(mut state) = shared.state.lock() else {
         return false;
     };
@@ -1054,7 +1122,76 @@ fn persist_terminal(
     shared.changed.notify_all();
 }
 
+fn validate_catalog_entries(entries: &[UsageCatalogEntry]) -> Result<(), UsageCoordinationError> {
+    let mut capabilities = BTreeSet::new();
+    for entry in entries {
+        if entry.revision.is_empty() || !capabilities.insert(entry.capability.clone()) {
+            return Err(coordination_error(
+                UsageCoordinationErrorKind::CorruptState,
+                "usage broker catalog contains an invalid or duplicate entry",
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn catalog_purge_set(
+    state: &CoordinatorState,
+    previous: &BTreeMap<UsageAccountCapability, String>,
+    next: &BTreeMap<UsageAccountCapability, String>,
+) -> BTreeSet<UsageAccountCapability> {
+    let mut purge = BTreeSet::new();
+    for (capability, revision) in previous {
+        if next
+            .get(capability)
+            .is_none_or(|current| current != revision)
+        {
+            purge.insert(capability.clone());
+        }
+    }
+    for (capability, entry) in &state.accounts {
+        if next
+            .get(capability)
+            .is_none_or(|revision| entry.catalog_revision.as_ref() != Some(revision))
+        {
+            purge.insert(capability.clone());
+        }
+    }
+    for capability in state.blocked.keys() {
+        if !next.contains_key(capability) {
+            purge.insert(capability.clone());
+        }
+    }
+    purge
+}
+
+fn catalog_entries_from_map(
+    catalog: &BTreeMap<UsageAccountCapability, String>,
+) -> Vec<UsageCatalogEntry> {
+    catalog
+        .iter()
+        .map(|(capability, revision)| UsageCatalogEntry {
+            capability: capability.clone(),
+            revision: revision.clone(),
+        })
+        .collect()
+}
+
+fn restore_catalog_state(
+    shared: &Arc<Shared>,
+    preimages: &BTreeMap<UsageAccountCapability, Option<AccountStateEnvelope>>,
+    now_epoch: i64,
+) {
+    for (capability, envelope) in preimages {
+        match envelope {
+            Some(envelope) => drop(shared.store.store(envelope, now_epoch)),
+            None => drop(shared.store.purge(capability)),
+        }
+    }
+}
+
 fn revoke_entry(entry: &mut AccountEntry, now_epoch: i64) {
+    entry.fenced_generations.insert(entry.envelope.generation);
     entry.envelope.generation = entry.envelope.generation.saturating_add(1);
     entry.envelope.phase = UsageRefreshPhase::Failed;
     entry.envelope.terminal_result = None;
@@ -1071,6 +1208,7 @@ fn revoke_entry(entry: &mut AccountEntry, now_epoch: i64) {
 }
 
 fn reset_entry(entry: &mut AccountEntry, now_epoch: i64, revision: String) {
+    entry.fenced_generations.insert(entry.envelope.generation);
     entry.envelope.generation = entry.envelope.generation.saturating_add(1);
     entry.envelope.phase = UsageRefreshPhase::Idle;
     entry.envelope.terminal_result = None;
@@ -1083,6 +1221,12 @@ fn reset_entry(entry: &mut AccountEntry, now_epoch: i64, revision: String) {
     entry.envelope.success_deadline_epoch = None;
     entry.envelope.consecutive_failures = 0;
     entry.history.clear();
+    while entry.fenced_generations.len() > TERMINAL_HISTORY_LIMIT {
+        let Some(oldest) = entry.fenced_generations.iter().next().copied() else {
+            break;
+        };
+        entry.fenced_generations.remove(&oldest);
+    }
     entry.recovery_pending = false;
     entry.cadence.next_due_epoch = now_epoch;
     entry.catalog_revision = Some(revision);
