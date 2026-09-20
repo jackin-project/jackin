@@ -77,4 +77,4 @@ fn local_version_override(
 }
 
 #[cfg(test)]
-mod tests;
+mod check;
