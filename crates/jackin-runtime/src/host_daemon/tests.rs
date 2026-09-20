@@ -205,6 +205,20 @@ fn daemon_socket_exports_client_parent_server_and_completes_after_response_write
 
 #[test]
 fn conformance_wire_real_daemon_socket_exports_bounded_parented_rpc() -> Result<()> {
+    const CHILD: &str = "JACKIN_RUNTIME_DAEMON_WIRE_CHILD";
+    if std::env::var_os(CHILD).is_none() {
+        let status = std::process::Command::new(std::env::current_exe()?)
+            .arg("--exact")
+            .arg(
+                "host_daemon::tests::conformance_wire_real_daemon_socket_exports_bounded_parented_rpc",
+            )
+            .arg("--nocapture")
+            .env(CHILD, "1")
+            .status()?;
+        anyhow::ensure!(status.success(), "isolated daemon wire test failed");
+        return Ok(());
+    }
+
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(2)
         .enable_all()
