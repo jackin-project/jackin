@@ -1,6 +1,8 @@
 use super::*;
 use crate::{event::Value, schema::attrs};
 
+static METER_TEST_LOCK: Mutex<()> = Mutex::new(());
+
 #[test]
 fn every_registered_metric_stream_enforces_its_own_cardinality_cap() {
     let mut streams = SeriesByInstrument::new();
@@ -47,6 +49,7 @@ fn every_registered_metric_stream_enforces_its_own_cardinality_cap() {
 
 #[test]
 fn cardinality_rejects_the_257th_set_without_eviction() {
+    let _lock = METER_TEST_LOCK.lock().expect("meter test lock");
     use opentelemetry::metrics::MeterProvider as _;
     use opentelemetry_sdk::metrics::{InMemoryMetricExporter, PeriodicReader, SdkMeterProvider};
 
@@ -54,7 +57,8 @@ fn cardinality_rejects_the_257th_set_without_eviction() {
     let provider = SdkMeterProvider::builder()
         .with_reader(PeriodicReader::builder(exporter.clone()).build())
         .build();
-    install(&provider.meter("cardinality-test")).expect("test meter installation");
+    let _installation =
+        install(&provider.meter("cardinality-test")).expect("test meter installation");
     let before = crate::facade_health().cardinality;
     let mut series = Vec::new();
     for command in schema::enums::CliCommandName::ALL {
@@ -194,6 +198,34 @@ fn cardinality_rejects_the_257th_set_without_eviction() {
             }));
         }
     }
+}
+
+#[test]
+fn meter_installation_drop_releases_provider_and_series_state() {
+    let _lock = METER_TEST_LOCK.lock().expect("meter test lock");
+    use opentelemetry::metrics::MeterProvider as _;
+    use opentelemetry_sdk::metrics::SdkMeterProvider;
+
+    let first_provider = SdkMeterProvider::builder().build();
+    let first_installation =
+        install(&first_provider.meter("first-lifecycle")).expect("first meter installation");
+    for value in 0..limits::MAX_CARDINALITY {
+        let attrs = [Attr {
+            key: attrs::CLI_COMMAND_NAME,
+            value: Value::U64(value as u64),
+        }];
+        assert!(accept_series(TELEMETRY_VALIDATE.name(), &attrs));
+    }
+    drop(first_installation);
+
+    let second_provider = SdkMeterProvider::builder().build();
+    let _second_installation = install(&second_provider.meter("second-lifecycle"))
+        .expect("second meter installation after first shutdown");
+    let attrs = [Attr {
+        key: attrs::CLI_COMMAND_NAME,
+        value: Value::U64(limits::MAX_CARDINALITY as u64),
+    }];
+    assert!(accept_series(TELEMETRY_VALIDATE.name(), &attrs));
 }
 
 #[test]
