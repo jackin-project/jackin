@@ -649,6 +649,10 @@ jq -e \
    .manifest == $manifest[0]' \
   "$package_dir/identity.json" >/dev/null
 
+# Verify the complete handoff, including the signed capsule manifest's target
+# bindings, before exposing the package to the workflow's publish steps.
+cargo xtask release-verify-package
+
 printf 'version=%s\nsource_commit=%s\n' "$version" "$source_commit"
 '''
 

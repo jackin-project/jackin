@@ -197,7 +197,7 @@ fn verify_preview_package(package_dir: &Path) -> Result<()> {
     )?;
 
     verify_sha256_sums(package_dir, &payload_digests)?;
-    verify_capsule_manifest(package_dir, &manifest, &payload_digests)?;
+    verify_capsule_manifest(package_dir, &manifest.version, &payload_digests)?;
 
     for payload in PAYLOADS {
         verify_archive(package_dir, payload)?;
@@ -579,34 +579,66 @@ fn read_strict_sha256(path: &Path, expected_name: &str) -> Result<String> {
 
 fn verify_capsule_manifest(
     package_dir: &Path,
-    package: &PackageManifest,
+    package_version: &str,
     payload_digests: &BTreeMap<String, String>,
 ) -> Result<()> {
+    verify_capsule_manifest_with(
+        package_dir,
+        package_version,
+        payload_digests,
+        verify_cosign_bundle,
+    )
+}
+
+fn verify_capsule_manifest_with<F>(
+    package_dir: &Path,
+    package_version: &str,
+    payload_digests: &BTreeMap<String, String>,
+    verify_bundle: F,
+) -> Result<()>
+where
+    F: FnOnce(&Path, &Path) -> Result<()>,
+{
     let manifest_path = package_dir.join("capsule-manifest.json");
     let bundle_path = package_dir.join("capsule-manifest.json.bundle");
-    let value = read_json(&manifest_path)?;
-    let capsule: CapsuleManifest = serde_json::from_value(value)
-        .with_context(|| format!("parsing capsule manifest {}", manifest_path.display()))?;
-    let expected = BTreeMap::from([
-        (
-            "aarch64-unknown-linux-gnu".to_owned(),
-            payload_digests
-                .get("jackin-capsule-aarch64-unknown-linux-gnu.tar.gz")
-                .context("missing aarch64 capsule payload digest")?
-                .clone(),
-        ),
-        (
-            "x86_64-unknown-linux-gnu".to_owned(),
-            payload_digests
-                .get("jackin-capsule-x86_64-unknown-linux-gnu.tar.gz")
-                .context("missing x86_64 capsule payload digest")?
-                .clone(),
-        ),
-    ]);
-    validate_capsule_manifest(&capsule, &package.version, &expected)?;
-    verify_cosign_bundle(&manifest_path, &bundle_path)
+    let capsule = read_capsule_manifest(&manifest_path)?;
+    let expected = expected_capsule_targets(payload_digests)?;
+    validate_capsule_manifest(&capsule, package_version, &expected)?;
+    verify_bundle(&manifest_path, &bundle_path)
         .context("verifying capsule-manifest.json cosign bundle")?;
     Ok(())
+}
+
+fn read_capsule_manifest(path: &Path) -> Result<CapsuleManifest> {
+    let value = read_json(path)?;
+    serde_json::from_value(value)
+        .with_context(|| format!("parsing capsule manifest {}", path.display()))
+}
+
+fn expected_capsule_targets(
+    payload_digests: &BTreeMap<String, String>,
+) -> Result<BTreeMap<String, String>> {
+    let mut expected = BTreeMap::new();
+    for payload in PAYLOADS
+        .iter()
+        .filter(|payload| payload.binary == "jackin-capsule")
+    {
+        let digest = payload_digests
+            .get(payload.name)
+            .with_context(|| format!("missing {} capsule payload digest", payload.target))?;
+        ensure!(
+            expected
+                .insert(payload.target.to_owned(), digest.clone())
+                .is_none(),
+            "duplicate capsule target in preview payload contract: {}",
+            payload.target
+        );
+    }
+    ensure!(
+        expected.len() == 2,
+        "preview package must declare exactly two capsule targets"
+    );
+    Ok(expected)
 }
 
 fn validate_capsule_manifest(

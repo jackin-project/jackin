@@ -7,6 +7,8 @@ use sha2::{Digest, Sha256};
 
 use super::*;
 
+const CAPSULE_VERSION: &str = "0.6.4-preview.1+0123456";
+
 fn digest(bytes: &[u8]) -> String {
     hex::encode(Sha256::digest(bytes))
 }
@@ -92,6 +94,58 @@ fn accepts_exact_sha256_sums_for_all_payloads() {
     fs::write(directory.path().join("SHA256SUMS"), format!("{sums}\n")).unwrap();
 
     verify_sha256_sums(directory.path(), &payload_digests).unwrap();
+}
+
+#[test]
+fn parses_capsule_manifest_and_binds_exact_payload_targets_before_bundle_check() {
+    let directory = tempfile::tempdir().unwrap();
+    let payload_digests = write_payloads(directory.path());
+    let expected = expected_capsule_targets(&payload_digests).unwrap();
+    let manifest_path = directory.path().join("capsule-manifest.json");
+    let bundle_path = directory.path().join("capsule-manifest.json.bundle");
+    fs::write(
+        &manifest_path,
+        serde_json::json!({"targets": expected, "version": CAPSULE_VERSION}).to_string(),
+    )
+    .unwrap();
+    fs::write(&bundle_path, b"deterministic bundle fixture").unwrap();
+
+    let mut verified_paths = None;
+    verify_capsule_manifest_with(
+        directory.path(),
+        CAPSULE_VERSION,
+        &payload_digests,
+        |manifest, bundle| {
+            verified_paths = Some((manifest.to_owned(), bundle.to_owned()));
+            Ok(())
+        },
+    )
+    .unwrap();
+
+    assert_eq!(
+        verified_paths,
+        Some((manifest_path, bundle_path)),
+        "bundle verification must receive the parsed manifest and its exact sidecar"
+    );
+}
+
+#[test]
+fn rejects_capsule_manifest_schema_extensions() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("capsule-manifest.json");
+    fs::write(
+        &path,
+        serde_json::json!({
+            "targets": {},
+            "version": CAPSULE_VERSION,
+            "unexpected": "must be rejected",
+        })
+        .to_string(),
+    )
+    .unwrap();
+
+    let error = read_capsule_manifest(&path).expect_err("unknown manifest fields must fail closed");
+    assert!(format!("{error:#}").contains("unknown field"));
 }
 
 #[test]
