@@ -1,0 +1,83 @@
+# Failure ledger — jackin-project/jackin (READ-ONLY inventory, fix nothing)
+Watermark: 2026-09-20T21:04:52Z (run 35537570310). Accessible window: 2026-05-31T21:25:10Z..2026-09-20T21:04:52Z.
+Coverage: 40000 unique runs (list-API ceiling; see GAP-1). Day spot-checks 09-19 (121/121), 08-20 (746/746), 09-20 incl 6 head-gap rows merged.
+Conclusions (unique): success 24989, failure 8657, cancelled 6289, skipped 62, in_progress/queued 3.
+Rerun attempts observed: 251 rows with run_attempt>1 (max attempt 3).
+Required checks (ruleset 14746904 protect-main, active, ~DEFAULT_BRANCH): DCO (ext 974774), Policy (15368), ci-required (15368). Branch-protection API: 404 (rulesets only).
+Generator pin (current tree): velnor 4fa7a3a85f141a6bb95bc9bdf0eef9e3ddde165d (.github-gen/velnor-workflow.toml, rev 4fa7a3a8 in ci-main.yml/ci-policy.yml).
+Historical pins observed in logs: 5623be5539f2a378430fdcc7d4ba5cb13b5f1222 (09-16), e05aee6de1d1614d752b4d1b1d26a49ac2c5ef91 (09-16), 7fa4a0731ee8bedc5b02d90507d6dbe8b719153a (09-15 Velnor lane).
+Upstream checkout: /tmp/velnor @ 5939604042ae5191b1b6d742e19e0db2c163ea1d (contains pin 4fa7a3a8 as commit; .github/actions/setup-velnor-workflow present).
+
+## Classes
+- C1 product-test-flaky: retry-sensitive assertion (diagnostics 7vs1; passed rerun, no code change)
+- C2 infra-mbx-quota: `mbx cache import` Quota exceeded (os error 122) after ~2GB cache restore, step "Set up Mr. Boxington"
+- C3 product-test-drift: xtask release_workflow test reads .github/workflows/release.yml absent at that SHA (file added later by generator [release])
+- C4 ci-stall: swift-package-native `cargo xtask desktop xcframework` silent 600s on ubuntu lane -> SIGKILL by stall watchdog
+- C5 ci-toolchain: swift-prototypes `swift: command not found` on ubuntu lane (xcode capability misrouted to github lane)
+- C6 policy-required-checks: live ruleset contexts not declared in tree [policy] (DCO,construct-required,docs-link-check,docs-required,validate)
+- C7 policy-generated-tree: checked-in tree differs from pinned render (incl .github/ci/.github-actions-generator-state on PR)
+- C8 policy-advisory-era: 41x "self-hosted jobs require a default-branch trusted-event gate" (09-15 generator/policy skew)
+- C9 ci-mise-dep: desktop-merge `cargo:boltffi_cli@0.30.1 requires cargo:sccache@0.16.0 not installed` (install_args order/dep)
+- C10 cancelled-superseded: desktop-merge cancel-in-progress + PR push supersede; CI/PR 1013 attempt-2 cancelled by newer push
+- C11 cancelled-zero-job: run cancelled before any job record (0 jobs via API; early cancel or record GC)
+- C12 legacy-* : pre-Velnor workflows (CI=cargo audit/deny vuln gate; Docs=repo-link-check 19 problems; jackin-dev=assert-version formula skew; Homebrew=gh release edit fail)
+- C13 aux: Hygiene=Velnor fleet admission reject; Maintenance=actions-cache over 8GiB budget; Nightly=era swift fail; RenovUpstream=`source: not found` sh-vs-bash (exit 127)
+- C14 pr-product-break: PR-branch compile/test failures (1002: jackin-instance unused OsString imports; 965-era: dylint_linting compile)
+- C15 aggregate: ci-required / Control-Required / Required derive failure from above (never root cause)
+
+## Main push ledger — CI / main (Velnor era, 42 runs; 21 failure + 10 cancelled + 11 success)
+- run 35521080097 push main fce94cea | job 106105226160 att1 fail + job 106150119934 att2 OK | unit rust-jackin-diagnostics | step Run unit checks | a1 15:56:44-15:56:56Z fail, a2 21:11:07-21:12:58Z OK | ubuntu-26.04 GH1000239891/GH1000240547 | log /tmp/finv/job106105226160.log:855-876 `conformance_partial_success_is_not_retried` left 7 right 1 @ wire_failure_support/mod.rs:51 | class C1 | enabler none (flaky) | owner product-diagnostics (inferred)
+- run 35443450628 push main 665f7e37 | job 105898301807 rust-jackin | step Set up Mr. Boxington | 12:39:23-12:40:22Z | ubuntu GH1000236132 | log /tmp/finv/rustjackin-105898301807.log:642 mbx Quota exceeded os122 after 2070MB restore | class C2 | enabler mbx-cache-size/runner-disk | owner ci-platform (inferred)
+- run 35211128040 push main 6023f430 | jobs 105168757087 rust-jackin C2 mbx; 105168759232 swift-native C4 stall SIGKILL 10:34:22-10:45:47Z (log /tmp/finv/swift-105168759232.log:648); 105168759395 xtask C3 release.yml ENOENT (log /tmp/finv/xtask-105168759395.log:843) | ubuntu lane | owner ci-platform/product-xtask
+- run 35208591820 push main 5bf20aaf | job 105160498368 rust-jackin C2 mbx | ubuntu | owner ci-platform
+- run 35204557395 push main 1b90eb16 | jobs 105147228463 rust-jackin C2 mbx (2059MB, Quota os122); 105147229540 xtask C3 release.yml ENOENT | ubuntu | owner ci-platform/product-xtask
+- run 35198242080 push main e4300b43 | jobs 105126612306 rust-jackin C2; 105126613330 swift-prototypes C5 `swift: command not found` exit127 08:10:41-08:10:56Z; 105126613400 xtask C3 | ubuntu | owner ci-platform
+- run 35162379343 push main 0be3fcf9 | jobs 105016366284 xtask C3; 105016366415 swift-native C4-class (Run unit checks); 105016366421 rust-runtime product-test `host_daemon ... bounded_parented_rpc` panic tests.rs:259 "did not arrive exactly once"; 105016366437 swift-prototypes C5-class | owner product-runtime + ci-platform
+- run 35114867283 push main 92f347ac | jobs 104858587644 swift-native C4-class; 104858587808 swift-prototypes C5-class; 104858587843 xtask C3 (same release.yml ENOENT) | owner ci-platform/product-xtask
+- run 35112494862 push main fecda3c7 | jobs 104850416799 rust-jackin C2; 104850419714 swift-prototypes C5-class; 104850419739 xtask C3-class; 104850419912 swift-native C4-class; + C15 ci-required/Control-Required | owner ci-platform
+- run 35107138897 push main 587f5f22 | jobs 104832315382 rust-jackin C2; 104832317676 swift-native C4-class 14:17:36-14:28:59Z; + C15 aggregates | owner ci-platform
+- run 35099980833 push main 1721e184 | job 104806653663 Policy C6 (pin 5623be55; ruleset had DCO,construct-required,docs-link-check,docs-required,validate undeclared; log /tmp/finv/policy-104806653663.log:553-569); all units skipped | owner ci-platform
+- run 35097895989 push main 13fb678a | Policy fail + C15 ci-required; units skipped | class C6-class | owner ci-platform
+- run 35094997274 push main d3c228c4 | Policy fail + C15 ci-required; units skipped | class C6-class | owner ci-platform
+- run 35092792967 push main c4359856 | Policy fail + C15 ci-required; units skipped | class C6-class | owner ci-platform
+- run 35089290588 push main c5dbf4c2 | Policy fail + C15 ci-required; units skipped | class C6-class | owner ci-platform
+- run 35088131161 push main 1d7af0af | Policy + Control/Planning fail + C15 ci-required; units skipped | class C6/C7-class | owner ci-platform
+- run 35080267191 push main 97bd8d04 | job 104742320386 Policy C6+C7 (pin e05aee6d; generated-tree differs + 5 required-checks findings); units skipped | owner ci-platform
+- run 34991672124 push main a83e3037 | job 104472825048 Swift/Velnor-era C-variant `sh: line 3: cd: native: No such file or directory` (gen rev 7fa4a073); Velnor jobs skipped | owner ci-platform(generator)
+- run 34968494172 push main 9845e34e | job 104382451379 Advisory policy C8 (41 findings; log /tmp/finv/advisory-104382451379.log:525); C15 ci-required+Required | owner ci-platform
+- run 34934736655 push main b95363a0 | Advisory policy fail + C15 ci-required; matrix skipped | class C8-class | owner ci-platform
+- run 34932943764 push main cf077420 | Advisory policy fail + C15 ci-required; matrix skipped | class C8-class | owner ci-platform
+- run 34928343838 push main 1fced1f9 | Advisory policy fail + C15 ci-required; matrix skipped | class C8-class | owner ci-platform
+- cancelled zero-job (C11): 34991655040 (2cd7bca1), 34991619641 (fedff2b8), 34976782142 (0fef14c9), 34946462169 (21466158), 34936553580 (31b5bf47) — jobs API total 0
+- cancelled with jobs: 34973279579 (05bbbda7: Swift/Velnor-era failures+skips, run cancelled); 34967285486 (a9d28138: Advisory cancelled + C15 fails); 34965265773 (d9097f47: Advisory fail + C15); 34954253311 (32d65698: all skipped); 34934919337 (dbcb582e: docker-velnor fail + skipped)
+- success (11): 35521080097 att2, 35517379726 (a5e10227), 35515576031 (0163d1b7), 35507503503 (1622769c), 35504497165 (3d510aac), 35478203945 (41796158), 35475235267 (3b1e1fc0), 35442270809 (00cba4a3), 35216755494 (278cdbe5), 35108916881 (7c6be511), 35103884531 (6ad668b9)
+
+## Main push ledger — Desktop merge cadence (13 runs; 5 failure + 1 cancelled + 7 success)
+- run 35515575859 push main 0163d1b7 MANDATORY | job 106090835001 | step Run desktop-merge 14:09:12-14:44:09Z (job 14:08:46-14:44:14Z = 35m28s; step 34m57s) | macos-26 GH1000239579 | log /tmp/finv/job106090835001.log: UI tests passing sequentially, tail `##[error]The operation was canceled` (no test failure; cancel-in-progress group desktop-merge, timeout-minutes 90 not reached) | class C10 | enabler concurrency cancel-in-progress (superseded by 35517379563 @14:43:56 same SHA a5e10227? no — by next push; sibling CI run 35515576031 same SHA succeeded) | owner ci-platform
+- failures C9 mise boltffi/sccache (all step "Set up Mise tools", ~30s, macos-26): 35442270734/job105895030506 (00cba4a3, log /tmp/finv/desktop-105895030506.log:226-233); 35216754970/job105186943884 (278cdbe5); 35211127552/job105168620062 (6023f430); 35208591493/job105160346474 (5bf20aaf); 35204557223/job105147062999 (1b90eb16) | owner ci-platform
+- success (7): 35521079960 (fce94cea), 35517379563 (a5e10227), 35507503339 (1622769c), 35504497024 (3d510aac), 35478203836 (41796158), 35475235030 (3b1e1fc0), 35443450406 (665f7e37)
+
+## Other main-push failures (legacy/aux; counts + inspected samples)
+- push+main non-OK total: 353 (incl Velnor-era 32+6 above). Samples: CI 34886941081 C12 cargo audit 1 vuln + deny fail (job 104119851652 build gate); Docs 33445470063 C12 repo-link-check 19 problems (job 99663526273); jackin-dev 33445470216 C12 assert-version formula 0.1.39 vs tag v0.1.50 (job 99663488147); Homebrew 34738371622 `gh release edit preview` exit 1 (job 103682791577); Hygiene 34989368295 C13 `Velnor rejected this job before workflow execution` (job 104449699249); Maintenance 35075424279 C13 cache over budget 9374465071>8589934592 (job 104726592180); Nightly 35075043065 swift-native fail (job 104725949205, era class C4); RenovUpstream-PR 35198357642 C13 `sh: source: not found` exit127 (job 105126858775, log /tmp/finv/renov-up.log:2298-2300).
+- Remaining legacy failures share workflow+era with samples; per-run rows not enumerated (see GAP-3).
+
+## PR-side (pull_request non-OK 13822; pull_request_target non-OK 162)
+- Velnor workflow policy failures: 124 (PR-target). Sample 35535428443/job106143483300 C7 generated-tree `.github/ci/.github-actions-generator-state` differs @ a37cee80 (branch integrate/pr1002-multi-account). Class holds for drift-era; other instances need per-run policy-log read (GAP-3).
+- CI/PR 1002/merge failures: 29. Sample 35529122759 @81ed457c: 8 rust units fail Run unit checks C14 `jackin-instance` unused imports OsString/OsStringExt (log /tmp/finv/pr1002-rustjackin.log:933-947) + C15 aggregates.
+- CI/PR 965/merge failures: 26 (1380-job matrix era). Sample 34893976554: only failures `rust-jackin-lints` C14 `could not compile dylint_linting (4 errors)` (job 104144111783) + C15 ci-required; rest skipped/success.
+- Cancelled PR runs are overwhelmingly push-supersede (same-branch newer run) incl 35535696169 att2 (6713d014) superseded by 35537570310 (997c18fe); desktop-style cancel groups; legacy CI 3059/Docs 1356/Construct 773 cancelled.
+- Full per-run PR enumeration not done (GAP-3); counts by workflow in inventory section.
+
+## Inventory counts (accessible, deduped, 2026-05-31..2026-09-20)
+- Unique runs 40000 (40006 rows incl 6 exact-dup success rows from head-shift; 6 newest rows merged post-hoc).
+- failure 8657: Docs 2649, CI 2309, Renovate Validate 1082, jackin-dev 856, Construct Image 673, Docs(public-unmerged) 197, jackin-dev(public-unmerged) 148, Velnor policy 124, Hygiene 91, reuse-compliance(public) 57, Homebrew Preview 56, reuse-compliance.yml 40, reuse-compliance 30, ci-unit-rust.yml 29, CI/PR-1002 29, Construct(public) 27, CI/PR-965 26, hygiene.yml 24, CI/main-push 22->21 after rerun (row updated), CI(public) 18, Renovate 17, rust-nextest.yml 15, Release 11, Desktop Cadence 8, + tail (Desktop merge push 5, CI/PR-980/995/1005/1006 5ea, etc.)
+- cancelled 6289: CI 3059, Docs 1356, Construct 773, jackin-dev 171, Docs(public) 146, Construct(public) 116, CI(public) 97, Homebrew 84, Renovate Validate 80, reuse(public) 60, jackin-dev(public) 46, Hygiene 40, + tail (Velnor policy 38, CI/PR-1002 37, Desktop Cadence 36, CI/main-push 10, ...)
+- events: pull_request 36340, push 2423, workflow_dispatch 485, schedule 336, pull_request_target 235, workflow_run 181.
+- Gaps/named: GAP-1 list-API 40000 ceiling — runs older than 2026-05-31T21:25:10Z exist but are inaccessible (window totals exceed cap; branch-filtered queries cap at 1000). GAP-2 live-tail: rows created after 21:04:52Z + attempt-1 job records evicted from jobs API after rerun (captured pre-eviction). GAP-3 per-run PR/legacy enumeration + per-instance policy-log reads not done (class-level disposition with inspected samples). GAP-4 upstream tailrocks/velnor CI runs not inventoried (scope: primary main+PRs; upstream used for pin/action verification only).
+
+## Parent dispositions (2026-09-21, post-inventory)
+- C9 RESOLVED: main desktop-merge.yml:34 lists cargo:sccache before cargo:boltffi_cli (commit 665f7e37 "fix(ci): include cargo:sccache in desktop cadence mise tools"); desktop green since 09-15.
+- C2 RESOLVED: ci-unit-rust.yml:266 "Bound the Mr. Boxington store" sets MBX_GC_MAX_SIZE=12GiB; no quota errors in recent mains (7 consecutive green per inventory).
+- C1 (att1 7-vs-1 flake): diagnosed transient (attempt-2 green identical HEAD; PR #1012 ran 122/122 green on identical tree+commands); hardening slice in PR #1014 (assert_wire_requests + content assert); mechanism unresolved, next probe = export timestamp+payload-hash if recurs.
+- C10 (35m28s cancel): mechanism = same-ref cancel-in-progress (35517379563 arrived 35m later); underlying cost = mise cache ineffective (26 tools rebuilt ~9.5min every desktop run despite HIT) + unwired sccache; fix pending perf slice.
+- Upstream Velnor red-main (Policy stale-tree + 15-min candidate wait; Preview identity): root = PR #968 regenerated tree without promoting pin (38dbf85e stale); push-event candidate lookup keyed by unmatchable merge SHA. Fix = `velnor-workflow promote --rev HEAD` at tip (agent velnor-promote-fix in flight); structural follow-up = fail-fast Acquire on non-PR events.
