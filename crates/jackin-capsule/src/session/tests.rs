@@ -1433,39 +1433,70 @@ fn pty_spawn_exit_pair_is_bounded_and_does_not_export_wait_errors() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn spawn_records_instance_identity_on_session() {
+async fn spawn_keeps_provider_route_with_same_agent_instance_and_account() {
     let (event_tx, _event_rx) = mpsc::unbounded_channel();
-    let mut command = CommandBuilder::new("/bin/sh");
-    command.arg("-c");
-    command.arg("exit 0");
-    let terminal = SessionTerminal {
-        rows: 24,
-        cols: 80,
-        row_arena: termpane::RowArena::default(),
-        default_fg: None,
-        default_bg: None,
-    };
+    let slots = [
+        (
+            "codex-work",
+            "openai-work",
+            "Codex · Work",
+            "https://work.example.test/v1",
+            2_001,
+        ),
+        (
+            "codex-personal",
+            "openai-personal",
+            "Codex · Personal",
+            "https://personal.example.test/v1",
+            2_002,
+        ),
+    ];
 
-    let (session, _id) = Session::spawn(
-        SessionSpawnSpec {
-            label: "Claude · Work".to_owned(),
-            agent: Some("claude-work".to_owned()),
-            account_id: Some("work".to_owned()),
-            identity: jackin_protocol::SessionIdentity {
-                uid: 2_001,
-                gid: 2_001,
+    let mut sessions = Vec::with_capacity(slots.len());
+    for (instance_id, account_id, label, endpoint, uid) in slots {
+        let mut command = CommandBuilder::new("/bin/sh");
+        command.arg("-c");
+        command.arg("exit 0");
+        let (session, _id) = Session::spawn(
+            SessionSpawnSpec {
+                label: label.to_owned(),
+                agent: Some(instance_id.to_owned()),
+                account_id: Some(account_id.to_owned()),
+                identity: jackin_protocol::SessionIdentity { uid, gid: uid },
+                provider: Some(super::SessionProvider {
+                    label: "OpenAI".to_owned(),
+                    env_overrides: vec![("OPENAI_BASE_URL".to_owned(), endpoint.to_owned())],
+                }),
+                cache_dir: None,
             },
-            provider: None,
-            cache_dir: None,
-        },
-        command,
-        terminal,
-        event_tx,
-    )
-    .expect("spawn real PTY session");
-    assert_eq!(session.label, "Claude · Work");
-    assert_eq!(session.agent.as_deref(), Some("claude-work"));
-    assert_eq!(session.account_id.as_deref(), Some("work"));
+            command,
+            SessionTerminal {
+                rows: 24,
+                cols: 80,
+                row_arena: termpane::RowArena::default(),
+                default_fg: None,
+                default_bg: None,
+            },
+            event_tx.clone(),
+        )
+        .expect("spawn real PTY session");
+        sessions.push(session);
+    }
+
+    for (session, (instance_id, account_id, label, endpoint, uid)) in sessions.iter().zip(slots) {
+        assert_eq!(session.label, label);
+        // `Session.agent` stores the stable instance configuration ID, not
+        // the shared executable slug (`codex`).
+        assert_eq!(session.agent.as_deref(), Some(instance_id));
+        assert_eq!(session.account_id.as_deref(), Some(account_id));
+        assert_eq!(session.identity.uid, uid);
+        let provider = session.provider.as_ref().expect("provider route retained");
+        assert_eq!(provider.label, "OpenAI");
+        assert_eq!(
+            provider.env_overrides,
+            vec![("OPENAI_BASE_URL".to_owned(), endpoint.to_owned())]
+        );
+    }
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -2153,4 +2184,125 @@ fn secondary_instance_gets_its_own_home_and_forwarded_dir() {
     let env = |name: &str| cmd.get_env(name).and_then(|v| v.to_str());
     assert_eq!(env("CODEX_HOME"), Some("/home/agent/.codex"));
     assert!(env("CLAUDE_CONFIG_DIR").is_none());
+}
+
+#[test]
+fn same_agent_instances_keep_model_home_endpoint_and_credential_bound_to_config_id() {
+    let credentials: jackin_protocol::AgentCredentialEnv =
+        serde_json::from_value(serde_json::json!({
+            "schema_version": 2,
+            "instances": {
+                "codex-work": {
+                    "agent": "codex",
+                    "account_id": "openai-work",
+                    "env": {
+                        "OPENAI_API_KEY": "work-key",
+                        "OPENAI_BASE_URL": "https://work.example.test/v1",
+                    },
+                },
+                "codex-personal": {
+                    "agent": "codex",
+                    "account_id": "openai-personal",
+                    "env": {
+                        "OPENAI_API_KEY": "personal-key",
+                        "OPENAI_BASE_URL": "https://personal.example.test/v1",
+                    },
+                },
+            },
+        }))
+        .expect("v2 fixture must decode");
+    let hostile_passthrough = vec![
+        ("CODEX_HOME".to_owned(), "/foreign-codex".to_owned()),
+        ("OPENAI_API_KEY".to_owned(), "ambient-key".to_owned()),
+        (
+            "OPENAI_BASE_URL".to_owned(),
+            "https://ambient.example.test/v1".to_owned(),
+        ),
+        (
+            jackin_core::CODEX_LANE_MODEL_ENV_NAME.to_owned(),
+            "ambient-model".to_owned(),
+        ),
+        (
+            jackin_core::CODEX_LANE_EFFORT_ENV_NAME.to_owned(),
+            "high".to_owned(),
+        ),
+    ];
+    let fixtures = [
+        (
+            "codex-work",
+            "openai-work",
+            "/home/agent/.codex",
+            "/jackin/codex",
+            "gpt-5.2-codex",
+            "medium",
+            "work-key",
+            "https://work.example.test/v1",
+        ),
+        (
+            "codex-personal",
+            "openai-personal",
+            "/home/agent/.codex-codex-personal",
+            "/jackin/codex-codex-personal",
+            "gpt-5.3-codex",
+            "low",
+            "personal-key",
+            "https://personal.example.test/v1",
+        ),
+    ];
+
+    for (instance_id, account_id, home_dir, forwarded_dir, model, effort, own_key, own_endpoint) in
+        fixtures
+    {
+        let spec = AgentSpawnSpec {
+            agent: "codex",
+            instance: instance_id,
+            home_dir,
+            forwarded_dir,
+            model: Some(model),
+            effort: Some(effort),
+            auth_mode: Some("api_key"),
+            env_passthrough: &hostile_passthrough,
+            cwd: Path::new("/workspace"),
+            codename: "test",
+            identity: jackin_protocol::SessionIdentity {
+                uid: 2_001,
+                gid: 2_001,
+            },
+        };
+        let mut command = build_agent_command(&spec);
+        super::apply_account_env(&mut command, instance_id, Some("api_key"), &credentials);
+        let env = |name: &str| command.get_env(name).and_then(|value| value.to_str());
+        let argv = command
+            .get_argv()
+            .iter()
+            .map(|argument| argument.to_string_lossy().into_owned())
+            .collect::<Vec<_>>();
+
+        assert_eq!(env(jackin_protocol::INSTANCE_ENV), Some(instance_id));
+        assert_eq!(env("CODEX_HOME"), Some(home_dir));
+        assert_eq!(
+            env(jackin_protocol::INSTANCE_FORWARDED_DIR_ENV),
+            Some(forwarded_dir)
+        );
+        assert_eq!(env("OPENAI_API_KEY"), Some(own_key));
+        assert_eq!(env("OPENAI_BASE_URL"), Some(own_endpoint));
+        assert_eq!(env(jackin_core::CODEX_LANE_MODEL_ENV_NAME), Some(model));
+        assert_eq!(env(jackin_core::CODEX_LANE_EFFORT_ENV_NAME), Some(effort));
+        assert_eq!(argv[1..].to_vec(), vec!["-m".to_owned(), model.to_owned()]);
+        assert_eq!(
+            credentials
+                .for_instance(instance_id)
+                .and_then(|env| env.get("OPENAI_API_KEY"))
+                .map(String::as_str),
+            Some(own_key),
+            "the fixture's account binding for {instance_id} must stay exact"
+        );
+        assert_eq!(
+            credentials
+                .instance(instance_id)
+                .map(|entry| entry.account_id.as_str()),
+            Some(account_id),
+            "the fixture must name the account selected by {instance_id}"
+        );
+    }
 }
