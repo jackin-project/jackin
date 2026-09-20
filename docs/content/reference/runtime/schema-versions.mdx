@@ -648,7 +648,7 @@ The split-from-`config.toml` work for legacy `[workspaces.<name>]` tables runs a
 | `[git].coauthor_trailer` | bool | No | `v1alpha5` | Enable `Co-authored-by` agent trailer via `prepare-commit-msg` hook; omitted when `false` |
 | `[git].dco` | bool | No | `v1alpha5` | Enable `Signed-off-by` DCO trailer via `prepare-commit-msg` hook; omitted when `false` |
 | `workspaces` | table | No | `legacy` | In-memory/legacy embedded workspace map; migrated into workspace files |
-| `role_repo_refresh_ttl_seconds` | integer | No | `legacy` | Launch-time role-repo refresh cache window; omitted uses the built-in default |
+| `role_repo_refresh_ttl_seconds` | integer | No | `legacy` | Launch-time role-repo refresh cache window; omitted uses the built-in 60-second default, while `0` forces a fetch on every launch |
 
 Full operator configuration examples live in
 [Configuration File](/reference/runtime/configuration/).
@@ -682,7 +682,7 @@ Legacy embedded `[workspaces.<name>]` tables in `config.toml` are split into per
 | `default_launch` | string array | No | `v1alpha10` | Workspace default launch configuration IDs; an explicit list replaces the inherited default |
 | `allowed_roles` | string array | No | `legacy` | Roles allowed in this workspace |
 | `default_role` | string | No | `legacy` | Preferred role for new sessions |
-| `default_agent` | string | No | `legacy` | Canonical agent slug; omitted lets launch resolution use the role manifest or prompt |
+| `default_agent` | string | No | `legacy` | `claude`, `codex`, `amp`, `kimi`, `opencode`, `grok`, `antigravity`, `gemini`, `cursor`, `muse`, `omp`, or `hermes`; omitted lets launch resolution use the role manifest or prompt |
 | `last_role` | string | No | `legacy` | Last role selected by the operator |
 | `env` | table | No | `legacy` | Workspace operator env layer |
 | `git_pull_on_entry` | bool | No | `legacy` | Pull mounted repositories on entry |

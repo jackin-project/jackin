@@ -445,7 +445,7 @@ This example is the contents of
 | `mounts[].isolation` | Per-mount isolation mode: `shared` (default), `worktree`, or `clone`. Omitting the field deserializes to `shared`, but every save writes the field explicitly so old configs migrate to the new shape on first save. Global mounts (under `[docker.mounts]`) reject this field at parse time. See [Per-mount isolation](/guides/workspaces/#per-mount-isolation). |
 | `allowed_roles` | List of allowed role selectors |
 | `default_role` | Default role selector |
-| `default_agent` | Optional workspace default agent (`"claude"`, `"codex"`, `"amp"`, `"kimi"`, `"opencode"`, or `"grok"`). Omit to let launch resolution use the role manifest: a single-agent role uses its only runtime, while a multi-agent role prompts interactively. |
+| `default_agent` | Optional workspace default agent (`"claude"`, `"codex"`, `"amp"`, `"kimi"`, `"opencode"`, `"grok"`, `"antigravity"`, `"gemini"`, `"cursor"`, `"muse"`, `"omp"`, or `"hermes"`). Omit to let launch resolution use the role manifest: a single-agent role uses its only runtime, while a multi-agent role prompts interactively. |
 | `last_role` | Most recently used role selector for this workspace |
 | `keep_awake.enabled` | macOS-only: keep the host awake while any agent in this workspace is running (see [Keeping the host awake](/guides/workspaces/#keeping-the-host-awake)). On Linux/Windows the flag is silently accepted but has no effect — useful when sharing a `config.toml` across machines, but the host will still sleep. |
 | `runtime.backend` | Optional per-workspace container backend override (`"docker"` or `"apple-container"`). Omit to inherit global `runtime.default_backend`. |
