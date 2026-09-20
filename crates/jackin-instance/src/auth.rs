@@ -1928,7 +1928,7 @@ fn inject_permission_repair_failure(
 fn maybe_inject_permission_repair_failure(stage: PermissionRepairFailure) -> anyhow::Result<()> {
     #[cfg(test)]
     {
-        if PERMISSION_REPAIR_FAILURE.with(|injected| injected.get()) == Some(stage) {
+        if PERMISSION_REPAIR_FAILURE.with(std::cell::Cell::get) == Some(stage) {
             anyhow::bail!("injected credential permission repair failure at {stage:?}");
         }
     }

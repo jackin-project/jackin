@@ -371,12 +371,12 @@ fn bind_selected_account(
     role: &str,
     agent: Agent,
     account_id: &str,
-) {
+) -> anyhow::Result<()> {
     if let Some(workspace) = workspace {
         let override_config = selected
             .workspaces
             .get_mut(workspace.as_str())
-            .expect("workspace authorization was checked before binding")
+            .ok_or_else(|| anyhow::anyhow!("workspace {workspace} is not configured"))?
             .roles
             .entry(role.to_owned())
             .or_default();
@@ -388,6 +388,7 @@ fn bind_selected_account(
             .account_bindings
             .insert(agent, account_id.to_owned());
     }
+    Ok(())
 }
 
 fn write_default_launch(
@@ -395,12 +396,12 @@ fn write_default_launch(
     workspace: Option<&jackin_core::WorkspaceName>,
     role: &str,
     configuration_ids: &[String],
-) {
+) -> anyhow::Result<()> {
     if let Some(workspace) = workspace {
         selected
             .workspaces
             .get_mut(workspace.as_str())
-            .expect("workspace authorization was checked before writing launch defaults")
+            .ok_or_else(|| anyhow::anyhow!("workspace {workspace} is not configured"))?
             .roles
             .entry(role.to_owned())
             .or_default()
@@ -408,6 +409,7 @@ fn write_default_launch(
     } else {
         selected.default_launch = Some(configuration_ids.to_vec());
     }
+    Ok(())
 }
 
 /// Replace only one agent's configurations in the effective launch list.
@@ -444,7 +446,7 @@ fn replace_agent_default_launch(
     if !replaced {
         launch.extend(chosen_ids.iter().cloned());
     }
-    write_default_launch(selected, workspace, role, &launch);
+    write_default_launch(selected, workspace, role, &launch)?;
     Ok(())
 }
 
@@ -532,7 +534,7 @@ pub fn with_account_selection(
     };
 
     let mut selected = config.clone();
-    bind_selected_account(&mut selected, workspace, role, agent, id);
+    bind_selected_account(&mut selected, workspace, role, agent, id)?;
     if let Some(configuration_ids) = admitted_ids {
         replace_agent_default_launch(&mut selected, workspace, role, agent, &configuration_ids)?;
     } else {
@@ -548,7 +550,7 @@ pub fn with_account_selection(
                 display_label: None,
                 invoked_via_wrapper: None,
             });
-        write_default_launch(&mut selected, workspace, role, &[config_id]);
+        write_default_launch(&mut selected, workspace, role, &[config_id])?;
     }
     let instances = jackin_config::resolve_launch(&selected, workspace, role, None, Some(agent))?;
     ensure_account_is_selected(&instances, agent, id, None)?;
@@ -578,11 +580,11 @@ pub fn with_configuration_selection(
     ensure_account_allowed(config, workspace, &account_id)?;
 
     let mut selected = config.clone();
-    bind_selected_account(&mut selected, workspace, role, agent, &account_id);
+    bind_selected_account(&mut selected, workspace, role, agent, &account_id)?;
     if selected.effective_default_launch(workspace, role).is_some() {
         replace_agent_default_launch(&mut selected, workspace, role, agent, &requested)?;
     } else {
-        write_default_launch(&mut selected, workspace, role, &requested);
+        write_default_launch(&mut selected, workspace, role, &requested)?;
     }
     let resolved = jackin_config::resolve_launch(&selected, workspace, role, None, Some(agent))?;
     ensure_account_is_selected(&resolved, agent, &account_id, Some(configuration_id))?;
