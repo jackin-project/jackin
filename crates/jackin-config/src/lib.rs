@@ -81,7 +81,8 @@ pub use migrations::{
 pub use mounts::{covers, parse_mount_spec, parse_mount_spec_resolved};
 pub use paths::{expand_tilde, resolve_path};
 pub use persist::{
-    ConfigReadGuard, acquire_config_read_lock, atomic_write, validate_workspace_file_stem,
+    ConfigReadGuard, acquire_config_read_lock, acquire_config_read_lock_required, atomic_write,
+    validate_workspace_file_stem,
 };
 pub use planner::{
     CollapseError, CollapsePlan, Removal, WorkspaceCreatePlan, WorkspaceEditPlan,

@@ -250,6 +250,52 @@ fn credentials_writer_rolls_back_after_install_before_cleanup() {
     assert_no_swap_artifacts(temp.path());
 }
 
+#[test]
+fn credentials_writer_rolls_back_when_cleanup_fails() {
+    let temp = tempfile::tempdir().unwrap();
+    write_account_credentials(temp.path(), &envelope()).unwrap();
+    let before = credential_snapshot(temp.path());
+
+    {
+        let _failure = inject_credential_write_failure(CredentialWriteFailure::Cleanup);
+        let error = write_account_credentials(temp.path(), &replacement_envelope()).unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("injected credential publication failure")
+        );
+    }
+    assert_eq!(credential_snapshot(temp.path()), before);
+    assert_no_swap_artifacts(temp.path());
+}
+
+#[test]
+fn credentials_writer_recovers_after_rollback_cleanup_fails() {
+    let temp = tempfile::tempdir().unwrap();
+    write_account_credentials(temp.path(), &envelope()).unwrap();
+    let before = credential_snapshot(temp.path());
+
+    {
+        let _failure =
+            inject_credential_write_failure(CredentialWriteFailure::InstallAndRollbackCleanup);
+        let error = write_account_credentials(temp.path(), &replacement_envelope()).unwrap_err();
+        assert!(error.to_string().contains("RollbackCleanup"));
+    }
+    assert_eq!(credential_snapshot(temp.path()), before);
+    assert!(
+        std::fs::read_dir(temp.path()).unwrap().any(|entry| entry
+            .unwrap()
+            .file_name()
+            .to_string_lossy()
+            .starts_with(".credentials-")),
+        "failed rollback cleanup must leave a recoverable transaction"
+    );
+
+    write_account_credentials(temp.path(), &replacement_envelope()).unwrap();
+    assert_eq!(credential_snapshot(temp.path()).len(), 2);
+    assert_no_swap_artifacts(temp.path());
+}
+
 fn api_key_account(id: &str) -> AccountConfig {
     AccountConfig {
         enabled: true,
@@ -451,6 +497,7 @@ fn admission_record_rejects_rotation_between_staging_and_recording() {
     paths.ensure_base_dirs().unwrap();
     let (config, admitted) = admitted_fingerprint_fixture();
     std::fs::write(&paths.config_file, toml::to_string(&config).unwrap()).unwrap();
+    std::fs::File::create(paths.config_file.with_file_name("config.lock")).unwrap();
 
     let revision = AccountConfigRevision::acquire(&paths).unwrap();
     let (rotation_started_tx, rotation_started_rx) = std::sync::mpsc::channel();
@@ -507,4 +554,100 @@ fn admission_record_rejects_rotation_between_staging_and_recording() {
     );
     assert!(!root.join(ACCOUNT_FINGERPRINT_FILE).exists());
     assert!(!root.join("account-admission.sha256").exists());
+}
+
+fn write_generation_fixture(paths: &jackin_core::JackinPaths, config: &AppConfig) {
+    paths.ensure_base_dirs().unwrap();
+    std::fs::write(&paths.config_file, toml::to_string(config).unwrap()).unwrap();
+    std::fs::File::create(paths.config_file.with_file_name("config.lock")).unwrap();
+}
+
+#[test]
+fn required_generation_lease_rejects_missing_lock() {
+    let temp = tempfile::tempdir().unwrap();
+    let paths = jackin_core::JackinPaths::for_tests(temp.path());
+    let config = AppConfig::default();
+    paths.ensure_base_dirs().unwrap();
+    std::fs::write(&paths.config_file, toml::to_string(&config).unwrap()).unwrap();
+
+    let error = AccountConfigRevision::acquire(&paths)
+        .expect_err("a missing config lock must fail admission");
+    assert!(
+        error.to_string().contains("required config lock"),
+        "unexpected missing-lock error: {error:#}"
+    );
+}
+
+#[test]
+fn bound_generation_lease_rejects_stale_caller_config() {
+    let temp = tempfile::tempdir().unwrap();
+    let paths = jackin_core::JackinPaths::for_tests(temp.path());
+    let persisted = AppConfig::default();
+    write_generation_fixture(&paths, &persisted);
+
+    let mut stale = persisted.clone();
+    stale
+        .env
+        .insert("STALE_CALLER_SNAPSHOT".into(), EnvValue::from("old"));
+    let error = AccountConfigRevision::acquire_bound(&paths, &stale)
+        .expect_err("stale caller config must fail admission");
+    assert!(
+        error
+            .to_string()
+            .contains("caller configuration snapshot is stale"),
+        "unexpected stale-caller error: {error:#}"
+    );
+}
+
+#[test]
+fn direct_writer_rotation_invalidates_held_generation_lease() {
+    let temp = tempfile::tempdir().unwrap();
+    let paths = jackin_core::JackinPaths::for_tests(temp.path());
+    let config = AppConfig::default();
+    write_generation_fixture(&paths, &config);
+    let revision = AccountConfigRevision::acquire(&paths).unwrap();
+
+    let mut rotated = config;
+    rotated
+        .env
+        .insert("DIRECT_WRITER_ROTATION".into(), EnvValue::from("new"));
+    std::fs::write(&paths.config_file, toml::to_string(&rotated).unwrap()).unwrap();
+
+    let error = revision
+        .ensure_current(&paths)
+        .expect_err("direct config rotation must invalidate the lease");
+    assert!(
+        error
+            .to_string()
+            .contains("configuration changed during launch"),
+        "unexpected rotation error: {error:#}"
+    );
+}
+
+#[test]
+fn failed_admission_drops_lease_and_allows_retry() {
+    let temp = tempfile::tempdir().unwrap();
+    let paths = jackin_core::JackinPaths::for_tests(temp.path());
+    let config = AppConfig::default();
+    write_generation_fixture(&paths, &config);
+
+    {
+        let revision = AccountConfigRevision::acquire(&paths).unwrap();
+        let mut rotated = config.clone();
+        rotated
+            .env
+            .insert("FAILED_ADMISSION".into(), EnvValue::from("first"));
+        std::fs::write(&paths.config_file, toml::to_string(&rotated).unwrap()).unwrap();
+        assert!(revision.ensure_current(&paths).is_err());
+    }
+
+    let retry_config = AppConfig {
+        env: [("RETRY_AFTER_FAILURE".into(), EnvValue::from("ok"))]
+            .into_iter()
+            .collect(),
+        ..AppConfig::default()
+    };
+    std::fs::write(&paths.config_file, toml::to_string(&retry_config).unwrap()).unwrap();
+    let retry = AccountConfigRevision::acquire(&paths).unwrap();
+    retry.ensure_current(&paths).unwrap();
 }

@@ -3,6 +3,8 @@
 
 //! Tests for `attach`.
 use std::collections::{HashMap, VecDeque};
+use std::path::PathBuf;
+use std::sync::{Mutex, OnceLock};
 
 use super::*;
 use jackin_test_support::{FakeDockerClient, FakeRunner};
@@ -21,6 +23,58 @@ fn short_test_paths() -> (TempDir, JackinPaths) {
         .unwrap();
     let paths = JackinPaths::for_tests(dir.path());
     (dir, paths)
+}
+
+type ScheduledConfigRotation = (String, PathBuf, Vec<u8>);
+
+fn config_rotation_slot() -> &'static Mutex<Vec<ScheduledConfigRotation>> {
+    static SLOT: OnceLock<Mutex<Vec<ScheduledConfigRotation>>> = OnceLock::new();
+    SLOT.get_or_init(|| Mutex::new(Vec::new()))
+}
+
+struct ConfigRotationGuard {
+    operation_prefix: String,
+    path: PathBuf,
+}
+
+fn schedule_config_rotation(
+    paths: &JackinPaths,
+    operation_prefix: impl Into<String>,
+    config: &jackin_config::AppConfig,
+) -> ConfigRotationGuard {
+    let operation_prefix = operation_prefix.into();
+    let path = paths.config_file.clone();
+    config_rotation_slot().lock().unwrap().push((
+        operation_prefix.clone(),
+        path.clone(),
+        toml::to_string(config).unwrap().into_bytes(),
+    ));
+    ConfigRotationGuard {
+        operation_prefix,
+        path,
+    }
+}
+
+fn rotate_config_on_operation(operation: &str) {
+    let scheduled = {
+        let mut slot = config_rotation_slot().lock().unwrap();
+        let position = slot.iter().position(|(prefix, _, _)| {
+            operation == prefix || operation.starts_with(&format!("{prefix} "))
+        });
+        position.map(|position| slot.remove(position))
+    };
+    if let Some((_, path, bytes)) = scheduled {
+        std::fs::write(path, bytes).unwrap();
+    }
+}
+
+impl Drop for ConfigRotationGuard {
+    fn drop(&mut self) {
+        config_rotation_slot()
+            .lock()
+            .unwrap()
+            .retain(|(prefix, path, _)| prefix != &self.operation_prefix || path != &self.path);
+    }
 }
 
 fn provision_account_admission(paths: &JackinPaths, container_name: &str) {
@@ -77,6 +131,7 @@ fn write_admission_fixture(
         toml::to_string(config).unwrap(),
     )
     .unwrap();
+    std::fs::File::create(paths.config_file.with_file_name("config.lock")).unwrap();
     let snapshot = jackin_config::load_read_only_config_snapshot(paths).unwrap();
     assert!(
         snapshot.diagnostics.is_empty(),
@@ -330,6 +385,267 @@ async fn hardline_attaches_when_container_is_running() {
         "expected jackin-capsule exec in recorded commands; got: {:?}",
         runner.recorded
     );
+}
+
+#[tokio::test]
+async fn attach_rejects_rotation_after_readiness_before_capsule_exec() {
+    let (_tmp, paths) = test_paths();
+    let container_name = "jk-attach-generation";
+    provision_account_admission(&paths, container_name);
+    let mut rotated = jackin_config::AppConfig::default();
+    rotated
+        .env
+        .insert("ROTATED_DURING_ATTACH".into(), "new".into());
+    let _rotation =
+        schedule_config_rotation(&paths, format!("docker exec {container_name}"), &rotated);
+    let docker = FakeDockerClient {
+        inspect_queue: std::cell::RefCell::new(VecDeque::from([ContainerState::Running])),
+        operation_hook: Some(rotate_config_on_operation),
+        ..Default::default()
+    };
+    let mut runner = FakeRunner::default();
+
+    let result = hardline_agent(&paths, container_name, &docker, &mut runner).await;
+    let error = match result {
+        Ok(()) => panic!(
+            "attach unexpectedly succeeded; docker={:?}, runner={:?}",
+            docker.recorded.borrow(),
+            runner.recorded
+        ),
+        Err(error) => error,
+    };
+    assert!(
+        error
+            .to_string()
+            .contains("configuration changed during launch"),
+        "unexpected rotation error: {error:#}"
+    );
+    assert!(
+        error.is::<ReconnectAdmissionFailure>(),
+        "readiness rotation must remain a reconnect admission error: {error:#}"
+    );
+    assert!(
+        !runner
+            .recorded
+            .iter()
+            .any(|call| call.contains("jackin-capsule")),
+        "capsule exec ran after the generation rotated: {:?}",
+        runner.recorded
+    );
+}
+
+#[tokio::test]
+async fn start_removes_container_if_generation_rotates_during_start() {
+    let (_tmp, paths) = test_paths();
+    let container_name = "jk-start-generation-after-await";
+    provision_account_admission(&paths, container_name);
+    let mut rotated = jackin_config::AppConfig::default();
+    rotated
+        .env
+        .insert("ROTATED_DURING_START_AWAIT".into(), "new".into());
+    let _rotation = schedule_config_rotation(
+        &paths,
+        format!("start_container:{container_name}"),
+        &rotated,
+    );
+    let docker = FakeDockerClient {
+        inspect_queue: std::cell::RefCell::new(VecDeque::from([ContainerState::Stopped {
+            exit_code: 1,
+            oom_killed: false,
+        }])),
+        operation_hook: Some(rotate_config_on_operation),
+        ..Default::default()
+    };
+    let mut runner = FakeRunner::default();
+
+    let error = start_or_reconnect_capsule_client(&paths, container_name, &docker, &mut runner)
+        .await
+        .expect_err("start must fail after a generation rotates during Docker start");
+    assert!(
+        error
+            .to_string()
+            .contains("configuration changed during launch"),
+        "unexpected rotation error: {error:#}"
+    );
+    assert!(
+        docker
+            .recorded
+            .borrow()
+            .iter()
+            .any(|call| call == &format!("docker rm -f {container_name}")),
+        "stale started container must be force-removed: {:?}",
+        docker.recorded.borrow()
+    );
+    assert!(
+        !runner
+            .recorded
+            .iter()
+            .any(|call| call.contains("jackin-capsule")),
+        "reconnect must not run after stale container cleanup: {:?}",
+        runner.recorded
+    );
+}
+
+#[tokio::test]
+async fn ambiguous_start_failure_cleans_container_if_generation_rotates_during_diagnosis() {
+    let (_tmp, paths) = test_paths();
+    let container_name = "jk-start-ambiguous-generation";
+    provision_account_admission(&paths, container_name);
+    let mut rotated = jackin_config::AppConfig::default();
+    rotated
+        .env
+        .insert("ROTATED_DURING_START_DIAGNOSIS".into(), "new".into());
+    let _rotation = schedule_config_rotation(
+        &paths,
+        format!("docker network inspect {container_name}-net"),
+        &rotated,
+    );
+    let docker = FakeDockerClient {
+        inspect_queue: std::cell::RefCell::new(VecDeque::from([
+            ContainerState::Stopped {
+                exit_code: 1,
+                oom_killed: false,
+            },
+            ContainerState::NotFound,
+        ])),
+        inspect_network_queue: std::cell::RefCell::new(VecDeque::from([None])),
+        fail_with: vec![("start_container".to_owned(), "daemon timeout".to_owned())],
+        operation_hook: Some(rotate_config_on_operation),
+        ..Default::default()
+    };
+    let mut runner = FakeRunner::default();
+
+    let error = start_or_reconnect_capsule_client(&paths, container_name, &docker, &mut runner)
+        .await
+        .expect_err("ambiguous start failure must reject a stale generation");
+    assert!(
+        error
+            .to_string()
+            .contains("configuration changed during launch"),
+        "unexpected rotation error: {error:#}"
+    );
+    assert!(
+        docker
+            .recorded
+            .borrow()
+            .iter()
+            .any(|call| call == &format!("docker rm -f {container_name}")),
+        "stale container must be removed after ambiguous start diagnosis: {:?}",
+        docker.recorded.borrow()
+    );
+}
+
+#[tokio::test]
+async fn reconnect_rejects_rotation_after_capsule_exec() {
+    let (_tmp, paths) = test_paths();
+    let container_name = "jk-reconnect-generation-after-await";
+    provision_account_admission(&paths, container_name);
+    let mut rotated = jackin_config::AppConfig::default();
+    rotated
+        .env
+        .insert("ROTATED_DURING_RECONNECT_AWAIT".into(), "new".into());
+    let path = paths.config_file.clone();
+    let bytes = toml::to_string(&rotated).unwrap().into_bytes();
+    let mut runner = FakeRunner::default();
+    runner.side_effects.push((
+        "docker exec".to_owned(),
+        Box::new(move || std::fs::write(&path, &bytes).unwrap()),
+    ));
+    let docker = FakeDockerClient {
+        inspect_queue: std::cell::RefCell::new(VecDeque::from([
+            ContainerState::Running,
+            ContainerState::Running,
+        ])),
+        ..Default::default()
+    };
+
+    let error = hardline_agent(&paths, container_name, &docker, &mut runner)
+        .await
+        .expect_err("reconnect must reject a generation rotation during capsule exec");
+    assert!(
+        error
+            .to_string()
+            .contains("configuration changed during launch"),
+        "unexpected rotation error: {error:#}"
+    );
+    assert!(
+        error.is::<ReconnectAdmissionFailure>(),
+        "post-exec lease failure must remain a reconnect admission error: {error:#}"
+    );
+    assert!(
+        runner
+            .recorded
+            .iter()
+            .any(|call| call.contains("jackin-capsule")),
+        "reconnect should reach the awaited capsule exec: {:?}",
+        runner.recorded
+    );
+}
+
+#[tokio::test]
+async fn start_rejects_rotation_after_lifecycle_inspect_before_container_start() {
+    let (_tmp, paths) = test_paths();
+    let container_name = "jk-start-generation";
+    provision_account_admission(&paths, container_name);
+    let mut rotated = jackin_config::AppConfig::default();
+    rotated
+        .env
+        .insert("ROTATED_DURING_START".into(), "new".into());
+    let _rotation =
+        schedule_config_rotation(&paths, format!("docker inspect {container_name}"), &rotated);
+    let docker = FakeDockerClient {
+        inspect_queue: std::cell::RefCell::new(VecDeque::from([
+            ContainerState::Stopped {
+                exit_code: 1,
+                oom_killed: false,
+            },
+            ContainerState::Running,
+        ])),
+        operation_hook: Some(rotate_config_on_operation),
+        ..Default::default()
+    };
+    let mut runner = FakeRunner::default();
+
+    let error = start_or_reconnect_capsule_client(&paths, container_name, &docker, &mut runner)
+        .await
+        .expect_err("container start must fail when config rotates after inspect");
+    assert!(
+        error
+            .to_string()
+            .contains("configuration changed during launch"),
+        "unexpected rotation error: {error:#}"
+    );
+    assert!(
+        !docker
+            .recorded
+            .borrow()
+            .iter()
+            .any(|call| call.starts_with("start_container:")),
+        "container start ran after the generation rotated: {:?}",
+        docker.recorded.borrow()
+    );
+}
+
+#[tokio::test]
+async fn attach_rejects_missing_lock_before_capsule_exec() {
+    let (_tmp, paths) = test_paths();
+    let container_name = "jk-missing-generation-lock";
+    provision_account_admission(&paths, container_name);
+    std::fs::remove_file(paths.config_file.with_file_name("config.lock")).unwrap();
+    let docker = FakeDockerClient {
+        inspect_queue: std::cell::RefCell::new(VecDeque::from([ContainerState::Running])),
+        ..Default::default()
+    };
+    let mut runner = FakeRunner::default();
+
+    let error = hardline_agent(&paths, container_name, &docker, &mut runner)
+        .await
+        .expect_err("missing config lock must deny attach");
+    assert!(
+        error.to_string().contains("required config lock"),
+        "unexpected missing-lock error: {error:#}"
+    );
+    assert!(runner.recorded.is_empty());
 }
 
 #[tokio::test]
@@ -1455,10 +1771,10 @@ fn missing_policy_and_changed_binding_deny_reconnect() {
         toml::to_string(&config).unwrap(),
     )
     .unwrap();
-    assert!(require_current_account_admission(&paths, name).is_err());
+    require_current_account_admission(&paths, name).unwrap_err();
     write_admission_fixture(&paths, name, &config, None, &[]);
     std::fs::remove_file(paths.data_dir.join(name).join("account-admission.sha256")).unwrap();
-    assert!(require_current_account_admission(&paths, name).is_err());
+    require_current_account_admission(&paths, name).unwrap_err();
 }
 
 #[tokio::test]
@@ -1499,6 +1815,8 @@ async fn agent_session_rejects_account_overrides_before_container_access() {
 async fn apple_backend_reconnect_rejects_unverified_account_admission() {
     use super::super::backend::ContainerBackend as _;
     let (_tmp, paths) = test_paths();
+    std::fs::create_dir_all(&paths.config_dir).unwrap();
+    std::fs::File::create(paths.config_file.with_file_name("config.lock")).unwrap();
     let mut runner = FakeRunner::default();
     let error = super::super::backend::AppleContainerBackend::production()
         .reconnect(&paths, "jk-unverified", Some(9), &mut runner)

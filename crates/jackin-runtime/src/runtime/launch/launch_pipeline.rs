@@ -14,7 +14,7 @@ use tracing::Instrument as _;
 
 use super::launch_slot::{claim_container_name, claim_known_container_name};
 use super::trust::inject_workspace_mise_env;
-use crate::runtime::attach::{ContainerState, hardline_agent, start_or_hardline_agent};
+use crate::runtime::attach::{ContainerState, start_or_hardline_agent};
 use crate::runtime::naming::{image_name, image_name_for_branch};
 use crate::runtime::repo_cache::{RepoResolveOptions, resolve_agent_repo_with};
 
@@ -316,17 +316,22 @@ fn git_pull_program(_opts: &super::LoadOptions) -> std::path::PathBuf {
 async fn restore_current_role_now(
     paths: &JackinPaths,
     container: &str,
+    admission_lease: &super::account_identity::AccountConfigRevision,
     docker: &impl DockerApi,
     runner: &mut impl CommandRunner,
     steps: &mut super::StepCounter,
     start_first: bool,
 ) -> anyhow::Result<()> {
     steps.finish_progress();
-    let load_result = if start_first {
-        start_or_hardline_agent(paths, container, docker, runner).await
-    } else {
-        hardline_agent(paths, container, docker, runner).await
-    };
+    let load_result = start_or_hardline_agent(
+        paths,
+        container,
+        admission_lease,
+        docker,
+        runner,
+        start_first,
+    )
+    .await;
     super::render_exit(paths, docker).await;
     load_result
 }
@@ -430,6 +435,7 @@ pub(super) fn bail_on_grant_errors(errors: Vec<String>) -> anyhow::Result<()> {
 async fn restore_explicit_container(
     paths: &JackinPaths,
     container: Option<&String>,
+    admission_lease: &super::account_identity::AccountConfigRevision,
     docker: &impl DockerApi,
     runner: &mut impl CommandRunner,
     steps: &mut super::StepCounter,
@@ -444,6 +450,7 @@ async fn restore_explicit_container(
         Some(container),
     );
     let docker_state = docker.inspect_container_state(container).await;
+    admission_lease.ensure_current(paths)?;
     jackin_diagnostics::active_timing_done(
         jackin_diagnostics::DiagnosticStage::Restore,
         "explicit_restore_container",
@@ -477,7 +484,16 @@ async fn restore_explicit_container(
         Some(container),
     );
     opts.record_launched_instance(container);
-    restore_current_role_now(paths, container, docker, runner, steps, start).await?;
+    restore_current_role_now(
+        paths,
+        container,
+        admission_lease,
+        docker,
+        runner,
+        steps,
+        start,
+    )
+    .await?;
     Ok(true)
 }
 
@@ -627,17 +643,18 @@ fn persist_new_role_trust(
     restore_source_override: bool,
     is_new: bool,
     newly_trusted: bool,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<Option<AppConfig>> {
     if restore_source_override || (!is_new && !newly_trusted) {
-        return Ok(());
+        return Ok(None);
     }
     let mut editor = jackin_config::ConfigEditor::open(paths)?;
     if let Some(role_source) = config.roles.get(&selector.key()) {
         editor.upsert_agent_source(&selector.key(), role_source);
     }
     editor.set_agent_trust(&selector.key(), true);
-    *config = editor.save()?;
-    Ok(())
+    let persisted_config = editor.save()?;
+    *config = persisted_config.clone();
+    Ok(Some(persisted_config))
 }
 
 fn confirm_role_branch(
@@ -788,7 +805,8 @@ pub(crate) async fn load_role_with(
         &str,
     ) -> anyhow::Result<()>,
 ) -> anyhow::Result<()> {
-    let initial_account_revision = super::account_identity::AccountConfigRevision::acquire(paths)?;
+    let initial_account_revision =
+        super::account_identity::AccountConfigRevision::acquire_bound(paths, config)?;
     let selected_workspace = config
         .workspaces
         .contains_key(workspace.name.as_str())
@@ -896,7 +914,7 @@ pub(crate) async fn load_role_with(
         && opts.configuration.is_none()
     {
         if let Some(agent) = selected_agent_before_role {
-            match super::resolve_current_restore_candidate_timed(
+            let candidate = super::resolve_current_restore_candidate_timed(
                 paths,
                 workspace_name.as_deref(),
                 workspace.label.as_str(),
@@ -905,22 +923,30 @@ pub(crate) async fn load_role_with(
                 agent,
                 docker,
             )
-            .await?
-            .map(|candidate| {
-                super::account_identity::admit_restore(
-                    candidate,
-                    &paths.data_dir,
-                    config,
-                    selected_workspace.as_ref(),
-                    &role_key,
-                )
-            })
-            .transpose()?
+            .await?;
+            initial_account_revision.ensure_current(paths)?;
+            match candidate
+                .map(|candidate| {
+                    super::account_identity::admit_restore(
+                        candidate,
+                        &paths.data_dir,
+                        config,
+                        selected_workspace.as_ref(),
+                        &role_key,
+                    )
+                })
+                .transpose()?
             {
                 Some(super::RestoreResolution::StartCurrentRole(container)) => {
                     opts.record_launched_instance(&container);
                     return restore_current_role_now(
-                        paths, &container, docker, runner, &mut steps, true,
+                        paths,
+                        &container,
+                        &initial_account_revision,
+                        docker,
+                        runner,
+                        &mut steps,
+                        true,
                     )
                     .await;
                 }
@@ -949,7 +975,7 @@ pub(crate) async fn load_role_with(
                 }
             }
         } else {
-            match super::resolve_unselected_current_restore_candidate_with_agent_timed(
+            let candidate = super::resolve_unselected_current_restore_candidate_with_agent_timed(
                 paths,
                 workspace_name.as_deref(),
                 workspace.label.as_str(),
@@ -957,18 +983,20 @@ pub(crate) async fn load_role_with(
                 &role_key,
                 docker,
             )
-            .await?
-            .map(|mut candidate| -> anyhow::Result<_> {
-                candidate.resolution = super::account_identity::admit_restore(
-                    candidate.resolution,
-                    &paths.data_dir,
-                    config,
-                    selected_workspace.as_ref(),
-                    &role_key,
-                )?;
-                Ok(candidate)
-            })
-            .transpose()?
+            .await?;
+            initial_account_revision.ensure_current(paths)?;
+            match candidate
+                .map(|mut candidate| -> anyhow::Result<_> {
+                    candidate.resolution = super::account_identity::admit_restore(
+                        candidate.resolution,
+                        &paths.data_dir,
+                        config,
+                        selected_workspace.as_ref(),
+                        &role_key,
+                    )?;
+                    Ok(candidate)
+                })
+                .transpose()?
             {
                 Some(super::UnselectedCurrentRestoreResolution {
                     resolution: super::RestoreResolution::StartCurrentRole(container),
@@ -976,7 +1004,13 @@ pub(crate) async fn load_role_with(
                 }) => {
                     opts.record_launched_instance(&container);
                     return restore_current_role_now(
-                        paths, &container, docker, runner, &mut steps, true,
+                        paths,
+                        &container,
+                        &initial_account_revision,
+                        docker,
+                        runner,
+                        &mut steps,
+                        true,
                     )
                     .await;
                 }
@@ -1039,6 +1073,7 @@ pub(crate) async fn load_role_with(
     if restore_explicit_container(
         paths,
         opts.restore_container_base.as_ref(),
+        &initial_account_revision,
         docker,
         runner,
         &mut steps,
@@ -1107,8 +1142,12 @@ pub(crate) async fn load_role_with(
         confirm_trust_for_test,
     )?;
 
+    // Do not release the caller-bound lease until all pre-admission work has
+    // been checked. A direct writer may bypass the advisory lock; fail before
+    // handing the config tree to the trust writer in that case.
+    initial_account_revision.ensure_current(paths)?;
     drop(initial_account_revision);
-    persist_new_role_trust(
+    let persisted_config = persist_new_role_trust(
         paths,
         config,
         selector,
@@ -1122,7 +1161,14 @@ pub(crate) async fn load_role_with(
             None,
         );
     }
-    let account_revision = super::account_identity::AccountConfigRevision::acquire(paths)?;
+    // Reacquire against the exact persisted caller snapshot. The launch config
+    // may carry an ephemeral account/configuration selection, so bind to the
+    // preselection snapshot unless the trust editor returned the new persisted
+    // snapshot explicitly. An unbound acquire would accept a direct writer's
+    // intervening generation and continue with stale in-memory inputs.
+    let persisted_snapshot = persisted_config.as_ref().unwrap_or(&admission_config);
+    let account_revision =
+        super::account_identity::AccountConfigRevision::acquire_bound(paths, persisted_snapshot)?;
 
     let agent_display_name = validated_repo.manifest.display_name(&selector.name);
     steps.role_name.clone_from(&agent_display_name);
@@ -1166,19 +1212,21 @@ pub(crate) async fn load_role_with(
         // `claim_container_name` reconciles any name collision downstream.
         None
     } else {
+        let restore_candidate = super::resolve_restore_candidate_reusing_early(
+            paths,
+            workspace_name.as_deref(),
+            workspace.label.as_str(),
+            &workspace.workdir,
+            &role_key,
+            agent,
+            docker,
+            steps.progress_mut(),
+            &early_current_scan,
+        )
+        .await?;
+        account_revision.ensure_current(paths)?;
         match super::account_identity::admit_restore(
-            super::resolve_restore_candidate_reusing_early(
-                paths,
-                workspace_name.as_deref(),
-                workspace.label.as_str(),
-                &workspace.workdir,
-                &role_key,
-                agent,
-                docker,
-                steps.progress_mut(),
-                &early_current_scan,
-            )
-            .await?,
+            restore_candidate,
             &paths.data_dir,
             config,
             selected_workspace.as_ref(),
@@ -1188,7 +1236,13 @@ pub(crate) async fn load_role_with(
             super::RestoreResolution::StartCurrentRole(container) => {
                 opts.record_launched_instance(&container);
                 return restore_current_role_now(
-                    paths, &container, docker, runner, &mut steps, true,
+                    paths,
+                    &container,
+                    &account_revision,
+                    docker,
+                    runner,
+                    &mut steps,
+                    true,
                 )
                 .await;
             }
@@ -1213,9 +1267,16 @@ pub(crate) async fn load_role_with(
             }
             super::RestoreResolution::RecoverRelatedRole(container) => {
                 steps.finish_progress();
-                let load_result = hardline_agent(paths, &container, docker, runner)
-                    .await
-                    .map(|()| container);
+                let load_result = start_or_hardline_agent(
+                    paths,
+                    &container,
+                    &account_revision,
+                    docker,
+                    runner,
+                    false,
+                )
+                .await
+                .map(|()| container);
                 match load_result {
                     Ok(_) => {
                         super::render_exit(paths, docker).await;
