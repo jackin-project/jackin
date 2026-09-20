@@ -213,7 +213,9 @@ fn launch_discovery_relay_uses_distinct_canonical_ids_for_same_surface() -> Resu
         ..CapsuleConfig::default()
     };
 
-    canonical.apply_to_launch_config(&mut launch_config);
+    canonical
+        .apply_to_launch_config(&mut launch_config)
+        .unwrap();
     let personal = &launch_config.usage_capabilities["personal@codex"];
     let work = &launch_config.usage_capabilities["work@codex"];
     assert_eq!(personal.surface_id, "codex");
@@ -233,6 +235,136 @@ fn launch_discovery_relay_uses_distinct_canonical_ids_for_same_surface() -> Resu
         Err(error) if error.kind == UsageCoordinationErrorKind::Unauthorized
     ));
     Ok(())
+}
+
+#[test]
+fn colliding_usage_unix_identities_fail_the_launch_closed() {
+    let shared = jackin_protocol::SessionIdentity {
+        uid: 2000,
+        gid: 2000,
+    };
+    let mut launch_config = CapsuleConfig {
+        instances: vec!["personal@codex".to_owned(), "work@codex".to_owned()],
+        accounts: BTreeMap::from([
+            ("personal@codex".to_owned(), "personal-openai".to_owned()),
+            ("work@codex".to_owned(), "work-openai".to_owned()),
+        ]),
+        usage_capabilities: BTreeMap::from([
+            (
+                "personal@codex".to_owned(),
+                UsageAccountCapability {
+                    account_id: "personal-openai".to_owned(),
+                    surface_id: "codex".to_owned(),
+                },
+            ),
+            (
+                "work@codex".to_owned(),
+                UsageAccountCapability {
+                    account_id: "work-openai".to_owned(),
+                    surface_id: "codex".to_owned(),
+                },
+            ),
+        ]),
+        instance_identities: BTreeMap::from([
+            ("personal@codex".to_owned(), shared),
+            ("work@codex".to_owned(), shared),
+        ]),
+        ..CapsuleConfig::default()
+    };
+    let canonical = CanonicalLaunchUsageCapabilities {
+        by_account_surface: BTreeMap::from([
+            (
+                ("personal-openai".to_owned(), "codex".to_owned()),
+                UsageAccountCapability {
+                    account_id: "provider-personal".to_owned(),
+                    surface_id: "codex".to_owned(),
+                },
+            ),
+            (
+                ("work-openai".to_owned(), "codex".to_owned()),
+                UsageAccountCapability {
+                    account_id: "provider-work".to_owned(),
+                    surface_id: "codex".to_owned(),
+                },
+            ),
+        ]),
+    };
+
+    let error = canonical
+        .apply_to_launch_config(&mut launch_config)
+        .unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("multiple usage instances share Unix identity"),
+        "unexpected error: {error:?}"
+    );
+}
+
+#[test]
+fn distinct_usage_unix_identities_pass_the_launch_guard() {
+    let mut launch_config = CapsuleConfig {
+        instances: vec!["personal@codex".to_owned(), "work@codex".to_owned()],
+        accounts: BTreeMap::from([
+            ("personal@codex".to_owned(), "personal-openai".to_owned()),
+            ("work@codex".to_owned(), "work-openai".to_owned()),
+        ]),
+        usage_capabilities: BTreeMap::from([
+            (
+                "personal@codex".to_owned(),
+                UsageAccountCapability {
+                    account_id: "personal-openai".to_owned(),
+                    surface_id: "codex".to_owned(),
+                },
+            ),
+            (
+                "work@codex".to_owned(),
+                UsageAccountCapability {
+                    account_id: "work-openai".to_owned(),
+                    surface_id: "codex".to_owned(),
+                },
+            ),
+        ]),
+        instance_identities: BTreeMap::from([
+            (
+                "personal@codex".to_owned(),
+                jackin_protocol::SessionIdentity {
+                    uid: 2000,
+                    gid: 2000,
+                },
+            ),
+            (
+                "work@codex".to_owned(),
+                jackin_protocol::SessionIdentity {
+                    uid: 2001,
+                    gid: 2001,
+                },
+            ),
+        ]),
+        ..CapsuleConfig::default()
+    };
+    let canonical = CanonicalLaunchUsageCapabilities {
+        by_account_surface: BTreeMap::from([
+            (
+                ("personal-openai".to_owned(), "codex".to_owned()),
+                UsageAccountCapability {
+                    account_id: "provider-personal".to_owned(),
+                    surface_id: "codex".to_owned(),
+                },
+            ),
+            (
+                ("work-openai".to_owned(), "codex".to_owned()),
+                UsageAccountCapability {
+                    account_id: "provider-work".to_owned(),
+                    surface_id: "codex".to_owned(),
+                },
+            ),
+        ]),
+    };
+
+    canonical
+        .apply_to_launch_config(&mut launch_config)
+        .unwrap();
 }
 
 #[test]

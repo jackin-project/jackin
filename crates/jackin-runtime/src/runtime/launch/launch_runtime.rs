@@ -941,7 +941,7 @@ pub(crate) async fn launch_role_runtime(
         })
         .await
         .context("starting scoped usage relay")?;
-    prepared_usage_relay.apply_to_launch_config(&mut capsule_config);
+    prepared_usage_relay.apply_to_launch_config(&mut capsule_config)?;
     let capsule_config_contents = super::capsule_config_contents(&capsule_config)
         .context("serializing Capsule launch config for /jackin/run/agent.toml")?;
     // Runtime passwd/group entries for the slot UIDs so `getpwuid` works in

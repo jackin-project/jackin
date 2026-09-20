@@ -210,7 +210,7 @@ pub(crate) struct CanonicalLaunchUsageCapabilities {
 }
 
 impl CanonicalLaunchUsageCapabilities {
-    pub(crate) fn apply_to_launch_config(&self, launch_config: &mut CapsuleConfig) {
+    pub(crate) fn apply_to_launch_config(&self, launch_config: &mut CapsuleConfig) -> Result<()> {
         let replacements = launch_config
             .instances
             .iter()
@@ -236,7 +236,29 @@ impl CanonicalLaunchUsageCapabilities {
                 launch_config.usage_capabilities.remove(&instance_id);
             }
         }
+        ensure_distinct_usage_unix_identities(launch_config)
     }
+}
+
+/// Fail the launch closed when two instances carrying usage capabilities
+/// share one Unix identity. The Capsule proxy authorizes peers by
+/// `(uid, gid)`, so a collision would make two instances'
+/// capabilities indistinguishable.
+fn ensure_distinct_usage_unix_identities(launch_config: &CapsuleConfig) -> Result<()> {
+    let mut seen = BTreeSet::new();
+    for instance_id in &launch_config.instances {
+        let Some(identity) = launch_config.identity_for_instance(instance_id) else {
+            continue;
+        };
+        if !launch_config.usage_capabilities.contains_key(instance_id) {
+            continue;
+        }
+        anyhow::ensure!(
+            seen.insert((identity.uid, identity.gid)),
+            "multiple usage instances share Unix identity {identity:?}"
+        );
+    }
+    Ok(())
 }
 
 /// Derive source proof from credentials actually provisioned for this launch.
@@ -349,9 +371,9 @@ pub async fn prepare_for_stdio_tunnel(launch: UsageRelayLaunch<'_>) -> Result<Pr
 }
 
 impl PreparedUsageRelay {
-    pub(crate) fn apply_to_launch_config(&self, launch_config: &mut CapsuleConfig) {
+    pub(crate) fn apply_to_launch_config(&self, launch_config: &mut CapsuleConfig) -> Result<()> {
         self.canonical_launch_usage_capabilities
-            .apply_to_launch_config(launch_config);
+            .apply_to_launch_config(launch_config)
     }
 }
 

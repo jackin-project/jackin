@@ -336,7 +336,7 @@ pub async fn launch(args: AppleContainerLaunch<'_>) -> Result<()> {
         })
         .await
         .context("starting scoped usage relay")?;
-    prepared_usage_relay.apply_to_launch_config(&mut capsule_config);
+    prepared_usage_relay.apply_to_launch_config(&mut capsule_config)?;
     let capsule_config_contents = super::launch::capsule_config_contents(&capsule_config)
         .context("serializing Capsule launch config for /jackin/run/agent.toml")?;
     super::launch::prepare_socket_dir(&socket_dir, &capsule_config_contents)?;
