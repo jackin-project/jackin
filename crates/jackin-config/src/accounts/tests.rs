@@ -1017,6 +1017,21 @@ fn agent_configuration_validation_rejects_bad_references_and_overrides() {
         invoked_via_wrapper: None,
     };
     good.validate("ok-id", &accounts).unwrap();
+    let wrapper_error = AgentConfiguration {
+        invoked_via_wrapper: Some(WrapperSpec {
+            identity: "credential-wrapper".into(),
+            args: vec!["--profile".into(), "private".into()],
+        }),
+        ..good.clone()
+    }
+    .validate("wrapped", &accounts)
+    .unwrap_err();
+    assert!(
+        wrapper_error
+            .to_string()
+            .contains("declares an unsupported shell wrapper"),
+        "wrapper templates must fail closed during config validation: {wrapper_error}"
+    );
     good.validate("Bad_ID!", &accounts).unwrap_err();
     AgentConfiguration {
         account: "missing".into(),
