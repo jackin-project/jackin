@@ -1362,7 +1362,8 @@ fn opencode_profile_identity(
         ProfileReadOutcome::Missing => {
             if path
                 .parent()
-                .is_some_and(|parent| parent.join("opencode.db").is_file())
+                .map(|parent| parent.join("opencode.db"))
+                .is_some_and(|database| reader.exists(&database))
             {
                 // Database-only OpenCode stores have no materializable auth
                 // source. Do not advertise a usage profile until the database

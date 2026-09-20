@@ -59,6 +59,25 @@ impl ProfileCredentialReader for RecordingProfileReader {
     }
 }
 
+struct SyntheticDatabaseOnlyReader;
+
+impl ProfileCredentialReader for SyntheticDatabaseOnlyReader {
+    fn read(&self, _path: &Path) -> ProfileReadOutcome {
+        ProfileReadOutcome::Missing
+    }
+
+    fn exists(&self, path: &Path) -> bool {
+        path.file_name().and_then(std::ffi::OsStr::to_str) == Some("opencode.db")
+    }
+
+    fn read_claude_keychain(
+        &self,
+        _scope: &jackin_core::ClaudeKeychainScope,
+    ) -> ProfileReadOutcome {
+        panic!("Claude is ignored in source-validation fixtures")
+    }
+}
+
 impl ProviderCredentialEnvResolver for FakeEnvResolver {
     fn resolve_provider_credentials(
         &self,
@@ -126,6 +145,17 @@ fn opencode_profile_requires_one_auth_entry_and_ignores_sibling_database() {
     std::fs::remove_file(&auth).unwrap();
     assert!(matches!(
         opencode_profile_identity(&reader, &auth),
+        ProfileValidation::Malformed
+    ));
+}
+
+#[test]
+fn opencode_profile_database_only_uses_reader_abstraction() {
+    let reader = SyntheticDatabaseOnlyReader;
+    let auth = Path::new("/synthetic/opencode/auth.json");
+
+    assert!(matches!(
+        opencode_profile_identity(&reader, auth),
         ProfileValidation::Malformed
     ));
 }
