@@ -41,6 +41,10 @@ Each entry is one upgrade path the current binary applies. <RepoFile path="crate
 **Summary**: deliberate account removal records a secret-free credential-source
 fingerprint in `account_scan_exclusions`. Explicit account scans skip that
 source after reload; direct account registration clears the matching exclusion.
+Profile credentials for Omp and Hermes may also persist an optional
+`source_selector` with a required `entry` and optional `profile`, pinning the
+exact source-store identity used at launch. Provider and agent values remain
+canonical slugs; aliases are not part of the wire contract.
 
 ### Config `v1alpha11` and workspace `v1alpha10` — 2026-09-17
 
@@ -577,22 +581,25 @@ config, jackin❯ migrates this automatically before parsing.
 
 The split-from-`config.toml` work for legacy `[workspaces.<name>]` tables runs as a separate startup migration alongside the version stamp; see [Configuration File](/reference/runtime/configuration/#one-file-per-workspace-by-design).
 
-### `v1alpha10`
+### Config field inventory
 
 | Field | Type | Required | Since | Notes |
 |---|---|---|---|---|
-| `version` | string | Yes | `v1alpha1` | Current value: `v1alpha10` |
+| `version` | string | Yes | `v1alpha1` | Current value: `v1alpha12` |
 | `dirty_exit_policy` | string | No | `v1alpha8` | `ask`, `keep`, or `discard`; global dirty/unpushed exit policy; omitted means built-in `ask` |
 | `[telemetry].level` | string | No | `v1alpha9` | Persisted telemetry capture/export level: `info`, `debug`, or `trace`; env var override wins for one process |
 | `[telemetry].categories` | string array | No | `v1alpha9` | Persisted telemetry category allowlist such as `docker` or `launch`; empty means no category filter |
 | `[accounts.<id>]` | table | No | `v1alpha10` | Named account configuration |
 | `[accounts.<id>].name` | string | Yes | `v1alpha10` | Human-readable account display name |
-| `[accounts.<id>].provider` | string | Yes | `v1alpha10` | Credential issuer: `anthropic`, `openai`, `moonshot`, `zai`, `minimax`, or `amp` |
+| `[accounts.<id>].provider` | string | Yes | `v1alpha10` | Credential issuer: `anthropic`, `openai`, `amp`, `xai`, `opencode`, `moonshot`, `zai`, `minimax`, `google`, `cursor`, `meta`, or `openrouter` (`openrouter` is for multi-provider clients only) |
 | `[accounts.<id>].enabled` | bool | No | `v1alpha10` | Whether this account may authenticate launches; defaults to `true` |
 | `[accounts.<id>.credential]` | table | Yes | `v1alpha10` | Credential source configuration |
 | `[accounts.<id>.credential].type` | string | Yes | `v1alpha10` | Credential type: `profile`, `api_key`, or `oauth_token` |
-| `[accounts.<id>.credential].agent` | string | Conditional | `v1alpha10` | Target agent for `profile` and `oauth_token` credentials (`claude`, `codex`, `amp`, `kimi`, `opencode`) |
+| `[accounts.<id>.credential].agent` | string | Conditional | `v1alpha10` | Target agent for `profile` credentials; `oauth_token` currently accepts `claude` only. Canonical profile slugs: `claude`, `codex`, `amp`, `kimi`, `opencode`, `grok`, `antigravity`, `gemini`, `cursor`, `muse`, `omp`, `hermes` |
 | `[accounts.<id>.credential].directory` | string | Conditional | `v1alpha10` | Host directory containing credentials for `profile` credentials |
+| `[accounts.<id>.credential.source_selector]` | table | No | `v1alpha12` | Exact source-store identity for Omp and Hermes profile credentials |
+| `[accounts.<id>.credential.source_selector].entry` | string | Yes when selector is present | `v1alpha12` | Exact provider/account key in the source store |
+| `[accounts.<id>.credential.source_selector].profile` | string | No | `v1alpha12` | Exact profile label when the source store exposes one |
 | `[accounts.<id>.credential].value` | string | Conditional | `v1alpha10` | Secret value or environment reference for `api_key` and `oauth_token` credentials |
 | `[account_bindings]` | table | No | `v1alpha10` | Global fallback account selections by agent (`<agent> = "<account-id>"`) |
 | `[github].auth_forward` | string | No | `legacy` | `sync`, `token`, or `ignore` |
