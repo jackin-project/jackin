@@ -294,7 +294,7 @@ pub async fn launch(args: AppleContainerLaunch<'_>) -> Result<()> {
     // not a valid Apple Container transport for Unix sockets.
     let socket_dir = paths.jackin_home.join("sockets").join(container_name);
     let prepared_usage_relay =
-        crate::usage_relay::prepare_for_docker_container(crate::usage_relay::UsageRelayLaunch {
+        crate::usage_relay::prepare_for_stdio_tunnel(crate::usage_relay::UsageRelayLaunch {
             paths,
             workspace_name,
             role_key,
@@ -302,7 +302,6 @@ pub async fn launch(args: AppleContainerLaunch<'_>) -> Result<()> {
                 state,
                 resolved_env,
             ),
-            socket_dir: socket_dir.clone(),
         })
         .await
         .context("starting scoped usage relay")?;

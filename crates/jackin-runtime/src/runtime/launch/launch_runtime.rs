@@ -989,7 +989,7 @@ pub(crate) async fn launch_role_runtime(
     );
     prepare_socket_dir_result?;
     let prepared_usage_relay =
-        crate::usage_relay::prepare_for_docker_container(crate::usage_relay::UsageRelayLaunch {
+        crate::usage_relay::prepare_for_stdio_tunnel(crate::usage_relay::UsageRelayLaunch {
             paths,
             workspace_name: (!sibling_auth_prewarm.workspace_name.is_empty())
                 .then_some(sibling_auth_prewarm.workspace_name),
@@ -998,7 +998,6 @@ pub(crate) async fn launch_role_runtime(
                 state,
                 resolved_env,
             ),
-            socket_dir: socket_dir.clone(),
         })
         .await
         .context("starting scoped usage relay")?;

@@ -15,9 +15,14 @@ async fn broker_client_stdio_proxy_multiplexes_out_of_order_responses() {
     let (proxy_output, host_request_reader) = tokio::io::duplex(64 * 1024);
     let proxy_socket = socket.clone();
     let proxy = tokio::spawn(async move {
-        run_at(
+        run_at_with_peer(
             &proxy_socket,
             DEFAULT_CAPSULE_SUPERVISOR_PID,
+            Some(PeerIdentity {
+                pid: Some(9),
+                uid: 2_001,
+                gid: 2_001,
+            }),
             proxy_input,
             proxy_output,
         )
@@ -153,4 +158,15 @@ fn supervisor_peer_allows_only_exact_root_supervisor() {
             gid: 2_001,
         }),
     ));
+}
+
+#[test]
+fn parse_supervisor_pid_defaults_and_rejects_invalid_values() {
+    assert_eq!(
+        parse_supervisor_pid(Err(std::env::VarError::NotPresent)).unwrap(),
+        DEFAULT_CAPSULE_SUPERVISOR_PID
+    );
+    assert_eq!(parse_supervisor_pid(Ok("2".to_owned())).unwrap(), 2);
+    let _zero = parse_supervisor_pid(Ok("0".to_owned())).unwrap_err();
+    let _garbage = parse_supervisor_pid(Ok("nope".to_owned())).unwrap_err();
 }

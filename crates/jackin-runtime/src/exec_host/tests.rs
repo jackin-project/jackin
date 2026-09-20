@@ -474,3 +474,16 @@ async fn unknown_name_is_rejected() {
     assert!(reply.get("values").is_none());
     assert!(reply.get("error").is_some());
 }
+
+#[tokio::test]
+async fn start_bound_for_container_creates_host_sock_before_returning() {
+    let temp = tempfile::tempdir().unwrap();
+    let handle = start_bound_for_container(temp.path(), "fixture", &[]).unwrap();
+    let sock = temp
+        .path()
+        .join("sockets")
+        .join("fixture")
+        .join("host.sock");
+    assert!(sock.exists());
+    handle.abort();
+}

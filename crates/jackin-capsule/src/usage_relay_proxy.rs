@@ -46,7 +46,11 @@ pub(crate) async fn run() -> Result<()> {
 }
 
 fn load_supervisor_pid() -> Result<u32> {
-    let supervisor_pid = match std::env::var(jackin_protocol::CAPSULE_SUPERVISOR_PID_ENV) {
+    parse_supervisor_pid(std::env::var(jackin_protocol::CAPSULE_SUPERVISOR_PID_ENV))
+}
+
+fn parse_supervisor_pid(variable: Result<String, std::env::VarError>) -> Result<u32> {
+    let supervisor_pid = match variable {
         Ok(value) => value.parse::<u32>().with_context(|| {
             format!(
                 "invalid {} value {value:?}",
@@ -82,6 +86,20 @@ fn peer_identity(stream: &UnixStream) -> Option<PeerIdentity> {
 }
 
 async fn run_at<R, W>(socket_path: &Path, supervisor_pid: u32, input: R, output: W) -> Result<()>
+where
+    R: AsyncRead + Unpin + Send + 'static,
+    W: AsyncWrite + Unpin + Send + 'static,
+{
+    run_at_with_peer(socket_path, supervisor_pid, None, input, output).await
+}
+
+async fn run_at_with_peer<R, W>(
+    socket_path: &Path,
+    supervisor_pid: u32,
+    forced_peer: Option<PeerIdentity>,
+    input: R,
+    output: W,
+) -> Result<()>
 where
     R: AsyncRead + Unpin + Send + 'static,
     W: AsyncWrite + Unpin + Send + 'static,
@@ -131,7 +149,7 @@ where
                 let (stream, _) = accepted?;
                 let requests = requests.clone();
                 let pending = Arc::clone(&pending);
-                let peer = peer_identity(&stream);
+                let peer = forced_peer.or_else(|| peer_identity(&stream));
                 let request_id = request_ids.fetch_add(1, Ordering::Relaxed);
                 drop(jackin_telemetry::spawn::spawn_stream(
                     "usage_relay.local_request",
