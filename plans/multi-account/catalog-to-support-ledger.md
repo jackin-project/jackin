@@ -12,8 +12,9 @@ ledger for the multi-account plan, not published documentation
 
 The live GitHub head of PR #1002 is `feat/multi-account-support` at
 `72feee236162468aeeeb416e8139a97db06538eb` (`72feee23`). The companion evidence
-ledger is being repaired in PR #1005 at
-`cefa882f6c3f5a3b4f0ce52a2052a05cb4706756` (`cefa882f`), still based on the
+ledger repair in PR #1005 started at
+`cefa882f6c3f5a3b4f0ce52a2052a05cb4706756` (`cefa882f`) and was pushed as signed
+commit `128aaa4d53a861b0ce5175d2f4d775c4b7cc088f` (`128aaa4d`), still based on the
 unsynchronized `ca128f8a80907319ea6d5648cf172ed81e33b1d4` (`ca128f8`) source
 tree; no merge was performed. `AUDIT-F` in this file means the PR #1005
 baseline fixture run at `ca128f8`: `cargo nextest run -p jackin-config -p

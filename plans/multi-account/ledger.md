@@ -6,8 +6,10 @@ Proof levels: `implemented` < `fixture_verified` < `container_verified` <
 
 ## Evidence audit and live-head recheck — 2026-09-20
 
-PR #1005 is `audit/pr1002-evidence` at `cefa882f6c3f5a3b4f0ce52a2052a05cb4706756`
-(`cefa882f`) and remains based on #1002 source `ca128f8a80907319ea6d5648cf172ed81e33b1d4`
+PR #1005 is `audit/pr1002-evidence`; this repair started at
+`cefa882f6c3f5a3b4f0ce52a2052a05cb4706756` (`cefa882f`) and was pushed as the
+signed repair commit `128aaa4d53a861b0ce5175d2f4d775c4b7cc088f` (`128aaa4d`). It
+remains based on #1002 source `ca128f8a80907319ea6d5648cf172ed81e33b1d4`
 (`ca128f8`). The live #1002 coordinator has since advanced to
 `72feee236162468aeeeb416e8139a97db06538eb` (`72feee23`). No merge or sync of that
 head was performed; the PR #1005 evidence baseline and the live-head recheck are
