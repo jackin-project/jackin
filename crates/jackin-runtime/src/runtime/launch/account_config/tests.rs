@@ -854,6 +854,7 @@ fn forged_prepared_journal_cannot_delete_a_sibling_directory() {
     let keep = parent.join("keep");
     std::fs::create_dir_all(keep.join("nested")).unwrap();
     std::fs::write(keep.join("nested/important.txt"), b"keep this").unwrap();
+    let expected_directory = parent.join(".codex");
 
     let publication = begin_private_config_publication(temp.path(), &parent).unwrap();
     let transaction = PrivateConfigTransaction {
@@ -867,9 +868,52 @@ fn forged_prepared_journal_cannot_delete_a_sibling_directory() {
     };
     private_config_persist_transaction(&publication, &transaction).unwrap();
 
-    let error = private_config_recover_transaction(&publication).unwrap_err();
+    let error = private_config_recover_transaction(&publication, &expected_directory).unwrap_err();
     assert!(
         format!("{error:#}").contains("staged path is not bound"),
+        "{error:#}"
+    );
+    assert_eq!(
+        std::fs::read(keep.join("nested/important.txt")).unwrap(),
+        b"keep this"
+    );
+    assert!(parent.join(PRIVATE_CONFIG_TRANSACTION_FILE).is_file());
+}
+
+#[cfg(unix)]
+#[test]
+fn forged_rollback_journal_cannot_delete_a_sibling_directory() {
+    let temp = tempfile::tempdir().unwrap();
+    let parent = temp.path().join("home");
+    let keep = parent.join("keep");
+    std::fs::create_dir_all(keep.join("nested")).unwrap();
+    std::fs::write(keep.join("nested/important.txt"), b"keep this").unwrap();
+    let expected_directory = parent.join(".codex");
+    let transaction_id = "1-0";
+
+    let publication = begin_private_config_publication(temp.path(), &parent).unwrap();
+    let transaction = PrivateConfigTransaction {
+        schema_version: PRIVATE_CONFIG_TRANSACTION_VERSION,
+        target: "keep".into(),
+        transaction_id: transaction_id.into(),
+        staged: private_config_artifact_name("stage", "keep", transaction_id),
+        previous: Some(private_config_artifact_name(
+            "previous",
+            "keep",
+            transaction_id,
+        )),
+        cleanup: Some(private_config_artifact_name(
+            "rollback",
+            "keep",
+            transaction_id,
+        )),
+        phase: PrivateConfigTransactionPhase::RollbackPrepared,
+    };
+    private_config_persist_transaction(&publication, &transaction).unwrap();
+
+    let error = private_config_recover_transaction(&publication, &expected_directory).unwrap_err();
+    assert!(
+        format!("{error:#}").contains("target is not bound to the expected publication"),
         "{error:#}"
     );
     assert_eq!(
@@ -918,7 +962,7 @@ fn first_publication_cleanup_recovers_after_stage_unlink_before_sync() {
     }));
 
     let publication = begin_private_config_publication(temp.path(), parent).unwrap();
-    private_config_recover_transaction(&publication).unwrap();
+    private_config_recover_transaction(&publication, &directory).unwrap();
     assert!(!parent.join(PRIVATE_CONFIG_TRANSACTION_FILE).exists());
     assert!(!directory.exists());
     drop(publication);
@@ -954,7 +998,7 @@ fn previous_moved_recovery_is_idempotent_after_previous_deletion() {
         phase: PrivateConfigTransactionPhase::PreviousMoved,
     };
     private_config_persist_transaction(&publication, &transaction).unwrap();
-    private_config_recover_transaction(&publication).unwrap();
+    private_config_recover_transaction(&publication, &directory).unwrap();
 
     assert_eq!(
         std::fs::read(directory.join("config.toml")).unwrap(),
@@ -985,7 +1029,7 @@ fn restart_recovers_after_previous_deletion_before_journal_cleanup() {
     assert!(parent.join(PRIVATE_CONFIG_TRANSACTION_FILE).is_file());
 
     let publication = begin_private_config_publication(temp.path(), parent).unwrap();
-    private_config_recover_transaction(&publication).unwrap();
+    private_config_recover_transaction(&publication, &directory).unwrap();
     assert!(directory.join("config.toml").is_file());
     assert!(
         std::fs::read_to_string(directory.join("config.toml"))
@@ -1047,7 +1091,7 @@ fn installed_recovery_quarantines_surviving_target_before_restoring_previous() {
         phase: PrivateConfigTransactionPhase::Installed,
     };
     private_config_persist_transaction(&publication, &transaction).unwrap();
-    private_config_recover_transaction(&publication).unwrap();
+    private_config_recover_transaction(&publication, &directory).unwrap();
 
     assert_eq!(
         std::fs::read(directory.join("config.toml")).unwrap(),
@@ -1094,7 +1138,7 @@ fn installed_recovery_restores_previous_after_mid_recursive_rollback_cleanup() {
     }));
 
     let publication = begin_private_config_publication(temp.path(), parent).unwrap();
-    private_config_recover_transaction(&publication).unwrap();
+    private_config_recover_transaction(&publication, &directory).unwrap();
     assert_eq!(
         std::fs::read(directory.join("config.toml")).unwrap(),
         old_config_bytes
@@ -1130,7 +1174,7 @@ fn installed_recovery_clears_first_publication_after_target_removal() {
     assert!(parent.join(PRIVATE_CONFIG_TRANSACTION_FILE).is_file());
 
     let publication = begin_private_config_publication(temp.path(), parent).unwrap();
-    private_config_recover_transaction(&publication).unwrap();
+    private_config_recover_transaction(&publication, &directory).unwrap();
     assert!(!parent.join(PRIVATE_CONFIG_TRANSACTION_FILE).exists());
     assert!(!directory.exists());
     drop(publication);
@@ -1151,7 +1195,7 @@ fn descriptor_relative_publication_survives_ancestor_swap() {
     std::fs::create_dir_all(&outside).unwrap();
     let directory = home.join(".codex");
     let publication = begin_private_config_publication(&root, &home).unwrap();
-    private_config_recover_transaction(&publication).unwrap();
+    private_config_recover_transaction(&publication, &directory).unwrap();
 
     let real_home = root.join("home-real");
     std::fs::rename(&home, &real_home).unwrap();

@@ -619,8 +619,13 @@ fn private_config_stage<'a>(
 #[cfg(unix)]
 fn private_config_transaction_names(
     transaction: &PrivateConfigTransaction,
+    expected_target: &CStr,
 ) -> anyhow::Result<(CString, CString, Option<CString>, Option<CString>)> {
     let target = private_config_target_component(&transaction.target)?;
+    anyhow::ensure!(
+        target.as_bytes() == expected_target.to_bytes(),
+        "private config transaction target is not bound to the expected publication"
+    );
     private_config_validate_transaction_id(&transaction.transaction_id)?;
     let expected_staged =
         private_config_artifact_name("stage", &transaction.target, &transaction.transaction_id);
@@ -1121,7 +1126,9 @@ fn private_config_recover_previous_cleanup(
 #[cfg(unix)]
 fn private_config_recover_transaction(
     publication: &PrivateConfigPublication,
+    expected_directory: &Path,
 ) -> anyhow::Result<()> {
+    let expected_target = private_config_target_name(publication, expected_directory)?;
     let Some(bytes) =
         private_config_read_file_at(&publication.parent, PRIVATE_CONFIG_TRANSACTION_FILE)?
     else {
@@ -1134,7 +1141,8 @@ fn private_config_recover_transaction(
         "unsupported private config transaction schema {}",
         transaction.schema_version
     );
-    let (target, staged, previous, cleanup) = private_config_transaction_names(&transaction)?;
+    let (target, staged, previous, cleanup) =
+        private_config_transaction_names(&transaction, expected_target.as_c_str())?;
     let mut transaction = transaction;
     match transaction.phase {
         PrivateConfigTransactionPhase::Prepared => private_config_recover_prepared(
@@ -1540,7 +1548,7 @@ fn publish_private_config_directory(
         .parent()
         .context("private config directory has no parent")?;
     let publication = begin_private_config_publication(root, parent)?;
-    private_config_recover_transaction(&publication)?;
+    private_config_recover_transaction(&publication, directory)?;
     publish_private_config_directory_locked(&publication, directory, files, remove_files)
 }
 
@@ -1638,7 +1646,7 @@ fn configure_codex(
             .parent()
             .context("private Codex configuration directory has no parent")?;
         let publication = begin_private_config_publication(root, parent)?;
-        private_config_recover_transaction(&publication)?;
+        private_config_recover_transaction(&publication, &directory)?;
         publication
     };
     let target = private_config_target_name(&publication, &directory)?;
