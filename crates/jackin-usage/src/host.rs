@@ -49,8 +49,8 @@ pub use discovery::{
     DiscoveredAccountDescriptor, ForwardedUsageAccount, HostCredentialRootRow,
     OpaqueCredentialHandle, ProviderCredentialEnvOutcome, ProviderCredentialEnvResolution,
     ProviderCredentialEnvResolver, ProviderCredentialIdentityOutcome,
-    ProviderCredentialRefreshOutcome, UsageCredentialKind, UsageDiscoveryCatalog,
-    UsageDiscoveryDiagnostic, UsageDiscoveryIssue, UsageDiscoveryScope,
+    ProviderCredentialRefreshOutcome, ProviderCredentialSourceMaterial, UsageCredentialKind,
+    UsageDiscoveryCatalog, UsageDiscoveryDiagnostic, UsageDiscoveryIssue, UsageDiscoveryScope,
     UsageSourceCandidateDescriptor, ValidatedUsageDiscovery, discover_usage_sources,
     host_credential_root_matrix, validate_usage_sources,
 };

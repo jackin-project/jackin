@@ -16,6 +16,7 @@ use jackin_core::{
     Agent, JackinPaths, UsageCredentialEnvName, UsageCredentialOwner, WorkspaceName,
 };
 use jackin_protocol::control::FocusedUsageView;
+use jackin_protocol::usage_broker::UsageCredentialSourceIdentity;
 
 use super::{
     CanonicalAccountIdentity, CanonicalAccountSubject, HostSurfaceId, HostUsageRuntime,
@@ -83,7 +84,7 @@ pub fn host_credential_root_matrix() -> Vec<HostCredentialRootRow> {
         HostCredentialRootRow {
             surface: "zai",
             host_paths: "",
-            env_vars: "ZAI_API_KEY, Z_AI_API_KEY",
+            env_vars: "ZAI_API_KEY, ZHIPU_API_KEY, Z_AI_API_KEY",
             container_handoff: "",
         },
         HostCredentialRootRow {
@@ -185,6 +186,16 @@ pub struct ProviderCredentialEnvResolution {
     pub outcome: ProviderCredentialEnvOutcome,
 }
 
+/// Secret-free source identity and material fingerprint retained by one
+/// validated discovery binding.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProviderCredentialSourceMaterial {
+    /// Exact declaration identity observed by the resolver.
+    pub source: UsageCredentialSourceIdentity,
+    /// Fingerprint of the resolved material held behind the opaque handle.
+    pub material_fingerprint: String,
+}
+
 /// Port from usage discovery to tier-4 env/1Password composition.
 pub trait ProviderCredentialEnvResolver: Send + Sync {
     /// Begin one explicit manual retry action.
@@ -229,6 +240,18 @@ pub trait ProviderCredentialEnvResolver: Send + Sync {
         _handle: &OpaqueCredentialHandle,
     ) -> ProviderCredentialRefreshOutcome {
         ProviderCredentialRefreshOutcome::Malformed
+    }
+
+    /// Return the exact non-secret source material bound to one opaque handle.
+    /// Implementations that cannot prove this must return `None`; the launch
+    /// boundary then rejects scoped environment credentials.
+    fn source_material(
+        &self,
+        _surface: HostSurfaceId,
+        _key: &str,
+        _handle: &OpaqueCredentialHandle,
+    ) -> Option<ProviderCredentialSourceMaterial> {
+        None
     }
 }
 
@@ -453,6 +476,7 @@ pub(super) enum ValidatedCredentialSource {
     Env {
         handle: OpaqueCredentialHandle,
         key: String,
+        material: Option<ProviderCredentialSourceMaterial>,
     },
     Capability,
 }
@@ -1164,6 +1188,7 @@ fn validate_source(
             capability_id,
             provenance,
         } => {
+            let material = env_resolver.source_material(surface, &key, &handle);
             let outcome = match env_resolver.identify_provider_credential(surface, &handle) {
                 ProviderCredentialIdentityOutcome::Authenticated {
                     provider_id,
@@ -1193,7 +1218,11 @@ fn validate_source(
                 source_id,
                 capability_id,
                 provenance,
-                ValidatedCredentialSource::Env { handle, key },
+                ValidatedCredentialSource::Env {
+                    handle,
+                    key,
+                    material,
+                },
                 outcome,
             )
         }
@@ -1614,7 +1643,7 @@ pub(super) fn refresh_credential_binding(
     env_resolver: &dyn ProviderCredentialEnvResolver,
 ) -> ProviderCredentialRefreshOutcome {
     let view = match &binding.source {
-        ValidatedCredentialSource::Env { handle, key } => {
+        ValidatedCredentialSource::Env { handle, key, .. } => {
             return env_resolver.refresh_provider_credential(binding.surface, key, handle);
         }
         ValidatedCredentialSource::Capability => {

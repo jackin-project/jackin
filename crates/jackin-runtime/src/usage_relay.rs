@@ -17,7 +17,9 @@ use jackin_protocol::CapsuleConfig;
 use jackin_protocol::usage_broker::{
     USAGE_BROKER_MAX_FRAME_BYTES, USAGE_BROKER_PROTOCOL_VERSION, UsageAccountCapability,
     UsageBrokerOperation, UsageBrokerRequest, UsageBrokerResponse, UsageCoordinationError,
-    UsageCoordinationErrorKind, UsageRelayTunnelRequest, UsageRelayTunnelResponse,
+    UsageCoordinationErrorKind, UsageCredentialScope, UsageCredentialSourceIdentity,
+    UsageCredentialSourceProof, UsageRelayTunnelRequest, UsageRelayTunnelResponse,
+    usage_credential_material_fingerprint,
 };
 use jackin_usage::coordinator::UsageCapabilitySet;
 use jackin_usage::host::{
@@ -209,6 +211,7 @@ pub struct PreparedUsageRelay {
     broker: UsageBrokerClient,
     capabilities: Vec<UsageAccountCapability>,
     canonical_launch_usage_capabilities: CanonicalLaunchUsageCapabilities,
+    credential_scope: UsageCredentialScope,
 }
 
 /// Canonical host capabilities resolved for the configured account selections
@@ -307,7 +310,61 @@ pub fn forwarded_sources_from_launch(
         selected_account_surfaces: BTreeMap::new(),
         profile_surface_ids,
         env_keys,
+        credential_scope: UsageCredentialScope::default(),
     }
+}
+
+/// Build the immutable, secret-free source fence immediately after launch
+/// staging. The fingerprint is computed from the exact value written to the
+/// per-instance credential file; no later config/env/op lookup participates.
+pub fn usage_credential_scope_for_staged_launch(
+    config: &AppConfig,
+    instances: &[jackin_config::ResolvedInstance],
+    credentials: &jackin_protocol::AgentCredentialEnv,
+) -> Result<UsageCredentialScope> {
+    let mut sources = BTreeSet::new();
+    for instance in instances {
+        let account = config
+            .accounts
+            .get(&instance.account_id)
+            .ok_or_else(|| anyhow::anyhow!("unknown account {:?}", instance.account_id))?;
+        let Some(surface) = HostSurfaceId::from_provider_alias(account.provider.slug()) else {
+            continue;
+        };
+        let declarations = jackin_env::credential_env_declarations_for_instance(config, instance)?;
+        let has_governed_credentials = jackin_core::USAGE_CREDENTIAL_ENV_REGISTRY
+            .iter()
+            .any(|entry| declarations.contains_key(entry.name));
+        if !has_governed_credentials {
+            continue;
+        }
+        let staged = credentials.instance(&instance.config_id).ok_or_else(|| {
+            anyhow::anyhow!(
+                "staged credentials missing for launch instance {:?}",
+                instance.config_id
+            )
+        })?;
+        for entry in jackin_core::USAGE_CREDENTIAL_ENV_REGISTRY {
+            let Some(declaration) = declarations.get(entry.name) else {
+                continue;
+            };
+            let value = staged.env.get(entry.name).ok_or_else(|| {
+                anyhow::anyhow!(
+                    "staged credential {:?} missing for launch instance {:?}",
+                    entry.name,
+                    instance.config_id
+                )
+            })?;
+            sources.insert(UsageCredentialSourceProof {
+                account_id: instance.account_id.clone(),
+                surface_id: surface.id().to_owned(),
+                key: entry.name.to_owned(),
+                source: UsageCredentialSourceIdentity::from_declaration(declaration),
+                material_fingerprint: usage_credential_material_fingerprint(value),
+            });
+        }
+    }
+    Ok(UsageCredentialScope { sources })
 }
 
 /// Source proof for the serialized launch config. The account ids are the
@@ -318,8 +375,10 @@ pub fn forwarded_sources_from_launch_config(
     state: &crate::instance::RoleState,
     resolved_env: &jackin_env::ResolvedEnv,
     launch_config: &CapsuleConfig,
+    credential_scope: &UsageCredentialScope,
 ) -> ForwardedUsageSources {
     let mut sources = forwarded_sources_from_launch(state, resolved_env);
+    sources.credential_scope = credential_scope.clone();
     sources.selected_account_ids = launch_config.accounts.values().cloned().collect();
     for (instance_id, account_id) in &launch_config.accounts {
         if let Some(capability) = launch_config.usage_capabilities.get(instance_id) {
@@ -374,6 +433,7 @@ pub(crate) async fn prepare_for_container(
     let role_key = launch.role_key.to_owned();
     let launch_config = launch.launch_config;
     let forwarded_sources = launch.forwarded_sources;
+    let credential_scope = forwarded_sources.credential_scope.clone();
     let socket_dir = launch.socket_dir;
     let socket_path = socket_dir.join(RELAY_SOCKET);
     if socket_path.as_os_str().as_bytes().len() >= crate::runtime::attach::MAX_UNIX_SOCKET_PATH_LEN
@@ -417,7 +477,13 @@ pub(crate) async fn prepare_for_container(
         fs::set_permissions(parent, fs::Permissions::from_mode(0o700))?;
     }
     Ok((
-        start_guard(socket_path, client, capabilities, peer_capabilities)?,
+        start_guard(
+            socket_path,
+            client,
+            capabilities,
+            peer_capabilities,
+            credential_scope,
+        )?,
         canonical_launch_usage_capabilities,
     ))
 }
@@ -431,6 +497,7 @@ pub async fn prepare_for_docker_container(
     let workspace_name = launch.workspace_name.map(str::to_owned);
     let role_key = launch.role_key.to_owned();
     let forwarded_sources = launch.forwarded_sources;
+    let credential_scope = forwarded_sources.credential_scope.clone();
     let (broker, capabilities, canonical_launch_usage_capabilities) =
         jackin_telemetry::spawn::joined_blocking(move || {
             prepare_broker_client(
@@ -446,6 +513,7 @@ pub async fn prepare_for_docker_container(
         broker,
         capabilities,
         canonical_launch_usage_capabilities,
+        credential_scope,
     })
 }
 
@@ -465,6 +533,7 @@ pub fn start_docker_tunnel(
         container_name,
         prepared.broker,
         prepared.capabilities,
+        prepared.credential_scope,
         &[
             jackin_core::container_paths::CAPSULE_BIN.to_owned(),
             "usage-relay-proxy".to_owned(),
@@ -478,6 +547,7 @@ pub fn start_docker_tunnel_with_command(
     container_name: &str,
     broker: UsageBrokerClient,
     capabilities: Vec<UsageAccountCapability>,
+    credential_scope: UsageCredentialScope,
     proxy_command: &[String],
 ) -> Result<UsageRelayGuard> {
     if capabilities.is_empty() {
@@ -497,13 +567,14 @@ pub fn start_docker_tunnel_with_command(
         .stdin_mode(jackin_process::StdioMode::Capture)
         .stdout_mode(jackin_process::StdioMode::Capture)
         .stderr_mode(jackin_process::StdioMode::Inherit);
-    start_tunnel_process(request, broker, capabilities)
+    start_tunnel_process(request, broker, capabilities, credential_scope)
 }
 
 fn start_tunnel_process(
     request: jackin_process::ExecRequest,
     broker: UsageBrokerClient,
     capabilities: Vec<UsageAccountCapability>,
+    credential_scope: UsageCredentialScope,
 ) -> Result<UsageRelayGuard> {
     let (operation, mut child) = crate::process_telemetry::spawn_async(&request)
         .context("starting scoped usage stdio tunnel")?;
@@ -519,7 +590,7 @@ fn start_tunnel_process(
     let (shutdown, mut shutdown_rx) = oneshot::channel();
     let task = jackin_telemetry::spawn::spawn_stream("usage_relay.tunnel", async move {
         let relay_result = tokio::select! {
-            result = serve_stdio_tunnel(reader, writer, broker, allowlist) => result,
+            result = serve_stdio_tunnel(reader, writer, broker, allowlist, credential_scope) => result,
             _ = &mut shutdown_rx => Ok(()),
         };
         let status =
@@ -553,8 +624,15 @@ fn start_guard(
     client: UsageBrokerClient,
     capabilities: Vec<UsageAccountCapability>,
     peer_capabilities: RelayPeerCapabilities,
+    credential_scope: UsageCredentialScope,
 ) -> Result<UsageRelayGuard> {
-    let task = start(socket_path.clone(), client, capabilities, peer_capabilities)?;
+    let task = start(
+        socket_path.clone(),
+        client,
+        capabilities,
+        peer_capabilities,
+        credential_scope,
+    )?;
     Ok(UsageRelayGuard {
         task: Some(task),
         socket_path: Some(socket_path),
@@ -636,6 +714,7 @@ pub fn start(
     broker: UsageBrokerClient,
     capabilities: Vec<UsageAccountCapability>,
     peer_capabilities: BTreeMap<(u32, u32), UsageAccountCapability>,
+    credential_scope: UsageCredentialScope,
 ) -> Result<tokio::task::JoinHandle<()>> {
     let allowlist = UsageCapabilitySet::new(capabilities);
     drop(fs::remove_file(&socket_path));
@@ -645,7 +724,14 @@ pub fn start(
     Ok(jackin_telemetry::spawn::spawn_stream(
         "usage_relay.connection",
         async move {
-            if let Err(_error) = run_listener(listener, broker, allowlist, peer_capabilities).await
+            if let Err(_error) = run_listener(
+                listener,
+                broker,
+                allowlist,
+                peer_capabilities,
+                credential_scope,
+            )
+            .await
             {
                 let _recorded = jackin_telemetry::record_error(
                     jackin_telemetry::schema::enums::ErrorType::RpcError,
@@ -660,16 +746,27 @@ async fn run_listener(
     broker: UsageBrokerClient,
     allowlist: UsageCapabilitySet,
     peer_capabilities: RelayPeerCapabilities,
+    credential_scope: UsageCredentialScope,
 ) -> Result<()> {
     loop {
         let (stream, _) = listener.accept().await?;
         let broker = broker.clone();
         let allowlist = allowlist.clone();
         let peer_capabilities = peer_capabilities.clone();
+        let credential_scope = credential_scope.clone();
         drop(jackin_telemetry::spawn::spawn_stream(
             "usage_relay.request",
             async move {
-                drop(handle_connection(stream, broker, allowlist, peer_capabilities).await);
+                drop(
+                    handle_connection(
+                        stream,
+                        broker,
+                        allowlist,
+                        peer_capabilities,
+                        credential_scope,
+                    )
+                    .await,
+                );
             },
         ));
     }
@@ -680,6 +777,7 @@ async fn handle_connection(
     broker: UsageBrokerClient,
     allowlist: UsageCapabilitySet,
     peer_capabilities: RelayPeerCapabilities,
+    credential_scope: UsageCredentialScope,
 ) -> Result<()> {
     let peer = stream
         .peer_cred()
@@ -701,7 +799,7 @@ async fn handle_connection(
                         && request.build_id == env!("CARGO_PKG_VERSION") =>
                 {
                     if peer_authorized(peer, &request.operation, &allowlist, &peer_capabilities) {
-                        dispatch(request.operation, broker, allowlist).await
+                        dispatch(request.operation, broker, allowlist, credential_scope).await
                     } else {
                         error_response(UsageCoordinationErrorKind::Unauthorized)
                     }
@@ -764,6 +862,7 @@ async fn dispatch(
     operation: UsageBrokerOperation,
     broker: UsageBrokerClient,
     allowlist: UsageCapabilitySet,
+    credential_scope: UsageCredentialScope,
 ) -> UsageBrokerResponse {
     let authorized = match operation {
         UsageBrokerOperation::CurrentForCapability { capability } => allowlist
@@ -817,7 +916,11 @@ async fn dispatch(
         Ok(operation) => operation,
         Err(error) => return UsageBrokerResponse::Error { error },
     };
-    match jackin_telemetry::spawn::joined_blocking(move || broker.execute(operation)).await {
+    match jackin_telemetry::spawn::joined_blocking(move || {
+        broker.execute_scoped(operation, credential_scope)
+    })
+    .await
+    {
         Ok(Ok(state)) => UsageBrokerResponse::State {
             state: Box::new(state),
         },
@@ -831,6 +934,7 @@ async fn serve_stdio_tunnel<R, W>(
     writer: W,
     broker: UsageBrokerClient,
     allowlist: UsageCapabilitySet,
+    credential_scope: UsageCredentialScope,
 ) -> Result<()>
 where
     R: AsyncRead + Unpin,
@@ -853,6 +957,7 @@ where
         let tunneled = read_async_frame::<_, UsageRelayTunnelRequest>(&mut reader).await?;
         let broker = broker.clone();
         let allowlist = allowlist.clone();
+        let credential_scope = credential_scope.clone();
         let responses = responses.clone();
         drop(jackin_telemetry::spawn::spawn_stream(
             "usage_relay.tunnel_request",
@@ -862,7 +967,13 @@ where
                 {
                     error_response(UsageCoordinationErrorKind::ProtocolMismatch)
                 } else {
-                    dispatch(tunneled.request.operation, broker, allowlist).await
+                    dispatch(
+                        tunneled.request.operation,
+                        broker,
+                        allowlist,
+                        credential_scope,
+                    )
+                    .await
                 };
                 drop(
                     responses

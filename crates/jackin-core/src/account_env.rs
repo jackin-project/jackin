@@ -5,15 +5,12 @@
 
 /// Account routing names in addition to the provider credential catalog.
 pub const ACCOUNT_ROUTING_ENV_NAMES: &[&str] = &[
-    "MOONSHOT_API_KEY",
     "MINIMAX_API_TOKEN",
     "MINIMAX_CODING_API_KEY",
     "Z_AI_API_KEY",
-    "ZHIPU_API_KEY",
     "KIMI_BASE_URL",
     "KIMI_AUTH_TOKEN",
     "kimi_auth_token",
-    "ANTHROPIC_AUTH_TOKEN",
     "ANTHROPIC_BASE_URL",
     "OPENAI_BASE_URL",
     "OPENAI_API_BASE",

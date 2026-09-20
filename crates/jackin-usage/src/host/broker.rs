@@ -19,8 +19,9 @@ use jackin_protocol::control::UsageSnapshotStatus;
 use jackin_protocol::usage_broker::{
     USAGE_BROKER_MAX_FRAME_BYTES, USAGE_BROKER_PROTOCOL_VERSION, UsageAccountCapability,
     UsageBrokerOperation, UsageBrokerRequest, UsageBrokerResponse, UsageCatalogEntry,
-    UsageCoordinationError, UsageCoordinationErrorKind, UsageGenerationView, UsageIdentityKindV1,
-    UsageProjectionRefreshStateV1, UsageProjectionSchemaV1, UsageProjectionV1, UsageRefreshPhase,
+    UsageCoordinationError, UsageCoordinationErrorKind, UsageCredentialScope, UsageGenerationView,
+    UsageIdentityKindV1, UsageProjectionRefreshStateV1, UsageProjectionSchemaV1, UsageProjectionV1,
+    UsageRefreshPhase,
 };
 use nix::fcntl::{OFlag, open, openat, renameat};
 use nix::sys::signal::kill;
@@ -34,11 +35,11 @@ use crate::coordinator::{
 
 use super::accounts::CanonicalAccountSubject;
 use super::discovery::{
-    ProviderCredentialEnvResolver, ProviderCredentialRefreshOutcome, ValidatedCredentialBinding,
-    ValidatedCredentialSource, discover_usage_sources, refresh_credential_binding,
-    validate_usage_sources,
+    ProviderCredentialEnvResolver, ProviderCredentialRefreshOutcome,
+    ProviderCredentialSourceMaterial, ValidatedCredentialBinding, ValidatedCredentialSource,
+    discover_usage_sources, refresh_credential_binding, validate_usage_sources,
 };
-use super::{HostUsageRuntime, UsageDiscoveryScope, ValidatedUsageDiscovery};
+use super::{HostSurfaceId, HostUsageRuntime, UsageDiscoveryScope, ValidatedUsageDiscovery};
 
 impl HostUsageRuntime {
     /// Whether this runtime permits host broker provider work.
@@ -294,6 +295,8 @@ pub struct ForwardedUsageSources {
     pub profile_surface_ids: BTreeSet<String>,
     /// Governed provider env names present in the Capsule's resolved environment.
     pub env_keys: BTreeSet<String>,
+    /// Exact source/material proofs staged for this launch.
+    pub credential_scope: UsageCredentialScope,
 }
 
 #[derive(Debug, Clone)]
@@ -305,15 +308,126 @@ struct ScopedCapability {
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum ForwardingRequirement {
     Profile(String),
-    Env(String),
+    Env {
+        surface: String,
+        key: String,
+        account_ids: BTreeSet<String>,
+        material: Option<ProviderCredentialSourceMaterial>,
+    },
     Capability,
+}
+
+/// Match the staged consumer key to the broker's canonical discovery key.
+///
+/// The key is an agent/provider contract alias, not the protected source
+/// identity. The source declaration, account, surface, and material
+/// fingerprint remain exact; only the closed provider alias sets below may
+/// bridge a launch-native key to the canonical discovery label.
+fn credential_keys_match(surface: &str, canonical: &str, staged: &str) -> bool {
+    if canonical == staged {
+        return true;
+    }
+    let Some(surface) = HostSurfaceId::from_id(surface) else {
+        return false;
+    };
+    match surface {
+        HostSurfaceId::Kimi => matches!(
+            (canonical, staged),
+            (
+                jackin_core::KIMI_CODE_API_KEY_ENV_NAME
+                    | jackin_core::KIMI_API_KEY_ENV_NAME
+                    | jackin_core::MOONSHOT_API_KEY_ENV_NAME
+                    | jackin_core::ANTHROPIC_AUTH_TOKEN_ENV_NAME,
+                jackin_core::KIMI_CODE_API_KEY_ENV_NAME
+                    | jackin_core::KIMI_API_KEY_ENV_NAME
+                    | jackin_core::MOONSHOT_API_KEY_ENV_NAME
+                    | jackin_core::ANTHROPIC_AUTH_TOKEN_ENV_NAME
+            )
+        ),
+        HostSurfaceId::Zai => matches!(
+            (canonical, staged),
+            (
+                jackin_core::ZAI_API_KEY_ENV_NAME
+                    | jackin_core::ZHIPU_API_KEY_ENV_NAME
+                    | jackin_core::OPENAI_API_KEY_ENV_NAME
+                    | jackin_core::ANTHROPIC_AUTH_TOKEN_ENV_NAME,
+                jackin_core::ZAI_API_KEY_ENV_NAME
+                    | jackin_core::ZHIPU_API_KEY_ENV_NAME
+                    | jackin_core::OPENAI_API_KEY_ENV_NAME
+                    | jackin_core::ANTHROPIC_AUTH_TOKEN_ENV_NAME
+            )
+        ),
+        HostSurfaceId::Minimax => matches!(
+            (canonical, staged),
+            (
+                jackin_core::MINIMAX_API_KEY_ENV_NAME | jackin_core::ANTHROPIC_AUTH_TOKEN_ENV_NAME,
+                jackin_core::MINIMAX_API_KEY_ENV_NAME | jackin_core::ANTHROPIC_AUTH_TOKEN_ENV_NAME
+            )
+        ),
+        HostSurfaceId::Google => matches!(
+            (canonical, staged),
+            (
+                jackin_core::GEMINI_API_KEY_ENV_NAME | jackin_core::GOOGLE_API_KEY_ENV_NAME,
+                jackin_core::GEMINI_API_KEY_ENV_NAME | jackin_core::GOOGLE_API_KEY_ENV_NAME
+            )
+        ),
+        _ => false,
+    }
+}
+
+fn credential_scope_matches(
+    scope: &UsageCredentialScope,
+    account_ids: &BTreeSet<String>,
+    surface: &str,
+    canonical_key: &str,
+    material: &ProviderCredentialSourceMaterial,
+) -> bool {
+    let mut found = false;
+    for proof in scope
+        .sources
+        .iter()
+        .filter(|proof| account_ids.contains(&proof.account_id) && proof.surface_id == surface)
+    {
+        found = true;
+        if !credential_keys_match(surface, canonical_key, &proof.key)
+            || proof.source != material.source
+            || proof.material_fingerprint != material.material_fingerprint
+        {
+            return false;
+        }
+    }
+    found
 }
 
 impl ForwardingRequirement {
     fn is_forwarded(&self, sources: &ForwardedUsageSources) -> bool {
         match self {
             Self::Profile(surface) => sources.profile_surface_ids.contains(surface),
-            Self::Env(key) => sources.env_keys.contains(key),
+            Self::Env {
+                surface,
+                key,
+                account_ids,
+                material,
+            } => {
+                if sources.selected_account_ids.is_empty() {
+                    return sources.env_keys.contains(key);
+                }
+                let Some(material) = material else {
+                    return false;
+                };
+                let account_ids = account_ids
+                    .iter()
+                    .filter(|account_id| sources.selected_account_ids.contains(*account_id))
+                    .cloned()
+                    .collect::<BTreeSet<_>>();
+                credential_scope_matches(
+                    &sources.credential_scope,
+                    &account_ids,
+                    surface,
+                    key,
+                    material,
+                )
+            }
             Self::Capability => false,
         }
     }
@@ -324,7 +438,17 @@ fn forwarding_requirement(binding: &ValidatedCredentialBinding) -> ForwardingReq
         ValidatedCredentialSource::Profile(_) => {
             ForwardingRequirement::Profile(binding.surface.id().to_owned())
         }
-        ValidatedCredentialSource::Env { key, .. } => ForwardingRequirement::Env(key.clone()),
+        ValidatedCredentialSource::Env { key, material, .. } => ForwardingRequirement::Env {
+            surface: binding.surface.id().to_owned(),
+            key: key.clone(),
+            account_ids: binding
+                .provenance
+                .iter()
+                .filter_map(|provenance| provenance.strip_prefix("account "))
+                .map(str::to_owned)
+                .collect(),
+            material: material.clone(),
+        },
         ValidatedCredentialSource::Capability => ForwardingRequirement::Capability,
     }
 }
@@ -549,10 +673,30 @@ impl UsageBrokerClient {
         &self,
         operation: UsageBrokerOperation,
     ) -> Result<UsageGenerationView, UsageCoordinationError> {
+        self.execute_with_scope(operation, None)
+    }
+
+    /// Execute one operation with the immutable launch proof supplied by the
+    /// host relay. The caller cannot replace this with Capsule input because
+    /// the relay owns the client invocation.
+    pub fn execute_scoped(
+        &self,
+        operation: UsageBrokerOperation,
+        scope: UsageCredentialScope,
+    ) -> Result<UsageGenerationView, UsageCoordinationError> {
+        self.execute_with_scope(operation, Some(scope))
+    }
+
+    fn execute_with_scope(
+        &self,
+        operation: UsageBrokerOperation,
+        launch_credential_scope: Option<UsageCredentialScope>,
+    ) -> Result<UsageGenerationView, UsageCoordinationError> {
         let request = UsageBrokerRequest {
             protocol_version: USAGE_BROKER_PROTOCOL_VERSION.to_owned(),
             build_id: self.build_id.clone(),
             operation,
+            launch_credential_scope,
         };
         let mut bytes = serde_json::to_vec(&request).map_err(|_| unavailable())?;
         if bytes.len() >= USAGE_BROKER_MAX_FRAME_BYTES {
@@ -643,6 +787,7 @@ impl UsageBrokerClient {
             protocol_version: USAGE_BROKER_PROTOCOL_VERSION.to_owned(),
             build_id: self.build_id.clone(),
             operation,
+            launch_credential_scope: None,
         };
         let mut bytes = serde_json::to_vec(&request).map_err(|_| unavailable())?;
         if bytes.len() >= USAGE_BROKER_MAX_FRAME_BYTES {
@@ -725,6 +870,43 @@ struct DiscoveryProviderExecutor {
 }
 
 impl UsageProviderExecutor for DiscoveryProviderExecutor {
+    fn authorize_credential_scope(
+        &self,
+        capability: &UsageAccountCapability,
+        scope: &UsageCredentialScope,
+    ) -> Result<(), UsageCoordinationError> {
+        let binding = self
+            .bindings
+            .lock()
+            .map_err(|_| unavailable())?
+            .get(capability)
+            .cloned()
+            .ok_or_else(credential_scope_mismatch)?;
+        let (key, material) = match &binding.source {
+            ValidatedCredentialSource::Env {
+                key,
+                material: Some(material),
+                ..
+            } => (key, material),
+            // Profile credentials are already materialized into the launch
+            // auth tree and do not use the mutable env/op resolver lane.
+            ValidatedCredentialSource::Profile(_) => return Ok(()),
+            // An env binding without a source proof and a capability-only
+            // binding have no host source to authorize.
+            ValidatedCredentialSource::Env { .. } | ValidatedCredentialSource::Capability => {
+                return Err(credential_scope_mismatch());
+            }
+        };
+        let account_ids = binding
+            .provenance
+            .iter()
+            .filter_map(|provenance| provenance.strip_prefix("account "));
+        let account_ids = account_ids.map(str::to_owned).collect::<BTreeSet<_>>();
+        credential_scope_matches(scope, &account_ids, &capability.surface_id, key, material)
+            .then_some(())
+            .ok_or_else(credential_scope_mismatch)
+    }
+
     fn probe(&self, capability: &UsageAccountCapability, _generation: u64) -> ProviderProbeOutcome {
         // The coordinator only classifies elapsed time after a probe returns,
         // so the blocking provider call (child CLI/RPC, secret resolution)
@@ -1384,12 +1566,33 @@ fn dispatch(
     build_id: &str,
     publisher: &publish::ProjectionPublisher,
 ) -> UsageBrokerResponse {
-    if request.protocol_version != USAGE_BROKER_PROTOCOL_VERSION || request.build_id != build_id {
+    let UsageBrokerRequest {
+        protocol_version,
+        build_id: request_build_id,
+        operation,
+        launch_credential_scope,
+    } = request;
+    if protocol_version != USAGE_BROKER_PROTOCOL_VERSION || request_build_id != build_id {
         return UsageBrokerResponse::Error {
             error: protocol_error(),
         };
     }
-    match &request.operation {
+    if launch_credential_scope.is_some()
+        && !matches!(
+            &operation,
+            UsageBrokerOperation::Current { .. }
+                | UsageBrokerOperation::Refresh { .. }
+                | UsageBrokerOperation::Join { .. }
+        )
+    {
+        return UsageBrokerResponse::Error {
+            error: UsageCoordinationError {
+                kind: UsageCoordinationErrorKind::Unauthorized,
+                message: "launch credential scope requires an account operation".to_owned(),
+            },
+        };
+    }
+    match &operation {
         UsageBrokerOperation::ReconcileCatalog {
             expected_projection_id,
             catalog_revision,
@@ -1429,7 +1632,7 @@ fn dispatch(
         _ => {}
     }
     let now = chrono::Utc::now().timestamp();
-    let result = match request.operation {
+    let result = match operation {
         UsageBrokerOperation::ReconcileCatalog { .. } => Err(protocol_error()),
         UsageBrokerOperation::CurrentProjection
         | UsageBrokerOperation::RequestRefresh { .. }
@@ -1444,6 +1647,11 @@ fn dispatch(
             message: "scoped usage operation requires a container relay".to_owned(),
         }),
         UsageBrokerOperation::Current { capability } => {
+            if let Some(scope) = launch_credential_scope.as_ref()
+                && let Err(error) = coordinator.authorize_credential_scope(&capability, scope)
+            {
+                return UsageBrokerResponse::Error { error };
+            }
             publisher.observe(&capability);
             let result = coordinator.current(&capability, now);
             publisher.publish_due(now);
@@ -1454,6 +1662,11 @@ fn dispatch(
             observed_generation,
             force,
         } => {
+            if let Some(scope) = launch_credential_scope.as_ref()
+                && let Err(error) = coordinator.authorize_credential_scope(&capability, scope)
+            {
+                return UsageBrokerResponse::Error { error };
+            }
             publisher.observe(&capability);
             let result = coordinator.request_refresh(&capability, observed_generation, force, now);
             publisher.publish_due(now);
@@ -1464,6 +1677,11 @@ fn dispatch(
             generation,
             timeout_ms,
         } => {
+            if let Some(scope) = launch_credential_scope.as_ref()
+                && let Err(error) = coordinator.authorize_credential_scope(&capability, scope)
+            {
+                return UsageBrokerResponse::Error { error };
+            }
             publisher.observe(&capability);
             let result = coordinator.join_generation(
                 &capability,
@@ -1854,6 +2072,13 @@ fn unavailable() -> UsageCoordinationError {
     UsageCoordinationError {
         kind: UsageCoordinationErrorKind::Unavailable,
         message: "usage broker is unavailable".to_owned(),
+    }
+}
+
+fn credential_scope_mismatch() -> UsageCoordinationError {
+    UsageCoordinationError {
+        kind: UsageCoordinationErrorKind::Unauthorized,
+        message: "launch credential source no longer matches staged material".to_owned(),
     }
 }
 
