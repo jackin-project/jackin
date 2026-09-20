@@ -268,6 +268,9 @@ impl Multiplexer {
                     &mut cmd,
                     instance,
                     config.auth_mode_for_instance(instance),
+                    config
+                        .usage_capability_for_instance(instance)
+                        .map(|capability| capability.surface_id.as_str()),
                     &self.launch_env.agent_credentials,
                 );
                 Ok(SessionLaunch {

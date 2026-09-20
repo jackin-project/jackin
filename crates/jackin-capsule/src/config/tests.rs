@@ -326,6 +326,50 @@ fn protected_credentials_bind_claude_oauth_to_its_auth_family() {
 }
 
 #[test]
+fn protected_credentials_preserve_claude_routed_auth_token_and_reject_foreign_key() {
+    let mut config = instance_config(&[("claude-work", "api_key", "claude")]);
+    config.usage_capabilities.insert(
+        "claude-work".to_owned(),
+        jackin_protocol::usage_broker::UsageAccountCapability {
+            account_id: "acc-work".to_owned(),
+            surface_id: "zai".to_owned(),
+        },
+    );
+    let valid = v2_credentials(serde_json::json!({
+        "schema_version": 2,
+        "instances": {
+            "claude-work": {
+                "agent": "claude",
+                "account_id": "acc-work",
+                "env": {
+                    "ANTHROPIC_AUTH_TOKEN": "selected-zai-token",
+                    "ANTHROPIC_BASE_URL": "https://api.z.ai/api/anthropic"
+                },
+            },
+        },
+    }));
+    validate_agent_credentials(&config, &valid).unwrap();
+
+    let foreign = v2_credentials(serde_json::json!({
+        "schema_version": 2,
+        "instances": {
+            "claude-work": {
+                "agent": "claude",
+                "account_id": "acc-work",
+                "env": {
+                    "ANTHROPIC_AUTH_TOKEN": "selected-zai-token",
+                    "ANTHROPIC_BASE_URL": "https://api.z.ai/api/anthropic",
+                    "OPENAI_API_KEY": "foreign-codex-sentinel"
+                },
+            },
+        },
+    }));
+    let error = validate_agent_credentials(&config, &foreign).unwrap_err();
+    assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
+    assert!(!error.to_string().contains("foreign-codex-sentinel"));
+}
+
+#[test]
 fn protected_credentials_required_for_secret_auth_modes() {
     for mode in ["api_key", "oauth_token"] {
         let config = instance_config(&[("claude-work", mode, "claude")]);

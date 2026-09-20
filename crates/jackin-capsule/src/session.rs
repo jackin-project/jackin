@@ -1991,6 +1991,7 @@ pub(crate) fn apply_account_env(
     command: &mut CommandBuilder,
     instance: &str,
     auth_mode: Option<&str>,
+    provider_surface: Option<&str>,
     credentials: &jackin_protocol::AgentCredentialEnv,
 ) {
     if !matches!(auth_mode, Some("api_key" | "oauth_token")) {
@@ -2016,7 +2017,7 @@ pub(crate) fn apply_account_env(
         let Ok(allowed) = crate::config::allowed_account_env_names(
             &entry.agent,
             auth_mode.unwrap_or_default(),
-            None,
+            provider_surface,
         ) else {
             return;
         };

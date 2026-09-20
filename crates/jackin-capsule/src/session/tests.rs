@@ -1930,7 +1930,7 @@ fn account_credentials_are_scoped_to_selected_instance_and_mode() {
             Some(mode),
             &hostile_passthrough,
         ));
-        super::apply_account_env(&mut cmd, "claude-work", Some(mode), &credentials);
+        super::apply_account_env(&mut cmd, "claude-work", Some(mode), None, &credentials);
         assert!(cmd.get_env("ANTHROPIC_API_KEY").is_none());
     }
     let mut cmd = build_agent_command(&spawn_spec(
@@ -1939,7 +1939,7 @@ fn account_credentials_are_scoped_to_selected_instance_and_mode() {
         Some("api_key"),
         &hostile_passthrough,
     ));
-    super::apply_account_env(&mut cmd, "claude-work", Some("api_key"), &credentials);
+    super::apply_account_env(&mut cmd, "claude-work", Some("api_key"), None, &credentials);
     assert_eq!(
         cmd.get_env("ANTHROPIC_API_KEY").and_then(|v| v.to_str()),
         Some("work-secret")
@@ -1953,7 +1953,13 @@ fn account_credentials_are_scoped_to_selected_instance_and_mode() {
         Some("api_key"),
         &hostile_passthrough,
     ));
-    super::apply_account_env(&mut cmd, "claude-personal", Some("api_key"), &credentials);
+    super::apply_account_env(
+        &mut cmd,
+        "claude-personal",
+        Some("api_key"),
+        None,
+        &credentials,
+    );
     assert_eq!(
         cmd.get_env("ANTHROPIC_API_KEY").and_then(|v| v.to_str()),
         Some("personal-secret")
@@ -2003,6 +2009,15 @@ fn account_env_injection_is_bounded_by_agent_provider_and_auth_family() {
                         "OPENAI_API_KEY": "foreign-codex-sentinel"
                     },
                 },
+                "claude-routed": {
+                    "agent": "claude",
+                    "account_id": "acc-zai",
+                    "env": {
+                        "ANTHROPIC_AUTH_TOKEN": "selected-zai-token",
+                        "ANTHROPIC_BASE_URL": "https://api.z.ai/api/anthropic",
+                        "OPENAI_API_KEY": "foreign-codex-sentinel"
+                    },
+                },
             },
         }))
         .expect("credential fixture must decode");
@@ -2014,7 +2029,13 @@ fn account_env_injection_is_bounded_by_agent_provider_and_auth_family() {
         Some("api_key"),
         &empty,
     ));
-    super::apply_account_env(&mut codex, "codex-routed", Some("api_key"), &credentials);
+    super::apply_account_env(
+        &mut codex,
+        "codex-routed",
+        Some("api_key"),
+        None,
+        &credentials,
+    );
     assert_eq!(
         codex
             .get_env("KIMI_API_KEY")
@@ -2040,6 +2061,7 @@ fn account_env_injection_is_bounded_by_agent_provider_and_auth_family() {
         &mut opencode,
         "opencode-routed",
         Some("api_key"),
+        None,
         &credentials,
     );
     assert_eq!(
@@ -2061,6 +2083,7 @@ fn account_env_injection_is_bounded_by_agent_provider_and_auth_family() {
         &mut claude,
         "claude-oauth",
         Some("oauth_token"),
+        None,
         &credentials,
     );
     assert_eq!(
@@ -2076,6 +2099,33 @@ fn account_env_injection_is_bounded_by_agent_provider_and_auth_family() {
         Some("https://anthropic.example")
     );
     assert!(claude.get_env("OPENAI_API_KEY").is_none());
+
+    let mut routed_claude = build_agent_command(&spawn_spec(
+        "claude",
+        "claude-routed",
+        Some("api_key"),
+        &empty,
+    ));
+    super::apply_account_env(
+        &mut routed_claude,
+        "claude-routed",
+        Some("api_key"),
+        Some("zai"),
+        &credentials,
+    );
+    assert_eq!(
+        routed_claude
+            .get_env("ANTHROPIC_AUTH_TOKEN")
+            .and_then(|value| value.to_str()),
+        Some("selected-zai-token")
+    );
+    assert_eq!(
+        routed_claude
+            .get_env("ANTHROPIC_BASE_URL")
+            .and_then(|value| value.to_str()),
+        Some("https://api.z.ai/api/anthropic")
+    );
+    assert!(routed_claude.get_env("OPENAI_API_KEY").is_none());
 }
 
 #[test]
@@ -2112,6 +2162,7 @@ fn google_alias_is_scrubbed_from_siblings_while_selected_credential_is_injected(
         &mut unselected,
         "gemini-unselected",
         Some("ignore"),
+        None,
         &credentials,
     );
     assert!(
@@ -2131,7 +2182,13 @@ fn google_alias_is_scrubbed_from_siblings_while_selected_credential_is_injected(
         Some("api_key"),
         &ambient,
     ));
-    super::apply_account_env(&mut work, "gemini-work", Some("api_key"), &credentials);
+    super::apply_account_env(
+        &mut work,
+        "gemini-work",
+        Some("api_key"),
+        None,
+        &credentials,
+    );
     assert_eq!(
         work.get_env(jackin_core::GEMINI_API_KEY_ENV_NAME)
             .and_then(|value| value.to_str()),
@@ -2149,6 +2206,7 @@ fn google_alias_is_scrubbed_from_siblings_while_selected_credential_is_injected(
         &mut personal,
         "gemini-personal",
         Some("api_key"),
+        None,
         &credentials,
     );
     assert_eq!(
@@ -2180,7 +2238,7 @@ fn unassigned_instance_cannot_inherit_another_instances_provider_key() {
         .expect("v2 fixture must decode");
     let empty: Vec<(String, String)> = Vec::new();
     let mut cmd = build_agent_command(&spawn_spec("codex", "codex-work", Some("ignore"), &empty));
-    super::apply_account_env(&mut cmd, "codex-work", Some("ignore"), &credentials);
+    super::apply_account_env(&mut cmd, "codex-work", Some("ignore"), None, &credentials);
     assert!(cmd.get_env("OPENAI_API_KEY").is_none());
     assert!(!format!("{credentials:?}").contains("opencode-secret"));
 }
