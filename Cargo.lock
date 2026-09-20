@@ -3317,6 +3317,7 @@ dependencies = [
  "jackin-manifest",
  "jackin-process",
  "jackin-telemetry",
+ "nix 0.31.3",
  "rand 0.10.2",
  "serde",
  "serde_json",
